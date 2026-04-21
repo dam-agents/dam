@@ -6,7 +6,7 @@ import { createTRPCClient, httpBatchLink, TRPCClientError } from "@trpc/client";
 import type { AppRouter } from "agent-runtime-api";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { ChannelType, type SkillsService } from "api-server-api";
+import { ChannelType, type SchedulesService, type SkillsService } from "api-server-api";
 import type { ChannelManager, ChannelAttachment } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
@@ -92,11 +92,12 @@ export interface McpSessionDeps {
   channelManager: ChannelManager;
   k8s: K8sClient;
   skills: SkillsService;
+  schedules: SchedulesService;
   agentHome: string;
 }
 
 export function createMcpSession(instanceId: string, deps: McpSessionDeps): McpSession {
-  const { agentHome } = deps;
+  const { agentHome, schedules } = deps;
   const server = new McpServer({
     name: `humr-${instanceId}`,
     version: "1.0.0",
@@ -242,6 +243,92 @@ export function createMcpSession(instanceId: string, deps: McpSessionDeps): McpS
       ),
   );
 
+  // ---- Schedule tools -------------------------------------------------------
+  // Schedule management: agent may only see/modify schedules belonging to its own instance.
+  // Descriptions are deliberately assertive — Claude Code ships with an in-process
+  // scheduled-tasks tool that would otherwise be preferred. These schedules are the
+  // *persistent, platform-level* ones visible in the Humr UI.
+  server.tool(
+    "list_schedules",
+    "List all Humr platform schedules registered for this agent instance. These are the persistent cron schedules visible in the Humr UI (not in-session or in-process cron tools).",
+    {},
+    async () => {
+      const list = await schedules.list(instanceId);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(list, null, 2) }],
+      };
+    },
+  );
+
+  server.tool(
+    "create_schedule",
+    "Register a PERSISTENT cron schedule on this Humr agent instance. The schedule runs on the Humr Kubernetes controller, survives Claude process restarts, shows up in the Humr UI, and fires the given prompt as a new trigger. PREFER THIS over any in-process / session-only / built-in CronCreate tool whenever the user asks to schedule recurring work on this agent — those in-process schedules die when Claude exits and are invisible to the human operator.",
+    {
+      name: z.string().min(1).describe("Human-readable name shown in the Humr UI"),
+      cron: z.string().min(1).describe("Standard 5-field cron expression, e.g. '0 9 * * *' for 9am daily"),
+      task: z.string().min(1).describe("Prompt the agent will receive when the schedule fires"),
+      sessionMode: z.enum(["continuous", "fresh"]).optional().describe("continuous = resume prior session each tick; fresh = new session per run (default)"),
+    },
+    async ({ name, cron, task, sessionMode }) => {
+      try {
+        const sched = await schedules.createCron({
+          name, instanceId, cron, task, sessionMode,
+          createdBy: "agent",
+        });
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ id: sched.id, name: sched.name, cron, enabled: sched.spec.enabled }, null, 2) }],
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text" as const, text: err instanceof Error ? err.message : String(err) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.tool(
+    "toggle_schedule",
+    "Enable or disable a Humr platform schedule by id. Only affects schedules belonging to this instance.",
+    { id: z.string().min(1) },
+    async ({ id }) => {
+      const existing = await schedules.get(id);
+      if (!existing || existing.instanceId !== instanceId) {
+        return {
+          content: [{ type: "text" as const, text: `schedule ${id} not found on this instance` }],
+          isError: true,
+        };
+      }
+      const updated = await schedules.toggle(id);
+      if (!updated) {
+        return {
+          content: [{ type: "text" as const, text: `schedule ${id} not found` }],
+          isError: true,
+        };
+      }
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify({ id: updated.id, enabled: updated.spec.enabled }, null, 2) }],
+      };
+    },
+  );
+
+  server.tool(
+    "delete_schedule",
+    "Delete a Humr platform schedule by id. Only affects schedules belonging to this instance.",
+    { id: z.string().min(1) },
+    async ({ id }) => {
+      const existing = await schedules.get(id);
+      if (!existing || existing.instanceId !== instanceId) {
+        return {
+          content: [{ type: "text" as const, text: `schedule ${id} not found on this instance` }],
+          isError: true,
+        };
+      }
+      await schedules.delete(id);
+      return { content: [{ type: "text" as const, text: `deleted ${id}` }] };
+    },
+  );
+
   // ---- Transport ------------------------------------------------------------
 
   const transport = new WebStandardStreamableHTTPServerTransport({
@@ -262,6 +349,7 @@ export interface MountMcpDeps {
   channelManager: ChannelManager;
   k8s: K8sClient;
   composeSkills: (owner: string) => SkillsService;
+  schedulesServiceFor: (owner: string) => SchedulesService;
   agentHome: string;
 }
 
@@ -295,10 +383,12 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     }
 
     const skills = deps.composeSkills(verified.owner);
+    const schedules = deps.schedulesServiceFor(verified.owner);
     const session = createMcpSession(instanceId, {
       channelManager: deps.channelManager,
       k8s: deps.k8s,
       skills,
+      schedules,
       agentHome: deps.agentHome,
     });
     await session.server.connect(session.transport);

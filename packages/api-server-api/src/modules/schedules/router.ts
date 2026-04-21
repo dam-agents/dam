@@ -24,6 +24,7 @@ function toView(sched: Schedule) {
     task: sched.spec.task ?? null,
     enabled: sched.spec.enabled,
     sessionMode: sched.spec.sessionMode,
+    createdBy: sched.spec.createdBy ?? "user",
     status: sched.status ?? null,
   };
   if (sched.spec.type === "rrule") {

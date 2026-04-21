@@ -1,3 +1,5 @@
+export type ScheduleCreator = "user" | "agent";
+
 export interface QuietWindow {
   /** "HH:MM" 24-hour, local to schedule timezone. */
   startTime: string;
@@ -14,6 +16,7 @@ export interface ScheduleSpecCron {
   task?: string;
   enabled: boolean;
   sessionMode?: "continuous" | "fresh";
+  createdBy?: ScheduleCreator;
 }
 
 export interface ScheduleSpecRRule {
@@ -27,6 +30,7 @@ export interface ScheduleSpecRRule {
   task?: string;
   enabled: boolean;
   sessionMode?: "continuous" | "fresh";
+  createdBy?: ScheduleCreator;
 }
 
 export type ScheduleSpec = ScheduleSpecCron | ScheduleSpecRRule;
@@ -52,6 +56,7 @@ export interface CreateCronScheduleInput {
   cron: string;
   task: string;
   sessionMode?: "continuous" | "fresh";
+  createdBy?: ScheduleCreator;
 }
 
 export interface CreateRRuleScheduleInput {

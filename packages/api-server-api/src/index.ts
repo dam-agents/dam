@@ -45,6 +45,7 @@ export type {
   ScheduleSpecRRule,
   ScheduleStatus,
   QuietWindow,
+  ScheduleCreator,
   CreateCronScheduleInput,
   CreateRRuleScheduleInput,
   UpdateRRuleScheduleInput,

@@ -28,6 +28,7 @@ export function createSchedulesService(deps: {
         cron: input.cron,
         task: input.task,
         enabled: true,
+        createdBy: input.createdBy ?? "user",
       };
       if (input.sessionMode) spec.sessionMode = input.sessionMode;
       return deps.repo.create(input.instanceId, agentRef, spec, deps.owner);

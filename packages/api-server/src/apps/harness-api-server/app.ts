@@ -53,6 +53,16 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     podFiles: { bus: podFilesBus, fetchSnapshot: podFilesSnapshot },
     agentHome: config.agentHome,
     composeSkills: (owner) => composeSkillsModule(api, config.namespace, owner, db, seedSources),
+    schedulesServiceFor: (owner) =>
+      composeAgentsModule(
+        api,
+        config.namespace,
+        owner,
+        db,
+        userDirectory,
+        channelSecretStore,
+        config.agentHome,
+      ).schedules,
     handleTrigger: async (body) => {
       const mode = body.sessionMode ?? "fresh";
       const sessionType = "schedule_cron";

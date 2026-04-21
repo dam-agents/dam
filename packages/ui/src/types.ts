@@ -138,6 +138,7 @@ export interface Schedule {
   task: string | null;
   enabled: boolean;
   sessionMode?: "continuous" | "fresh";
+  createdBy: "user" | "agent";
   status: { lastRun?: string; nextRun?: string; lastResult?: string } | null;
 }
 
