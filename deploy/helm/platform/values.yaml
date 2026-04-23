@@ -583,6 +583,29 @@ codeGuardianTemplate:
       cpu: "1"
       memory: "2Gi"
 
+# -- Bob agent template
+bobAgentTemplate:
+  enabled: false
+  name: bob
+  image:
+    repository: ghcr.io/dam-agents/dam/bob
+    tag: ""
+    pullPolicy: IfNotPresent
+  description: "Bob agent"
+  # Path where agent-runtime writes the platform-outbound MCP config. Bob reads
+  # project-scope config from <workdir>/.bob/settings.json (lowercase `b`,
+  # `settings.json` — the official docs name `.Bob/mcp.json` is stale).
+  # Relative paths are resolved against the agent workdir (typically
+  # /home/agent/work).
+  mcpConfigPath: .bob/settings.json
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "1"
+      memory: "2Gi"
+
 # -- Platform-wide skill sources (shared catalog visible to all users).
 # Rendered into the api-server pod as SKILL_SOURCES_SEED (JSON array, one
 # entry per source) and parsed at startup. api-server merges these with

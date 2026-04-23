@@ -11,6 +11,10 @@ const schema = z.object({
   TRIGGERS_DIR: z.string().default("/home/agent/.triggers"),
   API_SERVER_URL: z.string().default(""),
   PLATFORM_MCP_URL: z.string().optional(),
+  /** Path (relative to WORK_DIR, or absolute) where agent-runtime writes the
+   *  platform-outbound MCP server config on startup. Per-agent helm templates
+   *  override it. */
+  MCP_CONFIG_PATH: z.string().default(".mcp.json"),
   /** SSE endpoint for declarative pod-files materialization (built by the
    *  reconciler from the harness server URL + instance id). When unset the
    *  loop is skipped — used for forks and any pod that shouldn't receive

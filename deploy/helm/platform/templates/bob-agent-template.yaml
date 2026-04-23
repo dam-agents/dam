@@ -1,0 +1,48 @@
+{{- if .Values.bobAgentTemplate.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.bobAgentTemplate.name }}
+  namespace: {{ .Values.agentNamespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    agent-platform.ai/type: agent-template
+data:
+  spec.yaml: |
+    version: agent-platform.ai/v1
+    image: "{{ .Values.bobAgentTemplate.image.repository }}:{{ .Values.bobAgentTemplate.image.tag | default .Chart.AppVersion }}"
+    description: {{ .Values.bobAgentTemplate.description | quote }}
+    mounts:
+      - path: /home/agent
+        persist: true
+      - path: /tmp
+        persist: false
+    init: |
+      #!/bin/bash
+      # Seed home from image on first boot
+      if [ ! -f /home/agent/.initialized ]; then
+        cp -rn /app/working-dir/. /home/agent/ 2>/dev/null || true
+        touch /home/agent/.initialized
+      fi
+      mkdir -p /home/agent/work
+      if [ -f /home/agent/work/requirements.txt ]; then
+        pip install -r /home/agent/work/requirements.txt
+      fi
+    env:
+      - name: PORT
+        value: "8080"
+      # Path (relative to the agent workdir, or absolute) where agent-runtime
+      # writes the platform-outbound MCP server config. Bob reads project-scope
+      # config from <workdir>/.bob/settings.json.
+      - name: MCP_CONFIG_PATH
+        value: {{ .Values.bobAgentTemplate.mcpConfigPath | quote }}
+    resources:
+      requests:
+        cpu: {{ .Values.bobAgentTemplate.resources.requests.cpu | quote }}
+        memory: {{ .Values.bobAgentTemplate.resources.requests.memory | quote }}
+      limits:
+        cpu: {{ .Values.bobAgentTemplate.resources.limits.cpu | quote }}
+        memory: {{ .Values.bobAgentTemplate.resources.limits.memory | quote }}
+    securityContext:
+      readOnlyRootFilesystem: false
+{{- end }}

@@ -51,6 +51,13 @@ codeGuardianTemplate:
     tag: latest
     pullPolicy: Never
 
+bobAgentTemplate:
+  enabled: true
+  image:
+    repository: platform-bob
+    tag: latest
+    pullPolicy: Never
+
 # Local dev convenience: route requests with any Host header (including
 # IP literals like 127.0.0.1) to the app, so the cluster is reachable
 # however the developer happens to address it.

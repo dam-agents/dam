@@ -2,7 +2,8 @@ import http from "node:http";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { isAbsolute } from "node:path";
 import headlessPkg from "@xterm/headless";
 const { Terminal: HeadlessTerminal } = headlessPkg;
 import serializePkg from "@xterm/addon-serialize";
@@ -236,7 +237,9 @@ server.on("upgrade", (req, socket, head) => {
 });
 
 if (config.PLATFORM_MCP_URL) {
-  const mcpPath = join(workDir, ".mcp.json");
+  const mcpPath = isAbsolute(config.MCP_CONFIG_PATH)
+    ? config.MCP_CONFIG_PATH
+    : join(workDir, config.MCP_CONFIG_PATH);
   let mcpConfig: Record<string, unknown> = {};
   if (existsSync(mcpPath)) {
     try { mcpConfig = JSON.parse(readFileSync(mcpPath, "utf8")); } catch {}
@@ -245,8 +248,17 @@ if (config.PLATFORM_MCP_URL) {
   // No Authorization header: the api-server's harness port identifies the
   // caller by source IP (NetworkPolicy admits only agent pods, podIpResolver
   // maps IP → instance label). See ADR-035.
-  mcpServers["platform-outbound"] = { type: "http", url: config.PLATFORM_MCP_URL };
+  // Shape superset: claude-code honours `type` + `url`, bob honours `httpUrl`
+  // + `trust`. Unknown fields are ignored by both, so one entry works for
+  // every agent.
+  mcpServers["platform-outbound"] = {
+    type: "http",
+    url: config.PLATFORM_MCP_URL,
+    httpUrl: config.PLATFORM_MCP_URL,
+    trust: true,
+  };
   mcpConfig.mcpServers = mcpServers;
+  mkdirSync(dirname(mcpPath), { recursive: true });
   writeFileSync(mcpPath, JSON.stringify(mcpConfig, null, 2));
   process.stderr.write(`[mcp] Wrote platform-outbound to ${mcpPath}\n`);
 }
