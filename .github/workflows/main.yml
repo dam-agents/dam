@@ -14,7 +14,7 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ghcr.io/kagenti/humr
+  IMAGE_PREFIX: ghcr.io/dam-agents/dam
 
 jobs:
   build-images:
@@ -196,33 +196,8 @@ jobs:
       - name: Package Helm chart (SHA-pinned)
         run: helm package deploy/helm/humr --version 0.0.0-${{ github.sha }} --app-version ${{ github.sha }}
       - name: Push SHA-pinned chart
-        run: helm push humr-0.0.0-${{ github.sha }}.tgz oci://ghcr.io/kagenti/humr/charts
+        run: helm push humr-0.0.0-${{ github.sha }}.tgz oci://ghcr.io/dam-agents/dam/charts
       - name: Package Helm chart (main floating tag)
         run: helm package deploy/helm/humr --version 0.0.0-main --app-version ${{ github.sha }}
       - name: Push main-floating chart
-        run: helm push humr-0.0.0-main.tgz oci://ghcr.io/kagenti/humr/charts
-
-  deploy:
-    runs-on: arc-runner-set
-    timeout-minutes: 10
-    needs: helm-package
-    environment:
-      name: Development
-    env:
-      HOME: /tmp
-    steps:
-      - uses: actions/checkout@v4
-      - uses: azure/setup-helm@v4
-      - name: Deploy via Helm
-        run: |
-          helm upgrade ${{ vars.HELM_RELEASE }} \
-            oci://ghcr.io/kagenti/humr/charts/humr \
-            --version 0.0.0-${{ github.sha }} \
-            --namespace ${{ vars.HELM_NAMESPACE }} \
-            --reset-then-reuse-values \
-            --timeout 5m
-      - uses: azure/setup-kubectl@v4
-      - name: Wait for rollout
-        run: |
-          kubectl rollout status statefulset --namespace ${{ vars.HELM_NAMESPACE }} --timeout=5m
-          kubectl rollout status deployment --namespace ${{ vars.HELM_NAMESPACE }} --timeout=5m
+        run: helm push humr-0.0.0-main.tgz oci://ghcr.io/dam-agents/dam/charts

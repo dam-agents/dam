@@ -16,7 +16,7 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ghcr.io/kagenti/humr
+  IMAGE_PREFIX: ghcr.io/dam-agents/dam
 
 jobs:
   build-images:
@@ -222,5 +222,5 @@ jobs:
       - name: Package Helm chart
         run: helm package deploy/helm/humr --version ${{ steps.version.outputs.version }} --app-version ${{ steps.version.outputs.version }}
       - name: Push to OCI registry
-        run: helm push humr-${{ steps.version.outputs.version }}.tgz oci://ghcr.io/kagenti/humr/charts
+        run: helm push humr-${{ steps.version.outputs.version }}.tgz oci://ghcr.io/dam-agents/dam/charts
 
