@@ -1,4 +1,4 @@
-# Why Humr
+# Why DAM
 
 ## What's an agent
 
@@ -18,17 +18,17 @@ All three hit the same wall when you try to run them in production: no open-sour
 
 ## The problem
 
-OpenClaw is wildly successful and keeps getting better. But it's a general-purpose platform that tries to serve every user and every scenario. Humr takes a different angle: narrower focus, zero-trust by default, building blocks instead of opinions.
+OpenClaw is wildly successful and keeps getting better. But it's a general-purpose platform that tries to serve every user and every scenario. DAM takes a different angle: narrower focus, zero-trust by default, building blocks instead of opinions.
 
 When an agent has bash access and can manipulate files, security can't be an afterthought. Credentials shouldn't be passed to the model. Network access shouldn't be open by default. Isolation shouldn't be optional. These aren't features. They're the foundation everything else is built on.
 
 And if you want to run agents on your own infrastructure without being tied to a specific vendor's harness, model, or cloud, that option doesn't exist today.
 
-## What Humr does
+## What DAM does
 
-Humr is a Kubernetes platform focused on running AI harnesses in production. It covers the second category (harnesses) and is building the foundation for the third (always-on personal assistants).
+DAM is a Kubernetes platform focused on running AI harnesses in production. It covers the second category (harnesses) and is building the foundation for the third (always-on personal assistants).
 
-**You bring the harness. Humr makes it production-ready.**
+**You bring the harness. DAM makes it production-ready.**
 
 Here's what that means:
 
@@ -42,7 +42,7 @@ Here's what that means:
 
 - **No vendor lock-in.** Model-agnostic. Harness-agnostic. Any harness that speaks ACP works. Today that's Claude Code, but the platform is designed for Codex, Gemini CLI, and whatever comes next.
 
-## What Humr believes
+## What DAM believes
 
 - **The harness is the unit of AI development.** The platform's job is to run it safely, not replace it.
 - **Security must be structural.** If it depends on the agent behaving correctly, it's not security.
@@ -51,4 +51,4 @@ Here's what that means:
 
 ## Where this is going
 
-Humr focuses on harnesses today and is preparing the building blocks for always-on personal assistants (scheduling, heartbeat, persistent workspace, channel integrations). A separate experiment will build an enterprise-grade OpenClaw alternative on top of these building blocks: an assistant that uses the harness to build software, create skills, and automate workflows, wrapped in an experience that's safe and manageable for enterprise use.
+DAM focuses on harnesses today and is preparing the building blocks for always-on personal assistants (scheduling, heartbeat, persistent workspace, channel integrations). A separate experiment will build an enterprise-grade OpenClaw alternative on top of these building blocks: an assistant that uses the harness to build software, create skills, and automate workflows, wrapped in an experience that's safe and manageable for enterprise use.
