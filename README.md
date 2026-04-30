@@ -1,5 +1,8 @@
 # DAM
 
+<p align="center">
+  <img src="docs/assets/icon.svg" width="120" alt="DAM icon" />
+</p>
 <h3 align="center">
   Run your own background agents on Kubernetes.<br/>
   Isolated by default. Credentialed. Always-on.
