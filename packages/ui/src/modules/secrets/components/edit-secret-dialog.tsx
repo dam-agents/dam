@@ -110,7 +110,7 @@ export function EditSecretDialog({ secret, onClose }: Props) {
   });
 
   return (
-    <Modal onClose={onClose} widthClass="w-[540px]">
+    <Modal widthClass="w-[540px]">
       <form onSubmit={onSubmit} className="contents">
         <div className="px-7 pt-7 pb-4 border-b-2 border-border-light">
           <h2 className="text-[20px] font-bold text-text">Edit Secret</h2>

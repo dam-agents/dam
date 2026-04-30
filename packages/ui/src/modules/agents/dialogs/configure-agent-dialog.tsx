@@ -187,7 +187,7 @@ export function ConfigureAgentDialog({
   const isSubmitDisabled = saving || !ready || !isDirty; 
 
   return (
-    <Modal onClose={onClose} widthClass="w-[640px]">
+    <Modal widthClass="w-[640px]">
       <form onSubmit={onSubmit} className="contents">
         <div className="px-7 pt-7 pb-4 border-b-2 border-border-light flex flex-col gap-3">
           <div>

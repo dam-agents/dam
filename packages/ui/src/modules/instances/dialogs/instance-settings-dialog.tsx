@@ -35,7 +35,7 @@ export function InstanceSettingsDialog({
   const removeUser = (email: string) => setUsers(users.filter(u => u !== email));
 
   return (
-    <Modal onClose={onCancel} widthClass="w-[460px]">
+    <Modal widthClass="w-[460px]">
       <div className="flex-1 overflow-y-auto p-5 md:p-7 flex flex-col gap-5">
         <div>
           <h2 className="text-[20px] font-bold text-text">Instance Settings</h2>

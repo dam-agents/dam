@@ -88,7 +88,7 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
   });
 
   return (
-    <Modal onClose={onCancel} widthClass="w-[480px]">
+    <Modal widthClass="w-[480px]">
       <form onSubmit={onSubmit} className="contents">
         <div className="px-7 pt-7 pb-4 border-b-2 border-border-light">
           <h2 className="text-[20px] font-bold text-text">Add Secret</h2>

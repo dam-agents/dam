@@ -35,7 +35,7 @@ export function AddMcpForm({ initialUrl = "", onCancel }: Props) {
   };
 
   return (
-    <Modal onClose={onCancel} widthClass="w-[480px]">
+    <Modal widthClass="w-[480px]">
       <div className="flex flex-col gap-5 p-5 md:p-7">
         <h2 className="text-[20px] font-bold text-text">Connect MCP Server</h2>
         <p className="text-[13px] text-text-secondary">
