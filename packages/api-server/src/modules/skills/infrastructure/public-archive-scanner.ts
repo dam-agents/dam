@@ -149,7 +149,13 @@ export async function scanPublicGithubArchive(gitUrl: string): Promise<Skill[]> 
   // The final URL is `codeload.github.com/{owner}/{repo}/tar.gz/{FULL_SHA}`.
   // Pick the trailing 40-char hex SHA.
   const shaMatch = res.url.match(/\/([0-9a-f]{40})(?:\?.*)?$/);
-  if (!shaMatch) throw new Error(`unexpected archive redirect: ${res.url}`);
+  if (!shaMatch) {
+    // Empty repo (no commits): GitHub responds 200 with the repo HTML page
+    // instead of redirecting to a tarball. Treat as "no skills" so the user
+    // sees an empty list rather than a scary error.
+    if ((res.headers.get("content-type") ?? "").includes("text/html")) return [];
+    throw new Error(`unexpected archive redirect: ${res.url}`);
+  }
   const version = shaMatch[1];
 
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "humr-public-scan-"));

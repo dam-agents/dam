@@ -121,6 +121,17 @@ describe("scanPublicGithubArchive", () => {
     );
   });
 
+  it("returns empty list for empty repos (200 HTML, no SHA redirect)", async () => {
+    const archiveUrl = "https://github.com/acme/empty/archive/HEAD.tar.gz";
+    const htmlRes = new Response("<html>empty repo</html>", {
+      status: 200,
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+    Object.defineProperty(htmlRes, "url", { value: archiveUrl });
+    fetchMock.mockResolvedValueOnce(htmlRes);
+    await expect(scanPublicGithubArchive("https://github.com/acme/empty")).resolves.toEqual([]);
+  });
+
   it("rejects non-GitHub URLs without fetching", async () => {
     await expect(scanPublicGithubArchive("https://gitlab.com/foo/bar")).rejects.toThrow(
       /only GitHub/,
