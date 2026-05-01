@@ -3,7 +3,7 @@ import { serve } from "@hono/node-server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter } from "api-server-api/router";
 import type { ApiContext, UserIdentity } from "api-server-api";
-import type { CoreV1Api } from "@kubernetes/client-node";
+import type { CoreV1Api, KubeConfig } from "@kubernetes/client-node";
 import type { Db } from "db";
 import type { SkillSourceSeed } from "../../modules/skills/index.js";
 import {
@@ -21,6 +21,7 @@ import {
   isThreadAuthorized, authorizeThread, revokeThread, listAuthorizedThreads,
 } from "../../modules/channels/infrastructure/telegram-threads-repository.js";
 import { createAcpRelay } from "./acp-relay.js";
+import { createShellRelay } from "./shell-relay.js";
 import { createOAuthRoutes } from "./oauth.js";
 import { createOAuthAppRegistry } from "../../modules/connections/infrastructure/oauth-apps.js";
 import type { Config } from "../../config.js";
@@ -40,6 +41,7 @@ import type { PodFilesPublisher } from "../../modules/pod-files/publisher.js";
 export interface ApiServerAppDeps {
   config: Config;
   api: CoreV1Api;
+  kc: KubeConfig;
   db: Db;
   onecli: OnecliClient;
   channelManager: ChannelManager;
@@ -52,7 +54,7 @@ export interface ApiServerAppDeps {
 }
 
 export function startApiServerApp(deps: ApiServerAppDeps) {
-  const { config, api, db, onecli, channelManager, channelSecretStore, identityLinkService, pendingSlackOAuthFlows, pendingTelegramOAuthFlows, podFilesPublisher, seedSources } = deps;
+  const { config, api, kc, db, onecli, channelManager, channelSecretStore, identityLinkService, pendingSlackOAuthFlows, pendingTelegramOAuthFlows, podFilesPublisher, seedSources } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
   const instancesRepo = createInstancesRepository(k8sClient);
@@ -218,6 +220,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   });
 
   const acpRelay = createAcpRelay(config.namespace, instancesRepo);
+  const shellRelay = config.shellSecret ? createShellRelay(config.namespace, kc) : null;
 
   const server = serve({ fetch: app.fetch, port: config.port }, () => {
     process.stderr.write(`api-server listening on http://localhost:${config.port}\n`);
@@ -225,6 +228,30 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
 
   server.on("upgrade", async (req, socket, head) => {
     const url = new URL(req.url!, `http://${req.headers.host}`);
+
+    // Shell relay (POC, dam-wn6) — Bearer-token auth via shared secret. Skips
+    // user JWT and instance-ownership checks by design; see ticket "Auth".
+    const shellMatch = url.pathname.match(/^\/api\/instances\/([^/]+)\/shell$/);
+    if (shellMatch) {
+      if (!shellRelay) {
+        socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+      const authHeader = req.headers["authorization"];
+      const provided = typeof authHeader === "string" && authHeader.startsWith("Bearer ")
+        ? authHeader.slice("Bearer ".length)
+        : null;
+      if (provided !== config.shellSecret) {
+        socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+      const instanceId = decodeURIComponent(shellMatch[1]);
+      shellRelay.handleUpgrade(req, socket, head, instanceId);
+      return;
+    }
+
     const match = url.pathname.match(/^\/api\/instances\/([^/]+)\/acp$/);
     if (!match) {
       socket.destroy();

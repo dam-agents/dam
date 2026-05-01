@@ -1,0 +1,24 @@
+["cli:shell"]
+description = "Attach to the Claude Code TUI of a Humr instance pod (POC, dam-wn6). Usage: mise run cli:shell -- <instanceId>"
+dir = "{{config_root}}"
+raw = true
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+# Token discovery for the POC: read it from the running apiserver Deployment
+# when not set in the local env. Falls through silently when the cluster
+# isn't reachable so the CLI's own "secret missing" error wins.
+if [ -z "${HUMR_SHELL_SECRET:-}" ]; then
+  if KCFG="$(mise run cluster:kubeconfig 2>/dev/null)" && [ -n "$KCFG" ]; then
+    HUMR_SHELL_SECRET="$(kubectl --kubeconfig="$KCFG" get deploy humr-apiserver \
+      -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="HUMR_SHELL_SECRET")].value}' 2>/dev/null || true)"
+    export HUMR_SHELL_SECRET
+  fi
+fi
+exec pnpm --filter humr-cli exec tsx src/shell.ts "$@"
+'''
+
+["humr-cli:check"]
+description = "Type-check humr-cli"
+dir = "{{config_root}}"
+run = "pnpm --filter humr-cli typecheck"

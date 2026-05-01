@@ -72,6 +72,10 @@ spec:
               value: {{ .Values.apiServer.harnessServerPort | quote }}
             - name: UI_BASE_URL
               value: {{ include "humr.url.ui" . | quote }}
+            {{- if .Values.apiServer.shellSecret }}
+            - name: HUMR_SHELL_SECRET
+              value: {{ .Values.apiServer.shellSecret | quote }}
+            {{- end }}
             {{- if .Values.apiServer.slackBotToken }}
             - name: SLACK_BOT_TOKEN
               value: {{ .Values.apiServer.slackBotToken | quote }}

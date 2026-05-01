@@ -63,6 +63,13 @@ rules:
     # recreate it with the current spec — functionally equivalent to a rolling
     # restart for replicas=1 without racing against the controller's reconcile.
     verbs: ["get", "list", "watch", "delete"]
+  # POC shell relay (dam-wn6) — `/api/instances/:id/shell` execs `tmux new -A
+  # -s humr claude` inside the agent pod and bridges the pod-exec WebSocket to
+  # the local CLI. Required even when shellSecret is empty so the helm chart
+  # stays consistent across enable/disable toggles.
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

@@ -51,7 +51,7 @@ const onecli = createOnecliClient({
   onecliBaseUrl: config.onecliBaseUrl,
 });
 
-const { api } = createApi(config.namespace);
+const { api, kc } = createApi(config.namespace);
 await runMigrations(config.databaseUrl, config.migrationsPath);
 const { db, sql } = createDb(config.databaseUrl);
 
@@ -241,7 +241,7 @@ const podFilesPublisher = createPodFilesPublisher({
 });
 
 const { server: apiServer } = startApiServerApp({
-  config, api, db, onecli, channelManager, channelSecretStore, identityLinkService,
+  config, api, kc, db, onecli, channelManager, channelSecretStore, identityLinkService,
   pendingSlackOAuthFlows, pendingTelegramOAuthFlows, podFilesPublisher, seedSources,
 });
 

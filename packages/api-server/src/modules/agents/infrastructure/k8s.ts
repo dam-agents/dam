@@ -162,5 +162,5 @@ export function podBaseUrl(instanceId: string, namespace: string): string {
 export function createApi(namespace: string) {
   const kc = new k8s.KubeConfig();
   kc.loadFromDefault();
-  return { api: kc.makeApiClient(k8s.CoreV1Api), namespace };
+  return { api: kc.makeApiClient(k8s.CoreV1Api), kc, namespace };
 }

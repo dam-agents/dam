@@ -17,6 +17,8 @@ apiServer:
     repository: humr-api-server
     tag: latest
     pullPolicy: Never
+  # POC shell relay shared secret (dam-wn6). Local dev only.
+  shellSecret: dev-shell-secret
 
 controller:
   image:

@@ -278,6 +278,11 @@ apiServer:
     pullPolicy: IfNotPresent
   port: 4000
   harnessServerPort: 4001
+  # -- POC `humr` CLI shell relay (dam-wn6). When set, exposes
+  # `/api/instances/:id/shell` as a WS bridge into the agent pod's TUI
+  # via `tmux new -A -s humr claude`. Bearer-token auth only — every user
+  # who knows this secret can attach to any instance. Leave empty to disable.
+  shellSecret: ""
   # -- Slack bot token (xoxb-...) for the platform-wide Slack app. Leave empty to disable Slack integration.
   slackBotToken: ""
   # -- Slack app-level token (xapp-...) for Socket Mode. Required alongside slackBotToken.

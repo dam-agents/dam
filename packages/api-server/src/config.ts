@@ -38,6 +38,11 @@ const configSchema = z.object({
   defaultGithubEnterpriseHost: z.string().nullable().default(null),
   defaultGithubEnterpriseClientId: z.string().nullable().default(null),
   defaultGithubEnterpriseClientSecret: z.string().nullable().default(null),
+  // POC shell relay (dam-wn6). When set, exposes
+  // `/api/instances/:id/shell` — a WS bridge to a TTY-attached
+  // `tmux new -A -s humr claude` exec inside the agent pod. Bearer-token
+  // auth via this shared secret. Empty/null disables the endpoint.
+  shellSecret: z.string().nullable().default(null),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -72,5 +77,6 @@ export function loadConfig(): Config {
     defaultGithubEnterpriseHost: process.env.HUMR_DEFAULT_GHE_HOST,
     defaultGithubEnterpriseClientId: process.env.HUMR_DEFAULT_GHE_CLIENT_ID,
     defaultGithubEnterpriseClientSecret: process.env.HUMR_DEFAULT_GHE_CLIENT_SECRET,
+    shellSecret: process.env.HUMR_SHELL_SECRET,
   });
 }
