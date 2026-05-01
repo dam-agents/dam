@@ -227,7 +227,7 @@ export function createMcpSession(instanceId: string, deps: McpSessionDeps): McpS
 
   server.tool(
     "publish_skill",
-    "Publish a locally-authored skill from THIS instance as a pull request on a connected source. Requires the source to have a publish credential configured. Returns the PR URL on success.",
+    "Open a pull request that adds an existing on-disk skill from THIS instance to a connected source. PRECONDITION: the skill directory (SKILL.md + supporting files) must already exist under one of your configured skill paths — author the files first using your normal file-writing tools, then call this. This tool only ships an already-authored skill upstream; it does not create or scaffold one. Requires the source to have a publish credential configured. Returns the PR URL on success.",
     {
       sourceId: z.string().min(1),
       name: z.string().min(1),
