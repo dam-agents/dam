@@ -21,16 +21,45 @@ import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocketServer, WebSocket } from "ws";
 
-const TMUX_COMMAND = ["tmux", "new", "-A", "-s", "humr", "claude"];
+// `-c <dir>` makes the tmux session's start-directory match the cwd that
+// agent-runtime hands to ACP (`WORK_DIR`, default `${HOME}/work`). Without
+// this the exec lands in the container's `/app` WORKDIR and Claude sees
+// a different file tree than the UI session.
+//
+// We also ship a minimal tmux.conf so Claude renders correctly inside the
+// session: `focus-events` (Claude warns when off), 256/true-color terminal
+// (default `screen` strips color), and mouse for scrollback. Written to
+// `/tmp` per attach so we don't pollute the persistent HOME.
+const TMUX_CONF = [
+  "set -g focus-events on",
+  'set -g default-terminal "tmux-256color"',
+  'set -ga terminal-overrides ",*256col*:Tc"',
+  "set -g mouse on",
+].join("\n");
 
-function buildExecPath(namespace: string, podName: string): string {
+function tmuxCommand(workDir: string): string[] {
+  // LANG/LC_ALL are unset in the agent image; without them tmux uses ASCII
+  // width math and Claude's box-drawing/emoji glyphs misalign by a column on
+  // every line that contains a wide char. Forcing C.UTF-8 fixes it without
+  // pulling in a locale package.
+  const script = [
+    `export LANG=C.UTF-8 LC_ALL=C.UTF-8`,
+    `cat >/tmp/humr-tmux.conf <<'__HUMR_TMUX_CONF__'`,
+    TMUX_CONF,
+    `__HUMR_TMUX_CONF__`,
+    `exec tmux -u -f /tmp/humr-tmux.conf new -A -s humr -c ${JSON.stringify(workDir)} claude`,
+  ].join("\n");
+  return ["bash", "-c", script];
+}
+
+function buildExecPath(namespace: string, podName: string, workDir: string): string {
   const params = new URLSearchParams();
   params.set("stdin", "true");
   params.set("stdout", "true");
   params.set("stderr", "true");
   params.set("tty", "true");
   params.set("container", "agent");
-  for (const arg of TMUX_COMMAND) params.append("command", arg);
+  for (const arg of tmuxCommand(workDir)) params.append("command", arg);
   return `/api/v1/namespaces/${namespace}/pods/${podName}/exec?${params.toString()}`;
 }
 
@@ -38,7 +67,7 @@ function podName(instanceId: string): string {
   return `${instanceId}-0`;
 }
 
-export function createShellRelay(namespace: string, kc: KubeConfig) {
+export function createShellRelay(namespace: string, kc: KubeConfig, workDir: string) {
   const wss = new WebSocketServer({ noServer: true });
 
   function handleUpgrade(
@@ -49,7 +78,23 @@ export function createShellRelay(namespace: string, kc: KubeConfig) {
   ) {
     wss.handleUpgrade(req, socket, head, async (client) => {
       const handler = new WebSocketHandler(kc);
-      const path = buildExecPath(namespace, podName(instanceId));
+      const path = buildExecPath(namespace, podName(instanceId), workDir);
+
+      // The CLI sends an initial resize the moment the WS opens. Without
+      // queueing here, that frame fires before the post-`await` listener is
+      // attached and gets dropped — tmux then sticks at its default 80×24
+      // until the next SIGWINCH. Buffer everything the client sends until
+      // upstream is ready, then drain in order.
+      const pending: { data: Buffer; isBinary: boolean }[] = [];
+      const bufferOnly = (data: unknown, isBinary: boolean) => {
+        const buf = data instanceof Buffer
+          ? data
+          : Array.isArray(data)
+            ? Buffer.concat(data as Buffer[])
+            : Buffer.from(data as ArrayBuffer);
+        pending.push({ data: buf, isBinary });
+      };
+      client.on("message", bufferOnly);
 
       let upstream: WebSocket | undefined;
       try {
@@ -77,25 +122,17 @@ export function createShellRelay(namespace: string, kc: KubeConfig) {
         return;
       }
 
-      client.on("message", (data, isBinary) => {
+      const forward = (data: Buffer, isBinary: boolean) => {
         if (!upstream || upstream.readyState !== WebSocket.OPEN) return;
         if (isBinary) {
-          const buf = data instanceof Buffer
-            ? data
-            : Buffer.isBuffer(data)
-              ? data
-              : Array.isArray(data)
-                ? Buffer.concat(data)
-                : Buffer.from(data as ArrayBuffer);
-          const out = Buffer.alloc(buf.length + 1);
+          const out = Buffer.alloc(data.length + 1);
           out.writeInt8(0, 0);
-          buf.copy(out, 1);
+          data.copy(out, 1);
           upstream.send(out);
           return;
         }
-        const text = data.toString();
         try {
-          const msg = JSON.parse(text) as { type?: string; cols?: number; rows?: number };
+          const msg = JSON.parse(data.toString()) as { type?: string; cols?: number; rows?: number };
           if (msg.type === "resize" && typeof msg.cols === "number" && typeof msg.rows === "number") {
             const payload = JSON.stringify({ Height: msg.rows, Width: msg.cols });
             const body = Buffer.from(payload, "utf8");
@@ -107,6 +144,18 @@ export function createShellRelay(namespace: string, kc: KubeConfig) {
         } catch {
           // Ignore malformed control frames in the POC
         }
+      };
+
+      client.off("message", bufferOnly);
+      for (const m of pending) forward(m.data, m.isBinary);
+      pending.length = 0;
+      client.on("message", (data, isBinary) => {
+        const buf = data instanceof Buffer
+          ? data
+          : Array.isArray(data)
+            ? Buffer.concat(data as Buffer[])
+            : Buffer.from(data as ArrayBuffer);
+        forward(buf, isBinary);
       });
 
       client.on("close", () => {

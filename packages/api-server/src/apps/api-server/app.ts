@@ -220,7 +220,12 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   });
 
   const acpRelay = createAcpRelay(config.namespace, instancesRepo);
-  const shellRelay = config.shellSecret ? createShellRelay(config.namespace, kc) : null;
+  // tmux start-directory matches agent-runtime's WORK_DIR
+  // (`${HOME}/work`) so the CLI Claude session sees the same file tree as
+  // the UI session.
+  const shellRelay = config.shellSecret
+    ? createShellRelay(config.namespace, kc, `${config.agentHome}/work`)
+    : null;
 
   const server = serve({ fetch: app.fetch, port: config.port }, () => {
     process.stderr.write(`api-server listening on http://localhost:${config.port}\n`);
