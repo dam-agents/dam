@@ -1,6 +1,11 @@
 import { createDb, runMigrations } from "db";
 import { createApi } from "./modules/agents/infrastructure/k8s.js";
 import { composeSystemInstances, startK8sCleanupSaga, startChannelCleanupSaga } from "./modules/agents/index.js";
+import {
+  createInstanceSkillsRepository,
+  parseSeedSources,
+  startSkillsCleanupSaga,
+} from "./modules/skills/index.js";
 import { createK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { createInstancesRepository } from "./modules/agents/infrastructure/instances-repository.js";
 import { createKeycloakUserDirectory } from "./modules/agents/infrastructure/keycloak-user-directory.js";
@@ -58,7 +63,12 @@ const channelCleanupSub = startChannelCleanupSaga(
   deleteChannelsByInstance(db),
   deleteThreadsByInstance(db),
 );
+const skillsCleanupSub = startSkillsCleanupSaga(
+  (instanceId) => createInstanceSkillsRepository(db).deleteByInstance(instanceId),
+);
 const onecliSyncSub = startOnecliSyncSaga(onecli);
+
+const seedSources = parseSeedSources(config.skillSourcesSeed);
 
 const { foreignCredentials } = composeConnectionsModule({ onecli });
 
@@ -217,13 +227,14 @@ const podFilesPublisher = createPodFilesPublisher({
 
 const { server: apiServer } = startApiServerApp({
   config, api, db, onecli, channelManager, channelSecretStore, identityLinkService,
-  pendingSlackOAuthFlows, pendingTelegramOAuthFlows, podFilesPublisher,
+  pendingSlackOAuthFlows, pendingTelegramOAuthFlows, podFilesPublisher, seedSources,
 });
 
 const { server: harnessApiServer } = startHarnessApiServerApp({
   config, api, db, channelManager, channelSecretStore,
   podFilesBus,
   podFilesSnapshot: podFilesPublisher.compute,
+  seedSources,
 });
 
 listChannelsByOwner(db, "")().then((channelsByInstance) => {
@@ -234,6 +245,7 @@ async function shutdown() {
   process.stderr.write("shutting down...\n");
   k8sCleanupSub.unsubscribe();
   channelCleanupSub.unsubscribe();
+  skillsCleanupSub.unsubscribe();
   onecliSyncSub.unsubscribe();
   onForeignReplySub.unsubscribe();
   onSlackTurnRelayedSub.unsubscribe();

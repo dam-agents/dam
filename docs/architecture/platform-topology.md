@@ -53,7 +53,7 @@ A TypeScript server that hosts the user-facing surface and the ACP relay. It run
 - **Public port** — user-authenticated tRPC, REST (OAuth callbacks, health), and the ACP relay WebSocket.
 - **Harness port** — an internal-only endpoint consumed by agent pods for trigger handoff and MCP tool calls. Not exposed outside the cluster and carries no user authentication.
 
-The api-server proxies all ACP traffic to agent pods; clients never dial pods directly. It also wakes hibernated instances on demand before forwarding the first message of a session. See [`packages/api-server/`](../../packages/api-server/).
+The api-server proxies all ACP traffic to agent pods; clients never dial pods directly. It also wakes hibernated instances on demand before forwarding the first message of a session. Both the ACP relay and the tRPC proxy verify the user JWT and ownership at the public port and rewrite `Authorization` to the per-instance OneCLI access token before forwarding — agent-runtime never sees user identity directly. See [security-and-credentials § same token authenticates three trust boundaries](security-and-credentials.md#per-instance-access-token-and-pod-identity) and [`packages/api-server/`](../../packages/api-server/).
 
 ### agent-runtime
 
@@ -77,7 +77,7 @@ A React + Vite single-page app served by the api-server. It uses tRPC over HTTP 
 | ui → api-server | tRPC over HTTP | CRUD on templates, instances, schedules, sessions |
 | ui → api-server | WebSocket (ACP, JSON-RPC 2.0) | Live session, permission prompts, streaming output |
 | api-server → agent-runtime | WebSocket (ACP, JSON-RPC 2.0) | Relay target — one hop, no fan-out |
-| api-server → agent-runtime | HTTP (tRPC proxy) | In-pod file operations surfaced to the UI |
+| api-server → agent-runtime | HTTP (tRPC proxy) | In-pod file operations surfaced to the UI; api-server swaps the user JWT for the OneCLI access token before forwarding |
 | agent-runtime → api-server | HTTP (harness port) | Trigger receipt + MCP tool access |
 | controller → K8s API | watch / list / write | Resource reconciliation and status writes |
 | api-server → K8s API | REST | Resource CRUD, spec writes, pod wake |

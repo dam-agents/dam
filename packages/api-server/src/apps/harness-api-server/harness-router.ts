@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import type { SkillsService } from "api-server-api";
 import { mountMcpRoutes } from "./mcp-endpoint.js";
 import {
   mountPodFilesEventsRoute,
@@ -23,6 +24,7 @@ export interface TriggerResult {
 export function createHarnessRouter(deps: {
   channelManager: ChannelManager;
   k8s: K8sClient;
+  composeSkills: (owner: string) => SkillsService;
   handleTrigger: (req: TriggerRequest) => Promise<TriggerResult>;
   podFiles: Pick<PodFilesEventsDeps, "bus" | "fetchSnapshot">;
   agentHome: string;
@@ -38,7 +40,12 @@ export function createHarnessRouter(deps: {
     return c.json(result);
   });
 
-  mountMcpRoutes(app, { channelManager: deps.channelManager, k8s: deps.k8s, agentHome: deps.agentHome });
+  mountMcpRoutes(app, {
+    channelManager: deps.channelManager,
+    k8s: deps.k8s,
+    composeSkills: deps.composeSkills,
+    agentHome: deps.agentHome,
+  });
   mountPodFilesEventsRoute(app, {
     k8s: deps.k8s,
     bus: deps.podFiles.bus,

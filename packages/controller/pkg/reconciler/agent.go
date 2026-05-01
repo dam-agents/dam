@@ -102,12 +102,9 @@ func (r *AgentReconciler) ensureAgent(ctx context.Context, cm *corev1.ConfigMap,
 	}
 
 	secretName := AgentTokenSecretName(name)
-	_, err := r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, secretName, metav1.GetOptions{})
-	if err == nil {
-		// Already registered.
+	if _, err := r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, secretName, metav1.GetOptions{}); err == nil {
 		return nil, nil
-	}
-	if !errors.IsNotFound(err) {
+	} else if !errors.IsNotFound(err) {
 		return nil, fmt.Errorf("checking token secret: %w", err)
 	}
 

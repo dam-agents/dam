@@ -5,12 +5,15 @@ import { appRouter } from "api-server-api/router";
 import type { ApiContext, UserIdentity } from "api-server-api";
 import type { CoreV1Api } from "@kubernetes/client-node";
 import type { Db } from "db";
+import type { SkillSourceSeed } from "../../modules/skills/index.js";
 import {
   createK8sClient, podBaseUrl,
 } from "../../modules/agents/infrastructure/k8s.js";
 import { createInstancesRepository } from "./../../modules/agents/infrastructure/instances-repository.js";
 import { composeAgentsModule } from "../../modules/agents/index.js";
 import { createKeycloakUserDirectory } from "../../modules/agents/infrastructure/keycloak-user-directory.js";
+import { composeSkillsModule } from "../../modules/skills/compose.js";
+import { createAgentTokenResolver } from "../../modules/skills/infrastructure/agent-token.js";
 import { createSlackOAuthRoutes } from "../../modules/channels/infrastructure/slack-oauth.js";
 import { createTelegramOAuthRoutes } from "../../modules/channels/infrastructure/telegram-oauth.js";
 import type { TelegramOAuthPending } from "../../modules/channels/infrastructure/telegram.js";
@@ -44,13 +47,15 @@ export interface ApiServerAppDeps {
   pendingSlackOAuthFlows: Map<string, SlackOAuthPending>;
   pendingTelegramOAuthFlows: Map<string, TelegramOAuthPending>;
   podFilesPublisher: PodFilesPublisher;
+  seedSources: SkillSourceSeed[];
 }
 
 export function startApiServerApp(deps: ApiServerAppDeps) {
-  const { config, api, db, onecli, channelManager, channelSecretStore, identityLinkService, pendingSlackOAuthFlows, pendingTelegramOAuthFlows, podFilesPublisher } = deps;
+  const { config, api, db, onecli, channelManager, channelSecretStore, identityLinkService, pendingSlackOAuthFlows, pendingTelegramOAuthFlows, podFilesPublisher, seedSources } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
   const instancesRepo = createInstancesRepository(k8sClient);
+  const getAgentToken = createAgentTokenResolver(k8sClient);
 
   const userDirectory = createKeycloakUserDirectory({
     keycloakUrl: config.keycloakUrl,
@@ -129,12 +134,26 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       return c.json({ error: "not found" }, 404);
     }
 
+    // Swap the user's JWT for the agent's bearer before forwarding —
+    // agent-runtime's tRPC procedures are all `protectedProcedure` and only
+    // honor the agent's ONECLI_ACCESS_TOKEN. Ownership has already been
+    // verified above, so issuing the agent token here is safe.
+    const infra = await instancesRepo.get(instanceId, user.sub);
+    if (!infra) return c.json({ error: "not found" }, 404);
+    let agentToken: string;
+    try {
+      agentToken = await getAgentToken(infra.agentId);
+    } catch {
+      return c.json({ error: "agent token unavailable" }, 502);
+    }
+
     const rest = c.req.path.replace(`/api/instances/${instanceId}/trpc`, "");
     const qs = c.req.url.includes("?") ? "?" + c.req.url.split("?")[1] : "";
     const upstreamUrl = `http://${podBaseUrl(instanceId, config.namespace)}/api/trpc${rest}${qs}`;
     try {
       const headers = new Headers(c.req.raw.headers);
       headers.delete("host");
+      headers.set("authorization", `Bearer ${agentToken}`);
       const upstream = await fetch(upstreamUrl, {
         method: c.req.method,
         headers,
@@ -153,6 +172,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     const userJwt = c.req.header("authorization")!.slice(7);
 
     const { templates, agents, instances, schedules, sessions } = composeAgentsModule(api, config.namespace, user.sub, db, userDirectory, channelSecretStore, config.agentHome);
+    const skills = composeSkillsModule(api, config.namespace, user.sub, db, seedSources);
     const secrets = createSecretsService({
       port: createOnecliSecretsPort(onecli, userJwt, user.sub),
       k8sPort: createK8sSecretsPort(k8sClient, user.sub),
@@ -176,6 +196,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         secrets,
         channels: { available: channelManager.availableChannels() },
         connections,
+        skills,
         user,
       }),
     });

@@ -23,6 +23,7 @@ export interface AgentSpec {
   env?: EnvVar[];
   resources?: Resources;
   securityContext?: SecurityContext;
+  skillPaths?: string[];
 }
 
 export interface Agent {

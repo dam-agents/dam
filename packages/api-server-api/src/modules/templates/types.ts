@@ -17,6 +17,14 @@ export interface SecurityContext {
 
 export const SPEC_VERSION = "humr.ai/v1";
 
+/** A {name, gitUrl} pair declared by the helm values (platform-wide) or by a
+ *  template (per-agent). The same shape flows through every layer — helm
+ *  values, rendered ConfigMap, TypeScript and Go types. */
+export interface SkillSourceSeed {
+  name: string;
+  gitUrl: string;
+}
+
 export interface TemplateSpec {
   version: string;
   image: string;
@@ -26,6 +34,12 @@ export interface TemplateSpec {
   env?: EnvVar[];
   resources?: Resources;
   securityContext?: SecurityContext;
+  /** Filesystem paths the harness reads skills from. Copied onto the agent
+   *  spec at creation time so the skills-service knows where to install. */
+  skillPaths?: string[];
+  /** Template-declared skill sources surfaced in the Skills panel of every
+   *  instance derived from this template. Read-only; badged as "Agent". */
+  skillSources?: SkillSourceSeed[];
 }
 
 export interface Template {

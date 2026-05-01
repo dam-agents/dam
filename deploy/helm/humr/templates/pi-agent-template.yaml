@@ -1,4 +1,5 @@
 {{- if .Values.piAgentTemplate.enabled }}
+{{- $home := .Values.piAgentTemplate.agentHome }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -13,7 +14,7 @@ data:
     image: "{{ .Values.piAgentTemplate.image.repository }}:{{ .Values.piAgentTemplate.image.tag | default .Chart.AppVersion }}"
     description: {{ .Values.piAgentTemplate.description | quote }}
     mounts:
-      - path: /home/agent
+      - path: {{ $home }}
         persist: true
         {{- with .Values.piAgentTemplate.homeMountSize }}
         size: {{ . | quote }}
@@ -23,11 +24,11 @@ data:
     init: |
       #!/bin/bash
       # Seed home from image on first boot
-      if [ ! -f /home/agent/.initialized ]; then
-        cp -rn /app/working-dir/. /home/agent/ 2>/dev/null || true
-        touch /home/agent/.initialized
+      if [ ! -f {{ $home }}/.initialized ]; then
+        cp -rn /app/working-dir/. {{ $home }}/ 2>/dev/null || true
+        touch {{ $home }}/.initialized
       fi
-      mkdir -p /home/agent/work
+      mkdir -p {{ $home }}/work
     env:
       - name: PORT
         value: "8080"
@@ -40,4 +41,13 @@ data:
         memory: {{ .Values.piAgentTemplate.resources.limits.memory | quote }}
     securityContext:
       readOnlyRootFilesystem: false
+    skillPaths:
+      - {{ $home }}/.pi/agent/skills/
+    {{- with .Values.piAgentTemplate.skillSources }}
+    skillSources:
+      {{- range . }}
+      - name: {{ .name | quote }}
+        gitUrl: {{ .gitUrl | quote }}
+      {{- end }}
+    {{- end }}
 {{- end }}

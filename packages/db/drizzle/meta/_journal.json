@@ -71,6 +71,13 @@
       "when": 1777680000000,
       "tag": "0009_slack_channel_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1777939200000,
+      "tag": "0010_skills_postgres",
+      "breakpoints": true
     }
   ]
 }

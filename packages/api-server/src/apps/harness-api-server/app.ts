@@ -5,6 +5,8 @@ import { createK8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { LABEL_OWNER } from "../../modules/agents/infrastructure/labels.js";
 import { createKeycloakUserDirectory } from "../../modules/agents/infrastructure/keycloak-user-directory.js";
 import { composeAgentsModule } from "../../modules/agents/index.js";
+import { composeSkillsModule } from "../../modules/skills/compose.js";
+import type { SkillSourceSeed } from "../../modules/skills/index.js";
 import { createAcpClient } from "../../core/acp-client.js";
 import { createHarnessRouter } from "./harness-router.js";
 import type { Config } from "../../config.js";
@@ -21,6 +23,7 @@ export interface HarnessApiServerAppDeps {
   channelSecretStore: ChannelSecretStore;
   podFilesBus: PodFilesBus;
   podFilesSnapshot: (owner: string, agentId: string) => Promise<FileSpec[]>;
+  seedSources: SkillSourceSeed[];
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
@@ -32,6 +35,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     channelSecretStore,
     podFilesBus,
     podFilesSnapshot,
+    seedSources,
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
@@ -48,6 +52,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     k8s: k8sClient,
     podFiles: { bus: podFilesBus, fetchSnapshot: podFilesSnapshot },
     agentHome: config.agentHome,
+    composeSkills: (owner) => composeSkillsModule(api, config.namespace, owner, db, seedSources),
     handleTrigger: async (body) => {
       const mode = body.sessionMode ?? "fresh";
       const sessionType = "schedule_cron";

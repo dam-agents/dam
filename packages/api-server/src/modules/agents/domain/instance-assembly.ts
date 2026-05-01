@@ -1,4 +1,8 @@
-import type { Instance, InstanceState, ChannelConfig } from "api-server-api";
+import type {
+  Instance,
+  InstanceState,
+  ChannelConfig,
+} from "api-server-api";
 
 export interface InfraInstance {
   id: string;

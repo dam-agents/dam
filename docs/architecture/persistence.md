@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-04-27
+Last verified: 2026-04-29
 
 ## Motivated by
 
@@ -14,12 +14,14 @@ Humr persists state on three durable substrates, split cleanly between the platf
 
 **Platform-owned** (the agent never touches these):
 
-- **Postgres** — cross-pod metadata that has to be queryable when no agent pod is running (sessions, channel bindings, identity links, allow-listed users). Sole writer: api-server.
-- **ConfigMaps** — declared resource state for templates, instances, schedules, and forks, with a `spec.yaml` / `status.yaml` ownership split. Sole writer of `spec.yaml`: api-server. Sole writer of `status.yaml`: controller.
+- **Postgres** — application state the api-server owns end-to-end. Sole writer: api-server; the controller never reads from or writes to Postgres. Holds anything that has to be queryable when no agent pod is running (sessions, channel bindings, identity links, allow-listed users) plus any other api-server-only domain resource.
+- **ConfigMaps** — resource state the controller reconciles into running infrastructure (templates, instances, schedules, forks), with a `spec.yaml` / `status.yaml` ownership split. Sole writer of `spec.yaml`: api-server. Sole writer of `status.yaml`: controller.
 
 **Agent-owned**:
 
 - **Per-instance PVCs** — the workspace and `$HOME` mounted into the agent pod. The agent process reads and writes here freely; it has no direct access to Postgres or to the ConfigMaps that describe it. Persists across hibernation; reclaimed when the instance is deleted.
+
+**Choosing between Postgres and ConfigMaps.** A new resource belongs on a ConfigMap iff the controller reconciles it. If only the api-server reads and writes it, it belongs in Postgres. The spec/status single-writer split exists to coordinate api-server and controller; without a controller reader, it has no purpose, and putting api-server-only state on a ConfigMap is using the K8s API as a generic key-value store. ADR-006's "K8s is the database" framing predates Postgres landing in the platform — the rule above is the post-[ADR-017](../adrs/017-db-backed-sessions.md) refinement.
 
 The controller and api-server never share writes on the same key — write contention is impossible by convention rather than by lock. The agent's only durable surface is the PVC; everything the platform knows *about* the agent is mirrored onto Postgres or a ConfigMap by the api-server or controller, not by the agent itself.
 
@@ -57,17 +59,18 @@ flowchart LR
 
 ### Postgres
 
-Postgres carries the state Humr's various subsystems need to share with each other — state that doesn't belong to any one pod and has to survive when pods aren't running.
+Postgres carries application state the api-server owns end-to-end — anything that has to be queryable when no agent pod is running, plus any domain resource the controller does not reconcile.
 
 - **session metadata** ([ADR-017](../adrs/017-db-backed-sessions.md)) — Humr enriches each ACP session with metadata the protocol does not carry: a source-type discriminator (UI-initiated vs. channel-initiated vs. schedule-driven), the owning instance, the linked schedule when applicable, and creation time. The DB is the source of truth for these enrichments; the agent runtime owns the conversation itself. The sessions list reads enrichments straight from the DB and overlays live ACP data (title, last update) only when the pod is running.
 - **channel routing** — bindings between external chat surfaces and the instance/session they map to. Owned by [channels](channels.md).
 - **identity and auth** — links between channel-side identities and platform users, plus the auth allow-list. Owned by [security-and-credentials](security-and-credentials.md).
+- **skills catalog** — connected sources, per-instance install records, and publish history. Owned by [skills](skills.md).
 
 The api-server is the sole writer for all of it. The controller does not touch Postgres — its bookkeeping lives on `status.yaml` of the ConfigMap it owns. The authoritative schema and migrations live in [`packages/db/`](../../packages/db/).
 
 ### ConfigMaps
 
-Domain resources are labeled ConfigMaps ([ADR-006](../adrs/006-configmaps-over-crds.md)). Four types, distinguished by `humr.ai/type`:
+Resources the controller reconciles are labeled ConfigMaps ([ADR-006](../adrs/006-configmaps-over-crds.md)). Four types, distinguished by `humr.ai/type`:
 
 | Type | What it declares |
 |---|---|

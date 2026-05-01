@@ -24,6 +24,8 @@
   --color-danger-light: var(--c-danger-light);
   --color-info: var(--c-info);
   --color-info-light: var(--c-info-light);
+  --color-template: var(--c-template);
+  --color-template-light: var(--c-template-light);
   --shadow-brutal: var(--s-brutal);
   --shadow-brutal-sm: var(--s-brutal-sm);
   --shadow-brutal-accent: var(--s-brutal-accent);
@@ -53,6 +55,8 @@
   --c-danger-light: #fef2f2;
   --c-info: #2563eb;
   --c-info-light: #eff6ff;
+  --c-template: #7c3aed;
+  --c-template-light: #f5f3ff;
   --s-brutal: 3px 3px 0 #292524;
   --s-brutal-sm: 2px 2px 0 #292524;
   --s-brutal-accent: 3px 3px 0 #ea580c;
@@ -80,6 +84,8 @@
   --c-danger-light: #3a1515;
   --c-info: #60a5fa;
   --c-info-light: #0f1f3a;
+  --c-template: #a78bfa;
+  --c-template-light: #1f1438;
   --s-brutal: 3px 3px 0 #000000;
   --s-brutal-sm: 2px 2px 0 #000000;
   --s-brutal-accent: 3px 3px 0 #fb923c;

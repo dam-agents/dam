@@ -11,6 +11,7 @@ export type {
   Mount,
   Resources,
   SecurityContext,
+  SkillSourceSeed,
 } from "./modules/templates/types.js";
 
 export type {
@@ -99,3 +100,18 @@ export type {
   PodFilesEvent,
   EventKind,
 } from "./modules/pod-files/types.js";
+
+export type {
+  Skill,
+  SkillRef,
+  SkillSource,
+  SkillsService,
+  SkillsState,
+  SkillPublishRecord,
+  CreateSkillSourceInput,
+  InstallSkillInput,
+  UninstallSkillInput,
+  LocalSkill,
+  PublishSkillInput,
+  PublishSkillResult,
+} from "./modules/skills/types.js";

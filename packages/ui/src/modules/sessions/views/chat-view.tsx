@@ -144,14 +144,17 @@ export function ChatView() {
       <div className="flex flex-1 flex-col overflow-hidden">
         {rightTab === "files" && <FilesPanel onOpenFile={openFileHandler} />}
         {rightTab === "log" && <LogPanel />}
-        {rightTab === "configuration" && (
+        <div className={`flex flex-1 flex-col overflow-hidden ${rightTab === "configuration" ? "" : "hidden"}`}>
           <ConfigurationPanel
             mcpOptions={mcpOptions} enabledMcps={enabledMcps}
             onToggleMcp={toggleMcp} onSelectAllMcps={selectAllMcps} onClearAllMcps={clearAllMcps}
             hasActiveSession={!!sessionId} accessMode={access?.mode ?? null}
             onResumeSession={mobileResumeSession}
+            instanceId={selectedInstance}
+            instanceRunning={instances.find((i) => i.id === selectedInstance)?.state === "running"}
+            onOpenFile={openFileHandler}
           />
-        )}
+        </div>
       </div>
     </>
   );

@@ -161,6 +161,14 @@ The opaque token is not a JWT — it carries no claims the agent could decode or
 
 Effectively, **the OneCLI access token *is* the pod's identity to the credential plane.** The pod has no service-account credentials to talk to the K8s API, no Keycloak credentials of its own, and no upstream credentials. Every real-world capability the agent has is mediated by the gateway, and every grant the gateway considers is the *owner's* grant — not the controller's, not the api-server's.
 
+The same OneCLI access token authenticates three trust boundaries:
+
+1. **Outbound egress to upstreams.** The pod's HTTP client sends every external request through the OneCLI gateway with the token as HTTP Basic auth (above).
+2. **Inbound from the agent to the api-server harness port.** Trigger handoff and MCP tool calls are authenticated by SHA-256 hashing the Bearer and matching against the agent ConfigMap's `status.yaml.accessTokenHash` — see [channels § Auth without an admin login](channels.md#auth-without-an-admin-login).
+3. **Inbound to agent-runtime from the api-server.** Agent-runtime's tRPC surface is fully protected and only accepts the OneCLI access token as Bearer. The api-server's per-instance tRPC proxy validates the user's JWT, enforces the `humr.ai/owner` label match, then rewrites `Authorization` from the user JWT to the OneCLI access token before forwarding. Agent-runtime never sees user JWTs and never interprets user identity; the api-server is the single ownership-enforcement point on that edge.
+
+Reusing one token across all three surfaces means there is no separate "agent-runtime credential" to provision, rotate, or leak. The api-server holds both the user JWT (briefly, per request) and the OneCLI access token (looked up per instance) only where ownership has just been verified.
+
 Token lifetime tracks the instance: the Secret is created on first reconcile and deleted alongside the instance. There is **no rotation cadence and no server-side expiry** — the controller mints once and never re-mints unless the Secret has been removed (e.g. manual deletion). The token is opaque and API-key-like; deleting the OneCLI agent is the only revocation path. The implications are called out explicitly in the threat model below.
 
 ## Network boundary

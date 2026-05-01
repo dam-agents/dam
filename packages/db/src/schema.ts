@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, jsonb, uniqueIndex, primaryKey, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, jsonb, uniqueIndex, index, primaryKey, timestamp, boolean } from "drizzle-orm/pg-core";
 
 export const channels = pgTable("channels", {
   instanceId: text("instance_id").notNull(),
@@ -53,4 +53,40 @@ export const sessions = pgTable("sessions", {
   uniqueIndex("sessions_instance_thread_idx")
     .on(table.instanceId, table.threadTs)
     .where(sql`${table.threadTs} IS NOT NULL`),
+]);
+
+export const skillSources = pgTable("skill_sources", {
+  id: text("id").primaryKey(),
+  owner: text("owner").notNull(),
+  name: text("name").notNull(),
+  gitUrl: text("git_url").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("skill_sources_owner_git_url_idx").on(table.owner, table.gitUrl),
+  index("skill_sources_owner_idx").on(table.owner),
+]);
+
+export const instanceSkills = pgTable("instance_skills", {
+  instanceId: text("instance_id").notNull(),
+  source: text("source").notNull(),
+  name: text("name").notNull(),
+  version: text("version").notNull(),
+  contentHash: text("content_hash"),
+  installedAt: timestamp("installed_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.instanceId, table.source, table.name] }),
+  index("instance_skills_instance_idx").on(table.instanceId),
+]);
+
+export const instanceSkillPublishes = pgTable("instance_skill_publishes", {
+  id: text("id").primaryKey(),
+  instanceId: text("instance_id").notNull(),
+  skillName: text("skill_name").notNull(),
+  sourceId: text("source_id").notNull(),
+  sourceName: text("source_name").notNull(),
+  sourceGitUrl: text("source_git_url").notNull(),
+  prUrl: text("pr_url").notNull(),
+  publishedAt: timestamp("published_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("instance_skill_publishes_instance_idx").on(table.instanceId),
 ]);

@@ -2,7 +2,14 @@ import { dirname, join, resolve } from "node:path";
 import { readdirSync } from "node:fs";
 import { mkdir, readFile, rename, rm, stat as statAsync, writeFile } from "node:fs/promises";
 import { fileTypeFromFile } from "file-type";
-import type { FilesService } from "agent-runtime-api";
+import type {
+  FileReadResult,
+  FilesDomainError,
+  FilesService,
+  FileWriteOk,
+  Result,
+} from "agent-runtime-api";
+import { err, ok } from "agent-runtime-api";
 
 const EXCLUDE = new Set([".git", ".npm", ".triggers", ".claude.json", ".initialized", "node_modules", ".DS_Store"]);
 
@@ -56,6 +63,8 @@ function isWritablePath(rel: string): boolean {
   return true;
 }
 
+const forbidden = (reason: string): FilesDomainError => ({ kind: "Forbidden", reason });
+
 export function createFilesService(workingDir: string): FilesService {
   const toAbs = (rel: string): string | null => safePath(workingDir, rel);
   const toWritableAbs = (rel: string): string | null => {
@@ -65,28 +74,27 @@ export function createFilesService(workingDir: string): FilesService {
 
   return {
     buildTree: () => buildTree(workingDir),
-    readFileSafe: async (rel) => {
-      if (!rel) return null;
+    readFileSafe: async (rel): Promise<Result<FileReadResult, FilesDomainError>> => {
+      if (!rel) return err({ kind: "NotFound", path: rel });
       const abs = toAbs(rel);
-      if (!abs) return null;
+      if (!abs) return err({ kind: "NotFound", path: rel });
       try {
         const s = await statAsync(abs);
-        if (!s.isFile()) return null;
+        if (!s.isFile()) return err({ kind: "NotFound", path: rel });
         if (s.size > MAX_FILE_SIZE) {
-          return { path: rel, binary: true };
+          return ok({ path: rel, binary: true });
         }
         const type = await fileTypeFromFile(abs);
         const buf = await readFile(abs);
         const mtimeMs = s.mtimeMs;
         if (type) {
-          return { path: rel, content: buf.toString("base64"), binary: true, mimeType: type.mime, mtimeMs };
+          return ok({ path: rel, content: buf.toString("base64"), binary: true, mimeType: type.mime, mtimeMs });
         }
         // file-type only detects known binary formats. Fall back to null-byte check
         // to catch unknown binary formats (raw .bin dumps, proprietary formats, etc.)
         if (hasNullBytes(buf)) {
-          return { path: rel, content: buf.toString("base64"), binary: true, mimeType: "application/octet-stream", mtimeMs };
+          return ok({ path: rel, content: buf.toString("base64"), binary: true, mimeType: "application/octet-stream", mtimeMs });
         }
-        // Text-based format
         const content = buf.toString("utf8");
         const lower = rel.toLowerCase();
         const mimeType =
@@ -97,91 +105,94 @@ export function createFilesService(workingDir: string): FilesService {
           lower.endsWith(".md") || lower.endsWith(".mdx") ? "text/markdown" :
           lower.endsWith(".xml") ? "application/xml" :
           "text/plain";
-        return { path: rel, content, mimeType, mtimeMs };
+        return ok({ path: rel, content, mimeType, mtimeMs });
       } catch {
-        return null;
+        return err({ kind: "NotFound", path: rel });
       }
     },
-    writeFileSafe: async (rel, content, expectedMtimeMs) => {
+    writeFileSafe: async (rel, content, expectedMtimeMs): Promise<Result<FileWriteOk, FilesDomainError>> => {
       const abs = toWritableAbs(rel);
-      if (!abs) throw new Error("forbidden path");
+      if (!abs) return err(forbidden("forbidden path"));
       if (expectedMtimeMs !== undefined) {
-        // Optimistic concurrency: refuse to clobber if the file changed under us.
-        // A missing file is treated as a conflict rather than a silent create so
-        // the UI can decide whether to recover. createFileSafe is the right call
-        // for net-new writes.
+        // Optimistic concurrency: refuse to clobber if the file changed under
+        // us. A missing file is treated as a conflict rather than a silent
+        // create — createFileSafe is the right call for net-new writes.
         try {
           const s = await statAsync(abs);
           if (Math.abs(s.mtimeMs - expectedMtimeMs) > 0.5) {
-            return { conflict: true, currentMtimeMs: s.mtimeMs };
+            return err({ kind: "Conflict", currentMtimeMs: s.mtimeMs });
           }
         } catch {
-          return { conflict: true, currentMtimeMs: 0 };
+          return err({ kind: "Conflict", currentMtimeMs: 0 });
         }
       }
       await writeFile(abs, content, "utf8");
       const s = await statAsync(abs);
-      return { mtimeMs: s.mtimeMs };
+      return ok({ mtimeMs: s.mtimeMs });
     },
-    createFileSafe: async (rel, content) => {
+    createFileSafe: async (rel, content): Promise<Result<FileWriteOk, FilesDomainError>> => {
       const abs = toWritableAbs(rel);
-      if (!abs) throw new Error("forbidden path");
+      if (!abs) return err(forbidden("forbidden path"));
       await mkdir(dirname(abs), { recursive: true });
       try {
         // `wx` fails when the path exists — we want "create" to be strict so
         // the UI can prompt for an alternative name instead of clobbering.
         await writeFile(abs, content, { flag: "wx", encoding: "utf8" });
-      } catch (err: unknown) {
-        if ((err as NodeJS.ErrnoException)?.code === "EEXIST") return { exists: true };
-        throw err;
+      } catch (e: unknown) {
+        if ((e as NodeJS.ErrnoException)?.code === "EEXIST") {
+          return err({ kind: "AlreadyExists", path: rel });
+        }
+        throw e;
       }
       const s = await statAsync(abs);
-      return { mtimeMs: s.mtimeMs };
+      return ok({ mtimeMs: s.mtimeMs });
     },
-    mkdirSafe: async (rel) => {
+    mkdirSafe: async (rel): Promise<Result<{ ok: true }, FilesDomainError>> => {
       const abs = toWritableAbs(rel);
-      if (!abs) throw new Error("forbidden path");
+      if (!abs) return err(forbidden("forbidden path"));
       try {
         const s = await statAsync(abs);
-        if (!s.isDirectory()) return { exists: true };
-        return { ok: true };
+        if (!s.isDirectory()) return err({ kind: "AlreadyExists", path: rel });
+        return ok({ ok: true });
       } catch {
         // Does not exist — create it.
       }
       await mkdir(abs, { recursive: true });
-      return { ok: true };
+      return ok({ ok: true });
     },
-    renameSafe: async (from, to, overwrite) => {
+    renameSafe: async (from, to, overwrite): Promise<Result<{ ok: true }, FilesDomainError>> => {
       const fromAbs = toWritableAbs(from);
       const toAbs2 = toWritableAbs(to);
-      if (!fromAbs || !toAbs2) throw new Error("forbidden path");
+      if (!fromAbs || !toAbs2) return err(forbidden("forbidden path"));
       if (!overwrite) {
         try {
           await statAsync(toAbs2);
-          return { exists: true };
+          return err({ kind: "AlreadyExists", path: to });
         } catch {
           // destination is free
         }
       }
       await mkdir(dirname(toAbs2), { recursive: true });
       await rename(fromAbs, toAbs2);
-      return { ok: true };
+      return ok({ ok: true });
     },
-    deleteSafe: async (rel) => {
+    deleteSafe: async (rel): Promise<Result<{ ok: true }, FilesDomainError>> => {
       const abs = toWritableAbs(rel);
-      if (!abs) throw new Error("forbidden path");
+      if (!abs) return err(forbidden("forbidden path"));
       await rm(abs, { recursive: true, force: false });
-      return { ok: true };
+      return ok({ ok: true });
     },
-    uploadFileSafe: async (rel, base64, overwrite) => {
+    uploadFileSafe: async (rel, base64, overwrite): Promise<Result<FileWriteOk, FilesDomainError>> => {
       const abs = toWritableAbs(rel);
-      if (!abs) throw new Error("forbidden path");
+      if (!abs) return err(forbidden("forbidden path"));
       const buf = Buffer.from(base64, "base64");
-      if (buf.length > MAX_FILE_SIZE) throw new Error("file too large");
+      if (buf.length > MAX_FILE_SIZE) {
+        return err({ kind: "PayloadTooLarge", detail: `file ${buf.length} bytes (max ${MAX_FILE_SIZE})` });
+      }
       if (!overwrite) {
         try {
           await statAsync(abs);
-          return { exists: true };
+          return err({ kind: "AlreadyExists", path: rel });
         } catch {
           // destination is free
         }
@@ -189,7 +200,7 @@ export function createFilesService(workingDir: string): FilesService {
       await mkdir(dirname(abs), { recursive: true });
       await writeFile(abs, buf);
       const s = await statAsync(abs);
-      return { mtimeMs: s.mtimeMs, absolutePath: abs };
+      return ok({ mtimeMs: s.mtimeMs, absolutePath: abs });
     },
   };
 }

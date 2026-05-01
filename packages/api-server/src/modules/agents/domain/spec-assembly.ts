@@ -17,6 +17,11 @@ export function assembleSpecFromTemplate(
     env: tmplSpec.env,
     resources: tmplSpec.resources,
     securityContext: tmplSpec.securityContext,
+    // Without this, the template's skillPaths is dropped and the
+    // skills-service falls back to the hardcoded /home/agent/.agents/skills
+    // default — so `defaultTemplate` (claude-code) installs end up in the
+    // wrong dir for the harness to find.
+    skillPaths: tmplSpec.skillPaths,
   };
 }
 

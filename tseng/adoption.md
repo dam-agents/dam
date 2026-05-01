@@ -60,4 +60,4 @@
   > Reason: agent-runtime does not need rxjs now
 
 ## Remaining
-- Domain errors as Result<T, E> values — Result type available in shared/domain/result.ts but not yet adopted in service ports (they return null for not-found)
+- Domain errors as Result<T, E> values — adopted in agent-runtime (skills + files modules) on 2026-04-28; api-server modules still return null/throw and remain on the legacy pattern

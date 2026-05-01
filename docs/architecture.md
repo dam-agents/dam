@@ -1,6 +1,6 @@
 # Architecture
 
-Last verified: 2026-04-27
+Last verified: 2026-04-29
 
 ## System context
 
@@ -55,6 +55,7 @@ Each page describes how the accepted ADRs are realized in the current system. AD
 - [persistence](architecture/persistence.md) — the three substrates (Postgres, ConfigMap spec/status, per-instance PVC) and what survives each lifecycle event.
 - [security-and-credentials](architecture/security-and-credentials.md) — Keycloak identity, OneCLI credential gateway, per-instance access tokens, network boundary, threat model.
 - [channels](architecture/channels.md) — Slack and Telegram adapters inside the api-server, inbound relay, outbound MCP tool, identity linking.
+- [skills](architecture/skills.md) — connectable git-based skill sources, install onto the per-instance PVC, REST-only publish back as a PR, OneCLI MITM for GitHub credentials.
 
 ## Strategy
 

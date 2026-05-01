@@ -6,6 +6,7 @@ import { instancesRouter } from "./modules/instances/router.js";
 import { schedulesRouter } from "./modules/schedules/router.js";
 import { secretsRouter } from "./modules/secrets/router.js";
 import { sessionsRouter } from "./modules/sessions/router.js";
+import { skillsRouter } from "./modules/skills/router.js";
 import { templatesRouter } from "./modules/templates/router.js";
 
 export const appRouter = t.router({
@@ -17,6 +18,7 @@ export const appRouter = t.router({
   secrets: secretsRouter,
   channels: channelsRouter,
   connections: connectionsRouter,
+  skills: skillsRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -6,6 +6,8 @@
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.17.1",
     "@trpc/server": "^11.16.0",
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0",
     "file-type": "^22.0.1",
     "js-yaml": "^4.1.0",
     "ws": "^8.20.0"

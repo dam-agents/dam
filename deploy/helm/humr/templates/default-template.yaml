@@ -1,4 +1,5 @@
 {{- if .Values.defaultTemplate.enabled }}
+{{- $home := .Values.defaultTemplate.agentHome }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -13,7 +14,7 @@ data:
     image: "{{ .Values.defaultTemplate.image.repository }}:{{ .Values.defaultTemplate.image.tag | default .Chart.AppVersion }}"
     description: {{ .Values.defaultTemplate.description | quote }}
     mounts:
-      - path: /home/agent
+      - path: {{ $home }}
         persist: true
         {{- with .Values.defaultTemplate.homeMountSize }}
         size: {{ . | quote }}
@@ -23,13 +24,13 @@ data:
     init: |
       #!/bin/bash
       # Seed home from image on first boot
-      if [ ! -f /home/agent/.initialized ]; then
-        cp -rn /app/working-dir/. /home/agent/ 2>/dev/null || true
-        touch /home/agent/.initialized
+      if [ ! -f {{ $home }}/.initialized ]; then
+        cp -rn /app/working-dir/. {{ $home }}/ 2>/dev/null || true
+        touch {{ $home }}/.initialized
       fi
-      mkdir -p /home/agent/work
-      if [ -f /home/agent/work/requirements.txt ]; then
-        pip install -r /home/agent/work/requirements.txt
+      mkdir -p {{ $home }}/work
+      if [ -f {{ $home }}/work/requirements.txt ]; then
+        pip install -r {{ $home }}/work/requirements.txt
       fi
     env:
       - name: PORT
@@ -43,4 +44,13 @@ data:
         memory: {{ .Values.defaultTemplate.resources.limits.memory | quote }}
     securityContext:
       readOnlyRootFilesystem: false
+    skillPaths:
+      - {{ $home }}/.claude/skills/
+    {{- with .Values.defaultTemplate.skillSources }}
+    skillSources:
+      {{- range . }}
+      - name: {{ .name | quote }}
+        gitUrl: {{ .gitUrl | quote }}
+      {{- end }}
+    {{- end }}
 {{- end }}

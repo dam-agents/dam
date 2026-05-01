@@ -13,6 +13,23 @@ import {
 } from "./poll-until-ready.js";
 import type { InfraInstance } from "../domain/instance-assembly.js";
 
+/** Re-run a read-modify-write routine when the K8s API rejects the write
+ *  with 409 Conflict. Mirrors the Go controller's `retry.RetryOnConflict`
+ *  so concurrent MCP + UI writers don't surface racy errors to the user. */
+async function retryOnConflict<T>(fn: () => Promise<T>): Promise<T> {
+  const MAX_ATTEMPTS = 5;
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (!is409(err)) throw err;
+      lastErr = err;
+    }
+  }
+  throw lastErr;
+}
+
 export interface InstancesRepository {
   list(owner?: string): Promise<InfraInstance[]>;
   get(id: string, owner?: string): Promise<InfraInstance | null>;
@@ -88,12 +105,17 @@ export function createInstancesRepository(k8s: K8sClient): InstancesRepository {
     },
 
     async updateSpec(id, owner, patch) {
-      const cm = await k8s.getConfigMap(id);
-      if (!cm) return null;
-      if (owner && !isOwnedBy(cm, owner)) return null;
-      cm.data = patchSpecField(cm, patch);
-      const updated = await k8s.replaceConfigMap(id, cm);
-      return parseInfraInstance(updated);
+      // read-modify-write under a conflict-retry loop: re-fetch the
+      // ConfigMap (fresh resourceVersion) on 409 so concurrent writers
+      // (MCP + UI, or two tabs) don't surface racy errors.
+      return retryOnConflict(async () => {
+        const cm = await k8s.getConfigMap(id);
+        if (!cm) return null;
+        if (owner && !isOwnedBy(cm, owner)) return null;
+        cm.data = patchSpecField(cm, patch);
+        const updated = await k8s.replaceConfigMap(id, cm);
+        return parseInfraInstance(updated);
+      });
     },
 
     async delete(id, owner?) {

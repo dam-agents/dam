@@ -115,6 +115,10 @@ spec:
               value: {{ include "humr.url.onecli" . | quote }}
             - name: AGENT_HOME
               value: {{ .Values.agentHome | quote }}
+            {{- if .Values.skills.skillSources }}
+            - name: SKILL_SOURCES_SEED
+              value: {{ .Values.skills.skillSources | toJson | quote }}
+            {{- end }}
           readinessProbe:
             tcpSocket:
               port: http

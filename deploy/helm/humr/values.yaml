@@ -110,7 +110,7 @@ onecli:
 
   # -- GitHub OAuth App credentials (shared across all users).
   # Register a GitHub OAuth App and set these to enable "Connect GitHub" for all users.
-  # Callback URL in form `{onecli external URL}/api/apps/github/callback` 
+  # Callback URL in form `{onecli external URL}/api/apps/github/callback`
   # which has to be set up in the gh OAuth app can be found in the onecli ui under the GitHub app
   github:
     clientId: ""
@@ -141,15 +141,15 @@ onecli:
     # If you need to reach a private network (VPC peering, on-prem VPN), remove
     # the relevant range here.
     blockedCIDRs:
-      - 10.0.0.0/8       # RFC1918 — covers k3s pod/service CIDRs and most cluster CNIs
-      - 172.16.0.0/12    # RFC1918 — Docker default, kubeadm common range
-      - 192.168.0.0/16   # RFC1918
-      - 100.64.0.0/10    # RFC6598 carrier-grade NAT (used by EKS for pods)
-      - 169.254.0.0/16   # link-local + cloud metadata (AWS/GCP/Azure IMDS at 169.254.169.254)
-      - 127.0.0.0/8      # loopback (note: doesn't block in-pod loopback — kernel bypasses CNI)
-      - 0.0.0.0/8        # IETF "this network"
-      - 224.0.0.0/4      # multicast
-      - 240.0.0.0/4      # IETF reserved
+      - 10.0.0.0/8 # RFC1918 — covers k3s pod/service CIDRs and most cluster CNIs
+      - 172.16.0.0/12 # RFC1918 — Docker default, kubeadm common range
+      - 192.168.0.0/16 # RFC1918
+      - 100.64.0.0/10 # RFC6598 carrier-grade NAT (used by EKS for pods)
+      - 169.254.0.0/16 # link-local + cloud metadata (AWS/GCP/Azure IMDS at 169.254.169.254)
+      - 127.0.0.0/8 # loopback (note: doesn't block in-pod loopback — kernel bypasses CNI)
+      - 0.0.0.0/8 # IETF "this network"
+      - 224.0.0.0/4 # multicast
+      - 240.0.0.0/4 # IETF reserved
 
   # -- Force local auth mode (skip NEXTAUTH_SECRET injection).
   # Useful for test clusters where OneCLI doesn't have a browser-based OAuth provider.
@@ -259,7 +259,7 @@ ingress:
 ui:
   image:
     repository: ghcr.io/kagenti/humr/ui
-    tag: ""  # defaults to appVersion
+    tag: "" # defaults to appVersion
     pullPolicy: IfNotPresent
   port: 8080
   resources:
@@ -411,6 +411,7 @@ defaultTemplate:
     tag: ""
     pullPolicy: IfNotPresent
   description: "Default Claude Code agent"
+  agentHome: /home/agent
   # -- PVC size for the persisted /home/agent mount. Empty = controller
   # default (10Gi). See issue #244.
   homeMountSize: "5Gi"
@@ -431,6 +432,7 @@ googleWorkspaceTemplate:
     tag: ""
     pullPolicy: IfNotPresent
   description: "Google Workspace agent with Drive and Gmail via gws CLI"
+  agentHome: /home/agent
   homeMountSize: "2Gi"
   resources:
     requests:
@@ -449,6 +451,7 @@ piAgentTemplate:
     tag: ""
     pullPolicy: IfNotPresent
   description: "Pi coding agent with multi-LLM support"
+  agentHome: /home/agent
   homeMountSize: "2Gi"
   resources:
     requests:
@@ -467,6 +470,7 @@ codeGuardianTemplate:
     tag: ""
     pullPolicy: IfNotPresent
   description: "PR code review agent (gh + Claude Code)"
+  agentHome: /home/agent
   # -- owner/repo slug the agent reviews. Empty = detect via `gh repo view`.
   githubRepo: ""
   # Code Guardian clones real repos — keep the larger default.
@@ -478,3 +482,17 @@ codeGuardianTemplate:
     limits:
       cpu: "1"
       memory: "2Gi"
+
+# -- Platform-wide skill sources (shared catalog visible to all users).
+# Rendered into the api-server pod as SKILL_SOURCES_SEED (JSON array, one
+# entry per source) and parsed at startup. api-server merges these with
+# user-created Postgres rows at read time. Users see these with a "Platform"
+# badge in the Skills panel and cannot delete them. The same {name, gitUrl}
+# shape works for per-template sources under `<templateKey>.skillSources` —
+# an instance derived from that template surfaces them with an "Agent" badge.
+skills:
+  skillSources: []
+  # Example:
+  # skillSources:
+  #   - name: "Anthropic Skills"
+  #     gitUrl: "https://github.com/anthropics/skills"

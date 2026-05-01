@@ -1,9 +1,11 @@
+import type { Result } from "../../result.js";
+
 export interface FileReadResult {
   path: string;
-  content?: string;  // UTF-8 for text, base64 for binary
-  binary?: boolean;  // true when content is base64-encoded or file exceeds size limit
-  mimeType?: string; // detected MIME type (absent when file exceeds size limit)
-  mtimeMs?: number;  // mtime at read; absent when file exceeds size limit
+  content?: string;
+  binary?: boolean;
+  mimeType?: string;
+  mtimeMs?: number;
 }
 
 export interface FileWriteOk {
@@ -13,46 +15,41 @@ export interface FileWriteOk {
   absolutePath?: string;
 }
 
-export interface FileConflict {
-  conflict: true;
-  currentMtimeMs: number;
-}
-
-export interface PathExists {
-  exists: true;
-}
+export type FilesDomainError =
+  | { kind: "Forbidden"; reason: string }
+  | { kind: "NotFound"; path: string }
+  | { kind: "Conflict"; currentMtimeMs: number }
+  | { kind: "AlreadyExists"; path: string }
+  | { kind: "PayloadTooLarge"; detail: string };
 
 export interface FilesService {
   buildTree: () => { path: string; type: "file" | "dir" }[];
-  readFileSafe: (rel: string) => Promise<FileReadResult | null>;
-  /** Overwrite an existing file. Returns conflict when expectedMtimeMs is
+  readFileSafe: (rel: string) => Promise<Result<FileReadResult, FilesDomainError>>;
+  /** Overwrite an existing file. Errors with Conflict when expectedMtimeMs is
    *  provided and the file was modified in the meantime. */
   writeFileSafe: (
     rel: string,
     content: string,
     expectedMtimeMs?: number,
-  ) => Promise<FileWriteOk | FileConflict>;
-  /** Create a new file. Fails with `{exists: true}` when the path already
-   *  exists. Auto-creates missing parent directories. */
-  createFileSafe: (rel: string, content: string) => Promise<FileWriteOk | PathExists>;
-  /** Create a directory (recursive mkdir). Returns `{exists: true}` if the
-   *  path already exists and is not a directory. */
-  mkdirSafe: (rel: string) => Promise<{ ok: true } | PathExists>;
-  /** Move/rename a file or directory. Returns `{exists: true}` when the
+  ) => Promise<Result<FileWriteOk, FilesDomainError>>;
+  /** Create a new file. Errors with AlreadyExists when the path is taken.
+   *  Auto-creates missing parent directories. */
+  createFileSafe: (rel: string, content: string) => Promise<Result<FileWriteOk, FilesDomainError>>;
+  /** Create a directory (recursive mkdir). */
+  mkdirSafe: (rel: string) => Promise<Result<{ ok: true }, FilesDomainError>>;
+  /** Move/rename a file or directory. Errors with AlreadyExists when the
    *  destination exists and overwrite is false. */
   renameSafe: (
     from: string,
     to: string,
     overwrite: boolean,
-  ) => Promise<{ ok: true } | PathExists>;
-  /** Remove a file or directory (recursive for dirs). */
-  deleteSafe: (rel: string) => Promise<{ ok: true }>;
-  /** Write a binary payload (base64-encoded) to disk. When `overwrite` is
-   *  false and the destination exists, returns `{exists: true}` without
-   *  clobbering. Intended for UI uploads where the client has no prior mtime. */
+  ) => Promise<Result<{ ok: true }, FilesDomainError>>;
+  deleteSafe: (rel: string) => Promise<Result<{ ok: true }, FilesDomainError>>;
+  /** Write a binary payload (base64-encoded) to disk. Intended for UI
+   *  uploads where the client has no prior mtime. */
   uploadFileSafe: (
     rel: string,
     base64: string,
     overwrite: boolean,
-  ) => Promise<FileWriteOk | PathExists>;
+  ) => Promise<Result<FileWriteOk, FilesDomainError>>;
 }

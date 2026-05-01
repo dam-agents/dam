@@ -1,113 +1,95 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { t } from "../../trpc.js";
+import { protectedProcedure, t } from "../../trpc.js";
+import type { FilesDomainError } from "./types.js";
 
 const pathSchema = z.string().min(1);
 
+function toTrpcError(error: FilesDomainError): TRPCError {
+  switch (error.kind) {
+    case "Forbidden":
+      return new TRPCError({ code: "FORBIDDEN", message: error.reason });
+    case "NotFound":
+      return new TRPCError({ code: "NOT_FOUND" });
+    case "Conflict":
+      return new TRPCError({
+        code: "CONFLICT",
+        message: "file changed on disk",
+        cause: { currentMtimeMs: error.currentMtimeMs },
+      });
+    case "AlreadyExists":
+      return new TRPCError({ code: "CONFLICT", message: "path already exists" });
+    case "PayloadTooLarge":
+      return new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: error.detail });
+  }
+}
+
 export const filesRouter = t.router({
-  tree: t.procedure.query(({ ctx }) => ({
+  tree: protectedProcedure.query(({ ctx }) => ({
     entries: ctx.files.buildTree(),
   })),
 
-  read: t.procedure
+  read: protectedProcedure
     .input(z.object({ path: pathSchema }))
     .query(async ({ ctx, input }) => {
       const result = await ctx.files.readFileSafe(input.path);
-      if (!result) {
-        throw new TRPCError({ code: "NOT_FOUND" });
-      }
-      return result;
+      if (!result.ok) throw toTrpcError(result.error);
+      return result.value;
     }),
 
-  write: t.procedure
+  write: protectedProcedure
     .input(z.object({
       path: pathSchema,
       content: z.string(),
       expectedMtimeMs: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      try {
-        const result = await ctx.files.writeFileSafe(
-          input.path,
-          input.content,
-          input.expectedMtimeMs,
-        );
-        if ("conflict" in result) {
-          throw new TRPCError({
-            code: "CONFLICT",
-            message: "file changed on disk",
-            cause: { currentMtimeMs: result.currentMtimeMs },
-          });
-        }
-        return { mtimeMs: result.mtimeMs };
-      } catch (err) {
-        if (err instanceof TRPCError) throw err;
-        throw new TRPCError({ code: "FORBIDDEN", message: (err as Error).message });
-      }
+      const result = await ctx.files.writeFileSafe(
+        input.path,
+        input.content,
+        input.expectedMtimeMs,
+      );
+      if (!result.ok) throw toTrpcError(result.error);
+      return { mtimeMs: result.value.mtimeMs };
     }),
 
-  create: t.procedure
+  create: protectedProcedure
     .input(z.object({ path: pathSchema, content: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      try {
-        const result = await ctx.files.createFileSafe(input.path, input.content);
-        if ("exists" in result) {
-          throw new TRPCError({ code: "CONFLICT", message: "path already exists" });
-        }
-        return { mtimeMs: result.mtimeMs };
-      } catch (err) {
-        if (err instanceof TRPCError) throw err;
-        throw new TRPCError({ code: "FORBIDDEN", message: (err as Error).message });
-      }
+      const result = await ctx.files.createFileSafe(input.path, input.content);
+      if (!result.ok) throw toTrpcError(result.error);
+      return { mtimeMs: result.value.mtimeMs };
     }),
 
-  mkdir: t.procedure
+  mkdir: protectedProcedure
     .input(z.object({ path: pathSchema }))
     .mutation(async ({ ctx, input }) => {
-      try {
-        const result = await ctx.files.mkdirSafe(input.path);
-        if ("exists" in result) {
-          throw new TRPCError({ code: "CONFLICT", message: "path exists and is not a directory" });
-        }
-        return { ok: true as const };
-      } catch (err) {
-        if (err instanceof TRPCError) throw err;
-        throw new TRPCError({ code: "FORBIDDEN", message: (err as Error).message });
-      }
+      const result = await ctx.files.mkdirSafe(input.path);
+      if (!result.ok) throw toTrpcError(result.error);
+      return { ok: true as const };
     }),
 
-  rename: t.procedure
+  rename: protectedProcedure
     .input(z.object({
       from: pathSchema,
       to: pathSchema,
       overwrite: z.boolean().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      try {
-        const result = await ctx.files.renameSafe(input.from, input.to, input.overwrite ?? false);
-        if ("exists" in result) {
-          throw new TRPCError({ code: "CONFLICT", message: "destination already exists" });
-        }
-        return { ok: true as const };
-      } catch (err) {
-        if (err instanceof TRPCError) throw err;
-        throw new TRPCError({ code: "FORBIDDEN", message: (err as Error).message });
-      }
+      const result = await ctx.files.renameSafe(input.from, input.to, input.overwrite ?? false);
+      if (!result.ok) throw toTrpcError(result.error);
+      return { ok: true as const };
     }),
 
-  remove: t.procedure
+  remove: protectedProcedure
     .input(z.object({ path: pathSchema }))
     .mutation(async ({ ctx, input }) => {
-      try {
-        await ctx.files.deleteSafe(input.path);
-        return { ok: true as const };
-      } catch (err) {
-        if (err instanceof TRPCError) throw err;
-        throw new TRPCError({ code: "FORBIDDEN", message: (err as Error).message });
-      }
+      const result = await ctx.files.deleteSafe(input.path);
+      if (!result.ok) throw toTrpcError(result.error);
+      return { ok: true as const };
     }),
 
-  upload: t.procedure
+  upload: protectedProcedure
     .input(z.object({
       path: pathSchema,
       contentBase64: z.string(),
@@ -118,27 +100,16 @@ export const filesRouter = t.router({
       overwrite: z.boolean().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      try {
-        const result = await ctx.files.uploadFileSafe(
-          input.path,
-          input.contentBase64,
-          input.overwrite ?? false,
-        );
-        if ("exists" in result) {
-          throw new TRPCError({ code: "CONFLICT", message: "path already exists" });
-        }
-        return {
-          mtimeMs: result.mtimeMs,
-          absolutePath: result.absolutePath,
-          contentType: input.contentType,
-        };
-      } catch (err) {
-        if (err instanceof TRPCError) throw err;
-        const msg = (err as Error).message;
-        throw new TRPCError({
-          code: /too large/i.test(msg) ? "PAYLOAD_TOO_LARGE" : "FORBIDDEN",
-          message: msg,
-        });
-      }
+      const result = await ctx.files.uploadFileSafe(
+        input.path,
+        input.contentBase64,
+        input.overwrite ?? false,
+      );
+      if (!result.ok) throw toTrpcError(result.error);
+      return {
+        mtimeMs: result.value.mtimeMs,
+        absolutePath: result.value.absolutePath,
+        contentType: input.contentType,
+      };
     }),
 });
