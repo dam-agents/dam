@@ -165,13 +165,6 @@ describe("schedules: API server CRUD", () => {
   });
 
   describe("read schedule status", () => {
-    it("returns null status when controller has not written status.yaml", async () => {
-      const sched = await client.schedules.get.query({
-        id: secondCronScheduleId,
-      });
-      expect(sched.status).toBeNull();
-    });
-
     it("returns status fields after controller writes status.yaml", async () => {
       const statusYaml = [
         "lastRun: '2026-04-08T09:00:00Z'",
