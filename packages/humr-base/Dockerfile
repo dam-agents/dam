@@ -33,6 +33,7 @@ RUN npm install --production
 COPY --from=builder /app/packages/agent-runtime/dist/ dist/
 
 RUN mkdir -p working-dir
+COPY packages/humr-base/skills/ /app/working-dir/.claude/skills/
 
 ENV PORT=8080
 EXPOSE 8080
