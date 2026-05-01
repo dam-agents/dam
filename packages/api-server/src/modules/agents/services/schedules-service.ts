@@ -49,6 +49,7 @@ export function createSchedulesService(deps: {
         timezone: input.timezone,
         task: input.task,
         enabled: true,
+        createdBy: "user",
       };
       if (input.quietHours && input.quietHours.length > 0) {
         spec.quietHours = input.quietHours;

@@ -16,7 +16,7 @@ export interface ScheduleSpecCron {
   task?: string;
   enabled: boolean;
   sessionMode?: "continuous" | "fresh";
-  createdBy?: ScheduleCreator;
+  createdBy: ScheduleCreator;
 }
 
 export interface ScheduleSpecRRule {
@@ -30,7 +30,7 @@ export interface ScheduleSpecRRule {
   task?: string;
   enabled: boolean;
   sessionMode?: "continuous" | "fresh";
-  createdBy?: ScheduleCreator;
+  createdBy: ScheduleCreator;
 }
 
 export type ScheduleSpec = ScheduleSpecCron | ScheduleSpecRRule;

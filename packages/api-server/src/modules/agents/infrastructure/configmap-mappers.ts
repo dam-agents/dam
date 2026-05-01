@@ -103,6 +103,7 @@ export function parseInfraInstance(cm: k8s.V1ConfigMap, pod?: k8s.V1Pod): InfraI
 
 export function parseSchedule(cm: k8s.V1ConfigMap): Schedule {
   const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as ScheduleSpec;
+  if (spec.createdBy !== "agent") spec.createdBy = "user";
   const statusYaml = cm.data?.[STATUS_KEY];
   let status: ScheduleStatus | undefined;
   if (statusYaml) {
@@ -165,16 +166,14 @@ export function buildScheduleConfigMap(
   spec: Record<string, unknown>,
   owner: string,
 ): k8s.V1ConfigMap {
+  const createdBy = (spec as { createdBy?: string }).createdBy === "agent" ? "agent" : "user";
   const labels: Record<string, string> = {
     [LABEL_TYPE]: TYPE_SCHEDULE,
     [LABEL_INSTANCE_REF]: instanceId,
     [LABEL_AGENT_REF]: agentRef,
     [LABEL_OWNER]: owner,
+    [LABEL_CREATED_BY]: createdBy,
   };
-  const createdBy = (spec as { createdBy?: string }).createdBy;
-  if (createdBy === "agent" || createdBy === "user") {
-    labels[LABEL_CREATED_BY] = createdBy;
-  }
   return {
     metadata: { name: generateK8sName("sched"), labels },
     data: { [SPEC_KEY]: yaml.dump(spec) },
