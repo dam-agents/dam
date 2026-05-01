@@ -66,7 +66,13 @@ export function createShellRelay(namespace: string, kc: KubeConfig) {
           },
         )) as unknown as WebSocket;
       } catch (err) {
-        process.stderr.write(`shell-relay: upstream connect failed for ${instanceId}: ${err}\n`);
+        // The K8s WS client surfaces upgrade failures as a generic event-shaped
+        // object (no .stack), so we pull `message` plus the resolved upstream
+        // URL out by hand to make the cause obvious in logs.
+        const e = err as { message?: string; target?: { url?: string } };
+        process.stderr.write(
+          `shell-relay: upstream connect failed for ${instanceId}: ${e.message ?? "(empty error)"} (${e.target?.url ?? ""})\n`,
+        );
         try { client.close(1011, "failed to attach to pod"); } catch { client.terminate(); }
         return;
       }

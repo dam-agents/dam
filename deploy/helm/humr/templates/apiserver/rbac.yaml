@@ -65,11 +65,11 @@ rules:
     verbs: ["get", "list", "watch", "delete"]
   # POC shell relay (dam-wn6) — `/api/instances/:id/shell` execs `tmux new -A
   # -s humr claude` inside the agent pod and bridges the pod-exec WebSocket to
-  # the local CLI. Required even when shellSecret is empty so the helm chart
-  # stays consistent across enable/disable toggles.
+  # the local CLI. WebSocket exec maps to verb `get` on the `pods/exec`
+  # subresource (SPDY exec maps to `create`); we grant both for compatibility.
   - apiGroups: [""]
     resources: ["pods/exec"]
-    verbs: ["create"]
+    verbs: ["get", "create"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
