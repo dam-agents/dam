@@ -264,6 +264,50 @@ describe("egress rules: enforcement", () => {
       expect(swept.filter((r) => r.source.startsWith("preset:")).length).toBe(0);
     });
 
+    it("connection grant promotes a preset:* row so a later preset switch keeps it", async () => {
+      // Both intents target api.anthropic.com:
+      //   - preset:trusted seeds (anthropic, *, *, allow, source=preset:trusted)
+      //   - the granted Anthropic secret seeds (anthropic, *, *, allow,
+      //     source=connection:<id>)
+      // The unique index on (agent, host, *, *) WHERE active permits only
+      // one. Without promotion, the connection insert silently no-ops and
+      // a later preset switch wipes the host even though the user still
+      // has the grant.
+      await client.agents.update.mutate({ id: AGENT_ID, egressPreset: "trusted" });
+      const presetSeeded = await client.egressRules.listForAgent.query({ agentId: AGENT_ID });
+      const beforeGrant = presetSeeded.find((r) => r.host === "api.anthropic.com");
+      expect(beforeGrant?.source).toBe("preset:trusted");
+
+      // Pick any Anthropic-typed secret the test environment exposes;
+      // skip cleanly if the test cluster doesn't seed one.
+      const secrets = await client.secrets.list.query();
+      const anthropic = secrets.find((s) => s.type === "anthropic");
+      if (!anthropic) return;
+      await client.secrets.setAgentAccess.mutate({
+        agentId: AGENT_ID,
+        mode: "selective",
+        secretIds: [anthropic.id],
+      });
+
+      const afterGrant = (await client.egressRules.listForAgent.query({ agentId: AGENT_ID }))
+        .find((r) => r.host === "api.anthropic.com");
+      expect(afterGrant?.source).toBe(`connection:${anthropic.id}`);
+
+      // Switching the preset off should NOT take down the host — the row
+      // is now connection-owned, not preset:*.
+      await client.agents.update.mutate({ id: AGENT_ID, egressPreset: "none" });
+      const afterSwitch = (await client.egressRules.listForAgent.query({ agentId: AGENT_ID }))
+        .find((r) => r.host === "api.anthropic.com");
+      expect(afterSwitch?.source).toBe(`connection:${anthropic.id}`);
+
+      // Cleanup: revoke the grant so subsequent tests start without it.
+      await client.secrets.setAgentAccess.mutate({
+        agentId: AGENT_ID,
+        mode: "selective",
+        secretIds: [],
+      });
+    });
+
     it("switching presets does not touch manual rules", async () => {
       const manual = await client.egressRules.create.mutate({
         agentId: AGENT_ID,

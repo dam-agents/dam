@@ -30,6 +30,15 @@ export interface EgressRulesRepository {
   revokePresetRowsForAgent(agentId: string): Promise<void>;
   getById(id: string): Promise<EgressRuleRow | null>;
   insert(row: NewEgressRule): Promise<EgressRuleRow>;
+  /** Insert-or-promote variant used by the connection-rules sync. If an
+   *  existing active row for `(agent, host, method, pathPattern)` is a
+   *  `preset:*` row, flip its `source` and `decided_by` to the connection's
+   *  values so a later preset sweep won't drop it. Same intent as
+   *  edit-promotes-to-manual: a user grant takes ownership of a host the
+   *  preset would otherwise own.
+   *  Returns the active row (newly inserted, promoted, or pre-existing
+   *  user-owned row that we left alone). */
+  insertOrPromoteFromPreset(row: NewEgressRule): Promise<EgressRuleRow>;
   /** Promotes the row's source to `manual` regardless of prior origin. */
   updatePromoteToManual(input: PromoteToManualInput): Promise<EgressRuleRow | null>;
   listForAgent(agentId: string): Promise<EgressRuleRow[]>;
@@ -160,6 +169,41 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
       if (inserted.length) return toRow(inserted[0] as RawRule);
       const existing = await this.findMatch(row.agentId, row.host, row.method, row.pathPattern);
       if (!existing) throw new Error("egress-rules: insert returned no row and no match found");
+      return existing;
+    },
+
+    async insertOrPromoteFromPreset(row) {
+      const inserted = await db.insert(egressRules).values({
+        id: row.id,
+        agentId: row.agentId,
+        host: row.host,
+        method: row.method,
+        pathPattern: row.pathPattern,
+        verdict: row.verdict,
+        decidedBy: row.decidedBy,
+        source: row.source,
+      }).onConflictDoNothing().returning();
+      if (inserted.length) return toRow(inserted[0] as RawRule);
+      // Conflict: an active row for this lookup key exists. If it's a
+      // preset:* row, promote it to the connection's source so a later
+      // preset sweep won't take it down. Manual / inbox / other connection
+      // rows are left alone — they already represent user intent.
+      const promoted = await db.execute<RawRule>(sql`
+        UPDATE ${egressRules}
+        SET source = ${row.source}, decided_by = ${row.decidedBy}
+        WHERE agent_id = ${row.agentId}
+          AND host = ${row.host}
+          AND method = ${row.method}
+          AND path_pattern = ${row.pathPattern}
+          AND status = 'active'
+          AND source LIKE 'preset:%'
+        RETURNING id, agent_id AS "agentId", host, method, path_pattern AS "pathPattern",
+                  verdict, decided_by AS "decidedBy", decided_at AS "decidedAt", status, source
+      `);
+      const promotedRows = promoted as unknown as RawRule[];
+      if (promotedRows.length) return toRow(promotedRows[0]!);
+      const existing = await this.findMatch(row.agentId, row.host, row.method, row.pathPattern);
+      if (!existing) throw new Error("egress-rules: insertOrPromoteFromPreset found no row");
       return existing;
     },
 
