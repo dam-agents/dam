@@ -285,6 +285,19 @@ apiServer:
   # -- Enable the Telegram channel. Each instance can connect its own bot token via the UI.
   telegramEnabled: false
 
+  # -- Optional platform-wide defaults for OAuth app credentials. When a field
+  # is set the connect form for the matching app drops the corresponding
+  # input — every user shares the admin-registered OAuth app. Leave empty
+  # to require each user to supply their own client id / secret.
+  oauthAppDefaults:
+    github:
+      clientId: ""
+      clientSecret: ""
+    githubEnterprise:
+      host: ""
+      clientId: ""
+      clientSecret: ""
+
   # -- Database connection (empty host = use shared local postgres)
   db:
     host: ""

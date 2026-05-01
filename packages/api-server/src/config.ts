@@ -28,6 +28,16 @@ const configSchema = z.object({
    *  parseSeedSources at startup — malformed JSON or wrong shape crashes the
    *  pod with a clear stderr. */
   skillSourcesSeed: z.string().default(""),
+  // Optional admin-level OAuth app defaults — when set, the connect form
+  // for the matching app skips those input fields and the api-server uses
+  // the defaults to mint tokens. Mirrors OneCLI's `GITHUB_CLIENT_ID` /
+  // `GITHUB_CLIENT_SECRET` knobs so a single admin-registered OAuth app
+  // can serve every user on a deployment.
+  defaultGithubClientId: z.string().nullable().default(null),
+  defaultGithubClientSecret: z.string().nullable().default(null),
+  defaultGithubEnterpriseHost: z.string().nullable().default(null),
+  defaultGithubEnterpriseClientId: z.string().nullable().default(null),
+  defaultGithubEnterpriseClientSecret: z.string().nullable().default(null),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -57,5 +67,10 @@ export function loadConfig(): Config {
     keycloakRequiredRole: process.env.KEYCLOAK_REQUIRED_ROLE,
     agentHome: process.env.AGENT_HOME,
     skillSourcesSeed: process.env.SKILL_SOURCES_SEED,
+    defaultGithubClientId: process.env.HUMR_DEFAULT_GITHUB_CLIENT_ID,
+    defaultGithubClientSecret: process.env.HUMR_DEFAULT_GITHUB_CLIENT_SECRET,
+    defaultGithubEnterpriseHost: process.env.HUMR_DEFAULT_GHE_HOST,
+    defaultGithubEnterpriseClientId: process.env.HUMR_DEFAULT_GHE_CLIENT_ID,
+    defaultGithubEnterpriseClientSecret: process.env.HUMR_DEFAULT_GHE_CLIENT_SECRET,
   });
 }

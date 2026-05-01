@@ -3,13 +3,20 @@ import { isProtectedAgentEnvName } from "api-server-api";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 
-import { ConnectionsPicker } from "../../../components/connections-picker.js";
+import {
+  ConnectionsPicker,
+  type OAuthAppEntry,
+} from "../../../components/connections-picker.js";
 import { sanitizeEnvVars } from "../../../components/env-vars-editor.js";
 import { FormField } from "../../../components/form-field.js";
 import { HoverTooltip } from "../../../components/hover-tooltip.js";
 import { Modal } from "../../../components/modal.js";
 import type { AgentView } from "../../../types.js";
-import { useAppConnections } from "../../connections/api/queries.js";
+import { APP_OAUTH_SECRET_PREFIX } from "../../../types.js";
+import {
+  useAppConnections,
+  useOAuthAppConnections,
+} from "../../connections/api/queries.js";
 import { useSecrets } from "../../secrets/api/queries.js";
 import {
   useSetAgentAccess,
@@ -45,6 +52,7 @@ export function ConfigureAgentDialog({
 
   const { data: secrets = [] } = useSecrets();
   const { data: apps = [] } = useAppConnections();
+  const { data: oauthAppConnections = [] } = useOAuthAppConnections();
   const accessQuery = useAgentAccess(agentId);
   const connectionsQuery = useAgentConnections(agentId);
 
@@ -120,6 +128,24 @@ export function ConfigureAgentDialog({
   const envVars = watch("envVars");
   const assignedSet = useMemo(() => new Set(assigned), [assigned]);
   const appIdsSet = useMemo(() => new Set(assignedAppIds), [assignedAppIds]);
+
+  // Join the api-server-driven OAuth app connections with their OneCLI mirror
+  // secrets so the picker can render them in the "Apps" subsection while
+  // grants still flow through the secret-access mechanism.
+  const oauthAppEntries = useMemo<OAuthAppEntry[]>(() => {
+    const secretByName = new Map(secrets.map((s) => [s.name, s]));
+    return oauthAppConnections.flatMap((conn) => {
+      const mirror = secretByName.get(`${APP_OAUTH_SECRET_PREFIX}${conn.connectionId}`);
+      if (!mirror) return [];
+      return [{
+        secretId: mirror.id,
+        appId: conn.appId,
+        displayName: conn.displayName,
+        hostPattern: conn.hostPattern,
+        expired: conn.expired,
+      }];
+    });
+  }, [oauthAppConnections, secrets]);
 
   const inheritedEnvs = useMemo<InheritedEnv[]>(() => {
     const items: InheritedEnv[] = (agent.env ?? [])
@@ -247,6 +273,7 @@ export function ConfigureAgentDialog({
               loading={!ready}
               secrets={secrets}
               apps={apps}
+              oauthApps={oauthAppEntries}
               selSecrets={assignedSet}
               selApps={appIdsSet}
               onToggleSecret={toggleSecret}

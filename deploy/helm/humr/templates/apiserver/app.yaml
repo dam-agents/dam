@@ -119,6 +119,30 @@ spec:
             - name: SKILL_SOURCES_SEED
               value: {{ .Values.skills.skillSources | toJson | quote }}
             {{- end }}
+            {{- with .Values.apiServer.oauthAppDefaults.github }}
+            {{- if .clientId }}
+            - name: HUMR_DEFAULT_GITHUB_CLIENT_ID
+              value: {{ .clientId | quote }}
+            {{- end }}
+            {{- if .clientSecret }}
+            - name: HUMR_DEFAULT_GITHUB_CLIENT_SECRET
+              value: {{ .clientSecret | quote }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.apiServer.oauthAppDefaults.githubEnterprise }}
+            {{- if .host }}
+            - name: HUMR_DEFAULT_GHE_HOST
+              value: {{ .host | quote }}
+            {{- end }}
+            {{- if .clientId }}
+            - name: HUMR_DEFAULT_GHE_CLIENT_ID
+              value: {{ .clientId | quote }}
+            {{- end }}
+            {{- if .clientSecret }}
+            - name: HUMR_DEFAULT_GHE_CLIENT_SECRET
+              value: {{ .clientSecret | quote }}
+            {{- end }}
+            {{- end }}
           readinessProbe:
             tcpSocket:
               port: http

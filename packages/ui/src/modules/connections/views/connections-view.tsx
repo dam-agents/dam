@@ -1,17 +1,25 @@
-import { ExternalLink, Plus, RefreshCw } from "lucide-react";
+import { Plus, RefreshCw } from "lucide-react";
 import { useState } from "react";
 
-import { getAuthConfig } from "../../../auth.js";
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { isCustomSecret, type SecretView } from "../../../types.js";
 import { useSecrets } from "../../secrets/api/queries.js";
 import { EditSecretDialog } from "../../secrets/components/edit-secret-dialog.js";
 import { CreateSecretForm } from "../../secrets/forms/create-secret-form.js";
-import { useAppConnections, useMcpConnections } from "../api/queries.js";
+import type { OAuthAppDescriptor } from "../api/fetchers.js";
+import {
+  useAppConnections,
+  useMcpConnections,
+  useOAuthAppConnections,
+  useOAuthApps,
+} from "../api/queries.js";
 import { AppConnectionRow } from "../components/app-connection-row.js";
 import { McpConnectionRow } from "../components/mcp-connection-row.js";
+import { OAuthAppConnectButton } from "../components/oauth-app-connect-button.js";
+import { OAuthAppRow } from "../components/oauth-app-row.js";
 import { SecretRow } from "../components/secret-row.js";
 import { AddMcpForm } from "../forms/add-mcp-form.js";
+import { ConnectAppForm } from "../forms/connect-app-form.js";
 
 export function ConnectionsView() {
   const {
@@ -32,21 +40,48 @@ export function ConnectionsView() {
     isFetching: isFetchingAppConnections,
     isPending: isPendingAppConnections,
   } = useAppConnections();
+  const {
+    data: oauthApps = [],
+    refetch: refetchOAuthApps,
+    isFetching: isFetchingOAuthApps,
+    isPending: isPendingOAuthApps,
+  } = useOAuthApps();
+  const {
+    data: oauthAppConnections = [],
+    refetch: refetchOAuthAppConnections,
+    isFetching: isFetchingOAuthAppConnections,
+  } = useOAuthAppConnections();
 
   const [addMcpInitialUrl, setAddMcpInitialUrl] = useState("");
   const [showAddMcp, setShowAddMcp] = useState(false);
   const [showAddSecret, setShowAddSecret] = useState(false);
   const [editingSecret, setEditingSecret] = useState<SecretView | null>(null);
+  const [connectingApp, setConnectingApp] = useState<OAuthAppDescriptor | null>(null);
 
-  const onecliUrl = getAuthConfig()?.onecliUrl;
   const customSecrets = secrets.filter(isCustomSecret);
+  const appsById = new Map(oauthApps.map((a) => [a.id, a]));
+  const singleAppsConnected = new Set(
+    oauthAppConnections
+      .map((c) => appsById.get(c.appId))
+      .filter((a): a is NonNullable<typeof a> => a != null && a.cardinality === "single")
+      .map((a) => a.id),
+  );
+  const availableToConnect = oauthApps.filter(
+    (app) => app.cardinality === "multiple" || !singleAppsConnected.has(app.id),
+  );
 
   const refreshAll = () => {
     refetchAppConnections();
     refetchMcpConnections();
+    refetchOAuthApps();
+    refetchOAuthAppConnections();
     refetchSecrets();
   };
-  const isFetching = isFetchingAppConnections || isFetchingMcpConnections;
+  const isFetching =
+    isFetchingAppConnections ||
+    isFetchingMcpConnections ||
+    isFetchingOAuthApps ||
+    isFetchingOAuthAppConnections;
 
   const openAddMcp = (initialUrl = "") => {
     setAddMcpInitialUrl(initialUrl);
@@ -72,58 +107,78 @@ export function ConnectionsView() {
       </p>
 
       {/* Apps */}
-      {onecliUrl && (
-        <section className="mb-10">
-          <h2 className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em] mb-2">
-            Apps
-          </h2>
-          <p className="text-[12px] text-text-muted mb-4">
-            OAuth apps like GitHub, Google, and Slack — connect and manage in OneCLI.
-          </p>
+      <section className="mb-10">
+        <h2 className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em] mb-2">
+          Apps
+        </h2>
+        <p className="text-[12px] text-text-muted mb-4">
+          OAuth apps like GitHub. Connect them here to grant agents API access on your behalf.
+        </p>
 
-          {isPendingAppConnections && (
-            <ListSkeleton />
-          )}
+        {isPendingOAuthApps && <ListSkeleton />}
 
-          {!isPendingAppConnections && appConnectionsError && (
-            <div className="rounded-xl border-2 border-danger bg-danger-light px-6 py-4 anim-in">
-              <div className="text-[13px] font-semibold text-danger">
-                Couldn't load app connections from OneCLI.
-              </div>
-              <div className="text-[11px] font-mono text-danger/80 mt-1 break-all">
-                {appConnectionsError.message}
-              </div>
+        {!isPendingOAuthApps && oauthAppConnections.length === 0 && availableToConnect.length === 0 && (
+          <div className="rounded-xl border-2 border-border-light bg-surface px-6 py-8 text-center text-[14px] text-text-muted anim-in">
+            No OAuth apps available.
+          </div>
+        )}
+
+        {!isPendingOAuthApps && oauthAppConnections.length > 0 && (
+          <div className="flex flex-col gap-3">
+            {oauthAppConnections.map((connection, i) => {
+              const app = appsById.get(connection.appId);
+              if (!app) return null;
+              return (
+                <OAuthAppRow
+                  key={connection.connectionId}
+                  app={app}
+                  connection={connection}
+                  animationDelayMs={i * 50}
+                  onReconnect={setConnectingApp}
+                />
+              );
+            })}
+          </div>
+        )}
+
+        {!isPendingOAuthApps && availableToConnect.length > 0 && (
+          <div className={`grid grid-cols-1 sm:grid-cols-2 gap-2 ${oauthAppConnections.length > 0 ? "mt-4" : ""}`}>
+            {availableToConnect.map((app) => (
+              <OAuthAppConnectButton key={app.id} app={app} onConnect={setConnectingApp} />
+            ))}
+          </div>
+        )}
+
+        {/* Legacy OneCLI-managed app connections — read-only until the
+            corresponding migration completes. */}
+        {!isPendingAppConnections && !appConnectionsError && appConnections.length > 0 && (
+          <>
+            <div className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em] mt-6 mb-2">
+              Managed in OneCLI
             </div>
-          )}
-
-          {!isPendingAppConnections && !appConnectionsError && appConnections.length === 0 && (
-            <div className="rounded-xl border-2 border-border-light bg-surface px-6 py-8 text-center text-[14px] text-text-muted anim-in">
-              No OAuth apps connected yet
-            </div>
-          )}
-
-          {!isPendingAppConnections && !appConnectionsError && appConnections.length > 0 && (
             <div className="flex flex-col gap-3">
               {appConnections.map((connection, i) => (
-                <AppConnectionRow key={connection.id} connection={connection} animationDelayMs={i * 50} />
+                <AppConnectionRow
+                  key={connection.id}
+                  connection={connection}
+                  animationDelayMs={i * 50}
+                />
               ))}
             </div>
-          )}
+          </>
+        )}
 
-          {!isPendingAppConnections && (
-            <div className="mt-4">
-              <a
-                href={`${onecliUrl}/connections`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn-brutal h-9 rounded-lg border-2 border-border bg-surface px-4 text-[13px] font-semibold text-text-secondary hover:text-text inline-flex items-center gap-1.5 shadow-brutal-sm"
-              >
-                Manage in OneCLI <ExternalLink size={13} />
-              </a>
+        {!isPendingAppConnections && appConnectionsError && (
+          <div className="rounded-xl border-2 border-danger bg-danger-light px-6 py-4 anim-in mt-4">
+            <div className="text-[13px] font-semibold text-danger">
+              Couldn't load app connections from OneCLI.
             </div>
-          )}
-        </section>
-      )}
+            <div className="text-[11px] font-mono text-danger/80 mt-1 break-all">
+              {appConnectionsError.message}
+            </div>
+          </div>
+        )}
+      </section>
 
       {/* MCP Servers */}
       <section className="mb-10">
@@ -218,6 +273,10 @@ export function ConnectionsView() {
           initialUrl={addMcpInitialUrl}
           onCancel={() => setShowAddMcp(false)}
         />
+      )}
+
+      {connectingApp && (
+        <ConnectAppForm app={connectingApp} onCancel={() => setConnectingApp(null)} />
       )}
 
       {showAddSecret && (

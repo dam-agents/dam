@@ -22,6 +22,7 @@ import {
 } from "../../modules/channels/infrastructure/telegram-threads-repository.js";
 import { createAcpRelay } from "./acp-relay.js";
 import { createOAuthRoutes } from "./oauth.js";
+import { createOAuthAppRegistry } from "../../modules/connections/infrastructure/oauth-apps.js";
 import type { Config } from "../../config.js";
 import { createAuth, ForbiddenError } from "./auth.js";
 import type { OnecliClient } from "./onecli.js";
@@ -87,7 +88,21 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
 
   app.use("/api/*", auth.middleware);
 
-  app.route("/", createOAuthRoutes(config.uiBaseUrl, onecli));
+  const oauthApps = createOAuthAppRegistry({
+    github: {
+      ...(config.defaultGithubClientId ? { clientId: config.defaultGithubClientId } : {}),
+      ...(config.defaultGithubClientSecret ? { clientSecret: config.defaultGithubClientSecret } : {}),
+    },
+    githubEnterprise: {
+      ...(config.defaultGithubEnterpriseHost ? { host: config.defaultGithubEnterpriseHost } : {}),
+      ...(config.defaultGithubEnterpriseClientId ? { clientId: config.defaultGithubEnterpriseClientId } : {}),
+      ...(config.defaultGithubEnterpriseClientSecret ? { clientSecret: config.defaultGithubEnterpriseClientSecret } : {}),
+    },
+  });
+  app.route(
+    "/",
+    createOAuthRoutes({ uiBaseUrl: config.uiBaseUrl, oc: onecli, k8sClient, apps: oauthApps }),
+  );
 
   if (config.slackBotToken && config.slackAppToken) {
     app.route("/", createSlackOAuthRoutes({

@@ -1,7 +1,12 @@
 import { useMutation } from "@tanstack/react-query";
 
-import { disconnectMcp, startMcpOAuth } from "./fetchers.js";
-import { mcpConnectionKeys } from "./queries.js";
+import {
+  disconnectApp,
+  disconnectMcp,
+  startAppOAuth,
+  startMcpOAuth,
+} from "./fetchers.js";
+import { mcpConnectionKeys, oauthAppKeys } from "./queries.js";
 
 export function useStartMcpOAuth() {
   return useMutation({
@@ -16,6 +21,23 @@ export function useDisconnectMcp() {
     meta: {
       invalidates: [mcpConnectionKeys.list()],
       errorToast: "Couldn't disconnect MCP server",
+    },
+  });
+}
+
+export function useStartAppOAuth() {
+  return useMutation({
+    mutationFn: startAppOAuth,
+    meta: { errorToast: "Couldn't start app connection" },
+  });
+}
+
+export function useDisconnectApp() {
+  return useMutation({
+    mutationFn: disconnectApp,
+    meta: {
+      invalidates: [oauthAppKeys.connections()],
+      errorToast: "Couldn't disconnect app",
     },
   });
 }

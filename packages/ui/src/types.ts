@@ -147,13 +147,21 @@ export type SecretMode = "all" | "selective";
 /** Prefix used for MCP OAuth secrets stored in OneCLI. */
 export const MCP_SECRET_PREFIX = "__humr_mcp:";
 
+/** Prefix used for app-OAuth tokens mirrored into OneCLI by the api-server. */
+export const APP_OAUTH_SECRET_PREFIX = "__humr_oauth:";
+
 export function isMcpSecret(s: { name: string; type: SecretType }): boolean {
   return s.type !== "anthropic" && s.name.startsWith(MCP_SECRET_PREFIX);
 }
 
-/** User-visible "Secrets" — excludes the Anthropic key and MCP OAuth blobs. */
+/** User-visible "Secrets" — excludes the Anthropic key and platform-internal
+ *  mirrors (MCP OAuth blobs and app-OAuth token mirrors). */
 export function isCustomSecret(s: { name: string; type: SecretType }): boolean {
-  return s.type !== "anthropic" && !s.name.startsWith(MCP_SECRET_PREFIX);
+  return (
+    s.type !== "anthropic" &&
+    !s.name.startsWith(MCP_SECRET_PREFIX) &&
+    !s.name.startsWith(APP_OAUTH_SECRET_PREFIX)
+  );
 }
 
 export function mcpHostnameFromSecretName(name: string): string {

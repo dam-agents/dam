@@ -3,11 +3,18 @@ import { Sparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 
-import { ConnectionsPicker } from "../../../components/connections-picker.js";
+import {
+  ConnectionsPicker,
+  type OAuthAppEntry,
+} from "../../../components/connections-picker.js";
 import { FormField } from "../../../components/form-field.js";
 import { HoverTooltip } from "../../../components/hover-tooltip.js";
 import type { EnvVar, TemplateView } from "../../../types.js";
-import { useAppConnections } from "../../connections/api/queries.js";
+import { APP_OAUTH_SECRET_PREFIX } from "../../../types.js";
+import {
+  useAppConnections,
+  useOAuthAppConnections,
+} from "../../connections/api/queries.js";
 import { useSecrets } from "../../secrets/api/queries.js";
 import { addAgentSchema, type AddAgentValues } from "../forms/add-agent-schema.js";
 import { envsToAddOnGrant } from "../utils/connection-env-helpers.js";
@@ -45,6 +52,7 @@ export function AddAgentDialog({
 
   const { data: secrets = [], isLoading: loadSecrets } = useSecrets();
   const { data: apps = [] } = useAppConnections();
+  const { data: oauthAppConnections = [] } = useOAuthAppConnections();
 
   const {
     register,
@@ -95,6 +103,24 @@ export function AddAgentDialog({
   const selApps = watch("selApps");
   const selSecretsSet = useMemo(() => new Set(selSecrets), [selSecrets]);
   const selAppsSet = useMemo(() => new Set(selApps), [selApps]);
+
+  // Join the api-server-driven OAuth app connections with their OneCLI mirror
+  // secrets so the picker can render them in the "Apps" subsection while the
+  // grant still flows through the secret-access mechanism.
+  const oauthAppEntries = useMemo<OAuthAppEntry[]>(() => {
+    const secretByName = new Map(secrets.map((s) => [s.name, s]));
+    return oauthAppConnections.flatMap((conn) => {
+      const mirror = secretByName.get(`${APP_OAUTH_SECRET_PREFIX}${conn.connectionId}`);
+      if (!mirror) return [];
+      return [{
+        secretId: mirror.id,
+        appId: conn.appId,
+        displayName: conn.displayName,
+        hostPattern: conn.hostPattern,
+        expired: conn.expired,
+      }];
+    });
+  }, [oauthAppConnections, secrets]);
 
   const pickTemplate = (tmpl: TemplateView) => {
     setSelectedTemplate(tmpl);
@@ -265,6 +291,7 @@ export function AddAgentDialog({
               loading={loadSecrets}
               secrets={secrets}
               apps={apps}
+              oauthApps={oauthAppEntries}
               selSecrets={selSecretsSet}
               selApps={selAppsSet}
               onToggleSecret={toggleSecret}
