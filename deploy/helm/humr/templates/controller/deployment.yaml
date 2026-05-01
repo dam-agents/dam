@@ -91,6 +91,15 @@ spec:
               value: {{ .Values.controller.envoyPort | default 10000 | quote }}
             - name: AGENT_HOME
               value: {{ .Values.agentHome | quote }}
+            - name: EXT_AUTHZ_HOST
+              # FQDN: agent pods live in a different namespace (`agents`) from
+              # the apiserver Service (`{{ .Release.Namespace }}`), so the
+              # bare service name doesn't resolve in the agent's DNS scope.
+              value: {{ printf "%s-apiserver.%s.svc.cluster.local" (include "humr.fullname" .) .Release.Namespace | quote }}
+            - name: EXT_AUTHZ_PORT
+              value: {{ .Values.apiServer.extAuthzPort | quote }}
+            - name: EXT_AUTHZ_HOLD_SECONDS
+              value: {{ .Values.apiServer.approvalHoldSeconds | quote }}
             - name: POD_NAME
               valueFrom:
                 fieldRef:

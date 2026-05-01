@@ -1,0 +1,73 @@
+// Minimal subset of Envoy's `envoy.service.auth.v3.Authorization` service —
+// just the fields we read in the network ext_authz handler. Proto3 is
+// forward-compatible: Envoy serializes the full message and our handler
+// silently drops unknown fields. The wire format for declared fields must
+// match Envoy's source-of-truth proto, so field numbers are pinned here.
+//
+// Source: github.com/envoyproxy/envoy → api/envoy/service/auth/v3/external_auth.proto
+//                                       api/envoy/service/auth/v3/attribute_context.proto
+
+syntax = "proto3";
+
+package envoy.service.auth.v3;
+
+service Authorization {
+  rpc Check (CheckRequest) returns (CheckResponse);
+}
+
+message CheckRequest {
+  AttributeContext attributes = 1;
+}
+
+message AttributeContext {
+  Peer source = 1;
+  Peer destination = 2;
+  Request request = 4;
+  TLSSession tls_session = 12;
+}
+
+message Peer {
+  Address address = 1;
+}
+
+message Address {
+  SocketAddress socket_address = 1;
+}
+
+message SocketAddress {
+  string address = 2;
+  uint32 port_value = 3;
+}
+
+message Request {
+  HttpRequest http = 2;
+}
+
+// Populated for L7 ext_authz on the credentialed-egress chains; empty on the
+// L4 (network) ext_authz path.
+message HttpRequest {
+  string method = 2;
+  map<string, string> headers = 3;
+  string path = 4;
+  string host = 5;
+  string scheme = 7;
+}
+
+// Populated for L4 ext_authz when the listener has a TLS inspector — that's
+// where the SNI we gate on comes from.
+message TLSSession {
+  string sni = 1;
+}
+
+// Standard google.rpc.Status — we only ever set `code`.
+message Status {
+  int32 code = 1;
+  string message = 2;
+}
+
+message CheckResponse {
+  Status status = 1;
+  // OkHttpResponse / DeniedHttpResponse fields exist upstream; we rely on
+  // status.code = 0 → OK, anything else → PERMISSION_DENIED, which Envoy
+  // honors regardless of whether the http details are populated.
+}

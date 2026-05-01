@@ -20,6 +20,15 @@ export interface AppConnectionView {
    * returned verbatim on `GET /api/connections` — Humr never writes this.
    */
   envMappings?: EnvMapping[];
+  /**
+   * API hosts this provider needs to reach (DRAFT-unified-hitl-ux). Joined
+   * server-side from the operator-owned `appConnectionEgressHosts` ConfigMap
+   * keyed by `provider`. Granting the connection inserts one
+   * `(host, *, *, allow, source=connection:<id>)` rule per host; ungranting
+   * sweeps them. Empty / missing → grants don't produce egress rules
+   * (some providers' hosts haven't been declared yet).
+   */
+  egressHosts?: string[];
 }
 
 export interface AgentAppConnections {

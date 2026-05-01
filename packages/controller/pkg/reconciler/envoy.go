@@ -3,8 +3,11 @@ package reconciler
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"sort"
+	"strings"
 	"text/template"
 
 	corev1 "k8s.io/api/core/v1"
@@ -47,12 +50,23 @@ func EnvoyBootstrapName(instanceName string) string {
 }
 
 // envoyRoute is the per-Secret data the bootstrap template needs.
+//
+// `Credentialed=false` is the L7-promoted MITM-only flavor (DRAFT-unified-hitl-ux):
+// the host has at least one path-specific egress_rule but no attached credential.
+// We render TLS-terminating chain + ext_authz, but skip credential_injector and
+// the credential SDS mount.
 type envoyRoute struct {
-	SecretName string // K8s Secret name, used for the per-route credential file path
-	Host       string // host the credential is scoped to (matched on :authority)
-	HeaderName string // header to inject (e.g. "Authorization")
-	VolumeName string // pod-level volume name for this Secret
+	SecretName   string // K8s Secret name, used for the per-route credential file path
+	Host         string // host the credential is scoped to (matched on :authority)
+	HeaderName   string // header to inject (e.g. "Authorization")
+	VolumeName   string // pod-level volume name for this Secret
+	Credentialed bool   // true → render credential_injector; false → MITM-only chain
 }
+
+// envoySecretTypeAllowOnly marks Secrets that exist solely to extend the
+// cert SAN list and force a host onto the L7 path so path-specific egress
+// rules can be enforced. They carry no credential payload.
+const envoySecretTypeAllowOnly = "allow-only"
 
 // listOwnerCredentialSecrets returns the K8s Secrets the api-server has
 // written for this owner. Secrets predating #337 (still OneCLI-only) are not
@@ -98,11 +112,16 @@ func routesFromSecrets(secrets []corev1.Secret) []envoyRoute {
 		if header == "" {
 			header = "Authorization"
 		}
+		// Default credentialed for back-compat with Secrets predating the
+		// secret-type label. Allow-only Secrets carry no credential payload
+		// and exist purely to extend the cert SAN list.
+		credentialed := s.Labels[envoySecretTypeLabel] != envoySecretTypeAllowOnly
 		routes = append(routes, envoyRoute{
-			SecretName: s.Name,
-			Host:       host,
-			HeaderName: header,
-			VolumeName: "cred-" + s.Name,
+			SecretName:   s.Name,
+			Host:         host,
+			HeaderName:   header,
+			VolumeName:   "cred-" + s.Name,
+			Credentialed: credentialed,
 		})
 	}
 	return routes
@@ -152,6 +171,28 @@ static_resources:
                 upgrade_configs:
                   - upgrade_type: CONNECT
                 http_filters:
+                  # Gate plain-HTTP egress (DRAFT-unified-hitl-ux). The
+                  # CONNECT route disables this via per-route config — TLS
+                  # tunnels are gated downstream (per-host L7 chain or
+                  # SNI-miss L4 catch-all). Without this filter, plain
+                  # HTTP requests would 404 with no inbox prompt.
+                  - name: envoy.filters.http.ext_authz
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthz
+                      transport_api_version: V3
+                      failure_mode_allow: false
+                      grpc_service:
+                        envoy_grpc:
+                          cluster_name: ext_authz_cluster
+                        initial_metadata:
+                          - { key: x-humr-instance, value: "{{ $.InstanceID }}" }
+                        timeout: {{ $.ExtAuthzTimeoutSeconds }}s
+                  - name: envoy.filters.http.dynamic_forward_proxy
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_forward_proxy.v3.FilterConfig
+                      dns_cache_config:
+                        name: dns_cache
+                        dns_lookup_family: V4_PREFERRED
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
@@ -167,6 +208,20 @@ static_resources:
                             upgrade_configs:
                               - upgrade_type: CONNECT
                                 connect_config: {}
+                          typed_per_filter_config:
+                            envoy.filters.http.ext_authz:
+                              "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute
+                              disabled: true
+                        # Plain HTTP fallthrough: gated by the HCM's
+                        # ext_authz filter, then forwarded via
+                        # dynamic_forward_proxy_http to the upstream's
+                        # actual HTTP port. Hosts that need a path/method
+                        # rule should use HTTPS — plain HTTP is gated by
+                        # SNI-equivalent (Host header) only.
+                        - match: { prefix: "/" }
+                          route:
+                            cluster: dynamic_forward_proxy_http
+                            timeout: 0s
 
     - name: tls_inspect_internal
       internal_listener: {}
@@ -193,6 +248,24 @@ static_resources:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
                 stat_prefix: terminate_{{ .SecretName }}
                 http_filters:
+                  # HITL gate (DRAFT-unified-hitl-ux). gRPC ext_authz to the
+                  # api-server's single auth endpoint — same Check RPC used
+                  # by the L4 catch-all chain below. Rules match short-circuit
+                  # ALLOW/DENY; misses persist a pending row and hold the
+                  # call up to {{ $.ExtAuthzHoldSeconds }}s. failure_mode_allow
+                  # is false so a Redis/api-server outage fails closed.
+                  - name: envoy.filters.http.ext_authz
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthz
+                      transport_api_version: V3
+                      failure_mode_allow: false
+                      grpc_service:
+                        envoy_grpc:
+                          cluster_name: ext_authz_cluster
+                        initial_metadata:
+                          - { key: x-humr-instance, value: "{{ $.InstanceID }}" }
+                        timeout: {{ $.ExtAuthzTimeoutSeconds }}s
+{{- if .Credentialed }}
                   - name: envoy.filters.http.credential_injector
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.credential_injector.v3.CredentialInjector
@@ -207,6 +280,7 @@ static_resources:
                               path_config_source:
                                 path: {{ $.CredentialsRoot }}/{{ .VolumeName }}/{{ $.CredentialFile }}
                           header: "{{ .HeaderName }}"
+{{- end }}
                   - name: envoy.filters.http.dynamic_forward_proxy
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_forward_proxy.v3.FilterConfig
@@ -227,10 +301,30 @@ static_resources:
                             cluster: dynamic_forward_proxy_https
                             timeout: 0s
 {{- end }}
-        # SNI miss: pass the encrypted bytes through to the real upstream.
-        # No injection (we don't know what's inside) and no termination.
-        - name: passthrough
+        # SNI miss: every other host hits the L4 ext_authz catch-all, which
+        # gates by SNI alone via the API server's gRPC ext_authz endpoint.
+        # No TLS termination, no credential injection -- bytes pass through
+        # to the real upstream once the gate replies OK. There is no static
+        # passthrough escape hatch in v1; default-deny is the API server's
+        # egress_rules evaluation.
+        - name: l4_authz_passthrough
           filters:
+            - name: envoy.filters.network.ext_authz
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.ext_authz.v3.ExtAuthz
+                stat_prefix: l4_authz
+                transport_api_version: V3
+                failure_mode_allow: false
+                # Envoy only populates AttributeContext.tls_session.sni when
+                # this is set; without it the api-server gate sees host=null
+                # and denies every L4 request with "missing host/sni".
+                include_tls_session: true
+                grpc_service:
+                  envoy_grpc:
+                    cluster_name: ext_authz_cluster
+                  initial_metadata:
+                    - { key: x-humr-instance, value: "{{ $.InstanceID }}" }
+                  timeout: {{ $.ExtAuthzTimeoutSeconds }}s
             - name: envoy.filters.network.sni_dynamic_forward_proxy
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.sni_dynamic_forward_proxy.v3.FilterConfig
@@ -241,7 +335,7 @@ static_resources:
             - name: envoy.filters.network.tcp_proxy
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
-                stat_prefix: passthrough
+                stat_prefix: l4_authz_forward
                 cluster: dynamic_forward_proxy_tcp
 
   clusters:
@@ -289,29 +383,80 @@ static_resources:
           dns_cache_config:
             name: dns_cache
             dns_lookup_family: V4_PREFERRED
+
+    # Plain-HTTP forward cluster (DRAFT-unified-hitl-ux). Used by the
+    # outer HCM's fallthrough route to forward proxied non-CONNECT
+    # requests after L7 ext_authz gates by Host. No TLS — plaintext
+    # already on the wire.
+    - name: dynamic_forward_proxy_http
+      connect_timeout: 5s
+      lb_policy: CLUSTER_PROVIDED
+      cluster_type:
+        name: envoy.clusters.dynamic_forward_proxy
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.clusters.dynamic_forward_proxy.v3.ClusterConfig
+          dns_cache_config:
+            name: dns_cache
+            dns_lookup_family: V4_PREFERRED
+
+    # Single gRPC ext_authz cluster: both Envoy filters (HTTP on
+    # TLS-terminated chains, network on the catch-all) call the same
+    # api-server endpoint. typed_extension_protocol_options forces HTTP/2
+    # framing so Envoy speaks gRPC instead of HTTP/1.1.
+    - name: ext_authz_cluster
+      connect_timeout: 1s
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options: {}
+      load_assignment:
+        cluster_name: ext_authz_cluster
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: {{ $.ExtAuthzHost }}
+                      port_value: {{ $.ExtAuthzPort }}
 `
 
 // renderEnvoyBootstrap returns the Envoy bootstrap YAML for an instance.
-func renderEnvoyBootstrap(cfg *config.Config, routes []envoyRoute) (string, error) {
+func renderEnvoyBootstrap(instanceName string, cfg *config.Config, routes []envoyRoute) (string, error) {
 	tmpl, err := template.New("envoy").Parse(envoyBootstrapTmpl)
 	if err != nil {
 		return "", err
 	}
+	// Envoy's per-call timeout sits ahead of the application-level hold so a
+	// hold-window timeout fires from the api-server side, not from Envoy.
+	extAuthzTimeoutSeconds := cfg.ExtAuthzHoldSeconds + 60
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, struct {
-		Port              int
-		Routes            []envoyRoute
-		CredentialsRoot   string
-		CredentialFile    string
-		CredentialSDSName string
-		LeafTLSDir        string
+		Port                   int
+		Routes                 []envoyRoute
+		CredentialsRoot        string
+		CredentialFile         string
+		CredentialSDSName      string
+		LeafTLSDir             string
+		InstanceID             string
+		ExtAuthzHost           string
+		ExtAuthzPort           int
+		ExtAuthzHoldSeconds    int
+		ExtAuthzTimeoutSeconds int
 	}{
-		Port:              cfg.EnvoyPort,
-		Routes:            routes,
-		CredentialsRoot:   envoyCredentialsRoot,
-		CredentialFile:    envoyCredentialKeySDS,
-		CredentialSDSName: envoyCredentialSDSName,
-		LeafTLSDir:        envoyLeafTLSMount,
+		Port:                   cfg.EnvoyPort,
+		Routes:                 routes,
+		CredentialsRoot:        envoyCredentialsRoot,
+		CredentialFile:         envoyCredentialKeySDS,
+		CredentialSDSName:      envoyCredentialSDSName,
+		LeafTLSDir:             envoyLeafTLSMount,
+		InstanceID:             instanceName,
+		ExtAuthzHost:           cfg.ExtAuthzHost,
+		ExtAuthzPort:           cfg.ExtAuthzPort,
+		ExtAuthzHoldSeconds:    cfg.ExtAuthzHoldSeconds,
+		ExtAuthzTimeoutSeconds: extAuthzTimeoutSeconds,
 	}); err != nil {
 		return "", err
 	}
@@ -322,7 +467,7 @@ func renderEnvoyBootstrap(cfg *config.Config, routes []envoyRoute) (string, erro
 // Envoy bootstrap YAML for an instance.
 func BuildEnvoyBootstrapConfigMap(instanceName string, cfg *config.Config, ownerCM *corev1.ConfigMap, secrets []corev1.Secret) (*corev1.ConfigMap, error) {
 	routes := routesFromSecrets(secrets)
-	yaml, err := renderEnvoyBootstrap(cfg, routes)
+	yaml, err := renderEnvoyBootstrap(instanceName, cfg, routes)
 	if err != nil {
 		return nil, err
 	}
@@ -354,6 +499,12 @@ func envoySidecarVolumes(instanceName string, secrets []corev1.Secret) []corev1.
 		},
 	}}
 	for _, s := range secrets {
+		// Allow-only Secrets carry no credential payload; the bootstrap
+		// template skips credential_injector for them, so there's nothing
+		// to mount.
+		if s.Labels[envoySecretTypeLabel] == envoySecretTypeAllowOnly {
+			continue
+		}
 		volumes = append(volumes, corev1.Volume{
 			Name: "cred-" + s.Name,
 			VolumeSource: corev1.VolumeSource{
@@ -361,9 +512,8 @@ func envoySidecarVolumes(instanceName string, secrets []corev1.Secret) []corev1.
 			},
 		})
 	}
-	// Optional: only present when there are routes (and therefore a leaf cert).
-	// On a flag-on instance with no credential Secrets, we render the bootstrap
-	// without TLS-terminating chains, so the volume is not needed.
+	// Leaf cert is required whenever ANY route exists (allow-only or
+	// credentialed) — both flavors terminate TLS to gate the request.
 	if len(secrets) > 0 {
 		volumes = append(volumes, corev1.Volume{
 			Name: envoyLeafTLSVolume,
@@ -382,6 +532,29 @@ func envoySidecarVolumes(instanceName string, secrets []corev1.Secret) []corev1.
 
 func ptrBool(b bool) *bool { return &b }
 
+// envoySecretsRev is a stable digest of the Secret set that drives Envoy's
+// chain rendering: secret name + host + secret-type label + headerName.
+// Stamped on the pod template so the StatefulSet rolls when any of those
+// change (new credentialed connection, allow-only Secret added, host
+// retargeted). Sort first so reconcile order doesn't churn the hash.
+func envoySecretsRev(secrets []corev1.Secret) string {
+	if len(secrets) == 0 {
+		return "empty"
+	}
+	parts := make([]string, 0, len(secrets))
+	for _, s := range secrets {
+		parts = append(parts, fmt.Sprintf("%s|%s|%s|%s",
+			s.Name,
+			s.Annotations[envoyHostPatternAnn],
+			s.Labels[envoySecretTypeLabel],
+			s.Annotations[envoyHeaderNameAnn],
+		))
+	}
+	sort.Strings(parts)
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\n")))
+	return hex.EncodeToString(sum[:8])
+}
+
 // envoySidecarContainer returns the Envoy sidecar spec. Drops all caps,
 // ReadOnlyRootFilesystem; mounts only the bootstrap CM and the owner's
 // credential Secrets.
@@ -392,6 +565,9 @@ func envoySidecarContainer(cfg *config.Config, secrets []corev1.Secret) corev1.C
 		ReadOnly:  true,
 	}}
 	for _, s := range secrets {
+		if s.Labels[envoySecretTypeLabel] == envoySecretTypeAllowOnly {
+			continue
+		}
 		mounts = append(mounts, corev1.VolumeMount{
 			Name:      "cred-" + s.Name,
 			MountPath: envoyCredentialsRoot + "/cred-" + s.Name,

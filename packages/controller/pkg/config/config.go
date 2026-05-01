@@ -42,7 +42,17 @@ type Config struct {
 	EnvoyMitmCAIssuer        string
 	EnvoyMitmLeafDuration    time.Duration // 0 = cert-manager default
 	EnvoyMitmLeafRenewBefore time.Duration // 0 = cert-manager default
-	AgentHome            string // HOME inside agent containers. Used for the HOME env var on the agent pod.
+	AgentHome                string        // HOME inside agent containers. Used for the HOME env var on the agent pod.
+	// ExtAuthzHost / ExtAuthzPort identify the API server's HITL ext_authz
+	// listener (gRPC). Both Envoy filters use the same endpoint:
+	//   - HTTP filter on TLS-terminated chains (L7 — sees method/path)
+	//   - Network filter on the catch-all chain (L4 — SNI only)
+	// (DRAFT-unified-hitl-ux).
+	ExtAuthzHost string
+	ExtAuthzPort int
+	// ExtAuthzHoldSeconds bounds how long the ext_authz handler holds a single
+	// call. Envoy's per-filter timeout must be at least this plus headroom.
+	ExtAuthzHoldSeconds int
 }
 
 func LoadFromEnv() (*Config, error) {
@@ -100,6 +110,9 @@ func LoadFromEnv() (*Config, error) {
 	cfg.EnvoyMitmCAIssuer = envOrDefault("ENVOY_MITM_CA_ISSUER", "humr-mitm-ca-issuer")
 	cfg.EnvoyMitmLeafDuration = envOrDefaultDuration("ENVOY_MITM_LEAF_DURATION", 0)
 	cfg.EnvoyMitmLeafRenewBefore = envOrDefaultDuration("ENVOY_MITM_LEAF_RENEW_BEFORE", 0)
+	cfg.ExtAuthzHost = envOrDefault("EXT_AUTHZ_HOST", release+"-apiserver")
+	cfg.ExtAuthzPort = envOrDefaultInt("EXT_AUTHZ_PORT", 4002)
+	cfg.ExtAuthzHoldSeconds = envOrDefaultInt("EXT_AUTHZ_HOLD_SECONDS", 1800)
 	return cfg, nil
 }
 

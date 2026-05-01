@@ -71,6 +71,28 @@ Pod-side operational view of skills. Distinct from the api-server's Skills conte
 | Publish | Lifting a Local Skill to a GitHub repository as a new branch + PR via the REST API |
 | Scan | Enumerating Scanned Skills in a Source |
 
+## Approvals (bounded context)
+
+| Term | Definition |
+|------|-----------|
+| Approval | A user-pending decision that gates either a credentialed egress request (ext_authz) or a harness tool call (acp_native); persisted in the `pending_approvals` table |
+| Pending Approval | An approval whose verdict has not yet been decided; lives in the inbox |
+| Inbox | The user-facing surface listing pending approvals — top-level page, sidebar bell with badge, and per-instance tray |
+| Verdict | The user's decision on a pending approval: `allow_once`, `allow`, or `deny` |
+| Synth Frame | A synthetic ACP `session/request_permission` frame the relay injects into an attached client WS for an ext_authz approval; the synthetic session id has the `_egress:` prefix so the UI dispatches it to the inbox rather than the in-session permission queue |
+| Held Call | An ext_authz request blocking on the API Server while it waits for a verdict, up to `approvalHoldSeconds` (default 30 minutes); durable pending row outlives the hold |
+| ext_authz Gate | The application service that runs Envoy's HTTP ext_authz check: rule lookup, pending-row creation, synth-frame fan-out, synchronous hold, wake-up, expiry |
+| Wrapper Response | A JSON-RPC response frame the inbox publishes when resolving an acp_native row; whichever replica holds the upstream WS for the instance forwards it to the wrapper |
+| Approvals Relay Service | Server-internal port the ACP relay consumes for mirror writes (record / resolve acp-native pending) and stream subscriptions (synth frames, wrapper responses) |
+
+## Egress Rules (bounded context)
+
+| Term | Definition |
+|------|-----------|
+| Egress Rule | A persistent allow/deny decision keyed on `(agent, host, method, path_pattern)`; matched on every ext_authz check before any user prompt |
+| Rule Verdict | `allow` or `deny` — the decision a rule encodes |
+| Rule Match | Lookup of the most-specific active rule for a given egress request; misses fall through to the ext_authz Gate's pending-approval flow |
+
 ## Secrets (bounded context)
 
 | Term | Definition |

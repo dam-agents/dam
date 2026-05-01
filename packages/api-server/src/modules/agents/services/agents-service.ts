@@ -2,12 +2,23 @@ import {
   isProtectedAgentEnvName,
   type AgentsService,
   type CreateAgentInput,
+  type EgressPreset,
   type UpdateAgentInput,
   type EnvVar,
   type TemplateSpec,
 } from "api-server-api";
 import type { AgentsRepository } from "./../infrastructure/agents-repository.js";
 import { assembleSpecFromTemplate, assembleSpecFromImage } from "../domain/spec-assembly.js";
+
+/**
+ * Port consumed by `create()` to seed `egress_rules` for a brand-new agent
+ * (DRAFT-unified-hitl-ux). Declared locally so the agents module doesn't
+ * import across module boundaries; the egress-rules module's adapter
+ * structurally satisfies this shape.
+ */
+export interface PresetSeeder {
+  seed(agentId: string, preset: EgressPreset, decidedBy: string): Promise<void>;
+}
 
 /**
  * Returns a new env list where any platform-managed entries (e.g. PORT) are
@@ -25,6 +36,9 @@ export function createAgentsService(deps: {
   owner: string;
   agentHome: string;
   readTemplateSpec: (id: string) => Promise<{ spec: TemplateSpec; isOwned: boolean } | null>;
+  /** Seeds egress_rules at create time. Optional so the system-instances
+   *  composition (which never creates agents) can omit it. */
+  presetSeeder?: PresetSeeder;
 }): AgentsService {
   return {
     list: () => deps.repo.list(deps.owner),
@@ -33,17 +47,19 @@ export function createAgentsService(deps: {
     async create(input: CreateAgentInput) {
       let spec: Record<string, unknown>;
       let templateId: string | undefined;
+      const preset = input.egressPreset ?? "trusted";
       if (input.templateId) {
         const tmpl = await deps.readTemplateSpec(input.templateId);
         if (!tmpl || tmpl.isOwned) throw new Error(`Template "${input.templateId}" not found`);
         spec = assembleSpecFromTemplate(input.name, tmpl.spec, {
           description: input.description,
+          egressPreset: preset,
         });
         templateId = input.templateId;
       } else {
         spec = assembleSpecFromImage(
           input.name,
-          { image: input.image, description: input.description },
+          { image: input.image, description: input.description, egressPreset: preset },
           deps.agentHome,
         );
       }
@@ -54,7 +70,14 @@ export function createAgentsService(deps: {
         const base = (spec.env as EnvVar[] | undefined) ?? [];
         spec.env = preserveProtectedEnvs(base, [...base, ...input.env]);
       }
-      return deps.repo.create(spec, deps.owner, templateId);
+      const agent = await deps.repo.create(spec, deps.owner, templateId);
+      // Seed the chosen preset (default `trusted`). `none` is a no-op; the
+      // operator-edited list of trusted hosts is captured at boot, so reseeding
+      // the preset on retry is idempotent against the lookup index.
+      if (deps.presetSeeder) {
+        await deps.presetSeeder.seed(agent.id, preset, deps.owner);
+      }
+      return agent;
     },
 
     async update(input: UpdateAgentInput) {
@@ -63,10 +86,21 @@ export function createAgentsService(deps: {
         const current = await deps.repo.get(input.id, deps.owner);
         env = preserveProtectedEnvs(current?.spec.env ?? [], env);
       }
+      // Preset change re-runs the seeder, which sweeps prior preset:* rows
+      // and inserts the new preset's rows. Manual and connection-derived
+      // rules are not touched. Done before the spec patch so a partial
+      // failure leaves the spec in sync with the actual rule set.
+      if (input.egressPreset !== undefined) {
+        const current = await deps.repo.get(input.id, deps.owner);
+        if (current && current.spec.egressPreset !== input.egressPreset && deps.presetSeeder) {
+          await deps.presetSeeder.seed(input.id, input.egressPreset, deps.owner);
+        }
+      }
       return deps.repo.updateSpec(input.id, deps.owner, {
         name: input.name,
         description: input.description,
         env,
+        egressPreset: input.egressPreset,
       });
     },
 

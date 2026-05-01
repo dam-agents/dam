@@ -1,4 +1,5 @@
 import type { EnvVar } from "../shared.js";
+import type { EgressPreset } from "../egress-rules/types.js";
 import type {
   Mount,
   Resources,
@@ -24,6 +25,11 @@ export interface AgentSpec {
   resources?: Resources;
   securityContext?: SecurityContext;
   skillPaths?: string[];
+  /** Persisted preset choice (DRAFT-unified-hitl-ux). Updating it via
+   *  `agents.update` re-runs the seeder server-side: prior preset:* rows
+   *  are revoked and the new preset's rows are inserted; manual and
+   *  connection-derived rules are preserved. */
+  egressPreset?: EgressPreset;
 }
 
 export interface Agent {
@@ -39,6 +45,11 @@ export interface CreateAgentInput {
   image?: string;
   description?: string;
   env?: EnvVar[];
+  /** Bulk-seeds egress_rules at create time. Defaults to `trusted` so a
+   *  brand-new agent can reach Anthropic, npm, PyPI, GitHub, etc. without
+   *  per-host inbox prompts. After seeding, rows are owned by the agent
+   *  like any other rule. See DRAFT-unified-hitl-ux. */
+  egressPreset?: EgressPreset;
 }
 
 export interface UpdateAgentInput {
@@ -46,6 +57,9 @@ export interface UpdateAgentInput {
   name?: string;
   description?: string;
   env?: EnvVar[];
+  /** When set and different from the agent's current preset, the server
+   *  reseeds preset rows alongside the spec patch. */
+  egressPreset?: EgressPreset;
 }
 
 export interface AgentsService {

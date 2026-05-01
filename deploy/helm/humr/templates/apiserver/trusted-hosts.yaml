@@ -1,0 +1,21 @@
+{{/*
+Trusted-host preset list (DRAFT-unified-hitl-ux). Mounted into the api-server
+as a single newline-delimited file at /etc/humr/trusted-hosts. The api-server
+reads it once at boot and uses it as seed data for the `trusted` egress preset
+when creating agents. Rules seeded with `source=preset:trusted` are owned by
+the agent like any other rule — editing the list here does not retroactively
+modify existing agents (intentional; mirrors a one-shot grant).
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "humr.fullname" . }}-trusted-hosts
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "humr.labels" . | nindent 4 }}
+    app.kubernetes.io/component: apiserver
+data:
+  trusted-hosts: |
+    {{- range .Values.apiServer.trustedHosts }}
+    {{ . }}
+    {{- end }}

@@ -4,6 +4,9 @@ const configSchema = z.object({
   namespace: z.string().default("humr-agents"),
   port: z.coerce.number().default(4000),
   harnessServerPort: z.coerce.number().default(4001),
+  /** gRPC ext_authz listener — serves both Envoy's HTTP filter (L7,
+   *  TLS-terminated chains) and network filter (L4, catch-all). */
+  extAuthzPort: z.coerce.number().default(4002),
   databaseUrl: z.string(),
   migrationsPath: z.string().default("./packages/db/drizzle"),
   slackBotToken: z.string().nullable().default(null),
@@ -38,6 +41,19 @@ const configSchema = z.object({
   defaultGithubEnterpriseHost: z.string().nullable().default(null),
   defaultGithubEnterpriseClientId: z.string().nullable().default(null),
   defaultGithubEnterpriseClientSecret: z.string().nullable().default(null),
+  redisUrl: z.string().nullable().default(null),
+  /** Default hold window for ext_authz HITL (seconds). Helm-configurable;
+   *  matches `pending_approvals.expires_at` and the synchronous-hold deadline. */
+  approvalHoldSeconds: z.coerce.number().int().positive().default(1800),
+  /** Path to a newline-delimited file of hosts seeded by the `trusted` egress
+   *  preset (DRAFT-unified-hitl-ux). Mounted from a Helm-managed ConfigMap.
+   *  Empty/missing file → preset is empty (still selectable, just seeds nothing). */
+  trustedHostsPath: z.string().default(""),
+  /** Path to a JSON map (`provider → string[]`) of API hosts each app-connection
+   *  provider needs to reach. App grants insert one `connection:<id>` egress
+   *  rule per host listed here. Empty/missing file → grants insert nothing
+   *  (matches pre-DRAFT-unified-hitl-ux behavior). */
+  appConnectionEgressHostsPath: z.string().default(""),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -47,6 +63,7 @@ export function loadConfig(): Config {
     namespace: process.env.NAMESPACE,
     port: process.env.PORT,
     harnessServerPort: process.env.MCP_PORT,
+    extAuthzPort: process.env.EXT_AUTHZ_PORT,
     databaseUrl: process.env.DATABASE_URL,
     migrationsPath: process.env.MIGRATIONS_PATH,
     slackBotToken: process.env.SLACK_BOT_TOKEN,
@@ -72,5 +89,9 @@ export function loadConfig(): Config {
     defaultGithubEnterpriseHost: process.env.HUMR_DEFAULT_GHE_HOST,
     defaultGithubEnterpriseClientId: process.env.HUMR_DEFAULT_GHE_CLIENT_ID,
     defaultGithubEnterpriseClientSecret: process.env.HUMR_DEFAULT_GHE_CLIENT_SECRET,
+    redisUrl: process.env.REDIS_URL,
+    approvalHoldSeconds: process.env.APPROVAL_HOLD_SECONDS,
+    trustedHostsPath: process.env.TRUSTED_HOSTS_PATH,
+    appConnectionEgressHostsPath: process.env.APP_CONNECTION_EGRESS_HOSTS_PATH,
   });
 }

@@ -19,6 +19,11 @@ spec:
       targetPort: harness
       protocol: TCP
       name: harness
+    - port: {{ .Values.apiServer.extAuthzPort }}
+      targetPort: ext-authz
+      protocol: TCP
+      name: ext-authz
+      appProtocol: grpc
   selector:
     app.kubernetes.io/component: apiserver
     app.kubernetes.io/instance: {{ .Release.Name }}
@@ -56,6 +61,8 @@ spec:
               name: http
             - containerPort: {{ .Values.apiServer.harnessServerPort }}
               name: harness
+            - containerPort: {{ .Values.apiServer.extAuthzPort }}
+              name: ext-authz
           env:
             - name: POSTGRES_PASSWORD
               valueFrom:
@@ -70,6 +77,8 @@ spec:
               value: {{ .Values.apiServer.port | quote }}
             - name: MCP_PORT
               value: {{ .Values.apiServer.harnessServerPort | quote }}
+            - name: EXT_AUTHZ_PORT
+              value: {{ .Values.apiServer.extAuthzPort | quote }}
             - name: UI_BASE_URL
               value: {{ include "humr.url.ui" . | quote }}
             {{- if .Values.apiServer.slackBotToken }}
@@ -143,6 +152,23 @@ spec:
               value: {{ .clientSecret | quote }}
             {{- end }}
             {{- end }}
+            - name: REDIS_URL
+              value: {{ include "humr.redis.url" . | quote }}
+            - name: APPROVAL_HOLD_SECONDS
+              value: {{ .Values.apiServer.approvalHoldSeconds | quote }}
+            - name: TRUSTED_HOSTS_PATH
+              value: /etc/humr/trusted-hosts
+            - name: APP_CONNECTION_EGRESS_HOSTS_PATH
+              value: /etc/humr/app-connection-egress-hosts.json
+          volumeMounts:
+            - name: trusted-hosts
+              mountPath: /etc/humr/trusted-hosts
+              subPath: trusted-hosts
+              readOnly: true
+            - name: app-connection-egress-hosts
+              mountPath: /etc/humr/app-connection-egress-hosts.json
+              subPath: app-connection-egress-hosts.json
+              readOnly: true
           readinessProbe:
             tcpSocket:
               port: http
@@ -155,3 +181,16 @@ spec:
             periodSeconds: 30
           resources:
             {{- toYaml .Values.apiServer.resources | nindent 12 }}
+      volumes:
+        - name: trusted-hosts
+          configMap:
+            name: {{ include "humr.fullname" . }}-trusted-hosts
+            items:
+              - key: trusted-hosts
+                path: trusted-hosts
+        - name: app-connection-egress-hosts
+          configMap:
+            name: {{ include "humr.fullname" . }}-app-connection-egress-hosts
+            items:
+              - key: app-connection-egress-hosts.json
+                path: app-connection-egress-hosts.json

@@ -25,6 +25,9 @@ import { createInstancesService } from "./services/instances-service.js";
 import { createSchedulesService } from "./services/schedules-service.js";
 import { createSessionsService } from "./services/sessions-service.js";
 import type { KeycloakUserDirectory } from "./infrastructure/keycloak-user-directory.js";
+import type { PresetSeeder } from "./services/agents-service.js";
+
+export type { PresetSeeder } from "./services/agents-service.js";
 
 export function composeAgentsModule(
   api: k8s.CoreV1Api,
@@ -34,6 +37,7 @@ export function composeAgentsModule(
   userDirectory: KeycloakUserDirectory,
   channelSecretStore: ChannelSecretStore,
   agentHome: string,
+  presetSeeder?: PresetSeeder,
 ): {
   templates: TemplatesService;
   agents: AgentsService;
@@ -52,6 +56,7 @@ export function composeAgentsModule(
     owner,
     agentHome,
     readTemplateSpec: (id) => templatesRepo.readSpec(id),
+    presetSeeder,
   });
 
   return {

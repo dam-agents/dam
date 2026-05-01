@@ -62,11 +62,24 @@ async function wsUrl(instanceId: string): Promise<string> {
  * before the user responds, the agent-runtime replays the request on the next
  * connection, which overwrites the pending entry and supplies a fresh resolver.
  */
+/** Synth ext_authz frames travel over the same WS as session-bound permission
+ *  requests. They carry a sentinel sessionId so the UI can divert them to the
+ *  inbox surface instead of the session-bound permission queue. The inbox
+ *  resolves them via tRPC; the WS-side promise is left pending forever (the
+ *  wrapper isn't awaiting a response on this synthetic id). */
+const SYNTH_EGRESS_PREFIX = "_egress:";
+
 function awaitPermission(params: {
   sessionId: string;
   toolCall?: { toolCallId?: string };
   options?: PermissionOption[];
 }): Promise<PermissionOutcome> {
+  if (params.sessionId.startsWith(SYNTH_EGRESS_PREFIX)) {
+    // v1: handled exclusively by the inbox UI. Return a never-resolving
+    // promise so the SDK doesn't synthesize a response back to the wrapper —
+    // there's no upstream listener for this id.
+    return new Promise<PermissionOutcome>(() => {});
+  }
   return new Promise((resolve) => {
     const toolCallId = params.toolCall?.toolCallId ?? crypto.randomUUID();
     useStore.getState().addPendingPermission({

@@ -3,5 +3,6 @@ export { runMigrations } from "./migrate.js";
 export {
   channels, sessions, identityLinks, allowedUsers, telegramThreads,
   skillSources, instanceSkills, instanceSkillPublishes,
+  egressRules, pendingApprovals,
 } from "./schema.js";
-export { eq, and, inArray, desc, isNotNull, sql } from "drizzle-orm";
+export { eq, and, inArray, asc, desc, isNotNull, isNull, lt, sql } from "drizzle-orm";

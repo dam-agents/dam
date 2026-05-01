@@ -1,0 +1,2 @@
+ALTER TABLE "egress_rules" ADD COLUMN "source" text DEFAULT 'manual' NOT NULL;--> statement-breakpoint
+CREATE INDEX "egress_rules_source_idx" ON "egress_rules" USING btree ("source") WHERE "egress_rules"."status" = 'active' AND "egress_rules"."source" != 'manual';

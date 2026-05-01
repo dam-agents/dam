@@ -3,6 +3,8 @@ import { useStore } from "./store.js";
 import { ListView } from "./modules/agents/views/list-view.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { ConnectionsView } from "./modules/connections/views/connections-view.js";
+import { InboxView } from "./modules/approvals/views/inbox-view.js";
+import { AgentEgressView } from "./modules/egress-rules/views/agent-egress-view.js";
 import { ProvidersView } from "./modules/settings/views/providers-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
@@ -58,6 +60,11 @@ export default function App() {
       else if (path === "/providers") useStore.setState({ view: "providers" });
       else if (path === "/connections") useStore.setState({ view: "connections" });
       else if (path === "/settings") useStore.setState({ view: "settings" });
+      else if (path === "/inbox") useStore.setState({ view: "inbox" });
+      else if (path.startsWith("/agents/") && path.endsWith("/egress")) {
+        const id = decodeURIComponent(path.slice("/agents/".length, -"/egress".length));
+        useStore.setState({ view: "agent-egress", agentId: id });
+      }
       else leaveChat();
     };
     // Handle initial URL (e.g. direct link to /chat/foo) — setState to avoid pushing duplicate history
@@ -82,7 +89,12 @@ export default function App() {
       <main className="relative z-10 flex-1 overflow-y-auto">
         <SetupProgressBar />
         <div className="mx-auto w-full max-w-[960px] px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10">
-          {view === "settings" ? <SettingsView /> : view === "providers" ? <ProvidersView /> : view === "connections" ? <ConnectionsView /> : <ListView />}
+          {view === "settings" ? <SettingsView />
+            : view === "providers" ? <ProvidersView />
+            : view === "connections" ? <ConnectionsView />
+            : view === "inbox" ? <InboxView />
+            : view === "agent-egress" ? <AgentEgressView />
+            : <ListView />}
         </div>
       </main>
       <MobileNav />

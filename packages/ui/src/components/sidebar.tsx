@@ -9,6 +9,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
+import { InboxBell } from "../modules/approvals/components/inbox-bell.js";
 
 const STORAGE_KEY = "humr-sidebar-collapsed";
 
@@ -78,6 +79,9 @@ export function Sidebar() {
       <div className="flex flex-col gap-0.5 px-2 mb-2">
         {/* Divider */}
         <div className="mx-0.5 mb-1 border-t border-border-light" />
+
+        {/* Inbox */}
+        <InboxBell collapsed={collapsed} />
 
         {/* Settings */}
         <button

@@ -3,6 +3,7 @@ import { ArrowLeft, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useStore } from "../../../store.js";
+import { InstanceApprovalsTray } from "../../approvals/components/instance-approvals-tray.js";
 import { useInstancesList } from "../../instances/api/queries.js";
 import { useAcpSessions } from "../api/queries.js";
 
@@ -96,6 +97,7 @@ export function SessionsSidebar({
           />
         ))}
       </div>
+      <InstanceApprovalsTray instanceId={selectedInstance} />
       <div className="px-3 py-3 border-t border-border-light shrink-0">
         <button
           className="w-full h-9 rounded-md border border-border-light text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center justify-center gap-1.5 transition-colors"

@@ -7,6 +7,19 @@ import type {
 import type { OnecliConnectionsPort } from "../infrastructure/onecli-connections-port.js";
 import type { PodFilesPublisher } from "../../pod-files/publisher.js";
 
+/** Minimal port consumed by `setAgentConnections` to insert / revoke
+ *  `connection:<id>` egress rules when grants change. Mirrors the
+ *  `ConnectionRulesSync` interface in the egress-rules module without
+ *  importing across module boundaries; the composition root supplies the
+ *  structurally-compatible adapter. */
+export interface ConnectionRulesSyncPort {
+  syncForAgent(input: {
+    agentId: string;
+    decidedBy: string;
+    grants: Map<string, { hosts: readonly string[] }>;
+  }): Promise<void>;
+}
+
 export function normalizeStatus(
   raw: string | null | undefined,
 ): AppConnectionStatus {
@@ -54,26 +67,47 @@ export function createConnectionsService(deps: {
    * trigger nothing (entries linger; see 034-pod-files-push).
    */
   podFiles?: PodFilesPublisher;
+  /**
+   * Provider → API hosts map (DRAFT-unified-hitl-ux). Loaded once at boot
+   * from the operator-owned ConfigMap. Joined into `AppConnectionView`
+   * for UI preview, and used by `setAgentConnections` to drive the
+   * connection-rules sync. Empty/missing for a provider → that provider's
+   * grants don't add egress rules.
+   */
+  egressHostsByProvider?: ReadonlyMap<string, readonly string[]>;
+  /**
+   * Egress-rules adapter the composition root supplies. When present,
+   * `setAgentConnections` syncs `connection:<id>` rules alongside the
+   * OneCLI grant write — same atomic-on-server pattern as `setAgentAccess`.
+   */
+  connectionRules?: ConnectionRulesSyncPort;
 }): ConnectionsService {
   return {
     async list() {
       // OneCLI returns `providerName` and `envMappings` joined from the app
       // registry — provider-specific knowledge lives there, not here.
+      // `egressHosts` is sourced from our own ConfigMap and joined by
+      // `provider` so the UI can preview connection-derived rules and
+      // `setAgentConnections` can sync them.
       const raw = await deps.port.listAppConnections();
       return raw
         .filter((c) => typeof c.id === "string" && typeof c.provider === "string")
-        .map<AppConnectionView>((c) => ({
-          id: c.id,
-          provider: c.provider,
-          label: c.providerName?.trim() || c.label?.trim() || c.provider,
-          status: normalizeStatus(c.status),
-          identity: extractIdentity(c.metadata) || c.label?.trim() || undefined,
-          ...(c.scopes ? { scopes: c.scopes } : {}),
-          ...(c.connectedAt ? { connectedAt: c.connectedAt } : {}),
-          ...(c.envMappings && c.envMappings.length > 0
-            ? { envMappings: c.envMappings }
-            : {}),
-        }));
+        .map<AppConnectionView>((c) => {
+          const hosts = deps.egressHostsByProvider?.get(c.provider);
+          return {
+            id: c.id,
+            provider: c.provider,
+            label: c.providerName?.trim() || c.label?.trim() || c.provider,
+            status: normalizeStatus(c.status),
+            identity: extractIdentity(c.metadata) || c.label?.trim() || undefined,
+            ...(c.scopes ? { scopes: c.scopes } : {}),
+            ...(c.connectedAt ? { connectedAt: c.connectedAt } : {}),
+            ...(c.envMappings && c.envMappings.length > 0
+              ? { envMappings: c.envMappings }
+              : {}),
+            ...(hosts && hosts.length > 0 ? { egressHosts: [...hosts] } : {}),
+          };
+        });
     },
 
     async getAgentConnections(agentId: string): Promise<AgentAppConnections> {
@@ -93,6 +127,26 @@ export function createConnectionsService(deps: {
       if (!agent) throw new Error(`Agent "${agentId}" not found in OneCLI`);
       const deduped = Array.from(new Set(connectionIds));
       await deps.port.setAgentAppConnectionIds(agent.id, deduped);
+
+      // Sync connection-derived egress rules so granting/ungranting an
+      // app produces the same atomic rule update that `setAgentAccess`
+      // delivers for secrets. Providers without a registry entry just
+      // contribute zero hosts — the sync still revokes any stale rows.
+      if (deps.connectionRules && deps.owner && deps.egressHostsByProvider) {
+        const all = await deps.port.listAppConnections();
+        const grants = new Map<string, { hosts: readonly string[] }>();
+        for (const c of all) {
+          if (!deduped.includes(c.id)) continue;
+          const hosts = deps.egressHostsByProvider.get(c.provider) ?? [];
+          if (hosts.length === 0) continue;
+          grants.set(c.id, { hosts });
+        }
+        await deps.connectionRules.syncForAgent({
+          agentId,
+          decidedBy: deps.owner,
+          grants,
+        });
+      }
 
       // Re-run pod-files producers tagged with "app-connections" and
       // publish to the agent's sidecar. Source-tagged so unrelated

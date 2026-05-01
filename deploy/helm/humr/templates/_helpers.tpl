@@ -144,6 +144,22 @@ Shared PostgreSQL secrets name
 {{- printf "%s-postgres-secrets" (include "humr.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
+{{/* ---- Shared Redis (DRAFT-redis-platform-primitive) ---- */}}
+
+{{/*
+Shared Redis fullname (StatefulSet + Service)
+*/}}
+{{- define "humr.redis.fullname" -}}
+{{- printf "%s-redis" (include "humr.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Redis URL exposed to consumers (no auth in v1; matches Postgres).
+*/}}
+{{- define "humr.redis.url" -}}
+{{- printf "redis://%s:%d" (include "humr.redis.fullname" .) (int .Values.redis.port) }}
+{{- end }}
+
 {{/* ---- OneCLI resources ---- */}}
 
 {{/*

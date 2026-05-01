@@ -116,3 +116,26 @@ export type {
   PublishSkillInput,
   PublishSkillResult,
 } from "./modules/skills/types.js";
+
+export type {
+  ApprovalType,
+  ApprovalStatus,
+  ApprovalVerdict,
+  ApprovalPayload,
+  ExtAuthzPayload,
+  AcpNativePayload,
+  AcpPermissionOption,
+  AcpPermissionOptionKind,
+  ApprovalView,
+  ApprovalsService,
+} from "./modules/approvals/types.js";
+
+export type {
+  RuleVerdict,
+  EgressRuleSource,
+  EgressPreset,
+  EgressRuleView,
+  CreateEgressRuleInput,
+  UpdateEgressRuleInput,
+  EgressRulesService,
+} from "./modules/egress-rules/types.js";

@@ -99,6 +99,7 @@ export interface AgentView {
   image: string;
   description?: string;
   env?: import("api-server-api").EnvVar[];
+  egressPreset?: import("api-server-api").EgressPreset | null;
 }
 
 export type InstanceState =
@@ -171,7 +172,7 @@ export function mcpHostnameFromSecretName(name: string): string {
     : name;
 }
 
-export type { EnvMapping, EnvVar, InjectionConfig } from "api-server-api";
+export type { EnvMapping, EnvVar, InjectionConfig, EgressPreset } from "api-server-api";
 export {
   DEFAULT_ENV_PLACEHOLDER,
   DEFAULT_INJECTION_CONFIG,

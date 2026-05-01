@@ -1,7 +1,7 @@
 import { is409, type K8sClient } from "./k8s.js";
 import { retry } from "./retry.js";
 import {
-  LABEL_TYPE, TYPE_INSTANCE, LABEL_OWNER, LABEL_INSTANCE_REF, LAST_ACTIVITY_KEY,
+  LABEL_TYPE, TYPE_INSTANCE, LABEL_OWNER, LABEL_INSTANCE_REF, LABEL_AGENT_REF, LAST_ACTIVITY_KEY,
 } from "./labels.js";
 import {
   parseInfraInstance, isOwnedBy, hasType,
@@ -40,6 +40,9 @@ export interface InstancesRepository {
   wake(id: string): Promise<InfraInstance | null>;
   isOwnedBy(id: string, owner: string): Promise<boolean>;
   getOwner(id: string): Promise<string | null>;
+  /** Resolve an instance to its `(owner, agentId)`. Used by the ext_authz
+   *  hot path to look up egress rules and credit pending approvals. */
+  resolveIdentity(id: string): Promise<{ owner: string; agentId: string } | null>;
   patchAnnotation(id: string, key: string, value: string): Promise<void>;
   wakeIfHibernated(id: string): Promise<boolean>;
   isPodReady(id: string): Promise<boolean>;
@@ -166,6 +169,15 @@ export function createInstancesRepository(k8s: K8sClient): InstancesRepository {
       const cm = await k8s.getConfigMap(id);
       if (!cm || !hasType(cm, TYPE_INSTANCE)) return null;
       return cm.metadata?.labels?.[LABEL_OWNER] ?? null;
+    },
+
+    async resolveIdentity(id) {
+      const cm = await k8s.getConfigMap(id);
+      if (!cm || !hasType(cm, TYPE_INSTANCE)) return null;
+      const owner = cm.metadata?.labels?.[LABEL_OWNER];
+      const agentId = cm.metadata?.labels?.[LABEL_AGENT_REF];
+      if (!owner || !agentId) return null;
+      return { owner, agentId };
     },
 
     async patchAnnotation(id, key, value) {

@@ -12,6 +12,7 @@ function toView(agent: Agent) {
     image: agent.spec.image,
     description: agent.spec.description,
     env: agent.spec.env,
+    egressPreset: agent.spec.egressPreset ?? null,
   };
 }
 
@@ -41,6 +42,7 @@ export const agentsRouter = t.router({
       image: z.string().optional(),
       description: z.string().optional(),
       env: z.array(envVarSchema).max(64).optional(),
+      egressPreset: z.enum(["none", "trusted", "all"]).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       if (!input.templateId && !input.image) {
@@ -56,6 +58,7 @@ export const agentsRouter = t.router({
       name: z.string().min(1).max(255).optional(),
       description: z.string().optional(),
       env: z.array(envVarSchema).max(64).optional(),
+      egressPreset: z.enum(["none", "trusted", "all"]).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const agent = await ctx.agents.update(input);

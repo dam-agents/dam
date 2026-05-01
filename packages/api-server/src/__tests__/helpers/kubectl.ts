@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import * as k8s from "@kubernetes/client-node";
 import yaml from "js-yaml";
 
@@ -329,6 +330,46 @@ export async function describeConfigMap(
   } catch (e) {
     return `describeConfigMap(${name}): ${e instanceof Error ? e.message : e}`;
   }
+}
+
+/**
+ * Run a command inside a pod's container. Returns stdout/stderr/exit code.
+ * Doesn't throw on non-zero — callers commonly *expect* a non-zero exit
+ * (e.g. curl 28 on a held-then-timed-out request).
+ */
+export interface ExecResult {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}
+
+export function execInPod(
+  podName: string,
+  container: string,
+  command: readonly string[],
+  opts: { timeoutMs?: number; namespace?: string } = {},
+): ExecResult {
+  const namespace = opts.namespace ?? NAMESPACE;
+  const result = spawnSync(
+    "kubectl",
+    [
+      "--kubeconfig", KUBECONFIG,
+      "exec",
+      "-n", namespace,
+      podName,
+      "-c", container,
+      "--",
+      ...command,
+    ],
+    { encoding: "utf8", timeout: opts.timeoutMs ?? 30_000 },
+  );
+  return {
+    // spawnSync returns null for status when killed by signal (incl. timeout);
+    // surface that as a distinct non-zero so callers can branch.
+    exitCode: result.status ?? -1,
+    stdout: result.stdout ?? "",
+    stderr: result.stderr ?? "",
+  };
 }
 
 export async function dumpPodLogs(

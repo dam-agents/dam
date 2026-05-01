@@ -1,6 +1,8 @@
 import type { AgentsService } from "./modules/agents/types.js";
+import type { ApprovalsService } from "./modules/approvals/types.js";
 import type { ChannelsService } from "./modules/channels/types.js";
 import type { ConnectionsService } from "./modules/connections/types.js";
+import type { EgressRulesService } from "./modules/egress-rules/types.js";
 import type { InstancesService } from "./modules/instances/types.js";
 import type { SchedulesService } from "./modules/schedules/types.js";
 import type { SecretsService } from "./modules/secrets/types.js";
@@ -23,5 +25,7 @@ export interface ApiContext {
   channels: ChannelsService;
   connections: ConnectionsService;
   skills: SkillsService;
+  approvals: ApprovalsService;
+  egressRules: EgressRulesService;
   user: UserIdentity;
 }
