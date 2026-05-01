@@ -52,6 +52,27 @@ describe("buildForkConfigMap", () => {
     const body = yaml.load(cm.data!["spec.yaml"]) as Record<string, unknown>;
     expect(body).not.toHaveProperty("sessionId");
   });
+
+  // Envoy path (ADR-033): the api-server skips the OneCLI mint, so the
+  // ConfigMap must omit `accessToken` and `forkAgentIdentifier`. The
+  // controller resolves credentials from foreignSub-labeled K8s Secrets at
+  // render time.
+  it("omits accessToken and forkAgentIdentifier on the Envoy path", () => {
+    const envoySpec: ForkSpec = {
+      instanceId: "inst-abc",
+      foreignSub: toForeignSub("kc|user-42"),
+      forkAgentIdentifier: "",
+    };
+    const cm = buildForkConfigMap({ forkId: "fork-1", spec: envoySpec });
+    const body = yaml.load(cm.data!["spec.yaml"]) as Record<string, unknown>;
+    expect(body).toEqual({
+      version: "humr.ai/v1",
+      instance: "inst-abc",
+      foreignSub: "kc|user-42",
+    });
+    expect(body).not.toHaveProperty("accessToken");
+    expect(body).not.toHaveProperty("forkAgentIdentifier");
+  });
 });
 
 describe("parseForkStatus", () => {

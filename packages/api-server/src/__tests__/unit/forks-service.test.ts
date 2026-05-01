@@ -209,6 +209,74 @@ describe("ForksService.openFork", () => {
   });
 });
 
+describe("ForksService.openFork — Envoy path (experimentalCredentialInjector=true)", () => {
+  it("skips the foreign-credentials mint and creates the fork without an accessToken", async () => {
+    let mintCalls = 0;
+    const orchestratorCalls: Array<{ forkId: string; accessToken?: string; forkAgentIdentifier: string }> = [];
+    const h = makeHarness({
+      foreignCredentials: {
+        mintForeignToken: async () => {
+          mintCalls++;
+          return ok({ accessToken: "should-not-be-used", agentIdentifier: "should-not-be-used" });
+        },
+      },
+      orchestrator: {
+        createFork: async ({ forkId, spec, accessToken }) => {
+          orchestratorCalls.push({ forkId, accessToken, forkAgentIdentifier: spec.forkAgentIdentifier });
+          return ok(undefined);
+        },
+      },
+    });
+
+    await h.service.openFork({
+      instanceId: "inst-1",
+      foreignSub: "kc|user-42",
+      replyId: "reply-1",
+      experimentalCredentialInjector: true,
+    });
+    h.statusStream("fork-1", [{ phase: "Ready", podIP: "10.0.0.7" }]);
+    await h.streamDone();
+
+    expect(mintCalls).toBe(0);
+    expect(orchestratorCalls).toEqual([
+      { forkId: "fork-1", accessToken: undefined, forkAgentIdentifier: "" },
+    ]);
+    expect(h.events).toEqual([
+      {
+        type: EventType.ForkReady,
+        forkId: "fork-1",
+        replyId: "reply-1",
+        podIP: "10.0.0.7",
+      },
+    ]);
+  });
+
+  it("emits ForkFailed(OrchestrationFailed) when the controller can't write the ConfigMap", async () => {
+    const h = makeHarness({
+      orchestrator: {
+        createFork: async () => err({ kind: "WriteFailed", detail: "apiserver 503" }),
+      },
+    });
+
+    await h.service.openFork({
+      instanceId: "inst-1",
+      foreignSub: "kc|user-42",
+      replyId: "reply-1",
+      experimentalCredentialInjector: true,
+    });
+
+    expect(h.events).toEqual([
+      {
+        type: EventType.ForkFailed,
+        forkId: "fork-1",
+        replyId: "reply-1",
+        reason: "OrchestrationFailed",
+        detail: "apiserver 503",
+      },
+    ]);
+  });
+});
+
 describe("ForksService.closeFork", () => {
   it("deletes the K8s fork and emits ForkCompleted after a Ready fork", async () => {
     const h = makeHarness({});

@@ -23,10 +23,16 @@ export type OrchestratorCreateError =
   | { kind: "AlreadyExists" };
 
 export interface ForkOrchestratorPort {
+  /**
+   * Write the fork ConfigMap. `accessToken` is omitted on the Envoy path
+   * (ADR-033): the controller resolves the replier's K8s credential
+   * Secrets at render time using `spec.foreignSub`, so no minted OneCLI
+   * token is needed in `spec.yaml`.
+   */
   createFork(args: {
     forkId: string;
     spec: ForkSpec;
-    accessToken: string;
+    accessToken?: string;
   }): Promise<Result<void, OrchestratorCreateError>>;
 
   watchStatus(forkId: string): AsyncIterable<ForkStatus>;

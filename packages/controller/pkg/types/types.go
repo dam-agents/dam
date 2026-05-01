@@ -129,12 +129,20 @@ type ScheduleStatus struct {
 // --- Fork ---
 
 type ForkSpec struct {
-	Version             string `yaml:"version"`
-	Instance            string `yaml:"instance"`
-	ForeignSub          string `yaml:"foreignSub"`
-	ForkAgentIdentifier string `yaml:"forkAgentIdentifier"`
+	Version    string `yaml:"version"`
+	Instance   string `yaml:"instance"`
+	ForeignSub string `yaml:"foreignSub"`
+	// ForkAgentIdentifier and AccessToken are populated only when the parent
+	// instance does **not** have `experimentalCredentialInjector` set —
+	// they are the OneCLI fork-agent registration that the api-server mints
+	// per (instance, foreignSub) on the legacy ADR-027 path. On the Envoy
+	// sidecar path (ADR-033) the fork's outbound identity is derived
+	// entirely from `ForeignSub` at render time (the controller mounts the
+	// replier's K8s credential Secrets into the sidecar) and these fields
+	// are left empty. They go away with OneCLI itself (#339).
+	ForkAgentIdentifier string `yaml:"forkAgentIdentifier,omitempty"`
 	SessionID           string `yaml:"sessionId,omitempty"`
-	AccessToken         string `yaml:"accessToken"`
+	AccessToken         string `yaml:"accessToken,omitempty"`
 }
 
 type ForkError struct {
@@ -219,11 +227,13 @@ func ParseForkSpec(data string) (*ForkSpec, error) {
 	if spec.ForeignSub == "" {
 		return nil, fmt.Errorf("fork spec: foreignSub is required")
 	}
-	if spec.AccessToken == "" {
-		return nil, fmt.Errorf("fork spec: accessToken is required")
-	}
-	if spec.ForkAgentIdentifier == "" {
-		return nil, fmt.Errorf("fork spec: forkAgentIdentifier is required")
+	// AccessToken / ForkAgentIdentifier are optional — required together
+	// only on the legacy ADR-027 (OneCLI) path; the Envoy path (ADR-033)
+	// renders the fork without either. The controller branches at render
+	// time on the parent instance's `experimentalCredentialInjector` flag
+	// and validates accordingly.
+	if (spec.AccessToken == "") != (spec.ForkAgentIdentifier == "") {
+		return nil, fmt.Errorf("fork spec: accessToken and forkAgentIdentifier must be set together (or both omitted on the Envoy path)")
 	}
 	return &spec, nil
 }

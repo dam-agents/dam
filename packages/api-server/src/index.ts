@@ -78,7 +78,21 @@ const { forks } = composeForksModule({
   orchestrator: createK8sForkOrchestrator({ api, namespace: config.namespace }),
 });
 
-const onForeignReplySub = startOnForeignReplySaga(forks);
+// Resolves the parent instance's `experimentalCredentialInjector` flag at
+// fork time. Failure → false: we fall back to the legacy OneCLI path rather
+// than blocking the fork on a transient K8s read error. See ADR-033.
+const onForeignReplySub = startOnForeignReplySaga(
+  forks,
+  async (instanceId) => {
+    try {
+      const inst = await instancesRepo.get(instanceId);
+      return inst?.experimentalCredentialInjector ?? false;
+    } catch (err) {
+      process.stderr.write(`[forks/on-foreign-reply] flag-lookup ${instanceId}: ${err}\n`);
+      return false;
+    }
+  },
+);
 const onSlackTurnRelayedSub = startOnSlackTurnRelayedSaga(forks);
 
 const userDirectory = createKeycloakUserDirectory({

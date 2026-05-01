@@ -6,10 +6,14 @@ import (
 	"log/slog"
 	"time"
 
+	cmv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
 	"gopkg.in/yaml.v3"
@@ -23,6 +27,7 @@ const ForkPodReadyTimeout = 120 * time.Second
 
 type ForkReconciler struct {
 	client   kubernetes.Interface
+	dynamic  dynamic.Interface // optional; required only on the experimental Envoy path
 	config   *config.Config
 	resolver *AgentResolver
 	factory  onecli.Factory
@@ -31,6 +36,15 @@ type ForkReconciler struct {
 
 func NewForkReconciler(client kubernetes.Interface, cfg *config.Config, resolver *AgentResolver, factory onecli.Factory) *ForkReconciler {
 	return &ForkReconciler{client: client, config: cfg, resolver: resolver, factory: factory, now: time.Now}
+}
+
+// WithDynamicClient supplies a dynamic client used to apply the cert-manager
+// Certificate that backs the per-fork Envoy leaf TLS Secret. Must be set when
+// the controller will reconcile flag-on parents; the OneCLI path doesn't need
+// it. Mirrors `InstanceReconciler.WithDynamicClient`.
+func (r *ForkReconciler) WithDynamicClient(d dynamic.Interface) *ForkReconciler {
+	r.dynamic = d
+	return r
 }
 
 func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) error {
@@ -72,9 +86,51 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, err.Error())
 	}
 
-	connectorEnvs := r.collectForeignConnectorEnvs(ctx, forkSpec.ForkAgentIdentifier, forkSpec.ForeignSub)
+	// Connector envs come from OneCLI's per-agent grant list. On the legacy
+	// path the api-server has minted a fork-agent under foreignSub and the
+	// identifier is in the spec; on the Envoy path no fork-agent exists,
+	// so envMappings (e.g. GH_TOKEN=humr:sentinel) are not surfaced — Envoy
+	// handles the wire-level injection regardless. Once #339 removes
+	// OneCLI, env-var derivation will move to K8s Secret labels.
+	var connectorEnvs []corev1.EnvVar
+	if !instanceSpec.ExperimentalCredentialInjector {
+		connectorEnvs = r.collectForeignConnectorEnvs(ctx, forkSpec.ForkAgentIdentifier, forkSpec.ForeignSub)
+	}
 
-	desired := BuildForkJob(forkName, forkSpec, instanceSpec, agentSpec, r.config, cm, connectorEnvs)
+	// Envoy path: load the replier's K8s credential Secrets and render the
+	// per-fork bootstrap ConfigMap + leaf certificate. Crucially, secrets
+	// are scoped to `foreignSub` — the parent owner's secrets must NOT
+	// appear here (ADR-033 §"Fork-Job pods follow the replier"). The
+	// per-fork bootstrap/leaf names are derived from `forkName`, so the
+	// resources are owned by the fork ConfigMap and GC'd with it.
+	var credentialSecrets []corev1.Secret
+	if instanceSpec.ExperimentalCredentialInjector {
+		secrets, err := listOwnerCredentialSecrets(ctx, r.client, r.config.Namespace, forkSpec.ForeignSub)
+		if err != nil {
+			return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("listing replier credential secrets: %v", err))
+		}
+		credentialSecrets = secrets
+
+		if !hasGitHubCredential(credentialSecrets) {
+			slog.Warn("fork on Envoy path: replier has no GitHub credential Secret; gh/octokit calls will be unauthenticated",
+				"fork", forkName, "foreignSub", forkSpec.ForeignSub)
+		}
+
+		bootstrapCM, err := BuildEnvoyBootstrapConfigMap(forkName, r.config, cm, credentialSecrets)
+		if err != nil {
+			return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("rendering envoy bootstrap: %v", err))
+		}
+		if err := r.applyConfigMap(ctx, bootstrapCM); err != nil {
+			return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying envoy bootstrap: %v", err))
+		}
+		if cert := BuildEnvoyLeafCertificate(forkName, r.config, cm, credentialSecrets); cert != nil {
+			if err := r.applyCertificate(ctx, cert); err != nil {
+				return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying envoy leaf certificate: %v", err))
+			}
+		}
+	}
+
+	desired := BuildForkJob(forkName, forkSpec, instanceSpec, agentSpec, r.config, cm, connectorEnvs, credentialSecrets)
 
 	if err := r.applyForkJob(ctx, desired); err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying job: %v", err))
@@ -203,4 +259,54 @@ func jobFailureReason(job *batchv1.Job) string {
 		}
 	}
 	return "job failed"
+}
+
+// applyConfigMap mirrors `InstanceReconciler.applyConfigMap` for fork-scoped
+// ConfigMaps (Envoy bootstrap). Owner references on `desired` cause the CM to
+// be GC'd when the fork CM is deleted.
+func (r *ForkReconciler) applyConfigMap(ctx context.Context, desired *corev1.ConfigMap) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		existing, err := r.client.CoreV1().ConfigMaps(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
+		if errors.IsNotFound(err) {
+			_, err = r.client.CoreV1().ConfigMaps(desired.Namespace).Create(ctx, desired, metav1.CreateOptions{})
+			return err
+		}
+		if err != nil {
+			return err
+		}
+		existing.Data = desired.Data
+		existing.OwnerReferences = desired.OwnerReferences
+		existing.Labels = desired.Labels
+		_, err = r.client.CoreV1().ConfigMaps(desired.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
+		return err
+	})
+}
+
+// applyCertificate mirrors `InstanceReconciler.applyCertificate` for fork-scoped
+// cert-manager Certificates (Envoy leaf TLS).
+func (r *ForkReconciler) applyCertificate(ctx context.Context, desired *cmv1.Certificate) error {
+	if r.dynamic == nil {
+		return fmt.Errorf("dynamic client not configured (cert-manager Certificate cannot be applied)")
+	}
+	raw, err := runtime.DefaultUnstructuredConverter.ToUnstructured(desired)
+	if err != nil {
+		return fmt.Errorf("encoding Certificate: %w", err)
+	}
+	desiredU := &unstructured.Unstructured{Object: raw}
+	desiredU.SetAPIVersion(cmv1.SchemeGroupVersion.String())
+	desiredU.SetKind("Certificate")
+	cli := r.dynamic.Resource(certificateGVR).Namespace(desired.Namespace)
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		existing, err := cli.Get(ctx, desired.Name, metav1.GetOptions{})
+		if errors.IsNotFound(err) {
+			_, err = cli.Create(ctx, desiredU, metav1.CreateOptions{})
+			return err
+		}
+		if err != nil {
+			return err
+		}
+		desiredU.SetResourceVersion(existing.GetResourceVersion())
+		_, err = cli.Update(ctx, desiredU, metav1.UpdateOptions{})
+		return err
+	})
 }

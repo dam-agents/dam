@@ -112,7 +112,7 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	agentResolver := reconciler.NewAgentResolver(cmInformer.Lister().ConfigMaps(cfg.Namespace))
 	agentReconciler := reconciler.NewAgentReconciler(client, cfg, onecliFactory)
 	instanceReconciler := reconciler.NewInstanceReconciler(client, cfg, agentResolver, onecliFactory).WithDynamicClient(dynClient)
-	forkReconciler := reconciler.NewForkReconciler(client, cfg, agentResolver, onecliFactory)
+	forkReconciler := reconciler.NewForkReconciler(client, cfg, agentResolver, onecliFactory).WithDynamicClient(dynClient)
 
 	sched := scheduler.New(client, cfg).WithRESTConfig(restCfg)
 	sched.Start()

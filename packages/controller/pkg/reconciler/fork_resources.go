@@ -21,6 +21,22 @@ const (
 
 // BuildForkJob constructs the per-turn foreign-user fork pod.
 //
+// Two paths share this renderer, switched by the parent instance's
+// `experimentalCredentialInjector` flag:
+//
+//   - **OneCLI path** (flag-off): `forkSpec.AccessToken` rides in
+//     `ONECLI_ACCESS_TOKEN`; `HTTPS_PROXY` points at the OneCLI gateway;
+//     credential injection happens in the cross-namespace MITM. Mirrors
+//     the long-lived StatefulSet's flag-off shape from `BuildStatefulSet`.
+//
+//   - **Envoy path** (flag-on, ADR-033): `credentialSecrets` are the
+//     replier's `(owner=foreignSub, connection=*)` K8s Secrets — the
+//     instance owner's Secrets must NOT appear here; the credential
+//     boundary is the container, and the agent never sees Secret bytes.
+//     `HTTPS_PROXY` points at the colocated `envoy` sidecar on
+//     `127.0.0.1`; `ONECLI_ACCESS_TOKEN` is dropped; SA-token automount
+//     and process-namespace sharing are disabled.
+//
 // Forks deliberately do NOT receive `HUMR_POD_FILES_EVENTS_URL`, so the
 // agent-runtime running in the fork pod skips the pod-files SSE loop
 // entirely. Forks are short-lived ACP-relay jobs spawned per turn; the
@@ -38,6 +54,7 @@ func BuildForkJob(
 	cfg *config.Config,
 	ownerCM *corev1.ConfigMap,
 	connectorEnvs []corev1.EnvVar,
+	credentialSecrets []corev1.Secret,
 ) *batchv1.Job {
 	labels := map[string]string{
 		ForkLabelType:        ForkJobLabelType,
@@ -45,29 +62,41 @@ func BuildForkJob(
 		ForkLabelInstanceRef: forkSpec.Instance,
 	}
 
-	proxyAddr := fmt.Sprintf("http://x:$(ONECLI_ACCESS_TOKEN)@%s:%d", cfg.GatewayFQDN(), cfg.GatewayPort)
 	caCertPath := "/etc/humr/ca/ca.crt"
 
-	env := []corev1.EnvVar{
-		{Name: "ONECLI_ACCESS_TOKEN", Value: forkSpec.AccessToken},
-		{Name: "HTTPS_PROXY", Value: proxyAddr},
-		{Name: "HTTP_PROXY", Value: proxyAddr},
-		{Name: "https_proxy", Value: proxyAddr},
-		{Name: "http_proxy", Value: proxyAddr},
-		{Name: "NO_PROXY", Value: cfg.APIServerHost},
-		{Name: "no_proxy", Value: cfg.APIServerHost},
-		{Name: "SSL_CERT_FILE", Value: caCertPath},
-		{Name: "NODE_EXTRA_CA_CERTS", Value: caCertPath},
-		{Name: "GIT_SSL_CAINFO", Value: caCertPath},
-		{Name: "NODE_USE_ENV_PROXY", Value: "1"},
-		{Name: "GIT_HTTP_PROXY_AUTHMETHOD", Value: "basic"},
-		{Name: "ADK_INSTANCE_ID", Value: forkSpec.Instance},
-		{Name: "API_SERVER_URL", Value: cfg.APIServerURL()},
-		{Name: "HOME", Value: cfg.AgentHome},
-		{Name: "HUMR_MCP_URL", Value: fmt.Sprintf("%s/api/instances/%s/mcp", cfg.HarnessServerURL, forkSpec.Instance)},
-		{Name: "HUMR_FORK_ID", Value: forkName},
-		{Name: "HUMR_FOREIGN_SUB", Value: forkSpec.ForeignSub},
+	var proxyAddr string
+	if instanceSpec.ExperimentalCredentialInjector {
+		proxyAddr = fmt.Sprintf("http://127.0.0.1:%d", cfg.EnvoyPort)
+	} else {
+		proxyAddr = fmt.Sprintf("http://x:$(ONECLI_ACCESS_TOKEN)@%s:%d", cfg.GatewayFQDN(), cfg.GatewayPort)
 	}
+
+	env := []corev1.EnvVar{}
+	if !instanceSpec.ExperimentalCredentialInjector {
+		// Inlined directly from the fork spec (minted by api-server). On the
+		// Envoy path the sidecar reads creds from disk; the agent has no
+		// proxy credential at all.
+		env = append(env, corev1.EnvVar{Name: "ONECLI_ACCESS_TOKEN", Value: forkSpec.AccessToken})
+	}
+	env = append(env,
+		corev1.EnvVar{Name: "HTTPS_PROXY", Value: proxyAddr},
+		corev1.EnvVar{Name: "HTTP_PROXY", Value: proxyAddr},
+		corev1.EnvVar{Name: "https_proxy", Value: proxyAddr},
+		corev1.EnvVar{Name: "http_proxy", Value: proxyAddr},
+		corev1.EnvVar{Name: "NO_PROXY", Value: cfg.APIServerHost},
+		corev1.EnvVar{Name: "no_proxy", Value: cfg.APIServerHost},
+		corev1.EnvVar{Name: "SSL_CERT_FILE", Value: caCertPath},
+		corev1.EnvVar{Name: "NODE_EXTRA_CA_CERTS", Value: caCertPath},
+		corev1.EnvVar{Name: "GIT_SSL_CAINFO", Value: caCertPath},
+		corev1.EnvVar{Name: "NODE_USE_ENV_PROXY", Value: "1"},
+		corev1.EnvVar{Name: "GIT_HTTP_PROXY_AUTHMETHOD", Value: "basic"},
+		corev1.EnvVar{Name: "ADK_INSTANCE_ID", Value: forkSpec.Instance},
+		corev1.EnvVar{Name: "API_SERVER_URL", Value: cfg.APIServerURL()},
+		corev1.EnvVar{Name: "HOME", Value: cfg.AgentHome},
+		corev1.EnvVar{Name: "HUMR_MCP_URL", Value: fmt.Sprintf("%s/api/instances/%s/mcp", cfg.HarnessServerURL, forkSpec.Instance)},
+		corev1.EnvVar{Name: "HUMR_FORK_ID", Value: forkName},
+		corev1.EnvVar{Name: "HUMR_FOREIGN_SUB", Value: forkSpec.ForeignSub},
+	)
 	env = append(env, connectorEnvs...)
 	for _, e := range agentSpec.Env {
 		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
@@ -111,10 +140,25 @@ func BuildForkJob(
 		}
 	}
 
-	volumes = append(volumes, corev1.Volume{
-		Name:         "ca-cert",
-		VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
-	})
+	// CA cert volume — mirrors `BuildStatefulSet`. On the Envoy path the
+	// `ca.crt` is projected from the per-fork leaf Secret; on the OneCLI
+	// path it's an emptyDir populated by the fetch-ca-cert init container.
+	if instanceSpec.ExperimentalCredentialInjector && len(credentialSecrets) > 0 {
+		volumes = append(volumes, corev1.Volume{
+			Name: "ca-cert",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: EnvoyLeafSecretName(forkName),
+					Items: []corev1.KeyToPath{{Key: "ca.crt", Path: "ca.crt"}},
+				},
+			},
+		})
+	} else {
+		volumes = append(volumes, corev1.Volume{
+			Name:         "ca-cert",
+			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+		})
+	}
 	volumeMounts = append(volumeMounts, corev1.VolumeMount{
 		Name: "ca-cert", MountPath: "/etc/humr/ca", ReadOnly: true,
 	})
@@ -127,19 +171,24 @@ func BuildForkJob(
 		resourceReqs.Limits = toResourceList(agentSpec.Resources.Limits)
 	}
 
-	caCertScript := fmt.Sprintf(
-		`until wget -qO /etc/humr/ca/ca.crt "%s/api/gateway/ca" 2>/dev/null; do sleep 2; done`,
-		cfg.WebURL())
-
-	initContainers := []corev1.Container{{
-		Name:            "fetch-ca-cert",
-		Image:           cfg.CACertInitImage,
-		ImagePullPolicy: corev1.PullIfNotPresent,
-		Command:         []string{"sh", "-c", caCertScript},
-		VolumeMounts: []corev1.VolumeMount{{
-			Name: "ca-cert", MountPath: "/etc/humr/ca",
-		}},
-	}}
+	// Init containers: fetch-ca-cert is OneCLI-only — Envoy-path forks get
+	// the CA from the projected leaf Secret. Optional user-defined init
+	// container runs on either path.
+	var initContainers []corev1.Container
+	if !instanceSpec.ExperimentalCredentialInjector {
+		caCertScript := fmt.Sprintf(
+			`until wget -qO /etc/humr/ca/ca.crt "%s/api/gateway/ca" 2>/dev/null; do sleep 2; done`,
+			cfg.WebURL())
+		initContainers = append(initContainers, corev1.Container{
+			Name:            "fetch-ca-cert",
+			Image:           cfg.CACertInitImage,
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command:         []string{"sh", "-c", caCertScript},
+			VolumeMounts: []corev1.VolumeMount{{
+				Name: "ca-cert", MountPath: "/etc/humr/ca",
+			}},
+		})
+	}
 	if agentSpec.Init != "" {
 		initContainers = append(initContainers, corev1.Container{
 			Name:            "init",
@@ -160,6 +209,60 @@ func BuildForkJob(
 		podSec = &corev1.PodSecurityContext{
 			RunAsNonRoot: agentSpec.SecurityContext.RunAsNonRoot,
 		}
+	}
+
+	containers := []corev1.Container{{
+		Name:            "agent",
+		Image:           agentSpec.Image,
+		ImagePullPolicy: corev1.PullPolicy(cfg.AgentImagePullPolicy),
+		Ports: []corev1.ContainerPort{{
+			Name: "acp", ContainerPort: 8080,
+		}},
+		Env:     env,
+		EnvFrom: envFrom,
+		ReadinessProbe: &corev1.Probe{
+			ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
+			PeriodSeconds: 1,
+		},
+		LivenessProbe: &corev1.Probe{
+			ProbeHandler:        corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
+			InitialDelaySeconds: 10,
+			PeriodSeconds:       10,
+		},
+		SecurityContext: &corev1.SecurityContext{
+			Capabilities: &corev1.Capabilities{
+				Drop: []corev1.Capability{"ALL"},
+			},
+		},
+		Resources:    resourceReqs,
+		VolumeMounts: volumeMounts,
+	}}
+
+	var automountSAToken *bool
+	var shareProcessNS *bool
+	if instanceSpec.ExperimentalCredentialInjector {
+		// Sidecar only — agent container never sees credential mounts.
+		volumes = append(volumes, envoySidecarVolumes(forkName, credentialSecrets)...)
+		containers = append(containers, envoySidecarContainer(cfg, credentialSecrets))
+		// ADR-033 Threat Model: agent must have no SA token (Secret-read
+		// RBAC would otherwise bypass volume-mount scoping) and process
+		// namespace must not be shared with the sidecar.
+		falseVal := false
+		automountSAToken = &falseVal
+		shareProcessNS = &falseVal
+
+		// GH_TOKEN signal — mirrors `BuildStatefulSet`. The OneCLI sentinel
+		// doesn't apply on the Envoy path, so tooling has no way to know
+		// whether GitHub auth is wired up other than to make a request and
+		// observe a 401. Surface the state explicitly.
+		ghAvail := "false"
+		if hasGitHubCredential(credentialSecrets) {
+			ghAvail = "true"
+		}
+		containers[0].Env = append(containers[0].Env, corev1.EnvVar{
+			Name:  "HUMR_GH_TOKEN_AVAILABLE",
+			Value: ghAvail,
+		})
 	}
 
 	ttl := int32(60)
@@ -185,33 +288,10 @@ func BuildForkJob(
 					ImagePullSecrets:              pullSecrets,
 					SecurityContext:               podSec,
 					InitContainers:                initContainers,
-					Containers: []corev1.Container{{
-						Name:            "agent",
-						Image:           agentSpec.Image,
-						ImagePullPolicy: corev1.PullPolicy(cfg.AgentImagePullPolicy),
-						Ports: []corev1.ContainerPort{{
-							Name: "acp", ContainerPort: 8080,
-						}},
-						Env:     env,
-						EnvFrom: envFrom,
-						ReadinessProbe: &corev1.Probe{
-							ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
-							PeriodSeconds: 1,
-						},
-						LivenessProbe: &corev1.Probe{
-							ProbeHandler:        corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
-							InitialDelaySeconds: 10,
-							PeriodSeconds:       10,
-						},
-						SecurityContext: &corev1.SecurityContext{
-							Capabilities: &corev1.Capabilities{
-								Drop: []corev1.Capability{"ALL"},
-							},
-						},
-						Resources:    resourceReqs,
-						VolumeMounts: volumeMounts,
-					}},
-					Volumes: volumes,
+					AutomountServiceAccountToken:  automountSAToken,
+					ShareProcessNamespace:         shareProcessNS,
+					Containers:                    containers,
+					Volumes:                       volumes,
 				},
 			},
 		},

@@ -32,10 +32,11 @@ async function drain(): Promise<void> {
 describe("on-foreign-reply saga", () => {
   let harness: ReturnType<typeof makeService>;
   let sub: { unsubscribe: () => void };
+  const flagOff = async () => false;
 
   beforeEach(() => {
     harness = makeService();
-    sub = startOnForeignReplySaga(harness.service);
+    sub = startOnForeignReplySaga(harness.service, flagOff);
   });
 
   it("calls openFork with correlation+identity fields from the event", async () => {
@@ -57,6 +58,7 @@ describe("on-foreign-reply saga", () => {
         foreignSub: "kc|user-42",
         replyId: "reply-1",
         sessionId: "sess-7",
+        experimentalCredentialInjector: false,
       },
     ]);
     sub.unsubscribe();
@@ -75,6 +77,28 @@ describe("on-foreign-reply saga", () => {
     await drain();
 
     expect(harness.openCalls[0]).not.toHaveProperty("sessionId");
+    sub.unsubscribe();
+  });
+
+  it("propagates experimentalCredentialInjector=true when the resolver says so", async () => {
+    sub.unsubscribe();
+    sub = startOnForeignReplySaga(harness.service, async () => true);
+
+    emit({
+      type: EventType.ForeignReplyReceived,
+      replyId: "reply-flag",
+      instanceId: "inst-flag",
+      foreignSub: "kc|user-42",
+      threadTs: "1700000000.000300",
+      prompt: "hi",
+      slackContext: { channelId: "C123", userSlackId: "U42" },
+    });
+    await drain();
+
+    expect(harness.openCalls[0]).toMatchObject({
+      instanceId: "inst-flag",
+      experimentalCredentialInjector: true,
+    });
     sub.unsubscribe();
   });
 
@@ -98,7 +122,7 @@ describe("on-foreign-reply saga", () => {
       },
       closeFork: async () => {},
     };
-    const s = startOnForeignReplySaga(failing);
+    const s = startOnForeignReplySaga(failing, flagOff);
 
     expect(() =>
       emit({

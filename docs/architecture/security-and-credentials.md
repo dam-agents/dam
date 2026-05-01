@@ -231,6 +231,19 @@ Two boundaries are deliberately mismatched: the **data** boundary is permissive 
 
 The Foreign Registration cache is **process memory in the api-server, with no TTL** — eviction is manual and the cache is lost on api-server restart. The first fork request after a restart re-mints (idempotent — OneCLI returns the existing fork agent on `409`), so the worst case is a one-impersonation-exchange round-trip on cold path, not a correctness failure. Foreign-Registration tokens are opaque, identical in shape to the per-instance access token, and survive only as long as the agent-fork ConfigMap and its Job — both deleted at turn completion.
 
+### Forks on the experimental Envoy path
+
+When the parent instance has `experimentalCredentialInjector: true`, the fork follows the Envoy sidecar topology from ADR-033 instead of the OneCLI flow above:
+
+- The api-server **does not mint** a OneCLI fork-agent token. The `(instanceId, foreignSub) → accessToken` cache and the RFC 8693 impersonation hop in the Connections module are skipped entirely; `spec.yaml` carries `foreignSub` only — `accessToken` and `forkAgentIdentifier` are omitted.
+- The controller, on reconciling the fork ConfigMap, lists K8s credential `Secret`s labeled `humr.ai/owner=<foreignSub>` (the replier — *not* the parent owner) and renders them into a per-fork Envoy bootstrap ConfigMap and a per-fork cert-manager `Certificate` (leaf TLS for the SAN list of the replier's host patterns). Both resources are owned by the fork ConfigMap and GC'd with it on `ttlSecondsAfterFinished`.
+- The fork pod gets the same Envoy sidecar shape as a flag-on StatefulSet: `HTTPS_PROXY=http://127.0.0.1:<envoyPort>`; no `ONECLI_ACCESS_TOKEN`; agent container has no SA token (`automountServiceAccountToken: false`); pod has no shared process namespace; agent volume mounts do **not** include any credential `Secret` — the boundary lives at the container, not the pod.
+- The credential boundary that ADR-027 establishes is preserved: the fork can read the parent's PVC contents (data boundary, permissive — RWX cross-user mount) but its outbound calls go through Envoy injection driven exclusively by the **replier's** Secrets. The parent owner's Secrets do not appear in the fork's pod spec.
+- `HUMR_GH_TOKEN_AVAILABLE` is set on the fork's agent container based on whether any of the replier's Secrets target a GitHub host, mirroring the parent's flag-on signal so wrapper scripts can detect missing credentials without observing a 401 mid-request.
+- NetworkPolicy is shared with the parent via the `humr.ai/instance` label, so the parent's flag-on egress (TCP 443/80 to `0.0.0.0/0` plus DNS + harness API server) automatically applies to fork pods.
+
+The legacy OneCLI fork path remains the default for instances without the flag and is unaffected by this change. The OneCLI mint goes away entirely once the OneCLI dual-write is removed (issue #339).
+
 ## Threat model
 
 What the agent **cannot** do, structurally:
