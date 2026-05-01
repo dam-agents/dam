@@ -1,7 +1,45 @@
 {
   "attribution": {
-    "commit": "Assisted-By: Claude (Anthropic AI) <noreply@anthropic.com>",
+    "commit": "Assisted-By: Claude (Anthropic AI) \u003cnoreply@anthropic.com\u003e",
     "pr": ""
+  },
+  "enabledPlugins": {
+    "claude-md-management@claude-plugins-official": true,
+    "frontend-design@claude-plugins-official": true,
+    "practical-skills@apoco-plugins": false
+  },
+  "extraKnownMarketplaces": {
+    "apoco-plugins": {
+      "autoUpdate": true,
+      "source": {
+        "repo": "apocohq/claude-plugins",
+        "source": "github"
+      }
+    }
+  },
+  "hooks": {
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "command": "bd prime",
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "bd prime",
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      }
+    ]
   },
   "permissions": {
     "allow": [
@@ -39,19 +77,5 @@
       "Bash(gh run list*)",
       "Bash(gh run view*)"
     ]
-  },
-  "enabledPlugins": {
-    "claude-md-management@claude-plugins-official": true,
-    "frontend-design@claude-plugins-official": true,
-    "practical-skills@apoco-plugins": false
-  },
-  "extraKnownMarketplaces": {
-    "apoco-plugins": {
-      "source": {
-        "source": "github",
-        "repo": "apocohq/claude-plugins"
-      },
-      "autoUpdate": true
-    }
   }
 }
