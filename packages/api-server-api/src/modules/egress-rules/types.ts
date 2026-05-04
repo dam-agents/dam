@@ -56,6 +56,11 @@ export interface UpdateEgressRuleInput {
 
 export interface EgressRulesService {
   listForAgent(agentId: string): Promise<EgressRuleView[]>;
+  /** Returns the agent's effective preset, derived from the `source` of its
+   *  active egress rules: any `preset:all` row → "all"; any `preset:trusted`
+   *  row → "trusted"; otherwise "none". The preset is not stored on the
+   *  agent spec — the rules' own sources are the truth. */
+  currentPreset(agentId: string): Promise<EgressPreset>;
   /** Hosts seeded by the `trusted` preset. Sourced from the helm-mounted
    *  ConfigMap at boot. Exposed so the UI can render a preview of the rules
    *  the trusted preset would produce without having to apply it first. */

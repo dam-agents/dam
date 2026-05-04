@@ -40,6 +40,7 @@ This directory contains ADRs for the Humr project.
 | [032](032-pod-reachability-primitive.md)      | Centralized pod-reachability primitive; observed pod Ready is the truth | @janjeliga |
 | [033](033-envoy-credential-gateway.md)        | Envoy-based credential gateway with ext_authz HITL — drop OneCLI | @pilartomas |
 | [035](035-unified-hitl-ux.md)                 | Unified HITL UX — verdict authority outside the agent pod | @jezekra1 |
+| [036](036-egress-preset-derived-from-rules.md) | Egress preset derived from rule sources, not stored on the agent spec | @jezekra1 |
 
 ## Drafts
 

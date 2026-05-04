@@ -18,10 +18,14 @@ import {
   useOAuthAppConnections,
 } from "../../connections/api/queries.js";
 import {
+  useApplyEgressPreset,
   useCreateEgressRule,
   useRevokeEgressRule,
 } from "../../egress-rules/api/mutations.js";
-import { useEgressRulesForAgent } from "../../egress-rules/api/queries.js";
+import {
+  useCurrentPreset,
+  useEgressRulesForAgent,
+} from "../../egress-rules/api/queries.js";
 import {
   AgentEgressEditor,
   type PendingAdd,
@@ -65,12 +69,14 @@ export function ConfigureAgentDialog({
   const accessQuery = useAgentAccess(agentId);
   const connectionsQuery = useAgentConnections(agentId);
   const { data: egressRules = [] } = useEgressRulesForAgent(agentId);
+  const { data: currentPreset = null } = useCurrentPreset(agentId);
 
   const updateAgent = useUpdateAgent();
   const setAccess = useSetAgentAccess();
   const setConnections = useSetAgentConnections();
   const createRule = useCreateEgressRule();
   const revokeRule = useRevokeEgressRule();
+  const applyPreset = useApplyEgressPreset();
 
   const [tab, setTab] = useState<Tab>("connections");
   // Network access edits, all staged. Save commits the bundle alongside
@@ -277,19 +283,19 @@ export function ConfigureAgentDialog({
           secretIds: values.assigned,
         });
       }
-      // Persist preset alongside other agent-level fields. The server
-      // sweeps preset:* rows and reseeds when it sees a preset change, so
-      // we don't call applyPreset separately — agents.update is the single
-      // commit point for the preset choice.
-      const wantsAgentUpdate =
-        Boolean(dirtyFields.envVars) || Boolean(dirtyFields.name) || stagedPreset !== null;
+      const wantsAgentUpdate = Boolean(dirtyFields.envVars) || Boolean(dirtyFields.name);
       if (wantsAgentUpdate) {
         await updateAgent.mutateAsync({
           id: agentId,
           ...(dirtyFields.envVars ? { env: sanitizeEnvVars(values.envVars) } : {}),
           ...(dirtyFields.name ? { name: values.name.trim() } : {}),
-          ...(stagedPreset !== null ? { egressPreset: stagedPreset } : {}),
         });
+      }
+      // Preset switch is its own mutation. The server sweeps preset:* rows
+      // and inserts the new preset's rows; manual / connection-derived rows
+      // are untouched.
+      if (stagedPreset !== null) {
+        await applyPreset.mutateAsync({ agentId, preset: stagedPreset });
       }
       if (dirtyFields.assignedAppIds) {
         await setConnections.mutateAsync({
@@ -314,7 +320,7 @@ export function ConfigureAgentDialog({
       ) {
         return;
       }
-      // Preset already committed via agents.update above. Now apply
+      // Preset already committed via applyPreset above. Now apply
       // user-driven deletes / adds — these survive a preset reseed because
       // the seeder only touches preset:* rows.
       for (const id of pendingDeletes) {
@@ -350,7 +356,7 @@ export function ConfigureAgentDialog({
   const savedWildcardActive = egressRules.some(
     (r) => r.host === "*" && !pendingDeletes.has(r.id),
   );
-  const effectivePreset = stagedPreset ?? agent.egressPreset ?? null;
+  const effectivePreset = stagedPreset ?? currentPreset;
   const effectivePresetIsAll = effectivePreset === "all";
   const wildcardHostInScope = stagedHasWildcardAdd || savedWildcardActive || effectivePresetIsAll;
 
@@ -445,7 +451,7 @@ export function ConfigureAgentDialog({
           {tab === "egress" && (
             <AgentEgressEditor
               agentId={agentId}
-              currentPreset={agent.egressPreset ?? null}
+              currentPreset={currentPreset}
               staged={{
                 preset: stagedPreset,
                 setPreset: setStagedPreset,

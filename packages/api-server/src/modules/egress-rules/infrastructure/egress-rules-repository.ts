@@ -1,6 +1,6 @@
 import { and, desc, eq, sql, type Db } from "db";
 import { egressRules } from "db";
-import type { EgressRuleSource, RuleVerdict } from "api-server-api";
+import type { EgressPreset, EgressRuleSource, RuleVerdict } from "api-server-api";
 import type { EgressRuleRow } from "../domain/types.js";
 
 export interface EgressRulesRepository {
@@ -28,6 +28,9 @@ export interface EgressRulesRepository {
    *  Manual and connection-derived rows are untouched. Used by `applyPreset`
    *  so switching presets sweeps the previous preset's auto-added rows. */
   revokePresetRowsForAgent(agentId: string): Promise<void>;
+  /** Derives the agent's current preset from active `preset:*` rows. The
+   *  preset is not stored on the spec — its rules' sources are the truth. */
+  getPresetForAgent(agentId: string): Promise<EgressPreset>;
   getById(id: string): Promise<EgressRuleRow | null>;
   insert(row: NewEgressRule): Promise<EgressRuleRow>;
   /** Insert-or-promote variant used by the connection-rules sync. If an
@@ -153,6 +156,22 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
           AND status = 'active'
           AND source LIKE 'preset:%'
       `);
+    },
+
+    async getPresetForAgent(agentId) {
+      // `preset:all` wins over `preset:trusted` if both are somehow present
+      // (transient state during a switch). No preset rows → "none".
+      const rows = await db.execute<{ source: string }>(sql`
+        SELECT DISTINCT source
+        FROM ${egressRules}
+        WHERE agent_id = ${agentId}
+          AND status = 'active'
+          AND source LIKE 'preset:%'
+      `);
+      const sources = (rows as unknown as Array<{ source: string }>).map((r) => r.source);
+      if (sources.includes("preset:all")) return "all";
+      if (sources.includes("preset:trusted")) return "trusted";
+      return "none";
     },
 
     async insert(row) {

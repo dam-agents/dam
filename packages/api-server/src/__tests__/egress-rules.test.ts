@@ -7,7 +7,7 @@ import { execInPod, waitForPodReady } from "./helpers/kubectl.js";
  * End-to-end tests for the network-access enforcement path
  * (ADR-035). Each test exercises the real agent pod's Envoy
  * sidecar and the api-server's ext_authz gate against a host the test
- * fully owns: the agent starts with `egressPreset: "none"` and zero
+ * fully owns: the agent is created with the `none` preset and zero
  * connection-derived rules, so observed allow/deny is unambiguously
  * caused by the rule the test under inspection just wrote (or didn't).
  *
@@ -245,8 +245,7 @@ describe("egress rules: enforcement", () => {
 
   describe("preset switching", () => {
     it("applying `trusted` seeds preset:trusted rows; switching to `none` revokes them", async () => {
-      // Apply via agents.update so we exercise the same path the dialog uses.
-      await client.agents.update.mutate({ id: AGENT_ID, egressPreset: "trusted" });
+      await client.egressRules.applyPreset.mutate({ agentId: AGENT_ID, preset: "trusted" });
 
       const seeded = await client.egressRules.listForAgent.query({ agentId: AGENT_ID });
       expect(seeded.length).toBeGreaterThan(0);
@@ -259,7 +258,7 @@ describe("egress rules: enforcement", () => {
       const apiAnthropic = seeded.find((r) => r.host === "api.anthropic.com");
       expect(apiAnthropic).toBeDefined();
 
-      await client.agents.update.mutate({ id: AGENT_ID, egressPreset: "none" });
+      await client.egressRules.applyPreset.mutate({ agentId: AGENT_ID, preset: "none" });
       const swept = await client.egressRules.listForAgent.query({ agentId: AGENT_ID });
       expect(swept.filter((r) => r.source.startsWith("preset:")).length).toBe(0);
     });
@@ -273,7 +272,7 @@ describe("egress rules: enforcement", () => {
       // one. Without promotion, the connection insert silently no-ops and
       // a later preset switch wipes the host even though the user still
       // has the grant.
-      await client.agents.update.mutate({ id: AGENT_ID, egressPreset: "trusted" });
+      await client.egressRules.applyPreset.mutate({ agentId: AGENT_ID, preset: "trusted" });
       const presetSeeded = await client.egressRules.listForAgent.query({ agentId: AGENT_ID });
       const beforeGrant = presetSeeded.find((r) => r.host === "api.anthropic.com");
       expect(beforeGrant?.source).toBe("preset:trusted");
@@ -295,7 +294,7 @@ describe("egress rules: enforcement", () => {
 
       // Switching the preset off should NOT take down the host — the row
       // is now connection-owned, not preset:*.
-      await client.agents.update.mutate({ id: AGENT_ID, egressPreset: "none" });
+      await client.egressRules.applyPreset.mutate({ agentId: AGENT_ID, preset: "none" });
       const afterSwitch = (await client.egressRules.listForAgent.query({ agentId: AGENT_ID }))
         .find((r) => r.host === "api.anthropic.com");
       expect(afterSwitch?.source).toBe(`connection:${anthropic.id}`);
@@ -317,8 +316,8 @@ describe("egress rules: enforcement", () => {
         verdict: "allow",
       });
 
-      await client.agents.update.mutate({ id: AGENT_ID, egressPreset: "trusted" });
-      await client.agents.update.mutate({ id: AGENT_ID, egressPreset: "none" });
+      await client.egressRules.applyPreset.mutate({ agentId: AGENT_ID, preset: "trusted" });
+      await client.egressRules.applyPreset.mutate({ agentId: AGENT_ID, preset: "none" });
 
       const after = await client.egressRules.listForAgent.query({ agentId: AGENT_ID });
       const stillThere = after.find((r) => r.id === manual.id);

@@ -84,10 +84,7 @@ export function useUpdateAgent() {
   return useMutation({
     ...trpc.agents.update.mutationOptions(),
     meta: {
-      // Include egress rules — agents.update reseeds preset:* rules
-      // server-side when the preset changes, so the editor needs a refresh
-      // to see the new rows.
-      invalidates: [trpc.agents.list.queryKey(), egressRulesKeys.all],
+      invalidates: [trpc.agents.list.queryKey()],
       errorToast: "Failed to update agent",
     },
   });

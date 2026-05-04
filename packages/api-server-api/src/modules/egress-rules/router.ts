@@ -8,6 +8,10 @@ export const egressRulesRouter = t.router({
     .input(z.object({ agentId: z.string().min(1) }))
     .query(({ ctx, input }) => ctx.egressRules.listForAgent(input.agentId)),
 
+  currentPreset: t.procedure
+    .input(z.object({ agentId: z.string().min(1) }))
+    .query(({ ctx, input }) => ctx.egressRules.currentPreset(input.agentId)),
+
   create: t.procedure
     .input(z.object({
       agentId: z.string().min(1),

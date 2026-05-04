@@ -5,6 +5,8 @@ import { platform } from "../../../platform.js";
 export const egressRulesKeys = {
   all: ["egress-rules"] as const,
   forAgent: (agentId: string | null) => [...egressRulesKeys.all, "agent", agentId] as const,
+  currentPreset: (agentId: string | null) =>
+    [...egressRulesKeys.all, "agent", agentId, "preset"] as const,
 };
 
 export function useEgressRulesForAgent(agentId: string | null) {
@@ -14,6 +16,17 @@ export function useEgressRulesForAgent(agentId: string | null) {
       ? () => platform.egressRules.listForAgent.query({ agentId })
       : skipToken,
     meta: { errorToast: "Couldn't load egress rules" },
+  });
+}
+
+/** Derived from active `egress_rules.source` server-side: any `preset:all`
+ *  row → "all"; any `preset:trusted` row → "trusted"; otherwise "none". */
+export function useCurrentPreset(agentId: string | null) {
+  return useQuery({
+    queryKey: egressRulesKeys.currentPreset(agentId),
+    queryFn: agentId
+      ? () => platform.egressRules.currentPreset.query({ agentId })
+      : skipToken,
   });
 }
 

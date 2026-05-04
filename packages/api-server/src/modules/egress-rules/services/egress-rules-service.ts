@@ -56,6 +56,11 @@ export function createEgressRulesService(deps: CreateEgressRulesServiceDeps): Eg
       return rows.map(toView);
     },
 
+    async currentPreset(agentId) {
+      if (!await deps.isAgentOwnedBy(agentId, deps.ownerSub)) return "none";
+      return deps.repo.getPresetForAgent(agentId);
+    },
+
     async trustedHosts() {
       return deps.trustedHosts;
     },

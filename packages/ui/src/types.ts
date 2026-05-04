@@ -99,7 +99,6 @@ export interface AgentView {
   image: string;
   description?: string;
   env?: import("api-server-api").EnvVar[];
-  egressPreset?: import("api-server-api").EgressPreset | null;
 }
 
 export type InstanceState =

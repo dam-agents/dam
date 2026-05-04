@@ -47,19 +47,17 @@ export function createAgentsService(deps: {
     async create(input: CreateAgentInput) {
       let spec: Record<string, unknown>;
       let templateId: string | undefined;
-      const preset = input.egressPreset ?? "trusted";
       if (input.templateId) {
         const tmpl = await deps.readTemplateSpec(input.templateId);
         if (!tmpl || tmpl.isOwned) throw new Error(`Template "${input.templateId}" not found`);
         spec = assembleSpecFromTemplate(input.name, tmpl.spec, {
           description: input.description,
-          egressPreset: preset,
         });
         templateId = input.templateId;
       } else {
         spec = assembleSpecFromImage(
           input.name,
-          { image: input.image, description: input.description, egressPreset: preset },
+          { image: input.image, description: input.description },
           deps.agentHome,
         );
       }
@@ -71,11 +69,12 @@ export function createAgentsService(deps: {
         spec.env = preserveProtectedEnvs(base, [...base, ...input.env]);
       }
       const agent = await deps.repo.create(spec, deps.owner, templateId);
-      // Seed the chosen preset (default `trusted`). `none` is a no-op; the
-      // operator-edited list of trusted hosts is captured at boot, so reseeding
-      // the preset on retry is idempotent against the lookup index.
+      // Bulk-seed the requested preset (default `trusted`). `none` is a
+      // no-op; the trusted host list is captured at boot, so reseeding on
+      // retry is idempotent against the lookup index. The chosen preset is
+      // not stored on the spec — the seeded rows' `source` is the truth.
       if (deps.presetSeeder) {
-        await deps.presetSeeder.seed(agent.id, preset, deps.owner);
+        await deps.presetSeeder.seed(agent.id, input.egressPreset ?? "trusted", deps.owner);
       }
       return agent;
     },
@@ -86,21 +85,10 @@ export function createAgentsService(deps: {
         const current = await deps.repo.get(input.id, deps.owner);
         env = preserveProtectedEnvs(current?.spec.env ?? [], env);
       }
-      // Preset change re-runs the seeder, which sweeps prior preset:* rows
-      // and inserts the new preset's rows. Manual and connection-derived
-      // rules are not touched. Done before the spec patch so a partial
-      // failure leaves the spec in sync with the actual rule set.
-      if (input.egressPreset !== undefined) {
-        const current = await deps.repo.get(input.id, deps.owner);
-        if (current && current.spec.egressPreset !== input.egressPreset && deps.presetSeeder) {
-          await deps.presetSeeder.seed(input.id, input.egressPreset, deps.owner);
-        }
-      }
       return deps.repo.updateSpec(input.id, deps.owner, {
         name: input.name,
         description: input.description,
         env,
-        egressPreset: input.egressPreset,
       });
     },
 
