@@ -30,6 +30,7 @@ import {
   AgentEgressEditor,
   type PendingAdd,
 } from "../../egress-rules/components/agent-egress-editor.js";
+import { useInstancesList } from "../../instances/api/queries.js";
 import { useSecrets } from "../../secrets/api/queries.js";
 import {
   useSetAgentAccess,
@@ -70,6 +71,16 @@ export function ConfigureAgentDialog({
   const connectionsQuery = useAgentConnections(agentId);
   const { data: egressRules = [] } = useEgressRulesForAgent(agentId);
   const { data: currentPreset = null } = useCurrentPreset(agentId);
+
+  // Network-access editor only makes sense on the Envoy path — without
+  // the experimental credential injector, ext_authz isn't in the request
+  // path so egress_rules are inert. Hide the whole tab in that case.
+  const instances = useInstancesList();
+  const instance = useMemo(
+    () => instances.find((i) => i.agentId === agentId) ?? null,
+    [instances, agentId],
+  );
+  const networkTabVisible = !!instance?.experimentalCredentialInjector;
 
   const updateAgent = useUpdateAgent();
   const setAccess = useSetAgentAccess();
@@ -413,12 +424,14 @@ export function ConfigureAgentDialog({
             count={envCount}
             onClick={() => setTab("env")}
           />
-          <TabButton
-            active={tab === "egress"}
-            label="Network access"
-            count={egressRules.length - pendingDeletes.size + pendingAdds.length}
-            onClick={() => setTab("egress")}
-          />
+          {networkTabVisible && (
+            <TabButton
+              active={tab === "egress"}
+              label="Network access"
+              count={egressRules.length - pendingDeletes.size + pendingAdds.length}
+              onClick={() => setTab("egress")}
+            />
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto px-7 py-5 flex flex-col gap-4">
@@ -448,7 +461,7 @@ export function ConfigureAgentDialog({
               )}
             />
           )}
-          {tab === "egress" && (
+          {tab === "egress" && networkTabVisible && (
             <AgentEgressEditor
               agentId={agentId}
               currentPreset={currentPreset}
