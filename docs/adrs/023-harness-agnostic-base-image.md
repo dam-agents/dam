@@ -8,7 +8,7 @@
 
 Humr must support multiple coding-agent harnesses (Claude Code, pi, codex, future Gemini CLI, etc.) without baking a specific one into the platform. Each harness ships as a CLI binary that speaks ACP (Agent Client Protocol) on stdio. The platform's job is to:
 
-1. Run the harness inside a pod with network isolation and OneCLI-injected credentials (ADR-005, ADR-010).
+1. Run the harness inside a pod with network isolation and Envoy-injected credentials (ADR-005, ADR-033).
 2. Receive ACP traffic from the UI (ADR-007) and forward it to a subprocess.
 3. Deliver scheduled triggers via exec (ADR-008).
 4. Persist workspace state on PVC, seeded from the agent image (ADR-001).

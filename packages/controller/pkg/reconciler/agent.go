@@ -2,8 +2,8 @@ package reconciler
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"log/slog"
 
@@ -13,7 +13,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/kagenti/humr/packages/controller/pkg/config"
-	"github.com/kagenti/humr/packages/controller/pkg/onecli"
 	"github.com/kagenti/humr/packages/controller/pkg/types"
 )
 
@@ -48,119 +47,79 @@ func (r *AgentResolver) Resolve(name string) (*corev1.ConfigMap, *types.AgentSpe
 	return cm, spec, nil
 }
 
-// AgentTokenSecretName returns the K8s Secret name that stores the OneCLI access token for an agent.
+// AgentTokenSecretName returns the K8s Secret name that stores the agent-runtime
+// auth token (Bearer for api-server → agent-runtime tRPC).
 func AgentTokenSecretName(agentName string) string {
 	return "humr-agent-" + agentName + "-token"
 }
 
-// AgentReconciler registers agents in OneCLI and stores their access tokens.
+// AgentReconciler ensures the agent-runtime token Secret exists for each agent.
+// The Secret is owned by the agent's ConfigMap so it is GC'd on agent removal.
 type AgentReconciler struct {
-	client  kubernetes.Interface
-	config  *config.Config
-	factory onecli.Factory
+	client kubernetes.Interface
+	config *config.Config
 }
 
-func NewAgentReconciler(client kubernetes.Interface, cfg *config.Config, factory onecli.Factory) *AgentReconciler {
-	return &AgentReconciler{client: client, config: cfg, factory: factory}
+func NewAgentReconciler(client kubernetes.Interface, cfg *config.Config) *AgentReconciler {
+	return &AgentReconciler{client: client, config: cfg}
 }
 
-// Reconcile registers the agent in OneCLI and stores its access token.
-// Secret/MCP assignment is managed from the UI via the OneCLI agent-secrets API.
+// Reconcile ensures the agent-runtime token Secret exists.
 func (r *AgentReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) error {
-	name := cm.Name
-	owner := cm.Labels["humr.ai/owner"]
-	if owner == "" {
-		return fmt.Errorf("agent %q has no humr.ai/owner label", name)
-	}
-
-	oc, err := r.factory.ClientForOwner(ctx, owner)
-	if err != nil {
-		return fmt.Errorf("getting OneCLI client for owner %q: %w", owner, err)
-	}
-
-	var agentSpec *types.AgentSpec
-	if specYAML, ok := cm.Data["spec.yaml"]; ok {
-		agentSpec, err = types.ParseAgentSpec(specYAML)
-		if err != nil {
-			return fmt.Errorf("parsing agent %q: %w", name, err)
-		}
-	}
-
-	// Ensure agent is registered in OneCLI (one-time).
-	if _, err := r.ensureAgent(ctx, cm, name, agentSpec, oc); err != nil {
-		return err
-	}
-
-	return nil
+	return ensureAgentRuntimeTokenSecret(ctx, r.client, r.config.Namespace, cm, cm.Name)
 }
 
-// ensureAgent registers the agent in OneCLI if not already done.
-func (r *AgentReconciler) ensureAgent(ctx context.Context, cm *corev1.ConfigMap, name string, agentSpec *types.AgentSpec, oc onecli.Client) (*onecli.Agent, error) {
-	displayName := name
-	if agentSpec != nil && agentSpec.Name != "" {
-		displayName = agentSpec.Name
-	}
+// Delete is a no-op — the token Secret is GC'd via owner reference when the
+// agent ConfigMap is deleted.
+func (r *AgentReconciler) Delete(_ context.Context, _ string, _ string) {}
 
-	secretName := AgentTokenSecretName(name)
-	if _, err := r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, secretName, metav1.GetOptions{}); err == nil {
-		return nil, nil
+// ensureAgentRuntimeTokenSecret creates the per-agent token Secret on first
+// sight and leaves it alone afterwards. The token authenticates api-server →
+// agent-runtime tRPC calls; rotating it requires deleting the Secret.
+func ensureAgentRuntimeTokenSecret(ctx context.Context, client kubernetes.Interface, namespace string, ownerCM *corev1.ConfigMap, agentName string) error {
+	secretName := AgentTokenSecretName(agentName)
+	if _, err := client.CoreV1().Secrets(namespace).Get(ctx, secretName, metav1.GetOptions{}); err == nil {
+		return nil
 	} else if !errors.IsNotFound(err) {
-		return nil, fmt.Errorf("checking token secret: %w", err)
+		return fmt.Errorf("checking token secret: %w", err)
 	}
 
-	secretMode := "selective"
-	if agentSpec != nil && agentSpec.SecretMode != "" {
-		secretMode = agentSpec.SecretMode
-	}
-
-	agent, err := oc.CreateAgent(ctx, displayName, name, secretMode)
+	token, err := randomToken()
 	if err != nil {
-		return nil, fmt.Errorf("registering agent %q in OneCLI: %w", name, err)
+		return fmt.Errorf("generating token: %w", err)
 	}
-	slog.Info("registered agent in OneCLI", "agent", name, "agentID", agent.ID)
 
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      secretName,
-			Namespace: r.config.Namespace,
+			Namespace: namespace,
 			Labels: map[string]string{
 				"humr.ai/type":  "agent-token",
-				"humr.ai/agent": name,
+				"humr.ai/agent": agentName,
 			},
 			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(cm, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
+				*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
 			},
 		},
 		Type: corev1.SecretTypeOpaque,
 		StringData: map[string]string{
-			"access-token": agent.AccessToken,
+			"access-token": token,
 		},
 	}
-	if _, err := r.client.CoreV1().Secrets(r.config.Namespace).Create(ctx, secret, metav1.CreateOptions{}); err != nil {
-		return nil, fmt.Errorf("creating token secret: %w", err)
+	if _, err := client.CoreV1().Secrets(namespace).Create(ctx, secret, metav1.CreateOptions{}); err != nil {
+		if errors.IsAlreadyExists(err) {
+			return nil
+		}
+		return fmt.Errorf("creating token secret: %w", err)
 	}
-	slog.Info("created agent token secret", "agent", name, "secret", secretName)
-
-	hash := sha256.Sum256([]byte(agent.AccessToken))
-	if err := WriteAgentStatus(ctx, r.client, r.config.Namespace, name, &AgentStatus{
-		AccessTokenHash: hex.EncodeToString(hash[:]),
-	}); err != nil {
-		return nil, fmt.Errorf("writing agent status: %w", err)
-	}
-
-	return agent, nil
+	slog.Info("created agent-runtime token secret", "agent", agentName, "secret", secretName)
+	return nil
 }
 
-// Delete removes the OneCLI agent for the given owner.
-func (r *AgentReconciler) Delete(ctx context.Context, name string, owner string) {
-	if owner == "" {
-		slog.Warn("cannot delete OneCLI agent: no owner", "agent", name)
-		return
+func randomToken() (string, error) {
+	var buf [32]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return "", err
 	}
-	oc, err := r.factory.ClientForOwner(ctx, owner)
-	if err != nil {
-		slog.Error("cannot get OneCLI client for delete", "agent", name, "owner", owner, "error", err)
-		return
-	}
-	oc.DeleteAgent(ctx, name)
+	return base64.RawURLEncoding.EncodeToString(buf[:]), nil
 }

@@ -87,5 +87,5 @@ portForwards:
     ignore: true
 
 message: |
-  k3s is ready. Access services via http://onecli.localhost:4444
+  k3s is ready. Access services via http://humr.localhost:4444
   KUBECONFIG: {{.Dir}}/copied-from-guest/kubeconfig.yaml

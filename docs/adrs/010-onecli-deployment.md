@@ -1,7 +1,7 @@
 # ADR-010: OneCLI deployment — single image, two Services, platform-managed lifecycle
 
 **Date:** 2026-04-02
-**Status:** Accepted
+**Status:** Superseded by [ADR-033](033-envoy-credential-gateway.md)
 **Owner:** @pilartomas
 
 ## Context

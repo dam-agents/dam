@@ -21,8 +21,8 @@ export function createK8sForkOrchestrator(
   const sleep = deps.sleep ?? defaultSleep;
 
   return {
-    async createFork({ forkId, spec, accessToken }) {
-      const body = buildForkConfigMap({ forkId, spec, accessToken });
+    async createFork({ forkId, spec }) {
+      const body = buildForkConfigMap({ forkId, spec });
       try {
         await deps.api.createNamespacedConfigMap({
           namespace: deps.namespace,

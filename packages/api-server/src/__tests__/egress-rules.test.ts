@@ -32,14 +32,9 @@ beforeAll(async () => {
   });
   AGENT_ID = agent.id;
   // The Envoy sidecar (and therefore the entire ext_authz enforcement
-  // path) is opt-in per instance via this flag. Without it the agent's
-  // egress is unproxied — all curl assertions in this file would pass-
-  // through to the real internet and the deny tests would silently
-  // succeed-the-wrong-way.
   const inst = await client.instances.create.mutate({
     name: "egress-test-inst",
     agentId: AGENT_ID,
-    experimentalCredentialInjector: true,
   });
   INSTANCE_ID = inst.id;
   POD_NAME = `${INSTANCE_ID}-0`;

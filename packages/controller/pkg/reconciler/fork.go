@@ -19,7 +19,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/kagenti/humr/packages/controller/pkg/config"
-	"github.com/kagenti/humr/packages/controller/pkg/onecli"
 	"github.com/kagenti/humr/packages/controller/pkg/types"
 )
 
@@ -27,21 +26,18 @@ const ForkPodReadyTimeout = 120 * time.Second
 
 type ForkReconciler struct {
 	client   kubernetes.Interface
-	dynamic  dynamic.Interface // optional; required only on the experimental Envoy path
+	dynamic  dynamic.Interface // required to apply per-fork cert-manager Certificates
 	config   *config.Config
 	resolver *AgentResolver
-	factory  onecli.Factory
 	now      func() time.Time
 }
 
-func NewForkReconciler(client kubernetes.Interface, cfg *config.Config, resolver *AgentResolver, factory onecli.Factory) *ForkReconciler {
-	return &ForkReconciler{client: client, config: cfg, resolver: resolver, factory: factory, now: time.Now}
+func NewForkReconciler(client kubernetes.Interface, cfg *config.Config, resolver *AgentResolver) *ForkReconciler {
+	return &ForkReconciler{client: client, config: cfg, resolver: resolver, now: time.Now}
 }
 
 // WithDynamicClient supplies a dynamic client used to apply the cert-manager
-// Certificate that backs the per-fork Envoy leaf TLS Secret. Must be set when
-// the controller will reconcile flag-on parents; the OneCLI path doesn't need
-// it. Mirrors `InstanceReconciler.WithDynamicClient`.
+// Certificate that backs the per-fork Envoy leaf TLS Secret.
 func (r *ForkReconciler) WithDynamicClient(d dynamic.Interface) *ForkReconciler {
 	r.dynamic = d
 	return r
@@ -86,51 +82,36 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, err.Error())
 	}
 
-	// Connector envs come from OneCLI's per-agent grant list. On the legacy
-	// path the api-server has minted a fork-agent under foreignSub and the
-	// identifier is in the spec; on the Envoy path no fork-agent exists,
-	// so envMappings (e.g. GH_TOKEN=humr:sentinel) are not surfaced — Envoy
-	// handles the wire-level injection regardless. Once #339 removes
-	// OneCLI, env-var derivation will move to K8s Secret labels.
-	var connectorEnvs []corev1.EnvVar
-	if !instanceSpec.ExperimentalCredentialInjector {
-		connectorEnvs = r.collectForeignConnectorEnvs(ctx, forkSpec.ForkAgentIdentifier, forkSpec.ForeignSub)
+	// Load the replier's K8s credential Secrets and render the per-fork
+	// bootstrap ConfigMap + leaf certificate. Secrets are scoped to
+	// `foreignSub` — the parent owner's secrets must NOT appear here
+	// (ADR-033 §"Fork-Job pods follow the replier"). The per-fork
+	// bootstrap/leaf names are derived from `forkName`, so the resources
+	// are owned by the fork ConfigMap and GC'd with it.
+	credentialSecrets, err := listOwnerCredentialSecrets(ctx, r.client, r.config.Namespace, forkSpec.ForeignSub)
+	if err != nil {
+		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("listing replier credential secrets: %v", err))
 	}
 
-	// Envoy path: load the replier's K8s credential Secrets and render the
-	// per-fork bootstrap ConfigMap + leaf certificate. Crucially, secrets
-	// are scoped to `foreignSub` — the parent owner's secrets must NOT
-	// appear here (ADR-033 §"Fork-Job pods follow the replier"). The
-	// per-fork bootstrap/leaf names are derived from `forkName`, so the
-	// resources are owned by the fork ConfigMap and GC'd with it.
-	var credentialSecrets []corev1.Secret
-	if instanceSpec.ExperimentalCredentialInjector {
-		secrets, err := listOwnerCredentialSecrets(ctx, r.client, r.config.Namespace, forkSpec.ForeignSub)
-		if err != nil {
-			return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("listing replier credential secrets: %v", err))
-		}
-		credentialSecrets = secrets
+	if !hasGitHubCredential(credentialSecrets) {
+		slog.Warn("fork: replier has no GitHub credential Secret; gh/octokit calls will be unauthenticated",
+			"fork", forkName, "foreignSub", forkSpec.ForeignSub)
+	}
 
-		if !hasGitHubCredential(credentialSecrets) {
-			slog.Warn("fork on Envoy path: replier has no GitHub credential Secret; gh/octokit calls will be unauthenticated",
-				"fork", forkName, "foreignSub", forkSpec.ForeignSub)
-		}
-
-		bootstrapCM, err := BuildEnvoyBootstrapConfigMap(forkName, r.config, cm, credentialSecrets)
-		if err != nil {
-			return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("rendering envoy bootstrap: %v", err))
-		}
-		if err := r.applyConfigMap(ctx, bootstrapCM); err != nil {
-			return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying envoy bootstrap: %v", err))
-		}
-		if cert := BuildEnvoyLeafCertificate(forkName, r.config, cm, credentialSecrets); cert != nil {
-			if err := r.applyCertificate(ctx, cert); err != nil {
-				return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying envoy leaf certificate: %v", err))
-			}
+	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(forkName, r.config, cm, credentialSecrets)
+	if err != nil {
+		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("rendering envoy bootstrap: %v", err))
+	}
+	if err := r.applyConfigMap(ctx, bootstrapCM); err != nil {
+		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying envoy bootstrap: %v", err))
+	}
+	if cert := BuildEnvoyLeafCertificate(forkName, r.config, cm, credentialSecrets); cert != nil {
+		if err := r.applyCertificate(ctx, cert); err != nil {
+			return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying envoy leaf certificate: %v", err))
 		}
 	}
 
-	desired := BuildForkJob(forkName, forkSpec, instanceSpec, agentSpec, r.config, cm, connectorEnvs, credentialSecrets)
+	desired := BuildForkJob(forkName, forkSpec, instanceSpec, agentSpec, r.config, cm, credentialSecrets)
 
 	if err := r.applyForkJob(ctx, desired); err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying job: %v", err))
@@ -200,23 +181,6 @@ func (r *ForkReconciler) findForkPod(ctx context.Context, forkName string) (*cor
 		}
 	}
 	return nil, nil
-}
-
-func (r *ForkReconciler) collectForeignConnectorEnvs(ctx context.Context, forkAgentIdentifier, foreignSub string) []corev1.EnvVar {
-	if r.factory == nil {
-		return nil
-	}
-	oc, err := r.factory.ClientForOwner(ctx, foreignSub)
-	if err != nil {
-		slog.Warn("could not get OneCLI client for foreign user; skipping connector envs", "forkAgent", forkAgentIdentifier, "sub", foreignSub, "error", err)
-		return nil
-	}
-	secrets, err := oc.ListSecretsForAgent(ctx, forkAgentIdentifier)
-	if err != nil {
-		slog.Warn("could not list secrets for fork agent under foreign user; skipping connector envs", "forkAgent", forkAgentIdentifier, "sub", foreignSub, "error", err)
-		return nil
-	}
-	return envMappingsToEnvVars(secrets)
 }
 
 func readForkPhase(cm *corev1.ConfigMap) string {

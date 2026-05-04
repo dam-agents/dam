@@ -24,7 +24,7 @@ Inbound traffic and outbound traffic take different paths. Inbound is push from 
 
 Two cross-cutting concerns are owned elsewhere and only summarized here:
 
-- **Foreign replier fork.** Slack's two-tier access (channel membership + per-instance allowed users) admits multiple authorized users into one thread. Owner replies relay to the main pod; replies from any other authorized user fork into a per-turn Kubernetes Job whose pod runs under the replier's OneCLI identity ([ADR-027](../adrs/027-slack-user-impersonation.md)). The mint, the Job spec, the RFC 8693 token exchange, and the shared-PVC mechanics are covered on [security-and-credentials](security-and-credentials.md). Channels just see "main pod or fork pod" at the relay step.
+- **Foreign replier fork.** Slack's two-tier access (channel membership + per-instance allowed users) admits multiple authorized users into one thread. Owner replies relay to the main pod; replies from any other authorized user fork into a per-turn Kubernetes Job whose Envoy sidecar mounts the replier's K8s credential Secrets ([ADR-027](../adrs/027-slack-user-impersonation.md)). The Job spec, the foreign-credential selection, and the shared-PVC mechanics are covered on [security-and-credentials](security-and-credentials.md). Channels just see "main pod or fork pod" at the relay step.
 - **Thread-session binding substrate.** The thread-to-session map lives in the sessions DB ([ADR-025](../adrs/025-thread-session.md)); see [persistence](persistence.md) for the storage shape.
 
 ## Topology

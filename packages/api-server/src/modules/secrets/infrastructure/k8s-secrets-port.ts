@@ -81,7 +81,19 @@ export function sdsYamlContent(value: string, valueFormat: string): string {
   ].join("\n");
 }
 
+export interface K8sStoredSecret {
+  id: string;
+  name: string;
+  type: string;
+  hostPattern: string;
+  pathPattern?: string | null;
+  injectionConfig?: InjectionConfig | null;
+  createdAt: string;
+  authMode?: AuthMode;
+}
+
 export interface K8sSecretsPort {
+  listSecrets(): Promise<K8sStoredSecret[]>;
   createSecret(input: {
     id: string;
     name: string;
@@ -127,6 +139,37 @@ function k8sSecretName(id: string): string {
 
 export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSecretsPort {
   return {
+    async listSecrets() {
+      const list = await client.listSecrets(
+        `${LABEL_OWNER}=${ownerSub},${LABEL_MANAGED_BY}=api-server`,
+      );
+      return list
+        .filter((s) => s.metadata?.name?.startsWith(K8S_NAME_PREFIX))
+        .map((s) => {
+          const ann = s.metadata?.annotations ?? {};
+          const labels = s.metadata?.labels ?? {};
+          const id = s.metadata!.name!.slice(K8S_NAME_PREFIX.length);
+          const headerName = ann[ANN_HEADER_NAME];
+          const valueFormat = ann[ANN_VALUE_FORMAT];
+          const injectionConfig: InjectionConfig | undefined =
+            headerName && valueFormat ? { headerName, valueFormat } : undefined;
+          const authMode = ann[ANN_AUTH_MODE] as AuthMode | undefined;
+          const stored: K8sStoredSecret = {
+            id,
+            name: ann["humr.ai/display-name"] ?? id,
+            type: labels[LABEL_SECRET_TYPE] ?? "generic",
+            hostPattern: ann[ANN_HOST_PATTERN] ?? "",
+            createdAt: s.metadata?.creationTimestamp
+              ? new Date(s.metadata.creationTimestamp).toISOString()
+              : new Date().toISOString(),
+          };
+          if (ann[ANN_PATH_PATTERN]) stored.pathPattern = ann[ANN_PATH_PATTERN];
+          if (injectionConfig) stored.injectionConfig = injectionConfig;
+          if (authMode) stored.authMode = authMode;
+          return stored;
+        });
+    },
+
     async createSecret({ id, name, type, value, hostPattern, pathPattern, injectionConfig, authMode }) {
       const secretType = type === "anthropic" ? "anthropic" : "generic";
       const { headerName, valueFormat } = resolveInjection(secretType, authMode, injectionConfig);

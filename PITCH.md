@@ -46,7 +46,7 @@ Here's the mapping to the three problems:
 
 | The problem | DAM's answer |
 |---|---|
-| Credentials and bash | Every pod routes outbound traffic through a MITM proxy (OneCLI). The agent's env has a placeholder token. Real creds get injected at the HTTP layer. Network policy drops everything else. If the agent is compromised, there's nothing to steal. |
+| Credentials and bash | Every pod ships with an Envoy credential-gateway sidecar. Real tokens live in K8s Secrets that are mounted only into the sidecar — never the agent container. Outbound traffic terminates at the sidecar, which injects the credential header on the wire. Network policy drops everything else. If the agent is compromised, there's nothing to steal. |
 | Can't leave your laptop | Cron lives on the platform, not your laptop. Schedules fire as trigger files in `/workspace/.triggers/` — the harness can't tell a cron fire from a human message. Workspace persists on a PVC across hibernation; conversation history comes back on wake. Slack is a first-class channel. |
 | Can't become a product | Every instance is a ConfigMap. Multi-tenant by construction. Harness-agnostic and model-agnostic — anything that speaks ACP works. No CRDs, so no cluster-admin required. |
 
@@ -84,15 +84,13 @@ mise run cluster:install    # k3s in lima, deploys DAM
 export KUBECONFIG="$(mise run cluster:kubeconfig)"
 ```
 
-That booted a local k3s cluster and deployed the whole stack: OneCLI, Keycloak, Postgres, controller, API server, UI, and a default Claude Code template called `claude-code`.
+That booted a local k3s cluster and deployed the whole stack: Keycloak, Postgres, controller, API server, UI, and a default Claude Code template called `claude-code`.
 
 **Log in.** Everything uses `dev` / `dev` for local installs (seeded by `values-local.yaml`). Same login for both UIs.
 
 **Create an instance.** Open `http://dam.localhost:4444`, pick the `claude-code` template, give it a name (e.g. `demo`). In ~20 seconds the pod is ready.
 
-**Drop a credential into OneCLI.** Open `http://onecli.localhost:4444` → Connections → Secrets → Add Secret. Pick **Anthropic**, paste the output of `claude setup-token`. Save.
-
-**Grant the secret to the agent.** OneCLI lists your instance as an agent (DAM's controller provisioned it when you created the instance). Open it, choose **Selective** mode, grant the Anthropic secret, Create Agent.
+**Drop a credential into DAM.** Open `http://dam.localhost:4444` → Connections → Add Secret. Pick **Anthropic**, paste the output of `claude setup-token`. Save.
 
 **Chat.** Open the instance in DAM, type a message. You're done.
 
@@ -107,7 +105,7 @@ mise run cluster:kubectl -- exec -n humr-agents <pod> -- \
   sh -c 'env | grep -iE "anthropic|api_key|token" || echo "no real creds visible"'
 ```
 
-The env has placeholders and a OneCLI access token. No real API keys. Prompt injection can't leak what isn't there.
+The env has only the agent-runtime auth token. No real API keys, no upstream credentials. Prompt injection can't leak what isn't there.
 
 ### 2. The agent can't reach the internet directly
 
@@ -119,11 +117,11 @@ mise run cluster:kubectl -- exec -n humr-agents <pod> -- \
     .on('error',e=>console.log('BLOCKED:',e.code))"
 ```
 
-`BLOCKED`. The NetworkPolicy drops everything except the OneCLI proxy and DNS. Kernel-level, enforced by the CNI — not something the agent can talk its way past.
+`BLOCKED`. The NetworkPolicy forces all 80/443 egress through the in-pod Envoy sidecar and DNS. Kernel-level, enforced by the CNI — not something the agent can talk its way past.
 
-### 3. The only working route is the proxy — and it knows who you are
+### 3. The only working route is the sidecar — and it knows who you are
 
-Put those two together: no credentials, no route out except the proxy. The chat still worked — OneCLI identified the agent, found the right secret, put it on the wire, forwarded. That's the security model. Not "we trust the agent." Structural. [Read the full security model →](docs/strategy/security-model.md)
+Put those two together: no credentials, no route out except the sidecar. The chat still worked — Envoy identified the agent's owner, mounted their credential Secret, injected the header on the wire, forwarded. That's the security model. Not "we trust the agent." Structural. [Read the full security model →](docs/strategy/security-model.md)
 
 ### 4. Pod killed, session restored
 
@@ -149,7 +147,7 @@ mise run cluster:kubectl -- exec -n humr-agents <pod> -- \
     .on('error',e=>console.log('BLOCKED:',e.code))"
 ```
 
-`BLOCKED`. The egress NetworkPolicy allows OneCLI and DNS — nothing else. Another instance, the Kubernetes API, Postgres, Keycloak — all unreachable from agent pods. Per-instance isolation without per-instance configuration.
+`BLOCKED`. The egress NetworkPolicy permits the in-pod Envoy sidecar (which talks to upstreams), the api-server's harness and ext_authz ports, and DNS — nothing else. Another instance, the Kubernetes API, Postgres, Keycloak — all unreachable from agent pods. Per-instance isolation without per-instance configuration.
 
 ## What you build on top
 

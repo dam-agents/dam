@@ -149,12 +149,10 @@ export function ConnectionsView() {
           </div>
         )}
 
-        {/* Legacy OneCLI-managed app connections — read-only until the
-            corresponding migration completes. */}
         {!isPendingAppConnections && !appConnectionsError && appConnections.length > 0 && (
           <>
             <div className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em] mt-6 mb-2">
-              Managed in OneCLI
+              Other connections
             </div>
             <div className="flex flex-col gap-3">
               {appConnections.map((connection, i) => (
@@ -171,7 +169,7 @@ export function ConnectionsView() {
         {!isPendingAppConnections && appConnectionsError && (
           <div className="rounded-xl border-2 border-danger bg-danger-light px-6 py-4 anim-in mt-4">
             <div className="text-[13px] font-semibold text-danger">
-              Couldn't load app connections from OneCLI.
+              Couldn't load app connections.
             </div>
             <div className="text-[11px] font-mono text-danger/80 mt-1 break-all">
               {appConnectionsError.message}

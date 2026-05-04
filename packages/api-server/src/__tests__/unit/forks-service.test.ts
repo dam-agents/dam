@@ -2,10 +2,7 @@ import { describe, it, expect } from "vitest";
 import { EventType, type DomainEvent } from "../../events.js";
 import { createForksService } from "../../modules/forks/services/forks-service.js";
 import type { ForkStatus } from "../../modules/forks/domain/fork.js";
-import type {
-  ForeignCredentialsPort,
-  ForkOrchestratorPort,
-} from "../../modules/forks/infrastructure/ports.js";
+import type { ForkOrchestratorPort } from "../../modules/forks/infrastructure/ports.js";
 import { err, ok } from "../../core/result.js";
 
 type Harness = {
@@ -16,7 +13,6 @@ type Harness = {
 };
 
 function makeHarness(overrides: {
-  foreignCredentials?: Partial<ForeignCredentialsPort>;
   orchestrator?: Partial<ForkOrchestratorPort>;
 }): Harness & {
   service: ReturnType<typeof createForksService>;
@@ -59,12 +55,6 @@ function makeHarness(overrides: {
     return iterable;
   }
 
-  const foreignCredentials: ForeignCredentialsPort = {
-    mintForeignToken: async () =>
-      ok({ accessToken: "fake-token", agentIdentifier: "fork-inst-1-aaaabbbbcccc" }),
-    ...overrides.foreignCredentials,
-  };
-
   const orchestrator: ForkOrchestratorPort = {
     createFork: async ({ forkId }) => {
       calls.createdForks.push(forkId);
@@ -78,7 +68,6 @@ function makeHarness(overrides: {
   };
 
   const service = createForksService({
-    foreignCredentials,
     orchestrator,
     emit: (e) => events.push(e),
     generateForkId: (() => {
@@ -122,31 +111,6 @@ describe("ForksService.openFork", () => {
         forkId: "fork-1",
         replyId: "reply-1",
         podIP: "10.0.0.5",
-      },
-    ]);
-  });
-
-  it("emits ForkFailed(CredentialMintFailed) when the credentials port errors — no fallback", async () => {
-    const h = makeHarness({
-      foreignCredentials: {
-        mintForeignToken: async () =>
-          err({ kind: "TokenExchangeFailed", detail: "401 unauthorized" }),
-      },
-    });
-    await h.service.openFork({
-      instanceId: "inst-1",
-      foreignSub: "kc|user-42",
-      replyId: "reply-1",
-    });
-
-    expect(h.calls.createdForks).toEqual([]);
-    expect(h.events).toEqual([
-      {
-        type: EventType.ForkFailed,
-        forkId: "fork-1",
-        replyId: "reply-1",
-        reason: "CredentialMintFailed",
-        detail: "401 unauthorized",
       },
     ]);
   });
@@ -209,74 +173,6 @@ describe("ForksService.openFork", () => {
   });
 });
 
-describe("ForksService.openFork — Envoy path (experimentalCredentialInjector=true)", () => {
-  it("skips the foreign-credentials mint and creates the fork without an accessToken", async () => {
-    let mintCalls = 0;
-    const orchestratorCalls: Array<{ forkId: string; accessToken?: string; forkAgentIdentifier: string }> = [];
-    const h = makeHarness({
-      foreignCredentials: {
-        mintForeignToken: async () => {
-          mintCalls++;
-          return ok({ accessToken: "should-not-be-used", agentIdentifier: "should-not-be-used" });
-        },
-      },
-      orchestrator: {
-        createFork: async ({ forkId, spec, accessToken }) => {
-          orchestratorCalls.push({ forkId, accessToken, forkAgentIdentifier: spec.forkAgentIdentifier });
-          return ok(undefined);
-        },
-      },
-    });
-
-    await h.service.openFork({
-      instanceId: "inst-1",
-      foreignSub: "kc|user-42",
-      replyId: "reply-1",
-      experimentalCredentialInjector: true,
-    });
-    h.statusStream("fork-1", [{ phase: "Ready", podIP: "10.0.0.7" }]);
-    await h.streamDone();
-
-    expect(mintCalls).toBe(0);
-    expect(orchestratorCalls).toEqual([
-      { forkId: "fork-1", accessToken: undefined, forkAgentIdentifier: "" },
-    ]);
-    expect(h.events).toEqual([
-      {
-        type: EventType.ForkReady,
-        forkId: "fork-1",
-        replyId: "reply-1",
-        podIP: "10.0.0.7",
-      },
-    ]);
-  });
-
-  it("emits ForkFailed(OrchestrationFailed) when the controller can't write the ConfigMap", async () => {
-    const h = makeHarness({
-      orchestrator: {
-        createFork: async () => err({ kind: "WriteFailed", detail: "apiserver 503" }),
-      },
-    });
-
-    await h.service.openFork({
-      instanceId: "inst-1",
-      foreignSub: "kc|user-42",
-      replyId: "reply-1",
-      experimentalCredentialInjector: true,
-    });
-
-    expect(h.events).toEqual([
-      {
-        type: EventType.ForkFailed,
-        forkId: "fork-1",
-        replyId: "reply-1",
-        reason: "OrchestrationFailed",
-        detail: "apiserver 503",
-      },
-    ]);
-  });
-});
-
 describe("ForksService.closeFork", () => {
   it("deletes the K8s fork and emits ForkCompleted after a Ready fork", async () => {
     const h = makeHarness({});
@@ -298,24 +194,6 @@ describe("ForksService.closeFork", () => {
   it("is a no-op for unknown forkIds", async () => {
     const h = makeHarness({});
     await h.service.closeFork("unknown");
-    expect(h.calls.deletedForks).toEqual([]);
-    expect(h.events).toEqual([]);
-  });
-
-  it("does not emit Completed after a fork has Failed (no illegal transition)", async () => {
-    const h = makeHarness({
-      foreignCredentials: {
-        mintForeignToken: async () => err({ kind: "TokenExchangeFailed" }),
-      },
-    });
-    await h.service.openFork({
-      instanceId: "inst-1",
-      foreignSub: "kc|user-42",
-      replyId: "reply-1",
-    });
-    h.events.length = 0;
-
-    await h.service.closeFork("fork-1");
     expect(h.calls.deletedForks).toEqual([]);
     expect(h.events).toEqual([]);
   });

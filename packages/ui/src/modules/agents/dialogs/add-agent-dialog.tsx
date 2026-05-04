@@ -39,7 +39,6 @@ export function AddAgentDialog({
     env?: EnvVar[];
     secretIds?: string[];
     appConnectionIds?: string[];
-    experimentalCredentialInjector?: boolean;
     egressPreset?: EgressPreset;
   }) => void;
   onCancel: () => void;
@@ -67,7 +66,7 @@ export function AddAgentDialog({
   } = useForm<AddAgentValues>({
     resolver: zodResolver(addAgentSchema),
     mode: "onChange",
-    defaultValues: { name: "", description: "", selSecrets: [], selApps: [], experimentalCredentialInjector: false, egressPreset: "trusted" },
+    defaultValues: { name: "", description: "", selSecrets: [], selApps: [], egressPreset: "trusted" },
   });
   const { errors, isSubmitting, isValid } = formState;
 
@@ -167,7 +166,6 @@ export function AddAgentDialog({
       // connection-derived egress rules.
       secretIds: values.selSecrets,
       appConnectionIds: values.selApps.length > 0 ? values.selApps : undefined,
-      experimentalCredentialInjector: values.experimentalCredentialInjector || undefined,
       egressPreset: values.egressPreset,
     });
   });
@@ -307,40 +305,14 @@ export function AddAgentDialog({
               onGoToProviders={onGoToProviders}
             />
 
-            <div className="flex flex-col gap-2">
-              <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">
-                Experimental
-              </span>
-              <label className="flex items-start gap-2 cursor-pointer rounded-lg border-2 border-border-light bg-bg px-4 py-3">
-                <input
-                  type="checkbox"
-                  className="mt-0.5 w-4 h-4 accent-[var(--color-accent)]"
-                  {...register("experimentalCredentialInjector")}
-                />
-                <span className="flex flex-col gap-1">
-                  <span className="text-[13px] font-semibold text-text">Credential injector (Envoy sidecar)</span>
-                  <span className="text-[12px] text-text-muted">
-                    Replaces OneCLI with an Envoy credential gateway for this instance. OAuth-backed services (GitHub, Slack, Google) will not work when enabled. Only secrets created after enabling will be injected. Restart required.
-                  </span>
-                </span>
-              </label>
-            </div>
-
-            {/* Network-access presets only take effect on the Envoy path —
-                ext_authz egress filters are wired into the Envoy sidecar.
-                Without it the rules table is inert, so the radios are
-                disabled until the experimental toggle is on. */}
-            <fieldset
-              disabled={!watch("experimentalCredentialInjector")}
-              className="flex flex-col gap-2 disabled:opacity-50"
-            >
+            <fieldset className="flex flex-col gap-2">
               <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">
                 Network access
               </span>
               <p className="text-[12px] text-text-muted">
-                {watch("experimentalCredentialInjector")
-                  ? "Initial set of hosts the agent can reach. Anything not covered surfaces in the inbox; you can change this later from the agent's Network access tab."
-                  : "Requires the experimental credential injector. Enable it above to configure egress rules."}
+                Initial set of hosts the agent can reach. Anything not covered
+                surfaces in the inbox; you can change this later from the
+                agent's Network access tab.
               </p>
               <div className="flex flex-col gap-1.5">
                 <label className="flex items-start gap-2 cursor-pointer rounded-lg border-2 border-border-light bg-bg px-4 py-2.5">

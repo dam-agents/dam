@@ -14,7 +14,7 @@ import (
 	"github.com/kagenti/humr/packages/controller/pkg/types"
 )
 
-func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *types.AgentSpec, cfg *config.Config, agentName string, ownerCM *corev1.ConfigMap, connectorEnvs []corev1.EnvVar, credentialSecrets []corev1.Secret) *appsv1.StatefulSet {
+func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *types.AgentSpec, cfg *config.Config, agentName string, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret) *appsv1.StatefulSet {
 	replicas := int32(1)
 	if instance.DesiredState == "hibernated" {
 		replicas = 0
@@ -23,30 +23,15 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 	labels := map[string]string{"humr.ai/instance": name}
 	caCertPath := "/etc/humr/ca/ca.crt"
 
-	// Egress proxy address: OneCLI gateway by default, Envoy sidecar on
-	// localhost when the experimental credential injector is enabled.
-	var proxyAddr string
-	if instance.ExperimentalCredentialInjector {
-		proxyAddr = fmt.Sprintf("http://127.0.0.1:%d", cfg.EnvoyPort)
-	} else {
-		// $(ONECLI_ACCESS_TOKEN) is interpolated by K8s at pod start from the
-		// agent token Secret. OneCLI accepts the token as the password.
-		proxyAddr = fmt.Sprintf("http://x:$(ONECLI_ACCESS_TOKEN)@%s:%d", cfg.GatewayFQDN(), cfg.GatewayPort)
-	}
+	proxyAddr := fmt.Sprintf("http://127.0.0.1:%d", cfg.EnvoyPort)
 
-	// ONECLI_ACCESS_TOKEN serves two purposes:
-	//   1. Egress proxy auth — only used on the OneCLI gateway path
-	//      (interpolated into HTTPS_PROXY). The experimental Envoy path
-	//      doesn't proxy through OneCLI, so the token is absent from the
-	//      proxy URL there.
-	//   2. Bearer for api-server → agent-runtime tRPC (files.tree, skills.*).
-	//      This usage is independent of the egress path: agent-runtime's
-	//      `protectedProcedure` always requires the token. Without it on the
-	//      experimental path, every protected tRPC call returns UNAUTHORIZED.
-	// Inject the env in both paths and let only the proxy URL diverge.
+	// AGENT_RUNTIME_TOKEN is the Bearer for api-server → agent-runtime tRPC
+	// (files.tree, skills.*). agent-runtime's `protectedProcedure` middleware
+	// validates it; the controller mints a random token per agent and stores
+	// it in the Secret named by AgentTokenSecretName.
 	tokenSecretName := AgentTokenSecretName(agentName)
 	env := []corev1.EnvVar{
-		{Name: "ONECLI_ACCESS_TOKEN", ValueFrom: &corev1.EnvVarSource{
+		{Name: "AGENT_RUNTIME_TOKEN", ValueFrom: &corev1.EnvVarSource{
 			SecretKeyRef: &corev1.SecretKeySelector{
 				LocalObjectReference: corev1.LocalObjectReference{Name: tokenSecretName},
 				Key:                  "access-token",
@@ -76,8 +61,7 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 	)
 
 	// Order matters: K8s resolves duplicate env names by keeping the last
-	// occurrence, so connector < template < instance — user overrides win.
-	env = append(env, connectorEnvs...)
+	// occurrence, so template < instance — user overrides win.
 	for _, e := range agentSpec.Env {
 		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
 	}
@@ -143,13 +127,10 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 		}
 	}
 
-	// CA cert volume.
-	// - OneCLI path: emptyDir, populated by an init container that fetches the
-	//   self-signed CA from OneCLI's gateway.
-	// - Experimental Envoy path: projected from the cert-manager-issued leaf
-	//   Secret. We expose only the `ca.crt` key — the `tls.key` stays inside
-	//   the Envoy sidecar's mount, never the agent's.
-	if instance.ExperimentalCredentialInjector && len(credentialSecrets) > 0 {
+	// CA cert volume — projected from the cert-manager-issued Envoy leaf
+	// Secret. We expose only the `ca.crt` key; the `tls.key` stays inside
+	// the Envoy sidecar's mount, never the agent's.
+	if len(credentialSecrets) > 0 {
 		volumes = append(volumes, corev1.Volume{
 			Name: "ca-cert",
 			VolumeSource: corev1.VolumeSource{
@@ -181,26 +162,10 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 		resourceReqs.Limits = toResourceList(agentSpec.Resources.Limits)
 	}
 
-	// Init containers: CA cert fetch (platform) + optional user init.
-	//
-	// The CA init container fetches OneCLI's MITM CA from its web API. On the
-	// experimental Envoy path the CA comes from a projected Secret (see above)
-	// and OneCLI is unreachable anyway (NetworkPolicy), so the init is skipped.
+	// Init containers: optional user-defined init only. The CA cert is
+	// projected from the cert-manager-issued leaf Secret, so no fetch step
+	// is needed.
 	var initContainers []corev1.Container
-	if !instance.ExperimentalCredentialInjector {
-		caCertScript := fmt.Sprintf(
-			`until wget -qO /etc/humr/ca/ca.crt "%s/api/gateway/ca" 2>/dev/null; do sleep 2; done`,
-			cfg.WebURL())
-		initContainers = append(initContainers, corev1.Container{
-			Name:            "fetch-ca-cert",
-			Image:           cfg.CACertInitImage,
-			ImagePullPolicy: corev1.PullIfNotPresent,
-			Command:         []string{"sh", "-c", caCertScript},
-			VolumeMounts: []corev1.VolumeMount{{
-				Name: "ca-cert", MountPath: "/etc/humr/ca",
-			}},
-		})
-	}
 	if agentSpec.Init != "" {
 		initContainers = append(initContainers, corev1.Container{
 			Name:            "init",
@@ -225,7 +190,6 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 		}
 	}
 
-	// Experimental: pod-level wiring for the Envoy credential-injector sidecar.
 	containers := []corev1.Container{{
 		Name:            "agent",
 		Image:           agentSpec.Image,
@@ -260,48 +224,41 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 		Resources:    resourceReqs,
 		VolumeMounts: volumeMounts,
 	}}
-	var automountSAToken *bool
-	var shareProcessNS *bool
 	podAnnotations := map[string]string{}
 	for k, v := range cfg.AgentPodAnnotations {
 		podAnnotations[k] = v
 	}
-	if instance.ExperimentalCredentialInjector {
-		// Sidecar only — the agent container never sees credential mounts.
-		volumes = append(volumes, envoySidecarVolumes(name, credentialSecrets)...)
-		containers = append(containers, envoySidecarContainer(cfg, credentialSecrets))
-		// ADR-033 Threat Model: agent must have no SA token (Secret-read RBAC
-		// would otherwise bypass volume-mount scoping) and process namespace
-		// must not be shared with the sidecar.
-		falseVal := false
-		automountSAToken = &falseVal
-		shareProcessNS = &falseVal
 
-		// GH_TOKEN signal. The OneCLI sentinel doesn't apply here, so tooling
-		// inside the agent has no way to know whether GitHub auth is wired up
-		// other than to make a request and observe a 401. Surface the state
-		// explicitly so wrapper scripts (and any GH_TOKEN-aware tool that
-		// learns about it) can short-circuit with a meaningful error, and so
-		// operators can see it via `kubectl get pod -o yaml` annotations.
-		ghAvail := "false"
-		if hasGitHubCredential(credentialSecrets) {
-			ghAvail = "true"
-		}
-		containers[0].Env = append(containers[0].Env, corev1.EnvVar{
-			Name:  "HUMR_GH_TOKEN_AVAILABLE",
-			Value: ghAvail,
-		})
-		podAnnotations["humr.ai/gh-token-available"] = ghAvail
+	// Sidecar only — the agent container never sees credential mounts.
+	volumes = append(volumes, envoySidecarVolumes(name, credentialSecrets)...)
+	containers = append(containers, envoySidecarContainer(cfg, credentialSecrets))
+	// ADR-033 Threat Model: agent must have no SA token (Secret-read RBAC
+	// would otherwise bypass volume-mount scoping) and process namespace
+	// must not be shared with the sidecar.
+	falseVal := false
+	automountSAToken := &falseVal
+	shareProcessNS := &falseVal
 
-		// Roll trigger (ADR-035 #10): hash of the Secret set
-		// driving the Envoy bootstrap. When the api-server adds an
-		// allow-only Secret to promote a host onto L7, the hash changes,
-		// the pod template diverges, and the StatefulSet rolls so Envoy
-		// picks up the new chain set + leaf cert. Without this, Secret
-		// list changes regenerate the bootstrap CM but don't restart the
-		// pod, and Envoy keeps serving the old config.
-		podAnnotations["humr.ai/envoy-secrets-rev"] = envoySecretsRev(credentialSecrets)
+	// GH_TOKEN signal. Surface whether a GitHub credential is wired up so
+	// wrapper scripts and operators can detect missing auth without making
+	// a 401-eliciting request first.
+	ghAvail := "false"
+	if hasGitHubCredential(credentialSecrets) {
+		ghAvail = "true"
 	}
+	containers[0].Env = append(containers[0].Env, corev1.EnvVar{
+		Name:  "HUMR_GH_TOKEN_AVAILABLE",
+		Value: ghAvail,
+	})
+	podAnnotations["humr.ai/gh-token-available"] = ghAvail
+
+	// Roll trigger (ADR-035 #10): hash of the Secret set driving the Envoy
+	// bootstrap. When the api-server adds an allow-only Secret to promote a
+	// host onto L7, the hash changes, the pod template diverges, and the
+	// StatefulSet rolls so Envoy picks up the new chain set + leaf cert.
+	// Without this, Secret list changes regenerate the bootstrap CM but
+	// don't restart the pod, and Envoy keeps serving the old config.
+	podAnnotations["humr.ai/envoy-secrets-rev"] = envoySecretsRev(credentialSecrets)
 
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -357,12 +314,10 @@ func BuildService(name string, cfg *config.Config, ownerCM *corev1.ConfigMap) *c
 	}
 }
 
-func BuildNetworkPolicy(name string, cfg *config.Config, ownerCM *corev1.ConfigMap, instance *types.InstanceSpec) *networkingv1.NetworkPolicy {
+func BuildNetworkPolicy(name string, cfg *config.Config, ownerCM *corev1.ConfigMap) *networkingv1.NetworkPolicy {
 	tcp := corev1.ProtocolTCP
 	udp := corev1.ProtocolUDP
 	acpPort := intstr.FromInt32(8080)
-	gwPort := intstr.FromInt32(int32(cfg.GatewayPort))
-	webPort := intstr.FromInt32(int32(cfg.WebPort))
 	harnessPort := intstr.FromInt32(int32(cfg.HarnessServerPort))
 	extAuthzPort := intstr.FromInt32(int32(cfg.ExtAuthzPort))
 	httpsPort := intstr.FromInt32(443)
@@ -370,53 +325,31 @@ func BuildNetworkPolicy(name string, cfg *config.Config, ownerCM *corev1.ConfigM
 	dnsPort := intstr.FromInt32(53)
 	dnsTargetPort := intstr.FromInt32(5353)
 
-	egress := []networkingv1.NetworkPolicyEgressRule{}
-	if instance.ExperimentalCredentialInjector {
-		// Sidecar reaches arbitrary upstreams. ADR-033 §Decision keeps the
-		// first-cut allowlist permissive (no DNS allowlist in v1) — refinement
-		// is a follow-up.
-		egress = append(egress, networkingv1.NetworkPolicyEgressRule{
-			Ports: []networkingv1.NetworkPolicyPort{
-				{Protocol: &tcp, Port: &httpsPort},
-				{Protocol: &tcp, Port: &httpPort},
+	// Sidecar reaches arbitrary upstreams. ADR-033 §Decision keeps the
+	// first-cut allowlist permissive (no DNS allowlist in v1) — refinement
+	// is a follow-up.
+	egress := []networkingv1.NetworkPolicyEgressRule{{
+		Ports: []networkingv1.NetworkPolicyPort{
+			{Protocol: &tcp, Port: &httpsPort},
+			{Protocol: &tcp, Port: &httpPort},
+		},
+	}, {
+		// HITL ext_authz gate (ADR-035). Envoy in this same pod calls the
+		// API server's ext_authz endpoint on every credentialed request.
+		// `failure_mode_allow: false` means a blocked call here fails
+		// closed — agent gets 403 with no inbox prompt.
+		To: []networkingv1.NetworkPolicyPeer{{
+			PodSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"app.kubernetes.io/component": "apiserver"},
 			},
-		})
-		// HITL ext_authz gate (ADR-035). Envoy in this same
-		// pod calls the API server's ext_authz endpoint on every credentialed
-		// request. `failure_mode_allow: false` means a blocked call here
-		// fails closed — i.e. agent gets 403 with no inbox prompt. So this
-		// rule is required wherever the credential-injector path is enabled.
-		egress = append(egress, networkingv1.NetworkPolicyEgressRule{
-			To: []networkingv1.NetworkPolicyPeer{{
-				PodSelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{"app.kubernetes.io/component": "apiserver"},
-				},
-				NamespaceSelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{"kubernetes.io/metadata.name": cfg.ReleaseNamespace},
-				},
-			}},
-			Ports: []networkingv1.NetworkPolicyPort{
-				{Protocol: &tcp, Port: &extAuthzPort},
+			NamespaceSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"kubernetes.io/metadata.name": cfg.ReleaseNamespace},
 			},
-		})
-	} else {
-		// OneCLI (cross-namespace: runs in the release namespace)
-		// Gateway port for HTTPS proxy, web port for container-config (CA cert fetch)
-		egress = append(egress, networkingv1.NetworkPolicyEgressRule{
-			To: []networkingv1.NetworkPolicyPeer{{
-				PodSelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{"app.kubernetes.io/component": "onecli"},
-				},
-				NamespaceSelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{"kubernetes.io/metadata.name": cfg.ReleaseNamespace},
-				},
-			}},
-			Ports: []networkingv1.NetworkPolicyPort{
-				{Protocol: &tcp, Port: &gwPort},
-				{Protocol: &tcp, Port: &webPort},
-			},
-		})
-	}
+		}},
+		Ports: []networkingv1.NetworkPolicyPort{
+			{Protocol: &tcp, Port: &extAuthzPort},
+		},
+	}}
 	egress = append(egress,
 		networkingv1.NetworkPolicyEgressRule{
 			// Harness API server: separate port exposing only the subset of

@@ -12,12 +12,6 @@ export type ForkPhase = "Pending" | "Ready" | "Failed" | "Completed";
 export interface ForkSpec {
   readonly instanceId: string;
   readonly foreignSub: ForeignSub;
-  /**
-   * OneCLI fork-agent identifier minted by the api-server's
-   * foreign-credentials port. Empty on the Envoy path (ADR-033) where the
-   * controller resolves credentials from foreignSub-labeled K8s Secrets.
-   */
-  readonly forkAgentIdentifier: string;
   readonly sessionId?: string;
 }
 

@@ -1,6 +1,6 @@
 # Architecture
 
-Last verified: 2026-04-29
+Last verified: 2026-05-04
 
 ## System context
 
@@ -15,11 +15,13 @@ flowchart LR
     ui[ui]
     api-server[api-server]
     controller[controller]
-    agent-runtime[agent-runtime pod]
-    onecli[onecli]
     keycloak[keycloak]
     postgres[(postgres)]
     k8s-api[(K8s API)]
+    subgraph agentpod[agent pod]
+      agent-runtime
+      envoy[Envoy sidecar]
+    end
   end
 
   user -->|HTTP + WS| ui
@@ -30,21 +32,19 @@ flowchart LR
 
   api-server <-->|ACP relay / tRPC proxy| agent-runtime
   api-server -->|REST| k8s-api
-  api-server -->|RFC 8693| keycloak
-  api-server -->|user-scoped calls| onecli
+  api-server -->|JWKS validate| keycloak
   api-server -->|metadata| postgres
 
   controller -->|watch + status| k8s-api
   controller -.exec triggers.-> agent-runtime
-  controller -->|provision token| onecli
-  controller -->|RFC 8693| keycloak
 
-  agent-runtime -->|outbound HTTPS| onecli
-  onecli -->|inject credentials| llm
-  onecli -->|inject credentials| github
+  agent-runtime -->|HTTPS_PROXY| envoy
+  envoy -->|ext_authz Check| api-server
+  envoy -->|inject credentials| llm
+  envoy -->|inject credentials| github
 ```
 
-The cluster boundary is the trust boundary. Browsers and Slack users reach Humr through the api-server; LLM and GitHub traffic from the agent always exits through onecli. The agent pod has no direct path to anything outside the cluster, no service-account credentials, and no upstream tokens of its own.
+The cluster boundary is the trust boundary. Browsers and Slack users reach Humr through the api-server; LLM and GitHub traffic from the agent always exits through the in-pod Envoy sidecar, which injects credentials from K8s Secrets mounted into the sidecar only. The agent container has no direct path to anything outside the cluster, no service-account credentials, and no upstream tokens of its own.
 
 ## Subsystems
 
@@ -53,9 +53,9 @@ Each page describes how the accepted ADRs are realized in the current system. AD
 - [platform-topology](architecture/platform-topology.md) — the four long-lived components (controller, api-server, agent-runtime, ui), the protocols between them, and the K8s resource model.
 - [agent-lifecycle](architecture/agent-lifecycle.md) — create → wake → trigger → hibernate → delete; per-schedule sessions and forks.
 - [persistence](architecture/persistence.md) — the three substrates (Postgres, ConfigMap spec/status, per-instance PVC) and what survives each lifecycle event.
-- [security-and-credentials](architecture/security-and-credentials.md) — Keycloak identity, OneCLI credential gateway, per-instance access tokens, network boundary, threat model.
+- [security-and-credentials](architecture/security-and-credentials.md) — Keycloak identity, Envoy sidecar credential gateway, K8s-Secret credential storage, ext_authz HITL, network boundary.
 - [channels](architecture/channels.md) — Slack and Telegram adapters inside the api-server, inbound relay, outbound MCP tool, identity linking.
-- [skills](architecture/skills.md) — connectable git-based skill sources, install onto the per-instance PVC, REST-only publish back as a PR, OneCLI MITM for GitHub credentials.
+- [skills](architecture/skills.md) — connectable git-based skill sources, install onto the per-instance PVC, REST-only publish back as a PR, Envoy sidecar credential injection for GitHub.
 
 ## Strategy
 

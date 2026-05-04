@@ -66,11 +66,11 @@ sequenceDiagram
 
 ### Create
 
-The api-server writes a new `agent-instance` ConfigMap with `spec.yaml` carrying the template ref, env overrides, secret refs, and a `desiredState` of `running` or `hibernated`. The controller reconciles four owned resources: a per-agent Secret (the OneCLI access token), a StatefulSet (replicas tracking `desiredState`), a headless Service, and a NetworkPolicy.
+The api-server writes a new `agent-instance` ConfigMap with `spec.yaml` carrying the template ref, env overrides, secret refs, and a `desiredState` of `running` or `hibernated`. The controller reconciles five owned resources: a per-agent Secret (the agent-runtime auth token), a StatefulSet (replicas tracking `desiredState`), a headless Service, a NetworkPolicy, and a per-instance Envoy bootstrap ConfigMap + leaf TLS Certificate ([ADR-033](../adrs/033-envoy-credential-gateway.md)).
 
 The pod image is built from `humr-base` plus a harness-specific layer ([ADR-023](../adrs/023-harness-agnostic-base-image.md)). The single platform knob is `AGENT_COMMAND` — agent-runtime spawns it as the ACP subprocess for each session and otherwise treats the harness as opaque. The workspace PVC is provisioned on first wake and survives subsequent hibernations.
 
-Pod env at start is the composition of connector-declared envs (OneCLI app/secret registry), template envs, agent-level envs, and instance-level envs — last occurrence wins, with `PORT` server-enforced ([ADR-024](../adrs/024-connector-declared-envs.md)). Editing any of these takes effect on the next pod restart.
+Pod env at start is the composition of platform envs (proxy + auth wiring), template envs, agent-level envs, and instance-level envs — last occurrence wins, with `PORT` server-enforced ([ADR-024](../adrs/024-connector-declared-envs.md)). Editing any of these takes effect on the next pod restart.
 
 Connector state that doesn't fit the env model (per-host CLI configs, allowlists, and similar) is materialized as files directly under HOME by `agent-runtime` itself, which holds an SSE connection to the api-server and merges declarative file fragments without restarting the pod. Image-baked content under the same paths participates in the merge — `agent-runtime` writes to the real PVC path, not a shadowing `emptyDir`.
 

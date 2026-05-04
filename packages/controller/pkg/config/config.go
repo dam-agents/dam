@@ -11,16 +11,8 @@ import (
 
 type Config struct {
 	Namespace        string // Agent workload namespace
-	ReleaseNamespace string // Helm release namespace (where controller/OneCLI run)
+	ReleaseNamespace string // Helm release namespace (where controller runs)
 	ReleaseName      string // Helm release name
-	OneCLIURL        string // OneCLI web API base URL
-	OneCLIAudience   string // OneCLI token audience (e.g. "onecli")
-	GatewayHost      string // OneCLI gateway K8s service host (short name)
-	GatewayPort      int    // OneCLI gateway port
-	WebPort          int    // OneCLI web API port (for container-config endpoint)
-	KeycloakTokenURL     string // Keycloak token endpoint for RFC 8693 exchange
-	KeycloakClientID     string // Confidential client ID (e.g. humr-controller)
-	KeycloakClientSecret string // Confidential client secret
 	LeaseName        string // Leader election lease name
 	PodName          string // This pod's name (from downward API)
 	AgentImagePullPolicy      string            // ImagePullPolicy for agent pods (default: IfNotPresent)
@@ -30,11 +22,10 @@ type Config struct {
 	AgentStorageSize          string // PVC size for persistent agent mounts (default: 10Gi)
 	IdleTimeout               time.Duration // Idle timeout before auto-hibernation (0 = disabled, default: 1h)
 	TerminationGracePeriod    int64         // Termination grace period in seconds for agent pods (default: 5)
-	CACertInitImage      string // Image for the CA cert init container (default: busybox:stable)
 	APIServerHost        string // API server hostname (for NO_PROXY)
 	HarnessServerURL     string // Harness API server internal URL (separate port, agent-facing)
 	HarnessServerPort    int    // Harness API server port (for network policy egress rule)
-	EnvoyImage           string // Image for the Envoy credential-injector sidecar (experimental)
+	EnvoyImage           string // Image for the Envoy credential-injector sidecar
 	EnvoyPort            int    // Port the Envoy sidecar listens on (proxy on 127.0.0.1)
 	// EnvoyMitmCAIssuer is the cert-manager ClusterIssuer that mints per-instance
 	// leaf certificates for the Envoy sidecar's TLS interception of agent egress.
@@ -70,18 +61,9 @@ func LoadFromEnv() (*Config, error) {
 		Namespace:        envOrDefault("HUMR_AGENT_NAMESPACE", "humr-agents"),
 		ReleaseNamespace: envOrDefault("HUMR_RELEASE_NAMESPACE", "default"),
 		ReleaseName:      release,
-		OneCLIURL:            os.Getenv("ONECLI_URL"),
-		OneCLIAudience:       envOrDefault("ONECLI_AUDIENCE", "onecli"),
-		KeycloakTokenURL:     keycloakTokenURL(),
-		KeycloakClientID:     envOrDefault("KEYCLOAK_CLIENT_ID", "humr-controller"),
-		KeycloakClientSecret: os.Getenv("KEYCLOAK_CLIENT_SECRET"),
-		GatewayHost:      envOrDefault("ONECLI_GATEWAY_HOST", release+"-onecli"),
-		GatewayPort:      envOrDefaultInt("ONECLI_GATEWAY_PORT", 10255),
-		WebPort:          envOrDefaultInt("ONECLI_WEB_PORT", 10254),
 		LeaseName:        envOrDefault("HUMR_LEASE_NAME", release+"-controller"),
 		PodName:          podName,
 	}
-	cfg.CACertInitImage = envOrDefault("CA_CERT_INIT_IMAGE", "busybox:stable")
 	cfg.APIServerHost = os.Getenv("HUMR_API_SERVER_HOST")
 	cfg.HarnessServerURL = os.Getenv("HUMR_HARNESS_SERVER_URL")
 	cfg.HarnessServerPort = envOrDefaultInt("HUMR_HARNESS_SERVER_PORT", 4001)
@@ -124,31 +106,8 @@ func LoadFromEnv() (*Config, error) {
 	return cfg, nil
 }
 
-// GatewayFQDN returns the fully-qualified DNS name for the OneCLI gateway service.
-// Required because agent pods run in a different namespace than the gateway.
-func (c *Config) GatewayFQDN() string {
-	return fmt.Sprintf("%s.%s.svc.cluster.local", c.GatewayHost, c.ReleaseNamespace)
-}
-
-// WebURL returns the HTTP URL for the OneCLI web API (used by init containers to fetch CA cert).
-func (c *Config) WebURL() string {
-	return fmt.Sprintf("http://%s:%d", c.GatewayFQDN(), c.WebPort)
-}
-
 func (c *Config) APIServerURL() string {
 	return fmt.Sprintf("http://%s-apiserver.%s.svc.cluster.local:%d", c.ReleaseName, c.ReleaseNamespace, c.HarnessServerPort)
-}
-
-func keycloakTokenURL() string {
-	if v := os.Getenv("KEYCLOAK_TOKEN_URL"); v != "" {
-		return v
-	}
-	base := os.Getenv("KEYCLOAK_URL")
-	realm := envOrDefault("KEYCLOAK_REALM", "humr")
-	if base == "" {
-		return ""
-	}
-	return fmt.Sprintf("%s/realms/%s/protocol/openid-connect/token", base, realm)
 }
 
 func envOrDefault(key, def string) string {

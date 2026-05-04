@@ -1,10 +1,5 @@
 # Local dev: images built with docker and loaded into k3s directly.
 # Used via: helm install -f values-local.yaml
-onecli:
-  # Use plain "localhost" for OneCLI so Google OAuth redirect URIs work.
-  # Google exempts http://localhost from HTTPS requirements but rejects
-  # subdomain URLs like http://onecli.localhost. See #154.
-  externalHostname: localhost
 
 ui:
   image:

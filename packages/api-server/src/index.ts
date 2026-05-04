@@ -24,7 +24,6 @@ import {
   isThreadAuthorized, authorizeThread, revokeThread, listAuthorizedThreads,
   deleteThreadsByInstance,
 } from "./modules/channels/infrastructure/telegram-threads-repository.js";
-import { composeConnectionsModule } from "./modules/connections/index.js";
 import { createOAuthRefreshService } from "./modules/connections/services/oauth-refresh-service.js";
 import { createPodFilesBus } from "./modules/pod-files/bus.js";
 import { createPodFilesPublisher } from "./modules/pod-files/publisher.js";
@@ -36,8 +35,6 @@ import {
 } from "./modules/forks/index.js";
 import { createK8sForkOrchestrator } from "./modules/forks/infrastructure/k8s-fork-orchestrator.js";
 import { loadConfig } from "./config.js";
-import { createOnecliClient } from "./apps/api-server/onecli.js";
-import { startOnecliSyncSaga } from "./sagas/onecli-sync.js";
 import { startApiServerApp } from "./apps/api-server/app.js";
 import { startHarnessApiServerApp } from "./apps/harness-api-server/app.js";
 import { startExtAuthzGrpcApp } from "./apps/ext-authz/grpc.js";
@@ -63,14 +60,6 @@ import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
 
 const config = loadConfig();
 
-const onecli = createOnecliClient({
-  keycloakTokenUrl: `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/token`,
-  clientId: config.keycloakApiClientId,
-  clientSecret: config.keycloakApiClientSecret,
-  onecliAudience: config.onecliAudience,
-  onecliBaseUrl: config.onecliBaseUrl,
-});
-
 const { api } = createApi(config.namespace);
 await runMigrations(config.databaseUrl, config.migrationsPath);
 const { db, sql } = createDb(config.databaseUrl);
@@ -87,32 +76,13 @@ const channelCleanupSub = startChannelCleanupSaga(
 const skillsCleanupSub = startSkillsCleanupSaga(
   (instanceId) => createInstanceSkillsRepository(db).deleteByInstance(instanceId),
 );
-const onecliSyncSub = startOnecliSyncSaga(onecli);
-
 const seedSources = parseSeedSources(config.skillSourcesSeed);
 
-const { foreignCredentials } = composeConnectionsModule({ onecli });
-
 const { forks } = composeForksModule({
-  foreignCredentials,
   orchestrator: createK8sForkOrchestrator({ api, namespace: config.namespace }),
 });
 
-// Resolves the parent instance's `experimentalCredentialInjector` flag at
-// fork time. Failure → false: we fall back to the legacy OneCLI path rather
-// than blocking the fork on a transient K8s read error. See ADR-033.
-const onForeignReplySub = startOnForeignReplySaga(
-  forks,
-  async (instanceId) => {
-    try {
-      const inst = await instancesRepo.get(instanceId);
-      return inst?.experimentalCredentialInjector ?? false;
-    } catch (err) {
-      process.stderr.write(`[forks/on-foreign-reply] flag-lookup ${instanceId}: ${err}\n`);
-      return false;
-    }
-  },
-);
+const onForeignReplySub = startOnForeignReplySaga(forks);
 const onSlackTurnRelayedSub = startOnSlackTurnRelayedSaga(forks);
 
 const userDirectory = createKeycloakUserDirectory({
@@ -216,44 +186,12 @@ const podFilesRegistry = buildPodFilesRegistry({
   // path; both read the same chart value.
   agentHome: config.agentHome,
   /**
-   * Returns only the connections **granted to `agentId`** under `owner`.
-   * Mirrors what the UI's per-agent grant click writes (`setAgentConnections`)
-   * — the file content reflects the explicit grant state, not the owner's
-   * broader OneCLI inventory. Owner impersonation lets us call from background
-   * contexts (snapshot path) without a live user JWT. Logs and returns empty
-   * on transient OneCLI failures; next reconnect re-snapshots.
+   * Per-agent connection grants are not modelled in the K8s-Secret world:
+   * every owner-Secret is visible to every owner-instance via the
+   * controller's selector, so producers see no per-agent slice. Returning
+   * empty is a no-op for downstream registries.
    */
-  fetchAgentGrantedConnections: async (owner, agentId) => {
-    const fetchJsonAs = async <T,>(path: string): Promise<T | null> => {
-      const res = await onecli.onecliFetchAs(owner, path);
-      if (!res.ok) {
-        process.stderr.write(
-          `pod-files: OneCLI ${path} for owner=${owner} agent=${agentId} → ${res.status}\n`,
-        );
-        return null;
-      }
-      return (await res.json()) as T;
-    };
-
-    const agents = await fetchJsonAs<Array<{ id: string; identifier: string }>>("/api/agents");
-    if (!agents) return [];
-    const agent = agents.find((a) => a.identifier === agentId);
-    if (!agent) return [];
-
-    const grantedIds = await fetchJsonAs<unknown[]>(
-      `/api/agents/${encodeURIComponent(agent.id)}/connections`,
-    );
-    if (!grantedIds || grantedIds.length === 0) return [];
-    const grantedSet = new Set(grantedIds.filter((x): x is string => typeof x === "string"));
-
-    const all = await fetchJsonAs<Array<{
-      id?: string;
-      provider: string;
-      metadata?: Record<string, unknown> | null;
-    }>>("/api/connections");
-    if (!all) return [];
-    return all.filter((c) => typeof c.id === "string" && grantedSet.has(c.id));
-  },
+  fetchAgentGrantedConnections: async () => [],
 });
 const podFilesPublisher = createPodFilesPublisher({
   bus: podFilesBus,
@@ -333,7 +271,7 @@ const agentArtifactsSweeper = createAgentArtifactsSweeper({
 agentArtifactsSweeper.start();
 
 const { server: apiServer } = startApiServerApp({
-  config, api, db, onecli, channelManager, channelSecretStore, identityLinkService,
+  config, api, db, channelManager, channelSecretStore, identityLinkService,
   pendingSlackOAuthFlows, pendingTelegramOAuthFlows, podFilesPublisher, seedSources,
   redisBus,
   approvalsRelay,
@@ -390,7 +328,6 @@ async function shutdown() {
   k8sCleanupSub.unsubscribe();
   channelCleanupSub.unsubscribe();
   skillsCleanupSub.unsubscribe();
-  onecliSyncSub.unsubscribe();
   onForeignReplySub.unsubscribe();
   onSlackTurnRelayedSub.unsubscribe();
   await oauthRefreshService.stop();

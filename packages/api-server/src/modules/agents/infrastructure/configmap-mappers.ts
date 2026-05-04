@@ -75,7 +75,6 @@ interface RawInstanceSpec {
   agentId: string;
   desiredState: "running" | "hibernated";
   description?: string;
-  experimentalCredentialInjector?: boolean;
 }
 
 export function parseInfraInstance(cm: k8s.V1ConfigMap, pod?: k8s.V1Pod): InfraInstance {
@@ -97,7 +96,6 @@ export function parseInfraInstance(cm: k8s.V1ConfigMap, pod?: k8s.V1Pod): InfraI
     currentState,
     error,
     podReady: pod ? isPodReady(pod) : false,
-    experimentalCredentialInjector: spec.experimentalCredentialInjector,
   };
 }
 

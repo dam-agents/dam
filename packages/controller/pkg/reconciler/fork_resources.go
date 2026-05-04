@@ -21,21 +21,12 @@ const (
 
 // BuildForkJob constructs the per-turn foreign-user fork pod.
 //
-// Two paths share this renderer, switched by the parent instance's
-// `experimentalCredentialInjector` flag:
-//
-//   - **OneCLI path** (flag-off): `forkSpec.AccessToken` rides in
-//     `ONECLI_ACCESS_TOKEN`; `HTTPS_PROXY` points at the OneCLI gateway;
-//     credential injection happens in the cross-namespace MITM. Mirrors
-//     the long-lived StatefulSet's flag-off shape from `BuildStatefulSet`.
-//
-//   - **Envoy path** (flag-on, ADR-033): `credentialSecrets` are the
-//     replier's `(owner=foreignSub, connection=*)` K8s Secrets — the
-//     instance owner's Secrets must NOT appear here; the credential
-//     boundary is the container, and the agent never sees Secret bytes.
-//     `HTTPS_PROXY` points at the colocated `envoy` sidecar on
-//     `127.0.0.1`; `ONECLI_ACCESS_TOKEN` is dropped; SA-token automount
-//     and process-namespace sharing are disabled.
+// `credentialSecrets` are the replier's `(owner=foreignSub, connection=*)`
+// K8s Secrets — the instance owner's Secrets must NOT appear here; the
+// credential boundary is the container and the agent never sees Secret
+// bytes. `HTTPS_PROXY` points at the colocated `envoy` sidecar on
+// `127.0.0.1`; SA-token automount and process-namespace sharing are
+// disabled.
 //
 // Forks deliberately do NOT receive `HUMR_POD_FILES_EVENTS_URL`, so the
 // agent-runtime running in the fork pod skips the pod-files SSE loop
@@ -53,7 +44,6 @@ func BuildForkJob(
 	agentSpec *types.AgentSpec,
 	cfg *config.Config,
 	ownerCM *corev1.ConfigMap,
-	connectorEnvs []corev1.EnvVar,
 	credentialSecrets []corev1.Secret,
 ) *batchv1.Job {
 	labels := map[string]string{
@@ -64,20 +54,9 @@ func BuildForkJob(
 
 	caCertPath := "/etc/humr/ca/ca.crt"
 
-	var proxyAddr string
-	if instanceSpec.ExperimentalCredentialInjector {
-		proxyAddr = fmt.Sprintf("http://127.0.0.1:%d", cfg.EnvoyPort)
-	} else {
-		proxyAddr = fmt.Sprintf("http://x:$(ONECLI_ACCESS_TOKEN)@%s:%d", cfg.GatewayFQDN(), cfg.GatewayPort)
-	}
+	proxyAddr := fmt.Sprintf("http://127.0.0.1:%d", cfg.EnvoyPort)
 
 	env := []corev1.EnvVar{}
-	if !instanceSpec.ExperimentalCredentialInjector {
-		// Inlined directly from the fork spec (minted by api-server). On the
-		// Envoy path the sidecar reads creds from disk; the agent has no
-		// proxy credential at all.
-		env = append(env, corev1.EnvVar{Name: "ONECLI_ACCESS_TOKEN", Value: forkSpec.AccessToken})
-	}
 	env = append(env,
 		corev1.EnvVar{Name: "HTTPS_PROXY", Value: proxyAddr},
 		corev1.EnvVar{Name: "HTTP_PROXY", Value: proxyAddr},
@@ -97,7 +76,6 @@ func BuildForkJob(
 		corev1.EnvVar{Name: "HUMR_FORK_ID", Value: forkName},
 		corev1.EnvVar{Name: "HUMR_FOREIGN_SUB", Value: forkSpec.ForeignSub},
 	)
-	env = append(env, connectorEnvs...)
 	for _, e := range agentSpec.Env {
 		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
 	}
@@ -140,10 +118,9 @@ func BuildForkJob(
 		}
 	}
 
-	// CA cert volume — mirrors `BuildStatefulSet`. On the Envoy path the
-	// `ca.crt` is projected from the per-fork leaf Secret; on the OneCLI
-	// path it's an emptyDir populated by the fetch-ca-cert init container.
-	if instanceSpec.ExperimentalCredentialInjector && len(credentialSecrets) > 0 {
+	// CA cert volume — projected from the per-fork cert-manager-issued leaf
+	// Secret. Mirrors `BuildStatefulSet`.
+	if len(credentialSecrets) > 0 {
 		volumes = append(volumes, corev1.Volume{
 			Name: "ca-cert",
 			VolumeSource: corev1.VolumeSource{
@@ -171,24 +148,9 @@ func BuildForkJob(
 		resourceReqs.Limits = toResourceList(agentSpec.Resources.Limits)
 	}
 
-	// Init containers: fetch-ca-cert is OneCLI-only — Envoy-path forks get
-	// the CA from the projected leaf Secret. Optional user-defined init
-	// container runs on either path.
+	// Init containers: optional user-defined init only. The CA cert is
+	// projected from the per-fork leaf Secret, so no fetch step is needed.
 	var initContainers []corev1.Container
-	if !instanceSpec.ExperimentalCredentialInjector {
-		caCertScript := fmt.Sprintf(
-			`until wget -qO /etc/humr/ca/ca.crt "%s/api/gateway/ca" 2>/dev/null; do sleep 2; done`,
-			cfg.WebURL())
-		initContainers = append(initContainers, corev1.Container{
-			Name:            "fetch-ca-cert",
-			Image:           cfg.CACertInitImage,
-			ImagePullPolicy: corev1.PullIfNotPresent,
-			Command:         []string{"sh", "-c", caCertScript},
-			VolumeMounts: []corev1.VolumeMount{{
-				Name: "ca-cert", MountPath: "/etc/humr/ca",
-			}},
-		})
-	}
 	if agentSpec.Init != "" {
 		initContainers = append(initContainers, corev1.Container{
 			Name:            "init",
@@ -238,32 +200,27 @@ func BuildForkJob(
 		VolumeMounts: volumeMounts,
 	}}
 
-	var automountSAToken *bool
-	var shareProcessNS *bool
-	if instanceSpec.ExperimentalCredentialInjector {
-		// Sidecar only — agent container never sees credential mounts.
-		volumes = append(volumes, envoySidecarVolumes(forkName, credentialSecrets)...)
-		containers = append(containers, envoySidecarContainer(cfg, credentialSecrets))
-		// ADR-033 Threat Model: agent must have no SA token (Secret-read
-		// RBAC would otherwise bypass volume-mount scoping) and process
-		// namespace must not be shared with the sidecar.
-		falseVal := false
-		automountSAToken = &falseVal
-		shareProcessNS = &falseVal
+	// Sidecar only — agent container never sees credential mounts.
+	volumes = append(volumes, envoySidecarVolumes(forkName, credentialSecrets)...)
+	containers = append(containers, envoySidecarContainer(cfg, credentialSecrets))
+	// ADR-033 Threat Model: agent must have no SA token (Secret-read RBAC
+	// would otherwise bypass volume-mount scoping) and process namespace
+	// must not be shared with the sidecar.
+	falseVal := false
+	automountSAToken := &falseVal
+	shareProcessNS := &falseVal
 
-		// GH_TOKEN signal — mirrors `BuildStatefulSet`. The OneCLI sentinel
-		// doesn't apply on the Envoy path, so tooling has no way to know
-		// whether GitHub auth is wired up other than to make a request and
-		// observe a 401. Surface the state explicitly.
-		ghAvail := "false"
-		if hasGitHubCredential(credentialSecrets) {
-			ghAvail = "true"
-		}
-		containers[0].Env = append(containers[0].Env, corev1.EnvVar{
-			Name:  "HUMR_GH_TOKEN_AVAILABLE",
-			Value: ghAvail,
-		})
+	// GH_TOKEN signal — mirrors `BuildStatefulSet`. Surface whether a
+	// GitHub credential is wired up so tooling doesn't have to make a
+	// 401-eliciting request to find out.
+	ghAvail := "false"
+	if hasGitHubCredential(credentialSecrets) {
+		ghAvail = "true"
 	}
+	containers[0].Env = append(containers[0].Env, corev1.EnvVar{
+		Name:  "HUMR_GH_TOKEN_AVAILABLE",
+		Value: ghAvail,
+	})
 
 	ttl := int32(60)
 	backoff := int32(0)

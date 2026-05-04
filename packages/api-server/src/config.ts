@@ -14,9 +14,6 @@ const configSchema = z.object({
   slackOauthCallbackUrl: z.string().nullable().default(null),
   telegramEnabled: z.coerce.boolean().default(false),
   uiBaseUrl: z.url().default("http://humr.localhost:4444"),
-  onecliBaseUrl: z.url().default("http://humr-onecli:10254"),
-  onecliExternalUrl: z.string().default(""),
-  onecliAudience: z.string().default("onecli"),
   keycloakUrl: z.url().default("http://humr-keycloak:8080"),
   keycloakExternalUrl: z.url().default("http://keycloak.localhost:4444"),
   keycloakRealm: z.string().default("humr"),
@@ -33,9 +30,8 @@ const configSchema = z.object({
   skillSourcesSeed: z.string().default(""),
   // Optional admin-level OAuth app defaults — when set, the connect form
   // for the matching app skips those input fields and the api-server uses
-  // the defaults to mint tokens. Mirrors OneCLI's `GITHUB_CLIENT_ID` /
-  // `GITHUB_CLIENT_SECRET` knobs so a single admin-registered OAuth app
-  // can serve every user on a deployment.
+  // the defaults to mint tokens. A single admin-registered OAuth app can
+  // serve every user on a deployment.
   defaultGithubClientId: z.string().nullable().default(null),
   defaultGithubClientSecret: z.string().nullable().default(null),
   defaultGithubEnterpriseHost: z.string().nullable().default(null),
@@ -75,9 +71,6 @@ export function loadConfig(): Config {
     slackOauthCallbackUrl: process.env.SLACK_OAUTH_CALLBACK_URL,
     telegramEnabled: process.env.TELEGRAM_ENABLED,
     uiBaseUrl: process.env.UI_BASE_URL,
-    onecliBaseUrl: process.env.ONECLI_WEB_URL,
-    onecliExternalUrl: process.env.ONECLI_EXTERNAL_URL,
-    onecliAudience: process.env.ONECLI_AUDIENCE,
     keycloakUrl: process.env.KEYCLOAK_URL,
     keycloakExternalUrl: process.env.KEYCLOAK_EXTERNAL_URL,
     keycloakRealm: process.env.KEYCLOAK_REALM,

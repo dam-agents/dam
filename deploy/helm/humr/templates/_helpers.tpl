@@ -104,20 +104,6 @@ Host:port string for URLs (includes port if non-empty)
 {{- end }}
 {{- end }}
 
-{{- define "humr.url.onecli" -}}
-{{- if .Values.urls.onecli }}
-{{- .Values.urls.onecli }}
-{{- else if .Values.onecli.externalHostname }}
-{{- if .Values.port }}
-{{- printf "%s://%s:%v" .Values.scheme .Values.onecli.externalHostname .Values.port }}
-{{- else }}
-{{- printf "%s://%s" .Values.scheme .Values.onecli.externalHostname }}
-{{- end }}
-{{- else }}
-{{- printf "%s://onecli.%s" .Values.scheme (include "humr.hostport" .) }}
-{{- end }}
-{{- end }}
-
 {{/*
 Extract just the hostname (no scheme, no port, no path) from a URL.
 Usage: {{ include "humr.url.host" (include "humr.url.ui" .) }}
@@ -158,51 +144,6 @@ Redis URL exposed to consumers (no auth in v1; matches Postgres).
 */}}
 {{- define "humr.redis.url" -}}
 {{- printf "redis://%s:%d" (include "humr.redis.fullname" .) (int .Values.redis.port) }}
-{{- end }}
-
-{{/* ---- OneCLI resources ---- */}}
-
-{{/*
-OneCLI app name (Deployment + Service)
-*/}}
-{{- define "humr.onecli.fullname" -}}
-{{- printf "%s-onecli" (include "humr.fullname" .) | trunc 63 | trimSuffix "-" }}
-{{- end }}
-
-{{/*
-OneCLI secrets name (encryption key)
-*/}}
-{{- define "humr.onecli.secrets.fullname" -}}
-{{- printf "%s-onecli-secrets" (include "humr.fullname" .) | trunc 63 | trimSuffix "-" }}
-{{- end }}
-
-{{/*
-OneCLI database host — uses external host if set, otherwise shared postgres
-*/}}
-{{- define "humr.onecli.db.host" -}}
-{{- if .Values.onecli.db.host }}
-{{- .Values.onecli.db.host }}
-{{- else }}
-{{- include "humr.postgres.fullname" . }}
-{{- end }}
-{{- end }}
-
-{{/*
-OneCLI database password secret name — uses shared postgres secret when db.password is empty
-*/}}
-{{- define "humr.onecli.db.password.secretName" -}}
-{{- if .Values.onecli.db.password }}
-{{- include "humr.onecli.secrets.fullname" . }}
-{{- else }}
-{{- include "humr.postgres.secrets.fullname" . }}
-{{- end }}
-{{- end }}
-
-{{/*
-OneCLI PostgreSQL DSN
-*/}}
-{{- define "humr.onecli.postgres.dsn" -}}
-{{- printf "postgresql://%s:$(POSTGRES_PASSWORD)@%s:%v/%s" .Values.onecli.db.user (include "humr.onecli.db.host" .) (int .Values.onecli.db.port) .Values.onecli.db.database }}
 {{- end }}
 
 {{/*

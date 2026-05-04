@@ -117,7 +117,6 @@ export interface InstanceView {
   error?: string;
   channels: ({ type: "slack"; slackChannelId: string } | { type: "telegram" })[];
   allowedUserEmails: string[];
-  experimentalCredentialInjector?: boolean;
 }
 
 export interface QuietWindowView {

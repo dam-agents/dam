@@ -16,15 +16,7 @@ interface ForkSpecYaml {
   version: string;
   instance: string;
   foreignSub: string;
-  /**
-   * Set on the legacy OneCLI path; omitted on the Envoy path (ADR-033)
-   * where the controller resolves credentials from foreignSub-labeled
-   * K8s Secrets at render time.
-   */
-  forkAgentIdentifier?: string;
   sessionId?: string;
-  /** Same gating as `forkAgentIdentifier`. */
-  accessToken?: string;
 }
 
 interface ForkStatusYaml {
@@ -38,18 +30,12 @@ interface ForkStatusYaml {
 export function buildForkConfigMap(args: {
   forkId: string;
   spec: ForkSpec;
-  /** Omitted on the Envoy path. */
-  accessToken?: string;
 }): k8s.V1ConfigMap {
   const body: ForkSpecYaml = {
     version: SPEC_VERSION,
     instance: args.spec.instanceId,
     foreignSub: args.spec.foreignSub,
   };
-  if (args.spec.forkAgentIdentifier) {
-    body.forkAgentIdentifier = args.spec.forkAgentIdentifier;
-  }
-  if (args.accessToken !== undefined) body.accessToken = args.accessToken;
   if (args.spec.sessionId !== undefined) body.sessionId = args.spec.sessionId;
 
   return {

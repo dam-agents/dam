@@ -1,7 +1,7 @@
 # ADR-015: Multi-user authentication via Keycloak + OneCLI fork with token exchange
 
 **Date:** 2026-04-08
-**Status:** Accepted
+**Status:** Accepted (§3 — OneCLI fork — superseded by [ADR-033](033-envoy-credential-gateway.md); Keycloak login + label-based ownership remain in force)
 **Owner:** @tomkis
 
 ## Context
@@ -22,13 +22,13 @@ All K8s resources (instance ConfigMaps, schedule ConfigMaps) get a `humr.ai/owne
 
 Templates remain shared (team-level resources, no owner label).
 
-### 3. Fork OneCLI
+### 3. Fork OneCLI ~~(removed — see ADR-033)~~
 
-Fork OneCLI to:
-
-- **Replace Google OAuth with generic OIDC** — OneCLI validates JWTs issued by Keycloak.
-- **Implement RFC 8693 token exchange** — the API server exchanges the user's JWT (audience: `humr-api`) for a OneCLI-scoped token (audience: `onecli`) via Keycloak's token exchange endpoint. OneCLI receives a valid JWT with the user's identity.
-- **Scope all data by user** — agents, credentials, and policy rules in OneCLI are scoped to the `sub` claim from the validated JWT. A user can only see and manage their own credentials.
+> **Removed by ADR-033.** OneCLI itself was retired in favour of an Envoy
+> credential-injector sidecar. Per-user credential isolation now lives in K8s
+> Secrets keyed by `humr.ai/owner`; the RFC 8693 token-exchange path against
+> a OneCLI audience no longer exists. The Keycloak login surface and the
+> label-based ownership decisions in §1 and §2 remain unchanged.
 
 ### 4. API server as the OneCLI proxy
 

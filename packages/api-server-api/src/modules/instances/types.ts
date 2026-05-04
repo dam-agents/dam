@@ -28,7 +28,6 @@ export interface Instance {
   error?: string;
   channels: ChannelConfig[];
   allowedUserEmails: string[];
-  experimentalCredentialInjector?: boolean;
 }
 
 export interface CreateInstanceInput {
@@ -38,7 +37,6 @@ export interface CreateInstanceInput {
   secretRef?: string;
   description?: string;
   allowedUserEmails?: string[];
-  experimentalCredentialInjector?: boolean;
 }
 
 export interface UpdateInstanceInput {
@@ -46,7 +44,6 @@ export interface UpdateInstanceInput {
   env?: EnvVar[];
   secretRef?: string;
   allowedUserEmails?: string[];
-  experimentalCredentialInjector?: boolean;
 }
 
 export type ConnectSlackError =

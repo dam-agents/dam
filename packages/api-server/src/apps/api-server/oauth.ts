@@ -3,16 +3,11 @@
  * 7591 dynamic client registration) and named "apps" (GitHub, GitHub
  * Enterprise) registered statically by the OAuthApp registry.
  *
- * Both flows go through the same engine and the same callback. Tokens are
- * dual-written to a per-`(owner, connection)` K8s `Secret` (consumed by the
- * Envoy sidecar and the refresh-token loop, ADR-033) and to OneCLI as a
- * generic secret keyed `__humr_mcp:<host>` (MCP) or `__humr_oauth:<conn>`
- * (apps). Removing the OneCLI write is a follow-up that runs after every
- * instance migrates off the OneCLI gateway.
+ * Tokens are stored as per-`(owner, connection)` K8s Secrets consumed by the
+ * Envoy sidecar and the refresh-token loop (ADR-033).
  */
 
 import { Hono } from "hono";
-import type { OnecliClient } from "./onecli.js";
 import type { UserIdentity } from "api-server-api";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import {
@@ -29,119 +24,6 @@ import {
   type OAuthAppDescriptor,
   type OAuthAppRegistry,
 } from "../../modules/connections/infrastructure/oauth-apps.js";
-import {
-  deleteOAuthSecretViaOnecli,
-  upsertOAuthSecretViaOnecli,
-} from "../../modules/connections/infrastructure/onecli-oauth-mirror.js";
-
-// ---------------------------------------------------------------------------
-// MCP-side OneCLI helpers — preserved for backward compat with the
-// `__humr_mcp:<host>` prefix that pre-existing connections use. The named-app
-// flow uses the OAuth-mirror helpers in modules/connections instead.
-// ---------------------------------------------------------------------------
-
-const MCP_SECRET_PREFIX = "__humr_mcp:";
-
-function mcpSecretName(hostname: string): string {
-  return `${MCP_SECRET_PREFIX}${hostname}`;
-}
-
-interface OnecliSecret {
-  id: string;
-  name: string;
-  type: string;
-  hostPattern: string;
-  injectionConfig: {
-    headerName: string;
-    valueFormat?: string;
-    expiresAt?: number;
-  } | null;
-  createdAt: string;
-}
-
-async function listOnecliSecrets(
-  oc: OnecliClient,
-  userJwt: string,
-  userSub: string,
-): Promise<OnecliSecret[]> {
-  const res = await oc.onecliFetch(userJwt, userSub, "/api/secrets");
-  if (!res.ok) throw new Error(`OneCLI list secrets failed: ${res.status}`);
-  return res.json() as Promise<OnecliSecret[]>;
-}
-
-export async function listMcpConnections(
-  oc: OnecliClient,
-  userJwt: string,
-  userSub: string,
-): Promise<{ hostname: string; connectedAt: string; expired: boolean }[]> {
-  const secrets = await listOnecliSecrets(oc, userJwt, userSub);
-  const now = Math.floor(Date.now() / 1000);
-  return secrets
-    .filter((s) => s.name.startsWith(MCP_SECRET_PREFIX))
-    .map((s) => {
-      const hostname = s.name.slice(MCP_SECRET_PREFIX.length);
-      const expiresAt = s.injectionConfig?.expiresAt;
-      return {
-        hostname,
-        connectedAt: s.createdAt,
-        expired: expiresAt != null && expiresAt < now,
-      };
-    });
-}
-
-async function upsertOnecliMcpSecret(
-  oc: OnecliClient,
-  userJwt: string,
-  userSub: string,
-  hostPattern: string,
-  value: string,
-  expiresAt?: number,
-): Promise<void> {
-  const name = mcpSecretName(hostPattern);
-  const existing = await listOnecliSecrets(oc, userJwt, userSub);
-  const old = existing.find((s) => s.name === name);
-  if (old) {
-    await oc.onecliFetch(userJwt, userSub, `/api/secrets/${old.id}`, {
-      method: "DELETE",
-    });
-  }
-  const res = await oc.onecliFetch(userJwt, userSub, "/api/secrets", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      name,
-      type: "generic",
-      value,
-      hostPattern,
-      injectionConfig: {
-        headerName: "authorization",
-        valueFormat: "Bearer {value}",
-        ...(expiresAt != null && { expiresAt }),
-      },
-    }),
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`OneCLI create secret failed: ${res.status} ${body}`);
-  }
-}
-
-/**
- * Stable token (`oauth-k8s-mirror-failed`) so log scrapers can dashboard the
- * mirror's failure mode. K8s and OneCLI mirrors are best-effort once the
- * primary write has succeeded; we don't fail the whole flow on a hiccup.
- */
-async function bestEffort(
-  meta: { op: string; target: string; identifier: string },
-  fn: () => Promise<void>,
-): Promise<void> {
-  try {
-    await fn();
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.warn("[oauth] mirror-failed", JSON.stringify({ ...meta, error: message }));
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Routes
@@ -149,7 +31,6 @@ async function bestEffort(
 
 export interface OAuthRoutesDeps {
   uiBaseUrl: string;
-  oc: OnecliClient;
   k8sClient: K8sClient;
   apps: OAuthAppRegistry;
   /** Override for tests — defaults to a fresh process-local engine. */
@@ -157,7 +38,7 @@ export interface OAuthRoutesDeps {
 }
 
 export function createOAuthRoutes(deps: OAuthRoutesDeps) {
-  const { uiBaseUrl, oc, k8sClient, apps } = deps;
+  const { uiBaseUrl, k8sClient, apps } = deps;
   const engine = deps.engine ?? createOAuthEngine();
   const oauth = new Hono<{ Variables: { user: UserIdentity } }>();
 
@@ -188,10 +69,6 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
    * fetch arbitrary cross-origin discovery documents, so we proxy from the
    * api-server. Tries RFC 8414 (OAuth 2.0 AS metadata) first and falls back
    * to RFC 8414 / OIDC at `/.well-known/openid-configuration`.
-   *
-   * Failure modes (network error, 404, malformed JSON, missing endpoints)
-   * all collapse to a 404 — the caller treats this as "discovery not
-   * supported, user fills the URLs manually."
    */
   oauth.post("/api/oauth/discover", async (c) => {
     let body: { host?: string };
@@ -202,8 +79,6 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
     }
     const host = body.host?.trim();
     if (!host) return c.json({ error: "host is required" }, 400);
-    // Same hostname shape the connect form enforces; rejects schemes, paths,
-    // and IP shenanigans before we make outbound traffic.
     if (!/^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$/.test(host)) {
       return c.json({ error: "host must be a valid DNS hostname" }, 400);
     }
@@ -234,24 +109,12 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
           });
         }
       } catch {
-        // try next candidate; don't surface raw fetch errors to the browser
+        // try next candidate
       }
     }
     return c.json({ error: "Discovery not supported by host" }, 404);
   });
 
-  /**
-   * Lists the user's connections to apps the registry knows about. Reads
-   * from the K8s connection store (source of truth for the experimental
-   * Envoy path); a connection whose key doesn't match any descriptor is
-   * skipped here — those surface under MCP listings or are an artifact of
-   * an app the platform removed.
-   *
-   * `connectionId` is the per-row identifier the UI uses for disconnect.
-   * For single-instance apps it's the descriptor id; for multi-instance
-   * apps (Generic) it's the stored connection key, which is unique per
-   * (owner, host).
-   */
   oauth.get("/api/oauth/apps/connections", async (c) => {
     try {
       const user = c.get("user");
@@ -264,8 +127,6 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
           const expired =
             conn.status === "expired" ||
             (conn.expiresAt != null && conn.expiresAt < nowSec);
-          // Prefer the per-connection displayName (Generic, GHE) saved at
-          // connect time; fall back to the descriptor's static label.
           const displayName =
             conn.displayName ??
             (app.id === "github-enterprise"
@@ -290,11 +151,6 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
     }
   });
 
-  /**
-   * Kicks off an authorization-code flow for an app. The user supplies their
-   * own client credentials (and host for GHE) in the body — the platform
-   * does not mint or store a default client.
-   */
   oauth.post("/api/oauth/apps/:id/connect", async (c) => {
     const id = c.req.param("id");
     const descriptor = apps.get(id);
@@ -325,11 +181,6 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
     return c.json({ authUrl });
   });
 
-  /**
-   * `:id` is either a single-instance descriptor id (e.g. `github`) or a
-   * stored connection key (e.g. `generic-abcdef…`) for multi-instance apps.
-   * Both shapes are accepted because the listing returns whichever fits.
-   */
   oauth.delete("/api/oauth/apps/connections/:id", async (c) => {
     const id = c.req.param("id");
     const descriptor = apps.get(id);
@@ -343,55 +194,34 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
       }
       connectionKey = descriptor.connectionKey;
     } else {
-      // No descriptor by that id — treat as a stored connection key. Verify
-      // it matches *some* configured app so we don't accept arbitrary keys.
       const matchingApp = apps.list().find((a) => matchesAppConnection(a, id));
       if (!matchingApp) return c.json({ error: "Unknown connection" }, 404);
       connectionKey = id;
     }
     const user = c.get("user");
-    const jwt = getUserJwt(c);
-    await bestEffort(
-      { op: "delete", target: "k8s", identifier: connectionKey },
-      () => k8sConnectionsFor(user.sub).deleteConnection(connectionKey),
-    );
-    await bestEffort(
-      { op: "delete", target: "onecli", identifier: connectionKey },
-      () => deleteOAuthSecretViaOnecli(oc, jwt, user.sub, connectionKey),
-    );
+    await k8sConnectionsFor(user.sub).deleteConnection(connectionKey);
     return c.json({ ok: true });
   });
 
   // -------------------------------------------------------------------------
-  // MCP servers (preserved external API)
+  // MCP servers
   // -------------------------------------------------------------------------
 
   oauth.get("/api/mcp/connections", async (c) => {
     try {
       const user = c.get("user");
-      const jwt = getUserJwt(c);
-      const [onecliConns, k8sConns] = await Promise.all([
-        listMcpConnections(oc, jwt, user.sub),
-        k8sConnectionsFor(user.sub).listConnections(),
-      ]);
+      const k8sConns = await k8sConnectionsFor(user.sub).listConnections();
       const appList = apps.list();
       const nowSec = Math.floor(Date.now() / 1000);
-      const merged = new Map<string, { hostname: string; connectedAt: string; expired: boolean }>();
-      for (const conn of onecliConns) merged.set(conn.hostname, conn);
-      for (const conn of k8sConns) {
-        // Skip rows owned by the named-app flow — those surface under
-        // /api/oauth/apps/connections, not the MCP list. Multi-instance
-        // apps (Generic) match by prefix so we have to ask the descriptor.
-        if (appList.some((a) => matchesAppConnection(a, conn.connection))) continue;
-        const expired =
-          conn.status === "expired" || (conn.expiresAt != null && conn.expiresAt < nowSec);
-        merged.set(conn.connection, {
+      const merged = k8sConns
+        .filter((conn) => !appList.some((a) => matchesAppConnection(a, conn.connection)))
+        .map((conn) => ({
           hostname: conn.connection,
-          connectedAt: conn.connectedAt ?? merged.get(conn.connection)?.connectedAt ?? "",
-          expired,
-        });
-      }
-      return c.json(Array.from(merged.values()));
+          connectedAt: conn.connectedAt ?? "",
+          expired:
+            conn.status === "expired" || (conn.expiresAt != null && conn.expiresAt < nowSec),
+        }));
+      return c.json(merged);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
       return c.json({ error: msg }, 500);
@@ -402,20 +232,7 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
     const hostname = c.req.param("hostname");
     try {
       const user = c.get("user");
-      const jwt = getUserJwt(c);
-      const secrets = await listOnecliSecrets(oc, jwt, user.sub);
-      const secret = secrets.find((s) => s.name === mcpSecretName(hostname));
-      if (secret) {
-        const res = await oc.onecliFetch(jwt, user.sub, `/api/secrets/${secret.id}`, {
-          method: "DELETE",
-        });
-        if (!res.ok) throw new Error(`OneCLI delete failed: ${res.status}`);
-      }
-      await bestEffort(
-        { op: "delete", target: "k8s", identifier: hostname },
-        () => k8sConnectionsFor(user.sub).deleteConnection(hostname),
-      );
-      if (!secret) return c.json({ ok: true, deletedFrom: "k8s" });
+      await k8sConnectionsFor(user.sub).deleteConnection(hostname);
       return c.json({ ok: true });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
@@ -458,7 +275,7 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        client_name: "Humr Agent Platform",
+        client_name: "DAM Agent Platform",
         redirect_uris: [redirectUri],
         grant_types: ["authorization_code", "refresh_token"],
         response_types: ["code"],
@@ -522,37 +339,7 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
       );
     }
 
-    // Decide the OneCLI mirror flavor from the provider id. Apps (GitHub,
-    // GHE) get the OAuth prefix; MCP keeps its legacy `__humr_mcp:` prefix
-    // so existing entries stay addressable.
     const isMcp = pending.provider.id.startsWith("mcp:");
-
-    try {
-      if (isMcp) {
-        await upsertOnecliMcpSecret(
-          oc,
-          pending.userJwt,
-          pending.userSub,
-          pending.flow.hostPattern,
-          tokens.accessToken,
-          tokens.expiresAt,
-        );
-      } else {
-        await upsertOAuthSecretViaOnecli(oc, pending.userJwt, pending.userSub, {
-          connection: pending.flow.connectionKey,
-          hostPattern: pending.flow.hostPattern,
-          accessToken: tokens.accessToken,
-          ...(tokens.expiresAt != null ? { expiresAt: tokens.expiresAt } : {}),
-          ...(pending.flow.envMappings ? { envMappings: pending.flow.envMappings } : {}),
-        });
-      }
-    } catch (err) {
-      // OneCLI is the source of truth on the non-flagged path — failing here
-      // means the user's existing pods can't use the credential. Surface the
-      // error rather than silently writing only the K8s mirror.
-      const msg = err instanceof Error ? err.message : "Unknown error";
-      return c.redirect(`${uiBaseUrl}?oauth=error&message=${encodeURIComponent(msg)}`);
-    }
 
     const metadata: ConnectionMetadata = {
       hostPattern: pending.flow.hostPattern,
@@ -568,19 +355,20 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
         ? { scopes: pending.provider.scopes.join(" ") }
         : {}),
     };
-    await bestEffort(
-      { op: "upsert", target: "k8s", identifier: pending.flow.connectionKey },
-      () =>
-        k8sConnectionsFor(pending.userSub).upsertConnection({
-          connection: pending.flow.connectionKey,
-          tokens: {
-            accessToken: tokens.accessToken,
-            ...(tokens.refreshToken ? { refreshToken: tokens.refreshToken } : {}),
-            ...(tokens.expiresAt != null ? { expiresAt: tokens.expiresAt } : {}),
-          },
-          metadata,
-        }),
-    );
+    try {
+      await k8sConnectionsFor(pending.userSub).upsertConnection({
+        connection: pending.flow.connectionKey,
+        tokens: {
+          accessToken: tokens.accessToken,
+          ...(tokens.refreshToken ? { refreshToken: tokens.refreshToken } : {}),
+          ...(tokens.expiresAt != null ? { expiresAt: tokens.expiresAt } : {}),
+        },
+        metadata,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      return c.redirect(`${uiBaseUrl}?oauth=error&message=${encodeURIComponent(msg)}`);
+    }
 
     const successQuery = isMcp
       ? `oauth=success&host=${pending.flow.hostPattern}`

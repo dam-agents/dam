@@ -34,7 +34,7 @@ Here's what that means:
 
 - **Your agent runs in an isolated container.** Each invocation gets a fresh pod. Agents can't see each other's files, network, or processes. Workspace files (memory, skills, project artifacts) persist between runs on a volume. The container itself is disposable.
 
-- **Your agent never sees real credentials.** All outbound traffic goes through a credential gateway (OneCLI). The gateway injects real tokens at the HTTP level and enforces per-agent policy rules. The agent only sees placeholders. If the agent gets compromised, there are no secrets to steal.
+- **Your agent never sees real credentials.** Each pod runs an Envoy credential-gateway sidecar that injects real tokens at the HTTP level from K8s Secrets mounted only into the sidecar — the agent container never has them. If the agent gets compromised, there are no secrets to steal.
 
 - **Scheduling and heartbeat are built in.** The platform owns cron, not the agent. When a schedule fires, the platform writes a trigger file to the agent's workspace. The agent wakes up, processes it, and goes back to sleep. A heartbeat works the same way: wake up, review history, decide if anything needs doing.
 

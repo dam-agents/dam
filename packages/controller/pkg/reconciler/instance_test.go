@@ -14,22 +14,21 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/kagenti/humr/packages/controller/pkg/config"
-	"github.com/kagenti/humr/packages/controller/pkg/onecli"
 )
 
 func setupReconciler(t *testing.T, agents map[string]*corev1.ConfigMap, objects ...runtime.Object) (*InstanceReconciler, *fake.Clientset) {
 	t.Helper()
 	client := fake.NewSimpleClientset(objects...)
 	cfg := &config.Config{
-		Namespace:        "test-agents",
-		ReleaseNamespace: "default",
-		ReleaseName:      "humr",
-		GatewayHost:      "humr-onecli",
-		GatewayPort:      10255,
-		WebPort:          10254,
+		Namespace:         "test-agents",
+		ReleaseNamespace:  "default",
+		ReleaseName:       "humr",
+		HarnessServerPort: 4001,
+		EnvoyImage:        "envoyproxy/envoy:distroless-v1.37.2",
+		EnvoyPort:         10000,
 	}
 	getter := &fakeGetter{cms: agents}
-	r := NewInstanceReconciler(client, cfg, NewAgentResolver(getter), nil)
+	r := NewInstanceReconciler(client, cfg, NewAgentResolver(getter))
 	return r, client
 }
 
@@ -75,9 +74,9 @@ func TestReconcile_CreateResources(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int32(1), *ss.Spec.Replicas)
 
-	// Proxy URL uses $(ONECLI_ACCESS_TOKEN) interpolation from Secret
+	// Proxy URL points at the colocated Envoy sidecar.
 	envMap := envToMap(ss.Spec.Template.Spec.Containers[0].Env)
-	assert.Contains(t, envMap["HTTPS_PROXY"], "$(ONECLI_ACCESS_TOKEN)@")
+	assert.Equal(t, "http://127.0.0.1:10000", envMap["HTTPS_PROXY"])
 
 	// Service created
 	svc, err := client.CoreV1().Services("test-agents").Get(ctx, "my-instance", metav1.GetOptions{})
@@ -275,45 +274,6 @@ func TestReconcileOrphanPVCs(t *testing.T) {
 	// live retained
 	_, err = client.CoreV1().PersistentVolumeClaims("test-agents").Get(context.Background(), live.Name, metav1.GetOptions{})
 	assert.NoError(t, err, "live instance PVC must be retained")
-}
-
-func TestEnvMappingsToEnvVars(t *testing.T) {
-	t.Run("empty", func(t *testing.T) {
-		assert.Nil(t, envMappingsToEnvVars(nil))
-	})
-	t.Run("skips secrets without metadata", func(t *testing.T) {
-		secrets := []onecli.Secret{{ID: "a"}}
-		assert.Nil(t, envMappingsToEnvVars(secrets))
-	})
-	t.Run("flattens envMappings", func(t *testing.T) {
-		secrets := []onecli.Secret{
-			{ID: "b", Metadata: &onecli.SecretMetadata{EnvMappings: []onecli.EnvMapping{
-				{EnvName: "GH_TOKEN", Placeholder: onecli.DefaultEnvPlaceholder},
-			}}},
-		}
-		envs := envMappingsToEnvVars(secrets)
-		require.Len(t, envs, 1)
-		assert.Equal(t, "GH_TOKEN", envs[0].Name)
-		assert.Equal(t, onecli.DefaultEnvPlaceholder, envs[0].Value)
-	})
-	t.Run("dedupes by envName, smallest ID wins", func(t *testing.T) {
-		secrets := []onecli.Secret{
-			{ID: "z", Metadata: &onecli.SecretMetadata{EnvMappings: []onecli.EnvMapping{
-				{EnvName: "GH_TOKEN", Placeholder: "from-z"},
-			}}},
-			{ID: "a", Metadata: &onecli.SecretMetadata{EnvMappings: []onecli.EnvMapping{
-				{EnvName: "GH_TOKEN", Placeholder: "from-a"},
-			}}},
-		}
-		envs := envMappingsToEnvVars(secrets)
-		require.Len(t, envs, 1)
-		assert.Equal(t, "from-a", envs[0].Value)
-	})
-	t.Run("does not mutate caller slice", func(t *testing.T) {
-		secrets := []onecli.Secret{{ID: "z"}, {ID: "a"}}
-		envMappingsToEnvVars(secrets)
-		assert.Equal(t, "z", secrets[0].ID)
-	})
 }
 
 func int32Ptr(i int32) *int32 { return &i }

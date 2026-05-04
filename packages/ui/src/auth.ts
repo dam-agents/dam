@@ -6,7 +6,6 @@ let currentUser: User | null = null;
 interface AuthConfig {
   issuer: string;
   clientId: string;
-  onecliUrl: string;
 }
 
 let cachedAuthConfig: AuthConfig | null = null;

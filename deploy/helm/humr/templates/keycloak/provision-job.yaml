@@ -42,29 +42,18 @@ spec:
               value: "120s"
             - name: IMPORT_VARSUBSTITUTION_ENABLED
               value: "true"
-            - name: ONECLI_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "humr.onecli.secrets.fullname" . }}
-                  key: OAUTH_CLIENT_SECRET
             - name: HUMR_API_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: {{ include "humr.keycloak.secrets.fullname" . }}
                   key: HUMR_API_CLIENT_SECRET
-            - name: HUMR_CONTROLLER_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "humr.keycloak.secrets.fullname" . }}
-                  key: HUMR_CONTROLLER_CLIENT_SECRET
           volumeMounts:
             - name: realm-config
               mountPath: /config
       containers:
-        {{- /* Set up token-exchange + impersonation permissions via Admin API.
-               keycloak-config-cli cannot modify realm-management authorizationSettings
-               reliably, so we use the Admin REST API after realm import. */}}
-        - name: token-exchange-setup
+        {{- /* Grant view-users from realm-management to the API service account
+               so the api-server can resolve user emails / subs via the Admin API. */}}
+        - name: realm-management-grants
           image: {{ .Values.keycloak.provisionImage }}
           env:
             - name: KC_URL
@@ -78,10 +67,6 @@ spec:
                 secretKeyRef:
                   name: {{ include "humr.keycloak.secrets.fullname" . }}
                   key: KEYCLOAK_ADMIN_PASSWORD
-            - name: TARGET_CLIENT_ID
-              value: {{ .Values.onecli.oauth.clientId | quote }}
-            - name: SOURCE_CLIENTS
-              value: {{ printf "%s,%s" .Values.keycloak.apiClientId .Values.keycloak.controllerClientId | quote }}
             - name: API_CLIENT_ID
               value: {{ .Values.keycloak.apiClientId | quote }}
           command: ["sh", "-c"]
@@ -93,101 +78,16 @@ spec:
               chmod +x /tmp/jq
               export PATH="/tmp:$PATH"
 
-              # Get admin token
               TOKEN=$(curl -f -s -X POST "$KC_URL/realms/master/protocol/openid-connect/token" \
                 -d "client_id=admin-cli&grant_type=password&username=$KC_ADMIN_USER&password=$KC_ADMIN_PASSWORD" | \
                 jq -r '.access_token')
               AUTH="Authorization: Bearer $TOKEN"
 
-              # Helper: get client UUID by clientId
               client_uuid() {
                 curl -f -s -H "$AUTH" "$KC_URL/admin/realms/$KC_REALM/clients?clientId=$1" | jq -r '.[0].id'
               }
 
               RM_UUID=$(client_uuid "realm-management")
-              TARGET_UUID=$(client_uuid "$TARGET_CLIENT_ID")
-              echo "realm-management=$RM_UUID target=$TARGET_CLIENT_ID=$TARGET_UUID"
-
-              # 1. Enable fine-grained permissions on the target client (onecli)
-              CLIENT_PERMS=$(curl -f -s -X PUT -H "$AUTH" -H "Content-Type: application/json" \
-                "$KC_URL/admin/realms/$KC_REALM/clients/$TARGET_UUID/management/permissions" \
-                -d '{"enabled":true}')
-              echo "$CLIENT_PERMS" | jq .
-              TE_PERM=$(echo "$CLIENT_PERMS" | jq -r '.scopePermissions["token-exchange"]')
-              CLIENT_RESOURCE=$(echo "$CLIENT_PERMS" | jq -r '.resource')
-              echo "Enabled client permissions: token-exchange perm=$TE_PERM resource=$CLIENT_RESOURCE"
-
-              # 2. Enable user management permissions (for impersonation)
-              USER_PERMS=$(curl -f -s -X PUT -H "$AUTH" -H "Content-Type: application/json" \
-                "$KC_URL/admin/realms/$KC_REALM/users-management-permissions" \
-                -d '{"enabled":true}')
-              echo "$USER_PERMS" | jq .
-              IMP_PERM=$(echo "$USER_PERMS" | jq -r '.scopePermissions["impersonate"]')
-              USER_RESOURCE=$(echo "$USER_PERMS" | jq -r '.resource')
-              echo "Enabled user permissions: impersonate perm=$IMP_PERM resource=$USER_RESOURCE"
-
-              # 3. Build JSON array of source client UUIDs
-              CLIENT_UUIDS="[]"
-              IFS=','
-              for cid in $SOURCE_CLIENTS; do
-                UUID=$(client_uuid "$cid")
-                echo "Source client $cid=$UUID"
-                CLIENT_UUIDS=$(echo "$CLIENT_UUIDS" | jq --arg u "$UUID" '. + [$u]')
-              done
-
-              # 4. Create or update client policy
-              EXISTING=$(curl -s -H "$AUTH" \
-                "$KC_URL/admin/realms/$KC_REALM/clients/$RM_UUID/authz/resource-server/policy/client?name=humr-platform-clients" \
-                2>/dev/null || echo "[]")
-              POL_ID=$(echo "$EXISTING" | jq -r '.[0].id // empty')
-
-              POLICY_BODY=$(jq -n --argjson clients "$CLIENT_UUIDS" \
-                '{name:"humr-platform-clients",clients:$clients,logic:"POSITIVE"}')
-
-              if [ -n "$POL_ID" ]; then
-                echo "Updating existing policy $POL_ID"
-                curl -f -s -X PUT -H "$AUTH" -H "Content-Type: application/json" \
-                  "$KC_URL/admin/realms/$KC_REALM/clients/$RM_UUID/authz/resource-server/policy/client/$POL_ID" \
-                  -d "$POLICY_BODY" > /dev/null
-              else
-                echo "Creating policy"
-                curl -f -s -X POST -H "$AUTH" -H "Content-Type: application/json" \
-                  "$KC_URL/admin/realms/$KC_REALM/clients/$RM_UUID/authz/resource-server/policy/client" \
-                  -d "$POLICY_BODY" > /dev/null
-              fi
-
-              # Re-read policy ID
-              POL_ID=$(curl -f -s -H "$AUTH" \
-                "$KC_URL/admin/realms/$KC_REALM/clients/$RM_UUID/authz/resource-server/policy/client?name=humr-platform-clients" | \
-                jq -r '.[0].id')
-              echo "Policy humr-platform-clients=$POL_ID"
-
-              # 5. Get scope IDs
-              TE_SCOPE=$(curl -f -s -H "$AUTH" \
-                "$KC_URL/admin/realms/$KC_REALM/clients/$RM_UUID/authz/resource-server/scope?name=token-exchange" | \
-                jq -r '.[0].id')
-              IMP_SCOPE=$(curl -f -s -H "$AUTH" \
-                "$KC_URL/admin/realms/$KC_REALM/clients/$RM_UUID/authz/resource-server/scope?name=impersonate" | \
-                jq -r '.[0].id')
-              echo "Scopes: token-exchange=$TE_SCOPE impersonate=$IMP_SCOPE"
-
-              # 6. Update token-exchange permission to use our policy
-              curl -f -s -X PUT -H "$AUTH" -H "Content-Type: application/json" \
-                "$KC_URL/admin/realms/$KC_REALM/clients/$RM_UUID/authz/resource-server/permission/scope/$TE_PERM" \
-                -d "$(jq -n --arg n "token-exchange.permission.client.$TARGET_UUID" \
-                  --arg r "$CLIENT_RESOURCE" --arg s "$TE_SCOPE" --arg p "$POL_ID" \
-                  '{name:$n,resources:[$r],scopes:[$s],policies:[$p],decisionStrategy:"UNANIMOUS"}')" > /dev/null
-              echo "Token-exchange permission configured"
-
-              # 7. Update impersonation permission to use our policy
-              curl -f -s -X PUT -H "$AUTH" -H "Content-Type: application/json" \
-                "$KC_URL/admin/realms/$KC_REALM/clients/$RM_UUID/authz/resource-server/permission/scope/$IMP_PERM" \
-                -d "$(jq -n --arg n "admin-impersonating.permission.users" \
-                  --arg r "$USER_RESOURCE" --arg s "$IMP_SCOPE" --arg p "$POL_ID" \
-                  '{name:$n,resources:[$r],scopes:[$s],policies:[$p],decisionStrategy:"UNANIMOUS"}')" > /dev/null
-              echo "Impersonation permission configured"
-
-              # 8. Grant view-users role from realm-management to the API service account
               API_UUID=$(client_uuid "$API_CLIENT_ID")
               SA_USER_ID=$(curl -f -s -H "$AUTH" \
                 "$KC_URL/admin/realms/$KC_REALM/clients/$API_UUID/service-account-user" | jq -r '.id')
@@ -197,8 +97,6 @@ spec:
                 "$KC_URL/admin/realms/$KC_REALM/users/$SA_USER_ID/role-mappings/clients/$RM_UUID" \
                 -d "[$VIEW_USERS_ROLE]" > /dev/null
               echo "Granted view-users to $API_CLIENT_ID service account"
-
-              echo "Done"
       volumes:
         - name: realm-config
           configMap:

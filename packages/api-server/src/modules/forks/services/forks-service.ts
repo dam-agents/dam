@@ -13,23 +13,13 @@ import {
   toForeignSub,
   type Fork,
 } from "../domain/fork.js";
-import type {
-  ForeignCredentialsPort,
-  ForkOrchestratorPort,
-} from "../infrastructure/ports.js";
+import type { ForkOrchestratorPort } from "../infrastructure/ports.js";
 
 export interface OpenForkInput {
   instanceId: string;
   foreignSub: string;
   replyId: string;
   sessionId?: string;
-  /**
-   * Parent instance's `experimentalCredentialInjector` flag. When `true`,
-   * the foreign-credentials mint (RFC 8693 token exchange + OneCLI
-   * fork-agent registration) is skipped — the controller resolves
-   * credentials from the replier's K8s Secrets at render time (ADR-033).
-   */
-  experimentalCredentialInjector?: boolean;
 }
 
 export interface ForksService {
@@ -38,7 +28,6 @@ export interface ForksService {
 }
 
 export function createForksService(deps: {
-  foreignCredentials: ForeignCredentialsPort;
   orchestrator: ForkOrchestratorPort;
   emit?: (event: DomainEvent) => void;
   generateForkId?: () => string;
@@ -91,65 +80,14 @@ export function createForksService(deps: {
     async openFork(input) {
       const forkId = generateForkId();
 
-      // Envoy path (ADR-033): no OneCLI fork-agent, no minted access
-      // token. The controller picks up the replier's K8s Secrets at render
-      // time via foreignSub-labelled selectors.
-      if (input.experimentalCredentialInjector) {
-        const fork = createFork({
-          forkId,
-          replyId: input.replyId,
-          spec: {
-            instanceId: input.instanceId,
-            foreignSub: toForeignSub(input.foreignSub),
-            forkAgentIdentifier: "",
-            ...(input.sessionId !== undefined ? { sessionId: input.sessionId } : {}),
-          },
-        });
-        open.set(forkId, fork);
-
-        const created = await deps.orchestrator.createFork({
-          forkId,
-          spec: fork.spec,
-        });
-        if (!created.ok) {
-          const detail =
-            created.error.kind === "WriteFailed" ? created.error.detail : created.error.kind;
-          emitFailed(fork, "OrchestrationFailed", detail);
-          return;
-        }
-
-        void consumeStatus(fork);
-        return;
-      }
-
-      // Legacy OneCLI path: mint foreign-user token, inline into ConfigMap.
-      const minted = await deps.foreignCredentials.mintForeignToken({
-        foreignSub: input.foreignSub,
-        instanceId: input.instanceId,
-      });
-      if (!minted.ok) {
-        const pending = createFork({
-          forkId,
-          replyId: input.replyId,
-          spec: {
-            instanceId: input.instanceId,
-            foreignSub: toForeignSub(input.foreignSub),
-            forkAgentIdentifier: "",
-            ...(input.sessionId !== undefined ? { sessionId: input.sessionId } : {}),
-          },
-        });
-        open.set(forkId, pending);
-        emitFailed(pending, "CredentialMintFailed", minted.error.detail);
-        return;
-      }
-
+      // The controller picks up the replier's K8s Secrets at render
+      // time via foreignSub-labelled selectors (ADR-033).
       const fork = createFork({
         forkId,
         replyId: input.replyId,
         spec: {
           instanceId: input.instanceId,
           foreignSub: toForeignSub(input.foreignSub),
-          forkAgentIdentifier: minted.value.agentIdentifier,
           ...(input.sessionId !== undefined ? { sessionId: input.sessionId } : {}),
         },
       });
@@ -158,7 +96,6 @@ export function createForksService(deps: {
       const created = await deps.orchestrator.createFork({
         forkId,
         spec: fork.spec,
-        accessToken: minted.value.accessToken,
       });
       if (!created.ok) {
         const detail =

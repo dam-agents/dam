@@ -12,7 +12,7 @@ Last verified: 2026-04-28
 - [ADR-012 — Runtime lifetime](../adrs/012-runtime-lifetime.md) — single-use spawn/hibernate model
 - [ADR-022 — Harness API server](../adrs/022-harness-api-server.md) — separate port with a restricted, internal-only surface
 - [ADR-023 — Harness-agnostic agent base image](../adrs/023-harness-agnostic-base-image.md) — `AGENT_COMMAND` contract
-- [ADR-033 — Envoy-based credential gateway](../adrs/033-envoy-credential-gateway.md) — experimental per-pod sidecar replaces OneCLI on the wire
+- [ADR-033 — Envoy-based credential gateway](../adrs/033-envoy-credential-gateway.md) — per-pod Envoy sidecar that mounts owner-labelled K8s Secrets and injects credentials on the wire
 
 ## Overview
 
@@ -53,7 +53,7 @@ A TypeScript server that hosts the user-facing surface and the ACP relay. It run
 - **Public port** — user-authenticated tRPC, REST (OAuth callbacks, health), and the ACP relay WebSocket.
 - **Harness port** — an internal-only endpoint consumed by agent pods for trigger handoff and MCP tool calls. Not exposed outside the cluster and carries no user authentication.
 
-The api-server proxies all ACP traffic to agent pods; clients never dial pods directly. It also wakes hibernated instances on demand before forwarding the first message of a session. Both the ACP relay and the tRPC proxy verify the user JWT and ownership at the public port and rewrite `Authorization` to the per-instance OneCLI access token before forwarding — agent-runtime never sees user identity directly. See [security-and-credentials § same token authenticates three trust boundaries](security-and-credentials.md#per-instance-access-token-and-pod-identity) and [`packages/api-server/`](../../packages/api-server/).
+The api-server proxies all ACP traffic to agent pods; clients never dial pods directly. It also wakes hibernated instances on demand before forwarding the first message of a session. Both the ACP relay and the tRPC proxy verify the user JWT and ownership at the public port and rewrite `Authorization` to the per-agent runtime token before forwarding — agent-runtime never sees user identity directly. See [security-and-credentials](security-and-credentials.md) and [`packages/api-server/`](../../packages/api-server/).
 
 ### agent-runtime
 
@@ -77,7 +77,7 @@ A React + Vite single-page app served by the api-server. It uses tRPC over HTTP 
 | ui → api-server | tRPC over HTTP | CRUD on templates, instances, schedules, sessions |
 | ui → api-server | WebSocket (ACP, JSON-RPC 2.0) | Live session, permission prompts, streaming output |
 | api-server → agent-runtime | WebSocket (ACP, JSON-RPC 2.0) | Relay target — one hop, no fan-out |
-| api-server → agent-runtime | HTTP (tRPC proxy) | In-pod file operations surfaced to the UI; api-server swaps the user JWT for the OneCLI access token before forwarding |
+| api-server → agent-runtime | HTTP (tRPC proxy) | In-pod file operations surfaced to the UI; api-server swaps the user JWT for the agent-runtime auth token before forwarding |
 | agent-runtime → api-server | HTTP (harness port) | Trigger receipt + MCP tool access |
 | controller → K8s API | watch / list / write | Resource reconciliation and status writes |
 | api-server → K8s API | REST | Resource CRUD, spec writes, pod wake |
@@ -99,12 +99,12 @@ Humr models all of its domain state as ConfigMaps labelled `humr.ai/type` ([ADR-
 | `agent-schedule` | Schedule: cron or RRULE, quiet hours, task payload, session mode |
 | `agent-fork` | Forked run: parent instance ref + overrides |
 
-For each `agent-instance`, the controller reconciles a StatefulSet (replicas 0 when hibernated, 1 when running), a headless Service, and a NetworkPolicy. The OneCLI access-token Secret lives one level up: it is reconciled per `agent` template by the agent reconciler and shared by every instance of that agent. ConfigMaps are chosen over CRDs so Humr installs without cluster-admin. See [`deploy/helm/humr/templates/`](../../deploy/helm/humr/templates/) for the install layout.
+For each `agent-instance`, the controller reconciles a StatefulSet (replicas 0 when hibernated, 1 when running), a headless Service, a NetworkPolicy, and a per-instance Envoy bootstrap ConfigMap + leaf-TLS Certificate ([ADR-033](../adrs/033-envoy-credential-gateway.md)). The agent-runtime auth-token Secret lives one level up: it is reconciled per `agent` template and shared by every instance of that agent. ConfigMaps are chosen over CRDs so Humr installs without cluster-admin. See [`deploy/helm/humr/templates/`](../../deploy/helm/humr/templates/) for the install layout.
 
 ## Invariants
 
 - **Spec/status ownership.** Controller never writes `spec.yaml`; api-server never writes `status.yaml`. Write contention between the two is impossible by convention.
 - **Relay-only ACP.** All ACP traffic is proxied through the api-server. Agent pods do not accept ACP connections from outside the cluster and the UI never dials pods directly.
 - **Two-port api-server.** The public port is user-authenticated; the harness port is cluster-internal and has no user authentication. They do not share routes.
-- **Credential isolation.** Agent pods never hold real upstream credentials. By default, egress flows through OneCLI's MITM gateway, which swaps a delegated OneCLI access token for the real upstream credential on the wire. Instances with the experimental `experimentalCredentialInjector` flag (ADR-033) take a different path: an Envoy sidecar in the pod intercepts agent TLS using a per-instance leaf cert and injects the credential header from a Secret mounted only into the sidecar — the agent container itself still never sees the upstream credential. See [security-and-credentials](security-and-credentials.md).
+- **Credential isolation.** Agent pods never hold real upstream credentials. An Envoy sidecar in the pod intercepts agent TLS using a per-instance leaf cert and injects the credential header from a K8s Secret mounted only into the sidecar — the agent container itself never sees the upstream credential ([ADR-033](../adrs/033-envoy-credential-gateway.md)). See [security-and-credentials](security-and-credentials.md).
 - **Atomic triggers.** Trigger files are delivered via write-temp + rename so the agent's trigger watcher never reads a partial file.

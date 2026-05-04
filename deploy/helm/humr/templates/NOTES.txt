@@ -2,14 +2,6 @@ Humr has been deployed!
 
 Components:
   - PostgreSQL: {{ include "humr.postgres.fullname" . }}.{{ .Release.Namespace }}.svc:5432
-  - OneCLI:     {{ include "humr.onecli.fullname" . }}.{{ .Release.Namespace }}.svc
-    - Gateway:  port {{ .Values.onecli.gateway.port }}
-    - Web:      port {{ .Values.onecli.web.port }}
-{{- if .Values.keycloak.enabled }}
-    - Auth:     OAuth (Keycloak JWT validation, client: {{ .Values.onecli.oauth.clientId }})
-{{- else }}
-    - Auth:     local (no JWT validation)
-{{- end }}
 {{- if .Values.keycloak.enabled }}
   - Keycloak:   {{ include "humr.keycloak.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.keycloak.port }}
     - Admin:    {{ include "humr.url.keycloak" . }} (user: {{ .Values.keycloak.admin.user }})
@@ -21,8 +13,6 @@ Components:
 
 Agent namespace: {{ .Values.agentNamespace }}
 
-CA cert: fetched by agent init container from OneCLI /api/container-config (via gateway proxy)
-
 RBAC:
   Controller SA: {{ include "humr.controller.serviceAccountName" . }}
   API Server SA: {{ include "humr.apiserver.serviceAccountName" . }}
@@ -33,7 +23,6 @@ To verify:
 
 To access services:
   {{ include "humr.url.ui" . }}          (UI)
-  {{ include "humr.url.onecli" . }}      (OneCLI)
 {{- if .Values.keycloak.enabled }}
   {{ include "humr.url.keycloak" . }}    (Keycloak admin)
 {{- end }}

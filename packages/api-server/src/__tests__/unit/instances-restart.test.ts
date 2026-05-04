@@ -20,6 +20,7 @@ function instanceCM(id: string, owner: string): k8s.V1ConfigMap {
 
 function fakeK8s(overrides: Partial<K8sClient> = {}): K8sClient {
   return {
+    namespace: "test-ns",
     listConfigMaps: vi.fn().mockResolvedValue([]),
     getConfigMap: vi.fn().mockResolvedValue(null),
     createConfigMap: vi.fn(),

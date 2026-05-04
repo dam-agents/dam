@@ -201,9 +201,9 @@ rm -f "$tar"
 DEV_DEFAULTS=(--set keycloak.admin.password=admin)
 
 echo "Installing/upgrading Humr chart..."
-# No --wait: the keycloak-provision post-install hook imports the humr realm,
-# which OneCLI's wait-for-keycloak init container depends on. With --wait,
-# helm would block on OneCLI readiness before the hook ever runs → deadlock.
+# No --wait: the keycloak-provision post-install hook imports the humr realm
+# after deployments come up. With --wait, helm would block on readiness
+# before the hook runs.
 if [ -z "$HELM_VALUES" ] && [ -f "$DEV_VALUES" ]; then
     HELM_VALUES="$DEV_VALUES"
     echo "Using dev overrides: $DEV_VALUES"
@@ -215,7 +215,7 @@ if [ "$NO_RESTART" = true ]; then
   echo "Skipping pod restart (--no-restart)"
 else
   echo "Restarting pods..."
-  kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment humr-controller humr-apiserver humr-ui humr-onecli
+  kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment humr-controller humr-apiserver humr-ui
   # Agent pods are managed by the controller (StatefulSets in humr-agents) and
   # pin :latest too — delete them so they come back on the freshly loaded image.
   kubectl --kubeconfig="$KUBECONFIG" delete pods -n humr-agents --all --ignore-not-found
@@ -551,7 +551,7 @@ esac
 
 
 ["cluster:logs"]
-description = "Show OneCLI pod logs"
+description = "Show api-server pod logs"
 run = '''
 #!/usr/bin/env bash
 set -eo pipefail
@@ -560,5 +560,5 @@ if [ -n "${IS_SANDBOX:-}" ]; then
 else
   KUBECONFIG="$HOME/.lima/humr-k3s/copied-from-guest/kubeconfig.yaml"
 fi
-kubectl --kubeconfig="$KUBECONFIG" logs -l app.kubernetes.io/component=onecli --all-containers --tail=50
+kubectl --kubeconfig="$KUBECONFIG" logs -l app.kubernetes.io/component=apiserver --all-containers --tail=50
 '''

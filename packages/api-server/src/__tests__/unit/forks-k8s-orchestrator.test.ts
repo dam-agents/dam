@@ -11,14 +11,13 @@ import { toForeignSub } from "../../modules/forks/domain/fork.js";
 
 const spec: ForkSpec = {
   instanceId: "inst-abc",
-  foreignSub: toForeignSub("kc|user-42"),
-  forkAgentIdentifier: "fork-inst-abc-abcd1234abcd",
+  foreignSub: toForeignSub("kc-user-42"),
   sessionId: "sess-1",
 };
 
 describe("buildForkConfigMap", () => {
-  it("produces a ConfigMap with the fork labels and inlined access token", () => {
-    const cm = buildForkConfigMap({ forkId: "fork-1", spec, accessToken: "tok" });
+  it("produces a ConfigMap with the fork labels", () => {
+    const cm = buildForkConfigMap({ forkId: "fork-1", spec });
 
     expect(cm.metadata?.name).toBe("fork-1");
     expect(cm.metadata?.labels).toMatchObject({
@@ -31,47 +30,22 @@ describe("buildForkConfigMap", () => {
     expect(body).toEqual({
       version: "humr.ai/v1",
       instance: "inst-abc",
-      foreignSub: "kc|user-42",
-      forkAgentIdentifier: "fork-inst-abc-abcd1234abcd",
+      foreignSub: "kc-user-42",
       sessionId: "sess-1",
-      accessToken: "tok",
     });
   });
 
   it("omits sessionId when not provided", () => {
     const withoutSession: ForkSpec = {
       instanceId: "inst-abc",
-      foreignSub: toForeignSub("kc|user-42"),
-      forkAgentIdentifier: "fork-inst-abc-abcd1234abcd",
+      foreignSub: toForeignSub("kc-user-42"),
     };
     const cm = buildForkConfigMap({
       forkId: "fork-1",
       spec: withoutSession,
-      accessToken: "tok",
     });
     const body = yaml.load(cm.data!["spec.yaml"]) as Record<string, unknown>;
     expect(body).not.toHaveProperty("sessionId");
-  });
-
-  // Envoy path (ADR-033): the api-server skips the OneCLI mint, so the
-  // ConfigMap must omit `accessToken` and `forkAgentIdentifier`. The
-  // controller resolves credentials from foreignSub-labeled K8s Secrets at
-  // render time.
-  it("omits accessToken and forkAgentIdentifier on the Envoy path", () => {
-    const envoySpec: ForkSpec = {
-      instanceId: "inst-abc",
-      foreignSub: toForeignSub("kc|user-42"),
-      forkAgentIdentifier: "",
-    };
-    const cm = buildForkConfigMap({ forkId: "fork-1", spec: envoySpec });
-    const body = yaml.load(cm.data!["spec.yaml"]) as Record<string, unknown>;
-    expect(body).toEqual({
-      version: "humr.ai/v1",
-      instance: "inst-abc",
-      foreignSub: "kc|user-42",
-    });
-    expect(body).not.toHaveProperty("accessToken");
-    expect(body).not.toHaveProperty("forkAgentIdentifier");
   });
 });
 
@@ -158,7 +132,7 @@ function makeFakeApi(
       state.created.push(req.body);
       return req.body;
     },
-    async readNamespacedConfigMap(req: { name: string }) {
+    async readNamespacedConfigMap(_req: { name: string }) {
       const idx = Math.min(state.readCount, state.readSequence.length - 1);
       state.readCount += 1;
       const entry = state.readSequence[idx];
@@ -182,7 +156,7 @@ describe("createK8sForkOrchestrator", () => {
       namespace: "humr-agents",
       sleep: async () => {},
     });
-    const result = await orch.createFork({ forkId: "fork-1", spec, accessToken: "tok" });
+    const result = await orch.createFork({ forkId: "fork-1", spec });
     expect(result.ok).toBe(true);
     expect(fake.created).toHaveLength(1);
     expect(fake.created[0].metadata?.name).toBe("fork-1");
@@ -196,7 +170,7 @@ describe("createK8sForkOrchestrator", () => {
       namespace: "humr-agents",
       sleep: async () => {},
     });
-    const result = await orch.createFork({ forkId: "fork-1", spec, accessToken: "tok" });
+    const result = await orch.createFork({ forkId: "fork-1", spec });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.kind).toBe("AlreadyExists");
   });
@@ -208,7 +182,7 @@ describe("createK8sForkOrchestrator", () => {
       namespace: "humr-agents",
       sleep: async () => {},
     });
-    const result = await orch.createFork({ forkId: "fork-1", spec, accessToken: "tok" });
+    const result = await orch.createFork({ forkId: "fork-1", spec });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.kind).toBe("WriteFailed");
   });
@@ -231,38 +205,10 @@ describe("createK8sForkOrchestrator", () => {
       { phase: "Ready", podIP: "10.0.0.5" },
     ]);
   });
-
-  it("watchStatus terminates when ConfigMap is 404", async () => {
-    const fake = makeFakeApi(["not-found"]);
-    const orch = createK8sForkOrchestrator({
-      api: fake.api,
-      namespace: "humr-agents",
-      sleep: async () => {},
-    });
-
-    const received = [];
-    for await (const status of orch.watchStatus("fork-1")) received.push(status);
-
-    expect(received).toEqual([]);
-  });
-
-  it("deleteFork issues a delete and swallows 404", async () => {
-    const fake = makeFakeApi([]);
-    fake.api.deleteNamespacedConfigMap = async () => {
-      throw { code: 404 };
-    };
-    const orch = createK8sForkOrchestrator({
-      api: fake.api,
-      namespace: "humr-agents",
-      sleep: async () => {},
-    });
-    await expect(orch.deleteFork("fork-1")).resolves.toBeUndefined();
-  });
 });
 
 function cm(status: Record<string, unknown>): k8s.V1ConfigMap {
   return {
-    metadata: { name: "fork-1" },
-    data: { "status.yaml": yaml.dump(status) },
+    data: { "status.yaml": yaml.dump({ version: "humr.ai/v1", ...status }) },
   } as k8s.V1ConfigMap;
 }

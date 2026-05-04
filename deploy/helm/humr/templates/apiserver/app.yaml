@@ -115,13 +115,7 @@ spec:
             - name: KEYCLOAK_REQUIRED_ROLE
               value: {{ .Values.keycloak.requiredRole | quote }}
             {{- end }}
-            - name: ONECLI_AUDIENCE
-              value: {{ .Values.onecli.oauth.audience | quote }}
             {{- end }}
-            - name: ONECLI_WEB_URL
-              value: "http://{{ include "humr.onecli.fullname" . }}:{{ .Values.onecli.web.port }}"
-            - name: ONECLI_EXTERNAL_URL
-              value: {{ include "humr.url.onecli" . | quote }}
             - name: AGENT_HOME
               value: {{ .Values.agentHome | quote }}
             {{- if .Values.skills.skillSources }}

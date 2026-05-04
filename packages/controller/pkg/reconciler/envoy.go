@@ -69,8 +69,7 @@ type envoyRoute struct {
 const envoySecretTypeAllowOnly = "allow-only"
 
 // listOwnerCredentialSecrets returns the K8s Secrets the api-server has
-// written for this owner. Secrets predating #337 (still OneCLI-only) are not
-// visible here — only newly-created secrets surface for the experimental path.
+// written for this owner.
 func listOwnerCredentialSecrets(ctx context.Context, client kubernetes.Interface, namespace, owner string) ([]corev1.Secret, error) {
 	if owner == "" {
 		return nil, nil
@@ -88,9 +87,7 @@ func listOwnerCredentialSecrets(ctx context.Context, client kubernetes.Interface
 
 // hasGitHubCredential reports whether any of the owner's K8s credential
 // Secrets target a GitHub host. Used by the reconciler to warn when an
-// experimental-flag instance has no GitHub credential — the OneCLI GH_TOKEN
-// sentinel is unavailable on this path, so gh/octokit lose auth silently
-// otherwise.
+// instance has no GitHub credential so gh/octokit don't lose auth silently.
 func hasGitHubCredential(secrets []corev1.Secret) bool {
 	for _, s := range secrets {
 		host := s.Annotations[envoyHostPatternAnn]

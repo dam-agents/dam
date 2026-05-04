@@ -6,9 +6,9 @@
 {{- end }}
 {{- end }}
 {{- /*
-  Resolve override hosts. When `urls.{service}` is set (or, for OneCLI,
-  the legacy `onecli.externalHostname`), the bundled Ingress routes that
-  hostname instead of generating convention-based rules for that service.
+  Resolve override hosts. When `urls.{service}` is set, the bundled Ingress
+  routes that hostname instead of generating convention-based rules for
+  that service.
 */ -}}
 {{- $uiHost := "" -}}
 {{- if .Values.urls.ui -}}
@@ -21,12 +21,6 @@
 {{- $keycloakHost := "" -}}
 {{- if .Values.urls.keycloak -}}
 {{- $keycloakHost = include "humr.url.host" .Values.urls.keycloak -}}
-{{- end -}}
-{{- $onecliHost := "" -}}
-{{- if .Values.urls.onecli -}}
-{{- $onecliHost = include "humr.url.host" .Values.urls.onecli -}}
-{{- else if .Values.onecli.externalHostname -}}
-{{- $onecliHost = .Values.onecli.externalHostname -}}
 {{- end -}}
 {{- $uiSvc := printf "%s-ui" (include "humr.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- $apiSvc := printf "%s-apiserver" (include "humr.fullname" .) | trunc 63 | trimSuffix "-" -}}
@@ -51,18 +45,6 @@ spec:
   {{- end }}
   rules:
     {{- /* Override hostnames: one rule per service, no alias mirroring. */ -}}
-    {{- if $onecliHost }}
-    - host: {{ $onecliHost }}
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: {{ include "humr.onecli.fullname" . }}
-                port:
-                  name: web
-    {{- end }}
     {{- if $uiHost }}
     - host: {{ $uiHost }}
       http:
@@ -101,18 +83,6 @@ spec:
     {{- end }}
     {{- /* Convention-based rules: only for services without an override. */ -}}
     {{- range $domain := $domains }}
-    {{- if not $onecliHost }}
-    - host: {{ printf "onecli.%s" $domain }}
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: {{ include "humr.onecli.fullname" $ }}
-                port:
-                  name: web
-    {{- end }}
     {{- if not $uiHost }}
     - host: {{ printf "humr.%s" $domain }}
       http:

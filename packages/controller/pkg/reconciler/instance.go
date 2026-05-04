@@ -3,9 +3,6 @@ package reconciler
 import (
 	"context"
 	"fmt"
-	"log/slog"
-	"slices"
-	"strings"
 
 	cmv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -19,28 +16,25 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
+	"log/slog"
 
 	"github.com/kagenti/humr/packages/controller/pkg/config"
-	"github.com/kagenti/humr/packages/controller/pkg/onecli"
 	"github.com/kagenti/humr/packages/controller/pkg/types"
 )
 
 type InstanceReconciler struct {
 	client   kubernetes.Interface
-	dynamic  dynamic.Interface // optional; required only on the experimental Envoy MITM path
+	dynamic  dynamic.Interface // required to apply cert-manager Certificates
 	config   *config.Config
 	resolver *AgentResolver
-	factory  onecli.Factory
 }
 
-func NewInstanceReconciler(client kubernetes.Interface, cfg *config.Config, resolver *AgentResolver, factory onecli.Factory) *InstanceReconciler {
-	return &InstanceReconciler{client: client, config: cfg, resolver: resolver, factory: factory}
+func NewInstanceReconciler(client kubernetes.Interface, cfg *config.Config, resolver *AgentResolver) *InstanceReconciler {
+	return &InstanceReconciler{client: client, config: cfg, resolver: resolver}
 }
 
-// WithDynamicClient supplies a dynamic client used to apply non-core resources
-// (currently: cert-manager.io/v1 Certificate for the experimental Envoy MITM
-// path). Optional — without it, the experimental flag's leaf-certificate step
-// is skipped and the agent pod will fail to mount its TLS Secret.
+// WithDynamicClient supplies a dynamic client used to apply cert-manager.io/v1
+// Certificate resources for the per-instance Envoy leaf TLS Secret.
 func (r *InstanceReconciler) WithDynamicClient(d dynamic.Interface) *InstanceReconciler {
 	r.dynamic = d
 	return r
@@ -75,46 +69,37 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 		return r.setError(ctx, name, fmt.Sprintf("setting agent owner reference: %v", err))
 	}
 
-	connectorEnvs := r.collectConnectorEnvs(ctx, agentCM, agentName)
+	owner := agentCM.Labels["humr.ai/owner"]
+	credentialSecrets, err := listOwnerCredentialSecrets(ctx, r.client, r.config.Namespace, owner)
+	if err != nil {
+		return r.setError(ctx, name, fmt.Sprintf("listing credential secrets: %v", err))
+	}
 
-	var credentialSecrets []corev1.Secret
-	if instanceSpec.ExperimentalCredentialInjector {
-		owner := agentCM.Labels["humr.ai/owner"]
-		secrets, err := listOwnerCredentialSecrets(ctx, r.client, r.config.Namespace, owner)
-		if err != nil {
-			return r.setError(ctx, name, fmt.Sprintf("listing credential secrets: %v", err))
-		}
-		credentialSecrets = secrets
+	if !hasGitHubCredential(credentialSecrets) {
+		slog.Warn("no GitHub credential Secret attached — gh/octokit calls will be unauthenticated",
+			"instance", name, "owner", owner)
+	}
 
-		// On the experimental path the OneCLI GitHub OAuth-app sentinel
-		// (GH_TOKEN=humr:sentinel) is not injected — Envoy doesn't do the
-		// host-based MITM swap OneCLI does. Until the user attaches their
-		// own GitHub credential Secret, gh/octokit/etc. will be unauthenticated.
-		// Log it so operators can see why GitHub-touching agents are failing
-		// without having to spelunk env diffs.
-		if !hasGitHubCredential(credentialSecrets) {
-			slog.Warn("experimental credential injector: no GitHub credential Secret attached — gh/octokit calls will be unauthenticated",
-				"instance", name, "owner", owner)
-		}
-
-		bootstrapCM, err := BuildEnvoyBootstrapConfigMap(name, r.config, cm, credentialSecrets)
-		if err != nil {
-			return r.setError(ctx, name, fmt.Sprintf("rendering envoy bootstrap: %v", err))
-		}
-		if err := r.applyConfigMap(ctx, bootstrapCM); err != nil {
-			return r.setError(ctx, name, fmt.Sprintf("applying envoy bootstrap: %v", err))
-		}
-		if cert := BuildEnvoyLeafCertificate(name, r.config, cm, credentialSecrets); cert != nil {
-			if err := r.applyCertificate(ctx, cert); err != nil {
-				return r.setError(ctx, name, fmt.Sprintf("applying envoy leaf certificate: %v", err))
-			}
+	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(name, r.config, cm, credentialSecrets)
+	if err != nil {
+		return r.setError(ctx, name, fmt.Sprintf("rendering envoy bootstrap: %v", err))
+	}
+	if err := r.applyConfigMap(ctx, bootstrapCM); err != nil {
+		return r.setError(ctx, name, fmt.Sprintf("applying envoy bootstrap: %v", err))
+	}
+	if cert := BuildEnvoyLeafCertificate(name, r.config, cm, credentialSecrets); cert != nil {
+		if err := r.applyCertificate(ctx, cert); err != nil {
+			return r.setError(ctx, name, fmt.Sprintf("applying envoy leaf certificate: %v", err))
 		}
 	}
 
-	// Build desired resources
-	ss := BuildStatefulSet(name, instanceSpec, agentSpec, r.config, agentName, cm, connectorEnvs, credentialSecrets)
+	if err := ensureAgentRuntimeTokenSecret(ctx, r.client, r.config.Namespace, agentCM, agentName); err != nil {
+		return r.setError(ctx, name, fmt.Sprintf("ensuring agent-runtime token secret: %v", err))
+	}
+
+	ss := BuildStatefulSet(name, instanceSpec, agentSpec, r.config, agentName, cm, credentialSecrets)
 	svc := BuildService(name, r.config, cm)
-	np := BuildNetworkPolicy(name, r.config, cm, instanceSpec)
+	np := BuildNetworkPolicy(name, r.config, cm)
 
 	if err := r.applyStatefulSet(ctx, ss); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying statefulset: %v", err))
@@ -166,62 +151,9 @@ func (r *InstanceReconciler) ensureAgentOwnerReference(ctx context.Context, inst
 	})
 }
 
-// collectConnectorEnvs fetches the agent's granted secrets from OneCLI and
-// derives the pod env vars their envMappings declare.
-//
-// Soft-fails on any error: a transient OneCLI outage or missing owner label
-// must not block instance reconciliation. The next reconcile pass will retry.
-func (r *InstanceReconciler) collectConnectorEnvs(ctx context.Context, agentCM *corev1.ConfigMap, agentName string) []corev1.EnvVar {
-	if r.factory == nil {
-		return nil
-	}
-	owner := agentCM.Labels["humr.ai/owner"]
-	if owner == "" {
-		slog.Warn("agent missing humr.ai/owner label; skipping connector envs", "agent", agentName)
-		return nil
-	}
-	oc, err := r.factory.ClientForOwner(ctx, owner)
-	if err != nil {
-		slog.Warn("could not get OneCLI client; skipping connector envs", "agent", agentName, "error", err)
-		return nil
-	}
-	secrets, err := oc.ListSecretsForAgent(ctx, agentName)
-	if err != nil {
-		slog.Warn("could not list secrets for agent; skipping connector envs", "agent", agentName, "error", err)
-		return nil
-	}
-	return envMappingsToEnvVars(secrets)
-}
-
-// envMappingsToEnvVars flattens each secret's metadata.envMappings into a pod
-// env slice. Duplicate envName across secrets is resolved deterministically
-// (smallest secret ID wins) — values are typically identical so the dedupe is
-// usually a no-op. Pure function; kept separate for unit testing.
-func envMappingsToEnvVars(secrets []onecli.Secret) []corev1.EnvVar {
-	ordered := append([]onecli.Secret(nil), secrets...)
-	slices.SortFunc(ordered, func(a, b onecli.Secret) int {
-		return strings.Compare(a.ID, b.ID)
-	})
-	seen := make(map[string]struct{})
-	var envs []corev1.EnvVar
-	for _, s := range ordered {
-		if s.Metadata == nil {
-			continue
-		}
-		for _, m := range s.Metadata.EnvMappings {
-			if _, dup := seen[m.EnvName]; dup {
-				continue
-			}
-			seen[m.EnvName] = struct{}{}
-			envs = append(envs, corev1.EnvVar{Name: m.EnvName, Value: m.Placeholder})
-		}
-	}
-	return envs
-}
-
 func (r *InstanceReconciler) Delete(ctx context.Context, name string) {
-	// Owner references handle cascade deletion of StatefulSet, Service, NetworkPolicy.
-	// OneCLI agent cleanup is handled by AgentReconciler.
+	// Owner references handle cascade deletion of StatefulSet, Service,
+	// NetworkPolicy, and the agent-runtime token Secret.
 	//
 	// PVCs created via VolumeClaimTemplates are intentionally NOT deleted by
 	// Kubernetes when the StatefulSet is removed (to prevent data loss).

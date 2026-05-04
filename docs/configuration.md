@@ -4,12 +4,12 @@ How to configure [Humr](../README.md) after installation: secrets for the creden
 
 ## Secrets
 
-Agents and other connections require API tokens to communicate with their providers. These secrets are managed through the OneCLI dashboard at [onecli.localhost:4444](http://onecli.localhost:4444).
+Agents and other connections require API tokens to communicate with their providers. These secrets are managed through the Humr UI at [humr.localhost:4444](http://humr.localhost:4444).
 
-OneCLI acts as a proxy — agents never see the secrets directly. Instead, OneCLI intercepts outgoing requests from agent pods and injects the appropriate credentials before forwarding them to the provider.
+The Envoy sidecar in each agent pod injects credentials on the wire — agents never see the secret bytes. The api-server stores secrets as K8s Secrets labelled with the owner's `sub`; the controller mounts the matching set into the Envoy sidecar only.
 
-1. **Add a secret** — open the OneCLI UI and create a new secret. For Anthropic, you can use `claude setup-token` as the token value. For other connections, use Apps or Generic secret.
-2. **Allow the secret for an agent** — in the OneCLI UI, grant the secret to the specific agent that needs it. Only requests from allowed agents will have credentials injected.
+1. **Add a secret** — open the Connections panel in the UI. For Anthropic, you can use `claude setup-token` as the token value. For other connections, use the OAuth flow for the provider or a Generic secret.
+2. **Connect an OAuth app** — for GitHub, GitHub Enterprise, and other named providers, click Connect and complete the browser flow. The api-server stores the resulting tokens; the refresh-token loop re-mints them before expiry.
 
 ## Skills
 
@@ -33,7 +33,7 @@ googleWorkspaceTemplate:
       gitUrl: "https://github.com/anthropics/google-workspace-skills"
 ```
 
-Users can also author skills in the Files panel and publish them upstream as pull requests via the Publish button on standalone skill rows. Publishing requires a GitHub connection in OneCLI.
+Users can also author skills in the Files panel and publish them upstream as pull requests via the Publish button on standalone skill rows. Publishing requires a connected GitHub account.
 
 ## Slack Integration
 

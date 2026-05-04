@@ -5,25 +5,21 @@ import { Modal } from "../../../components/modal.js";
 
 export interface InstanceSettingsValues {
   allowedUserEmails: string[];
-  experimentalCredentialInjector: boolean;
 }
 
 export function InstanceSettingsDialog({
   instanceName,
   allowedUserEmails,
-  experimentalCredentialInjector,
   onSubmit,
   onCancel,
 }: {
   instanceName: string;
   allowedUserEmails: string[];
-  experimentalCredentialInjector: boolean;
   onSubmit: (values: InstanceSettingsValues) => void;
   onCancel: () => void;
 }) {
   const [users, setUsers] = useState<string[]>(allowedUserEmails);
   const [input, setInput] = useState("");
-  const [experimental, setExperimental] = useState<boolean>(experimentalCredentialInjector);
 
   const addUser = () => {
     const v = input.trim();
@@ -85,24 +81,6 @@ export function InstanceSettingsDialog({
           )}
         </div>
 
-        <div className="flex flex-col gap-3">
-          <span className="text-[12px] font-bold text-text-secondary uppercase tracking-[0.03em]">Experimental</span>
-          <label className="flex items-start gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={experimental}
-              onChange={e => setExperimental(e.target.checked)}
-              className="mt-0.5 w-4 h-4 accent-[var(--color-accent)]"
-            />
-            <span className="flex flex-col gap-1">
-              <span className="text-[13px] font-semibold text-text">Credential injector (Envoy sidecar)</span>
-              <span className="text-[12px] text-text-muted">
-                Replaces OneCLI with an Envoy credential gateway for this instance. OAuth-backed services (GitHub, Slack, Google) will not work when enabled. Restart required.
-              </span>
-            </span>
-          </label>
-        </div>
-
         <div className="flex justify-end gap-3 pt-1">
           <button
             className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
@@ -112,7 +90,7 @@ export function InstanceSettingsDialog({
           </button>
           <button
             className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent"
-            onClick={() => onSubmit({ allowedUserEmails: users, experimentalCredentialInjector: experimental })}
+            onClick={() => onSubmit({ allowedUserEmails: users })}
           >
             Save
           </button>

@@ -15,6 +15,7 @@ function fakeClient() {
   const deleted: string[] = [];
   const store = new Map<string, k8s.V1Secret>();
   const client: K8sClient = {
+    namespace: "test-ns",
     listConfigMaps: async () => [],
     getConfigMap: async () => null,
     createConfigMap: async (b) => b,

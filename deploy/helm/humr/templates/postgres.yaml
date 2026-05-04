@@ -15,7 +15,7 @@ data:
     set -e
     # Create additional databases beyond the default ($POSTGRES_DB).
     # This script runs only on first PGDATA init.
-    for db in onecli keycloak humr; do
+    for db in keycloak humr; do
       echo "Creating database '$db' (if not exists)..."
       psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-SQL
         SELECT 'CREATE DATABASE $db' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '$db')\gexec

@@ -22,14 +22,3 @@ describe("computeState", () => {
   });
 });
 
-describe("assembleInstance — experimentalCredentialInjector round-trip", () => {
-  it("threads the flag through to the assembled Instance", () => {
-    const instance = assembleInstance(infra({ experimentalCredentialInjector: true }), [], []);
-    expect(instance.experimentalCredentialInjector).toBe(true);
-  });
-
-  it("leaves the field undefined when not set on infra", () => {
-    const instance = assembleInstance(infra(), [], []);
-    expect(instance.experimentalCredentialInjector).toBeUndefined();
-  });
-});

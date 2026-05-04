@@ -26,7 +26,6 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	"github.com/kagenti/humr/packages/controller/pkg/config"
-	"github.com/kagenti/humr/packages/controller/pkg/onecli"
 	"github.com/kagenti/humr/packages/controller/pkg/reconciler"
 	"github.com/kagenti/humr/packages/controller/pkg/scheduler"
 )
@@ -55,21 +54,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	var onecliFactory onecli.Factory
-	if cfg.OneCLIURL != "" && cfg.KeycloakTokenURL != "" {
-		onecliFactory = onecli.NewTokenExchangeFactory(onecli.TokenExchangeConfig{
-			OneCLIBaseURL:    cfg.OneCLIURL,
-			KeycloakTokenURL: cfg.KeycloakTokenURL,
-			ClientID:         cfg.KeycloakClientID,
-			ClientSecret:     cfg.KeycloakClientSecret,
-			OneCLIAudience:   cfg.OneCLIAudience,
-		})
-		slog.Info("OneCLI token exchange factory configured", "url", cfg.OneCLIURL)
-	} else {
-		slog.Warn("OneCLI not configured, using noop factory")
-		onecliFactory = &onecli.NoopFactory{}
-	}
-
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
 
@@ -89,7 +73,7 @@ func main() {
 		ReleaseOnCancel: true,
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(ctx context.Context) {
-				run(ctx, client, dynClient, restCfg, cfg, onecliFactory)
+				run(ctx, client, dynClient, restCfg, cfg)
 			},
 			OnStoppedLeading: func() {
 				slog.Info("lost leadership")
@@ -98,7 +82,7 @@ func main() {
 	})
 }
 
-func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Interface, restCfg *rest.Config, cfg *config.Config, onecliFactory onecli.Factory) {
+func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Interface, restCfg *rest.Config, cfg *config.Config) {
 	slog.Info("started leading", "namespace", cfg.Namespace)
 
 	factory := informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second,
@@ -110,9 +94,9 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 
 	cmInformer := factory.Core().V1().ConfigMaps()
 	agentResolver := reconciler.NewAgentResolver(cmInformer.Lister().ConfigMaps(cfg.Namespace))
-	agentReconciler := reconciler.NewAgentReconciler(client, cfg, onecliFactory)
-	instanceReconciler := reconciler.NewInstanceReconciler(client, cfg, agentResolver, onecliFactory).WithDynamicClient(dynClient)
-	forkReconciler := reconciler.NewForkReconciler(client, cfg, agentResolver, onecliFactory).WithDynamicClient(dynClient)
+	agentReconciler := reconciler.NewAgentReconciler(client, cfg)
+	instanceReconciler := reconciler.NewInstanceReconciler(client, cfg, agentResolver).WithDynamicClient(dynClient)
+	forkReconciler := reconciler.NewForkReconciler(client, cfg, agentResolver).WithDynamicClient(dynClient)
 
 	sched := scheduler.New(client, cfg).WithRESTConfig(restCfg)
 	sched.Start()
@@ -153,7 +137,7 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 			cmType := cm.Labels["humr.ai/type"]
 			switch cmType {
 			case "agent":
-				agentReconciler.Delete(ctx, cm.Name, cm.Labels["humr.ai/owner"])
+				agentReconciler.Delete(ctx, cm.Name, "")
 			case "agent-instance":
 				instanceReconciler.Delete(ctx, cm.Name)
 			case "agent-schedule":

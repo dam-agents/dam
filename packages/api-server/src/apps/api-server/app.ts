@@ -25,11 +25,9 @@ import { createOAuthRoutes } from "./oauth.js";
 import { createOAuthAppRegistry } from "../../modules/connections/infrastructure/oauth-apps.js";
 import type { Config } from "../../config.js";
 import { createAuth, ForbiddenError } from "./auth.js";
-import type { OnecliClient } from "./onecli.js";
-import { createOnecliSecretsPort } from "./../../modules/secrets/infrastructure/onecli-secrets-port.js";
 import { createK8sSecretsPort } from "./../../modules/secrets/infrastructure/k8s-secrets-port.js";
 import { createSecretsService } from "./../../modules/secrets/services/secrets-service.js";
-import { createOnecliConnectionsPort } from "./../../modules/connections/infrastructure/onecli-connections-port.js";
+import { createK8sConnectionsPort } from "./../../modules/connections/infrastructure/k8s-connections-port.js";
 import { createConnectionsService } from "./../../modules/connections/services/connections-service.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { ChannelSecretStore } from "./../../modules/channels/infrastructure/channel-secret-store.js";
@@ -54,7 +52,6 @@ export interface ApiServerAppDeps {
   config: Config;
   api: CoreV1Api;
   db: Db;
-  onecli: OnecliClient;
   channelManager: ChannelManager;
   channelSecretStore: ChannelSecretStore;
   identityLinkService: IdentityLinkService;
@@ -76,7 +73,7 @@ export interface ApiServerAppDeps {
 
 export function startApiServerApp(deps: ApiServerAppDeps) {
   const {
-    config, api, db, onecli, channelManager, channelSecretStore, identityLinkService,
+    config, api, db, channelManager, channelSecretStore, identityLinkService,
     pendingSlackOAuthFlows, pendingTelegramOAuthFlows, podFilesPublisher, seedSources,
     redisBus, approvalsRelay, wrapperFrameSender, presetSeeder, trustedHosts,
     appConnectionEgressHosts, agentCleanupHooks,
@@ -110,7 +107,6 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     c.json({
       issuer: `${config.keycloakExternalUrl}/realms/${config.keycloakRealm}`,
       clientId: config.keycloakClientId,
-      onecliUrl: config.onecliExternalUrl,
     }),
   );
 
@@ -129,7 +125,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   });
   app.route(
     "/",
-    createOAuthRoutes({ uiBaseUrl: config.uiBaseUrl, oc: onecli, k8sClient, apps: oauthApps }),
+    createOAuthRoutes({ uiBaseUrl: config.uiBaseUrl, k8sClient, apps: oauthApps }),
   );
 
   if (config.slackBotToken && config.slackAppToken) {
@@ -212,18 +208,16 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
 
   app.all("/api/trpc/*", (c) => {
     const user = c.get("user");
-    const userJwt = c.req.header("authorization")!.slice(7);
 
     const { templates, agents, instances, schedules, sessions } = composeAgentsModule(api, config.namespace, user.sub, db, userDirectory, channelSecretStore, config.agentHome, presetSeeder, agentCleanupHooks);
     const skills = composeSkillsModule(api, config.namespace, user.sub, db, seedSources);
     const secrets = createSecretsService({
-      port: createOnecliSecretsPort(onecli, userJwt, user.sub),
       k8sPort: createK8sSecretsPort(k8sClient, user.sub),
       connectionRules: createConnectionRulesSyncAdapter(db),
       ownerSub: user.sub,
     });
     const connections = createConnectionsService({
-      port: createOnecliConnectionsPort(onecli, userJwt, user.sub),
+      port: createK8sConnectionsPort(k8sClient, user.sub),
       owner: user.sub,
       podFiles: podFilesPublisher,
       egressHostsByProvider: appConnectionEgressHosts,

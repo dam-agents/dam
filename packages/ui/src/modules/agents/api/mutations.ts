@@ -24,24 +24,20 @@ export interface CreateAgentInput {
    *  explicit array (incl. []) ⇒ override. */
   secretIds?: string[];
   appConnectionIds?: string[];
-  experimentalCredentialInjector?: boolean;
   egressPreset?: EgressPreset;
 }
 
 /**
  * Create-agent orchestrates four calls in sequence: create agent, create
- * instance, set agent access, set app connections. The trailing two run
- * against OneCLI which the controller registers asynchronously after agent
- * create — so they need a retry loop to ride out the sync lag.
+ * instance, set agent access, set app connections.
  */
 export function useCreateAgent() {
   return useMutation({
-    mutationFn: async ({ secretIds, appConnectionIds, experimentalCredentialInjector, egressPreset, ...input }: CreateAgentInput) => {
+    mutationFn: async ({ secretIds, appConnectionIds, egressPreset, ...input }: CreateAgentInput) => {
       const agent = await platform.agents.create.mutate({ ...input, egressPreset });
       await platform.instances.create.mutate({
         name: input.name,
         agentId: agent.id,
-        experimentalCredentialInjector,
       });
 
       if (secretIds !== undefined) {

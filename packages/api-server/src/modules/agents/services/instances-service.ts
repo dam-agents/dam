@@ -110,7 +110,6 @@ export function createInstancesService(deps: {
         env: input.env,
         secretRef: input.secretRef,
         description: input.description,
-        experimentalCredentialInjector: input.experimentalCredentialInjector,
       };
       const infra = await deps.repo.create(input.agentId, spec, deps.owner ?? "");
       const emails = input.allowedUserEmails ?? [];
@@ -128,7 +127,6 @@ export function createInstancesService(deps: {
       const infra = await deps.repo.updateSpec(input.id, deps.owner, {
         env: input.env,
         secretRef: input.secretRef,
-        experimentalCredentialInjector: input.experimentalCredentialInjector,
       });
       if (!infra) return null;
       if (input.allowedUserEmails !== undefined) {
