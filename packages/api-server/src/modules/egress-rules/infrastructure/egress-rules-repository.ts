@@ -46,6 +46,14 @@ export interface EgressRulesRepository {
   updatePromoteToManual(input: PromoteToManualInput): Promise<EgressRuleRow | null>;
   listForAgent(agentId: string): Promise<EgressRuleRow[]>;
   revoke(id: string): Promise<void>;
+  /** Hard-delete all rows for an agent. Used by the cleanup hook on agent
+   *  delete and by the orphan sweeper. Revoked rows are also removed —
+   *  there's no auditable retention requirement once the agent is gone. */
+  deleteForAgent(agentId: string): Promise<void>;
+  /** Distinct active and revoked `agent_id`s across the table. Cheap
+   *  enough at the row counts we expect; the sweeper compares this set
+   *  against the live K8s agent CM list. */
+  listDistinctAgentIds(): Promise<string[]>;
 }
 
 export interface NewEgressRule {
@@ -252,6 +260,17 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
 
     async revoke(id) {
       await db.update(egressRules).set({ status: "revoked" }).where(eq(egressRules.id, id));
+    },
+
+    async deleteForAgent(agentId) {
+      await db.delete(egressRules).where(eq(egressRules.agentId, agentId));
+    },
+
+    async listDistinctAgentIds() {
+      const rows = await db.execute<{ agent_id: string }>(sql`
+        SELECT DISTINCT agent_id FROM ${egressRules}
+      `);
+      return (rows as unknown as Array<{ agent_id: string }>).map((r) => r.agent_id);
     },
   };
 }

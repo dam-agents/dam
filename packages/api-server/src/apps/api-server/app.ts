@@ -47,7 +47,7 @@ import {
   createEgressRuleWriterAdapter,
   createK8sAllowOnlySecretsPort,
 } from "./../../modules/egress-rules/compose.js";
-import type { PresetSeeder } from "../../modules/agents/compose.js";
+import type { AgentCleanupHook, PresetSeeder } from "../../modules/agents/compose.js";
 import type { RedisBus } from "../../core/redis-bus.js";
 
 export interface ApiServerAppDeps {
@@ -68,6 +68,10 @@ export interface ApiServerAppDeps {
   presetSeeder: PresetSeeder;
   trustedHosts: readonly string[];
   appConnectionEgressHosts: ReadonlyMap<string, readonly string[]>;
+  /** Hooks fired after a successful agent K8s delete. Each one clears its
+   *  module's per-agent durable state; the orphan-sweeper saga is the
+   *  belt-and-suspenders for anything missed here. */
+  agentCleanupHooks: readonly AgentCleanupHook[];
 }
 
 export function startApiServerApp(deps: ApiServerAppDeps) {
@@ -75,7 +79,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     config, api, db, onecli, channelManager, channelSecretStore, identityLinkService,
     pendingSlackOAuthFlows, pendingTelegramOAuthFlows, podFilesPublisher, seedSources,
     redisBus, approvalsRelay, wrapperFrameSender, presetSeeder, trustedHosts,
-    appConnectionEgressHosts,
+    appConnectionEgressHosts, agentCleanupHooks,
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
@@ -210,7 +214,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     const user = c.get("user");
     const userJwt = c.req.header("authorization")!.slice(7);
 
-    const { templates, agents, instances, schedules, sessions } = composeAgentsModule(api, config.namespace, user.sub, db, userDirectory, channelSecretStore, config.agentHome, presetSeeder);
+    const { templates, agents, instances, schedules, sessions } = composeAgentsModule(api, config.namespace, user.sub, db, userDirectory, channelSecretStore, config.agentHome, presetSeeder, agentCleanupHooks);
     const skills = composeSkillsModule(api, config.namespace, user.sub, db, seedSources);
     const secrets = createSecretsService({
       port: createOnecliSecretsPort(onecli, userJwt, user.sub),

@@ -41,12 +41,20 @@ import { startOnecliSyncSaga } from "./sagas/onecli-sync.js";
 import { startApiServerApp } from "./apps/api-server/app.js";
 import { startHarnessApiServerApp } from "./apps/harness-api-server/app.js";
 import { startExtAuthzGrpcApp } from "./apps/ext-authz/grpc.js";
-import { composeApprovalsSystem } from "./modules/approvals/compose.js";
+import {
+  composeApprovalsSystem,
+  createApprovalsCleanupHook,
+  listPendingApprovalAgentIds,
+} from "./modules/approvals/compose.js";
 import { createWrapperFrameSender } from "./modules/approvals/infrastructure/wrapper-frame-sender.js";
 import {
   createEgressRuleMatchAdapter,
+  createEgressRulesCleanupHook,
   createPresetSeederAdapter,
+  listEgressRuleAgentIds,
 } from "./modules/egress-rules/compose.js";
+import { createAgentArtifactsSweeper } from "./sagas/agent-artifacts-sweeper.js";
+import { createK8sClient as createAgentsK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
 import { loadAppConnectionEgressHosts } from "./bootstrap/app-connection-egress-hosts.js";
 import { createRedisBus } from "./core/redis-bus.js";
@@ -291,6 +299,38 @@ const { relay: approvalsRelay, gate: extAuthzGate, sweeper: deliverySweeper } = 
 });
 deliverySweeper.start();
 
+// Per-agent cleanup hooks fired after a successful K8s delete. Each
+// module's adapter clears its own table; failures log + continue. The
+// orphan-sweeper saga catches anything missed (replica died mid-delete,
+// hook threw, etc.).
+const agentCleanupHooks = [
+  createEgressRulesCleanupHook(db),
+  createApprovalsCleanupHook(db),
+];
+
+// Cross-store orphan reaper. Lists live agent ConfigMaps, finds DB rows
+// keyed by an agent_id no longer in the live set, and runs each module's
+// cleanup. Runs on every replica — DELETEs are idempotent, the random
+// initial-delay jitter spreads scans out.
+const agentArtifactsSweeper = createAgentArtifactsSweeper({
+  k8s: createAgentsK8sClient(api, config.namespace),
+  sources: [
+    {
+      name: "egress-rules",
+      listAgentIds: () => listEgressRuleAgentIds(db),
+      cleanup: agentCleanupHooks[0]!,
+    },
+    {
+      name: "pending-approvals",
+      listAgentIds: () => listPendingApprovalAgentIds(db),
+      cleanup: agentCleanupHooks[1]!,
+    },
+  ],
+  intervalMs: 30 * 60_000,
+  batchSize: 200,
+});
+agentArtifactsSweeper.start();
+
 const { server: apiServer } = startApiServerApp({
   config, api, db, onecli, channelManager, channelSecretStore, identityLinkService,
   pendingSlackOAuthFlows, pendingTelegramOAuthFlows, podFilesPublisher, seedSources,
@@ -300,6 +340,7 @@ const { server: apiServer } = startApiServerApp({
   presetSeeder,
   trustedHosts,
   appConnectionEgressHosts,
+  agentCleanupHooks,
 });
 
 // Re-mints OAuth access tokens from stored refresh tokens before they expire
@@ -339,6 +380,7 @@ async function shutdown() {
   onSlackTurnRelayedSub.unsubscribe();
   await oauthRefreshService.stop();
   await deliverySweeper.stop();
+  await agentArtifactsSweeper.stop();
   await channelManager.stopAll();
   await redisBus.close();
   await sql.end();

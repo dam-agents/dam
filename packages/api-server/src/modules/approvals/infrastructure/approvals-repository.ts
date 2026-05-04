@@ -37,6 +37,14 @@ export interface ApprovalsRepository {
   }): Promise<PendingApprovalRow[]>;
   expirePending(id: string): Promise<void>;
   expireOverdue(now: Date): Promise<string[]>;
+  /** Hard-delete every pending_approvals row for an agent. Called by the
+   *  cleanup hook on agent delete and by the orphan sweeper. Resolved and
+   *  expired rows are removed alongside pending — the agent is gone, the
+   *  audit trail goes with it. */
+  deleteForAgent(agentId: string): Promise<void>;
+  /** Distinct `agent_id`s referenced by any pending_approvals row. The
+   *  sweeper uses this to find rows whose agent is no longer in K8s. */
+  listDistinctAgentIds(): Promise<string[]>;
 }
 
 export interface NewPendingApproval {
@@ -202,6 +210,17 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
         ))
         .returning({ id: pendingApprovals.id });
       return rows.map((r) => r.id);
+    },
+
+    async deleteForAgent(agentId) {
+      await db.delete(pendingApprovals).where(eq(pendingApprovals.agentId, agentId));
+    },
+
+    async listDistinctAgentIds() {
+      const rows = await db.execute<{ agent_id: string }>(sql`
+        SELECT DISTINCT agent_id FROM ${pendingApprovals}
+      `);
+      return (rows as unknown as Array<{ agent_id: string }>).map((r) => r.agent_id);
     },
   };
 }

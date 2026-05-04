@@ -98,6 +98,22 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
   return { relay, gate, sweeper };
 }
 
+/**
+ * Per-agent cleanup hook registered with `composeAgentsModule`. Hard-deletes
+ * every pending_approvals row keyed by `agent_id` once the agent's K8s
+ * ConfigMap is gone. Resolved/expired rows go too — the agent isn't around
+ * to need an audit trail.
+ */
+export function createApprovalsCleanupHook(db: Db): (agentId: string) => Promise<void> {
+  const repo = createApprovalsRepository(db);
+  return (agentId) => repo.deleteForAgent(agentId);
+}
+
+/** Read primitive used by the orphan sweeper saga. */
+export function listPendingApprovalAgentIds(db: Db): Promise<string[]> {
+  return createApprovalsRepository(db).listDistinctAgentIds();
+}
+
 export type { ApprovalsRelayService } from "./services/approvals-relay-service.js";
 export type {
   ExtAuthzGate,

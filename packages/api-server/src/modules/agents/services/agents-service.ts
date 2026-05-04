@@ -21,6 +21,16 @@ export interface PresetSeeder {
 }
 
 /**
+ * Cleanup hook invoked after a successful K8s ConfigMap delete. Each
+ * registered hook clears its module's per-agent durable state — egress
+ * rules, pending approvals, anything else keyed by `agent_id` in
+ * Postgres. Best-effort: a single hook failing logs and continues so a
+ * partial delete doesn't strand the rest. Orphans that escape are caught
+ * by the agent-artifacts sweeper saga.
+ */
+export type AgentCleanupHook = (agentId: string) => Promise<void>;
+
+/**
  * Returns a new env list where any platform-managed entries (e.g. PORT) are
  * taken from `current` rather than `incoming`, preventing clients from
  * clobbering template-owned envs.
@@ -39,6 +49,11 @@ export function createAgentsService(deps: {
   /** Seeds egress_rules at create time. Optional so the system-instances
    *  composition (which never creates agents) can omit it. */
   presetSeeder?: PresetSeeder;
+  /** Run after a successful K8s delete. Each module that owns per-agent
+   *  Postgres state contributes one hook; the wiring layer composes the
+   *  list. Empty / undefined is fine — no cleanup, orphans rely on the
+   *  background sweeper. */
+  cleanupHooks?: readonly AgentCleanupHook[];
 }): AgentsService {
   return {
     list: () => deps.repo.list(deps.owner),
@@ -92,6 +107,20 @@ export function createAgentsService(deps: {
       });
     },
 
-    delete: (id) => deps.repo.delete(id, deps.owner),
+    async delete(id) {
+      await deps.repo.delete(id, deps.owner);
+      // Run cleanup hooks sequentially. Each hook is best-effort: a thrown
+      // hook is logged and skipped so a single module's failure doesn't
+      // strand the others. The sweeper saga catches anything missed here.
+      for (const hook of deps.cleanupHooks ?? []) {
+        try {
+          await hook(id);
+        } catch (err) {
+          process.stderr.write(
+            `agents.delete cleanup hook failed for ${id}: ${err instanceof Error ? err.message : err}\n`,
+          );
+        }
+      }
+    },
   };
 }

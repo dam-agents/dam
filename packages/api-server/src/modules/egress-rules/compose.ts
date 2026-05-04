@@ -129,3 +129,22 @@ export function createConnectionRulesSyncAdapter(db: Db): ConnectionRulesSync {
   const repo = createEgressRulesRepository(db);
   return createConnectionRulesSync({ repo });
 }
+
+/**
+ * Per-agent cleanup hook registered with `composeAgentsModule`. Hard-deletes
+ * every egress_rules row for the agent — both active and revoked — once the
+ * agent ConfigMap is gone. Best-effort: throws on DB error and the agents
+ * service logs + continues with remaining hooks.
+ */
+export function createEgressRulesCleanupHook(db: Db): (agentId: string) => Promise<void> {
+  const repo = createEgressRulesRepository(db);
+  return (agentId) => repo.deleteForAgent(agentId);
+}
+
+/**
+ * Read primitive used by the orphan sweeper saga to find agent_ids the DB
+ * still references that no longer have a live K8s ConfigMap.
+ */
+export function listEgressRuleAgentIds(db: Db): Promise<string[]> {
+  return createEgressRulesRepository(db).listDistinctAgentIds();
+}
