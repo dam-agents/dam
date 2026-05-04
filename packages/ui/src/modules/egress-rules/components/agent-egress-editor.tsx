@@ -74,10 +74,12 @@ export interface ConnectionGrantPreview {
  * and in the standalone /agents/:id/egress route (live — every action
  * fires its mutation directly).
  *
- * `currentPreset` is the agent's persisted preset (read from `agent.spec`
- * via the parent dialog). It seeds the dropdown so the user sees their
- * existing choice instead of a hardcoded default. It's also what we treat
- * as the "effective" preset when no staged change is pending.
+ * `currentPreset` is the preset the server derives from the agent's rule
+ * `source` column (via `useCurrentPreset` in the parent dialog) — the
+ * preset isn't stored on the agent spec; it's the projection of which
+ * `preset:*` rows are present. It seeds the dropdown so the user sees
+ * their existing choice instead of a hardcoded default. It's also what
+ * we treat as the "effective" preset when no staged change is pending.
  */
 export function AgentEgressEditor({
   agentId,

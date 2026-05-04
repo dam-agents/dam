@@ -122,9 +122,9 @@ export function createEgressRulesService(deps: CreateEgressRulesServiceDeps): Eg
         throw new Error("agent not found");
       }
       if (!deps.presetSeeder) return;
-      // Idempotent against the unique index — re-applying the same preset
-      // is safe; switching presets adds rules without removing prior ones,
-      // since the user owns deletes via `revoke`.
+      // The seeder sweeps prior `preset:*` rows before inserting the new
+      // ones, so switching presets replaces rather than piles up. Manual
+      // and connection-derived rows are untouched.
       await deps.presetSeeder.seed(agentId, preset, deps.ownerSub);
     },
   };
