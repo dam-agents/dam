@@ -16,11 +16,19 @@ export interface RedisBus {
   close(): Promise<void>;
 }
 
-export function createRedisBus(url: string): RedisBus {
+export interface RedisBusOptions {
+  /** Optional AUTH password. Passed separately from the URL so it never
+   *  appears in logs or stack traces (ioredis logs redact options.password
+   *  but happily prints the URL on connect errors). */
+  password?: string;
+}
+
+export function createRedisBus(url: string, options: RedisBusOptions = {}): RedisBus {
   // Two connections because a connection in subscribe mode can only execute
   // SUBSCRIBE / UNSUBSCRIBE / PING / QUIT.
-  const publisher: RedisClient = new Redis(url, { lazyConnect: false, maxRetriesPerRequest: null });
-  const subscriber: RedisClient = new Redis(url, { lazyConnect: false, maxRetriesPerRequest: null });
+  const opts = { lazyConnect: false, maxRetriesPerRequest: null, password: options.password };
+  const publisher: RedisClient = new Redis(url, opts);
+  const subscriber: RedisClient = new Redis(url, opts);
 
   const listeners = new Map<string, Set<BusListener>>();
 

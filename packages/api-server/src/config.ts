@@ -42,6 +42,10 @@ const configSchema = z.object({
   defaultGithubEnterpriseClientId: z.string().nullable().default(null),
   defaultGithubEnterpriseClientSecret: z.string().nullable().default(null),
   redisUrl: z.string().nullable().default(null),
+  /** Optional Redis AUTH password. The chart provisions a generated
+   *  per-release password and binds it via secretKeyRef; standalone dev
+   *  setups can leave it unset to point at an unauthenticated instance. */
+  redisPassword: z.string().nullable().default(null),
   /** Default hold window for ext_authz HITL (seconds). Helm-configurable;
    *  matches `pending_approvals.expires_at` and the synchronous-hold deadline. */
   approvalHoldSeconds: z.coerce.number().int().positive().default(1800),
@@ -90,6 +94,7 @@ export function loadConfig(): Config {
     defaultGithubEnterpriseClientId: process.env.HUMR_DEFAULT_GHE_CLIENT_ID,
     defaultGithubEnterpriseClientSecret: process.env.HUMR_DEFAULT_GHE_CLIENT_SECRET,
     redisUrl: process.env.REDIS_URL,
+    redisPassword: process.env.REDIS_PASSWORD,
     approvalHoldSeconds: process.env.APPROVAL_HOLD_SECONDS,
     trustedHostsPath: process.env.TRUSTED_HOSTS_PATH,
     appConnectionEgressHostsPath: process.env.APP_CONNECTION_EGRESS_HOSTS_PATH,

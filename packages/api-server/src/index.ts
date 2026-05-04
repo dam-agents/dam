@@ -261,7 +261,7 @@ const podFilesPublisher = createPodFilesPublisher({
 });
 
 if (!config.redisUrl) throw new Error("REDIS_URL is required (Redis is a platform primitive — see ADR-036)");
-const redisBus = createRedisBus(config.redisUrl);
+const redisBus = createRedisBus(config.redisUrl, { password: config.redisPassword ?? undefined });
 
 // Seed list for the `trusted` egress preset (ADR-035).
 // Read once at boot; the helm ConfigMap is the operator-editable source.

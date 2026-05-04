@@ -154,6 +154,13 @@ spec:
             {{- end }}
             - name: REDIS_URL
               value: {{ include "humr.redis.url" . | quote }}
+            {{- if .Values.redis.enabled }}
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ printf "%s-auth" (include "humr.redis.fullname" .) }}
+                  key: password
+            {{- end }}
             - name: APPROVAL_HOLD_SECONDS
               value: {{ .Values.apiServer.approvalHoldSeconds | quote }}
             - name: TRUSTED_HOSTS_PATH
