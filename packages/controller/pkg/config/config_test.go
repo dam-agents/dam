@@ -61,6 +61,29 @@ func TestLoadFromEnv_Defaults(t *testing.T) {
 	assert.Equal(t, "http://humr-onecli.default.svc.cluster.local:10254", cfg.WebURL())
 	assert.Equal(t, 1*time.Hour, cfg.IdleTimeout)
 	assert.Equal(t, "", cfg.AgentStorageClass)
+	assert.Equal(t, "humr-apiserver.default.svc.cluster.local", cfg.ExtAuthzHost)
+}
+
+func TestLoadFromEnv_ExtAuthzHost_DefaultUsesFQDN(t *testing.T) {
+	setEnv(t, map[string]string{
+		"HUMR_RELEASE_NAME":      "my-release",
+		"HUMR_RELEASE_NAMESPACE": "custom-ns",
+		"POD_NAME":               "controller-0",
+	})
+	cfg, err := LoadFromEnv()
+	require.NoError(t, err)
+	assert.Equal(t, "my-release-apiserver.custom-ns.svc.cluster.local", cfg.ExtAuthzHost)
+}
+
+func TestLoadFromEnv_ExtAuthzHost_OverrideWins(t *testing.T) {
+	setEnv(t, map[string]string{
+		"HUMR_RELEASE_NAME": "humr",
+		"POD_NAME":          "controller-0",
+		"EXT_AUTHZ_HOST":    "ext-authz.example.svc.cluster.local",
+	})
+	cfg, err := LoadFromEnv()
+	require.NoError(t, err)
+	assert.Equal(t, "ext-authz.example.svc.cluster.local", cfg.ExtAuthzHost)
 }
 
 func TestLoadFromEnv_AgentStorageClass(t *testing.T) {
@@ -122,6 +145,7 @@ func setEnv(t *testing.T, vars map[string]string) {
 		"ONECLI_GATEWAY_HOST", "ONECLI_GATEWAY_PORT",
 		"HUMR_LEASE_NAME", "POD_NAME", "HUMR_IDLE_TIMEOUT",
 		"AGENT_STORAGE_CLASS",
+		"EXT_AUTHZ_HOST", "EXT_AUTHZ_PORT", "EXT_AUTHZ_HOLD_SECONDS",
 	} {
 		os.Unsetenv(key)
 		t.Cleanup(func() { os.Unsetenv(key) })

@@ -110,7 +110,15 @@ func LoadFromEnv() (*Config, error) {
 	cfg.EnvoyMitmCAIssuer = envOrDefault("ENVOY_MITM_CA_ISSUER", "humr-mitm-ca-issuer")
 	cfg.EnvoyMitmLeafDuration = envOrDefaultDuration("ENVOY_MITM_LEAF_DURATION", 0)
 	cfg.EnvoyMitmLeafRenewBefore = envOrDefaultDuration("ENVOY_MITM_LEAF_RENEW_BEFORE", 0)
-	cfg.ExtAuthzHost = envOrDefault("EXT_AUTHZ_HOST", release+"-apiserver")
+	// FQDN by default: agent pods live in a different namespace from the
+	// api-server Service, so a bare service name doesn't resolve in the
+	// agent's DNS scope. Helm sets this explicitly too — the FQDN default
+	// is the correctness floor for any harness that loads config without
+	// the chart's env wiring.
+	cfg.ExtAuthzHost = envOrDefault(
+		"EXT_AUTHZ_HOST",
+		fmt.Sprintf("%s-apiserver.%s.svc.cluster.local", release, cfg.ReleaseNamespace),
+	)
 	cfg.ExtAuthzPort = envOrDefaultInt("EXT_AUTHZ_PORT", 4002)
 	cfg.ExtAuthzHoldSeconds = envOrDefaultInt("EXT_AUTHZ_HOLD_SECONDS", 1800)
 	return cfg, nil
