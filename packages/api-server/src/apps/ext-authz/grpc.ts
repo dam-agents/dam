@@ -9,6 +9,11 @@ import {
   type Status,
 } from "../../proto-gen/external_auth.gen.js";
 
+/** Metadata key Envoy renders into every Check call from the per-instance
+ *  bootstrap. Used as a defense-in-depth sanity check against the
+ *  IP-derived identity, not as the primary auth signal. */
+const INSTANCE_METADATA_KEY = "x-humr-instance";
+
 /** google.rpc.Status codes — only OK and PERMISSION_DENIED are meaningful
  *  to Envoy's ext_authz client. */
 const GRPC_STATUS_OK = 0;
@@ -47,14 +52,37 @@ export async function startExtAuthzGrpcApp(deps: ExtAuthzGrpcAppDeps): Promise<{
         // Identity comes from the connection's source IP — the only field
         // an in-pod attacker cannot fake under our pod security context
         // (no CAP_NET_RAW, no hostNetwork). The CNI rewrites/drops any
-        // non-pod source at egress on every CNI we care about. We
-        // deliberately do NOT trust an `x-humr-instance` metadata header
-        // even if Envoy renders one — a compromised agent bypassing its
-        // sidecar can fabricate any header it likes.
+        // non-pod source at egress on every CNI we care about.
         const peerIp = parseGrpcPeer(call.getPeer());
         const instanceId = peerIp ? deps.podIpResolver.resolve(peerIp) : null;
         if (!instanceId) {
           callback(null, denied(peerIp ? `unknown pod ${peerIp}` : "missing peer"));
+          return;
+        }
+
+        // Defense-in-depth: Envoy always renders `x-humr-instance` into
+        // initial_metadata from the per-instance bootstrap. The header is
+        // required and must agree with the IP-derived identity. Missing
+        // means someone bypassed Envoy (or bootstrap drift); mismatch
+        // means a forged header (or bootstrap drift). Both fail closed.
+        // Tooling that needs to call this endpoint outside Envoy must
+        // include the matching header.
+        const claimedRaw = call.metadata.get(INSTANCE_METADATA_KEY);
+        const claimed = Array.isArray(claimedRaw) && claimedRaw.length > 0
+          ? claimedRaw[0]?.toString()
+          : null;
+        if (!claimed) {
+          process.stderr.write(
+            `[ext-authz] missing ${INSTANCE_METADATA_KEY} from peer ${peerIp} (resolves to ${instanceId})\n`,
+          );
+          callback(null, denied("missing instance metadata"));
+          return;
+        }
+        if (claimed !== instanceId) {
+          process.stderr.write(
+            `[ext-authz] identity mismatch: peer ${peerIp} resolves to ${instanceId} but metadata claims ${claimed}\n`,
+          );
+          callback(null, denied("identity mismatch"));
           return;
         }
 
