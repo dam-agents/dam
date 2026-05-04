@@ -187,14 +187,20 @@ export function createSecretsService(deps: {
       // so the user's selection is preserved across toggles.
       await deps.port.setAgentSecrets(agent.id, access.secretIds);
 
-      // ADR-035 §"Single rules table": auto-mirror the grant
-      // list into egress_rules with source=connection:<id>. Only fires in
-      // selective mode — "all" doesn't map to a fixed host set, and the
-      // user can use the `trusted`/`all` preset or manual rules instead.
-      if (deps.connectionRules && deps.ownerSub && access.mode === "selective") {
-        const allSecrets = await deps.port.listSecrets();
-        const granted = allSecrets.filter((s) => access.secretIds.includes(s.id));
-        const grants = new Map(granted.map((s) => [s.id, { hosts: [s.hostPattern] as readonly string[] }]));
+      // ADR-035 §"Single rules table": auto-mirror the grant list into
+      // egress_rules with source=connection:<id>. In "all" mode there's no
+      // per-secret grant set — connection rules don't make sense, so we
+      // sync an empty map and the sync sweeps any leftover `connection:*`
+      // rows from a previous selective configuration. The user can still
+      // shape egress via presets or manual rules. Flipping back to
+      // selective re-inserts rules from the (preserved) secret list.
+      if (deps.connectionRules && deps.ownerSub) {
+        const grants = new Map<string, { hosts: readonly string[] }>();
+        if (access.mode === "selective") {
+          const allSecrets = await deps.port.listSecrets();
+          const granted = allSecrets.filter((s) => access.secretIds.includes(s.id));
+          for (const s of granted) grants.set(s.id, { hosts: [s.hostPattern] });
+        }
         await deps.connectionRules.syncForAgent({
           agentId,
           decidedBy: deps.ownerSub,

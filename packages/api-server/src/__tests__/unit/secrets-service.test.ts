@@ -86,6 +86,38 @@ describe("createSecretsService", () => {
     warn.mockRestore();
   });
 
+  it("setAgentAccess fires connection-rules sync in both modes — empty grants in 'all' sweeps stale rows", async () => {
+    const calls: { agentId: string; grantIds: string[] }[] = [];
+    const connectionRules = {
+      syncForAgent: async (input: {
+        agentId: string;
+        decidedBy: string;
+        grants: Map<string, { hosts: readonly string[] }>;
+      }) => {
+        calls.push({ agentId: input.agentId, grantIds: [...input.grants.keys()] });
+      },
+    };
+    const port = fakeOnecliPort();
+    port.findAgentByIdentifier = async () => ({
+      id: "agent-1",
+      name: "agent-1",
+      identifier: "agent-1",
+      secretMode: "selective" as const,
+    });
+    const service = createSecretsService({ port, connectionRules, ownerSub: "user-1" });
+
+    // Selective with one granted secret: sync mirrors the grant.
+    await service.setAgentAccess("agent-1", { mode: "selective", secretIds: ["abc-123"] });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({ agentId: "agent-1", grantIds: ["abc-123"] });
+
+    // Flip to "all": sync still fires, but with an empty grant map so the
+    // syncer revokes the previously-mirrored connection rule.
+    await service.setAgentAccess("agent-1", { mode: "all", secretIds: ["abc-123"] });
+    expect(calls).toHaveLength(2);
+    expect(calls[1]).toEqual({ agentId: "agent-1", grantIds: [] });
+  });
+
   it("k8s mirror skipped entirely when k8sPort is not configured", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const service = createSecretsService({ port: fakeOnecliPort() });
