@@ -316,6 +316,15 @@ apiServer:
   # timeouts are an external ceiling — see ADR §Timeouts.
   approvalHoldSeconds: 1800
 
+  # -- Ingress NetworkPolicy for the api-server pod.
+  # Restricts the agent-facing ports (`harness`, `ext-authz`) to ingress from
+  # pods carrying `humr.ai/instance` (agent + fork pods) in agentNamespace.
+  # The HTTP port stays open so the UI / ingress controller can reach it;
+  # JWT auth at the application layer protects that one. Disable in
+  # environments without NetworkPolicy support (e.g. some bare clusters).
+  networkPolicy:
+    enabled: true
+
   # -- Hosts seeded into the `trusted` egress preset (ADR-035).
   # Each entry becomes an active `(agent, host, *, *, allow, source=preset:trusted)`
   # row when an agent is created with `egressPreset: trusted`. Values are

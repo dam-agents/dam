@@ -1,0 +1,66 @@
+{{- if .Values.apiServer.networkPolicy.enabled }}
+{{- /*
+  Ingress restriction for the api-server pod.
+
+  The `harness` and `ext-authz` ports expose APIs intended exclusively for
+  agent + fork pods (MCP triggers, ext_authz Check). Without this policy,
+  any pod in the cluster can reach them by Service DNS:
+    - `ext_authz` Check: spoof `x-humr-instance` and flood
+      `pending_approvals` for someone else's owner, or probe rules.
+    - `harness` /api: invoke MCP tools with a forged Authorization header.
+  The HTTP port (UI / tRPC) stays open — it goes through the ingress
+  controller which is a different trust scope and is auth-protected at
+  the application layer.
+
+  Policy shape:
+    - `http` is allowed from anywhere (UI, ingress controller, in-cluster).
+    - `harness` + `ext-authz` are allowed only from pods carrying
+      `humr.ai/instance` (instance pods + fork pods both set it) in the
+      configured `agentNamespace`.
+
+  K8s NetworkPolicy semantics: each ingress rule is OR-ed. A rule with no
+  `from` allows from anywhere; a rule with `from` restricts to that source.
+  So a request matching the http rule is allowed even if it doesn't match
+  the agent-only rule, and vice versa.
+*/}}
+{{- $appName := printf "%s-apiserver" (include "humr.fullname" .) | trunc 63 | trimSuffix "-" }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $appName }}-ingress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "humr.labels" . | nindent 4 }}
+    app.kubernetes.io/component: apiserver
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: apiserver
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes:
+    - Ingress
+  ingress:
+    # http: open. UI, mobile, ingress controller, anything in-cluster.
+    # Application-layer auth (Keycloak JWT) is the gate here.
+    - ports:
+        - protocol: TCP
+          port: {{ .Values.apiServer.port }}
+
+    # harness + ext-authz: agent + fork pods only. The pod-selector key
+    # `humr.ai/instance` is set by the controller on both StatefulSet pods
+    # and fork Jobs (`ForkLabelInstanceRef`); matching by Exists covers
+    # both without listing each fork-id.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.agentNamespace | quote }}
+          podSelector:
+            matchExpressions:
+              - key: humr.ai/instance
+                operator: Exists
+      ports:
+        - protocol: TCP
+          port: {{ .Values.apiServer.harnessServerPort }}
+        - protocol: TCP
+          port: {{ .Values.apiServer.extAuthzPort }}
+{{- end }}
