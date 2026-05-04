@@ -47,3 +47,6 @@ This directory contains ADRs for the Humr project.
 | Draft | Title | Owner |
 |-------|-------|-------|
 | [DRAFT](DRAFT-multi-agent.md) | Multi-agent collaboration — isolated instances with shared artifacts | @tomkis |
+| [DRAFT](DRAFT-unified-hitl-ux.md) | Unified HITL UX — verdict authority outside the agent pod | @jezekra1 |
+| [DRAFT](DRAFT-redis-platform-primitive.md) | Redis as a platform primitive — pub/sub, queues, cache | @jezekra1 |
+| [DRAFT](DRAFT-remote-terminal.md) | Remote terminal — CLI attaches to a tmux-multiplexed harness TUI in the pod | @tomkis |
