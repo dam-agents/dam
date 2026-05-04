@@ -2,7 +2,7 @@ import { skipToken, useQuery } from "@tanstack/react-query";
 
 import { platform } from "../../../platform.js";
 
-const REFETCH_INTERVAL_MS = 5000;
+const REFETCH_INTERVAL_MS = 2000;
 
 export const approvalsKeys = {
   all: ["approvals"] as const,
