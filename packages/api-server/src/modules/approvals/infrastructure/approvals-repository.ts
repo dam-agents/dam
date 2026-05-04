@@ -12,6 +12,17 @@ export interface ListApprovalsRepoOpts {
 export interface ApprovalsRepository {
   insertPending(row: NewPendingApproval): Promise<void>;
   getPending(id: string): Promise<PendingApprovalRow | null>;
+  /** Returns the most recent pending ext_authz row for an agent that
+   *  matches the request shape, or null. Used by the gate to dedupe
+   *  retried holds so the inbox doesn't fill with copies of one logical
+   *  decision when the agent's CLI retries (Envoy timeout, network blip,
+   *  api-server restart). */
+  findActivePendingExtAuthz(input: {
+    agentId: string;
+    host: string;
+    method: string;
+    path: string;
+  }): Promise<PendingApprovalRow | null>;
   listPendingForOwner(ownerSub: string, opts?: ListApprovalsRepoOpts): Promise<PendingApprovalRow[]>;
   listPendingForInstance(instanceId: string, opts?: ListApprovalsRepoOpts): Promise<PendingApprovalRow[]>;
   /** CAS update: only succeeds if the row is still `pending`. The single
@@ -127,6 +138,32 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
     async getPending(id) {
       const rows = await db.select().from(pendingApprovals).where(eq(pendingApprovals.id, id));
       return rows.length ? toPendingRow(rows[0] as RawPending) : null;
+    },
+
+    async findActivePendingExtAuthz({ agentId, host, method, path }) {
+      // JSONB extraction matches the payload shape inserted by the gate
+      // (`{kind: "ext_authz", host, method, path}`). No supporting index —
+      // the inbox queries scan by (owner|instance, status), which already
+      // gates the candidate set; lookups here run after a status='pending'
+      // + agent_id filter so the row count is small.
+      const rows = await db.execute<RawPending>(sql`
+        SELECT id, type, instance_id AS "instanceId", agent_id AS "agentId",
+               owner_sub AS "ownerSub", session_id AS "sessionId", payload,
+               created_at AS "createdAt", expires_at AS "expiresAt",
+               resolved_at AS "resolvedAt", verdict, decided_by AS "decidedBy",
+               status, delivered_at AS "deliveredAt"
+        FROM ${pendingApprovals}
+        WHERE agent_id = ${agentId}
+          AND status = 'pending'
+          AND type = 'ext_authz'
+          AND payload->>'host' = ${host}
+          AND payload->>'method' = ${method}
+          AND payload->>'path' = ${path}
+        ORDER BY created_at DESC
+        LIMIT 1
+      `);
+      const list = rows as unknown as RawPending[];
+      return list.length ? toPendingRow(list[0]) : null;
     },
 
     async listPendingForOwner(ownerSub, opts) {

@@ -62,22 +62,33 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
       const matched = await deps.ruleMatcher.match(identity.agentId, host, method, path);
       if (matched) return matched.verdict;
 
-      const pendingId = randomUUID();
-      await deps.repo.insertPending({
-        id: pendingId,
-        type: "ext_authz",
-        instanceId,
+      // Dedupe retried holds: when the agent's CLI retries (Envoy timeout,
+      // network blip, api-server restart mid-hold) we want one inbox row
+      // per logical decision, not one per retry. Reuse any active pending
+      // row of the same shape; otherwise insert fresh. The synth frame is
+      // only republished on first insert — replicas already subscribed
+      // pick up the original; new tabs query the inbox via tRPC.
+      const existing = await deps.repo.findActivePendingExtAuthz({
         agentId: identity.agentId,
-        ownerSub: identity.ownerSub,
-        sessionId: null,
-        payload: { kind: "ext_authz", host, method, path },
-        expiresAt: new Date(Date.now() + deps.holdSeconds * 1000),
+        host,
+        method,
+        path,
       });
-
-      // Synth-frame fan-out: any replica holding a WS for this instance
-      // picks it up via the relay's `inject:<instanceId>` subscription.
-      const frame = buildExtAuthzSynthFrame({ approvalId: pendingId, host, method, path });
-      void deps.bus.publish(injectChannelOf(instanceId), frame);
+      const pendingId = existing?.id ?? randomUUID();
+      if (!existing) {
+        await deps.repo.insertPending({
+          id: pendingId,
+          type: "ext_authz",
+          instanceId,
+          agentId: identity.agentId,
+          ownerSub: identity.ownerSub,
+          sessionId: null,
+          payload: { kind: "ext_authz", host, method, path },
+          expiresAt: new Date(Date.now() + deps.holdSeconds * 1000),
+        });
+        const frame = buildExtAuthzSynthFrame({ approvalId: pendingId, host, method, path });
+        void deps.bus.publish(injectChannelOf(instanceId), frame);
+      }
 
       return waitForVerdict(deps, pendingId);
     },

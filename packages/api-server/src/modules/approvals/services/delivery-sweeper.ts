@@ -24,7 +24,9 @@ export interface CreateDeliverySweeperDeps {
 }
 
 /**
- * Periodic best-effort retry of rows that are `resolved AND delivered_at IS NULL`.
+ * Periodic best-effort retry of rows that are `resolved AND delivered_at IS NULL`,
+ * paired with an overdue-pending sweep that flips rows past their
+ * `expires_at` to `expired`.
  *
  * No claim coordination — every replica scans, and on a contention race
  * multiple replicas may dial the wrapper for the same row. The wrapper
@@ -32,11 +34,15 @@ export interface CreateDeliverySweeperDeps {
  * and drops anything not pending), so duplicate sends are harmless. First
  * successful send stamps `delivered_at`; subsequent scans skip the row.
  *
- * The sweep covers exactly the failure modes the inline path can't:
+ * The retry path covers exactly the failure modes the inline path can't:
  *   - Replica died after CAS-resolve, before WS send.
  *   - WS send raised; the inline path swallowed and didn't retry.
  *   - Wrapper was momentarily unreachable (pod restart, pending-to-running
  *     ramp).
+ *
+ * The expire path bounds inbox lifetime: ext_authz rows past their TTL
+ * (24h default), and acp_native rows whose wrapper is gone for good, get
+ * flipped to `expired` so the inbox doesn't accumulate stale work.
  */
 export function createDeliverySweeper(
   deps: CreateDeliverySweeperDeps,
@@ -63,11 +69,15 @@ export function createDeliverySweeper(
           await deps.wrapperFrameSender.send(row.instanceId, frame);
           await deps.repo.markDelivered(row.id);
         } catch {
-          // Leave for next tick. Bounded by the row's expiresAt; rows that
-          // never deliver eventually expire via the existing expireOverdue
-          // sweep on the ext_authz Gate side.
+          // Leave for next tick. The expire-overdue pass below bounds how
+          // long a never-delivered row sticks around in the inbox.
         }
       }
+      // Flip overdue pending rows to `expired`. The query is cheap (a
+      // partial index on `(status, expires_at)` would help if it ever
+      // becomes hot, but the DELETE-on-agent-cleanup keeps the table
+      // small in normal operation).
+      await deps.repo.expireOverdue(new Date()).catch(() => {});
     } finally {
       running = false;
     }
