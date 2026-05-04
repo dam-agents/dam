@@ -7,7 +7,8 @@ CREATE TABLE "egress_rules" (
 	"verdict" text NOT NULL,
 	"decided_by" text NOT NULL,
 	"decided_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"status" text DEFAULT 'active' NOT NULL
+	"status" text DEFAULT 'active' NOT NULL,
+	"source" text DEFAULT 'manual' NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "pending_approvals" (
@@ -23,9 +24,12 @@ CREATE TABLE "pending_approvals" (
 	"resolved_at" timestamp with time zone,
 	"verdict" text,
 	"decided_by" text,
-	"status" text DEFAULT 'pending' NOT NULL
+	"status" text DEFAULT 'pending' NOT NULL,
+	"delivered_at" timestamp with time zone
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX "egress_rules_lookup_idx" ON "egress_rules" USING btree ("agent_id","host","method","path_pattern") WHERE "egress_rules"."status" = 'active';--> statement-breakpoint
+CREATE INDEX "egress_rules_source_idx" ON "egress_rules" USING btree ("source") WHERE "egress_rules"."status" = 'active' AND "egress_rules"."source" != 'manual';--> statement-breakpoint
 CREATE INDEX "pending_approvals_owner_status_idx" ON "pending_approvals" USING btree ("owner_sub","status");--> statement-breakpoint
-CREATE INDEX "pending_approvals_instance_status_idx" ON "pending_approvals" USING btree ("instance_id","status");
+CREATE INDEX "pending_approvals_instance_status_idx" ON "pending_approvals" USING btree ("instance_id","status");--> statement-breakpoint
+CREATE INDEX "pending_approvals_undelivered_idx" ON "pending_approvals" USING btree ("resolved_at") WHERE status = 'resolved' AND delivered_at IS NULL;
