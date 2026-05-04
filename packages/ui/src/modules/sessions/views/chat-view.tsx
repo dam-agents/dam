@@ -33,7 +33,6 @@ export function ChatView() {
   const setSessionError = useStore((s) => s.setSessionError);
   const deleteSession = useStore((s) => s.deleteSession);
   const rightTab = useStore((s) => s.rightTab);
-  const loadingSession = useStore((s) => s.loading.session);
   const goBack = useStore((s) => s.goBack);
   const setRightTab = useStore((s) => s.setRightTab);
   const hasPendingPermission = useStore((s) =>
@@ -53,7 +52,7 @@ export function ChatView() {
   const { mcpOptions, enabledMcps, toggleMcp, selectAllMcps, clearAllMcps, selectedMcpServers, access } =
     useMcpPicker(selectedInstance);
 
-  const { ensureConnection, resetSession, resumeSession, sendPrompt, stopAgent, busy, engagedSessionIdRef } =
+  const { ensureConnection, resetSession, resumeSession, sendPrompt, stopAgent, busy, engagedSessionIdRef, loadingSession } =
     useAcpSession(selectedInstance, selectedMcpServers, textareaRef);
 
   const { openFileHandler } = useFileTree(selectedInstance);

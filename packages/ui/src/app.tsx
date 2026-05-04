@@ -1,18 +1,19 @@
 import { useEffect } from "react";
-import { useStore } from "./store.js";
+
+import { DialogOverlay } from "./components/dialog-overlay.js";
+import { MobileNav } from "./components/mobile-nav.js";
+import { OfflineBanner } from "./components/offline-banner.js";
+import { SetupProgressBar } from "./components/setup-progress-bar.js";
+import { Sidebar } from "./components/sidebar.js";
+import { ToastOverlay } from "./components/toast-overlay.js";
 import { ListView } from "./modules/agents/views/list-view.js";
-import { ChatView } from "./modules/sessions/views/chat-view.js";
-import { ConnectionsView } from "./modules/connections/views/connections-view.js";
 import { InboxView } from "./modules/approvals/views/inbox-view.js";
+import { ConnectionsView } from "./modules/connections/views/connections-view.js";
 import { AgentEgressView } from "./modules/egress-rules/views/agent-egress-view.js";
+import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { ProvidersView } from "./modules/settings/views/providers-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
-import { DialogOverlay } from "./components/dialog-overlay.js";
-import { OfflineBanner } from "./components/offline-banner.js";
-import { ToastOverlay } from "./components/toast-overlay.js";
-import { Sidebar } from "./components/sidebar.js";
-import { MobileNav } from "./components/mobile-nav.js";
-import { SetupProgressBar } from "./components/setup-progress-bar.js";
+import { useStore } from "./store.js";
 
 export default function App() {
   const view = useStore((s) => s.view);

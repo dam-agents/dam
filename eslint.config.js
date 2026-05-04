@@ -15,12 +15,8 @@ export default tseslint.config([
       "unicorn/filename-case": ["error", { case: "kebabCase" }],
     },
   },
-  // Full rule set only for already-migrated UI code. Legacy files inherit
-  // only the base rules above. Files automatically adopt the strict rules
-  // when they move into modules/ during the refactor. Once every domain is
-  // done, drop this block and widen the rules above to packages/ui/**.
   {
-    files: ["packages/ui/src/modules/**/*.{ts,tsx}"],
+    files: ["packages/ui/**/*.{ts,tsx}"],
     extends: [tseslint.configs.recommended],
     plugins: {
       "simple-import-sort": simpleImportSort,

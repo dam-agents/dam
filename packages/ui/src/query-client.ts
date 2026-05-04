@@ -1,6 +1,6 @@
 import { type Query, QueryCache, QueryClient, type QueryKey } from "@tanstack/react-query";
 
-import { emitToast } from "./store/toast-sink.js";
+import { emitToast } from "./lib/toast-sink.js";
 
 declare module "@tanstack/react-query" {
   interface Register {
@@ -14,9 +14,8 @@ declare module "@tanstack/react-query" {
   }
 }
 
-// One toast per sustained outage, cleared on the next success — matches the
-// behavior of the legacy runQuery helper. Without this a 5-second poll would
-// emit a toast every tick while the backend is down.
+// One toast per sustained outage, cleared on the next success. Without this a
+// 5-second poll would emit a toast every tick while the backend is down.
 const notifiedOutages = new WeakSet<Query<unknown, unknown, unknown>>();
 
 const queryCache = new QueryCache({

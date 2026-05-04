@@ -1,3 +1,5 @@
+import type { EnvMapping, EnvVar, InjectionConfig } from "api-server-api";
+
 export type Role = "user" | "assistant";
 
 export interface ToolContent {
@@ -77,8 +79,8 @@ export interface LogEntry {
   payload: object;
 }
 
-export { SessionType } from "api-server-api";
 export type { SessionView } from "api-server-api";
+export { SessionType } from "api-server-api";
 
 export interface TreeEntry {
   path: string;
@@ -98,7 +100,7 @@ export interface AgentView {
   templateId: string | null;
   image: string;
   description?: string;
-  env?: import("api-server-api").EnvVar[];
+  env?: EnvVar[];
 }
 
 export type InstanceState =
@@ -170,13 +172,13 @@ export function mcpHostnameFromSecretName(name: string): string {
     : name;
 }
 
-export type { EnvMapping, EnvVar, InjectionConfig, EgressPreset } from "api-server-api";
+export type { EgressPreset,EnvMapping, EnvVar, InjectionConfig } from "api-server-api";
 export {
+  ANTHROPIC_API_KEY_ENV_MAPPING,
+  ANTHROPIC_OAUTH_ENV_MAPPING,
   DEFAULT_ENV_PLACEHOLDER,
   DEFAULT_INJECTION_CONFIG,
   isValidEnvName,
-  ANTHROPIC_OAUTH_ENV_MAPPING,
-  ANTHROPIC_API_KEY_ENV_MAPPING,
 } from "api-server-api";
 
 export interface SecretView {
@@ -185,9 +187,9 @@ export interface SecretView {
   type: SecretType;
   hostPattern: string;
   pathPattern?: string;
-  injectionConfig?: import("api-server-api").InjectionConfig;
+  injectionConfig?: InjectionConfig;
   createdAt: string;
-  envMappings?: import("api-server-api").EnvMapping[];
+  envMappings?: EnvMapping[];
 }
 
 export interface McpConnection {

@@ -1,5 +1,6 @@
 import type { StateCreator } from "zustand";
-import type { PlatformStore } from "../store.js";
+
+import type { PlatformStore } from "../../../store.js";
 
 export type Theme = "light" | "dark" | "system";
 

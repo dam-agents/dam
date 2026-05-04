@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+
 import { applyUpdate, finalizeAllStreaming, hasStreamingAssistant } from "../../modules/acp/session-projection.js";
 import type { Message, ToolChip } from "../../types.js";
 
@@ -22,8 +23,17 @@ function assistantMsg(id: string, text: string, streaming = false, queued?: bool
 
 const txtChunk = (text: string, kind: "agent_message_chunk" | "user_message_chunk" = "agent_message_chunk") => ({
   sessionUpdate: kind,
-  content: { type: "text", text },
+  content: { type: "text" as const, text },
 });
+
+/** Pull the leading text part's body out of a message. Throws when the first
+ *  part isn't text — these tests build messages with a known shape, so a
+ *  mismatch should fail loudly rather than silently return "". */
+function firstTextPart({ parts }: Message): string {
+  const [first] = parts;
+  if (first?.kind !== "text") throw new Error(`expected text part, got ${first?.kind ?? "none"}`);
+  return first.text;
+}
 
 describe("applyUpdate — agent content", () => {
   test("opens a new assistant bubble on demand when no bubble exists", () => {
@@ -178,9 +188,9 @@ describe("applyUpdate — turn boundaries", () => {
   test("user_message_chunk strips <context> tags and extracts file chip", () => {
     const start: Message[] = [];
     const update = {
-      sessionUpdate: "user_message_chunk",
+      sessionUpdate: "user_message_chunk" as const,
       messageId: "u1",
-      content: { type: "text", text: 'see <context ref="file:///notes.md">big body</context> please' },
+      content: { type: "text" as const, text: 'see <context ref="file:///notes.md">big body</context> please' },
     };
     const out = applyUpdate(start, update);
     expect(out).toHaveLength(1);
@@ -193,9 +203,9 @@ describe("applyUpdate — turn boundaries", () => {
 
   test("user_message_chunk extracts binary file reference as file chip", () => {
     const out = applyUpdate([], {
-      sessionUpdate: "user_message_chunk",
+      sessionUpdate: "user_message_chunk" as const,
       messageId: "u1",
-      content: { type: "text", text: "look at [@image.png](file:///tmp/image.png)" },
+      content: { type: "text" as const, text: "look at [@image.png](file:///tmp/image.png)" },
     });
     expect(out[0].parts).toEqual([
       { kind: "text", text: "look at" },
@@ -280,7 +290,11 @@ describe("replay scenarios", () => {
     m = applyUpdate(m, txtChunk("a2", "agent_message_chunk"));
     m = finalizeAllStreaming(m);
 
-    expect(m.map((x) => ({ role: x.role, text: (x.parts[0] as any).text, streaming: x.streaming }))).toEqual([
+    expect(m.map((message) => ({
+      role: message.role,
+      text: firstTextPart(message),
+      streaming: message.streaming,
+    }))).toEqual([
       { role: "user", text: "q1", streaming: false },
       { role: "assistant", text: "a1", streaming: false },
       { role: "user", text: "q2", streaming: false },
@@ -314,7 +328,7 @@ describe("queued prompt scenarios", () => {
 
     // Agent streams response to first prompt.
     m = applyUpdate(m, txtChunk("hello 1"));
-    expect((m[1].parts[0] as any).text).toBe("hello 1");
+    expect(firstTextPart(m[1])).toBe("hello 1");
     expect(m[1].queued ?? false).toBe(false);
     expect(m[3].parts).toEqual([]);
     expect(m[3].queued).toBe(true);
@@ -327,7 +341,7 @@ describe("queued prompt scenarios", () => {
     // Agent starts streaming second prompt — promotes a2 to active.
     m = applyUpdate(m, txtChunk("hello 2"));
     expect(m[3].queued).toBe(false);
-    expect((m[3].parts[0] as any).text).toBe("hello 2");
+    expect(firstTextPart(m[3])).toBe("hello 2");
 
     // Turn 2 ends.
     m = applyUpdate(m, { sessionUpdate: "platform_turn_ended" });

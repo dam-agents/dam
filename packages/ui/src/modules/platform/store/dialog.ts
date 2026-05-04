@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { StateCreator } from "zustand";
-import type { PlatformStore } from "../store.js";
+
+import type { PlatformStore } from "../../../store.js";
 
 export interface DialogState {
   type: "alert" | "confirm";
@@ -16,11 +17,16 @@ export interface DialogSlice {
   closeDialog: (ok: boolean) => void;
 }
 
-export const createDialogSlice: StateCreator<PlatformStore, [], [], DialogSlice> = (set, get) => ({
+export const createDialogSlice: StateCreator<PlatformStore, [], [], DialogSlice> = (
+  set,
+  get,
+) => ({
   dialog: null,
   showAlert: (message, title = "Error") =>
     new Promise<void>((resolve) => {
-      set({ dialog: { type: "alert", title, message, resolve: () => resolve() } });
+      set({
+        dialog: { type: "alert", title, message, resolve: () => resolve() },
+      });
     }),
   showConfirm: (message, title = "Confirm") =>
     new Promise<boolean>((resolve) => {
@@ -28,6 +34,9 @@ export const createDialogSlice: StateCreator<PlatformStore, [], [], DialogSlice>
     }),
   closeDialog: (ok) => {
     const d = get().dialog;
-    if (d) { d.resolve(ok); set({ dialog: null }); }
+    if (d) {
+      d.resolve(ok);
+      set({ dialog: null });
+    }
   },
 });

@@ -1,35 +1,26 @@
-// ACP config payloads stay typed as `any` until step 07 introduces
-// Zod-inferred types at the boundary.
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
 import { PROTOCOL_VERSION } from "@agentclientprotocol/sdk/dist/acp.js";
 import { useCallback, useEffect } from "react";
 
 import { useStore } from "../../../store.js";
 import { openConnection } from "../../acp/acp.js";
+import type { AcpUpdate, SessionConfigPayload } from "../../acp/types.js";
 import { getSavedPreferences } from "../components/session-config-popover.js";
 
 const cachedConfigKey = (instanceId: string) => `platform-cached-config:${instanceId}`;
 
-interface ConfigPayload {
-  modes?: any;
-  models?: any;
-  configOptions?: any;
-}
-
 export interface AcpConfigCache {
   /** Persist a fresh session-config response into the store + localStorage. */
-  captureSessionConfig: (response: ConfigPayload) => void;
+  captureSessionConfig: (response: SessionConfigPayload) => void;
   /** Apply incremental ACP `current_mode_update` / `config_option_update`
    *  notifications to the store. */
-  handleConfigUpdate: (u: any) => void;
+  handleConfigUpdate: (update: AcpUpdate) => void;
   /** Replay the user's saved per-instance preferences into a freshly-created
    *  session — sets model/mode and forwards each config option. */
   applySavedPreferences: (
     conn: ClientSideConnection,
     sid: string,
-    sessionResponse: ConfigPayload,
+    sessionResponse: SessionConfigPayload,
   ) => Promise<void>;
 }
 
@@ -52,7 +43,7 @@ export function useAcpConfigCache(
   const setSessionModels = useStore((s) => s.setSessionModels);
   const setSessionConfigOptions = useStore((s) => s.setSessionConfigOptions);
 
-  const captureSessionConfig = useCallback((response: ConfigPayload) => {
+  const captureSessionConfig = useCallback((response: SessionConfigPayload) => {
     setSessionModes(response.modes ?? null);
     setSessionModels(response.models ?? null);
     setSessionConfigOptions(response.configOptions ?? []);
@@ -67,33 +58,34 @@ export function useAcpConfigCache(
     }
   }, [selectedInstance, setSessionModes, setSessionModels, setSessionConfigOptions]);
 
-  const handleConfigUpdate = useCallback((u: any) => {
-    if (u.sessionUpdate === "current_mode_update") {
+  const handleConfigUpdate = useCallback((update: AcpUpdate) => {
+    if (update.sessionUpdate === "current_mode_update") {
+      const { currentModeId } = update;
       const modes = useStore.getState().sessionModes;
-      if (modes) setSessionModes({ ...modes, currentModeId: u.currentModeId });
-    } else if (u.sessionUpdate === "config_option_update") {
-      setSessionConfigOptions(u.configOptions);
+      if (modes) setSessionModes({ ...modes, currentModeId });
+    } else if (update.sessionUpdate === "config_option_update") {
+      setSessionConfigOptions(update.configOptions);
     }
   }, [setSessionModes, setSessionConfigOptions]);
 
   const applySavedPreferences = useCallback(async (
     conn: ClientSideConnection,
     sid: string,
-    sessionResponse: ConfigPayload,
+    sessionResponse: SessionConfigPayload,
   ) => {
     if (!selectedInstance) return;
     const prefs = getSavedPreferences(selectedInstance);
     const calls: Promise<unknown>[] = [];
-    if (prefs.model && sessionResponse.models?.availableModels.some((m: any) => m.modelId === prefs.model)) {
+    if (prefs.model && sessionResponse.models?.availableModels.some((m) => m.modelId === prefs.model)) {
       calls.push(conn.unstable_setSessionModel({ sessionId: sid, modelId: prefs.model }).catch(() => {}));
       setSessionModels({ ...sessionResponse.models, currentModelId: prefs.model });
     }
-    if (prefs.mode && sessionResponse.modes?.availableModes.some((m: any) => m.id === prefs.mode)) {
+    if (prefs.mode && sessionResponse.modes?.availableModes.some((m) => m.id === prefs.mode)) {
       calls.push(conn.setSessionMode({ sessionId: sid, modeId: prefs.mode }).catch(() => {}));
       setSessionModes({ ...sessionResponse.modes, currentModeId: prefs.mode });
     }
     for (const [configId, value] of Object.entries(prefs.config)) {
-      const opt = sessionResponse.configOptions?.find((o: any) => o.id === configId);
+      const opt = sessionResponse.configOptions?.find((o) => o.id === configId);
       if (!opt) continue;
       const req = opt.type === "boolean"
         ? { sessionId: sid, configId, type: "boolean" as const, value: value === "true" }
@@ -110,15 +102,15 @@ export function useAcpConfigCache(
     if (!selectedInstance || sessionId) return;
     const prefs = getSavedPreferences(selectedInstance);
 
-    const applyConfig = (data: ConfigPayload) => {
+    const applyConfig = (data: SessionConfigPayload) => {
       if (data.modes) {
         const modes = { ...data.modes };
-        if (prefs.mode && modes.availableModes?.some((m: any) => m.id === prefs.mode)) modes.currentModeId = prefs.mode;
+        if (prefs.mode && modes.availableModes?.some((m) => m.id === prefs.mode)) modes.currentModeId = prefs.mode;
         setSessionModes(modes);
       }
       if (data.models) {
         const models = { ...data.models };
-        if (prefs.model && models.availableModels?.some((m: any) => m.modelId === prefs.model)) models.currentModelId = prefs.model;
+        if (prefs.model && models.availableModels?.some((m) => m.modelId === prefs.model)) models.currentModelId = prefs.model;
         setSessionModels(models);
       }
       if (data.configOptions?.length) setSessionConfigOptions(data.configOptions);

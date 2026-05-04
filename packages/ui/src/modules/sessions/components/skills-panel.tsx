@@ -9,8 +9,8 @@ import { ChevronDown, ChevronRight, ExternalLink, Eye, Plus, RefreshCw, Share2, 
 import { useCallback, useEffect, useState } from "react";
 
 import { api } from "../../../api.js";
+import { ACTION_FAILED, runAction } from "../../../lib/query-helpers.js";
 import { useStore } from "../../../store.js";
-import { ACTION_FAILED, runAction } from "../../../store/query-helpers.js";
 
 /** localStorage key for per-user persistence of collapsed source ids. Per
  *  browser, not per instance — catalog preferences apply everywhere. */

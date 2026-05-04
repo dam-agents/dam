@@ -1,10 +1,10 @@
-import {
-  KeyValueEditor,
-  allKeyValuesValid,
-  sanitizeKeyValues,
-  type KeyValue,
-} from "./key-value-editor.js";
 import { DEFAULT_ENV_PLACEHOLDER, type EnvMapping } from "../types.js";
+import {
+  allKeyValuesValid,
+  type KeyValue,
+  KeyValueEditor,
+  sanitizeKeyValues,
+} from "./key-value-editor.js";
 
 const toKV = (m: EnvMapping): KeyValue => ({
   key: m.envName,

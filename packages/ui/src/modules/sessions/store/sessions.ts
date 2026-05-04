@@ -1,9 +1,9 @@
 import type { StateCreator } from "zustand";
 
 import { api } from "../../../api.js";
+import { ACTION_FAILED, runAction } from "../../../lib/query-helpers.js";
 import { queryClient } from "../../../query-client.js";
 import type { PlatformStore } from "../../../store.js";
-import { ACTION_FAILED, runAction } from "../../../store/query-helpers.js";
 import type { LogEntry, Message } from "../../../types.js";
 import { acpSessionsKeys } from "../api/queries.js";
 
@@ -45,7 +45,12 @@ export interface SessionsSlice {
   resetChatContext: () => void;
 }
 
-export const createSessionsSlice: StateCreator<PlatformStore, [], [], SessionsSlice> = (set, get) => ({
+export const createSessionsSlice: StateCreator<
+  PlatformStore,
+  [],
+  [],
+  SessionsSlice
+> = (set, get) => ({
   sessionId: null,
   messages: [],
   log: [],
@@ -56,28 +61,33 @@ export const createSessionsSlice: StateCreator<PlatformStore, [], [], SessionsSl
 
   setSessionId: (id) => set({ sessionId: id }),
   setMessages: (updater) =>
-    set((s) => ({ messages: typeof updater === "function" ? updater(s.messages) : updater })),
+    set((s) => ({
+      messages: typeof updater === "function" ? updater(s.messages) : updater,
+    })),
   setSessionError: (e) => set({ sessionError: e }),
   setIncludeChannelSessions: (v) => set({ includeChannelSessions: v }),
   setQueuedMessage: (msg) => set({ queuedMessage: msg }),
   setBusy: (busy) => set({ busy }),
 
-  resetChatContext: () => set({
-    sessionId: null,
-    messages: [],
-    sessionError: null,
-    openFilePath: null,
-    log: [],
-    sessionModes: null,
-    sessionModels: null,
-    sessionConfigOptions: [],
-    pendingPermissions: [],
-    queuedMessage: null,
-  }),
+  resetChatContext: () =>
+    set({
+      sessionId: null,
+      messages: [],
+      sessionError: null,
+      openFilePath: null,
+      log: [],
+      sessionModes: null,
+      sessionModels: null,
+      sessionConfigOptions: [],
+      pendingPermissions: [],
+      queuedMessage: null,
+    }),
 
   addLog: (type, payload) => {
     const ts = new Date().toISOString().slice(11, 23);
-    set((s) => ({ log: [...s.log, { id: crypto.randomUUID(), ts, type, payload }] }));
+    set((s) => ({
+      log: [...s.log, { id: crypto.randomUUID(), ts, type, payload }],
+    }));
   },
 
   deleteSession: async (sessionId) => {

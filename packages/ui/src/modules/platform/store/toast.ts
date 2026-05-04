@@ -1,6 +1,11 @@
 import type { StateCreator } from "zustand";
-import type { PlatformStore } from "../store.js";
-import { setToastSink, type Toast, type ToastKind } from "./toast-sink.js";
+
+import {
+  setToastSink,
+  type Toast,
+  type ToastKind,
+} from "../../../lib/toast-sink.js";
+import type { PlatformStore } from "../../../store.js";
 
 export type { Toast, ToastKind };
 
@@ -12,7 +17,10 @@ export interface ToastSlice {
 
 const DEFAULT_TTL = 5000;
 
-export const createToastSlice: StateCreator<PlatformStore, [], [], ToastSlice> = (set, get) => {
+export const createToastSlice: StateCreator<PlatformStore, [], [], ToastSlice> = (
+  set,
+  get,
+) => {
   const showToast = (input: Omit<Toast, "id">) => {
     const id = crypto.randomUUID();
     const ttl = input.ttl ?? DEFAULT_TTL;
@@ -24,6 +32,7 @@ export const createToastSlice: StateCreator<PlatformStore, [], [], ToastSlice> =
   return {
     toasts: [],
     showToast,
-    dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+    dismissToast: (id) =>
+      set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
   };
 };

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+
 import { resolveAgentDisplay } from "../../modules/agents/utils/agent-resolver.js";
 import { transitionRestartingInstances } from "../../modules/instances/store.js";
 import type { AgentView, InstanceView } from "../../types.js";

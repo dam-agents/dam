@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "react";
-import { useStore } from "../store.js";
 import { AlertTriangle } from "lucide-react";
+import { useEffect, useRef } from "react";
+
+import { useStore } from "../store.js";
 
 export function DialogOverlay() {
   const dialog = useStore(s => s.dialog);

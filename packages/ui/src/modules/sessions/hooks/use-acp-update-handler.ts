@@ -1,11 +1,8 @@
-// ACP update payloads stay typed as `any` until step 07 introduces
-// Zod-inferred types at the boundary.
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 import { useCallback } from "react";
 
 import { useStore } from "../../../store.js";
 import { applyUpdate } from "../../acp/session-projection.js";
+import type { AcpUpdate, UpdateHandler } from "../../acp/types.js";
 
 /**
  * Build the streaming-update callback fed to `openConnection`. The handler:
@@ -19,8 +16,8 @@ import { applyUpdate } from "../../acp/session-projection.js";
  * orchestrator calls `make()` at the connect site.
  */
 export function useAcpUpdateHandler(
-  handleConfigUpdate: (u: any) => void,
-): () => (u: any) => void {
+  handleConfigUpdate: (update: AcpUpdate) => void,
+): () => UpdateHandler {
   const setMessages = useStore((s) => s.setMessages);
   const addLog = useStore((s) => s.addLog);
 
@@ -33,24 +30,29 @@ export function useAcpUpdateHandler(
   }, []);
 
   return useCallback(() => {
-    return (u: any) => {
-      handleConfigUpdate(u);
+    return (update: AcpUpdate) => {
+      handleConfigUpdate(update);
 
-      if ((u?.sessionUpdate === "tool_call" || u?.sessionUpdate === "tool_call_update")
-          && u.status && u.status !== "pending") {
-        dismissStalePermission(u.toolCallId);
+      const { sessionUpdate: kind } = update;
+
+      if ((kind === "tool_call" || kind === "tool_call_update")
+          && update.status && update.status !== "pending") {
+        dismissStalePermission(update.toolCallId);
       }
 
-      if (u?.sessionUpdate === "agent_message_chunk") {
-        if (u.content?.type === "text") addLog("text", { text: u.content.text });
-        else if (u.content?.type === "image") addLog("image", { mimeType: u.content.mimeType });
-      } else if (u?.sessionUpdate === "agent_thought_chunk") {
-        if (u.content?.type === "text") addLog("thought", { text: u.content.text });
-      } else if (u?.sessionUpdate === "tool_call") {
-        addLog("tool", { title: u.title, status: u.status });
+      if (kind === "agent_message_chunk" || kind === "agent_thought_chunk") {
+        const { content } = update;
+        const logKind = kind === "agent_message_chunk" ? "text" : "thought";
+        if (content.type === "text") addLog(logKind, { text: content.text });
+        else if (content.type === "image" && kind === "agent_message_chunk") {
+          addLog("image", { mimeType: content.mimeType });
+        }
+      } else if (kind === "tool_call") {
+        const { title, status } = update;
+        addLog("tool", { title, status });
       }
 
-      setMessages((prev) => applyUpdate(prev, u));
+      setMessages((prev) => applyUpdate(prev, update));
     };
   }, [handleConfigUpdate, dismissStalePermission, addLog, setMessages]);
 }

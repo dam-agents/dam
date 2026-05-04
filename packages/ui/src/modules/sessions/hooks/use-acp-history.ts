@@ -1,15 +1,15 @@
-// ACP load-session response stays typed as `any` until step 07 introduces
-// Zod-inferred types at the boundary.
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 import { PROTOCOL_VERSION } from "@agentclientprotocol/sdk/dist/acp.js";
-import type { McpServer } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
+import type {
+  LoadSessionResponse,
+  McpServer,
+} from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import { useCallback } from "react";
 
 import { useStore } from "../../../store.js";
 import type { Message } from "../../../types.js";
 import { openConnection } from "../../acp/acp.js";
 import { applyUpdate, finalizeAllStreaming } from "../../acp/session-projection.js";
+import type { AcpUpdate, SessionConfigPayload } from "../../acp/types.js";
 import { getSavedPreferences } from "../components/session-config-popover.js";
 
 /**
@@ -34,8 +34,8 @@ import { getSavedPreferences } from "../components/session-config-popover.js";
 export function useAcpHistory(
   selectedInstance: string | null,
   selectedMcpServers: McpServer[],
-  captureSessionConfig: (response: any) => void,
-  handleConfigUpdate: (u: any) => void,
+  captureSessionConfig: (response: SessionConfigPayload) => void,
+  handleConfigUpdate: (update: AcpUpdate) => void,
 ): {
   loadHistory: (sid: string) => Promise<Message[]>;
 } {
@@ -48,16 +48,16 @@ export function useAcpHistory(
     let replayed: Message[] = [];
     let ws: WebSocket | null = null;
     try {
-      const conn = await openConnection(selectedInstance, (u) => {
-        handleConfigUpdate(u);
-        replayed = applyUpdate(replayed, u);
+      const conn = await openConnection(selectedInstance, (update) => {
+        handleConfigUpdate(update);
+        replayed = applyUpdate(replayed, update);
       });
       ws = conn.ws;
       await conn.connection.initialize({
         protocolVersion: PROTOCOL_VERSION,
         clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
       });
-      const resp = await conn.connection.loadSession({
+      const resp: LoadSessionResponse = await conn.connection.loadSession({
         sessionId: sid,
         cwd: ".",
         mcpServers: selectedMcpServers,
@@ -67,10 +67,10 @@ export function useAcpHistory(
       // Optimistic prefs nudge — real ACP `set*` calls fire when the
       // orchestrator opens the live channel via applySavedPreferences.
       const prefs = getSavedPreferences(selectedInstance);
-      if (prefs.model && resp.models?.availableModels?.some((m: any) => m.modelId === prefs.model)) {
+      if (prefs.model && resp.models?.availableModels?.some((m) => m.modelId === prefs.model)) {
         setSessionModels({ ...resp.models, currentModelId: prefs.model });
       }
-      if (prefs.mode && resp.modes?.availableModes?.some((m: any) => m.id === prefs.mode)) {
+      if (prefs.mode && resp.modes?.availableModes?.some((m) => m.id === prefs.mode)) {
         setSessionModes({ ...resp.modes, currentModeId: prefs.mode });
       }
     } finally {

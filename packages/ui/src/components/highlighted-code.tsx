@@ -1,16 +1,16 @@
-import { useMemo } from "react";
 import hljs from "highlight.js/lib/core";
-import json from "highlight.js/lib/languages/json";
-import python from "highlight.js/lib/languages/python";
-import javascript from "highlight.js/lib/languages/javascript";
-import typescript from "highlight.js/lib/languages/typescript";
-import yaml from "highlight.js/lib/languages/yaml";
 import bash from "highlight.js/lib/languages/bash";
 import css from "highlight.js/lib/languages/css";
-import xml from "highlight.js/lib/languages/xml";
-import go from "highlight.js/lib/languages/go";
-import sql from "highlight.js/lib/languages/sql";
 import dockerfile from "highlight.js/lib/languages/dockerfile";
+import go from "highlight.js/lib/languages/go";
+import javascript from "highlight.js/lib/languages/javascript";
+import json from "highlight.js/lib/languages/json";
+import python from "highlight.js/lib/languages/python";
+import sql from "highlight.js/lib/languages/sql";
+import typescript from "highlight.js/lib/languages/typescript";
+import xml from "highlight.js/lib/languages/xml";
+import yaml from "highlight.js/lib/languages/yaml";
+import { useMemo } from "react";
 
 hljs.registerLanguage("json", json);
 hljs.registerLanguage("python", python);

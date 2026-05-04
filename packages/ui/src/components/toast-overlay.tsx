@@ -1,6 +1,7 @@
+import { AlertCircle, AlertTriangle, CheckCircle2, Info, type LucideIcon,X } from "lucide-react";
+
+import type { Toast, ToastKind } from "../modules/platform/store/toast.js";
 import { useStore } from "../store.js";
-import { AlertTriangle, AlertCircle, CheckCircle2, Info, X, type LucideIcon } from "lucide-react";
-import type { Toast, ToastKind } from "../store/toast.js";
 
 const ICON: Record<ToastKind, LucideIcon> = {
   error: AlertCircle,

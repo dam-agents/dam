@@ -1,16 +1,18 @@
-// ACP protocol surface — replaced with Zod-inferred types in step 07.
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 import {
   ClientSideConnection,
 } from "@agentclientprotocol/sdk/dist/acp.js";
 import type { AnyMessage } from "@agentclientprotocol/sdk/dist/jsonrpc.js";
+import type {
+  RequestPermissionRequest,
+  SessionNotification,
+} from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
 
 import { getAccessToken } from "../../auth.js";
-import { type PermissionOption, type PermissionOutcome,useStore } from "../../store.js";
+import { type PermissionOutcome,useStore } from "../../store.js";
+import type { UpdateHandler } from "./types.js";
 
-export type UpdateHandler = (update: any) => void;
+export type { UpdateHandler } from "./types.js";
 
 const WS_CONNECT_TIMEOUT_MS = 120_000;
 
@@ -69,11 +71,7 @@ async function wsUrl(instanceId: string): Promise<string> {
  *  wrapper isn't awaiting a response on this synthetic id). */
 const SYNTH_EGRESS_PREFIX = "_egress:";
 
-function awaitPermission(params: {
-  sessionId: string;
-  toolCall?: { toolCallId?: string };
-  options?: PermissionOption[];
-}): Promise<PermissionOutcome> {
+function awaitPermission(params: RequestPermissionRequest): Promise<PermissionOutcome> {
   if (params.sessionId.startsWith(SYNTH_EGRESS_PREFIX)) {
     // v1: handled exclusively by the inbox UI. Return a never-resolving
     // promise so the SDK doesn't synthesize a response back to the wrapper —
@@ -86,7 +84,7 @@ function awaitPermission(params: {
       toolCallId,
       sessionId: params.sessionId,
       toolCall: params.toolCall,
-      options: params.options ?? [],
+      options: params.options,
       resolve,
     });
   });
@@ -99,10 +97,10 @@ export async function openConnection(
   const { stream, ws } = await wsStream(await wsUrl(instanceId));
   const connection = new ClientSideConnection(
     () => ({
-      async requestPermission(params: any) {
+      async requestPermission(params: RequestPermissionRequest) {
         return awaitPermission(params);
       },
-      async sessionUpdate(params: any) {
+      async sessionUpdate(params: SessionNotification) {
         onUpdate(params.update);
       },
       async writeTextFile() {
@@ -115,9 +113,10 @@ export async function openConnection(
       // response of each prompt so viewers that didn't originate the prompt
       // can close their in-progress assistant bubble. Surface it through the
       // same `onUpdate` channel as a synthetic `sessionUpdate`.
-      async extNotification(method: string, params: any) {
+      async extNotification(method: string, params: Record<string, unknown>) {
         if (method === "platform/turnEnded") {
-          onUpdate({ sessionUpdate: "platform_turn_ended", sessionId: params?.sessionId });
+          const sessionId = typeof params?.sessionId === "string" ? params.sessionId : undefined;
+          onUpdate({ sessionUpdate: "platform_turn_ended", sessionId });
         }
       },
     }),

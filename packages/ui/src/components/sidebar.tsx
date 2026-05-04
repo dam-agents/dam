@@ -1,16 +1,17 @@
-import { useState, useEffect } from "react";
-import { getBrand } from "../brand.js";
-import { useStore } from "../store.js";
-import { Logo } from "./logo.js";
 import {
   Bot,
-  Sparkles,
-  Unplug,
-  Settings,
   PanelLeftClose,
   PanelLeftOpen,
+  Settings,
+  Sparkles,
+  Unplug,
 } from "lucide-react";
+import { useEffect, useState } from "react";
+
+import { getBrand } from "../brand.js";
 import { InboxBell } from "../modules/approvals/components/inbox-bell.js";
+import { useStore } from "../store.js";
+import { Logo } from "./logo.js";
 
 const STORAGE_KEY = "platform-sidebar-collapsed";
 

@@ -1,8 +1,8 @@
+import { ChevronDown,ChevronRight } from "lucide-react";
 import { useMemo, useState } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
-import { ChevronRight, ChevronDown } from "lucide-react";
+import remarkGfm from "remark-gfm";
 
 const REMARK_PLUGINS = [remarkGfm];
 const REHYPE_PLUGINS = [rehypeHighlight];

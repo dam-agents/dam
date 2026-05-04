@@ -1,6 +1,7 @@
-import { describe, expect, test } from "vitest";
-import { envsAfterUngrant } from "../../modules/agents/utils/connection-env-helpers.js";
 import type { AppConnectionView, EnvVar } from "api-server-api";
+import { describe, expect, test } from "vitest";
+
+import { envsAfterUngrant } from "../../modules/agents/utils/connection-env-helpers.js";
 
 // These two tests lock in the *non-obvious* invariants of the ungrant path.
 // Everything else in `connection-env-helpers.ts` is filter/map that restates

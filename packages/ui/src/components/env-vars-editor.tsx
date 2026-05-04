@@ -1,10 +1,10 @@
-import {
-  KeyValueEditor,
-  allKeyValuesValid,
-  sanitizeKeyValues,
-  type KeyValue,
-} from "./key-value-editor.js";
 import type { EnvVar } from "../types.js";
+import {
+  allKeyValuesValid,
+  type KeyValue,
+  KeyValueEditor,
+  sanitizeKeyValues,
+} from "./key-value-editor.js";
 
 const toKV = (v: EnvVar): KeyValue => ({ key: v.name, value: v.value });
 const fromKV = (kv: KeyValue): EnvVar => ({ name: kv.key, value: kv.value });

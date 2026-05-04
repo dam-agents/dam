@@ -16,7 +16,12 @@ export interface SessionConfigSlice {
   setSessionConfigOptions: (options: SessionConfigOption[]) => void;
 }
 
-export const createSessionConfigSlice: StateCreator<PlatformStore, [], [], SessionConfigSlice> = (set) => ({
+export const createSessionConfigSlice: StateCreator<
+  PlatformStore,
+  [],
+  [],
+  SessionConfigSlice
+> = (set) => ({
   sessionModes: null,
   sessionModels: null,
   sessionConfigOptions: [],

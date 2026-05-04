@@ -1,17 +1,18 @@
-import { useStore } from "../store.js";
-import { isCustomSecret } from "../types.js";
+import { Check, ChevronRight } from "lucide-react";
+
 import {
   computeOnboardingState,
   firstPendingStep,
   STEP_KEYS,
-  stepLabels,
   type StepKey,
+  stepLabels,
   type StepStatus,
 } from "../lib/onboarding.js";
-import { Check, ChevronRight } from "lucide-react";
 import { useAgents } from "../modules/agents/api/queries.js";
 import { useAppConnections, useMcpConnections } from "../modules/connections/api/queries.js";
 import { useSecrets } from "../modules/secrets/api/queries.js";
+import { useStore } from "../store.js";
+import { isCustomSecret } from "../types.js";
 
 export function SetupProgressBar() {
   const view = useStore((s) => s.view);

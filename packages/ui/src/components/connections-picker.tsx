@@ -1,14 +1,15 @@
-import type { SecretView } from "../types.js";
 import type { AppConnectionView } from "api-server-api";
+import { Globe, Info, KeyRound, Lock, Sparkles } from "lucide-react";
+
+import { OAuthAppIcon } from "../modules/connections/components/oauth-app-icon.js";
+import type { SecretView } from "../types.js";
 import {
   APP_OAUTH_SECRET_PREFIX,
   isMcpSecret,
   mcpHostnameFromSecretName,
 } from "../types.js";
-import { Globe, Info, KeyRound, Lock, Sparkles } from "lucide-react";
-import { HoverTooltip } from "./hover-tooltip.js";
 import { AppStatusPill } from "./app-status-pill.js";
-import { OAuthAppIcon } from "../modules/connections/components/oauth-app-icon.js";
+import { HoverTooltip } from "./hover-tooltip.js";
 
 /**
  * One row in the picker's "OAuth Apps" subsection. Joins the

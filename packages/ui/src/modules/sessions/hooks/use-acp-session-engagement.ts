@@ -1,12 +1,9 @@
-// ACP newSession / unstable_resumeSession responses stay typed as `any`
-// until step 07 introduces Zod-inferred types at the boundary.
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
 import type { McpServer } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import { useCallback, useRef } from "react";
 
 import { useStore } from "../../../store.js";
+import type { SessionConfigPayload } from "../../acp/types.js";
 
 /**
  * Owns the "engage a live ACP connection with the active session" decision.
@@ -27,11 +24,11 @@ import { useStore } from "../../../store.js";
 export function useAcpSessionEngagement(
   selectedInstance: string | null,
   selectedMcpServers: McpServer[],
-  captureSessionConfig: (response: any) => void,
+  captureSessionConfig: (response: SessionConfigPayload) => void,
   applySavedPreferences: (
     conn: ClientSideConnection,
     sid: string,
-    sessionResponse: any,
+    sessionResponse: SessionConfigPayload,
   ) => Promise<void>,
 ): {
   engagedSessionIdRef: React.MutableRefObject<string | null>;

@@ -1,7 +1,12 @@
-// ACP update surface — replaced with Zod-inferred types in step 07.
-/* eslint-disable @typescript-eslint/no-explicit-any */
+import type {
+  ContentChunk,
+  ToolCall,
+  ToolCallContent,
+  ToolCallUpdate,
+} from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 
-import type { Message, MessagePart, ToolChip } from "../../types.js";
+import type { Message, MessagePart, ToolChip, ToolContent } from "../../types.js";
+import type { AcpUpdate } from "./types.js";
 
 /**
  * Unified session projection — applies ACP `sessionUpdate` notifications (and
@@ -29,8 +34,13 @@ function stripUserTags(raw: string): string {
   return raw.replace(/<[a-z-]+>[\s\S]*?<\/[a-z-]+>/g, "").trim();
 }
 
-function mapToolContent(content: any[] | undefined) {
-  return content?.map((c: any) => ({ type: c.type, text: c.text ?? c.content?.text })).filter((c: any) => c.text);
+function mapToolContent(content: ToolCallContent[] | undefined | null): ToolContent[] | undefined {
+  return content
+    ?.map<ToolContent>((c) => {
+      if (c.type === "content") return { type: c.type, text: c.content.type === "text" ? c.content.text : "" };
+      return { type: c.type, text: "" };
+    })
+    .filter((c) => c.text);
 }
 
 /**
@@ -64,8 +74,8 @@ function parseUserText(text: string): MessagePart[] {
   return parts.length > 0 ? parts : [{ kind: "text", text }];
 }
 
-export function applyUpdate(messages: Message[], update: any): Message[] {
-  switch (update?.sessionUpdate) {
+export function applyUpdate(messages: Message[], update: AcpUpdate): Message[] {
+  switch (update.sessionUpdate) {
     case "platform_turn_ended":
       return closeActiveAssistant(messages);
 
@@ -119,17 +129,17 @@ export function hasStreamingAssistant(messages: Message[]): boolean {
   return messages.some((m) => m.role === "assistant" && m.streaming);
 }
 
-function handleUserChunk(messages: Message[], u: any): Message[] {
+function handleUserChunk(messages: Message[], u: ContentChunk): Message[] {
   const closed = closeActiveAssistant(messages);
   const mid = u.messageId ?? null;
 
-  if (u.content?.type === "text") {
-    const txt = stripUserTags(u.content.text as string);
+  if (u.content.type === "text") {
+    const txt = stripUserTags(u.content.text);
     if (!txt) return closed;
     return appendOrExtendUser(closed, mid, parseUserText(txt));
   }
 
-  if (u.content?.type === "image") {
+  if (u.content.type === "image") {
     const part: MessagePart = { kind: "image", data: u.content.data, mimeType: u.content.mimeType };
     return appendOrExtendUser(closed, mid, [part]);
   }
@@ -137,32 +147,32 @@ function handleUserChunk(messages: Message[], u: any): Message[] {
   return closed;
 }
 
-function handleAgentChunk(messages: Message[], u: any, kind: "text" | "thought"): Message[] {
-  if (u.content?.type === "text") {
-    const txt = u.content.text as string;
+function handleAgentChunk(messages: Message[], u: ContentChunk, kind: "text" | "thought"): Message[] {
+  if (u.content.type === "text") {
+    const txt = u.content.text;
     if (!txt) return messages;
     return appendToActive(messages, [{ kind, text: txt }]);
   }
-  if (u.content?.type === "image") {
+  if (u.content.type === "image") {
     return appendToActive(messages, [{ kind: "image", data: u.content.data, mimeType: u.content.mimeType }]);
   }
   return messages;
 }
 
-function handleToolCall(messages: Message[], u: any): Message[] {
+function handleToolCall(messages: Message[], u: ToolCall): Message[] {
   const existingIdx = findToolIdx(messages, u.toolCallId);
   if (existingIdx !== null) return patchToolChip(messages, existingIdx, u);
   const chip: ToolChip = {
     kind: "tool",
     toolCallId: u.toolCallId,
     title: u.title,
-    status: u.status,
+    status: u.status ?? "pending",
     content: mapToolContent(u.content),
   };
   return appendToActive(messages, [chip]);
 }
 
-function handleToolCallUpdate(messages: Message[], u: any): Message[] {
+function handleToolCallUpdate(messages: Message[], u: ToolCallUpdate): Message[] {
   const existingIdx = findToolIdx(messages, u.toolCallId);
   if (existingIdx === null) return messages;
   return patchToolChip(messages, existingIdx, u);
@@ -176,7 +186,7 @@ function findToolIdx(messages: Message[], toolCallId: string | undefined): numbe
   return null;
 }
 
-function patchToolChip(messages: Message[], idx: number, u: any): Message[] {
+function patchToolChip(messages: Message[], idx: number, u: ToolCall | ToolCallUpdate): Message[] {
   const content = mapToolContent(u.content);
   return messages.map((m, i) => i !== idx ? m : {
     ...m,

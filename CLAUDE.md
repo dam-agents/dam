@@ -57,9 +57,7 @@ Always follow [`docs/guidelines/documentation-guidelines.md`](docs/guidelines/do
 
 ## UI (`packages/ui`)
 
-Follow the [`react-ui-engineering`](.agents/skills/react-ui-engineering/SKILL.md) skill for all React + TypeScript work. Concrete in-flight migration targets for this project are tracked in [`docs/plans/ui-refactor/`](docs/plans/ui-refactor/).
-
-ESLint's strict rule set applies only inside `packages/ui/src/modules/**` while the refactor is in flight — legacy files outside `modules/` inherit only baseline rules. Run `mise run lint:fix` after editing any migrated file; auto-fixes import order and `import type`. See `docs/plans/ui-refactor/README.md` for the post-migration cleanup.
+Follow the [`react-ui-engineering`](.agents/skills/react-ui-engineering/SKILL.md) skill for all React + TypeScript work. Run `mise run lint:fix` after edits; auto-fixes import order and `import type`.
 
 ## Commit Conventions
 

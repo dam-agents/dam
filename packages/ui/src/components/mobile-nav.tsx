@@ -1,5 +1,6 @@
+import { Bot, Settings,Sparkles, Unplug } from "lucide-react";
+
 import { useStore } from "../store.js";
-import { Bot, Sparkles, Unplug, Settings } from "lucide-react";
 
 const navItems = [
   { view: "list" as const, label: "Agents", icon: Bot },

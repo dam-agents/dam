@@ -8,8 +8,8 @@ import { Check, ChevronDown,ChevronUp } from "lucide-react";
 import { useCallback,useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { runAction } from "../../../lib/query-helpers.js";
 import { useStore } from "../../../store.js";
-import { runAction } from "../../../store/query-helpers.js";
 
 function prefKey(instanceId: string, key: string) {
   return `platform-pref:${instanceId}:${key}`;

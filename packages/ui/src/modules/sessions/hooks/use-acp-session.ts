@@ -1,5 +1,5 @@
 import type { McpServer } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { api } from "../../../api.js";
 import { useStore } from "../../../store.js";
@@ -31,8 +31,7 @@ export function useAcpSession(
   const setSessionId = useStore((s) => s.setSessionId);
   const setMessages = useStore((s) => s.setMessages);
   const setBusy = useStore((s) => s.setBusy);
-  const setLoadingSession = useStore((s) => s.setLoadingSession);
-  const loadingSession = useStore((s) => s.loading.session);
+  const [loadingSession, setLoadingSession] = useState(false);
   // resetSession clears the cached config alongside the engagement; the
   // engagement + capture paths use the config-cache hook.
   const setSessionModes = useStore((s) => s.setSessionModes);
@@ -124,7 +123,7 @@ export function useAcpSession(
     } finally {
       if (useStore.getState().sessionId === sid) setLoadingSession(false);
     }
-  }, [selectedInstance, loadHistory, resetConnection, setLoadingSession, setMessages, setSessionError, setSessionId, setMobileScreen]);
+  }, [selectedInstance, loadHistory, resetConnection, setMessages, setSessionError, setSessionId, setMobileScreen]);
 
   const { sendPrompt, stopAgent } = useAcpPrompt(
     selectedInstance,
@@ -145,5 +144,6 @@ export function useAcpSession(
     sendPrompt,
     stopAgent,
     busy,
+    loadingSession,
   };
 }

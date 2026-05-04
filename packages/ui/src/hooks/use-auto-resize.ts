@@ -1,4 +1,4 @@
-import { useCallback, useEffect, type RefObject } from "react";
+import { type RefObject,useCallback, useEffect } from "react";
 
 /**
  * Auto-resizes a textarea to fit its content, up to 50vh.

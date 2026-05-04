@@ -1,5 +1,6 @@
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
 import type { AppRouter } from "api-server-api";
+
 import { getAccessToken } from "./auth.js";
 
 export const api = createTRPCClient<AppRouter>({

@@ -1,9 +1,8 @@
 import type { StateCreator } from "zustand";
 
 import type { PlatformStore } from "../../store.js";
-import { viewToPath } from "../../store/navigation.js";
-import { resetQueryTracker } from "../../store/query-helpers.js";
 import type { InstanceView } from "../../types.js";
+import { viewToPath } from "../platform/lib/routes.js";
 
 /**
  * UI-side state for the instances domain. Server state (instances list,
@@ -22,15 +21,28 @@ export interface InstancesSlice {
    *  read that still shows `running` before the pod actually terminates, plus
    *  a click timestamp that bounds how long the "Restarting" pill can linger
    *  if the pod fails to recycle cleanly. */
-  restartingInstances: Map<string, { seenNonRunning: boolean; clickedAt: number }>;
-  setRestartingInstance: (id: string, entry: { seenNonRunning: boolean; clickedAt: number }) => void;
+  restartingInstances: Map<
+    string,
+    { seenNonRunning: boolean; clickedAt: number }
+  >;
+  setRestartingInstance: (
+    id: string,
+    entry: { seenNonRunning: boolean; clickedAt: number },
+  ) => void;
   clearRestartingInstance: (id: string) => void;
-  setRestartingInstances: (map: Map<string, { seenNonRunning: boolean; clickedAt: number }>) => void;
+  setRestartingInstances: (
+    map: Map<string, { seenNonRunning: boolean; clickedAt: number }>,
+  ) => void;
   selectInstance: (id: string) => void;
   goBack: () => void;
 }
 
-export const createInstancesSlice: StateCreator<PlatformStore, [], [], InstancesSlice> = (set, get) => ({
+export const createInstancesSlice: StateCreator<
+  PlatformStore,
+  [],
+  [],
+  InstancesSlice
+> = (set, get) => ({
   selectedInstance: null,
   restartingInstances: new Map(),
 
@@ -49,24 +61,19 @@ export const createInstancesSlice: StateCreator<PlatformStore, [], [], Instances
   setRestartingInstances: (map) => set({ restartingInstances: map }),
 
   selectInstance: (id) => {
-    const prev = get().selectedInstance;
     history.pushState(null, "", viewToPath("chat", id));
     get().resetChatContext();
-    // Clear per-instance poll tracker state so a prior instance's failure count
-    // doesn't bleed into this one.
-    if (prev && prev !== id) {
-      resetQueryTracker(`sessions:${prev}`);
-    }
-    set({ selectedInstance: id, view: "chat", mobileScreen: "sessions", showMobilePanel: false });
+    set({
+      selectedInstance: id,
+      view: "chat",
+      mobileScreen: "sessions",
+      showMobilePanel: false,
+    });
   },
 
   goBack: () => {
-    const prev = get().selectedInstance;
     history.pushState(null, "", "/");
     get().resetChatContext();
-    if (prev) {
-      resetQueryTracker(`sessions:${prev}`);
-    }
     set({ selectedInstance: null, view: "list", showMobilePanel: false });
   },
 });
@@ -97,7 +104,10 @@ export function transitionRestartingInstances(
 ): Map<string, { seenNonRunning: boolean; clickedAt: number }> {
   if (current.size === 0) return current;
   const byId = new Map(instances.map((i) => [i.id, i]));
-  const next = new Map<string, { seenNonRunning: boolean; clickedAt: number }>();
+  const next = new Map<
+    string,
+    { seenNonRunning: boolean; clickedAt: number }
+  >();
   for (const [id, entry] of current) {
     const inst = byId.get(id);
     if (!inst) continue;
