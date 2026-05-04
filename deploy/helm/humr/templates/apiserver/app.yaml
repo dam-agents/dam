@@ -176,14 +176,20 @@ spec:
               mountPath: /etc/humr/app-connection-egress-hosts.json
               subPath: app-connection-egress-hosts.json
               readOnly: true
+          # Probe the ext-authz gRPC port: if the ext-authz listener fails to
+          # bind or its handler init blows up, Envoy filters with
+          # `failure_mode_allow: false` would silently deny across the cluster
+          # while the pod still served HTTP. Both listeners run in the same
+          # Node process, so http-port liveness is implicit when ext-authz is
+          # up; the inverse isn't true. (ADR-035)
           readinessProbe:
             tcpSocket:
-              port: http
+              port: ext-authz
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
             tcpSocket:
-              port: http
+              port: ext-authz
             initialDelaySeconds: 10
             periodSeconds: 30
           resources:
