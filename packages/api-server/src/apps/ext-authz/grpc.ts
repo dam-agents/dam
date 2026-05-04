@@ -1,16 +1,13 @@
 import * as grpc from "@grpc/grpc-js";
 import type { ExtAuthzGate } from "../../modules/approvals/compose.js";
+import type { PodIpResolver } from "../../modules/agents/infrastructure/pod-ip-resolver.js";
+import { parseGrpcPeer } from "../../modules/agents/infrastructure/pod-ip-resolver.js";
 import {
   AuthorizationService,
   type AuthorizationServer,
   type CheckResponse,
   type Status,
 } from "../../proto-gen/external_auth.gen.js";
-
-/** Same metadata key as the L7 path. The Envoy filter renders it via
- *  `initial_metadata` on the per-instance bootstrap, mirroring how
- *  `headers_to_add` works for HTTP ext_authz. */
-const INSTANCE_METADATA_KEY = "x-humr-instance";
 
 /** google.rpc.Status codes — only OK and PERMISSION_DENIED are meaningful
  *  to Envoy's ext_authz client. */
@@ -23,6 +20,11 @@ export interface ExtAuthzGrpcAppDeps {
    *  so the connection doesn't drop mid-wait while the user thinks. */
   holdSeconds: number;
   gate: ExtAuthzGate;
+  /** Resolves the calling pod's IP to an instance ID. The returned id is
+   *  authoritative — pods can't spoof source IPs under K8s + standard
+   *  CNIs without CAP_NET_RAW (we drop all caps), so this beats trusting
+   *  any metadata header. See `pod-ip-resolver.ts` for the threat model. */
+  podIpResolver: PodIpResolver;
 }
 
 /**
@@ -42,12 +44,17 @@ export async function startExtAuthzGrpcApp(deps: ExtAuthzGrpcAppDeps): Promise<{
   const impl: AuthorizationServer = {
     check: async (call, callback) => {
       try {
-        const instanceIdRaw = call.metadata.get(INSTANCE_METADATA_KEY);
-        const instanceId = Array.isArray(instanceIdRaw) && instanceIdRaw.length > 0
-          ? instanceIdRaw[0]?.toString()
-          : null;
+        // Identity comes from the connection's source IP — the only field
+        // an in-pod attacker cannot fake under our pod security context
+        // (no CAP_NET_RAW, no hostNetwork). The CNI rewrites/drops any
+        // non-pod source at egress on every CNI we care about. We
+        // deliberately do NOT trust an `x-humr-instance` metadata header
+        // even if Envoy renders one — a compromised agent bypassing its
+        // sidecar can fabricate any header it likes.
+        const peerIp = parseGrpcPeer(call.getPeer());
+        const instanceId = peerIp ? deps.podIpResolver.resolve(peerIp) : null;
         if (!instanceId) {
-          callback(null, denied("missing instance metadata"));
+          callback(null, denied(peerIp ? `unknown pod ${peerIp}` : "missing peer"));
           return;
         }
 
