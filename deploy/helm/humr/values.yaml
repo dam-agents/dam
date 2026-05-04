@@ -68,7 +68,7 @@ postgres:
       cpu: 500m
       memory: 512Mi
 
-# -- Shared Redis instance (DRAFT-redis-platform-primitive).
+# -- Shared Redis instance (ADR-036).
 # Used as the cross-replica pub/sub primitive — first consumer is HITL ext_authz
 # wake-ups (ADR-035). Persistence uses AOF with `everysec`; the
 # platform tolerates losing recent ephemeral data on restart (Postgres remains

@@ -5,7 +5,7 @@ operator against a deployed cluster.
 
 ## `migrate-egress-rules.sh`
 
-One-time backfill for agents that pre-date ADR-035 / ADR-036. For every
+One-time backfill for agents that pre-date ADR-035. For every
 agent ConfigMap without the `humr.ai/egress-migrated` annotation, the script
 inserts:
 

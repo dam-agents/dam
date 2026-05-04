@@ -83,7 +83,7 @@ Postgres is already a hard platform dependency ([ADR-017](017-db-backed-sessions
 
 **Postgres is the source of truth for everything durable** — rules, pending rows, verdicts, delivery state, audit. The inbox query is `SELECT … FROM pending_approvals WHERE owner = ? AND status = 'pending'`; surviving offline / refresh / replica restart is a property of the row existing in Postgres.
 
-**Redis pub/sub** ([`DRAFT-redis-platform-primitive`](DRAFT-redis-platform-primitive.md)) is a hard platform dependency — see that ADR for the reasoning. It carries ephemeral wake-up signals: `approval:<id>` channel for held ext_authz calls, and `inject:<instanceId>` channel for synth-frame fan-out to whichever replica is holding the agent's WS. Redis is on the signal path; Postgres remains the truth path. A Redis outage stops new wake-ups and synth deliveries until it recovers; existing pending rows are unaffected and resolve normally on the agent's next retry.
+**Redis pub/sub** ([ADR-036](036-redis-platform-primitive.md)) is a hard platform dependency — see that ADR for the reasoning. It carries ephemeral wake-up signals: `approval:<id>` channel for held ext_authz calls, and `inject:<instanceId>` channel for synth-frame fan-out to whichever replica is holding the agent's WS. Redis is on the signal path; Postgres remains the truth path. A Redis outage stops new wake-ups and synth deliveries until it recovers; existing pending rows are unaffected and resolve normally on the agent's next retry.
 
 ### ext_authz mechanics — out-of-pod authority, synchronous hold
 
@@ -407,7 +407,7 @@ Would technically enable ACP-native async inbox. Rejected — harness-specific, 
 <details>
 <summary>Postgres <code>LISTEN/NOTIFY</code> as the wake-up channel (instead of Redis)</summary>
 
-Considered. Rejected at the platform level by [`DRAFT-redis-platform-primitive`](DRAFT-redis-platform-primitive.md), which establishes Redis as the cross-replica signaling primitive going forward. pg LISTEN/NOTIFY duplicates the same notify-from-write pattern without adding anything, and the Redis ADR makes Redis a hard platform dependency, so a separate fallback isn't carried.
+Considered. Rejected at the platform level by [ADR-036](036-redis-platform-primitive.md), which establishes Redis as the cross-replica signaling primitive going forward. pg LISTEN/NOTIFY duplicates the same notify-from-write pattern without adding anything, and the Redis ADR makes Redis a hard platform dependency, so a separate fallback isn't carried.
 
 </details>
 
@@ -450,4 +450,4 @@ Considered as the path to mitmproxy-style "MITM any SNI without enumeration." A 
 - [ADR-017 — DB-backed sessions](017-db-backed-sessions.md) — the platform Postgres this ADR extends with `egress_rules` and `pending_approvals`.
 - [ADR-018 — Slack integration](018-slack-integration.md) — first-class HITL consumer in `interactive` mode.
 - [ADR-027 — Slack per-turn user impersonation](027-slack-user-impersonation.md) — fork-Job pods inherit this same ext_authz authority shape (the parent instance's API Server is the authority; fork-Job pods don't change the trust model).
-- [`DRAFT-redis-platform-primitive`](DRAFT-redis-platform-primitive.md) — establishes Redis as the platform's pub/sub / queue / cache primitive. Cross-replica wake-ups in this ADR are the first consumer.
+- [ADR-036](036-redis-platform-primitive.md) — establishes Redis as the platform's pub/sub / queue / cache primitive. Cross-replica wake-ups in this ADR are the first consumer.

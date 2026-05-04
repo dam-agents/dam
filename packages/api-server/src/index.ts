@@ -251,7 +251,7 @@ const podFilesPublisher = createPodFilesPublisher({
   registry: podFilesRegistry,
 });
 
-if (!config.redisUrl) throw new Error("REDIS_URL is required (Redis is a platform primitive — see DRAFT-redis-platform-primitive)");
+if (!config.redisUrl) throw new Error("REDIS_URL is required (Redis is a platform primitive — see ADR-036)");
 const redisBus = createRedisBus(config.redisUrl);
 
 // Seed list for the `trusted` egress preset (ADR-035).

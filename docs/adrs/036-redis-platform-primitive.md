@@ -1,7 +1,7 @@
-# DRAFT: Redis as a platform primitive — pub/sub, queues, cache
+# ADR-036: Redis as a platform primitive — pub/sub, queues, cache
 
 **Date:** 2026-04-29
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** @jezekra1
 
 ## Context

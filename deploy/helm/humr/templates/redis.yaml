@@ -47,7 +47,7 @@ spec:
           image: {{ .Values.redis.image }}
           # AOF appendfsync everysec — relaxed durability matches the platform
           # rule that Redis is allowed to lose recent ephemeral data on restart
-          # (see DRAFT-redis-platform-primitive).
+          # (see ADR-036).
           args:
             - --appendonly
             - "yes"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One-time migration: backfill `egress_rules` for agents that pre-date
-# ADR-035 / ADR-036.
+# ADR-035.
 #
 # For every agent without the `humr.ai/egress-migrated` annotation, the
 # script inserts:

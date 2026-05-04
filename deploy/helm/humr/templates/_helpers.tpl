@@ -144,7 +144,7 @@ Shared PostgreSQL secrets name
 {{- printf "%s-postgres-secrets" (include "humr.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
-{{/* ---- Shared Redis (DRAFT-redis-platform-primitive) ---- */}}
+{{/* ---- Shared Redis (ADR-036) ---- */}}
 
 {{/*
 Shared Redis fullname (StatefulSet + Service)
