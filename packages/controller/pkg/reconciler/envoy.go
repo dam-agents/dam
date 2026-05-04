@@ -212,12 +212,15 @@ static_resources:
                             envoy.filters.http.ext_authz:
                               "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute
                               disabled: true
-                        # Plain HTTP fallthrough: gated by the HCM's
-                        # ext_authz filter, then forwarded via
-                        # dynamic_forward_proxy_http to the upstream's
-                        # actual HTTP port. Hosts that need a path/method
-                        # rule should use HTTPS — plain HTTP is gated by
-                        # SNI-equivalent (Host header) only.
+                        # Plain HTTP fallthrough. The outer HCM's
+                        # ext_authz fires here (CONNECT disables it
+                        # per-route above; plain HTTP does not), passing
+                        # method/path/host to the same gate the inner
+                        # TLS-terminating chains use post-MITM — path
+                        # and method rules apply identically. Forward
+                        # via dynamic_forward_proxy_http to the
+                        # upstream's HTTP port; no MITM needed since
+                        # the bytes are already plaintext.
                         - match: { prefix: "/" }
                           route:
                             cluster: dynamic_forward_proxy_http
@@ -386,8 +389,9 @@ static_resources:
 
     # Plain-HTTP forward cluster (ADR-035). Used by the
     # outer HCM's fallthrough route to forward proxied non-CONNECT
-    # requests after L7 ext_authz gates by Host. No TLS — plaintext
-    # already on the wire.
+    # requests after the HCM's L7 ext_authz applies the same
+    # path/method rules used on TLS-terminated chains. No TLS —
+    # plaintext is already on the wire.
     - name: dynamic_forward_proxy_http
       connect_timeout: 5s
       lb_policy: CLUSTER_PROVIDED
