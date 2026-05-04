@@ -1,9 +1,11 @@
 import * as grpc from "@grpc/grpc-js";
-import * as protoLoader from "@grpc/proto-loader";
-import { existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
 import type { ExtAuthzGate } from "../../modules/approvals/compose.js";
+import {
+  AuthorizationService,
+  type AuthorizationServer,
+  type CheckResponse,
+  type Status,
+} from "../../proto-gen/external_auth.gen.js";
 
 /** Same metadata key as the L7 path. The Envoy filter renders it via
  *  `initial_metadata` on the per-instance bootstrap, mirroring how
@@ -14,28 +16,6 @@ const INSTANCE_METADATA_KEY = "x-humr-instance";
  *  to Envoy's ext_authz client. */
 const GRPC_STATUS_OK = 0;
 const GRPC_STATUS_PERMISSION_DENIED = 7;
-
-/** Sourced from the vendored minimal proto at `proto/external_auth.proto`. */
-interface CheckRequest {
-  attributes?: {
-    source?: { address?: { socket_address?: { address?: string; port_value?: number } } };
-    destination?: { address?: { socket_address?: { address?: string; port_value?: number } } };
-    request?: {
-      http?: {
-        method?: string;
-        headers?: Record<string, string>;
-        path?: string;
-        host?: string;
-        scheme?: string;
-      };
-    };
-    tls_session?: { sni?: string };
-  };
-}
-
-interface CheckResponse {
-  status: { code: number; message?: string };
-}
 
 export interface ExtAuthzGrpcAppDeps {
   port: number;
@@ -52,56 +32,15 @@ export interface ExtAuthzGrpcAppDeps {
  * delegates to the same `ExtAuthzGate` the HTTP path uses — single
  * decider, two transports.
  */
-/**
- * Resolves the vendored proto file across the dev/prod layout split. tsup
- * bundles `src/apps/ext-authz/grpc.ts` into `dist/index.js`, so the
- * `import.meta.url`-relative path differs between:
- *   - dev (tsx):     packages/api-server/src/apps/ext-authz/grpc.ts
- *                    → ../../../proto/external_auth.proto
- *   - prod (bundle): packages/api-server/dist/index.js
- *                    → proto/external_auth.proto (copied by tsup onSuccess)
- * Probe both candidates and return the first that exists; surface a clear
- * error if neither does so the operator sees the layout mismatch directly.
- */
-function resolveProtoPath(): string {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const candidates = [
-    resolve(here, "proto/external_auth.proto"),               // bundled: dist/proto
-    resolve(here, "../../../proto/external_auth.proto"),       // dev: src/apps/ext-authz
-  ];
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) return candidate;
-  }
-  throw new Error(
-    `ext-authz: external_auth.proto not found. Tried: ${candidates.join(", ")}`,
-  );
-}
-
 export async function startExtAuthzGrpcApp(deps: ExtAuthzGrpcAppDeps): Promise<{ server: grpc.Server }> {
-  const protoPath = resolveProtoPath();
-  const packageDef = protoLoader.loadSync(protoPath, {
-    keepCase: true,
-    longs: String,
-    enums: String,
-    defaults: true,
-    oneofs: true,
-  });
-  const grpcObj = grpc.loadPackageDefinition(packageDef) as unknown as {
-    envoy: { service: { auth: { v3: { Authorization: { service: grpc.ServiceDefinition } } } } };
-  };
-  const authzService = grpcObj.envoy.service.auth.v3.Authorization.service;
-
   const server = new grpc.Server({
     "grpc.keepalive_time_ms": Math.min(60_000, deps.holdSeconds * 1000),
     "grpc.keepalive_timeout_ms": 20_000,
     "grpc.keepalive_permit_without_calls": 1,
   });
 
-  server.addService(authzService, {
-    Check: async (
-      call: grpc.ServerUnaryCall<CheckRequest, CheckResponse>,
-      callback: grpc.sendUnaryData<CheckResponse>,
-    ) => {
+  const impl: AuthorizationServer = {
+    check: async (call, callback) => {
       try {
         const instanceIdRaw = call.metadata.get(INSTANCE_METADATA_KEY);
         const instanceId = Array.isArray(instanceIdRaw) && instanceIdRaw.length > 0
@@ -112,14 +51,13 @@ export async function startExtAuthzGrpcApp(deps: ExtAuthzGrpcAppDeps): Promise<{
           return;
         }
 
-        const req = call.request;
-        const sni = req.attributes?.tls_session?.sni ?? null;
-        const httpReq = req.attributes?.request?.http;
+        const httpReq = call.request.attributes?.request?.http;
+        const sni = call.request.attributes?.tlsSession?.sni ?? null;
         // The HTTP filter copies `:authority` into `host`, which carries
         // the port for CONNECT (`example.com:443`) and may carry it for
         // proxied plain HTTP. Egress rules are written on bare hostnames,
         // so strip the port before lookup. SNI never carries a port.
-        const rawHost = httpReq?.host ?? sni;
+        const rawHost = httpReq?.host || sni;
         const host = rawHost ? stripPort(rawHost) : null;
         if (!host) {
           callback(null, denied("missing host/sni"));
@@ -132,15 +70,17 @@ export async function startExtAuthzGrpcApp(deps: ExtAuthzGrpcAppDeps): Promise<{
         const verdict = await deps.gate.gateRequest({
           instanceId,
           host,
-          method: httpReq?.method?.toUpperCase() ?? "*",
-          path: httpReq?.path ?? "*",
+          method: httpReq?.method?.toUpperCase() || "*",
+          path: httpReq?.path || "*",
         });
         callback(null, verdict === "allow" ? ok() : denied("policy denied"));
       } catch (err) {
         callback(null, denied(err instanceof Error ? err.message : "internal error"));
       }
     },
-  });
+  };
+
+  server.addService(AuthorizationService, impl);
 
   await new Promise<void>((res, rej) => {
     server.bindAsync(
@@ -171,10 +111,14 @@ function stripPort(host: string): string {
   return idx === -1 ? host : host.slice(0, idx);
 }
 
+function makeStatus(code: number, message?: string): Status {
+  return { code, message: message ?? "" };
+}
+
 function ok(): CheckResponse {
-  return { status: { code: GRPC_STATUS_OK } };
+  return { status: makeStatus(GRPC_STATUS_OK) };
 }
 
 function denied(message: string): CheckResponse {
-  return { status: { code: GRPC_STATUS_PERMISSION_DENIED, message } };
+  return { status: makeStatus(GRPC_STATUS_PERMISSION_DENIED, message) };
 }

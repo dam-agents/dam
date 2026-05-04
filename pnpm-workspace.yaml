@@ -2,6 +2,9 @@ packages:
   - "packages/*"
   - "packages/agents/pi-agent/workspace/.pi/agent/extensions/*"
 allowBuilds:
+  # grpc-tools downloads the protoc binary in a postinstall step; needed
+  # by `mise run api-server:gen:proto` (ts-proto codegen for ext_authz).
+  grpc-tools: true
   koffi: true
   protobufjs: true
   sharp: true

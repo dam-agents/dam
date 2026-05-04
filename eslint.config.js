@@ -5,7 +5,7 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config([
   {
-    ignores: [".claude/worktrees/**", ".worktrees/**", "context/**"],
+    ignores: [".claude/worktrees/**", ".worktrees/**", "context/**", "**/proto-gen/**"],
   },
   {
     files: ["packages/**/*.{ts,tsx}"],

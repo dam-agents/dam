@@ -1,3 +1,16 @@
+["api-server:gen:proto"]
+description = "Regenerate ts-proto types from proto/external_auth.proto"
+dir = "{{config_root}}/packages/api-server"
+run = '''
+mkdir -p src/proto-gen
+node_modules/.bin/grpc_tools_node_protoc \
+  --plugin=protoc-gen-ts_proto=node_modules/.bin/protoc-gen-ts_proto \
+  --ts_proto_out=src/proto-gen \
+  --ts_proto_opt=outputServices=grpc-js,esModuleInterop=true,useExactTypes=false,unknownFields=true,outputJsonMethods=false,outputClientImpl=false,fileSuffix=.gen \
+  --proto_path=proto \
+  proto/external_auth.proto
+'''
+
 ["api-server:test:unit"]
 description = "Run api-server unit tests"
 dir = "{{config_root}}"
