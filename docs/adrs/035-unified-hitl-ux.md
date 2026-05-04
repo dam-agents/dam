@@ -357,6 +357,7 @@ A replica restarting mid-hold drops the in-flight ext_authz call as a normal ups
 - **No SDS hot-reload, no xDS.** Pod restart is the reload mechanism for L7 chain set changes (new credentialed connection or new path-promoted host); the existing per-Secret cert/chain machinery is the only Envoy primitive used. Dynamic-config upgrades are v1.5+ if L7 churn proves high.
 - **No mitmproxy-style dynamic per-SNI cert minting.** Hosts that need MITM (credentialed or path-rule'd) are enumerated in the cert SAN list. Arbitrary SNIs do not auto-MITM; they are decided at L4 by the API Server.
 - **No SNI-miss passthrough.** Every connection lands on either a TLS-terminating chain or the L4 catch-all chain. There is no "if Envoy doesn't recognize the SNI, just forward" path. `preset = all` is a single wildcard rule the L4 handler matches, not a passthrough chain.
+- **No inbox pagination (v1).** `listForOwner` / `listForInstance` return a single page capped at 100 rows by default (hard ceiling 500, configurable per-call). Cursor-based pagination is deferred — the live shape only surfaces *pending* rows for an active user, and a user with >100 simultaneous pending HITL prompts is already in a degenerate state. When a "history" tab surfaces resolved/expired rows alongside pending, this becomes load-bearing and gets a `(createdAt DESC, id)` cursor + a background trim of old resolved rows. Orphan reaping today only fires on agent delete; resolved rows for live agents accumulate until that point.
 
 ## Alternatives Considered
 
