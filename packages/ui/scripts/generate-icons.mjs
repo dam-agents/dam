@@ -18,12 +18,16 @@ const BG_LIGHT = "#fafaf9";
 const rawSvg = await readFile(resolve(publicDir, "favicon.svg"), "utf8");
 // Extract just the <svg …>…</svg> inner content — we re-wrap it with a transform
 const inner = rawSvg.replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>\s*$/, "");
+const srcViewBox = rawSvg.match(/viewBox="([^"]+)"/i)?.[1] ?? "0 0 512 512";
+const [, , srcW, srcH] = srcViewBox.split(/\s+/).map(Number);
+const SRC = Math.max(srcW, srcH);
 const VIEW = 512;
+const scale = SAFE_AREA * (VIEW / SRC);
 const offset = ((1 - SAFE_AREA) / 2) * VIEW;
 
 const paddedSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${VIEW} ${VIEW}" fill="none">
   <rect width="${VIEW}" height="${VIEW}" fill="${BG_LIGHT}"/>
-  <g transform="translate(${offset} ${offset}) scale(${SAFE_AREA})">${inner}</g>
+  <g transform="translate(${offset} ${offset}) scale(${scale})">${inner}</g>
 </svg>`;
 
 const targets = [

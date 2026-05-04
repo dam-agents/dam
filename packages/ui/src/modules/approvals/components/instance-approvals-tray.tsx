@@ -36,12 +36,12 @@ export function InstanceApprovalsTray({ instanceId }: InstanceApprovalsTrayProps
         className="flex items-center gap-2 w-full px-4 h-9 text-left text-text-secondary hover:text-text transition-colors"
       >
         {effectiveOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        <ShieldAlert size={12} className={pendingCount > 0 ? "text-warning" : "text-text-muted"} />
+        <ShieldAlert size={12} className={pendingCount > 0 ? "text-accent" : "text-text-muted"} />
         <span className="text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted">
           Approvals
         </span>
         {pendingCount > 0 && (
-          <span className="ml-auto min-w-[18px] h-[18px] rounded-full bg-warning text-[10px] font-bold text-white flex items-center justify-center px-1.5">
+          <span className="ml-auto min-w-[18px] h-[18px] rounded-full bg-accent text-[10px] font-bold text-white flex items-center justify-center px-1.5">
             {pendingCount > 9 ? "9+" : pendingCount}
           </span>
         )}

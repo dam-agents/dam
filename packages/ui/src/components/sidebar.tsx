@@ -44,7 +44,7 @@ export function Sidebar() {
         <Logo size={22} className="text-accent shrink-0" />
         {!collapsed && (
           <span className="text-[15px] font-extrabold tracking-[-0.03em] text-accent">
-            humr
+            dam
           </span>
         )}
       </button>

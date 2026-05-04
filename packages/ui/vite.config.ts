@@ -11,10 +11,10 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["favicon.svg", "apple-touch-icon-180x180.png"],
       manifest: {
-        name: "Humr",
-        short_name: "Humr",
+        name: "Dam",
+        short_name: "Dam",
         description: "AI agent platform",
-        theme_color: "#ea580c",
+        theme_color: "#1D6BE1",
         background_color: "#fafaf9",
         display: "standalone",
         start_url: "/",

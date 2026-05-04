@@ -352,8 +352,8 @@ function ChatHeaderStatus({ selectedInstance, instances, busy }: { selectedInsta
       <StatusBadge
         size="sm"
         label="Busy"
-        colorClasses="bg-warning-light text-warning border-warning"
-        dotColorClasses="bg-warning anim-pulse"
+        colorClasses="bg-accent-light text-accent border-accent"
+        dotColorClasses="bg-accent anim-pulse"
       />
     );
   }

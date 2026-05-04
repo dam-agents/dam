@@ -47,7 +47,7 @@ export function InboxBell({ collapsed }: InboxBellProps) {
         <span className="relative shrink-0">
           <Inbox size={18} />
           {pendingCount > 0 && (
-            <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] px-1 rounded-full bg-warning text-[10px] font-bold text-white flex items-center justify-center">
+            <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] px-1 rounded-full bg-accent text-[10px] font-bold text-white flex items-center justify-center">
               {pendingCount > 9 ? "9+" : pendingCount}
             </span>
           )}
