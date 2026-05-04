@@ -368,9 +368,23 @@ func TestBuildStatefulSet_FlagOn_AddsEnvoySidecar(t *testing.T) {
 	assert.Equal(t, "http://127.0.0.1:10000", envMap["HTTP_PROXY"])
 	assert.Equal(t, "http://127.0.0.1:10000", envMap["HTTPS_PROXY"])
 	assert.NotContains(t, envMap, "GH_TOKEN", "OneCLI sentinel must be dropped on experimental path")
-	for _, e := range agent.Env {
-		assert.NotEqual(t, "ONECLI_ACCESS_TOKEN", e.Name, "agent must not see the OneCLI token on experimental path")
+	// ONECLI_ACCESS_TOKEN is still injected — it's the bearer for
+	// api-server → agent-runtime tRPC, independent of the egress path.
+	// What must NOT happen is the token leaking into HTTPS_PROXY (Envoy
+	// doesn't speak OneCLI auth).
+	assert.NotContains(t, envMap["HTTPS_PROXY"], "$(ONECLI_ACCESS_TOKEN)",
+		"experimental path must not interpolate the OneCLI token into the proxy URL")
+	var tokenEnv *corev1.EnvVar
+	for i := range agent.Env {
+		if agent.Env[i].Name == "ONECLI_ACCESS_TOKEN" {
+			tokenEnv = &agent.Env[i]
+			break
+		}
 	}
+	require.NotNil(t, tokenEnv, "agent-runtime needs ONECLI_ACCESS_TOKEN for tRPC bearer auth")
+	require.NotNil(t, tokenEnv.ValueFrom)
+	require.NotNil(t, tokenEnv.ValueFrom.SecretKeyRef)
+	assert.Equal(t, "access-token", tokenEnv.ValueFrom.SecretKeyRef.Key)
 
 	// No fetch-ca-cert init: OneCLI is unreachable on the experimental path
 	// (NetworkPolicy drops it) and the agent's CA now comes from the leaf

@@ -34,17 +34,24 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 		proxyAddr = fmt.Sprintf("http://x:$(ONECLI_ACCESS_TOKEN)@%s:%d", cfg.GatewayFQDN(), cfg.GatewayPort)
 	}
 
-	// Base env. ONECLI_ACCESS_TOKEN is omitted on the experimental path —
-	// the sidecar reads credentials from disk; the agent has no token at all.
-	env := []corev1.EnvVar{}
-	if !instance.ExperimentalCredentialInjector {
-		tokenSecretName := AgentTokenSecretName(agentName)
-		env = append(env, corev1.EnvVar{Name: "ONECLI_ACCESS_TOKEN", ValueFrom: &corev1.EnvVarSource{
+	// ONECLI_ACCESS_TOKEN serves two purposes:
+	//   1. Egress proxy auth — only used on the OneCLI gateway path
+	//      (interpolated into HTTPS_PROXY). The experimental Envoy path
+	//      doesn't proxy through OneCLI, so the token is absent from the
+	//      proxy URL there.
+	//   2. Bearer for api-server → agent-runtime tRPC (files.tree, skills.*).
+	//      This usage is independent of the egress path: agent-runtime's
+	//      `protectedProcedure` always requires the token. Without it on the
+	//      experimental path, every protected tRPC call returns UNAUTHORIZED.
+	// Inject the env in both paths and let only the proxy URL diverge.
+	tokenSecretName := AgentTokenSecretName(agentName)
+	env := []corev1.EnvVar{
+		{Name: "ONECLI_ACCESS_TOKEN", ValueFrom: &corev1.EnvVarSource{
 			SecretKeyRef: &corev1.SecretKeySelector{
 				LocalObjectReference: corev1.LocalObjectReference{Name: tokenSecretName},
 				Key:                  "access-token",
 			},
-		}})
+		}},
 	}
 	env = append(env,
 		corev1.EnvVar{Name: "HTTPS_PROXY", Value: proxyAddr},
