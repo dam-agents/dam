@@ -245,8 +245,6 @@ Three presets are exposed at agent creation. All three are just bulk rule-seedin
 
 The trusted-list itself lives in API Server config (Helm-shipped). It is *seed* data, not runtime config — once seeded, the rows are owned by the agent and editable like any other.
 
-**Preset is persisted on the agent spec.** `AgentSpec.egressPreset` records the user's last selection so reopening the Configure dialog reflects what they chose. `agents.update({ egressPreset })` is the single commit point: server-side, when the preset differs from the agent's current preset, the seeder sweeps the existing `preset:*` rows and inserts the new preset's rows in the same handler. Manual and connection-derived rules are untouched. Re-applying the same preset is a no-op, so retries are idempotent. The UI's Save flow uses this; there is no separate `applyPreset` call from the dialog.
-
 #### UI: staging model with cosmetic preview
 
 The Configure dialog stages all network-access edits client-side and commits them on Save. Edits include preset switches, secret toggles, app-connection toggles, manual rule deletes, and manual rule adds. While staged, the editor renders:
@@ -254,7 +252,7 @@ The Configure dialog stages all network-access edits client-side and commits the
 - **Preview rows** — virtual rows for what the server *will* produce on Save. For preset switches the rows come from `egressRules.trustedHosts()` (queries the same ConfigMap the seeder reads). For connection grants the rows come from `secret.hostPattern` (1-row) or `app.egressHosts` (n-rows) joined client-side from the picker state.
 - **Sweep marks** — existing server rows about to be removed are rendered struck-through. The same visual treatment covers user-initiated trash-icon deletes, preset-switch sweeps (`source LIKE 'preset:%'`), and connection-revoke sweeps (`source = 'connection:<id>'` for ungranted ids). Rows under preset/connection sweep don't show a per-row trash because the only "undo" is to revert the dropdown / picker, not the trash.
 
-Persistence on Save is **intent-shaped, not state-shaped**: the UI sends `agents.update({ egressPreset })`, `setAgentAccess({ secretIds })`, `setAgentConnections({ connectionIds })`, plus per-row `revokeRule` / `createRule` for manual edits. The server walks each handler's existing reconciliation logic to compute the rule diff and apply it atomically. The UI never sends the projected rule list — server-side derivation stays the single source of truth, and races (a parallel inbox approval, another tab) can't be clobbered by a stale projection.
+Persistence on Save is **intent-shaped, not state-shaped**: the UI sends `egressRules.applyPreset({ preset })`, `setAgentAccess({ secretIds })`, `setAgentConnections({ connectionIds })`, plus per-row `revokeRule` / `createRule` for manual edits. The server walks each handler's existing reconciliation logic to compute the rule diff and apply it atomically. The UI never sends the projected rule list — server-side derivation stays the single source of truth, and races (a parallel inbox approval, another tab) can't be clobbered by a stale projection.
 
 The duplication between server's derivation and UI's preview projection is intentional and minimal: both sides read from the same primitives (the trusted-hosts ConfigMap, `secret.hostPattern`, `app.egressHosts`). The shapes are simple enough that drift is a non-issue at this scale; if the derivation grows complex, the right next step is a server-side preview endpoint (`previewForAgent({intent})`), not moving rule synthesis into the UI.
 
