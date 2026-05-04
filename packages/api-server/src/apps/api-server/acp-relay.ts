@@ -98,6 +98,13 @@ export function createAcpRelay(
     instanceId: string,
   ) {
     wss.handleUpgrade(req, socket, head, (client) => {
+      // Resolve identity once per upgrade. The instance's owner/agent
+      // can't change for the lifetime of this WS — capturing here avoids
+      // a K8s ConfigMap GET per permission-request mirror. Failure to
+      // resolve fails the upgrade closed; without identity we'd write
+      // pending_approvals rows the inbox query can't find.
+      let identity: { ownerSub: string; agentId: string } | null = null;
+
       // Subscribe the inject channel for synth ext_authz frames bound for
       // this UI client. Unrelated to ACP-native delivery — that path is
       // outbox-driven and lives entirely in the approvals service.
@@ -108,25 +115,22 @@ export function createAcpRelay(
 
       function mirrorPermissionRequest(msg: JsonRpcRequest): void {
         const sessionId = msg.params?.sessionId;
-        if (!sessionId) return;
-        identityLookup.resolve(instanceId).then((identity) => {
-          if (!identity) return;
-          const tc = msg.params.toolCall ?? {};
-          const toolName = (tc.title as string | undefined) ?? "tool call";
-          const options = (msg.params.options ?? []).map((o) => ({
-            optionId: o.optionId,
-            kind: o.kind as "allow_once" | "allow_always" | "reject_once" | "reject_always" | undefined,
-          }));
-          approvals.recordAcpNativePending({
-            instanceId,
-            sessionId,
-            rpcId: msg.id,
-            agentId: identity.agentId,
-            ownerSub: identity.ownerSub,
-            toolName,
-            args: tc.rawInput,
-            options,
-          }).catch(() => {});
+        if (!sessionId || !identity) return;
+        const tc = msg.params.toolCall ?? {};
+        const toolName = (tc.title as string | undefined) ?? "tool call";
+        const options = (msg.params.options ?? []).map((o) => ({
+          optionId: o.optionId,
+          kind: o.kind as "allow_once" | "allow_always" | "reject_once" | "reject_always" | undefined,
+        }));
+        approvals.recordAcpNativePending({
+          instanceId,
+          sessionId,
+          rpcId: msg.id,
+          agentId: identity.agentId,
+          ownerSub: identity.ownerSub,
+          toolName,
+          args: tc.rawInput,
+          options,
         }).catch(() => {});
       }
 
@@ -148,7 +152,15 @@ export function createAcpRelay(
 
       const upstreamUrl = `ws://${podBaseUrl(instanceId, namespace)}/api/acp`;
 
-      repo.ensureReady(instanceId)
+      identityLookup.resolve(instanceId)
+        .then((resolved) => {
+          if (!resolved) {
+            client.close(1011, "instance not found");
+            throw new Error("instance not found");
+          }
+          identity = resolved;
+        })
+        .then(() => repo.ensureReady(instanceId))
         .then(() => connectUpstream(upstreamUrl))
         .then((upstream) => {
           repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "true").catch(() => {});
