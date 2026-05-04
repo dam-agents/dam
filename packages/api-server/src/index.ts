@@ -254,7 +254,7 @@ const podFilesPublisher = createPodFilesPublisher({
 if (!config.redisUrl) throw new Error("REDIS_URL is required (Redis is a platform primitive — see DRAFT-redis-platform-primitive)");
 const redisBus = createRedisBus(config.redisUrl);
 
-// Seed list for the `trusted` egress preset (DRAFT-unified-hitl-ux).
+// Seed list for the `trusted` egress preset (ADR-035).
 // Read once at boot; the helm ConfigMap is the operator-editable source.
 const trustedHosts = loadTrustedHosts(config.trustedHostsPath);
 const presetSeeder = createPresetSeederAdapter(db, trustedHosts);

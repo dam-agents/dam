@@ -111,7 +111,7 @@ export function useSetAgentConnections() {
     ...trpc.connections.setAgentConnections.mutationOptions(),
     meta: {
       // Server-side `setAgentConnections` syncs `connection:<id>` egress
-      // rules per granted provider's API hosts (DRAFT-unified-hitl-ux).
+      // rules per granted provider's API hosts (ADR-035).
       // Refetch the editor's view alongside the grants query.
       invalidates: [trpc.connections.getAgentConnections.queryKey(), egressRulesKeys.all],
       errorToast: "Failed to update app connections",

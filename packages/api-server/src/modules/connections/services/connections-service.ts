@@ -68,7 +68,7 @@ export function createConnectionsService(deps: {
    */
   podFiles?: PodFilesPublisher;
   /**
-   * Provider → API hosts map (DRAFT-unified-hitl-ux). Loaded once at boot
+   * Provider → API hosts map (ADR-035). Loaded once at boot
    * from the operator-owned ConfigMap. Joined into `AppConnectionView`
    * for UI preview, and used by `setAgentConnections` to drive the
    * connection-rules sync. Empty/missing for a provider → that provider's

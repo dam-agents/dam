@@ -51,7 +51,7 @@ func EnvoyBootstrapName(instanceName string) string {
 
 // envoyRoute is the per-Secret data the bootstrap template needs.
 //
-// `Credentialed=false` is the L7-promoted MITM-only flavor (DRAFT-unified-hitl-ux):
+// `Credentialed=false` is the L7-promoted MITM-only flavor (ADR-035):
 // the host has at least one path-specific egress_rule but no attached credential.
 // We render TLS-terminating chain + ext_authz, but skip credential_injector and
 // the credential SDS mount.
@@ -171,7 +171,7 @@ static_resources:
                 upgrade_configs:
                   - upgrade_type: CONNECT
                 http_filters:
-                  # Gate plain-HTTP egress (DRAFT-unified-hitl-ux). The
+                  # Gate plain-HTTP egress (ADR-035). The
                   # CONNECT route disables this via per-route config — TLS
                   # tunnels are gated downstream (per-host L7 chain or
                   # SNI-miss L4 catch-all). Without this filter, plain
@@ -248,7 +248,7 @@ static_resources:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
                 stat_prefix: terminate_{{ .SecretName }}
                 http_filters:
-                  # HITL gate (DRAFT-unified-hitl-ux). gRPC ext_authz to the
+                  # HITL gate (ADR-035). gRPC ext_authz to the
                   # api-server's single auth endpoint — same Check RPC used
                   # by the L4 catch-all chain below. Rules match short-circuit
                   # ALLOW/DENY; misses persist a pending row and hold the
@@ -384,7 +384,7 @@ static_resources:
             name: dns_cache
             dns_lookup_family: V4_PREFERRED
 
-    # Plain-HTTP forward cluster (DRAFT-unified-hitl-ux). Used by the
+    # Plain-HTTP forward cluster (ADR-035). Used by the
     # outer HCM's fallthrough route to forward proxied non-CONNECT
     # requests after L7 ext_authz gates by Host. No TLS — plaintext
     # already on the wire.

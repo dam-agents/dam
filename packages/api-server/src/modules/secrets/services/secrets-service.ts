@@ -16,7 +16,7 @@ import type { K8sSecretsPort } from "./../infrastructure/k8s-secrets-port.js";
 import { hostPatternFor } from "../domain/types.js";
 
 /**
- * Sync port for connection-derived egress rules (DRAFT-unified-hitl-ux).
+ * Sync port for connection-derived egress rules (ADR-035).
  * The secrets module owns the per-agent grant list; this port reconciles
  * `egress_rules` with that list whenever it changes. Optional dep — non-
  * cluster contexts (tests) skip the side effect.
@@ -187,7 +187,7 @@ export function createSecretsService(deps: {
       // so the user's selection is preserved across toggles.
       await deps.port.setAgentSecrets(agent.id, access.secretIds);
 
-      // DRAFT-unified-hitl-ux §"Single rules table": auto-mirror the grant
+      // ADR-035 §"Single rules table": auto-mirror the grant
       // list into egress_rules with source=connection:<id>. Only fires in
       // selective mode — "all" doesn't map to a fixed host set, and the
       // user can use the `trusted`/`all` preset or manual rules instead.

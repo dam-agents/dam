@@ -46,13 +46,13 @@ const configSchema = z.object({
    *  matches `pending_approvals.expires_at` and the synchronous-hold deadline. */
   approvalHoldSeconds: z.coerce.number().int().positive().default(1800),
   /** Path to a newline-delimited file of hosts seeded by the `trusted` egress
-   *  preset (DRAFT-unified-hitl-ux). Mounted from a Helm-managed ConfigMap.
+   *  preset (ADR-035). Mounted from a Helm-managed ConfigMap.
    *  Empty/missing file → preset is empty (still selectable, just seeds nothing). */
   trustedHostsPath: z.string().default(""),
   /** Path to a JSON map (`provider → string[]`) of API hosts each app-connection
    *  provider needs to reach. App grants insert one `connection:<id>` egress
    *  rule per host listed here. Empty/missing file → grants insert nothing
-   *  (matches pre-DRAFT-unified-hitl-ux behavior). */
+   *  (matches pre-ADR-035 behavior). */
   appConnectionEgressHostsPath: z.string().default(""),
 });
 

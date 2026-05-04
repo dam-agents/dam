@@ -286,7 +286,7 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 		})
 		podAnnotations["humr.ai/gh-token-available"] = ghAvail
 
-		// Roll trigger (DRAFT-unified-hitl-ux #10): hash of the Secret set
+		// Roll trigger (ADR-035 #10): hash of the Secret set
 		// driving the Envoy bootstrap. When the api-server adds an
 		// allow-only Secret to promote a host onto L7, the hash changes,
 		// the pod template diverges, and the StatefulSet rolls so Envoy
@@ -374,7 +374,7 @@ func BuildNetworkPolicy(name string, cfg *config.Config, ownerCM *corev1.ConfigM
 				{Protocol: &tcp, Port: &httpPort},
 			},
 		})
-		// HITL ext_authz gate (DRAFT-unified-hitl-ux). Envoy in this same
+		// HITL ext_authz gate (ADR-035). Envoy in this same
 		// pod calls the API server's ext_authz endpoint on every credentialed
 		// request. `failure_mode_allow: false` means a blocked call here
 		// fails closed — i.e. agent gets 403 with no inbox prompt. So this

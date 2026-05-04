@@ -1,12 +1,12 @@
-# DRAFT: Unified HITL UX — verdict authority outside the agent pod
+# ADR-035: Unified HITL UX — verdict authority outside the agent pod
 
 **Date:** 2026-04-27
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** @jezekra1
 
 ## Context
 
-[`DRAFT-envoy-credential-gateway`](DRAFT-envoy-credential-gateway.md) introduces an Envoy `ext_authz` HITL gate for credential-injected egress. Independently, the platform supports ACP-native permission requests for the harness's own tool calls, parked in the wrapper's `pendingFromAgent` and resolved by the engaged ACP client ([acp-runtime.ts:580](../../packages/agent-runtime/src/modules/acp/services/acp-runtime.ts#L580)).
+[ADR-033](033-envoy-credential-gateway.md) introduces an Envoy `ext_authz` HITL gate for credential-injected egress. Independently, the platform supports ACP-native permission requests for the harness's own tool calls, parked in the wrapper's `pendingFromAgent` and resolved by the engaged ACP client ([acp-runtime.ts:580](../../packages/agent-runtime/src/modules/acp/services/acp-runtime.ts#L580)).
 
 The two gates protect different things — ACP gates guard the *harness's tool execution*; ext_authz guards *credential injection on outbound HTTP* — and neither layer has the data to pre-empt the other. Both stay. If both ship with their own user surface, the user gets two parallel approval systems for the same shape of decision. That's the user-visible problem this ADR addresses.
 
@@ -83,7 +83,7 @@ Postgres is already a hard platform dependency ([ADR-017](017-db-backed-sessions
 
 **Postgres is the source of truth for everything durable** — rules, pending rows, verdicts, delivery state, audit. The inbox query is `SELECT … FROM pending_approvals WHERE owner = ? AND status = 'pending'`; surviving offline / refresh / replica restart is a property of the row existing in Postgres.
 
-**Redis pub/sub** ([`DRAFT-redis-platform-primitive`](DRAFT-redis-platform-primitive.md)) is a hard platform dependency — see that ADR for the reasoning. It carries ephemeral wake-up signals: `approval:<id>` channel for held ext_authz calls, and `frame:inject:<instanceId>` channel for synth-frame fan-out to whichever replica is holding the agent's WS. Redis is on the signal path; Postgres remains the truth path. A Redis outage stops new wake-ups and synth deliveries until it recovers; existing pending rows are unaffected and resolve normally on the agent's next retry.
+**Redis pub/sub** ([`DRAFT-redis-platform-primitive`](DRAFT-redis-platform-primitive.md)) is a hard platform dependency — see that ADR for the reasoning. It carries ephemeral wake-up signals: `approval:<id>` channel for held ext_authz calls, and `inject:<instanceId>` channel for synth-frame fan-out to whichever replica is holding the agent's WS. Redis is on the signal path; Postgres remains the truth path. A Redis outage stops new wake-ups and synth deliveries until it recovers; existing pending rows are unaffected and resolve normally on the agent's next retry.
 
 ### ext_authz mechanics — out-of-pod authority, synchronous hold
 
@@ -222,6 +222,8 @@ The previous `preset = all` "passthrough escape hatch" is replaced by a no-op pr
 
 **Editing promotes**: any user edit of a non-`manual` rule re-stamps `source = manual`, with the original origin preserved as a display-only annotation. Revoking the source no longer touches the rule. Mirrors how connection-injected envs become user-owned on edit.
 
+**Granting promotes preset rows.** When a connection grant lands on a host already covered by a `preset:*` row (common case: `preset = trusted` agent + Anthropic API key both targeting `api.anthropic.com`), the existing row's source flips from `preset:*` to `connection:<id>` rather than the insert silently no-op'ing on the active-row uniqueness constraint. Without this, switching the preset later would sweep the row and leave the still-granted connection without an allow rule. This is the same "more-specific intent wins" rule as user edits, applied at grant time. `manual`, `inbox`, and other-`connection:*` rows on the same key are left alone.
+
 **No tombstones, no reconcile loop.** Connection grant is one-shot — there is no recurring sync that could resurrect a deleted rule. The two cases that matter are *narrowing* (user edits a connection-injected rule into a path-specific one — `source` flips to `manual`, revoke leaves it alone) and *re-granting* (covered by the table row above: skip auto-insert when a user-owned rule already covers the host). Outright deletion of the only rule a connection depends on is not a defended case — the connection is non-functional in that state, and the user's expected next action is to disconnect.
 
 **Two flavors of "connection" produce rules.** Both write `source=connection:<id>` rows; they differ in where the host metadata comes from:
@@ -342,7 +344,7 @@ Pod death takes the in-flight turn with it; the in-memory Promise vaporizes; the
 API Server replicas are stateless; Postgres is the truth path; Redis pub/sub is the wake-up signal. Three distinct cross-replica events:
 
 - **Held ext_authz wake-up.** Replica A holds the call, subscribed to `approval:<id>`. Replica B handles the user's response, CAS-updates the row, publishes on `approval:<id>`. A reads the verdict from Postgres and replies to Envoy.
-- **Synth-frame delivery.** When ext_authz holds and needs the inbox to show a prompt, the holding replica publishes on `frame:inject:<instanceId>`. Whatever replica is holding the agent's relay WS subscribes per-instance and injects the synth frame downstream into the UI. No live WS = no synth delivery; the inbox row covers the offline case.
+- **Synth-frame delivery.** When ext_authz holds and needs the inbox to show a prompt, the holding replica publishes on `inject:<instanceId>`. Whatever replica is holding the agent's relay WS subscribes per-instance and injects the synth frame downstream into the UI. No live WS = no synth delivery; the inbox row covers the offline case.
 - **Outbox delivery for ACP-native.** Inbox click on any replica writes the verdict + attempts a fresh upstream WS to the wrapper inline (see [ACP-native mechanics](#acp-native-mechanics--wrapper-local-mirrored-to-db)). A periodic sweep on each replica retries undelivered rows. Wrapper dedups by JSON-RPC id; delivery is at-least-once.
 
 A replica restarting mid-hold drops the in-flight ext_authz call as a normal upstream error to the agent; the pending row is unaffected and the agent's next retry resolves from Postgres.
@@ -443,7 +445,7 @@ Considered as the path to mitmproxy-style "MITM any SNI without enumeration." A 
 
 ## Related ADRs
 
-- [`DRAFT-envoy-credential-gateway`](DRAFT-envoy-credential-gateway.md) — establishes the ext_authz HITL gate this ADR resolves. The `egress_rules` table here is the v1 implementation of that ADR's "stored decision" concept, reshaped from per-request fingerprint to per-agent rule.
+- [ADR-033 — Envoy-based credential gateway with ext_authz HITL](033-envoy-credential-gateway.md) — establishes the ext_authz HITL gate this ADR resolves. The `egress_rules` table here is the v1 implementation of that ADR's "stored decision" concept, reshaped from per-request fingerprint to per-agent rule.
 - [ADR-007 — ACP traffic always proxied through the API Server](007-acp-relay.md) — the relay this ADR extends with synth-frame injection and ACP-native mirror writes.
 - [ADR-017 — DB-backed sessions](017-db-backed-sessions.md) — the platform Postgres this ADR extends with `egress_rules` and `pending_approvals`.
 - [ADR-018 — Slack integration](018-slack-integration.md) — first-class HITL consumer in `interactive` mode.

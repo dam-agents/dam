@@ -49,7 +49,7 @@ export const telegramThreads = pgTable("telegram_threads", {
  * `source` records the row's origin — `manual`, `inbox`, `connection:<id>`,
  * `preset:trusted`, `preset:all`. User edits flip the source to `manual` so
  * later connection revokes/preset reseeds don't touch the row. See
- * DRAFT-unified-hitl-ux §"Single rules table, mirroring the env-injection
+ * ADR-035 §"Single rules table, mirroring the env-injection
  * pattern".
  */
 export const egressRules = pgTable("egress_rules", {

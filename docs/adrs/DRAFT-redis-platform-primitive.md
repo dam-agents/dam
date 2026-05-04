@@ -8,7 +8,7 @@
 
 Several upcoming and existing features want a primitive that Postgres does not fit cleanly:
 
-- Cross-replica signaling — held call wake-ups, fan-out to user WSs ([`DRAFT-unified-hitl-ux`](DRAFT-unified-hitl-ux.md)).
+- Cross-replica signaling — held call wake-ups, fan-out to user WSs ([ADR-035](035-unified-hitl-ux.md)).
 - Caching layer for read-heavy paths shared across replicas — no specific feature is decided here, but session-log replay ([ADR-026](026-session-log-replay.md)) is a plausible first candidate (many concurrent cursors re-reading the same rows).
 - Simple work queues for low-latency background work where cron + table polling is too coarse but a full broker is too much.
 
@@ -45,7 +45,7 @@ Use Redis going forward wherever it makes sense within these categories. The spl
 ## Consequences
 
 - One new platform dependency in the Helm chart and dev bootstrap.
-- HITL ext_authz hold ([`DRAFT-unified-hitl-ux`](DRAFT-unified-hitl-ux.md)) uses Redis as its cross-replica wake-up channel without inheriting `pg LISTEN/NOTIFY`'s pool quirks.
+- HITL ext_authz hold ([ADR-035](035-unified-hitl-ux.md)) uses Redis as its cross-replica wake-up channel without inheriting `pg LISTEN/NOTIFY`'s pool quirks.
 - Future caching work has a clear destination if and when a feature wants it — replica-shared, fast, with a Postgres-backed fallback path. No specific feature is committed by this ADR.
 - Future simple-queue work can use Redis lists / streams without introducing a heavier broker.
 - Operators size Redis for memory pressure. Cache TTLs and queue depth are author-side responsibilities; the platform doesn't enforce a global cap.
@@ -54,4 +54,4 @@ Use Redis going forward wherever it makes sense within these categories. The spl
 ## Related ADRs
 
 - [ADR-017 — DB-backed sessions](017-db-backed-sessions.md) — Postgres remains the platform's source of truth; this ADR adds an ephemeral-coordination primitive alongside it.
-- [`DRAFT-unified-hitl-ux`](DRAFT-unified-hitl-ux.md) — first consumer of Redis pub/sub for cross-replica HITL wake-ups.
+- [ADR-035](035-unified-hitl-ux.md) — first consumer of Redis pub/sub for cross-replica HITL wake-ups.

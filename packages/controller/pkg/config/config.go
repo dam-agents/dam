@@ -47,7 +47,7 @@ type Config struct {
 	// listener (gRPC). Both Envoy filters use the same endpoint:
 	//   - HTTP filter on TLS-terminated chains (L7 — sees method/path)
 	//   - Network filter on the catch-all chain (L4 — SNI only)
-	// (DRAFT-unified-hitl-ux).
+	// (ADR-035).
 	ExtAuthzHost string
 	ExtAuthzPort int
 	// ExtAuthzHoldSeconds bounds how long the ext_authz handler holds a single

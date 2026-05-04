@@ -25,7 +25,7 @@ export interface AgentSpec {
   resources?: Resources;
   securityContext?: SecurityContext;
   skillPaths?: string[];
-  /** Persisted preset choice (DRAFT-unified-hitl-ux). Updating it via
+  /** Persisted preset choice (ADR-035). Updating it via
    *  `agents.update` re-runs the seeder server-side: prior preset:* rows
    *  are revoked and the new preset's rows are inserted; manual and
    *  connection-derived rules are preserved. */
@@ -48,7 +48,7 @@ export interface CreateAgentInput {
   /** Bulk-seeds egress_rules at create time. Defaults to `trusted` so a
    *  brand-new agent can reach Anthropic, npm, PyPI, GitHub, etc. without
    *  per-host inbox prompts. After seeding, rows are owned by the agent
-   *  like any other rule. See DRAFT-unified-hitl-ux. */
+   *  like any other rule. See ADR-035. */
   egressPreset?: EgressPreset;
 }
 

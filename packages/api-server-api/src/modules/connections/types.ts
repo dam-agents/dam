@@ -21,7 +21,7 @@ export interface AppConnectionView {
    */
   envMappings?: EnvMapping[];
   /**
-   * API hosts this provider needs to reach (DRAFT-unified-hitl-ux). Joined
+   * API hosts this provider needs to reach (ADR-035). Joined
    * server-side from the operator-owned `appConnectionEgressHosts` ConfigMap
    * keyed by `provider`. Granting the connection inserts one
    * `(host, *, *, allow, source=connection:<id>)` rule per host; ungranting

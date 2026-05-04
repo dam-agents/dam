@@ -12,7 +12,7 @@ import { assembleSpecFromTemplate, assembleSpecFromImage } from "../domain/spec-
 
 /**
  * Port consumed by `create()` to seed `egress_rules` for a brand-new agent
- * (DRAFT-unified-hitl-ux). Declared locally so the agents module doesn't
+ * (ADR-035). Declared locally so the agents module doesn't
  * import across module boundaries; the egress-rules module's adapter
  * structurally satisfies this shape.
  */

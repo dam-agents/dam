@@ -13,7 +13,7 @@ export const addAgentSchema = z.object({
   selApps: z.array(z.string()),
   experimentalCredentialInjector: z.boolean(),
   /** Egress preset seeded into egress_rules at create time
-   *  (DRAFT-unified-hitl-ux). `trusted` is the recommended default. */
+   *  (ADR-035). `trusted` is the recommended default. */
   egressPreset: z.enum(["none", "trusted", "all"]),
 });
 

@@ -39,11 +39,11 @@ This directory contains ADRs for the Humr project.
 | [031](031-schedule-rrule-quiet-hours.md)      | Schedules use RRULE for includes and structured quiet hours for exclusions | @jezekra1 |
 | [032](032-pod-reachability-primitive.md)      | Centralized pod-reachability primitive; observed pod Ready is the truth | @janjeliga |
 | [033](033-envoy-credential-gateway.md)        | Envoy-based credential gateway with ext_authz HITL — drop OneCLI | @pilartomas |
+| [035](035-unified-hitl-ux.md)                 | Unified HITL UX — verdict authority outside the agent pod | @jezekra1 |
 
 ## Drafts
 
 | Draft | Title | Owner |
 |-------|-------|-------|
 | [DRAFT](DRAFT-multi-agent.md) | Multi-agent collaboration — isolated instances with shared artifacts | @tomkis |
-| [DRAFT](DRAFT-unified-hitl-ux.md) | Unified HITL UX — verdict authority outside the agent pod | @jezekra1 |
 | [DRAFT](DRAFT-redis-platform-primitive.md) | Redis as a platform primitive — pub/sub, queues, cache | @jezekra1 |

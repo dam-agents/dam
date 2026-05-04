@@ -70,7 +70,7 @@ postgres:
 
 # -- Shared Redis instance (DRAFT-redis-platform-primitive).
 # Used as the cross-replica pub/sub primitive — first consumer is HITL ext_authz
-# wake-ups (DRAFT-unified-hitl-ux). Persistence uses AOF with `everysec`; the
+# wake-ups (ADR-035). Persistence uses AOF with `everysec`; the
 # platform tolerates losing recent ephemeral data on restart (Postgres remains
 # the source of truth for anything durable).
 redis:
@@ -298,7 +298,7 @@ apiServer:
   port: 4000
   harnessServerPort: 4001
   # -- ext_authz gRPC listener for the Envoy sidecar's HITL gate
-  # (DRAFT-unified-hitl-ux). Single endpoint: Envoy's HTTP filter (L7,
+  # (ADR-035). Single endpoint: Envoy's HTTP filter (L7,
   # TLS-terminated chains) and network filter (L4, catch-all chain) both
   # call this port; the handler reads whichever attributes are populated.
   # Cluster-internal only; never routed via ingress.
@@ -312,11 +312,11 @@ apiServer:
   # -- Default hold window (seconds) for HITL ext_authz approvals. The held
   # call resolves on user verdict or denies on timeout; the durable
   # pending_approvals row outlives the hold and is consumed by the agent's
-  # next retry. Default 30 minutes (DRAFT-unified-hitl-ux). Per-CLI read
+  # next retry. Default 30 minutes (ADR-035). Per-CLI read
   # timeouts are an external ceiling — see ADR §Timeouts.
   approvalHoldSeconds: 1800
 
-  # -- Hosts seeded into the `trusted` egress preset (DRAFT-unified-hitl-ux).
+  # -- Hosts seeded into the `trusted` egress preset (ADR-035).
   # Each entry becomes an active `(agent, host, *, *, allow, source=preset:trusted)`
   # row when an agent is created with `egressPreset: trusted`. Values are
   # **literal hostnames only** — no wildcards, no schemes, no paths. SNI
@@ -365,7 +365,7 @@ apiServer:
     - mise.jdx.dev
     - cdn.mise.run
 
-  # -- API hosts each app-connection provider needs to reach (DRAFT-unified-hitl-ux).
+  # -- API hosts each app-connection provider needs to reach (ADR-035).
   #
   # When a user grants an app connection (e.g. Slack, Google Workspace) the
   # api-server inserts one `(host, *, *, allow, source=connection:<id>)` rule

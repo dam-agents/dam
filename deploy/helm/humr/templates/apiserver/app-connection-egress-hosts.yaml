@@ -1,5 +1,5 @@
 {{/*
-Per-provider egress hosts for app-connection grants (DRAFT-unified-hitl-ux).
+Per-provider egress hosts for app-connection grants (ADR-035).
 Mounted into the api-server as a JSON file at
 /etc/humr/app-connection-egress-hosts. Read once at boot and used by
 `setAgentConnections` to insert/revoke `connection:<id>` egress rules per

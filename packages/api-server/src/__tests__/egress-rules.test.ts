@@ -5,7 +5,7 @@ import { execInPod, waitForPodReady } from "./helpers/kubectl.js";
 
 /**
  * End-to-end tests for the network-access enforcement path
- * (DRAFT-unified-hitl-ux). Each test exercises the real agent pod's Envoy
+ * (ADR-035). Each test exercises the real agent pod's Envoy
  * sidecar and the api-server's ext_authz gate against a host the test
  * fully owns: the agent starts with `egressPreset: "none"` and zero
  * connection-derived rules, so observed allow/deny is unambiguously
