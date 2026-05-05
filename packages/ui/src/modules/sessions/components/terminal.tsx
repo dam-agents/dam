@@ -39,7 +39,6 @@ function encodeResize(cols: number, rows: number): ArrayBuffer {
 export function Terminal({ instanceId, sessionId }: { instanceId: string; sessionId: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
-  const fitRef = useRef<FitAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const [state, setState] = useState<ConnectionState>("connecting");
   const [exitCode, setExitCode] = useState<number | null>(null);
@@ -53,7 +52,6 @@ export function Terminal({ instanceId, sessionId }: { instanceId: string; sessio
       termRef.current.dispose();
       termRef.current = null;
     }
-    fitRef.current = null;
     if (containerRef.current) {
       containerRef.current.innerHTML = "";
     }
@@ -86,7 +84,6 @@ export function Terminal({ instanceId, sessionId }: { instanceId: string; sessio
 
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
-      fitRef.current = fitAddon;
 
       // Wait for layout before fitting
       await new Promise<void>((r) => requestAnimationFrame(() => r()));

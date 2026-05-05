@@ -100,10 +100,23 @@ export function SessionsSidebar({
         ))}
       </div>
       <InstanceApprovalsTray instanceId={selectedInstance} />
-      <NewSessionButtons
-        onNewChat={onNewSession}
-        onNewTerminal={onNewTerminalSession}
-      />
+      <div className="px-3 py-3 border-t border-border-light shrink-0">
+        <div className="flex gap-1">
+          <button
+            className="flex-1 h-9 rounded-md border border-border-light text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center justify-center gap-1.5 transition-colors"
+            onClick={onNewSession}
+          >
+            <Plus size={13} /> New Session
+          </button>
+          <button
+            className="h-9 w-9 rounded-md border border-border-light flex items-center justify-center text-text-muted hover:text-accent hover:border-accent transition-colors"
+            onClick={onNewTerminalSession}
+            title="New Terminal Session"
+          >
+            <TerminalSquare size={14} />
+          </button>
+        </div>
+      </div>
     </>
   );
 }
@@ -246,30 +259,3 @@ function SessionRow({
   );
 }
 
-function NewSessionButtons({
-  onNewChat,
-  onNewTerminal,
-}: {
-  onNewChat: () => void;
-  onNewTerminal: () => void;
-}) {
-  return (
-    <div className="px-3 py-3 border-t border-border-light shrink-0">
-      <div className="flex gap-1">
-        <button
-          className="flex-1 h-9 rounded-md border border-border-light text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center justify-center gap-1.5 transition-colors"
-          onClick={onNewChat}
-        >
-          <Plus size={13} /> New Session
-        </button>
-        <button
-          className="h-9 w-9 rounded-md border border-border-light flex items-center justify-center text-text-muted hover:text-accent hover:border-accent transition-colors"
-          onClick={onNewTerminal}
-          title="New Terminal Session"
-        >
-          <TerminalSquare size={14} />
-        </button>
-      </div>
-    </div>
-  );
-}
