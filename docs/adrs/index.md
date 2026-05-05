@@ -41,10 +41,10 @@ This directory contains ADRs for the Humr project.
 | [033](033-envoy-credential-gateway.md)        | Envoy-based credential gateway with ext_authz HITL — drop OneCLI | @pilartomas |
 | [035](035-unified-hitl-ux.md)                 | Unified HITL UX — verdict authority outside the agent pod | @jezekra1 |
 | [036](036-redis-platform-primitive.md)        | Redis as a platform primitive — pub/sub, queues, cache | @jezekra1 |
+| [037](037-remote-terminal.md)                 | Remote terminal — split "chat" and "terminal" session modes | @JanPokorny |
 
 ## Drafts
 
 | Draft | Title | Owner |
 |-------|-------|-------|
 | [DRAFT](DRAFT-multi-agent.md) | Multi-agent collaboration — isolated instances with shared artifacts | @tomkis |
-| [DRAFT](DRAFT-remote-terminal.md) | Remote terminal — split "chat" and "terminal" session modes | @JanPokorny |

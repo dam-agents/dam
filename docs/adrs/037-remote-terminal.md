@@ -1,7 +1,7 @@
-# DRAFT: Remote terminal — split "chat" and "terminal" session modes
+# ADR-037: Remote terminal — split "chat" and "terminal" session modes
 
 **Date:** 2026-05-04
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** @JanPokorny
 
 ## Context
