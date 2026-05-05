@@ -24,3 +24,17 @@ export const STATUS_KEY = "status.yaml";
 // ---- Annotation keys ----
 export const LAST_ACTIVITY_KEY = "humr.ai/last-activity";
 export const ACTIVE_SESSION_KEY = "humr.ai/active-session";
+
+// Per-agent grant annotations stored on the instance ConfigMap. The
+// controller reads these on every reconcile and intersects them with the
+// owner's credential Secret list before mounting into the Envoy sidecar.
+//
+// `humr.ai/secret-mode`:
+//   - absent or "all": every owner Secret is granted
+//   - "selective":     only Secrets whose id is in `granted-secret-ids`
+// `humr.ai/granted-connection-ids`:
+//   - absent: every owner connection is granted
+//   - present (even empty string): only connections in the comma-separated list
+export const ANN_SECRET_MODE = "humr.ai/secret-mode";
+export const ANN_GRANTED_SECRET_IDS = "humr.ai/granted-secret-ids";
+export const ANN_GRANTED_CONNECTION_IDS = "humr.ai/granted-connection-ids";

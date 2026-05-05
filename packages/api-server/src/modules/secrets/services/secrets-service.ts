@@ -11,6 +11,7 @@ import type {
   K8sSecretsPort,
   K8sStoredSecret,
 } from "./../infrastructure/k8s-secrets-port.js";
+import type { AgentGrantsPort } from "../../agents/infrastructure/agent-grants-port.js";
 import { hostPatternFor } from "../domain/types.js";
 
 /**
@@ -43,6 +44,8 @@ function toSecretView(s: K8sStoredSecret): SecretView {
 
 export function createSecretsService(deps: {
   k8sPort: K8sSecretsPort;
+  /** Per-agent grant store (annotations on the instance ConfigMap). */
+  grants: AgentGrantsPort;
   /** Reconciles egress_rules against the agent's currently-granted secrets
    *  on every setAgentAccess call. */
   connectionRules?: AgentConnectionRulesSync;
@@ -105,20 +108,31 @@ export function createSecretsService(deps: {
       await deps.k8sPort.deleteSecret(id);
     },
 
-    // Per-agent grants are not modelled in the K8s-Secret world: every
-    // owner-Secret is visible to every owner-instance via the
-    // humr.ai/owner=<sub> label selector. We surface "all" so the UI
-    // continues to work without an OneCLI-style grant list.
-    async getAgentAccess(_agentId: string) {
-      return { mode: "all" as const, secretIds: [] };
+    async getAgentAccess(agentId: string) {
+      const grants = await deps.grants.get(agentId);
+      return { mode: grants.secretMode, secretIds: grants.grantedSecretIds };
     },
 
-    async setAgentAccess(agentId: string, _access: AgentAccess) {
+    async setAgentAccess(agentId: string, access: AgentAccess) {
+      await deps.grants.setSecretGrants(agentId, access.mode, access.secretIds);
+
+      // Sync `connection:<id>` egress rules against the new grant list so
+      // toggling an Anthropic / generic Secret produces matching rule
+      // changes. In "all" mode we sync an empty map (no per-secret rules);
+      // egress shape relies on presets / manual rules at that point.
       if (deps.connectionRules && deps.ownerSub) {
+        const grants = new Map<string, { hosts: readonly string[] }>();
+        if (access.mode === "selective" && access.secretIds.length > 0) {
+          const allSecrets = await deps.k8sPort.listSecrets();
+          for (const s of allSecrets) {
+            if (!access.secretIds.includes(s.id)) continue;
+            grants.set(s.id, { hosts: [s.hostPattern] });
+          }
+        }
         await deps.connectionRules.syncForAgent({
           agentId,
           decidedBy: deps.ownerSub,
-          grants: new Map(),
+          grants,
         });
       }
     },

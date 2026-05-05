@@ -5,6 +5,7 @@ import type {
   ConnectionsService,
 } from "api-server-api";
 import type { K8sConnectionsPort } from "../infrastructure/k8s-connections-port.js";
+import type { AgentGrantsPort } from "../../agents/infrastructure/agent-grants-port.js";
 import type { PodFilesPublisher } from "../../pod-files/publisher.js";
 
 /** Minimal port consumed by `setAgentConnections` to insert / revoke
@@ -30,6 +31,8 @@ export function normalizeStatus(
 
 export function createConnectionsService(deps: {
   port: K8sConnectionsPort;
+  /** Per-agent grant store (annotations on the instance ConfigMap). */
+  grants: AgentGrantsPort;
   /** Owner sub, also the agents' owner. Required when `podFiles` is set. */
   owner?: string;
   /**
@@ -68,20 +71,38 @@ export function createConnectionsService(deps: {
       });
     },
 
-    // Per-agent grants are not tracked in the K8s-Secret model: every
-    // owner-Secret with `humr.ai/owner=<sub>` is visible to every owner-
-    // instance via the controller's selector. The tRPC contract is
-    // preserved so the UI keeps rendering, but the grant list is empty.
-    async getAgentConnections(_agentId: string): Promise<AgentAppConnections> {
-      return { connectionIds: [] };
+    async getAgentConnections(agentId: string): Promise<AgentAppConnections> {
+      const g = await deps.grants.get(agentId);
+      // No annotation on the instance CM → "all granted" (legacy default).
+      // The UI uses connectionIds to show which checkboxes are ticked, so
+      // surface every owner connection in that case.
+      if (g.grantedConnectionIds === null) {
+        const all = await deps.port.listConnections();
+        return { connectionIds: all.map((c) => c.connection) };
+      }
+      return { connectionIds: g.grantedConnectionIds };
     },
 
-    async setAgentConnections(agentId: string, _connectionIds: string[]) {
+    async setAgentConnections(agentId: string, connectionIds: string[]) {
+      const deduped = Array.from(new Set(connectionIds));
+      await deps.grants.setConnectionGrants(agentId, deduped);
+
       if (deps.connectionRules && deps.owner) {
+        // Sync `connection:<id>` egress rules per granted provider's API
+        // hosts (ADR-035). Providers without a registry entry just
+        // contribute zero hosts — the sync still revokes any stale rows.
+        const all = await deps.port.listConnections();
+        const grants = new Map<string, { hosts: readonly string[] }>();
+        for (const c of all) {
+          if (!deduped.includes(c.connection)) continue;
+          const hosts = deps.egressHostsByProvider?.get(c.connection) ?? [];
+          if (hosts.length === 0) continue;
+          grants.set(c.connection, { hosts });
+        }
         await deps.connectionRules.syncForAgent({
           agentId,
           decidedBy: deps.owner,
-          grants: new Map(),
+          grants,
         });
       }
       if (deps.podFiles && deps.owner) {

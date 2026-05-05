@@ -32,9 +32,17 @@ const (
 	envoyOwnerLabel       = "humr.ai/owner"
 	envoyManagedByLabel   = "humr.ai/managed-by"
 	envoySecretTypeLabel  = "humr.ai/secret-type"
+	envoyConnectionLabel  = "humr.ai/connection"
 	envoyHostPatternAnn   = "humr.ai/host-pattern"
 	envoyHeaderNameAnn    = "humr.ai/injection-header-name"
 	envoyAuthModeAnn      = "humr.ai/auth-mode"
+	// Per-agent grant annotations stamped by the api-server on the
+	// instance ConfigMap. The controller reads them on every reconcile
+	// and intersects with the owner's credential Secret list.
+	grantSecretModeAnn        = "humr.ai/secret-mode"
+	grantSecretIdsAnn         = "humr.ai/granted-secret-ids"
+	grantConnectionIdsAnn     = "humr.ai/granted-connection-ids"
+	credentialSecretNamePrefix = "humr-cred-"
 	envoyBootstrapVolume  = "envoy-bootstrap"
 	envoyBootstrapMount   = "/etc/envoy"
 	envoyCredentialsRoot   = "/etc/envoy/credentials"
@@ -68,6 +76,69 @@ type envoyRoute struct {
 // cert SAN list and force a host onto the L7 path so path-specific egress
 // rules can be enforced. They carry no credential payload.
 const envoySecretTypeAllowOnly = "allow-only"
+
+// listAgentCredentialSecrets returns the owner's credential Secrets filtered
+// by the per-agent grant annotations on the instance ConfigMap. See
+// `filterByGrants` for the precise semantics.
+func listAgentCredentialSecrets(ctx context.Context, client kubernetes.Interface, namespace, owner string, instanceCM *corev1.ConfigMap) ([]corev1.Secret, error) {
+	all, err := listOwnerCredentialSecrets(ctx, client, namespace, owner)
+	if err != nil {
+		return nil, err
+	}
+	return filterByGrants(all, instanceCM.Annotations), nil
+}
+
+// filterByGrants narrows the owner's credential Secret list using the agent's
+// grant annotations. Two independent dimensions:
+//
+//   - Regular secrets (`humr.ai/secret-type` ∈ {anthropic, generic}): governed
+//     by `humr.ai/secret-mode`. Absent or "all" → every Secret is granted;
+//     "selective" → only Secrets whose id (the suffix after `humr-cred-`) is
+//     listed in `humr.ai/granted-secret-ids`.
+//   - Connection secrets (`humr.ai/secret-type` = connection): governed by
+//     `humr.ai/granted-connection-ids`. Absent → every connection is granted
+//     (legacy default); present (even empty) → only connection keys listed.
+func filterByGrants(secrets []corev1.Secret, ann map[string]string) []corev1.Secret {
+	secretMode := ann[grantSecretModeAnn]
+	grantedSecretIds := splitGrant(ann[grantSecretIdsAnn])
+	connRaw, hasConnAnn := ann[grantConnectionIdsAnn]
+	grantedConnIds := splitGrant(connRaw)
+
+	out := secrets[:0:0]
+	for _, s := range secrets {
+		switch s.Labels[envoySecretTypeLabel] {
+		case "connection":
+			if !hasConnAnn {
+				out = append(out, s)
+				continue
+			}
+			connKey := s.Labels[envoyConnectionLabel]
+			if grantedConnIds[connKey] {
+				out = append(out, s)
+			}
+		default:
+			if secretMode != "selective" {
+				out = append(out, s)
+				continue
+			}
+			id := strings.TrimPrefix(s.Name, credentialSecretNamePrefix)
+			if grantedSecretIds[id] {
+				out = append(out, s)
+			}
+		}
+	}
+	return out
+}
+
+func splitGrant(raw string) map[string]bool {
+	out := map[string]bool{}
+	for _, part := range strings.Split(raw, ",") {
+		if p := strings.TrimSpace(part); p != "" {
+			out[p] = true
+		}
+	}
+	return out
+}
 
 // listOwnerCredentialSecrets returns the K8s Secrets the api-server has
 // written for this owner.

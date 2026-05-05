@@ -29,6 +29,7 @@ import { createK8sSecretsPort } from "./../../modules/secrets/infrastructure/k8s
 import { createSecretsService } from "./../../modules/secrets/services/secrets-service.js";
 import { createK8sConnectionsPort } from "./../../modules/connections/infrastructure/k8s-connections-port.js";
 import { createConnectionsService } from "./../../modules/connections/services/connections-service.js";
+import { createAgentGrantsPort } from "./../../modules/agents/infrastructure/agent-grants-port.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { ChannelSecretStore } from "./../../modules/channels/infrastructure/channel-secret-store.js";
 import type { IdentityLinkService } from "./../../modules/channels/services/identity-link-service.js";
@@ -211,13 +212,16 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
 
     const { templates, agents, instances, schedules, sessions } = composeAgentsModule(api, config.namespace, user.sub, db, userDirectory, channelSecretStore, config.agentHome, presetSeeder, agentCleanupHooks);
     const skills = composeSkillsModule(api, config.namespace, user.sub, db, seedSources);
+    const grants = createAgentGrantsPort(k8sClient, user.sub);
     const secrets = createSecretsService({
       k8sPort: createK8sSecretsPort(k8sClient, user.sub),
+      grants,
       connectionRules: createConnectionRulesSyncAdapter(db),
       ownerSub: user.sub,
     });
     const connections = createConnectionsService({
       port: createK8sConnectionsPort(k8sClient, user.sub),
+      grants,
       owner: user.sub,
       podFiles: podFilesPublisher,
       egressHostsByProvider: appConnectionEgressHosts,

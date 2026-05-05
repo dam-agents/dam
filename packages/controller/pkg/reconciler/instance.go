@@ -70,7 +70,7 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 	}
 
 	owner := agentCM.Labels["humr.ai/owner"]
-	credentialSecrets, err := listOwnerCredentialSecrets(ctx, r.client, r.config.Namespace, owner)
+	credentialSecrets, err := listAgentCredentialSecrets(ctx, r.client, r.config.Namespace, owner, cm)
 	if err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("listing credential secrets: %v", err))
 	}
