@@ -1,13 +1,12 @@
 import type { Schedule, ScheduleSpec } from "api-server-api";
 import yaml from "js-yaml";
-import type { K8sClient } from "./k8s.js";
+import type { K8sClient } from "../../agents/infrastructure/k8s.js";
 import {
   LABEL_TYPE, TYPE_SCHEDULE, LABEL_OWNER, LABEL_INSTANCE_REF,
   LABEL_AGENT_REF, SPEC_KEY,
-} from "./labels.js";
-import {
-  parseSchedule, isOwnedBy, buildScheduleConfigMap,
-} from "./configmap-mappers.js";
+} from "../../agents/infrastructure/labels.js";
+import { isOwnedBy } from "../../agents/infrastructure/configmap-mappers.js";
+import { parseSchedule, buildScheduleConfigMap } from "./configmap-mappers.js";
 
 export interface SchedulesRepository {
   list(instanceId: string, owner: string): Promise<Schedule[]>;
@@ -49,9 +48,6 @@ export function createSchedulesRepository(k8s: K8sClient): SchedulesRepository {
     async update(id, patch, owner) {
       const cm = await getOwned(id, owner);
       if (!cm) return null;
-      // Start from the current spec so unspecified fields stick; `patch` wins
-      // on any field the caller supplies. Caller also passes undefined to
-      // clear optional fields (e.g. quietHours: [] to drop all windows).
       const current = yaml.load(cm.data?.[SPEC_KEY] ?? "") as Record<string, unknown>;
       const nextSpec = { ...current, ...patch };
       cm.data = { ...cm.data, [SPEC_KEY]: yaml.dump(nextSpec) };

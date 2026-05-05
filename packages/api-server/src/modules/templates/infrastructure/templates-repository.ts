@@ -1,10 +1,11 @@
 import type { Template, TemplateSpec } from "api-server-api";
-import type { K8sClient } from "./k8s.js";
+import yaml from "js-yaml";
+import type { K8sClient } from "../../agents/infrastructure/k8s.js";
 import {
   LABEL_TYPE, TYPE_TEMPLATE, LABEL_OWNER, SPEC_KEY,
-} from "./labels.js";
-import { parseTemplate, hasType } from "./configmap-mappers.js";
-import yaml from "js-yaml";
+} from "../../agents/infrastructure/labels.js";
+import { hasType } from "../../agents/infrastructure/configmap-mappers.js";
+import { parseTemplate } from "./configmap-mappers.js";
 
 export interface TemplatesRepository {
   list(): Promise<Template[]>;

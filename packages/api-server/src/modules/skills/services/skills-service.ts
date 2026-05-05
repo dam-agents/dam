@@ -14,8 +14,8 @@ import type {
   UninstallSkillInput,
 } from "api-server-api";
 import type { AgentsRepository } from "../../agents/infrastructure/agents-repository.js";
-import type { InstancesRepository } from "../../agents/infrastructure/instances-repository.js";
-import type { TemplatesRepository } from "../../agents/infrastructure/templates-repository.js";
+import type { InstancesRepository } from "../../instances/infrastructure/instances-repository.js";
+import type { TemplatesRepository } from "../../templates/infrastructure/templates-repository.js";
 import {
   SkillSourceProtectedError,
   type SkillsRepository,

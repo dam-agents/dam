@@ -12,11 +12,11 @@ import {
 import type { InstanceSkillsRepository } from "../../modules/skills/infrastructure/instance-skills-repository.js";
 import type { SkillSourceSeed } from "../../modules/skills/infrastructure/seed-sources.js";
 import { PublicArchiveNotFoundError } from "../../modules/skills/infrastructure/public-archive-scanner.js";
-import type { InstancesRepository } from "../../modules/agents/infrastructure/instances-repository.js";
+import type { InstancesRepository } from "../../modules/instances/infrastructure/instances-repository.js";
 import type { AgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
-import type { TemplatesRepository } from "../../modules/agents/infrastructure/templates-repository.js";
+import type { TemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
 import type { AgentRuntimeSkillsClient } from "../../modules/skills/infrastructure/agent-runtime-client.js";
-import type { InfraInstance } from "../../modules/agents/domain/instance-assembly.js";
+import type { InfraInstance } from "../../modules/instances/domain/instance-assembly.js";
 
 function emptyTemplatesRepo(): TemplatesRepository {
   return {

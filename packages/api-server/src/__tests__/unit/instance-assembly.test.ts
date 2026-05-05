@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { assembleInstance, computeState, type InfraInstance } from "../../modules/agents/domain/instance-assembly.js";
+import { assembleInstance, computeState, type InfraInstance } from "../../modules/instances/domain/instance-assembly.js";
 
 function infra(overrides: Partial<InfraInstance> = {}): InfraInstance {
   return {

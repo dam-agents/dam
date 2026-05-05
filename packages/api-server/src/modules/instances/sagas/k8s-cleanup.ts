@@ -5,8 +5,8 @@
 import type { Subscription } from "rxjs";
 import { mergeMap } from "rxjs/operators";
 import { events$, ofType, EventType, type InstanceDeleted } from "../../../events.js";
-import type { K8sClient } from "../infrastructure/k8s.js";
-import { LABEL_INSTANCE_REF } from "../infrastructure/labels.js";
+import type { K8sClient } from "../../agents/infrastructure/k8s.js";
+import { LABEL_INSTANCE_REF } from "../../agents/infrastructure/labels.js";
 import type { ChannelSecretStore } from "../../channels/infrastructure/channel-secret-store.js";
 
 export function startK8sCleanupSaga(

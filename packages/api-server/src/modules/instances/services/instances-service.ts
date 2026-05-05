@@ -6,11 +6,11 @@ import type {
   Agent,
 } from "api-server-api";
 import { SPEC_VERSION, ChannelType } from "api-server-api";
-import type { InstancesRepository } from "./../infrastructure/instances-repository.js";
-import type { KeycloakUserDirectory } from "./../infrastructure/keycloak-user-directory.js";
+import type { InstancesRepository } from "../infrastructure/instances-repository.js";
+import type { KeycloakUserDirectory } from "../infrastructure/keycloak-user-directory.js";
 import type { ChannelSecretStore } from "../../channels/infrastructure/channel-secret-store.js";
 import { assembleInstance, findOrphanedInstanceIds } from "../domain/instance-assembly.js";
-import { isSlackChannelUniqueViolation } from "../infrastructure/channels-repository.js";
+import { isSlackChannelUniqueViolation } from "../infrastructure/channel-bindings-repository.js";
 import { ok, err } from "../../../core/result.js";
 import type { UnitOfWork, Tx } from "../../../core/unit-of-work.js";
 import { emit, EventType } from "../../../events.js";

@@ -1,16 +1,24 @@
 import { createDb, runMigrations } from "db";
 import { createApi } from "./modules/agents/infrastructure/k8s.js";
-import { composeSystemInstances, startK8sCleanupSaga, startChannelCleanupSaga } from "./modules/agents/index.js";
+import {
+  composeInstancesModule,
+  createInstancesRepository,
+  createKeycloakUserDirectory,
+  createPodIpResolver,
+  startK8sCleanupSaga,
+  startChannelCleanupSaga,
+  deleteChannelsByInstance,
+  listChannelsByOwner,
+  findBySlackChannelId,
+  findSlackChannelByInstance,
+} from "./modules/instances/index.js";
+import { upsertSession, findByInstanceAndThreadTs, touchSession } from "./modules/sessions/index.js";
 import {
   createInstanceSkillsRepository,
   parseSeedSources,
   startSkillsCleanupSaga,
 } from "./modules/skills/index.js";
 import { createK8sClient } from "./modules/agents/infrastructure/k8s.js";
-import { createInstancesRepository } from "./modules/agents/infrastructure/instances-repository.js";
-import { createKeycloakUserDirectory } from "./modules/agents/infrastructure/keycloak-user-directory.js";
-import { deleteChannelsByInstance, listChannelsByOwner, findBySlackChannelId, findSlackChannelByInstance } from "./modules/agents/infrastructure/channels-repository.js";
-import { upsertSession, findByInstanceAndThreadTs, touchSession } from "./modules/agents/infrastructure/sessions-repository.js";
 import { createPostgresState } from "@chat-adapter/state-pg";
 import { createSlackWorker, type SlackOAuthPending, type ChannelRegistry } from "./modules/channels/infrastructure/slack.js";
 import { createTelegramWorker, type TelegramOAuthPending } from "./modules/channels/infrastructure/telegram.js";
@@ -52,7 +60,6 @@ import {
 } from "./modules/egress-rules/compose.js";
 import { createAgentArtifactsSweeper } from "./sagas/agent-artifacts-sweeper.js";
 import { createK8sClient as createAgentsK8sClient } from "./modules/agents/infrastructure/k8s.js";
-import { createPodIpResolver } from "./modules/agents/infrastructure/pod-ip-resolver.js";
 import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
 import { loadAppConnectionEgressHosts } from "./bootstrap/app-connection-egress-hosts.js";
 import { createRedisBus } from "./core/redis-bus.js";
@@ -92,7 +99,15 @@ const userDirectory = createKeycloakUserDirectory({
   clientSecret: config.keycloakApiClientSecret,
 });
 
-const systemInstances = composeSystemInstances(api, config.namespace, db, userDirectory, channelSecretStore, config.agentHome);
+const { instances: systemInstances } = composeInstancesModule({
+  api,
+  namespace: config.namespace,
+  owner: undefined,
+  db,
+  userDirectory,
+  channelSecretStore,
+  getAgent: async () => null,
+});
 const persistSession = upsertSession(db);
 const persistSlackSession: typeof persistSession = (sessionId, instanceId, type, threadTs?) =>
   persistSession(sessionId, instanceId, type, undefined, threadTs);

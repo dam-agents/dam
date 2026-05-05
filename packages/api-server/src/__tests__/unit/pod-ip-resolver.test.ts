@@ -3,7 +3,7 @@ import type * as k8s from "@kubernetes/client-node";
 import {
   createPodIpResolver,
   parseGrpcPeer,
-} from "../../modules/agents/infrastructure/pod-ip-resolver.js";
+} from "../../modules/instances/infrastructure/pod-ip-resolver.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 
 function fakeK8s(podSets: Array<Array<{ ip: string; instance: string }>>): {

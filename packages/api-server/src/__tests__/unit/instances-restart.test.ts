@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import type * as k8s from "@kubernetes/client-node";
-import { createInstancesRepository } from "../../modules/agents/infrastructure/instances-repository.js";
+import { createInstancesRepository } from "../../modules/instances/infrastructure/instances-repository.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import {
   LABEL_TYPE, LABEL_OWNER, TYPE_INSTANCE, SPEC_KEY,

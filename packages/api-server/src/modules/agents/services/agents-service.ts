@@ -7,7 +7,7 @@ import {
   type EnvVar,
   type TemplateSpec,
 } from "api-server-api";
-import type { AgentsRepository } from "./../infrastructure/agents-repository.js";
+import type { AgentsRepository } from "../infrastructure/agents-repository.js";
 import { assembleSpecFromTemplate, assembleSpecFromImage } from "../domain/spec-assembly.js";
 
 /**

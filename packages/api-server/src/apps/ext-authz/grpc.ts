@@ -1,7 +1,7 @@
 import * as grpc from "@grpc/grpc-js";
 import type { ExtAuthzGate } from "../../modules/approvals/compose.js";
-import type { PodIpResolver } from "../../modules/agents/infrastructure/pod-ip-resolver.js";
-import { parseGrpcPeer } from "../../modules/agents/infrastructure/pod-ip-resolver.js";
+import type { PodIpResolver } from "../../modules/instances/infrastructure/pod-ip-resolver.js";
+import { parseGrpcPeer } from "../../modules/instances/infrastructure/pod-ip-resolver.js";
 import {
   AuthorizationService,
   type AuthorizationServer,

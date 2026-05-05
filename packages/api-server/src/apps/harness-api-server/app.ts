@@ -3,8 +3,13 @@ import type { CoreV1Api } from "@kubernetes/client-node";
 import type { Db } from "db";
 import { createK8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { LABEL_OWNER } from "../../modules/agents/infrastructure/labels.js";
-import { createKeycloakUserDirectory } from "../../modules/agents/infrastructure/keycloak-user-directory.js";
+import {
+  composeInstancesModule, createKeycloakUserDirectory,
+} from "../../modules/instances/index.js";
 import { composeAgentsModule } from "../../modules/agents/index.js";
+import { composeTemplatesModule } from "../../modules/templates/index.js";
+import { composeSchedulesModule } from "../../modules/schedules/index.js";
+import { composeSessionsModule } from "../../modules/sessions/index.js";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
 import type { SkillSourceSeed } from "../../modules/skills/index.js";
 import { createAcpClient } from "../../core/acp-client.js";
@@ -54,15 +59,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     agentHome: config.agentHome,
     composeSkills: (owner) => composeSkillsModule(api, config.namespace, owner, db, seedSources, config.brand.name),
     schedulesServiceFor: (owner) =>
-      composeAgentsModule(
-        api,
-        config.namespace,
-        owner,
-        db,
-        userDirectory,
-        channelSecretStore,
-        config.agentHome,
-      ).schedules,
+      composeSchedulesModule(api, config.namespace, owner).schedules,
     handleTrigger: async (body) => {
       const mode = body.sessionMode ?? "fresh";
       const sessionType = "schedule_cron";
@@ -76,7 +73,18 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       if (!owner) {
         throw new Error(`instance ${body.instanceId}: missing owner label`);
       }
-      const { sessions } = composeAgentsModule(api, config.namespace, owner, db, userDirectory, channelSecretStore, config.agentHome);
+      const { readSpec: readTemplateSpec } = composeTemplatesModule(api, config.namespace);
+      const { agents } = composeAgentsModule({
+        api, namespace: config.namespace, owner, agentHome: config.agentHome, readTemplateSpec,
+      });
+      const { isOwnedInstance } = composeInstancesModule({
+        api, namespace: config.namespace, owner, db, userDirectory, channelSecretStore,
+        getAgent: (id) => agents.get(id),
+      });
+      const { isOwnedSchedule } = composeSchedulesModule(api, config.namespace, owner);
+      const { sessions } = composeSessionsModule({
+        db, namespace: config.namespace, isOwnedInstance, isOwnedSchedule,
+      });
 
       let resumeSessionId: string | undefined;
       if (mode === "continuous") {

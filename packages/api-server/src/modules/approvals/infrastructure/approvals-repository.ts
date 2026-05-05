@@ -146,7 +146,7 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
       // the inbox queries scan by (owner|instance, status), which already
       // gates the candidate set; lookups here run after a status='pending'
       // + agent_id filter so the row count is small.
-      const rows = await db.execute<RawPending>(sql`
+      const rows = await db.execute(sql`
         SELECT id, type, instance_id AS "instanceId", agent_id AS "agentId",
                owner_sub AS "ownerSub", session_id AS "sessionId", payload,
                created_at AS "createdAt", expires_at AS "expiresAt",

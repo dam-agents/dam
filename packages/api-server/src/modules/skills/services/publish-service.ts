@@ -6,7 +6,7 @@ import type {
   SkillSource,
 } from "api-server-api";
 import type { AgentsRepository } from "../../agents/infrastructure/agents-repository.js";
-import type { InstancesRepository } from "../../agents/infrastructure/instances-repository.js";
+import type { InstancesRepository } from "../../instances/infrastructure/instances-repository.js";
 import type { InstanceSkillsRepository } from "../infrastructure/instance-skills-repository.js";
 import {
   AgentRuntimeUpstreamError,

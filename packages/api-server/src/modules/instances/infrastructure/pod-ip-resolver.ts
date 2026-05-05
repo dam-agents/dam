@@ -21,8 +21,8 @@
  * `resolve()` triggers a single-flighted refresh on miss to handle that
  * cold-start path without making it the steady state.
  */
-import type { K8sClient } from "./k8s.js";
-import { LABEL_INSTANCE_REF } from "./labels.js";
+import type { K8sClient } from "../../agents/infrastructure/k8s.js";
+import { LABEL_INSTANCE_REF } from "../../agents/infrastructure/labels.js";
 
 export interface PodIpResolver {
   start(): Promise<void>;

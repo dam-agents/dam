@@ -5,7 +5,7 @@ import type {
   UpdateRRuleScheduleInput,
 } from "api-server-api";
 import { SPEC_VERSION } from "api-server-api";
-import type { SchedulesRepository } from "./../infrastructure/schedules-repository.js";
+import type { SchedulesRepository } from "../infrastructure/schedules-repository.js";
 import { validateCron, validateHasVisibleOccurrence, validateRRule, validateTimezone } from "../domain/recurrences.js";
 
 export function createSchedulesService(deps: {
@@ -70,8 +70,6 @@ export function createSchedulesService(deps: {
         quietHours: input.quietHours,
         task: input.task,
       };
-      // sessionMode is optional; only patch it when supplied so omitting it
-      // means "keep current mode" rather than "clear to default."
       if (input.sessionMode) patch.sessionMode = input.sessionMode;
       return deps.repo.update(input.id, patch, deps.owner);
     },

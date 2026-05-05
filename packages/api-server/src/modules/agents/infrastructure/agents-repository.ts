@@ -3,10 +3,8 @@ import type { K8sClient } from "./k8s.js";
 import {
   LABEL_TYPE, TYPE_AGENT, LABEL_OWNER,
 } from "./labels.js";
-import {
-  parseAgent, isOwnedBy, hasType,
-  buildAgentConfigMap, patchSpecField,
-} from "./configmap-mappers.js";
+import { isOwnedBy, hasType, patchSpecField } from "./configmap-mappers.js";
+import { parseAgent, buildAgentConfigMap } from "./agents-configmap-mappers.js";
 
 export interface AgentsRepository {
   list(owner: string): Promise<Agent[]>;

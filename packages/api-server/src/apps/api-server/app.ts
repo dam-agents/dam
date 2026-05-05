@@ -9,9 +9,13 @@ import type { SkillSourceSeed } from "../../modules/skills/index.js";
 import {
   createK8sClient, podBaseUrl,
 } from "../../modules/agents/infrastructure/k8s.js";
-import { createInstancesRepository } from "./../../modules/agents/infrastructure/instances-repository.js";
+import {
+  composeInstancesModule, createInstancesRepository, createKeycloakUserDirectory,
+} from "../../modules/instances/index.js";
 import { composeAgentsModule } from "../../modules/agents/index.js";
-import { createKeycloakUserDirectory } from "../../modules/agents/infrastructure/keycloak-user-directory.js";
+import { composeTemplatesModule } from "../../modules/templates/index.js";
+import { composeSchedulesModule } from "../../modules/schedules/index.js";
+import { composeSessionsModule } from "../../modules/sessions/index.js";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
 import { createSlackOAuthRoutes } from "../../modules/channels/infrastructure/slack-oauth.js";
 import { createTelegramOAuthRoutes } from "../../modules/channels/infrastructure/telegram-oauth.js";
@@ -228,7 +232,19 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   app.all("/api/trpc/*", (c) => {
     const user = c.get("user");
 
-    const { templates, agents, instances, schedules, sessions } = composeAgentsModule(api, config.namespace, user.sub, db, userDirectory, channelSecretStore, config.agentHome, presetSeeder, agentCleanupHooks);
+    const { templates, readSpec: readTemplateSpec } = composeTemplatesModule(api, config.namespace);
+    const { agents } = composeAgentsModule({
+      api, namespace: config.namespace, owner: user.sub, agentHome: config.agentHome,
+      readTemplateSpec, presetSeeder, cleanupHooks: agentCleanupHooks,
+    });
+    const { instances, isOwnedInstance } = composeInstancesModule({
+      api, namespace: config.namespace, owner: user.sub, db, userDirectory, channelSecretStore,
+      getAgent: (id) => agents.get(id),
+    });
+    const { schedules, isOwnedSchedule } = composeSchedulesModule(api, config.namespace, user.sub);
+    const { sessions } = composeSessionsModule({
+      db, namespace: config.namespace, isOwnedInstance, isOwnedSchedule,
+    });
     const skills = composeSkillsModule(api, config.namespace, user.sub, db, seedSources, config.brand.name);
     const grants = createAgentGrantsPort(k8sClient, user.sub);
     const secrets = createSecretsService({

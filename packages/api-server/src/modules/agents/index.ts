@@ -1,3 +1,3 @@
-export { composeAgentsModule, composeSystemInstances } from "./compose.js";
-export { startK8sCleanupSaga } from "./sagas/k8s-cleanup.js";
-export { startChannelCleanupSaga } from "./sagas/channel-cleanup.js";
+export { composeAgentsModule } from "./compose.js";
+export type { AgentCleanupHook, PresetSeeder } from "./services/agents-service.js";
+export type { AgentsRepository } from "./infrastructure/agents-repository.js";

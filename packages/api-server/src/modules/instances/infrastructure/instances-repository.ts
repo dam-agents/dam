@@ -1,16 +1,15 @@
-import { is409, type K8sClient } from "./k8s.js";
-import { retry } from "./retry.js";
+import { is409, type K8sClient } from "../../agents/infrastructure/k8s.js";
+import { retry } from "../../agents/infrastructure/retry.js";
 import {
   LABEL_TYPE, TYPE_INSTANCE, LABEL_OWNER, LABEL_INSTANCE_REF, LABEL_AGENT_REF, LAST_ACTIVITY_KEY,
-} from "./labels.js";
+} from "../../agents/infrastructure/labels.js";
 import {
-  parseInfraInstance, isOwnedBy, hasType,
-  buildInstanceConfigMap, patchSpecField, setDesiredState,
-  isPodReady,
-} from "./configmap-mappers.js";
+  isOwnedBy, hasType, patchSpecField, setDesiredState, isPodReady,
+} from "../../agents/infrastructure/configmap-mappers.js";
+import { parseInfraInstance, buildInstanceConfigMap } from "./configmap-mappers.js";
 import {
   pollUntilReady, WAKE_POLL_INITIAL_MS, WAKE_POLL_MAX_MS, WAKE_TIMEOUT_MS,
-} from "./poll-until-ready.js";
+} from "../../agents/infrastructure/poll-until-ready.js";
 import type { InfraInstance } from "../domain/instance-assembly.js";
 
 /** Re-run a read-modify-write routine when the K8s API rejects the write

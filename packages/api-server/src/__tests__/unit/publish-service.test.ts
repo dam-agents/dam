@@ -3,9 +3,9 @@ import { TRPCError } from "@trpc/server";
 import type { AgentRuntimeSkillsClient } from "../../modules/skills/infrastructure/agent-runtime-client.js";
 import { AgentRuntimeUpstreamError } from "../../modules/skills/infrastructure/agent-runtime-client.js";
 import type { AgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
-import type { InstancesRepository } from "../../modules/agents/infrastructure/instances-repository.js";
+import type { InstancesRepository } from "../../modules/instances/infrastructure/instances-repository.js";
 import type { InstanceSkillsRepository } from "../../modules/skills/infrastructure/instance-skills-repository.js";
-import type { InfraInstance } from "../../modules/agents/domain/instance-assembly.js";
+import type { InfraInstance } from "../../modules/instances/domain/instance-assembly.js";
 import { publishSkill } from "../../modules/skills/services/publish-service.js";
 
 const OWNER = "user-1";
