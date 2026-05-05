@@ -14,7 +14,7 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ghcr.io/dam-agents/dam
+  IMAGE_PREFIX: ghcr.io/${{ github.repository }}
 
 jobs:
   build-images:
@@ -196,8 +196,8 @@ jobs:
       - name: Package Helm chart (SHA-pinned)
         run: helm package deploy/helm/platform --version 0.0.0-${{ github.sha }} --app-version ${{ github.sha }}
       - name: Push SHA-pinned chart
-        run: helm push platform-0.0.0-${{ github.sha }}.tgz oci://ghcr.io/dam-agents/dam/charts
+        run: helm push platform-0.0.0-${{ github.sha }}.tgz oci://ghcr.io/${{ github.repository }}/charts
       - name: Package Helm chart (main floating tag)
         run: helm package deploy/helm/platform --version 0.0.0-main --app-version ${{ github.sha }}
       - name: Push main-floating chart
-        run: helm push platform-0.0.0-main.tgz oci://ghcr.io/dam-agents/dam/charts
+        run: helm push platform-0.0.0-main.tgz oci://ghcr.io/${{ github.repository }}/charts

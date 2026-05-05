@@ -16,7 +16,7 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ghcr.io/dam-agents/dam
+  IMAGE_PREFIX: ghcr.io/${{ github.repository }}
 
 jobs:
   build-images:
@@ -222,5 +222,5 @@ jobs:
       - name: Package Helm chart
         run: helm package deploy/helm/platform --version ${{ steps.version.outputs.version }} --app-version ${{ steps.version.outputs.version }}
       - name: Push to OCI registry
-        run: helm push platform-${{ steps.version.outputs.version }}.tgz oci://ghcr.io/dam-agents/dam/charts
+        run: helm push platform-${{ steps.version.outputs.version }}.tgz oci://ghcr.io/${{ github.repository }}/charts
 

@@ -1,7 +1,7 @@
 # DAM
 
 <p align="center">
-  <img src="docs/assets/icon.svg" width="120" alt="DAM icon" />
+  <img src="docs/assets/icon.svg" width="120" alt="icon" />
 </p>
 <h3 align="center">
   Run your own background agents on Kubernetes.<br/>
@@ -57,7 +57,7 @@ mise install                # install toolchain + deps
 mise run cluster:install    # create local k3s cluster + deploy DAM
 ```
 
-Open [dam.localhost:4444](http://dam.localhost:4444) (login: `dev` / `dev`), create an instance from a template, and start chatting. See the [configuration guide](docs/configuration.md) for credential setup and Slack integration.
+Open [localhost:4444](http://localhost:4444) (login: `dev` / `dev`), create an instance from a template, and start chatting. See the [configuration guide](docs/configuration.md) for credential setup and Slack integration.
 
 ## Learn more
 

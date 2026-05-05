@@ -89,7 +89,7 @@ export function createSlackWorker(
   getInstanceOwner: (instanceId: string) => Promise<string | null>,
   channelRegistry: ChannelRegistry,
   /** Lowercase brand identifier used as the Slack slash command name (e.g.
-   *  brandShort="dam" → /dam login). Sourced from BRAND_SHORT env var. */
+   *  brandShort="name" → /name login). Sourced from BRAND_SHORT env var. */
   brandShort: string,
   emit: (event: DomainEvent) => void = defaultEmit,
 ): SlackWorker {
