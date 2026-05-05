@@ -66,7 +66,7 @@ sequenceDiagram
 
 ### Create
 
-The api-server writes a new `agent-instance` ConfigMap with `spec.yaml` carrying the template ref, env overrides, secret refs, and a `desiredState` of `running` or `hibernated`. The controller reconciles five owned resources: a per-agent Secret (the agent-runtime auth token), a StatefulSet (replicas tracking `desiredState`), a headless Service, a NetworkPolicy, and a per-instance Envoy bootstrap ConfigMap + leaf TLS Certificate ([ADR-033](../adrs/033-envoy-credential-gateway.md)).
+The api-server writes a new `agent-instance` ConfigMap with `spec.yaml` carrying the template ref, env overrides, secret refs, and a `desiredState` of `running` or `hibernated`. The controller reconciles four owned resources: a StatefulSet (replicas tracking `desiredState`), a headless Service, a NetworkPolicy, and a per-instance Envoy bootstrap ConfigMap + leaf TLS Certificate ([ADR-033](../adrs/033-envoy-credential-gateway.md)).
 
 The pod image is built from `humr-base` plus a harness-specific layer ([ADR-023](../adrs/023-harness-agnostic-base-image.md)). The single platform knob is `AGENT_COMMAND` — agent-runtime spawns it as the ACP subprocess for each session and otherwise treats the harness as opaque. The workspace PVC is provisioned on first wake and survives subsequent hibernations.
 

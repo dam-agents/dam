@@ -6,7 +6,6 @@ import { createInstancesRepository } from "../agents/infrastructure/instances-re
 import { createTemplatesRepository } from "../agents/infrastructure/templates-repository.js";
 import { createK8sClient } from "../agents/infrastructure/k8s.js";
 import { createAgentRuntimeSkillsClient } from "./infrastructure/agent-runtime-client.js";
-import { createAgentTokenResolver } from "./infrastructure/agent-token.js";
 import { scanPublicGithubArchive } from "./infrastructure/public-archive-scanner.js";
 import { createSkillsRepository } from "./infrastructure/skills-repository.js";
 import { createInstanceSkillsRepository } from "./infrastructure/instance-skills-repository.js";
@@ -67,7 +66,6 @@ export function composeSkillsModule(
     templatesRepo: createTemplatesRepository(k8s),
     seedSources,
     runtimeClient: createAgentRuntimeSkillsClient(namespace),
-    getAgentToken: createAgentTokenResolver(k8s),
     owner,
     scanSource: scanWithCache,
     invalidateScan: invalidateScanCache,

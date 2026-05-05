@@ -27,16 +27,15 @@ export interface PublishServiceDeps {
   instanceSkills: InstanceSkillsRepository;
   agents: AgentsRepository;
   runtimeClient: AgentRuntimeSkillsClient;
-  getAgentToken: (agentId: string) => Promise<string>;
 }
 
 /**
  * Publish orchestrator — thin proxy. Validates that the user owns the
  * instance + source and the instance is running, then delegates everything
- * else to agent-runtime (which is network-wired to OneCLI's MITM so the
- * GitHub token swap happens server-side).
+ * else to agent-runtime (which goes through the in-pod Envoy sidecar's
+ * credential injector for the GitHub token swap, ADR-033).
  *
- * Upstream OneCLI errors (app_not_connected / access_restricted) get
+ * Upstream gateway errors (app_not_connected / access_restricted) get
  * re-thrown as tRPC errors with the `connect_url` / `manage_url` carried
  * along in `message` so the UI can parse them.
  */
@@ -68,11 +67,10 @@ export async function publishSkill(
   const skillPaths = agent?.spec.skillPaths?.length
     ? agent.spec.skillPaths
     : DEFAULT_SKILL_PATHS;
-  const token = await deps.getAgentToken(infra.agentId);
 
   let result;
   try {
-    result = await deps.runtimeClient.publish(input.instanceId, token, {
+    result = await deps.runtimeClient.publish(input.instanceId, {
       name: input.name,
       skillPaths,
       owner: host.owner,

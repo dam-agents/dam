@@ -1,13 +1,12 @@
 import http from "node:http";
 import { spawnSync } from "node:child_process";
-import { timingSafeEqual } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { WebSocketServer } from "ws";
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { appRouter } from "agent-runtime-api/router";
-import type { AgentAuth, AgentRuntimeContext } from "agent-runtime-api";
+import type { AgentRuntimeContext } from "agent-runtime-api";
 import { createFilesService } from "./modules/files.js";
 import { composeSkills } from "./modules/skills/index.js";
 import { config } from "./modules/config.js";
@@ -48,27 +47,13 @@ const CORS = {
 // prevents partial reads before the service-level check kicks in.
 const TRPC_MAX_BODY_SIZE = 32 * 1024 * 1024;
 
-/**
- * Constant-time Bearer compare against the agent's own access token. Returns
- * `null` when no/invalid header so unauthenticated requests reach the
- * `protectedProcedure` middleware which throws UNAUTHORIZED.
- */
-function readAgentAuth(req: http.IncomingMessage): AgentAuth | null {
-  const expected = config.ONECLI_ACCESS_TOKEN;
-  if (!expected) return null;
-  const header = req.headers["authorization"];
-  if (typeof header !== "string" || !header.startsWith("Bearer ")) return null;
-  const presented = header.slice("Bearer ".length);
-  const a = Buffer.from(expected);
-  const b = Buffer.from(presented);
-  if (a.length !== b.length) return null;
-  return timingSafeEqual(a, b) ? { agentCaller: true } : null;
-}
-
+// The agent's NetworkPolicy admits ingress on this port only from the
+// api-server pod; the api-server has already verified the user JWT and
+// instance ownership before forwarding. So tRPC routes need no in-process
+// auth check — the kernel-level gate is the auth boundary.
 const trpcHandler = createHTTPHandler({
   router: appRouter,
-  createContext: ({ req }): AgentRuntimeContext => ({
-    auth: readAgentAuth(req),
+  createContext: (): AgentRuntimeContext => ({
     files: filesService,
     skills: skillsService,
   }),
@@ -128,11 +113,10 @@ if (config.HUMR_MCP_URL) {
     try { mcpConfig = JSON.parse(readFileSync(mcpPath, "utf8")); } catch {}
   }
   const mcpServers = (mcpConfig.mcpServers ?? {}) as Record<string, unknown>;
-  const mcpEntry: Record<string, unknown> = { type: "http", url: config.HUMR_MCP_URL };
-  if (config.ONECLI_ACCESS_TOKEN) {
-    mcpEntry.headers = { Authorization: `Bearer ${config.ONECLI_ACCESS_TOKEN}` };
-  }
-  mcpServers["humr-outbound"] = mcpEntry;
+  // No Authorization header: the api-server's harness port identifies the
+  // caller by source IP (NetworkPolicy admits only agent pods, podIpResolver
+  // maps IP → instance label). See ADR-035.
+  mcpServers["humr-outbound"] = { type: "http", url: config.HUMR_MCP_URL };
   mcpConfig.mcpServers = mcpServers;
   writeFileSync(mcpPath, JSON.stringify(mcpConfig, null, 2));
   process.stderr.write(`[mcp] Wrote humr-outbound to ${mcpPath}\n`);
@@ -140,9 +124,9 @@ if (config.HUMR_MCP_URL) {
 
 // Configure git to use gh's credential helper. git doesn't know about
 // GH_TOKEN directly, so without this it prompts for a username on private
-// repos. With this, git asks `gh auth git-credential`, gets humr:sentinel,
-// and OneCLI's MITM swaps it — same path REST already uses. Idempotent;
-// safe to run on every boot.
+// repos. With this, git asks `gh auth git-credential`, gets the sentinel,
+// and the Envoy sidecar swaps it on the wire — same path REST already
+// uses. Idempotent; safe to run on every boot.
 try {
   const result = spawnSync("gh", ["auth", "setup-git"], { stdio: "pipe" });
   if (result.status !== 0) {
@@ -152,15 +136,6 @@ try {
   }
 } catch (e) {
   process.stderr.write(`[git] failed to configure credential helper: ${(e as Error).message}\n`);
-}
-
-if (!config.ONECLI_ACCESS_TOKEN) {
-  // Without a token every `protectedProcedure` (files + skills) returns
-  // UNAUTHORIZED. Correct in prod, silent in dev — surface it loudly so a
-  // misconfigured workstation doesn't look like a generic auth bug.
-  process.stderr.write(
-    "[auth] WARNING: ONECLI_ACCESS_TOKEN is unset — all /api/trpc calls will return UNAUTHORIZED\n",
-  );
 }
 
 server.listen(config.PORT, () => {
@@ -175,10 +150,9 @@ server.listen(config.PORT, () => {
   // Pod-files sync: opt-in via env. The reconciler sets the URL on instance
   // pods only — forks deliberately don't get it (they're per-turn jobs and
   // don't read pod-files state). See 034-pod-files-push.md.
-  if (config.HUMR_POD_FILES_EVENTS_URL && config.ONECLI_ACCESS_TOKEN) {
+  if (config.HUMR_POD_FILES_EVENTS_URL) {
     startPodFilesSync({
       url: config.HUMR_POD_FILES_EVENTS_URL,
-      token: config.ONECLI_ACCESS_TOKEN,
       agentHome: homeDir,
     });
   }

@@ -94,7 +94,6 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 
 	cmInformer := factory.Core().V1().ConfigMaps()
 	agentResolver := reconciler.NewAgentResolver(cmInformer.Lister().ConfigMaps(cfg.Namespace))
-	agentReconciler := reconciler.NewAgentReconciler(client, cfg)
 	instanceReconciler := reconciler.NewInstanceReconciler(client, cfg, agentResolver).WithDynamicClient(dynClient)
 	forkReconciler := reconciler.NewForkReconciler(client, cfg, agentResolver).WithDynamicClient(dynClient)
 
@@ -136,8 +135,6 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 			}
 			cmType := cm.Labels["humr.ai/type"]
 			switch cmType {
-			case "agent":
-				agentReconciler.Delete(ctx, cm.Name, "")
 			case "agent-instance":
 				instanceReconciler.Delete(ctx, cm.Name)
 			case "agent-schedule":
@@ -172,12 +169,6 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 
 			cmType := cm.Labels["humr.ai/type"]
 			switch cmType {
-			case "agent":
-				if err := agentReconciler.Reconcile(ctx, cm); err != nil {
-					slog.Error("reconcile agent", "name", name, "error", err)
-					queue.AddRateLimited(key)
-					return
-				}
 			case "agent-instance":
 				if err := instanceReconciler.Reconcile(ctx, cm); err != nil {
 					slog.Error("reconcile instance", "name", name, "error", err)

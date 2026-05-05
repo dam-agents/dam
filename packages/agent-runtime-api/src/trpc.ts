@@ -1,4 +1,4 @@
-import { initTRPC, TRPCError } from "@trpc/server";
+import { initTRPC } from "@trpc/server";
 import type { AgentRuntimeContext } from "./context.js";
 
 interface UpstreamCause {
@@ -14,8 +14,8 @@ function extractUpstream(cause: unknown): UpstreamCause["upstream"] | undefined 
 }
 
 export const t = initTRPC.context<AgentRuntimeContext>().create({
-  // Lift `cause.upstream` (set by services for OneCLI/GitHub gateway errors)
-  // into `data.upstream` so tRPC clients can extract `connect_url`/`manage_url`
+  // Lift `cause.upstream` (set by services for upstream gateway errors) into
+  // `data.upstream` so tRPC clients can extract `connect_url`/`manage_url`
   // CTAs without the cause being stripped from the wire envelope.
   errorFormatter: ({ shape, error }) => {
     const upstream = extractUpstream(error.cause);
@@ -29,9 +29,11 @@ export const t = initTRPC.context<AgentRuntimeContext>().create({
   },
 });
 
-export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
-  if (!ctx.auth?.agentCaller) {
-    throw new TRPCError({ code: "UNAUTHORIZED" });
-  }
-  return next({ ctx: { ...ctx, auth: ctx.auth } });
-});
+// Authentication of the api-server → agent-runtime hop is enforced at the
+// kernel by the agent pod's NetworkPolicy: ingress on the ACP/tRPC port is
+// admitted only from the api-server pod. The api-server, in turn, verifies
+// the user JWT and instance ownership before forwarding. There is no
+// additional in-process auth check, so files.* and skills.* mount on the
+// same `t.procedure` as everything else; `protectedProcedure` is preserved
+// as an alias for callers that import it.
+export const protectedProcedure = t.procedure;

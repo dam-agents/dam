@@ -14,7 +14,7 @@ import (
 	"github.com/kagenti/humr/packages/controller/pkg/types"
 )
 
-func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *types.AgentSpec, cfg *config.Config, agentName string, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret) *appsv1.StatefulSet {
+func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *types.AgentSpec, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret) *appsv1.StatefulSet {
 	replicas := int32(1)
 	if instance.DesiredState == "hibernated" {
 		replicas = 0
@@ -25,40 +25,31 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 
 	proxyAddr := fmt.Sprintf("http://127.0.0.1:%d", cfg.EnvoyPort)
 
-	// AGENT_RUNTIME_TOKEN is the Bearer for api-server → agent-runtime tRPC
-	// (files.tree, skills.*). agent-runtime's `protectedProcedure` middleware
-	// validates it; the controller mints a random token per agent and stores
-	// it in the Secret named by AgentTokenSecretName.
-	tokenSecretName := AgentTokenSecretName(agentName)
+	// The agent container holds zero platform credentials. Inbound calls to
+	// agent-runtime's tRPC are gated at the kernel by the pod's
+	// NetworkPolicy (ingress admitted only from the api-server pod);
+	// outbound calls are credential-injected by the Envoy sidecar.
 	env := []corev1.EnvVar{
-		{Name: "AGENT_RUNTIME_TOKEN", ValueFrom: &corev1.EnvVarSource{
-			SecretKeyRef: &corev1.SecretKeySelector{
-				LocalObjectReference: corev1.LocalObjectReference{Name: tokenSecretName},
-				Key:                  "access-token",
-			},
-		}},
-	}
-	env = append(env,
-		corev1.EnvVar{Name: "HTTPS_PROXY", Value: proxyAddr},
-		corev1.EnvVar{Name: "HTTP_PROXY", Value: proxyAddr},
-		corev1.EnvVar{Name: "https_proxy", Value: proxyAddr},
-		corev1.EnvVar{Name: "http_proxy", Value: proxyAddr},
-		corev1.EnvVar{Name: "NO_PROXY", Value: cfg.APIServerHost},
-		corev1.EnvVar{Name: "no_proxy", Value: cfg.APIServerHost},
-		corev1.EnvVar{Name: "SSL_CERT_FILE", Value: caCertPath},
-		corev1.EnvVar{Name: "NODE_EXTRA_CA_CERTS", Value: caCertPath},
-		corev1.EnvVar{Name: "GIT_SSL_CAINFO", Value: caCertPath},
-		corev1.EnvVar{Name: "NODE_USE_ENV_PROXY", Value: "1"},
-		corev1.EnvVar{Name: "GIT_HTTP_PROXY_AUTHMETHOD", Value: "basic"},
-		corev1.EnvVar{Name: "ADK_INSTANCE_ID", Value: name},
-		corev1.EnvVar{Name: "API_SERVER_URL", Value: cfg.APIServerURL()},
-		corev1.EnvVar{Name: "HOME", Value: cfg.AgentHome},
-		corev1.EnvVar{Name: "HUMR_MCP_URL", Value: fmt.Sprintf("%s/api/instances/%s/mcp", cfg.HarnessServerURL, name)},
+		{Name: "HTTPS_PROXY", Value: proxyAddr},
+		{Name: "HTTP_PROXY", Value: proxyAddr},
+		{Name: "https_proxy", Value: proxyAddr},
+		{Name: "http_proxy", Value: proxyAddr},
+		{Name: "NO_PROXY", Value: cfg.APIServerHost},
+		{Name: "no_proxy", Value: cfg.APIServerHost},
+		{Name: "SSL_CERT_FILE", Value: caCertPath},
+		{Name: "NODE_EXTRA_CA_CERTS", Value: caCertPath},
+		{Name: "GIT_SSL_CAINFO", Value: caCertPath},
+		{Name: "NODE_USE_ENV_PROXY", Value: "1"},
+		{Name: "GIT_HTTP_PROXY_AUTHMETHOD", Value: "basic"},
+		{Name: "ADK_INSTANCE_ID", Value: name},
+		{Name: "API_SERVER_URL", Value: cfg.APIServerURL()},
+		{Name: "HOME", Value: cfg.AgentHome},
+		{Name: "HUMR_MCP_URL", Value: fmt.Sprintf("%s/api/instances/%s/mcp", cfg.HarnessServerURL, name)},
 		// agent-runtime opens this SSE stream and materializes pod-files
 		// (gh hosts.yml today; more producers later) directly under HOME.
 		// Forks deliberately do NOT receive this env — see fork_resources.go.
-		corev1.EnvVar{Name: "HUMR_POD_FILES_EVENTS_URL", Value: fmt.Sprintf("%s/api/instances/%s/pod-files/events", cfg.HarnessServerURL, name)},
-	)
+		{Name: "HUMR_POD_FILES_EVENTS_URL", Value: fmt.Sprintf("%s/api/instances/%s/pod-files/events", cfg.HarnessServerURL, name)},
+	}
 
 	// Order matters: K8s resolves duplicate env names by keeping the last
 	// occurrence, so credential placeholders < template < instance — user
@@ -401,7 +392,19 @@ func BuildNetworkPolicy(name string, cfg *config.Config, ownerCM *corev1.ConfigM
 				networkingv1.PolicyTypeIngress,
 			},
 			Egress: egress,
+			// Ingress is the only authentication boundary on this hop: the
+			// api-server pod is the sole authorized caller of agent-runtime's
+			// ACP/tRPC port. The api-server has already verified the user
+			// JWT and instance ownership before forwarding.
 			Ingress: []networkingv1.NetworkPolicyIngressRule{{
+				From: []networkingv1.NetworkPolicyPeer{{
+					PodSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"app.kubernetes.io/component": "apiserver"},
+					},
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"kubernetes.io/metadata.name": cfg.ReleaseNamespace},
+					},
+				}},
 				Ports: []networkingv1.NetworkPolicyPort{{
 					Protocol: &tcp, Port: &acpPort,
 				}},

@@ -93,11 +93,7 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 		}
 	}
 
-	if err := ensureAgentRuntimeTokenSecret(ctx, r.client, r.config.Namespace, agentCM, agentName); err != nil {
-		return r.setError(ctx, name, fmt.Sprintf("ensuring agent-runtime token secret: %v", err))
-	}
-
-	ss := BuildStatefulSet(name, instanceSpec, agentSpec, r.config, agentName, cm, credentialSecrets)
+	ss := BuildStatefulSet(name, instanceSpec, agentSpec, r.config, cm, credentialSecrets)
 	svc := BuildService(name, r.config, cm)
 	np := BuildNetworkPolicy(name, r.config, cm)
 

@@ -70,7 +70,7 @@ func TestBuildStatefulSet_Running(t *testing.T) {
 		Env:          []types.EnvVar{{Name: "GITHUB_ORG", Value: "alpha"}},
 		SecretRef:    "my-secrets",
 	}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM, nil)
+	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil)
 
 	require.NotNil(t, ss)
 	assert.Equal(t, "my-instance", ss.Name)
@@ -96,10 +96,12 @@ func TestBuildStatefulSet_Running(t *testing.T) {
 	assert.Equal(t, "http://127.0.0.1:10000", envMap["HTTPS_PROXY"])
 	assert.Equal(t, "http://127.0.0.1:10000", envMap["HTTP_PROXY"])
 
-	tokenEnv := c.Env[0]
-	assert.Equal(t, "AGENT_RUNTIME_TOKEN", tokenEnv.Name)
-	assert.Equal(t, "humr-agent-my-agent-token", tokenEnv.ValueFrom.SecretKeyRef.Name)
-	assert.Equal(t, "access-token", tokenEnv.ValueFrom.SecretKeyRef.Key)
+	// No platform-issued credential token in the agent container's env —
+	// the api-server → agent-runtime hop is gated by NetworkPolicy ingress.
+	for _, e := range c.Env {
+		assert.NotEqual(t, "ONECLI_ACCESS_TOKEN", e.Name)
+		assert.NotEqual(t, "AGENT_RUNTIME_TOKEN", e.Name)
+	}
 	assert.Equal(t, "/etc/humr/ca/ca.crt", envMap["SSL_CERT_FILE"])
 	assert.Equal(t, "/etc/humr/ca/ca.crt", envMap["NODE_EXTRA_CA_CERTS"])
 	assert.Equal(t, "my-instance", envMap["ADK_INSTANCE_ID"])
@@ -117,13 +119,13 @@ func TestBuildStatefulSet_Running(t *testing.T) {
 
 func TestBuildStatefulSet_Hibernated(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "hibernated"}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM, nil)
+	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil)
 	assert.Equal(t, int32(0), *ss.Spec.Replicas)
 }
 
 func TestBuildStatefulSet_InitContainer(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM, nil)
+	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil)
 	require.Len(t, ss.Spec.Template.Spec.InitContainers, 1, "only the user-defined init runs")
 	ic := ss.Spec.Template.Spec.InitContainers[0]
 	assert.Equal(t, "init", ic.Name)
@@ -135,13 +137,13 @@ func TestBuildStatefulSet_NoUserInitWhenEmpty(t *testing.T) {
 	agent := *testAgent
 	agent.Init = ""
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, &agent, testConfig, "my-agent", testOwnerCM, nil)
+	ss := BuildStatefulSet("my-instance", instance, &agent, testConfig, testOwnerCM, nil)
 	assert.Empty(t, ss.Spec.Template.Spec.InitContainers)
 }
 
 func TestBuildStatefulSet_Volumes(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM, nil)
+	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil)
 
 	require.Len(t, ss.Spec.VolumeClaimTemplates, 1)
 	pvc := ss.Spec.VolumeClaimTemplates[0]
@@ -176,7 +178,7 @@ func TestBuildStatefulSet_PVCSize(t *testing.T) {
 		},
 	}
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, &agent, testConfig, "my-agent", testOwnerCM, nil)
+	ss := BuildStatefulSet("my-instance", instance, &agent, testConfig, testOwnerCM, nil)
 
 	require.Len(t, ss.Spec.VolumeClaimTemplates, 2)
 	byName := map[string]corev1.PersistentVolumeClaim{}
@@ -193,7 +195,7 @@ func TestBuildStatefulSet_AgentStorageClass(t *testing.T) {
 	cfg := *testConfig
 	cfg.AgentStorageClass = "humr-rwx"
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, &cfg, "my-agent", testOwnerCM, nil)
+	ss := BuildStatefulSet("my-instance", instance, testAgent, &cfg, testOwnerCM, nil)
 
 	require.Len(t, ss.Spec.VolumeClaimTemplates, 1)
 	pvc := ss.Spec.VolumeClaimTemplates[0]
@@ -205,7 +207,7 @@ func TestBuildStatefulSet_PodFilesEventsURL(t *testing.T) {
 	cfg := *testConfig
 	cfg.HarnessServerURL = "http://humr-apiserver.default.svc:4001"
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, &cfg, "my-agent", testOwnerCM, nil)
+	ss := BuildStatefulSet("my-instance", instance, testAgent, &cfg, testOwnerCM, nil)
 
 	envMap := envToMap(ss.Spec.Template.Spec.Containers[0].Env)
 	assert.Equal(t,
@@ -215,7 +217,7 @@ func TestBuildStatefulSet_PodFilesEventsURL(t *testing.T) {
 
 func TestBuildStatefulSet_NoSecretRef(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM, nil)
+	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil)
 	assert.Empty(t, ss.Spec.Template.Spec.Containers[0].EnvFrom)
 }
 
@@ -271,8 +273,14 @@ func TestBuildNetworkPolicy(t *testing.T) {
 	dns := np.Spec.Egress[3]
 	assert.Empty(t, dns.To)
 
-	// Ingress: allow ACP port
+	// Ingress: ACP port admitted only from the api-server pod. The
+	// kernel-level peer match is the only authentication boundary on this
+	// hop — there is no in-process auth check.
 	require.Len(t, np.Spec.Ingress, 1)
+	require.Len(t, np.Spec.Ingress[0].From, 1)
+	assert.Equal(t, "apiserver",
+		np.Spec.Ingress[0].From[0].PodSelector.MatchLabels["app.kubernetes.io/component"])
+	require.NotNil(t, np.Spec.Ingress[0].From[0].NamespaceSelector)
 	assert.Equal(t, int32(8080), np.Spec.Ingress[0].Ports[0].Port.IntVal)
 
 	// No OneCLI peer anywhere.
@@ -298,7 +306,7 @@ func envToMap(envs []corev1.EnvVar) map[string]string {
 func TestBuildStatefulSet_AddsEnvoySidecar(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running"}
 	secrets := []corev1.Secret{credSecret("humr-cred-aaa", "api.example.com")}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM, secrets)
+	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, secrets)
 
 	require.Len(t, ss.Spec.Template.Spec.Containers, 2, "agent + envoy sidecar")
 	agent := ss.Spec.Template.Spec.Containers[0]
@@ -310,18 +318,6 @@ func TestBuildStatefulSet_AddsEnvoySidecar(t *testing.T) {
 	envMap := envToMap(agent.Env)
 	assert.Equal(t, "http://127.0.0.1:10000", envMap["HTTP_PROXY"])
 	assert.Equal(t, "http://127.0.0.1:10000", envMap["HTTPS_PROXY"])
-
-	var tokenEnv *corev1.EnvVar
-	for i := range agent.Env {
-		if agent.Env[i].Name == "AGENT_RUNTIME_TOKEN" {
-			tokenEnv = &agent.Env[i]
-			break
-		}
-	}
-	require.NotNil(t, tokenEnv, "agent-runtime needs AGENT_RUNTIME_TOKEN for tRPC bearer auth")
-	require.NotNil(t, tokenEnv.ValueFrom)
-	require.NotNil(t, tokenEnv.ValueFrom.SecretKeyRef)
-	assert.Equal(t, "access-token", tokenEnv.ValueFrom.SecretKeyRef.Key)
 
 	volNames := map[string]bool{}
 	for _, v := range ss.Spec.Template.Spec.Volumes {
@@ -340,7 +336,7 @@ func TestBuildStatefulSet_AddsEnvoySidecar(t *testing.T) {
 
 func TestBuildStatefulSet_GHTokenSignal_NoCredential(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM, nil)
+	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil)
 
 	envMap := envToMap(ss.Spec.Template.Spec.Containers[0].Env)
 	assert.Equal(t, "false", envMap["HUMR_GH_TOKEN_AVAILABLE"])
@@ -350,7 +346,7 @@ func TestBuildStatefulSet_GHTokenSignal_NoCredential(t *testing.T) {
 func TestBuildStatefulSet_GHTokenSignal_WithCredential(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running"}
 	secrets := []corev1.Secret{credSecret("humr-cred-gh", "api.github.com")}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM, secrets)
+	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, secrets)
 
 	envMap := envToMap(ss.Spec.Template.Spec.Containers[0].Env)
 	assert.Equal(t, "true", envMap["HUMR_GH_TOKEN_AVAILABLE"])
@@ -360,7 +356,7 @@ func TestBuildStatefulSet_GHTokenSignal_WithCredential(t *testing.T) {
 func TestBuildStatefulSet_SecretMountsSidecarOnly(t *testing.T) {
 	secrets := []corev1.Secret{credSecret("humr-cred-aaa", "api.example.com")}
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM, secrets)
+	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, secrets)
 
 	volNames := map[string]bool{}
 	for _, v := range ss.Spec.Template.Spec.Volumes {
@@ -402,7 +398,7 @@ func TestBuildStatefulSet_SecretMountsSidecarOnly(t *testing.T) {
 
 func TestBuildStatefulSet_PodHardening(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, "my-agent", testOwnerCM, nil)
+	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil)
 	require.NotNil(t, ss.Spec.Template.Spec.AutomountServiceAccountToken)
 	assert.False(t, *ss.Spec.Template.Spec.AutomountServiceAccountToken)
 	require.NotNil(t, ss.Spec.Template.Spec.ShareProcessNamespace)

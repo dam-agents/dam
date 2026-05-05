@@ -106,10 +106,9 @@ async function processTrigger(
     }
     const mcpServers = [...trigger.mcpServers];
     if (config.HUMR_MCP_URL) {
-      const mcpHeaders = config.ONECLI_ACCESS_TOKEN
-        ? [{ name: "Authorization", value: `Bearer ${config.ONECLI_ACCESS_TOKEN}` }]
-        : [];
-      mcpServers.push({ type: "http", name: "humr-outbound", url: config.HUMR_MCP_URL, headers: mcpHeaders });
+      // No Authorization header: the api-server's harness port admits agent
+      // pods via NetworkPolicy and identifies the caller by source IP.
+      mcpServers.push({ type: "http", name: "humr-outbound", url: config.HUMR_MCP_URL, headers: [] });
     }
 
     const result = await postTrigger(options.apiServerUrl, {

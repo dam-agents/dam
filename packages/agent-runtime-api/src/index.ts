@@ -1,5 +1,5 @@
 export type { AppRouter } from "./router.js";
-export type { AgentAuth, AgentRuntimeContext } from "./context.js";
+export type { AgentRuntimeContext } from "./context.js";
 export type { Result } from "./result.js";
 export { ok, err } from "./result.js";
 export type {

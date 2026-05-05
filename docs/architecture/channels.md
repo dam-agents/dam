@@ -180,10 +180,10 @@ sequenceDiagram
   participant W as Worker
   participant M as Messenger API
 
-  H->>MCP: POST /api/instances/{id}/mcp<br/>tool: send_channel_message<br/>Bearer ONECLI_ACCESS_TOKEN
-  MCP->>K: read agent status.yaml<br/>(accessTokenHash, owner)
-  K-->>MCP: hash + owner
-  MCP->>MCP: SHA-256 token, compare<br/>verify agent.owner == instance.owner
+  H->>MCP: POST /api/instances/{id}/mcp<br/>tool: send_channel_message
+  MCP->>K: resolve source pod IP → instance label
+  K-->>MCP: instance + owner
+  MCP->>MCP: verify caller IP belongs to {id};<br/>agent.owner == instance.owner
   alt verification fails
     MCP-->>H: 401 / 404
   else verified
@@ -206,7 +206,7 @@ What the agent sees:
 Why the dedicated MCP endpoint:
 
 - **Network isolation.** The MCP port is the only api-server port the agent's NetworkPolicy admits. The agent cannot reach the admin API (tRPC, OAuth, instance management) — only this one endpoint.
-- **Auth without an admin login.** The harness Bearer is the agent's `ONECLI_ACCESS_TOKEN`, the same token that authenticates outbound proxy traffic ([security-and-credentials](security-and-credentials.md)). The api-server compares the SHA-256 hash against the agent ConfigMap's `status.yaml.accessTokenHash`, which the controller writes at agent registration. Owner match (agent.owner == instance.owner) is the second check.
+- **Auth without an admin login.** Caller identity is derived from the source pod IP, mapped to a `humr.ai/instance` label via the api-server's `podIpResolver` cache. The agent does not present a Bearer token — a compromised harness can't claim to be a different instance because the kernel-verified source IP is the source of truth. Owner match (agent.owner == instance.owner) is the second check.
 - **Direct path to channel infra.** The MCP endpoint dispatches into the same `ChannelManager.postMessage` that workers use internally — no agent-runtime round-trip, no second relay hop.
 
 ### Threading model

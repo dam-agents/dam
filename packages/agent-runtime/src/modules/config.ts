@@ -16,7 +16,6 @@ const schema = z.object({
    *  loop is skipped — used for forks and any pod that shouldn't receive
    *  pod-files state. */
   HUMR_POD_FILES_EVENTS_URL: z.string().optional(),
-  ONECLI_ACCESS_TOKEN: z.string().optional(),
   /** Override the agent spawn command (e.g. "pi-acp"). When unset, spawns the
    *  default node-based ACP agent (dist/agent.js or src/agent.ts in dev). */
   AGENT_COMMAND: z.string().optional(),

@@ -13,7 +13,6 @@ import { createInstancesRepository } from "./../../modules/agents/infrastructure
 import { composeAgentsModule } from "../../modules/agents/index.js";
 import { createKeycloakUserDirectory } from "../../modules/agents/infrastructure/keycloak-user-directory.js";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
-import { createAgentTokenResolver } from "../../modules/skills/infrastructure/agent-token.js";
 import { createSlackOAuthRoutes } from "../../modules/channels/infrastructure/slack-oauth.js";
 import { createTelegramOAuthRoutes } from "../../modules/channels/infrastructure/telegram-oauth.js";
 import type { TelegramOAuthPending } from "../../modules/channels/infrastructure/telegram.js";
@@ -82,7 +81,6 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
 
   const k8sClient = createK8sClient(api, config.namespace);
   const instancesRepo = createInstancesRepository(k8sClient);
-  const getAgentToken = createAgentTokenResolver(k8sClient);
 
   const userDirectory = createKeycloakUserDirectory({
     keycloakUrl: config.keycloakUrl,
@@ -174,26 +172,16 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       return c.json({ error: "not found" }, 404);
     }
 
-    // Swap the user's JWT for the agent's bearer before forwarding —
-    // agent-runtime's tRPC procedures are all `protectedProcedure` and only
-    // honor the agent's ONECLI_ACCESS_TOKEN. Ownership has already been
-    // verified above, so issuing the agent token here is safe.
-    const infra = await instancesRepo.get(instanceId, user.sub);
-    if (!infra) return c.json({ error: "not found" }, 404);
-    let agentToken: string;
-    try {
-      agentToken = await getAgentToken(infra.agentId);
-    } catch {
-      return c.json({ error: "agent token unavailable" }, 502);
-    }
-
+    // No Bearer swap needed: ownership is verified above, and the agent
+    // pod's NetworkPolicy admits ingress only from the api-server pod —
+    // the kernel-level gate is the auth boundary on this hop.
     const rest = c.req.path.replace(`/api/instances/${instanceId}/trpc`, "");
     const qs = c.req.url.includes("?") ? "?" + c.req.url.split("?")[1] : "";
     const upstreamUrl = `http://${podBaseUrl(instanceId, config.namespace)}/api/trpc${rest}${qs}`;
     try {
       const headers = new Headers(c.req.raw.headers);
       headers.delete("host");
-      headers.set("authorization", `Bearer ${agentToken}`);
+      headers.delete("authorization");
       const upstream = await fetch(upstreamUrl, {
         method: c.req.method,
         headers,

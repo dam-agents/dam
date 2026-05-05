@@ -6,8 +6,6 @@ export interface PodFilesSyncOptions {
   /** SSE endpoint built by the reconciler:
    *  `${HARNESS_SERVER_URL}/api/instances/<instance>/pod-files/events`. */
   url: string;
-  /** Per-instance Bearer token (`ONECLI_ACCESS_TOKEN`). */
-  token: string;
   /** Agent container HOME — paths in incoming FileSpecs must resolve under
    *  this prefix or the write is refused (defense-in-depth). */
   agentHome: string;
@@ -25,7 +23,6 @@ export function startPodFilesSync(opts: PodFilesSyncOptions): void {
   process.stderr.write(`[pod-files] starting (home=${opts.agentHome})\n`);
   void runSseLoop({
     url: opts.url,
-    token: opts.token,
     onDispatch: (event, data) => dispatch(event, data, opts.agentHome),
   });
 }

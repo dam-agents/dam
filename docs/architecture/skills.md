@@ -107,7 +107,7 @@ Lives in [`packages/api-server/src/modules/skills/`](../../packages/api-server/s
 - The **scan cache** — per-`gitUrl`, 5-minute TTL, invalidated on `sources.refresh` or after a successful publish to that source.
 - **Public-archive scanning** — for `github.com` URLs, downloads `archive/HEAD.tar.gz` directly from GitHub, walks for `SKILL.md`, parses frontmatter, computes `contentHash`. No credentials required. This is the path that lets the catalog UI render even when no instance is running.
 - **Private / non-GitHub fallback** — falls through to the agent-runtime `skills.scan` over the harness port. Requires a running instance because the credential path needs the Envoy sidecar; the api-server has none.
-- **Install / uninstall orchestration** — fetches the per-instance access token from the instance's Secret, calls agent-runtime, and on success upserts the `instance_skills` row with the returned `contentHash`.
+- **Install / uninstall orchestration** — calls agent-runtime over its harness-port tRPC and on success upserts the `instance_skills` row with the returned `contentHash`. The api-server is the only pod whose NetworkPolicy can reach the agent's tRPC listener; no Bearer token is sent.
 - **Publish orchestration** ([`publish-service`](../../packages/api-server/src/modules/skills/services/publish-service.ts)) — validates that the source is a GitHub URL (only host that supports publish), calls agent-runtime, and on success writes the `instance_skill_publishes` row and invalidates the scan cache for that source.
 - **Reconciled `state` view** — joins live `listLocal` from agent-runtime with the `instance_skills` rows, drops ghost rows whose directories were deleted out-of-band (and persists the cleanup), and folds in the `instance_skill_publishes` rows.
 - **MCP tools** — five tools registered on the per-instance MCP endpoint ([`mcp-endpoint.ts`](../../packages/api-server/src/apps/harness-api-server/mcp-endpoint.ts)): `list_skill_sources`, `list_skills_in_source`, `install_skill`, `uninstall_skill`, `publish_skill`. `instanceId` is bound by the verified MCP session token, not user input — agents cannot spoof which instance they're acting on.
@@ -154,7 +154,7 @@ sequenceDiagram
 
   U->>API: skills.install(instanceId, source, name, version)
   API->>API: resolve skillPaths from agent spec
-  API->>RT: skills.install (Bearer = agent-runtime auth token)
+  API->>RT: skills.install (NetworkPolicy-gated, no Bearer)
   RT->>ENV: GET /repos/.../tarball/{version}
   ENV->>GH: + Authorization: Bearer <user GH token>
   GH-->>ENV: tarball
@@ -181,7 +181,7 @@ sequenceDiagram
 
   U->>API: skills.publish(instanceId, sourceId, name)
   API->>API: validate sourceId is GitHub
-  API->>RT: skills.publish (Bearer = agent-runtime auth token)
+  API->>RT: skills.publish (NetworkPolicy-gated, no Bearer)
   RT->>RT: read skill from PVC<br/>(per-file + total size caps)
   RT->>ENV: REST: blobs / tree / commit / branch / PR
   ENV->>GH: + Authorization: Bearer <user GH token>
@@ -233,7 +233,7 @@ The on-pod state lives on the per-instance PVC under the configured Skill Paths.
 ## Invariants
 
 - **Filesystem is authoritative for installed state.** `instance_skills` is a declarative record that self-heals on every `state` read. A skill removed via the Files panel disappears from the UI without any explicit uninstall.
-- **api-server never touches the pod filesystem.** Every disk-touching operation goes through agent-runtime over the harness port; the per-instance access token is the only authentication needed.
+- **api-server never touches the pod filesystem.** Every disk-touching operation goes through agent-runtime over its tRPC port; the agent pod's NetworkPolicy admits ingress only from the api-server pod, so no in-process auth is needed on that hop.
 - **agent-runtime never holds a GitHub credential.** Every authenticated GitHub call leaves the agent unauthenticated; the Envoy sidecar injects `Authorization: Bearer <user OAuth token>` from the owner's K8s Secret on the wire. A compromised agent container cannot exfiltrate the user's GitHub token because the token is never mounted into the agent — only into the sidecar.
 - **Publish is REST-only.** No `git push` on the publish path. `git` is used only for cloning non-GitHub sources during install/scan, and that path also routes through the sidecar's credential injector via `gh auth setup-git`.
 - **MCP `instanceId` is server-bound.** The per-instance MCP endpoint authenticates the agent against the agent ConfigMap's `accessTokenHash` ([channels § Auth without an admin login](channels.md#auth-without-an-admin-login)) and pins the `instanceId` from the verified token, not from tool input.

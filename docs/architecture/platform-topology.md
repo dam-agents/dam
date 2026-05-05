@@ -77,7 +77,7 @@ A React + Vite single-page app served by the api-server. It uses tRPC over HTTP 
 | ui → api-server | tRPC over HTTP | CRUD on templates, instances, schedules, sessions |
 | ui → api-server | WebSocket (ACP, JSON-RPC 2.0) | Live session, permission prompts, streaming output |
 | api-server → agent-runtime | WebSocket (ACP, JSON-RPC 2.0) | Relay target — one hop, no fan-out |
-| api-server → agent-runtime | HTTP (tRPC proxy) | In-pod file operations surfaced to the UI; api-server swaps the user JWT for the agent-runtime auth token before forwarding |
+| api-server → agent-runtime | HTTP (tRPC proxy) | In-pod file operations surfaced to the UI; the agent pod's NetworkPolicy admits this hop only from the api-server pod, so no in-process auth check is needed |
 | agent-runtime → api-server | HTTP (harness port) | Trigger receipt + MCP tool access |
 | controller → K8s API | watch / list / write | Resource reconciliation and status writes |
 | api-server → K8s API | REST | Resource CRUD, spec writes, pod wake |
@@ -99,7 +99,7 @@ Humr models all of its domain state as ConfigMaps labelled `humr.ai/type` ([ADR-
 | `agent-schedule` | Schedule: cron or RRULE, quiet hours, task payload, session mode |
 | `agent-fork` | Forked run: parent instance ref + overrides |
 
-For each `agent-instance`, the controller reconciles a StatefulSet (replicas 0 when hibernated, 1 when running), a headless Service, a NetworkPolicy, and a per-instance Envoy bootstrap ConfigMap + leaf-TLS Certificate ([ADR-033](../adrs/033-envoy-credential-gateway.md)). The agent-runtime auth-token Secret lives one level up: it is reconciled per `agent` template and shared by every instance of that agent. ConfigMaps are chosen over CRDs so Humr installs without cluster-admin. See [`deploy/helm/humr/templates/`](../../deploy/helm/humr/templates/) for the install layout.
+For each `agent-instance`, the controller reconciles a StatefulSet (replicas 0 when hibernated, 1 when running), a headless Service, a NetworkPolicy, and a per-instance Envoy bootstrap ConfigMap + leaf-TLS Certificate ([ADR-033](../adrs/033-envoy-credential-gateway.md)). ConfigMaps are chosen over CRDs so Humr installs without cluster-admin. See [`deploy/helm/humr/templates/`](../../deploy/helm/humr/templates/) for the install layout.
 
 ## Invariants
 

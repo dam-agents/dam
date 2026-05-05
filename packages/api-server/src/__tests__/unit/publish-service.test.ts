@@ -64,7 +64,6 @@ function makeDeps() {
     }),
     scan: vi.fn().mockResolvedValue([]),
   };
-  const getAgentToken = vi.fn().mockResolvedValue("agent-token");
   const instanceSkills = makeInstanceSkillsRepo();
 
   return {
@@ -75,7 +74,6 @@ function makeDeps() {
       instanceSkills,
       agents,
       runtimeClient,
-      getAgentToken,
     },
     runtimeClient,
     resolveSource,
@@ -99,7 +97,6 @@ describe("publishSkill — thin proxy", () => {
 
     expect(runtimeClient.publish).toHaveBeenCalledWith(
       INSTANCE_ID,
-      "agent-token",
       expect.objectContaining({
         name: "demo",
         owner: "foo",

@@ -59,7 +59,6 @@ export interface SkillsServiceDeps {
    *  `system: true` and protected from deletion. */
   seedSources: SkillSourceSeed[];
   runtimeClient: AgentRuntimeSkillsClient;
-  getAgentToken: (agentId: string) => Promise<string>;
   owner: string;
   /** Scan via the provided scanner with a shared TTL cache. The cache key is
    *  the gitUrl alone — results are user-independent. */
@@ -352,10 +351,9 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
           message: `instance is ${infra.currentState ?? "not running"}; start it before browsing private sources`,
         });
       }
-      const token = await deps.getAgentToken(infra.agentId);
       try {
         return await deps.scanSource(src.gitUrl, (gitUrl) =>
-          deps.runtimeClient.scan(instanceId, token, gitUrl),
+          deps.runtimeClient.scan(instanceId, gitUrl),
         );
       } catch (err) {
         if (err instanceof AgentRuntimeUpstreamError) throw upstreamToTrpc(err);
@@ -366,11 +364,10 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     async installSkill(input: InstallSkillInput) {
       const infra = await loadRunningInstance(deps, input.instanceId);
       const skillPaths = await resolveSkillPaths(deps, infra.agentId);
-      const token = await deps.getAgentToken(infra.agentId);
 
       let result;
       try {
-        result = await deps.runtimeClient.install(input.instanceId, token, {
+        result = await deps.runtimeClient.install(input.instanceId, {
           source: input.source,
           name: input.name,
           version: input.version,
@@ -407,9 +404,8 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     async uninstallSkill(input: UninstallSkillInput) {
       const infra = await loadRunningInstance(deps, input.instanceId);
       const skillPaths = await resolveSkillPaths(deps, infra.agentId);
-      const token = await deps.getAgentToken(infra.agentId);
 
-      await deps.runtimeClient.uninstall(input.instanceId, token, {
+      await deps.runtimeClient.uninstall(input.instanceId, {
         name: input.name,
         skillPaths,
       });
@@ -436,7 +432,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
           instanceSkills: deps.instanceSkillsRepo,
           agents: deps.agentsRepo,
           runtimeClient: deps.runtimeClient,
-          getAgentToken: deps.getAgentToken,
         },
         input,
       );
@@ -464,12 +459,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       // No filesystem to read when the pod isn't running.
       if (infra.currentState !== "running") return [];
       const skillPaths = await resolveSkillPaths(deps, infra.agentId);
-      const token = await deps.getAgentToken(infra.agentId);
-      const all = await deps.runtimeClient.listLocal(
-        instanceId,
-        token,
-        skillPaths,
-      );
+      const all = await deps.runtimeClient.listLocal(instanceId, skillPaths);
       // Subtract anything already tracked as installed-from-remote (by directory
       // name). Matches behavior that the remote-installed entry is the canonical
       // one when names collide.
@@ -508,12 +498,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       }
 
       const skillPaths = await resolveSkillPaths(deps, infra.agentId);
-      const token = await deps.getAgentToken(infra.agentId);
-      const local = await deps.runtimeClient.listLocal(
-        instanceId,
-        token,
-        skillPaths,
-      );
+      const local = await deps.runtimeClient.listLocal(instanceId, skillPaths);
 
       const onDisk = new Set(local.map((s) => s.name));
 

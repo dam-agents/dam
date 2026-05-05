@@ -115,7 +115,6 @@ interface Env {
   agentsGet: ReturnType<typeof vi.fn>;
   runtimeInstall: ReturnType<typeof vi.fn>;
   runtimeUninstall: ReturnType<typeof vi.fn>;
-  getAgentToken: ReturnType<typeof vi.fn>;
   instanceSkillsRepo: ReturnType<typeof makeInstanceSkillsRepo>;
   svc: ReturnType<typeof createSkillsService>;
 }
@@ -148,7 +147,6 @@ function makeEnv(opts: {
     scan: vi.fn<AgentRuntimeSkillsClient["scan"]>().mockResolvedValue([]),
   };
 
-  const getAgentToken = vi.fn<(agentId: string) => Promise<string>>().mockResolvedValue("agent-token-xyz");
   const instanceSkillsRepo = makeInstanceSkillsRepo(opts.initialInstalled ?? []);
 
   const svc = createSkillsService({
@@ -159,14 +157,13 @@ function makeEnv(opts: {
     templatesRepo: emptyTemplatesRepo(),
     seedSources: opts.seeds ?? [],
     runtimeClient,
-    getAgentToken,
     owner: OWNER,
     scanSource: vi.fn<(u: string, s: (u: string) => Promise<Skill[]>) => Promise<Skill[]>>().mockResolvedValue([]),
     invalidateScan: vi.fn(),
     scanPublic: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
   });
 
-  return { instancesGet, agentsGet, runtimeInstall, runtimeUninstall, getAgentToken, instanceSkillsRepo, svc };
+  return { instancesGet, agentsGet, runtimeInstall, runtimeUninstall, instanceSkillsRepo, svc };
 }
 
 const installInput = {
@@ -182,7 +179,7 @@ describe("skills-service install", () => {
     const result = await env.svc.installSkill(installInput);
 
     expect(env.runtimeInstall).toHaveBeenCalledTimes(1);
-    expect(env.runtimeInstall).toHaveBeenCalledWith(INSTANCE_ID, "agent-token-xyz", {
+    expect(env.runtimeInstall).toHaveBeenCalledWith(INSTANCE_ID, {
       source: SOURCE.gitUrl,
       name: "adr",
       version: "sha-v1",
@@ -222,7 +219,7 @@ describe("skills-service install", () => {
   it("falls back to the default skillPath when the agent has none", async () => {
     const env = makeEnv({ agent: makeAgent() });
     await env.svc.installSkill(installInput);
-    expect(env.runtimeInstall).toHaveBeenCalledWith(INSTANCE_ID, "agent-token-xyz", expect.objectContaining({
+    expect(env.runtimeInstall).toHaveBeenCalledWith(INSTANCE_ID, expect.objectContaining({
       skillPaths: ["/home/agent/.agents/skills/"],
     }));
   });
@@ -267,7 +264,7 @@ describe("skills-service uninstall", () => {
       name: "adr",
     });
 
-    expect(env.runtimeUninstall).toHaveBeenCalledWith(INSTANCE_ID, "agent-token-xyz", {
+    expect(env.runtimeUninstall).toHaveBeenCalledWith(INSTANCE_ID, {
       name: "adr",
       skillPaths: ["/home/agent/.claude/skills/"],
     });
@@ -312,7 +309,6 @@ describe("skills-service listLocal", () => {
         publish: vi.fn(),
         scan: vi.fn(),
       },
-      getAgentToken: async () => "agent-token-xyz",
       owner: OWNER,
       scanSource: vi.fn<(u: string, s: (u: string) => Promise<Skill[]>) => Promise<Skill[]>>().mockResolvedValue([]),
       invalidateScan: vi.fn(),
@@ -323,7 +319,6 @@ describe("skills-service listLocal", () => {
 
     expect(runtimeListLocal).toHaveBeenCalledWith(
       INSTANCE_ID,
-      "agent-token-xyz",
       ["/home/agent/.claude/skills/"],
     );
     expect(result).toEqual([
@@ -349,7 +344,6 @@ describe("skills-service listLocal", () => {
         publish: vi.fn(),
         scan: vi.fn(),
       },
-      getAgentToken: async () => "t",
       owner: OWNER,
       scanSource: vi.fn<(u: string, s: (u: string) => Promise<Skill[]>) => Promise<Skill[]>>().mockResolvedValue([]),
       invalidateScan: vi.fn(),
@@ -375,7 +369,6 @@ describe("skills-service listLocal", () => {
         publish: vi.fn(),
         scan: vi.fn(),
       },
-      getAgentToken: async () => "t",
       owner: OWNER,
       scanSource: vi.fn<(u: string, s: (u: string) => Promise<Skill[]>) => Promise<Skill[]>>().mockResolvedValue([]),
       invalidateScan: vi.fn(),
@@ -421,7 +414,6 @@ describe("skills-service listSkills routing", () => {
       templatesRepo: emptyTemplatesRepo(),
       seedSources: [],
       runtimeClient,
-      getAgentToken: async () => "token",
       owner: OWNER,
       scanSource: scanCache,
       invalidateScan: vi.fn(),
@@ -455,7 +447,7 @@ describe("skills-service listSkills routing", () => {
     const result = await svc.listSkills(SOURCE.id, INSTANCE_ID);
 
     expect(publicScan).toHaveBeenCalled();
-    expect(runtimeScan).toHaveBeenCalledWith(INSTANCE_ID, "token", SOURCE.gitUrl);
+    expect(runtimeScan).toHaveBeenCalledWith(INSTANCE_ID, SOURCE.gitUrl);
     expect(result[0].name).toBe("secret");
   });
 
@@ -544,7 +536,6 @@ describe("skills-service listSkills routing", () => {
         publish: vi.fn(),
         scan: runtimeScan,
       },
-      getAgentToken: async () => "token",
       owner: OWNER,
       scanSource: scanCache,
       invalidateScan: vi.fn(),
@@ -586,7 +577,6 @@ describe("skills-service getState (ghost reconciliation)", () => {
       templatesRepo: emptyTemplatesRepo(),
       seedSources: [],
       runtimeClient,
-      getAgentToken: async () => "t",
       owner: OWNER,
       scanSource: vi.fn<(u: string, s: (u: string) => Promise<Skill[]>) => Promise<Skill[]>>().mockResolvedValue([]),
       invalidateScan: vi.fn(),
@@ -672,7 +662,6 @@ describe("skills-service deleteSource", () => {
       templatesRepo: emptyTemplatesRepo(),
       seedSources: [],
       runtimeClient: {} as AgentRuntimeSkillsClient,
-      getAgentToken: async () => "agent-token-xyz",
       owner: OWNER,
       scanSource: vi.fn<(u: string, s: (u: string) => Promise<Skill[]>) => Promise<Skill[]>>().mockResolvedValue([]),
       invalidateScan: vi.fn(),
@@ -694,7 +683,6 @@ describe("skills-service deleteSource", () => {
       templatesRepo: emptyTemplatesRepo(),
       seedSources: [],
       runtimeClient: {} as AgentRuntimeSkillsClient,
-      getAgentToken: async () => "t",
       owner: OWNER,
       scanSource: vi.fn<(u: string, s: (u: string) => Promise<Skill[]>) => Promise<Skill[]>>().mockResolvedValue([]),
       invalidateScan: vi.fn(),
@@ -726,7 +714,6 @@ describe("skills-service deleteSource", () => {
       templatesRepo: emptyTemplatesRepo(),
       seedSources: [],
       runtimeClient: {} as AgentRuntimeSkillsClient,
-      getAgentToken: async () => "t",
       owner: OWNER,
       scanSource: vi.fn<(u: string, s: (u: string) => Promise<Skill[]>) => Promise<Skill[]>>().mockResolvedValue([]),
       invalidateScan: vi.fn(),
@@ -792,7 +779,6 @@ describe("skills-service listSources", () => {
       templatesRepo,
       seedSources: opts.seeds ?? [],
       runtimeClient: {} as AgentRuntimeSkillsClient,
-      getAgentToken: async () => "t",
       owner: OWNER,
       scanSource: vi.fn<(u: string, s: (u: string) => Promise<Skill[]>) => Promise<Skill[]>>().mockResolvedValue([]),
       invalidateScan: vi.fn(),

@@ -24,7 +24,7 @@ Flow: harness → MCP tool → API Server → SlackWorker → Slack.
 
 **MCP endpoint** hosted on a dedicated port (separate from the admin API) at `/api/instances/:id/mcp` using Streamable HTTP transport. Direct access to SlackWorker — no agent-runtime round-trip.
 
-**Auth:** Agent-runtime sends its `ONECLI_ACCESS_TOKEN` as a Bearer header. The controller writes a SHA-256 hash of the token into the agent ConfigMap's `status.yaml` at registration time. The MCP endpoint verifies the hash and checks that the agent's owner matches the instance's owner.
+**Auth:** Caller identity is derived from the source pod IP, mapped to a `humr.ai/instance` label via the api-server's `podIpResolver` cache. The agent presents no Bearer token. NetworkPolicy on the api-server pod admits the harness port only from agent pods, so the kernel-verified source IP is the source of truth — a compromised harness can't claim to be a different instance. Owner match (agent.owner == instance.owner) is the second check.
 
 **Network isolation:** The MCP port is the only API server port allowed by the agent's NetworkPolicy — agents cannot reach the admin API (tRPC, OAuth, etc.).
 
