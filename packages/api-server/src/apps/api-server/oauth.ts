@@ -20,6 +20,7 @@ import {
   type OAuthEngine,
 } from "../../modules/connections/infrastructure/oauth-engine.js";
 import {
+  callbackUrlForApp,
   matchesAppConnection,
   type OAuthAppDescriptor,
   type OAuthAppRegistry,
@@ -64,9 +65,12 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
   oauth.get("/api/oauth/apps", (c) => {
     // Bake the callback URL into each descriptor so the connect form can
     // surface it — every OAuth app the user registers at the provider must
-    // be configured with this exact URL as its redirect URI.
-    const callbackUrl = `${uiBaseUrl}/api/oauth/callback`;
-    return c.json(apps.list().map((d) => ({ ...d, callbackUrl })));
+    // be configured with this exact URL as its redirect URI. Per-descriptor
+    // because some providers (e.g. Spotify) reject `localhost` and need a
+    // host-rewritten callback (see `localhostCallbackAlias`).
+    return c.json(
+      apps.list().map((d) => ({ ...d, callbackUrl: callbackUrlForApp(d, uiBaseUrl) })),
+    );
   });
 
   /**
@@ -175,7 +179,7 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
     }
     const user = c.get("user");
     const jwt = getUserJwt(c);
-    const redirectUri = `${uiBaseUrl}/api/oauth/callback`;
+    const redirectUri = callbackUrlForApp(descriptor, uiBaseUrl);
     const { authUrl } = engine.start({
       provider: built.provider,
       flow: built.flow,

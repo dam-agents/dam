@@ -1,21 +1,23 @@
 import { describe, it, expect } from "vitest";
 
 import {
+  callbackUrlForApp,
   createOAuthAppRegistry,
   matchesAppConnection,
 } from "../../modules/connections/infrastructure/oauth-apps.js";
 
 describe("OAuth app registry — descriptors", () => {
-  it("lists GitHub.com, GitHub Enterprise, and Generic as available app types", () => {
+  it("lists the static apps and Generic as available app types", () => {
     const reg = createOAuthAppRegistry();
     const ids = reg.list().map((d) => d.id);
-    expect(ids).toEqual(["github", "github-enterprise", "generic"]);
+    expect(ids).toEqual(["github", "github-enterprise", "spotify", "generic"]);
   });
 
   it("each descriptor declares its cardinality", () => {
     const reg = createOAuthAppRegistry();
     expect(reg.get("github")!.cardinality).toBe("single");
     expect(reg.get("github-enterprise")!.cardinality).toBe("single");
+    expect(reg.get("spotify")!.cardinality).toBe("single");
     expect(reg.get("generic")!.cardinality).toBe("multiple");
   });
 
@@ -90,6 +92,27 @@ describe("OAuth app registry — build()", () => {
     const reg = createOAuthAppRegistry();
     expect(() => reg.build("github", { clientId: "" })).toThrow();
     expect(() => reg.build("github", { clientId: "id" })).toThrow();
+  });
+
+  it("builds the Spotify flow with default scopes and the SPOTIFY_TOKEN env mapping", () => {
+    const reg = createOAuthAppRegistry();
+    const built = reg.build("spotify", { clientId: "id", clientSecret: "sec" });
+    expect(built.provider.authorizationUrl).toBe(
+      "https://accounts.spotify.com/authorize",
+    );
+    expect(built.provider.tokenEndpoint).toBe(
+      "https://accounts.spotify.com/api/token",
+    );
+    expect(built.provider.tokenEndpointAcceptJson).toBe(true);
+    expect(built.provider.scopes).toContain("user-read-private");
+    expect(built.provider.scopes).toContain("user-modify-playback-state");
+    expect(built.flow).toEqual({
+      connectionKey: "spotify",
+      hostPattern: "api.spotify.com",
+      displayName: "Spotify",
+      envMappings: [{ envName: "SPOTIFY_TOKEN", placeholder: "dummy-placeholder" }],
+    });
+    expect(built.connectionDisplayName).toBe("Spotify");
   });
 
   it("rejects an invalid GHE host (scheme included)", () => {
@@ -238,6 +261,43 @@ describe("OAuth app registry — admin defaults", () => {
       "clientId",
       "clientSecret",
     ]);
+  });
+});
+
+describe("callbackUrlForApp", () => {
+  it("returns the standard callback URL for descriptors without a quirk", () => {
+    const reg = createOAuthAppRegistry();
+    const github = reg.get("github")!;
+    expect(callbackUrlForApp(github, "http://localhost:4444")).toBe(
+      "http://localhost:4444/api/oauth/callback",
+    );
+    expect(callbackUrlForApp(github, "https://app.example.com")).toBe(
+      "https://app.example.com/api/oauth/callback",
+    );
+  });
+
+  it("rewrites localhost → 127.0.0.1 for Spotify on a local-dev base URL", () => {
+    const reg = createOAuthAppRegistry();
+    const spotify = reg.get("spotify")!;
+    expect(callbackUrlForApp(spotify, "http://localhost:4444")).toBe(
+      "http://127.0.0.1:4444/api/oauth/callback",
+    );
+  });
+
+  it("leaves Spotify's callback URL alone when the base URL host is not localhost", () => {
+    const reg = createOAuthAppRegistry();
+    const spotify = reg.get("spotify")!;
+    expect(callbackUrlForApp(spotify, "https://app.example.com")).toBe(
+      "https://app.example.com/api/oauth/callback",
+    );
+  });
+
+  it("does not rewrite hosts that merely start with `localhost`", () => {
+    const reg = createOAuthAppRegistry();
+    const spotify = reg.get("spotify")!;
+    expect(callbackUrlForApp(spotify, "http://localhost.example.com:4444")).toBe(
+      "http://localhost.example.com:4444/api/oauth/callback",
+    );
   });
 });
 

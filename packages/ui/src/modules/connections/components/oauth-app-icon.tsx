@@ -13,6 +13,7 @@ import { Cable } from "lucide-react";
 const ICON_BY_APP_ID: Record<string, string> = {
   github: "/icons/github.svg",
   "github-enterprise": "/icons/github-enterprise.svg",
+  spotify: "/icons/spotify.svg",
 };
 
 interface Props {

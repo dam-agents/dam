@@ -43,7 +43,18 @@ const GH_TOKEN_ENV_MAPPING: EnvMapping = {
   placeholder: DEFAULT_ENV_PLACEHOLDER,
 };
 
-export type OAuthAppId = "github" | "github-enterprise" | "generic";
+/**
+ * Spotify Web API tooling has no canonical CLI env-var name (unlike `GH_TOKEN`),
+ * so we settle on `SPOTIFY_TOKEN`. Agents call api.spotify.com with
+ * `Authorization: Bearer $SPOTIFY_TOKEN`; the Envoy sidecar swaps the
+ * sentinel placeholder for the real access token at request time.
+ */
+const SPOTIFY_TOKEN_ENV_MAPPING: EnvMapping = {
+  envName: "SPOTIFY_TOKEN",
+  placeholder: DEFAULT_ENV_PLACEHOLDER,
+};
+
+export type OAuthAppId = "github" | "github-enterprise" | "spotify" | "generic";
 
 export interface OAuthAppInputField {
   name: string;
@@ -83,6 +94,16 @@ export interface OAuthAppDescriptor {
    * empty). Generic uses this; static apps don't need it.
    */
   discoverFromHostField?: string;
+  /**
+   * Provider quirk: some OAuth providers (notably Spotify since 2024) reject
+   * `localhost` as a redirect-URI host but accept `127.0.0.1`. When set, the
+   * platform rewrites the `localhost` host to this alias **only when** the
+   * platform's `uiBaseUrl` host is exactly `localhost` — production URLs are
+   * left alone. Used both for the displayed callback URL on the connect form
+   * (so the user registers the right value at the provider) and for the
+   * `redirect_uri` sent during the OAuth flow.
+   */
+  localhostCallbackAlias?: string;
 }
 
 export interface BuiltOAuthApp {
@@ -129,6 +150,27 @@ const DESCRIPTORS: Record<OAuthAppId, OAuthAppDescriptor> = {
       { name: "clientId", label: "Client ID" },
       { name: "clientSecret", label: "Client secret", secret: true },
     ],
+  },
+  spotify: {
+    id: "spotify",
+    displayName: "Spotify",
+    description:
+      "Connect Spotify so agents can read your library and playlists and control playback on your behalf.",
+    cardinality: "single",
+    connectionKey: "spotify",
+    registrationUrl: "https://developer.spotify.com/dashboard",
+    inputs: [
+      {
+        name: "clientId",
+        label: "Client ID",
+        helper: "From the app you registered in the Spotify developer dashboard.",
+      },
+      { name: "clientSecret", label: "Client secret", secret: true },
+    ],
+    // Spotify rejects `localhost` redirect URIs (developer dashboard policy
+    // since 2024) but accepts `127.0.0.1`. Reaching the api-server via the
+    // catch-all ingress rule on the platform's local-dev cluster.
+    localhostCallbackAlias: "127.0.0.1",
   },
   generic: {
     id: "generic",
@@ -179,6 +221,36 @@ const githubInputSchema = z.object({
   clientSecret: z.string().min(1, "Client secret is required"),
 });
 
+const spotifyInputSchema = z.object({
+  clientId: z.string().min(1, "Client ID is required"),
+  clientSecret: z.string().min(1, "Client secret is required"),
+});
+
+/**
+ * Default scope set covering reading the user's library/playlists, listening
+ * history, and controlling playback. Scoped down to what the typical agent
+ * use case ("triage my playlists", "queue this track") needs — avoids
+ * `streaming` (Web Playback SDK only) and `ugc-image-upload` (rare).
+ *
+ * Spotify always returns a refresh token for auth-code flows, so no
+ * `offline_access` analogue is required.
+ */
+const DEFAULT_SPOTIFY_SCOPES = [
+  "user-read-private",
+  "user-read-email",
+  "playlist-read-private",
+  "playlist-read-collaborative",
+  "playlist-modify-private",
+  "playlist-modify-public",
+  "user-library-read",
+  "user-library-modify",
+  "user-top-read",
+  "user-read-recently-played",
+  "user-read-playback-state",
+  "user-modify-playback-state",
+  "user-read-currently-playing",
+];
+
 // RFC 1123 subdomain — same shape K8s names accept. Used both directly as a
 // host and as input to Envoy SNI matching, so we apply it strictly here.
 const HOSTNAME_RE =
@@ -213,6 +285,7 @@ const genericInputSchema = z.object({
 
 export type GithubInput = z.infer<typeof githubInputSchema>;
 export type GheInput = z.infer<typeof gheInputSchema>;
+export type SpotifyInput = z.infer<typeof spotifyInputSchema>;
 export type GenericInput = z.infer<typeof genericInputSchema>;
 
 /**
@@ -240,6 +313,30 @@ export interface OAuthAppRegistry {
    * the engine inputs. Throws on validation failure — caller maps to a 400.
    */
   build(id: OAuthAppId, rawInput: unknown): BuiltOAuthApp;
+}
+
+/**
+ * Compute the OAuth callback URL for a given app, applying the
+ * `localhostCallbackAlias` provider quirk when the platform's `uiBaseUrl`
+ * host is exactly `localhost`. The scheme, port, and path are preserved;
+ * only the host is swapped. Production URLs (any host other than
+ * `localhost`) pass through unchanged.
+ */
+export function callbackUrlForApp(
+  descriptor: OAuthAppDescriptor,
+  uiBaseUrl: string,
+): string {
+  const base = descriptor.localhostCallbackAlias
+    ? rewriteLocalhostHost(uiBaseUrl, descriptor.localhostCallbackAlias)
+    : uiBaseUrl;
+  return `${base}/api/oauth/callback`;
+}
+
+// Match `localhost` as a complete host label so we never rewrite hostnames
+// like `localhost.example.com`. Anchored at the scheme so query strings and
+// path segments containing the literal "localhost" are left alone.
+function rewriteLocalhostHost(url: string, alias: string): string {
+  return url.replace(/^(https?:\/\/)localhost(?=:|\/|$)/, `$1${alias}`);
 }
 
 /**
@@ -308,6 +405,27 @@ function buildGhe(input: GheInput): BuiltOAuthApp {
       ],
     },
     connectionDisplayName: `GitHub Enterprise (${host})`,
+  };
+}
+
+function buildSpotify(input: SpotifyInput): BuiltOAuthApp {
+  return {
+    provider: {
+      id: "spotify",
+      authorizationUrl: "https://accounts.spotify.com/authorize",
+      tokenEndpoint: "https://accounts.spotify.com/api/token",
+      clientId: input.clientId,
+      clientSecret: input.clientSecret,
+      scopes: DEFAULT_SPOTIFY_SCOPES,
+      tokenEndpointAcceptJson: true,
+    },
+    flow: {
+      connectionKey: "spotify",
+      hostPattern: "api.spotify.com",
+      displayName: "Spotify",
+      envMappings: [SPOTIFY_TOKEN_ENV_MAPPING],
+    },
+    connectionDisplayName: "Spotify",
   };
 }
 
@@ -411,6 +529,7 @@ export function createOAuthAppRegistry(
       const merged = withDefaults(id, rawInput);
       if (id === "github") return buildGithub(githubInputSchema.parse(merged));
       if (id === "github-enterprise") return buildGhe(gheInputSchema.parse(merged));
+      if (id === "spotify") return buildSpotify(spotifyInputSchema.parse(merged));
       if (id === "generic") return buildGeneric(genericInputSchema.parse(merged));
       throw new Error(`unknown app id: ${id as string}`);
     },
