@@ -42,7 +42,7 @@ beforeAll(async () => {
 
   // Warm-up: pod ready ≠ ext_authz pipeline ready. The api-server
   // resolves instance → agent identity lazily on the first Check call,
-  // and cold OneCLI sync after pod creation can leave the first
+  // and the cold lookup after pod creation can leave the first
   // request's gate call returning deny without inserting a pending row.
   // Issue one curl, drain any approvals, then start asserting.
   curl("example.com", "https");

@@ -164,8 +164,8 @@ func listOwnerCredentialSecrets(ctx context.Context, client kubernetes.Interface
 // in-pod env has to carry a placeholder.
 //
 // The placeholder value is opaque to the upstream — Envoy overwrites it — so
-// any non-empty string works. We use the same `humr:sentinel` token the OneCLI
-// path used so logs stay grep-friendly across the migration.
+// any non-empty string works. We use a stable `humr:sentinel` token so logs
+// stay grep-friendly.
 func credentialEnvVars(secrets []corev1.Secret) []corev1.EnvVar {
 	const sentinel = "humr:sentinel"
 	seen := map[string]struct{}{}

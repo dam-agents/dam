@@ -12,9 +12,10 @@ import { OAuthAppIcon } from "../modules/connections/components/oauth-app-icon.j
 
 /**
  * One row in the picker's "OAuth Apps" subsection. Joins the
- * api-server-managed app connection (host, displayName, expiry, appId for the
- * brand icon) with the OneCLI mirror secret's id (the grant target — agents
- * see the token via `Authorization: Bearer` injection on `hostPattern`).
+ * api-server-managed app connection (host, displayName, expiry, appId for
+ * the brand icon) with the K8s credential Secret's id (the grant target —
+ * agents see the token via the Envoy sidecar's `Authorization: Bearer`
+ * injection on `hostPattern`).
  */
 export interface OAuthAppEntry {
   secretId: string;

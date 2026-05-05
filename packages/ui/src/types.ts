@@ -144,10 +144,10 @@ export interface Schedule {
 export type SecretType = "anthropic" | "generic";
 export type SecretMode = "all" | "selective";
 
-/** Prefix used for MCP OAuth secrets stored in OneCLI. */
+/** Prefix used for MCP OAuth secrets stored as K8s credential Secrets. */
 export const MCP_SECRET_PREFIX = "__humr_mcp:";
 
-/** Prefix used for app-OAuth tokens mirrored into OneCLI by the api-server. */
+/** Prefix used for app-OAuth tokens stored as K8s credential Secrets by the api-server. */
 export const APP_OAUTH_SECRET_PREFIX = "__humr_oauth:";
 
 export function isMcpSecret(s: { name: string; type: SecretType }): boolean {

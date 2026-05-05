@@ -42,7 +42,6 @@ Persistence vocabulary shared by every bounded context. See [`docs/architecture/
 | Fork | An ephemeral, per-turn execution environment derived from an Instance that impersonates a foreign user for the duration of one Slack turn |
 | Foreign Sub | The Keycloak `sub` of a Slack replier who is not the Instance owner |
 | Fork Phase | The lifecycle state of a Fork: Pending, Ready, Failed, or Completed |
-| Foreign Registration | The `(agent, foreignSub) → OneCLI access token` binding, minted lazily on first fork request and cached in-memory by the Connections module |
 
 ## Skills — api-server side (bounded context)
 
@@ -97,8 +96,8 @@ Pod-side operational view of skills. Distinct from the api-server's Skills conte
 
 | Term | Definition |
 |------|-----------|
-| Secret | A user-owned credential (e.g., an Anthropic API key) stored in OneCLI that can be injected into agent egress traffic by the credential gateway |
+| Secret | A user-owned credential (e.g., an Anthropic API key) stored as a K8s Secret labelled with the owner's `sub` and mounted into the agent pod's Envoy sidecar for wire-level injection on outbound traffic |
 | Secret Type | The provider taxonomy for a secret — currently `anthropic` (hostPattern fixed) or `generic` (user-supplied host/path patterns) |
-| Host Pattern | The hostname pattern that identifies which outbound requests the credential gateway should inject this secret into |
-| Secret Assignment | The linkage between a Secret and an Agent that makes the secret available to that agent's egress; OneCLI owns this linkage as a bulk set per agent |
+| Host Pattern | The hostname pattern that identifies which outbound requests the Envoy sidecar should inject this secret into |
+| Secret Assignment | The linkage between a Secret and an Agent that makes the secret available to that agent's egress; stored as the `humr.ai/secret-mode` + `humr.ai/granted-secret-ids` annotations on the agent's instance ConfigMap |
 | Provider | The external service a secret authenticates against (e.g., Anthropic); for typed secrets the provider determines default routing rules |

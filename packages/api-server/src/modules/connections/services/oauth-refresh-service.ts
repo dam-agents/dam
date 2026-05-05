@@ -13,24 +13,6 @@
  * State is the K8s Secrets — the loop is idempotent and crash-safe; on
  * restart it re-derives its work list. Single-process; multi-replica leader
  * election is a follow-up.
- *
- * KNOWN GAP — OneCLI mirror is not refreshed.
- *   The api-server's connect/disconnect handlers dual-write to OneCLI
- *   (`__humr_oauth:<connection>` / `__humr_mcp:<host>` generic secrets) so
- *   non-flagged instances on the OneCLI gateway keep working. This loop
- *   does **not** push refreshed tokens back to OneCLI — it only updates
- *   the K8s Secret. Consequences:
- *     - Flagged instances (Envoy sidecar) read the refreshed token via
- *       SDS file-watch — works as designed.
- *     - Non-flagged instances (OneCLI gateway) keep using the original
- *       access token until it expires at the upstream; the user has to
- *       manually reconnect to refresh OneCLI.
- *   Closing the gap requires a way to call OneCLI per-owner from a
- *   process-wide loop without a user JWT — either a Keycloak RFC 8693
- *   impersonation hop (`requested_subject = owner`, mirroring the
- *   controller's pattern) or a cluster-scoped OneCLI admin token. Both
- *   are wider in scope than this PR's slice; the gap closes naturally
- *   when the OneCLI dual-write is removed in the follow-up issue.
  */
 import {
   listAllConnectionWorkItems,

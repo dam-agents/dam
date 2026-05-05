@@ -2,8 +2,8 @@ import { TRPCError } from "@trpc/server";
 import { AgentRuntimeUpstreamError } from "./agent-runtime-client.js";
 
 /**
- * Translate an OneCLI gateway error (relayed by agent-runtime as HTTP 502
- * with a `.upstream` envelope) into a tRPC error the UI can act on.
+ * Translate a structured upstream error (relayed by agent-runtime as HTTP
+ * 502 with a `.upstream` envelope) into a tRPC error the UI can act on.
  *
  * We encode the `connect_url` / `manage_url` into the message as a
  * `humr-cta:<url>` prefix segment that the client can split back out. Keeps
@@ -24,7 +24,7 @@ export function upstreamToTrpc(err: AgentRuntimeUpstreamError): TRPCError {
   if (status === 403) {
     return new TRPCError({
       code: "FORBIDDEN",
-      message: `GitHub rejected the request (${message}). Reconnect GitHub in OneCLI with the repo scope.`,
+      message: `GitHub rejected the request (${message}). Reconnect GitHub with the repo scope.`,
     });
   }
   if (status === 404) {

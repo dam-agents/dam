@@ -1,11 +1,11 @@
 /**
  * OAuth-issued credential storage in K8s Secrets, keyed by `(owner, connection)`.
  *
- * Replaces the OneCLI REST write path for tokens minted by the API Server's
- * OAuth callback (today: MCP servers; later: GitHub, Slack, Google). The
- * controller's Envoy renderer (`packages/controller/pkg/reconciler/envoy.go`)
- * already lists Secrets by `humr.ai/owner=<sub>,humr.ai/managed-by=api-server`,
- * so connection Secrets land in the sidecar without controller changes.
+ * Stores tokens minted by the API Server's OAuth callback (MCP servers,
+ * GitHub, Slack, Google, …). The controller's Envoy renderer
+ * (`packages/controller/pkg/reconciler/envoy.go`) lists Secrets by
+ * `humr.ai/owner=<sub>,humr.ai/managed-by=api-server`, so connection Secrets
+ * land in the sidecar automatically.
  *
  * Each Secret carries:
  *   - `sds.yaml` — SDS DiscoveryResponse the sidecar reads via `path_config_source`

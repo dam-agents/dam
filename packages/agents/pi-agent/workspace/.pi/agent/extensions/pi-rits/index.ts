@@ -13,9 +13,10 @@ export default function register(pi: ExtensionAPI): void {
 	const provider: ProviderConfig = {
 		baseUrl: /\/v\d+$/.test(url) ? url : `${url}/v1`,
 		api: "openai-completions",
-		// Auth is injected by OneCLI at the HTTP-proxy layer; the key set here only
-		// exists to satisfy pi-acp's per-session auth gate (reads models.json.apiKey).
-		apiKey: "injected-by-onecli",
+		// Auth is injected on the wire by the Envoy sidecar's credential_injector
+		// filter; the key set here only exists to satisfy pi-acp's per-session
+		// auth gate (reads models.json.apiKey).
+		apiKey: "humr:sentinel",
 		authHeader: false,
 		models: [
 			{

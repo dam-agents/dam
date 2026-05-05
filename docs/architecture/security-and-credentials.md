@@ -179,7 +179,8 @@ Each agent pod gets a NetworkPolicy that:
 - Permits gRPC egress to the api-server's ext_authz port (the HITL gate).
 - Permits egress to the api-server's harness port (MCP, triggers).
 - Permits DNS.
-- Allows ingress only on the agent's ACP port from cluster peers.
+- Admits ingress on the agent's ACP/tRPC port only from the api-server pod;
+  the kernel-level peer match is the auth boundary on that hop.
 
-OneCLI is no longer in the path; there is no cross-namespace credential
-gateway pod for the agent to reach.
+The credential gateway lives inside the agent pod (the Envoy sidecar);
+there is no cross-namespace gateway pod for the agent to reach.

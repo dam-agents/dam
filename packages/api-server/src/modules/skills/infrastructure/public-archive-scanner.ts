@@ -7,11 +7,12 @@ import type { Skill } from "api-server-api";
 import { detectHost } from "./git-host.js";
 
 /**
- * Scan a public GitHub source directly — no OneCLI, no git binary, no auth.
+ * Scan a public GitHub source directly — no Envoy sidecar, no git binary,
+ * no auth.
  *
  * api-server has direct internet egress (no NetworkPolicy applies to it),
  * so it can hit `github.com/{owner}/{repo}/archive/HEAD.tar.gz` without
- * going through OneCLI's MITM. That endpoint:
+ * going through any agent pod. That endpoint:
  *   - Returns 302 → codeload.github.com/.../tar.gz/{FULL_SHA} on public repos
  *     (full commit SHA in the redirect URL — recoverable from response.url).
  *   - Returns 404 for private repos and nonexistent ones alike — caller
@@ -19,10 +20,10 @@ import { detectHost } from "./git-host.js";
  *   - Has no api.github.com-style rate limit (tarball endpoint is a separate
  *     budget and effectively unlimited for our one-per-5-min cache cadence).
  *
- * The chosen architecture makes public-source scans work in every OneCLI
- * state — unconfigured, configured but not Connected, Connected but agent
- * not granted, or fully connected + granted — which is a hard product
- * requirement (see docs/plans/skills/11-scan-in-api-server.md).
+ * The chosen architecture makes public-source scans work in every
+ * connection state — no app configured, configured but not Connected,
+ * Connected but agent not granted, or fully connected + granted — which
+ * is a hard product requirement (see docs/plans/skills/11-scan-in-api-server.md).
  */
 export class PublicArchiveNotFoundError extends Error {
   constructor(gitUrl: string) {

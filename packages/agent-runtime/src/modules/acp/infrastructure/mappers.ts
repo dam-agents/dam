@@ -1,5 +1,5 @@
 const AUTH_HINT =
-  "Authentication Error: Ensure the API/OAuth credential secret is correct and linked to this agent in the OneCLI dashboard (Agents > select agent > Secrets).\n\nError: ";
+  "Authentication Error: Ensure the API/OAuth credential secret is correct and linked to this agent (Agents > select agent > Secrets).\n\nError: ";
 
 /**
  * Prepend the authentication hint to any frame whose error or text content

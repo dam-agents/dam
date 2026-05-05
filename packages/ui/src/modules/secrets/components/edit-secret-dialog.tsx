@@ -130,7 +130,7 @@ export function EditSecretDialog({ secret, onClose }: Props) {
           {isGeneric && (
             <FormField
               label="Host Pattern"
-              hint="Hostname OneCLI matches against outbound requests. Required."
+              hint="Hostname the Envoy sidecar matches against outbound requests. Required."
               error={errors.hostPattern?.message}
             >
               <input
@@ -159,7 +159,7 @@ export function EditSecretDialog({ secret, onClose }: Props) {
           {isGeneric && (
             <FormField
               label="Header Name"
-              hint="HTTP header OneCLI writes the secret into."
+              hint="HTTP header the Envoy sidecar writes the secret into."
               error={errors.headerName?.message}
             >
               <input

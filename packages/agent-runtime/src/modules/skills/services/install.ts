@@ -50,8 +50,9 @@ async function fetchSourceAtVersion(
 ): Promise<Result<void, SkillsDomainError>> {
   const host = detectGithubOwnerRepo(source);
   if (host) {
-    // Anonymous-first; on 404 retry with sentinel so OneCLI can surface the
-    // structured `app_not_connected` / `access_restricted` CTA body.
+    // Anonymous-first; on 404 retry with the sentinel so the api-server's
+    // upstream-error mapping can surface the structured `app_not_connected`
+    // / `access_restricted` CTA body.
     let bytes = await deps.github.fetchTarball(host, version, { withAuth: false });
     if (!bytes.ok && bytes.error.kind === "UpstreamGitHubError" && bytes.error.status === 404) {
       bytes = await deps.github.fetchTarball(host, version, { withAuth: true });

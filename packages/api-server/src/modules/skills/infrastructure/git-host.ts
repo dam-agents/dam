@@ -1,7 +1,7 @@
 /**
  * Pure parsers for git host URLs. The actual GitHub REST calls live in
- * agent-runtime (which is wired through OneCLI's MITM); api-server just
- * needs to know which host a source points at.
+ * agent-runtime (whose egress is intercepted by the Envoy sidecar);
+ * api-server just needs to know which host a source points at.
  */
 
 export interface GitHostIdentity {

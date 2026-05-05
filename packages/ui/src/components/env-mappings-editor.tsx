@@ -31,7 +31,7 @@ export function EnvMappingsEditor({
       disabled={disabled}
       newRowValue={DEFAULT_ENV_PLACEHOLDER}
       valuePlaceholder={DEFAULT_ENV_PLACEHOLDER}
-      emptyMessage="No env vars declared. The agent will only receive credentials via OneCLI's HTTP proxy."
+      emptyMessage="No env vars declared. The agent will only receive credentials via the Envoy sidecar's on-the-wire injection."
     />
   );
 }

@@ -10,8 +10,8 @@ export function useAgents() {
 }
 
 /**
- * Per-agent secret + connection access. The agent might not yet be registered
- * with OneCLI (controller syncs asynchronously after create), so we swallow
+ * Per-agent secret + connection access. The agent might not yet be fully
+ * reconciled (controller syncs asynchronously after create), so we swallow
  * errors silently rather than toasting.
  */
 export function useAgentAccess(agentId: string | null) {
@@ -24,8 +24,9 @@ export function useAgentAccess(agentId: string | null) {
 }
 
 /**
- * Per-agent app-connection grants. Same OneCLI-sync lag as {@link useAgentAccess},
- * so errors stay silent and initial data defaults to an empty grant list.
+ * Per-agent app-connection grants. Same controller-sync lag as
+ * {@link useAgentAccess}, so errors stay silent and initial data defaults
+ * to an empty grant list.
  */
 export function useAgentConnections(agentId: string | null) {
   return useQuery({

@@ -95,17 +95,20 @@ export interface GitHubRestClient {
 }
 
 /**
- * Adapter that talks to `api.github.com` through OneCLI's HTTPS proxy.
+ * Adapter that talks to `api.github.com` through the agent pod's Envoy
+ * sidecar (HTTPS_PROXY).
  *
  * `withAuth: true` attaches the sentinel bearer (`humr:sentinel` unless
- * `GH_TOKEN` overrides) — OneCLI's MITM swaps it for the user's OAuth token.
- * Needed for mutations and for endpoints whose 404-on-unauthenticated path is
- * ambiguous (we'd rather get the structured `app_not_connected` CTA).
+ * `GH_TOKEN` overrides) — the sidecar's credential_injector filter rewrites
+ * it to the user's OAuth token on the wire. Needed for mutations and for
+ * endpoints whose 404-on-unauthenticated path is ambiguous (we'd rather get
+ * the structured `app_not_connected` CTA).
  *
- * `withAuth: false` sends no Authorization header. OneCLI passes anonymous
- * reads through for public resources and *still* injects the user's token
- * automatically when they're Connected. The hard-requirement path for scan:
- * public repos must work even when the user hasn't Connected GitHub yet.
+ * `withAuth: false` sends no Authorization header. The sidecar passes
+ * anonymous reads through for public resources; private resources require
+ * the sentinel so credential_injector can attach the user's token. The
+ * hard-requirement path for scan: public repos must work even when the user
+ * hasn't Connected GitHub yet.
  */
 export function createGitHubRestClient(): GitHubRestClient {
   return {

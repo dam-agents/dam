@@ -3,13 +3,12 @@ import { Cable } from "lucide-react";
 /**
  * Per-app brand icon. Known app ids resolve to a brand SVG under
  * `/icons/`; everything else falls back to a `Cable` glyph — visually
- * distinct from KeyRound (which the OneCLI app-connection rows already
- * use) and Globe (MCP rows), and reads as "user-supplied integration."
- * SVGs carry their own `fill` so they render the same in light/dark
- * themes without runtime CSS gymnastics.
+ * distinct from KeyRound (which generic app-connection rows use) and
+ * Globe (MCP rows), and reads as "user-supplied integration." SVGs
+ * carry their own `fill` so they render the same in light/dark themes
+ * without runtime CSS gymnastics.
  *
- * Brand SVGs sourced from the kagenti/onecli fork (Apache 2.0); the
- * shapes are SimpleIcons-style canonical octocats.
+ * Brand SVGs are SimpleIcons-style canonical glyphs (Apache 2.0).
  */
 const ICON_BY_APP_ID: Record<string, string> = {
   github: "/icons/github.svg",

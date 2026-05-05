@@ -1,9 +1,9 @@
 import type { FileFragment, FileProducer, FileSpec } from "../types.js";
 
 /**
- * One row of OneCLI's `/api/connections` response — only the fields this
- * producer needs. Kept local to avoid pulling the connections module's
- * port shape into the pod-files layer.
+ * One row of the api-server's `/api/connections` response — only the
+ * fields this producer needs. Kept local to avoid pulling the connections
+ * module's port shape into the pod-files layer.
  */
 interface RawConnection {
   id?: string;
@@ -14,7 +14,7 @@ interface RawConnection {
 /**
  * Where the producer reads its state from. Agent-scoped: the callback
  * returns only the connections **granted to `agentId`** under `owner`,
- * not every connection the owner has in OneCLI. This matches the user-
+ * not every connection the owner has registered. This matches the user-
  * facing model — the UI's per-agent grant click is the sole driver of
  * what files appear inside that agent's pod.
  *
@@ -33,8 +33,8 @@ export interface GithubEnterpriseHostsDeps {
 export const GH_ENTERPRISE_HOSTS_RELATIVE_PATH = ".config/gh/hosts.yml";
 
 /**
- * Strip scheme and port from `metadata.baseUrl`, mirroring the gateway's
- * parser (context/onecli/apps/gateway/src/apps.rs `extract_host_from_base_url`).
+ * Strip scheme and port from `metadata.baseUrl` so the host can be matched
+ * against Envoy's SNI filter chains.
  */
 function extractHost(metadata: Record<string, unknown> | null | undefined): string | undefined {
   if (!metadata) return undefined;
@@ -46,9 +46,10 @@ function extractHost(metadata: Record<string, unknown> | null | undefined): stri
 }
 
 /**
- * `gh auth status` only displays the user — actual auth uses the proxied
- * sentinel token. Pick the OAuth login (`metadata.username`) by default and
- * fall back through `login` and `name` so older records keep working.
+ * `gh auth status` only displays the user — actual auth uses the sentinel
+ * token (rewritten on the wire by the Envoy sidecar's credential_injector
+ * filter). Pick the OAuth login (`metadata.username`) by default and fall
+ * back through `login` and `name` so older records keep working.
  */
 function pickUsername(metadata: Record<string, unknown> | null | undefined): string | undefined {
   if (!metadata) return undefined;
@@ -88,9 +89,10 @@ function renderHostFragment(connection: RawConnection): FileFragment | null {
 
 /**
  * Uses `yaml-fill-if-missing` so revokes are safe (entries linger but the
- * gateway stops swapping the sentinel, so the next call fails loud rather
- * than silently using a stale grant). Trade-off: a revoked host stays
- * visible in `gh auth status` until the user manually edits hosts.yml.
+ * Envoy sidecar stops rewriting the sentinel once the grant is gone, so
+ * the next call fails loud rather than silently using a stale grant).
+ * Trade-off: a revoked host stays visible in `gh auth status` until the
+ * user manually edits hosts.yml.
  */
 export function makeGithubEnterpriseHostsProducer(
   deps: GithubEnterpriseHostsDeps,

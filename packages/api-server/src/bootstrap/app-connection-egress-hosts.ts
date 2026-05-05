@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
  * map; grants stay rule-less but the rest of the app works.
  *
  * The file shape is `{ "<provider>": ["host1", "host2"], ... }` where
- * `<provider>` matches the `provider` field on OneCLI's
+ * `<provider>` matches the `provider` field returned by the api-server's
  * `/api/connections` rows. See the matching Helm template
  * `templates/apiserver/app-connection-egress-hosts.yaml`.
  */

@@ -4,9 +4,8 @@
  * Reused by both the MCP-server flow (provider config built dynamically from
  * RFC 8414 metadata + RFC 7591 dynamic client registration) and the named-app
  * flow (provider config built statically by the OAuthApp registry — GitHub,
- * GitHub Enterprise, etc.). Token storage and OneCLI mirror are not the
- * engine's job — callers pull the resulting `TokenSet` and write through
- * whichever ports apply.
+ * GitHub Enterprise, etc.). Token storage is not the engine's job — callers
+ * pull the resulting `TokenSet` and write through whichever ports apply.
  *
  * State of in-flight flows lives in a Map keyed by the OAuth `state`
  * parameter. A janitor sweeps entries older than 10 minutes.
@@ -50,11 +49,12 @@ export interface OAuthFlowMetadata {
   displayName?: string;
   /**
    * Pod env vars to inject into every agent granted access to this
-   * connection's mirror secret. The placeholder is typically the OneCLI
-   * sentinel — the gateway swaps it for the real token at request time —
-   * but for env vars carrying literal config (e.g. `GH_HOST`) it can be a
-   * concrete value. Static apps populate this from the descriptor; Generic
-   * leaves it unset (no provider-specific tooling convention to enforce).
+   * connection's K8s Secret. The placeholder is typically `humr:sentinel`
+   * — the Envoy sidecar's credential_injector filter rewrites it to the
+   * real token at request time — but for env vars carrying literal config
+   * (e.g. `GH_HOST`) it can be a concrete value. Static apps populate this
+   * from the descriptor; Generic leaves it unset (no provider-specific
+   * tooling convention to enforce).
    */
   envMappings?: import("api-server-api").EnvMapping[];
 }
@@ -233,8 +233,8 @@ export function createOAuthEngine(opts?: CreateOAuthEngineOptions): OAuthEngine 
       // GitHub (and some other providers) return HTTP 200 even on errors,
       // with `{error, error_description, ...}` in the body. Catch it here
       // before the missing access_token bubbles into a confusing
-      // downstream "expected string, received undefined" from the OneCLI
-      // mirror.
+      // downstream "expected string, received undefined" when the Secret
+      // is written.
       if (!data.access_token) {
         const detail = data.error_description ?? data.error ?? "no access_token in response";
         const code = data.error ? `${data.error}: ` : "";

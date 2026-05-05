@@ -28,7 +28,7 @@ So yes: *inside* the virtual machine, an agent has fewer walls between it and th
 
 > **Example.** A guide online tells the agent to install a tool called `official-slack-cli` by running `uvx official-slack-cli` (a common one-line way to fetch and run a package). The tool looks real, but it's a copycat built by an attacker. The moment the agent runs it, the Slack API key gets shipped off to the attacker's server. From there, the attacker logs into your Slack workspace and starts scanning messages for anything valuable: passwords, customer data, internal plans.
 
-The trick for solving this is a proxy: a middleman program that sits between the agent and the outside world, letting it use APIs and CLI tools without ever holding the real keys. Humr uses a proxy called OneCLI for this today; we may swap it for something else down the line, but the idea will stay the same.
+The trick for solving this is a proxy: a middleman program that sits between the agent and the outside world, letting it use APIs and CLI tools without ever holding the real keys. Humr runs an Envoy sidecar in every agent pod for this — the agent talks to the sidecar over `localhost`, and the sidecar swaps a placeholder for the real credential before the request leaves the pod.
 
 Here's how it works. Instead of giving the agent your real API keys, the agent only sees fake placeholders like `{{SLACK_TOKEN}}`. When the agent sends a request, say to Slack, the request passes through the proxy first. The proxy swaps the placeholder for the real key at the very last second, and only if the request is actually going to Slack. A request going anywhere else gets no key at all.
 
@@ -85,7 +85,7 @@ None of this makes the system *safe*. A determined attacker who controls text th
 
 How Humr realizes the model:
 
-- [security-and-credentials](../architecture/security-and-credentials.md) — Keycloak identity flow, OneCLI credential gateway, MITM cert-manager CA, network boundary, full threat model.
+- [security-and-credentials](../architecture/security-and-credentials.md) — Keycloak identity flow, Envoy sidecar credential gateway, cert-manager-issued leaf CA, network boundary, full threat model.
 - [platform-topology](../architecture/platform-topology.md) — the four components and why the agent pod is the trust boundary.
 - [persistence](../architecture/persistence.md) § Security boundary — workspace residue is adversarial input on the next turn.
 - [Multiplayer](multi-player.md) — the companion doc covering identity, ownership, and what a colleague's turn looks like.

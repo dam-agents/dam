@@ -155,9 +155,9 @@ export function ConfigureAgentDialog({
   const assignedSet = useMemo(() => new Set(assigned), [assigned]);
   const appIdsSet = useMemo(() => new Set(assignedAppIds), [assignedAppIds]);
 
-  // Join the api-server-driven OAuth app connections with their OneCLI mirror
-  // secrets so the picker can render them in the "Apps" subsection while
-  // grants still flow through the secret-access mechanism.
+  // Join the api-server-driven OAuth app connections with their K8s
+  // credential Secrets so the picker can render them in the "Apps"
+  // subsection while grants flow through the secret-access mechanism.
   const oauthAppEntries = useMemo<OAuthAppEntry[]>(() => {
     const secretByName = new Map(secrets.map((s) => [s.name, s]));
     return oauthAppConnections.flatMap((conn) => {

@@ -15,9 +15,9 @@ export interface AppConnectionView {
   scopes?: string[];
   connectedAt?: string;
   /**
-   * Pod envs contributed by this connection. Declared by OneCLI's app
-   * registry (see the matching `AppDefinition.envMappings` field) and
-   * returned verbatim on `GET /api/connections` — Humr never writes this.
+   * Pod envs contributed by this connection. Declared by the OAuth app
+   * registry's `flow.envMappings` and returned verbatim on
+   * `GET /api/connections`.
    */
   envMappings?: EnvMapping[];
   /**

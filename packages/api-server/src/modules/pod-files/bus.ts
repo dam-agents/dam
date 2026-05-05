@@ -1,7 +1,7 @@
 import type { PodFilesEvent } from "./types.js";
 
 /**
- * In-memory pub/sub for pod-files updates, keyed by agent name. OneCLI
+ * In-memory pub/sub for pod-files updates, keyed by agent name. Connection
  * grants are agent-scoped, so every running instance of the same agent
  * shares one topic. Single api-server replica is the deployment baseline —
  * see 034-pod-files-push for the multi-replica path.

@@ -31,9 +31,9 @@ describe("envsAfterUngrant — non-obvious invariants", () => {
     expect(out).toEqual(envs);
   });
 
-  test("treats a placeholder change (OneCLI upgrade) as 'edited' — keeps the entry", () => {
+  test("treats a placeholder change (sentinel rotation) as 'edited' — keeps the entry", () => {
     // An agent env populated under the old placeholder shouldn't be silently
-    // deleted after OneCLI rotates its sentinel. The value-equality check is
+    // deleted after the sentinel is rotated. The value-equality check is
     // what protects this — dropping it would cause data loss post-upgrade.
     const envs: EnvVar[] = [{ name: "X", value: "humr:sentinel" }];
     const out = envsAfterUngrant(envs, app([mapping("X", "humr:sentinel-v2")]), []);

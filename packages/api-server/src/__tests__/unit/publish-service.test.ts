@@ -155,14 +155,14 @@ describe("publishSkill — thin proxy", () => {
     await expect(publishSkill(deps, input)).rejects.toMatchObject({ code: "NOT_IMPLEMENTED" });
   });
 
-  it("translates OneCLI 'app_not_connected' to a PRECONDITION_FAILED with humr-cta: URL", async () => {
+  it("translates upstream 'app_not_connected' to a PRECONDITION_FAILED with humr-cta: URL", async () => {
     const { deps, runtimeClient } = makeDeps();
     (runtimeClient.publish as any) = vi.fn().mockRejectedValue(
       new AgentRuntimeUpstreamError("agent-runtime error", {
         status: 401,
         body: {
           error: "app_not_connected",
-          message: "GitHub is not connected in OneCLI.",
+          message: "GitHub is not connected.",
           connect_url: "http://localhost:4444/connections?connect=github",
           provider: "github",
         },
@@ -178,7 +178,7 @@ describe("publishSkill — thin proxy", () => {
     expect(err.message).toContain("humr-cta:http://localhost:4444/connections?connect=github");
   });
 
-  it("translates OneCLI 'access_restricted' (agent not granted) similarly with manage_url", async () => {
+  it("translates upstream 'access_restricted' (agent not granted) similarly with manage_url", async () => {
     const { deps, runtimeClient } = makeDeps();
     (runtimeClient.publish as any) = vi.fn().mockRejectedValue(
       new AgentRuntimeUpstreamError("agent-runtime error", {

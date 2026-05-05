@@ -140,7 +140,8 @@ describe("oauth-engine.exchange", () => {
     // GitHub returns HTTP 200 + JSON `{error, error_description}` on auth
     // failures (bad client_secret, code already consumed, redirect-URI
     // mismatch, …). The engine has to surface that as a thrown error so
-    // downstream code doesn't write `accessToken: undefined` to OneCLI.
+    // downstream code doesn't write `accessToken: undefined` into the
+    // connection's K8s Secret.
     const fetchImpl = vi.fn(async () =>
       new Response(
         JSON.stringify({

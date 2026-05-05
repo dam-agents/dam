@@ -333,9 +333,9 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
       void refreshSource(publishForm.sourceId);
     } catch (err) {
       // publish-service encodes a call-to-action URL as `\nhumr-cta:<url>`
-      // in the error message when OneCLI's gateway surfaces a structured
-      // error (not connected / agent access not granted). Parse it out so
-      // the toast's action button takes the user straight to the right fix.
+      // in the error message when an upstream surfaces a structured error
+      // (not connected / agent access not granted). Parse it out so the
+      // toast's action button takes the user straight to the right fix.
       const rawMessage = err instanceof Error ? err.message : `Failed to publish ${publishFor.name}`;
       const cta = rawMessage.match(/humr-cta:(\S+)/)?.[1];
       const message = rawMessage.replace(/\nhumr-cta:\S+/, "").trim();
@@ -617,10 +617,11 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
 
             {!collapsed && error && (() => {
               // publish/scan services encode a call-to-action URL as
-              // `\nhumr-cta:<url>` in the tRPC error message when OneCLI's
-              // gateway surfaces a structured error (not connected / agent
-              // access not granted / repo not in OAuth App's allowed list).
-              // Split it out so the banner offers a direct link to the fix.
+              // `\nhumr-cta:<url>` in the tRPC error message when an
+              // upstream surfaces a structured error (not connected /
+              // agent access not granted / repo not in OAuth App's
+              // allowed list). Split it out so the banner offers a
+              // direct link to the fix.
               const cta = error.match(/humr-cta:(\S+)/)?.[1];
               const message = error.replace(/\nhumr-cta:\S+/, "").trim();
               return (

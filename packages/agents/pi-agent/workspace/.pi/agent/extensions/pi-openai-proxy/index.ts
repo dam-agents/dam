@@ -13,10 +13,10 @@ export default function register(pi: ExtensionAPI): void {
 	const provider: ProviderConfig = {
 		baseUrl: /\/v\d+$/.test(url) ? url : `${url}/v1`,
 		api: "openai-completions",
-		// Auth is injected by OneCLI at the HTTP-proxy layer (or by Envoy's
-		// credential_injector under ADR-033); the key set here only exists to
-		// satisfy pi-acp's per-session auth gate (reads models.json.apiKey).
-		apiKey: env("OPENAI_PROXY_API_KEY") ?? "injected-by-onecli",
+		// Auth is injected on the wire by the Envoy sidecar's
+		// credential_injector filter (ADR-033); the key set here only exists
+		// to satisfy pi-acp's per-session auth gate (reads models.json.apiKey).
+		apiKey: env("OPENAI_PROXY_API_KEY") ?? "humr:sentinel",
 		authHeader: false,
 		models: [
 			{

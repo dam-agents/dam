@@ -4,7 +4,8 @@ import { Agent, request } from "node:http";
 import { Agent as HttpsAgent, request as requestHttps } from "node:https";
 
 // Explicit agents bypass HTTP_PROXY env vars (agent pods route external
-// traffic through OneCLI, but internal cluster calls must go direct).
+// traffic through the Envoy sidecar, but internal cluster calls must go
+// direct).
 const directAgent = new Agent();
 const directHttpsAgent = new HttpsAgent();
 import { z } from "zod/v4";

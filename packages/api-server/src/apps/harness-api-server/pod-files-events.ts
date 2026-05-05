@@ -15,8 +15,8 @@ export interface PodFilesEventsDeps {
 /**
  * Mount the SSE channel that the agent-pod sidecar holds open.
  * Auth: Bearer token (per-instance). Topics: keyed by agent name because
- * OneCLI grants are agent-scoped — every running instance of the same agent
- * sees the same set of granted connections, so they share one topic.
+ * connection grants are agent-scoped — every running instance of the same
+ * agent sees the same set of granted connections, so they share one topic.
  */
 export function mountPodFilesEventsRoute(app: Hono, deps: PodFilesEventsDeps) {
   app.get("/api/instances/:id/pod-files/events", async (c) => {

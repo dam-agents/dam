@@ -1,13 +1,10 @@
 /**
- * Forward-only K8s mirror for user-typed secrets (generic + Anthropic).
+ * K8s storage for user-typed secrets (generic + Anthropic).
  *
  * The Envoy credential-injector sidecar (ADR-033) reads credentials from files
  * mounted into the sidecar container. The Controller renders those mounts from
  * K8s Secrets labelled with the owner's sub. This port writes those Secrets so
- * newly-created OneCLI secrets land in K8s for the sidecar to discover.
- *
- * Existing OneCLI-only secrets are not migrated; users with the experimental
- * flag on must re-create the secrets they want injected.
+ * newly-created secrets land in K8s for the sidecar to discover.
  */
 import type * as k8s from "@kubernetes/client-node";
 import type { InjectionConfig } from "api-server-api";
@@ -122,8 +119,8 @@ export interface K8sSecretsPort {
 // `id.toLowerCase()` defensively, but that masks IDs that aren't already
 // valid (e.g. mixed case → silent collisions on case-only differences) and
 // can still produce invalid names if the ID contains other characters.
-// Validate up-front instead — OneCLI hands us UUIDs, so this is a no-op for
-// the happy path and a hard error for anything else.
+// Validate up-front instead — callers hand us UUIDs, so this is a no-op
+// for the happy path and a hard error for anything else.
 const K8S_NAME_RE = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
 const K8S_NAME_PREFIX = "humr-cred-";
 const K8S_NAME_MAX_ID_LEN = 253 - K8S_NAME_PREFIX.length;

@@ -121,9 +121,10 @@ async function loadRunningInstance(
  * canPublish is a soft signal: "the publish infrastructure knows how to
  * target this host." True when the gitUrl parses as a GitHub URL — that's
  * the only host our publish flow supports today. Authentication/authorization
- * (is the user Connected in OneCLI? is this agent granted access?) is not
- * preflighted here; any failure surfaces at publish time with a precise CTA
- * from OneCLI's gateway. Cheaper + harder to get stale than a cluster call.
+ * (is the user's GitHub connection live? is this agent granted access?)
+ * is not preflighted here; any failure surfaces at publish time with a
+ * precise CTA from upstream. Cheaper + harder to get stale than a cluster
+ * call.
  */
 function enrichSources(sources: SkillSource[]): SkillSource[] {
   return sources.map((s) =>
@@ -316,9 +317,9 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       }
 
       // Fast path: public GitHub repo scanned directly from api-server. This
-      // works in every OneCLI state (unconfigured, not Connected, not
-      // granted, fully granted) because api-server has direct internet
-      // egress — it never touches OneCLI's per-agent-grant gating.
+      // works in every connection state (no app configured, not Connected,
+      // not granted, fully granted) because api-server has direct internet
+      // egress — it never touches the agent pod's per-grant gating.
       if (detectHost(src.gitUrl)) {
         try {
           return await deps.scanSource(src.gitUrl, deps.scanPublic);
@@ -331,8 +332,9 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       }
 
       // Private/authenticated path: delegate to agent-runtime inside a
-      // running instance pod, which uses OneCLI's token swap. Without an
-      // instanceId we can't target a pod — refuse with a clear message.
+      // running instance pod, whose Envoy sidecar performs the token swap.
+      // Without an instanceId we can't target a pod — refuse with a clear
+      // message.
       if (!instanceId) {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",

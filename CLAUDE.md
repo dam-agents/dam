@@ -13,7 +13,7 @@ pnpm workspaces + standalone Go module. Concept depth lives in [`docs/architectu
 - `packages/ui/` — React chat interface (Vite)
 - `packages/humr-base/` — shared base image/utilities
 - `packages/db/` — database schema and migrations
-- `deploy/helm/humr/` — Helm chart for all components + OneCLI + PostgreSQL
+- `deploy/helm/humr/` — Helm chart for all components + PostgreSQL
 
 ## Workflow
 
@@ -33,7 +33,7 @@ mise run ui:run             # start UI dev server
 mise run cluster:install      # create k3s VM, build images, install cert-manager + Humr chart (or upgrade if already installed)
 mise run cluster:build-agent  # rebuild agent image only, restart agent pods
 mise run cluster:status       # show pods and cluster state
-mise run cluster:logs         # show OneCLI pod logs
+mise run cluster:logs         # show api-server pod logs
 mise run cluster:stop         # stop k3s VM (preserves data)
 mise run cluster:uninstall    # helm uninstall + cleanup PVCs
 mise run cluster:delete       # destroy k3s VM entirely

@@ -106,9 +106,9 @@ export function AddAgentDialog({
   const selSecretsSet = useMemo(() => new Set(selSecrets), [selSecrets]);
   const selAppsSet = useMemo(() => new Set(selApps), [selApps]);
 
-  // Join the api-server-driven OAuth app connections with their OneCLI mirror
-  // secrets so the picker can render them in the "Apps" subsection while the
-  // grant still flows through the secret-access mechanism.
+  // Join the api-server-driven OAuth app connections with their K8s
+  // credential Secrets so the picker can render them in the "Apps"
+  // subsection while the grant flows through the secret-access mechanism.
   const oauthAppEntries = useMemo<OAuthAppEntry[]>(() => {
     const secretByName = new Map(secrets.map((s) => [s.name, s]));
     return oauthAppConnections.flatMap((conn) => {

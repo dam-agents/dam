@@ -35,8 +35,9 @@ the agent loads at startup.
 
 - `GITHUB_REPO` — `owner/repo` slug to review. Defaults to the repo detected in
   the working directory via `gh repo view`.
-- A GitHub connection must be provided via OneCLI so that `gh` can
-  authenticate.
+- A GitHub connection must be granted to this agent so that `gh` can
+  authenticate (the Envoy sidecar injects the OAuth token on outbound
+  GitHub requests).
 
 ## Persistence
 

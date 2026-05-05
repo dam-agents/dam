@@ -47,7 +47,7 @@ Each subsystem page starts with two headers directly under the title:
 - Mermaid only — renders on GitHub, reviewable as text in PR diffs.
 - One system-context diagram on the landing page.
 - Subsystem pages include a diagram only if it adds clarity: sequence diagrams for flows, component diagrams for topology.
-- Box labels use code names (`api-server`, `onecli`, `agent-runtime`, …).
+- Box labels use code names (`api-server`, `agent-runtime`, `envoy`, …).
 
 ### Links
 

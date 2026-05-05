@@ -21,15 +21,16 @@ export interface PublishDeps {
 
 /**
  * Publish a local skill to GitHub as a new branch + PR. Executes entirely
- * via the REST API through OneCLI's MITM — no git subprocess, no working
- * copy on disk. Multi-step REST sequencing lives here (not in the port);
- * the port stays a thin typed wrapper around api.github.com.
+ * via the REST API through the agent pod's Envoy sidecar — no git
+ * subprocess, no working copy on disk. Multi-step REST sequencing lives
+ * here (not in the port); the port stays a thin typed wrapper around
+ * api.github.com.
  *
  * Requires this pod to run with `GH_TOKEN=humr:sentinel` + `HTTPS_PROXY`
- * pre-wired by the controller (always true in Humr), OneCLI's
- * `GITHUB_CLIENT_ID/SECRET` configured, the user Connected, and this agent
- * granted access. Failures on any of those surface as a 401/403 from
- * OneCLI's gateway with a structured error body the contract relays.
+ * pre-wired by the controller (always true in Humr), a GitHub OAuth app
+ * configured, the user Connected, and this agent granted access. Failures
+ * on any of those surface as a 401/403 from upstream with a structured
+ * error body the contract relays.
  */
 export async function runPublish(
   deps: PublishDeps,

@@ -22,8 +22,9 @@ export interface ScanDeps {
 
 /**
  * Enumerate skills in a remote git source. GitHub URLs walk through
- * api.github.com (commit-head + tarball) so OneCLI's stable Bearer-sentinel
- * swap is on the hot path; non-GitHub URLs fall back to anonymous git clone.
+ * api.github.com (commit-head + tarball) so the Envoy sidecar's stable
+ * Bearer-sentinel swap is on the hot path; non-GitHub URLs fall back to
+ * anonymous git clone.
  *
  * Trade-off: `version` is the source's HEAD commit at scan time, uniform
  * across the catalogue. Drift detection lights the Update badge whenever the
@@ -44,11 +45,12 @@ async function scanGithub(
   source: string,
   host: DetectedOwnerRepo,
 ): Promise<Result<ScannedSkill[], SkillsDomainError>> {
-  // Anonymous preflight. OneCLI passes public repos through and auto-injects
-  // the user's token for private repos when they're Connected — happy path is
-  // one call. A 404 here is ambiguous: truly-not-found OR private + not
-  // Connected. Retry with the sentinel so OneCLI's gateway can return the
-  // structured `app_not_connected` / `access_restricted` CTA the UI renders.
+  // Anonymous preflight. The Envoy sidecar passes public repos through and
+  // its credential_injector filter rewrites the sentinel for private repos
+  // when the user is Connected — happy path is one call. A 404 here is
+  // ambiguous: truly-not-found OR private + not Connected. Retry with the
+  // sentinel so the api-server can surface the structured `app_not_connected`
+  // / `access_restricted` CTA the UI renders.
   let head = await deps.github.getCommitHead(host, { withAuth: false });
   if (!head.ok && head.error.kind === "UpstreamGitHubError" && head.error.status === 404) {
     head = await deps.github.getCommitHead(host, { withAuth: true });
@@ -57,7 +59,7 @@ async function scanGithub(
   const version = head.value.sha;
 
   // Tarball is served by api.github.com (with a redirect to codeload that
-  // OneCLI follows transparently — verified empirically). For a typical
+  // the sidecar follows transparently — verified empirically). For a typical
   // skill repo this is ~50–500 KB.
   const tarball = await deps.github.fetchTarball(host, version, { withAuth: false });
   if (!tarball.ok) return tarball;

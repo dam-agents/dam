@@ -5,8 +5,9 @@ export type SecretMode = "all" | "selective";
 /**
  * Declares a pod env var to inject into every agent instance that has access
  * to this secret. `placeholder` is the literal value written into the env
- * (typically "humr:sentinel") — OneCLI's gateway swaps it for the real
- * credential on outbound requests matching the secret's host pattern.
+ * (typically "humr:sentinel") — the Envoy sidecar's credential_injector
+ * filter rewrites it to the real credential on outbound requests matching
+ * the secret's host pattern.
  */
 export interface EnvMapping {
   envName: string;
@@ -23,8 +24,8 @@ export function isValidEnvName(name: string): boolean {
 
 /**
  * OAuth-token mode. The Claude Code SDK sends `CLAUDE_CODE_OAUTH_TOKEN` via
- * `Authorization: Bearer …`, which OneCLI's MITM gateway swaps for the stored
- * OAuth credential.
+ * `Authorization: Bearer …`, which the Envoy sidecar's credential_injector
+ * filter rewrites to the stored OAuth credential on the wire.
  */
 export const ANTHROPIC_OAUTH_ENV_MAPPING: EnvMapping = {
   envName: "CLAUDE_CODE_OAUTH_TOKEN",
@@ -32,9 +33,9 @@ export const ANTHROPIC_OAUTH_ENV_MAPPING: EnvMapping = {
 };
 
 /**
- * How OneCLI's gateway injects a generic secret into matching outbound
+ * How the Envoy sidecar injects a generic secret into matching outbound
  * requests. `valueFormat` may reference the literal token `{value}`;
- * OneCLI defaults it to `{value}` when omitted.
+ * defaults to `{value}` when omitted.
  */
 export interface InjectionConfig {
   headerName: string;
@@ -49,8 +50,9 @@ export const DEFAULT_INJECTION_CONFIG: InjectionConfig = {
 
 /**
  * API-key mode. Tools that read `ANTHROPIC_API_KEY` (e.g. `@anthropic-ai/sdk`)
- * send the sentinel via `x-api-key`, which OneCLI's gateway swaps for the
- * stored api-key credential.
+ * send the sentinel via `x-api-key`, which the Envoy sidecar's
+ * credential_injector filter rewrites to the stored api-key credential on
+ * the wire.
  */
 export const ANTHROPIC_API_KEY_ENV_MAPPING: EnvMapping = {
   envName: "ANTHROPIC_API_KEY",

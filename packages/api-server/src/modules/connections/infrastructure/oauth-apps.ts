@@ -8,11 +8,11 @@
  *
  * Client credentials live with the user by default — every user registers
  * their own OAuth app at the provider against the platform's callback URL.
- * **Optional admin defaults** (mirroring OneCLI's `GITHUB_CLIENT_ID` /
- * `GITHUB_CLIENT_SECRET` knobs) let an operator wire a single
- * platform-registered OAuth app: when a default is configured, the
- * matching field disappears from the connect form and the registry's
- * `build()` uses the default to mint tokens.
+ * **Optional admin defaults** (`GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`
+ * knobs on the api-server) let an operator wire a single platform-registered
+ * OAuth app: when a default is configured, the matching field disappears
+ * from the connect form and the registry's `build()` uses the default to
+ * mint tokens.
  *
  * Cardinality:
  * - **Single-instance** apps (github, github-enterprise) have at most one
@@ -34,9 +34,9 @@ import {
 /**
  * Env vars set on agents that grant a GitHub.com or GHE connection. `gh` CLI
  * (and most token-aware GitHub tooling) reads `GH_TOKEN` from the env and
- * sends it as the bearer token; OneCLI's gateway recognizes the sentinel
- * placeholder and substitutes the real token on outbound requests matching
- * the secret's host pattern.
+ * sends it as the bearer token; the Envoy sidecar's credential_injector
+ * filter rewrites the sentinel placeholder to the real token on outbound
+ * requests matching the secret's host pattern.
  */
 const GH_TOKEN_ENV_MAPPING: EnvMapping = {
   envName: "GH_TOKEN",

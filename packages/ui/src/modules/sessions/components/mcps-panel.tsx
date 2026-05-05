@@ -1,7 +1,7 @@
 import { Globe } from "lucide-react";
 
 export interface McpOption {
-  id: string;          // OneCLI secret id
+  id: string;          // K8s credential Secret id
   hostname: string;    // display label + session key
   assigned: boolean;   // agent has this secret assigned (selective or via "all" mode)
 }

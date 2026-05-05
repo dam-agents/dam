@@ -163,7 +163,7 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
             label="Header Name (optional)"
             hint={
               <>
-                HTTP header OneCLI writes the secret into. Defaults to{" "}
+                HTTP header the Envoy sidecar writes the secret into. Defaults to{" "}
                 <span className="font-mono">{DEFAULT_INJECTION_CONFIG.headerName}</span>.
               </>
             }
@@ -200,7 +200,7 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
               Inject env vars into every agent instance granted this secret.
               The placeholder (typically{" "}
               <span className="font-mono">humr:sentinel</span>) is swapped
-              for the real value on the wire by OneCLI.
+              for the real value on the wire by the Envoy sidecar.
             </p>
             <Controller
               control={control}
