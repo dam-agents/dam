@@ -43,17 +43,6 @@ const GH_TOKEN_ENV_MAPPING: EnvMapping = {
   placeholder: DEFAULT_ENV_PLACEHOLDER,
 };
 
-/**
- * Spotify Web API tooling has no canonical CLI env-var name (unlike `GH_TOKEN`),
- * so we settle on `SPOTIFY_TOKEN`. Agents call api.spotify.com with
- * `Authorization: Bearer $SPOTIFY_TOKEN`; the Envoy sidecar swaps the
- * sentinel placeholder for the real access token at request time.
- */
-const SPOTIFY_TOKEN_ENV_MAPPING: EnvMapping = {
-  envName: "SPOTIFY_TOKEN",
-  placeholder: DEFAULT_ENV_PLACEHOLDER,
-};
-
 export type OAuthAppId = "github" | "github-enterprise" | "spotify" | "generic";
 
 export interface OAuthAppInputField {
@@ -423,7 +412,6 @@ function buildSpotify(input: SpotifyInput): BuiltOAuthApp {
       connectionKey: "spotify",
       hostPattern: "api.spotify.com",
       displayName: "Spotify",
-      envMappings: [SPOTIFY_TOKEN_ENV_MAPPING],
     },
     connectionDisplayName: "Spotify",
   };

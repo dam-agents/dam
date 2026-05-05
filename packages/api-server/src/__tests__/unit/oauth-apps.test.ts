@@ -94,7 +94,7 @@ describe("OAuth app registry — build()", () => {
     expect(() => reg.build("github", { clientId: "id" })).toThrow();
   });
 
-  it("builds the Spotify flow with default scopes and the SPOTIFY_TOKEN env mapping", () => {
+  it("builds the Spotify flow with default scopes and no env-var injection", () => {
     const reg = createOAuthAppRegistry();
     const built = reg.build("spotify", { clientId: "id", clientSecret: "sec" });
     expect(built.provider.authorizationUrl).toBe(
@@ -110,8 +110,8 @@ describe("OAuth app registry — build()", () => {
       connectionKey: "spotify",
       hostPattern: "api.spotify.com",
       displayName: "Spotify",
-      envMappings: [{ envName: "SPOTIFY_TOKEN", placeholder: "dummy-placeholder" }],
     });
+    expect(built.flow.envMappings).toBeUndefined();
     expect(built.connectionDisplayName).toBe("Spotify");
   });
 
