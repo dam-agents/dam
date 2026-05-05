@@ -76,6 +76,10 @@ func BuildForkJob(
 		corev1.EnvVar{Name: "HUMR_FORK_ID", Value: forkName},
 		corev1.EnvVar{Name: "HUMR_FOREIGN_SUB", Value: forkSpec.ForeignSub},
 	)
+	// Placeholder credential envs from the replier's K8s Secrets — same
+	// purpose as the long-lived StatefulSet shape: satisfy the harness's
+	// is-env-set check; Envoy overrides the header on the wire.
+	env = append(env, credentialEnvVars(credentialSecrets)...)
 	for _, e := range agentSpec.Env {
 		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
 	}

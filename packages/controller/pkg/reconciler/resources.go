@@ -61,7 +61,10 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 	)
 
 	// Order matters: K8s resolves duplicate env names by keeping the last
-	// occurrence, so template < instance — user overrides win.
+	// occurrence, so credential placeholders < template < instance — user
+	// overrides win. The placeholders only need to satisfy the harness's
+	// "is this env set?" check; Envoy overwrites the header on the wire.
+	env = append(env, credentialEnvVars(credentialSecrets)...)
 	for _, e := range agentSpec.Env {
 		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
 	}

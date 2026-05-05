@@ -59,11 +59,14 @@ export function createSecretsService(deps: {
     async create(input: CreateSecretInput) {
       const hostPattern = hostPatternFor(input.type, input.hostPattern);
       const id = randomUUID();
+      // Anthropic OAuth tokens are `sk-ant-oat…`; API keys are `sk-ant-api…`.
+      // Both share the `sk-ant-` prefix, so the discriminator is the segment
+      // immediately after.
       const authMode =
         input.type === "anthropic"
-          ? input.value.startsWith("sk-ant-")
-            ? "api-key"
-            : "oauth"
+          ? input.value.startsWith("sk-ant-oat")
+            ? "oauth"
+            : "api-key"
           : undefined;
       await deps.k8sPort.createSecret({
         id,

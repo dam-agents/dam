@@ -34,6 +34,7 @@ const (
 	envoySecretTypeLabel  = "humr.ai/secret-type"
 	envoyHostPatternAnn   = "humr.ai/host-pattern"
 	envoyHeaderNameAnn    = "humr.ai/injection-header-name"
+	envoyAuthModeAnn      = "humr.ai/auth-mode"
 	envoyBootstrapVolume  = "envoy-bootstrap"
 	envoyBootstrapMount   = "/etc/envoy"
 	envoyCredentialsRoot   = "/etc/envoy/credentials"
@@ -83,6 +84,44 @@ func listOwnerCredentialSecrets(ctx context.Context, client kubernetes.Interface
 	items := append([]corev1.Secret(nil), list.Items...)
 	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
 	return items, nil
+}
+
+// credentialEnvVars synthesizes the env vars the agent harness needs to even
+// *attempt* an upstream call when the corresponding credential Secret exists.
+// Envoy's credential_injector overrides the header on the wire, but harnesses
+// like Claude Code refuse to dispatch when the canonical env is unset, so the
+// in-pod env has to carry a placeholder.
+//
+// The placeholder value is opaque to the upstream — Envoy overwrites it — so
+// any non-empty string works. We use the same `humr:sentinel` token the OneCLI
+// path used so logs stay grep-friendly across the migration.
+func credentialEnvVars(secrets []corev1.Secret) []corev1.EnvVar {
+	const sentinel = "humr:sentinel"
+	seen := map[string]struct{}{}
+	add := func(envs []corev1.EnvVar, name string) []corev1.EnvVar {
+		if _, dup := seen[name]; dup {
+			return envs
+		}
+		seen[name] = struct{}{}
+		return append(envs, corev1.EnvVar{Name: name, Value: sentinel})
+	}
+	var envs []corev1.EnvVar
+	for _, s := range secrets {
+		switch s.Labels[envoySecretTypeLabel] {
+		case "anthropic":
+			if s.Annotations[envoyAuthModeAnn] == "api-key" {
+				envs = add(envs, "ANTHROPIC_API_KEY")
+			} else {
+				envs = add(envs, "CLAUDE_CODE_OAUTH_TOKEN")
+			}
+		case "connection":
+			host := s.Annotations[envoyHostPatternAnn]
+			if host == "github.com" || host == "api.github.com" {
+				envs = add(envs, "GH_TOKEN")
+			}
+		}
+	}
+	return envs
 }
 
 // hasGitHubCredential reports whether any of the owner's K8s credential
