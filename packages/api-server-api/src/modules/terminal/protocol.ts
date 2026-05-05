@@ -18,12 +18,6 @@ export const OP_RESIZE = 0x02;
 /** Server → client: PTY process exited (1-byte payload: exit code). */
 export const OP_EXIT = 0x03;
 
-export type TerminalOpcode =
-  | typeof OP_INPUT
-  | typeof OP_OUTPUT
-  | typeof OP_RESIZE
-  | typeof OP_EXIT;
-
 /** Decoded terminal frame. */
 export type TerminalFrame =
   | { op: typeof OP_INPUT; data: Uint8Array }
@@ -72,7 +66,7 @@ export function decodeFrame(buf: Uint8Array): TerminalFrame {
   if (buf.byteLength === 0) {
     throw new Error("empty terminal frame");
   }
-  const op = buf[0] as TerminalOpcode;
+  const op = buf[0]!;
   const payload = buf.subarray(1);
 
   switch (op) {

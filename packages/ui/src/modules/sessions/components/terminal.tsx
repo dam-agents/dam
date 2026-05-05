@@ -2,7 +2,7 @@ import "@xterm/xterm/css/xterm.css";
 
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as XTerm } from "@xterm/xterm";
-import { OP_EXIT, OP_INPUT, OP_OUTPUT, OP_RESIZE } from "api-server-api";
+import { encodeDataFrame, encodeResize,OP_EXIT, OP_INPUT, OP_OUTPUT } from "api-server-api";
 import { Loader2, TerminalIcon, XCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -10,30 +10,10 @@ import { getAccessToken } from "../../../auth.js";
 
 type ConnectionState = "connecting" | "live" | "disconnected" | "exited";
 
-/** Build the WebSocket URL for the terminal relay. */
 async function terminalWsUrl(instanceId: string, sessionId: string): Promise<string> {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const token = await getAccessToken();
   return `${proto}//${location.host}/api/instances/${instanceId}/terminal?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(sessionId)}`;
-}
-
-/** Encode a data frame: opcode byte + payload. */
-function encodeData(op: number, data: string): ArrayBuffer {
-  const encoded = new TextEncoder().encode(data);
-  const frame = new Uint8Array(1 + encoded.byteLength);
-  frame[0] = op;
-  frame.set(encoded, 1);
-  return frame.buffer;
-}
-
-/** Encode a resize frame: opcode 0x02 + cols(u16BE) + rows(u16BE). */
-function encodeResize(cols: number, rows: number): ArrayBuffer {
-  const frame = new ArrayBuffer(5);
-  const view = new DataView(frame);
-  view.setUint8(0, OP_RESIZE);
-  view.setUint16(1, cols);
-  view.setUint16(3, rows);
-  return frame;
 }
 
 export function Terminal({ instanceId, sessionId }: { instanceId: string; sessionId: string }) {
@@ -109,7 +89,7 @@ export function Terminal({ instanceId, sessionId }: { instanceId: string; sessio
       ws.onopen = () => {
         if (cancelled) return;
         setState("live");
-        ws.send(encodeResize(term.cols, term.rows));
+        ws.send(encodeResize(term.cols, term.rows).buffer);
         term.focus();
       };
 
@@ -145,14 +125,14 @@ export function Terminal({ instanceId, sessionId }: { instanceId: string; sessio
       // Wire terminal input → WebSocket
       term.onData((data: string) => {
         if (ws.readyState === WebSocket.OPEN) {
-          ws.send(encodeData(OP_INPUT, data));
+          ws.send(encodeDataFrame(OP_INPUT, data));
         }
       });
 
       // Wire resize events
       term.onResize(({ cols, rows }: { cols: number; rows: number }) => {
         if (ws.readyState === WebSocket.OPEN) {
-          ws.send(encodeResize(cols, rows));
+          ws.send(encodeResize(cols, rows).buffer);
         }
       });
 

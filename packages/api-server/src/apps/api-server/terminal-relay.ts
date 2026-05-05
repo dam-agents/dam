@@ -15,38 +15,12 @@ import { LAST_ACTIVITY_KEY, ACTIVE_SESSION_KEY } from "../../modules/agents/infr
 
 const DEBOUNCE_MS = 30_000;
 
-const lastActivityTimestamps = new Map<string, number>();
-
-function shouldUpdateActivity(instanceId: string): boolean {
-  const now = Date.now();
-  const last = lastActivityTimestamps.get(instanceId) ?? 0;
-  if (now - last < DEBOUNCE_MS) return false;
-  lastActivityTimestamps.set(instanceId, now);
-  return true;
-}
-
-function sanitizeCloseCode(code: number): number {
-  if (code === 1000 || (code >= 1001 && code <= 1014 && code !== 1004 && code !== 1005 && code !== 1006)) return code;
-  if (code >= 3000 && code <= 4999) return code;
-  return 1011;
-}
-
-function connectUpstream(url: string): Promise<WebSocket> {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(url);
-    ws.on("open", () => resolve(ws));
-    ws.on("error", (err) => {
-      ws.close();
-      reject(err);
-    });
-  });
-}
-
 export function createTerminalRelay(
   namespace: string,
   repo: InstancesRepository,
 ) {
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
+  const lastActivityTimestamps = new Map<string, number>();
 
   function handleUpgrade(
     req: IncomingMessage,
@@ -54,8 +28,6 @@ export function createTerminalRelay(
     head: Buffer,
     instanceId: string,
   ) {
-    // Extract sessionId from the client's query string and forward it upstream
-    // so the agent-runtime can map each session to its own PTY process.
     const reqUrl = new URL(req.url!, `http://${req.headers.host}`);
     const sessionId = reqUrl.searchParams.get("sessionId") ?? "default";
 
@@ -75,9 +47,12 @@ export function createTerminalRelay(
       const upstreamUrl = `ws://${podBaseUrl(instanceId, namespace)}/api/terminal?sessionId=${encodeURIComponent(sessionId)}`;
 
       repo.ensureReady(instanceId)
-        .then(() => connectUpstream(upstreamUrl))
+        .then(() => new Promise<WebSocket>((resolve, reject) => {
+          const ws = new WebSocket(upstreamUrl);
+          ws.on("open", () => resolve(ws));
+          ws.on("error", (err) => { ws.close(); reject(err); });
+        }))
         .then((upstream) => {
-          // Flush buffered messages (usually the initial resize frame)
           for (const msg of pending) {
             if (upstream.readyState === WebSocket.OPEN) {
               upstream.send(msg.data, { binary: msg.isBinary });
@@ -91,12 +66,11 @@ export function createTerminalRelay(
             if (upstream.readyState === WebSocket.OPEN) {
               upstream.send(data, { binary: isBinary });
 
-              if (shouldUpdateActivity(instanceId)) {
-                repo.patchAnnotation(
-                  instanceId,
-                  LAST_ACTIVITY_KEY,
-                  new Date().toISOString(),
-                ).catch(() => {});
+              const now = Date.now();
+              const last = lastActivityTimestamps.get(instanceId) ?? 0;
+              if (now - last >= DEBOUNCE_MS) {
+                lastActivityTimestamps.set(instanceId, now);
+                repo.patchAnnotation(instanceId, LAST_ACTIVITY_KEY, new Date().toISOString()).catch(() => {});
               }
             }
           });
@@ -109,11 +83,10 @@ export function createTerminalRelay(
 
           upstream.on("close", (code, reason) => {
             if (client.readyState === WebSocket.OPEN) {
-              try {
-                client.close(sanitizeCloseCode(code), reason.toString() || "upstream closed");
-              } catch {
-                client.terminate();
-              }
+              // Sanitize close code: only pass through valid codes
+              const safeCode = (code === 1000 || (code >= 1001 && code <= 1014 && code !== 1004 && code !== 1005 && code !== 1006) || (code >= 3000 && code <= 4999))
+                ? code : 1011;
+              try { client.close(safeCode, reason.toString() || "upstream closed"); } catch { client.terminate(); }
             }
           });
 
@@ -125,9 +98,7 @@ export function createTerminalRelay(
 
           client.on("close", () => {
             repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "").catch(() => {});
-            if (upstream.readyState === WebSocket.OPEN) {
-              upstream.close();
-            }
+            if (upstream.readyState === WebSocket.OPEN) upstream.close();
           });
         })
         .catch((err) => {

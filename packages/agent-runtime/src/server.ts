@@ -67,14 +67,10 @@ const { runtime: acpRuntime } = composeAcp({
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
 });
 
-const terminalCommand = config.TERMINAL_COMMAND
-  ? config.TERMINAL_COMMAND.split(" ")
-  : process.env.SHELL
-    ? [process.env.SHELL]
-    : ["/bin/bash"];
-
 const ptyManager = createPtyManager({
-  command: terminalCommand,
+  command: config.TERMINAL_COMMAND
+    ? config.TERMINAL_COMMAND.split(" ")
+    : process.env.SHELL ? [process.env.SHELL] : ["/bin/bash"],
   workingDir: workDir,
   log: (msg) => process.stderr.write(`[pty] ${msg}\n`),
 });

@@ -92,7 +92,9 @@ export {
   OP_RESIZE,
   OP_EXIT,
   encodeDataFrame,
+  encodeResize,
   encodeExit,
+  decodeFrame,
 } from "./modules/terminal/protocol.js";
 export type {
   TerminalFrame,

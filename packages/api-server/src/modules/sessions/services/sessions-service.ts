@@ -5,7 +5,7 @@ export function createSessionsService(deps: {
   listByInstance: (instanceId: string) => Promise<{ sessionId: string; instanceId: string; type: string; mode: string; scheduleId: string | null; scheduleActive: boolean; createdAt: Date }[]>;
   listByScheduleId: (scheduleId: string) => Promise<{ sessionId: string; instanceId: string; type: string; mode: string; scheduleId: string | null; scheduleActive: boolean; createdAt: Date }[]>;
   findActiveByScheduleId: (scheduleId: string) => Promise<{ sessionId: string; instanceId: string; type: string; mode: string; scheduleId: string | null; createdAt: Date } | null>;
-  upsert: (sessionId: string, instanceId: string, type?: SessionType, scheduleId?: string, mode?: SessionMode) => Promise<void>;
+  upsert: (sessionId: string, instanceId: string, type?: SessionType, scheduleId?: string, threadTs?: string, mode?: SessionMode) => Promise<void>;
   delete: (sessionId: string, instanceId: string) => Promise<void>;
   isOwnedInstance: (instanceId: string) => Promise<boolean>;
   isOwnedSchedule: (scheduleId: string) => Promise<boolean>;
