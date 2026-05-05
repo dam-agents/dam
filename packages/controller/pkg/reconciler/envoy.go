@@ -245,13 +245,22 @@ func routesFromSecrets(secrets []corev1.Secret) []envoyRoute {
 //   3. The INTERNAL listener uses tls_inspector to read SNI. One filter chain
 //      per known host terminates TLS with that host's leaf cert; default
 //      filter chain (SNI miss) does TCP passthrough via sni_dynamic_forward_proxy.
-//   4. Inside a TLS-terminating chain, an HCM runs credential_injector + the
-//      HTTP dynamic_forward_proxy, which re-originates upstream TLS to the
-//      real host using the inner request's Host header.
+//   4. Inside a TLS-terminating chain, an HCM runs credential_injector and
+//      forwards to a per-credential STRICT_DNS cluster pinned to the
+//      credential's host. The agent's inner Host header has no influence on
+//      routing — Envoy's destination is fixed in config — so the
+//      route-confusion exfiltration path called out in ADR-033 §Threat Model
+//      is structurally closed. Allow-only chains (path-rule promoted, no
+//      credential) keep using dynamic_forward_proxy_https; they have no
+//      credential to misroute.
 //
 // Notes:
 //   - credential_injector lives at the HCM level (not per-route) because each
 //      filter chain's HCM is already host-specific. No composite filter needed.
+//   - Each credentialed cluster sets explicit upstream SNI and SAN-pinned
+//      validation against the credential's host, so a poisoned-DNS or
+//      misconfigured cluster fails the upstream TLS handshake before any
+//      credentialed body reaches the wire.
 //   - Upstream TLS validation uses Envoy's default system trust bundle; the
 //      sidecar image must ship one (envoy-distroless does).
 //   - Admin interface intentionally omitted (ADR-033 threat model: the agent
@@ -408,7 +417,22 @@ static_resources:
                       routes:
                         - match: { prefix: "/" }
                           route:
+{{- if .Credentialed }}
+                            # Pinned to a per-credential static cluster
+                            # (clusters list below). The agent's Host header
+                            # cannot steer this request to a different
+                            # upstream; the cluster's destination is fixed in
+                            # config. host_rewrite_literal additionally
+                            # canonicalises the upstream Host so honest
+                            # backends never see an agent-manipulated value.
+                            cluster: upstream_{{ .SecretName }}
+                            host_rewrite_literal: "{{ .Host }}"
+{{- else }}
+                            # Allow-only (path-rule promoted, no credential
+                            # injection). Forward via dynamic_forward_proxy;
+                            # no credential to misroute.
                             cluster: dynamic_forward_proxy_https
+{{- end }}
                             timeout: 0s
 {{- end }}
         # SNI miss: every other host hits the L4 ext_authz catch-all, which
@@ -509,6 +533,45 @@ static_resources:
           dns_cache_config:
             name: dns_cache
             dns_lookup_family: V4_PREFERRED
+
+{{- range .Routes }}
+{{- if .Credentialed }}
+
+    # Pinned upstream for the credentialed chain matching SNI={{ .Host }}.
+    # STRICT_DNS resolves {{ .Host }}:443 directly; the agent's Host header
+    # plays no role in destination selection. Upstream TLS hard-binds SNI
+    # and validates the upstream cert's SAN against {{ .Host }}, so even a
+    # poisoned cache or misrouted endpoint fails the handshake before any
+    # credentialed body is on the wire.
+    - name: upstream_{{ .SecretName }}
+      connect_timeout: 5s
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: upstream_{{ .SecretName }}
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: {{ .Host }}
+                      port_value: 443
+      transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+          sni: {{ .Host }}
+          auto_host_sni: false
+          common_tls_context:
+            validation_context:
+              trusted_ca:
+                filename: /etc/ssl/certs/ca-certificates.crt
+              match_typed_subject_alt_names:
+                - san_type: DNS
+                  matcher:
+                    exact: {{ .Host }}
+{{- end }}
+{{- end }}
 
     # Single gRPC ext_authz cluster: both Envoy filters (HTTP on
     # TLS-terminated chains, network on the catch-all) call the same
@@ -643,16 +706,23 @@ func envoySidecarVolumes(instanceName string, secrets []corev1.Secret) []corev1.
 
 func ptrBool(b bool) *bool { return &b }
 
+// envoyBootstrapTemplateRev is folded into envoySecretsRev so that
+// structural changes to the bootstrap template (new clusters, route shape
+// changes, etc.) force existing pods to roll on chart upgrade — without it,
+// the rendered ConfigMap diverges but the pod template stays identical and
+// kubelet keeps the old bootstrap mounted.
+//
+// Bump on any template change that affects pod-visible behavior.
+const envoyBootstrapTemplateRev = "v2-pinned-upstreams"
+
 // envoySecretsRev is a stable digest of the Secret set that drives Envoy's
-// chain rendering: secret name + host + secret-type label + headerName.
-// Stamped on the pod template so the StatefulSet rolls when any of those
-// change (new credentialed connection, allow-only Secret added, host
-// retargeted). Sort first so reconcile order doesn't churn the hash.
+// chain rendering: secret name + host + secret-type label + headerName,
+// plus a template-revision marker. Stamped on the pod template so the
+// StatefulSet rolls when any of those change (new credentialed connection,
+// allow-only Secret added, host retargeted, template format bumped). Sort
+// first so reconcile order doesn't churn the hash.
 func envoySecretsRev(secrets []corev1.Secret) string {
-	if len(secrets) == 0 {
-		return "empty"
-	}
-	parts := make([]string, 0, len(secrets))
+	parts := []string{"tmpl=" + envoyBootstrapTemplateRev}
 	for _, s := range secrets {
 		parts = append(parts, fmt.Sprintf("%s|%s|%s|%s",
 			s.Name,
@@ -661,7 +731,9 @@ func envoySecretsRev(secrets []corev1.Secret) string {
 			s.Annotations[envoyHeaderNameAnn],
 		))
 	}
-	sort.Strings(parts)
+	// Keep the template marker first; sort the rest so reconcile order
+	// doesn't churn the hash.
+	sort.Strings(parts[1:])
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\n")))
 	return hex.EncodeToString(sum[:8])
 }
