@@ -9,14 +9,14 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/kagenti/humr/packages/controller/pkg/config"
-	"github.com/kagenti/humr/packages/controller/pkg/types"
+	"github.com/kagenti/platform/packages/controller/pkg/config"
+	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
 var testConfig = &config.Config{
 	Namespace:         "test-agents",
 	ReleaseNamespace:  "default",
-	ReleaseName:       "humr",
+	ReleaseName:       "platform",
 	HarnessServerPort: 4001,
 	AgentHome:         "/home/agent",
 	EnvoyImage:        "envoyproxy/envoy:distroless-v1.37.2",
@@ -55,8 +55,8 @@ func credSecret(name, host string) corev1.Secret {
 	return corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
-			Annotations: map[string]string{"humr.ai/host-pattern": host, "humr.ai/injection-header-name": "Authorization"},
-			Labels:      map[string]string{"humr.ai/owner": "owner-1", "humr.ai/managed-by": "api-server"},
+			Annotations: map[string]string{"agent-platform.ai/host-pattern": host, "agent-platform.ai/injection-header-name": "Authorization"},
+			Labels:      map[string]string{"agent-platform.ai/owner": "owner-1", "agent-platform.ai/managed-by": "api-server"},
 		},
 		Data: map[string][]byte{"value": []byte("Bearer abc")},
 	}
@@ -80,7 +80,7 @@ func TestBuildStatefulSet_Running(t *testing.T) {
 	require.Len(t, ss.OwnerReferences, 1)
 	assert.Equal(t, "cm-uid-123", string(ss.OwnerReferences[0].UID))
 
-	assert.Equal(t, "my-instance", ss.Spec.Template.Labels["humr.ai/instance"])
+	assert.Equal(t, "my-instance", ss.Spec.Template.Labels["agent-platform.ai/instance"])
 
 	require.Len(t, ss.Spec.Template.Spec.Containers, 2, "agent + envoy sidecar")
 	c := ss.Spec.Template.Spec.Containers[0]
@@ -101,8 +101,8 @@ func TestBuildStatefulSet_Running(t *testing.T) {
 	for _, e := range c.Env {
 		assert.NotEqual(t, "AGENT_RUNTIME_TOKEN", e.Name)
 	}
-	assert.Equal(t, "/etc/humr/ca/ca.crt", envMap["SSL_CERT_FILE"])
-	assert.Equal(t, "/etc/humr/ca/ca.crt", envMap["NODE_EXTRA_CA_CERTS"])
+	assert.Equal(t, "/etc/platform/ca/ca.crt", envMap["SSL_CERT_FILE"])
+	assert.Equal(t, "/etc/platform/ca/ca.crt", envMap["NODE_EXTRA_CA_CERTS"])
 	assert.Equal(t, "my-instance", envMap["ADK_INSTANCE_ID"])
 	assert.Equal(t, "8080", envMap["ACP_PORT"])
 	assert.Equal(t, "alpha", envMap["GITHUB_ORG"])
@@ -165,12 +165,12 @@ func TestBuildStatefulSet_Volumes(t *testing.T) {
 	}
 	assert.Equal(t, "home-agent", mountPaths["/home/agent"])
 	assert.Equal(t, "tmp", mountPaths["/tmp"])
-	assert.Equal(t, "ca-cert", mountPaths["/etc/humr/ca"])
+	assert.Equal(t, "ca-cert", mountPaths["/etc/platform/ca"])
 }
 
 func TestBuildStatefulSet_PVCSize(t *testing.T) {
 	agent := types.AgentSpec{
-		Image: "humr-test:latest",
+		Image: "platform-test:latest",
 		Mounts: []types.Mount{
 			{Path: "/home/agent", Persist: true, Size: "2Gi"},
 			{Path: "/cache", Persist: true},
@@ -192,26 +192,26 @@ func TestBuildStatefulSet_PVCSize(t *testing.T) {
 
 func TestBuildStatefulSet_AgentStorageClass(t *testing.T) {
 	cfg := *testConfig
-	cfg.AgentStorageClass = "humr-rwx"
+	cfg.AgentStorageClass = "platform-rwx"
 	instance := &types.InstanceSpec{DesiredState: "running"}
 	ss := BuildStatefulSet("my-instance", instance, testAgent, &cfg, testOwnerCM, nil)
 
 	require.Len(t, ss.Spec.VolumeClaimTemplates, 1)
 	pvc := ss.Spec.VolumeClaimTemplates[0]
 	require.NotNil(t, pvc.Spec.StorageClassName)
-	assert.Equal(t, "humr-rwx", *pvc.Spec.StorageClassName)
+	assert.Equal(t, "platform-rwx", *pvc.Spec.StorageClassName)
 }
 
 func TestBuildStatefulSet_PodFilesEventsURL(t *testing.T) {
 	cfg := *testConfig
-	cfg.HarnessServerURL = "http://humr-apiserver.default.svc:4001"
+	cfg.HarnessServerURL = "http://platform-apiserver.default.svc:4001"
 	instance := &types.InstanceSpec{DesiredState: "running"}
 	ss := BuildStatefulSet("my-instance", instance, testAgent, &cfg, testOwnerCM, nil)
 
 	envMap := envToMap(ss.Spec.Template.Spec.Containers[0].Env)
 	assert.Equal(t,
-		"http://humr-apiserver.default.svc:4001/api/instances/my-instance/pod-files/events",
-		envMap["HUMR_POD_FILES_EVENTS_URL"])
+		"http://platform-apiserver.default.svc:4001/api/instances/my-instance/pod-files/events",
+		envMap["PLATFORM_POD_FILES_EVENTS_URL"])
 }
 
 func TestBuildStatefulSet_NoSecretRef(t *testing.T) {
@@ -229,7 +229,7 @@ func TestBuildService(t *testing.T) {
 	assert.Equal(t, corev1.ClusterIPNone, svc.Spec.ClusterIP)
 	assert.Equal(t, int32(8080), svc.Spec.Ports[0].Port)
 	assert.Equal(t, "acp", svc.Spec.Ports[0].Name)
-	assert.Equal(t, "my-instance", svc.Spec.Selector["humr.ai/instance"])
+	assert.Equal(t, "my-instance", svc.Spec.Selector["agent-platform.ai/instance"])
 	require.Len(t, svc.OwnerReferences, 1)
 }
 
@@ -239,7 +239,7 @@ func TestBuildNetworkPolicy(t *testing.T) {
 	np := BuildNetworkPolicy("my-instance", testConfig, testOwnerCM)
 	assert.Equal(t, "my-instance-egress", np.Name)
 	assert.Equal(t, "test-agents", np.Namespace)
-	assert.Equal(t, "my-instance", np.Spec.PodSelector.MatchLabels["humr.ai/instance"])
+	assert.Equal(t, "my-instance", np.Spec.PodSelector.MatchLabels["agent-platform.ai/instance"])
 	require.Len(t, np.OwnerReferences, 1)
 
 	// Sidecar permissive 80/443, ext_authz to api-server, harness to api-server, DNS.
@@ -295,7 +295,7 @@ func envToMap(envs []corev1.EnvVar) map[string]string {
 
 func TestBuildStatefulSet_AddsEnvoySidecar(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	secrets := []corev1.Secret{credSecret("humr-cred-aaa", "api.example.com")}
+	secrets := []corev1.Secret{credSecret("platform-cred-aaa", "api.example.com")}
 	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, secrets)
 
 	require.Len(t, ss.Spec.Template.Spec.Containers, 2, "agent + envoy sidecar")
@@ -313,14 +313,14 @@ func TestBuildStatefulSet_AddsEnvoySidecar(t *testing.T) {
 	for _, v := range ss.Spec.Template.Spec.Volumes {
 		volNames[v.Name] = true
 	}
-	require.True(t, volNames["cred-humr-cred-aaa"], "credential volume must use cred-<secretName>")
+	require.True(t, volNames["cred-platform-cred-aaa"], "credential volume must use cred-<secretName>")
 	require.True(t, volNames["envoy-tls"], "leaf-TLS volume must be present")
 
 	envoyMounts := map[string]string{}
 	for _, m := range envoy.VolumeMounts {
 		envoyMounts[m.Name] = m.MountPath
 	}
-	assert.Equal(t, "/etc/envoy/credentials/cred-humr-cred-aaa", envoyMounts["cred-humr-cred-aaa"])
+	assert.Equal(t, "/etc/envoy/credentials/cred-platform-cred-aaa", envoyMounts["cred-platform-cred-aaa"])
 	assert.Equal(t, "/etc/envoy/tls", envoyMounts["envoy-tls"])
 }
 
@@ -329,22 +329,22 @@ func TestBuildStatefulSet_GHTokenSignal_NoCredential(t *testing.T) {
 	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil)
 
 	envMap := envToMap(ss.Spec.Template.Spec.Containers[0].Env)
-	assert.Equal(t, "false", envMap["HUMR_GH_TOKEN_AVAILABLE"])
-	assert.Equal(t, "false", ss.Spec.Template.Annotations["humr.ai/gh-token-available"])
+	assert.Equal(t, "false", envMap["PLATFORM_GH_TOKEN_AVAILABLE"])
+	assert.Equal(t, "false", ss.Spec.Template.Annotations["agent-platform.ai/gh-token-available"])
 }
 
 func TestBuildStatefulSet_GHTokenSignal_WithCredential(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	secrets := []corev1.Secret{credSecret("humr-cred-gh", "api.github.com")}
+	secrets := []corev1.Secret{credSecret("platform-cred-gh", "api.github.com")}
 	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, secrets)
 
 	envMap := envToMap(ss.Spec.Template.Spec.Containers[0].Env)
-	assert.Equal(t, "true", envMap["HUMR_GH_TOKEN_AVAILABLE"])
-	assert.Equal(t, "true", ss.Spec.Template.Annotations["humr.ai/gh-token-available"])
+	assert.Equal(t, "true", envMap["PLATFORM_GH_TOKEN_AVAILABLE"])
+	assert.Equal(t, "true", ss.Spec.Template.Annotations["agent-platform.ai/gh-token-available"])
 }
 
 func TestBuildStatefulSet_SecretMountsSidecarOnly(t *testing.T) {
-	secrets := []corev1.Secret{credSecret("humr-cred-aaa", "api.example.com")}
+	secrets := []corev1.Secret{credSecret("platform-cred-aaa", "api.example.com")}
 	instance := &types.InstanceSpec{DesiredState: "running"}
 	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, secrets)
 
@@ -353,11 +353,11 @@ func TestBuildStatefulSet_SecretMountsSidecarOnly(t *testing.T) {
 		volNames[v.Name] = true
 	}
 	assert.True(t, volNames["envoy-bootstrap"])
-	assert.True(t, volNames["cred-humr-cred-aaa"])
+	assert.True(t, volNames["cred-platform-cred-aaa"])
 
 	agentMounts := ss.Spec.Template.Spec.Containers[0].VolumeMounts
 	for _, m := range agentMounts {
-		assert.NotEqual(t, "cred-humr-cred-aaa", m.Name, "agent container must not mount credential secrets")
+		assert.NotEqual(t, "cred-platform-cred-aaa", m.Name, "agent container must not mount credential secrets")
 		assert.NotEqual(t, "envoy-bootstrap", m.Name, "agent container must not mount the envoy bootstrap CM")
 	}
 
@@ -366,7 +366,7 @@ func TestBuildStatefulSet_SecretMountsSidecarOnly(t *testing.T) {
 		envoyMounts[m.Name] = true
 	}
 	assert.True(t, envoyMounts["envoy-bootstrap"])
-	assert.True(t, envoyMounts["cred-humr-cred-aaa"])
+	assert.True(t, envoyMounts["cred-platform-cred-aaa"])
 	assert.True(t, envoyMounts["envoy-tls"])
 
 	// Agent's ca-cert volume is now projected from the leaf Secret, exposing
@@ -396,7 +396,7 @@ func TestBuildStatefulSet_PodHardening(t *testing.T) {
 }
 
 func TestBuildEnvoyBootstrapConfigMap(t *testing.T) {
-	secrets := []corev1.Secret{credSecret("humr-cred-aaa", "api.example.com")}
+	secrets := []corev1.Secret{credSecret("platform-cred-aaa", "api.example.com")}
 	cm, err := BuildEnvoyBootstrapConfigMap("my-instance", testConfig, testOwnerCM, secrets)
 	require.NoError(t, err)
 	assert.Equal(t, "my-instance-envoy-bootstrap", cm.Name)
@@ -404,7 +404,7 @@ func TestBuildEnvoyBootstrapConfigMap(t *testing.T) {
 	yaml := cm.Data["envoy.yaml"]
 	assert.Contains(t, yaml, "127.0.0.1")
 	assert.Contains(t, yaml, "api.example.com", "filter chain must match by SNI on the host")
-	assert.Contains(t, yaml, "/etc/envoy/credentials/cred-humr-cred-aaa/sds.yaml")
+	assert.Contains(t, yaml, "/etc/envoy/credentials/cred-platform-cred-aaa/sds.yaml")
 	assert.Contains(t, yaml, "internal_listener", "must declare an internal listener")
 	assert.Contains(t, yaml, "envoy.bootstrap.internal_listener", "must enable the internal_listener bootstrap extension")
 	assert.Contains(t, yaml, "tls_inspector", "internal listener must inspect SNI")

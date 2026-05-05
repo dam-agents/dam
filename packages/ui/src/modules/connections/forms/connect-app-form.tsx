@@ -136,7 +136,7 @@ export function ConnectAppForm({ app, onCancel }: Props) {
             return;
           }
           if (data.authUrl) {
-            sessionStorage.setItem("humr-return-view", "connections");
+            sessionStorage.setItem("platform-return-view", "connections");
             window.location.href = data.authUrl;
           }
         },

@@ -1,6 +1,6 @@
 import { skipToken, useQuery } from "@tanstack/react-query";
 
-import { platform } from "../../../platform.js";
+import { api } from "../../../api.js";
 
 export const egressRulesKeys = {
   all: ["egress-rules"] as const,
@@ -13,7 +13,7 @@ export function useEgressRulesForAgent(agentId: string | null) {
   return useQuery({
     queryKey: egressRulesKeys.forAgent(agentId),
     queryFn: agentId
-      ? () => platform.egressRules.listForAgent.query({ agentId })
+      ? () => api.egressRules.listForAgent.query({ agentId })
       : skipToken,
     meta: { errorToast: "Couldn't load egress rules" },
   });
@@ -25,7 +25,7 @@ export function useCurrentPreset(agentId: string | null) {
   return useQuery({
     queryKey: egressRulesKeys.currentPreset(agentId),
     queryFn: agentId
-      ? () => platform.egressRules.currentPreset.query({ agentId })
+      ? () => api.egressRules.currentPreset.query({ agentId })
       : skipToken,
   });
 }
@@ -36,7 +36,7 @@ export function useCurrentPreset(agentId: string | null) {
 export function useTrustedHosts() {
   return useQuery({
     queryKey: [...egressRulesKeys.all, "trusted-hosts"] as const,
-    queryFn: () => platform.egressRules.trustedHosts.query(),
+    queryFn: () => api.egressRules.trustedHosts.query(),
     staleTime: 5 * 60_000,
   });
 }

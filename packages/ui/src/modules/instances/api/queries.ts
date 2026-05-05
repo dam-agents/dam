@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { platform } from "../../../platform.js";
+import { api } from "../../../api.js";
 import type { InstanceView } from "../../../types.js";
 
 export const instancesKeys = {
@@ -18,8 +18,8 @@ export function useInstances() {
     queryKey: instancesKeys.listWithChannels(),
     queryFn: async () => {
       const [list, availableChannels] = await Promise.all([
-        platform.instances.list.query(),
-        platform.channels.available.query(),
+        api.instances.list.query(),
+        api.channels.available.query(),
       ]);
       return { list, availableChannels };
     },

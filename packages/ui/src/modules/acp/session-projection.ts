@@ -5,7 +5,7 @@ import type { Message, MessagePart, ToolChip } from "../../types.js";
 
 /**
  * Unified session projection — applies ACP `sessionUpdate` notifications (and
- * our synthetic `humr_turn_ended`) to a message list. Pure: no DOM, no refs,
+ * our synthetic `platform_turn_ended`) to a message list. Pure: no DOM, no refs,
  * no side effects. Used by both live streaming and history replay so the two
  * paths can't drift.
  *
@@ -13,7 +13,7 @@ import type { Message, MessagePart, ToolChip } from "../../types.js";
  * streaming, non-queued assistant after the last user. `sendPrompt` appends
  * an assistant bubble with `queued: true` while a prior turn is in flight;
  * the first agent content arriving for that prompt promotes the queued
- * bubble to active. Turn boundaries (`humr_turn_ended`, or a fresh
+ * bubble to active. Turn boundaries (`platform_turn_ended`, or a fresh
  * `user_message_chunk`) close the active bubble, so the next agent content
  * picks the earliest remaining queued bubble (or opens one on demand).
  */
@@ -66,10 +66,10 @@ function parseUserText(text: string): MessagePart[] {
 
 export function applyUpdate(messages: Message[], update: any): Message[] {
   switch (update?.sessionUpdate) {
-    case "humr_turn_ended":
+    case "platform_turn_ended":
       return closeActiveAssistant(messages);
 
-    case "humr_clipped_replay":
+    case "platform_clipped_replay":
       return appendNotice(messages, "Older conversation not loaded");
 
     case "user_message_chunk":

@@ -1,5 +1,5 @@
 import type { StateCreator } from "zustand";
-import type { HumrStore } from "../store.js";
+import type { PlatformStore } from "../store.js";
 
 export interface LoadingState {
   session: boolean;
@@ -10,7 +10,7 @@ export interface LoadingSlice {
   setLoadingSession: (loading: boolean) => void;
 }
 
-export const createLoadingSlice: StateCreator<HumrStore, [], [], LoadingSlice> = (set) => ({
+export const createLoadingSlice: StateCreator<PlatformStore, [], [], LoadingSlice> = (set) => ({
   loading: { session: false },
   setLoadingSession: (loading) => set((s) => ({ loading: { ...s.loading, session: loading } })),
 });

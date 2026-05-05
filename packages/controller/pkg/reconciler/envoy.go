@@ -15,7 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/client-go/kubernetes"
 
-	"github.com/kagenti/humr/packages/controller/pkg/config"
+	"github.com/kagenti/platform/packages/controller/pkg/config"
 )
 
 // Envoy sidecar wiring for the experimental credential-injector path (ADR-033).
@@ -29,20 +29,20 @@ import (
 // bootstrap ConfigMap and roll the StatefulSet.
 
 const (
-	envoyOwnerLabel       = "humr.ai/owner"
-	envoyManagedByLabel   = "humr.ai/managed-by"
-	envoySecretTypeLabel  = "humr.ai/secret-type"
-	envoyConnectionLabel  = "humr.ai/connection"
-	envoyHostPatternAnn   = "humr.ai/host-pattern"
-	envoyHeaderNameAnn    = "humr.ai/injection-header-name"
-	envoyAuthModeAnn      = "humr.ai/auth-mode"
+	envoyOwnerLabel       = "agent-platform.ai/owner"
+	envoyManagedByLabel   = "agent-platform.ai/managed-by"
+	envoySecretTypeLabel  = "agent-platform.ai/secret-type"
+	envoyConnectionLabel  = "agent-platform.ai/connection"
+	envoyHostPatternAnn   = "agent-platform.ai/host-pattern"
+	envoyHeaderNameAnn    = "agent-platform.ai/injection-header-name"
+	envoyAuthModeAnn      = "agent-platform.ai/auth-mode"
 	// Per-agent grant annotations stamped by the api-server on the
 	// instance ConfigMap. The controller reads them on every reconcile
 	// and intersects with the owner's credential Secret list.
-	grantSecretModeAnn        = "humr.ai/secret-mode"
-	grantSecretIdsAnn         = "humr.ai/granted-secret-ids"
-	grantConnectionIdsAnn     = "humr.ai/granted-connection-ids"
-	credentialSecretNamePrefix = "humr-cred-"
+	grantSecretModeAnn        = "agent-platform.ai/secret-mode"
+	grantSecretIdsAnn         = "agent-platform.ai/granted-secret-ids"
+	grantConnectionIdsAnn     = "agent-platform.ai/granted-connection-ids"
+	credentialSecretNamePrefix = "platform-cred-"
 	envoyBootstrapVolume  = "envoy-bootstrap"
 	envoyBootstrapMount   = "/etc/envoy"
 	envoyCredentialsRoot   = "/etc/envoy/credentials"
@@ -91,12 +91,12 @@ func listAgentCredentialSecrets(ctx context.Context, client kubernetes.Interface
 // filterByGrants narrows the owner's credential Secret list using the agent's
 // grant annotations. Two independent dimensions:
 //
-//   - Regular secrets (`humr.ai/secret-type` ∈ {anthropic, generic}): governed
-//     by `humr.ai/secret-mode`. Absent or "all" → every Secret is granted;
-//     "selective" → only Secrets whose id (the suffix after `humr-cred-`) is
-//     listed in `humr.ai/granted-secret-ids`.
-//   - Connection secrets (`humr.ai/secret-type` = connection): governed by
-//     `humr.ai/granted-connection-ids`. Absent → every connection is granted
+//   - Regular secrets (`agent-platform.ai/secret-type` ∈ {anthropic, generic}): governed
+//     by `agent-platform.ai/secret-mode`. Absent or "all" → every Secret is granted;
+//     "selective" → only Secrets whose id (the suffix after `platform-cred-`) is
+//     listed in `agent-platform.ai/granted-secret-ids`.
+//   - Connection secrets (`agent-platform.ai/secret-type` = connection): governed by
+//     `agent-platform.ai/granted-connection-ids`. Absent → every connection is granted
 //     (legacy default); present (even empty) → only connection keys listed.
 func filterByGrants(secrets []corev1.Secret, ann map[string]string) []corev1.Secret {
 	secretMode := ann[grantSecretModeAnn]
@@ -164,10 +164,10 @@ func listOwnerCredentialSecrets(ctx context.Context, client kubernetes.Interface
 // in-pod env has to carry a placeholder.
 //
 // The placeholder value is opaque to the upstream — Envoy overwrites it — so
-// any non-empty string works. We use a stable `humr:sentinel` token so logs
-// stay grep-friendly.
+// any non-empty string works. We use a stable `dummy-placeholder` token so
+// logs stay grep-friendly.
 func credentialEnvVars(secrets []corev1.Secret) []corev1.EnvVar {
-	const sentinel = "humr:sentinel"
+	const sentinel = "dummy-placeholder"
 	seen := map[string]struct{}{}
 	add := func(envs []corev1.EnvVar, name string) []corev1.EnvVar {
 		if _, dup := seen[name]; dup {
@@ -258,8 +258,8 @@ func routesFromSecrets(secrets []corev1.Secret) []envoyRoute {
 //      shares the network namespace).
 
 const envoyBootstrapTmpl = `node:
-  id: humr-credential-injector
-  cluster: humr-credential-injector
+  id: platform-credential-injector
+  cluster: platform-credential-injector
 bootstrap_extensions:
   - name: envoy.bootstrap.internal_listener
     typed_config:
@@ -292,7 +292,7 @@ static_resources:
                         envoy_grpc:
                           cluster_name: ext_authz_cluster
                         initial_metadata:
-                          - { key: x-humr-instance, value: "{{ $.InstanceID }}" }
+                          - { key: x-platform-instance, value: "{{ $.InstanceID }}" }
                         timeout: {{ $.ExtAuthzTimeoutSeconds }}s
                   - name: envoy.filters.http.dynamic_forward_proxy
                     typed_config:
@@ -373,7 +373,7 @@ static_resources:
                         envoy_grpc:
                           cluster_name: ext_authz_cluster
                         initial_metadata:
-                          - { key: x-humr-instance, value: "{{ $.InstanceID }}" }
+                          - { key: x-platform-instance, value: "{{ $.InstanceID }}" }
                         timeout: {{ $.ExtAuthzTimeoutSeconds }}s
 {{- if .Credentialed }}
                   - name: envoy.filters.http.credential_injector
@@ -433,7 +433,7 @@ static_resources:
                   envoy_grpc:
                     cluster_name: ext_authz_cluster
                   initial_metadata:
-                    - { key: x-humr-instance, value: "{{ $.InstanceID }}" }
+                    - { key: x-platform-instance, value: "{{ $.InstanceID }}" }
                   timeout: {{ $.ExtAuthzTimeoutSeconds }}s
             - name: envoy.filters.network.sni_dynamic_forward_proxy
               typed_config:
@@ -586,7 +586,7 @@ func BuildEnvoyBootstrapConfigMap(instanceName string, cfg *config.Config, owner
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      EnvoyBootstrapName(instanceName),
 			Namespace: cfg.Namespace,
-			Labels:    map[string]string{"humr.ai/instance": instanceName},
+			Labels:    map[string]string{"agent-platform.ai/instance": instanceName},
 			OwnerReferences: []metav1.OwnerReference{
 				*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
 			},

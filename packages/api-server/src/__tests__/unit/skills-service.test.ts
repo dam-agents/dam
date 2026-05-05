@@ -62,7 +62,7 @@ function makeAgent(skillPaths?: string[]): Agent {
     id: AGENT_ID,
     name: "a",
     spec: {
-      version: "humr.ai/v1",
+      version: "agent-platform.ai/v1",
       name: "a",
       image: "x",
       ...(skillPaths ? { skillPaths } : {}),
@@ -161,6 +161,7 @@ function makeEnv(opts: {
     scanSource: vi.fn<(u: string, s: (u: string) => Promise<Skill[]>) => Promise<Skill[]>>().mockResolvedValue([]),
     invalidateScan: vi.fn(),
     scanPublic: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
+    brandName: "TestBrand",
   });
 
   return { instancesGet, agentsGet, runtimeInstall, runtimeUninstall, instanceSkillsRepo, svc };
@@ -313,6 +314,7 @@ describe("skills-service listLocal", () => {
       scanSource: vi.fn<(u: string, s: (u: string) => Promise<Skill[]>) => Promise<Skill[]>>().mockResolvedValue([]),
       invalidateScan: vi.fn(),
       scanPublic: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
+      brandName: "TestBrand",
     });
 
     const result = await svc.listLocal(INSTANCE_ID);
@@ -348,6 +350,7 @@ describe("skills-service listLocal", () => {
       scanSource: vi.fn<(u: string, s: (u: string) => Promise<Skill[]>) => Promise<Skill[]>>().mockResolvedValue([]),
       invalidateScan: vi.fn(),
       scanPublic: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
+      brandName: "TestBrand",
     });
 
     expect(await svc.listLocal(INSTANCE_ID)).toEqual([]);
@@ -373,6 +376,7 @@ describe("skills-service listLocal", () => {
       scanSource: vi.fn<(u: string, s: (u: string) => Promise<Skill[]>) => Promise<Skill[]>>().mockResolvedValue([]),
       invalidateScan: vi.fn(),
       scanPublic: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
+      brandName: "TestBrand",
     });
 
     expect(await svc.listLocal("ghost")).toEqual([]);
@@ -418,6 +422,7 @@ describe("skills-service listSkills routing", () => {
       scanSource: scanCache,
       invalidateScan: vi.fn(),
       scanPublic: opts.publicScan,
+      brandName: "TestBrand",
     });
   }
 
@@ -508,7 +513,7 @@ describe("skills-service listSkills routing", () => {
               id: templateId,
               name: templateName,
               spec: {
-                version: "humr.ai/v1",
+                version: "agent-platform.ai/v1",
                 image: "x",
                 skillSources: [{ name: "GW Skills", gitUrl: templateUrl }],
               },
@@ -540,6 +545,7 @@ describe("skills-service listSkills routing", () => {
       scanSource: scanCache,
       invalidateScan: vi.fn(),
       scanPublic: publicScan,
+      brandName: "TestBrand",
     });
 
     const id = templateSourceId(templateId, templateUrl);
@@ -581,6 +587,7 @@ describe("skills-service getState (ghost reconciliation)", () => {
       scanSource: vi.fn<(u: string, s: (u: string) => Promise<Skill[]>) => Promise<Skill[]>>().mockResolvedValue([]),
       invalidateScan: vi.fn(),
       scanPublic: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
+      brandName: "TestBrand",
     });
     return { svc, instancesGet, runtimeClient, instanceSkillsRepo };
   }
@@ -666,6 +673,7 @@ describe("skills-service deleteSource", () => {
       scanSource: vi.fn<(u: string, s: (u: string) => Promise<Skill[]>) => Promise<Skill[]>>().mockResolvedValue([]),
       invalidateScan: vi.fn(),
       scanPublic: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
+      brandName: "TestBrand",
     });
 
     await expect(svc.deleteSource("skill-src-seed-foo")).rejects.toMatchObject({
@@ -687,6 +695,7 @@ describe("skills-service deleteSource", () => {
       scanSource: vi.fn<(u: string, s: (u: string) => Promise<Skill[]>) => Promise<Skill[]>>().mockResolvedValue([]),
       invalidateScan: vi.fn(),
       scanPublic: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
+      brandName: "TestBrand",
     });
 
     await expect(svc.deleteSource("template:tmpl-x:abcdef012345")).rejects.toMatchObject({
@@ -718,6 +727,7 @@ describe("skills-service deleteSource", () => {
       scanSource: vi.fn<(u: string, s: (u: string) => Promise<Skill[]>) => Promise<Skill[]>>().mockResolvedValue([]),
       invalidateScan: vi.fn(),
       scanPublic: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
+      brandName: "TestBrand",
     });
 
     await svc.deleteSource(SOURCE.id);
@@ -757,7 +767,7 @@ describe("skills-service listSources", () => {
         id: AGENT_ID,
         name: "a",
         templateId: templateId ?? undefined,
-        spec: { version: "humr.ai/v1", name: "a", image: "x" },
+        spec: { version: "agent-platform.ai/v1", name: "a", image: "x" },
       } as Agent),
     } as unknown as AgentsRepository;
 
@@ -783,6 +793,7 @@ describe("skills-service listSources", () => {
       scanSource: vi.fn<(u: string, s: (u: string) => Promise<Skill[]>) => Promise<Skill[]>>().mockResolvedValue([]),
       invalidateScan: vi.fn(),
       scanPublic: vi.fn<(u: string) => Promise<Skill[]>>().mockResolvedValue([]),
+      brandName: "TestBrand",
     });
 
     return { svc, templatesGet };
@@ -792,7 +803,7 @@ describe("skills-service listSources", () => {
     id: TEMPLATE_ID,
     name: TEMPLATE_NAME,
     spec: {
-      version: "humr.ai/v1",
+      version: "agent-platform.ai/v1",
       image: "x",
       skillSources: [
         { name: "GW Skills", gitUrl: TEMPLATE_URL },
@@ -886,7 +897,7 @@ describe("skills-service listSources", () => {
       id: TEMPLATE_ID,
       name: TEMPLATE_NAME,
       spec: {
-        version: "humr.ai/v1",
+        version: "agent-platform.ai/v1",
         image: "x",
         skillSources: [
           { name: "Zeta", gitUrl: "https://github.com/t/z" },

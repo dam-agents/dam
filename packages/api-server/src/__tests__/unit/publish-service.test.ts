@@ -60,7 +60,7 @@ function makeDeps() {
     listLocal: vi.fn(),
     publish: vi.fn().mockResolvedValue({
       prUrl: "https://github.com/foo/bar/pull/1",
-      branch: "humr/publish-demo-20260101000000",
+      branch: "platform/publish-demo-20260101000000",
     }),
     scan: vi.fn().mockResolvedValue([]),
   };
@@ -74,6 +74,7 @@ function makeDeps() {
       instanceSkills,
       agents,
       runtimeClient,
+      brandName: "TestBrand",
     },
     runtimeClient,
     resolveSource,
@@ -155,7 +156,7 @@ describe("publishSkill — thin proxy", () => {
     await expect(publishSkill(deps, input)).rejects.toMatchObject({ code: "NOT_IMPLEMENTED" });
   });
 
-  it("translates upstream 'app_not_connected' to a PRECONDITION_FAILED with humr-cta: URL", async () => {
+  it("translates upstream 'app_not_connected' to a PRECONDITION_FAILED with platform-cta: URL", async () => {
     const { deps, runtimeClient } = makeDeps();
     (runtimeClient.publish as any) = vi.fn().mockRejectedValue(
       new AgentRuntimeUpstreamError("agent-runtime error", {
@@ -175,7 +176,7 @@ describe("publishSkill — thin proxy", () => {
 
     // The message should carry the CTA URL so the UI can parse it out.
     const err = (await publishSkill(deps, input).catch((e) => e)) as TRPCError;
-    expect(err.message).toContain("humr-cta:http://localhost:4444/connections?connect=github");
+    expect(err.message).toContain("platform-cta:http://localhost:4444/connections?connect=github");
   });
 
   it("translates upstream 'access_restricted' (agent not granted) similarly with manage_url", async () => {
@@ -195,6 +196,6 @@ describe("publishSkill — thin proxy", () => {
     const err = (await publishSkill(deps, input).catch((e) => e)) as TRPCError;
     expect(err).toBeInstanceOf(TRPCError);
     expect(err.code).toBe("PRECONDITION_FAILED");
-    expect(err.message).toContain("humr-cta:http://localhost:4444/agents?manage=abc");
+    expect(err.message).toContain("platform-cta:http://localhost:4444/agents?manage=abc");
   });
 });

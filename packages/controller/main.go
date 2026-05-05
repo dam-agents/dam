@@ -25,9 +25,9 @@ import (
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/client-go/util/workqueue"
 
-	"github.com/kagenti/humr/packages/controller/pkg/config"
-	"github.com/kagenti/humr/packages/controller/pkg/reconciler"
-	"github.com/kagenti/humr/packages/controller/pkg/scheduler"
+	"github.com/kagenti/platform/packages/controller/pkg/config"
+	"github.com/kagenti/platform/packages/controller/pkg/reconciler"
+	"github.com/kagenti/platform/packages/controller/pkg/scheduler"
 )
 
 func main() {
@@ -88,7 +88,7 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	factory := informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second,
 		informers.WithNamespace(cfg.Namespace),
 		informers.WithTweakListOptions(func(opts *metav1.ListOptions) {
-			opts.LabelSelector = "humr.ai/type"
+			opts.LabelSelector = "agent-platform.ai/type"
 		}),
 	)
 
@@ -133,7 +133,7 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 					return
 				}
 			}
-			cmType := cm.Labels["humr.ai/type"]
+			cmType := cm.Labels["agent-platform.ai/type"]
 			switch cmType {
 			case "agent-instance":
 				instanceReconciler.Delete(ctx, cm.Name)
@@ -167,7 +167,7 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 				return
 			}
 
-			cmType := cm.Labels["humr.ai/type"]
+			cmType := cm.Labels["agent-platform.ai/type"]
 			switch cmType {
 			case "agent-instance":
 				if err := instanceReconciler.Reconcile(ctx, cm); err != nil {

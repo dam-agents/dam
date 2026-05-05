@@ -4,7 +4,7 @@ import { emitToast } from "./toast-sink.js";
  * Sentinel returned from `runAction` on failure. Distinct from `undefined` so
  * callers can safely use `runAction` with mutations that resolve to void.
  */
-export const ACTION_FAILED: unique symbol = Symbol("humr:ACTION_FAILED");
+export const ACTION_FAILED: unique symbol = Symbol("platform:ACTION_FAILED");
 export type ActionResult<T> = T | typeof ACTION_FAILED;
 
 /**

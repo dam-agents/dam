@@ -65,7 +65,7 @@ flowchart LR
   MCP --> CM
 ```
 
-Bot and App-Level Tokens come from Helm values and live in api-server env — no per-instance Secret. The workspace-wide identity-link table backs the `/humr login` flow, and the relay path branches between the main pod and a per-turn fork pod by replier identity ([security-and-credentials](security-and-credentials.md)).
+Bot and App-Level Tokens come from Helm values and live in api-server env — no per-instance Secret. The workspace-wide identity-link table backs the `/platform login` flow, and the relay path branches between the main pod and a per-turn fork pod by replier identity ([security-and-credentials](security-and-credentials.md)).
 
 ### Telegram — per-instance channel
 
@@ -104,7 +104,7 @@ flowchart LR
   MCP --> CM
 ```
 
-The bot token lives in a per-instance k8s Secret (`humr-channel-telegram-<instanceId>`); there is no workspace identity to link, so authorization is per-conversation in `telegram_threads`. The relay path is single-track — the main pod handles every turn, no foreign-replier fork.
+The bot token lives in a per-instance k8s Secret (`platform-channel-telegram-<instanceId>`); there is no workspace identity to link, so authorization is per-conversation in `telegram_threads`. The relay path is single-track — the main pod handles every turn, no foreign-replier fork.
 
 ## Adapters
 
@@ -114,14 +114,14 @@ Both workers implement the same internal contract — `start`, `stop`, `stopAll`
 
 - **Transport.** Socket Mode, one workspace-level WebSocket from the api-server to Slack. The api-server has no inbound network access requirement; events arrive over the socket the api-server itself opened. Slack caps Socket Mode at ten concurrent connections per app, which is the install-level scale ceiling for Slack ([ADR-018](../adrs/018-slack-integration.md)).
 - **Token provenance.** App-Level Token (`xapp-…`) and Bot Token come from Helm values, set at install time. Not stored per-instance.
-- **Identity linking.** A `/humr login` slash command starts a Keycloak OAuth flow; on callback the api-server stores `slack_user_id ↔ keycloak_sub`. All subsequent interactions require a linked identity; unlinked users get an ephemeral prompt to log in. The link table is the source of truth for "who is this Slack user in Humr terms."
+- **Identity linking.** A `/platform login` slash command starts a Keycloak OAuth flow; on callback the api-server stores `slack_user_id ↔ keycloak_sub`. All subsequent interactions require a linked identity; unlinked users get an ephemeral prompt to log in. The link table is the source of truth for "who is this Slack user in Platform terms."
 - **Access control.** Two tiers ([ADR-018 §3](../adrs/018-slack-integration.md)). Channel membership is the coarse gate — users must be in the Slack channel to see the bot's interactions. Per-instance allowed users is the fine gate — each instance optionally declares the subs that may *trigger* work; non-listed users in the channel still see responses but cannot drive a session. Combined with foreign-replier forking ([ADR-027](../adrs/027-slack-user-impersonation.md)), this lets a thread have multiple authorized drivers whose actions land under their own identities.
 - **Instance selection per thread.** When a user posts in a channel, the worker checks which instances they have access to in that channel. One match → route directly. Multiple matches → emit an `external_select` block that lazy-loads from the api-server. The selected instance is stored as `thread_ts → instance_id` in memory; once a thread is bound to an instance, every subsequent message in the thread goes to the same instance.
 
 ### Telegram — per-instance channel
 
 - **Transport.** Long-poll `getUpdates`. Each instance has its own bot, so the api-server runs one Telegram client per active Telegram-connected instance.
-- **Token provenance.** The instance owner creates a bot via `@BotFather` and pastes the token in the UI. The api-server writes it to a k8s Secret named `humr-channel-telegram-<instanceId>` with `humr.ai/type=channel-secret` ([ADR-029](../adrs/029-per-instance-channels.md)). The token never round-trips to the UI on read paths and never traverses the in-process event bus — `TelegramConnected` carries only `instanceId`, and the worker reads the token from the Secret store at start time.
+- **Token provenance.** The instance owner creates a bot via `@BotFather` and pastes the token in the UI. The api-server writes it to a k8s Secret named `platform-channel-telegram-<instanceId>` with `platform.ai/type=channel-secret` ([ADR-029](../adrs/029-per-instance-channels.md)). The token never round-trips to the UI on read paths and never traverses the in-process event bus — `TelegramConnected` carries only `instanceId`, and the worker reads the token from the Secret store at start time.
 - **Identity model — there is none.** Telegram has no workspace to anchor a user-to-Keycloak link against. Authorization shifts from user to *conversation*: a thread (DM or group) is unauthorized until someone runs `/login` and completes a Keycloak OAuth flow, which records the thread in `telegram_threads`. `/logout` revokes. In groups, only chat admins may `/login` (verified via `getChatMember`); unauthorized groups stay silent so the bot does not spam every chat it has been added to.
 - **Lifecycle.** Connect = create Secret + emit `TelegramConnected`; the `ChannelManager`'s subscription reads the token from the Secret store and starts the worker for that instance. Disconnect = stop worker + delete Secret. Instance deletion cascades via label selector. No bot token at rest in Postgres.
 
@@ -206,7 +206,7 @@ What the agent sees:
 Why the dedicated MCP endpoint:
 
 - **Network isolation.** The MCP port is the only api-server port the agent's NetworkPolicy admits. The agent cannot reach the admin API (tRPC, OAuth, instance management) — only this one endpoint.
-- **Auth without an admin login.** Caller identity is derived from the source pod IP, mapped to a `humr.ai/instance` label via the api-server's `podIpResolver` cache. The agent does not present a Bearer token — a compromised harness can't claim to be a different instance because the kernel-verified source IP is the source of truth. Owner match (agent.owner == instance.owner) is the second check.
+- **Auth without an admin login.** Caller identity is derived from the source pod IP, mapped to a `platform.ai/instance` label via the api-server's `podIpResolver` cache. The agent does not present a Bearer token — a compromised harness can't claim to be a different instance because the kernel-verified source IP is the source of truth. Owner match (agent.owner == instance.owner) is the second check.
 - **Direct path to channel infra.** The MCP endpoint dispatches into the same `ChannelManager.postMessage` that workers use internally — no agent-runtime round-trip, no second relay hop.
 
 ### Threading model
@@ -228,6 +228,6 @@ Channels touch three stores; the substrate details live on [persistence](persist
 
 - **`sessions` (Postgres).** Thread-to-session mapping with `(instanceId, threadKey, sessionType)`. Slack and Telegram both write here; the relay reads here on every inbound message to decide resume-vs-new.
 - **Identity-link tables (Postgres).** `identity_links` keyed on `(provider, external_user_id)` mapping to `keycloak_sub` — Slack populates it today, but the `provider` column makes the table reusable for any future workspace channel ([ADR-018 §2](../adrs/018-slack-integration.md)). `telegram_threads` records per-conversation authorization for Telegram ([ADR-029](../adrs/029-per-instance-channels.md)). Different shapes by design — Slack has a workspace, Telegram does not.
-- **Channel Secrets (k8s).** `humr-channel-telegram-<instanceId>` per Telegram-connected instance. Slack has none — its tokens live in api-server env from Helm values.
+- **Channel Secrets (k8s).** `platform-channel-telegram-<instanceId>` per Telegram-connected instance. Slack has none — its tokens live in api-server env from Helm values.
 
 Channels do **not** participate in the agent ConfigMap spec/status split. The "channel config in instance ConfigMap" pattern from [ADR-016](../adrs/016-messenger-integration.md) was superseded by [ADR-029](../adrs/029-per-instance-channels.md): channel routing metadata lives in Postgres, secrets in k8s Secrets, agent ConfigMaps stay channel-free.

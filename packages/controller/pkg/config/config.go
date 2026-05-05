@@ -47,9 +47,9 @@ type Config struct {
 }
 
 func LoadFromEnv() (*Config, error) {
-	release := os.Getenv("HUMR_RELEASE_NAME")
+	release := os.Getenv("PLATFORM_RELEASE_NAME")
 	if release == "" {
-		return nil, fmt.Errorf("required env var HUMR_RELEASE_NAME is not set")
+		return nil, fmt.Errorf("required env var PLATFORM_RELEASE_NAME is not set")
 	}
 
 	podName := os.Getenv("POD_NAME")
@@ -58,15 +58,15 @@ func LoadFromEnv() (*Config, error) {
 	}
 
 	cfg := &Config{
-		Namespace:        envOrDefault("HUMR_AGENT_NAMESPACE", "humr-agents"),
-		ReleaseNamespace: envOrDefault("HUMR_RELEASE_NAMESPACE", "default"),
+		Namespace:        envOrDefault("PLATFORM_AGENT_NAMESPACE", "platform-agents"),
+		ReleaseNamespace: envOrDefault("PLATFORM_RELEASE_NAMESPACE", "default"),
 		ReleaseName:      release,
-		LeaseName:        envOrDefault("HUMR_LEASE_NAME", release+"-controller"),
+		LeaseName:        envOrDefault("PLATFORM_LEASE_NAME", release+"-controller"),
 		PodName:          podName,
 	}
-	cfg.APIServerHost = os.Getenv("HUMR_API_SERVER_HOST")
-	cfg.HarnessServerURL = os.Getenv("HUMR_HARNESS_SERVER_URL")
-	cfg.HarnessServerPort = envOrDefaultInt("HUMR_HARNESS_SERVER_PORT", 4001)
+	cfg.APIServerHost = os.Getenv("PLATFORM_API_SERVER_HOST")
+	cfg.HarnessServerURL = os.Getenv("PLATFORM_HARNESS_SERVER_URL")
+	cfg.HarnessServerPort = envOrDefaultInt("PLATFORM_HARNESS_SERVER_PORT", 4001)
 	cfg.AgentImagePullPolicy = envOrDefault("AGENT_IMAGE_PULL_POLICY", "IfNotPresent")
 	if v := os.Getenv("AGENT_IMAGE_PULL_SECRETS"); v != "" {
 		for _, s := range strings.Split(v, ",") {
@@ -85,11 +85,11 @@ func LoadFromEnv() (*Config, error) {
 	cfg.AgentStorageClass = os.Getenv("AGENT_STORAGE_CLASS")
 	cfg.AgentStorageSize = envOrDefault("AGENT_STORAGE_SIZE", "10Gi")
 	cfg.AgentHome = envOrDefault("AGENT_HOME", "/home/agent")
-	cfg.IdleTimeout = envOrDefaultDuration("HUMR_IDLE_TIMEOUT", 1*time.Hour)
-	cfg.TerminationGracePeriod = int64(envOrDefaultInt("HUMR_TERMINATION_GRACE_PERIOD", 5))
+	cfg.IdleTimeout = envOrDefaultDuration("PLATFORM_IDLE_TIMEOUT", 1*time.Hour)
+	cfg.TerminationGracePeriod = int64(envOrDefaultInt("PLATFORM_TERMINATION_GRACE_PERIOD", 5))
 	cfg.EnvoyImage = envOrDefault("ENVOY_IMAGE", "envoyproxy/envoy:distroless-v1.37.2")
 	cfg.EnvoyPort = envOrDefaultInt("ENVOY_PORT", 10000)
-	cfg.EnvoyMitmCAIssuer = envOrDefault("ENVOY_MITM_CA_ISSUER", "humr-mitm-ca-issuer")
+	cfg.EnvoyMitmCAIssuer = envOrDefault("ENVOY_MITM_CA_ISSUER", "platform-mitm-ca-issuer")
 	cfg.EnvoyMitmLeafDuration = envOrDefaultDuration("ENVOY_MITM_LEAF_DURATION", 0)
 	cfg.EnvoyMitmLeafRenewBefore = envOrDefaultDuration("ENVOY_MITM_LEAF_RENEW_BEFORE", 0)
 	// FQDN by default: agent pods live in a different namespace from the

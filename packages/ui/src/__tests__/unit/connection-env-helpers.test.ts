@@ -12,7 +12,7 @@ function app(
   return { envMappings };
 }
 
-const mapping = (envName: string, placeholder = "humr:sentinel") => ({
+const mapping = (envName: string, placeholder = "dummy-placeholder") => ({
   envName,
   placeholder,
 });
@@ -22,7 +22,7 @@ describe("envsAfterUngrant — non-obvious invariants", () => {
     // Gmail and Drive both declare GOOGLE_WORKSPACE_CLI_TOKEN. Ungranting
     // Gmail while Drive is still granted must not drop the env. Without the
     // `stillNeededNames` guard, a naive filter would silently delete it.
-    const envs: EnvVar[] = [{ name: "X", value: "humr:sentinel" }];
+    const envs: EnvVar[] = [{ name: "X", value: "dummy-placeholder" }];
     const out = envsAfterUngrant(
       envs,
       app([mapping("X")]),
@@ -35,8 +35,8 @@ describe("envsAfterUngrant — non-obvious invariants", () => {
     // An agent env populated under the old placeholder shouldn't be silently
     // deleted after the sentinel is rotated. The value-equality check is
     // what protects this — dropping it would cause data loss post-upgrade.
-    const envs: EnvVar[] = [{ name: "X", value: "humr:sentinel" }];
-    const out = envsAfterUngrant(envs, app([mapping("X", "humr:sentinel-v2")]), []);
+    const envs: EnvVar[] = [{ name: "X", value: "dummy-placeholder" }];
+    const out = envsAfterUngrant(envs, app([mapping("X", "dummy-placeholder-v2")]), []);
     expect(out).toEqual(envs);
   });
 });

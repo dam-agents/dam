@@ -66,10 +66,10 @@ DAM runs agents using three K8s primitives.
 
 **Each instance is its own.** Two instances in the same cluster can't see each other — no shared memory, no shared disk, no shared network namespace. One agent's crash doesn't touch others. One agent's compromise doesn't leak beyond its own pod. One agent's `rm -rf` hurts only itself.
 
-None of this uses CRDs. Every DAM resource is a plain ConfigMap with a `humr.ai/type` label:
+None of this uses CRDs. Every DAM resource is a plain ConfigMap with a `platform.ai/type` label:
 
 ```sh
-mise run cluster:kubectl -- get cm -l humr.ai/type -A
+mise run cluster:kubectl -- get cm -l platform.ai/type -A
 ```
 
 So you can inspect, edit, diff, and back up DAM state with `kubectl` alone. No cluster-admin required to install. That's not a quirk — it's the entire reason DAM is namespace-scoped by design.
@@ -101,7 +101,7 @@ Some demos of what's actually happening in your cluster.
 ### 1. The agent has no secrets
 
 ```sh
-mise run cluster:kubectl -- exec -n humr-agents <pod> -- \
+mise run cluster:kubectl -- exec -n platform-agents <pod> -- \
   sh -c 'env | grep -iE "anthropic|api_key|token" || echo "no real creds visible"'
 ```
 
@@ -110,7 +110,7 @@ The env has only the agent-runtime auth token. No real API keys, no upstream cre
 ### 2. The agent can't reach the internet directly
 
 ```sh
-mise run cluster:kubectl -- exec -n humr-agents <pod> -- \
+mise run cluster:kubectl -- exec -n platform-agents <pod> -- \
   node -e "require('net').connect(443,'api.anthropic.com').setTimeout(3000)
     .on('connect',()=>console.log('CONNECTED (unexpected)'))
     .on('timeout',()=>console.log('BLOCKED: timeout'))
@@ -128,7 +128,7 @@ Put those two together: no credentials, no route out except the sidecar. The cha
 Kill the pod:
 
 ```sh
-mise run cluster:kubectl -- delete pod -n humr-agents <pod>
+mise run cluster:kubectl -- delete pod -n platform-agents <pod>
 ```
 
 Kubernetes replaces it. New pod, same name, same PVC, same conversation history. Wait ~20 seconds and chat again — your earlier messages are still there.
@@ -140,8 +140,8 @@ That's not resilience you configured. It's StatefulSet + per-instance PVC + DB-b
 Create a second instance in the UI (call it `other`). From the first:
 
 ```sh
-mise run cluster:kubectl -- exec -n humr-agents <pod> -- \
-  node -e "require('net').connect(8080,'other-0.other.humr-agents.svc').setTimeout(3000)
+mise run cluster:kubectl -- exec -n platform-agents <pod> -- \
+  node -e "require('net').connect(8080,'other-0.other.platform-agents.svc').setTimeout(3000)
     .on('connect',()=>console.log('CONNECTED (unexpected)'))
     .on('timeout',()=>console.log('BLOCKED: timeout'))
     .on('error',e=>console.log('BLOCKED:',e.code))"

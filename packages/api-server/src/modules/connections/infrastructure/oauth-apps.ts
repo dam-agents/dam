@@ -1,5 +1,5 @@
 /**
- * Static descriptors for the OAuth apps Humr knows how to drive — GitHub.com,
+ * Static descriptors for the OAuth apps the platform knows how to drive — GitHub.com,
  * GitHub Enterprise, and a Generic app for arbitrary auth-code+PKCE
  * providers. Each descriptor declares the inputs the user must supply at
  * connect time (their own OAuth client id + secret, plus app-specific

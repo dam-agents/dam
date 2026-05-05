@@ -1,5 +1,5 @@
 import type { StateCreator } from "zustand";
-import type { HumrStore } from "../store.js";
+import type { PlatformStore } from "../store.js";
 
 export type Theme = "light" | "dark" | "system";
 
@@ -13,10 +13,10 @@ function applyTheme(theme: Theme) {
   document.documentElement.classList.toggle("dark", isDark);
 }
 
-export const createThemeSlice: StateCreator<HumrStore, [], [], ThemeSlice> = (set) => ({
-  theme: (localStorage.getItem("humr-theme") as Theme) || "system",
+export const createThemeSlice: StateCreator<PlatformStore, [], [], ThemeSlice> = (set) => ({
+  theme: (localStorage.getItem("platform-theme") as Theme) || "system",
   setTheme: (t) => {
-    localStorage.setItem("humr-theme", t);
+    localStorage.setItem("platform-theme", t);
     applyTheme(t);
     set({ theme: t });
   },

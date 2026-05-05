@@ -10,8 +10,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	"github.com/kagenti/humr/packages/controller/pkg/config"
-	"github.com/kagenti/humr/packages/controller/pkg/types"
+	"github.com/kagenti/platform/packages/controller/pkg/config"
+	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
 func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *types.AgentSpec, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret) *appsv1.StatefulSet {
@@ -20,8 +20,8 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 		replicas = 0
 	}
 
-	labels := map[string]string{"humr.ai/instance": name}
-	caCertPath := "/etc/humr/ca/ca.crt"
+	labels := map[string]string{"agent-platform.ai/instance": name}
+	caCertPath := "/etc/platform/ca/ca.crt"
 
 	proxyAddr := fmt.Sprintf("http://127.0.0.1:%d", cfg.EnvoyPort)
 
@@ -44,11 +44,11 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 		{Name: "ADK_INSTANCE_ID", Value: name},
 		{Name: "API_SERVER_URL", Value: cfg.APIServerURL()},
 		{Name: "HOME", Value: cfg.AgentHome},
-		{Name: "HUMR_MCP_URL", Value: fmt.Sprintf("%s/api/instances/%s/mcp", cfg.HarnessServerURL, name)},
+		{Name: "PLATFORM_MCP_URL", Value: fmt.Sprintf("%s/api/instances/%s/mcp", cfg.HarnessServerURL, name)},
 		// agent-runtime opens this SSE stream and materializes pod-files
 		// (gh hosts.yml today; more producers later) directly under HOME.
 		// Forks deliberately do NOT receive this env — see fork_resources.go.
-		{Name: "HUMR_POD_FILES_EVENTS_URL", Value: fmt.Sprintf("%s/api/instances/%s/pod-files/events", cfg.HarnessServerURL, name)},
+		{Name: "PLATFORM_POD_FILES_EVENTS_URL", Value: fmt.Sprintf("%s/api/instances/%s/pod-files/events", cfg.HarnessServerURL, name)},
 	}
 
 	// Order matters: K8s resolves duplicate env names by keeping the last
@@ -144,7 +144,7 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 		})
 	}
 	volumeMounts = append(volumeMounts, corev1.VolumeMount{
-		Name: "ca-cert", MountPath: "/etc/humr/ca", ReadOnly: true,
+		Name: "ca-cert", MountPath: "/etc/platform/ca", ReadOnly: true,
 	})
 
 	// Resources
@@ -241,10 +241,10 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 		ghAvail = "true"
 	}
 	containers[0].Env = append(containers[0].Env, corev1.EnvVar{
-		Name:  "HUMR_GH_TOKEN_AVAILABLE",
+		Name:  "PLATFORM_GH_TOKEN_AVAILABLE",
 		Value: ghAvail,
 	})
-	podAnnotations["humr.ai/gh-token-available"] = ghAvail
+	podAnnotations["agent-platform.ai/gh-token-available"] = ghAvail
 
 	// Roll trigger (ADR-035 #10): hash of the Secret set driving the Envoy
 	// bootstrap. When the api-server adds an allow-only Secret to promote a
@@ -252,7 +252,7 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 	// StatefulSet rolls so Envoy picks up the new chain set + leaf cert.
 	// Without this, Secret list changes regenerate the bootstrap CM but
 	// don't restart the pod, and Envoy keeps serving the old config.
-	podAnnotations["humr.ai/envoy-secrets-rev"] = envoySecretsRev(credentialSecrets)
+	podAnnotations["agent-platform.ai/envoy-secrets-rev"] = envoySecretsRev(credentialSecrets)
 
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -293,14 +293,14 @@ func BuildService(name string, cfg *config.Config, ownerCM *corev1.ConfigMap) *c
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: cfg.Namespace,
-			Labels:    map[string]string{"humr.ai/instance": name},
+			Labels:    map[string]string{"agent-platform.ai/instance": name},
 			OwnerReferences: []metav1.OwnerReference{
 				*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
 			},
 		},
 		Spec: corev1.ServiceSpec{
 			ClusterIP: corev1.ClusterIPNone,
-			Selector:  map[string]string{"humr.ai/instance": name},
+			Selector:  map[string]string{"agent-platform.ai/instance": name},
 			Ports: []corev1.ServicePort{{
 				Name: "acp", Port: 8080, TargetPort: intstr.FromString("acp"),
 			}},
@@ -378,14 +378,14 @@ func BuildNetworkPolicy(name string, cfg *config.Config, ownerCM *corev1.ConfigM
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name + "-egress",
 			Namespace: cfg.Namespace,
-			Labels:    map[string]string{"humr.ai/instance": name},
+			Labels:    map[string]string{"agent-platform.ai/instance": name},
 			OwnerReferences: []metav1.OwnerReference{
 				*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
 			},
 		},
 		Spec: networkingv1.NetworkPolicySpec{
 			PodSelector: metav1.LabelSelector{
-				MatchLabels: map[string]string{"humr.ai/instance": name},
+				MatchLabels: map[string]string{"agent-platform.ai/instance": name},
 			},
 			PolicyTypes: []networkingv1.PolicyType{
 				networkingv1.PolicyTypeEgress,

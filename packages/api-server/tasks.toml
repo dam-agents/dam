@@ -23,7 +23,7 @@ run = '''
 #!/usr/bin/env bash
 set -eo pipefail
 
-VM_NAME="humr-k3s-test"
+VM_NAME="platform-k3s-test"
 if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
 else
@@ -55,8 +55,8 @@ dump_diagnostics() {
           echo ""
         done
     echo ""
-    echo "--- Logs from Humr pods ---"
-    for ns in default humr-agents; do
+    echo "--- Logs from Platform pods ---"
+    for ns in default platform-agents; do
       for pod in $(kubectl --kubeconfig="$KUBECONFIG" get pods -n "$ns" -o name 2>/dev/null); do
         echo "### $ns/$pod (current) ###"
         kubectl --kubeconfig="$KUBECONFIG" logs -n "$ns" "$pod" --all-containers --tail=200 2>&1 || true

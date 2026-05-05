@@ -10,7 +10,7 @@ Last verified: 2026-04-29
 
 ## Overview
 
-Humr persists state on three durable substrates, split cleanly between the platform and the agent:
+Platform persists state on three durable substrates, split cleanly between the platform and the agent:
 
 **Platform-owned** (the agent never touches these):
 
@@ -61,7 +61,7 @@ flowchart LR
 
 Postgres carries application state the api-server owns end-to-end — anything that has to be queryable when no agent pod is running, plus any domain resource the controller does not reconcile.
 
-- **session metadata** ([ADR-017](../adrs/017-db-backed-sessions.md)) — Humr enriches each ACP session with metadata the protocol does not carry: a source-type discriminator (UI-initiated vs. channel-initiated vs. schedule-driven), the owning instance, the linked schedule when applicable, and creation time. The DB is the source of truth for these enrichments; the agent runtime owns the conversation itself. The sessions list reads enrichments straight from the DB and overlays live ACP data (title, last update) only when the pod is running.
+- **session metadata** ([ADR-017](../adrs/017-db-backed-sessions.md)) — Platform enriches each ACP session with metadata the protocol does not carry: a source-type discriminator (UI-initiated vs. channel-initiated vs. schedule-driven), the owning instance, the linked schedule when applicable, and creation time. The DB is the source of truth for these enrichments; the agent runtime owns the conversation itself. The sessions list reads enrichments straight from the DB and overlays live ACP data (title, last update) only when the pod is running.
 - **channel routing** — bindings between external chat surfaces and the instance/session they map to. Owned by [channels](channels.md).
 - **identity and auth** — links between channel-side identities and platform users, plus the auth allow-list. Owned by [security-and-credentials](security-and-credentials.md).
 - **skills catalog** — connected sources, per-instance install records, and publish history. Owned by [skills](skills.md).
@@ -70,7 +70,7 @@ The api-server is the sole writer for all of it. The controller does not touch P
 
 ### ConfigMaps
 
-Resources the controller reconciles are labeled ConfigMaps ([ADR-006](../adrs/006-configmaps-over-crds.md)). Four types, distinguished by `humr.ai/type`:
+Resources the controller reconciles are labeled ConfigMaps ([ADR-006](../adrs/006-configmaps-over-crds.md)). Four types, distinguished by `platform.ai/type`:
 
 | Type | What it declares |
 |---|---|
@@ -86,7 +86,7 @@ Each ConfigMap carries two `data` keys with strict single-writer ownership:
 
 High-frequency, lightweight metadata (heartbeats, activity timestamps) lives on **annotations** rather than `status.yaml` to avoid rewriting the spec/status payload on every update.
 
-ConfigMaps were chosen over CRDs so that Humr installs without cluster-admin — the schema maps directly onto a CRD spec if the constraint ever lifts. There is no schema validation at the K8s API layer; both the api-server (on write) and the controller (on read) validate in application code.
+ConfigMaps were chosen over CRDs so that Platform installs without cluster-admin — the schema maps directly onto a CRD spec if the constraint ever lifts. There is no schema validation at the K8s API layer; both the api-server (on write) and the controller (on read) validate in application code.
 
 ### Per-instance PVCs
 
@@ -98,7 +98,7 @@ The default Claude Code template persists the workspace and `$HOME`. Together th
 - **`$HOME`** — agent memory, skills, MCP server caches, and the harness's on-disk session store. The session store is the cold-start source for `session/load` after a pod restart.
 - **`.triggers/`** — pending trigger payloads. The controller delivers each payload via `kubectl exec` into the *running* pod, which writes the file onto its mounted PVC; the controller itself never mounts the volume. The pod must therefore be awake before delivery, and the schedule loop wakes it first if it is hibernated (see [agent-lifecycle](agent-lifecycle.md)).
 
-PVCs survive hibernation — when a StatefulSet scales to zero replicas, the volume detaches but is retained. The controller explicitly deletes PVCs on instance deletion (the standard StatefulSet behavior is to retain them to prevent data loss; Humr opts back into reclamation because instance deletion is intentional).
+PVCs survive hibernation — when a StatefulSet scales to zero replicas, the volume detaches but is retained. The controller explicitly deletes PVCs on instance deletion (the standard StatefulSet behavior is to retain them to prevent data loss; Platform opts back into reclamation because instance deletion is intentional).
 
 What does **not** survive hibernation: anything written to the container's ephemeral filesystem outside the persisted mounts — OS-level changes, packages installed at runtime, files in `/tmp`. Tools and dependencies the agent relies on must be baked into the image at build time.
 

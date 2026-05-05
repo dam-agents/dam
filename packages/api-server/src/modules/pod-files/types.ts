@@ -32,7 +32,7 @@ export const PRODUCER_SOURCES = ["app-connections"] as const;
 export type ProducerSource = (typeof PRODUCER_SOURCES)[number];
 
 /**
- * A producer reads humr's state for an `(owner, agentId)` pair and emits
+ * A producer reads the platform's state for an `(owner, agentId)` pair and emits
  * the files it wants materialized in that agent's pods. Producers are
  * **agent-scoped**: the file content for one agent reflects only what's
  * been explicitly granted/configured for that agent, not the owner's

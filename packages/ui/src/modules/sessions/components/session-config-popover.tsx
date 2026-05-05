@@ -12,7 +12,7 @@ import { useStore } from "../../../store.js";
 import { runAction } from "../../../store/query-helpers.js";
 
 function prefKey(instanceId: string, key: string) {
-  return `humr-pref:${instanceId}:${key}`;
+  return `platform-pref:${instanceId}:${key}`;
 }
 
 function savePreference(instanceId: string, key: string, value: string) {
@@ -20,7 +20,7 @@ function savePreference(instanceId: string, key: string, value: string) {
 }
 
 export function getSavedPreferences(instanceId: string): { model?: string; mode?: string; config: Record<string, string> } {
-  const prefix = `humr-pref:${instanceId}:config:`;
+  const prefix = `platform-pref:${instanceId}:config:`;
   const config: Record<string, string> = {};
   try {
     for (let i = 0; i < localStorage.length; i++) {

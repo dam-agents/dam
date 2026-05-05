@@ -35,10 +35,15 @@ export interface OAuthRoutesDeps {
   apps: OAuthAppRegistry;
   /** Override for tests — defaults to a fresh process-local engine. */
   engine?: OAuthEngine;
+  /** Display name surfaced as `client_name` during RFC 7591 dynamic client
+   *  registration (visible in the OAuth provider's app list). Sourced from
+   *  brand config so a deployment rebrand renames the registration without
+   *  a code change. */
+  brandName: string;
 }
 
 export function createOAuthRoutes(deps: OAuthRoutesDeps) {
-  const { uiBaseUrl, k8sClient, apps } = deps;
+  const { uiBaseUrl, k8sClient, apps, brandName } = deps;
   const engine = deps.engine ?? createOAuthEngine();
   const oauth = new Hono<{ Variables: { user: UserIdentity } }>();
 
@@ -275,7 +280,7 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        client_name: "DAM Agent Platform",
+        client_name: `${brandName} Agent Platform`,
         redirect_uris: [redirectUri],
         grant_types: ["authorization_code", "refresh_token"],
         response_types: ["code"],

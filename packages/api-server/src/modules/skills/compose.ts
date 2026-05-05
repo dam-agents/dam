@@ -56,6 +56,7 @@ export function composeSkillsModule(
   owner: string,
   db: Db,
   seedSources: SkillSourceSeed[],
+  brandName: string,
 ): SkillsService {
   const k8s = createK8sClient(api, namespace);
   return createSkillsService({
@@ -70,5 +71,6 @@ export function composeSkillsModule(
     scanSource: scanWithCache,
     invalidateScan: invalidateScanCache,
     scanPublic: scanPublicGithubArchive,
+    brandName,
   });
 }

@@ -1,7 +1,7 @@
 /**
  * Pod-IP → instance-id cache for the ext_authz gRPC server.
  *
- * Threat model: the gate must NOT trust the `x-humr-instance` metadata an
+ * Threat model: the gate must NOT trust the `x-platform-instance` metadata an
  * Envoy sidecar (or a compromised agent bypassing Envoy) sends — it's a
  * plaintext string with no origin proof. The TCP source IP of the gRPC
  * connection IS authoritative under K8s + standard CNIs: pods can't spoof
@@ -9,7 +9,7 @@
  * never use it for agents). The CNI rewrites/drops any non-pod source IP
  * at egress.
  *
- * This cache resolves an inbound peer IP to the `humr.ai/instance` label
+ * This cache resolves an inbound peer IP to the `agent-platform.ai/instance` label
  * carried on the pod, which the gate then runs through the existing
  * `identityResolver` to get `(ownerSub, agentId)`. Both StatefulSet agent
  * pods and fork Jobs carry the label (`ForkLabelInstanceRef` reuses it),

@@ -5,15 +5,15 @@
   "scripts": {
     "dev": "pnpm --filter agent-runtime dev",
     "start": "pnpm --filter agent-runtime start",
-    "ui": "pnpm --filter humr-ui dev",
+    "ui": "pnpm --filter platform-ui dev",
     "api-server": "pnpm --filter api-server dev",
     "typecheck": "pnpm -r --parallel run typecheck",
-    "docker:humr-base:build": "docker build -f packages/humr-base/Dockerfile -t humr-base .",
-    "docker:humr-base:start": "docker rm -f humr-base 2>/dev/null; docker run --name humr-base -p 8080:8080 humr-base",
-    "docker:claude-code:build": "pnpm docker:humr-base:build && docker build -t humr-claude-code packages/agents/claude-code",
-    "docker:claude-code:start": "docker rm -f humr-claude-code 2>/dev/null; docker run --name humr-claude-code -p 3000:3000 humr-claude-code",
-    "docker:google-workspace:build": "pnpm docker:humr-base:build && docker build -t humr-google-workspace-agent packages/agents/google-workspace",
-    "docker:google-workspace:start": "docker rm -f humr-google-workspace-agent 2>/dev/null; docker run --name humr-google-workspace-agent -p 3001:8080 humr-google-workspace-agent"
+    "docker:platform-base:build": "docker build -f packages/platform-base/Dockerfile -t platform-base .",
+    "docker:platform-base:start": "docker rm -f platform-base 2>/dev/null; docker run --name platform-base -p 8080:8080 platform-base",
+    "docker:claude-code:build": "pnpm docker:platform-base:build && docker build -t platform-claude-code packages/agents/claude-code",
+    "docker:claude-code:start": "docker rm -f platform-claude-code 2>/dev/null; docker run --name platform-claude-code -p 3000:3000 platform-claude-code",
+    "docker:google-workspace:build": "pnpm docker:platform-base:build && docker build -t platform-google-workspace-agent packages/agents/google-workspace",
+    "docker:google-workspace:start": "docker rm -f platform-google-workspace-agent 2>/dev/null; docker run --name platform-google-workspace-agent -p 3001:8080 platform-google-workspace-agent"
   },
   "devDependencies": {
     "eslint": "^10.2.0",

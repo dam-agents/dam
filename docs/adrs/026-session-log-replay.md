@@ -24,7 +24,7 @@ The `claude-agent-acp` child process runs for the pod's lifetime, independent of
 
 ### 2. Per-session log, per-channel cursor
 
-The runtime keeps a `Map<sessionId, SessionLog>` where each log is an ordered list of `session/update` lines (including the synthetic `humr/turnEnded`), each with a monotonic `seq`. Every channel has a `Map<sessionId, cursor>` tracking the last seq it has received.
+The runtime keeps a `Map<sessionId, SessionLog>` where each log is an ordered list of `session/update` lines (including the synthetic `platform/turnEnded`), each with a monotonic `seq`. Every channel has a `Map<sessionId, cursor>` tracking the last seq it has received.
 
 On every incoming `session/update` from the agent:
 
@@ -47,13 +47,13 @@ This eliminates the class of bug where the agent's on-stdio replay interleaves w
 
 ### 4. Byte-bounded log with truncation sentinel
 
-Each session log has a soft byte cap (2 MB default). When an append would push the log past the cap, the oldest entry is evicted and the log's `truncated` flag is set. A catch-up against a truncated log prepends a synthetic notification with `update.sessionUpdate = "humr_clipped_replay"`; the UI renders this as a dimmed "Older conversation not loaded" divider. Sessions whose conversation exceeds 2 MB of serialized notifications can still be recovered via a forced full reload (planned separate feature — see Consequences).
+Each session log has a soft byte cap (2 MB default). When an append would push the log past the cap, the oldest entry is evicted and the log's `truncated` flag is set. A catch-up against a truncated log prepends a synthetic notification with `update.sessionUpdate = "platform_clipped_replay"`; the UI renders this as a dimmed "Older conversation not loaded" divider. Sessions whose conversation exceeds 2 MB of serialized notifications can still be recovered via a forced full reload (planned separate feature — see Consequences).
 
 The log is purged when the session is reaped (`session/close`) or when the agent exits.
 
-### 5. Custom turn-end signal (`humr/turnEnded`)
+### 5. Custom turn-end signal (`platform/turnEnded`)
 
-ACP has no on-wire notification for "turn completed" — clients infer it from a `session/prompt` response. But viewers who didn't originate the prompt never see that response and have no way to close their in-progress assistant bubble. The runtime emits a custom `humr/turnEnded` JSON-RPC notification when a prompt response arrives, scoped to engaged channels via the normal fan-out. Clients that don't implement `extNotification` silently ignore it.
+ACP has no on-wire notification for "turn completed" — clients infer it from a `session/prompt` response. But viewers who didn't originate the prompt never see that response and have no way to close their in-progress assistant bubble. The runtime emits a custom `platform/turnEnded` JSON-RPC notification when a prompt response arrives, scoped to engaged channels via the normal fan-out. Clients that don't implement `extNotification` silently ignore it.
 
 ### 6. Idle reap via `session/close`
 
@@ -65,7 +65,7 @@ A permission request with no engaged channel to answer it gets a 10-minute TTL p
 
 ### 8. Prompt queue per session
 
-Per-session prompt queue (cap 32) with id rewriting (so concurrent clients' id spaces don't collide). When a prompt response arrives, the queue advances and `humr/turnEnded` broadcasts.
+Per-session prompt queue (cap 32) with id rewriting (so concurrent clients' id spaces don't collide). When a prompt response arrives, the queue advances and `platform/turnEnded` broadcasts.
 
 ## Multi-connection model
 
@@ -114,7 +114,7 @@ sequenceDiagram
   B->>R: session/load
   Note over R: log has metadata → serve from memory
   alt log was truncated
-    R->>B: humr_clipped_replay sentinel
+    R->>B: platform_clipped_replay sentinel
   end
   R->>B: replay seq 1..11 (advance B's cursor)
   R->>B: session/load response
@@ -126,7 +126,7 @@ sequenceDiagram
   R->>B: send (cursor 11→12)
 
   G->>R: session/prompt response
-  R->>R: append humr/turnEnded seq=13
+  R->>R: append platform/turnEnded seq=13
   R->>A: send; R->>B: send
 ```
 

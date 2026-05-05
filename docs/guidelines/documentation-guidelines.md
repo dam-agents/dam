@@ -7,7 +7,7 @@ Rules for writing project documentation under [`docs/`](../).
 Docs are split into a few kinds. Pick the right one before writing — putting the wrong content in the wrong place is the most common drift source.
 
 - **Guidelines** ([`docs/guidelines/`](.)) — rules to follow when writing docs, issues, or PRs. This page is one. Prescriptive, not descriptive.
-- **Strategy** ([`docs/strategy/`](../strategy/)) — high-level overview of what Humr is trying to be, for product, security, and positioning audiences. Independent of how the current system happens to be built.
+- **Strategy** ([`docs/strategy/`](../strategy/)) — high-level overview of what Platform is trying to be, for product, security, and positioning audiences. Independent of how the current system happens to be built.
 - **Architecture** ([`docs/architecture/`](../architecture/)) — the authoritative architectural overview of the system as it exists today. One page per subsystem, indexed from [`docs/architecture.md`](../architecture.md).
 
 - **ADRs** ([`docs/adrs/`](../adrs/)) — Architecture Decision Records. Filed *before* work begins on anything that requires an important decision, so the reasoning is captured up front. One ADR per decision. Immutable after acceptance; superseded, not rewritten. Use the `/adr` skill.
@@ -40,7 +40,7 @@ Each subsystem page starts with two headers directly under the title:
 
 - **Include**: component roles, who-talks-to-whom, protocols, persistence substrates, resource-model invariants, framework-level tech, security layers, trust boundaries.
 - **Omit**: exact package names, file paths, Helm template tree, implementation phase markers, library-level choices below framework level.
-- **Link out** for volatile content rather than restating it (repo paths like [`packages/`](../../packages/), [`deploy/helm/humr/templates/`](../../deploy/helm/humr/templates/), and ADRs).
+- **Link out** for volatile content rather than restating it (repo paths like [`packages/`](../../packages/), [`deploy/helm/platform/templates/`](../../deploy/helm/platform/templates/), and ADRs).
 
 ### Diagrams
 

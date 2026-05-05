@@ -6,7 +6,7 @@
 
 ## Context
 
-Humr needs to support instant messengers (starting with Slack) as conversational interfaces — when an agent instance is mentioned in a channel, it should wake up, run a session, and reply.
+Platform needs to support instant messengers (starting with Slack) as conversational interfaces — when an agent instance is mentioned in a channel, it should wake up, run a session, and reply.
 
 Key constraints:
 - The agent pod can be scaled to zero after inactivity — a sidecar would die with it and miss mentions

@@ -6,10 +6,13 @@
     <meta name="theme-color" content="#1D6BE1" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="Dam" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
-    <title>Dam</title>
+    <link rel="icon" type="image/svg+xml" href="/api/brand/icon.svg" />
+    <link rel="apple-touch-icon" href="/api/brand/icon-180.png" />
+    <link rel="manifest" href="/api/brand/manifest.webmanifest" />
+    <!-- Title + apple-mobile-web-app-title are intentionally absent; both are
+         set at runtime by src/brand.ts after fetching /api/brand. The PWA
+         manifest is also served dynamically by the api-server. -->
+    <title></title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />

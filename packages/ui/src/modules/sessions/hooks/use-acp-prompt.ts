@@ -1,7 +1,7 @@
 import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
 import { useCallback, useRef } from "react";
 
-import { platform } from "../../../platform.js";
+import { api } from "../../../api.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import type { Attachment, Message } from "../../../types.js";
@@ -93,7 +93,7 @@ export function useAcpPrompt(
       if (!persistedSessionsRef.current.has(sid)) {
         persistedSessionsRef.current.add(sid);
         try {
-          await platform.sessions.create.mutate({ sessionId: sid, instanceId: selectedInstance });
+          await api.sessions.create.mutate({ sessionId: sid, instanceId: selectedInstance });
         } catch (err) {
           showToast({
             kind: "warning",
@@ -101,7 +101,7 @@ export function useAcpPrompt(
           });
         }
       }
-      // Belt-and-braces: if humr_turn_ended somehow didn't fire (server
+      // Belt-and-braces: if platform_turn_ended somehow didn't fire (server
       // variant without our extension), force-close our bubble anyway.
       setMessages((p) => p.map((m) => m.id === aId ? { ...m, streaming: false, queued: false } : m));
     } catch (err: unknown) {

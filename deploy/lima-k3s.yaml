@@ -1,4 +1,4 @@
-# Lima VM template for humr k3s cluster
+# Lima VM template for platform k3s cluster
 # Based on template:k3s with custom port forwarding
 
 images:
@@ -20,10 +20,10 @@ provision:
     script: |
       #!/bin/sh
       set -e
-      echo "[humr-provision] Installing nfs-common (required for humr-rwx NFS mounts)..."
+      echo "[platform-provision] Installing nfs-common (required for platform-rwx NFS mounts)..."
       DEBIAN_FRONTEND=noninteractive apt-get update
       DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nfs-common
-      echo "[humr-provision] mount.nfs4: $(command -v mount.nfs4 || echo MISSING)"
+      echo "[platform-provision] mount.nfs4: $(command -v mount.nfs4 || echo MISSING)"
       # Bound kubelet container-log usage at ~30 MiB per pod so a chatty/looping
       # pod can't fill the dev VM disk (issue #244). cluster:install also
       # ensures this file exists on existing VMs.
@@ -47,7 +47,7 @@ provision:
       spec:
         valuesContent: |
           ports:
-            humr:
+            platform:
               port: 4444
               expose:
                 default: true
@@ -87,5 +87,5 @@ portForwards:
     ignore: true
 
 message: |
-  k3s is ready. Access services via http://humr.localhost:4444
+  k3s is ready. Access services via http://platform.localhost:4444
   KUBECONFIG: {{.Dir}}/copied-from-guest/kubeconfig.yaml

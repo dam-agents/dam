@@ -11,7 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 
-	"github.com/kagenti/humr/packages/controller/pkg/config"
+	"github.com/kagenti/platform/packages/controller/pkg/config"
 )
 
 func idleCheckerCfg(timeout time.Duration) *config.Config {
@@ -26,19 +26,19 @@ func runningInstanceCM(name, lastActivity string, annotations map[string]string)
 		annotations = make(map[string]string)
 	}
 	if lastActivity != "" {
-		annotations["humr.ai/last-activity"] = lastActivity
+		annotations["agent-platform.ai/last-activity"] = lastActivity
 	}
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name, Namespace: "test-agents",
 			Labels: map[string]string{
-				"humr.ai/type":     "agent-instance",
-				"humr.ai/agent": "claude-code",
+				"agent-platform.ai/type":     "agent-instance",
+				"agent-platform.ai/agent": "claude-code",
 			},
 			Annotations: annotations,
 		},
 		Data: map[string]string{
-			"spec.yaml": "version: humr.ai/v1\ndesiredState: running\nagentId: claude-code\n",
+			"spec.yaml": "version: agent-platform.ai/v1\ndesiredState: running\nagentId: claude-code\n",
 		},
 	}
 }
@@ -72,7 +72,7 @@ func TestIdleChecker_SkipsRecentlyActiveInstance(t *testing.T) {
 func TestIdleChecker_SkipsActiveSession(t *testing.T) {
 	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
 	cm := runningInstanceCM("session-agent", staleTime, map[string]string{
-		"humr.ai/active-session": "true",
+		"agent-platform.ai/active-session": "true",
 	})
 	client := fake.NewSimpleClientset(cm)
 	checker := NewIdleChecker(client, idleCheckerCfg(1*time.Hour))
@@ -99,7 +99,7 @@ func TestIdleChecker_SkipsNoLastActivity(t *testing.T) {
 func TestIdleChecker_SkipsAlreadyHibernated(t *testing.T) {
 	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
 	cm := runningInstanceCM("hibernated-agent", staleTime, nil)
-	cm.Data["spec.yaml"] = "version: humr.ai/v1\ndesiredState: hibernated\nagentId: claude-code\n"
+	cm.Data["spec.yaml"] = "version: agent-platform.ai/v1\ndesiredState: hibernated\nagentId: claude-code\n"
 	client := fake.NewSimpleClientset(cm)
 	checker := NewIdleChecker(client, idleCheckerCfg(1*time.Hour))
 

@@ -15,7 +15,7 @@ export interface ChannelSecretStore {
 }
 
 export function channelSecretName(instanceId: string, type: ChannelType): string {
-  return `humr-channel-${type}-${instanceId}`;
+  return `platform-channel-${type}-${instanceId}`;
 }
 
 export function createChannelSecretStore(k8s: K8sClient): ChannelSecretStore {

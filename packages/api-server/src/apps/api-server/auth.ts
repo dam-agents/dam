@@ -10,13 +10,13 @@ export class ForbiddenError extends Error {
 }
 
 export interface AuthConfig {
-  /** External issuer URL (matches token `iss` claim), e.g. http://keycloak.localhost:4444/realms/humr */
+  /** External issuer URL (matches token `iss` claim), e.g. http://keycloak.localhost:4444/realms/platform */
   issuerUrl: string;
-  /** Internal JWKS endpoint for key fetching, e.g. http://humr-keycloak:8080/realms/humr/protocol/openid-connect/certs */
+  /** Internal JWKS endpoint for key fetching, e.g. http://platform-keycloak:8080/realms/platform/protocol/openid-connect/certs */
   jwksUrl: string;
-  /** Expected audience in access tokens (e.g. "humr-api") */
+  /** Expected audience in access tokens (e.g. "platform-api") */
   audience?: string;
-  /** Realm role required to access the API (e.g. "humr-access"). If unset, all authenticated users are allowed. */
+  /** Realm role required to access the API (e.g. "platform-access"). If unset, all authenticated users are allowed. */
   requiredRole?: string;
 }
 

@@ -249,7 +249,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       method: "session/update",
       params: {
         sessionId,
-        update: { sessionUpdate: "humr_clipped_replay" },
+        update: { sessionUpdate: "platform_clipped_replay" },
       },
     });
   }
@@ -739,7 +739,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           }
           appendAndFanOut(sid, JSON.stringify({
             jsonrpc: "2.0",
-            method: "humr/turnEnded",
+            method: "platform/turnEnded",
             params: { sessionId: sid },
           }));
           // Reap the SDK session if the turn finished with nothing left to

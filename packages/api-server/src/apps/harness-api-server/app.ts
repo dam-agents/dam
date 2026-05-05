@@ -52,7 +52,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     k8s: k8sClient,
     podFiles: { bus: podFilesBus, fetchSnapshot: podFilesSnapshot },
     agentHome: config.agentHome,
-    composeSkills: (owner) => composeSkillsModule(api, config.namespace, owner, db, seedSources),
+    composeSkills: (owner) => composeSkillsModule(api, config.namespace, owner, db, seedSources, config.brand.name),
     schedulesServiceFor: (owner) =>
       composeAgentsModule(
         api,

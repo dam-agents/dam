@@ -8,7 +8,7 @@
 
 ## Context
 
-Today, a Slack thread is routed to a single Humr instance by the `threadTs → instance_id` mapping (ADR-018). Every reply in that thread is relayed to the same instance, and the agent pod makes outbound calls (GitHub, Anthropic, etc.) through OneCLI using the **instance owner's** identity — the OneCLI access token baked into the pod by the controller is scoped to whoever created the instance (ADR-015).
+Today, a Slack thread is routed to a single Platform instance by the `threadTs → instance_id` mapping (ADR-018). Every reply in that thread is relayed to the same instance, and the agent pod makes outbound calls (GitHub, Anthropic, etc.) through OneCLI using the **instance owner's** identity — the OneCLI access token baked into the pod by the controller is scoped to whoever created the instance (ADR-015).
 
 This conflates two distinct concepts:
 
@@ -19,7 +19,7 @@ This conflates two distinct concepts:
 
 The initial draft of this ADR proposed passing a per-turn api-key through ACP `_meta` and having the agent-runtime swap the pod's OneCLI credentials for the turn. This is not implementable, because the OneCLI token is not a request-time parameter — it is **structural** to the pod:
 
-- The controller stores the token in a per-agent K8s Secret `humr-agent-{agentName}-token` and injects it as `ONECLI_ACCESS_TOKEN` (see `resources.go:28-38`).
+- The controller stores the token in a per-agent K8s Secret `platform-agent-{agentName}-token` and injects it as `ONECLI_ACCESS_TOKEN` (see `resources.go:28-38`).
 - Both `HTTPS_PROXY` and `HTTP_PROXY` are set to `http://x:$(ONECLI_ACCESS_TOKEN)@gateway:port` and resolved by Kubernetes at pod startup (`resources.go:26,39-42`).
 - All outbound traffic from the agent process, its child processes (git, curl, npm), and every tool it spawns goes through this proxy. The credential routing lives in the container's environment, not in the agent-runtime.
 - There is no hook to change the proxy auth between turns: env vars are frozen at container start, and child processes inherit the frozen copy.
@@ -33,7 +33,7 @@ Per-turn impersonation therefore cannot be done by mutating state inside the run
 For each Slack message relayed to an instance:
 
 - If the replier **is the instance owner**, the turn runs in the main StatefulSet pod, exactly as today. No change.
-- If the replier **is a foreign user** (linked via `/humr login` but not the owner), the turn runs in a **per-turn Kubernetes Job** whose pod has the replier's OneCLI token baked into its `HTTPS_PROXY` from startup.
+- If the replier **is a foreign user** (linked via `/platform login` but not the owner), the turn runs in a **per-turn Kubernetes Job** whose pod has the replier's OneCLI token baked into its `HTTPS_PROXY` from startup.
 
 Thread routing (`threadTs → instance_id`) is unchanged — the instance is still bound to the thread. What changes is *where* a given turn executes: owner turns go to the main pod; foreign turns go to a short-lived Job.
 
@@ -43,7 +43,7 @@ The forked Job pod mounts the same `/home/agent` PersistentVolumeClaim as the ma
 
 Consequences:
 
-- **Storage class must support RWX.** For the k3s-on-lima development cluster, the default `local-path` provisioner does not support RWX; we will ship `nfs-server-provisioner` as part of the Humr chart's dev-cluster install flow. It runs an in-cluster NFS server as a StatefulSet backed by `local-path`, and exposes RWX PVCs on top of that export — self-contained, one Helm install, no host-level NFS setup. Production deployments on managed K8s use the cloud-native RWX options (EFS, Filestore, Azure Files).
+- **Storage class must support RWX.** For the k3s-on-lima development cluster, the default `local-path` provisioner does not support RWX; we will ship `nfs-server-provisioner` as part of the Platform chart's dev-cluster install flow. It runs an in-cluster NFS server as a StatefulSet backed by `local-path`, and exposes RWX PVCs on top of that export — self-contained, one Helm install, no host-level NFS setup. Production deployments on managed K8s use the cloud-native RWX options (EFS, Filestore, Azure Files).
 - **Session continuity is automatic.** Claude Code's session transcript lives at `/home/agent/.claude/projects/…/*.jsonl`, which is on the shared PVC. A Job can resume the session by calling `unstable_resumeSession({ sessionId })` — the agent-runtime invokes Claude Code with `--resume`, which reads the same on-disk JSONL that the main pod last wrote. New messages append to the same file, so the next main-pod turn picks up Bob's contribution transparently.
 - **Working tree is shared.** Git history, dependency caches, `.claude` state, MEMORY.md — all of it is the same bytes across the main pod and the Job. This matches the "we're working on this together" model of shared Slack threads.
 
@@ -61,14 +61,14 @@ For each foreign-user turn the controller creates a Kubernetes Job:
 
 The main pod gets its OneCLI access token from a long-lived per-agent Secret because its pod is long-lived. Forked Jobs are ephemeral (`ttlSecondsAfterFinished: 60`), so the token does not need K8s-level persistence.
 
-Registration is **lazy** — on first turn from a given `(instanceId, foreignSub)` pair, not at `/humr login` time. Eager registration would have to fan out across every humr-agent for every linked user (Slack logins are not instance-scoped), which scales as `users × agents` and produces dead registrations for users who never reply in a given thread. The lazy cost — one RFC 8693 exchange plus one `CreateAgent` round-trip — is paid once per `(user, instance)` across the user's lifetime and amortizes to zero.
+Registration is **lazy** — on first turn from a given `(instanceId, foreignSub)` pair, not at `/platform login` time. Eager registration would have to fan out across every platform-agent for every linked user (Slack logins are not instance-scoped), which scales as `users × agents` and produces dead registrations for users who never reply in a given thread. The lazy cost — one RFC 8693 exchange plus one `CreateAgent` round-trip — is paid once per `(user, instance)` across the user's lifetime and amortizes to zero.
 
 Minting runs **in the api-server**, not the controller. The api-server is where identity-bearing requests land (Slack relay already resolves `keycloakSub`), where a cache can survive across reconcile loops, and where the RFC 8693 token-exchange code can live alongside other outbound-identity concerns in the `connections` module. Putting the mint step in the controller would force an identity round-trip across processes just to build a Job; instead, the minted token rides in `spec.yaml` and the controller only needs to read it and plug it into the Job env.
 
 On fork request:
 
 - The api-server's `ForeignRegistrationService` performs the RFC 8693 exchange against Keycloak (service-account → impersonation) to obtain a OneCLI client scoped to the foreign user.
-- Registers an agent under that user in OneCLI. The identifier is `fork-{instanceId}-{sha256(foreignSub)[0:12]}` — per-instance, not per-agent: two instances of the same humr-agent produce two OneCLI fork-agents for the same foreign user. We picked this because the identifier lives longer than the fork (OneCLI agents are persistent) and because per-instance isolation makes later audits — "which PRs did Bob open via which instance?" — straightforward.
+- Registers an agent under that user in OneCLI. The identifier is `fork-{instanceId}-{sha256(foreignSub)[0:12]}` — per-instance, not per-agent: two instances of the same platform-agent produce two OneCLI fork-agents for the same foreign user. We picked this because the identifier lives longer than the fork (OneCLI agents are persistent) and because per-instance isolation makes later audits — "which PRs did Bob open via which instance?" — straightforward.
 - `POST /api/agents` is idempotent over the identifier: OneCLI returns `409 Conflict` on duplicate; the port falls back to `GET /api/agents` and picks the matching entry. First turn from a user on an instance registers; subsequent turns return the same token.
 - Immediately after Create (and on the 409 fallback), the port calls `PATCH /api/agents/{id}/secret-mode` with `{mode: "all"}`. OneCLI's default for newly created agents is the empty-secret mode, which would leave the fork pod's proxy token carrying no Anthropic/GitHub/etc. credentials — every outbound call would 401. `secret-mode=all` makes any secret the foreign user has configured in their OneCLI account visible to the fork for the duration of the turn, matching the user expectation "I set up my Anthropic key → my fork just uses it".
 - The resulting OneCLI access token is written to the fork ConfigMap's `spec.yaml.accessToken`. The controller reads it and inlines it directly into the Job's `env[]` as `ONECLI_ACCESS_TOKEN`. The pod's `HTTPS_PROXY` interpolation (`http://x:$(ONECLI_ACCESS_TOKEN)@gateway:port`) works identically.
@@ -92,7 +92,7 @@ OneCLI is unchanged — no new delegation header, no `act_as` semantics; the exi
 
 Fork-Job requests follow the existing ConfigMap-as-IPC pattern (agent-template, agent-instance, agent-schedule): the API server writes `spec.yaml`, the controller reconciles and writes `status.yaml`. No new tRPC endpoints, no direct API-server-to-controller calls.
 
-New ConfigMap type: `humr.ai/type: agent-fork`.
+New ConfigMap type: `platform.ai/type: agent-fork`.
 
 - **`spec.yaml`** (API-server-owned): `{ version, instance, foreignSub, sessionId?, accessToken }` — identifies the instance to fork off, the foreign user whose identity the turn runs under, optionally the ACP session to resume, and the minted OneCLI access token that will be inlined into the Job env (§4).
 - **`status.yaml`** (controller-owned): `{ version, phase: Pending|Ready|Failed|Completed, jobName, podIP?, error? }` — reports Job progress and the pod address once reachable. `error` carries `{ reason, detail? }` where `reason ∈ {CredentialMintFailed, OrchestrationFailed, PodNotReady, Timeout}`.
@@ -150,10 +150,10 @@ Direct UI sessions, cron-triggered sessions (ADR-019), and MCP/harness-API traff
 
 - Outbound API calls in a foreign-user Slack turn are attributed to the actual replier; PRs, issues, model usage, audit logs all match who asked for the action.
 - Owner turns stay on the main pod — no regression in latency or behavior for the 80% case.
-- Every Humr deployment must provision an RWX-capable storage class. The dev cluster (k3s-on-lima) ships with a workaround; prod deployments on managed K8s (EKS, GKE, AKS) already have RWX via EFS/Filestore/Azure Files.
+- Every Platform deployment must provision an RWX-capable storage class. The dev cluster (k3s-on-lima) ships with a workaround; prod deployments on managed K8s (EKS, GKE, AKS) already have RWX via EFS/Filestore/Azure Files.
 - The api-server grows a `(instanceId, foreignSub) → accessToken` in-memory cache and the RFC 8693 token-exchange path in the `connections` module. The controller grows a new fork-Job creation path that reads the minted token from `spec.yaml.accessToken`. RFC 8693 impersonation ends up split across both processes (api-server for the OneCLI access token, controller for per-agent secret listing). No new persistent K8s resources (no per-foreign-user Secret).
 - The API server gains a "fork path" in the Slack relay: detect foreign replier → mint foreign OneCLI token → create `agent-fork` ConfigMap with the token inlined → poll `status.yaml` until `phase == Ready` → proxy ACP to `status.yaml.podIP`. Job creation + pod Ready adds ~2–5 s cold-start latency per foreign turn; acceptable for Slack.
-- A new ConfigMap type `humr.ai/type: agent-fork` is introduced, reusing the existing spec/status split. The fork path uses polling (not an informer) on the status field; see §5 for the rationale. No new CRDs or tRPC endpoints.
+- A new ConfigMap type `platform.ai/type: agent-fork` is introduced, reusing the existing spec/status split. The fork path uses polling (not an informer) on the status field; see §5 for the rationale. No new CRDs or tRPC endpoints.
 - OneCLI is unchanged — no new headers, no delegation flow; the fork burden from ADR-015 does not grow. The api-server's interactions with OneCLI are confined to `POST /api/agents` (with 409-idempotency fallback via `GET /api/agents`) and `PATCH /api/agents/{id}/secret-mode`, all on the existing public API.
 - Shared workspace means Bob's Job and Alice's pod see the same `.git`, same `node_modules`, same `~/.claude`. Races are possible but deferred (§7).
 - Jobs auto-clean (`ttlSecondsAfterFinished`). Credentials live in the fork ConfigMap's `spec.yaml.accessToken` for the Job's lifetime (plus TTL) and in the Job's env; they are not persisted elsewhere. Only the api-server's in-memory cache persists between turns.

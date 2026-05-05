@@ -19,10 +19,10 @@ import (
 	"k8s.io/client-go/tools/remotecommand"
 	"gopkg.in/yaml.v3"
 
-	"github.com/kagenti/humr/packages/controller/pkg/config"
-	"github.com/kagenti/humr/packages/controller/pkg/lifecycle"
-	"github.com/kagenti/humr/packages/controller/pkg/reconciler"
-	"github.com/kagenti/humr/packages/controller/pkg/types"
+	"github.com/kagenti/platform/packages/controller/pkg/config"
+	"github.com/kagenti/platform/packages/controller/pkg/lifecycle"
+	"github.com/kagenti/platform/packages/controller/pkg/reconciler"
+	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
 type Scheduler struct {
@@ -75,7 +75,7 @@ func (s *Scheduler) Stop() {
 
 func (s *Scheduler) SyncSchedule(cm *corev1.ConfigMap) error {
 	name := cm.Name
-	instanceName := cm.Labels["humr.ai/instance"]
+	instanceName := cm.Labels["agent-platform.ai/instance"]
 
 	specYAML, ok := cm.Data["spec.yaml"]
 	if !ok {

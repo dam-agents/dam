@@ -1,6 +1,6 @@
 import type { StateCreator } from "zustand";
 
-import type { HumrStore } from "../../store.js";
+import type { PlatformStore } from "../../store.js";
 import { viewToPath } from "../../store/navigation.js";
 import { resetQueryTracker } from "../../store/query-helpers.js";
 import type { InstanceView } from "../../types.js";
@@ -30,7 +30,7 @@ export interface InstancesSlice {
   goBack: () => void;
 }
 
-export const createInstancesSlice: StateCreator<HumrStore, [], [], InstancesSlice> = (set, get) => ({
+export const createInstancesSlice: StateCreator<PlatformStore, [], [], InstancesSlice> = (set, get) => ({
   selectedInstance: null,
   restartingInstances: new Map(),
 

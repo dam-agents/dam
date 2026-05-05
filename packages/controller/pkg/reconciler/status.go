@@ -9,7 +9,7 @@ import (
 	"k8s.io/client-go/util/retry"
 	"gopkg.in/yaml.v3"
 
-	"github.com/kagenti/humr/packages/controller/pkg/types"
+	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
 type AgentStatus struct {

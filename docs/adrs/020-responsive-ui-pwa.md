@@ -3,11 +3,11 @@
 **Status:** ACCEPTED
 **Date:** 2026-04-16
 **Owner:** @jezekra1
-**Issue:** [#129](https://github.com/kagenti/humr/issues/129)
+**Issue:** [#129](https://github.com/kagenti/platform/issues/129)
 
 ## Context
 
-The Humr UI is desktop-only with a fixed 3-column layout. It doesn't work on mobile devices, has no stop/cancel button for running agent turns, and doesn't expose ACP session configuration (model, mode, effort, thinking) that the protocol already supports. Users who want to interact with agents from a phone cannot.
+The Platform UI is desktop-only with a fixed 3-column layout. It doesn't work on mobile devices, has no stop/cancel button for running agent turns, and doesn't expose ACP session configuration (model, mode, effort, thinking) that the protocol already supports. Users who want to interact with agents from a phone cannot.
 
 The ACP protocol (v0.17.0) and the Claude Code ACP harness (v0.24.2) already implement:
 - `session/cancel` (stable) — cancel an active prompt turn
@@ -46,7 +46,7 @@ On mobile (<768px), ChatView uses a two-screen flow: session list (full screen) 
 
 ### 5. PWA with service worker
 
-Add a web app manifest and minimal service worker for app shell caching. This allows mobile users to install Humr to their home screen and get a standalone app experience. No offline data — WebSocket and API are online-only.
+Add a web app manifest and minimal service worker for app shell caching. This allows mobile users to install Platform to their home screen and get a standalone app experience. No offline data — WebSocket and API are online-only.
 
 ### 6. Lobster logo
 

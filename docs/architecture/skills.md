@@ -4,7 +4,7 @@ Last verified: 2026-04-29
 
 ## Motivated by
 
-- [ADR-030 — Skills: connectable sources and install](../adrs/030-skills-marketplace.md) — Humr owns skill *transport*, not skill format; sources are external git repos, not a Humr-hosted catalog
+- [ADR-030 — Skills: connectable sources and install](../adrs/030-skills-marketplace.md) — Platform owns skill *transport*, not skill format; sources are external git repos, not a Platform-hosted catalog
 - [ADR-023 — Harness-agnostic agent base image](../adrs/023-harness-agnostic-base-image.md) — `skillPaths` is a per-template knob; the controller stays harness-agnostic
 - [ADR-005 — Gateway pattern for credentials](../adrs/005-credential-gateway.md) — agent-runtime makes GitHub calls without holding credentials; the Envoy sidecar injects `Authorization` on the wire from the owner's K8s Secret
 - [ADR-024 — Connector-declared envs and per-agent overrides](../adrs/024-connector-declared-envs.md) — env composition rules for agent pods
@@ -12,7 +12,7 @@ Last verified: 2026-04-29
 
 ## Overview
 
-A **skill** is a directory containing a `SKILL.md` manifest (YAML frontmatter — `name`, `description`) plus supporting files. Humr does not interpret skills; it **transports** them between external git repositories and the per-instance PVC, where the harness reads them from configured paths.
+A **skill** is a directory containing a `SKILL.md` manifest (YAML frontmatter — `name`, `description`) plus supporting files. Platform does not interpret skills; it **transports** them between external git repositories and the per-instance PVC, where the harness reads them from configured paths.
 
 The subsystem splits cleanly across two bounded contexts ([`tseng/vocabulary.md`](../../tseng/vocabulary.md)):
 
@@ -73,7 +73,7 @@ The api-server scans **public** GitHub catalogs directly (no credentials needed)
 A connection to an external git repository, addressable by id. Three kinds, all merged into a single list at read time and badged in the UI:
 
 - **User source** — a row in Postgres (`skill_sources`), owner-scoped. Created and deleted by the user via tRPC.
-- **System source** — a Helm-declared platform-wide entry from `skills.skillSources` ([`deploy/helm/humr/values.yaml`](../../deploy/helm/humr/values.yaml)). Loaded into api-server config from the `SKILL_SOURCES_SEED` env at boot, never persisted to Postgres. Marked `system: true` and protected from deletion. Badged "Platform".
+- **System source** — a Helm-declared platform-wide entry from `skills.skillSources` ([`deploy/helm/platform/values.yaml`](../../deploy/helm/platform/values.yaml)). Loaded into api-server config from the `SKILL_SOURCES_SEED` env at boot, never persisted to Postgres. Marked `system: true` and protected from deletion. Badged "Platform".
 - **Template source** — declared on a template's `spec.skillSources`. Surfaced read-only on every instance derived from that template. Badged "Agent".
 
 Listing dedupes on `gitUrl` with first-wins precedence: user → template → system. A user creating a custom source for the same URL shadows the system entry; deleting the user row exposes the system entry again.
@@ -121,7 +121,7 @@ Three responsibilities:
 
 - **Install** — fetches the source at the requested `version`. For GitHub URLs, uses the REST tarball endpoint (anonymous first, retry authenticated on 404 to distinguish "not found" from "private"); for everything else, shallow-clones via `git`. The Envoy sidecar injects the owner's GitHub token on the wire when the request hits `api.github.com`. Resolves the skill directory inside the fetch (`skills/<name>/` then top-level `<name>/`), copies it into every configured Skill Path, and returns the deterministic `contentHash`.
 - **Scan** — same fetch path; walks for `SKILL.md`, parses frontmatter, and returns `(name, description, version, contentHash)` for each.
-- **Publish** — REST-only. Reads the local skill from disk (size-capped per file and per skill), creates blobs + tree + commit + branch + PR via the GitHub REST API, with author `Humr <humr-publish@users.noreply.github.com>`. Branch naming: `humr/publish-<name>-<timestamp>`. There is no `git push`.
+- **Publish** — REST-only. Reads the local skill from disk (size-capped per file and per skill), creates blobs + tree + commit + branch + PR via the GitHub REST API, with author `Platform <platform-publish@users.noreply.github.com>`. Branch naming: `platform/publish-<name>-<timestamp>`. There is no `git push`.
 
 Boot-time wiring runs `gh auth setup-git` once before the tRPC server starts, so a private-repo `git clone` invoked from inside the pod also routes through `gh` (and therefore through the sidecar's credential injector) instead of stalling on a username prompt.
 
@@ -130,10 +130,10 @@ Boot-time wiring runs `gh auth setup-git` once before the tRPC server starts, so
 Agent-runtime never holds a real GitHub token. The Envoy sidecar performs the swap:
 
 1. The pod's `HTTPS_PROXY` is `http://127.0.0.1:<envoy-port>`, so every outbound request goes through the sidecar. `SSL_CERT_FILE` points at the cluster-issued MITM CA so TLS termination at the sidecar succeeds ([security-and-credentials](security-and-credentials.md)).
-2. The sidecar's host-specific filter chain for `api.github.com` injects `Authorization: Bearer <user's GitHub OAuth token>` from a K8s Secret labelled `humr.ai/owner=<sub>` and `humr.ai/connection=github` (or similar), then re-originates upstream TLS to the real host.
+2. The sidecar's host-specific filter chain for `api.github.com` injects `Authorization: Bearer <user's GitHub OAuth token>` from a K8s Secret labelled `platform.ai/owner=<sub>` and `platform.ai/connection=github` (or similar), then re-originates upstream TLS to the real host.
 3. agent-runtime makes its API calls without authenticating — Envoy supplies the credential.
 
-If the user has not connected GitHub, no Secret exists and the request leaves authenticated only when the agent has supplied its own token. The agent runtime exposes `HUMR_GH_TOKEN_AVAILABLE=true|false` so wrapper scripts can short-circuit instead of making a 401-eliciting request first.
+If the user has not connected GitHub, no Secret exists and the request leaves authenticated only when the agent has supplied its own token. The agent runtime exposes `PLATFORM_GH_TOKEN_AVAILABLE=true|false` so wrapper scripts can short-circuit instead of making a 401-eliciting request first.
 
 The same path lets `git clone` of a private repo work without any credential being mounted into the agent container.
 

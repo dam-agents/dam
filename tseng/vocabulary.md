@@ -99,5 +99,5 @@ Pod-side operational view of skills. Distinct from the api-server's Skills conte
 | Secret | A user-owned credential (e.g., an Anthropic API key) stored as a K8s Secret labelled with the owner's `sub` and mounted into the agent pod's Envoy sidecar for wire-level injection on outbound traffic |
 | Secret Type | The provider taxonomy for a secret — currently `anthropic` (hostPattern fixed) or `generic` (user-supplied host/path patterns) |
 | Host Pattern | The hostname pattern that identifies which outbound requests the Envoy sidecar should inject this secret into |
-| Secret Assignment | The linkage between a Secret and an Agent that makes the secret available to that agent's egress; stored as the `humr.ai/secret-mode` + `humr.ai/granted-secret-ids` annotations on the agent's instance ConfigMap |
+| Secret Assignment | The linkage between a Secret and an Agent that makes the secret available to that agent's egress; stored as the `agent-platform.ai/secret-mode` + `agent-platform.ai/granted-secret-ids` annotations on the agent's instance ConfigMap |
 | Provider | The external service a secret authenticates against (e.g., Anthropic); for typed secrets the provider determines default routing rules |

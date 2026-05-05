@@ -1,0 +1,9 @@
+{{- if .Values.createAgentNamespace }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.agentNamespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    agent-platform.ai/managed-by: platform
+{{- end }}

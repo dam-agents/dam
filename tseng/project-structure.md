@@ -6,8 +6,8 @@
 <!-- package: agent-runtime-api | role: contract | path: packages/agent-runtime-api | package_name: agent-runtime-api -->
 <!-- package: api-server | role: server | runtime: hono | path: packages/api-server | package_name: api-server -->
 <!-- package: agent-runtime | role: server | runtime: standalone | path: packages/agent-runtime | package_name: agent-runtime -->
-<!-- package: ui | role: client | path: packages/ui | package_name: humr-ui -->
-<!-- package: humr-base | role: other | path: packages/humr-base | package_name: humr-base -->
+<!-- package: ui | role: client | path: packages/ui | package_name: platform-ui -->
+<!-- package: platform-base | role: other | path: packages/platform-base | package_name: platform-base -->
 <!-- package: claude-code | role: other | path: packages/agents/claude-code | package_name: claude-code -->
 <!-- package: google-workspace | role: other | path: packages/agents/google-workspace | package_name: google-workspace -->
 <!-- package: controller | role: other | path: packages/controller | package_name: controller (Go) -->

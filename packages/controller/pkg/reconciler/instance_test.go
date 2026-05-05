@@ -13,7 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
 
-	"github.com/kagenti/humr/packages/controller/pkg/config"
+	"github.com/kagenti/platform/packages/controller/pkg/config"
 )
 
 func setupReconciler(t *testing.T, agents map[string]*corev1.ConfigMap, objects ...runtime.Object) (*InstanceReconciler, *fake.Clientset) {
@@ -22,7 +22,7 @@ func setupReconciler(t *testing.T, agents map[string]*corev1.ConfigMap, objects 
 	cfg := &config.Config{
 		Namespace:         "test-agents",
 		ReleaseNamespace:  "default",
-		ReleaseName:       "humr",
+		ReleaseName:       "platform",
 		HarnessServerPort: 4001,
 		EnvoyImage:        "envoyproxy/envoy:distroless-v1.37.2",
 		EnvoyPort:         10000,
@@ -36,7 +36,7 @@ func agentCM() *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "claude-code", Namespace: "test-agents", UID: "agent-uid",
-			Labels: map[string]string{"humr.ai/type": "agent"},
+			Labels: map[string]string{"agent-platform.ai/type": "agent"},
 		},
 		Data: map[string]string{"spec.yaml": fixtureAgentYAML},
 	}
@@ -47,12 +47,12 @@ func instanceCM(desiredState string) *corev1.ConfigMap {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "my-instance", Namespace: "test-agents", UID: "uid-1",
 			Labels: map[string]string{
-				"humr.ai/type":  "agent-instance",
-				"humr.ai/agent": "claude-code",
+				"agent-platform.ai/type":  "agent-instance",
+				"agent-platform.ai/agent": "claude-code",
 			},
 		},
 		Data: map[string]string{
-			"spec.yaml": fmt.Sprintf("version: humr.ai/v1\ndesiredState: %s\nagentId: claude-code\n", desiredState),
+			"spec.yaml": fmt.Sprintf("version: agent-platform.ai/v1\ndesiredState: %s\nagentId: claude-code\n", desiredState),
 		},
 	}
 }
@@ -129,7 +129,7 @@ func TestReconcile_UpdateReplicas(t *testing.T) {
 
 func TestReconcile_AgentNotFound(t *testing.T) {
 	cm := instanceCM("running")
-	cm.Labels["humr.ai/agent"] = "missing"
+	cm.Labels["agent-platform.ai/agent"] = "missing"
 	r, client := setupReconciler(t,
 		map[string]*corev1.ConfigMap{},
 		cm,
@@ -216,7 +216,7 @@ func TestDelete_CleansPVCs(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "home-agent-my-instance-0",
 			Namespace: "test-agents",
-			Labels:    map[string]string{"humr.ai/instance": "my-instance"},
+			Labels:    map[string]string{"agent-platform.ai/instance": "my-instance"},
 		},
 	}
 	r, client := setupReconciler(t,
@@ -227,7 +227,7 @@ func TestDelete_CleansPVCs(t *testing.T) {
 	// Verify PVC exists before deletion
 	ctx := context.Background()
 	pvcs, err := client.CoreV1().PersistentVolumeClaims("test-agents").List(ctx, metav1.ListOptions{
-		LabelSelector: "humr.ai/instance=my-instance",
+		LabelSelector: "agent-platform.ai/instance=my-instance",
 	})
 	require.NoError(t, err)
 	assert.Len(t, pvcs.Items, 1)
@@ -236,7 +236,7 @@ func TestDelete_CleansPVCs(t *testing.T) {
 	r.Delete(ctx, "my-instance")
 
 	pvcs, err = client.CoreV1().PersistentVolumeClaims("test-agents").List(ctx, metav1.ListOptions{
-		LabelSelector: "humr.ai/instance=my-instance",
+		LabelSelector: "agent-platform.ai/instance=my-instance",
 	})
 	require.NoError(t, err)
 	assert.Empty(t, pvcs.Items)
@@ -248,7 +248,7 @@ func TestReconcileOrphanPVCs(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "home-agent-deleted-instance-0",
 			Namespace: "test-agents",
-			Labels:    map[string]string{"humr.ai/instance": "deleted-instance"},
+			Labels:    map[string]string{"agent-platform.ai/instance": "deleted-instance"},
 		},
 	}
 	// live: PVC labeled for an instance that still has a ConfigMap
@@ -256,7 +256,7 @@ func TestReconcileOrphanPVCs(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "home-agent-my-instance-0",
 			Namespace: "test-agents",
-			Labels:    map[string]string{"humr.ai/instance": "my-instance"},
+			Labels:    map[string]string{"agent-platform.ai/instance": "my-instance"},
 		},
 	}
 	liveCM := instanceCM("running") // name = "my-instance"

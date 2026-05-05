@@ -5,7 +5,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/kagenti/humr/packages/controller/pkg/types"
+	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
 // AgentGetter abstracts how agents are looked up — informer lister in prod, map in tests.

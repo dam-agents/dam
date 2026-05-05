@@ -1,6 +1,6 @@
 const KEYCLOAK_URL = "http://keycloak.localtest.me:5555";
-const REALM = "humr";
-const CLIENT_ID = "humr-ui";
+const REALM = "platform";
+const CLIENT_ID = "platform-ui";
 
 export interface TokenResponse {
   access_token: string;

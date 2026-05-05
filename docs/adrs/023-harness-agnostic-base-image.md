@@ -6,7 +6,7 @@
 
 ## Context
 
-Humr must support multiple coding-agent harnesses (Claude Code, pi, codex, future Gemini CLI, etc.) without baking a specific one into the platform. Each harness ships as a CLI binary that speaks ACP (Agent Client Protocol) on stdio. The platform's job is to:
+Platform must support multiple coding-agent harnesses (Claude Code, pi, codex, future Gemini CLI, etc.) without baking a specific one into the platform. Each harness ships as a CLI binary that speaks ACP (Agent Client Protocol) on stdio. The platform's job is to:
 
 1. Run the harness inside a pod with network isolation and Envoy-injected credentials (ADR-005, ADR-033).
 2. Receive ACP traffic from the UI (ADR-007) and forward it to a subprocess.
@@ -17,9 +17,9 @@ None of those concerns depend on which harness is running — only on an ACP-spe
 
 ## Decision
 
-Ship a single **`humr-base`** image that owns the platform-managed surface area; every concrete agent image extends it and contributes only the harness-specific bits.
+Ship a single **`platform-base`** image that owns the platform-managed surface area; every concrete agent image extends it and contributes only the harness-specific bits.
 
-### `humr-base` responsibilities
+### `platform-base` responsibilities
 
 - Node 22 runtime + `git` + `gh` CLI + ca-certificates.
 - Bundled `agent-runtime` process (`packages/agent-runtime/`): ACP WebSocket server, file-service tRPC router, trigger-file watcher.
@@ -31,7 +31,7 @@ Ship a single **`humr-base`** image that owns the platform-managed surface area;
 A concrete agent image is a ~5-line Dockerfile:
 
 ```Dockerfile
-ARG BASE_IMAGE=humr-base
+ARG BASE_IMAGE=platform-base
 FROM ${BASE_IMAGE}
 
 RUN npm install -g <harness-package>
@@ -61,21 +61,21 @@ See `packages/agents/pi-agent/README.md` for pi-specific config (memory scopes, 
 
 **Agent-runtime as a sidecar container.** Each agent runs its harness in one container, agent-runtime in another, communicating over a shared volume or localhost. Rejected: doubles the per-pod footprint, complicates the trigger/file path (two containers to exec into), and gains nothing — agent-runtime is lightweight and harness-agnostic already.
 
-**Per-harness base images** (`humr-base-claude`, `humr-base-pi`, …). Rejected: duplicates the platform code for each harness; every agent-runtime change has to be rebuilt N times. The single `humr-base` + `AGENT_COMMAND` layer already gives harness authors all the flexibility they need without forking the base.
+**Per-harness base images** (`platform-base-claude`, `platform-base-pi`, …). Rejected: duplicates the platform code for each harness; every agent-runtime change has to be rebuilt N times. The single `platform-base` + `AGENT_COMMAND` layer already gives harness authors all the flexibility they need without forking the base.
 
-**Drop `humr-base` and let agents embed agent-runtime directly.** Rejected: every agent repo would need to vendor or depend on the agent-runtime package and rebuild it, duplicating the Node + git + gh + CA bootstrap layers. `humr-base` consolidates that fixed cost once.
+**Drop `platform-base` and let agents embed agent-runtime directly.** Rejected: every agent repo would need to vendor or depend on the agent-runtime package and rebuild it, duplicating the Node + git + gh + CA bootstrap layers. `platform-base` consolidates that fixed cost once.
 
 ## Consequences
 
-- **Rebuild coupling.** Every agent image must be rebuilt when `humr-base` (and thus the bundled agent-runtime) changes. `mise run image:agent` builds `humr-base` + all three agents in one pass.
+- **Rebuild coupling.** Every agent image must be rebuilt when `platform-base` (and thus the bundled agent-runtime) changes. `mise run image:agent` builds `platform-base` + all three agents in one pass.
 - **Harness contract is narrow.** The platform assumes the harness speaks ACP over stdio and respects the trigger-file convention (ADR-008). Anything outside that — memory formats, skill registries, tool auth — is the harness's business.
-- **Low barrier for new agents.** Adding a new harness is: Dockerfile that extends `humr-base`, `npm install -g <harness>`, set `AGENT_COMMAND`, optionally seed `workspace/`. Example PRs: `feat(agent-runtime): add codex-ready agent image` (502366e), `feat(agents): add pi-agent with @zhafron/pi-memory` (4f7cfd0).
-- **Helm chart plumbs image + template per agent.** Each agent has a Helm values block (`pi-agent` at `deploy/helm/humr/values.yaml`, template at `deploy/helm/humr/templates/pi-agent-template.yaml`). Adding an agent requires a chart change — acceptable cost.
+- **Low barrier for new agents.** Adding a new harness is: Dockerfile that extends `platform-base`, `npm install -g <harness>`, set `AGENT_COMMAND`, optionally seed `workspace/`. Example PRs: `feat(agent-runtime): add codex-ready agent image` (502366e), `feat(agents): add pi-agent with @zhafron/pi-memory` (4f7cfd0).
+- **Helm chart plumbs image + template per agent.** Each agent has a Helm values block (`pi-agent` at `deploy/helm/platform/values.yaml`, template at `deploy/helm/platform/templates/pi-agent-template.yaml`). Adding an agent requires a chart change — acceptable cost.
 - **Single `AGENT_COMMAND` assumes single-binary harnesses.** If a future harness needs a multi-process orchestration (e.g., sidecar MCP server), it must wrap itself in a shell script and expose one ACP entrypoint. No orchestration primitives in the platform.
 
 ## Key files
 
-- `packages/humr-base/Dockerfile` — base image definition.
+- `packages/platform-base/Dockerfile` — base image definition.
 - `packages/agent-runtime/src/server.ts` — reads `AGENT_COMMAND`, runs the ACP server.
 - `packages/agent-runtime/src/acp-bridge.ts` — spawns the harness subprocess per session.
 - `packages/agent-runtime/src/trigger-watcher.ts` — watches `/home/agent/.triggers/` for scheduled-session files.

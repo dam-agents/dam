@@ -98,7 +98,7 @@ export interface GitHubRestClient {
  * Adapter that talks to `api.github.com` through the agent pod's Envoy
  * sidecar (HTTPS_PROXY).
  *
- * `withAuth: true` attaches the sentinel bearer (`humr:sentinel` unless
+ * `withAuth: true` attaches the sentinel bearer (`dummy-placeholder` unless
  * `GH_TOKEN` overrides) — the sidecar's credential_injector filter rewrites
  * it to the user's OAuth token on the wire. Needed for mutations and for
  * endpoints whose 404-on-unauthenticated path is ambiguous (we'd rather get
@@ -185,7 +185,7 @@ export function createGitHubRestClient(): GitHubRestClient {
 }
 
 function ghHeaders(withAuth: boolean, hasBody: boolean): Record<string, string> {
-  const token = process.env.GH_TOKEN ?? "humr:sentinel";
+  const token = process.env.GH_TOKEN ?? "dummy-placeholder";
   return {
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",

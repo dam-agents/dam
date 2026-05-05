@@ -1,12 +1,12 @@
 # Pi Agent
 
-Humr agent running [pi coding agent](https://github.com/badlogic/pi-mono) with persistent cross-session memory.
+Platform agent running [pi coding agent](https://github.com/badlogic/pi-mono) with persistent cross-session memory.
 
 ## Stack
 
 | Component | Package | Purpose |
 |---|---|---|
-| Harness | `@mariozechner/pi-coding-agent` + `pi-acp` | pi runtime + ACP bridge to Humr UI |
+| Harness | `@mariozechner/pi-coding-agent` + `pi-acp` | pi runtime + ACP bridge to Platform UI |
 | Memory | `@zhafron/pi-memory` | git-free file-based memory, auto-injected at session start |
 
 Default model: `openai / gpt-5.4-mini`. Change in `workspace/.pi/agent/settings.json`.
@@ -28,7 +28,7 @@ workspace/
 
 Pi natively supports a long list of API-key providers (OpenAI, Mistral, Groq, DeepSeek, Cerebras, xAI, OpenRouter, Gemini, Fireworks, Hugging Face, ZAI, MiniMax, …) plus any OpenAI-Completions / OpenAI-Responses / Anthropic-Messages / Google-Generative-AI compatible endpoint via [`models.json`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md) or [extensions](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/extensions.md). Authoritative reference: [pi providers](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/providers.md) for env-var names, auth-file shape, and resolution order; [pi models](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md) for the `models.json` schema and `compat` flags.
 
-In Humr the actual credential never lives in pod env. The pod carries a placeholder; the in-pod Envoy sidecar terminates outbound TLS and rewrites the auth header using a [generic secret](../../../docs/architecture/security-and-credentials.md) ([ADR-033](../../../docs/adrs/033-envoy-credential-gateway.md)) scoped to the provider's host. The flow is the same for every provider — only the host pattern and (occasionally) the injection header change.
+On the platform the actual credential never lives in pod env. The pod carries a placeholder; the in-pod Envoy sidecar terminates outbound TLS and rewrites the auth header using a [generic secret](../../../docs/architecture/security-and-credentials.md) ([ADR-033](../../../docs/adrs/033-envoy-credential-gateway.md)) scoped to the provider's host. The flow is the same for every provider — only the host pattern and (occasionally) the injection header change.
 
 ### Built-in API-key providers
 
@@ -37,12 +37,12 @@ Three steps to enable any pi built-in provider:
 1. **Set the provider's env var to a non-empty placeholder** so pi's [credential resolution](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/providers.md#resolution-order) recognizes the provider. Add to `Dockerfile`, the agent template, or per-instance via the Configure Agent UI:
 
    ```dockerfile
-   ENV OPENAI_API_KEY=humr:sentinel
+   ENV OPENAI_API_KEY=dummy-placeholder
    ```
 
    The literal value pi sends on the wire is rewritten by the Envoy sidecar before the request leaves the pod.
 
-2. **Create a generic secret in DAM** scoped to the provider's host. The default injection (`Authorization: Bearer {value}`) is correct for almost every provider in the table below. Override `injectionConfig.headerName` (and optionally `valueFormat`) only for providers that deviate (`x-api-key`, `RITS_API_KEY`, `Token {value}`, …).
+2. **Create a generic secret on the platform** scoped to the provider's host. The default injection (`Authorization: Bearer {value}`) is correct for almost every provider in the table below. Override `injectionConfig.headerName` (and optionally `valueFormat`) only for providers that deviate (`x-api-key`, `RITS_API_KEY`, `Token {value}`, …).
 
 3. **Select the model** in [`settings.json`](workspace/.pi/agent/settings.json) (`defaultProvider` / `defaultModel`) or via `/model` at session start.
 
@@ -71,11 +71,11 @@ Sourced from pi-mono [`env-api-keys.ts`](https://github.com/badlogic/pi-mono/blo
 | MiniMax | `minimax` | `MINIMAX_API_KEY` | `api.minimax.io` |
 | MiniMax (China) | `minimax-cn` | `MINIMAX_CN_API_KEY` | `api.minimaxi.com` |
 
-> **Anthropic — prefer the dedicated provider.** Humr ships a first-class Anthropic provider that handles the OAuth-vs-API-key shape and is wired into the Configure Agent UI as the *Anthropic secret* type. The plain env-var path above does work, but the dedicated provider is the recommended way and the tRPC router rejects `hostPattern` / `pathPattern` / `injectionConfig` on Anthropic secrets to keep the two paths from drifting.
+> **Anthropic — prefer the dedicated provider.** Platform ships a first-class Anthropic provider that handles the OAuth-vs-API-key shape and is wired into the Configure Agent UI as the *Anthropic secret* type. The plain env-var path above does work, but the dedicated provider is the recommended way and the tRPC router rejects `hostPattern` / `pathPattern` / `injectionConfig` on Anthropic secrets to keep the two paths from drifting.
 
 > When two providers share a host (OpenCode Zen vs Go) or a single host serves several pi providers, scope the secret with `pathPattern` ([ADR-028](../../../docs/adrs/028-generic-secret-injection-config.md)) so each credential matches only its own sub-path.
 
-#### Other providers (env vars from pi-mono; Humr integration not validated end-to-end)
+#### Other providers (env vars from pi-mono; Platform integration not validated end-to-end)
 
 These providers have additional configuration shapes (per-resource URLs, AWS credential chain, OAuth, SA-key files). The env vars below are what pi-mono reads; whether they compose cleanly with the Envoy sidecar's wire-level header rewrite hasn't been verified for each — confirm before relying on them in production.
 
@@ -98,7 +98,7 @@ For self-hosted vLLM / Ollama / LM Studio / internal proxies that aren't in pi's
     "internal-vllm": {
       "baseUrl": "https://vllm.internal.example.com/v1",
       "api": "openai-completions",
-      "apiKey": "humr:sentinel",
+      "apiKey": "dummy-placeholder",
       "authHeader": true,
       "models": [{ "id": "qwen2.5-coder-32b" }]
     }
@@ -106,7 +106,7 @@ For self-hosted vLLM / Ollama / LM Studio / internal proxies that aren't in pi's
 }
 ```
 
-Then create a generic secret in DAM with `hostPattern: vllm.internal.example.com` and the default Bearer injection. The literal `apiKey` is a placeholder satisfying [pi-acp's per-session auth gate](#pi-acp-auth-gate-workarounds-15); the Envoy sidecar rewrites the header on the wire. The full `models.json` schema (`compat`, `reasoning`, `contextWindow`, `thinkingFormat`, `headers`, `modelOverrides`) is in [pi models.md](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md).
+Then create a generic secret on the platform with `hostPattern: vllm.internal.example.com` and the default Bearer injection. The literal `apiKey` is a placeholder satisfying [pi-acp's per-session auth gate](#pi-acp-auth-gate-workarounds-15); the Envoy sidecar rewrites the header on the wire. The full `models.json` schema (`compat`, `reasoning`, `contextWindow`, `thinkingFormat`, `headers`, `modelOverrides`) is in [pi models.md](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md).
 
 For non-Bearer auth, override `injectionConfig` on the secret instead of changing `models.json`:
 
@@ -130,7 +130,7 @@ The [`pi-rits`](workspace/.pi/agent/extensions/pi-rits/index.ts) extension is au
 | `RITS_MAX_TOKENS` | no | `16384` | Max output tokens. |
 | `RITS_THINKING_FORMAT` | no | — | `qwen`, `qwen-chat-template`, `zai`, `reasoning_effort`, or `openrouter` — request-body hint for servers with a matching reasoning parser. |
 
-The API key is **not** a pod env var. Configure it as a generic secret in DAM with `injectionConfig.headerName: RITS_API_KEY`, `injectionConfig.valueFormat: {value}`, and a host pattern matching your RITS deployment. The Envoy sidecar injects the header on outbound traffic at the proxy layer.
+The API key is **not** a pod env var. Configure it as a generic secret on the platform with `injectionConfig.headerName: RITS_API_KEY`, `injectionConfig.valueFormat: {value}`, and a host pattern matching your RITS deployment. The Envoy sidecar injects the header on outbound traffic at the proxy layer.
 
 To make RITS the default model, edit `settings.json`:
 
@@ -197,7 +197,7 @@ mise run cluster:install        # first time
 mise run cluster:build-agent    # rebuild after changes
 ```
 
-Create an agent from the **pi-agent** template in the Humr UI, open a session, and the bootstrap flow runs automatically.
+Create an agent from the **pi-agent** template in the Platform UI, open a session, and the bootstrap flow runs automatically.
 
 ## Upgrading existing instances
 

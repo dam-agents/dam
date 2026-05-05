@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { StateCreator } from "zustand";
-import type { HumrStore } from "../store.js";
+import type { PlatformStore } from "../store.js";
 
 export interface DialogState {
   type: "alert" | "confirm";
@@ -16,7 +16,7 @@ export interface DialogSlice {
   closeDialog: (ok: boolean) => void;
 }
 
-export const createDialogSlice: StateCreator<HumrStore, [], [], DialogSlice> = (set, get) => ({
+export const createDialogSlice: StateCreator<PlatformStore, [], [], DialogSlice> = (set, get) => ({
   dialog: null,
   showAlert: (message, title = "Error") =>
     new Promise<void>((resolve) => {

@@ -11,7 +11,7 @@ flowchart LR
   llm[LLM APIs]
   github[GitHub]
 
-  subgraph cluster[Humr install]
+  subgraph cluster[Platform install]
     ui[ui]
     api-server[api-server]
     controller[controller]
@@ -44,7 +44,7 @@ flowchart LR
   envoy -->|inject credentials| github
 ```
 
-The cluster boundary is the trust boundary. Browsers and Slack users reach Humr through the api-server; LLM and GitHub traffic from the agent always exits through the in-pod Envoy sidecar, which injects credentials from K8s Secrets mounted into the sidecar only. The agent container has no direct path to anything outside the cluster, no service-account credentials, and no upstream tokens of its own.
+The cluster boundary is the trust boundary. Browsers and Slack users reach Platform through the api-server; LLM and GitHub traffic from the agent always exits through the in-pod Envoy sidecar, which injects credentials from K8s Secrets mounted into the sidecar only. The agent container has no direct path to anything outside the cluster, no service-account credentials, and no upstream tokens of its own.
 
 ## Subsystems
 
@@ -59,10 +59,10 @@ Each page describes how the accepted ADRs are realized in the current system. AD
 
 ## Strategy
 
-Higher-level documents that frame *what* Humr is trying to be, separate from how the current system is built:
+Higher-level documents that frame *what* Platform is trying to be, separate from how the current system is built:
 
 - [Multiplayer model](strategy/multi-player.md) — what's private to each user, what's shared via channels, and what's install-wide plumbing.
-- [Security model](strategy/security-model.md) — the three structural risks of running AI agents, and which ones Humr addresses today.
+- [Security model](strategy/security-model.md) — the three structural risks of running AI agents, and which ones Platform addresses today.
 
 ## Decisions
 

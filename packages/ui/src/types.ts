@@ -145,10 +145,10 @@ export type SecretType = "anthropic" | "generic";
 export type SecretMode = "all" | "selective";
 
 /** Prefix used for MCP OAuth secrets stored as K8s credential Secrets. */
-export const MCP_SECRET_PREFIX = "__humr_mcp:";
+export const MCP_SECRET_PREFIX = "__mcp:";
 
 /** Prefix used for app-OAuth tokens stored as K8s credential Secrets by the api-server. */
-export const APP_OAUTH_SECRET_PREFIX = "__humr_oauth:";
+export const APP_OAUTH_SECRET_PREFIX = "__oauth:";
 
 export function isMcpSecret(s: { name: string; type: SecretType }): boolean {
   return s.type !== "anthropic" && s.name.startsWith(MCP_SECRET_PREFIX);

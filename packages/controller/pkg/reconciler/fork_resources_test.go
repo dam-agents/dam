@@ -8,7 +8,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/kagenti/humr/packages/controller/pkg/types"
+	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
 var testForkOwnerCM = &corev1.ConfigMap{
@@ -39,9 +39,9 @@ func TestBuildForkJob_BasicShape(t *testing.T) {
 	require.NotNil(t, job)
 	assert.Equal(t, "fork-abc", job.Name)
 	assert.Equal(t, "test-agents", job.Namespace)
-	assert.Equal(t, "agent-fork-job", job.Labels["humr.ai/type"])
-	assert.Equal(t, "fork-abc", job.Labels["humr.ai/fork-id"])
-	assert.Equal(t, "my-instance", job.Labels["humr.ai/instance"])
+	assert.Equal(t, "agent-fork-job", job.Labels["agent-platform.ai/type"])
+	assert.Equal(t, "fork-abc", job.Labels["agent-platform.ai/fork-id"])
+	assert.Equal(t, "my-instance", job.Labels["agent-platform.ai/instance"])
 
 	require.Len(t, job.OwnerReferences, 1)
 	assert.Equal(t, "fork-uid-123", string(job.OwnerReferences[0].UID))
@@ -65,8 +65,8 @@ func TestBuildForkJob_ForkMetadataEnv(t *testing.T) {
 	c := job.Spec.Template.Spec.Containers[0]
 
 	env := envMap(c.Env)
-	assert.Equal(t, "fork-abc", env["HUMR_FORK_ID"])
-	assert.Equal(t, "kc|user-42", env["HUMR_FOREIGN_SUB"])
+	assert.Equal(t, "fork-abc", env["PLATFORM_FORK_ID"])
+	assert.Equal(t, "kc|user-42", env["PLATFORM_FOREIGN_SUB"])
 	assert.Equal(t, "my-instance", env["ADK_INSTANCE_ID"])
 	assert.Equal(t, "http://127.0.0.1:10000", env["HTTPS_PROXY"])
 }
@@ -114,7 +114,7 @@ func envMap(envs []corev1.EnvVar) map[string]string {
 }
 
 func TestBuildForkJob_AddsEnvoySidecar(t *testing.T) {
-	secrets := []corev1.Secret{credSecret("humr-cred-replier-x", "api.example.com")}
+	secrets := []corev1.Secret{credSecret("platform-cred-replier-x", "api.example.com")}
 	job := BuildForkJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, secrets)
 
 	require.Len(t, job.Spec.Template.Spec.Containers, 2, "agent + envoy sidecar")
@@ -135,7 +135,7 @@ func TestBuildForkJob_AddsEnvoySidecar(t *testing.T) {
 }
 
 func TestBuildForkJob_ReplierSecretsMountedSidecarOnly(t *testing.T) {
-	secrets := []corev1.Secret{credSecret("humr-cred-replier-x", "api.example.com")}
+	secrets := []corev1.Secret{credSecret("platform-cred-replier-x", "api.example.com")}
 	job := BuildForkJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, secrets)
 
 	require.Len(t, job.Spec.Template.Spec.Containers, 2)
@@ -146,15 +146,15 @@ func TestBuildForkJob_ReplierSecretsMountedSidecarOnly(t *testing.T) {
 	for _, m := range envoy.VolumeMounts {
 		envoyMounts[m.Name] = true
 	}
-	require.True(t, envoyMounts["cred-humr-cred-replier-x"], "envoy must mount the replier credential secret")
+	require.True(t, envoyMounts["cred-platform-cred-replier-x"], "envoy must mount the replier credential secret")
 
 	for _, m := range agent.VolumeMounts {
-		assert.NotEqual(t, "cred-humr-cred-replier-x", m.Name, "credential boundary lives at the container — agent must not see Secret bytes")
+		assert.NotEqual(t, "cred-platform-cred-replier-x", m.Name, "credential boundary lives at the container — agent must not see Secret bytes")
 	}
 }
 
 func TestBuildForkJob_NoFetchCACertInit(t *testing.T) {
-	secrets := []corev1.Secret{credSecret("humr-cred-replier-x", "api.example.com")}
+	secrets := []corev1.Secret{credSecret("platform-cred-replier-x", "api.example.com")}
 	job := BuildForkJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, secrets)
 
 	for _, ic := range job.Spec.Template.Spec.InitContainers {
@@ -178,15 +178,15 @@ func TestBuildForkJob_GHTokenSignal(t *testing.T) {
 		secrets []corev1.Secret
 		want    string
 	}{
-		"with github cred":    {[]corev1.Secret{credSecret("humr-cred-gh", "api.github.com")}, "true"},
-		"without github cred": {[]corev1.Secret{credSecret("humr-cred-other", "api.example.com")}, "false"},
+		"with github cred":    {[]corev1.Secret{credSecret("platform-cred-gh", "api.github.com")}, "true"},
+		"without github cred": {[]corev1.Secret{credSecret("platform-cred-other", "api.example.com")}, "false"},
 		"no creds":            {nil, "false"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			job := BuildForkJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, tc.secrets)
 			env := envMap(job.Spec.Template.Spec.Containers[0].Env)
-			assert.Equal(t, tc.want, env["HUMR_GH_TOKEN_AVAILABLE"])
+			assert.Equal(t, tc.want, env["PLATFORM_GH_TOKEN_AVAILABLE"])
 		})
 	}
 }

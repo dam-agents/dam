@@ -1,6 +1,6 @@
 ## Project Overview
 
-Humr — a Kubernetes platform for running AI agent harnesses (Claude Code, Codex, Gemini CLI) in isolated environments with credential injection, network isolation, and scheduled execution.
+Platform — a Kubernetes platform for running AI agent harnesses (Claude Code, Codex, Gemini CLI) in isolated environments with credential injection, network isolation, and scheduled execution.
 
 ### Monorepo layout
 
@@ -11,9 +11,9 @@ pnpm workspaces + standalone Go module. Concept depth lives in [`docs/architectu
 - `packages/agent-runtime/` + `packages/agent-runtime-api/` — in-pod ACP WebSocket server and its contract package
 - `packages/agents/` — per-harness agent images (`claude-code`, `pi-agent`, `google-workspace`, `code-guardian`)
 - `packages/ui/` — React chat interface (Vite)
-- `packages/humr-base/` — shared base image/utilities
+- `packages/platform-base/` — shared base image/utilities
 - `packages/db/` — database schema and migrations
-- `deploy/helm/humr/` — Helm chart for all components + PostgreSQL
+- `deploy/helm/platform/` — Helm chart for all components + PostgreSQL
 
 ## Workflow
 
@@ -30,7 +30,7 @@ mise run ui:run             # start UI dev server
 ### Cluster lifecycle (k3s via lima)
 
 ```sh
-mise run cluster:install      # create k3s VM, build images, install cert-manager + Humr chart (or upgrade if already installed)
+mise run cluster:install      # create k3s VM, build images, install cert-manager + Platform chart (or upgrade if already installed)
 mise run cluster:build-agent  # rebuild agent image only, restart agent pods
 mise run cluster:status       # show pods and cluster state
 mise run cluster:logs         # show api-server pod logs
@@ -73,6 +73,10 @@ ESLint's strict rule set applies only inside `packages/ui/src/modules/**` while 
 ## Separation of Concerns & DRY Principle
 
 This system is a modular component system following the DRY (Don't Repeat Yourself) principle. Each piece has a single responsibility. You should be able to swap out any component without rewriting others.
+
+## Branding
+
+Never hardcode the brand (`Dam`, `dam`, or any replacement) in code. The codename `platform` is permanent; user-visible brand flows through Helm `brand.*` ([`deploy/helm/platform/values.yaml`](deploy/helm/platform/values.yaml)) → api-server `config.brand` → UI `getBrand()` ([`packages/ui/src/brand.ts`](packages/ui/src/brand.ts)).
 
 ## Worktrees
 

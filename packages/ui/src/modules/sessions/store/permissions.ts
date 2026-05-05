@@ -1,6 +1,6 @@
 import type { StateCreator } from "zustand";
 
-import type { HumrStore } from "../../../store.js";
+import type { PlatformStore } from "../../../store.js";
 
 export interface PermissionOption {
   optionId: string;
@@ -35,7 +35,7 @@ export interface PermissionsSlice {
   clearPendingPermissions: () => void;
 }
 
-export const createPermissionsSlice: StateCreator<HumrStore, [], [], PermissionsSlice> = (set, get) => ({
+export const createPermissionsSlice: StateCreator<PlatformStore, [], [], PermissionsSlice> = (set, get) => ({
   pendingPermissions: [],
   addPendingPermission: (p) =>
     set((s) => {

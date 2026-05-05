@@ -44,8 +44,8 @@ export async function initAuth(): Promise<User | null> {
   if (window.location.pathname === "/auth/callback") {
     try {
       currentUser = await userManager.signinRedirectCallback();
-      const returnUrl = sessionStorage.getItem("humr-auth-return") || "/";
-      sessionStorage.removeItem("humr-auth-return");
+      const returnUrl = sessionStorage.getItem("platform-auth-return") || "/";
+      sessionStorage.removeItem("platform-auth-return");
       window.history.replaceState({}, "", returnUrl);
       return currentUser;
     } catch (err) {
@@ -62,7 +62,7 @@ export async function initAuth(): Promise<User | null> {
 
   // Not authenticated — save current location and redirect to Keycloak
   sessionStorage.setItem(
-    "humr-auth-return",
+    "platform-auth-return",
     window.location.pathname + window.location.search,
   );
   await userManager.signinRedirect();

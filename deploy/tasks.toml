@@ -8,7 +8,7 @@ run = '''
 if [ -n "${IS_SANDBOX:-}" ]; then
   echo "/etc/rancher/k3s/k3s.yaml"
 else
-  echo "$HOME/.lima/humr-k3s/copied-from-guest/kubeconfig.yaml"
+  echo "$HOME/.lima/platform-k3s/copied-from-guest/kubeconfig.yaml"
 fi
 '''
 
@@ -24,19 +24,19 @@ export KUBECONFIG="$(mise run cluster:kubeconfig)"
 CALLER=$(ps -o comm= -p $(ps -o ppid= -p $PPID) 2>/dev/null)
 CALLER="${CALLER:-$SHELL}"
 case "$(basename "$CALLER")" in
-  bash) exec bash --rcfile <(echo 'source ~/.bashrc; PS1="(humr) $PS1"') ;;
+  bash) exec bash --rcfile <(echo 'source ~/.bashrc; PS1="(platform) $PS1"') ;;
   zsh)
     ZDOTDIR=$(mktemp -d)
     cat > "$ZDOTDIR/.zshrc" <<'ZRC'
 [[ -f ~/.zshenv ]] && source ~/.zshenv
 [[ -f ~/.zshrc ]]  && source ~/.zshrc
-PS1="(humr) $PS1"
+PS1="(platform) $PS1"
 command rm -rf "$ZDOTDIR"
 ZRC
     export ZDOTDIR
     exec zsh
     ;;
-  fish) exec fish -C 'functions -c fish_prompt _orig_fish_prompt; function fish_prompt; echo -n "(humr) "; _orig_fish_prompt; end' ;;
+  fish) exec fish -C 'functions -c fish_prompt _orig_fish_prompt; function fish_prompt; echo -n "(platform) "; _orig_fish_prompt; end' ;;
   *)    exec "$CALLER" ;;
 esac
 '''
@@ -47,29 +47,29 @@ esac
 ["image:controller"]
 description = "Build controller Docker image"
 dir = "{{config_root}}"
-run = 'docker build -t humr-controller:latest packages/controller/'
+run = 'docker build -t platform-controller:latest packages/controller/'
 
 ["image:apiserver"]
 description = "Build api-server Docker image"
 dir = "{{config_root}}"
-run = 'docker build -f packages/api-server/Dockerfile -t humr-api-server:latest .'
+run = 'docker build -f packages/api-server/Dockerfile -t platform-api-server:latest .'
 
 ["image:ui"]
 description = "Build UI Docker image"
 dir = "{{config_root}}"
-run = 'docker build -f packages/ui/Dockerfile -t humr-ui:latest .'
+run = 'docker build -f packages/ui/Dockerfile -t platform-ui:latest .'
 
 ["image:agent"]
-description = "Build agent Docker images (humr-base + claude-code + google-workspace + pi-agent + code-guardian)"
+description = "Build agent Docker images (platform-base + claude-code + google-workspace + pi-agent + code-guardian)"
 dir = "{{config_root}}"
 run = '''
 #!/usr/bin/env bash
 set -eo pipefail
-docker build -f packages/humr-base/Dockerfile -t humr-base .
-docker build -t humr-claude-code:latest packages/agents/claude-code
-docker build -t humr-google-workspace-agent:latest packages/agents/google-workspace
-docker build -t humr-pi-agent:latest packages/agents/pi-agent
-docker build -t humr-code-guardian:latest packages/agents/code-guardian
+docker build -f packages/platform-base/Dockerfile -t platform-base .
+docker build -t platform-claude-code:latest packages/agents/claude-code
+docker build -t platform-google-workspace-agent:latest packages/agents/google-workspace
+docker build -t platform-pi-agent:latest packages/agents/pi-agent
+docker build -t platform-code-guardian:latest packages/agents/code-guardian
 '''
 
 # -- Cluster lifecycle (k3s via lima) --
@@ -83,7 +83,7 @@ docker build -t humr-code-guardian:latest packages/agents/code-guardian
 # upgrade: assumes VM/k3s exists, uses helm upgrade
 
 ["cluster:install"]
-description = "Create k3s cluster, build images, install cert-manager + Humr chart. Options: --vm-name=NAME --lima-template=PATH --helm-values=PATH --set=key=val --no-restart"
+description = "Create k3s cluster, build images, install cert-manager + Platform chart. Options: --vm-name=NAME --lima-template=PATH --helm-values=PATH --set=key=val --no-restart"
 depends = ["image:controller", "image:apiserver", "image:ui", "image:agent"]
 dir = "{{config_root}}"
 raw = true
@@ -91,12 +91,12 @@ run = '''
 #!/usr/bin/env bash
 set -eo pipefail
 
-LIMA_INSTANCE="humr-k3s"
+LIMA_INSTANCE="platform-k3s"
 LIMA_TEMPLATE="deploy/lima-k3s.yaml"
 HELM_VALUES=""
 HELM_EXTRA_ARGS=()
 NO_RESTART=false
-DEV_VALUES="deploy/helm/humr/values-dev.yaml"
+DEV_VALUES="deploy/helm/platform/values-dev.yaml"
 for arg in "$@"; do
   case "$arg" in
     --vm-name=*) LIMA_INSTANCE="${arg#--vm-name=}" ;;
@@ -185,8 +185,8 @@ fi
 
 # 3. Load images into k3s (built by depends: image:*)
 echo "Loading images into k3s..."
-tar="/tmp/humr-images.tar"
-docker save -o "$tar" humr-controller:latest humr-api-server:latest humr-ui:latest humr-claude-code:latest humr-google-workspace-agent:latest humr-pi-agent:latest humr-code-guardian:latest
+tar="/tmp/platform-images.tar"
+docker save -o "$tar" platform-controller:latest platform-api-server:latest platform-ui:latest platform-claude-code:latest platform-google-workspace-agent:latest platform-pi-agent:latest platform-code-guardian:latest
 if [ -n "${IS_SANDBOX:-}" ]; then
   docker image prune --all --force >/dev/null 2>&1 || true
   sudo k3s ctr images import "$tar"
@@ -200,28 +200,28 @@ rm -f "$tar"
 # Dev-cluster defaults (overridable via --set)
 DEV_DEFAULTS=(--set keycloak.admin.password=admin)
 
-echo "Installing/upgrading Humr chart..."
-# No --wait: the keycloak-provision post-install hook imports the humr realm
+echo "Installing/upgrading Platform chart..."
+# No --wait: the keycloak-provision post-install hook imports the platform realm
 # after deployments come up. With --wait, helm would block on readiness
 # before the hook runs.
 if [ -z "$HELM_VALUES" ] && [ -f "$DEV_VALUES" ]; then
     HELM_VALUES="$DEV_VALUES"
     echo "Using dev overrides: $DEV_VALUES"
   fi
-  helm --kubeconfig="$KUBECONFIG" upgrade --install humr deploy/helm/humr -f deploy/helm/humr/values-local.yaml --timeout 15m ${HELM_VALUES:+-f "$HELM_VALUES"} "${DEV_DEFAULTS[@]}" "${HELM_EXTRA_ARGS[@]}"
+  helm --kubeconfig="$KUBECONFIG" upgrade --install platform deploy/helm/platform -f deploy/helm/platform/values-local.yaml --timeout 15m ${HELM_VALUES:+-f "$HELM_VALUES"} "${DEV_DEFAULTS[@]}" "${HELM_EXTRA_ARGS[@]}"
 
 # 5. Restart pods to pick up new local images (dev only — :latest tags don't trigger rollout)
 if [ "$NO_RESTART" = true ]; then
   echo "Skipping pod restart (--no-restart)"
 else
   echo "Restarting pods..."
-  kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment humr-controller humr-apiserver humr-ui
-  # Agent pods are managed by the controller (StatefulSets in humr-agents) and
+  kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-controller platform-apiserver platform-ui
+  # Agent pods are managed by the controller (StatefulSets in platform-agents) and
   # pin :latest too — delete them so they come back on the freshly loaded image.
-  kubectl --kubeconfig="$KUBECONFIG" delete pods -n humr-agents --all --ignore-not-found
+  kubectl --kubeconfig="$KUBECONFIG" delete pods -n platform-agents --all --ignore-not-found
 fi
 
-# 6. Wait for all Humr deployments to become Available (replaces helm --wait,
+# 6. Wait for all Platform deployments to become Available (replaces helm --wait,
 # but happens AFTER post-install hooks have run, so no deadlock).
 echo "Waiting for deployments to be ready..."
 kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Available deployment --all --timeout=10m
@@ -255,14 +255,14 @@ run = '''
 set -eo pipefail
 
 echo "Loading into k3s..."
-tar="/tmp/humr-api-server.tar"
-docker save humr-api-server:latest -o "$tar"
+tar="/tmp/platform-api-server.tar"
+docker save platform-api-server:latest -o "$tar"
 
 if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
   sudo k3s ctr images import "$tar"
 else
-  LIMA_INSTANCE="humr-k3s"
+  LIMA_INSTANCE="platform-k3s"
   KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
   limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
   limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
@@ -270,8 +270,8 @@ fi
 rm -f "$tar"
 
 echo "Restarting apiserver pod..."
-kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment humr-apiserver
-kubectl --kubeconfig="$KUBECONFIG" rollout status deployment humr-apiserver --timeout=60s
+kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-apiserver
+kubectl --kubeconfig="$KUBECONFIG" rollout status deployment platform-apiserver --timeout=60s
 
 # Drop image layers no longer pinned by a running container (issue #244).
 if [ -n "${IS_SANDBOX:-}" ]; then
@@ -292,14 +292,14 @@ run = '''
 set -eo pipefail
 
 echo "Loading into k3s..."
-tar="/tmp/humr-ui.tar"
-docker save humr-ui:latest -o "$tar"
+tar="/tmp/platform-ui.tar"
+docker save platform-ui:latest -o "$tar"
 
 if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
   sudo k3s ctr images import "$tar"
 else
-  LIMA_INSTANCE="humr-k3s"
+  LIMA_INSTANCE="platform-k3s"
   KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
   limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
   limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
@@ -307,8 +307,8 @@ fi
 rm -f "$tar"
 
 echo "Restarting UI pod..."
-kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment humr-ui
-kubectl --kubeconfig="$KUBECONFIG" rollout status deployment humr-ui --timeout=60s
+kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-ui
+kubectl --kubeconfig="$KUBECONFIG" rollout status deployment platform-ui --timeout=60s
 
 if [ -n "${IS_SANDBOX:-}" ]; then
   sudo k3s crictl rmi --prune >/dev/null 2>&1 || true
@@ -328,14 +328,14 @@ run = '''
 set -eo pipefail
 
 echo "Loading into k3s..."
-tar="/tmp/humr-agent-images.tar"
-docker save humr-claude-code:latest humr-google-workspace-agent:latest humr-pi-agent:latest humr-code-guardian:latest -o "$tar"
+tar="/tmp/platform-agent-images.tar"
+docker save platform-claude-code:latest platform-google-workspace-agent:latest platform-pi-agent:latest platform-code-guardian:latest -o "$tar"
 
 if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
   sudo k3s ctr images import "$tar"
 else
-  LIMA_INSTANCE="humr-k3s"
+  LIMA_INSTANCE="platform-k3s"
   KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
   limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
   limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
@@ -343,7 +343,7 @@ fi
 rm -f "$tar"
 
 echo "Restarting agent pods..."
-kubectl --kubeconfig="$KUBECONFIG" delete pods -n humr-agents --all 2>/dev/null || true
+kubectl --kubeconfig="$KUBECONFIG" delete pods -n platform-agents --all 2>/dev/null || true
 
 # Prune dangling layers: old `:latest` SHAs that just lost their tag to the
 # freshly imported one. Skip `crictl rmi --prune` here — when no instance
@@ -360,14 +360,14 @@ echo "Done. Agent pods will restart with new image."
 '''
 
 ["cluster:kubectl"]
-description = "Run kubectl against the humr-k3s cluster. Usage: mise run cluster:kubectl -- get pods"
+description = "Run kubectl against the platform-k3s cluster. Usage: mise run cluster:kubectl -- get pods"
 raw = true
 run = '''
 #!/usr/bin/env bash
 if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
 else
-  KUBECONFIG="$HOME/.lima/humr-k3s/copied-from-guest/kubeconfig.yaml"
+  KUBECONFIG="$HOME/.lima/platform-k3s/copied-from-guest/kubeconfig.yaml"
 fi
 exec kubectl --kubeconfig="$KUBECONFIG" "$@"
 '''
@@ -384,7 +384,7 @@ if [ -n "${IS_SANDBOX:-}" ]; then
     exec "$@"
   fi
 else
-  exec limactl shell humr-k3s "$@"
+  exec limactl shell platform-k3s "$@"
 fi
 '''
 
@@ -396,12 +396,12 @@ set -eo pipefail
 if [ -n "${IS_SANDBOX:-}" ]; then
   sudo systemctl stop k3s
 else
-  limactl stop humr-k3s
+  limactl stop platform-k3s
 fi
 '''
 
 ["cluster:uninstall"]
-description = "Uninstall Humr chart and clean up all resources"
+description = "Uninstall Platform chart and clean up all resources"
 dir = "{{config_root}}"
 run = '''
 #!/usr/bin/env bash
@@ -409,12 +409,12 @@ set -eo pipefail
 if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
 else
-  KUBECONFIG="$HOME/.lima/humr-k3s/copied-from-guest/kubeconfig.yaml"
+  KUBECONFIG="$HOME/.lima/platform-k3s/copied-from-guest/kubeconfig.yaml"
 fi
-helm --kubeconfig="$KUBECONFIG" uninstall humr || true
+helm --kubeconfig="$KUBECONFIG" uninstall platform || true
 kubectl --kubeconfig="$KUBECONFIG" delete pvc --all 2>/dev/null || true
-kubectl --kubeconfig="$KUBECONFIG" delete ns humr-agents --ignore-not-found 2>/dev/null || true
-echo "Humr uninstalled and cleaned up. Use 'mise run cluster:delete' to remove the entire cluster."
+kubectl --kubeconfig="$KUBECONFIG" delete ns platform-agents --ignore-not-found 2>/dev/null || true
+echo "Platform uninstalled and cleaned up. Use 'mise run cluster:delete' to remove the entire cluster."
 '''
 
 ["cluster:delete"]
@@ -424,7 +424,7 @@ run = '''
 #!/usr/bin/env bash
 set -eo pipefail
 
-LIMA_INSTANCE="humr-k3s"
+LIMA_INSTANCE="platform-k3s"
 FORCE=false
 for arg in "$@"; do
   case "$arg" in
@@ -465,7 +465,7 @@ if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
   RUN_IN_VM="sudo"
 else
-  LIMA_INSTANCE="humr-k3s"
+  LIMA_INSTANCE="platform-k3s"
   KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
   RUN_IN_VM="limactl shell $LIMA_INSTANCE sudo"
 fi
@@ -478,7 +478,7 @@ kubectl --kubeconfig="$KUBECONFIG" delete pod -A --field-selector=status.phase=S
 kubectl --kubeconfig="$KUBECONFIG" delete pod -A --field-selector=status.phase=Failed --ignore-not-found
 
 echo "[3/4] Checking for orphan agent PVCs..."
-# Cross-reference humr.ai/instance label on each PVC against existing instance
+# Cross-reference platform.ai/instance label on each PVC against existing instance
 # ConfigMaps. The controller GCs orphans every 10m; this just surfaces any that
 # look stuck. Forced deletion is left to the operator.
 ORPHANS=()
@@ -488,8 +488,8 @@ while IFS='|' read -r ns pvc inst; do
     ORPHANS+=("$ns/$pvc (instance: $inst)")
   fi
 done < <(
-  kubectl --kubeconfig="$KUBECONFIG" get pvc -A -l humr.ai/instance \
-    -o jsonpath='{range .items[*]}{.metadata.namespace}|{.metadata.name}|{.metadata.labels.humr\.ai/instance}{"\n"}{end}'
+  kubectl --kubeconfig="$KUBECONFIG" get pvc -A -l platform.ai/instance \
+    -o jsonpath='{range .items[*]}{.metadata.namespace}|{.metadata.name}|{.metadata.labels.platform\.ai/instance}{"\n"}{end}'
 )
 if [ "${#ORPHANS[@]}" -eq 0 ]; then
   echo "  no orphan PVCs found"
@@ -512,7 +512,7 @@ set -eo pipefail
 if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
 else
-  KUBECONFIG="$HOME/.lima/humr-k3s/copied-from-guest/kubeconfig.yaml"
+  KUBECONFIG="$HOME/.lima/platform-k3s/copied-from-guest/kubeconfig.yaml"
 fi
 
 STATUS_CMD="
@@ -530,8 +530,8 @@ echo ''
 echo '=== Pods (default) ==='
 kubectl --kubeconfig='$KUBECONFIG' get pods 2>/dev/null || true
 echo ''
-echo '=== Pods (humr-agents) ==='
-kubectl --kubeconfig='$KUBECONFIG' get pods -n humr-agents 2>/dev/null || true
+echo '=== Pods (platform-agents) ==='
+kubectl --kubeconfig='$KUBECONFIG' get pods -n platform-agents 2>/dev/null || true
 "
 
 case "${1:-}" in
@@ -558,7 +558,7 @@ set -eo pipefail
 if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
 else
-  KUBECONFIG="$HOME/.lima/humr-k3s/copied-from-guest/kubeconfig.yaml"
+  KUBECONFIG="$HOME/.lima/platform-k3s/copied-from-guest/kubeconfig.yaml"
 fi
 kubectl --kubeconfig="$KUBECONFIG" logs -l app.kubernetes.io/component=apiserver --all-containers --tail=50
 '''

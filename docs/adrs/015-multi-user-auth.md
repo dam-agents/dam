@@ -6,7 +6,7 @@
 
 ## Context
 
-Humr is currently single-tenant. There is no authentication on the API server, no ownership on K8s resources, and OneCLI credentials are shared per-template across all instances. To support multiple users, we need: (1) user identity, (2) resource scoping, (3) per-user credential isolation.
+Platform is currently single-tenant. There is no authentication on the API server, no ownership on K8s resources, and OneCLI credentials are shared per-template across all instances. To support multiple users, we need: (1) user identity, (2) resource scoping, (3) per-user credential isolation.
 
 OneCLI only supports Google OAuth and has no concept of per-user scoping. Its dashboard is not suitable for end users — OneCLI must remain an invisible implementation detail behind our API server.
 
@@ -18,7 +18,7 @@ Add Keycloak to the cluster (Helm subchart). All user authentication flows throu
 
 ### 2. Label-based resource ownership (soft tenancy)
 
-All K8s resources (instance ConfigMaps, schedule ConfigMaps) get a `humr.ai/owner` label set to the authenticated user's ID. The API server filters all queries by this label. No namespace-per-user — everything stays in a single namespace.
+All K8s resources (instance ConfigMaps, schedule ConfigMaps) get a `platform.ai/owner` label set to the authenticated user's ID. The API server filters all queries by this label. No namespace-per-user — everything stays in a single namespace.
 
 Templates remain shared (team-level resources, no owner label).
 
@@ -26,7 +26,7 @@ Templates remain shared (team-level resources, no owner label).
 
 > **Removed by ADR-033.** OneCLI itself was retired in favour of an Envoy
 > credential-injector sidecar. Per-user credential isolation now lives in K8s
-> Secrets keyed by `humr.ai/owner`; the RFC 8693 token-exchange path against
+> Secrets keyed by `platform.ai/owner`; the RFC 8693 token-exchange path against
 > a OneCLI audience no longer exists. The Keycloak login surface and the
 > label-based ownership decisions in §1 and §2 remain unchanged.
 

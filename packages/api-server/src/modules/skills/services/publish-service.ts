@@ -27,6 +27,9 @@ export interface PublishServiceDeps {
   instanceSkills: InstanceSkillsRepository;
   agents: AgentsRepository;
   runtimeClient: AgentRuntimeSkillsClient;
+  /** Display name surfaced in the auto-generated PR body when the caller
+   *  doesn't pass one. Sourced from brand config (env-var driven). */
+  brandName: string;
 }
 
 /**
@@ -76,7 +79,7 @@ export async function publishSkill(
       owner: host.owner,
       repo: host.repo,
       title: input.title?.trim() || `Add ${input.name} skill`,
-      body: input.body?.trim() || `Published from Humr.\n\n**Skill:** \`${input.name}\``,
+      body: input.body?.trim() || `Published from ${deps.brandName}.\n\n**Skill:** \`${input.name}\``,
     });
   } catch (err) {
     if (err instanceof AgentRuntimeUpstreamError) {

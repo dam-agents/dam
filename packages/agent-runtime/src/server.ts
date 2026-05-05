@@ -20,13 +20,13 @@ let triggerWatcher: TriggerWatcher | undefined;
 const __dir = dirname(fileURLToPath(import.meta.url));
 const agentCommand = config.AGENT_COMMAND
   ? config.AGENT_COMMAND.split(" ")
-  : config.HUMR_DEV
+  : config.PLATFORM_DEV
     ? ["npx", "tsx", join(__dir, "agent.ts")]
     : ["node", join(__dir, "agent.js")];
-const homeDir = config.HUMR_DEV
+const homeDir = config.PLATFORM_DEV
   ? join(__dir, "../working-dir")
   : config.HOME_DIR;
-const workDir = config.HUMR_DEV
+const workDir = config.PLATFORM_DEV
   ? join(__dir, "../working-dir")
   : config.WORK_DIR;
 
@@ -106,7 +106,7 @@ wss.on("connection", (ws) => {
   acpRuntime.attach(createWebSocketChannel(ws));
 });
 
-if (config.HUMR_MCP_URL) {
+if (config.PLATFORM_MCP_URL) {
   const mcpPath = join(workDir, ".mcp.json");
   let mcpConfig: Record<string, unknown> = {};
   if (existsSync(mcpPath)) {
@@ -116,10 +116,10 @@ if (config.HUMR_MCP_URL) {
   // No Authorization header: the api-server's harness port identifies the
   // caller by source IP (NetworkPolicy admits only agent pods, podIpResolver
   // maps IP → instance label). See ADR-035.
-  mcpServers["humr-outbound"] = { type: "http", url: config.HUMR_MCP_URL };
+  mcpServers["platform-outbound"] = { type: "http", url: config.PLATFORM_MCP_URL };
   mcpConfig.mcpServers = mcpServers;
   writeFileSync(mcpPath, JSON.stringify(mcpConfig, null, 2));
-  process.stderr.write(`[mcp] Wrote humr-outbound to ${mcpPath}\n`);
+  process.stderr.write(`[mcp] Wrote platform-outbound to ${mcpPath}\n`);
 }
 
 // Configure git to use gh's credential helper. git doesn't know about
@@ -139,7 +139,7 @@ try {
 }
 
 server.listen(config.PORT, () => {
-  process.stderr.write(`Humr on http://localhost:${config.PORT}\n`);
+  process.stderr.write(`Platform on http://localhost:${config.PORT}\n`);
 
   triggerWatcher = startTriggerWatcher({
     triggersDir: config.TRIGGERS_DIR,
@@ -150,9 +150,9 @@ server.listen(config.PORT, () => {
   // Pod-files sync: opt-in via env. The reconciler sets the URL on instance
   // pods only — forks deliberately don't get it (they're per-turn jobs and
   // don't read pod-files state). See 034-pod-files-push.md.
-  if (config.HUMR_POD_FILES_EVENTS_URL) {
+  if (config.PLATFORM_POD_FILES_EVENTS_URL) {
     startPodFilesSync({
-      url: config.HUMR_POD_FILES_EVENTS_URL,
+      url: config.PLATFORM_POD_FILES_EVENTS_URL,
       agentHome: homeDir,
     });
   }

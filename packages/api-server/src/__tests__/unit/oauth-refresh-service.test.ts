@@ -115,9 +115,9 @@ describe("oauth-refresh-service", () => {
     const after = store.get(connectionSecretName("owner-1", "mcp.example.com"))!;
     expect(decode(after, "raw_access_token")).toBe("new-access");
     expect(decode(after, "refresh_token")).toBe("new-ref");
-    expect(after.metadata!.annotations!["humr.ai/connection-status"]).toBe("active");
+    expect(after.metadata!.annotations!["agent-platform.ai/connection-status"]).toBe("active");
     // expiresAt == now + 3600s
-    expect(after.metadata!.annotations!["humr.ai/expires-at"]).toBe(
+    expect(after.metadata!.annotations!["agent-platform.ai/expires-at"]).toBe(
       String(Math.floor(NOW_MS / 1000) + 3600),
     );
   });
@@ -193,7 +193,7 @@ describe("oauth-refresh-service", () => {
     await svc.tick();
 
     const after = store.get(connectionSecretName("owner-1", "mcp.example.com"))!;
-    expect(after.metadata!.annotations!["humr.ai/connection-status"]).toBe("expired");
+    expect(after.metadata!.annotations!["agent-platform.ai/connection-status"]).toBe("expired");
     // Original token is unchanged — only the status flipped.
     expect(decode(after, "raw_access_token")).toBe("old");
   });

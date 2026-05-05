@@ -1,0 +1,225 @@
+{{- $appName := printf "%s-apiserver" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $appName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: apiserver
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.apiServer.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+    - port: {{ .Values.apiServer.harnessServerPort }}
+      targetPort: harness
+      protocol: TCP
+      name: harness
+    - port: {{ .Values.apiServer.extAuthzPort }}
+      targetPort: ext-authz
+      protocol: TCP
+      name: ext-authz
+      appProtocol: grpc
+  selector:
+    app.kubernetes.io/component: apiserver
+    app.kubernetes.io/instance: {{ .Release.Name }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $appName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: apiserver
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: apiserver
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        {{- include "platform.labels" . | nindent 8 }}
+        app.kubernetes.io/component: apiserver
+    spec:
+      {{- include "platform.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "platform.apiserver.serviceAccountName" . }}
+      containers:
+        - name: apiserver
+          image: "{{ .Values.apiServer.image.repository }}:{{ .Values.apiServer.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.apiServer.image.pullPolicy | default "IfNotPresent" }}
+          ports:
+            - containerPort: {{ .Values.apiServer.port }}
+              name: http
+            - containerPort: {{ .Values.apiServer.harnessServerPort }}
+              name: harness
+            - containerPort: {{ .Values.apiServer.extAuthzPort }}
+              name: ext-authz
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.apiserver.db.password.secretName" . }}
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: {{ include "platform.apiserver.postgres.dsn" . | quote }}
+            - name: NAMESPACE
+              value: {{ .Values.agentNamespace | quote }}
+            - name: PORT
+              value: {{ .Values.apiServer.port | quote }}
+            - name: MCP_PORT
+              value: {{ .Values.apiServer.harnessServerPort | quote }}
+            - name: EXT_AUTHZ_PORT
+              value: {{ .Values.apiServer.extAuthzPort | quote }}
+            - name: UI_BASE_URL
+              value: {{ include "platform.url.ui" . | quote }}
+            {{- if .Values.apiServer.slackBotToken }}
+            - name: SLACK_BOT_TOKEN
+              value: {{ .Values.apiServer.slackBotToken | quote }}
+            {{- end }}
+            {{- if .Values.apiServer.slackAppToken }}
+            - name: SLACK_APP_TOKEN
+              value: {{ .Values.apiServer.slackAppToken | quote }}
+            {{- end }}
+            {{- if .Values.apiServer.telegramEnabled }}
+            - name: TELEGRAM_ENABLED
+              value: "true"
+            {{- end }}
+            {{- if .Values.keycloak.enabled }}
+            - name: KEYCLOAK_URL
+              value: "http://{{ include "platform.keycloak.fullname" . }}:{{ .Values.keycloak.port }}"
+            - name: KEYCLOAK_EXTERNAL_URL
+              value: {{ include "platform.url.keycloak" . | quote }}
+            - name: KEYCLOAK_REALM
+              value: {{ .Values.keycloak.realm | quote }}
+            - name: KEYCLOAK_CLIENT_ID
+              value: {{ .Values.keycloak.clientId | quote }}
+            - name: KEYCLOAK_API_AUDIENCE
+              value: {{ .Values.keycloak.apiAudience | quote }}
+            - name: KEYCLOAK_API_CLIENT_ID
+              value: {{ .Values.keycloak.apiClientId | quote }}
+            - name: KEYCLOAK_API_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.keycloak.secrets.fullname" . }}
+                  key: PLATFORM_API_CLIENT_SECRET
+            {{- if .Values.keycloak.requiredRole }}
+            - name: KEYCLOAK_REQUIRED_ROLE
+              value: {{ .Values.keycloak.requiredRole | quote }}
+            {{- end }}
+            {{- end }}
+            - name: AGENT_HOME
+              value: {{ .Values.agentHome | quote }}
+            {{- if .Values.skills.skillSources }}
+            - name: SKILL_SOURCES_SEED
+              value: {{ .Values.skills.skillSources | toJson | quote }}
+            {{- end }}
+            {{- with .Values.apiServer.oauthAppDefaults.github }}
+            {{- if .clientId }}
+            - name: PLATFORM_DEFAULT_GITHUB_CLIENT_ID
+              value: {{ .clientId | quote }}
+            {{- end }}
+            {{- if .clientSecret }}
+            - name: PLATFORM_DEFAULT_GITHUB_CLIENT_SECRET
+              value: {{ .clientSecret | quote }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.apiServer.oauthAppDefaults.githubEnterprise }}
+            {{- if .host }}
+            - name: PLATFORM_DEFAULT_GHE_HOST
+              value: {{ .host | quote }}
+            {{- end }}
+            {{- if .clientId }}
+            - name: PLATFORM_DEFAULT_GHE_CLIENT_ID
+              value: {{ .clientId | quote }}
+            {{- end }}
+            {{- if .clientSecret }}
+            - name: PLATFORM_DEFAULT_GHE_CLIENT_SECRET
+              value: {{ .clientSecret | quote }}
+            {{- end }}
+            {{- end }}
+            - name: REDIS_URL
+              value: {{ include "platform.redis.url" . | quote }}
+            {{- if .Values.redis.enabled }}
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ printf "%s-auth" (include "platform.redis.fullname" .) }}
+                  key: password
+            {{- end }}
+            - name: APPROVAL_HOLD_SECONDS
+              value: {{ .Values.apiServer.approvalHoldSeconds | quote }}
+            - name: TRUSTED_HOSTS_PATH
+              value: /etc/platform/trusted-hosts
+            - name: APP_CONNECTION_EGRESS_HOSTS_PATH
+              value: /etc/platform/app-connection-egress-hosts.json
+            # Brand — drives UI title/theme, OAuth client_name, Slack
+            # slash command, skill-publish git author + branch prefix.
+            - name: BRAND_NAME
+              value: {{ .Values.brand.name | quote }}
+            - name: BRAND_SHORT
+              value: {{ .Values.brand.short | quote }}
+            - name: BRAND_THEME_LIGHT_ACCENT
+              value: {{ .Values.brand.theme.light.accent | quote }}
+            - name: BRAND_THEME_LIGHT_ACCENT_HOVER
+              value: {{ .Values.brand.theme.light.accentHover | quote }}
+            - name: BRAND_THEME_LIGHT_ACCENT_LIGHT
+              value: {{ .Values.brand.theme.light.accentLight | quote }}
+            - name: BRAND_THEME_DARK_ACCENT
+              value: {{ .Values.brand.theme.dark.accent | quote }}
+            - name: BRAND_THEME_DARK_ACCENT_HOVER
+              value: {{ .Values.brand.theme.dark.accentHover | quote }}
+            - name: BRAND_THEME_DARK_ACCENT_LIGHT
+              value: {{ .Values.brand.theme.dark.accentLight | quote }}
+            {{- if .Values.brand.icon }}
+            - name: BRAND_ICON_SVG
+              value: {{ .Values.brand.icon | quote }}
+            {{- end }}
+          volumeMounts:
+            - name: trusted-hosts
+              mountPath: /etc/platform/trusted-hosts
+              subPath: trusted-hosts
+              readOnly: true
+            - name: app-connection-egress-hosts
+              mountPath: /etc/platform/app-connection-egress-hosts.json
+              subPath: app-connection-egress-hosts.json
+              readOnly: true
+          # Probe the ext-authz gRPC port: if the ext-authz listener fails to
+          # bind or its handler init blows up, Envoy filters with
+          # `failure_mode_allow: false` would silently deny across the cluster
+          # while the pod still served HTTP. Both listeners run in the same
+          # Node process, so http-port liveness is implicit when ext-authz is
+          # up; the inverse isn't true. (ADR-035)
+          readinessProbe:
+            tcpSocket:
+              port: ext-authz
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: ext-authz
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.apiServer.resources | nindent 12 }}
+      volumes:
+        - name: trusted-hosts
+          configMap:
+            name: {{ include "platform.fullname" . }}-trusted-hosts
+            items:
+              - key: trusted-hosts
+                path: trusted-hosts
+        - name: app-connection-egress-hosts
+          configMap:
+            name: {{ include "platform.fullname" . }}-app-connection-egress-hosts
+            items:
+              - key: app-connection-egress-hosts.json
+                path: app-connection-egress-hosts.json

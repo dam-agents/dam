@@ -65,7 +65,7 @@ export interface InstancesService {
   /**
    * Ensure the instance's pod is reachable. Waits for pod Ready, waking
    * from hibernation if needed. Idempotent; single-flight per id; bumps
-   * `humr.ai/last-activity` on every success. Channel adapters and any
+   * `agent-platform.ai/last-activity` on every success. Channel adapters and any
    * server-side caller that needs to talk to the agent must await this
    * before connecting. See ADR-032.
    */

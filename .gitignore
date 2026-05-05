@@ -28,8 +28,8 @@ packages/ui/.vite/
 Thumbs.db
 
 # Helm
-deploy/helm/humr/charts/
-deploy/helm/humr/values-dev.yaml
+deploy/helm/platform/charts/
+deploy/helm/platform/values-dev.yaml
 
 # Reference (vendored, not tracked)
 context/

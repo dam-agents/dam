@@ -9,13 +9,13 @@ COPY packages/ui/package.json packages/ui/
 COPY packages/api-server-api/package.json packages/api-server-api/
 COPY packages/agent-runtime-api/package.json packages/agent-runtime-api/
 
-RUN pnpm install --frozen-lockfile --filter humr-ui...
+RUN pnpm install --frozen-lockfile --filter platform-ui...
 
 COPY packages/api-server-api/ packages/api-server-api/
 COPY packages/agent-runtime-api/ packages/agent-runtime-api/
 COPY packages/ui/ packages/ui/
 
-RUN pnpm --filter humr-ui build
+RUN pnpm --filter platform-ui build
 
 FROM nginxinc/nginx-unprivileged:1-alpine
 

@@ -88,6 +88,9 @@ export function createSlackWorker(
   },
   getInstanceOwner: (instanceId: string) => Promise<string | null>,
   channelRegistry: ChannelRegistry,
+  /** Lowercase brand identifier used as the Slack slash command name (e.g.
+   *  brandShort="dam" → /dam login). Sourced from BRAND_SHORT env var. */
+  brandShort: string,
   emit: (event: DomainEvent) => void = defaultEmit,
 ): SlackWorker {
   let app: BoltApp | null = null;
@@ -333,7 +336,7 @@ export function createSlackWorker(
       .with("login", async () => {
         const existing = await identityLinks.resolve("slack", command.user_id);
         if (existing) {
-          await ack({ response_type: "ephemeral", text: "You are already linked. Use `/humr logout` to unlink first." });
+          await ack({ response_type: "ephemeral", text: `You are already linked. Use \`/${brandShort} logout\` to unlink first.` });
           return;
         }
 
@@ -364,7 +367,7 @@ export function createSlackWorker(
       .with(P.string, async () => {
         await ack({
           response_type: "ephemeral",
-          text: "Usage: `/humr login` or `/humr logout`",
+          text: `Usage: \`/${brandShort} login\` or \`/${brandShort} logout\``,
         });
       })
       .exhaustive();
@@ -381,7 +384,7 @@ export function createSlackWorker(
       await app.client.chat.postEphemeral({
         channel: event.channel,
         user: slackUserId,
-        text: "You need to link your account first. Use `/humr login` to get started.",
+        text: `You need to link your account first. Use \`/${brandShort} login\` to get started.`,
       });
       return;
     }
@@ -464,7 +467,7 @@ export function createSlackWorker(
     });
 
     bolt.event("app_mention", handleAppMention);
-    bolt.command("/humr", handleCommand);
+    bolt.command(`/${brandShort}`, handleCommand);
 
     bolt.error(async (error) => {
       process.stderr.write(`[slack] Bolt error: ${error}\n`);

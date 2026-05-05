@@ -1,0 +1,86 @@
+{{- if .Values.ingress.enabled }}
+{{- $domains := list .Values.domain }}
+{{- range .Values.ingress.aliasDomains }}
+{{- if . }}
+{{- $domains = append $domains . }}
+{{- end }}
+{{- end }}
+{{- /*
+  Resolve override hosts. When `urls.{service}` is set, the bundled Ingress
+  routes that hostname instead of generating convention-based rules for
+  that service. UI and API share a single host (path-based routing splits
+  `/api/*` to the api-server and everything else to the UI), so an `urls.api`
+  override is no longer needed and is treated as a UI override fallback.
+*/ -}}
+{{- $uiHost := "" -}}
+{{- if .Values.urls.ui -}}
+{{- $uiHost = include "platform.url.host" .Values.urls.ui -}}
+{{- else if .Values.urls.api -}}
+{{- $uiHost = include "platform.url.host" .Values.urls.api -}}
+{{- end -}}
+{{- $keycloakHost := "" -}}
+{{- if .Values.urls.keycloak -}}
+{{- $keycloakHost = include "platform.url.host" .Values.urls.keycloak -}}
+{{- end -}}
+{{- $uiSvc := printf "%s-ui" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- $apiSvc := printf "%s-apiserver" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "platform.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+  annotations:
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- with .Values.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- if $uiHost }}
+    - host: {{ $uiHost }}
+      http:
+        paths:
+          {{- include "platform.ingress.appPaths" (dict "uiSvc" $uiSvc "apiSvc" $apiSvc) | nindent 10 }}
+    {{- end }}
+    {{- if and .Values.keycloak.enabled $keycloakHost }}
+    - host: {{ $keycloakHost }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "platform.keycloak.fullname" . }}
+                port:
+                  name: http
+    {{- end }}
+    {{- /* Convention-based rules: bare `${domain}` is the single app host. */ -}}
+    {{- range $domain := $domains }}
+    {{- if not $uiHost }}
+    - host: {{ $domain }}
+      http:
+        paths:
+          {{- include "platform.ingress.appPaths" (dict "uiSvc" $uiSvc "apiSvc" $apiSvc) | nindent 10 }}
+    {{- end }}
+    {{- if and $.Values.keycloak.enabled (not $keycloakHost) }}
+    - host: {{ printf "keycloak.%s" $domain }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "platform.keycloak.fullname" $ }}
+                port:
+                  name: http
+    {{- end }}
+    {{- end }}
+{{- end }}

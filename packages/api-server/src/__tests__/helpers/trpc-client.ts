@@ -2,7 +2,7 @@ import { createTRPCClient, httpBatchLink } from "@trpc/client";
 import { inject } from "vitest";
 import type { AppRouter } from "api-server-api";
 
-const API_URL = "http://humr-api.localtest.me:5555/api/trpc";
+const API_URL = "http://localtest.me:5555/api/trpc";
 
 /** Create a tRPC client with an optional auth token. */
 export function createClient(token?: string) {

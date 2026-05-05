@@ -26,9 +26,9 @@ export interface PublishDeps {
  * here (not in the port); the port stays a thin typed wrapper around
  * api.github.com.
  *
- * Requires this pod to run with `GH_TOKEN=humr:sentinel` + `HTTPS_PROXY`
- * pre-wired by the controller (always true in Humr), a GitHub OAuth app
- * configured, the user Connected, and this agent granted access. Failures
+ * Requires this pod to run with `GH_TOKEN=dummy-placeholder` + `HTTPS_PROXY`
+ * pre-wired by the controller (always true on the platform), a GitHub OAuth
+ * app configured, the user Connected, and this agent granted access. Failures
  * on any of those surface as a 401/403 from upstream with a structured
  * error body the contract relays.
  */
@@ -73,16 +73,20 @@ export async function runPublish(
   if (!tree.ok) return tree;
 
   // 3. Commit pointing at the tree.
+  // Author + branch prefix are intentionally neutral ("platform") and not
+  // brand-driven — agent pods are deliberately brand-blind, and the
+  // user-facing PR title/body that the api-server passes through `input`
+  // already carries brand framing where it matters.
   const commit = await deps.github.createCommit(host, {
-    message: `Add ${name} skill\n\nPublished from Humr.`,
+    message: `Add ${name} skill`,
     tree: tree.value.sha,
     parents: [headSha],
-    author: { name: "Humr", email: "humr-publish@users.noreply.github.com" },
+    author: { name: "Platform", email: "platform-publish@users.noreply.github.com" },
   });
   if (!commit.ok) return commit;
 
   // 4. Create the branch ref.
-  const branch = `humr/publish-${name}-${branchTimestamp(deps.now())}`;
+  const branch = `platform/publish-${name}-${branchTimestamp(deps.now())}`;
   const refRes = await deps.github.createRef(host, {
     ref: `refs/heads/${branch}`,
     sha: commit.value.sha,

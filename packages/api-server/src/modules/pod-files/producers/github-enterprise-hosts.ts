@@ -75,12 +75,12 @@ function renderHostFragment(connection: RawConnection): FileFragment | null {
   // username is unknown — gh tolerates the minimal form on read.
   return {
     [host]: {
-      oauth_token: "humr:sentinel",
+      oauth_token: "dummy-placeholder",
       git_protocol: "https",
       ...(username
         ? {
             user: username,
-            users: { [username]: { oauth_token: "humr:sentinel" } },
+            users: { [username]: { oauth_token: "dummy-placeholder" } },
           }
         : {}),
     },

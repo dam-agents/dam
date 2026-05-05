@@ -10,7 +10,7 @@ import { useStore } from "../../../store.js";
 import { openConnection } from "../../acp/acp.js";
 import { getSavedPreferences } from "../components/session-config-popover.js";
 
-const cachedConfigKey = (instanceId: string) => `humr-cached-config:${instanceId}`;
+const cachedConfigKey = (instanceId: string) => `platform-cached-config:${instanceId}`;
 
 interface ConfigPayload {
   modes?: any;

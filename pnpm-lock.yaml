@@ -187,6 +187,9 @@ importers:
       rxjs:
         specifier: ^7.8.2
         version: 7.8.2
+      sharp:
+        specifier: ^0.34.5
+        version: 0.34.5
       tar:
         specifier: ^7.5.13
         version: 7.5.13
@@ -251,7 +254,7 @@ importers:
         specifier: ^6.0.2
         version: 6.0.2
 
-  packages/humr-base:
+  packages/platform-base:
     dependencies:
       '@agentclientprotocol/sdk':
         specifier: ^0.17.1

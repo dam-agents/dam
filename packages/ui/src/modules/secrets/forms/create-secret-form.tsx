@@ -199,7 +199,7 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
             <p className="text-[11px] text-text-muted">
               Inject env vars into every agent instance granted this secret.
               The placeholder (typically{" "}
-              <span className="font-mono">humr:sentinel</span>) is swapped
+              <span className="font-mono">dummy-placeholder</span>) is swapped
               for the real value on the wire by the Envoy sidecar.
             </p>
             <Controller

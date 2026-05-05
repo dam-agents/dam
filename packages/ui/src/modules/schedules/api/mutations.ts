@@ -1,6 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 
-import { platform } from "../../../platform.js";
+import { api } from "../../../api.js";
 import { trpc } from "../../../trpc.js";
 
 const invalidatesScheduleList = {
@@ -20,7 +20,7 @@ export interface CreateScheduleInput {
 export function useCreateSchedule() {
   return useMutation({
     mutationFn: (input: CreateScheduleInput) =>
-      platform.schedules.createRRule.mutate({
+      api.schedules.createRRule.mutate({
         ...input,
         quietHours: input.quietHours.length > 0 ? input.quietHours : undefined,
         // "fresh" is the absence of a persisted session on the wire.
@@ -46,7 +46,7 @@ export interface UpdateScheduleInput {
 export function useUpdateSchedule() {
   return useMutation({
     mutationFn: (input: UpdateScheduleInput) =>
-      platform.schedules.updateRRule.mutate({
+      api.schedules.updateRRule.mutate({
         ...input,
         sessionMode: input.sessionMode === "fresh" ? undefined : input.sessionMode,
       }),

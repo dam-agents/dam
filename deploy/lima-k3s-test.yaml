@@ -20,7 +20,7 @@ provision:
     script: |
       #!/bin/sh
       set -e
-      # nfs-common is required so the kubelet can mount the humr-rwx
+      # nfs-common is required so the kubelet can mount the platform-rwx
       # PVCs served by the in-cluster NFS provisioner. Without this
       # package, agent pods fail with "bad option; … you might need a
       # /sbin/mount.<type> helper program."
@@ -45,7 +45,7 @@ provision:
       spec:
         valuesContent: |
           ports:
-            humr:
+            platform:
               port: 5555
               expose:
                 default: true

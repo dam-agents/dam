@@ -8,7 +8,7 @@ import (
 
 	"github.com/teambition/rrule-go"
 
-	"github.com/kagenti/humr/packages/controller/pkg/types"
+	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
 // maxQuietHoursSkipIterations bounds the walk when every RRULE occurrence

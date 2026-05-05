@@ -34,8 +34,8 @@ jobs:
           - component: ui
             dockerfile: packages/ui/Dockerfile
             context: .
-          - component: humr-base
-            dockerfile: packages/humr-base/Dockerfile
+          - component: platform-base
+            dockerfile: packages/platform-base/Dockerfile
             context: .
     steps:
       - uses: actions/checkout@v4
@@ -97,7 +97,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            BASE_IMAGE=${{ env.IMAGE_PREFIX }}/humr-base:${{ steps.meta.outputs.version }}
+            BASE_IMAGE=${{ env.IMAGE_PREFIX }}/platform-base:${{ steps.meta.outputs.version }}
           cache-from: type=gha,scope=claude-code
           cache-to: type=gha,mode=max,scope=claude-code
 
@@ -132,7 +132,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            BASE_IMAGE=${{ env.IMAGE_PREFIX }}/humr-base:${{ steps.meta.outputs.version }}
+            BASE_IMAGE=${{ env.IMAGE_PREFIX }}/platform-base:${{ steps.meta.outputs.version }}
           cache-from: type=gha,scope=google-workspace-agent
           cache-to: type=gha,mode=max,scope=google-workspace-agent
 
@@ -167,7 +167,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            BASE_IMAGE=${{ env.IMAGE_PREFIX }}/humr-base:${{ steps.meta.outputs.version }}
+            BASE_IMAGE=${{ env.IMAGE_PREFIX }}/platform-base:${{ steps.meta.outputs.version }}
           cache-from: type=gha,scope=code-guardian
           cache-to: type=gha,mode=max,scope=code-guardian
 
@@ -202,7 +202,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            BASE_IMAGE=${{ env.IMAGE_PREFIX }}/humr-base:${{ steps.meta.outputs.version }}
+            BASE_IMAGE=${{ env.IMAGE_PREFIX }}/platform-base:${{ steps.meta.outputs.version }}
           cache-from: type=gha,scope=pi-agent
           cache-to: type=gha,mode=max,scope=pi-agent
 
@@ -220,7 +220,7 @@ jobs:
       - name: Log in to GHCR OCI
         run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username ${{ github.actor }} --password-stdin
       - name: Package Helm chart
-        run: helm package deploy/helm/humr --version ${{ steps.version.outputs.version }} --app-version ${{ steps.version.outputs.version }}
+        run: helm package deploy/helm/platform --version ${{ steps.version.outputs.version }} --app-version ${{ steps.version.outputs.version }}
       - name: Push to OCI registry
-        run: helm push humr-${{ steps.version.outputs.version }}.tgz oci://ghcr.io/dam-agents/dam/charts
+        run: helm push platform-${{ steps.version.outputs.version }}.tgz oci://ghcr.io/dam-agents/dam/charts
 

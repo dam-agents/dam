@@ -30,13 +30,13 @@ function fakeClient(initial: k8s.V1ConfigMap[]) {
   const store = new Map(initial.map((cm) => [cm.metadata!.name!, cm]));
   const patches: { name: string; body: object }[] = [];
   const client: K8sClient = {
-    namespace: "humr-agents",
+    namespace: "platform-agents",
     listConfigMaps: async (selector) => {
       // The port queries by labels; assume any configured fake matches.
       const items = Array.from(store.values());
-      // Honor a humr.ai/agent= filter when present so multi-agent fixtures
+      // Honor a agent-platform.ai/agent= filter when present so multi-agent fixtures
       // don't bleed across tests.
-      const m = /humr\.ai\/agent=([^,]+)/.exec(selector);
+      const m = /platform\.ai\/agent=([^,]+)/.exec(selector);
       if (!m) return items;
       return items.filter((cm) => cm.metadata?.labels?.[LABEL_AGENT_REF] === m[1]);
     },

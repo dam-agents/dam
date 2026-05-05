@@ -1,5 +1,5 @@
 import type { StateCreator } from "zustand";
-import type { HumrStore } from "../store.js";
+import type { PlatformStore } from "../store.js";
 
 export type View =
   | "list"
@@ -43,11 +43,11 @@ export function pathToState(path: string): { view: View; instance?: string; agen
   return { view: "list" };
 }
 
-export const createNavigationSlice: StateCreator<HumrStore, [], [], NavigationSlice> = (set) => ({
+export const createNavigationSlice: StateCreator<PlatformStore, [], [], NavigationSlice> = (set) => ({
   view: (() => {
-    const saved = sessionStorage.getItem("humr-return-view");
+    const saved = sessionStorage.getItem("platform-return-view");
     if (saved) {
-      sessionStorage.removeItem("humr-return-view");
+      sessionStorage.removeItem("platform-return-view");
       return saved as View;
     }
     return pathToState(window.location.pathname).view;

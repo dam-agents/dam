@@ -12,13 +12,13 @@ Related: the team committed to "K8s is the database" — no external database, C
 
 ## Decision
 
-Use labeled ConfigMaps instead of CRDs for all platform resources. Three resource types distinguished by `humr.ai/type` label: `agent-template`, `agent-instance`, `agent-schedule`.
+Use labeled ConfigMaps instead of CRDs for all platform resources. Three resource types distinguished by `platform.ai/type` label: `agent-template`, `agent-instance`, `agent-schedule`.
 
 Key design choices within this decision:
 
-- **Single-writer keys.** Each ConfigMap has `spec.yaml` (written only by the API Server) and `status.yaml` (written only by the Controller). This mirrors the CRD spec/status subresource pattern and eliminates write contention. Lightweight metadata (`humr.ai/last-activity`, `humr.ai/active-session`) uses ConfigMap annotations, not `data` keys.
+- **Single-writer keys.** Each ConfigMap has `spec.yaml` (written only by the API Server) and `status.yaml` (written only by the Controller). This mirrors the CRD spec/status subresource pattern and eliminates write contention. Lightweight metadata (`platform.ai/last-activity`, `platform.ai/active-session`) uses ConfigMap annotations, not `data` keys.
 - **Validation.** The API Server validates `spec.yaml` before writing. The Controller validates on read and writes errors to `status.yaml`. Compensates for the lack of CRD schema validation.
-- **Discovery.** `kubectl get cm -l humr.ai/type=agent-instance` — not as clean as `kubectl get agents` but functional.
+- **Discovery.** `kubectl get cm -l platform.ai/type=agent-instance` — not as clean as `kubectl get agents` but functional.
 - **Upgrade path.** The ConfigMap schema maps directly to a CRD spec. Swapping the watch source in the Controller's reconcile loop is the only required change.
 
 ## Alternatives Considered

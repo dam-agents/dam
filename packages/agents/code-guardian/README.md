@@ -19,7 +19,7 @@ On every run, the agent:
 6. Appends the review outcome to `REVIEWS.md` and reports findings to the user.
 7. For each PR newly reviewed or re-reviewed this run, posts the **full
    review as its own Slack message** via the
-   `mcp__humr-outbound__send_channel_message` MCP tool (same tool handles
+   `mcp__platform-outbound__send_channel_message` MCP tool (same tool handles
    Slack and Telegram; pass `channel="slack"`). One PR = one message, no
    batching and no summarizing — Slack gets the same content as the chat UI.
 

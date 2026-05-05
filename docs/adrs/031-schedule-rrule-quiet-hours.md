@@ -12,7 +12,7 @@ Today a schedule is a single standard cron string plus an `enabled` toggle (see 
 - "Mondays and Wednesdays at 07:30, in my timezone."
 - "Every hour, but pause during our team holiday week."
 
-Cron has no timezone (the controller runs in UTC), no way to express an overnight window that crosses midnight, and no "skip this range" primitive. Users can disable the whole schedule with the manual toggle, but have to remember to flip it twice a day. Issue [#253](https://github.com/kagenti/humr/issues/253) captures the user need: a way to say "run like this, but not during these windows."
+Cron has no timezone (the controller runs in UTC), no way to express an overnight window that crosses midnight, and no "skip this range" primitive. Users can disable the whole schedule with the manual toggle, but have to remember to flip it twice a day. Issue [#253](https://github.com/kagenti/platform/issues/253) captures the user need: a way to say "run like this, but not during these windows."
 
 We considered two families of solutions:
 
@@ -33,8 +33,8 @@ A schedule is composed of:
 4. **A schedule-level `enabled` flag** (unchanged from today) that disables the whole schedule when false.
 
 ```yaml
-# ScheduleSpec (humr.ai/v1)
-version: humr.ai/v1
+# ScheduleSpec (platform.ai/v1)
+version: platform.ai/v1
 type: rrule
 timezone: Europe/Prague
 rrule: "FREQ=MINUTELY;INTERVAL=30;BYDAY=MO,TU,WE,TH,FR"

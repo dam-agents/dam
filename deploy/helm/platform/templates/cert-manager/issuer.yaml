@@ -1,0 +1,31 @@
+{{- if and .Values.controller .Values.controller.envoyMitm .Values.controller.envoyMitm.enabled }}
+{{/*
+Cluster issuers backing the experimental Envoy credential-injector path
+(ADR-033). The bootstrap issuer signs the platform-mitm-ca Certificate; the CA
+issuer then signs per-instance leaf certs that Envoy uses to terminate the
+agent's TLS for credential injection.
+
+ClusterIssuers are cluster-scoped — names collide globally. Override via
+.Values.controller.envoyMitm.{bootstrapIssuerName,caIssuerName} if needed.
+*/}}
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ .Values.controller.envoyMitm.bootstrapIssuerName }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: envoy-mitm
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ .Values.controller.envoyMitm.caIssuerName }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: envoy-mitm
+spec:
+  ca:
+    secretName: {{ .Values.controller.envoyMitm.caSecretName }}
+{{- end }}

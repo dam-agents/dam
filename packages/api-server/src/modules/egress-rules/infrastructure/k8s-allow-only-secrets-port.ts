@@ -1,7 +1,7 @@
 /**
  * Materializes "allow-only" K8s Secrets that promote a host onto Envoy's L7
  * (TLS-terminating) chain. They carry no credential payload — only the
- * `humr.ai/host-pattern` annotation that the controller consumes when
+ * `agent-platform.ai/host-pattern` annotation that the controller consumes when
  * extending the cert SAN list and rendering an MITM-only filter chain.
  *
  * See ADR-035 §"L4 → L7 promotion": when the user adds a
@@ -12,14 +12,14 @@
 import type * as k8s from "@kubernetes/client-node";
 import type { K8sClient } from "../../agents/infrastructure/k8s.js";
 
-const LABEL_OWNER = "humr.ai/owner";
-const LABEL_SECRET_TYPE = "humr.ai/secret-type";
-const LABEL_MANAGED_BY = "humr.ai/managed-by";
-const ANN_HOST_PATTERN = "humr.ai/host-pattern";
-const ANN_DISPLAY_NAME = "humr.ai/display-name";
+const LABEL_OWNER = "agent-platform.ai/owner";
+const LABEL_SECRET_TYPE = "agent-platform.ai/secret-type";
+const LABEL_MANAGED_BY = "agent-platform.ai/managed-by";
+const ANN_HOST_PATTERN = "agent-platform.ai/host-pattern";
+const ANN_DISPLAY_NAME = "agent-platform.ai/display-name";
 
 const SECRET_TYPE_ALLOW_ONLY = "allow-only";
-const NAME_PREFIX = "humr-allow-";
+const NAME_PREFIX = "platform-allow-";
 
 /**
  * Maps a host string to a K8s name component. K8s metadata.name is RFC 1123:

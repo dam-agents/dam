@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kagenti/humr/packages/controller/pkg/types"
+	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
 func TestIsInQuietHours(t *testing.T) {

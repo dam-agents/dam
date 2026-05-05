@@ -8,13 +8,13 @@ import (
 	"k8s.io/client-go/util/retry"
 	"gopkg.in/yaml.v3"
 
-	"github.com/kagenti/humr/packages/controller/pkg/types"
+	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
 // Annotation keys. Kept local to avoid a cross-package dependency on the
 // reconciler; string literal is the contract.
 const (
-	lastActivityAnnotation = "humr.ai/last-activity"
+	lastActivityAnnotation = "agent-platform.ai/last-activity"
 )
 
 // wakeIfHibernated flips the instance's desiredState from "hibernated" to
@@ -48,7 +48,7 @@ func (l *Lifecycle) wakeIfHibernated(ctx context.Context, instanceName string) e
 	})
 }
 
-// bumpLastActivity updates humr.ai/last-activity to now. Called on every
+// bumpLastActivity updates agent-platform.ai/last-activity to now. Called on every
 // successful EnsureReady, so any caller (schedule fire, UI WS open, channel
 // message) keeps the pod warm and delays the idle-checker's hibernation.
 func (l *Lifecycle) bumpLastActivity(ctx context.Context, instanceName string) error {

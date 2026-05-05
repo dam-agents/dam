@@ -22,8 +22,8 @@ func rruleScheduleCM(name, instanceName, specBody string) *corev1.ConfigMap {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name, Namespace: "test-agents",
 			Labels: map[string]string{
-				"humr.ai/type":     "agent-schedule",
-				"humr.ai/instance": instanceName,
+				"agent-platform.ai/type":     "agent-schedule",
+				"agent-platform.ai/instance": instanceName,
 			},
 		},
 		Data: map[string]string{"spec.yaml": specBody},
@@ -39,9 +39,9 @@ func runningInstanceCM(name string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name, Namespace: "test-agents",
-			Labels: map[string]string{"humr.ai/type": "agent-instance"},
+			Labels: map[string]string{"agent-platform.ai/type": "agent-instance"},
 		},
-		Data: map[string]string{"spec.yaml": "version: humr.ai/v1\ndesiredState: running\n"},
+		Data: map[string]string{"spec.yaml": "version: agent-platform.ai/v1\ndesiredState: running\n"},
 	}
 }
 
@@ -57,7 +57,7 @@ func readyPod(instanceName string) *corev1.Pod {
 }
 
 func TestSyncSchedule_RRule_Enabled(t *testing.T) {
-	spec := `version: humr.ai/v1
+	spec := `version: agent-platform.ai/v1
 type: rrule
 rrule: "FREQ=HOURLY"
 timezone: UTC
@@ -83,7 +83,7 @@ enabled: true
 }
 
 func TestSyncSchedule_RRule_Disabled(t *testing.T) {
-	spec := `version: humr.ai/v1
+	spec := `version: agent-platform.ai/v1
 type: rrule
 rrule: "FREQ=HOURLY"
 timezone: UTC
@@ -100,7 +100,7 @@ enabled: false
 }
 
 func TestSyncSchedule_RRule_Invalid(t *testing.T) {
-	spec := `version: humr.ai/v1
+	spec := `version: agent-platform.ai/v1
 type: rrule
 rrule: "THIS IS NOT A VALID RRULE"
 timezone: UTC
@@ -122,7 +122,7 @@ enabled: true
 // down and recreate the rrule goroutine — starving schedules whose period
 // exceeded the resync interval.
 func TestSyncSchedule_RRule_Idempotent(t *testing.T) {
-	spec := `version: humr.ai/v1
+	spec := `version: agent-platform.ai/v1
 type: rrule
 rrule: "FREQ=HOURLY"
 timezone: UTC
@@ -156,7 +156,7 @@ enabled: true
 }
 
 func TestRemoveSchedule_RRule(t *testing.T) {
-	spec := `version: humr.ai/v1
+	spec := `version: agent-platform.ai/v1
 type: rrule
 rrule: "FREQ=HOURLY"
 timezone: UTC
@@ -180,7 +180,7 @@ enabled: true
 // success status. This exercises the full goroutine loop end-to-end
 // (without a real pod; fire() skips the exec step when restCfg is nil).
 func TestRunRRuleJob_FiresOutsideQuietHours(t *testing.T) {
-	spec := `version: humr.ai/v1
+	spec := `version: agent-platform.ai/v1
 type: rrule
 rrule: "FREQ=SECONDLY"
 timezone: UTC
@@ -216,7 +216,7 @@ func TestRunRRuleJob_QuietHoursSuppresses(t *testing.T) {
 	startHHMM := fmt.Sprintf("%02d:%02d", startT.Hour(), startT.Minute())
 	endHHMM := fmt.Sprintf("%02d:%02d", endT.Hour(), endT.Minute())
 
-	spec := fmt.Sprintf(`version: humr.ai/v1
+	spec := fmt.Sprintf(`version: agent-platform.ai/v1
 type: rrule
 rrule: "FREQ=SECONDLY"
 timezone: UTC

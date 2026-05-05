@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=humr-base
+ARG BASE_IMAGE=platform-base
 FROM ${BASE_IMAGE}
 
 # Claude Code harness

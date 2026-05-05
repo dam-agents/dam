@@ -1,6 +1,6 @@
 import { skipToken, useQuery } from "@tanstack/react-query";
 
-import { platform } from "../../../platform.js";
+import { api } from "../../../api.js";
 
 export const acpSessionsKeys = {
   all: ["acp-sessions"] as const,
@@ -25,7 +25,7 @@ export function useAcpSessions(
   return useQuery({
     queryKey: acpSessionsKeys.list(instanceId, includeChannel),
     queryFn: live
-      ? () => platform.sessions.list.query({ instanceId, includeChannel })
+      ? () => api.sessions.list.query({ instanceId, includeChannel })
       : skipToken,
     meta: { errorToast: "Couldn't refresh session list" },
   });

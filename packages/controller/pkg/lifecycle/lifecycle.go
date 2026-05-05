@@ -54,7 +54,7 @@ func New(client kubernetes.Interface, namespace string) *Lifecycle {
 
 // EnsureReady blocks until the instance's pod is Ready, waking it from
 // hibernation if needed. Idempotent; single-flight per instance name; bumps
-// humr.ai/last-activity on every successful completion so any caller
+// agent-platform.ai/last-activity on every successful completion so any caller
 // implicitly keeps the pod warm.
 //
 // Behaviour: if the pod is already Ready, this is one getPod + one

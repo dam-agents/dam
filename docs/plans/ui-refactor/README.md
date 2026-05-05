@@ -1,6 +1,6 @@
 # UI refactor plan — `packages/ui`
 
-First-pass refactor of humr's `packages/ui` toward the [React + TypeScript UI engineering skill](../../../.agents/skills/react-ui-engineering/SKILL.md). The skill holds the rules and severity tiers; this plan holds the execution process, the ordered steps, and the progress tracker. Delete this folder once the matrix is fully green.
+First-pass refactor of platform's `packages/ui` toward the [React + TypeScript UI engineering skill](../../../.agents/skills/react-ui-engineering/SKILL.md). The skill holds the rules and severity tiers; this plan holds the execution process, the ordered steps, and the progress tracker. Delete this folder once the matrix is fully green.
 
 ---
 

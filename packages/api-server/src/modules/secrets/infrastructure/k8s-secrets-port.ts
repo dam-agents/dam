@@ -11,14 +11,14 @@ import type { InjectionConfig } from "api-server-api";
 
 import type { K8sClient } from "../../agents/infrastructure/k8s.js";
 
-const LABEL_OWNER = "humr.ai/owner";
-const LABEL_SECRET_TYPE = "humr.ai/secret-type";
-const LABEL_MANAGED_BY = "humr.ai/managed-by";
-const ANN_HOST_PATTERN = "humr.ai/host-pattern";
-const ANN_PATH_PATTERN = "humr.ai/path-pattern";
-const ANN_HEADER_NAME = "humr.ai/injection-header-name";
-const ANN_AUTH_MODE = "humr.ai/auth-mode";
-const ANN_VALUE_FORMAT = "humr.ai/injection-value-format";
+const LABEL_OWNER = "agent-platform.ai/owner";
+const LABEL_SECRET_TYPE = "agent-platform.ai/secret-type";
+const LABEL_MANAGED_BY = "agent-platform.ai/managed-by";
+const ANN_HOST_PATTERN = "agent-platform.ai/host-pattern";
+const ANN_PATH_PATTERN = "agent-platform.ai/path-pattern";
+const ANN_HEADER_NAME = "agent-platform.ai/injection-header-name";
+const ANN_AUTH_MODE = "agent-platform.ai/auth-mode";
+const ANN_VALUE_FORMAT = "agent-platform.ai/injection-value-format";
 
 export type AuthMode = "api-key" | "oauth";
 
@@ -122,7 +122,7 @@ export interface K8sSecretsPort {
 // Validate up-front instead — callers hand us UUIDs, so this is a no-op
 // for the happy path and a hard error for anything else.
 const K8S_NAME_RE = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
-const K8S_NAME_PREFIX = "humr-cred-";
+const K8S_NAME_PREFIX = "platform-cred-";
 const K8S_NAME_MAX_ID_LEN = 253 - K8S_NAME_PREFIX.length;
 
 function k8sSecretName(id: string): string {
@@ -153,7 +153,7 @@ export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSe
           const authMode = ann[ANN_AUTH_MODE] as AuthMode | undefined;
           const stored: K8sStoredSecret = {
             id,
-            name: ann["humr.ai/display-name"] ?? id,
+            name: ann["agent-platform.ai/display-name"] ?? id,
             type: labels[LABEL_SECRET_TYPE] ?? "generic",
             hostPattern: ann[ANN_HOST_PATTERN] ?? "",
             createdAt: s.metadata?.creationTimestamp
@@ -174,7 +174,7 @@ export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSe
         [ANN_HOST_PATTERN]: hostPattern,
         [ANN_HEADER_NAME]: headerName,
         [ANN_VALUE_FORMAT]: valueFormat,
-        "humr.ai/display-name": name,
+        "agent-platform.ai/display-name": name,
       };
       if (pathPattern) annotations[ANN_PATH_PATTERN] = pathPattern;
       if (authMode) annotations[ANN_AUTH_MODE] = authMode;

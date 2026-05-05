@@ -159,7 +159,7 @@ export async function scanPublicGithubArchive(gitUrl: string): Promise<Skill[]> 
   }
   const version = shaMatch[1];
 
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "humr-public-scan-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "platform-public-scan-"));
   try {
     const buf = Buffer.from(await res.arrayBuffer());
     if (buf.byteLength > MAX_TARBALL_BYTES) {

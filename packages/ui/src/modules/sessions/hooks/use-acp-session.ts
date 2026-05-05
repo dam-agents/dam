@@ -1,7 +1,7 @@
 import type { McpServer } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import { useCallback, useEffect } from "react";
 
-import { platform } from "../../../platform.js";
+import { api } from "../../../api.js";
 import { useStore } from "../../../store.js";
 import { hasStreamingAssistant } from "../../acp/session-projection.js";
 import { classifyResumeError, extractErrorMessage } from "../../acp/utils.js";
@@ -87,7 +87,7 @@ export function useAcpSession(
     if (!selectedInstance) return;
     const inst = instances.find(({ id }) => id === selectedInstance);
     if (inst?.state === "hibernated") {
-      platform.instances.wake.mutate({ id: selectedInstance }).catch(() => {});
+      api.instances.wake.mutate({ id: selectedInstance }).catch(() => {});
     }
   }, [selectedInstance, instances]);
 

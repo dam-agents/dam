@@ -1,0 +1,102 @@
+{{- if .Values.keycloak.enabled }}
+{{- $appName := include "platform.keycloak.fullname" . }}
+{{- $uiUrl := include "platform.url.ui" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $appName }}-realm
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: keycloak
+data:
+  platform-realm.json: |-
+    {
+      "realm": {{ .Values.keycloak.realm | quote }},
+      "enabled": true,
+      "sslRequired": {{ if eq .Values.scheme "https" }}"external"{{ else }}"none"{{ end }},
+      "registrationAllowed": false,
+      "loginWithEmailAllowed": true,
+      "duplicateEmailsAllowed": false,
+      "resetPasswordAllowed": false,
+      "editUsernameAllowed": false,
+      "bruteForceProtected": true,
+      "clients": [
+        {
+          "clientId": {{ .Values.keycloak.clientId | quote }},
+          "enabled": true,
+          "publicClient": true,
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": true,
+          "redirectUris": [
+            {{ printf "%s/*" $uiUrl | quote }},
+            "http://localhost:5173/*"
+          ],
+          "webOrigins": [
+            {{ $uiUrl | quote }},
+            "http://localhost:5173"
+          ],
+          "protocol": "openid-connect",
+          "attributes": {
+            "pkce.code.challenge.method": "S256"
+          },
+          "protocolMappers": [
+            {
+              "name": "platform-api-audience",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper",
+              "consentRequired": false,
+              "config": {
+                "included.custom.audience": {{ .Values.keycloak.apiAudience | quote }},
+                "id.token.claim": "false",
+                "access.token.claim": "true"
+              }
+            }
+          ]
+        },
+        {
+          "clientId": {{ .Values.keycloak.apiClientId | quote }},
+          "enabled": true,
+          "publicClient": false,
+          "clientAuthenticatorType": "client-secret",
+          "secret": "$(env:PLATFORM_API_CLIENT_SECRET)",
+          "standardFlowEnabled": false,
+          "directAccessGrantsEnabled": false,
+          "serviceAccountsEnabled": true,
+          "protocol": "openid-connect"
+        }
+      ],
+      {{- if .Values.keycloak.requiredRole }}
+      "roles": {
+        "realm": [
+          {
+            "name": {{ .Values.keycloak.requiredRole | quote }},
+            "description": {{ printf "Grants access to the %s platform" .Values.brand.name | quote }}
+          }
+        ]
+      },
+      {{- end }}
+      "users": [
+        {{- if .Values.keycloak.testUser.enabled }}
+        {
+          "username": {{ .Values.keycloak.testUser.username | quote }},
+          "enabled": true,
+          "emailVerified": true,
+          "firstName": "Dev",
+          "lastName": "User",
+          "email": "dev@platform.local",
+          "credentials": [
+            {
+              "type": "password",
+              "value": {{ .Values.keycloak.testUser.password | quote }},
+              "temporary": false
+            }
+          ]
+          {{- if .Values.keycloak.requiredRole }}
+          ,"realmRoles": [{{ .Values.keycloak.requiredRole | quote }}]
+          {{- end }}
+        }
+        {{- end }}
+      ]
+    }
+{{- end }}

@@ -1,4 +1,4 @@
-module github.com/kagenti/humr/packages/controller
+module github.com/kagenti/platform/packages/controller
 
 go 1.25.0
 

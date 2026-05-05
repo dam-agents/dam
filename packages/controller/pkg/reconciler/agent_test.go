@@ -10,7 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-const fixtureAgentYAML = `version: humr.ai/v1
+const fixtureAgentYAML = `version: agent-platform.ai/v1
 image: ghcr.io/myorg/claude-code:latest
 description: "Persistent agent for repo monitoring"
 mounts:

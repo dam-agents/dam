@@ -1,6 +1,6 @@
 import type { StateCreator } from "zustand";
 
-import type { HumrStore } from "../../store.js";
+import type { PlatformStore } from "../../store.js";
 
 export type RightTab = "files" | "log" | "configuration";
 
@@ -18,7 +18,7 @@ export interface FilesSlice {
   setOpenFileDirty: (dirty: boolean) => void;
 }
 
-export const createFilesSlice: StateCreator<HumrStore, [], [], FilesSlice> = (set) => ({
+export const createFilesSlice: StateCreator<PlatformStore, [], [], FilesSlice> = (set) => ({
   openFilePath: null,
   rightTab: "files",
   openFileDirty: false,

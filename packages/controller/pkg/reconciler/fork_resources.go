@@ -8,15 +8,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	"github.com/kagenti/humr/packages/controller/pkg/config"
-	"github.com/kagenti/humr/packages/controller/pkg/types"
+	"github.com/kagenti/platform/packages/controller/pkg/config"
+	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
 const (
 	ForkJobLabelType     = "agent-fork-job"
-	ForkLabelForkID      = "humr.ai/fork-id"
-	ForkLabelInstanceRef = "humr.ai/instance"
-	ForkLabelType        = "humr.ai/type"
+	ForkLabelForkID      = "agent-platform.ai/fork-id"
+	ForkLabelInstanceRef = "agent-platform.ai/instance"
+	ForkLabelType        = "agent-platform.ai/type"
 )
 
 // BuildForkJob constructs the per-turn foreign-user fork pod.
@@ -28,14 +28,14 @@ const (
 // `127.0.0.1`; SA-token automount and process-namespace sharing are
 // disabled.
 //
-// Forks deliberately do NOT receive `HUMR_POD_FILES_EVENTS_URL`, so the
+// Forks deliberately do NOT receive `PLATFORM_POD_FILES_EVENTS_URL`, so the
 // agent-runtime running in the fork pod skips the pod-files SSE loop
 // entirely. Forks are short-lived ACP-relay jobs spawned per turn; the
 // SSE overhead per pod isn't justified for that lifecycle, and most
 // pod-files state (config, allowlists, host entries for connection-
 // aware CLIs) is irrelevant to the relay flow. If a future fork-
 // relevant feature ever needs files materialized in fork pods, set
-// `HUMR_POD_FILES_EVENTS_URL` on the fork's env here — until then,
+// `PLATFORM_POD_FILES_EVENTS_URL` on the fork's env here — until then,
 // pod-files state inside fork pods is unsupported on purpose.
 func BuildForkJob(
 	forkName string,
@@ -52,7 +52,7 @@ func BuildForkJob(
 		ForkLabelInstanceRef: forkSpec.Instance,
 	}
 
-	caCertPath := "/etc/humr/ca/ca.crt"
+	caCertPath := "/etc/platform/ca/ca.crt"
 
 	proxyAddr := fmt.Sprintf("http://127.0.0.1:%d", cfg.EnvoyPort)
 
@@ -72,9 +72,9 @@ func BuildForkJob(
 		corev1.EnvVar{Name: "ADK_INSTANCE_ID", Value: forkSpec.Instance},
 		corev1.EnvVar{Name: "API_SERVER_URL", Value: cfg.APIServerURL()},
 		corev1.EnvVar{Name: "HOME", Value: cfg.AgentHome},
-		corev1.EnvVar{Name: "HUMR_MCP_URL", Value: fmt.Sprintf("%s/api/instances/%s/mcp", cfg.HarnessServerURL, forkSpec.Instance)},
-		corev1.EnvVar{Name: "HUMR_FORK_ID", Value: forkName},
-		corev1.EnvVar{Name: "HUMR_FOREIGN_SUB", Value: forkSpec.ForeignSub},
+		corev1.EnvVar{Name: "PLATFORM_MCP_URL", Value: fmt.Sprintf("%s/api/instances/%s/mcp", cfg.HarnessServerURL, forkSpec.Instance)},
+		corev1.EnvVar{Name: "PLATFORM_FORK_ID", Value: forkName},
+		corev1.EnvVar{Name: "PLATFORM_FOREIGN_SUB", Value: forkSpec.ForeignSub},
 	)
 	// Placeholder credential envs from the replier's K8s Secrets — same
 	// purpose as the long-lived StatefulSet shape: satisfy the harness's
@@ -141,7 +141,7 @@ func BuildForkJob(
 		})
 	}
 	volumeMounts = append(volumeMounts, corev1.VolumeMount{
-		Name: "ca-cert", MountPath: "/etc/humr/ca", ReadOnly: true,
+		Name: "ca-cert", MountPath: "/etc/platform/ca", ReadOnly: true,
 	})
 
 	resourceReqs := corev1.ResourceRequirements{}
@@ -222,7 +222,7 @@ func BuildForkJob(
 		ghAvail = "true"
 	}
 	containers[0].Env = append(containers[0].Env, corev1.EnvVar{
-		Name:  "HUMR_GH_TOKEN_AVAILABLE",
+		Name:  "PLATFORM_GH_TOKEN_AVAILABLE",
 		Value: ghAvail,
 	})
 

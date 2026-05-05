@@ -14,8 +14,8 @@ import (
 	"k8s.io/client-go/util/retry"
 	"gopkg.in/yaml.v3"
 
-	"github.com/kagenti/humr/packages/controller/pkg/config"
-	"github.com/kagenti/humr/packages/controller/pkg/types"
+	"github.com/kagenti/platform/packages/controller/pkg/config"
+	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
 type IdleChecker struct {
@@ -64,7 +64,7 @@ func (c *IdleChecker) checkInterval() time.Duration {
 
 func (c *IdleChecker) check(ctx context.Context) {
 	cms, err := c.client.CoreV1().ConfigMaps(c.config.Namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: "humr.ai/type=agent-instance",
+		LabelSelector: "agent-platform.ai/type=agent-instance",
 	})
 	if err != nil {
 		slog.Error("idle checker: listing instances", "error", err)
@@ -79,11 +79,11 @@ func (c *IdleChecker) check(ctx context.Context) {
 		}
 
 		// Skip instances with an active session
-		if cm.Annotations["humr.ai/active-session"] == "true" {
+		if cm.Annotations["agent-platform.ai/active-session"] == "true" {
 			continue
 		}
 
-		lastActivity := cm.Annotations["humr.ai/last-activity"]
+		lastActivity := cm.Annotations["agent-platform.ai/last-activity"]
 		if lastActivity == "" {
 			continue
 		}

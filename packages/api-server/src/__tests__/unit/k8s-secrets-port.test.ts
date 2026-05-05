@@ -127,11 +127,11 @@ describe("createK8sSecretsPort.createSecret", () => {
 
     expect(created).toHaveLength(1);
     const s = created[0]!;
-    expect(s.metadata?.name).toBe("humr-cred-abc");
-    expect(s.metadata?.labels?.["humr.ai/owner"]).toBe("owner-1");
-    expect(s.metadata?.labels?.["humr.ai/secret-type"]).toBe("anthropic");
-    expect(s.metadata?.annotations?.["humr.ai/injection-header-name"]).toBe("x-api-key");
-    expect(s.metadata?.annotations?.["humr.ai/auth-mode"]).toBe("api-key");
+    expect(s.metadata?.name).toBe("platform-cred-abc");
+    expect(s.metadata?.labels?.["agent-platform.ai/owner"]).toBe("owner-1");
+    expect(s.metadata?.labels?.["agent-platform.ai/secret-type"]).toBe("anthropic");
+    expect(s.metadata?.annotations?.["agent-platform.ai/injection-header-name"]).toBe("x-api-key");
+    expect(s.metadata?.annotations?.["agent-platform.ai/auth-mode"]).toBe("api-key");
     expect(s.stringData?.["sds.yaml"]).toContain('inline_string: "sk-ant-key"');
     expect(s.stringData?.value).toBeUndefined();
   });
@@ -150,7 +150,7 @@ describe("createK8sSecretsPort.createSecret", () => {
     });
 
     const s = created[0]!;
-    expect(s.metadata?.annotations?.["humr.ai/injection-header-name"]).toBe("Authorization");
+    expect(s.metadata?.annotations?.["agent-platform.ai/injection-header-name"]).toBe("Authorization");
     expect(s.stringData?.["sds.yaml"]).toContain('inline_string: "Bearer oauth-token"');
   });
 
@@ -168,7 +168,7 @@ describe("createK8sSecretsPort.createSecret", () => {
     });
 
     const s = created[0]!;
-    expect(s.metadata?.annotations?.["humr.ai/injection-header-name"]).toBe("X-Auth");
+    expect(s.metadata?.annotations?.["agent-platform.ai/injection-header-name"]).toBe("X-Auth");
     expect(s.stringData?.["sds.yaml"]).toContain('inline_string: "Token raw-tok"');
   });
 
@@ -185,7 +185,7 @@ describe("createK8sSecretsPort.createSecret", () => {
     });
 
     const s = created[0]!;
-    expect(s.metadata?.annotations?.["humr.ai/injection-header-name"]).toBe("Authorization");
+    expect(s.metadata?.annotations?.["agent-platform.ai/injection-header-name"]).toBe("Authorization");
     expect(s.stringData?.["sds.yaml"]).toContain('inline_string: "Bearer tok"');
   });
 });
@@ -208,6 +208,6 @@ describe("createK8sSecretsPort.updateSecret", () => {
 
     expect(replaced).toHaveLength(1);
     expect(replaced[0]!.body.stringData?.["sds.yaml"]).toContain('inline_string: "new"');
-    expect(replaced[0]!.body.metadata?.annotations?.["humr.ai/injection-header-name"]).toBe("x-api-key");
+    expect(replaced[0]!.body.metadata?.annotations?.["agent-platform.ai/injection-header-name"]).toBe("x-api-key");
   });
 });

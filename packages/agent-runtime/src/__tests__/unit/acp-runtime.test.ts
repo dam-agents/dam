@@ -606,7 +606,7 @@ describe("createAcpRuntime", () => {
     expect(fa.sent).toHaveLength(before);
   });
 
-  it("broadcasts a humr/turnEnded notification to engaged channels when a prompt completes", () => {
+  it("broadcasts a platform/turnEnded notification to engaged channels when a prompt completes", () => {
     const fa = makeFakeAgent();
     const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
 
@@ -625,13 +625,13 @@ describe("createAcpRuntime", () => {
 
     // Both engaged channels see the turn-ended notification.
     const turnEnded = (sent: string[]) => sent.find((f) => {
-      try { return JSON.parse(f).method === "humr/turnEnded"; } catch { return false; }
+      try { return JSON.parse(f).method === "platform/turnEnded"; } catch { return false; }
     });
     expect(turnEnded(c1.sent)).toBeDefined();
     expect(turnEnded(c2.sent)).toBeDefined();
   });
 
-  it("does not broadcast humr/turnEnded to channels not engaged with the session", () => {
+  it("does not broadcast platform/turnEnded to channels not engaged with the session", () => {
     const fa = makeFakeAgent();
     const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
 
@@ -648,7 +648,7 @@ describe("createAcpRuntime", () => {
     fa.pushLine(agentPromptResponse(outbound));
 
     const turnEnded = c2.sent.find((f) => {
-      try { return JSON.parse(f).method === "humr/turnEnded"; } catch { return false; }
+      try { return JSON.parse(f).method === "platform/turnEnded"; } catch { return false; }
     });
     expect(turnEnded).toBeUndefined();
   });
@@ -1204,7 +1204,7 @@ describe("createAcpRuntime", () => {
 
   it("prepends a <clipped-conversation> sentinel when the log has been truncated", () => {
     // Tiny log cap forces eviction on the second entry. A fresh loader's
-    // catch-up prepends a synthetic `humr_clipped_replay` notification so
+    // catch-up prepends a synthetic `platform_clipped_replay` notification so
     // the UI can render a "older messages not loaded" placeholder.
     const fa = makeFakeAgent();
     const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp", logBytesCap: 10 });
@@ -1231,7 +1231,7 @@ describe("createAcpRuntime", () => {
     }));
 
     const sentinel = b.sent.find((f) => {
-      try { return JSON.parse(f).params?.update?.sessionUpdate === "humr_clipped_replay"; }
+      try { return JSON.parse(f).params?.update?.sessionUpdate === "platform_clipped_replay"; }
       catch { return false; }
     });
     expect(sentinel).toBeDefined();

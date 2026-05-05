@@ -1,7 +1,7 @@
 import { z } from "zod/v4";
 
 const configSchema = z.object({
-  namespace: z.string().default("humr-agents"),
+  namespace: z.string().default("platform-agents"),
   port: z.coerce.number().default(4000),
   harnessServerPort: z.coerce.number().default(4001),
   /** gRPC ext_authz listener — serves both Envoy's HTTP filter (L7,
@@ -13,13 +13,13 @@ const configSchema = z.object({
   slackAppToken: z.string().nullable().default(null),
   slackOauthCallbackUrl: z.string().nullable().default(null),
   telegramEnabled: z.coerce.boolean().default(false),
-  uiBaseUrl: z.url().default("http://humr.localhost:4444"),
-  keycloakUrl: z.url().default("http://humr-keycloak:8080"),
+  uiBaseUrl: z.url().default("http://localhost:4444"),
+  keycloakUrl: z.url().default("http://platform-keycloak:8080"),
   keycloakExternalUrl: z.url().default("http://keycloak.localhost:4444"),
-  keycloakRealm: z.string().default("humr"),
-  keycloakClientId: z.string().default("humr-ui"),
-  keycloakApiAudience: z.string().default("humr-api"),
-  keycloakApiClientId: z.string().default("humr-api"),
+  keycloakRealm: z.string().default("platform"),
+  keycloakClientId: z.string().default("platform-ui"),
+  keycloakApiAudience: z.string().default("platform-api"),
+  keycloakApiClientId: z.string().default("platform-api"),
   keycloakApiClientSecret: z.string().default(""),
   keycloakRequiredRole: z.string().optional(),
   agentHome: z.string().default("/home/agent"),
@@ -54,6 +54,27 @@ const configSchema = z.object({
    *  rule per host listed here. Empty/missing file → grants insert nothing
    *  (matches pre-ADR-035 behavior). */
   appConnectionEgressHostsPath: z.string().default(""),
+  /** Brand presented to end users — display name, slash-command identifier,
+   *  and theme accent colors. Surfaced to the UI via `GET /api/brand` and
+   *  used internally for OAuth client_name, Slack slash command, skill
+   *  publish git author, MCP tool descriptions. The internal codename
+   *  ("platform") is permanent; this section is the only knob users see. */
+  brand: z.object({
+    name: z.string().default("Platform"),
+    short: z.string().default("platform"),
+    theme: z.object({
+      light: z.object({
+        accent: z.string().default("#1D6BE1"),
+        accentHover: z.string().default("#1556B8"),
+        accentLight: z.string().default("#eaf2fe"),
+      }),
+      dark: z.object({
+        accent: z.string().default("#3C92FD"),
+        accentHover: z.string().default("#2F88FD"),
+        accentLight: z.string().default("#0f1f3a"),
+      }),
+    }),
+  }),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -81,15 +102,31 @@ export function loadConfig(): Config {
     keycloakRequiredRole: process.env.KEYCLOAK_REQUIRED_ROLE,
     agentHome: process.env.AGENT_HOME,
     skillSourcesSeed: process.env.SKILL_SOURCES_SEED,
-    defaultGithubClientId: process.env.HUMR_DEFAULT_GITHUB_CLIENT_ID,
-    defaultGithubClientSecret: process.env.HUMR_DEFAULT_GITHUB_CLIENT_SECRET,
-    defaultGithubEnterpriseHost: process.env.HUMR_DEFAULT_GHE_HOST,
-    defaultGithubEnterpriseClientId: process.env.HUMR_DEFAULT_GHE_CLIENT_ID,
-    defaultGithubEnterpriseClientSecret: process.env.HUMR_DEFAULT_GHE_CLIENT_SECRET,
+    defaultGithubClientId: process.env.PLATFORM_DEFAULT_GITHUB_CLIENT_ID,
+    defaultGithubClientSecret: process.env.PLATFORM_DEFAULT_GITHUB_CLIENT_SECRET,
+    defaultGithubEnterpriseHost: process.env.PLATFORM_DEFAULT_GHE_HOST,
+    defaultGithubEnterpriseClientId: process.env.PLATFORM_DEFAULT_GHE_CLIENT_ID,
+    defaultGithubEnterpriseClientSecret: process.env.PLATFORM_DEFAULT_GHE_CLIENT_SECRET,
     redisUrl: process.env.REDIS_URL,
     redisPassword: process.env.REDIS_PASSWORD,
     approvalHoldSeconds: process.env.APPROVAL_HOLD_SECONDS,
     trustedHostsPath: process.env.TRUSTED_HOSTS_PATH,
     appConnectionEgressHostsPath: process.env.APP_CONNECTION_EGRESS_HOSTS_PATH,
+    brand: {
+      name: process.env.BRAND_NAME,
+      short: process.env.BRAND_SHORT,
+      theme: {
+        light: {
+          accent: process.env.BRAND_THEME_LIGHT_ACCENT,
+          accentHover: process.env.BRAND_THEME_LIGHT_ACCENT_HOVER,
+          accentLight: process.env.BRAND_THEME_LIGHT_ACCENT_LIGHT,
+        },
+        dark: {
+          accent: process.env.BRAND_THEME_DARK_ACCENT,
+          accentHover: process.env.BRAND_THEME_DARK_ACCENT_HOVER,
+          accentLight: process.env.BRAND_THEME_DARK_ACCENT_LIGHT,
+        },
+      },
+    },
   });
 }

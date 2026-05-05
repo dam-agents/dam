@@ -266,7 +266,7 @@ describe("e2e: controller reconciliation", () => {
         await Promise.all([
           dumpPodLogs("app.kubernetes.io/component=controller"),
           describePod(podName),
-          dumpPodLogs(`humr.ai/instance=${e2eInstanceId}`, "humr-agents"),
+          dumpPodLogs(`agent-platform.ai/instance=${e2eInstanceId}`, "platform-agents"),
           getEvents(podName),
           describeConfigMap(e2eScheduleId),
         ]);

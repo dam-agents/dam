@@ -12,7 +12,7 @@ Key constraints:
 - The API Server runs behind a VPN — Slack cannot POST to it directly
 - Multiple users share a single Slack workspace and need access to different instances
 - Users must be authenticated (linked to Keycloak identity per ADR-015)
-- A single Slack app serves the entire Humr installation
+- A single Slack app serves the entire Platform installation
 
 ## Decision
 
@@ -20,17 +20,17 @@ Key constraints:
 
 The Slack app uses Socket Mode instead of HTTP request URLs. The API Server connects to Slack via WebSocket using an App-Level Token (`xapp-...`), receiving all events and interactions over the socket. No inbound network access required.
 
-### 2. Identity linking via `/humr login`
+### 2. Identity linking via `/platform login`
 
-A `/humr login` slash command initiates a Keycloak OAuth flow:
+A `/platform login` slash command initiates a Keycloak OAuth flow:
 
-1. User types `/humr login`
+1. User types `/platform login`
 2. Bot replies with an ephemeral message containing a Keycloak login URL
 3. User clicks, authenticates via Keycloak
 4. Keycloak redirects to the API Server callback (user is on VPN, so this works)
 5. API Server stores `slack_user_id ↔ keycloak_identity` mapping
 
-All subsequent interactions require a linked identity. Unlinked users receive an ephemeral prompt to `/humr login` first.
+All subsequent interactions require a linked identity. Unlinked users receive an ephemeral prompt to `/platform login` first.
 
 ### 3. Two-tier access control — channel + instance
 
@@ -45,7 +45,7 @@ This gives instance owners control over who can trigger agent work while keeping
 When a user sends a message in a channel:
 1. Bot checks which instances the user has access to in that channel
 2. If one instance → route directly, no prompt
-3. If multiple → show `external_select` dropdown (lazy-loads from Humr API)
+3. If multiple → show `external_select` dropdown (lazy-loads from Platform API)
 4. Selected instance is stored as a `thread_ts → instance_id` mapping
 5. All subsequent messages in the thread route to the same instance
 
@@ -77,7 +77,7 @@ Inherits from ADR-016: each thread is a new ACP session. Thread history is injec
 
 ## Consequences
 
-- Single Slack app per Humr installation — simple admin
+- Single Slack app per Platform installation — simple admin
 - Socket Mode means no public endpoints, but also means max 10 concurrent WebSocket connections per app (Slack limit) — sufficient for current scale
 - Identity linking is a one-time step per user; must handle token refresh/expiry
 - Two-tier access: channel membership for visibility, per-instance allowed users for interaction rights

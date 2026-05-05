@@ -139,7 +139,7 @@ export function createTelegramWorker(
     const adapter = createTelegramAdapter({ botToken, mode: "polling" });
 
     const chat = new Chat({
-      userName: "humr",
+      userName: "platform",
       adapters: { telegram: adapter },
       state,
     });

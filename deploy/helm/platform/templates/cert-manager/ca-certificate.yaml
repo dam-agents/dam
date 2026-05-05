@@ -1,0 +1,33 @@
+{{- if and .Values.controller .Values.controller.envoyMitm .Values.controller.envoyMitm.enabled }}
+{{/*
+The platform MITM CA. Self-signed via the bootstrap issuer; the resulting Secret
+in cert-manager's cluster-resource-namespace backs the platform-mitm-ca-issuer
+ClusterIssuer.
+
+cert-manager only honours `ca:` ClusterIssuers that reference a Secret in the
+namespace passed to its --cluster-resource-namespace flag (default
+`cert-manager`). Override .Values.controller.envoyMitm.caSecretNamespace to
+match if your install differs.
+*/}}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ .Values.controller.envoyMitm.caSecretName }}
+  namespace: {{ .Values.controller.envoyMitm.caSecretNamespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: envoy-mitm
+spec:
+  isCA: true
+  commonName: platform MITM CA
+  secretName: {{ .Values.controller.envoyMitm.caSecretName }}
+  duration: {{ .Values.controller.envoyMitm.caDuration }}
+  renewBefore: {{ .Values.controller.envoyMitm.caRenewBefore }}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: {{ .Values.controller.envoyMitm.bootstrapIssuerName }}
+    kind: ClusterIssuer
+    group: cert-manager.io
+{{- end }}

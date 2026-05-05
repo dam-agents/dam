@@ -9,7 +9,7 @@ import (
 
 // --- Agent ---
 
-const fixtureTemplateYAML = `version: humr.ai/v1
+const fixtureTemplateYAML = `version: agent-platform.ai/v1
 image: ghcr.io/myorg/claude-code:latest
 description: "Persistent agent for repo monitoring"
 mounts:
@@ -63,20 +63,20 @@ func TestParseAgentSpec_MissingVersion(t *testing.T) {
 }
 
 func TestParseAgentSpec_WrongVersion(t *testing.T) {
-	_, err := ParseAgentSpec("version: humr.ai/v99\nimage: foo")
+	_, err := ParseAgentSpec("version: agent-platform.ai/v99\nimage: foo")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported version")
 }
 
 func TestParseAgentSpec_MissingImage(t *testing.T) {
-	_, err := ParseAgentSpec(`version: humr.ai/v1
+	_, err := ParseAgentSpec(`version: agent-platform.ai/v1
 description: "no image"`)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "image")
 }
 
 func TestParseAgentSpec_RelativeMountPath(t *testing.T) {
-	_, err := ParseAgentSpec(`version: humr.ai/v1
+	_, err := ParseAgentSpec(`version: agent-platform.ai/v1
 image: foo
 mounts:
   - path: workspace
@@ -86,7 +86,7 @@ mounts:
 }
 
 func TestParseAgentSpec_MountSize(t *testing.T) {
-	spec, err := ParseAgentSpec(`version: humr.ai/v1
+	spec, err := ParseAgentSpec(`version: agent-platform.ai/v1
 image: foo
 mounts:
   - path: /home/agent
@@ -101,7 +101,7 @@ mounts:
 }
 
 func TestParseAgentSpec_MountSizeInvalid(t *testing.T) {
-	_, err := ParseAgentSpec(`version: humr.ai/v1
+	_, err := ParseAgentSpec(`version: agent-platform.ai/v1
 image: foo
 mounts:
   - path: /home/agent
@@ -114,7 +114,7 @@ mounts:
 // --- Instance ---
 
 func TestParseInstanceSpec(t *testing.T) {
-	spec, err := ParseInstanceSpec(`version: humr.ai/v1
+	spec, err := ParseInstanceSpec(`version: agent-platform.ai/v1
 desiredState: running
 agentId: claude-code
 env:
@@ -131,14 +131,14 @@ secretRef: cg-team-alpha-secrets
 }
 
 func TestParseInstanceSpec_MissingDesiredState(t *testing.T) {
-	_, err := ParseInstanceSpec(`version: humr.ai/v1
+	_, err := ParseInstanceSpec(`version: agent-platform.ai/v1
 agentId: foo`)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "desiredState")
 }
 
 func TestParseInstanceSpec_InvalidDesiredState(t *testing.T) {
-	_, err := ParseInstanceSpec(`version: humr.ai/v1
+	_, err := ParseInstanceSpec(`version: agent-platform.ai/v1
 desiredState: paused`)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "'running' or 'hibernated'")
@@ -153,7 +153,7 @@ func TestParseInstanceSpec_MissingVersion(t *testing.T) {
 // --- Schedule ---
 
 func TestParseScheduleSpec(t *testing.T) {
-	spec, err := ParseScheduleSpec(`version: humr.ai/v1
+	spec, err := ParseScheduleSpec(`version: agent-platform.ai/v1
 type: cron
 cron: "*/30 * * * *"
 task: ""
@@ -167,7 +167,7 @@ enabled: true
 }
 
 func TestParseScheduleSpec_InvalidCron(t *testing.T) {
-	_, err := ParseScheduleSpec(`version: humr.ai/v1
+	_, err := ParseScheduleSpec(`version: agent-platform.ai/v1
 cron: "not a cron"
 enabled: true`)
 	assert.Error(t, err)
@@ -183,7 +183,7 @@ enabled: true`)
 
 func TestParseScheduleSpecWithSessionMode(t *testing.T) {
 	yaml := `
-version: humr.ai/v1
+version: agent-platform.ai/v1
 type: cron
 cron: "*/5 * * * *"
 task: "check health"
@@ -201,7 +201,7 @@ sessionMode: continuous
 
 func TestParseScheduleSpecSessionModeDefaults(t *testing.T) {
 	yaml := `
-version: humr.ai/v1
+version: agent-platform.ai/v1
 type: cron
 cron: "*/5 * * * *"
 enabled: true
@@ -246,7 +246,7 @@ func TestNewScheduleStatus(t *testing.T) {
 
 // --- Fork ---
 
-const fixtureForkYAML = `version: humr.ai/v1
+const fixtureForkYAML = `version: agent-platform.ai/v1
 instance: inst-abc
 foreignSub: kc|user-42
 sessionId: sess-1
@@ -262,7 +262,7 @@ func TestParseForkSpec(t *testing.T) {
 }
 
 func TestParseForkSpec_Minimal(t *testing.T) {
-	spec, err := ParseForkSpec(`version: humr.ai/v1
+	spec, err := ParseForkSpec(`version: agent-platform.ai/v1
 instance: inst-abc
 foreignSub: kc|user-42
 `)
@@ -272,8 +272,8 @@ foreignSub: kc|user-42
 
 func TestParseForkSpec_MissingRequired(t *testing.T) {
 	cases := map[string]string{
-		"missing instance":   `version: humr.ai/v1` + "\n" + `foreignSub: kc|u`,
-		"missing foreignSub": `version: humr.ai/v1` + "\n" + `instance: inst-abc`,
+		"missing instance":   `version: agent-platform.ai/v1` + "\n" + `foreignSub: kc|u`,
+		"missing foreignSub": `version: agent-platform.ai/v1` + "\n" + `instance: inst-abc`,
 	}
 	for name, yaml := range cases {
 		t.Run(name, func(t *testing.T) {

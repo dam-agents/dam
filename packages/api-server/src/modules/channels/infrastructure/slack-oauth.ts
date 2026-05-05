@@ -9,6 +9,9 @@ export function createSlackOAuthRoutes(deps: {
   pendingFlows: Map<string, SlackOAuthPending>;
   identityLinks: IdentityLinkService;
   oauthConfig: KeycloakOAuthConfig;
+  /** Lowercase brand identifier — used to render the slash command name in
+   *  user-facing error messages ("Run `/<brandShort> login` again"). */
+  brandShort: string;
 }) {
   const routes = new Hono();
 
@@ -32,7 +35,7 @@ export function createSlackOAuthRoutes(deps: {
 
     if (Date.now() - pending.createdAt > FLOW_TTL_MS) {
       deps.pendingFlows.delete(state);
-      return c.text("Login link expired. Run `/humr login` again.", 400);
+      return c.text(`Login link expired. Run \`/${deps.brandShort} login\` again.`, 400);
     }
 
     deps.pendingFlows.delete(state);
@@ -40,7 +43,7 @@ export function createSlackOAuthRoutes(deps: {
     const result = await exchangeCodeForTokens(deps.oauthConfig, code, pending.codeVerifier);
     if ("error" in result) {
       process.stderr.write(`[slack-oauth] ${result.error}\n`);
-      return c.text("Token exchange failed. Run `/humr login` again.", 400);
+      return c.text(`Token exchange failed. Run \`/${deps.brandShort} login\` again.`, 400);
     }
 
     await deps.identityLinks.link("slack", pending.slackUserId, result.keycloakSub, result.refreshToken);

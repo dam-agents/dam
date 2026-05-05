@@ -14,7 +14,7 @@ import (
 
 var quietHoursTimeRE = regexp.MustCompile(`^([01][0-9]|2[0-3]):[0-5][0-9]$`)
 
-const SpecVersion = "humr.ai/v1"
+const SpecVersion = "agent-platform.ai/v1"
 
 // --- Agent ---
 

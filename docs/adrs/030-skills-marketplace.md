@@ -7,7 +7,7 @@
 
 ## Context
 
-One user's breakthrough workflow never propagates. New users face a blank slate. [kagenti/humr-claw#5](https://github.com/kagenti/humr-claw/issues/5) asks for a shared skills surface in Humr, modeled on [Ramp's Glass](https://x.com/sebgoddijn/status/2042285915435937816).
+One user's breakthrough workflow never propagates. New users face a blank slate. [kagenti/platform-claw#5](https://github.com/kagenti/platform-claw/issues/5) asks for a shared skills surface in Platform, modeled on [Ramp's Glass](https://x.com/sebgoddijn/status/2042285915435937816).
 
 Prior decisions:
 
@@ -19,9 +19,9 @@ Prior decisions:
 
 Since then: [agentskills.io](https://agentskills.io) is an open cross-harness standard (38+ adopters); Pi ships alongside Claude Code; public skill marketplaces exist (skills.sh, ClawHub, LobeHub, Anthropic's repo, OpenAI's catalog).
 
-This refines ADR-023. Humr doesn't define skill *format* or *interpretation* — agentskills.io and the harness do. It owns skill *transport* — same category as credentials (ADR-005/010), env (ADR-024), and workspace seeding (ADR-001).
+This refines ADR-023. Platform doesn't define skill *format* or *interpretation* — agentskills.io and the harness do. It owns skill *transport* — same category as credentials (ADR-005/010), env (ADR-024), and workspace seeding (ADR-001).
 
-**We do not build our own marketplace.** Skill sources are external — public marketplaces, vendor catalogs, internal git repos. Humr connects to them like it connects to MCP servers. The differentiating Humr value (transport, isolation, policy) does not require hosting the catalog.
+**We do not build our own marketplace.** Skill sources are external — public marketplaces, vendor catalogs, internal git repos. Platform connects to them like it connects to MCP servers. The differentiating Platform value (transport, isolation, policy) does not require hosting the catalog.
 
 ## Decision
 
@@ -30,7 +30,7 @@ This refines ADR-023. Humr doesn't define skill *format* or *interpretation* —
 A skill source is a connection to an external git repository, addressable by id. Sister to OneCLI credential connectors (ADR-024) and MCP connections. Three kinds, merged into a single list at read time and badged in the UI:
 
 - **User source** — a row in the Postgres `skill_sources` table, owner-scoped. Created and deleted by the user via tRPC.
-- **System source** — a Helm-declared platform-wide entry from `skills.skillSources` ([`deploy/helm/humr/values.yaml`](../../deploy/helm/humr/values.yaml)). Rendered into the api-server pod as the `SKILL_SOURCES_SEED` env (Zod-validated, slug ids), loaded into config at boot, **never persisted to Postgres**. Marked `system: true`, protected from deletion. Badged "Platform".
+- **System source** — a Helm-declared platform-wide entry from `skills.skillSources` ([`deploy/helm/platform/values.yaml`](../../deploy/helm/platform/values.yaml)). Rendered into the api-server pod as the `SKILL_SOURCES_SEED` env (Zod-validated, slug ids), loaded into config at boot, **never persisted to Postgres**. Marked `system: true`, protected from deletion. Badged "Platform".
 - **Template source** — declared on a template's `spec.skillSources`. Surfaced read-only on every instance derived from that template. Badged "Agent".
 
 Listing dedupes on `gitUrl` with first-wins precedence: user → template → system. A user creating a custom source for the same URL shadows the system entry; deleting the user row exposes the system entry again.
@@ -53,14 +53,14 @@ Agent templates own harness-specific quirks (`skillPaths`); controller stays har
 
 ### 3. Publish
 
-- **Git sources (GitHub only in v1)** — invisible-git. User authors a skill on the pod (Files panel), clicks *publish*, Humr opens a PR on the connected repo. Git-host PR review is the gate. Non-technical users never see git.
-- **Mechanism: REST, not `git push`.** agent-runtime drives the full GitHub REST flow (blobs → tree → commit → branch → PR) from inside the pod. Branch naming: `humr/publish-<name>-<timestamp>`. Author: `Humr <humr-publish@users.noreply.github.com>`. Per-file and per-skill size caps applied before upload.
+- **Git sources (GitHub only in v1)** — invisible-git. User authors a skill on the pod (Files panel), clicks *publish*, Platform opens a PR on the connected repo. Git-host PR review is the gate. Non-technical users never see git.
+- **Mechanism: REST, not `git push`.** agent-runtime drives the full GitHub REST flow (blobs → tree → commit → branch → PR) from inside the pod. Branch naming: `platform/publish-<name>-<timestamp>`. Author: `Platform <platform-publish@users.noreply.github.com>`. Per-file and per-skill size caps applied before upload.
 - **Credentials via OneCLI MITM (ADR-005).** agent-runtime never holds a real GitHub token. Three pieces:
-  1. Controller sets `GH_TOKEN=humr:sentinel` as a platform-default env on every agent pod.
+  1. Controller sets `GH_TOKEN=platform:sentinel` as a platform-default env on every agent pod.
   2. Pod's `HTTPS_PROXY` + cluster MITM CA route every outbound request through OneCLI's gateway.
-  3. agent-runtime sends `Authorization: Bearer humr:sentinel` on every GitHub API call; OneCLI swaps for the owner's OAuth token on the wire.
+  3. agent-runtime sends `Authorization: Bearer platform:sentinel` on every GitHub API call; OneCLI swaps for the owner's OAuth token on the wire.
 - **Publish records.** `instance_skill_publishes` table logs successful publishes (skillName, sourceId, prUrl, plus denormalized source name/gitUrl so the row stays usable after the source is renamed or deleted). Drives the "Published" badge on Standalone rows; replaces the name-match heuristic.
-- **Public marketplaces** — out-of-band. Users publish through each marketplace's own flow. Humr does not intermediate.
+- **Public marketplaces** — out-of-band. Users publish through each marketplace's own flow. Platform does not intermediate.
 
 ### 4. Agent-callable installs (MCP)
 
@@ -87,7 +87,7 @@ A real recommender (Sensei/Glass pattern) needs role, usage telemetry, and cross
 System sources come from `SKILL_SOURCES_SEED` env; template sources from `template.spec.skillSources`. Neither persists. PVC reclamation handles file-side cleanup on instance deletion; the Skills cleanup saga (subscribes to `InstanceDeleted`) handles the row-side. User-owned sources outlive any single instance.
 
 **Schema additions:**
-- `humr.ai/type=skill-source` is **not** used. Sources moved to Postgres before merge.
+- `platform.ai/type=skill-source` is **not** used. Sources moved to Postgres before merge.
 - `TemplateSpec.skillPaths: string[]` and `AgentSpec.skillPaths: string[]`. Default `["/home/agent/.agents/skills/"]`. Claude-Code-based templates (`example-agent`, `google-workspace`, `code-guardian`) override to `["/home/agent/.claude/skills/"]`. `pi-agent` uses `["/home/agent/.pi/agent/skills/"]`. Resolution at install time: `agent.spec.skillPaths` → `template.spec.skillPaths` → cross-harness default.
 - `TemplateSpec.skillSources: [{name, gitUrl}]` for template-bound sources.
 - `InstanceSpec.skills` is **not** added. (Earlier draft had it; replaced by `instance_skills` table.)
@@ -117,8 +117,8 @@ System sources come from `SKILL_SOURCES_SEED` env; template sources from `templa
 
 ## Non-goals
 
-- Humr-owned catalog, publishing review, or public-facing marketplace.
-- Humr-invented ratings or reviews (surface source-provided ones as-is).
+- Platform-owned catalog, publishing review, or public-facing marketplace.
+- Platform-invented ratings or reviews (surface source-provided ones as-is).
 - Cross-install usage telemetry.
 - Exhaustive harness support in v1.
 
@@ -141,7 +141,7 @@ System sources come from `SKILL_SOURCES_SEED` env; template sources from `templa
 - Supersedes [ADR-011](011-skills-claude-marketplace.md); closes the harness-native draft.
 - New schema: `skill_sources`, `instance_skills`, `instance_skill_publishes` Postgres tables; `TemplateSpec.skillPaths`, `AgentSpec.skillPaths`, `TemplateSpec.skillSources`. No new ConfigMap kinds.
 - Agent-runtime gains a tRPC `skills` router on the harness port; the api-server is the sole caller and authenticates with the per-instance OneCLI access token (same token reused on three surfaces — egress, harness, tRPC).
-- Publish flow depends on OneCLI MITM ([ADR-005](005-credential-gateway.md)) and the platform-default `GH_TOKEN=humr:sentinel` env ([ADR-024](024-connector-declared-envs.md)). agent-runtime never holds a real GitHub token; a compromised pod cannot exfiltrate it.
+- Publish flow depends on OneCLI MITM ([ADR-005](005-credential-gateway.md)) and the platform-default `GH_TOKEN=platform:sentinel` env ([ADR-024](024-connector-declared-envs.md)). agent-runtime never holds a real GitHub token; a compromised pod cannot exfiltrate it.
 - UI gains a Skills section in the Configure dialog (per-instance) and a connect-source flow analogous to connecting an MCP server.
 - The harness MCP endpoint exposes four install/discovery tools and one publish tool; `add_skill_source` is intentionally absent to block prompt-injection URL drops.
 - No new service or Deployment. Skill-source fetch and Skills section logic live in the existing api-server; pod-side logic in the existing agent-runtime.

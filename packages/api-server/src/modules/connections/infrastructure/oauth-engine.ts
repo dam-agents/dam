@@ -49,7 +49,7 @@ export interface OAuthFlowMetadata {
   displayName?: string;
   /**
    * Pod env vars to inject into every agent granted access to this
-   * connection's K8s Secret. The placeholder is typically `humr:sentinel`
+   * connection's K8s Secret. The placeholder is typically `dummy-placeholder`
    * — the Envoy sidecar's credential_injector filter rewrites it to the
    * real token at request time — but for env vars carrying literal config
    * (e.g. `GH_HOST`) it can be a concrete value. Static apps populate this

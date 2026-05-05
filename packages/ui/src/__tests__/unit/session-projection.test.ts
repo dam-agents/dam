@@ -124,36 +124,36 @@ describe("applyUpdate — agent content", () => {
 });
 
 describe("applyUpdate — turn boundaries", () => {
-  test("humr_turn_ended closes the active assistant", () => {
+  test("platform_turn_ended closes the active assistant", () => {
     const start: Message[] = [userMsg("u1", "hi"), assistantMsg("a1", "hello", true)];
-    const out = applyUpdate(start, { sessionUpdate: "humr_turn_ended" });
+    const out = applyUpdate(start, { sessionUpdate: "platform_turn_ended" });
     expect(out[1].streaming).toBe(false);
   });
 
-  test("humr_turn_ended closes the active bubble and leaves queued ones alone", () => {
+  test("platform_turn_ended closes the active bubble and leaves queued ones alone", () => {
     const start: Message[] = [
       userMsg("u1", "first"),
       assistantMsg("a1", "hello", true, false),
       userMsg("u2", "second"),
       assistantMsg("a2", "", true, true),
     ];
-    const out = applyUpdate(start, { sessionUpdate: "humr_turn_ended" });
+    const out = applyUpdate(start, { sessionUpdate: "platform_turn_ended" });
     expect(out[1].streaming).toBe(false);
     expect(out[3].streaming).toBe(true);
     expect(out[3].queued).toBe(true);
   });
 
-  test("humr_turn_ended skips queued-only states (no active to close)", () => {
+  test("platform_turn_ended skips queued-only states (no active to close)", () => {
     const start: Message[] = [
       userMsg("u1", "first"),
       assistantMsg("a1", "", true, true),
     ];
-    const out = applyUpdate(start, { sessionUpdate: "humr_turn_ended" });
+    const out = applyUpdate(start, { sessionUpdate: "platform_turn_ended" });
     expect(out).toEqual(start);
   });
 
-  test("humr_turn_ended on empty state is a no-op", () => {
-    const out = applyUpdate([], { sessionUpdate: "humr_turn_ended" });
+  test("platform_turn_ended on empty state is a no-op", () => {
+    const out = applyUpdate([], { sessionUpdate: "platform_turn_ended" });
     expect(out).toEqual([]);
   });
 
@@ -320,7 +320,7 @@ describe("queued prompt scenarios", () => {
     expect(m[3].queued).toBe(true);
 
     // Turn 1 ends.
-    m = applyUpdate(m, { sessionUpdate: "humr_turn_ended" });
+    m = applyUpdate(m, { sessionUpdate: "platform_turn_ended" });
     expect(m[1].streaming).toBe(false);
     expect(m[3].streaming).toBe(true);
 
@@ -330,7 +330,7 @@ describe("queued prompt scenarios", () => {
     expect((m[3].parts[0] as any).text).toBe("hello 2");
 
     // Turn 2 ends.
-    m = applyUpdate(m, { sessionUpdate: "humr_turn_ended" });
+    m = applyUpdate(m, { sessionUpdate: "platform_turn_ended" });
     expect(m[3].streaming).toBe(false);
   });
 });

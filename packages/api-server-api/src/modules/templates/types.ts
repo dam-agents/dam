@@ -15,7 +15,7 @@ export interface SecurityContext {
   readOnlyRootFilesystem?: boolean;
 }
 
-export const SPEC_VERSION = "humr.ai/v1";
+export const SPEC_VERSION = "agent-platform.ai/v1";
 
 /** A {name, gitUrl} pair declared by the helm values (platform-wide) or by a
  *  template (per-agent). The same shape flows through every layer — helm

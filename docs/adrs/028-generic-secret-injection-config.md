@@ -44,7 +44,7 @@ An update payload distinguishes between *unchanged* (field omitted) and *cleared
 
 **Free-form headers JSON instead of `{ headerName, valueFormat }`.** Let users paste an arbitrary header map. Rejected: hard to validate, no `{value}` contract, and 95% of real cases are a single header with a formatted value. The two-field shape captures the common case without closing the door on a future multi-header form.
 
-**Per-secret sentinel matching.** Assign each secret a unique sentinel (`humr:sentinel:<id>`) and have OneCLI match on sentinel instead of host+path. Rejected: host+path matching is already how OneCLI works and covers this use case; per-secret sentinels would require a gateway change and touch every code path that currently emits the shared sentinel.
+**Per-secret sentinel matching.** Assign each secret a unique sentinel (`platform:sentinel:<id>`) and have OneCLI match on sentinel instead of host+path. Rejected: host+path matching is already how OneCLI works and covers this use case; per-secret sentinels would require a gateway change and touch every code path that currently emits the shared sentinel.
 
 **Push path scoping into the agent (rewrite requests in `agent-runtime`).** Rejected: the gateway already sits inline and MITMs the traffic; adding path scoping on the agent side would split one concern across two codebases.
 

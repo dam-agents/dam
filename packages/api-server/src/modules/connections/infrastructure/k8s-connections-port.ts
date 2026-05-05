@@ -4,8 +4,8 @@
  * Stores tokens minted by the API Server's OAuth callback (MCP servers,
  * GitHub, Slack, Google, …). The controller's Envoy renderer
  * (`packages/controller/pkg/reconciler/envoy.go`) lists Secrets by
- * `humr.ai/owner=<sub>,humr.ai/managed-by=api-server`, so connection Secrets
- * land in the sidecar automatically.
+ * `agent-platform.ai/owner=<sub>,agent-platform.ai/managed-by=api-server`,
+ * so connection Secrets land in the sidecar automatically.
  *
  * Each Secret carries:
  *   - `sds.yaml` — SDS DiscoveryResponse the sidecar reads via `path_config_source`
@@ -29,26 +29,26 @@ import {
   sdsYamlContent,
 } from "../../secrets/infrastructure/k8s-secrets-port.js";
 
-const LABEL_OWNER = "humr.ai/owner";
-const LABEL_MANAGED_BY = "humr.ai/managed-by";
-const LABEL_SECRET_TYPE = "humr.ai/secret-type";
-const LABEL_CONNECTION = "humr.ai/connection";
+const LABEL_OWNER = "agent-platform.ai/owner";
+const LABEL_MANAGED_BY = "agent-platform.ai/managed-by";
+const LABEL_SECRET_TYPE = "agent-platform.ai/secret-type";
+const LABEL_CONNECTION = "agent-platform.ai/connection";
 
-const ANN_HOST_PATTERN = "humr.ai/host-pattern";
-const ANN_PATH_PATTERN = "humr.ai/path-pattern";
-const ANN_HEADER_NAME = "humr.ai/injection-header-name";
-const ANN_VALUE_FORMAT = "humr.ai/injection-value-format";
-const ANN_EXPIRES_AT = "humr.ai/expires-at";
-const ANN_TOKEN_URL = "humr.ai/token-url";
-const ANN_AUTHORIZATION_URL = "humr.ai/authorization-url";
-const ANN_GRANT_TYPE = "humr.ai/grant-type";
-const ANN_CONNECTION_STATUS = "humr.ai/connection-status";
-const ANN_CONNECTED_AT = "humr.ai/connected-at";
-const ANN_DISPLAY_NAME = "humr.ai/display-name";
-const ANN_SCOPES = "humr.ai/scopes";
+const ANN_HOST_PATTERN = "agent-platform.ai/host-pattern";
+const ANN_PATH_PATTERN = "agent-platform.ai/path-pattern";
+const ANN_HEADER_NAME = "agent-platform.ai/injection-header-name";
+const ANN_VALUE_FORMAT = "agent-platform.ai/injection-value-format";
+const ANN_EXPIRES_AT = "agent-platform.ai/expires-at";
+const ANN_TOKEN_URL = "agent-platform.ai/token-url";
+const ANN_AUTHORIZATION_URL = "agent-platform.ai/authorization-url";
+const ANN_GRANT_TYPE = "agent-platform.ai/grant-type";
+const ANN_CONNECTION_STATUS = "agent-platform.ai/connection-status";
+const ANN_CONNECTED_AT = "agent-platform.ai/connected-at";
+const ANN_DISPLAY_NAME = "agent-platform.ai/display-name";
+const ANN_SCOPES = "agent-platform.ai/scopes";
 
 const SECRET_TYPE_CONNECTION = "connection";
-const NAME_PREFIX = "humr-conn-";
+const NAME_PREFIX = "platform-conn-";
 
 export type ConnectionStatus = "active" | "expired";
 export type GrantType = "authorization_code" | "client_credentials";

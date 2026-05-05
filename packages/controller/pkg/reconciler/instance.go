@@ -18,8 +18,8 @@ import (
 	"k8s.io/client-go/util/retry"
 	"log/slog"
 
-	"github.com/kagenti/humr/packages/controller/pkg/config"
-	"github.com/kagenti/humr/packages/controller/pkg/types"
+	"github.com/kagenti/platform/packages/controller/pkg/config"
+	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
 type InstanceReconciler struct {
@@ -53,7 +53,7 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 	}
 
 	// Resolve agent — prefer label, fall back to spec field
-	agentName := cm.Labels["humr.ai/agent"]
+	agentName := cm.Labels["agent-platform.ai/agent"]
 	if agentName == "" {
 		agentName = instanceSpec.AgentName
 	}
@@ -69,7 +69,7 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 		return r.setError(ctx, name, fmt.Sprintf("setting agent owner reference: %v", err))
 	}
 
-	owner := agentCM.Labels["humr.ai/owner"]
+	owner := agentCM.Labels["agent-platform.ai/owner"]
 	credentialSecrets, err := listAgentCredentialSecrets(ctx, r.client, r.config.Namespace, owner, cm)
 	if err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("listing credential secrets: %v", err))
@@ -159,7 +159,7 @@ func (r *InstanceReconciler) Delete(ctx context.Context, name string) {
 
 func (r *InstanceReconciler) deletePVCs(ctx context.Context, instanceName string) {
 	pvcs, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).List(ctx,
-		metav1.ListOptions{LabelSelector: "humr.ai/instance=" + instanceName},
+		metav1.ListOptions{LabelSelector: "agent-platform.ai/instance=" + instanceName},
 	)
 	if err != nil {
 		slog.Warn("listing PVCs for instance", "instance", instanceName, "error", err)
@@ -172,7 +172,7 @@ func (r *InstanceReconciler) deletePVCs(ctx context.Context, instanceName string
 	}
 }
 
-// ReconcileOrphanPVCs deletes any PVC labeled `humr.ai/instance=<name>` whose
+// ReconcileOrphanPVCs deletes any PVC labeled `agent-platform.ai/instance=<name>` whose
 // instance ConfigMap no longer exists. Covers two leak modes (issue #244):
 // the controller crashing between StatefulSet teardown and PVC deletion, and
 // users removing the instance ConfigMap out-of-band (e.g. via kubectl).
@@ -181,7 +181,7 @@ func (r *InstanceReconciler) deletePVCs(ctx context.Context, instanceName string
 // ConfigMap from the API server (not the informer cache) before deleting.
 func (r *InstanceReconciler) ReconcileOrphanPVCs(ctx context.Context) {
 	pvcs, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).List(ctx,
-		metav1.ListOptions{LabelSelector: "humr.ai/instance"},
+		metav1.ListOptions{LabelSelector: "agent-platform.ai/instance"},
 	)
 	if err != nil {
 		slog.Warn("orphan PVC GC: listing PVCs failed", "error", err)
@@ -189,7 +189,7 @@ func (r *InstanceReconciler) ReconcileOrphanPVCs(ctx context.Context) {
 	}
 	deleted := 0
 	for _, pvc := range pvcs.Items {
-		instanceName := pvc.Labels["humr.ai/instance"]
+		instanceName := pvc.Labels["agent-platform.ai/instance"]
 		if instanceName == "" {
 			continue
 		}

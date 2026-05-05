@@ -15,9 +15,9 @@ func TestBuildEnvoyLeafCertificate_NoSecretsReturnsNil(t *testing.T) {
 
 func TestBuildEnvoyLeafCertificate_DedupesAndSortsHosts(t *testing.T) {
 	secrets := []corev1.Secret{
-		credSecret("humr-cred-bbb", "b.example.com"),
-		credSecret("humr-cred-aaa", "a.example.com"),
-		credSecret("humr-cred-dup", "a.example.com"), // same host as -aaa
+		credSecret("platform-cred-bbb", "b.example.com"),
+		credSecret("platform-cred-aaa", "a.example.com"),
+		credSecret("platform-cred-dup", "a.example.com"), // same host as -aaa
 	}
 	cert := BuildEnvoyLeafCertificate("my-instance", testConfig, testOwnerCM, secrets)
 	require.NotNil(t, cert)
@@ -33,19 +33,19 @@ func TestBuildEnvoyLeafCertificate_DedupesAndSortsHosts(t *testing.T) {
 
 func TestBuildEnvoyLeafCertificate_IssuerRef(t *testing.T) {
 	cfg := *testConfig
-	cfg.EnvoyMitmCAIssuer = "humr-mitm-ca-issuer"
-	secrets := []corev1.Secret{credSecret("humr-cred-aaa", "api.example.com")}
+	cfg.EnvoyMitmCAIssuer = "platform-mitm-ca-issuer"
+	secrets := []corev1.Secret{credSecret("platform-cred-aaa", "api.example.com")}
 
 	cert := BuildEnvoyLeafCertificate("my-instance", &cfg, testOwnerCM, secrets)
 	require.NotNil(t, cert)
 
-	assert.Equal(t, "humr-mitm-ca-issuer", cert.Spec.IssuerRef.Name)
+	assert.Equal(t, "platform-mitm-ca-issuer", cert.Spec.IssuerRef.Name)
 	assert.Equal(t, "ClusterIssuer", cert.Spec.IssuerRef.Kind)
 	assert.Equal(t, "cert-manager.io", cert.Spec.IssuerRef.Group)
 }
 
 func TestBuildEnvoyLeafCertificate_OwnerReferences(t *testing.T) {
-	secrets := []corev1.Secret{credSecret("humr-cred-aaa", "api.example.com")}
+	secrets := []corev1.Secret{credSecret("platform-cred-aaa", "api.example.com")}
 	cert := BuildEnvoyLeafCertificate("my-instance", testConfig, testOwnerCM, secrets)
 	require.NotNil(t, cert)
 

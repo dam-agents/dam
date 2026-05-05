@@ -10,7 +10,7 @@ As agent use cases mature beyond single-agent coding tasks, users want multiple 
 
 OpenClaw demonstrates this with its multi-agent configuration file, where agents share a single mutable system environment and permissions are enforced partly via prompts. This works for personal use but is problematic for enterprise: mutable shared state, prompt-based security boundaries, and no enforceable isolation between agents.
 
-The question: how should Humr model multi-agent collaboration? Should agents share workspaces, run inside a single instance, or be fully isolated with explicit communication channels?
+The question: how should Platform model multi-agent collaboration? Should agents share workspaces, run inside a single instance, or be fully isolated with explicit communication channels?
 
 ## Decision
 
@@ -41,7 +41,7 @@ The platform does NOT:
 
 **Multi-agent within a single instance.** Run multiple agent processes in one pod with a shared filesystem. Rejected: conflates isolation boundaries, makes per-agent credential scoping impossible at the platform level, and creates the same mutable-state problems seen in OpenClaw.
 
-**OpenClaw-style config-file multi-agent.** Single configuration file defining all agents, shared environment, prompt-based permissions. Rejected: prompt-based security is not enforceable — an agent can ignore prompt instructions. Enterprise environments require platform-enforced boundaries. Humr's advantage is platform-level fine-grained control.
+**OpenClaw-style config-file multi-agent.** Single configuration file defining all agents, shared environment, prompt-based permissions. Rejected: prompt-based security is not enforceable — an agent can ignore prompt instructions. Enterprise environments require platform-enforced boundaries. Platform's advantage is platform-level fine-grained control.
 
 ## Consequences
 

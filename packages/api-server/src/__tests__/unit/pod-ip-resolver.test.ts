@@ -17,7 +17,7 @@ function fakeK8s(podSets: Array<Array<{ ip: string; instance: string }>>): {
       counter.calls++;
       const pods = podSets[Math.min(i++, podSets.length - 1)] ?? [];
       return pods.map(({ ip, instance }) => ({
-        metadata: { labels: { "humr.ai/instance": instance } },
+        metadata: { labels: { "agent-platform.ai/instance": instance } },
         status: { podIP: ip },
       } as k8s.V1Pod));
     },
@@ -122,7 +122,7 @@ describe("podIpResolver", () => {
         attempt++;
         if (attempt === 1) throw new Error("transient");
         return [
-          { metadata: { labels: { "humr.ai/instance": "inst-D" } }, status: { podIP: "10.0.0.8" } } as k8s.V1Pod,
+          { metadata: { labels: { "agent-platform.ai/instance": "inst-D" } }, status: { podIP: "10.0.0.8" } } as k8s.V1Pod,
         ];
       },
     } as unknown as K8sClient;

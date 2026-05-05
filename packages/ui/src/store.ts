@@ -15,7 +15,7 @@ export type { Toast, ToastKind } from "./store/toast.js";
 export type { SessionError } from "./modules/sessions/store/sessions.js";
 export type { PermissionOption, PermissionOutcome, PendingPermission } from "./modules/sessions/store/permissions.js";
 
-export type HumrStore =
+export type PlatformStore =
   & DialogSlice
   & ThemeSlice
   & NavigationSlice
@@ -27,7 +27,7 @@ export type HumrStore =
   & FilesSlice
   & PermissionsSlice;
 
-export const useStore = create<HumrStore>()((...a) => ({
+export const useStore = create<PlatformStore>()((...a) => ({
   ...createDialogSlice(...a),
   ...createThemeSlice(...a),
   ...createNavigationSlice(...a),

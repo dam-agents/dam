@@ -8,7 +8,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/kagenti/humr/packages/controller/pkg/config"
+	"github.com/kagenti/platform/packages/controller/pkg/config"
 )
 
 // Per-instance Envoy leaf certificate, signed by the cluster-wide MITM CA
@@ -58,7 +58,7 @@ func BuildEnvoyLeafCertificate(instanceName string, cfg *config.Config, ownerCM 
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      EnvoyLeafSecretName(instanceName),
 			Namespace: cfg.Namespace,
-			Labels:    map[string]string{"humr.ai/instance": instanceName},
+			Labels:    map[string]string{"agent-platform.ai/instance": instanceName},
 			OwnerReferences: []metav1.OwnerReference{
 				*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
 			},

@@ -72,6 +72,9 @@ export interface SkillsServiceDeps {
    *  signal to the caller to fall back to the agent-runtime path for
    *  private-repo auth (if the instance is running). */
   scanPublic: (gitUrl: string) => Promise<Skill[]>;
+  /** Brand display name surfaced in publish-PR bodies. Sourced from runtime
+   *  brand config so a deployment rebrand doesn't need a code change. */
+  brandName: string;
 }
 
 /** Resolve the filesystem paths the harness reads skills from, in order of
@@ -434,6 +437,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
           instanceSkills: deps.instanceSkillsRepo,
           agents: deps.agentsRepo,
           runtimeClient: deps.runtimeClient,
+          brandName: deps.brandName,
         },
         input,
       );

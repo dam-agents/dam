@@ -22,10 +22,10 @@ func instanceCM(name, desiredState string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name, Namespace: ns,
-			Labels: map[string]string{"humr.ai/type": "agent-instance"},
+			Labels: map[string]string{"agent-platform.ai/type": "agent-instance"},
 		},
 		Data: map[string]string{
-			"spec.yaml": "version: humr.ai/v1\ndesiredState: " + desiredState + "\n",
+			"spec.yaml": "version: agent-platform.ai/v1\ndesiredState: " + desiredState + "\n",
 		},
 	}
 }

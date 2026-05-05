@@ -18,8 +18,8 @@ import (
 	"k8s.io/client-go/util/retry"
 	"gopkg.in/yaml.v3"
 
-	"github.com/kagenti/humr/packages/controller/pkg/config"
-	"github.com/kagenti/humr/packages/controller/pkg/types"
+	"github.com/kagenti/platform/packages/controller/pkg/config"
+	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
 const ForkPodReadyTimeout = 120 * time.Second
@@ -73,7 +73,7 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("parsing instance %q: %v", forkSpec.Instance, err))
 	}
 
-	agentName := instanceCM.Labels["humr.ai/agent"]
+	agentName := instanceCM.Labels["agent-platform.ai/agent"]
 	if agentName == "" {
 		agentName = instanceSpec.AgentName
 	}

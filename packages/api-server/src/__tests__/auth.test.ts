@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { createClient, client } from "./helpers/trpc-client.js";
 import { getToken } from "./helpers/auth.js";
 
-const API_BASE = "http://humr-api.localtest.me:5555";
+const API_BASE = "http://localtest.me:5555";
 
 describe("auth: public endpoints", () => {
   it("/api/health returns 200 without token", async () => {
@@ -17,8 +17,8 @@ describe("auth: public endpoints", () => {
     const data = await res.json();
     expect(data).toHaveProperty("issuer");
     expect(data).toHaveProperty("clientId");
-    expect(data.issuer).toContain("/realms/humr");
-    expect(data.clientId).toBe("humr-ui");
+    expect(data.issuer).toContain("/realms/platform");
+    expect(data.clientId).toBe("platform-ui");
   });
 });
 
@@ -70,7 +70,7 @@ describe("auth: authenticated requests succeed", () => {
     const payload = JSON.parse(
       Buffer.from(payloadB64, "base64url").toString(),
     );
-    expect(payload.aud).toContain("humr-api");
+    expect(payload.aud).toContain("platform-api");
     expect(payload.preferred_username).toBe("dev");
   });
 });

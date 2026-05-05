@@ -1,6 +1,6 @@
 import { skipToken, useQuery } from "@tanstack/react-query";
 
-import { platform } from "../../../platform.js";
+import { api } from "../../../api.js";
 
 const REFETCH_INTERVAL_MS = 2000;
 
@@ -17,7 +17,7 @@ export const approvalsKeys = {
 export function useApprovalsForOwner() {
   return useQuery({
     queryKey: approvalsKeys.forOwner(),
-    queryFn: () => platform.approvals.listForOwner.query(),
+    queryFn: () => api.approvals.listForOwner.query(),
     refetchInterval: REFETCH_INTERVAL_MS,
     staleTime: REFETCH_INTERVAL_MS,
     meta: { errorToast: "Couldn't load approvals" },
@@ -28,7 +28,7 @@ export function useApprovalsForInstance(instanceId: string | null) {
   return useQuery({
     queryKey: approvalsKeys.forInstance(instanceId),
     queryFn: instanceId
-      ? () => platform.approvals.listForInstance.query({ instanceId })
+      ? () => api.approvals.listForInstance.query({ instanceId })
       : skipToken,
     refetchInterval: REFETCH_INTERVAL_MS,
     staleTime: REFETCH_INTERVAL_MS,

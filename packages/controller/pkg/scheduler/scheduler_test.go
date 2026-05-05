@@ -10,8 +10,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 
-	"github.com/kagenti/humr/packages/controller/pkg/config"
-	"github.com/kagenti/humr/packages/controller/pkg/types"
+	"github.com/kagenti/platform/packages/controller/pkg/config"
+	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
 var testCfg = &config.Config{Namespace: "test-agents"}
@@ -25,12 +25,12 @@ func scheduleCM(name, instanceName string, enabled bool) *corev1.ConfigMap {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name, Namespace: "test-agents",
 			Labels: map[string]string{
-				"humr.ai/type":     "agent-schedule",
-				"humr.ai/instance": instanceName,
+				"agent-platform.ai/type":     "agent-schedule",
+				"agent-platform.ai/instance": instanceName,
 			},
 		},
 		Data: map[string]string{
-			"spec.yaml": "version: humr.ai/v1\ntype: cron\ncron: \"*/5 * * * *\"\ntask: check repo\nenabled: " + enabledStr + "\n",
+			"spec.yaml": "version: agent-platform.ai/v1\ntype: cron\ncron: \"*/5 * * * *\"\ntask: check repo\nenabled: " + enabledStr + "\n",
 		},
 	}
 }
@@ -87,7 +87,7 @@ func TestSyncSchedule_ReplacesEntryWhenSpecChanges(t *testing.T) {
 	firstEntry := s.schedules["my-schedule"]
 
 	// Mutate the cron expression and re-sync: the entry should be replaced.
-	cm.Data["spec.yaml"] = "version: humr.ai/v1\ntype: cron\ncron: \"*/10 * * * *\"\ntask: check repo\nenabled: true\n"
+	cm.Data["spec.yaml"] = "version: agent-platform.ai/v1\ntype: cron\ncron: \"*/10 * * * *\"\ntask: check repo\nenabled: true\n"
 	require.NoError(t, s.SyncSchedule(cm))
 	secondEntry := s.schedules["my-schedule"]
 	assert.NotEqual(t, firstEntry, secondEntry, "changed spec must replace the cron entry")
@@ -116,10 +116,10 @@ func TestFire_RunningInstance(t *testing.T) {
 	instanceCm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "my-instance", Namespace: "test-agents",
-			Labels: map[string]string{"humr.ai/type": "agent-instance"},
+			Labels: map[string]string{"agent-platform.ai/type": "agent-instance"},
 		},
 		Data: map[string]string{
-			"spec.yaml": "version: humr.ai/v1\ndesiredState: running\n",
+			"spec.yaml": "version: agent-platform.ai/v1\ndesiredState: running\n",
 		},
 	}
 	readyPod := &corev1.Pod{
@@ -139,5 +139,5 @@ func TestFire_RunningInstance(t *testing.T) {
 	assert.Contains(t, instance.Data["spec.yaml"], "desiredState: running")
 	// EnsureReady always bumps last-activity, even on the hot path — this is
 	// what keeps continuous-mode schedules from re-hibernating mid-chain.
-	assert.Contains(t, instance.Annotations, "humr.ai/last-activity")
+	assert.Contains(t, instance.Annotations, "agent-platform.ai/last-activity")
 }

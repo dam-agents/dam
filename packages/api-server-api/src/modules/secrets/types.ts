@@ -5,7 +5,7 @@ export type SecretMode = "all" | "selective";
 /**
  * Declares a pod env var to inject into every agent instance that has access
  * to this secret. `placeholder` is the literal value written into the env
- * (typically "humr:sentinel") — the Envoy sidecar's credential_injector
+ * (typically "dummy-placeholder") — the Envoy sidecar's credential_injector
  * filter rewrites it to the real credential on outbound requests matching
  * the secret's host pattern.
  */
@@ -14,7 +14,7 @@ export interface EnvMapping {
   placeholder: string;
 }
 
-export const DEFAULT_ENV_PLACEHOLDER = "humr:sentinel";
+export const DEFAULT_ENV_PLACEHOLDER = "dummy-placeholder";
 
 export const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
 

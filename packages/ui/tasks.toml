@@ -16,14 +16,8 @@ run = "echo 'No fix tasks for ui yet'"
 ["ui:test"]
 description = "Run UI unit tests"
 dir = "{{config_root}}"
-run = 'pnpm --filter humr-ui exec vitest run'
+run = 'pnpm --filter platform-ui exec vitest run'
 
 ["ui:run"]
 dir = "{{config_root}}"
 run = "pnpm ui"
-
-["ui:icons"]
-# Rasterize favicon.svg to PWA / apple-touch PNGs with safe-area padding.
-dir = "{{config_root}}/packages/ui"
-depends = ["ui:setup"]
-run = "pnpm exec node scripts/generate-icons.mjs"

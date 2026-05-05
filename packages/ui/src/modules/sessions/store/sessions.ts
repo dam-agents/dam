@@ -1,8 +1,8 @@
 import type { StateCreator } from "zustand";
 
-import { platform } from "../../../platform.js";
+import { api } from "../../../api.js";
 import { queryClient } from "../../../query-client.js";
-import type { HumrStore } from "../../../store.js";
+import type { PlatformStore } from "../../../store.js";
 import { ACTION_FAILED, runAction } from "../../../store/query-helpers.js";
 import type { LogEntry, Message } from "../../../types.js";
 import { acpSessionsKeys } from "../api/queries.js";
@@ -45,7 +45,7 @@ export interface SessionsSlice {
   resetChatContext: () => void;
 }
 
-export const createSessionsSlice: StateCreator<HumrStore, [], [], SessionsSlice> = (set, get) => ({
+export const createSessionsSlice: StateCreator<PlatformStore, [], [], SessionsSlice> = (set, get) => ({
   sessionId: null,
   messages: [],
   log: [],
@@ -84,7 +84,7 @@ export const createSessionsSlice: StateCreator<HumrStore, [], [], SessionsSlice>
     const instanceId = get().selectedInstance;
     if (!instanceId) return;
     const ok = await runAction(
-      () => platform.sessions.delete.mutate({ sessionId, instanceId }),
+      () => api.sessions.delete.mutate({ sessionId, instanceId }),
       "Failed to delete session",
     );
     if (ok === ACTION_FAILED) return;

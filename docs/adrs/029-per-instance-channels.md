@@ -19,8 +19,8 @@ Adding Telegram made it clear that treating per-instance as a distinct category 
 
 Bot tokens live in namespaced k8s Secrets:
 
-- Name: `humr-channel-<type>-<instanceId>` (e.g. `humr-channel-telegram-acme-bot`)
-- Labels: `humr.ai/type=channel-secret`, `humr.ai/instance=<id>`, `humr.ai/channel-type=<type>`
+- Name: `platform-channel-<type>-<instanceId>` (e.g. `platform-channel-telegram-acme-bot`)
+- Labels: `platform.ai/type=channel-secret`, `platform.ai/instance=<id>`, `platform.ai/channel-type=<type>`
 - Data key: `botToken`
 
 Consequences of this shape:
@@ -62,7 +62,7 @@ The public `TelegramChannel` type exposes only `{ type }`. The `connectTelegram`
 
 | Aspect | Slack (platform, ADR-018) | Telegram (per-instance) |
 |---|---|---|
-| Who installs the bot | Humr operator, once | Instance owner, via @BotFather |
+| Who installs the bot | Platform operator, once | Instance owner, via @BotFather |
 | Token provenance | Helm values → env var | UI input → k8s Secret |
 | Identity model | Slack user ↔ Keycloak sub (workspace-wide) | Thread authorization (no user mapping) |
 | Access control | Per-instance allowed-users list | `/login` per conversation |
@@ -73,7 +73,7 @@ The public `TelegramChannel` type exposes only `{ type }`. The `connectTelegram`
 - Adding a new per-instance channel is mechanical: a new worker, routing wiring, and reuse of `ChannelSecretStore` + the thread-authorization pattern.
 - Operators running purely with Slack are unaffected.
 - The channels table in Postgres stores only metadata. This closes the "prototype gap" called out in ADR-016 (channel config in ConfigMaps).
-- Per-tenant key management falls on k8s Secret handling — no new crypto code, no new key rotation procedure beyond what Humr already inherits.
+- Per-tenant key management falls on k8s Secret handling — no new crypto code, no new key rotation procedure beyond what Platform already inherits.
 - Tokens are not printable anywhere in the platform UI once saved; operators changing a token must paste a new one.
 
 ## Related

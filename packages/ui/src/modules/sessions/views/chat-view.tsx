@@ -44,8 +44,8 @@ export function ChatView() {
   const showMobilePanel = useStore((s) => s.showMobilePanel);
   const setShowMobilePanel = useStore((s) => s.setShowMobilePanel);
 
-  const [leftW, setLeftW] = useState(() => Number(localStorage.getItem("humr-left-w")) || 220);
-  const [rightW, setRightW] = useState(() => Number(localStorage.getItem("humr-right-w")) || 340);
+  const [leftW, setLeftW] = useState(() => Number(localStorage.getItem("platform-left-w")) || 220);
+  const [rightW, setRightW] = useState(() => Number(localStorage.getItem("platform-right-w")) || 340);
   const messagesRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -178,7 +178,7 @@ export function ChatView() {
           onNewSession={handleNewSession}
         />
       </div>
-      <ResizeHandle side="left" onResize={d => setLeftW(w => { const v = Math.max(140, Math.min(400, w + d)); localStorage.setItem("humr-left-w", String(v)); return v; })} />
+      <ResizeHandle side="left" onResize={d => setLeftW(w => { const v = Math.max(140, Math.min(400, w + d)); localStorage.setItem("platform-left-w", String(v)); return v; })} />
 
       {/* Main chat column */}
       <div className={`relative flex flex-1 flex-col min-w-0 ${mobileScreen === "sessions" ? "hidden md:flex" : "flex"}`}>
@@ -319,7 +319,7 @@ export function ChatView() {
       </div>
 
       {/* Right panel: desktop */}
-      <ResizeHandle side="right" onResize={d => setRightW(w => { const v = Math.max(240, Math.min(600, w + d)); localStorage.setItem("humr-right-w", String(v)); return v; })} />
+      <ResizeHandle side="right" onResize={d => setRightW(w => { const v = Math.max(240, Math.min(600, w + d)); localStorage.setItem("platform-right-w", String(v)); return v; })} />
       <div style={{ width: rightW }} className="hidden md:flex shrink-0 flex-col border-l border-border-light bg-surface/50 backdrop-blur-xl overflow-hidden relative z-10">
         {rightPanelContent}
       </div>

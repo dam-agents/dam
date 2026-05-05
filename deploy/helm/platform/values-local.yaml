@@ -1,0 +1,59 @@
+# Local dev: images built with docker and loaded into k3s directly.
+# Used via: helm install -f values-local.yaml
+
+ui:
+  image:
+    repository: platform-ui
+    tag: latest
+    pullPolicy: Never
+
+apiServer:
+  image:
+    repository: platform-api-server
+    tag: latest
+    pullPolicy: Never
+
+controller:
+  image:
+    repository: platform-controller
+    tag: latest
+    pullPolicy: Never
+  agentImagePullPolicy: Never
+  agentStorageClass: platform-rwx
+
+nfsProvisioner:
+  enabled: true
+
+defaultTemplate:
+  image:
+    repository: platform-claude-code
+    tag: latest
+    pullPolicy: Never
+
+googleWorkspaceTemplate:
+  enabled: true
+  image:
+    repository: platform-google-workspace-agent
+    tag: latest
+    pullPolicy: Never
+
+piAgentTemplate:
+  enabled: true
+  image:
+    repository: platform-pi-agent
+    tag: latest
+    pullPolicy: Never
+
+codeGuardianTemplate:
+  enabled: true
+  image:
+    repository: platform-code-guardian
+    tag: latest
+    pullPolicy: Never
+
+# Bootstrap a known dev/dev user for local cluster — never enabled in production.
+keycloak:
+  testUser:
+    enabled: true
+    username: dev
+    password: dev

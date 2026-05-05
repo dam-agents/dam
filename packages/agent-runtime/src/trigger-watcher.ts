@@ -106,10 +106,10 @@ async function processTrigger(
       return;
     }
     const mcpServers = [...trigger.mcpServers];
-    if (config.HUMR_MCP_URL) {
+    if (config.PLATFORM_MCP_URL) {
       // No Authorization header: the api-server's harness port admits agent
       // pods via NetworkPolicy and identifies the caller by source IP.
-      mcpServers.push({ type: "http", name: "humr-outbound", url: config.HUMR_MCP_URL, headers: [] });
+      mcpServers.push({ type: "http", name: "platform-outbound", url: config.PLATFORM_MCP_URL, headers: [] });
     }
 
     const result = await postTrigger(options.apiServerUrl, {

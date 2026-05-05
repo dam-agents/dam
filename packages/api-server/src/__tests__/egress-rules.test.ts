@@ -93,8 +93,8 @@ afterEach(async () => {
 function curl(host: string, scheme: "http" | "https", timeoutSec = 4) {
   // -s: silent; -o /dev/null: discard body; -w "%{http_code}": print status;
   // --max-time: bound the wait so a held request doesn't stall the test.
-  // -k: skip cert validation. The agent image trusts only Humr's internal
-  // CA (`/etc/humr/ca/ca.crt`), which doesn't sign real upstream certs,
+  // -k: skip cert validation. The agent image trusts only the platform's internal
+  // CA (`/etc/platform/ca/ca.crt`), which doesn't sign real upstream certs,
   // so on the L4 SNI-passthrough path curl would otherwise fail with
   // CURLE_SSL_CACERT (77) even when the gate allowed the request. We're
   // testing gate enforcement, not TLS validation — `-k` decouples them.

@@ -6,7 +6,7 @@
 
 ## Context
 
-ADR-018 established Slack integration as inbound-only: users mention `@Humr` in Slack, messages route to agent instances, responses flow back in-thread. Agents have no way to initiate messages to Slack.
+ADR-018 established Slack integration as inbound-only: users mention `@Platform` in Slack, messages route to agent instances, responses flow back in-thread. Agents have no way to initiate messages to Slack.
 
 Agents need to post proactively — scheduled job results, status updates, and other agent-initiated communication.
 
@@ -24,7 +24,7 @@ Flow: harness → MCP tool → API Server → SlackWorker → Slack.
 
 **MCP endpoint** hosted on a dedicated port (separate from the admin API) at `/api/instances/:id/mcp` using Streamable HTTP transport. Direct access to SlackWorker — no agent-runtime round-trip.
 
-**Auth:** Caller identity is derived from the source pod IP, mapped to a `humr.ai/instance` label via the api-server's `podIpResolver` cache. The agent presents no Bearer token. NetworkPolicy on the api-server pod admits the harness port only from agent pods, so the kernel-verified source IP is the source of truth — a compromised harness can't claim to be a different instance. Owner match (agent.owner == instance.owner) is the second check.
+**Auth:** Caller identity is derived from the source pod IP, mapped to a `platform.ai/instance` label via the api-server's `podIpResolver` cache. The agent presents no Bearer token. NetworkPolicy on the api-server pod admits the harness port only from agent pods, so the kernel-verified source IP is the source of truth — a compromised harness can't claim to be a different instance. Owner match (agent.owner == instance.owner) is the second check.
 
 **Network isolation:** The MCP port is the only API server port allowed by the agent's NetworkPolicy — agents cannot reach the admin API (tRPC, OAuth, etc.).
 
@@ -39,7 +39,7 @@ Channel becomes bidirectional at the instance level. When an instance has a conn
 ### 3. Fire-and-forget threading model
 
 - Outbound message → top-level post in channel → no thread-to-session mapping stored
-- User replies with `@Humr` in the resulting thread → treated as a **new inbound mention** → creates a new session
+- User replies with `@Platform` in the resulting thread → treated as a **new inbound mention** → creates a new session
 - Context from the originating session is not carried over (acceptable trade-off for simplicity)
 
 ## Alternatives Considered

@@ -68,7 +68,7 @@ sequenceDiagram
 
 The api-server writes a new `agent-instance` ConfigMap with `spec.yaml` carrying the template ref, env overrides, secret refs, and a `desiredState` of `running` or `hibernated`. The controller reconciles four owned resources: a StatefulSet (replicas tracking `desiredState`), a headless Service, a NetworkPolicy, and a per-instance Envoy bootstrap ConfigMap + leaf TLS Certificate ([ADR-033](../adrs/033-envoy-credential-gateway.md)).
 
-The pod image is built from `humr-base` plus a harness-specific layer ([ADR-023](../adrs/023-harness-agnostic-base-image.md)). The single platform knob is `AGENT_COMMAND` — agent-runtime spawns it as the ACP subprocess for each session and otherwise treats the harness as opaque. The workspace PVC is provisioned on first wake and survives subsequent hibernations.
+The pod image is built from `platform-base` plus a harness-specific layer ([ADR-023](../adrs/023-harness-agnostic-base-image.md)). The single platform knob is `AGENT_COMMAND` — agent-runtime spawns it as the ACP subprocess for each session and otherwise treats the harness as opaque. The workspace PVC is provisioned on first wake and survives subsequent hibernations.
 
 Pod env at start is the composition of platform envs (proxy + auth wiring), template envs, agent-level envs, and instance-level envs — last occurrence wins, with `PORT` server-enforced ([ADR-024](../adrs/024-connector-declared-envs.md)). Editing any of these takes effect on the next pod restart.
 
@@ -76,7 +76,7 @@ Connector state that doesn't fit the env model (per-host CLI configs, allowlists
 
 ### Wake
 
-Every caller that sends work to a pod — the controller's schedule loop, the api-server's ACP relay, channel adapters — routes through a single reachability primitive ([ADR-032](../adrs/032-pod-reachability-primitive.md)). The primitive's contract: **observed pod `Ready` is the authoritative answer to "can I call this pod?"** `spec.desiredState` is user intent (running vs. hibernated) and continues to drive the reconciler, but it is no longer read as a reachability signal by callers. The primitive flips `desiredState` to `running` if needed, single-flights concurrent waits per instance, bumps the `humr.ai/last-activity` annotation on every successful call (so any caller implicitly keeps the pod warm), and is implemented in parallel in Go (controller) and TypeScript (api-server).
+Every caller that sends work to a pod — the controller's schedule loop, the api-server's ACP relay, channel adapters — routes through a single reachability primitive ([ADR-032](../adrs/032-pod-reachability-primitive.md)). The primitive's contract: **observed pod `Ready` is the authoritative answer to "can I call this pod?"** `spec.desiredState` is user intent (running vs. hibernated) and continues to drive the reconciler, but it is no longer read as a reachability signal by callers. The primitive flips `desiredState` to `running` if needed, single-flights concurrent waits per instance, bumps the `platform.ai/last-activity` annotation on every successful call (so any caller implicitly keeps the pod warm), and is implemented in parallel in Go (controller) and TypeScript (api-server).
 
 Two paths trigger a wake:
 

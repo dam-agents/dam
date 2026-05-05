@@ -21,14 +21,14 @@ describe("buildForkConfigMap", () => {
 
     expect(cm.metadata?.name).toBe("fork-1");
     expect(cm.metadata?.labels).toMatchObject({
-      "humr.ai/type": "agent-fork",
-      "humr.ai/instance": "inst-abc",
-      "humr.ai/fork-id": "fork-1",
+      "agent-platform.ai/type": "agent-fork",
+      "agent-platform.ai/instance": "inst-abc",
+      "agent-platform.ai/fork-id": "fork-1",
     });
 
     const body = yaml.load(cm.data!["spec.yaml"]) as Record<string, unknown>;
     expect(body).toEqual({
-      version: "humr.ai/v1",
+      version: "agent-platform.ai/v1",
       instance: "inst-abc",
       foreignSub: "kc-user-42",
       sessionId: "sess-1",
@@ -58,7 +58,7 @@ describe("parseForkStatus", () => {
     const cm = {
       data: {
         "status.yaml": yaml.dump({
-          version: "humr.ai/v1",
+          version: "agent-platform.ai/v1",
           phase: "Ready",
           jobName: "fork-1",
           podIP: "10.0.0.5",
@@ -72,7 +72,7 @@ describe("parseForkStatus", () => {
     const cm = {
       data: {
         "status.yaml": yaml.dump({
-          version: "humr.ai/v1",
+          version: "agent-platform.ai/v1",
           phase: "Failed",
           error: { reason: "PodNotReady", detail: "CrashLoop" },
         }),
@@ -88,7 +88,7 @@ describe("parseForkStatus", () => {
     const cm = {
       data: {
         "status.yaml": yaml.dump({
-          version: "humr.ai/v1",
+          version: "agent-platform.ai/v1",
           phase: "Failed",
           error: { reason: "SomethingElse" },
         }),
@@ -153,21 +153,21 @@ describe("createK8sForkOrchestrator", () => {
     const fake = makeFakeApi([]);
     const orch = createK8sForkOrchestrator({
       api: fake.api,
-      namespace: "humr-agents",
+      namespace: "platform-agents",
       sleep: async () => {},
     });
     const result = await orch.createFork({ forkId: "fork-1", spec });
     expect(result.ok).toBe(true);
     expect(fake.created).toHaveLength(1);
     expect(fake.created[0].metadata?.name).toBe("fork-1");
-    expect(fake.created[0].metadata?.namespace).toBe("humr-agents");
+    expect(fake.created[0].metadata?.namespace).toBe("platform-agents");
   });
 
   it("createFork maps 409 into AlreadyExists", async () => {
     const fake = makeFakeApi([], { createError: { code: 409 } });
     const orch = createK8sForkOrchestrator({
       api: fake.api,
-      namespace: "humr-agents",
+      namespace: "platform-agents",
       sleep: async () => {},
     });
     const result = await orch.createFork({ forkId: "fork-1", spec });
@@ -179,7 +179,7 @@ describe("createK8sForkOrchestrator", () => {
     const fake = makeFakeApi([], { createError: { code: 500 } });
     const orch = createK8sForkOrchestrator({
       api: fake.api,
-      namespace: "humr-agents",
+      namespace: "platform-agents",
       sleep: async () => {},
     });
     const result = await orch.createFork({ forkId: "fork-1", spec });
@@ -193,7 +193,7 @@ describe("createK8sForkOrchestrator", () => {
     const fake = makeFakeApi([pending, ready]);
     const orch = createK8sForkOrchestrator({
       api: fake.api,
-      namespace: "humr-agents",
+      namespace: "platform-agents",
       sleep: async () => {},
     });
 
@@ -209,6 +209,6 @@ describe("createK8sForkOrchestrator", () => {
 
 function cm(status: Record<string, unknown>): k8s.V1ConfigMap {
   return {
-    data: { "status.yaml": yaml.dump({ version: "humr.ai/v1", ...status }) },
+    data: { "status.yaml": yaml.dump({ version: "agent-platform.ai/v1", ...status }) },
   } as k8s.V1ConfigMap;
 }

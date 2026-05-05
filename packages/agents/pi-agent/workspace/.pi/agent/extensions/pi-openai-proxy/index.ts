@@ -16,7 +16,7 @@ export default function register(pi: ExtensionAPI): void {
 		// Auth is injected on the wire by the Envoy sidecar's
 		// credential_injector filter (ADR-033); the key set here only exists
 		// to satisfy pi-acp's per-session auth gate (reads models.json.apiKey).
-		apiKey: env("OPENAI_PROXY_API_KEY") ?? "humr:sentinel",
+		apiKey: env("OPENAI_PROXY_API_KEY") ?? "dummy-placeholder",
 		authHeader: false,
 		models: [
 			{

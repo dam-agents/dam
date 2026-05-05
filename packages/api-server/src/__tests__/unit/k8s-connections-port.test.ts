@@ -77,7 +77,7 @@ const SAMPLE_METADATA = {
 describe("connectionSecretName", () => {
   it("hashes both owner and connection so the name fits RFC 1123", () => {
     const name = connectionSecretName("uuid-with-Mixed-Case", "mcp.example.com");
-    expect(name).toMatch(/^humr-conn-[a-f0-9]{16}-[a-f0-9]{16}$/);
+    expect(name).toMatch(/^platform-conn-[a-f0-9]{16}-[a-f0-9]{16}$/);
   });
 
   it("is stable for the same (owner, connection)", () => {
@@ -107,20 +107,20 @@ describe("K8sConnectionsPort.upsertConnection", () => {
     const name = connectionSecretName("owner-1", "mcp.example.com");
     const secret = store.get(name);
     expect(secret).toBeDefined();
-    expect(secret!.metadata?.labels?.["humr.ai/owner"]).toBe("owner-1");
-    expect(secret!.metadata?.labels?.["humr.ai/managed-by"]).toBe("api-server");
-    expect(secret!.metadata?.labels?.["humr.ai/secret-type"]).toBe("connection");
-    expect(secret!.metadata?.labels?.["humr.ai/connection"]).toBe(
+    expect(secret!.metadata?.labels?.["agent-platform.ai/owner"]).toBe("owner-1");
+    expect(secret!.metadata?.labels?.["agent-platform.ai/managed-by"]).toBe("api-server");
+    expect(secret!.metadata?.labels?.["agent-platform.ai/secret-type"]).toBe("connection");
+    expect(secret!.metadata?.labels?.["agent-platform.ai/connection"]).toBe(
       "mcp.example.com",
     );
-    expect(secret!.metadata?.annotations?.["humr.ai/host-pattern"]).toBe(
+    expect(secret!.metadata?.annotations?.["agent-platform.ai/host-pattern"]).toBe(
       "mcp.example.com",
     );
-    expect(secret!.metadata?.annotations?.["humr.ai/expires-at"]).toBe("9999");
-    expect(secret!.metadata?.annotations?.["humr.ai/grant-type"]).toBe(
+    expect(secret!.metadata?.annotations?.["agent-platform.ai/expires-at"]).toBe("9999");
+    expect(secret!.metadata?.annotations?.["agent-platform.ai/grant-type"]).toBe(
       "authorization_code",
     );
-    expect(secret!.metadata?.annotations?.["humr.ai/connection-status"]).toBe(
+    expect(secret!.metadata?.annotations?.["agent-platform.ai/connection-status"]).toBe(
       "active",
     );
     // The access token reaches the sidecar via sds.yaml — header prefix baked in.
@@ -142,7 +142,7 @@ describe("K8sConnectionsPort.upsertConnection", () => {
       metadata: SAMPLE_METADATA,
     });
     const name = connectionSecretName("owner-1", "mcp.example.com");
-    const firstConnectedAt = store.get(name)!.metadata!.annotations!["humr.ai/connected-at"];
+    const firstConnectedAt = store.get(name)!.metadata!.annotations!["agent-platform.ai/connected-at"];
 
     await new Promise((r) => setTimeout(r, 5));
     await port.upsertConnection({
@@ -150,7 +150,7 @@ describe("K8sConnectionsPort.upsertConnection", () => {
       tokens: { accessToken: "second", expiresAt: 2 },
       metadata: SAMPLE_METADATA,
     });
-    expect(store.get(name)!.metadata!.annotations!["humr.ai/connected-at"]).toBe(firstConnectedAt);
+    expect(store.get(name)!.metadata!.annotations!["agent-platform.ai/connected-at"]).toBe(firstConnectedAt);
   });
 });
 

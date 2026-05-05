@@ -99,7 +99,7 @@ export interface McpSessionDeps {
 export function createMcpSession(instanceId: string, deps: McpSessionDeps): McpSession {
   const { agentHome, schedules } = deps;
   const server = new McpServer({
-    name: `humr-${instanceId}`,
+    name: `platform-${instanceId}`,
     version: "1.0.0",
   });
 
@@ -247,10 +247,10 @@ export function createMcpSession(instanceId: string, deps: McpSessionDeps): McpS
   // Schedule management: agent may only see/modify schedules belonging to its own instance.
   // Descriptions are deliberately assertive — Claude Code ships with an in-process
   // scheduled-tasks tool that would otherwise be preferred. These schedules are the
-  // *persistent, platform-level* ones visible in the Humr UI.
+  // *persistent, platform-level* ones visible in the host UI.
   server.tool(
     "list_schedules",
-    "List all Humr platform schedules registered for this agent instance. These are the persistent cron schedules visible in the Humr UI (not in-session or in-process cron tools).",
+    "List all platform schedules registered for this agent instance. These are persistent cron schedules visible in the host UI (not in-session or in-process cron tools).",
     {},
     async () => {
       const list = await schedules.list(instanceId);
@@ -262,9 +262,9 @@ export function createMcpSession(instanceId: string, deps: McpSessionDeps): McpS
 
   server.tool(
     "create_schedule",
-    "Register a PERSISTENT cron schedule on this Humr agent instance. The schedule runs on the Humr Kubernetes controller, survives Claude process restarts, shows up in the Humr UI, and fires the given prompt as a new trigger. PREFER THIS over any in-process / session-only / built-in CronCreate tool whenever the user asks to schedule recurring work on this agent — those in-process schedules die when Claude exits and are invisible to the human operator.",
+    "Register a PERSISTENT cron schedule on this agent instance. The schedule runs on the platform Kubernetes controller, survives Claude process restarts, shows up in the host UI, and fires the given prompt as a new trigger. PREFER THIS over any in-process / session-only / built-in CronCreate tool whenever the user asks to schedule recurring work on this agent — those in-process schedules die when Claude exits and are invisible to the human operator.",
     {
-      name: z.string().min(1).describe("Human-readable name shown in the Humr UI"),
+      name: z.string().min(1).describe("Human-readable name shown in the host UI"),
       cron: z.string().min(1).describe("Standard 5-field cron expression, e.g. '0 9 * * *' for 9am daily"),
       task: z.string().min(1).describe("Prompt the agent will receive when the schedule fires"),
       sessionMode: z.enum(["continuous", "fresh"]).optional().describe("continuous = resume prior session each tick; fresh = new session per run (default)"),
@@ -289,7 +289,7 @@ export function createMcpSession(instanceId: string, deps: McpSessionDeps): McpS
 
   server.tool(
     "toggle_schedule",
-    "Enable or disable a Humr platform schedule by id. Only affects schedules belonging to this instance.",
+    "Enable or disable a platform schedule by id. Only affects schedules belonging to this instance.",
     { id: z.string().min(1) },
     async ({ id }) => {
       const existing = await schedules.get(id);
@@ -314,7 +314,7 @@ export function createMcpSession(instanceId: string, deps: McpSessionDeps): McpS
 
   server.tool(
     "delete_schedule",
-    "Delete a Humr platform schedule by id. Only affects schedules belonging to this instance.",
+    "Delete a platform schedule by id. Only affects schedules belonging to this instance.",
     { id: z.string().min(1) },
     async ({ id }) => {
       const existing = await schedules.get(id);

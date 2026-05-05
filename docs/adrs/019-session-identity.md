@@ -145,7 +145,7 @@ The entire mechanism uses standard ACP protocol methods:
 - `session/prompt` — send a prompt
 - `session/list` — list sessions (for DB enrichment)
 
-No harness-specific `_meta` fields, no Claude Code options, no capability gates. Humr already requires ACP compliance as its agent contract — `session/resume` is a core ACP method, not an extension. Any ACP-compliant agent that persists sessions works.
+No harness-specific `_meta` fields, no Claude Code options, no capability gates. Platform already requires ACP compliance as its agent contract — `session/resume` is a core ACP method, not an extension. Any ACP-compliant agent that persists sessions works.
 
 ## Alternatives Considered
 
@@ -159,7 +159,7 @@ No harness-specific `_meta` fields, no Claude Code options, no capability gates.
 
 **Platform-managed context depth.** Expose a `contextDepth` option on continuous schedules to limit how many recent messages the agent sees on each tick. Investigation revealed this cannot be done agent-agnostically through ACP: during `session/resume`, the agent subprocess reads the full JSONL transcript directly from disk (e.g., `~/.claude/projects/<cwd>/<sessionId>.jsonl`) and sends it to the model API internally — the conversation history never flows over the ACP wire, so there is no interception point at the proxy level. The only viable approach would be direct JSONL file manipulation (truncate before resume, restore after), which is harness-specific, fragile, and violates the principle that the platform stays out of context management. Deferred until ACP exposes a protocol-level mechanism for context windowing.
 
-**Graceful degradation for agents without `session/resume`.** Fall back to `session/new` if the agent doesn't support session persistence, so minimal ACP agents still work. Rejected: Humr already requires full ACP compliance as its agent contract. Adding a fallback path complicates the trigger-watcher with branching logic for a scenario that shouldn't occur. If an agent doesn't support `session/resume`, it's not a supported Humr agent.
+**Graceful degradation for agents without `session/resume`.** Fall back to `session/new` if the agent doesn't support session persistence, so minimal ACP agents still work. Rejected: Platform already requires full ACP compliance as its agent contract. Adding a fallback path complicates the trigger-watcher with branching logic for a scenario that shouldn't occur. If an agent doesn't support `session/resume`, it's not a supported Platform agent.
 
 **Pod-local result files for session ID tracking.** Store the schedule-to-session mapping as files inside the agent pod (`/workspace/.trigger-results/`), exposed via a tRPC endpoint on the agent-runtime-api. Rejected: ADR-017 already established the `sessions` table as the source of truth for session metadata. Duplicating this into pod-local files creates a parallel tracking system and doesn't survive PVC deletion gracefully. The DB is the right place.
 
@@ -175,4 +175,4 @@ No harness-specific `_meta` fields, no Claude Code options, no capability gates.
 - Triggers are serialized within a schedule (concurrent across schedules)
 - Controller is unchanged — still writes trigger files, doesn't need to know about session IDs
 - Context growth is delegated to the agent — the platform doesn't intervene
-- `session/resume` support is a hard requirement for Humr agents — this is reasonable given ACP compliance is already required
+- `session/resume` support is a hard requirement for Platform agents — this is reasonable given ACP compliance is already required

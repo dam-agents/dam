@@ -48,7 +48,7 @@ export interface InstancesRepository {
   isPodReady(id: string): Promise<boolean>;
   /**
    * Make the instance's pod reachable. Idempotent; single-flight per id;
-   * bumps `humr.ai/last-activity` on every successful completion so any
+   * bumps `agent-platform.ai/last-activity` on every successful completion so any
    * caller implicitly keeps the pod warm.
    *
    * The observed pod Ready condition is the authoritative signal — not

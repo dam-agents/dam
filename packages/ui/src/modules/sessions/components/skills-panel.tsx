@@ -8,13 +8,13 @@ import type {
 import { ChevronDown, ChevronRight, ExternalLink, Eye, Plus, RefreshCw, Share2, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
-import { platform } from "../../../platform.js";
+import { api } from "../../../api.js";
 import { useStore } from "../../../store.js";
 import { ACTION_FAILED, runAction } from "../../../store/query-helpers.js";
 
 /** localStorage key for per-user persistence of collapsed source ids. Per
  *  browser, not per instance — catalog preferences apply everywhere. */
-const COLLAPSED_STORAGE_KEY = "humr:skills:collapsed";
+const COLLAPSED_STORAGE_KEY = "platform:skills:collapsed";
 
 function loadCollapsed(): Set<string> {
   try {
@@ -140,7 +140,7 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
     setLoadingBySource((l) => ({ ...l, [sourceId]: true }));
     setErrorBySource((e) => ({ ...e, [sourceId]: null }));
     try {
-      const list = await platform.skills.listSkills.query({ sourceId, instanceId });
+      const list = await api.skills.listSkills.query({ sourceId, instanceId });
       setSkillsBySource((s) => ({ ...s, [sourceId]: list }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to load skills";
@@ -153,7 +153,7 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
 
   const refreshSource = useCallback(async (sourceId: string) => {
     const ok = await runAction(
-      () => platform.skills.sources.refresh.mutate({ id: sourceId }),
+      () => api.skills.sources.refresh.mutate({ id: sourceId }),
       "Failed to refresh source",
     );
     if (ok !== ACTION_FAILED) await loadSkills(sourceId);
@@ -178,7 +178,7 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
         return;
       }
       try {
-        const state = await platform.skills.state.query({ instanceId });
+        const state = await api.skills.state.query({ instanceId });
         if (!cancelled) {
           setInstalled(state.installed);
           setLocalSkills(state.standalone);
@@ -191,7 +191,7 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
       try {
         // Pass instanceId so the backend composes user + platform + agent
         // (template-seeded) sources into a single ordered list.
-        const srcs = await platform.skills.sources.list.query(
+        const srcs = await api.skills.sources.list.query(
           instanceId ? { instanceId } : undefined,
         );
         if (!cancelled) setSources(srcs);
@@ -234,8 +234,8 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
     const currentlyInstalled = isInstalled(skill.source, skill.name);
     const result = await runAction(
       () => currentlyInstalled
-        ? platform.skills.uninstall.mutate({ instanceId, source: skill.source, name: skill.name })
-        : platform.skills.install.mutate({
+        ? api.skills.uninstall.mutate({ instanceId, source: skill.source, name: skill.name })
+        : api.skills.install.mutate({
             instanceId,
             source: skill.source,
             name: skill.name,
@@ -253,7 +253,7 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
     const key = skillKey(skill.source, skill.name);
     setBusyRow(key);
     const result = await runAction(
-      () => platform.skills.install.mutate({
+      () => api.skills.install.mutate({
         instanceId,
         source: skill.source,
         name: skill.name,
@@ -270,7 +270,7 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
     if (!addForm.name.trim() || !addForm.gitUrl.trim()) return;
     setAddBusy(true);
     const result = await runAction(
-      () => platform.skills.sources.create.mutate({
+      () => api.skills.sources.create.mutate({
         name: addForm.name.trim(),
         gitUrl: addForm.gitUrl.trim(),
       }),
@@ -313,7 +313,7 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
     if (!instanceId || !publishFor) return;
     setPublishBusy(true);
     try {
-      const result = await platform.skills.publish.mutate({
+      const result = await api.skills.publish.mutate({
         instanceId,
         sourceId: publishForm.sourceId,
         name: publishFor.name,
@@ -332,13 +332,13 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
       // still sitting on this panel).
       void refreshSource(publishForm.sourceId);
     } catch (err) {
-      // publish-service encodes a call-to-action URL as `\nhumr-cta:<url>`
+      // publish-service encodes a call-to-action URL as `\nplatform-cta:<url>`
       // in the error message when an upstream surfaces a structured error
       // (not connected / agent access not granted). Parse it out so the
       // toast's action button takes the user straight to the right fix.
       const rawMessage = err instanceof Error ? err.message : `Failed to publish ${publishFor.name}`;
-      const cta = rawMessage.match(/humr-cta:(\S+)/)?.[1];
-      const message = rawMessage.replace(/\nhumr-cta:\S+/, "").trim();
+      const cta = rawMessage.match(/platform-cta:(\S+)/)?.[1];
+      const message = rawMessage.replace(/\nplatform-cta:\S+/, "").trim();
       showToast({
         kind: "error",
         message,
@@ -357,7 +357,7 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
     );
     if (!ok) return;
     const result = await runAction(
-      () => platform.skills.sources.delete.mutate({ id: src.id }),
+      () => api.skills.sources.delete.mutate({ id: src.id }),
       "Failed to remove source",
     );
     if (result !== ACTION_FAILED) {
@@ -617,13 +617,13 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
 
             {!collapsed && error && (() => {
               // publish/scan services encode a call-to-action URL as
-              // `\nhumr-cta:<url>` in the tRPC error message when an
+              // `\nplatform-cta:<url>` in the tRPC error message when an
               // upstream surfaces a structured error (not connected /
               // agent access not granted / repo not in OAuth App's
               // allowed list). Split it out so the banner offers a
               // direct link to the fix.
-              const cta = error.match(/humr-cta:(\S+)/)?.[1];
-              const message = error.replace(/\nhumr-cta:\S+/, "").trim();
+              const cta = error.match(/platform-cta:(\S+)/)?.[1];
+              const message = error.replace(/\nplatform-cta:\S+/, "").trim();
               return (
                 <div className="px-4 py-2 text-[11px] text-danger bg-danger-light flex items-center gap-2">
                   <span className="flex-1">{message}</span>

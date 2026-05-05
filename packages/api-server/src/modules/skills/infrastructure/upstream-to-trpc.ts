@@ -6,7 +6,7 @@ import { AgentRuntimeUpstreamError } from "./agent-runtime-client.js";
  * 502 with a `.upstream` envelope) into a tRPC error the UI can act on.
  *
  * We encode the `connect_url` / `manage_url` into the message as a
- * `humr-cta:<url>` prefix segment that the client can split back out. Keeps
+ * `platform-cta:<url>` prefix segment that the client can split back out. Keeps
  * the server → client contract simple (no tRPC data extension needed).
  *
  * Shared across the publish and scan flows — both delegate to agent-runtime
@@ -16,7 +16,7 @@ export function upstreamToTrpc(err: AgentRuntimeUpstreamError): TRPCError {
   const { status, body } = err.upstream;
   const message = body?.message ?? err.message;
   const cta = body?.connect_url ?? body?.manage_url;
-  const encoded = cta ? `${message}\nhumr-cta:${cta}` : message;
+  const encoded = cta ? `${message}\nplatform-cta:${cta}` : message;
 
   if (body?.error === "app_not_connected" || body?.error === "access_restricted") {
     return new TRPCError({ code: "PRECONDITION_FAILED", message: encoded });

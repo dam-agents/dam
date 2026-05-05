@@ -59,7 +59,7 @@ describe("OAuth app registry — build()", () => {
       connectionKey: "github",
       hostPattern: "api.github.com",
       displayName: "GitHub",
-      envMappings: [{ envName: "GH_TOKEN", placeholder: "humr:sentinel" }],
+      envMappings: [{ envName: "GH_TOKEN", placeholder: "dummy-placeholder" }],
     });
     expect(built.connectionDisplayName).toBe("GitHub");
   });
@@ -80,7 +80,7 @@ describe("OAuth app registry — build()", () => {
     expect(built.flow.hostPattern).toBe("ghe.example.com");
     expect(built.flow.connectionKey).toBe("github-enterprise");
     expect(built.flow.envMappings).toEqual([
-      { envName: "GH_TOKEN", placeholder: "humr:sentinel" },
+      { envName: "GH_TOKEN", placeholder: "dummy-placeholder" },
       { envName: "GH_HOST", placeholder: "ghe.example.com" },
     ]);
     expect(built.connectionDisplayName).toBe("GitHub Enterprise (ghe.example.com)");

@@ -144,6 +144,7 @@ const slackWorker = config.slackBotToken && config.slackAppToken
       },
       (instanceId) => instancesRepo.getOwner(instanceId),
       channelRegistry,
+      config.brand.short,
     )
   : undefined;
 
@@ -296,7 +297,7 @@ const { server: harnessApiServer } = startHarnessApiServerApp({
 });
 
 // Source-IP-derived identity for the ext_authz handler. NetworkPolicy
-// (deploy/helm/humr/templates/apiserver/networkpolicy.yaml) blocks
+// (deploy/helm/platform/templates/apiserver/networkpolicy.yaml) blocks
 // non-agent pods at the kernel; this cache turns a verified peer IP into
 // the pod's instance label so a compromised agent bypassing its sidecar
 // still can't impersonate a sibling. Refresh cadence is generous —

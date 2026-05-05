@@ -2,7 +2,7 @@ import { execSync } from "node:child_process";
 import type { TestProject } from "vitest/node";
 import { waitForKeycloak, getToken } from "./auth.js";
 
-const API_URL = "http://humr-api.localtest.me:5555";
+const API_URL = "http://localtest.me:5555";
 
 async function waitForReady(url: string, timeoutMs = 120_000) {
   const start = Date.now();
@@ -42,7 +42,7 @@ export async function teardown() {
   console.log("Deleting test cluster...");
   try {
     execSync(
-      "mise run cluster:delete -- --vm-name=humr-k3s-test --force",
+      "mise run cluster:delete -- --vm-name=platform-k3s-test --force",
       { stdio: "inherit", timeout: 120_000 },
     );
   } catch (e) {

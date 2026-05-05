@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { getBrand } from "../brand.js";
 import { useStore } from "../store.js";
 import { Logo } from "./logo.js";
 import {
@@ -11,7 +12,7 @@ import {
 } from "lucide-react";
 import { InboxBell } from "../modules/approvals/components/inbox-bell.js";
 
-const STORAGE_KEY = "humr-sidebar-collapsed";
+const STORAGE_KEY = "platform-sidebar-collapsed";
 
 const navItems = [
   { view: "list" as const, label: "Agents", icon: Bot },
@@ -44,7 +45,7 @@ export function Sidebar() {
         <Logo size={22} className="text-accent shrink-0" />
         {!collapsed && (
           <span className="text-[15px] font-extrabold tracking-[-0.03em] text-accent">
-            dam
+            {getBrand().short}
           </span>
         )}
       </button>

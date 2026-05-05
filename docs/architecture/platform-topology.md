@@ -16,7 +16,7 @@ Last verified: 2026-04-28
 
 ## Overview
 
-Humr runs as four long-lived subsystems on Kubernetes: a Go **controller** that reconciles ConfigMap-declared resources, a TypeScript **api-server** that brokers user requests and relays agent traffic, per-instance **agent-runtime** pods that host the agent process, and a React **ui** served by the api-server. The controller and api-server never talk to each other directly — they coordinate through the K8s API, using a `spec.yaml` / `status.yaml` split on each ConfigMap so that writes never contend.
+Platform runs as four long-lived subsystems on Kubernetes: a Go **controller** that reconciles ConfigMap-declared resources, a TypeScript **api-server** that brokers user requests and relays agent traffic, per-instance **agent-runtime** pods that host the agent process, and a React **ui** served by the api-server. The controller and api-server never talk to each other directly — they coordinate through the K8s API, using a `spec.yaml` / `status.yaml` split on each ConfigMap so that writes never contend.
 
 ## Diagram
 
@@ -44,7 +44,7 @@ flowchart LR
 
 ### controller
 
-A stateless Go reconciler built on client-go. It watches ConfigMaps labelled `humr.ai/type` (template, instance, schedule, fork), reconciles the StatefulSet, Service, NetworkPolicy, and per-agent Secret for each instance, runs the schedule loop, and delivers trigger files to agent pods via `exec` (see [ADR-008](../adrs/008-trigger-files.md)). The controller writes only `status.yaml` on owned ConfigMaps; it never writes `spec.yaml`. See [`packages/controller/`](../../packages/controller/).
+A stateless Go reconciler built on client-go. It watches ConfigMaps labelled `platform.ai/type` (template, instance, schedule, fork), reconciles the StatefulSet, Service, NetworkPolicy, and per-agent Secret for each instance, runs the schedule loop, and delivers trigger files to agent pods via `exec` (see [ADR-008](../adrs/008-trigger-files.md)). The controller writes only `status.yaml` on owned ConfigMaps; it never writes `spec.yaml`. See [`packages/controller/`](../../packages/controller/).
 
 ### api-server
 
@@ -62,7 +62,7 @@ The per-instance pod that runs the ACP WebSocket server and spawns the underlyin
 - Accept one ACP WebSocket connection (relayed from the api-server) and speak JSON-RPC 2.0 to the agent process.
 - Watch a well-known trigger directory and forward scheduled triggers to the api-server's harness port.
 - Expose a scoped tRPC router (via the api-server's tRPC proxy) for in-pod file operations surfaced to the UI.
-- Hold an SSE connection to the api-server's pod-files endpoint and materialize declarative file state under the agent's HOME — currently `~/.config/gh/hosts.yml` for granted GitHub Enterprise app connections, more producers might come. Refuses paths outside HOME (defense-in-depth) and skips the loop when `HUMR_POD_FILES_EVENTS_URL` is unset (forks).
+- Hold an SSE connection to the api-server's pod-files endpoint and materialize declarative file state under the agent's HOME — currently `~/.config/gh/hosts.yml` for granted GitHub Enterprise app connections, more producers might come. Refuses paths outside HOME (defense-in-depth) and skips the loop when `PLATFORM_POD_FILES_EVENTS_URL` is unset (forks).
 
 See [`packages/agent-runtime/`](../../packages/agent-runtime/) and [`packages/agent-runtime-api/`](../../packages/agent-runtime-api/).
 
@@ -87,19 +87,19 @@ ACP frames are JSON-RPC 2.0, one logical message per WebSocket frame.
 
 ## K8s resource model
 
-Humr models all of its domain state as ConfigMaps labelled `humr.ai/type` ([ADR-006](../adrs/006-configmaps-over-crds.md)). Each ConfigMap carries two keys:
+Platform models all of its domain state as ConfigMaps labelled `platform.ai/type` ([ADR-006](../adrs/006-configmaps-over-crds.md)). Each ConfigMap carries two keys:
 
 - `spec.yaml` — user intent. Owned exclusively by the api-server.
 - `status.yaml` — observed state and scheduler bookkeeping. Owned exclusively by the controller.
 
-| `humr.ai/type` | Purpose |
+| `platform.ai/type` | Purpose |
 |---|---|
 | `agent` | Template: image, command, default env, injection rules |
 | `agent-instance` | Instance desired state: template ref, skills, env overrides, secret refs |
 | `agent-schedule` | Schedule: cron or RRULE, quiet hours, task payload, session mode |
 | `agent-fork` | Forked run: parent instance ref + overrides |
 
-For each `agent-instance`, the controller reconciles a StatefulSet (replicas 0 when hibernated, 1 when running), a headless Service, a NetworkPolicy, and a per-instance Envoy bootstrap ConfigMap + leaf-TLS Certificate ([ADR-033](../adrs/033-envoy-credential-gateway.md)). ConfigMaps are chosen over CRDs so Humr installs without cluster-admin. See [`deploy/helm/humr/templates/`](../../deploy/helm/humr/templates/) for the install layout.
+For each `agent-instance`, the controller reconciles a StatefulSet (replicas 0 when hibernated, 1 when running), a headless Service, a NetworkPolicy, and a per-instance Envoy bootstrap ConfigMap + leaf-TLS Certificate ([ADR-033](../adrs/033-envoy-credential-gateway.md)). ConfigMaps are chosen over CRDs so Platform installs without cluster-admin. See [`deploy/helm/platform/templates/`](../../deploy/helm/platform/templates/) for the install layout.
 
 ## Invariants
 

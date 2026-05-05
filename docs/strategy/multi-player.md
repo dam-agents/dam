@@ -1,18 +1,18 @@
-# Humr is multiplayer, not multitenant yet
+# Platform is multiplayer, not multitenant yet
 
-> **TL;DR.** Humr is a shared platform for AI agents. Each agent belongs to one person — its owner. To let colleagues use an agent, the owner connects it to a shared surface (a Slack channel, a Telegram chat, …). Colleagues can watch for free. They can only talk to the agent if the owner adds them to an access list. When a colleague talks to it, the agent acts as *them*, not the owner.
+> **TL;DR.** Platform is a shared platform for AI agents. Each agent belongs to one person — its owner. To let colleagues use an agent, the owner connects it to a shared surface (a Slack channel, a Telegram chat, …). Colleagues can watch for free. They can only talk to the agent if the owner adds them to an access list. When a colleague talks to it, the agent acts as *them*, not the owner.
 
 ## The big idea
 
-One installation of Humr hosts one team. Everyone on the team signs in. Everyone can build their own agents. By default, **your agents are yours** — nobody else on the installation sees them or can interact with them.
+One installation of Platform hosts one team. Everyone on the team signs in. Everyone can build their own agents. By default, **your agents are yours** — nobody else on the installation sees them or can interact with them.
 
-Sharing an agent is an explicit choice. You share by connecting it to a **shared surface** — a Slack channel, a Telegram chat, or other integrations over time. In Humr, that connection is called a **channel**.
+Sharing an agent is an explicit choice. You share by connecting it to a **shared surface** — a Slack channel, a Telegram chat, or other integrations over time. In Platform, that connection is called a **channel**.
 
-## Who are you, to Humr?
+## Who are you, to Platform?
 
-Humr uses a single sign-on system, the same way most enterprise applications do. Your corporate SSO sits behind it, so "who you are in Humr" is the same identity you use everywhere else at work. Every request you make carries proof of that identity.
+Platform uses a single sign-on system, the same way most enterprise applications do. Your corporate SSO sits behind it, so "who you are in Platform" is the same identity you use everywhere else at work. Every request you make carries proof of that identity.
 
-When you reach Humr from Slack or Telegram, the first step is linking your account on that platform to your Humr identity. After that, Humr knows exactly which person is on the other end of every message.
+When you reach Platform from Slack or Telegram, the first step is linking your account on that platform to your Platform identity. After that, Platform knows exactly which person is on the other end of every message.
 
 ## What's yours is yours
 
@@ -29,7 +29,7 @@ Other people on the installation cannot see any of that. Not in the dashboard, n
 
 ## Your credentials stay yours
 
-Agents need credentials to do real work — call GitHub, read email, hit internal APIs. Humr tracks credentials per person. When your agent runs, it uses *your* credentials, and only yours. It cannot reach anyone else's.
+Agents need credentials to do real work — call GitHub, read email, hit internal APIs. Platform tracks credentials per person. When your agent runs, it uses *your* credentials, and only yours. It cannot reach anyone else's.
 
 A component called the **credential gateway** hands credentials to agents. It checks your identity first. No identity, no credentials.
 
@@ -54,7 +54,7 @@ This is the important part. When Bob (a guest Alice added) messages Alice's agen
 - Any rate limits hit are Bob's limits.
 - Any audit log shows Bob took the action.
 
-Humr achieves this by starting a short-lived process for Bob's turn. That process carries Bob's identity and Bob's credentials. When the turn ends, the process shuts down. Alice's main process — the one that normally runs the agent — is not touched.
+Platform achieves this by starting a short-lived process for Bob's turn. That process carries Bob's identity and Bob's credentials. When the turn ends, the process shuts down. Alice's main process — the one that normally runs the agent — is not touched.
 
 ## The shared workspace
 
@@ -68,11 +68,11 @@ That's intentional. Sharing an agent means sharing its full context. If somethin
 
 ## Why one installation = one team
 
-Everyone on one installation of Humr is aware the others exist. They can't see each other's agents (that's what this document is about), but they share the same identity system, the same credential gateway, and the same underlying infrastructure.
+Everyone on one installation of Platform is aware the others exist. They can't see each other's agents (that's what this document is about), but they share the same identity system, the same credential gateway, and the same underlying infrastructure.
 
 That's fine for one team that trusts its members. It is **not** appropriate for two teams that should be walled off from each other.
 
-The rule is simple: **one installation of Humr per trust boundary.** One team, one installation. Two groups that need separation, two installations. Humr does not try to isolate mutually untrusted users inside a single installation today.
+The rule is simple: **one installation of Platform per trust boundary.** One team, one installation. Two groups that need separation, two installations. Platform does not try to isolate mutually untrusted users inside a single installation today.
 
 That may change in the future — the design leaves room for it. For now, the model is "shared installation within a trust boundary."
 

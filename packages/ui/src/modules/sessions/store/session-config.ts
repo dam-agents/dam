@@ -5,7 +5,7 @@ import type {
 } from "@agentclientprotocol/sdk/dist/acp.js";
 import type { StateCreator } from "zustand";
 
-import type { HumrStore } from "../../../store.js";
+import type { PlatformStore } from "../../../store.js";
 
 export interface SessionConfigSlice {
   sessionModes: SessionModeState | null;
@@ -16,7 +16,7 @@ export interface SessionConfigSlice {
   setSessionConfigOptions: (options: SessionConfigOption[]) => void;
 }
 
-export const createSessionConfigSlice: StateCreator<HumrStore, [], [], SessionConfigSlice> = (set) => ({
+export const createSessionConfigSlice: StateCreator<PlatformStore, [], [], SessionConfigSlice> = (set) => ({
   sessionModes: null,
   sessionModels: null,
   sessionConfigOptions: [],

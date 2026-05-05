@@ -9,7 +9,7 @@ function tmp(): string {
 }
 
 /**
- * applyFile's only humr-specific responsibility is the path-access guard:
+ * applyFile's only platform-specific responsibility is the path-access guard:
  * incoming FileSpecs from the api-server must resolve under agentHome or
  * the write is refused. The merge semantics are covered in merge tests;
  * the happy-path write end-to-end is covered through the dispatch test.

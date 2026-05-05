@@ -10,7 +10,7 @@ Schedule CRUD was the first feature requiring API-level tests. The API server is
 
 ## Decision
 
-Full e2e tests that spin up a dedicated test cluster (`mise run cluster:install --vm-name=humr-k3s-test`), deploy the complete Humr stack, and test against it.
+Full e2e tests that spin up a dedicated test cluster (`mise run cluster:install --vm-name=platform-k3s-test`), deploy the complete Platform stack, and test against it.
 
 ### Test layers
 
@@ -20,8 +20,8 @@ Full e2e tests that spin up a dedicated test cluster (`mise run cluster:install 
 
 ### Infrastructure
 
-- **Dedicated Lima VM** (`humr-k3s-test`) with separate ports (5555 Traefik, 16445 k8s API) to avoid collisions with dev cluster
-- **Full Humr chart** deployed (API server, controller, UI, OneCLI, PostgreSQL)
+- **Dedicated Lima VM** (`platform-k3s-test`) with separate ports (5555 Traefik, 16445 k8s API) to avoid collisions with dev cluster
+- **Full Platform chart** deployed (API server, controller, UI, OneCLI, PostgreSQL)
 - **`mise run api-server:e2e`** orchestrates: build images → create cluster → run vitest → tear down cluster
 - **Vitest** as test framework, `@trpc/client` for endpoint calls, `@kubernetes/client-node` for K8s assertions
 - **Cluster parameterization** via `--vm-name` and `--lima-template` flags on `cluster:install`/`cluster:delete`

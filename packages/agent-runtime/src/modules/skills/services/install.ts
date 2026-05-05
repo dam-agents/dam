@@ -26,7 +26,7 @@ export async function runInstall(
   skillPaths: SkillPath[],
   input: InstallSkillInput,
 ): Promise<Result<InstallSkillResult, SkillsDomainError>> {
-  return deps.repo.withTempDir("humr-skill-", async (tmp) => {
+  return deps.repo.withTempDir("platform-skill-", async (tmp) => {
     const fetched = await fetchSourceAtVersion(deps, input.source, input.version, tmp);
     if (!fetched.ok) return fetched;
 

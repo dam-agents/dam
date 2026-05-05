@@ -12,7 +12,7 @@ import {
 /** Metadata key Envoy renders into every Check call from the per-instance
  *  bootstrap. Used as a defense-in-depth sanity check against the
  *  IP-derived identity, not as the primary auth signal. */
-const INSTANCE_METADATA_KEY = "x-humr-instance";
+const INSTANCE_METADATA_KEY = "x-platform-instance";
 
 /** google.rpc.Status codes — only OK and PERMISSION_DENIED are meaningful
  *  to Envoy's ext_authz client. */
@@ -60,7 +60,7 @@ export async function startExtAuthzGrpcApp(deps: ExtAuthzGrpcAppDeps): Promise<{
           return;
         }
 
-        // Defense-in-depth: Envoy always renders `x-humr-instance` into
+        // Defense-in-depth: Envoy always renders `x-platform-instance` into
         // initial_metadata from the per-instance bootstrap. The header is
         // required and must agree with the IP-derived identity. Missing
         // means someone bypassed Envoy (or bootstrap drift); mismatch

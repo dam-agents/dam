@@ -8,7 +8,7 @@
 
 Three code paths currently wake and wait for an agent pod before calling into it: the scheduler's `fire()` (Go), the ACP relay's WS upgrade handler (TypeScript), and `ensureRunning` in `acp-client.ts` used by channel adapters (TypeScript). They are near-duplicates with subtly different semantics. The scheduler gates its readiness wait on `if woke` — meaning it skips the wait whenever `desiredState` is already `"running"` — which treats *user intent* as proof of *pod reachability*. They are not the same: a pod can be absent, cycling, or still coming up from a wake initiated by another caller while `desiredState == "running"`.
 
-This mismatch is the root cause of the intermittent `pods "X-0" not found` failures on scheduled triggers. Related races affect the UI wake path (fire-and-forget, no readiness wait) and the idle-checker interaction with continuous-mode schedules, where `humr.ai/last-activity` is never bumped by trigger-initiated sessions and the pod gets hibernated mid-chain.
+This mismatch is the root cause of the intermittent `pods "X-0" not found` failures on scheduled triggers. Related races affect the UI wake path (fire-and-forget, no readiness wait) and the idle-checker interaction with continuous-mode schedules, where `platform.ai/last-activity` is never bumped by trigger-initiated sessions and the pod gets hibernated mid-chain.
 
 Adding tactical patches at each site would fix the immediate symptoms but preserves three near-duplicate implementations that will drift again.
 
@@ -18,7 +18,7 @@ Every caller that sends work to an agent pod routes through a single primitive, 
 
 - Observed pod `Ready` condition is the authoritative answer to "can I call this pod?" — not `desiredState`.
 - Idempotent and single-flight per `instanceId`; concurrent callers share one wait.
-- Bumps `humr.ai/last-activity` on every successful call, so any caller implicitly keeps the pod warm and closes the continuous-schedule re-hibernation race without special-casing trigger sessions.
+- Bumps `platform.ai/last-activity` on every successful call, so any caller implicitly keeps the pod warm and closes the continuous-schedule re-hibernation race without special-casing trigger sessions.
 - `desiredState` remains **user intent** (running vs. hibernated) and continues to drive the reconciler. It is no longer read as a reachability signal by callers.
 
 The primitive is implemented once per runtime — Go (`packages/controller/pkg/lifecycle/`) and TypeScript (`InstancesRepository.ensureReady`) — with parallel test suites. `wakeIfHibernated`, `waitForPodReady`, and `pollUntilReady` become private implementation details of the primitive in each language. The three existing wake-and-wait sites are replaced; `ensureRunning` is deleted.

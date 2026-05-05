@@ -167,7 +167,7 @@ function createAcpClientForUrl(opts: {
         await connection.initialize({
           protocolVersion: 1,
           clientCapabilities: {},
-          clientInfo: { name: "humr-sessions", version: "1.0.0" },
+          clientInfo: { name: "platform-sessions", version: "1.0.0" },
         });
         const r = await connection.listSessions({ cwd: "." });
         return (r.sessions ?? []) as AcpSessionInfo[];
@@ -183,7 +183,7 @@ function createAcpClientForUrl(opts: {
     async sendPrompt(prompt: string, sendOpts?: { resumeSessionId?: string }): Promise<string> {
       const responseChunks: string[] = [];
 
-      await withAcpConnection(url, "humr-acp", {
+      await withAcpConnection(url, "platform-acp", {
         async sessionUpdate(params: any) {
           if (params.update?.sessionUpdate === "agent_message_chunk" && params.update.content?.type === "text") {
             responseChunks.push(params.update.content.text);
@@ -220,7 +220,7 @@ function createAcpClientForUrl(opts: {
       resumeSessionId?: string;
       mcpServers?: unknown[];
     }): Promise<TriggerSessionResult> {
-      return withAcpConnection(url, "humr-trigger", {}, async (connection) => {
+      return withAcpConnection(url, "platform-trigger", {}, async (connection) => {
         let sessionId: string;
         const mcpServers = (triggerOpts.mcpServers ?? []) as any[];
 

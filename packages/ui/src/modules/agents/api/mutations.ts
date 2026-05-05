@@ -1,6 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 
-import { platform } from "../../../platform.js";
+import { api } from "../../../api.js";
 import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
 import type { EgressPreset, EnvVar } from "../../../types.js";
@@ -34,15 +34,15 @@ export interface CreateAgentInput {
 export function useCreateAgent() {
   return useMutation({
     mutationFn: async ({ secretIds, appConnectionIds, egressPreset, ...input }: CreateAgentInput) => {
-      const agent = await platform.agents.create.mutate({ ...input, egressPreset });
-      await platform.instances.create.mutate({
+      const agent = await api.agents.create.mutate({ ...input, egressPreset });
+      await api.instances.create.mutate({
         name: input.name,
         agentId: agent.id,
       });
 
       if (secretIds !== undefined) {
         await withRetry(() =>
-          platform.secrets.setAgentAccess.mutate({
+          api.secrets.setAgentAccess.mutate({
             agentId: agent.id,
             mode: "selective",
             secretIds,
@@ -51,7 +51,7 @@ export function useCreateAgent() {
       }
       if (appConnectionIds?.length) {
         await withRetry(() =>
-          platform.connections.setAgentConnections.mutate({
+          api.connections.setAgentConnections.mutate({
             agentId: agent.id,
             connectionIds: appConnectionIds,
           }),

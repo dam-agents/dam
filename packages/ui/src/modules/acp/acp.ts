@@ -111,13 +111,13 @@ export async function openConnection(
       async readTextFile() {
         return { content: "" };
       },
-      // Our runtime emits a custom `humr/turnEnded` notification on the last
+      // Our runtime emits a custom `platform/turnEnded` notification on the last
       // response of each prompt so viewers that didn't originate the prompt
       // can close their in-progress assistant bubble. Surface it through the
       // same `onUpdate` channel as a synthetic `sessionUpdate`.
       async extNotification(method: string, params: any) {
-        if (method === "humr/turnEnded") {
-          onUpdate({ sessionUpdate: "humr_turn_ended", sessionId: params?.sessionId });
+        if (method === "platform/turnEnded") {
+          onUpdate({ sessionUpdate: "platform_turn_ended", sessionId: params?.sessionId });
         }
       },
     }),

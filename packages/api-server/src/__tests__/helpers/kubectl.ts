@@ -4,8 +4,8 @@ import yaml from "js-yaml";
 
 const KUBECONFIG = process.env.IS_SANDBOX
   ? "/etc/rancher/k3s/k3s.yaml"
-  : `${process.env.HOME}/.lima/humr-k3s-test/copied-from-guest/kubeconfig.yaml`;
-const NAMESPACE = "humr-agents";
+  : `${process.env.HOME}/.lima/platform-k3s-test/copied-from-guest/kubeconfig.yaml`;
+const NAMESPACE = "platform-agents";
 
 function loadApi() {
   const kc = new k8s.KubeConfig();

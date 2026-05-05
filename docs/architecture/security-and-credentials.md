@@ -21,9 +21,9 @@ Three rules carry the security model:
    outbound traffic on the wire — the agent container never sees Secret
    bytes.
 2. **Identity flows from Keycloak.** Browser users authenticate against
-   Keycloak; the api-server validates the JWT and stamps `humr.ai/owner` on
+   Keycloak; the api-server validates the JWT and stamps `platform.ai/owner` on
    every resource the user creates. Per-user credential isolation is the
-   `humr.ai/owner` label on the K8s Secret — the controller's selector
+   `platform.ai/owner` label on the K8s Secret — the controller's selector
    refuses to mount any other owner's Secret into a given owner's pod.
 3. **The trust line is the agent pod's network egress.** Everything outside
    the pod is the platform; everything inside the pod is least-privileged.
@@ -57,7 +57,7 @@ flowchart LR
   browser -->|user JWT| api-server
   api-server -->|JWKS validate| keycloak
 
-  api-server -->|write K8s Secrets<br/>humr.ai/owner=sub| agentpod
+  api-server -->|write K8s Secrets<br/>platform.ai/owner=sub| agentpod
   controller -->|render bootstrap + leaf cert<br/>list owner Secrets| agentpod
 
   agent-runtime -->|HTTPS_PROXY=127.0.0.1| envoy
@@ -79,10 +79,10 @@ subchart and is the OIDC provider for every authenticated surface. The
 user agent flow:
 
 1. Browser authenticates against Keycloak and obtains a JWT with audience
-   `humr-api`.
+   `platform-api`.
 2. UI sends the JWT to the api-server on every tRPC and ACP call. The
    api-server validates it against Keycloak's JWKS.
-3. The api-server's `sub` claim becomes `humr.ai/owner=<sub>` on every
+3. The api-server's `sub` claim becomes `platform.ai/owner=<sub>` on every
    resource the user creates (instance ConfigMap, K8s credential Secret,
    etc.).
 
@@ -93,16 +93,16 @@ writing.
 ## Resource ownership
 
 Multi-tenancy is **soft** — a single Kubernetes namespace, with a
-`humr.ai/owner` label on every owned resource carrying the authenticated
+`platform.ai/owner` label on every owned resource carrying the authenticated
 user's `sub`. The api-server is the sole writer of `spec.yaml` and stamps
 the label on create; every list and get filters by it. There is no
 namespace-per-user.
 
 The controller picks credentials per-instance by listing K8s Secrets
-labelled `humr.ai/owner=<sub>,humr.ai/managed-by=api-server` in the agent
+labelled `platform.ai/owner=<sub>,platform.ai/managed-by=api-server` in the agent
 namespace, then mounting the matching set into the Envoy sidecar. Cross-
 owner leakage is structurally prevented by the label selector — a missing
-`humr.ai/owner` label is treated as no owner and never mounted.
+`platform.ai/owner` label is treated as no owner and never mounted.
 
 ## Credential storage
 
@@ -110,7 +110,7 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
 
 - **OAuth-issued tokens** (GitHub, MCP servers, Generic OAuth apps) — the
   api-server's `/api/oauth/callback` writes the access + refresh token
-  pair, with an `humr.ai/host-pattern` annotation naming the upstream
+  pair, with an `platform.ai/host-pattern` annotation naming the upstream
   host the token belongs to. The refresh-token loop re-mints access
   tokens before expiry; the agent never sees the refresh token.
 - **User-supplied secrets** (Anthropic API keys, generic API tokens) —
@@ -126,8 +126,8 @@ container does not. See [`packages/api-server/src/modules/connections/infrastruc
 The controller renders a per-instance `Envoy bootstrap ConfigMap` and a
 cert-manager `Certificate` whose Secret holds the leaf TLS material the
 Envoy sidecar uses to terminate the agent's egress TLS. The leaf is
-issued by a chart-managed `humr-mitm-ca-issuer` ClusterIssuer; the CA
-cert is mounted into the agent at `/etc/humr/ca/ca.crt` so its TLS
+issued by a chart-managed `platform-mitm-ca-issuer` ClusterIssuer; the CA
+cert is mounted into the agent at `/etc/platform/ca/ca.crt` so its TLS
 clients trust the sidecar.
 
 On the wire:
@@ -165,7 +165,7 @@ only.
 When a user other than the instance owner replies in a Slack thread,
 the api-server emits a fork ConfigMap that the controller materialises
 into a per-turn Job. The fork pod's Envoy sidecar mounts the
-**replier's** K8s credential Secrets — selected by `humr.ai/owner=<replier-sub>`,
+**replier's** K8s credential Secrets — selected by `platform.ai/owner=<replier-sub>`,
 not the instance owner's `sub`. The credential boundary is preserved:
 the fork pod runs the replier's credentials, never the parent instance
 owner's. See [ADR-027](../adrs/027-slack-user-impersonation.md).

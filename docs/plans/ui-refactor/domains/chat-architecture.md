@@ -62,7 +62,7 @@ IDs:
 1. **Client→server requests** the SDK initiates: `initialize`, `newSession`,
    `unstable_resumeSession`, `prompt`, `cancel`, `setSessionMode`, …
 2. **Server→client `sessionUpdate` notifications** — streamed tokens,
-   tool-call lifecycle, mode changes, the synthetic `humr/turnEnded` from our
+   tool-call lifecycle, mode changes, the synthetic `platform/turnEnded` from our
    runtime extension.
 3. **Server→client `requestPermission` calls** — when the agent wants
    approval before a tool runs. `acp.ts` parks them as a pending promise in

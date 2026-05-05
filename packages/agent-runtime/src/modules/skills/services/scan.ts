@@ -64,7 +64,7 @@ async function scanGithub(
   const tarball = await deps.github.fetchTarball(host, version, { withAuth: false });
   if (!tarball.ok) return tarball;
 
-  return deps.repo.withTempDir("humr-skills-scan-", async (tmp) => {
+  return deps.repo.withTempDir("platform-skills-scan-", async (tmp) => {
     await deps.repo.extractTarball(tarball.value, tmp, {});
     // GitHub tarballs wrap contents in a single top-level dir like
     // `{owner}-{repo}-{short-sha}` — find it and scan from there.
@@ -83,7 +83,7 @@ async function scanGitClone(
   deps: ScanDeps,
   source: string,
 ): Promise<Result<ScannedSkill[], SkillsDomainError>> {
-  return deps.repo.withTempDir("humr-skills-scan-", async (tmp) => {
+  return deps.repo.withTempDir("platform-skills-scan-", async (tmp) => {
     const cloned = await deps.git.cloneShallow(source, tmp, 50);
     if (!cloned.ok) return cloned;
 

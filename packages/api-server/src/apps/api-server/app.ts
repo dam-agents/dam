@@ -21,6 +21,7 @@ import {
 } from "../../modules/channels/infrastructure/telegram-threads-repository.js";
 import { createAcpRelay } from "./acp-relay.js";
 import { createOAuthRoutes } from "./oauth.js";
+import { mountBrandIconRoutes } from "./brand-icon.js";
 import { createOAuthAppRegistry } from "../../modules/connections/infrastructure/oauth-apps.js";
 import type { Config } from "../../config.js";
 import { createAuth, ForbiddenError } from "./auth.js";
@@ -108,6 +109,34 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       clientId: config.keycloakClientId,
     }),
   );
+  // Public — UI fetches this on bootstrap (before auth) to set the page
+  // title, theme-color meta, and CSS accent custom properties. Sole source
+  // of brand truth; all UI components read from here, never from build-time
+  // constants.
+  app.get("/api/brand", (c) => c.json(config.brand));
+  // Public — PWA manifest (replaces the build-time bundled one). Served
+  // dynamically so the installed-PWA name follows brand without a UI rebuild.
+  app.get("/api/brand/manifest.webmanifest", (c) => {
+    c.header("Content-Type", "application/manifest+json");
+    return c.body(JSON.stringify({
+      name: config.brand.name,
+      short_name: config.brand.name,
+      description: "AI agent platform",
+      theme_color: config.brand.theme.light.accent,
+      background_color: "#fafaf9",
+      display: "standalone",
+      start_url: "/",
+      icons: [
+        { src: "/api/brand/icon-192.png", sizes: "192x192", type: "image/png" },
+        { src: "/api/brand/icon-512.png", sizes: "512x512", type: "image/png" },
+        { src: "/api/brand/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+      ],
+    }));
+  });
+  // Brand icon — single SVG source, rasterized on demand by sharp. Override
+  // via Helm `brand.icon` (passed as BRAND_ICON_SVG env var); falls back to
+  // the bundled default. Public.
+  mountBrandIconRoutes(app);
 
   app.use("/api/*", auth.middleware);
 
@@ -124,13 +153,14 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   });
   app.route(
     "/",
-    createOAuthRoutes({ uiBaseUrl: config.uiBaseUrl, k8sClient, apps: oauthApps }),
+    createOAuthRoutes({ uiBaseUrl: config.uiBaseUrl, k8sClient, apps: oauthApps, brandName: config.brand.name }),
   );
 
   if (config.slackBotToken && config.slackAppToken) {
     app.route("/", createSlackOAuthRoutes({
       pendingFlows: pendingSlackOAuthFlows,
       identityLinks: identityLinkService,
+      brandShort: config.brand.short,
       oauthConfig: {
         keycloakExternalUrl: config.keycloakExternalUrl,
         keycloakUrl: config.keycloakUrl,
@@ -199,7 +229,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     const user = c.get("user");
 
     const { templates, agents, instances, schedules, sessions } = composeAgentsModule(api, config.namespace, user.sub, db, userDirectory, channelSecretStore, config.agentHome, presetSeeder, agentCleanupHooks);
-    const skills = composeSkillsModule(api, config.namespace, user.sub, db, seedSources);
+    const skills = composeSkillsModule(api, config.namespace, user.sub, db, seedSources, config.brand.name);
     const grants = createAgentGrantsPort(k8sClient, user.sub);
     const secrets = createSecretsService({
       k8sPort: createK8sSecretsPort(k8sClient, user.sub),
