@@ -43,6 +43,13 @@ export function Terminal({ instanceId, sessionId }: { instanceId: string; sessio
   const [state, setState] = useState<ConnectionState>("connecting");
   const [exitCode, setExitCode] = useState<number | null>(null);
 
+  // Focus the terminal after React finishes rendering the "live" state
+  useEffect(() => {
+    if (state === "live") {
+      requestAnimationFrame(() => termRef.current?.focus());
+    }
+  }, [state]);
+
   const cleanup = useCallback(() => {
     if (wsRef.current) {
       wsRef.current.close();
