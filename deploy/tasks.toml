@@ -137,6 +137,9 @@ else
   echo "Waiting for k3s to be ready..."
   for _ in $(seq 1 60); do kubectl --kubeconfig="$KUBECONFIG" get nodes -o name 2>/dev/null | grep -q . && break; sleep 2; done
 fi
+# k3s writes kubeconfig before the node registers; the for-loop above
+# ensures ≥1 node exists, otherwise `kubectl wait --all` would error
+# immediately with "no matching resources found".
 kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Ready node --all --timeout=120s
 
 # 1b. Ensure k3s container-log rotation is configured (issue #244 upgrade
