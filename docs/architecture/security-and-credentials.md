@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-05-04
+Last verified: 2026-05-05
 
 ## Motivated by
 
@@ -138,7 +138,14 @@ On the wire:
    stream into an internal listener that reads SNI.
 3. Per-host filter chains terminate TLS with the leaf cert, run the
    credential injector to add the configured `Authorization` header, then
-   re-originate upstream TLS via the dynamic forward proxy.
+   forward to a per-credential `STRICT_DNS` cluster pinned to the
+   credential's host (explicit upstream SNI + SAN-bound TLS validation).
+   The agent's inner `Host` header has no influence on the upstream
+   destination — the route-confusion exfiltration path from
+   [ADR-033 §Threat Model](../adrs/033-envoy-credential-gateway.md#threat-model)
+   is structurally closed. Allow-only chains (path-rule promoted, no
+   credential) keep using the dynamic forward proxy — they have no
+   credential to misroute.
 4. The default chain (SNI miss) does TCP passthrough — the request reaches
    the upstream unchanged.
 
