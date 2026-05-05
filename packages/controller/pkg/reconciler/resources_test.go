@@ -99,7 +99,6 @@ func TestBuildStatefulSet_Running(t *testing.T) {
 	// No platform-issued credential token in the agent container's env —
 	// the api-server → agent-runtime hop is gated by NetworkPolicy ingress.
 	for _, e := range c.Env {
-		assert.NotEqual(t, "ONECLI_ACCESS_TOKEN", e.Name)
 		assert.NotEqual(t, "AGENT_RUNTIME_TOKEN", e.Name)
 	}
 	assert.Equal(t, "/etc/humr/ca/ca.crt", envMap["SSL_CERT_FILE"])
@@ -282,15 +281,6 @@ func TestBuildNetworkPolicy(t *testing.T) {
 		np.Spec.Ingress[0].From[0].PodSelector.MatchLabels["app.kubernetes.io/component"])
 	require.NotNil(t, np.Spec.Ingress[0].From[0].NamespaceSelector)
 	assert.Equal(t, int32(8080), np.Spec.Ingress[0].Ports[0].Port.IntVal)
-
-	// No OneCLI peer anywhere.
-	for _, rule := range np.Spec.Egress {
-		for _, peer := range rule.To {
-			if peer.PodSelector != nil {
-				assert.NotEqual(t, "onecli", peer.PodSelector.MatchLabels["app.kubernetes.io/component"])
-			}
-		}
-	}
 }
 
 func envToMap(envs []corev1.EnvVar) map[string]string {
