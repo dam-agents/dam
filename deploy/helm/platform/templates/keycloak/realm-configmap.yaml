@@ -31,10 +31,16 @@ data:
           "redirectUris": [
             {{ printf "%s/*" $uiUrl | quote }},
             "http://localhost:5173/*"
+            {{- range .Values.keycloak.extraRedirectUris }},
+            {{ . | quote }}
+            {{- end }}
           ],
           "webOrigins": [
             {{ $uiUrl | quote }},
             "http://localhost:5173"
+            {{- range .Values.keycloak.extraWebOrigins }},
+            {{ . | quote }}
+            {{- end }}
           ],
           "protocol": "openid-connect",
           "attributes": {

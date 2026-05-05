@@ -51,9 +51,21 @@ codeGuardianTemplate:
     tag: latest
     pullPolicy: Never
 
+# Local dev convenience: route requests with any Host header (including
+# IP literals like 127.0.0.1) to the app, so the cluster is reachable
+# however the developer happens to address it.
+ingress:
+  catchAllAppHost: true
+
 # Bootstrap a known dev/dev user for local cluster — never enabled in production.
+# Also widen the OAuth allow-list so the cluster works when reached via
+# the catch-all ingress rule (e.g. http://127.0.0.1:4444).
 keycloak:
   testUser:
     enabled: true
     username: dev
     password: dev
+  extraRedirectUris:
+    - "http://127.0.0.1:4444/*"
+  extraWebOrigins:
+    - "http://127.0.0.1:4444"

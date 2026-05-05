@@ -62,6 +62,16 @@ spec:
                 port:
                   name: http
     {{- end }}
+    {{- /* Catch-all app rule (host-less). Matches any Host header that no
+           other rule claims, so requests to IP literals (e.g. `127.0.0.1`) or
+           ad-hoc aliases reach the UI + API. Skipped when an explicit
+           `urls.ui`/`urls.api` override is set since that pins the app to a
+           single hostname intentionally. */ -}}
+    {{- if and .Values.ingress.catchAllAppHost (not $uiHost) }}
+    - http:
+        paths:
+          {{- include "platform.ingress.appPaths" (dict "uiSvc" $uiSvc "apiSvc" $apiSvc) | nindent 10 }}
+    {{- end }}
     {{- /* Convention-based rules: bare `${domain}` is the single app host. */ -}}
     {{- range $domain := $domains }}
     {{- if not $uiHost }}

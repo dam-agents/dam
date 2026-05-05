@@ -141,6 +141,14 @@ keycloak:
   apiClientId: platform-api
   apiClientSecret: ""
 
+  # -- Additional redirect URIs and web origins to register on the public
+  # `clientId` client. The chart always allows `{urls.ui}/*` and the Vite
+  # dev port; use these to register extra dev hosts (e.g. `127.0.0.1:4444`,
+  # tunnel URLs) without editing the realm template. Each entry is passed
+  # through verbatim — wildcards (`/*`) are supported by Keycloak.
+  extraRedirectUris: []
+  extraWebOrigins: []
+
   # -- Test user bootstrapped via realm import.
   # DISABLED by default — production deployments must not ship a known credential.
   # Local dev and e2e tests (via values-local.yaml) enable it.
@@ -186,6 +194,13 @@ ingress:
   # (hostname only, no port). Ignored for any service with an explicit
   # `urls.{service}` override.
   aliasDomains: ["localtest.me"]
+  # -- When true, adds a host-less Ingress rule for the app (UI + `/api/*`)
+  # that matches *any* Host header — including IP literals (`127.0.0.1`)
+  # which the K8s Ingress validator otherwise rejects in `host:` fields.
+  # Useful for local dev where you want to reach the cluster by IP or by
+  # an unplanned alias. Off by default — convention-based hostnames cover
+  # production, and a catch-all weakens host-based isolation.
+  catchAllAppHost: false
   # -- TLS rules passed through verbatim to `Ingress.spec.tls`. The chart does
   # NOT auto-derive `hosts` from rules — when you set any `urls.{service}`
   # override, you must also list those hostnames here (or reference them via
