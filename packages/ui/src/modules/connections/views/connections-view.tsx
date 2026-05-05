@@ -8,12 +8,10 @@ import { EditSecretDialog } from "../../secrets/components/edit-secret-dialog.js
 import { CreateSecretForm } from "../../secrets/forms/create-secret-form.js";
 import type { OAuthAppDescriptor } from "../api/fetchers.js";
 import {
-  useAppConnections,
   useMcpConnections,
   useOAuthAppConnections,
   useOAuthApps,
 } from "../api/queries.js";
-import { AppConnectionRow } from "../components/app-connection-row.js";
 import { McpConnectionRow } from "../components/mcp-connection-row.js";
 import { OAuthAppConnectButton } from "../components/oauth-app-connect-button.js";
 import { OAuthAppRow } from "../components/oauth-app-row.js";
@@ -33,13 +31,6 @@ export function ConnectionsView() {
     isFetching: isFetchingMcpConnections,
     isPending: isPendingMcpConnections,
   } = useMcpConnections();
-  const {
-    data: appConnections = [],
-    error: appConnectionsError,
-    refetch: refetchAppConnections,
-    isFetching: isFetchingAppConnections,
-    isPending: isPendingAppConnections,
-  } = useAppConnections();
   const {
     data: oauthApps = [],
     refetch: refetchOAuthApps,
@@ -71,14 +62,12 @@ export function ConnectionsView() {
   );
 
   const refreshAll = () => {
-    refetchAppConnections();
     refetchMcpConnections();
     refetchOAuthApps();
     refetchOAuthAppConnections();
     refetchSecrets();
   };
   const isFetching =
-    isFetchingAppConnections ||
     isFetchingMcpConnections ||
     isFetchingOAuthApps ||
     isFetchingOAuthAppConnections;
@@ -149,33 +138,6 @@ export function ConnectionsView() {
           </div>
         )}
 
-        {!isPendingAppConnections && !appConnectionsError && appConnections.length > 0 && (
-          <>
-            <div className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em] mt-6 mb-2">
-              Other connections
-            </div>
-            <div className="flex flex-col gap-3">
-              {appConnections.map((connection, i) => (
-                <AppConnectionRow
-                  key={connection.id}
-                  connection={connection}
-                  animationDelayMs={i * 50}
-                />
-              ))}
-            </div>
-          </>
-        )}
-
-        {!isPendingAppConnections && appConnectionsError && (
-          <div className="rounded-xl border-2 border-danger bg-danger-light px-6 py-4 anim-in mt-4">
-            <div className="text-[13px] font-semibold text-danger">
-              Couldn't load app connections.
-            </div>
-            <div className="text-[11px] font-mono text-danger/80 mt-1 break-all">
-              {appConnectionsError.message}
-            </div>
-          </div>
-        )}
       </section>
 
       {/* MCP Servers */}
