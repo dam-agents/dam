@@ -12,8 +12,6 @@ import { getAccessToken } from "../../auth.js";
 import { type PermissionOutcome,useStore } from "../../store.js";
 import type { UpdateHandler } from "./types.js";
 
-export type { UpdateHandler } from "./types.js";
-
 const WS_CONNECT_TIMEOUT_MS = 120_000;
 
 function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {

@@ -4,8 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useStore } from "../../../store.js";
 import type { Message } from "../../../types.js";
-import { openConnection, type UpdateHandler } from "../../acp/acp.js";
+import { openConnection } from "../../acp/acp.js";
 import { finalizeAllStreaming } from "../../acp/session-projection.js";
+import type { UpdateHandler } from "../../acp/types.js";
 import { RECONNECT_DELAYS } from "../../acp/utils.js";
 
 interface LiveConnection {
