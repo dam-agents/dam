@@ -3,11 +3,11 @@
 // shell script can treat "user gave bad input" uniformly.
 //
 //   0  success
-//   1  runtime failure (file write, network, etc. — issue 5+ extends)
+//   1  runtime failure (file write, network unreachable, malformed response)
 //   2  invalid input (commander parse error or our validation error)
-//
-// Issues 5/6 will introduce dedicated codes for compat-floor failures.
+//   3  compat below floor (CLI < server's minClientVersion)
 
 export const EXIT_SUCCESS = 0;
 export const EXIT_RUNTIME_FAILURE = 1;
 export const EXIT_INVALID_INPUT = 2;
+export const EXIT_COMPAT_BELOW_FLOOR = 3;

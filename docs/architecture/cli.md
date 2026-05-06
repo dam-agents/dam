@@ -29,4 +29,10 @@ Two persistence concerns share `~/.dam/`: the configuration the user can edit (t
 
 ## Compatibility negotiation
 
-Before any networked verb can run, the CLI hits the api-server's unauthenticated `GET /api/version` endpoint (plain HTTP, outside the tRPC surface) to learn the server's version and the minimum CLI version it accepts. The CLI hard-refuses to run when its own semver is below the floor, and warns to stderr when the server is ahead but compatible. The endpoint is configurable via Helm so operators can drop support for known-broken older clients without rebuilding the image.
+Before any networked verb runs, the CLI hits the api-server's unauthenticated `GET /api/version` (plain HTTP, outside the tRPC surface) to learn the server's version and the minimum CLI version it accepts. Three verdicts:
+
+- **Ok** — local CLI is at or ahead of the server's reported version. Command proceeds.
+- **BehindCurrent** — local CLI is below the server but at or above the floor. The CLI warns to stderr and proceeds (exit 0).
+- **BelowFloor** — local CLI is below the server's `minClientVersion`. The CLI hard-fails with a non-zero exit and refuses to run, regardless of which verb the user invoked.
+
+The floor is configurable via Helm (`apiServer.minClientCliVersion`) so operators can drop support for known-broken older clients without rebuilding the image. `dam ping` is the verb that opts into this gate explicitly; future networked verbs (`login`, `shell`, …) will too. `dam version` (issue 6) reports the verdict but never refuses to run — it is informational, not gated.

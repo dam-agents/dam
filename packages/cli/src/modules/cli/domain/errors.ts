@@ -29,9 +29,22 @@ export interface FileWriteError {
   reason: string;
 }
 
+export type ProbeErrorCode =
+  | "network"
+  | "timeout"
+  | "non-ok-status"
+  | "malformed-response";
+
+export interface ProbeError {
+  kind: "probe-error";
+  code: ProbeErrorCode;
+  message: string;
+}
+
 export type DomainError =
   | MissingConfigError
   | MalformedConfigError
   | InvalidKeyError
   | InvalidValueError
-  | FileWriteError;
+  | FileWriteError
+  | ProbeError;
