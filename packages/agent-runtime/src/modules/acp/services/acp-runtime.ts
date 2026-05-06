@@ -395,6 +395,39 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }
   }
 
+  /**
+   * Synthesize a `platform/permission_resolved` notification and fan it
+   * out to channels engaged with the session. Lets other tabs (or the
+   * resolver itself, immediately) close their permission dialog without
+   * waiting for the agent's downstream `tool_call_update`.
+   *
+   * The original request frame's `params.toolCall.toolCallId` carries
+   * the UI's dismissal key — extract it so consumers can match by
+   * the same id they originally added the dialog under.
+   */
+  function broadcastPermissionResolved(sessionId: string, requestId: JsonRpcId, originalFrame: string): void {
+    let toolCallId: string | undefined;
+    let method: string | undefined;
+    try {
+      const parsed = JSON.parse(originalFrame) as {
+        method?: unknown;
+        params?: { toolCall?: { toolCallId?: unknown } };
+      };
+      if (typeof parsed.method === "string") method = parsed.method;
+      const tcid = parsed.params?.toolCall?.toolCallId;
+      if (typeof tcid === "string") toolCallId = tcid;
+    } catch { /* Malformed pending-frame data — give up and skip the broadcast. */ }
+    if (method !== "session/request_permission") return;
+    const out = JSON.stringify({
+      jsonrpc: "2.0",
+      method: "platform/permission_resolved",
+      params: { sessionId, requestId, toolCallId },
+    });
+    for (const [channel, sessions] of engagedSessions) {
+      if (sessions.has(sessionId) && channel.isOpen()) channel.send(out);
+    }
+  }
+
   function sendToChannel(c: ClientChannel, line: string): void {
     if (c.isOpen()) c.send(line);
   }
@@ -819,7 +852,16 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       const pending = pendingFromAgent.get(frame.id);
       if (!pending) return;
       pendingFromAgent.delete(frame.id);
-      if (pending.sessionId) updateOrphanTimerForSession(pending.sessionId);
+      if (pending.sessionId) {
+        updateOrphanTimerForSession(pending.sessionId);
+        // For permission requests, tell every engaged channel the dialog
+        // is resolved so other tabs (and the resolver itself, fast)
+        // close their dialog without waiting on tool_call_update from
+        // the agent. Non-permission agent-initiated requests (fs reads,
+        // …) skip this — `broadcastPermissionResolved` filters by
+        // method on the original request frame.
+        broadcastPermissionResolved(pending.sessionId, frame.id, pending.frame);
+      }
       a.send(frame);
       return;
     }

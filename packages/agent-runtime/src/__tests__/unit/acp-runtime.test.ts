@@ -310,6 +310,37 @@ describe("createAcpRuntime", () => {
     expect(fa.sent.length).toBe(countBefore + 1);
   });
 
+  it("broadcasts platform/permission_resolved to engaged channels when one resolves a permission", () => {
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+
+    const c1 = makeFakeChannel();
+    const c2 = makeFakeChannel();
+    runtime.attach(c1.channel);
+    runtime.attach(c2.channel);
+    c1.pushMessage(resumeSessionRequest(1));
+    c2.pushMessage(resumeSessionRequest(1));
+
+    fa.pushLine(permissionRequest(7));
+    // Both channels see the permission request live.
+    expect(c1.sent).toContain(permissionRequest(7));
+    expect(c2.sent).toContain(permissionRequest(7));
+
+    c1.pushMessage(permissionResponse(7));
+
+    // Both channels receive a platform/permission_resolved notification
+    // tagged with the original tool call id (`tc-7`). The resolver gets
+    // it too — harmless, since their dialog is already closed.
+    const resolvedNotif = (sent: string[]) => sent.find((f) => {
+      try {
+        const p = JSON.parse(f) as { method?: string; params?: { toolCallId?: unknown } };
+        return p.method === "platform/permission_resolved" && p.params?.toolCallId === "tc-7";
+      } catch { return false; }
+    });
+    expect(resolvedNotif(c1.sent)).toBeTruthy();
+    expect(resolvedNotif(c2.sent)).toBeTruthy();
+  });
+
   it("rewrites client request ids so concurrent clients cannot collide at the agent", () => {
     const fa = makeFakeAgent();
     const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });

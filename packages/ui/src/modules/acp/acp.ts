@@ -111,10 +111,23 @@ export async function openConnection(
       // response of each prompt so viewers that didn't originate the prompt
       // can close their in-progress assistant bubble. Surface it through the
       // same `onUpdate` channel as a synthetic `sessionUpdate`.
+      //
+      // It also emits `platform/permission_resolved` when any client (this
+      // tab or another) answers a permission request, so dialogs in other
+      // tabs close immediately instead of waiting for the agent's
+      // downstream `tool_call_update`.
       async extNotification(method: string, params: Record<string, unknown>) {
         if (method === "platform/turnEnded") {
           const sessionId = typeof params?.sessionId === "string" ? params.sessionId : undefined;
           onUpdate({ sessionUpdate: "platform_turn_ended", sessionId });
+        } else if (method === "platform/permission_resolved") {
+          const toolCallId = typeof params?.toolCallId === "string" ? params.toolCallId : undefined;
+          if (toolCallId) {
+            const pending = useStore.getState().pendingPermissions;
+            if (pending.some((p) => p.toolCallId === toolCallId)) {
+              useStore.getState().dismissPendingPermission(toolCallId);
+            }
+          }
         }
       },
     }),
