@@ -1,0 +1,28 @@
+["cli:setup"]
+dir = "{{config_root}}"
+depends = ["common:setup:pnpm"]
+
+["cli:check"]
+depends = ["cli:check:*"]
+
+["cli:check:tsc"]
+dir = "{{config_root}}/packages/cli"
+depends = ["cli:setup"]
+run = "pnpm exec tsc --noEmit"
+
+["cli:test"]
+description = "Run cli unit tests"
+dir = "{{config_root}}"
+run = 'pnpm --filter @dam-agents/cli exec vitest run'
+
+["cli:build"]
+description = "Build the dam CLI to dist/bin.js"
+dir = "{{config_root}}/packages/cli"
+depends = ["cli:setup"]
+run = "pnpm exec tsup"
+
+["cli:dev"]
+description = "Run the dam CLI from source via tsx"
+dir = "{{config_root}}/packages/cli"
+depends = ["cli:setup"]
+run = "pnpm exec tsx src/bin.ts"

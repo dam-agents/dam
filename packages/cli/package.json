@@ -1,0 +1,28 @@
+{
+  "name": "@dam-agents/cli",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "dam": "./dist/bin.js"
+  },
+  "scripts": {
+    "dev": "tsx watch src/bin.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "tsup",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "commander": "^14.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "tsup": "^8.5.1",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.3"
+  }
+}
