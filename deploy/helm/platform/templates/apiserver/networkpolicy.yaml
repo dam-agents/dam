@@ -2,26 +2,21 @@
 {{- /*
   Ingress restriction for the api-server pod.
 
-  The `harness` and `ext-authz` ports expose APIs intended exclusively for
-  agent + fork pods (MCP triggers, ext_authz Check). Without this policy,
-  any pod in the cluster can reach them by Service DNS:
-    - `ext_authz` Check: spoof `x-platform-instance` and flood
-      `pending_approvals` for someone else's owner, or probe rules.
-    - `harness` /api: invoke MCP tools with a forged Authorization header.
-  The HTTP port (UI / tRPC) stays open — it goes through the ingress
-  controller which is a different trust scope and is auth-protected at
-  the application layer.
+  Three ports, three trust scopes:
+    - `http` (UI / tRPC): open in-cluster; Keycloak JWT gates it at L7.
+    - `harness` (MCP, pod-files SSE, /internal/trigger): post-ADR-039 the
+      agent reaches this through the istio waypoint, so the destination
+      sees the waypoint pod as the source — not the agent. Allowing it
+      means matching the waypoint's pod selector in the release ns.
+    - `ext-authz` (HITL Check): NOT routed through the waypoint (the
+      harness Service carries the use-waypoint annotation; the public+
+      ext-authz Service does not). Source is still the agent / fork
+      pod itself, so the agent-namespace + `agent-platform.ai/instance`
+      selector still matches.
 
-  Policy shape:
-    - `http` is allowed from anywhere (UI, ingress controller, in-cluster).
-    - `harness` + `ext-authz` are allowed only from pods carrying
-      `agent-platform.ai/instance` (instance pods + fork pods both set it) in the
-      configured `agentNamespace`.
-
-  K8s NetworkPolicy semantics: each ingress rule is OR-ed. A rule with no
-  `from` allows from anywhere; a rule with `from` restricts to that source.
-  So a request matching the http rule is allowed even if it doesn't match
-  the agent-only rule, and vice versa.
+  Each ingress rule is OR-ed. The harness and ext-authz rules are
+  intentionally separate so a misconfiguration that bypasses the waypoint
+  cannot accidentally fall through onto the ext-authz path.
 */}}
 {{- $appName := printf "%s-apiserver" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
 apiVersion: networking.k8s.io/v1
@@ -46,10 +41,27 @@ spec:
         - protocol: TCP
           port: {{ .Values.apiServer.port }}
 
-    # harness + ext-authz: agent + fork pods only. The pod-selector key
-    # `agent-platform.ai/instance` is set by the controller on both StatefulSet pods
-    # and fork Jobs (`ForkLabelInstanceRef`); matching by Exists covers
-    # both without listing each fork-id.
+    # harness: only the istio waypoint pod (ADR-039). After ambient routes
+    # agent traffic through the waypoint, the source IP arriving at the
+    # api-server pod is the waypoint's, not the agent's. The Gateway-API
+    # mesh-controller stamps `gateway.networking.k8s.io/gateway-name` on
+    # the synthesised waypoint Pod — that's the stable selector key.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace | quote }}
+          podSelector:
+            matchLabels:
+              gateway.networking.k8s.io/gateway-name: {{ .Values.istio.waypointName }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.apiServer.harnessServerPort }}
+
+    # ext-authz: agent + fork pods only. Does NOT go through the waypoint
+    # (the public+ext-authz Service deliberately does not carry the
+    # use-waypoint annotation), so the source is the agent/fork pod itself.
+    # `agent-platform.ai/instance` is set by the controller on both
+    # StatefulSet pods and fork Jobs; Exists covers both.
     - from:
         - namespaceSelector:
             matchLabels:
@@ -59,8 +71,6 @@ spec:
               - key: agent-platform.ai/instance
                 operator: Exists
       ports:
-        - protocol: TCP
-          port: {{ .Values.apiServer.harnessServerPort }}
         - protocol: TCP
           port: {{ .Values.apiServer.extAuthzPort }}
 {{- end }}
