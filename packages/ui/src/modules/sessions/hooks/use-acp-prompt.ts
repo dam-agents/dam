@@ -82,26 +82,33 @@ export function useAcpPrompt(
 
       const sid = engagedSessionIdRef.current;
       if (!sid) throw new Error("No active session");
+
+      // Persist to the platform DB as soon as we know we have content for
+      // this session — fire-and-forget, in parallel with the prompt
+      // round-trip. Earlier this awaited the prompt's response before
+      // persisting, so a user who navigated away mid-stream lost the
+      // session from the sidebar entirely (the prompt promise rejected,
+      // persist never ran). Persisting up front means: agent keeps
+      // working, wrapper keeps logging, the session shows up in the
+      // sidebar, and clicking back later loads the conversation.
+      if (!persistedSessionsRef.current.has(sid)) {
+        persistedSessionsRef.current.add(sid);
+        api.sessions.create.mutate({ sessionId: sid, instanceId: selectedInstance, mode: SessionMode.Chat })
+          .then(() => queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all }))
+          .catch((err) => {
+            // Allow a retry on the next prompt if persist failed.
+            persistedSessionsRef.current.delete(sid);
+            showToast({
+              kind: "warning",
+              message: `Session won't appear in the list: ${err instanceof Error ? err.message : "sync failed"}`,
+            });
+          });
+      }
+
       const promptBlocks = await buildPromptBlocks(selectedInstance, sid, text, attachments);
       const r = await conn.prompt({ sessionId: sid, prompt: promptBlocks });
       addLog("done", { stopReason: r.stopReason });
 
-      // Persist to the platform DB lazily, only once the session has real
-      // content. Await the create before invalidating the session-list
-      // query — otherwise the refetch races the server's DB write, sees no
-      // row for this session, and the user has to hit Refresh for it to
-      // appear.
-      if (!persistedSessionsRef.current.has(sid)) {
-        persistedSessionsRef.current.add(sid);
-        try {
-          await api.sessions.create.mutate({ sessionId: sid, instanceId: selectedInstance, mode: SessionMode.Chat });
-        } catch (err) {
-          showToast({
-            kind: "warning",
-            message: `Session won't appear in the list: ${err instanceof Error ? err.message : "sync failed"}`,
-          });
-        }
-      }
       // Belt-and-braces: if platform_turn_ended somehow didn't fire (server
       // variant without our extension), force-close our bubble anyway.
       setMessages((p) => p.map((m) => m.id === aId ? { ...m, streaming: false, queued: false } : m));
