@@ -1,10 +1,12 @@
-FROM node:22-slim AS build
+FROM registry.access.redhat.com/hi/nodejs:22-builder AS builder
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+USER root
 
-WORKDIR /app
+COPY scripts/install-pnpm.sh /usr/local/bin/install-pnpm
+COPY package.json ./
+RUN install-pnpm
 
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
+COPY pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
 COPY packages/ui/package.json packages/ui/
 COPY packages/api-server-api/package.json packages/api-server-api/
 COPY packages/agent-runtime-api/package.json packages/agent-runtime-api/
@@ -17,8 +19,10 @@ COPY packages/ui/ packages/ui/
 
 RUN pnpm --filter platform-ui build
 
-FROM nginxinc/nginx-unprivileged:1-alpine
+FROM registry.access.redhat.com/hi/nginx:1.30 AS runner
 
-COPY --from=build /app/packages/ui/dist /usr/share/nginx/html
+COPY packages/ui/default.conf /etc/nginx/conf.d/default.conf
+
+COPY --from=builder /app/packages/ui/dist /usr/share/nginx/html
 
 EXPOSE 8080

@@ -1,7 +1,5 @@
 [tools]
-# Node.js
 nodejs = "22"
-pnpm = "10"
 
 # Go
 go = "1.24"

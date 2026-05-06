@@ -83,7 +83,7 @@ agentHome: /home/agent
 # Set enabled: false when using external/cloud DBs for all services.
 postgres:
   enabled: true
-  image: postgres:18-alpine
+  image: registry.access.redhat.com/hi/postgresql:18
   user: platform
   # password is auto-generated if not set
   password: ""
