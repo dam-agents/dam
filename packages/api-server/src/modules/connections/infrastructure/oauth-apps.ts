@@ -205,7 +205,7 @@ const GOOGLE_SERVICES: Record<GoogleServiceId, GoogleServiceDef> = {
     description: "Read, create, and edit Google Docs documents.",
     hostPattern: "docs.googleapis.com",
     scopes: [
-      "https://www.googleapis.com/auth/documents",
+      "https://www.googleapis.com/auth/drive.readonly",
       "https://www.googleapis.com/auth/drive.file",
     ],
   },
@@ -258,7 +258,7 @@ const GOOGLE_SERVICES: Record<GoogleServiceId, GoogleServiceDef> = {
     description: "Read, create, and edit spreadsheets.",
     hostPattern: "sheets.googleapis.com",
     scopes: [
-      "https://www.googleapis.com/auth/spreadsheets",
+      "https://www.googleapis.com/auth/drive.readonly",
       "https://www.googleapis.com/auth/drive.file",
     ],
   },
@@ -267,7 +267,7 @@ const GOOGLE_SERVICES: Record<GoogleServiceId, GoogleServiceDef> = {
     description: "Read, create, and edit presentations.",
     hostPattern: "slides.googleapis.com",
     scopes: [
-      "https://www.googleapis.com/auth/presentations",
+      "https://www.googleapis.com/auth/drive.readonly",
       "https://www.googleapis.com/auth/drive.file",
     ],
   },
