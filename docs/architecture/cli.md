@@ -17,6 +17,16 @@ The package shares the api-server's tRPC contract directly via the `api-server-a
 
 The CLI runs on the user's machine. It reads and writes only under `~/.dam/` (today: `config.toml`; later, credentials in their own files), and makes outbound network calls only to the configured server. There is no telemetry and no anonymous reporting — the platform collects nothing today and the CLI does not break that posture.
 
+## Config
+
+Two persistence concerns share `~/.dam/`: the configuration the user can edit (this file) and credentials, which arrive with [`#80`](https://github.com/dam-agents/dam/issues/80) and live in their own files.
+
+- **Location:** `~/.dam/config.toml`. Flat schema, no profile indirection.
+- **Keys:** v0 has one — `server` (URL). Adding a key is forced by a `satisfies Record<ConfigKey, true>` registry that fails to compile until the new field is registered.
+- **Precedence at resolve time:** flag (per-invocation `--server`, when commands grow one) > env var > file > error. There is no silent default.
+- **Env var:** `DAM_SERVER` for the server URL (matches the `dam` binary name). Future keys follow the same `DAM_<KEY>` convention.
+- **Writes:** read-merge-rename. The CLI never blows away unrelated top-level keys, so a user can hand-edit comments or future config knobs without losing them on the next `dam config set`.
+
 ## Compatibility negotiation
 
 Before any networked verb can run, the CLI hits the api-server's unauthenticated `GET /api/version` endpoint (plain HTTP, outside the tRPC surface) to learn the server's version and the minimum CLI version it accepts. The CLI hard-refuses to run when its own semver is below the floor, and warns to stderr when the server is ahead but compatible. The endpoint is configurable via Helm so operators can drop support for known-broken older clients without rebuilding the image.
