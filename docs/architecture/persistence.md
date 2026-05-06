@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-04-29
+Last verified: 2026-05-06
 
 ## Motivated by
 
@@ -120,4 +120,4 @@ Schedules are independent ConfigMaps and survive instance deletion as orphans un
 
 The PVC is a **shared mutable surface across every session, trigger, fork, and channel-driven prompt that runs on the same instance.** Anything written into the workspace by one turn — model output saved to disk, tool output, files fetched from upstream — is plain context for the next turn. Treat workspace contents as adversarial input. A scheduled job can plant a file that prompt-injects a later user-driven session; a Slack-driven prompt can leak its instructions through residue left on disk.
 
-The platform does not sandbox writes within the workspace. Mitigations live elsewhere: NetworkPolicy restricts which upstreams the agent can reach, the Envoy sidecar gates credentialed egress, and forks let you run with a narrowed credential set without polluting the parent's workspace. The threat model and credential isolation are detailed on [security-and-credentials](security-and-credentials.md).
+The platform does not sandbox writes within the workspace. Mitigations live elsewhere: NetworkPolicy restricts which upstreams the agent can reach (the agent pod can only dial its paired gateway pod, never an upstream directly — [ADR-038](../adrs/038-paired-gateway-pod.md)), the gateway pod gates credentialed egress, and forks let you run with a narrowed credential set without polluting the parent's workspace. The threat model and credential isolation are detailed on [security-and-credentials](security-and-credentials.md).

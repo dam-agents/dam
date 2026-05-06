@@ -14,6 +14,19 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
+// portInt32 narrows a config-supplied port (typed `int` because it comes
+// from `strconv.Atoi` on an env var) to int32 with an explicit upper-bound
+// check. Without the check, env-driven int → int32 conversion is flagged
+// by CodeQL (`go/incorrect-integer-conversion`) and could wrap on 32-bit
+// platforms; here it's a config-bootstrap invariant — port numbers are
+// uint16 — so a panic is the right shape if the operator misconfigures.
+func portInt32(p int) int32 {
+	if p < 0 || p > 65535 {
+		panic(fmt.Sprintf("port out of range: %d (must be 0..65535)", p))
+	}
+	return int32(p)
+}
+
 // ADR-038 paired-pod labels. `LabelPair` identifies the two pods of a single
 // agent/gateway pair; `LabelRole` distinguishes the roles inside the pair.
 //
@@ -344,8 +357,8 @@ func BuildAgentNetworkPolicy(pairKey string, cfg *config.Config, ownerCM *corev1
 	tcp := corev1.ProtocolTCP
 	udp := corev1.ProtocolUDP
 	acpPort := intstr.FromInt32(8080)
-	harnessPort := intstr.FromInt32(int32(cfg.HarnessServerPort))
-	envoyPort := intstr.FromInt32(int32(cfg.EnvoyPort))
+	harnessPort := intstr.FromInt32(portInt32(cfg.HarnessServerPort))
+	envoyPort := intstr.FromInt32(portInt32(cfg.EnvoyPort))
 	dnsPort := intstr.FromInt32(53)
 	dnsTargetPort := intstr.FromInt32(5353)
 

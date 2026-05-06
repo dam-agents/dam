@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-04-29
+Last verified: 2026-05-06
 
 ## Motivated by
 
@@ -66,7 +66,7 @@ sequenceDiagram
 
 ### Create
 
-The api-server writes a new `agent-instance` ConfigMap with `spec.yaml` carrying the template ref, env overrides, secret refs, and a `desiredState` of `running` or `hibernated`. The controller reconciles four owned resources: a StatefulSet (replicas tracking `desiredState`), a headless Service, a NetworkPolicy, and a per-instance Envoy bootstrap ConfigMap + leaf TLS Certificate ([ADR-033](../adrs/033-envoy-credential-gateway.md)).
+The api-server writes a new `agent-instance` ConfigMap with `spec.yaml` carrying the template ref, env overrides, secret refs, and a `desiredState` of `running` or `hibernated`. The controller reconciles a paired set of owned resources: two StatefulSets (the agent and its paired gateway, each tracking `desiredState`), two headless Services (the agent's ACP and the gateway's `<instance>-gateway` proxy DNS), two role-scoped NetworkPolicies, and a per-instance Envoy bootstrap ConfigMap + leaf TLS Certificate ([ADR-033](../adrs/033-envoy-credential-gateway.md), [ADR-038](../adrs/038-paired-gateway-pod.md)).
 
 The pod image is built from `platform-base` plus a harness-specific layer ([ADR-023](../adrs/023-harness-agnostic-base-image.md)). The single platform knob is `AGENT_COMMAND` — agent-runtime spawns it as the ACP subprocess for each session and otherwise treats the harness as opaque. The workspace PVC is provisioned on first wake and survives subsequent hibernations.
 

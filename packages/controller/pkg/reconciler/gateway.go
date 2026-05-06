@@ -87,7 +87,7 @@ func BuildGatewayStatefulSet(instanceName string, hibernated bool, cfg *config.C
 // would tie the agent's env to a StatefulSet ordinal (ADR-038).
 func BuildGatewayService(instanceName string, cfg *config.Config, ownerCM *corev1.ConfigMap) *corev1.Service {
 	gatewayName := GatewayName(instanceName)
-	envoyPort := int32(cfg.EnvoyPort)
+	envoyPort := portInt32(cfg.EnvoyPort)
 	selector := map[string]string{LabelPair: instanceName, LabelRole: RoleGateway}
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -119,8 +119,8 @@ func BuildGatewayService(instanceName string, cfg *config.Config, ownerCM *corev
 func BuildGatewayNetworkPolicy(pairKey string, cfg *config.Config, ownerCM *corev1.ConfigMap) *networkingv1.NetworkPolicy {
 	tcp := corev1.ProtocolTCP
 	udp := corev1.ProtocolUDP
-	envoyPort := intstr.FromInt32(int32(cfg.EnvoyPort))
-	extAuthzPort := intstr.FromInt32(int32(cfg.ExtAuthzPort))
+	envoyPort := intstr.FromInt32(portInt32(cfg.EnvoyPort))
+	extAuthzPort := intstr.FromInt32(portInt32(cfg.ExtAuthzPort))
 	httpsPort := intstr.FromInt32(443)
 	httpPort := intstr.FromInt32(80)
 	dnsPort := intstr.FromInt32(53)
@@ -245,7 +245,7 @@ func BuildForkGatewayPod(forkName, parentInstanceID string, cfg *config.Config, 
 // point HTTPS_PROXY at, mirroring the long-lived shape.
 func BuildForkGatewayService(forkName string, cfg *config.Config, ownerCM *corev1.ConfigMap) *corev1.Service {
 	gatewayName := GatewayName(forkName)
-	envoyPort := int32(cfg.EnvoyPort)
+	envoyPort := portInt32(cfg.EnvoyPort)
 	selector := map[string]string{LabelPair: forkName, LabelRole: RoleGateway}
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{

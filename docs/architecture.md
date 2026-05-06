@@ -1,6 +1,6 @@
 # Architecture
 
-Last verified: 2026-05-04
+Last verified: 2026-05-06
 
 ## System context
 
@@ -20,7 +20,9 @@ flowchart LR
     k8s-api[(K8s API)]
     subgraph agentpod[agent pod]
       agent-runtime
-      envoy[Envoy sidecar]
+    end
+    subgraph gatewaypod[gateway pod]
+      envoy[Envoy]
     end
   end
 
@@ -44,7 +46,7 @@ flowchart LR
   envoy -->|inject credentials| github
 ```
 
-The cluster boundary is the trust boundary. Browsers and Slack users reach Platform through the api-server; LLM and GitHub traffic from the agent always exits through the in-pod Envoy sidecar, which injects credentials from K8s Secrets mounted into the sidecar only. The agent container has no direct path to anything outside the cluster, no service-account credentials, and no upstream tokens of its own.
+The cluster boundary is the trust boundary. Browsers and Slack users reach Platform through the api-server; LLM and GitHub traffic from the agent always exits through the paired gateway pod ([ADR-038](adrs/038-paired-gateway-pod.md)), where Envoy injects credentials from K8s Secrets mounted on the gateway only. The agent pod's NetworkPolicy admits no path to TCP 80/443 other than the paired gateway, so credential injection is enforced by Kubernetes — not by the agent honoring `HTTPS_PROXY`. The agent pod has no service-account credentials and no upstream tokens of its own.
 
 ## Subsystems
 

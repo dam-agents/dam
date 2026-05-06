@@ -161,3 +161,17 @@ func TestBuildForkGatewayService(t *testing.T) {
 	assert.Equal(t, "fork-abc", svc.Spec.Selector["agent-platform.ai/pair"])
 	assert.Equal(t, "gateway", svc.Spec.Selector["agent-platform.ai/role"])
 }
+
+// TestLabelContract pins the on-the-wire label keys and values that
+// NetworkPolicy selectors and the api-server's pod-IP resolver depend on.
+// The TS side has a mirror test in
+// `packages/api-server/src/__tests__/unit/label-contract.test.ts`. Drift
+// between the two would silently break the credential boundary
+// (ADR-038 §Threat Model).
+func TestLabelContract(t *testing.T) {
+	assert.Equal(t, "agent-platform.ai/instance", LabelInstance)
+	assert.Equal(t, "agent-platform.ai/pair", LabelPair)
+	assert.Equal(t, "agent-platform.ai/role", LabelRole)
+	assert.Equal(t, "agent", RoleAgent)
+	assert.Equal(t, "gateway", RoleGateway)
+}
