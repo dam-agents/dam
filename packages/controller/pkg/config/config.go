@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -108,6 +109,28 @@ func LoadFromEnv() (*Config, error) {
 
 func (c *Config) APIServerURL() string {
 	return fmt.Sprintf("http://%s-apiserver.%s.svc.cluster.local:%d", c.ReleaseName, c.ReleaseNamespace, c.HarnessServerPort)
+}
+
+// NoProxyHosts is the comma-separated NO_PROXY value the controller stamps
+// onto agent + fork pods. It must include every in-cluster api-server host
+// the harness will dial — otherwise the request goes through HTTPS_PROXY
+// (the per-instance gateway pod's MITM Envoy), which has no business
+// proxying internal cluster Services and answers with ECONNRESET.
+//
+// ADR-039 split the api-server into two Services (public + harness); the
+// harness host has to be in this list explicitly because it doesn't share
+// a DNS suffix with anything else we exclude.
+func (c *Config) NoProxyHosts() string {
+	hosts := []string{}
+	if c.APIServerHost != "" {
+		hosts = append(hosts, c.APIServerHost)
+	}
+	if c.HarnessServerURL != "" {
+		if u, err := url.Parse(c.HarnessServerURL); err == nil && u.Hostname() != "" {
+			hosts = append(hosts, u.Hostname())
+		}
+	}
+	return strings.Join(hosts, ",")
 }
 
 func envOrDefault(key, def string) string {
