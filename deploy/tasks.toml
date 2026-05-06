@@ -194,8 +194,15 @@ else
   helm --kubeconfig="$KUBECONFIG" upgrade --install istio-base istio/base -n istio-system --wait
   helm --kubeconfig="$KUBECONFIG" upgrade --install istiod istio/istiod -n istio-system \
     --set profile=ambient --wait
+  # k3s places its CNI binaries and configs under /var/lib/rancher/k3s/...
+  # rather than /opt/cni/bin and /etc/cni/net.d. Without these overrides
+  # istio-cni-node sits in CrashLoopBackOff / NotReady waiting for a CNI
+  # config it will never see, and ambient redirection never starts.
   helm --kubeconfig="$KUBECONFIG" upgrade --install istio-cni istio/cni -n istio-system \
-    --set profile=ambient --wait
+    --set profile=ambient \
+    --set cni.cniBinDir=/var/lib/rancher/k3s/data/cni \
+    --set cni.cniConfDir=/var/lib/rancher/k3s/agent/etc/cni/net.d \
+    --wait
   helm --kubeconfig="$KUBECONFIG" upgrade --install ztunnel istio/ztunnel -n istio-system --wait
 fi
 
