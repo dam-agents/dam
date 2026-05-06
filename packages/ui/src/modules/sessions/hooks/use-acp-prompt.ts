@@ -3,7 +3,7 @@ import { SessionMode } from "api-server-api";
 import { useCallback, useRef } from "react";
 
 import { api } from "../../../api.js";
-import { queryClient } from "../../../query-client.js";
+import { invalidateAcrossTabs } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import type { Attachment, Message } from "../../../types.js";
 import { finalizeAllStreaming, hasStreamingAssistant } from "../../acp/session-projection.js";
@@ -94,7 +94,7 @@ export function useAcpPrompt(
       if (!persistedSessionsRef.current.has(sid)) {
         persistedSessionsRef.current.add(sid);
         api.sessions.create.mutate({ sessionId: sid, instanceId: selectedInstance, mode: SessionMode.Chat })
-          .then(() => queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all }))
+          .then(() => invalidateAcrossTabs([acpSessionsKeys.all]))
           .catch((err) => {
             // Allow a retry on the next prompt if persist failed.
             persistedSessionsRef.current.delete(sid);
@@ -121,7 +121,9 @@ export function useAcpPrompt(
           : m,
       ));
     } finally {
-      queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
+      // Refresh the session list (locally + other tabs) so titles derived
+      // from the conversation appear once the agent's first response lands.
+      invalidateAcrossTabs([acpSessionsKeys.all]);
       textareaRef.current?.focus();
     }
   }, [selectedInstance, ensureConnection, engagedSessionIdRef, addLog, setMessages, showToast, textareaRef]);
