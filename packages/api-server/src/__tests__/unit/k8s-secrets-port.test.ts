@@ -210,4 +210,97 @@ describe("createK8sSecretsPort.updateSecret", () => {
     expect(replaced[0]!.body.stringData?.["sds.yaml"]).toContain('inline_string: "new"');
     expect(replaced[0]!.body.metadata?.annotations?.["agent-platform.ai/injection-header-name"]).toBe("x-api-key");
   });
+
+  it("renames the display-name annotation when patch.name is set", async () => {
+    const { client, replaced } = fakeClient();
+    const port = createK8sSecretsPort(client, "owner-1");
+    await port.createSecret({
+      id: "abc",
+      name: "Old Name",
+      type: "generic",
+      value: "tok",
+      hostPattern: "api.example.com",
+    });
+    await port.updateSecret("abc", { name: "New Name" });
+    expect(
+      replaced[0]!.body.metadata?.annotations?.["agent-platform.ai/display-name"],
+    ).toBe("New Name");
+  });
+});
+
+describe("createK8sSecretsPort envMappings round-trip", () => {
+  it("persists envMappings on create and reads them back on list", async () => {
+    const { client, created } = fakeClient();
+    const port = createK8sSecretsPort(client, "owner-1");
+
+    await port.createSecret({
+      id: "abc",
+      name: "LiteLLM",
+      type: "generic",
+      value: "tok",
+      hostPattern: "proxy.example.com",
+      envMappings: [
+        { envName: "ANTHROPIC_API_KEY", placeholder: "dummy-placeholder" },
+        { envName: "LITELLM_BASE_URL", placeholder: "https://proxy.example.com" },
+      ],
+    });
+
+    const ann = created[0]!.metadata?.annotations ?? {};
+    expect(ann["agent-platform.ai/env-mappings"]).toBeDefined();
+    expect(JSON.parse(ann["agent-platform.ai/env-mappings"]!)).toEqual([
+      { envName: "ANTHROPIC_API_KEY", placeholder: "dummy-placeholder" },
+      { envName: "LITELLM_BASE_URL", placeholder: "https://proxy.example.com" },
+    ]);
+
+    const [stored] = await port.listSecrets();
+    expect(stored?.envMappings).toEqual([
+      { envName: "ANTHROPIC_API_KEY", placeholder: "dummy-placeholder" },
+      { envName: "LITELLM_BASE_URL", placeholder: "https://proxy.example.com" },
+    ]);
+  });
+
+  it("update overwrites envMappings; empty array clears them", async () => {
+    const { client, replaced } = fakeClient();
+    const port = createK8sSecretsPort(client, "owner-1");
+
+    await port.createSecret({
+      id: "abc",
+      name: "x",
+      type: "generic",
+      value: "tok",
+      hostPattern: "h",
+      envMappings: [{ envName: "FOO", placeholder: "x" }],
+    });
+
+    await port.updateSecret("abc", {
+      envMappings: [{ envName: "BAR", placeholder: "y" }],
+    });
+    expect(
+      replaced.at(-1)!.body.metadata?.annotations?.["agent-platform.ai/env-mappings"],
+    ).toBe('[{"envName":"BAR","placeholder":"y"}]');
+
+    await port.updateSecret("abc", { envMappings: [] });
+    expect(
+      replaced.at(-1)!.body.metadata?.annotations?.["agent-platform.ai/env-mappings"],
+    ).toBeUndefined();
+  });
+
+  it("invalid env names are dropped at write time", async () => {
+    const { client, created } = fakeClient();
+    const port = createK8sSecretsPort(client, "owner-1");
+    await port.createSecret({
+      id: "abc",
+      name: "x",
+      type: "generic",
+      value: "tok",
+      hostPattern: "h",
+      envMappings: [
+        { envName: "GOOD_VAR", placeholder: "ok" },
+        { envName: "bad-name", placeholder: "x" },
+      ],
+    });
+    expect(
+      JSON.parse(created[0]!.metadata?.annotations?.["agent-platform.ai/env-mappings"]!),
+    ).toEqual([{ envName: "GOOD_VAR", placeholder: "ok" }]);
+  });
 });

@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -36,6 +37,10 @@ const (
 	envoyHostPatternAnn   = "agent-platform.ai/host-pattern"
 	envoyHeaderNameAnn    = "agent-platform.ai/injection-header-name"
 	envoyAuthModeAnn      = "agent-platform.ai/auth-mode"
+	// User-supplied env mappings on a generic credential Secret. JSON-encoded
+	// `[{envName, placeholder}]`. Read by `credentialEnvVars` to seed the
+	// agent pod with the matching env vars (Envoy rewrites the wire value).
+	envoyEnvMappingsAnn   = "agent-platform.ai/env-mappings"
 	// Per-agent grant annotations stamped by the api-server on the
 	// instance ConfigMap. The controller reads them on every reconcile
 	// and intersects with the owner's credential Secret list.
@@ -169,12 +174,15 @@ func listOwnerCredentialSecrets(ctx context.Context, client kubernetes.Interface
 func credentialEnvVars(secrets []corev1.Secret) []corev1.EnvVar {
 	const sentinel = "dummy-placeholder"
 	seen := map[string]struct{}{}
-	add := func(envs []corev1.EnvVar, name string) []corev1.EnvVar {
+	addWithValue := func(envs []corev1.EnvVar, name, value string) []corev1.EnvVar {
 		if _, dup := seen[name]; dup {
 			return envs
 		}
 		seen[name] = struct{}{}
-		return append(envs, corev1.EnvVar{Name: name, Value: sentinel})
+		return append(envs, corev1.EnvVar{Name: name, Value: value})
+	}
+	add := func(envs []corev1.EnvVar, name string) []corev1.EnvVar {
+		return addWithValue(envs, name, sentinel)
 	}
 	var envs []corev1.EnvVar
 	for _, s := range secrets {
@@ -191,8 +199,41 @@ func credentialEnvVars(secrets []corev1.Secret) []corev1.EnvVar {
 				envs = add(envs, "GH_TOKEN")
 			}
 		}
+		// User-supplied envMappings (generic secrets + custom Anthropic
+		// modes) win on dedup so a `dummy-placeholder` from the hardcoded
+		// branch above doesn't clobber a literal placeholder the user set
+		// (e.g. `GH_HOST=github.example.com` for an enterprise host).
+		for _, m := range parseUserEnvMappings(s.Annotations[envoyEnvMappingsAnn]) {
+			envs = addWithValue(envs, m.EnvName, m.Placeholder)
+		}
 	}
 	return envs
+}
+
+type userEnvMapping struct {
+	EnvName     string `json:"envName"`
+	Placeholder string `json:"placeholder"`
+}
+
+// parseUserEnvMappings decodes the `agent-platform.ai/env-mappings` annotation
+// written by the api-server. Returns nil on any decoding error or invalid
+// shape — the api-server validates the input, but we belt-and-suspender here
+// so a malformed annotation can't crash a reconcile.
+func parseUserEnvMappings(raw string) []userEnvMapping {
+	if raw == "" {
+		return nil
+	}
+	var parsed []userEnvMapping
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return nil
+	}
+	out := parsed[:0]
+	for _, m := range parsed {
+		if m.EnvName != "" && m.Placeholder != "" {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // hasGitHubCredential reports whether any of the owner's K8s credential

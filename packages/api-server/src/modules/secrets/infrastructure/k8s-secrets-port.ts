@@ -7,7 +7,8 @@
  * newly-created secrets land in K8s for the sidecar to discover.
  */
 import type * as k8s from "@kubernetes/client-node";
-import type { InjectionConfig } from "api-server-api";
+import type { EnvMapping, InjectionConfig } from "api-server-api";
+import { isValidEnvName } from "api-server-api";
 
 import type { K8sClient } from "../../agents/infrastructure/k8s.js";
 
@@ -19,6 +20,8 @@ const ANN_PATH_PATTERN = "agent-platform.ai/path-pattern";
 const ANN_HEADER_NAME = "agent-platform.ai/injection-header-name";
 const ANN_AUTH_MODE = "agent-platform.ai/auth-mode";
 const ANN_VALUE_FORMAT = "agent-platform.ai/injection-value-format";
+const ANN_DISPLAY_NAME = "agent-platform.ai/display-name";
+const ANN_ENV_MAPPINGS = "agent-platform.ai/env-mappings";
 
 export type AuthMode = "api-key" | "oauth";
 
@@ -87,6 +90,7 @@ export interface K8sStoredSecret {
   injectionConfig?: InjectionConfig | null;
   createdAt: string;
   authMode?: AuthMode;
+  envMappings?: EnvMapping[];
 }
 
 export interface K8sSecretsPort {
@@ -100,18 +104,57 @@ export interface K8sSecretsPort {
     pathPattern?: string;
     injectionConfig?: InjectionConfig;
     authMode?: AuthMode;
+    envMappings?: EnvMapping[];
   }): Promise<void>;
   updateSecret(
     id: string,
     input: {
+      name?: string;
       value?: string;
       hostPattern?: string;
       pathPattern?: string | null;
       injectionConfig?: InjectionConfig | null;
       authMode?: AuthMode;
+      envMappings?: EnvMapping[];
     },
   ): Promise<void>;
   deleteSecret(id: string): Promise<void>;
+}
+
+/**
+ * Serializes envMappings into the `agent-platform.ai/env-mappings` annotation.
+ * Empty input clears the annotation. Invalid entries are dropped — the router
+ * already validates, but the controller reads this annotation on every
+ * reconcile so we belt-and-suspender the shape here too.
+ */
+function serializeEnvMappings(mappings: readonly EnvMapping[]): string {
+  const cleaned = mappings
+    .filter((m) => isValidEnvName(m.envName) && m.placeholder.length > 0)
+    .map((m) => ({ envName: m.envName, placeholder: m.placeholder }));
+  return JSON.stringify(cleaned);
+}
+
+function parseEnvMappings(raw: string | undefined): EnvMapping[] | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return undefined;
+    const out: EnvMapping[] = [];
+    for (const m of parsed) {
+      if (
+        m &&
+        typeof m === "object" &&
+        typeof m.envName === "string" &&
+        typeof m.placeholder === "string" &&
+        isValidEnvName(m.envName)
+      ) {
+        out.push({ envName: m.envName, placeholder: m.placeholder });
+      }
+    }
+    return out.length > 0 ? out : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 // K8s metadata.name is RFC 1123 subdomain: lowercase alphanumeric / hyphen,
@@ -153,7 +196,7 @@ export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSe
           const authMode = ann[ANN_AUTH_MODE] as AuthMode | undefined;
           const stored: K8sStoredSecret = {
             id,
-            name: ann["agent-platform.ai/display-name"] ?? id,
+            name: ann[ANN_DISPLAY_NAME] ?? id,
             type: labels[LABEL_SECRET_TYPE] ?? "generic",
             hostPattern: ann[ANN_HOST_PATTERN] ?? "",
             createdAt: s.metadata?.creationTimestamp
@@ -163,21 +206,26 @@ export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSe
           if (ann[ANN_PATH_PATTERN]) stored.pathPattern = ann[ANN_PATH_PATTERN];
           if (injectionConfig) stored.injectionConfig = injectionConfig;
           if (authMode) stored.authMode = authMode;
+          const envMappings = parseEnvMappings(ann[ANN_ENV_MAPPINGS]);
+          if (envMappings) stored.envMappings = envMappings;
           return stored;
         });
     },
 
-    async createSecret({ id, name, type, value, hostPattern, pathPattern, injectionConfig, authMode }) {
+    async createSecret({ id, name, type, value, hostPattern, pathPattern, injectionConfig, authMode, envMappings }) {
       const secretType = type === "anthropic" ? "anthropic" : "generic";
       const { headerName, valueFormat } = resolveInjection(secretType, authMode, injectionConfig);
       const annotations: Record<string, string> = {
         [ANN_HOST_PATTERN]: hostPattern,
         [ANN_HEADER_NAME]: headerName,
         [ANN_VALUE_FORMAT]: valueFormat,
-        "agent-platform.ai/display-name": name,
+        [ANN_DISPLAY_NAME]: name,
       };
       if (pathPattern) annotations[ANN_PATH_PATTERN] = pathPattern;
       if (authMode) annotations[ANN_AUTH_MODE] = authMode;
+      if (envMappings && envMappings.length > 0) {
+        annotations[ANN_ENV_MAPPINGS] = serializeEnvMappings(envMappings);
+      }
 
       const body: k8s.V1Secret = {
         metadata: {
@@ -203,9 +251,14 @@ export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSe
       const labels = existing.metadata?.labels ?? {};
       const secretType = labels[LABEL_SECRET_TYPE] ?? "generic";
 
+      if (patch.name !== undefined) annotations[ANN_DISPLAY_NAME] = patch.name;
       if (patch.hostPattern !== undefined) annotations[ANN_HOST_PATTERN] = patch.hostPattern;
       if (patch.pathPattern === null) delete annotations[ANN_PATH_PATTERN];
       else if (patch.pathPattern !== undefined) annotations[ANN_PATH_PATTERN] = patch.pathPattern;
+      if (patch.envMappings !== undefined) {
+        if (patch.envMappings.length === 0) delete annotations[ANN_ENV_MAPPINGS];
+        else annotations[ANN_ENV_MAPPINGS] = serializeEnvMappings(patch.envMappings);
+      }
 
       // Recompute header + value format if the injection config or auth mode
       // changed; otherwise keep what was stored at create time.

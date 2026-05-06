@@ -212,6 +212,65 @@ func TestRenderEnvoyBootstrap_MixedRoutesOnlyPinCredentialed(t *testing.T) {
 	assert.NotContains(t, got, "name: upstream_platform-allow-only-npm")
 }
 
+func TestCredentialEnvVars_AnthropicAndGitHub(t *testing.T) {
+	apiKey := ownerSecret("platform-cred-anthropic", "anthropic", "")
+	apiKey.Annotations[envoyAuthModeAnn] = "api-key"
+	oauth := ownerSecret("platform-cred-oauth", "anthropic", "")
+	oauth.Annotations[envoyAuthModeAnn] = "oauth"
+	gh := ownerSecret("platform-conn-github", "connection", "github")
+	gh.Annotations[envoyHostPatternAnn] = "api.github.com"
+
+	envs := credentialEnvVars([]corev1.Secret{apiKey, oauth, gh})
+	got := map[string]string{}
+	for _, e := range envs {
+		got[e.Name] = e.Value
+	}
+	assert.Equal(t, "dummy-placeholder", got["ANTHROPIC_API_KEY"])
+	assert.Equal(t, "dummy-placeholder", got["CLAUDE_CODE_OAUTH_TOKEN"])
+	assert.Equal(t, "dummy-placeholder", got["GH_TOKEN"])
+}
+
+func TestCredentialEnvVars_UserSuppliedEnvMappings(t *testing.T) {
+	// Generic secret with user-defined env mappings (e.g. an IBM LiteLLM
+	// proxy that wants ANTHROPIC_API_KEY set to a sentinel for the harness
+	// to even attempt the call).
+	generic := ownerSecret("platform-cred-litellm", "generic", "")
+	generic.Annotations[envoyEnvMappingsAnn] = `[{"envName":"ANTHROPIC_API_KEY","placeholder":"dummy-placeholder"},{"envName":"LITELLM_BASE_URL","placeholder":"https://proxy.example.com"}]`
+
+	envs := credentialEnvVars([]corev1.Secret{generic})
+	got := map[string]string{}
+	for _, e := range envs {
+		got[e.Name] = e.Value
+	}
+	assert.Equal(t, "dummy-placeholder", got["ANTHROPIC_API_KEY"])
+	assert.Equal(t, "https://proxy.example.com", got["LITELLM_BASE_URL"])
+}
+
+func TestCredentialEnvVars_UserMappingsOverrideHardcodedSentinel(t *testing.T) {
+	// When the same env name is contributed by both the hardcoded branch
+	// (anthropic api-key → ANTHROPIC_API_KEY=dummy-placeholder) and a
+	// user-supplied mapping with a literal placeholder, the user's literal
+	// value is dropped because the hardcoded branch added it first. That's
+	// the intended dedup direction — hardcoded credentials win on conflict.
+	apiKey := ownerSecret("platform-cred-anthropic", "anthropic", "")
+	apiKey.Annotations[envoyAuthModeAnn] = "api-key"
+	apiKey.Annotations[envoyEnvMappingsAnn] = `[{"envName":"ANTHROPIC_API_KEY","placeholder":"literal-not-used"}]`
+
+	envs := credentialEnvVars([]corev1.Secret{apiKey})
+	got := map[string]string{}
+	for _, e := range envs {
+		got[e.Name] = e.Value
+	}
+	assert.Equal(t, "dummy-placeholder", got["ANTHROPIC_API_KEY"])
+}
+
+func TestCredentialEnvVars_MalformedAnnotationIsIgnored(t *testing.T) {
+	generic := ownerSecret("platform-cred-bad", "generic", "")
+	generic.Annotations[envoyEnvMappingsAnn] = "not-json"
+	envs := credentialEnvVars([]corev1.Secret{generic})
+	assert.Empty(t, envs)
+}
+
 func TestEnvoySecretsRev_TemplateRevBumpRollsExistingPods(t *testing.T) {
 	// The rev hash must include a template-revision marker so any structural
 	// template change rolls existing pods on chart upgrade. Without it, the
