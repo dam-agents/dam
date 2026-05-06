@@ -1,12 +1,3 @@
-/**
- * Per-session PTY manager with server-side screen buffer.
- *
- * Each terminal session gets its own PTY process AND a headless xterm instance
- * that maintains the screen buffer server-side. When a client reconnects, the
- * current screen state is serialized and replayed, giving the client the full
- * terminal view immediately — like reattaching to tmux/screen.
- */
-
 import headlessPkg from "@xterm/headless";
 const { Terminal: HeadlessTerminal } = headlessPkg;
 import serializePkg from "@xterm/addon-serialize";
