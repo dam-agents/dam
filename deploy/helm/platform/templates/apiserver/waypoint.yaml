@@ -1,0 +1,25 @@
+{{- if .Values.istio.enabled }}
+# ADR-039: Istio waypoint that fronts the api-server's harness Service.
+# Istio creates the waypoint Deployment + Service automatically from this
+# Gateway resource (gatewayClassName: istio-waypoint). The waypoint
+# terminates inbound HBONE from ztunnel, emits `x-forwarded-client-cert`
+# so the api-server can read the SPIFFE peer principal at the application
+# layer, and lets us attach an L7 AuthorizationPolicy.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ .Values.istio.waypointName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: apiserver
+    # Istio's standard label for ambient waypoints — narrows the waypoint
+    # to L7 (HBONE) traffic, which is what we need for XFCC injection.
+    istio.io/waypoint-for: service
+spec:
+  gatewayClassName: istio-waypoint
+  listeners:
+    - name: mesh
+      port: 15008
+      protocol: HBONE
+{{- end }}

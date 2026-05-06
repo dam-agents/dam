@@ -7,7 +7,12 @@ run = "helm lint ."
 
 ["helm:check:render"]
 dir = "{{config_root}}/deploy/helm/platform"
-run = "helm template platform . | kubeconform -strict -summary -skip Certificate,Issuer,ClusterIssuer"
+# Skipped CRDs: cert-manager (Certificate/Issuer/ClusterIssuer), Istio
+# (AuthorizationPolicy), Gateway API (Gateway). kubeconform's bundled
+# schema set covers core K8s only; adding `-schema-location` for each
+# would also work but the upstream schemas are slow to update for prerelease
+# Istio APIs. Skip is the practical move on local dev.
+run = "helm template platform . | kubeconform -strict -summary -skip Certificate,Issuer,ClusterIssuer,AuthorizationPolicy,Gateway"
 
 ["helm:setup"]
 alias = "helm:build"

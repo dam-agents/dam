@@ -312,10 +312,13 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 					ImagePullSecrets:              pullSecrets,
 					SecurityContext:               podSec,
 					InitContainers:                initContainers,
-					AutomountServiceAccountToken:  automountSAToken,
-					ShareProcessNamespace:         shareProcessNS,
-					Containers:                    containers,
-					Volumes:                       volumes,
+					// ADR-039: per-instance SA carries the SPIFFE identity
+					// the api-server checks on inbound harness-port traffic.
+					ServiceAccountName:           name,
+					AutomountServiceAccountToken: automountSAToken,
+					ShareProcessNamespace:        shareProcessNS,
+					Containers:                   containers,
+					Volumes:                      volumes,
 				},
 			},
 		},

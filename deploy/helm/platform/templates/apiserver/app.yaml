@@ -1,5 +1,10 @@
 {{- $appName := printf "%s-apiserver" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- $harnessSvc := printf "%s-harness" $appName | trunc 63 | trimSuffix "-" }}
 ---
+# Public + ext-authz Service. ADR-039: deliberately does NOT carry the
+# istio.io/use-waypoint annotation so ext-authz gRPC calls from gateway pods
+# bypass the waypoint hop (gateway pods don't hold harness-port credentials;
+# pod-IP resolver continues to handle ext-authz identity).
 apiVersion: v1
 kind: Service
 metadata:
@@ -15,15 +20,40 @@ spec:
       targetPort: http
       protocol: TCP
       name: http
-    - port: {{ .Values.apiServer.harnessServerPort }}
-      targetPort: harness
-      protocol: TCP
-      name: harness
     - port: {{ .Values.apiServer.extAuthzPort }}
       targetPort: ext-authz
       protocol: TCP
       name: ext-authz
       appProtocol: grpc
+  selector:
+    app.kubernetes.io/component: apiserver
+    app.kubernetes.io/instance: {{ .Release.Name }}
+---
+# Harness-only Service. ADR-039: when istio.enabled, this Service is
+# attached to the istio-waypoint Gateway via `istio.io/use-waypoint`, so
+# inbound traffic terminates HBONE at the waypoint and reaches the
+# api-server with `x-forwarded-client-cert` carrying the SPIFFE peer
+# principal. The waypoint hop adds latency we don't want on ext-authz; the
+# split keeps ext-authz on the direct Service above.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $harnessSvc }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: apiserver
+  {{- if .Values.istio.enabled }}
+  annotations:
+    istio.io/use-waypoint: {{ .Values.istio.waypointName | quote }}
+  {{- end }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.apiServer.harnessServerPort }}
+      targetPort: harness
+      protocol: TCP
+      name: harness
   selector:
     app.kubernetes.io/component: apiserver
     app.kubernetes.io/instance: {{ .Release.Name }}
@@ -157,6 +187,8 @@ spec:
             {{- end }}
             - name: APPROVAL_HOLD_SECONDS
               value: {{ .Values.apiServer.approvalHoldSeconds | quote }}
+            - name: ISTIO_TRUST_DOMAIN
+              value: {{ .Values.istio.trustDomain | quote }}
             - name: TRUSTED_HOSTS_PATH
               value: /etc/platform/trusted-hosts
             - name: APP_CONNECTION_EGRESS_HOSTS_PATH

@@ -243,10 +243,15 @@ func BuildForkAgentJob(
 					ImagePullSecrets:              pullSecrets,
 					SecurityContext:               podSec,
 					InitContainers:                initContainers,
-					AutomountServiceAccountToken:  automountSAToken,
-					ShareProcessNamespace:         shareProcessNS,
-					Containers:                    containers,
-					Volumes:                       volumes,
+					// ADR-039: fork agent runs as the parent instance's SA so
+					// outbound calls to /api/instances/<parent>/* succeed the
+					// peer-principal == URL `:id` cross-check. Fork lifecycle
+					// stays bounded by the fork CM / Job.
+					ServiceAccountName:           forkSpec.Instance,
+					AutomountServiceAccountToken: automountSAToken,
+					ShareProcessNamespace:        shareProcessNS,
+					Containers:                   containers,
+					Volumes:                      volumes,
 				},
 			},
 		},

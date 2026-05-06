@@ -14,9 +14,9 @@ export interface StreamOptions {
 /**
  * Open one SSE connection and dispatch frames until the server closes the
  * stream or the connection errors. Resolves on clean end; rejects on
- * status != 200 or transport error. The api-server's harness port admits
- * agent pods via NetworkPolicy and identifies the caller by source IP — no
- * Bearer header is sent.
+ * status != 200 or transport error. ADR-039: the api-server authenticates
+ * the caller via the Istio ambient peer principal — no Authorization
+ * header is sent.
  */
 export function streamOnce(opts: StreamOptions): Promise<void> {
   return new Promise((resolve, reject) => {

@@ -3,7 +3,8 @@ import { streamSSE } from "hono/streaming";
 import type { PodFilesBus } from "../../modules/pod-files/bus.js";
 import type { FileSpec } from "../../modules/pod-files/types.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
-import { verifyInstanceToken } from "./instance-auth.js";
+import { resolveInstanceIdentity } from "./instance-auth.js";
+import { getPeerInstanceId, type PeerIdentityVars } from "./peer-identity.js";
 
 export interface PodFilesEventsDeps {
   k8s: K8sClient;
@@ -13,20 +14,21 @@ export interface PodFilesEventsDeps {
 }
 
 /**
- * Mount the SSE channel that the agent-pod sidecar holds open.
- * Auth: Bearer token (per-instance). Topics: keyed by agent name because
- * connection grants are agent-scoped — every running instance of the same
- * agent sees the same set of granted connections, so they share one topic.
+ * Mount the SSE channel the agent-runtime holds open to receive pod-file
+ * upserts. Auth: ambient peer principal (ADR-039) — the URL `:id` must match
+ * the peer SA name. Topics are keyed by agent ID since connection grants are
+ * agent-scoped (every instance of the same agent sees the same grants).
  */
-export function mountPodFilesEventsRoute(app: Hono, deps: PodFilesEventsDeps) {
+export function mountPodFilesEventsRoute(
+  app: Hono<{ Variables: PeerIdentityVars }>,
+  deps: PodFilesEventsDeps,
+) {
   app.get("/api/instances/:id/pod-files/events", async (c) => {
-    const authHeader = c.req.header("authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return c.json({ error: "unauthorized" }, 401);
-    }
-    const token = authHeader.slice(7);
     const instanceId = c.req.param("id")!;
-    const identity = await verifyInstanceToken(deps.k8s, instanceId, token);
+    if (getPeerInstanceId(c) !== instanceId) {
+      return c.json({ error: "forbidden" }, 403);
+    }
+    const identity = await resolveInstanceIdentity(deps.k8s, instanceId);
     if (!identity) return c.json({ error: "not found" }, 404);
 
     const { agentId, owner } = identity;

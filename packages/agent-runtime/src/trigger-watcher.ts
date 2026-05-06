@@ -107,8 +107,8 @@ async function processTrigger(
     }
     const mcpServers = [...trigger.mcpServers];
     if (config.PLATFORM_MCP_URL) {
-      // No Authorization header: the api-server's harness port admits agent
-      // pods via NetworkPolicy and identifies the caller by source IP.
+      // No Authorization header: ADR-039 — Istio ambient mTLS authenticates
+      // the call via the per-instance SA principal at the waypoint.
       mcpServers.push({ type: "http", name: "platform-outbound", url: config.PLATFORM_MCP_URL, headers: [] });
     }
 

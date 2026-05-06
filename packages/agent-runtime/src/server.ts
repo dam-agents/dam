@@ -113,9 +113,10 @@ if (config.PLATFORM_MCP_URL) {
     try { mcpConfig = JSON.parse(readFileSync(mcpPath, "utf8")); } catch {}
   }
   const mcpServers = (mcpConfig.mcpServers ?? {}) as Record<string, unknown>;
-  // No Authorization header: the api-server's harness port identifies the
-  // caller by source IP (NetworkPolicy admits only agent pods, podIpResolver
-  // maps IP → instance label). See ADR-035.
+  // No Authorization header: ADR-039 — the api-server's harness port
+  // authenticates the caller via the Istio ambient peer principal injected
+  // by the waypoint as `x-forwarded-client-cert`. The agent process holds
+  // no token; identity is the SA the pod runs as.
   mcpServers["platform-outbound"] = { type: "http", url: config.PLATFORM_MCP_URL };
   mcpConfig.mcpServers = mcpServers;
   writeFileSync(mcpPath, JSON.stringify(mcpConfig, null, 2));

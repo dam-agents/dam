@@ -51,6 +51,10 @@ func TestBuildForkAgentJob_BasicShape(t *testing.T) {
 	require.Len(t, job.OwnerReferences, 1)
 	assert.Equal(t, "fork-uid-123", string(job.OwnerReferences[0].UID))
 	assert.True(t, *job.OwnerReferences[0].Controller)
+
+	// ADR-039: fork agent runs as the parent instance's SA so the
+	// peer-principal still resolves to the parent on /api/instances/<parent>/* calls.
+	assert.Equal(t, "my-instance", job.Spec.Template.Spec.ServiceAccountName)
 }
 
 func TestBuildForkAgentJob_LifecycleGuarantees(t *testing.T) {

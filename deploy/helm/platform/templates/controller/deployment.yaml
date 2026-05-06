@@ -54,8 +54,12 @@ spec:
             {{- end }}
             - name: PLATFORM_API_SERVER_HOST
               value: "{{ include "platform.fullname" . }}-apiserver.{{ .Release.Namespace }}.svc.cluster.local"
+            # Harness-only Service (ADR-039). Stays on the apiserver-harness
+            # Service so agent → harness traffic flows through the istio
+            # waypoint when istio is enabled; the same DNS works without
+            # istio because the Service selects the same pods.
             - name: PLATFORM_HARNESS_SERVER_URL
-              value: "http://{{ include "platform.fullname" . }}-apiserver.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.apiServer.harnessServerPort }}"
+              value: "http://{{ include "platform.fullname" . }}-apiserver-harness.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.apiServer.harnessServerPort }}"
             - name: PLATFORM_HARNESS_SERVER_PORT
               value: {{ .Values.apiServer.harnessServerPort | quote }}
             - name: PLATFORM_IDLE_TIMEOUT

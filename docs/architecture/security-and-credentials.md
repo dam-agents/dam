@@ -11,6 +11,7 @@ Last verified: 2026-05-06
 - [ADR-033 — Envoy-based credential gateway](../adrs/033-envoy-credential-gateway.md) — Envoy mints per-instance leaf certs, MITMs egress, and injects credential headers
 - [ADR-035 — HITL ext_authz](../adrs/035-hitl-ext-authz.md) — Envoy gates credentialed egress through an api-server ext_authz call
 - [ADR-038 — Paired agent and gateway pods](../adrs/038-paired-gateway-pod.md) — agent and gateway run in two paired pods, with NetworkPolicies the cluster enforces
+- [ADR-039 — Istio ambient mesh for agent → platform identity](../adrs/039-istio-ambient-mesh.md) — per-instance SA carries the SPIFFE identity the api-server checks on inbound harness-port traffic
 
 ## Overview
 

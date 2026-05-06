@@ -36,6 +36,12 @@ rules:
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # ADR-039: per-instance ServiceAccounts give pods their SPIFFE identity
+  # for ambient mTLS. Owner-refed to the instance ConfigMap; K8s GC reaps
+  # them on instance deletion.
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["apps"]
     resources: ["statefulsets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]

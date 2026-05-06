@@ -83,7 +83,7 @@ docker build -t platform-code-guardian:latest packages/agents/code-guardian
 # upgrade: assumes VM/k3s exists, uses helm upgrade
 
 ["cluster:install"]
-description = "Create k3s cluster, build images, install cert-manager + Platform chart. Options: --vm-name=NAME --lima-template=PATH --helm-values=PATH --set=key=val --no-restart"
+description = "Create k3s cluster, build images, install cert-manager + Istio ambient + Platform chart. Options: --vm-name=NAME --lima-template=PATH --helm-values=PATH --set=key=val --no-restart"
 depends = ["image:controller", "image:apiserver", "image:ui", "image:agent"]
 dir = "{{config_root}}"
 raw = true
@@ -176,6 +176,33 @@ if ! kubectl --kubeconfig="$KUBECONFIG" get ns cert-manager >/dev/null 2>&1; the
 else
   echo "cert-manager already installed"
 fi
+
+# 2b. Install Istio (ambient profile) for ADR-039 peer-principal auth on
+# the api-server's harness port. Idempotent: skips when istiod and ztunnel
+# are already running.
+if kubectl --kubeconfig="$KUBECONFIG" get ns istio-system >/dev/null 2>&1 \
+   && kubectl --kubeconfig="$KUBECONFIG" -n istio-system get ds ztunnel >/dev/null 2>&1; then
+  echo "Istio (ambient) already installed"
+else
+  echo "Installing Istio (ambient) via Helm..."
+  helm --kubeconfig="$KUBECONFIG" repo add istio https://istio-release.storage.googleapis.com/charts >/dev/null
+  helm --kubeconfig="$KUBECONFIG" repo update istio >/dev/null
+  kubectl --kubeconfig="$KUBECONFIG" create ns istio-system 2>/dev/null || true
+  # Gateway API CRDs (Gateway/HTTPRoute/etc.) — required for the
+  # istio-waypoint Gateway resource the platform chart deploys.
+  kubectl --kubeconfig="$KUBECONFIG" apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.0/standard-install.yaml
+  helm --kubeconfig="$KUBECONFIG" upgrade --install istio-base istio/base -n istio-system --wait
+  helm --kubeconfig="$KUBECONFIG" upgrade --install istiod istio/istiod -n istio-system \
+    --set profile=ambient --wait
+  helm --kubeconfig="$KUBECONFIG" upgrade --install istio-cni istio/cni -n istio-system \
+    --set profile=ambient --wait
+  helm --kubeconfig="$KUBECONFIG" upgrade --install ztunnel istio/ztunnel -n istio-system --wait
+fi
+
+# 2c. Label the install namespace for ambient. Chart's namespace.yaml only
+# owns the agent namespace; the install namespace is created out-of-band.
+INSTALL_NS="${INSTALL_NS:-default}"
+kubectl --kubeconfig="$KUBECONFIG" label ns "$INSTALL_NS" istio.io/dataplane-mode=ambient --overwrite
 
 # 3. Load images into k3s (built by depends: image:*)
 echo "Loading images into k3s..."

@@ -10,7 +10,8 @@ import { ChannelType, type SchedulesService, type SkillsService } from "api-serv
 import type { ChannelManager, ChannelAttachment } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
-import { verifyInstanceToken } from "./instance-auth.js";
+import { resolveInstanceIdentity } from "./instance-auth.js";
+import { getPeerInstanceId, type PeerIdentityVars } from "./peer-identity.js";
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
 
@@ -353,16 +354,21 @@ export interface MountMcpDeps {
   agentHome: string;
 }
 
-export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
+export function mountMcpRoutes(
+  app: Hono<{ Variables: PeerIdentityVars }>,
+  deps: MountMcpDeps,
+) {
   app.all("/api/instances/:id/mcp", async (c) => {
-    const authHeader = c.req.header("authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return c.json({ error: "unauthorized" }, 401);
-    }
-    const token = authHeader.slice(7);
-
+    // Identity comes from the ambient peer principal (ADR-039) injected by
+    // the waypoint and resolved by `peerIdentityMiddleware`. URL `:id` must
+    // match — fork pods reuse the parent instance's SA, so this also holds
+    // for forks calling `/api/instances/<parent>/mcp`.
     const instanceId = c.req.param("id")!;
-    const verified = await verifyInstanceToken(deps.k8s, instanceId, token);
+    if (getPeerInstanceId(c) !== instanceId) {
+      return c.json({ error: "forbidden" }, 403);
+    }
+
+    const verified = await resolveInstanceIdentity(deps.k8s, instanceId);
     if (!verified) {
       return c.json({ error: "not found" }, 404);
     }

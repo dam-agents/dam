@@ -14,6 +14,7 @@ Last verified: 2026-05-06
 - [ADR-023 — Harness-agnostic agent base image](../adrs/023-harness-agnostic-base-image.md) — `AGENT_COMMAND` contract
 - [ADR-033 — Envoy-based credential gateway](../adrs/033-envoy-credential-gateway.md) — Envoy is the credential gateway; mounts owner-labelled K8s Secrets and injects credentials on the wire
 - [ADR-038 — Paired agent and gateway pods](../adrs/038-paired-gateway-pod.md) — agent and gateway run in two paired pods per instance, glued by NetworkPolicy
+- [ADR-039 — Istio ambient mesh for agent → platform identity](../adrs/039-istio-ambient-mesh.md) — per-instance SA + waypoint-injected XFCC authenticate inbound harness-port traffic
 
 ## Overview
 
@@ -55,7 +56,7 @@ A stateless Go reconciler built on client-go. It watches ConfigMaps labelled `pl
 A TypeScript server that hosts the user-facing surface and the ACP relay. It runs two listeners ([ADR-022](../adrs/022-harness-api-server.md)):
 
 - **Public port** — user-authenticated tRPC, REST (OAuth callbacks, health), and the ACP relay WebSocket.
-- **Harness port** — an internal-only endpoint consumed by agent pods for trigger handoff and MCP tool calls. Not exposed outside the cluster and carries no user authentication.
+- **Harness port** — an internal-only endpoint consumed by agent pods for trigger handoff, MCP tool calls, and the pod-files SSE channel. Not exposed outside the cluster and carries no user JWT auth; identity is the Istio ambient peer principal injected by the waypoint as `x-forwarded-client-cert` ([ADR-039](../adrs/039-istio-ambient-mesh.md)). The api-server cross-checks the peer SA name against the URL `:id` on each request.
 
 The api-server proxies all ACP traffic to agent pods; clients never dial pods directly. It also wakes hibernated instances on demand before forwarding the first message of a session. Both the ACP relay and the tRPC proxy verify the user JWT and ownership at the public port and rewrite `Authorization` to the per-agent runtime token before forwarding — agent-runtime never sees user identity directly. See [security-and-credentials](security-and-credentials.md) and [`packages/api-server/`](../../packages/api-server/).
 

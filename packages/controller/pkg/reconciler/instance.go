@@ -80,6 +80,13 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 			"instance", name, "owner", owner)
 	}
 
+	// ADR-039: per-instance SA must exist before either pod of the pair is
+	// scheduled — pod admission rejects an unknown serviceAccountName and the
+	// agent's harness-port traffic depends on the SPIFFE identity it carries.
+	if err := r.applyServiceAccount(ctx, BuildInstanceServiceAccount(name, r.config, cm)); err != nil {
+		return r.setError(ctx, name, fmt.Sprintf("applying service account: %v", err))
+	}
+
 	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(name, r.config, cm, credentialSecrets)
 	if err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("rendering envoy bootstrap: %v", err))
@@ -252,6 +259,15 @@ func (r *InstanceReconciler) applyStatefulSet(ctx context.Context, desired *apps
 		_, err = r.client.AppsV1().StatefulSets(desired.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
 		return err
 	})
+}
+
+func (r *InstanceReconciler) applyServiceAccount(ctx context.Context, desired *corev1.ServiceAccount) error {
+	_, err := r.client.CoreV1().ServiceAccounts(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
+	if errors.IsNotFound(err) {
+		_, err = r.client.CoreV1().ServiceAccounts(desired.Namespace).Create(ctx, desired, metav1.CreateOptions{})
+		return err
+	}
+	return err
 }
 
 func (r *InstanceReconciler) applyService(ctx context.Context, desired *corev1.Service) error {

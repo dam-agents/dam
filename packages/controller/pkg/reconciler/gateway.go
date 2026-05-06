@@ -73,9 +73,13 @@ func BuildGatewayStatefulSet(instanceName string, hibernated bool, cfg *config.C
 				},
 				Spec: corev1.PodSpec{
 					TerminationGracePeriodSeconds: &cfg.TerminationGracePeriod,
-					AutomountServiceAccountToken:  &falseVal,
-					Containers:                    containers,
-					Volumes:                       volumes,
+					// ADR-039: gateway pod shares the per-instance SA so the
+					// long-lived pair speaks with one SPIFFE identity. The
+					// pair boundary stays L4 NetworkPolicy via LabelPair.
+					ServiceAccountName:           instanceName,
+					AutomountServiceAccountToken: &falseVal,
+					Containers:                   containers,
+					Volumes:                      volumes,
 				},
 			},
 		},
@@ -234,9 +238,14 @@ func BuildForkGatewayPod(forkName, parentInstanceID string, cfg *config.Config, 
 		Spec: corev1.PodSpec{
 			RestartPolicy:                 corev1.RestartPolicyAlways,
 			TerminationGracePeriodSeconds: &cfg.TerminationGracePeriod,
-			AutomountServiceAccountToken:  &falseVal,
-			Containers:                    containers,
-			Volumes:                       volumes,
+			// ADR-039: fork pods reuse the parent instance's SA so the
+			// peer principal still resolves to the parent instance — the
+			// URL `:id` in MCP / pod-files calls already references the
+			// parent (forks set ADK_INSTANCE_ID = parent).
+			ServiceAccountName:           parentInstanceID,
+			AutomountServiceAccountToken: &falseVal,
+			Containers:                   containers,
+			Volumes:                      volumes,
 		},
 	}
 }

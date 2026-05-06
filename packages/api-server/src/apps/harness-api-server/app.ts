@@ -57,6 +57,8 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     k8s: k8sClient,
     podFiles: { bus: podFilesBus, fetchSnapshot: podFilesSnapshot },
     agentHome: config.agentHome,
+    istioTrustDomain: config.istioTrustDomain,
+    agentNamespace: config.namespace,
     composeSkills: (owner) => composeSkillsModule(api, config.namespace, owner, db, seedSources, config.brand.name),
     schedulesServiceFor: (owner) =>
       composeSchedulesModule(api, config.namespace, owner).schedules,
