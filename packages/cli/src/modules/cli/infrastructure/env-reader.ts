@@ -4,6 +4,9 @@ export interface EnvReader {
 
 export function createProcessEnvReader(): EnvReader {
   return {
-    get: (name) => process.env[name],
+    get: (name) => {
+      const v = process.env[name];
+      return v && v.length > 0 ? v : undefined;
+    },
   };
 }
