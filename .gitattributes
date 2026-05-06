@@ -1,0 +1,30 @@
+# Force text-mode diff for source files. Without this, a single stray NUL
+# byte (e.g. accidentally typed during an edit) flips git's binary
+# heuristic on a file's first 8000 bytes — making PR diffs render as
+# binary on GitHub even when both sides are otherwise plain text.
+
+# TypeScript / JavaScript
+*.ts    text diff
+*.tsx   text diff
+*.js    text diff
+*.jsx   text diff
+*.mjs   text diff
+*.cjs   text diff
+
+# Go
+*.go    text diff
+
+# Configuration / data formats
+*.json  text diff
+*.yaml  text diff
+*.yml   text diff
+*.toml  text diff
+*.md    text diff
+
+# Shell / scripts
+*.sh    text eol=lf diff
+
+# Lockfiles — text but verbose; keep diffs but don't try to highlight
+pnpm-lock.yaml -diff
+package-lock.json -diff
+go.sum  -diff
