@@ -64,5 +64,6 @@ describe("verdictFor", () => {
     expect(v.kind).toBe(kind);
     expect(v.localCli).toBe(inputs.localCli);
     expect(v.serverVersion).toBe(inputs.serverVersion);
+    expect(v.serverMinClient).toBe(inputs.serverMinClient);
   });
 });

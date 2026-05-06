@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { buildConfigSetCommand } from "./commands/config-set.js";
 import { buildPingCommand } from "./commands/ping.js";
+import { buildVersionCommand } from "./commands/version.js";
 import { defaultConfigPath } from "./infrastructure/config-path.js";
 import { createTomlConfigStore } from "./infrastructure/config-store.js";
 import { createProcessEnvReader } from "./infrastructure/env-reader.js";
@@ -46,6 +47,9 @@ export function compose(opts: ComposeOptions = {}): Command {
   );
   program.addCommand(
     buildPingCommand({ service: compatService, serverEnvVar: SERVER_ENV_VAR }),
+  );
+  program.addCommand(
+    buildVersionCommand({ service: compatService, localCliVersion: cliVersion }),
   );
 
   return program;

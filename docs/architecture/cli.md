@@ -9,7 +9,7 @@ Last verified: 2026-05-06
 
 ## Overview
 
-The `dam` CLI is a TypeScript Node package, installed via `npm install -g @dam-agents/cli`, that points at a configured Platform deployment. Users run it on their own machine; it never runs inside the cluster. Today's surface is `dam --version` and `dam --help` (commander.js built-ins). Subsequent work adds `dam config set`, `dam ping`, and `dam version` (the un-gated counterpart to `ping`); future verbs — `dam login`, `dam shell`, `dam import` — slot into the same module.
+The `dam` CLI is a TypeScript Node package, installed via `npm install -g @dam-agents/cli`, that points at a configured Platform deployment. Users run it on their own machine; it never runs inside the cluster. The v1 surface is complete: `dam --version`, `dam --help` (commander.js built-ins), `dam config set`, `dam ping`, and `dam version`. Future verbs — `dam login`, `dam shell`, `dam import` — slot into the same module.
 
 The package shares the api-server's tRPC contract directly via the `api-server-api` workspace package. Every server-side type change reaches the CLI without codegen or manual mirroring. tRPC is not wired in this initial slice — the foundation lands first; verbs that need authenticated calls bring the client wiring with them.
 
@@ -35,4 +35,4 @@ Before any networked verb runs, the CLI hits the api-server's unauthenticated `G
 - **BehindCurrent** — local CLI is below the server but at or above the floor. The CLI warns to stderr and proceeds (exit 0).
 - **BelowFloor** — local CLI is below the server's `minClientVersion`. The CLI hard-fails with a non-zero exit and refuses to run, regardless of which verb the user invoked.
 
-The floor is configurable via Helm (`apiServer.minClientCliVersion`) so operators can drop support for known-broken older clients without rebuilding the image. `dam ping` is the verb that opts into this gate explicitly; future networked verbs (`login`, `shell`, …) will too. `dam version` (issue 6) reports the verdict but never refuses to run — it is informational, not gated.
+The floor is configurable via Helm (`apiServer.minClientCliVersion`) so operators can drop support for known-broken older clients without rebuilding the image. `dam ping` is the verb that opts into this gate explicitly; future networked verbs (`login`, `shell`, …) will too. `dam version` is the un-gated counterpart to `ping`: it surfaces the same verdict (and the same stderr warnings) but never refuses to run — it is informational, not gated, and always exits 0 even on probe failure.

@@ -3,7 +3,12 @@
 // lib so the layering rule stays clean.
 
 export type CompatVerdict =
-  | { kind: "ok"; localCli: string; serverVersion: string }
+  | {
+      kind: "ok";
+      localCli: string;
+      serverVersion: string;
+      serverMinClient: string;
+    }
   | {
       kind: "behind-current";
       localCli: string;
@@ -36,7 +41,7 @@ export function verdictFor(inputs: VerdictInputs): CompatVerdict {
       serverMinClient,
     };
   }
-  return { kind: "ok", localCli, serverVersion };
+  return { kind: "ok", localCli, serverVersion, serverMinClient };
 }
 
 /**
