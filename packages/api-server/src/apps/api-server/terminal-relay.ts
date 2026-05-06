@@ -45,11 +45,9 @@ export function createTerminalRelay(
 
       repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "true").catch(() => {});
 
-      const upstreamUrl = `ws://${podBaseUrl(instanceId, namespace)}/api/terminal?sessionId=${encodeURIComponent(sessionId)}${reset ? "&reset=1" : ""}`;
-
       repo.ensureReady(instanceId)
         .then(() => new Promise<WebSocket>((resolve, reject) => {
-          const ws = new WebSocket(upstreamUrl);
+          const ws = new WebSocket(`ws://${podBaseUrl(instanceId, namespace)}/api/terminal?sessionId=${encodeURIComponent(sessionId)}${reset ? "&reset=1" : ""}`);
           ws.on("open", () => resolve(ws));
           ws.on("error", (err) => { ws.close(); reject(err); });
         }))
@@ -68,8 +66,7 @@ export function createTerminalRelay(
               upstream.send(data, { binary: isBinary });
 
               const now = Date.now();
-              const last = lastActivityTimestamps.get(instanceId) ?? 0;
-              if (now - last >= DEBOUNCE_MS) {
+              if (now - (lastActivityTimestamps.get(instanceId) ?? 0) >= DEBOUNCE_MS) {
                 lastActivityTimestamps.set(instanceId, now);
                 repo.patchAnnotation(instanceId, LAST_ACTIVITY_KEY, new Date().toISOString()).catch(() => {});
               }
@@ -84,10 +81,13 @@ export function createTerminalRelay(
 
           upstream.on("close", (code, reason) => {
             if (client.readyState === WebSocket.OPEN) {
-              // Sanitize close code: only pass through valid codes
-              const safeCode = (code === 1000 || (code >= 1001 && code <= 1014 && code !== 1004 && code !== 1005 && code !== 1006) || (code >= 3000 && code <= 4999))
-                ? code : 1011;
-              try { client.close(safeCode, reason.toString() || "upstream closed"); } catch { client.terminate(); }
+              // Sanitize close code: only pass through valid codes; everything else → 1011.
+              try {
+                client.close(
+                  (code === 1000 || (code >= 1001 && code <= 1014 && code !== 1004 && code !== 1005 && code !== 1006) || (code >= 3000 && code <= 4999)) ? code : 1011,
+                  reason.toString() || "upstream closed",
+                );
+              } catch { client.terminate(); }
             }
           });
 

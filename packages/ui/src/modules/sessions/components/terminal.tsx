@@ -4,17 +4,11 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { encodeDataFrame, encodeResize,OP_EXIT, OP_INPUT, OP_OUTPUT } from "api-server-api";
 import { Loader2, TerminalIcon, XCircle } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { getAccessToken } from "../../../auth.js";
 
 type ConnectionState = "connecting" | "live" | "disconnected" | "exited";
-
-async function terminalWsUrl(instanceId: string, sessionId: string, reset: boolean): Promise<string> {
-  const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  const token = await getAccessToken();
-  return `${proto}//${location.host}/api/instances/${instanceId}/terminal?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(sessionId)}${reset ? "&reset=1" : ""}`;
-}
 
 export function Terminal({ instanceId, sessionId, fresh, onConnected }: { instanceId: string; sessionId: string; fresh?: boolean; onConnected?: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -29,20 +23,6 @@ export function Terminal({ instanceId, sessionId, fresh, onConnected }: { instan
       requestAnimationFrame(() => termRef.current?.focus());
     }
   }, [state]);
-
-  const cleanup = useCallback(() => {
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-    if (termRef.current) {
-      termRef.current.dispose();
-      termRef.current = null;
-    }
-    if (containerRef.current) {
-      containerRef.current.innerHTML = "";
-    }
-  }, []);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -78,11 +58,9 @@ export function Terminal({ instanceId, sessionId, fresh, onConnected }: { instan
 
       fitAddon.fit();
 
-      // Connect WebSocket
-      const url = await terminalWsUrl(instanceId, sessionId, !!fresh);
+      const token = await getAccessToken();
       if (cancelled) return;
-
-      const ws = new WebSocket(url);
+      const ws = new WebSocket(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/api/instances/${instanceId}/terminal?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(sessionId)}${fresh ? "&reset=1" : ""}`);
       ws.binaryType = "arraybuffer";
       wsRef.current = ws;
 
@@ -101,11 +79,9 @@ export function Terminal({ instanceId, sessionId, fresh, onConnected }: { instan
         const payload = buf.subarray(1);
 
         switch (op) {
-          case OP_OUTPUT: {
-            const text = new TextDecoder().decode(payload);
-            term.write(text);
+          case OP_OUTPUT:
+            term.write(new TextDecoder().decode(payload));
             break;
-          }
           case OP_EXIT:
             setExitCode(payload.byteLength > 0 ? payload[0]! : 0);
             setState("exited");
@@ -154,9 +130,21 @@ export function Terminal({ instanceId, sessionId, fresh, onConnected }: { instan
     return () => {
       cancelled = true;
       roCleanup?.then((fn) => fn?.());
-      cleanup();
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+      if (termRef.current) {
+        termRef.current.dispose();
+        termRef.current = null;
+      }
+      if (containerRef.current) containerRef.current.innerHTML = "";
     };
-  }, [instanceId, sessionId, cleanup]);
+    // `fresh` and `onConnected` are intentionally captured once at mount —
+    // re-running the effect when `fresh` flips post-connect would tear down
+    // and recreate the WS, undoing the kill-and-respawn we just did.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [instanceId, sessionId]);
 
   return (
     <div className="flex flex-1 flex-col min-h-0 relative">

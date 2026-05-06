@@ -152,11 +152,10 @@ export function ChatView() {
       return;
     }
 
-    const ok = await showConfirm(
+    if (!await showConfirm(
       `Switch this session to ${target} mode? Files and history are preserved, but any running tasks will be cancelled.`,
       "Switch session mode",
-    );
-    if (!ok) return;
+    )) return;
 
     if (busy) stopAgent();
     if (sessionId) {
