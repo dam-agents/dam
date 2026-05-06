@@ -43,7 +43,10 @@ metadata:
   labels:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: apiserver
-  annotations:
+    # istio.io/use-waypoint is a LABEL since Istio 1.21+ (ambient ga).
+    # As an annotation it is silently ignored — ztunnel routes traffic
+    # directly to the backing pod's HBONE port, the destination has no
+    # waypoint enrollment and Connection refused on :15008.
     istio.io/use-waypoint: {{ .Values.istio.waypointName | quote }}
 spec:
   type: ClusterIP

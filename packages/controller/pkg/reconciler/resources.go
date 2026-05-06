@@ -360,8 +360,8 @@ func BuildAgentNetworkPolicy(pairKey string, cfg *config.Config, ownerCM *corev1
 	tcp := corev1.ProtocolTCP
 	udp := corev1.ProtocolUDP
 	acpPort := intstr.FromInt32(8080)
-	harnessPort := intstr.FromInt32(portInt32(cfg.HarnessServerPort))
 	envoyPort := intstr.FromInt32(portInt32(cfg.EnvoyPort))
+	hbonePort := intstr.FromInt32(15008)
 	dnsPort := intstr.FromInt32(53)
 	dnsTargetPort := intstr.FromInt32(5353)
 
@@ -383,20 +383,26 @@ func BuildAgentNetworkPolicy(pairKey string, cfg *config.Config, ownerCM *corev1
 			},
 		},
 		{
-			// Harness API server: separate port exposing only the subset of
-			// API available to agent harnesses (triggers, MCP tools).
-			// Platform-internal control plane, not a credentialed external
-			// resource — no proxy hop needed.
+			// ADR-039: harness traffic is fronted by an istio-waypoint that
+			// runs in the release namespace. ztunnel transparently rewrites
+			// the agent's `<harness-service>:4001` dial to HBONE (port 15008)
+			// against the waypoint pod, so the egress that hits the kernel
+			// from this pod's network namespace is to the waypoint — not the
+			// api-server pod. Allowing the waypoint pod by gateway-name +
+			// port 15008 is the cluster-side counterpart of ADR-039's
+			// peer-identity check.
 			To: []networkingv1.NetworkPolicyPeer{{
 				PodSelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{"app.kubernetes.io/component": "apiserver"},
+					MatchLabels: map[string]string{
+						"gateway.networking.k8s.io/gateway-name": cfg.WaypointName,
+					},
 				},
 				NamespaceSelector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{"kubernetes.io/metadata.name": cfg.ReleaseNamespace},
 				},
 			}},
 			Ports: []networkingv1.NetworkPolicyPort{
-				{Protocol: &tcp, Port: &harnessPort},
+				{Protocol: &tcp, Port: &hbonePort},
 			},
 		},
 		{

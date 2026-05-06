@@ -22,6 +22,7 @@ var testConfig = &config.Config{
 	AgentHome:         "/home/agent",
 	EnvoyImage:        "envoyproxy/envoy:distroless-v1.37.2",
 	EnvoyPort:         10000,
+	WaypointName:      "platform-apiserver-waypoint",
 }
 
 var testAgent = &types.AgentSpec{
@@ -281,7 +282,8 @@ func TestBuildAgentNetworkPolicy(t *testing.T) {
 	assert.Equal(t, "agent", np.Spec.PodSelector.MatchLabels["agent-platform.ai/role"])
 	require.Len(t, np.OwnerReferences, 1)
 
-	// ADR-038: egress is gateway pod + harness + DNS. Open 80/443 to the
+	// ADR-038/ADR-039: egress is paired gateway + ambient HBONE to the
+	// waypoint that fronts the harness Service + DNS. Open 80/443 to the
 	// world is gone — that bypass is the whole point of the split.
 	require.Len(t, np.Spec.Egress, 3)
 
@@ -293,12 +295,15 @@ func TestBuildAgentNetworkPolicy(t *testing.T) {
 	require.Len(t, gatewayEgress.Ports, 1)
 	assert.Equal(t, int32(10000), gatewayEgress.Ports[0].Port.IntVal)
 
-	// 2: harness API server
+	// 2: harness via the istio waypoint — ambient rewrites the harness
+	// Service dial to HBONE 15008 against the waypoint pod, so the kernel-
+	// level egress sees the waypoint as the destination.
 	harness := np.Spec.Egress[1]
 	require.Len(t, harness.To, 1)
-	assert.Equal(t, "apiserver", harness.To[0].PodSelector.MatchLabels["app.kubernetes.io/component"])
+	assert.Equal(t, testConfig.WaypointName,
+		harness.To[0].PodSelector.MatchLabels["gateway.networking.k8s.io/gateway-name"])
 	require.Len(t, harness.Ports, 1)
-	assert.Equal(t, int32(4001), harness.Ports[0].Port.IntVal)
+	assert.Equal(t, int32(15008), harness.Ports[0].Port.IntVal)
 
 	// 3: DNS
 	dns := np.Spec.Egress[2]

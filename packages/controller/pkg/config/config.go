@@ -26,6 +26,12 @@ type Config struct {
 	APIServerHost        string // API server hostname (for NO_PROXY)
 	HarnessServerURL     string // Harness API server internal URL (separate port, agent-facing)
 	HarnessServerPort    int    // Harness API server port (for network policy egress rule)
+	// WaypointName is the name of the istio-waypoint Gateway resource that
+	// fronts the api-server's harness Service (ADR-039). The agent's egress
+	// NetworkPolicy must permit ambient HBONE (port 15008) to that pod —
+	// otherwise the kernel drops ztunnel's outbound and the connection
+	// surfaces as `Connection refused` in ztunnel access logs.
+	WaypointName string
 	EnvoyImage           string // Image for the Envoy credential-injector sidecar
 	EnvoyPort            int    // Port the Envoy sidecar listens on (proxy on 127.0.0.1)
 	// EnvoyMitmCAIssuer is the cert-manager ClusterIssuer that mints per-instance
@@ -68,6 +74,7 @@ func LoadFromEnv() (*Config, error) {
 	cfg.APIServerHost = os.Getenv("PLATFORM_API_SERVER_HOST")
 	cfg.HarnessServerURL = os.Getenv("PLATFORM_HARNESS_SERVER_URL")
 	cfg.HarnessServerPort = envOrDefaultInt("PLATFORM_HARNESS_SERVER_PORT", 4001)
+	cfg.WaypointName = envOrDefault("PLATFORM_WAYPOINT_NAME", "platform-apiserver-waypoint")
 	cfg.AgentImagePullPolicy = envOrDefault("AGENT_IMAGE_PULL_POLICY", "IfNotPresent")
 	if v := os.Getenv("AGENT_IMAGE_PULL_SECRETS"); v != "" {
 		for _, s := range strings.Split(v, ",") {

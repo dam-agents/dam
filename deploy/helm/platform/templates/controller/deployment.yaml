@@ -62,6 +62,11 @@ spec:
               value: "http://{{ include "platform.fullname" . }}-apiserver-harness.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.apiServer.harnessServerPort }}"
             - name: PLATFORM_HARNESS_SERVER_PORT
               value: {{ .Values.apiServer.harnessServerPort | quote }}
+            # ADR-039: required by BuildAgentNetworkPolicy to allow ambient
+            # HBONE (15008) from the agent pod to the waypoint that fronts
+            # the harness Service.
+            - name: PLATFORM_WAYPOINT_NAME
+              value: {{ .Values.istio.waypointName | quote }}
             - name: PLATFORM_IDLE_TIMEOUT
               value: {{ .Values.controller.idleTimeout | default "1h" | quote }}
             - name: PLATFORM_TERMINATION_GRACE_PERIOD
