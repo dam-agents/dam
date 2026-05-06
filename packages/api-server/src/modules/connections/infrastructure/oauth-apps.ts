@@ -58,7 +58,8 @@ export type GoogleServiceId =
   | "google-search-console"
   | "google-sheets"
   | "google-slides"
-  | "google-tasks";
+  | "google-tasks"
+  | "youtube";
 
 export type OAuthAppId =
   | "github"
@@ -275,6 +276,13 @@ const GOOGLE_SERVICES: Record<GoogleServiceId, GoogleServiceDef> = {
     description: "Manage task lists and tasks.",
     hostPattern: "tasks.googleapis.com",
     scopes: ["https://www.googleapis.com/auth/tasks"],
+  },
+  youtube: {
+    displayName: "YouTube",
+    description:
+      "Read channels, playlists, playlist items, and subscriptions.",
+    hostPattern: "youtube.googleapis.com",
+    scopes: ["https://www.googleapis.com/auth/youtube.readonly"],
   },
 };
 

@@ -29,6 +29,7 @@ describe("OAuth app registry — descriptors", () => {
       "google-sheets",
       "google-slides",
       "google-tasks",
+      "youtube",
       "generic",
     ]);
   });
@@ -61,6 +62,7 @@ describe("OAuth app registry — descriptors", () => {
       "google-sheets",
       "google-slides",
       "google-tasks",
+      "youtube",
     ];
     for (const id of googleIds) {
       expect(reg.get(id)!.credentialFamily).toBe("google");

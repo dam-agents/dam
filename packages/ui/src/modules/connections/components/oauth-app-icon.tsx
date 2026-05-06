@@ -29,6 +29,7 @@ const ICON_BY_APP_ID: Record<string, string> = {
   "google-sheets": "/icons/google-sheets.svg",
   "google-slides": "/icons/google-slides.svg",
   "google-tasks": "/icons/google-tasks.svg",
+  youtube: "/icons/youtube.svg",
 };
 
 interface Props {
