@@ -154,6 +154,31 @@ export function createAcpRelay(
         pending.push({ data: data as Buffer, isBinary });
       });
 
+      // Lifecycle bookkeeping for the upstream-dial → handler-attach window.
+      //
+      // `upstream` is null until `connectUpstream` resolves; if the client
+      // closes during that window, `clientClosedDuringDial` is set so the
+      // `.then` aborts and tears down the upstream once it does come up.
+      // Without this, a client that disconnects mid-dial leaks the upstream
+      // WS — the close handler used to be attached *inside* `.then`, so a
+      // pre-dial close left no cleanup hook.
+      let upstream: WebSocket | null = null;
+      let clientClosedDuringDial = false;
+
+      client.on("close", () => {
+        repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "").catch(() => {});
+        if (upstream === null) {
+          clientClosedDuringDial = true;
+          return;
+        }
+        // Inbox-driven verdicts no longer need this upstream — delivery
+        // happens out-of-band via WrapperFrameSender on the click-handling
+        // replica (or via the periodic sweep). Closing here is safe.
+        if (upstream.readyState === WebSocket.OPEN) {
+          upstream.close();
+        }
+      });
+
       const upstreamUrl = `ws://${podBaseUrl(instanceId, namespace)}/api/acp`;
 
       identityLookup.resolve(instanceId)
@@ -166,20 +191,48 @@ export function createAcpRelay(
         })
         .then(() => repo.ensureReady(instanceId))
         .then(() => connectUpstream(upstreamUrl))
-        .then((upstream) => {
+        .then((u) => {
+          upstream = u;
+
+          // Client gave up during the dial. Flush any queued messages
+          // anyway — the user may have typed a prompt before reloading,
+          // and the wrapper handles "channel detached mid-active-prompt"
+          // gracefully (session/update notifications still land in its
+          // log, so the user catches up on reconnect). Then close the
+          // upstream so we don't leak it.
+          if (clientClosedDuringDial) {
+            if (u.readyState === WebSocket.OPEN) {
+              for (const msg of pending) {
+                u.send(msg.data, { binary: msg.isBinary });
+              }
+            }
+            pending.length = 0;
+            u.close();
+            return;
+          }
+
+          // `connectUpstream` resolves on the WS `open` event, so this is
+          // expected to be true. Guarding instead of silently dropping the
+          // pending frames: if for any reason the socket isn't OPEN here,
+          // failing the upgrade closed is more honest than draining
+          // messages into the void.
+          if (u.readyState !== WebSocket.OPEN) {
+            client.close(1011, "upstream not ready");
+            u.close();
+            return;
+          }
+
           repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "true").catch(() => {});
 
           for (const msg of pending) {
-            if (upstream.readyState === WebSocket.OPEN) {
-              upstream.send(msg.data, { binary: msg.isBinary });
-            }
+            u.send(msg.data, { binary: msg.isBinary });
           }
           pending.length = 0;
 
           client.removeAllListeners("message");
           client.on("message", (data, isBinary) => {
-            if (upstream.readyState === WebSocket.OPEN) {
-              upstream.send(data, { binary: isBinary });
+            if (u.readyState === WebSocket.OPEN) {
+              u.send(data, { binary: isBinary });
 
               if (!isBinary) {
                 const parsed = tryParse(data);
@@ -195,7 +248,7 @@ export function createAcpRelay(
             }
           });
 
-          upstream.on("message", (data, isBinary) => {
+          u.on("message", (data, isBinary) => {
             if (client.readyState === WebSocket.OPEN) {
               client.send(data, { binary: isBinary });
 
@@ -206,7 +259,7 @@ export function createAcpRelay(
             }
           });
 
-          upstream.on("close", (code, reason) => {
+          u.on("close", (code, reason) => {
             if (client.readyState === WebSocket.OPEN) {
               try {
                 client.close(sanitizeCloseCode(code), reason.toString() || "upstream closed");
@@ -216,23 +269,13 @@ export function createAcpRelay(
             }
           });
 
-          upstream.on("error", () => {
+          u.on("error", () => {
             if (client.readyState === WebSocket.OPEN) {
               try {
                 client.close(1011, "upstream error");
               } catch {
                 client.terminate();
               }
-            }
-          });
-
-          client.on("close", () => {
-            repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "").catch(() => {});
-            // Inbox-driven verdicts no longer need this upstream — delivery
-            // happens out-of-band via WrapperFrameSender on the click-handling
-            // replica (or via the periodic sweep). Closing here is safe.
-            if (upstream.readyState === WebSocket.OPEN) {
-              upstream.close();
             }
           });
         })
