@@ -7,31 +7,45 @@ description: Generate a status report of what each team member is working on by 
 
 Generate a status report from the active GitHub Project. For each team member, find their active ticket and check whether they have recent commit activity. Flag the gaps so the user can see at a glance who's parked and which tickets have stalled.
 
-## Team
+## Step 0 — Load config
 
-The team is fixed. Use exactly these GitHub handles:
+Config lives in `team.json` next to this SKILL.md. Always resolve the absolute path from this skill's base directory (provided when the skill is loaded). Schema:
 
+```json
+{
+  "org": "<github-org-slug>",
+  "projectNumber": <int>,
+  "activeStatus": "In Progress",
+  "team": ["handle1", "handle2", ...]
+}
 ```
-JanPokorny, jezekra1, jjeliga, PetrBulanek, pilartomas, kapetr, Tomas2D, xjacka, tomkis, matoushavlena
-```
 
-## Default project
+Read it with `jq` so the rest of the skill can interpolate values.
 
-- Org: `dam-agents`
-- Project number: `1` (name: `DAM`)
-- Active = Status field equals `In Progress`
+### If `team.json` is missing or the user asks to reset (re-init / update team / change project)
 
-If the user names a different project, override these. If you're not sure which project is meant, ask before guessing — the team list is the same but the board may not be.
+Run the init flow:
 
-## Step 1 — Pull all In Progress items in one shot
+1. Ask the user, in one message, for:
+   - GitHub org slug (e.g. `dam-agents`)
+   - Project number (the integer in the project URL)
+   - Active status field value (default `In Progress` — accept Enter to keep)
+   - Team handles, comma- or space-separated GitHub logins
+2. Echo back the parsed values for confirmation before writing.
+3. Write `team.json` with the schema above. Sort `team` in the order the user provided — that order is used downstream for stable report output.
+4. Continue to Step 1.
 
-Don't query per-member. Pull the whole board's In Progress items once, then filter locally.
+Treat any of these as "reset config": "reset team", "update team", "change project", "re-init", "init team-report".
+
+## Step 1 — Pull all active items in one shot
+
+Don't query per-member. Pull the whole board's items once, then filter locally to `Status == <activeStatus>`.
 
 ```sh
 gh api graphql -f query='
 {
-  organization(login: "dam-agents") {
-    projectV2(number: 1) {
+  organization(login: "<org>") {
+    projectV2(number: <projectNumber>) {
       title
       url
       items(first: 100) {
@@ -69,7 +83,7 @@ gh api graphql -f query='
 }'
 ```
 
-Filter to `fieldValueByName.name == "In Progress"`. Keep the project `title` and `url` for the report header. Paginate via `pageInfo` if there are >100 items (rare).
+Substitute `<org>` and `<projectNumber>` from `team.json`. Filter to `fieldValueByName.name == <activeStatus>`. Keep the project `title` and `url` for the report header. Paginate via `pageInfo` if there are >100 items (rare).
 
 The query intentionally pulls **two** PR-link sources because GitHub stores them inconsistently:
 - `closedByPullRequestsReferences` — PRs that close the issue via "Closes #N".
@@ -79,7 +93,7 @@ For each issue, build a deduped set of linked PRs (by `repo + number`) from both
 
 ## Step 2 — Match tickets to members
 
-Walk the team list once. For each member, collect every In Progress item where the member appears in `content.assignees.nodes[].login`.
+Walk the `team` array from `team.json` once. For each member, collect every active item where the member appears in `content.assignees.nodes[].login`.
 
 - 0 tickets → record as **no active ticket**.
 - 1 ticket → normal case.
@@ -89,7 +103,7 @@ A ticket can have multiple assignees; the same ticket can appear under several m
 
 ## Step 3 — Decide whether each ticket is stale
 
-The user's definition: a ticket is stale when there has been **no commit activity in the last 48 hours**. The signal lives on the linked PR, not the issue (issue `updatedAt` changes when labels move, comments land, etc.).
+A ticket is stale when there has been **no commit activity in the last 48 hours**. The signal lives on the linked PR, not the issue (issue `updatedAt` changes when labels move, comments land, etc.).
 
 Compute the cutoff once: `date -u -v-48H +%Y-%m-%dT%H:%M:%SZ` on macOS, or `date -u -d '48 hours ago' +%Y-%m-%dT%H:%M:%SZ` on Linux.
 
@@ -111,11 +125,11 @@ Run the per-PR commit lookups in parallel — usually under 20 active items. Eit
 
 ### Optional cross-check: assignee commit activity
 
-When a ticket comes back stale or "no linked PR", spot-check whether the assignee is otherwise active in the org over the same window:
+When a ticket comes back stale or "no linked PR", spot-check whether the assignee is otherwise active in the org over the same window. Use `org` from `team.json`:
 
 ```sh
 gh api search/commits -X GET \
-  -f q="author:<login> org:dam-agents committer-date:>=<CUTOFF>" \
+  -f q="author:<login> org:<org> committer-date:>=<CUTOFF>" \
   -H "Accept: application/vnd.github.cloak-preview" \
   --jq '.total_count'
 ```
@@ -133,7 +147,7 @@ Project: [<project title>](<project url>)
 
 ## Summary
 - Active tickets: <N>
-- Members without an active ticket: <N> / 10
+- Members without an active ticket: <N> / <team size>
 - Stale tickets: <N>
 
 ## Flags
@@ -155,7 +169,7 @@ Project: [<project title>](<project url>)
 ```
 
 Rules:
-- Order members in the Flags sections by the Team list above (stable order beats alphabetical for a recurring report).
+- Order members in the Flags sections by the `team` array in `team.json` (stable order beats alphabetical for a recurring report).
 - Skip whole sections that are empty (omit the heading; don't print "(none)").
 - For "no active ticket" members, append the org-wide commit count from the optional cross-check — distinguishes parked from working-without-a-ticket.
 - "ok" only when there's a linked PR with a commit inside the 48h window. If the ticket is itself a PR, use that PR's last commit.
@@ -164,5 +178,5 @@ Rules:
 ## Why this shape
 
 - One GraphQL request for the board, then parallel commit lookups, keeps the whole thing under ~15 seconds even on larger boards.
-- Hardcoding the team list (in this skill) and the active-status definition (`In Progress`) is intentional — the user wants a fixed lens, not a configurable tool.
+- Config lives in `team.json` next to the skill (gitignored, per-machine) — re-init takes a single user message; nothing is hardcoded in the skill itself.
 - Distinguishing **no linked PR** from **stale linked PR** matters: the first is a workflow gap (issue isn't connected to code yet), the second is genuine inactivity. Lumping them loses signal.

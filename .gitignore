@@ -42,3 +42,6 @@ context/
 # Playwright
 .playwright-mcp
 
+# Skill-local config (per-machine, populated via init flow)
+.agents/skills/team-report/team.json
+
