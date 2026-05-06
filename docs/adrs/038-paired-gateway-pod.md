@@ -79,7 +79,12 @@ a per-instance identity issuer, certificate distribution the agent
 container cannot read directly, and Envoy config branched on client
 identity. Higher operational and verification cost than two pods plus
 two NetworkPolicies. mTLS as defense-in-depth on top of the paired-pod
-split is a clean v1.5 follow-on.
+split is a clean follow-on — and the workload-identity primitive that
+makes it free arrives in [ADR-039](039-istio-ambient-mesh.md): once the
+agent namespace is in Istio ambient, ztunnel mTLSes the agent → gateway
+hop transparently; an `AuthorizationPolicy` on the gateway pod can then
+require the inbound principal be the per-instance SA, layering a
+cryptographic check on top of the pair-keyed NetworkPolicy.
 
 **Per-instance pod-DNS or downward-API IP injection.** Rejected: pod
 ordinals and pod IPs are not stable across restarts; the agent's env
@@ -111,8 +116,12 @@ goes stale. A Service is the indirection that solves this.
 - **Gateway ingress on `0.0.0.0`.** The NetworkPolicy ingress selector
   must exact-match on `instance=<name>`; a wildcard would let one
   instance's agent dial another's gateway.
-- **mTLS as defense-in-depth deferred to v1.5.** Catches NetworkPolicy
-  misconfiguration without changing this ADR's shape.
+- **mTLS as defense-in-depth available via ADR-039.** Once the agent
+  namespace is in Istio ambient, ztunnel mTLSes the pair connection
+  transparently. An `AuthorizationPolicy` on the gateway pod can require
+  the inbound principal be the per-instance SA, catching NetworkPolicy
+  misconfiguration without changing this ADR's shape. Not yet wired —
+  ADR-039 only turns the primitive on for the api-server's harness port.
 
 ## Related ADRs
 
@@ -123,3 +132,6 @@ goes stale. A Service is the indirection that solves this.
   source moves to gateway pod.
 - [ADR-027](027-slack-user-impersonation.md) — fork Jobs gain a paired
   gateway Job and per-fork NetworkPolicy pair.
+- [ADR-039](039-istio-ambient-mesh.md) — per-instance SA + ambient mTLS
+  layer cryptographic identity on top of the pair-keyed NetworkPolicy
+  the agent → gateway boundary depends on.
