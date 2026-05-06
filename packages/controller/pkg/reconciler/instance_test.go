@@ -11,6 +11,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/kagenti/platform/packages/controller/pkg/config"
@@ -26,9 +27,16 @@ func setupReconciler(t *testing.T, agents map[string]*corev1.ConfigMap, objects 
 		HarnessServerPort: 4001,
 		EnvoyImage:        "envoyproxy/envoy:distroless-v1.37.2",
 		EnvoyPort:         10000,
+		WaypointName:      "platform-apiserver-waypoint",
+		IstioTrustDomain:  "cluster.local",
 	}
 	getter := &fakeGetter{cms: agents}
-	r := NewInstanceReconciler(client, cfg, NewAgentResolver(getter))
+	// Dynamic fake client backs `applyAuthorizationPolicy` (Istio
+	// security.istio.io/v1) and `applyCertificate` (cert-manager.io/v1).
+	// Both are unstructured paths in the reconciler.
+	scheme := runtime.NewScheme()
+	dyn := dynamicfake.NewSimpleDynamicClient(scheme)
+	r := NewInstanceReconciler(client, cfg, NewAgentResolver(getter)).WithDynamicClient(dyn)
 	return r, client
 }
 

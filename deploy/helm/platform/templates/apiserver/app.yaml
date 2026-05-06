@@ -54,6 +54,11 @@ spec:
     - port: {{ .Values.apiServer.harnessServerPort }}
       targetPort: harness
       protocol: TCP
+      # `appProtocol: http` is what tells Istio to give the waypoint an
+      # HTTP listener for this port. Without it the waypoint forwards as
+      # opaque TCP and never injects `x-forwarded-client-cert`, so the
+      # api-server's peer-identity middleware sees no XFCC and 401s.
+      appProtocol: http
       name: harness
   selector:
     app.kubernetes.io/component: apiserver
@@ -188,8 +193,6 @@ spec:
             {{- end }}
             - name: APPROVAL_HOLD_SECONDS
               value: {{ .Values.apiServer.approvalHoldSeconds | quote }}
-            - name: ISTIO_TRUST_DOMAIN
-              value: {{ .Values.istio.trustDomain | quote }}
             - name: TRUSTED_HOSTS_PATH
               value: /etc/platform/trusted-hosts
             - name: APP_CONNECTION_EGRESS_HOSTS_PATH

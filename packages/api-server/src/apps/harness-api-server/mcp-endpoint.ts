@@ -11,7 +11,6 @@ import type { ChannelManager, ChannelAttachment } from "./../../modules/channels
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
 import { resolveInstanceIdentity } from "./instance-auth.js";
-import { getPeerInstanceId, type PeerIdentityVars } from "./peer-identity.js";
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
 
@@ -354,20 +353,13 @@ export interface MountMcpDeps {
   agentHome: string;
 }
 
-export function mountMcpRoutes(
-  app: Hono<{ Variables: PeerIdentityVars }>,
-  deps: MountMcpDeps,
-) {
+export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
   app.all("/api/instances/:id/mcp", async (c) => {
-    // Identity comes from the ambient peer principal (ADR-039) injected by
-    // the waypoint and resolved by `peerIdentityMiddleware`. URL `:id` must
-    // match — fork pods reuse the parent instance's SA, so this also holds
-    // for forks calling `/api/instances/<parent>/mcp`.
+    // ADR-039: identity is enforced by Istio AuthorizationPolicy at the
+    // waypoint — only the principal `cluster.local/ns/<agent-ns>/sa/<id>`
+    // can reach `/api/instances/<id>/*`. Fork pods reuse the parent
+    // instance's SA, so the same rule covers forks targeting the parent.
     const instanceId = c.req.param("id")!;
-    if (getPeerInstanceId(c) !== instanceId) {
-      return c.json({ error: "forbidden" }, 403);
-    }
-
     const verified = await resolveInstanceIdentity(deps.k8s, instanceId);
     if (!verified) {
       return c.json({ error: "not found" }, 404);

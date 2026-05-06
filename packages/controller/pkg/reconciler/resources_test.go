@@ -23,6 +23,7 @@ var testConfig = &config.Config{
 	EnvoyImage:        "envoyproxy/envoy:distroless-v1.37.2",
 	EnvoyPort:         10000,
 	WaypointName:      "platform-apiserver-waypoint",
+	IstioTrustDomain:  "cluster.local",
 }
 
 var testAgent = &types.AgentSpec{

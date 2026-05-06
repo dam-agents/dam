@@ -112,8 +112,7 @@ async function processTrigger(
       mcpServers.push({ type: "http", name: "platform-outbound", url: config.PLATFORM_MCP_URL, headers: [] });
     }
 
-    const result = await postTrigger(options.apiServerUrl, {
-      instanceId: options.instanceId,
+    const result = await postTrigger(options.apiServerUrl, options.instanceId, {
       schedule: trigger.schedule,
       task: trigger.task,
       type: trigger.type,
@@ -128,13 +127,17 @@ async function processTrigger(
   }
 }
 
-/** POST to the API server's /internal/trigger endpoint using node:http (bypasses HTTP_PROXY). */
+/** POST to the API server's per-instance trigger endpoint using node:http
+ *  (bypasses HTTP_PROXY). The URL carries the instance ID — the harness
+ *  waypoint's Istio AuthorizationPolicy admits the call only if the
+ *  caller's principal SA matches that ID (ADR-039). */
 function postTrigger(
   apiServerUrl: string,
+  instanceId: string,
   body: object,
 ): Promise<{ sessionId: string; stopReason?: string }> {
   return new Promise((resolve, reject) => {
-    const url = new URL("/internal/trigger", apiServerUrl);
+    const url = new URL(`/api/instances/${instanceId}/internal/trigger`, apiServerUrl);
     const payload = JSON.stringify(body);
     const doRequest = url.protocol === "https:" ? requestHttps : request;
 
@@ -156,7 +159,7 @@ function postTrigger(
             reject(new Error(`Invalid JSON response: ${data}`));
           }
         } else {
-          reject(new Error(`POST /internal/trigger failed: ${res.statusCode} ${data}`));
+          reject(new Error(`POST /api/instances/${instanceId}/internal/trigger failed: ${res.statusCode} ${data}`));
         }
       });
     });

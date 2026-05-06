@@ -32,6 +32,10 @@ type Config struct {
 	// otherwise the kernel drops ztunnel's outbound and the connection
 	// surfaces as `Connection refused` in ztunnel access logs.
 	WaypointName string
+	// IstioTrustDomain is the SPIFFE trust domain Istio mints workload
+	// certs under. Used to render the principal string on per-instance
+	// AuthorizationPolicies (ADR-039) — `<trust-domain>/ns/<agent-ns>/sa/<id>`.
+	IstioTrustDomain string
 	EnvoyImage           string // Image for the Envoy credential-injector sidecar
 	EnvoyPort            int    // Port the Envoy sidecar listens on (proxy on 127.0.0.1)
 	// EnvoyMitmCAIssuer is the cert-manager ClusterIssuer that mints per-instance
@@ -75,6 +79,7 @@ func LoadFromEnv() (*Config, error) {
 	cfg.HarnessServerURL = os.Getenv("PLATFORM_HARNESS_SERVER_URL")
 	cfg.HarnessServerPort = envOrDefaultInt("PLATFORM_HARNESS_SERVER_PORT", 4001)
 	cfg.WaypointName = envOrDefault("PLATFORM_WAYPOINT_NAME", "platform-apiserver-waypoint")
+	cfg.IstioTrustDomain = envOrDefault("PLATFORM_ISTIO_TRUST_DOMAIN", "cluster.local")
 	cfg.AgentImagePullPolicy = envOrDefault("AGENT_IMAGE_PULL_POLICY", "IfNotPresent")
 	if v := os.Getenv("AGENT_IMAGE_PULL_SECRETS"); v != "" {
 		for _, s := range strings.Split(v, ",") {

@@ -57,12 +57,10 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     k8s: k8sClient,
     podFiles: { bus: podFilesBus, fetchSnapshot: podFilesSnapshot },
     agentHome: config.agentHome,
-    istioTrustDomain: config.istioTrustDomain,
-    agentNamespace: config.namespace,
     composeSkills: (owner) => composeSkillsModule(api, config.namespace, owner, db, seedSources, config.brand.name),
     schedulesServiceFor: (owner) =>
       composeSchedulesModule(api, config.namespace, owner).schedules,
-    handleTrigger: async (body) => {
+    handleTrigger: async (instanceId, body) => {
       const mode = body.sessionMode ?? "fresh";
       const sessionType = "schedule_cron";
 
@@ -70,10 +68,10 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       // with "_system" would short-circuit sessions.create's isOwnedInstance
       // check and silently drop the DB row — so the scheduled session would
       // fire, complete, and leave no trace in the sessions table.
-      const instanceCm = await k8sClient.getConfigMap(body.instanceId);
+      const instanceCm = await k8sClient.getConfigMap(instanceId);
       const owner = instanceCm?.metadata?.labels?.[LABEL_OWNER];
       if (!owner) {
-        throw new Error(`instance ${body.instanceId}: missing owner label`);
+        throw new Error(`instance ${instanceId}: missing owner label`);
       }
       const { readSpec: readTemplateSpec } = composeTemplatesModule(api, config.namespace);
       const { agents } = composeAgentsModule({
@@ -96,8 +94,8 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
 
       const acp = createAcpClient({
         namespace: config.namespace,
-        instanceName: body.instanceId,
-        onSessionCreated: (sid: string) => sessions.create(sid, body.instanceId, sessionType as any, body.schedule),
+        instanceName: instanceId,
+        onSessionCreated: (sid: string) => sessions.create(sid, instanceId, sessionType as any, body.schedule),
       });
 
       return acp.triggerSession({

@@ -86,6 +86,14 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 	if err := r.applyServiceAccount(ctx, BuildInstanceServiceAccount(name, r.config, cm)); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying service account: %v", err))
 	}
+	// ADR-039: per-instance Istio AuthorizationPolicy at the harness Service
+	// waypoint. Pins the principal SA to the matching URL `:id` so the
+	// api-server's harness handler doesn't have to trust any application-
+	// layer header (XFCC). Created in the release namespace alongside the
+	// harness Service.
+	if err := r.applyAuthorizationPolicy(ctx, BuildInstanceAuthorizationPolicy(name, r.config, cm)); err != nil {
+		return r.setError(ctx, name, fmt.Sprintf("applying authorization policy: %v", err))
+	}
 
 	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(name, r.config, cm, credentialSecrets)
 	if err != nil {
@@ -343,6 +351,30 @@ func (r *InstanceReconciler) applyCertificate(ctx context.Context, desired *cmv1
 		// Preserve resourceVersion + status; replace spec/labels/owner.
 		desiredU.SetResourceVersion(existing.GetResourceVersion())
 		_, err = cli.Update(ctx, desiredU, metav1.UpdateOptions{})
+		return err
+	})
+}
+
+// applyAuthorizationPolicy creates or updates a security.istio.io/v1
+// AuthorizationPolicy via the dynamic client. Same shape as applyCertificate
+// — the controller doesn't import Istio's typed client just to PUT one
+// resource; rendering as Unstructured is enough.
+func (r *InstanceReconciler) applyAuthorizationPolicy(ctx context.Context, desired *unstructured.Unstructured) error {
+	if r.dynamic == nil {
+		return fmt.Errorf("dynamic client not configured (Istio AuthorizationPolicy cannot be applied)")
+	}
+	cli := r.dynamic.Resource(authorizationPolicyGVR).Namespace(desired.GetNamespace())
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		existing, err := cli.Get(ctx, desired.GetName(), metav1.GetOptions{})
+		if errors.IsNotFound(err) {
+			_, err = cli.Create(ctx, desired, metav1.CreateOptions{})
+			return err
+		}
+		if err != nil {
+			return err
+		}
+		desired.SetResourceVersion(existing.GetResourceVersion())
+		_, err = cli.Update(ctx, desired, metav1.UpdateOptions{})
 		return err
 	})
 }

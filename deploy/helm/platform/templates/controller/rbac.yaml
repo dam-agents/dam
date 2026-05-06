@@ -71,6 +71,13 @@ rules:
     resources: ["certificates"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 {{- end }}
+  # ADR-039: per-instance Istio AuthorizationPolicies pin
+  # principal SA → URL `:id` at the harness Service waypoint, replacing
+  # the application-side XFCC cross-check. Lifecycle is owner-refed to
+  # the instance ConfigMap.
+  - apiGroups: ["security.istio.io"]
+    resources: ["authorizationpolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 {{- if $clusterScoped }}

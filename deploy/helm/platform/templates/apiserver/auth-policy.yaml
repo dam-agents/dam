@@ -1,45 +1,18 @@
-# ADR-039: pre-filter inbound traffic at the waypoint before it reaches the
-# api-server's harness handler. The application also cross-checks peer SA
-# name against the URL `:id`, but this rule cuts off the noise from anything
-# that isn't a mesh-authenticated SA in the agent namespace at all.
+# ADR-039: identity-to-path enforcement for the harness Service is owned
+# by per-instance AuthorizationPolicies that the controller renders for
+# each running instance. We deliberately do NOT add a namespace-wide ALLOW
+# policy here — Istio OR-s ALLOW policies, so a coarse "any agent SA"
+# rule would silently grant cross-instance access, defeating the per-
+# instance check the controller installs.
 #
-# Targets the waypoint Gateway via `targetRefs`; AuthorizationPolicy on the
-# waypoint applies to traffic flowing through it (which is the harness
-# Service traffic only — the public + ext-authz Service is wired around the
-# waypoint and not subject to this rule).
-apiVersion: security.istio.io/v1
-kind: AuthorizationPolicy
-metadata:
-  name: {{ include "platform.fullname" . }}-apiserver-harness
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "platform.labels" . | nindent 4 }}
-    app.kubernetes.io/component: apiserver
-spec:
-  targetRefs:
-    - group: gateway.networking.k8s.io
-      kind: Gateway
-      name: {{ .Values.istio.waypointName }}
-  action: ALLOW
-  rules:
-    - from:
-        - source:
-            # SPIFFE principals from the agent namespace — per-instance SAs
-            # the controller creates for each running instance pair. The
-            # URL `:id` cross-check in the api-server pins the principal
-            # SA name to the instance the request claims to address.
-            principals:
-              - "{{ .Values.istio.trustDomain }}/ns/{{ .Values.agentNamespace }}/sa/*"
----
-# Defense-in-depth: a pod-level rule on the api-server itself, narrowed to
-# the harness port. The waypoint policy above protects traffic that flows
-# through the waypoint Service, but in ambient an in-mesh pod can still
-# dial the api-server pod IP directly — that path skips the waypoint and
-# would let a malicious pod present a hand-crafted XFCC header straight to
-# the application. Denying any source other than the waypoint's own SA
-# closes that gap. The waypoint Deployment that Istio synthesises from the
-# Gateway resource runs as a ServiceAccount of the same name in the
-# release namespace.
+# What the chart does install is the pod-level DENY below: even though
+# every legitimate harness call goes through the waypoint, an in-mesh pod
+# could in principle dial the api-server pod IP directly on :4001,
+# skipping the waypoint and skipping the per-instance APs that target
+# the harness Service. Denying any source other than the waypoint's own
+# SA closes that gap. The waypoint Deployment that Istio synthesises
+# from the Gateway resource runs as a ServiceAccount of the same name in
+# the release namespace.
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
