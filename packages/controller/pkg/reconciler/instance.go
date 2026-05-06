@@ -93,18 +93,36 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 		}
 	}
 
-	ss := BuildStatefulSet(name, instanceSpec, agentSpec, r.config, cm, credentialSecrets)
-	svc := BuildService(name, r.config, cm)
-	np := BuildNetworkPolicy(name, r.config, cm)
+	hibernated := instanceSpec.DesiredState == "hibernated"
 
-	if err := r.applyStatefulSet(ctx, ss); err != nil {
-		return r.setError(ctx, name, fmt.Sprintf("applying statefulset: %v", err))
+	// ADR-038: paired pods, rendered as a unit. Render the gateway first
+	// so the agent's HTTPS_PROXY target exists by the time the agent pod
+	// starts dialing it.
+	gatewaySS := BuildGatewayStatefulSet(name, hibernated, r.config, cm, credentialSecrets)
+	gatewaySvc := BuildGatewayService(name, r.config, cm)
+	gatewayNP := BuildGatewayNetworkPolicy(name, r.config, cm)
+
+	agentSS := BuildAgentStatefulSet(name, instanceSpec, agentSpec, r.config, cm, credentialSecrets)
+	agentSvc := BuildAgentService(name, r.config, cm)
+	agentNP := BuildAgentNetworkPolicy(name, r.config, cm)
+
+	if err := r.applyStatefulSet(ctx, gatewaySS); err != nil {
+		return r.setError(ctx, name, fmt.Sprintf("applying gateway statefulset: %v", err))
 	}
-	if err := r.applyService(ctx, svc); err != nil {
-		return r.setError(ctx, name, fmt.Sprintf("applying service: %v", err))
+	if err := r.applyService(ctx, gatewaySvc); err != nil {
+		return r.setError(ctx, name, fmt.Sprintf("applying gateway service: %v", err))
 	}
-	if err := r.applyNetworkPolicy(ctx, np); err != nil {
-		return r.setError(ctx, name, fmt.Sprintf("applying networkpolicy: %v", err))
+	if err := r.applyNetworkPolicy(ctx, gatewayNP); err != nil {
+		return r.setError(ctx, name, fmt.Sprintf("applying gateway networkpolicy: %v", err))
+	}
+	if err := r.applyStatefulSet(ctx, agentSS); err != nil {
+		return r.setError(ctx, name, fmt.Sprintf("applying agent statefulset: %v", err))
+	}
+	if err := r.applyService(ctx, agentSvc); err != nil {
+		return r.setError(ctx, name, fmt.Sprintf("applying agent service: %v", err))
+	}
+	if err := r.applyNetworkPolicy(ctx, agentNP); err != nil {
+		return r.setError(ctx, name, fmt.Sprintf("applying agent networkpolicy: %v", err))
 	}
 
 	state := instanceSpec.DesiredState
@@ -148,11 +166,12 @@ func (r *InstanceReconciler) ensureAgentOwnerReference(ctx context.Context, inst
 }
 
 func (r *InstanceReconciler) Delete(ctx context.Context, name string) {
-	// Owner references handle cascade deletion of StatefulSet, Service,
-	// NetworkPolicy, and the agent-runtime token Secret.
+	// Owner references handle cascade deletion of both StatefulSets
+	// (agent + gateway), both Services, both NetworkPolicies, the Envoy
+	// bootstrap ConfigMap, and the cert-manager Certificate / leaf Secret.
 	//
-	// PVCs created via VolumeClaimTemplates are intentionally NOT deleted by
-	// Kubernetes when the StatefulSet is removed (to prevent data loss).
+	// PVCs created via VolumeClaimTemplates on the agent StatefulSet are
+	// intentionally NOT deleted by Kubernetes (to prevent data loss).
 	// We clean them up explicitly on instance removal.
 	r.deletePVCs(ctx, name)
 }

@@ -10,6 +10,12 @@ export const LABEL_CHANNEL_TYPE = "agent-platform.ai/channel-type";
 export const LABEL_SYSTEM = "agent-platform.ai/system";
 export const LABEL_CREATED_BY = "agent-platform.ai/created-by";
 
+// Per-pod role within an instance pair (ADR-038). Distinguishes the agent
+// pod from the paired gateway (Envoy) pod that mounts credentials.
+export const LABEL_ROLE = "agent-platform.ai/role";
+export const ROLE_AGENT = "agent";
+export const ROLE_GATEWAY = "gateway";
+
 // ---- Label values for LABEL_TYPE ----
 export const TYPE_TEMPLATE = "agent-template";
 export const TYPE_AGENT = "agent";

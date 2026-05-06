@@ -69,23 +69,35 @@ func TestReconcile_CreateResources(t *testing.T) {
 
 	ctx := context.Background()
 
-	// StatefulSet created with replicas=1
+	// Agent StatefulSet — replicas=1
 	ss, err := client.AppsV1().StatefulSets("test-agents").Get(ctx, "my-instance", metav1.GetOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, int32(1), *ss.Spec.Replicas)
 
-	// Proxy URL points at the colocated Envoy sidecar.
+	// Proxy URL targets the paired gateway Service (ADR-038).
 	envMap := envToMap(ss.Spec.Template.Spec.Containers[0].Env)
-	assert.Equal(t, "http://127.0.0.1:10000", envMap["HTTPS_PROXY"])
+	assert.Equal(t, "http://my-instance-gateway:10000", envMap["HTTPS_PROXY"])
 
-	// Service created
+	// Gateway StatefulSet — also replicas=1
+	gws, err := client.AppsV1().StatefulSets("test-agents").Get(ctx, "my-instance-gateway", metav1.GetOptions{})
+	require.NoError(t, err, "gateway StatefulSet must be created alongside the agent")
+	assert.Equal(t, int32(1), *gws.Spec.Replicas)
+
+	// Agent Service
 	svc, err := client.CoreV1().Services("test-agents").Get(ctx, "my-instance", metav1.GetOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, corev1.ClusterIPNone, svc.Spec.ClusterIP)
 
-	// NetworkPolicy created
+	// Gateway Service
+	gwSvc, err := client.CoreV1().Services("test-agents").Get(ctx, "my-instance-gateway", metav1.GetOptions{})
+	require.NoError(t, err, "gateway Service must be created so HTTPS_PROXY DNS resolves")
+	assert.Equal(t, corev1.ClusterIPNone, gwSvc.Spec.ClusterIP)
+
+	// Both NetworkPolicies created
 	_, err = client.NetworkingV1().NetworkPolicies("test-agents").Get(ctx, "my-instance-egress", metav1.GetOptions{})
 	require.NoError(t, err)
+	_, err = client.NetworkingV1().NetworkPolicies("test-agents").Get(ctx, "my-instance-gateway-egress", metav1.GetOptions{})
+	require.NoError(t, err, "gateway NetworkPolicy must be created")
 
 	// Status written
 	updated, _ := client.CoreV1().ConfigMaps("test-agents").Get(ctx, "my-instance", metav1.GetOptions{})
@@ -104,6 +116,10 @@ func TestReconcile_Hibernate(t *testing.T) {
 
 	ss, _ := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "my-instance", metav1.GetOptions{})
 	assert.Equal(t, int32(0), *ss.Spec.Replicas)
+
+	// Gateway scales with the agent — both at 0 when hibernated.
+	gws, _ := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "my-instance-gateway", metav1.GetOptions{})
+	assert.Equal(t, int32(0), *gws.Spec.Replicas, "gateway must hibernate alongside the agent")
 
 	updated, _ := client.CoreV1().ConfigMaps("test-agents").Get(context.Background(), "my-instance", metav1.GetOptions{})
 	assert.Contains(t, updated.Data["status.yaml"], "currentState: hibernated")

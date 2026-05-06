@@ -33,23 +33,28 @@ var testForkInstance = &types.InstanceSpec{
 	Env:          []types.EnvVar{{Name: "GITHUB_ORG", Value: "alpha"}},
 }
 
-func TestBuildForkJob_BasicShape(t *testing.T) {
-	job := BuildForkJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, nil)
+func TestBuildForkAgentJob_BasicShape(t *testing.T) {
+	job := BuildForkAgentJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, nil)
 
 	require.NotNil(t, job)
 	assert.Equal(t, "fork-abc", job.Name)
 	assert.Equal(t, "test-agents", job.Namespace)
 	assert.Equal(t, "agent-fork-job", job.Labels["agent-platform.ai/type"])
 	assert.Equal(t, "fork-abc", job.Labels["agent-platform.ai/fork-id"])
+	// `instance` label references the parent — for resolver / ext_authz
+	// identity. `pair` is the fork's own name — for ADR-038 NetworkPolicy
+	// scoping.
 	assert.Equal(t, "my-instance", job.Labels["agent-platform.ai/instance"])
+	assert.Equal(t, "fork-abc", job.Labels["agent-platform.ai/pair"])
+	assert.Equal(t, "agent", job.Labels["agent-platform.ai/role"])
 
 	require.Len(t, job.OwnerReferences, 1)
 	assert.Equal(t, "fork-uid-123", string(job.OwnerReferences[0].UID))
 	assert.True(t, *job.OwnerReferences[0].Controller)
 }
 
-func TestBuildForkJob_LifecycleGuarantees(t *testing.T) {
-	job := BuildForkJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, nil)
+func TestBuildForkAgentJob_LifecycleGuarantees(t *testing.T) {
+	job := BuildForkAgentJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, nil)
 
 	require.NotNil(t, job.Spec.BackoffLimit)
 	assert.Equal(t, int32(0), *job.Spec.BackoffLimit)
@@ -60,19 +65,20 @@ func TestBuildForkJob_LifecycleGuarantees(t *testing.T) {
 	assert.Equal(t, corev1.RestartPolicyNever, job.Spec.Template.Spec.RestartPolicy)
 }
 
-func TestBuildForkJob_ForkMetadataEnv(t *testing.T) {
-	job := BuildForkJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, nil)
+func TestBuildForkAgentJob_ForkMetadataEnv(t *testing.T) {
+	job := BuildForkAgentJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, nil)
 	c := job.Spec.Template.Spec.Containers[0]
 
 	env := envMap(c.Env)
 	assert.Equal(t, "fork-abc", env["PLATFORM_FORK_ID"])
 	assert.Equal(t, "kc|user-42", env["PLATFORM_FOREIGN_SUB"])
 	assert.Equal(t, "my-instance", env["ADK_INSTANCE_ID"])
-	assert.Equal(t, "http://127.0.0.1:10000", env["HTTPS_PROXY"])
+	// HTTPS_PROXY targets the fork's OWN gateway — not the parent's.
+	assert.Equal(t, "http://fork-abc-gateway:10000", env["HTTPS_PROXY"])
 }
 
-func TestBuildForkJob_MountsInstancePVC_NotVolumeClaimTemplate(t *testing.T) {
-	job := BuildForkJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, nil)
+func TestBuildForkAgentJob_MountsInstancePVC_NotVolumeClaimTemplate(t *testing.T) {
+	job := BuildForkAgentJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, nil)
 
 	podSpec := job.Spec.Template.Spec
 
@@ -89,14 +95,14 @@ func TestBuildForkJob_MountsInstancePVC_NotVolumeClaimTemplate(t *testing.T) {
 	assert.Nil(t, persistentVol.EmptyDir)
 }
 
-func TestBuildForkJob_InheritsInstanceEnvAndSecretRef(t *testing.T) {
+func TestBuildForkAgentJob_InheritsInstanceEnvAndSecretRef(t *testing.T) {
 	instance := &types.InstanceSpec{
 		Version:      types.SpecVersion,
 		DesiredState: "running",
 		Env:          []types.EnvVar{{Name: "FOO", Value: "bar"}},
 		SecretRef:    "my-extra-secret",
 	}
-	job := BuildForkJob("fork-abc", testForkSpec, instance, testAgent, testConfig, testForkOwnerCM, nil)
+	job := BuildForkAgentJob("fork-abc", testForkSpec, instance, testAgent, testConfig, testForkOwnerCM, nil)
 	c := job.Spec.Template.Spec.Containers[0]
 
 	assert.Equal(t, "bar", envMap(c.Env)["FOO"])
@@ -113,20 +119,19 @@ func envMap(envs []corev1.EnvVar) map[string]string {
 	return m
 }
 
-func TestBuildForkJob_AddsEnvoySidecar(t *testing.T) {
+func TestBuildForkAgentJob_NoSidecar(t *testing.T) {
+	// ADR-038: agent and gateway are paired pods, not co-located. Fork
+	// agents have only one container.
 	secrets := []corev1.Secret{credSecret("platform-cred-replier-x", "api.example.com")}
-	job := BuildForkJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, secrets)
+	job := BuildForkAgentJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, secrets)
 
-	require.Len(t, job.Spec.Template.Spec.Containers, 2, "agent + envoy sidecar")
+	require.Len(t, job.Spec.Template.Spec.Containers, 1, "fork agent has no sidecar")
 	agent := job.Spec.Template.Spec.Containers[0]
-	envoy := job.Spec.Template.Spec.Containers[1]
 	assert.Equal(t, "agent", agent.Name)
-	assert.Equal(t, "envoy", envoy.Name)
-	assert.Equal(t, "envoyproxy/envoy:distroless-v1.37.2", envoy.Image)
 
 	envM := envMap(agent.Env)
-	assert.Equal(t, "http://127.0.0.1:10000", envM["HTTP_PROXY"])
-	assert.Equal(t, "http://127.0.0.1:10000", envM["HTTPS_PROXY"])
+	assert.Equal(t, "http://fork-abc-gateway:10000", envM["HTTP_PROXY"])
+	assert.Equal(t, "http://fork-abc-gateway:10000", envM["HTTPS_PROXY"])
 
 	require.NotNil(t, job.Spec.Template.Spec.AutomountServiceAccountToken)
 	assert.False(t, *job.Spec.Template.Spec.AutomountServiceAccountToken)
@@ -134,28 +139,29 @@ func TestBuildForkJob_AddsEnvoySidecar(t *testing.T) {
 	assert.False(t, *job.Spec.Template.Spec.ShareProcessNamespace)
 }
 
-func TestBuildForkJob_ReplierSecretsMountedSidecarOnly(t *testing.T) {
+func TestBuildForkAgentJob_NoCredentialMountsOnAgent(t *testing.T) {
+	// Replier credentials live on the paired fork gateway pod only.
 	secrets := []corev1.Secret{credSecret("platform-cred-replier-x", "api.example.com")}
-	job := BuildForkJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, secrets)
+	job := BuildForkAgentJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, secrets)
 
-	require.Len(t, job.Spec.Template.Spec.Containers, 2)
-	agent := job.Spec.Template.Spec.Containers[0]
-	envoy := job.Spec.Template.Spec.Containers[1]
-
-	envoyMounts := map[string]bool{}
-	for _, m := range envoy.VolumeMounts {
-		envoyMounts[m.Name] = true
+	for _, v := range job.Spec.Template.Spec.Volumes {
+		assert.NotContains(t, v.Name, "cred-platform-cred-",
+			"fork agent pod must not mount credential Secrets (ADR-038)")
+		assert.NotEqual(t, "envoy-bootstrap", v.Name,
+			"fork agent must not mount the Envoy bootstrap CM")
+		assert.NotEqual(t, "envoy-tls", v.Name,
+			"fork agent must not mount the leaf TLS Secret with the private key")
 	}
-	require.True(t, envoyMounts["cred-platform-cred-replier-x"], "envoy must mount the replier credential secret")
 
-	for _, m := range agent.VolumeMounts {
-		assert.NotEqual(t, "cred-platform-cred-replier-x", m.Name, "credential boundary lives at the container — agent must not see Secret bytes")
+	for _, m := range job.Spec.Template.Spec.Containers[0].VolumeMounts {
+		assert.NotContains(t, m.Name, "cred-platform-cred-",
+			"credential boundary lives at the pod boundary — fork agent never sees Secret bytes")
 	}
 }
 
-func TestBuildForkJob_NoFetchCACertInit(t *testing.T) {
+func TestBuildForkAgentJob_NoFetchCACertInit(t *testing.T) {
 	secrets := []corev1.Secret{credSecret("platform-cred-replier-x", "api.example.com")}
-	job := BuildForkJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, secrets)
+	job := BuildForkAgentJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, secrets)
 
 	for _, ic := range job.Spec.Template.Spec.InitContainers {
 		assert.NotEqual(t, "fetch-ca-cert", ic.Name, "no fetch-ca-cert init container")
@@ -171,9 +177,12 @@ func TestBuildForkJob_NoFetchCACertInit(t *testing.T) {
 	require.NotNil(t, caVol)
 	require.NotNil(t, caVol.Secret)
 	assert.Equal(t, EnvoyLeafSecretName("fork-abc"), caVol.Secret.SecretName)
+	require.Len(t, caVol.Secret.Items, 1)
+	assert.Equal(t, "ca.crt", caVol.Secret.Items[0].Key,
+		"fork agent must only see ca.crt — never tls.key")
 }
 
-func TestBuildForkJob_GHTokenSignal(t *testing.T) {
+func TestBuildForkAgentJob_GHTokenSignal(t *testing.T) {
 	cases := map[string]struct {
 		secrets []corev1.Secret
 		want    string
@@ -184,7 +193,7 @@ func TestBuildForkJob_GHTokenSignal(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			job := BuildForkJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, tc.secrets)
+			job := BuildForkAgentJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, tc.secrets)
 			env := envMap(job.Spec.Template.Spec.Containers[0].Env)
 			assert.Equal(t, tc.want, env["PLATFORM_GH_TOKEN_AVAILABLE"])
 		})

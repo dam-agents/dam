@@ -18,6 +18,7 @@ var testConfig = &config.Config{
 	ReleaseNamespace:  "default",
 	ReleaseName:       "platform",
 	HarnessServerPort: 4001,
+	ExtAuthzPort:      4002,
 	AgentHome:         "/home/agent",
 	EnvoyImage:        "envoyproxy/envoy:distroless-v1.37.2",
 	EnvoyPort:         10000,
@@ -62,15 +63,15 @@ func credSecret(name, host string) corev1.Secret {
 	}
 }
 
-// --- StatefulSet tests ---
+// --- Agent StatefulSet tests ---
 
-func TestBuildStatefulSet_Running(t *testing.T) {
+func TestBuildAgentStatefulSet_Running(t *testing.T) {
 	instance := &types.InstanceSpec{
 		DesiredState: "running",
 		Env:          []types.EnvVar{{Name: "GITHUB_ORG", Value: "alpha"}},
 		SecretRef:    "my-secrets",
 	}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil)
+	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil)
 
 	require.NotNil(t, ss)
 	assert.Equal(t, "my-instance", ss.Name)
@@ -81,9 +82,12 @@ func TestBuildStatefulSet_Running(t *testing.T) {
 	assert.Equal(t, "cm-uid-123", string(ss.OwnerReferences[0].UID))
 
 	assert.Equal(t, "my-instance", ss.Spec.Template.Labels["agent-platform.ai/instance"])
+	assert.Equal(t, "my-instance", ss.Spec.Template.Labels["agent-platform.ai/pair"])
+	assert.Equal(t, "agent", ss.Spec.Template.Labels["agent-platform.ai/role"])
 
-	require.Len(t, ss.Spec.Template.Spec.Containers, 2, "agent + envoy sidecar")
+	require.Len(t, ss.Spec.Template.Spec.Containers, 1, "agent only — gateway runs in its own paired pod (ADR-038)")
 	c := ss.Spec.Template.Spec.Containers[0]
+	assert.Equal(t, "agent", c.Name)
 	assert.Equal(t, "ghcr.io/myorg/agent:latest", c.Image)
 	assert.Equal(t, int32(8080), c.Ports[0].ContainerPort)
 	assert.Equal(t, "acp", c.Ports[0].Name)
@@ -93,11 +97,10 @@ func TestBuildStatefulSet_Running(t *testing.T) {
 	assert.Equal(t, int32(120), c.StartupProbe.FailureThreshold)
 
 	envMap := envToMap(c.Env)
-	assert.Equal(t, "http://127.0.0.1:10000", envMap["HTTPS_PROXY"])
-	assert.Equal(t, "http://127.0.0.1:10000", envMap["HTTP_PROXY"])
+	// HTTPS_PROXY now points at the paired gateway Service DNS, not loopback.
+	assert.Equal(t, "http://my-instance-gateway:10000", envMap["HTTPS_PROXY"])
+	assert.Equal(t, "http://my-instance-gateway:10000", envMap["HTTP_PROXY"])
 
-	// No platform-issued credential token in the agent container's env —
-	// the api-server → agent-runtime hop is gated by NetworkPolicy ingress.
 	for _, e := range c.Env {
 		assert.NotEqual(t, "AGENT_RUNTIME_TOKEN", e.Name)
 	}
@@ -116,15 +119,15 @@ func TestBuildStatefulSet_Running(t *testing.T) {
 	assert.True(t, *ss.Spec.Template.Spec.SecurityContext.RunAsNonRoot)
 }
 
-func TestBuildStatefulSet_Hibernated(t *testing.T) {
+func TestBuildAgentStatefulSet_Hibernated(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "hibernated"}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil)
+	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil)
 	assert.Equal(t, int32(0), *ss.Spec.Replicas)
 }
 
-func TestBuildStatefulSet_InitContainer(t *testing.T) {
+func TestBuildAgentStatefulSet_InitContainer(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil)
+	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil)
 	require.Len(t, ss.Spec.Template.Spec.InitContainers, 1, "only the user-defined init runs")
 	ic := ss.Spec.Template.Spec.InitContainers[0]
 	assert.Equal(t, "init", ic.Name)
@@ -132,17 +135,17 @@ func TestBuildStatefulSet_InitContainer(t *testing.T) {
 	assert.Equal(t, []string{"sh", "-c", testAgent.Init}, ic.Command)
 }
 
-func TestBuildStatefulSet_NoUserInitWhenEmpty(t *testing.T) {
+func TestBuildAgentStatefulSet_NoUserInitWhenEmpty(t *testing.T) {
 	agent := *testAgent
 	agent.Init = ""
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, &agent, testConfig, testOwnerCM, nil)
+	ss := BuildAgentStatefulSet("my-instance", instance, &agent, testConfig, testOwnerCM, nil)
 	assert.Empty(t, ss.Spec.Template.Spec.InitContainers)
 }
 
-func TestBuildStatefulSet_Volumes(t *testing.T) {
+func TestBuildAgentStatefulSet_Volumes(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil)
+	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil)
 
 	require.Len(t, ss.Spec.VolumeClaimTemplates, 1)
 	pvc := ss.Spec.VolumeClaimTemplates[0]
@@ -168,7 +171,7 @@ func TestBuildStatefulSet_Volumes(t *testing.T) {
 	assert.Equal(t, "ca-cert", mountPaths["/etc/platform/ca"])
 }
 
-func TestBuildStatefulSet_PVCSize(t *testing.T) {
+func TestBuildAgentStatefulSet_PVCSize(t *testing.T) {
 	agent := types.AgentSpec{
 		Image: "platform-test:latest",
 		Mounts: []types.Mount{
@@ -177,7 +180,7 @@ func TestBuildStatefulSet_PVCSize(t *testing.T) {
 		},
 	}
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, &agent, testConfig, testOwnerCM, nil)
+	ss := BuildAgentStatefulSet("my-instance", instance, &agent, testConfig, testOwnerCM, nil)
 
 	require.Len(t, ss.Spec.VolumeClaimTemplates, 2)
 	byName := map[string]corev1.PersistentVolumeClaim{}
@@ -190,11 +193,11 @@ func TestBuildStatefulSet_PVCSize(t *testing.T) {
 	assert.Equal(t, "10Gi", cache.String())
 }
 
-func TestBuildStatefulSet_AgentStorageClass(t *testing.T) {
+func TestBuildAgentStatefulSet_AgentStorageClass(t *testing.T) {
 	cfg := *testConfig
 	cfg.AgentStorageClass = "platform-rwx"
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, &cfg, testOwnerCM, nil)
+	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, &cfg, testOwnerCM, nil)
 
 	require.Len(t, ss.Spec.VolumeClaimTemplates, 1)
 	pvc := ss.Spec.VolumeClaimTemplates[0]
@@ -202,11 +205,11 @@ func TestBuildStatefulSet_AgentStorageClass(t *testing.T) {
 	assert.Equal(t, "platform-rwx", *pvc.Spec.StorageClassName)
 }
 
-func TestBuildStatefulSet_PodFilesEventsURL(t *testing.T) {
+func TestBuildAgentStatefulSet_PodFilesEventsURL(t *testing.T) {
 	cfg := *testConfig
 	cfg.HarnessServerURL = "http://platform-apiserver.default.svc:4001"
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, &cfg, testOwnerCM, nil)
+	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, &cfg, testOwnerCM, nil)
 
 	envMap := envToMap(ss.Spec.Template.Spec.Containers[0].Env)
 	assert.Equal(t,
@@ -214,67 +217,106 @@ func TestBuildStatefulSet_PodFilesEventsURL(t *testing.T) {
 		envMap["PLATFORM_POD_FILES_EVENTS_URL"])
 }
 
-func TestBuildStatefulSet_NoSecretRef(t *testing.T) {
+func TestBuildAgentStatefulSet_NoSecretRef(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil)
+	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil)
 	assert.Empty(t, ss.Spec.Template.Spec.Containers[0].EnvFrom)
 }
 
-// --- Service tests ---
+func TestBuildAgentStatefulSet_NoCredentialMountsOnAgent(t *testing.T) {
+	// ADR-038: the agent pod's only platform-issued data is the CA cert
+	// (single-key projection of the leaf Secret). No credential Secrets,
+	// no Envoy bootstrap CM, no leaf private key.
+	secrets := []corev1.Secret{credSecret("platform-cred-aaa", "api.example.com")}
+	instance := &types.InstanceSpec{DesiredState: "running"}
+	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, secrets)
 
-func TestBuildService(t *testing.T) {
-	svc := BuildService("my-instance", testConfig, testOwnerCM)
+	require.Len(t, ss.Spec.Template.Spec.Containers, 1, "no sidecar — gateway is its own pod")
+
+	for _, v := range ss.Spec.Template.Spec.Volumes {
+		assert.NotEqual(t, "envoy-bootstrap", v.Name, "agent pod must not mount the Envoy bootstrap CM")
+		assert.NotEqual(t, "envoy-tls", v.Name, "agent pod must not mount the leaf TLS Secret with the private key")
+		assert.NotContains(t, v.Name, "cred-platform-cred-", "agent pod must not mount any credential Secret")
+	}
+
+	// CA cert volume IS still on the agent — projected from the leaf Secret
+	// with single-key projection (ca.crt only).
+	var caCertVol *corev1.Volume
+	for i, v := range ss.Spec.Template.Spec.Volumes {
+		if v.Name == "ca-cert" {
+			caCertVol = &ss.Spec.Template.Spec.Volumes[i]
+			break
+		}
+	}
+	require.NotNil(t, caCertVol, "ca-cert volume must exist on the agent pod")
+	require.NotNil(t, caCertVol.Secret, "ca-cert volume must be sourced from the leaf Secret")
+	assert.Equal(t, "my-instance-envoy-tls", caCertVol.Secret.SecretName)
+	require.Len(t, caCertVol.Secret.Items, 1)
+	assert.Equal(t, "ca.crt", caCertVol.Secret.Items[0].Key, "agent must only see ca.crt — never tls.key")
+}
+
+// --- Agent Service tests ---
+
+func TestBuildAgentService(t *testing.T) {
+	svc := BuildAgentService("my-instance", testConfig, testOwnerCM)
 	assert.Equal(t, "my-instance", svc.Name)
 	assert.Equal(t, "test-agents", svc.Namespace)
 	assert.Equal(t, corev1.ClusterIPNone, svc.Spec.ClusterIP)
 	assert.Equal(t, int32(8080), svc.Spec.Ports[0].Port)
 	assert.Equal(t, "acp", svc.Spec.Ports[0].Name)
-	assert.Equal(t, "my-instance", svc.Spec.Selector["agent-platform.ai/instance"])
+	// Selector pins to pair + role=agent so the gateway pod (same instance
+	// label) is excluded.
+	assert.Equal(t, "my-instance", svc.Spec.Selector["agent-platform.ai/pair"])
+	assert.Equal(t, "agent", svc.Spec.Selector["agent-platform.ai/role"])
 	require.Len(t, svc.OwnerReferences, 1)
 }
 
-// --- NetworkPolicy tests ---
+// --- Agent NetworkPolicy tests ---
 
-func TestBuildNetworkPolicy(t *testing.T) {
-	np := BuildNetworkPolicy("my-instance", testConfig, testOwnerCM)
+func TestBuildAgentNetworkPolicy(t *testing.T) {
+	np := BuildAgentNetworkPolicy("my-instance", testConfig, testOwnerCM)
 	assert.Equal(t, "my-instance-egress", np.Name)
 	assert.Equal(t, "test-agents", np.Namespace)
-	assert.Equal(t, "my-instance", np.Spec.PodSelector.MatchLabels["agent-platform.ai/instance"])
+	assert.Equal(t, "my-instance", np.Spec.PodSelector.MatchLabels["agent-platform.ai/pair"])
+	assert.Equal(t, "agent", np.Spec.PodSelector.MatchLabels["agent-platform.ai/role"])
 	require.Len(t, np.OwnerReferences, 1)
 
-	// Sidecar permissive 80/443, ext_authz to api-server, harness to api-server, DNS.
-	require.Len(t, np.Spec.Egress, 4)
+	// ADR-038: egress is gateway pod + harness + DNS. Open 80/443 to the
+	// world is gone — that bypass is the whole point of the split.
+	require.Len(t, np.Spec.Egress, 3)
 
-	// 1: open egress for the sidecar
-	open := np.Spec.Egress[0]
-	assert.Empty(t, open.To, "open egress must not have a peer selector")
-	var sawHttps bool
-	for _, p := range open.Ports {
-		if p.Port != nil && p.Port.IntVal == 443 {
-			sawHttps = true
-		}
-	}
-	assert.True(t, sawHttps, "must permit egress on TCP 443")
+	// 1: paired gateway pod only
+	gatewayEgress := np.Spec.Egress[0]
+	require.Len(t, gatewayEgress.To, 1)
+	assert.Equal(t, "my-instance", gatewayEgress.To[0].PodSelector.MatchLabels["agent-platform.ai/pair"])
+	assert.Equal(t, "gateway", gatewayEgress.To[0].PodSelector.MatchLabels["agent-platform.ai/role"])
+	require.Len(t, gatewayEgress.Ports, 1)
+	assert.Equal(t, int32(10000), gatewayEgress.Ports[0].Port.IntVal)
 
-	// 2: ext_authz to api-server
-	extAuthz := np.Spec.Egress[1]
-	require.Len(t, extAuthz.To, 1)
-	assert.Equal(t, "apiserver", extAuthz.To[0].PodSelector.MatchLabels["app.kubernetes.io/component"])
-
-	// 3: harness API server
-	harness := np.Spec.Egress[2]
+	// 2: harness API server
+	harness := np.Spec.Egress[1]
 	require.Len(t, harness.To, 1)
 	assert.Equal(t, "apiserver", harness.To[0].PodSelector.MatchLabels["app.kubernetes.io/component"])
 	require.Len(t, harness.Ports, 1)
 	assert.Equal(t, int32(4001), harness.Ports[0].Port.IntVal)
 
-	// 4: DNS
-	dns := np.Spec.Egress[3]
+	// 3: DNS
+	dns := np.Spec.Egress[2]
 	assert.Empty(t, dns.To)
 
-	// Ingress: ACP port admitted only from the api-server pod. The
-	// kernel-level peer match is the only authentication boundary on this
-	// hop — there is no in-process auth check.
+	// Agent must NOT be allowed to dial 80/443 anywhere — that's the bypass.
+	for _, rule := range np.Spec.Egress {
+		if len(rule.To) == 0 {
+			for _, p := range rule.Ports {
+				assert.NotEqual(t, int32(443), p.Port.IntVal,
+					"agent NetworkPolicy must not admit open 443 egress (ADR-038)")
+				assert.NotEqual(t, int32(80), p.Port.IntVal,
+					"agent NetworkPolicy must not admit open 80 egress (ADR-038)")
+			}
+		}
+	}
+
+	// Ingress: ACP port admitted only from the api-server pod.
 	require.Len(t, np.Spec.Ingress, 1)
 	require.Len(t, np.Spec.Ingress[0].From, 1)
 	assert.Equal(t, "apiserver",
@@ -291,109 +333,37 @@ func envToMap(envs []corev1.EnvVar) map[string]string {
 	return m
 }
 
-// --- Envoy sidecar wiring ---
+// --- GH_TOKEN signal ---
 
-func TestBuildStatefulSet_AddsEnvoySidecar(t *testing.T) {
+func TestBuildAgentStatefulSet_GHTokenSignal_NoCredential(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	secrets := []corev1.Secret{credSecret("platform-cred-aaa", "api.example.com")}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, secrets)
-
-	require.Len(t, ss.Spec.Template.Spec.Containers, 2, "agent + envoy sidecar")
-	agent := ss.Spec.Template.Spec.Containers[0]
-	envoy := ss.Spec.Template.Spec.Containers[1]
-	assert.Equal(t, "agent", agent.Name)
-	assert.Equal(t, "envoy", envoy.Name)
-	assert.Equal(t, "envoyproxy/envoy:distroless-v1.37.2", envoy.Image)
-
-	envMap := envToMap(agent.Env)
-	assert.Equal(t, "http://127.0.0.1:10000", envMap["HTTP_PROXY"])
-	assert.Equal(t, "http://127.0.0.1:10000", envMap["HTTPS_PROXY"])
-
-	volNames := map[string]bool{}
-	for _, v := range ss.Spec.Template.Spec.Volumes {
-		volNames[v.Name] = true
-	}
-	require.True(t, volNames["cred-platform-cred-aaa"], "credential volume must use cred-<secretName>")
-	require.True(t, volNames["envoy-tls"], "leaf-TLS volume must be present")
-
-	envoyMounts := map[string]string{}
-	for _, m := range envoy.VolumeMounts {
-		envoyMounts[m.Name] = m.MountPath
-	}
-	assert.Equal(t, "/etc/envoy/credentials/cred-platform-cred-aaa", envoyMounts["cred-platform-cred-aaa"])
-	assert.Equal(t, "/etc/envoy/tls", envoyMounts["envoy-tls"])
-}
-
-func TestBuildStatefulSet_GHTokenSignal_NoCredential(t *testing.T) {
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil)
+	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil)
 
 	envMap := envToMap(ss.Spec.Template.Spec.Containers[0].Env)
 	assert.Equal(t, "false", envMap["PLATFORM_GH_TOKEN_AVAILABLE"])
 	assert.Equal(t, "false", ss.Spec.Template.Annotations["agent-platform.ai/gh-token-available"])
 }
 
-func TestBuildStatefulSet_GHTokenSignal_WithCredential(t *testing.T) {
+func TestBuildAgentStatefulSet_GHTokenSignal_WithCredential(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running"}
 	secrets := []corev1.Secret{credSecret("platform-cred-gh", "api.github.com")}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, secrets)
+	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, secrets)
 
 	envMap := envToMap(ss.Spec.Template.Spec.Containers[0].Env)
 	assert.Equal(t, "true", envMap["PLATFORM_GH_TOKEN_AVAILABLE"])
 	assert.Equal(t, "true", ss.Spec.Template.Annotations["agent-platform.ai/gh-token-available"])
 }
 
-func TestBuildStatefulSet_SecretMountsSidecarOnly(t *testing.T) {
-	secrets := []corev1.Secret{credSecret("platform-cred-aaa", "api.example.com")}
+func TestBuildAgentStatefulSet_PodHardening(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, secrets)
-
-	volNames := map[string]bool{}
-	for _, v := range ss.Spec.Template.Spec.Volumes {
-		volNames[v.Name] = true
-	}
-	assert.True(t, volNames["envoy-bootstrap"])
-	assert.True(t, volNames["cred-platform-cred-aaa"])
-
-	agentMounts := ss.Spec.Template.Spec.Containers[0].VolumeMounts
-	for _, m := range agentMounts {
-		assert.NotEqual(t, "cred-platform-cred-aaa", m.Name, "agent container must not mount credential secrets")
-		assert.NotEqual(t, "envoy-bootstrap", m.Name, "agent container must not mount the envoy bootstrap CM")
-	}
-
-	envoyMounts := map[string]bool{}
-	for _, m := range ss.Spec.Template.Spec.Containers[1].VolumeMounts {
-		envoyMounts[m.Name] = true
-	}
-	assert.True(t, envoyMounts["envoy-bootstrap"])
-	assert.True(t, envoyMounts["cred-platform-cred-aaa"])
-	assert.True(t, envoyMounts["envoy-tls"])
-
-	// Agent's ca-cert volume is now projected from the leaf Secret, exposing
-	// only ca.crt. The leaf private key (tls.key) must NOT be visible to the
-	// agent — it's the credential boundary between agent and sidecar.
-	var caCertVol *corev1.Volume
-	for i, v := range ss.Spec.Template.Spec.Volumes {
-		if v.Name == "ca-cert" {
-			caCertVol = &ss.Spec.Template.Spec.Volumes[i]
-			break
-		}
-	}
-	require.NotNil(t, caCertVol, "ca-cert volume must exist")
-	require.NotNil(t, caCertVol.Secret, "ca-cert volume must be sourced from the leaf Secret")
-	assert.Equal(t, "my-instance-envoy-tls", caCertVol.Secret.SecretName)
-	require.Len(t, caCertVol.Secret.Items, 1)
-	assert.Equal(t, "ca.crt", caCertVol.Secret.Items[0].Key, "agent must only see ca.crt — never tls.key")
-}
-
-func TestBuildStatefulSet_PodHardening(t *testing.T) {
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil)
+	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil)
 	require.NotNil(t, ss.Spec.Template.Spec.AutomountServiceAccountToken)
 	assert.False(t, *ss.Spec.Template.Spec.AutomountServiceAccountToken)
 	require.NotNil(t, ss.Spec.Template.Spec.ShareProcessNamespace)
 	assert.False(t, *ss.Spec.Template.Spec.ShareProcessNamespace)
 }
+
+// --- Envoy bootstrap rendering (still produces the same YAML, just bound on 0.0.0.0 now) ---
 
 func TestBuildEnvoyBootstrapConfigMap(t *testing.T) {
 	secrets := []corev1.Secret{credSecret("platform-cred-aaa", "api.example.com")}
@@ -402,7 +372,9 @@ func TestBuildEnvoyBootstrapConfigMap(t *testing.T) {
 	assert.Equal(t, "my-instance-envoy-bootstrap", cm.Name)
 	assert.Equal(t, "test-agents", cm.Namespace)
 	yaml := cm.Data["envoy.yaml"]
-	assert.Contains(t, yaml, "127.0.0.1")
+	// ADR-038: gateway listener binds 0.0.0.0; reach is gated by NetworkPolicy.
+	assert.Contains(t, yaml, "0.0.0.0")
+	assert.NotContains(t, yaml, "127.0.0.1", "gateway listener must not bind loopback under the paired-pod model")
 	assert.Contains(t, yaml, "api.example.com", "filter chain must match by SNI on the host")
 	assert.Contains(t, yaml, "/etc/envoy/credentials/cred-platform-cred-aaa/sds.yaml")
 	assert.Contains(t, yaml, "internal_listener", "must declare an internal listener")

@@ -14,21 +14,56 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
-func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *types.AgentSpec, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret) *appsv1.StatefulSet {
+// ADR-038 paired-pod labels. `LabelPair` identifies the two pods of a single
+// agent/gateway pair; `LabelRole` distinguishes the roles inside the pair.
+//
+// Pair scope is *per orchestration unit*, not per instance: long-lived
+// instances use the instance name as the pair key, but forks use the fork
+// name (each fork has its own paired gateway, the parent's gateway is not
+// shared). The `LabelInstance` label still identifies the parent instance
+// for ext_authz / pod-IP resolver purposes — for long-lived pods it equals
+// the pair key, for fork pods it points at the parent instance so traffic
+// resolves under the parent's egress rules (ADR-027).
+const (
+	LabelInstance = "agent-platform.ai/instance"
+	LabelPair     = "agent-platform.ai/pair"
+	LabelRole     = "agent-platform.ai/role"
+	RoleAgent     = "agent"
+	RoleGateway   = "gateway"
+)
+
+// agentProxyAddr is the agent's HTTPS_PROXY value: the paired gateway pod's
+// Service DNS. Service-form is stable across gateway pod restarts (ADR-038).
+func agentProxyAddr(instanceName string, cfg *config.Config) string {
+	return fmt.Sprintf("http://%s:%d", GatewayName(instanceName), cfg.EnvoyPort)
+}
+
+// BuildAgentStatefulSet renders the agent half of the paired pod set
+// (ADR-038). The agent container holds zero credentials; egress credential
+// injection happens in the paired gateway pod, reached via HTTPS_PROXY.
+//
+// `credentialSecrets` is consulted only for the GH_TOKEN-availability signal
+// surfaced as an env var and pod annotation; no Secret material is mounted
+// into the agent pod.
+func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec *types.AgentSpec, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret) *appsv1.StatefulSet {
 	replicas := int32(1)
 	if instance.DesiredState == "hibernated" {
 		replicas = 0
 	}
 
-	labels := map[string]string{"agent-platform.ai/instance": name}
+	labels := map[string]string{
+		LabelInstance: name,
+		LabelPair:     name,
+		LabelRole:     RoleAgent,
+	}
 	caCertPath := "/etc/platform/ca/ca.crt"
 
-	proxyAddr := fmt.Sprintf("http://127.0.0.1:%d", cfg.EnvoyPort)
+	proxyAddr := agentProxyAddr(name, cfg)
 
 	// The agent container holds zero platform credentials. Inbound calls to
 	// agent-runtime's tRPC are gated at the kernel by the pod's
 	// NetworkPolicy (ingress admitted only from the api-server pod);
-	// outbound calls are credential-injected by the Envoy sidecar.
+	// outbound calls cross the paired gateway pod for credential injection.
 	env := []corev1.EnvVar{
 		{Name: "HTTPS_PROXY", Value: proxyAddr},
 		{Name: "HTTP_PROXY", Value: proxyAddr},
@@ -54,7 +89,8 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 	// Order matters: K8s resolves duplicate env names by keeping the last
 	// occurrence, so credential placeholders < template < instance — user
 	// overrides win. The placeholders only need to satisfy the harness's
-	// "is this env set?" check; Envoy overwrites the header on the wire.
+	// "is this env set?" check; Envoy in the paired gateway overwrites the
+	// header on the wire.
 	env = append(env, credentialEnvVars(credentialSecrets)...)
 	for _, e := range agentSpec.Env {
 		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
@@ -84,9 +120,6 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 			Name: volName, MountPath: m.Path,
 		})
 		if m.Persist {
-			// Per-mount `size:` (issue #244) wins over the cluster-wide
-			// AgentStorageSize default; both fall back to 10Gi.
-			// Validation happens in ParseAgentSpec, so MustParse here is safe.
 			storageSize := m.Size
 			if storageSize == "" {
 				storageSize = cfg.AgentStorageSize
@@ -109,7 +142,7 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 			pvcs = append(pvcs, corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:   volName,
-					Labels: labels,
+					Labels: map[string]string{LabelInstance: name},
 				},
 				Spec: pvcSpec,
 			})
@@ -123,7 +156,8 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 
 	// CA cert volume — projected from the cert-manager-issued Envoy leaf
 	// Secret. We expose only the `ca.crt` key; the `tls.key` stays inside
-	// the Envoy sidecar's mount, never the agent's.
+	// the gateway pod's mount, never the agent's. This is the only
+	// platform-issued data the agent pod mounts (ADR-038).
 	if len(credentialSecrets) > 0 {
 		volumes = append(volumes, corev1.Volume{
 			Name: "ca-cert",
@@ -156,9 +190,7 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 		resourceReqs.Limits = toResourceList(agentSpec.Resources.Limits)
 	}
 
-	// Init containers: optional user-defined init only. The CA cert is
-	// projected from the cert-manager-issued leaf Secret, so no fetch step
-	// is needed.
+	// Init containers: optional user-defined init only.
 	var initContainers []corev1.Container
 	if agentSpec.Init != "" {
 		initContainers = append(initContainers, corev1.Container{
@@ -183,6 +215,15 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 			RunAsNonRoot: agentSpec.SecurityContext.RunAsNonRoot,
 		}
 	}
+
+	// GH_TOKEN signal. Surface whether a GitHub credential is wired up so
+	// wrapper scripts and operators can detect missing auth without making
+	// a 401-eliciting request first.
+	ghAvail := "false"
+	if hasGitHubCredential(credentialSecrets) {
+		ghAvail = "true"
+	}
+	env = append(env, corev1.EnvVar{Name: "PLATFORM_GH_TOKEN_AVAILABLE", Value: ghAvail})
 
 	containers := []corev1.Container{{
 		Name:            "agent",
@@ -218,41 +259,21 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 		Resources:    resourceReqs,
 		VolumeMounts: volumeMounts,
 	}}
+
 	podAnnotations := map[string]string{}
 	for k, v := range cfg.AgentPodAnnotations {
 		podAnnotations[k] = v
 	}
+	podAnnotations["agent-platform.ai/gh-token-available"] = ghAvail
 
-	// Sidecar only — the agent container never sees credential mounts.
-	volumes = append(volumes, envoySidecarVolumes(name, credentialSecrets)...)
-	containers = append(containers, envoySidecarContainer(cfg, credentialSecrets))
 	// ADR-033 Threat Model: agent must have no SA token (Secret-read RBAC
-	// would otherwise bypass volume-mount scoping) and process namespace
-	// must not be shared with the sidecar.
+	// would otherwise bypass the per-pod credential boundary). With the
+	// paired-pod split (ADR-038) the agent and gateway are different pods
+	// so process-namespace sharing is structurally moot, but we keep
+	// `false` explicit for clarity.
 	falseVal := false
 	automountSAToken := &falseVal
 	shareProcessNS := &falseVal
-
-	// GH_TOKEN signal. Surface whether a GitHub credential is wired up so
-	// wrapper scripts and operators can detect missing auth without making
-	// a 401-eliciting request first.
-	ghAvail := "false"
-	if hasGitHubCredential(credentialSecrets) {
-		ghAvail = "true"
-	}
-	containers[0].Env = append(containers[0].Env, corev1.EnvVar{
-		Name:  "PLATFORM_GH_TOKEN_AVAILABLE",
-		Value: ghAvail,
-	})
-	podAnnotations["agent-platform.ai/gh-token-available"] = ghAvail
-
-	// Roll trigger (ADR-035 #10): hash of the Secret set driving the Envoy
-	// bootstrap. When the api-server adds an allow-only Secret to promote a
-	// host onto L7, the hash changes, the pod template diverges, and the
-	// StatefulSet rolls so Envoy picks up the new chain set + leaf cert.
-	// Without this, Secret list changes regenerate the bootstrap CM but
-	// don't restart the pod, and Envoy keeps serving the old config.
-	podAnnotations["agent-platform.ai/envoy-secrets-rev"] = envoySecretsRev(credentialSecrets)
 
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -288,19 +309,23 @@ func BuildStatefulSet(name string, instance *types.InstanceSpec, agentSpec *type
 	}
 }
 
-func BuildService(name string, cfg *config.Config, ownerCM *corev1.ConfigMap) *corev1.Service {
+// BuildAgentService is the headless Service the api-server uses to reach the
+// agent pod's ACP/tRPC port. Selector pins to the pair key + role=agent so
+// the gateway pod (which carries the same instance label) is excluded.
+func BuildAgentService(name string, cfg *config.Config, ownerCM *corev1.ConfigMap) *corev1.Service {
+	selector := map[string]string{LabelPair: name, LabelRole: RoleAgent}
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: cfg.Namespace,
-			Labels:    map[string]string{"agent-platform.ai/instance": name},
+			Labels:    map[string]string{LabelInstance: name, LabelPair: name, LabelRole: RoleAgent},
 			OwnerReferences: []metav1.OwnerReference{
 				*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
 			},
 		},
 		Spec: corev1.ServiceSpec{
 			ClusterIP: corev1.ClusterIPNone,
-			Selector:  map[string]string{"agent-platform.ai/instance": name},
+			Selector:  selector,
 			Ports: []corev1.ServicePort{{
 				Name: "acp", Port: 8080, TargetPort: intstr.FromString("acp"),
 			}},
@@ -308,46 +333,44 @@ func BuildService(name string, cfg *config.Config, ownerCM *corev1.ConfigMap) *c
 	}
 }
 
-func BuildNetworkPolicy(name string, cfg *config.Config, ownerCM *corev1.ConfigMap) *networkingv1.NetworkPolicy {
+// BuildAgentNetworkPolicy is the cluster-enforced half of the credential
+// boundary on the agent side (ADR-038): no path to TCP 80/443 anywhere except
+// the paired gateway pod, plus the api-server harness port and DNS.
+//
+// `pairKey` is the pair identifier — the long-lived instance name for
+// long-lived agent pairs, the fork name for fork pairs. Both halves of the
+// pair carry `agent-platform.ai/pair=<pairKey>`.
+func BuildAgentNetworkPolicy(pairKey string, cfg *config.Config, ownerCM *corev1.ConfigMap) *networkingv1.NetworkPolicy {
 	tcp := corev1.ProtocolTCP
 	udp := corev1.ProtocolUDP
 	acpPort := intstr.FromInt32(8080)
 	harnessPort := intstr.FromInt32(int32(cfg.HarnessServerPort))
-	extAuthzPort := intstr.FromInt32(int32(cfg.ExtAuthzPort))
-	httpsPort := intstr.FromInt32(443)
-	httpPort := intstr.FromInt32(80)
+	envoyPort := intstr.FromInt32(int32(cfg.EnvoyPort))
 	dnsPort := intstr.FromInt32(53)
 	dnsTargetPort := intstr.FromInt32(5353)
 
-	// Sidecar reaches arbitrary upstreams. ADR-033 §Decision keeps the
-	// first-cut allowlist permissive (no DNS allowlist in v1) — refinement
-	// is a follow-up.
-	egress := []networkingv1.NetworkPolicyEgressRule{{
-		Ports: []networkingv1.NetworkPolicyPort{
-			{Protocol: &tcp, Port: &httpsPort},
-			{Protocol: &tcp, Port: &httpPort},
-		},
-	}, {
-		// HITL ext_authz gate (ADR-035). Envoy in this same pod calls the
-		// API server's ext_authz endpoint on every credentialed request.
-		// `failure_mode_allow: false` means a blocked call here fails
-		// closed — agent gets 403 with no inbox prompt.
-		To: []networkingv1.NetworkPolicyPeer{{
-			PodSelector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{"app.kubernetes.io/component": "apiserver"},
+	egress := []networkingv1.NetworkPolicyEgressRule{
+		{
+			// Paired gateway pod only — exact-match on pair + role.
+			// Loosening to a wildcard would let one pair's agent dial
+			// another's gateway, defeating the boundary (ADR-038 §Threat Model).
+			To: []networkingv1.NetworkPolicyPeer{{
+				PodSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						LabelPair: pairKey,
+						LabelRole: RoleGateway,
+					},
+				},
+			}},
+			Ports: []networkingv1.NetworkPolicyPort{
+				{Protocol: &tcp, Port: &envoyPort},
 			},
-			NamespaceSelector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{"kubernetes.io/metadata.name": cfg.ReleaseNamespace},
-			},
-		}},
-		Ports: []networkingv1.NetworkPolicyPort{
-			{Protocol: &tcp, Port: &extAuthzPort},
 		},
-	}}
-	egress = append(egress,
-		networkingv1.NetworkPolicyEgressRule{
+		{
 			// Harness API server: separate port exposing only the subset of
 			// API available to agent harnesses (triggers, MCP tools).
+			// Platform-internal control plane, not a credentialed external
+			// resource — no proxy hop needed.
 			To: []networkingv1.NetworkPolicyPeer{{
 				PodSelector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{"app.kubernetes.io/component": "apiserver"},
@@ -360,11 +383,8 @@ func BuildNetworkPolicy(name string, cfg *config.Config, ownerCM *corev1.ConfigM
 				{Protocol: &tcp, Port: &harnessPort},
 			},
 		},
-		networkingv1.NetworkPolicyEgressRule{
-			// DNS — allow both port 53 (service port) and 5353 (target port).
-			// OVN-Kubernetes evaluates egress policy after DNAT, so the policy
-			// sees the post-DNAT target port. OpenShift DNS pods run CoreDNS
-			// on 5353 behind a Service that maps 53→5353.
+		{
+			// DNS — service port (53) and CoreDNS-on-OpenShift target port (5353).
 			Ports: []networkingv1.NetworkPolicyPort{
 				{Protocol: &tcp, Port: &dnsPort},
 				{Protocol: &udp, Port: &dnsPort},
@@ -372,20 +392,20 @@ func BuildNetworkPolicy(name string, cfg *config.Config, ownerCM *corev1.ConfigM
 				{Protocol: &udp, Port: &dnsTargetPort},
 			},
 		},
-	)
+	}
 
 	return &networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name + "-egress",
+			Name:      pairKey + "-egress",
 			Namespace: cfg.Namespace,
-			Labels:    map[string]string{"agent-platform.ai/instance": name},
+			Labels:    map[string]string{LabelPair: pairKey, LabelRole: RoleAgent},
 			OwnerReferences: []metav1.OwnerReference{
 				*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
 			},
 		},
 		Spec: networkingv1.NetworkPolicySpec{
 			PodSelector: metav1.LabelSelector{
-				MatchLabels: map[string]string{"agent-platform.ai/instance": name},
+				MatchLabels: map[string]string{LabelPair: pairKey, LabelRole: RoleAgent},
 			},
 			PolicyTypes: []networkingv1.PolicyType{
 				networkingv1.PolicyTypeEgress,

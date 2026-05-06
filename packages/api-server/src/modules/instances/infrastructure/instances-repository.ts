@@ -2,6 +2,7 @@ import { is409, type K8sClient } from "../../agents/infrastructure/k8s.js";
 import { retry } from "../../agents/infrastructure/retry.js";
 import {
   LABEL_TYPE, TYPE_INSTANCE, LABEL_OWNER, LABEL_INSTANCE_REF, LABEL_AGENT_REF, LAST_ACTIVITY_KEY,
+  LABEL_ROLE, ROLE_AGENT,
 } from "../../agents/infrastructure/labels.js";
 import {
   isOwnedBy, hasType, patchSpecField, setDesiredState, isPodReady,
@@ -79,7 +80,10 @@ export function createInstancesRepository(k8s: K8sClient): InstancesRepository {
       const ownerSelector = owner ? `,${LABEL_OWNER}=${owner}` : "";
       const [configMaps, pods] = await Promise.all([
         k8s.listConfigMaps(`${LABEL_TYPE}=${TYPE_INSTANCE}${ownerSelector}`),
-        k8s.listPods(LABEL_INSTANCE_REF),
+        // ADR-038: agent and gateway pods share the instance label;
+        // narrow to role=agent so status (Ready, podIP) reflects the
+        // agent half of the pair, which is what callers expect.
+        k8s.listPods(`${LABEL_INSTANCE_REF},${LABEL_ROLE}=${ROLE_AGENT}`),
       ]);
       const podMap = new Map<string, (typeof pods)[number]>();
       for (const pod of pods) {

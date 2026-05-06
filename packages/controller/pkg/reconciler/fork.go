@@ -9,6 +9,7 @@ import (
 	cmv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -111,7 +112,28 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 		}
 	}
 
-	desired := BuildForkJob(forkName, forkSpec, instanceSpec, agentSpec, r.config, cm, credentialSecrets)
+	// ADR-038: paired gateway pod for the fork. Render the gateway-side
+	// resources first so HTTPS_PROXY's target exists by the time the
+	// agent Job's pod starts dialing it.
+	gatewayPod := BuildForkGatewayPod(forkName, forkSpec.Instance, r.config, cm, credentialSecrets)
+	gatewaySvc := BuildForkGatewayService(forkName, r.config, cm)
+	gatewayNP := BuildForkGatewayNetworkPolicy(forkName, r.config, cm)
+	agentNP := BuildForkAgentNetworkPolicy(forkName, r.config, cm)
+
+	if err := r.applyPod(ctx, gatewayPod); err != nil {
+		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying gateway pod: %v", err))
+	}
+	if err := r.applyService(ctx, gatewaySvc); err != nil {
+		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying gateway service: %v", err))
+	}
+	if err := r.applyNetworkPolicy(ctx, gatewayNP); err != nil {
+		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying gateway networkpolicy: %v", err))
+	}
+	if err := r.applyNetworkPolicy(ctx, agentNP); err != nil {
+		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying agent networkpolicy: %v", err))
+	}
+
+	desired := BuildForkAgentJob(forkName, forkSpec, instanceSpec, agentSpec, r.config, cm, credentialSecrets)
 
 	if err := r.applyForkJob(ctx, desired); err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying job: %v", err))
@@ -163,6 +185,48 @@ func (r *ForkReconciler) applyForkJob(ctx context.Context, desired *batchv1.Job)
 			_, err = r.client.BatchV1().Jobs(desired.Namespace).Create(ctx, desired, metav1.CreateOptions{})
 			return err
 		}
+		return err
+	})
+}
+
+// applyPod creates the fork's gateway Pod if missing. Bare Pods are immutable
+// in their key fields (image, args, volumes), so we treat existing Pods as
+// authoritative — a re-render with the same fork name keeps the running pod.
+// Owner references on the Pod GC it when the fork CM is deleted.
+func (r *ForkReconciler) applyPod(ctx context.Context, desired *corev1.Pod) error {
+	_, err := r.client.CoreV1().Pods(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
+	if errors.IsNotFound(err) {
+		_, err = r.client.CoreV1().Pods(desired.Namespace).Create(ctx, desired, metav1.CreateOptions{})
+		return err
+	}
+	return err
+}
+
+// applyService mirrors `InstanceReconciler.applyService` for fork-scoped
+// gateway Services.
+func (r *ForkReconciler) applyService(ctx context.Context, desired *corev1.Service) error {
+	_, err := r.client.CoreV1().Services(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
+	if errors.IsNotFound(err) {
+		_, err = r.client.CoreV1().Services(desired.Namespace).Create(ctx, desired, metav1.CreateOptions{})
+		return err
+	}
+	return err
+}
+
+// applyNetworkPolicy mirrors `InstanceReconciler.applyNetworkPolicy` for
+// fork-scoped policies (per-fork agent and gateway pair).
+func (r *ForkReconciler) applyNetworkPolicy(ctx context.Context, desired *networkingv1.NetworkPolicy) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		existing, err := r.client.NetworkingV1().NetworkPolicies(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
+		if errors.IsNotFound(err) {
+			_, err = r.client.NetworkingV1().NetworkPolicies(desired.Namespace).Create(ctx, desired, metav1.CreateOptions{})
+			return err
+		}
+		if err != nil {
+			return err
+		}
+		existing.Spec = desired.Spec
+		_, err = r.client.NetworkingV1().NetworkPolicies(desired.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
 		return err
 	})
 }

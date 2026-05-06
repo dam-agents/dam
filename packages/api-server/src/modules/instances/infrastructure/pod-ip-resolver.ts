@@ -9,11 +9,14 @@
  * never use it for agents). The CNI rewrites/drops any non-pod source IP
  * at egress.
  *
- * This cache resolves an inbound peer IP to the `agent-platform.ai/instance` label
- * carried on the pod, which the gate then runs through the existing
- * `identityResolver` to get `(ownerSub, agentId)`. Both StatefulSet agent
- * pods and fork Jobs carry the label (`ForkLabelInstanceRef` reuses it),
- * so this single cache covers both shapes.
+ * Under ADR-038's paired-pod split the calling pod is the gateway, not the
+ * agent — both pods of the pair carry the same `agent-platform.ai/instance`
+ * label, so we narrow the LIST filter to `role=gateway` to disambiguate.
+ * The cache resolves an inbound peer IP to that pod's instance label,
+ * which the gate then runs through the existing `identityResolver` to
+ * get `(ownerSub, agentId)`. Both StatefulSet gateway pods and fork
+ * gateway Pods carry the same labels, so this single cache covers both
+ * shapes.
  *
  * Refresh strategy: a periodic re-list (cheap, single Pod LIST per tick).
  * Pods are added/removed at human cadence, so a few seconds of staleness
@@ -22,7 +25,11 @@
  * cold-start path without making it the steady state.
  */
 import type { K8sClient } from "../../agents/infrastructure/k8s.js";
-import { LABEL_INSTANCE_REF } from "../../agents/infrastructure/labels.js";
+import {
+  LABEL_INSTANCE_REF,
+  LABEL_ROLE,
+  ROLE_GATEWAY,
+} from "../../agents/infrastructure/labels.js";
 
 export interface PodIpResolver {
   start(): Promise<void>;
@@ -67,8 +74,14 @@ export function createPodIpResolver(deps: CreatePodIpResolverDeps): PodIpResolve
     if (refreshing) return refreshing;
     refreshing = (async () => {
       try {
-        // labelSelector with just the key name = "key exists" in K8s.
-        const pods = await deps.k8s.listPods(LABEL_INSTANCE_REF);
+        // ADR-038: ext_authz Check calls originate from the paired gateway
+        // pod, not the agent. Both pods carry the instance label; narrow
+        // to role=gateway so a misdirected agent-pod IP can't satisfy the
+        // resolver (it never should — agent pods have no admitted egress
+        // to the api-server's ext_authz port — but the explicit filter
+        // makes the contract obvious).
+        const selector = `${LABEL_INSTANCE_REF},${LABEL_ROLE}=${ROLE_GATEWAY}`;
+        const pods = await deps.k8s.listPods(selector);
         const next = new Map<string, string>();
         for (const pod of pods) {
           const ip = pod.status?.podIP;

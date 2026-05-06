@@ -19,25 +19,20 @@ const (
 	ForkLabelType        = "agent-platform.ai/type"
 )
 
-// BuildForkJob constructs the per-turn foreign-user fork pod.
+// BuildForkAgentJob constructs the agent half of the per-turn paired pod
+// pair (ADR-038). The fork agent runs the harness; egress credential
+// injection happens in the paired fork gateway pod, reached via HTTPS_PROXY.
 //
 // `credentialSecrets` are the replier's `(owner=foreignSub, connection=*)`
-// K8s Secrets — the instance owner's Secrets must NOT appear here; the
-// credential boundary is the container and the agent never sees Secret
-// bytes. `HTTPS_PROXY` points at the colocated `envoy` sidecar on
-// `127.0.0.1`; SA-token automount and process-namespace sharing are
-// disabled.
+// K8s Secrets — the instance owner's Secrets must NOT appear here. They mount
+// only on the paired gateway pod (ADR-027 + ADR-038). The agent container
+// itself sees no Secret bytes.
 //
 // Forks deliberately do NOT receive `PLATFORM_POD_FILES_EVENTS_URL`, so the
 // agent-runtime running in the fork pod skips the pod-files SSE loop
 // entirely. Forks are short-lived ACP-relay jobs spawned per turn; the
-// SSE overhead per pod isn't justified for that lifecycle, and most
-// pod-files state (config, allowlists, host entries for connection-
-// aware CLIs) is irrelevant to the relay flow. If a future fork-
-// relevant feature ever needs files materialized in fork pods, set
-// `PLATFORM_POD_FILES_EVENTS_URL` on the fork's env here — until then,
-// pod-files state inside fork pods is unsupported on purpose.
-func BuildForkJob(
+// SSE overhead per pod isn't justified for that lifecycle.
+func BuildForkAgentJob(
 	forkName string,
 	forkSpec *types.ForkSpec,
 	instanceSpec *types.InstanceSpec,
@@ -47,38 +42,48 @@ func BuildForkJob(
 	credentialSecrets []corev1.Secret,
 ) *batchv1.Job {
 	labels := map[string]string{
-		ForkLabelType:        ForkJobLabelType,
-		ForkLabelForkID:      forkName,
+		ForkLabelType:   ForkJobLabelType,
+		ForkLabelForkID: forkName,
+		// `agent-platform.ai/instance` references the *parent* instance for
+		// fork pods — the pod-IP resolver and ext_authz identity flow
+		// through that label, so traffic from the fork resolves under the
+		// parent's egress rules (ADR-027).
 		ForkLabelInstanceRef: forkSpec.Instance,
+		// Pair key + role for ADR-038 NetworkPolicy / Service scoping.
+		// Using the fork name as the pair key isolates the fork from the
+		// parent instance pair: fork agent only reaches fork gateway,
+		// never the parent's gateway.
+		LabelPair: forkName,
+		LabelRole: RoleAgent,
 	}
 
 	caCertPath := "/etc/platform/ca/ca.crt"
 
-	proxyAddr := fmt.Sprintf("http://127.0.0.1:%d", cfg.EnvoyPort)
+	// Paired gateway Service DNS — stable across the fork lifetime.
+	proxyAddr := fmt.Sprintf("http://%s:%d", GatewayName(forkName), cfg.EnvoyPort)
 
-	env := []corev1.EnvVar{}
-	env = append(env,
-		corev1.EnvVar{Name: "HTTPS_PROXY", Value: proxyAddr},
-		corev1.EnvVar{Name: "HTTP_PROXY", Value: proxyAddr},
-		corev1.EnvVar{Name: "https_proxy", Value: proxyAddr},
-		corev1.EnvVar{Name: "http_proxy", Value: proxyAddr},
-		corev1.EnvVar{Name: "NO_PROXY", Value: cfg.APIServerHost},
-		corev1.EnvVar{Name: "no_proxy", Value: cfg.APIServerHost},
-		corev1.EnvVar{Name: "SSL_CERT_FILE", Value: caCertPath},
-		corev1.EnvVar{Name: "NODE_EXTRA_CA_CERTS", Value: caCertPath},
-		corev1.EnvVar{Name: "GIT_SSL_CAINFO", Value: caCertPath},
-		corev1.EnvVar{Name: "NODE_USE_ENV_PROXY", Value: "1"},
-		corev1.EnvVar{Name: "GIT_HTTP_PROXY_AUTHMETHOD", Value: "basic"},
-		corev1.EnvVar{Name: "ADK_INSTANCE_ID", Value: forkSpec.Instance},
-		corev1.EnvVar{Name: "API_SERVER_URL", Value: cfg.APIServerURL()},
-		corev1.EnvVar{Name: "HOME", Value: cfg.AgentHome},
-		corev1.EnvVar{Name: "PLATFORM_MCP_URL", Value: fmt.Sprintf("%s/api/instances/%s/mcp", cfg.HarnessServerURL, forkSpec.Instance)},
-		corev1.EnvVar{Name: "PLATFORM_FORK_ID", Value: forkName},
-		corev1.EnvVar{Name: "PLATFORM_FOREIGN_SUB", Value: forkSpec.ForeignSub},
-	)
+	env := []corev1.EnvVar{
+		{Name: "HTTPS_PROXY", Value: proxyAddr},
+		{Name: "HTTP_PROXY", Value: proxyAddr},
+		{Name: "https_proxy", Value: proxyAddr},
+		{Name: "http_proxy", Value: proxyAddr},
+		{Name: "NO_PROXY", Value: cfg.APIServerHost},
+		{Name: "no_proxy", Value: cfg.APIServerHost},
+		{Name: "SSL_CERT_FILE", Value: caCertPath},
+		{Name: "NODE_EXTRA_CA_CERTS", Value: caCertPath},
+		{Name: "GIT_SSL_CAINFO", Value: caCertPath},
+		{Name: "NODE_USE_ENV_PROXY", Value: "1"},
+		{Name: "GIT_HTTP_PROXY_AUTHMETHOD", Value: "basic"},
+		{Name: "ADK_INSTANCE_ID", Value: forkSpec.Instance},
+		{Name: "API_SERVER_URL", Value: cfg.APIServerURL()},
+		{Name: "HOME", Value: cfg.AgentHome},
+		{Name: "PLATFORM_MCP_URL", Value: fmt.Sprintf("%s/api/instances/%s/mcp", cfg.HarnessServerURL, forkSpec.Instance)},
+		{Name: "PLATFORM_FORK_ID", Value: forkName},
+		{Name: "PLATFORM_FOREIGN_SUB", Value: forkSpec.ForeignSub},
+	}
 	// Placeholder credential envs from the replier's K8s Secrets — same
-	// purpose as the long-lived StatefulSet shape: satisfy the harness's
-	// is-env-set check; Envoy overrides the header on the wire.
+	// purpose as the long-lived shape: satisfy the harness's is-env-set
+	// check; the gateway's Envoy overwrites the header on the wire.
 	env = append(env, credentialEnvVars(credentialSecrets)...)
 	for _, e := range agentSpec.Env {
 		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
@@ -123,14 +128,15 @@ func BuildForkJob(
 	}
 
 	// CA cert volume — projected from the per-fork cert-manager-issued leaf
-	// Secret. Mirrors `BuildStatefulSet`.
+	// Secret (single-key projection). The leaf private key (tls.key) lives
+	// only on the paired gateway pod (ADR-038).
 	if len(credentialSecrets) > 0 {
 		volumes = append(volumes, corev1.Volume{
 			Name: "ca-cert",
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					SecretName: EnvoyLeafSecretName(forkName),
-					Items: []corev1.KeyToPath{{Key: "ca.crt", Path: "ca.crt"}},
+					Items:      []corev1.KeyToPath{{Key: "ca.crt", Path: "ca.crt"}},
 				},
 			},
 		})
@@ -152,8 +158,7 @@ func BuildForkJob(
 		resourceReqs.Limits = toResourceList(agentSpec.Resources.Limits)
 	}
 
-	// Init containers: optional user-defined init only. The CA cert is
-	// projected from the per-fork leaf Secret, so no fetch step is needed.
+	// Init containers: optional user-defined init only.
 	var initContainers []corev1.Container
 	if agentSpec.Init != "" {
 		initContainers = append(initContainers, corev1.Container{
@@ -176,6 +181,13 @@ func BuildForkJob(
 			RunAsNonRoot: agentSpec.SecurityContext.RunAsNonRoot,
 		}
 	}
+
+	// GH_TOKEN signal — mirrors the long-lived shape.
+	ghAvail := "false"
+	if hasGitHubCredential(credentialSecrets) {
+		ghAvail = "true"
+	}
+	env = append(env, corev1.EnvVar{Name: "PLATFORM_GH_TOKEN_AVAILABLE", Value: ghAvail})
 
 	containers := []corev1.Container{{
 		Name:            "agent",
@@ -204,27 +216,9 @@ func BuildForkJob(
 		VolumeMounts: volumeMounts,
 	}}
 
-	// Sidecar only — agent container never sees credential mounts.
-	volumes = append(volumes, envoySidecarVolumes(forkName, credentialSecrets)...)
-	containers = append(containers, envoySidecarContainer(cfg, credentialSecrets))
-	// ADR-033 Threat Model: agent must have no SA token (Secret-read RBAC
-	// would otherwise bypass volume-mount scoping) and process namespace
-	// must not be shared with the sidecar.
 	falseVal := false
 	automountSAToken := &falseVal
 	shareProcessNS := &falseVal
-
-	// GH_TOKEN signal — mirrors `BuildStatefulSet`. Surface whether a
-	// GitHub credential is wired up so tooling doesn't have to make a
-	// 401-eliciting request to find out.
-	ghAvail := "false"
-	if hasGitHubCredential(credentialSecrets) {
-		ghAvail = "true"
-	}
-	containers[0].Env = append(containers[0].Env, corev1.EnvVar{
-		Name:  "PLATFORM_GH_TOKEN_AVAILABLE",
-		Value: ghAvail,
-	})
 
 	ttl := int32(60)
 	backoff := int32(0)

@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-04-28
+Last verified: 2026-05-06
 
 ## Motivated by
 
@@ -12,11 +12,12 @@ Last verified: 2026-04-28
 - [ADR-012 — Runtime lifetime](../adrs/012-runtime-lifetime.md) — single-use spawn/hibernate model
 - [ADR-022 — Harness API server](../adrs/022-harness-api-server.md) — separate port with a restricted, internal-only surface
 - [ADR-023 — Harness-agnostic agent base image](../adrs/023-harness-agnostic-base-image.md) — `AGENT_COMMAND` contract
-- [ADR-033 — Envoy-based credential gateway](../adrs/033-envoy-credential-gateway.md) — per-pod Envoy sidecar that mounts owner-labelled K8s Secrets and injects credentials on the wire
+- [ADR-033 — Envoy-based credential gateway](../adrs/033-envoy-credential-gateway.md) — Envoy is the credential gateway; mounts owner-labelled K8s Secrets and injects credentials on the wire
+- [ADR-038 — Paired agent and gateway pods](../adrs/038-paired-gateway-pod.md) — agent and gateway run in two paired pods per instance, glued by NetworkPolicy
 
 ## Overview
 
-Platform runs as four long-lived subsystems on Kubernetes: a Go **controller** that reconciles ConfigMap-declared resources, a TypeScript **api-server** that brokers user requests and relays agent traffic, per-instance **agent-runtime** pods that host the agent process, and a React **ui** served by the api-server. The controller and api-server never talk to each other directly — they coordinate through the K8s API, using a `spec.yaml` / `status.yaml` split on each ConfigMap so that writes never contend.
+Platform runs as four long-lived subsystems on Kubernetes: a Go **controller** that reconciles ConfigMap-declared resources, a TypeScript **api-server** that brokers user requests and relays agent traffic, per-instance paired **agent-runtime** + **gateway** pods that host the agent process and its egress proxy, and a React **ui** served by the api-server. The controller and api-server never talk to each other directly — they coordinate through the K8s API, using a `spec.yaml` / `status.yaml` split on each ConfigMap so that writes never contend.
 
 ## Diagram
 
@@ -27,6 +28,7 @@ flowchart LR
   api-server[api-server]
   controller[controller]
   agent-runtime[agent-runtime pod]
+  gateway[gateway pod]
   k8s-api[(K8s API)]
 
   browser -->|HTTP + WS| ui
@@ -35,6 +37,8 @@ flowchart LR
   api-server -->|ACP relay / WS| agent-runtime
   api-server -->|tRPC proxy| agent-runtime
   agent-runtime -->|trigger POST / MCP| api-server
+  agent-runtime -->|HTTPS_PROXY| gateway
+  gateway -->|ext_authz Check| api-server
   api-server -->|REST| k8s-api
   controller -->|watch + status writes| k8s-api
   controller -.exec trigger.-> agent-runtime
@@ -64,7 +68,11 @@ The per-instance pod that runs the ACP WebSocket server and spawns the underlyin
 - Expose a scoped tRPC router (via the api-server's tRPC proxy) for in-pod file operations surfaced to the UI.
 - Hold an SSE connection to the api-server's pod-files endpoint and materialize declarative file state under the agent's HOME — currently `~/.config/gh/hosts.yml` for granted GitHub Enterprise app connections, more producers might come. Refuses paths outside HOME (defense-in-depth) and skips the loop when `PLATFORM_POD_FILES_EVENTS_URL` is unset (forks).
 
-See [`packages/agent-runtime/`](../../packages/agent-runtime/) and [`packages/agent-runtime-api/`](../../packages/agent-runtime-api/).
+The agent-runtime pod holds zero credential Secrets and has no admitted route to TCP 80/443 except its paired gateway pod ([ADR-038](../adrs/038-paired-gateway-pod.md)). Its `HTTPS_PROXY` value is the per-instance gateway Service DNS, but the value is decorative — Kubernetes admits no other route. See [`packages/agent-runtime/`](../../packages/agent-runtime/) and [`packages/agent-runtime-api/`](../../packages/agent-runtime-api/).
+
+### gateway
+
+A per-instance Envoy pod paired with the agent-runtime pod ([ADR-038](../adrs/038-paired-gateway-pod.md)). Mounts the owner's credential Secrets, the cert-manager-issued leaf TLS material, and the rendered Envoy bootstrap ConfigMap. Terminates the agent's egress TLS, injects credentials on the wire, and gates each credentialed request through the api-server's ext_authz handler. NetworkPolicy admits ingress only from the paired agent pod and egress only to upstream services, the api-server's ext_authz port, and DNS. See [security-and-credentials](security-and-credentials.md).
 
 ### ui
 
@@ -99,12 +107,12 @@ Platform models all of its domain state as ConfigMaps labelled `platform.ai/type
 | `agent-schedule` | Schedule: cron or RRULE, quiet hours, task payload, session mode |
 | `agent-fork` | Forked run: parent instance ref + overrides |
 
-For each `agent-instance`, the controller reconciles a StatefulSet (replicas 0 when hibernated, 1 when running), a headless Service, a NetworkPolicy, and a per-instance Envoy bootstrap ConfigMap + leaf-TLS Certificate ([ADR-033](../adrs/033-envoy-credential-gateway.md)). ConfigMaps are chosen over CRDs so Platform installs without cluster-admin. See [`deploy/helm/platform/templates/`](../../deploy/helm/platform/templates/) for the install layout.
+For each `agent-instance`, the controller reconciles **two paired StatefulSets** (agent + gateway, both at replicas 0 when hibernated and 1 when running), **two Services** (agent's ACP and the gateway's `<instance>-gateway` proxy DNS), **two NetworkPolicies** (one per role), and a per-instance Envoy bootstrap ConfigMap + leaf-TLS Certificate ([ADR-033](../adrs/033-envoy-credential-gateway.md), [ADR-038](../adrs/038-paired-gateway-pod.md)). ConfigMaps are chosen over CRDs so Platform installs without cluster-admin. See [`deploy/helm/platform/templates/`](../../deploy/helm/platform/templates/) for the install layout.
 
 ## Invariants
 
 - **Spec/status ownership.** Controller never writes `spec.yaml`; api-server never writes `status.yaml`. Write contention between the two is impossible by convention.
 - **Relay-only ACP.** All ACP traffic is proxied through the api-server. Agent pods do not accept ACP connections from outside the cluster and the UI never dials pods directly.
 - **Two-port api-server.** The public port is user-authenticated; the harness port is cluster-internal and has no user authentication. They do not share routes.
-- **Credential isolation.** Agent pods never hold real upstream credentials. An Envoy sidecar in the pod intercepts agent TLS using a per-instance leaf cert and injects the credential header from a K8s Secret mounted only into the sidecar — the agent container itself never sees the upstream credential ([ADR-033](../adrs/033-envoy-credential-gateway.md)). See [security-and-credentials](security-and-credentials.md).
+- **Credential isolation.** Agent pods never hold real upstream credentials. The paired gateway pod intercepts agent TLS using a per-instance leaf cert and injects the credential header from a K8s Secret mounted only on the gateway — the agent pod has no path to Secret material, and NetworkPolicy admits no egress to TCP 80/443 except through the paired gateway ([ADR-033](../adrs/033-envoy-credential-gateway.md), [ADR-038](../adrs/038-paired-gateway-pod.md)). See [security-and-credentials](security-and-credentials.md).
 - **Atomic triggers.** Trigger files are delivered via write-temp + rename so the agent's trigger watcher never reads a partial file.

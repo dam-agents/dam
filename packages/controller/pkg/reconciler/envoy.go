@@ -236,9 +236,10 @@ func routesFromSecrets(secrets []corev1.Secret) []envoyRoute {
 
 // Bootstrap template — TLS-intercepting CONNECT proxy.
 //
-// Topology:
-//   1. The agent points HTTP(S)_PROXY at 127.0.0.1:<port>. All egress arrives
-//      as HTTP CONNECT.
+// Topology (ADR-038):
+//   1. The agent points HTTP(S)_PROXY at the paired gateway pod's Service DNS
+//      (e.g. `<instance>-gateway:<port>`). The listener binds 0.0.0.0 inside
+//      the gateway pod; reach is gated by NetworkPolicy, not bind address.
 //   2. The OUTER listener on that port is an HCM that terminates the agent's
 //      CONNECT and routes the inner stream into the INTERNAL listener (Envoy's
 //      "internal listener" feature, addressed via envoy_internal_address).
@@ -262,9 +263,9 @@ func routesFromSecrets(secrets []corev1.Secret) []envoyRoute {
 //      misconfigured cluster fails the upstream TLS handshake before any
 //      credentialed body reaches the wire.
 //   - Upstream TLS validation uses Envoy's default system trust bundle; the
-//      sidecar image must ship one (envoy-distroless does).
-//   - Admin interface intentionally omitted (ADR-033 threat model: the agent
-//      shares the network namespace).
+//      gateway image must ship one (envoy-distroless does).
+//   - Admin interface intentionally omitted; the gateway pod's NetworkPolicy
+//      additionally admits ingress only from its paired agent pod.
 
 const envoyBootstrapTmpl = `node:
   id: platform-credential-injector
@@ -277,7 +278,7 @@ static_resources:
   listeners:
     - name: agent_egress
       address:
-        socket_address: { address: 127.0.0.1, port_value: {{ .Port }} }
+        socket_address: { address: {{ .ListenAddress }}, port_value: {{ .Port }} }
       filter_chains:
         - filters:
             - name: envoy.filters.network.http_connection_manager
@@ -597,7 +598,13 @@ static_resources:
                       port_value: {{ $.ExtAuthzPort }}
 `
 
-// renderEnvoyBootstrap returns the Envoy bootstrap YAML for an instance.
+// envoyListenAddress is the bind address for the gateway pod's outer listener.
+// 0.0.0.0 — reach is gated by the gateway pod's NetworkPolicy (ingress admitted
+// only from the paired agent pod), not the bind address. ADR-038.
+const envoyListenAddress = "0.0.0.0"
+
+// renderEnvoyBootstrap returns the Envoy bootstrap YAML for an instance's
+// paired gateway pod.
 func renderEnvoyBootstrap(instanceName string, cfg *config.Config, routes []envoyRoute) (string, error) {
 	tmpl, err := template.New("envoy").Parse(envoyBootstrapTmpl)
 	if err != nil {
@@ -608,6 +615,7 @@ func renderEnvoyBootstrap(instanceName string, cfg *config.Config, routes []envo
 	extAuthzTimeoutSeconds := cfg.ExtAuthzHoldSeconds + 60
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, struct {
+		ListenAddress          string
 		Port                   int
 		Routes                 []envoyRoute
 		CredentialsRoot        string
@@ -620,6 +628,7 @@ func renderEnvoyBootstrap(instanceName string, cfg *config.Config, routes []envo
 		ExtAuthzHoldSeconds    int
 		ExtAuthzTimeoutSeconds int
 	}{
+		ListenAddress:          envoyListenAddress,
 		Port:                   cfg.EnvoyPort,
 		Routes:                 routes,
 		CredentialsRoot:        envoyCredentialsRoot,
@@ -658,12 +667,12 @@ func BuildEnvoyBootstrapConfigMap(instanceName string, cfg *config.Config, owner
 	}, nil
 }
 
-// envoySidecarVolumes returns the pod-level volumes that back the sidecar's
+// envoyVolumes returns the pod-level volumes that back the gateway pod's
 // bootstrap ConfigMap, per-Secret credential files, and the cert-manager-issued
 // TLS leaf used to terminate the agent's intercepted TLS. None of these are
-// referenced from the agent container — the credential boundary lives at the
-// container, not the pod.
-func envoySidecarVolumes(instanceName string, secrets []corev1.Secret) []corev1.Volume {
+// referenced from the agent pod — the credential boundary lives at the pod
+// boundary (ADR-038).
+func envoyVolumes(instanceName string, secrets []corev1.Secret) []corev1.Volume {
 	volumes := []corev1.Volume{{
 		Name: envoyBootstrapVolume,
 		VolumeSource: corev1.VolumeSource{
@@ -713,7 +722,7 @@ func ptrBool(b bool) *bool { return &b }
 // kubelet keeps the old bootstrap mounted.
 //
 // Bump on any template change that affects pod-visible behavior.
-const envoyBootstrapTemplateRev = "v2-pinned-upstreams"
+const envoyBootstrapTemplateRev = "v3-paired-gateway"
 
 // envoySecretsRev is a stable digest of the Secret set that drives Envoy's
 // chain rendering: secret name + host + secret-type label + headerName,
@@ -738,10 +747,11 @@ func envoySecretsRev(secrets []corev1.Secret) string {
 	return hex.EncodeToString(sum[:8])
 }
 
-// envoySidecarContainer returns the Envoy sidecar spec. Drops all caps,
+// envoyContainer returns the gateway pod's Envoy container spec. Drops all caps,
 // ReadOnlyRootFilesystem; mounts only the bootstrap CM and the owner's
-// credential Secrets.
-func envoySidecarContainer(cfg *config.Config, secrets []corev1.Secret) corev1.Container {
+// credential Secrets. Used as the sole non-init container of the paired
+// gateway pod (ADR-038).
+func envoyContainer(cfg *config.Config, secrets []corev1.Secret) corev1.Container {
 	mounts := []corev1.VolumeMount{{
 		Name:      envoyBootstrapVolume,
 		MountPath: envoyBootstrapMount,
