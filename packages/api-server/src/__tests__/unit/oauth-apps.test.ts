@@ -7,10 +7,30 @@ import {
 } from "../../modules/connections/infrastructure/oauth-apps.js";
 
 describe("OAuth app registry — descriptors", () => {
-  it("lists the static apps and Generic as available app types", () => {
+  it("lists the static apps, Google services, and Generic as available app types", () => {
     const reg = createOAuthAppRegistry();
     const ids = reg.list().map((d) => d.id);
-    expect(ids).toEqual(["github", "github-enterprise", "spotify", "generic"]);
+    expect(ids).toEqual([
+      "github",
+      "github-enterprise",
+      "spotify",
+      "gmail",
+      "google-admin",
+      "google-analytics",
+      "google-calendar",
+      "google-classroom",
+      "google-docs",
+      "google-drive",
+      "google-forms",
+      "google-health",
+      "google-meet",
+      "google-photos",
+      "google-search-console",
+      "google-sheets",
+      "google-slides",
+      "google-tasks",
+      "generic",
+    ]);
   });
 
   it("each descriptor declares its cardinality", () => {
@@ -18,7 +38,35 @@ describe("OAuth app registry — descriptors", () => {
     expect(reg.get("github")!.cardinality).toBe("single");
     expect(reg.get("github-enterprise")!.cardinality).toBe("single");
     expect(reg.get("spotify")!.cardinality).toBe("single");
+    expect(reg.get("gmail")!.cardinality).toBe("single");
+    expect(reg.get("google-drive")!.cardinality).toBe("single");
     expect(reg.get("generic")!.cardinality).toBe("multiple");
+  });
+
+  it("Google service descriptors share the credentialFamily 'google'", () => {
+    const reg = createOAuthAppRegistry();
+    const googleIds = [
+      "gmail",
+      "google-admin",
+      "google-analytics",
+      "google-calendar",
+      "google-classroom",
+      "google-docs",
+      "google-drive",
+      "google-forms",
+      "google-health",
+      "google-meet",
+      "google-photos",
+      "google-search-console",
+      "google-sheets",
+      "google-slides",
+      "google-tasks",
+    ];
+    for (const id of googleIds) {
+      expect(reg.get(id)!.credentialFamily).toBe("google");
+    }
+    expect(reg.get("github")!.credentialFamily).toBeUndefined();
+    expect(reg.get("spotify")!.credentialFamily).toBeUndefined();
   });
 
   it("each descriptor surfaces input fields the UI needs to render the connect form", () => {
@@ -92,6 +140,44 @@ describe("OAuth app registry — build()", () => {
     const reg = createOAuthAppRegistry();
     expect(() => reg.build("github", { clientId: "" })).toThrow();
     expect(() => reg.build("github", { clientId: "id" })).toThrow();
+  });
+
+  it("builds a Google service flow with the OIDC baseline + service-specific scopes and offline-access auth params", () => {
+    const reg = createOAuthAppRegistry();
+    const built = reg.build("google-drive", { clientId: "id", clientSecret: "sec" });
+    expect(built.provider.authorizationUrl).toBe(
+      "https://accounts.google.com/o/oauth2/v2/auth",
+    );
+    expect(built.provider.tokenEndpoint).toBe("https://oauth2.googleapis.com/token");
+    expect(built.provider.scopes).toEqual([
+      "openid",
+      "email",
+      "profile",
+      "https://www.googleapis.com/auth/drive.readonly",
+      "https://www.googleapis.com/auth/drive.file",
+    ]);
+    expect(built.provider.extraAuthParams).toEqual({
+      access_type: "offline",
+      prompt: "consent",
+    });
+    expect(built.flow).toEqual({
+      connectionKey: "google-drive",
+      hostPattern: "www.googleapis.com",
+      displayName: "Google Drive",
+    });
+    expect(built.connectionDisplayName).toBe("Google Drive");
+  });
+
+  it("Google Health uses the googlehealth.googleapis.com host and health-specific scopes", () => {
+    const reg = createOAuthAppRegistry();
+    const built = reg.build("google-health", { clientId: "id", clientSecret: "sec" });
+    expect(built.flow.hostPattern).toBe("googlehealth.googleapis.com");
+    expect(built.provider.scopes).toContain(
+      "https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly",
+    );
+    expect(built.provider.scopes).toContain(
+      "https://www.googleapis.com/auth/googlehealth.sleep.readonly",
+    );
   });
 
   it("builds the Spotify flow with default scopes and no env-var injection", () => {

@@ -166,6 +166,11 @@ export function ConnectAppForm({ app, onCancel }: Props) {
           </a>
         )}
         <CallbackUrlField url={app.callbackUrl} />
+        {app.credentialsInherited && (
+          <div className="rounded-lg border-2 border-success/30 bg-success/5 px-4 py-3 text-[12px] text-text-secondary">
+            Reusing the Client ID and secret from another connected app in this family — no need to re-enter them.
+          </div>
+        )}
         {app.inputs.map((field) => {
           const isDiscoveryHostField = app.discoverFromHostField === field.name;
           const helperOverride =

@@ -63,6 +63,15 @@ const oauthAppDescriptorSchema = z.object({
   callbackUrl: z.string(),
   /** When set, the form runs issuer discovery on blur of the named input. */
   discoverFromHostField: z.string().optional(),
+  /** Provider quirk surface area — the UI does not act on these directly. */
+  localhostCallbackAlias: z.string().optional(),
+  credentialFamily: z.string().optional(),
+  /**
+   * True when the user already has a sibling connection in this app's
+   * credentialFamily and the server has pruned the credential inputs.
+   * Drives a "Using your stored credentials" hint in the connect form.
+   */
+  credentialsInherited: z.boolean().optional(),
 });
 const oauthAppsSchema = z.array(oauthAppDescriptorSchema);
 export type OAuthAppDescriptor = z.infer<typeof oauthAppDescriptorSchema>;

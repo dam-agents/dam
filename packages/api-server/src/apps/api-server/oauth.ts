@@ -58,18 +58,61 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
     return createK8sConnectionsPort(k8sClient, userSub);
   }
 
+  /**
+   * For each `credentialFamily` the user has at least one connection in,
+   * pick the first connection's `clientId` / `clientSecret` from its stored
+   * metadata. Sibling descriptors in the same family use these to skip
+   * re-asking the user — register one OAuth app at the provider, connect
+   * many services with it.
+   */
+  async function readFamilyCreds(
+    port: K8sConnectionsPort,
+  ): Promise<Map<string, { clientId: string; clientSecret: string }>> {
+    const out = new Map<string, { clientId: string; clientSecret: string }>();
+    const summaries = await port.listConnections();
+    const descriptors = apps.list();
+    for (const summary of summaries) {
+      const matched = descriptors.find((d) => matchesAppConnection(d, summary.connection));
+      const family = matched?.credentialFamily;
+      if (!family || out.has(family)) continue;
+      const record = await port.getConnection(summary.connection);
+      const cid = record?.metadata.clientId;
+      const csec = record?.metadata.clientSecret;
+      if (cid && csec) out.set(family, { clientId: cid, clientSecret: csec });
+    }
+    return out;
+  }
+
   // -------------------------------------------------------------------------
   // Named OAuth apps (GitHub, GitHub Enterprise)
   // -------------------------------------------------------------------------
 
-  oauth.get("/api/oauth/apps", (c) => {
+  oauth.get("/api/oauth/apps", async (c) => {
     // Bake the callback URL into each descriptor so the connect form can
     // surface it — every OAuth app the user registers at the provider must
     // be configured with this exact URL as its redirect URI. Per-descriptor
     // because some providers (e.g. Spotify) reject `localhost` and need a
     // host-rewritten callback (see `localhostCallbackAlias`).
+    //
+    // Descriptors with `credentialFamily` set get their credential inputs
+    // (clientId / clientSecret) pruned when the user already has a sibling
+    // connection in the same family — the connect form then renders only
+    // service-specific fields and the OAuth flow reuses the stored creds.
+    const user = c.get("user");
+    const familyCreds = await readFamilyCreds(k8sConnectionsFor(user.sub));
     return c.json(
-      apps.list().map((d) => ({ ...d, callbackUrl: callbackUrlForApp(d, uiBaseUrl) })),
+      apps.list().map((d) => {
+        const inheritFamily = d.credentialFamily && familyCreds.has(d.credentialFamily);
+        const inputs = inheritFamily
+          ? d.inputs.filter((i) => i.name !== "clientId" && i.name !== "clientSecret")
+          : d.inputs;
+        return {
+          ...d,
+          inputs,
+          ...(inheritFamily ? { credentialsInherited: true as const } : {}),
+          callbackUrl: callbackUrlForApp(d, uiBaseUrl),
+        };
+      }),
     );
   });
 
@@ -170,6 +213,23 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
     } catch {
       return c.json({ error: "Invalid JSON body" }, 400);
     }
+    const user = c.get("user");
+    // Inherit clientId / clientSecret from a sibling connection in the same
+    // credentialFamily when the body omits them. Mirrors the input pruning
+    // applied by GET /api/oauth/apps so the connect form doesn't have to
+    // round-trip the credentials it never showed the user.
+    if (descriptor.credentialFamily) {
+      const merged = (body && typeof body === "object" ? { ...(body as Record<string, unknown>) } : {});
+      if (!merged.clientId || !merged.clientSecret) {
+        const familyCreds = await readFamilyCreds(k8sConnectionsFor(user.sub));
+        const creds = familyCreds.get(descriptor.credentialFamily);
+        if (creds) {
+          if (!merged.clientId) merged.clientId = creds.clientId;
+          if (!merged.clientSecret) merged.clientSecret = creds.clientSecret;
+          body = merged;
+        }
+      }
+    }
     let built;
     try {
       built = apps.build(descriptor.id, body);
@@ -177,7 +237,6 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
       const msg = err instanceof Error ? err.message : "Invalid input";
       return c.json({ error: msg }, 400);
     }
-    const user = c.get("user");
     const jwt = getUserJwt(c);
     const redirectUri = callbackUrlForApp(descriptor, uiBaseUrl);
     const { authUrl } = engine.start({
