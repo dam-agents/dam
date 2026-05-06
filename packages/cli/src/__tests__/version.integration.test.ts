@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { copyFile, mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -235,5 +235,24 @@ describe("dam version (integration)", () => {
     });
     expect(r.exitCode).toBe(0);
     expect(r.stdout.trim()).toBe(LOCAL);
+  });
+
+  it("relocated bin.js still resolves the version (build-time embed)", async () => {
+    // The version must be embedded in the bundle, not resolved by walking
+    // up to a sibling package.json. Copy the built bin to a tmp dir away
+    // from the repo and confirm `--version` prints the right string.
+    // Use a `.mjs` extension so Node treats it as ESM without relying on a
+    // sibling package.json (which is the whole point — no walk).
+    const tmpDist = await mkdtemp(join(tmpdir(), "dam-relocated-"));
+    try {
+      const relocated = join(tmpDist, "bin.mjs");
+      await copyFile(BIN_PATH, relocated);
+      const { stdout } = await exec("node", [relocated, "--version"], {
+        env: { HOME: home, PATH: process.env.PATH ?? "" },
+      });
+      expect(stdout.trim()).toBe(LOCAL);
+    } finally {
+      await rm(tmpDist, { recursive: true, force: true });
+    }
   });
 });
