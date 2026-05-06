@@ -283,6 +283,11 @@ apiServer:
   # timeouts are an external ceiling — see ADR §Timeouts.
   approvalHoldSeconds: 1800
 
+  # -- Minimum dam CLI version this server accepts. CLIs below this floor
+  # exit non-zero with a setup hint; CLIs at or above the floor proceed
+  # (a soft-warn fires if they're behind the current server version).
+  # Default "0.0.0" accepts everything. Bump when you need to retire a
+  # known-broken older client. See ADR-039 §"server-advertised compatibility floor".
   minClientCliVersion: "0.0.0"
 
   # -- Ingress NetworkPolicy for the api-server pod.
