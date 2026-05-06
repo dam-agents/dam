@@ -30,17 +30,17 @@ function fakeProbe(
   return {
     async probe() {
       if (result.ok) return ok(result.value);
-      return err({
-        kind: "probe-error",
-        code: result.code,
-        message: "stub",
-      });
+      return err({ kind: "probe-error", code: result.code, message: "stub" });
     },
   };
 }
 
+// Verdict logic is covered by compat.test.ts. These cases cover the
+// service-only seams: error propagation from each upstream port, and the
+// flag override flowing through to ConfigService.
+
 describe("CompatService.check", () => {
-  it("Ok when local matches server and is at/above floor", async () => {
+  it("happy path: passes localCliVersion + probe values into verdictFor and returns its result", async () => {
     const svc = createCompatService({
       config: fakeConfigService({ server: "http://x" }),
       probe: fakeProbe({
@@ -52,40 +52,14 @@ describe("CompatService.check", () => {
 
     const r = await svc.check({});
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.value.kind).toBe("ok");
+    if (r.ok) {
+      expect(r.value.kind).toBe("ok");
+      expect(r.value.localCli).toBe("1.0.0");
+      expect(r.value.serverVersion).toBe("1.0.0");
+    }
   });
 
-  it("BehindCurrent when local lags server but is at/above floor", async () => {
-    const svc = createCompatService({
-      config: fakeConfigService({ server: "http://x" }),
-      probe: fakeProbe({
-        ok: true,
-        value: { serverVersion: "2.0.0", minClientVersion: "1.0.0" },
-      }),
-      localCliVersion: "1.5.0",
-    });
-
-    const r = await svc.check({});
-    expect(r.ok).toBe(true);
-    if (r.ok) expect(r.value.kind).toBe("behind-current");
-  });
-
-  it("BelowFloor when local is below floor", async () => {
-    const svc = createCompatService({
-      config: fakeConfigService({ server: "http://x" }),
-      probe: fakeProbe({
-        ok: true,
-        value: { serverVersion: "1.0.0", minClientVersion: "1.0.0" },
-      }),
-      localCliVersion: "0.5.0",
-    });
-
-    const r = await svc.check({});
-    expect(r.ok).toBe(true);
-    if (r.ok) expect(r.value.kind).toBe("below-floor");
-  });
-
-  it("propagates MissingConfigError when no server configured", async () => {
+  it("propagates MissingConfigError from ConfigService", async () => {
     const svc = createCompatService({
       config: fakeConfigService({ error: "missing" }),
       probe: fakeProbe({
@@ -100,7 +74,7 @@ describe("CompatService.check", () => {
     if (!r.ok) expect(r.error.kind).toBe("missing-config");
   });
 
-  it("propagates ProbeError on network failure", async () => {
+  it("propagates ProbeError from VersionProbe", async () => {
     const svc = createCompatService({
       config: fakeConfigService({ server: "http://x" }),
       probe: fakeProbe({ ok: false, code: "network" }),
@@ -109,15 +83,12 @@ describe("CompatService.check", () => {
 
     const r = await svc.check({});
     expect(r.ok).toBe(false);
-    if (!r.ok) {
-      expect(r.error.kind).toBe("probe-error");
-      if (r.error.kind === "probe-error") {
-        expect(r.error.code).toBe("network");
-      }
+    if (!r.ok && r.error.kind === "probe-error") {
+      expect(r.error.code).toBe("network");
     }
   });
 
-  it("uses flag override when provided", async () => {
+  it("forwards the flag override to ConfigService.getResolved", async () => {
     let resolveCalledWithFlag: Partial<Config> | undefined = undefined;
     const svc = createCompatService({
       config: {

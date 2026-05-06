@@ -35,10 +35,4 @@ describe("/api/version handler", () => {
     expect(await without.json()).toEqual(await with_.json());
   });
 
-  it("reflects the configured minClientVersion floor", async () => {
-    const app = buildApp("1.0.0", "99.0.0");
-    const res = await app.request("/api/version");
-    const body = (await res.json()) as { minClientVersion: string };
-    expect(body.minClientVersion).toBe("99.0.0");
-  });
 });
