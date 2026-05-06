@@ -157,7 +157,10 @@ export function ChatView() {
     }
     if (target === SessionMode.Terminal) terminalFreshRef.current = true;
     setSessionMode(target);
-    if (target === SessionMode.Chat && sessionId) resumeSession(sessionId);
+    if (target === SessionMode.Chat) {
+      if (sessionId) resumeSession(sessionId, { expectNotFound: sessionMode === SessionMode.Terminal });
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    }
   }, [selectedInstance, sessionMode, sessionId, messages.length, showConfirm, busy, stopAgent, setSessionMode, resumeSession, setSessionId]);
 
   const handleBack = useCallback(() => {
@@ -238,23 +241,23 @@ export function ChatView() {
           </button>
           <span className="w-px h-4 bg-border-light" />
           <h1 className="text-[14px] font-bold text-text truncate">{selectedInstance}</h1>
+          <div className="flex h-7 rounded-md border border-border-light overflow-hidden">
+            <button
+              className={`px-2 flex items-center gap-1 text-[11px] font-semibold transition-colors ${chatActive ? "bg-accent-light text-accent" : "text-text-muted hover:text-accent"}`}
+              onClick={chatActive ? undefined : handleToggleMode}
+              title="Chat mode"
+            >
+              <MessageSquare size={12} /> Chat
+            </button>
+            <button
+              className={`px-2 flex items-center gap-1 text-[11px] font-semibold border-l border-border-light transition-colors ${!chatActive ? "bg-accent-light text-accent" : "text-text-muted hover:text-accent"}`}
+              onClick={!chatActive ? undefined : handleToggleMode}
+              title="Terminal mode"
+            >
+              <TerminalSquare size={12} /> Terminal
+            </button>
+          </div>
           <div className="ml-auto flex items-center gap-2">
-            <div className="flex h-7 rounded-md border border-border-light overflow-hidden">
-              <button
-                className={`px-2 flex items-center gap-1 text-[11px] font-semibold transition-colors ${chatActive ? "bg-accent-light text-accent" : "text-text-muted hover:text-accent"}`}
-                onClick={chatActive ? undefined : handleToggleMode}
-                title="Chat mode"
-              >
-                <MessageSquare size={12} /> Chat
-              </button>
-              <button
-                className={`px-2 flex items-center gap-1 text-[11px] font-semibold border-l border-border-light transition-colors ${!chatActive ? "bg-accent-light text-accent" : "text-text-muted hover:text-accent"}`}
-                onClick={!chatActive ? undefined : handleToggleMode}
-                title="Terminal mode"
-              >
-                <TerminalSquare size={12} /> Terminal
-              </button>
-            </div>
             <button
               className="md:hidden h-7 w-7 rounded-md border border-border-light flex items-center justify-center text-text-muted hover:text-accent hover:border-accent transition-colors"
               onClick={() => setShowMobilePanel(true)}

@@ -2,10 +2,12 @@ import type { McpServer } from "@agentclientprotocol/sdk/dist/schema/types.gen.j
 import { useCallback, useEffect, useState } from "react";
 
 import { api } from "../../../api.js";
+import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import { hasStreamingAssistant } from "../../acp/session-projection.js";
 import { classifyResumeError, extractErrorMessage } from "../../acp/utils.js";
 import { useInstancesList } from "../../instances/api/queries.js";
+import { acpSessionsKeys } from "../api/queries.js";
 import { useAcpConfigCache } from "./use-acp-config-cache.js";
 import { useAcpConnection } from "./use-acp-connection.js";
 import { useAcpHistory } from "./use-acp-history.js";
@@ -99,9 +101,9 @@ export function useAcpSession(
     setSessionConfigOptions([]);
   }, [resetConnection, setSessionId, setMessages, setSessionModes, setSessionModels, setSessionConfigOptions]);
 
-  const resumeSession = useCallback(async (sid: string) => {
+  const resumeSession = useCallback(async (sid: string, opts?: { expectNotFound?: boolean }) => {
     if (!selectedInstance) return;
-    
+
     resetConnection();
     setLoadingSession(true);
     setMessages([]);
@@ -115,15 +117,23 @@ export function useAcpSession(
       setMessages(fresh);
     } catch (e) {
       if (useStore.getState().sessionId !== sid) return;
+      const kind = classifyResumeError(e);
+      if (kind === "not-found" && opts?.expectNotFound) {
+        setLoadingSession(false);
+        await api.sessions.delete.mutate({ sessionId: sid, instanceId: selectedInstance });
+        queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
+        resetSession();
+        return;
+      }
       setSessionError({
         sessionId: sid,
         message: extractErrorMessage(e),
-        kind: classifyResumeError(e),
+        kind,
       });
     } finally {
       if (useStore.getState().sessionId === sid) setLoadingSession(false);
     }
-  }, [selectedInstance, loadHistory, resetConnection, setMessages, setSessionError, setSessionId, setMobileScreen]);
+  }, [selectedInstance, loadHistory, resetConnection, resetSession, setMessages, setSessionError, setSessionId, setMobileScreen]);
 
   const { sendPrompt, stopAgent } = useAcpPrompt(
     selectedInstance,
