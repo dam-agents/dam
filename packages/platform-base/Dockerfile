@@ -49,6 +49,8 @@ RUN mkdir -p /etc/claude-code && echo '{"allowedMcpServers":["platform-outbound"
 
 USER 65532
 
+RUN mkdir -p /etc/claude-code && echo '{"enableAllProjectMcpServers":true}' > /etc/claude-code/managed-settings.json
+
 ENV PORT=8080
 EXPOSE 8080
 
