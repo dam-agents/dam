@@ -1,4 +1,4 @@
-# ADR-039: Platform CLI foundation — Node-on-npm, tRPC contract reuse
+# ADR-039: Platform CLI foundation — TypeScript on Node, npm distribution
 
 **Date:** 2026-05-05
 **Status:** Accepted
@@ -18,7 +18,7 @@ This ADR implements [#79](https://github.com/dam-agents/dam/issues/79). Subseque
 
 The load-bearing rules:
 
-- **One language stack.** TypeScript, the same stack as the API server and UI ([ADR-009](009-go-and-typescript.md)). The CLI imports `api-server-api` directly and consumes the tRPC contract end-to-end-typed; every server-side type change reaches the CLI without codegen or manual mirroring. This is the single biggest leverage point and the reason TypeScript wins over Go, Rust, or Python here.
+- **One language stack.** TypeScript, the same stack as the API server and UI ([ADR-009](009-go-and-typescript.md)). The team writes TypeScript daily; the repo's only non-TS package is the controller. Adding a third language stack for one tool is ongoing tax. The CLI also consumes `api-server-api` directly today, getting tRPC types end-to-end without codegen — a current convenience that depends on how the API surface evolves.
 - **Ship as a Node script, not a native binary.** `npm install -g @dam-agents/cli` is the only install path. Users must have Node ≥ 20.
 - **Config lives at `~/.dam/config.toml`.** The AI-CLI category convention is to put state in `~/.<vendor>/`; the audience expects that location. TOML for hand-edit ergonomics and comment support. Auth credentials and other state will share the `~/.dam/` tree but explicitly not this file.
 - **Flat config schema; no profiles.** A single configured server, no `current-profile` indirection.
@@ -40,19 +40,19 @@ This ADR explicitly does *not* decide:
 ## Alternatives Considered
 
 - **Native binary distribution (Bun-compile, brew, curl-pipe).** Polished install story, no Node prerequisite. Rejected on demo-deadline grounds: the engineering cost (CI matrix, code-signing, install-script hosting) buys polish the demo doesn't need, and the npm-script path does not block the migration.
-- **Go or Rust for the CLI binary.** Smaller binaries, no Node prerequisite. Rejected because both throw away tRPC contract reuse — every API change becomes a two-place edit, forever — and add a third language stack to the repo.
-- **Python.** Considered. Rejected on three grounds: zero code reuse with the tRPC contract, weaker single-binary distribution story than TypeScript, and a third language stack to maintain.
+- **Go or Rust for the CLI binary.** Smaller binaries, no Node prerequisite. Rejected because TypeScript is the team's daily language and the repo's only non-TS package is the controller — adding a third stack for one tool is ongoing tax. Contract consumption is a secondary concern: the current TS-direct-import advantage is tied to today's tRPC API. Any evolution of that surface — replacement, wrapping, supplementation by a separate API — shifts how every client consumes the contract, regardless of language.
+- **Python.** Considered. Rejected on the same team-velocity and single-stack-consistency grounds, plus a weaker single-binary distribution story than TypeScript (PyInstaller/Nuitka are clunkier than Bun-compile if/when we go that direction).
 - **XDG-compliant config path.** Matches generic developer-tool precedent. Rejected because the AI-CLI audience expects `~/.<vendor>/`; matching the audience's muscle memory beats matching a different audience's precedent.
 - **Profiles from day one.** Rejected on YAGNI grounds; the migration path remains open as a non-breaking on-read rewrite.
 - **Native Windows support.** Rejected because native Windows pulls forward design work for [#86](https://github.com/dam-agents/dam/issues/86) (Windows PTY differs) and expands the test matrix during demo crunch. WSL2 is supported transparently — it is just Linux from the binary's perspective.
-- **REST + manual fetch instead of tRPC client.** Rejected because it discards the entire reason TypeScript was chosen over Go/Rust.
+- **REST + manual fetch instead of tRPC client.** Rejected because it discards direct type imports without offering anything in return. If the API surface evolves later, the CLI follows it through whatever client tooling matches the new surface — manual fetch is never that answer.
 - **`/version` inside the tRPC surface.** Rejected because the version check must run before authentication and before any client setup; a plain HTTP endpoint is simpler and useful for non-CLI consumers (uptime checks, ops tooling) too.
 - **Opt-out anonymous telemetry.** The standard pattern in many developer CLIs. Rejected because it would be inconsistent with the platform's broader posture; flipping just the CLI to phone-home would be a surprise.
 
 ## Consequences
 
 - The CLI ships on a tighter timeline because npm-only distribution skips CI matrix, code-signing, and install-script hosting. Every future verb the team adds — login, instances, shell, import — inherits the foundation without re-litigating.
-- Every server-side tRPC contract change automatically reaches the CLI's type system. There is no contract-drift risk between UI and CLI; both consume the same package.
+- Every server-side tRPC contract change automatically reaches the CLI's type system today. There is no contract-drift risk between UI and CLI; both consume the same package. If the API surface evolves — whether by replacing tRPC, wrapping it, or adding a separate API for public consumption — the CLI's consumption mechanism evolves with it. The migration is bounded and falls equally on the UI and CLI; it is not a CLI-specific cost.
 - Users without Node ≥ 20 cannot install the CLI. Install docs must call this out.
 - Native Windows users must use WSL2.
 - The CLI has no ability to phone home, including for crash data. Bug reports rely on user-supplied output. Diagnostic ergonomics are a spec concern.
