@@ -85,6 +85,21 @@ describe("dam config set (integration)", () => {
     await expect(readFile(configPath, "utf-8")).rejects.toThrow();
   });
 
+  it.each([
+    ["mailto:foo", "mailto"],
+    ["file:///etc/passwd", "file"],
+    ["ftp://example.test/x", "ftp"],
+  ])("rejects non-http(s) URL %s", async (input) => {
+    const r = await runDam(
+      ["config", "set", "server", input],
+      { HOME: home, PATH: process.env.PATH ?? "" },
+    );
+
+    expect(r.exitCode).not.toBe(0);
+    expect(r.stderr).toContain("must be an http(s) URL");
+    await expect(readFile(configPath, "utf-8")).rejects.toThrow();
+  });
+
   it("rejects an unknown key with non-zero exit and helpful stderr", async () => {
     const r = await runDam(
       ["config", "set", "unknown-key", "anything"],
