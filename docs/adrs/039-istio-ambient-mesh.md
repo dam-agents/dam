@@ -6,14 +6,16 @@
 
 ## Context
 
-Issue #108 calls for proper authentication on the api-server's harness port —
-the agent → platform internal endpoints (`/api/instances/:id/mcp`,
-`/api/instances/:id/pod-files/events`, `/internal/trigger`). Today the
-boundary is NetworkPolicy + an unused per-instance bearer token. The token
-producer (`WriteAgentStatus`) was never wired up, so MCP and pod-files SSE
-404 on every call (the agent stopped sending the token in a prior refactor;
-the platform side still tries to verify it). `/internal/trigger` has no
-auth at all.
+The api-server's harness port (agent → platform internal endpoints —
+`/api/instances/:id/mcp`, `/api/instances/:id/pod-files/events`,
+`/internal/trigger`) has no cryptographic auth today. The boundary is
+NetworkPolicy + an unused per-instance bearer-token shim: the token
+producer (`WriteAgentStatus`) was never wired up, so MCP and pod-files
+SSE 404 on every call (the agent stopped sending the token in a prior
+refactor; the platform side still tries to verify it). `/internal/trigger`
+has no auth at all. A compromised pod could impersonate another
+instance to the platform, and the half-finished migration leaves real
+breakage (pod-files-SSE retry loop, MCP tool calls failing) in its wake.
 
 Two structurally different identity primitives address this:
 
@@ -71,9 +73,9 @@ Concretely:
   stashes the SA name on the Hono context. Each handler cross-checks
   against URL `:id` (or trigger body's `instanceId`).
 - **ext_authz unchanged.** Gateway → api-server (port 4002) keeps its
-  pod-IP resolver. Out of scope for issue #108; works today; swap is risk
-  for no benefit. Per-instance SA on gateway pods does future-proof a
-  swap.
+  pod-IP resolver. Out of scope here — gateway pods don't hold
+  harness-port credentials, the resolver works, swap is risk for no
+  benefit. Per-instance SA on gateway pods does future-proof a swap.
 
 The bearer-token plumbing is removed: `verifyInstanceToken`,
 `AgentStatus.AccessTokenHash`, and the dead `WriteAgentStatus` producer.
@@ -110,8 +112,8 @@ per-pod, so the gateway pod's existing Envoy stays as-is. Ambient is also
 the direction Istio is taking for new installs.
 
 **`cert-manager-istio-csr`** to chain Istio's workload certs to a
-cert-manager-issued root. Rejected for v1: out of scope for the auth
-problem; clean v1.5 follow-up if a unified PKI is ever desired.
+cert-manager-issued root. Rejected for now: orthogonal to the auth
+problem; clean follow-up if a unified PKI is ever desired.
 
 ## Consequences
 
@@ -142,7 +144,10 @@ problem; clean v1.5 follow-up if a unified PKI is ever desired.
   schema set. `helm:check:render` adds both kinds to the skip list,
   matching how cert-manager kinds were already handled.
 - **ext_authz untouched.** Gateway → api-server identity stays
-  pod-IP-resolver-based. Issue #108 was scoped to agent → api-server.
+  pod-IP-resolver-based. Scope here is agent → api-server only; gateway
+  pods don't hold harness-port credentials, the resolver works, and a
+  waypoint hop on ext-authz adds latency for no security gain. Per-instance
+  SA on gateway pods does future-proof a swap if ever wanted.
 
 ## Related ADRs
 
