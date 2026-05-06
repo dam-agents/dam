@@ -27,6 +27,7 @@ import { createAcpRelay } from "./acp-relay.js";
 import { createTerminalRelay } from "./terminal-relay.js";
 import { createOAuthRoutes } from "./oauth.js";
 import { mountBrandIconRoutes } from "./brand-icon.js";
+import { registerVersionEndpoint } from "./version.js";
 import { createOAuthAppRegistry } from "../../modules/connections/infrastructure/oauth-apps.js";
 import type { Config } from "../../config.js";
 import { createAuth, ForbiddenError } from "./auth.js";
@@ -56,6 +57,7 @@ import type { RedisBus } from "../../core/redis-bus.js";
 
 export interface ApiServerAppDeps {
   config: Config;
+  serverVersion: string;
   api: CoreV1Api;
   db: Db;
   channelManager: ChannelManager;
@@ -78,7 +80,7 @@ export interface ApiServerAppDeps {
 
 export function startApiServerApp(deps: ApiServerAppDeps) {
   const {
-    config, api, db, channelManager, channelSecretStore, identityLinkService,
+    config, serverVersion, api, db, channelManager, channelSecretStore, identityLinkService,
     pendingSlackOAuthFlows, pendingTelegramOAuthFlows, podFilesPublisher, seedSources,
     redisBus, approvalsRelay, wrapperFrameSender, presetSeeder, trustedHosts,
     agentCleanupHooks,
@@ -107,6 +109,10 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   const app = new Hono<{ Variables: { user: UserIdentity } }>();
 
   app.get("/api/health", (c) => c.json({ status: "ok" }));
+  registerVersionEndpoint(app, {
+    serverVersion,
+    minClientVersion: config.minClientCliVersion,
+  });
   app.get("/api/auth/config", (c) =>
     c.json({
       issuer: `${config.keycloakExternalUrl}/realms/${config.keycloakRealm}`,

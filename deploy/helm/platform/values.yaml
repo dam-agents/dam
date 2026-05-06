@@ -283,6 +283,8 @@ apiServer:
   # timeouts are an external ceiling — see ADR §Timeouts.
   approvalHoldSeconds: 1800
 
+  minClientCliVersion: "0.0.0"
+
   # -- Ingress NetworkPolicy for the api-server pod.
   # Restricts the agent-facing ports (`harness`, `ext-authz`) to ingress from
   # pods carrying `agent-platform.ai/instance` (agent + fork pods) in agentNamespace.

@@ -53,6 +53,7 @@ const configSchema = z.object({
   /** Default hold window for ext_authz HITL (seconds). Helm-configurable;
    *  matches `pending_approvals.expires_at` and the synchronous-hold deadline. */
   approvalHoldSeconds: z.coerce.number().int().positive().default(1800),
+  minClientCliVersion: z.string().default("0.0.0"),
   /** Path to a newline-delimited file of hosts seeded by the `trusted` egress
    *  preset (ADR-035). Mounted from a Helm-managed ConfigMap.
    *  Empty/missing file → preset is empty (still selectable, just seeds nothing). */
@@ -114,6 +115,7 @@ export function loadConfig(): Config {
     redisUrl: process.env.REDIS_URL,
     redisPassword: process.env.REDIS_PASSWORD,
     approvalHoldSeconds: process.env.APPROVAL_HOLD_SECONDS,
+    minClientCliVersion: process.env.MIN_CLIENT_CLI_VERSION,
     trustedHostsPath: process.env.TRUSTED_HOSTS_PATH,
     brand: {
       name: process.env.BRAND_NAME,
