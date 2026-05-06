@@ -1,4 +1,3 @@
-{{- if .Values.istio.enabled }}
 # ADR-039: Istio waypoint that fronts the api-server's harness Service.
 # Istio creates the waypoint Deployment + Service automatically from this
 # Gateway resource (gatewayClassName: istio-waypoint). The waypoint
@@ -22,4 +21,3 @@ spec:
     - name: mesh
       port: 15008
       protocol: HBONE
-{{- end }}

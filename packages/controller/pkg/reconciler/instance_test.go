@@ -292,4 +292,40 @@ func TestReconcileOrphanPVCs(t *testing.T) {
 	assert.NoError(t, err, "live instance PVC must be retained")
 }
 
+func TestReconcile_ReconcilesServiceAccountDrift(t *testing.T) {
+	// Pre-existing SA with the right name but wrong shape — simulating an
+	// upgrade from a prior controller version, manual creation, or a SA
+	// left over from a different release. The reconciler must converge it,
+	// not silently accept the drift; otherwise the per-instance SA loses
+	// its owner reference (no GC on instance delete) or its labels (broken
+	// selectors).
+	cm := instanceCM("running")
+	staleSA := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-instance",
+			Namespace: "test-agents",
+			Labels:    map[string]string{"unrelated": "true"},
+			// no OwnerReferences — would orphan the SA on instance delete
+		},
+		// AutomountServiceAccountToken left as default (pointer-to-true) —
+		// not what BuildInstanceServiceAccount produces (false).
+	}
+	r, client := setupReconciler(t,
+		map[string]*corev1.ConfigMap{"claude-code": agentCM()},
+		cm, staleSA,
+	)
+
+	require.NoError(t, r.Reconcile(context.Background(), cm))
+
+	got, err := client.CoreV1().ServiceAccounts("test-agents").Get(context.Background(), "my-instance", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "my-instance", got.Labels["agent-platform.ai/instance"],
+		"reconciler must overwrite drifted labels so selectors keep finding the SA")
+	require.Len(t, got.OwnerReferences, 1,
+		"reconciler must set the instance-CM owner reference so K8s GC reaps the SA")
+	assert.EqualValues(t, "uid-1", got.OwnerReferences[0].UID)
+	require.NotNil(t, got.AutomountServiceAccountToken)
+	assert.False(t, *got.AutomountServiceAccountToken)
+}
+
 func int32Ptr(i int32) *int32 { return &i }

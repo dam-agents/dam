@@ -1,0 +1,24 @@
+{{/*
+  ADR-039: Istio ambient is the security boundary on the api-server's
+  harness port (peer SPIFFE principal in `x-forwarded-client-cert`,
+  injected by the waypoint, cross-checked against the URL `:id`). With
+  no Istio there is no peer identity, so installing without it would
+  silently leave the harness port exposed to anything in the cluster.
+
+  This template emits no resource on success and fails the install with
+  an actionable message when the cluster is missing the bits the rest of
+  the chart depends on. `lookup` returns nil under `helm template` (no
+  API access), so `mise run helm:check:render` still passes.
+*/}}
+{{- $haveAPI := lookup "v1" "Namespace" "" "default" -}}
+{{- if $haveAPI -}}
+{{-   if not (lookup "apiextensions.k8s.io/v1" "CustomResourceDefinition" "" "authorizationpolicies.security.istio.io") -}}
+{{-     fail "ADR-039: Istio is required. AuthorizationPolicy CRD (security.istio.io) not found — install istio/base + istiod + istio-cni + ztunnel (ambient profile) before installing this chart." -}}
+{{-   end -}}
+{{-   if not (lookup "apiextensions.k8s.io/v1" "CustomResourceDefinition" "" "gateways.gateway.networking.k8s.io") -}}
+{{-     fail "ADR-039: Gateway-API CRDs are required (gateways.gateway.networking.k8s.io not found) — apply the standard Gateway-API CRDs before installing this chart." -}}
+{{-   end -}}
+{{-   if not (lookup "apps/v1" "DaemonSet" "istio-system" "ztunnel") -}}
+{{-     fail "ADR-039: Istio ambient is required. ztunnel DaemonSet not found in istio-system — only the ambient profile is supported (sidecar profile lacks the waypoint integration this chart relies on)." -}}
+{{-   end -}}
+{{- end -}}

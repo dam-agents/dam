@@ -236,20 +236,15 @@ ui:
 
 # -- API Server
 # -- Istio ambient mesh integration (ADR-039).
-# When `enabled`, the chart labels the agent namespace with
-# `istio.io/dataplane-mode: ambient`, deploys an istio-waypoint Gateway in
-# front of the api-server's harness port, and stamps a default-deny
-# AuthorizationPolicy that admits only mTLS-authenticated SPIFFE
-# principals from the agent namespace. The waypoint terminates HBONE and
-# emits `x-forwarded-client-cert` so the api-server can read the inbound
-# peer principal at the application layer.
+# Istio ambient is a hard prerequisite for installing this chart — peer
+# identity on the api-server's harness port is the only inbound auth
+# check, and it depends on the waypoint to inject `x-forwarded-client-cert`.
+# A pre-install check fails the install if Istio's ambient stack
+# (istiod / ztunnel / istio-cni / Gateway-API CRDs) isn't present.
 #
-# Istio itself is NOT installed by this chart — install it separately
-# (e.g. `mise run cluster:install` does this for local k3s). When disabled,
-# the harness port has no cryptographic identity check; only NetworkPolicy
-# gates inbound traffic.
+# Install Istio out-of-band before installing this chart (e.g.
+# `mise run cluster:install` does this for local k3s).
 istio:
-  enabled: true
   # -- SPIFFE trust domain Istio mints workload certs under.
   # Default `cluster.local` matches Istio's default; override on installs
   # that set `meshConfig.trustDomain`.

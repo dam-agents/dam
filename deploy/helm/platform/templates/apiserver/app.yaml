@@ -43,10 +43,8 @@ metadata:
   labels:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: apiserver
-  {{- if .Values.istio.enabled }}
   annotations:
     istio.io/use-waypoint: {{ .Values.istio.waypointName | quote }}
-  {{- end }}
 spec:
   type: ClusterIP
   ports:

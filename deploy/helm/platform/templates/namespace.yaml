@@ -6,12 +6,10 @@ metadata:
   labels:
     {{- include "platform.labels" . | nindent 4 }}
     agent-platform.ai/managed-by: platform
-    {{- if .Values.istio.enabled }}
     # ADR-039: opt the namespace into Istio ambient so ztunnel transparently
     # mTLSes pod-to-pod traffic from agent + gateway pods. The install
     # namespace (.Release.Namespace, where api-server runs) needs the same
     # label applied out-of-band — the chart doesn't own that namespace.
     # `mise run cluster:install:istio` handles that on local k3s.
     istio.io/dataplane-mode: ambient
-    {{- end }}
 {{- end }}

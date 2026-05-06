@@ -262,12 +262,25 @@ func (r *InstanceReconciler) applyStatefulSet(ctx context.Context, desired *apps
 }
 
 func (r *InstanceReconciler) applyServiceAccount(ctx context.Context, desired *corev1.ServiceAccount) error {
-	_, err := r.client.CoreV1().ServiceAccounts(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
-	if errors.IsNotFound(err) {
-		_, err = r.client.CoreV1().ServiceAccounts(desired.Namespace).Create(ctx, desired, metav1.CreateOptions{})
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		existing, err := r.client.CoreV1().ServiceAccounts(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
+		if errors.IsNotFound(err) {
+			_, err = r.client.CoreV1().ServiceAccounts(desired.Namespace).Create(ctx, desired, metav1.CreateOptions{})
+			return err
+		}
+		if err != nil {
+			return err
+		}
+		// Reconcile drift on pre-existing SAs (manual creation, upgrade
+		// cycles, prior controller versions). Owner reference and labels
+		// must match the desired shape — otherwise GC won't reap the SA on
+		// instance deletion and selectors won't find it.
+		existing.Labels = desired.Labels
+		existing.OwnerReferences = desired.OwnerReferences
+		existing.AutomountServiceAccountToken = desired.AutomountServiceAccountToken
+		_, err = r.client.CoreV1().ServiceAccounts(desired.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
 		return err
-	}
-	return err
+	})
 }
 
 func (r *InstanceReconciler) applyService(ctx context.Context, desired *corev1.Service) error {
