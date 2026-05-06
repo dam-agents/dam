@@ -2,7 +2,7 @@ import "@xterm/xterm/css/xterm.css";
 
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as XTerm } from "@xterm/xterm";
-import { encodeDataFrame, encodeResize,OP_EXIT, OP_INPUT, OP_OUTPUT } from "api-server-api";
+import { encodeDataFrame, encodeResize, OP_EXIT, OP_INPUT, OP_OUTPUT } from "api-server-api";
 import { Loader2, TerminalIcon, XCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -13,15 +13,12 @@ type ConnectionState = "connecting" | "live" | "disconnected" | "exited";
 export function Terminal({ instanceId, sessionId, fresh, onConnected }: { instanceId: string; sessionId: string; fresh?: boolean; onConnected?: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
   const [state, setState] = useState<ConnectionState>("connecting");
   const [exitCode, setExitCode] = useState<number | null>(null);
 
-  // Focus the terminal after React finishes rendering the "live" state
+  // Focus the terminal after React commits the "live" state.
   useEffect(() => {
-    if (state === "live") {
-      requestAnimationFrame(() => termRef.current?.focus());
-    }
+    if (state === "live") requestAnimationFrame(() => termRef.current?.focus());
   }, [state]);
 
   useEffect(() => {
@@ -29,43 +26,38 @@ export function Terminal({ instanceId, sessionId, fresh, onConnected }: { instan
     if (!container) return;
 
     let cancelled = false;
+    let ws: WebSocket | null = null;
+    let term: XTerm | null = null;
+    let ro: ResizeObserver | null = null;
 
-    async function connect() {
-      if (cancelled) return;
-      setState("connecting");
-
-      const term = new XTerm({
+    (async () => {
+      term = new XTerm({
         cursorBlink: true,
         fontSize: 14,
         fontFamily: "'JetBrains Mono', 'Fira Code', ui-monospace, monospace",
-        theme: {
-          background: "#0c0a09",
-          foreground: "#e7e5e4",
-          cursor: "#e7e5e4",
-          selectionBackground: "#44403c",
-        },
+        theme: { background: "#0c0a09", foreground: "#e7e5e4", cursor: "#e7e5e4", selectionBackground: "#44403c" },
         scrollback: 1000,
       });
-      term.open(container!);
+      term.open(container);
       termRef.current = term;
 
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
 
-      // Wait for layout before fitting
+      // Wait one frame so the container has its committed layout before fit().
       await new Promise<void>((r) => requestAnimationFrame(() => r()));
       if (cancelled) return;
-
       fitAddon.fit();
 
       const token = await getAccessToken();
       if (cancelled) return;
-      const ws = new WebSocket(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/api/instances/${instanceId}/terminal?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(sessionId)}${fresh ? "&reset=1" : ""}`);
+
+      const proto = location.protocol === "https:" ? "wss:" : "ws:";
+      ws = new WebSocket(`${proto}//${location.host}/api/instances/${instanceId}/terminal?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(sessionId)}${fresh ? "&reset=1" : ""}`);
       ws.binaryType = "arraybuffer";
-      wsRef.current = ws;
 
       ws.onopen = () => {
-        if (cancelled) return;
+        if (cancelled || !ws || !term) return;
         setState("live");
         ws.send(encodeResize(term.cols, term.rows).buffer);
         term.focus();
@@ -77,68 +69,39 @@ export function Terminal({ instanceId, sessionId, fresh, onConnected }: { instan
         if (buf.byteLength === 0) return;
         const op = buf[0];
         const payload = buf.subarray(1);
-
-        switch (op) {
-          case OP_OUTPUT:
-            term.write(new TextDecoder().decode(payload));
-            break;
-          case OP_EXIT:
-            setExitCode(payload.byteLength > 0 ? payload[0]! : 0);
-            setState("exited");
-            break;
+        if (op === OP_OUTPUT) term?.write(new TextDecoder().decode(payload));
+        else if (op === OP_EXIT) {
+          setExitCode(payload.byteLength > 0 ? payload[0]! : 0);
+          setState("exited");
         }
       };
 
       ws.onclose = () => {
-        if (cancelled) return;
-        setState((s) => (s === "exited" ? s : "disconnected"));
+        if (!cancelled) setState((s) => (s === "exited" ? s : "disconnected"));
       };
+      ws.onerror = () => { if (!cancelled) setState("disconnected"); };
 
-      ws.onerror = () => {
-        if (cancelled) return;
-        setState("disconnected");
-      };
-
-      // Wire terminal input → WebSocket
-      term.onData((data: string) => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(encodeDataFrame(OP_INPUT, data));
-        }
+      term.onData((data) => {
+        if (ws?.readyState === WebSocket.OPEN) ws.send(encodeDataFrame(OP_INPUT, data));
+      });
+      term.onResize(({ cols, rows }) => {
+        if (ws?.readyState === WebSocket.OPEN) ws.send(encodeResize(cols, rows).buffer);
       });
 
-      // Wire resize events
-      term.onResize(({ cols, rows }: { cols: number; rows: number }) => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(encodeResize(cols, rows).buffer);
-        }
-      });
-
-      // Auto-fit terminal on container resize
-      const ro = new ResizeObserver(() => {
-        fitAddon.fit();
-      });
-      ro.observe(container!);
-
-      return () => ro.disconnect();
-    }
-
-    const roCleanup = connect().catch((err) => {
+      ro = new ResizeObserver(() => fitAddon.fit());
+      ro.observe(container);
+    })().catch((err) => {
       console.error("[terminal] connect failed:", err);
       setState("disconnected");
     });
 
     return () => {
       cancelled = true;
-      roCleanup?.then((fn) => fn?.());
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
-      }
-      if (termRef.current) {
-        termRef.current.dispose();
-        termRef.current = null;
-      }
-      if (containerRef.current) containerRef.current.innerHTML = "";
+      ro?.disconnect();
+      ws?.close();
+      term?.dispose();
+      termRef.current = null;
+      container.innerHTML = "";
     };
     // `fresh` and `onConnected` are intentionally captured once at mount —
     // re-running the effect when `fresh` flips post-connect would tear down

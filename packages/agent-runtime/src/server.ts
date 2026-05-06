@@ -73,7 +73,6 @@ const { runtime: acpRuntime } = composeAcp({
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
 });
 
-// ── PTY state for terminal-mode sessions ──────────────────────────────────────
 // One PTY per session id, kept alive across client reconnects via a headless
 // xterm that mirrors output and serializes the screen for replay.
 const PTY_DETACH_GRACE_MS = 30_000;
@@ -87,86 +86,40 @@ interface PtySlot {
 }
 
 const ptySlots = new Map<string, PtySlot>();
-const ptyLog = (msg: string) => process.stderr.write(`[pty] ${msg}\n`);
+const ptyLog = (sid: string, msg: string) => process.stderr.write(`[pty] [${sid}] ${msg}\n`);
 
 function killPtySlot(sessionId: string): void {
   const slot = ptySlots.get(sessionId);
   if (!slot) return;
   if (slot.graceTimer) clearTimeout(slot.graceTimer);
-  if (slot.pty) {
-    try { slot.pty.kill(); } catch {}
-  }
+  try { slot.pty?.kill(); } catch {}
   slot.headless.dispose();
   ptySlots.delete(sessionId);
-  ptyLog(`[${sessionId}] PTY killed`);
+  ptyLog(sessionId, "killed");
 }
 
-function spawnPty(sessionId: string, cols: number, rows: number): nodePty.IPty {
-  const cleanEnv: Record<string, string> = {};
-  for (const [k, v] of Object.entries(process.env)) {
-    if (v !== undefined && !k.startsWith("npm_config_") && !k.startsWith("npm_lifecycle_"))
-      cleanEnv[k] = v;
-  }
-  cleanEnv.TERM = "xterm-256color";
-  cleanEnv.COLORTERM = "truecolor";
-  cleanEnv.HARNESS_SESSION_ID = sessionId;
-
-  return nodePty.spawn("/usr/local/bin/harness-terminal", [], {
-    name: "xterm-256color",
-    cols,
-    rows,
-    cwd: workDir,
-    env: cleanEnv,
-  });
-}
-
-function wirePty(sessionId: string, slot: PtySlot, p: nodePty.IPty): void {
-  p.onData((data) => {
-    slot.headless.write(data);
-    if (slot.client?.readyState === 1) {
-      slot.client.send(encodeDataFrame(OP_OUTPUT, data));
-    }
-  });
-  p.onExit(({ exitCode }) => {
-    ptyLog(`[${sessionId}] PTY exited with code ${exitCode}`);
-    if (slot.client?.readyState === 1) {
-      slot.client.send(encodeExit(exitCode));
-      slot.client.close(1000, "pty exited");
-    }
-    slot.pty = null;
-    slot.headless.dispose();
-    ptySlots.delete(sessionId);
-  });
-}
-
-function wirePtyClose(sessionId: string, slot: PtySlot, ws: WsWebSocket): void {
+function bindClientClose(sessionId: string, slot: PtySlot, ws: WsWebSocket): void {
   ws.on("close", () => {
-    if (slot.client === ws) {
-      slot.client = null;
-      if (slot.pty) {
-        ptyLog(`[${sessionId}] Client detached — starting grace timer`);
-        slot.graceTimer = setTimeout(() => {
-          ptyLog(`[${sessionId}] Grace expired — killing PTY`);
-          killPtySlot(sessionId);
-        }, PTY_DETACH_GRACE_MS);
-      }
-    }
+    if (slot.client !== ws) return;
+    slot.client = null;
+    if (!slot.pty) return;
+    ptyLog(sessionId, "client detached — starting grace timer");
+    slot.graceTimer = setTimeout(() => killPtySlot(sessionId), PTY_DETACH_GRACE_MS);
   });
-  ws.on("error", () => {
-    if (slot.client === ws) slot.client = null;
-  });
+  ws.on("error", () => { if (slot.client === ws) slot.client = null; });
 }
 
 function attachPty(sessionId: string, ws: WsWebSocket, opts: { reset: boolean }): void {
   if (opts.reset) killPtySlot(sessionId);
   let initialized = false;
   ws.binaryType = "nodebuffer";
+  ws.on("error", () => {});
 
   ws.on("message", (raw: Buffer) => {
     let frame;
     try { frame = decodeFrame(raw); } catch { return; }
 
-    // Wait for the first RESIZE to know the client's terminal size before spawning.
+    // First RESIZE tells us the client's terminal size — required before spawning.
     if (!initialized && frame.op === OP_RESIZE) {
       initialized = true;
       const { cols, rows } = frame;
@@ -175,55 +128,63 @@ function attachPty(sessionId: string, ws: WsWebSocket, opts: { reset: boolean })
       if (existing) {
         if (existing.graceTimer) clearTimeout(existing.graceTimer);
         if (existing.client && existing.client !== ws && existing.client.readyState === 1) {
-          ptyLog(`[${sessionId}] Replacing existing client`);
           existing.client.close(1000, "replaced by new connection");
         }
         existing.client = ws;
         existing.headless.resize(cols, rows);
-        if (existing.pty) existing.pty.resize(cols, rows);
+        existing.pty?.resize(cols, rows);
 
-        ptyLog(`[${sessionId}] Reconnect — replaying buffer`);
-        try {
-          const serialized = existing.serialize.serialize();
-          ptyLog(`[${sessionId}] Replay buffer: ${serialized.length} chars`);
-          if (serialized.length > 0) ws.send(encodeDataFrame(OP_OUTPUT, serialized));
-        } catch (err) {
-          ptyLog(`[${sessionId}] Replay failed: ${(err as Error).message}`);
-        }
-        wirePtyClose(sessionId, existing, ws);
+        const serialized = existing.serialize.serialize();
+        ptyLog(sessionId, `reconnect — replaying ${serialized.length} chars`);
+        if (serialized.length > 0) ws.send(encodeDataFrame(OP_OUTPUT, serialized));
+        bindClientClose(sessionId, existing, ws);
         return;
       }
 
       const headless = new HeadlessTerminal({ cols, rows, scrollback: 1000, allowProposedApi: true });
       const serialize = new SerializeAddon();
       headless.loadAddon(serialize);
-      const slot: PtySlot = { pty: null, headless, serialize, client: ws, graceTimer: null };
+      const env = Object.fromEntries(
+        Object.entries(process.env).filter(
+          ([k, v]) => v !== undefined && !k.startsWith("npm_config_") && !k.startsWith("npm_lifecycle_"),
+        ),
+      ) as Record<string, string>;
+      const pty = nodePty.spawn("/usr/local/bin/harness-terminal", [], {
+        name: "xterm-256color", cols, rows, cwd: workDir,
+        env: { ...env, TERM: "xterm-256color", COLORTERM: "truecolor", HARNESS_SESSION_ID: sessionId },
+      });
+      const slot: PtySlot = { pty, headless, serialize, client: ws, graceTimer: null };
       ptySlots.set(sessionId, slot);
-      slot.pty = spawnPty(sessionId, cols, rows);
-      wirePty(sessionId, slot, slot.pty);
-      wirePtyClose(sessionId, slot, ws);
-      ptyLog(`[${sessionId}] Spawned PTY (${cols}x${rows})`);
+      ptyLog(sessionId, `spawned PTY (${cols}x${rows})`);
+
+      pty.onData((data) => {
+        slot.headless.write(data);
+        if (slot.client?.readyState === 1) slot.client.send(encodeDataFrame(OP_OUTPUT, data));
+      });
+      pty.onExit(({ exitCode }) => {
+        ptyLog(sessionId, `exited ${exitCode}`);
+        if (slot.client?.readyState === 1) {
+          slot.client.send(encodeExit(exitCode));
+          slot.client.close(1000, "pty exited");
+        }
+        slot.pty = null;
+        slot.headless.dispose();
+        ptySlots.delete(sessionId);
+      });
+      bindClientClose(sessionId, slot, ws);
       return;
     }
 
     const slot = ptySlots.get(sessionId);
     if (!slot) return;
-
-    switch (frame.op) {
-      case OP_INPUT:
-        if (slot.pty) slot.pty.write(new TextDecoder().decode(frame.data));
-        break;
-      case OP_RESIZE:
-        slot.headless.resize(frame.cols, frame.rows);
-        if (slot.pty) slot.pty.resize(frame.cols, frame.rows);
-        break;
+    if (frame.op === OP_INPUT) {
+      slot.pty?.write(new TextDecoder().decode(frame.data));
+    } else if (frame.op === OP_RESIZE) {
+      slot.headless.resize(frame.cols, frame.rows);
+      slot.pty?.resize(frame.cols, frame.rows);
     }
   });
-
-  ws.on("error", () => {});
 }
-
-// ── HTTP + WebSocket server ───────────────────────────────────────────────────
 
 const server = http.createServer((req, res) => {
   if (req.method === "OPTIONS") {

@@ -1,9 +1,6 @@
 /**
- * Terminal WebSocket relay — bidirectional binary tunnel between a browser
- * (or future CLI) client and the agent-runtime's PTY endpoint.
- *
- * Much simpler than the ACP relay: frames are opaque binary, there is no
- * JSON-RPC parsing, and no permission mirroring.
+ * Terminal WebSocket relay — opaque binary tunnel between client and the
+ * agent-runtime's PTY endpoint. No JSON-RPC, no permission mirroring.
  */
 
 import { WebSocketServer, WebSocket } from "ws";
@@ -13,35 +10,33 @@ import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
 import type { InstancesRepository } from "../../modules/agents/infrastructure/instances-repository.js";
 import { LAST_ACTIVITY_KEY, ACTIVE_SESSION_KEY } from "../../modules/agents/infrastructure/labels.js";
 
-const DEBOUNCE_MS = 30_000;
+const ACTIVITY_DEBOUNCE_MS = 30_000;
 
-export function createTerminalRelay(
-  namespace: string,
-  repo: InstancesRepository,
-) {
+// Valid WebSocket close codes per RFC 6455 + 3000-4999 user range. Anything
+// else gets coerced to 1011 (server error) — `ws` throws on out-of-range codes.
+function safeCloseCode(code: number): number {
+  if (code === 1000) return code;
+  if (code >= 1001 && code <= 1014 && code !== 1004 && code !== 1005 && code !== 1006) return code;
+  if (code >= 3000 && code <= 4999) return code;
+  return 1011;
+}
+
+export function createTerminalRelay(namespace: string, repo: InstancesRepository) {
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
-  const lastActivityTimestamps = new Map<string, number>();
+  const lastActivity = new Map<string, number>();
 
-  function handleUpgrade(
-    req: IncomingMessage,
-    socket: Duplex,
-    head: Buffer,
-    instanceId: string,
-  ) {
-    const reqUrl = new URL(req.url!, `http://${req.headers.host}`);
-    const sessionId = reqUrl.searchParams.get("sessionId") ?? "default";
-    const reset = reqUrl.searchParams.get("reset") === "1";
+  function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer, instanceId: string) {
+    const url = new URL(req.url!, `http://${req.headers.host}`);
+    const sessionId = url.searchParams.get("sessionId") ?? "default";
+    const reset = url.searchParams.get("reset") === "1";
 
     wss.handleUpgrade(req, socket, head, (client) => {
-      client.on("error", () => {
-        try { client.terminate(); } catch {}
-      });
+      client.on("error", () => { try { client.terminate(); } catch {} });
 
-      // Buffer messages while we wake the pod and connect upstream
-      const pending: { data: Buffer | ArrayBuffer | Buffer[]; isBinary: boolean }[] = [];
-      client.on("message", (data, isBinary) => {
-        pending.push({ data: data as Buffer, isBinary });
-      });
+      // Buffer client messages until upstream is open.
+      const pending: { data: Buffer; isBinary: boolean }[] = [];
+      const buffer = (data: Buffer, isBinary: boolean) => { pending.push({ data, isBinary }); };
+      client.on("message", buffer);
 
       repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "true").catch(() => {});
 
@@ -52,49 +47,33 @@ export function createTerminalRelay(
           ws.on("error", (err) => { ws.close(); reject(err); });
         }))
         .then((upstream) => {
-          for (const msg of pending) {
-            if (upstream.readyState === WebSocket.OPEN) {
-              upstream.send(msg.data, { binary: msg.isBinary });
-            }
-          }
-          pending.length = 0;
+          client.off("message", buffer);
+          for (const { data, isBinary } of pending) upstream.send(data, { binary: isBinary });
 
-          // Replace buffering listener with transparent relay
-          client.removeAllListeners("message");
           client.on("message", (data, isBinary) => {
-            if (upstream.readyState === WebSocket.OPEN) {
-              upstream.send(data, { binary: isBinary });
+            if (upstream.readyState !== WebSocket.OPEN) return;
+            upstream.send(data, { binary: isBinary });
 
-              const now = Date.now();
-              if (now - (lastActivityTimestamps.get(instanceId) ?? 0) >= DEBOUNCE_MS) {
-                lastActivityTimestamps.set(instanceId, now);
-                repo.patchAnnotation(instanceId, LAST_ACTIVITY_KEY, new Date().toISOString()).catch(() => {});
-              }
+            const now = Date.now();
+            if (now - (lastActivity.get(instanceId) ?? 0) >= ACTIVITY_DEBOUNCE_MS) {
+              lastActivity.set(instanceId, now);
+              repo.patchAnnotation(instanceId, LAST_ACTIVITY_KEY, new Date().toISOString()).catch(() => {});
             }
           });
 
           upstream.on("message", (data, isBinary) => {
-            if (client.readyState === WebSocket.OPEN) {
-              client.send(data, { binary: isBinary });
-            }
+            if (client.readyState === WebSocket.OPEN) client.send(data, { binary: isBinary });
           });
 
           upstream.on("close", (code, reason) => {
-            if (client.readyState === WebSocket.OPEN) {
-              // Sanitize close code: only pass through valid codes; everything else → 1011.
-              try {
-                client.close(
-                  (code === 1000 || (code >= 1001 && code <= 1014 && code !== 1004 && code !== 1005 && code !== 1006) || (code >= 3000 && code <= 4999)) ? code : 1011,
-                  reason.toString() || "upstream closed",
-                );
-              } catch { client.terminate(); }
-            }
+            if (client.readyState !== WebSocket.OPEN) return;
+            try { client.close(safeCloseCode(code), reason.toString() || "upstream closed"); }
+            catch { client.terminate(); }
           });
 
           upstream.on("error", () => {
-            if (client.readyState === WebSocket.OPEN) {
-              try { client.close(1011, "upstream error"); } catch { client.terminate(); }
-            }
+            if (client.readyState !== WebSocket.OPEN) return;
+            try { client.close(1011, "upstream error"); } catch { client.terminate(); }
           });
 
           client.on("close", () => {
