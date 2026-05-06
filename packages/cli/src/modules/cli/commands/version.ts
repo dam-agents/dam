@@ -44,6 +44,14 @@ export function buildVersionCommand(deps: VersionCommandDeps): Command {
       }
 
       const verdict = result.value;
+      // Server line first (stdout), then any warning/error (stderr). This
+      // preserves the spec'd contract that the server line always prints
+      // when reachable, and matches the conventional stdout-then-stderr
+      // shape so a trailing warning amplifies the line that just printed.
+      process.stdout.write(
+        `server ${verdict.serverVersion} (min CLI ${verdict.serverMinClient})\n`,
+      );
+
       if (verdict.kind === "behind-current") {
         process.stderr.write(
           `warning: CLI ${verdict.localCli} is behind server ${verdict.serverVersion}; consider upgrading\n`,
@@ -53,9 +61,5 @@ export function buildVersionCommand(deps: VersionCommandDeps): Command {
           `error: CLI ${verdict.localCli} is below the server's minimum required version ${verdict.serverMinClient}. ping/login/shell will fail until you upgrade.\n`,
         );
       }
-
-      process.stdout.write(
-        `server ${verdict.serverVersion} (min CLI ${verdict.serverMinClient})\n`,
-      );
     });
 }
