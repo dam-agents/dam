@@ -260,7 +260,6 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       podFiles: podFilesPublisher,
       egressHostsByProvider: appConnectionEgressHosts,
       connectionRules: createConnectionRulesSyncAdapter(db),
-      apps: oauthApps,
     });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agents.get(agentId)) !== null && ownerSub === user.sub;

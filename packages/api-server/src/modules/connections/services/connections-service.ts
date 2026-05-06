@@ -7,10 +7,6 @@ import type {
 import type { K8sConnectionsPort } from "../infrastructure/k8s-connections-port.js";
 import type { AgentGrantsPort } from "../../agents/infrastructure/agent-grants-port.js";
 import type { PodFilesPublisher } from "../../pod-files/publisher.js";
-import {
-  matchesAppConnection,
-  type OAuthAppRegistry,
-} from "../infrastructure/oauth-apps.js";
 
 /** Minimal port consumed by `setAgentConnections` to insert / revoke
  *  `connection:<id>` egress rules when grants change. */
@@ -53,21 +49,11 @@ export function createConnectionsService(deps: {
   egressHostsByProvider?: ReadonlyMap<string, readonly string[]>;
   /** Egress-rules adapter the composition root supplies. */
   connectionRules?: ConnectionRulesSyncPort;
-  /**
-   * OAuth app registry. When set, `list()` skips connections whose key
-   * matches a registered app descriptor — those are surfaced separately
-   * via `/api/oauth/apps/connections` and would otherwise show up twice
-   * in the UI (once under "Apps", once under "Other connections").
-   */
-  apps?: OAuthAppRegistry;
 }): ConnectionsService {
   return {
     async list() {
       const connections = await deps.port.listConnections();
-      const appList = deps.apps?.list() ?? [];
-      return connections
-        .filter((c) => !appList.some((a) => matchesAppConnection(a, c.connection)))
-        .map<AppConnectionView>((c) => {
+      return connections.map<AppConnectionView>((c) => {
         // Provider is the connection key (host or named-app id) in the K8s
         // model. Without per-provider host metadata the egressHosts join is
         // best-effort — present only when the connection key matches a
