@@ -35,12 +35,8 @@ export const ACTIVE_SESSION_KEY = "agent-platform.ai/active-session";
 // controller reads these on every reconcile and intersects them with the
 // owner's credential Secret list before mounting into the Envoy sidecar.
 //
-// `agent-platform.ai/secret-mode`:
-//   - absent or "all": every owner Secret is granted
-//   - "selective":     only Secrets whose id is in `granted-secret-ids`
-// `agent-platform.ai/granted-connection-ids`:
-//   - absent: every owner connection is granted
-//   - present (even empty string): only connections in the comma-separated list
-export const ANN_SECRET_MODE = "agent-platform.ai/secret-mode";
+// Both grants are always selective: absence is treated as an empty grant
+// list, and new instance ConfigMaps initialize the annotations explicitly
+// so the explicit-empty vs. legacy-absent distinction is moot.
 export const ANN_GRANTED_SECRET_IDS = "agent-platform.ai/granted-secret-ids";
 export const ANN_GRANTED_CONNECTION_IDS = "agent-platform.ai/granted-connection-ids";

@@ -38,8 +38,9 @@ const (
 	envoyAuthModeAnn      = "agent-platform.ai/auth-mode"
 	// Per-agent grant annotations stamped by the api-server on the
 	// instance ConfigMap. The controller reads them on every reconcile
-	// and intersects with the owner's credential Secret list.
-	grantSecretModeAnn        = "agent-platform.ai/secret-mode"
+	// and intersects with the owner's credential Secret list. Both lists
+	// are always selective: an absent annotation reads as an empty grant
+	// set, never "all granted".
 	grantSecretIdsAnn         = "agent-platform.ai/granted-secret-ids"
 	grantConnectionIdsAnn     = "agent-platform.ai/granted-connection-ids"
 	credentialSecretNamePrefix = "platform-cred-"
@@ -89,38 +90,31 @@ func listAgentCredentialSecrets(ctx context.Context, client kubernetes.Interface
 }
 
 // filterByGrants narrows the owner's credential Secret list using the agent's
-// grant annotations. Two independent dimensions:
+// grant annotations. Both lists are always selective: only Secrets whose
+// identifier appears in the relevant annotation are mounted into the
+// sidecar.
 //
-//   - Regular secrets (`agent-platform.ai/secret-type` ∈ {anthropic, generic}): governed
-//     by `agent-platform.ai/secret-mode`. Absent or "all" → every Secret is granted;
-//     "selective" → only Secrets whose id (the suffix after `platform-cred-`) is
-//     listed in `agent-platform.ai/granted-secret-ids`.
-//   - Connection secrets (`agent-platform.ai/secret-type` = connection): governed by
-//     `agent-platform.ai/granted-connection-ids`. Absent → every connection is granted
-//     (legacy default); present (even empty) → only connection keys listed.
+//   - Regular secrets (`agent-platform.ai/secret-type` ∈ {anthropic, generic}):
+//     keyed by the id suffix after `platform-cred-`, looked up in
+//     `agent-platform.ai/granted-secret-ids`.
+//   - Connection secrets (`agent-platform.ai/secret-type` = connection):
+//     keyed by `agent-platform.ai/connection`, looked up in
+//     `agent-platform.ai/granted-connection-ids`.
+//
+// Absent or empty annotations result in an empty intersection.
 func filterByGrants(secrets []corev1.Secret, ann map[string]string) []corev1.Secret {
-	secretMode := ann[grantSecretModeAnn]
 	grantedSecretIds := splitGrant(ann[grantSecretIdsAnn])
-	connRaw, hasConnAnn := ann[grantConnectionIdsAnn]
-	grantedConnIds := splitGrant(connRaw)
+	grantedConnIds := splitGrant(ann[grantConnectionIdsAnn])
 
 	out := secrets[:0:0]
 	for _, s := range secrets {
 		switch s.Labels[envoySecretTypeLabel] {
 		case "connection":
-			if !hasConnAnn {
-				out = append(out, s)
-				continue
-			}
 			connKey := s.Labels[envoyConnectionLabel]
 			if grantedConnIds[connKey] {
 				out = append(out, s)
 			}
 		default:
-			if secretMode != "selective" {
-				out = append(out, s)
-				continue
-			}
 			id := strings.TrimPrefix(s.Name, credentialSecretNamePrefix)
 			if grantedSecretIds[id] {
 				out = append(out, s)

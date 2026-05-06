@@ -5,7 +5,6 @@ import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import {
   ANN_GRANTED_CONNECTION_IDS,
   ANN_GRANTED_SECRET_IDS,
-  ANN_SECRET_MODE,
   LABEL_AGENT_REF,
   LABEL_OWNER,
   LABEL_TYPE,
@@ -77,37 +76,34 @@ function fakeClient(initial: k8s.V1ConfigMap[]) {
 }
 
 describe("createAgentGrantsPort.get", () => {
-  it("returns the legacy default when no instance exists", async () => {
+  it("returns empty grants when no instance exists", async () => {
     const { client } = fakeClient([]);
     const port = createAgentGrantsPort(client, "owner-1");
     const grants = await port.get("agent-1");
     expect(grants).toEqual({
-      secretMode: "all",
       grantedSecretIds: [],
-      grantedConnectionIds: null,
+      grantedConnectionIds: [],
     });
   });
 
   it("reads selective secret grants from the instance CM", async () => {
     const { client } = fakeClient([
       instanceCM("inst-1", {
-        [ANN_SECRET_MODE]: "selective",
         [ANN_GRANTED_SECRET_IDS]: "aaa,bbb",
       }),
     ]);
     const port = createAgentGrantsPort(client, "owner-1");
     const grants = await port.get("agent-1");
-    expect(grants.secretMode).toBe("selective");
     expect(grants.grantedSecretIds).toEqual(["aaa", "bbb"]);
-    expect(grants.grantedConnectionIds).toBeNull();
+    expect(grants.grantedConnectionIds).toEqual([]);
   });
 
-  it("treats absent connection annotation as `all granted`, present-but-empty as none", async () => {
+  it("absent connection annotation reads as empty (always-selective)", async () => {
     {
       const { client } = fakeClient([instanceCM("inst-1", {})]);
       const port = createAgentGrantsPort(client, "owner-1");
       const grants = await port.get("agent-1");
-      expect(grants.grantedConnectionIds).toBeNull();
+      expect(grants.grantedConnectionIds).toEqual([]);
     }
     {
       const { client } = fakeClient([
@@ -129,40 +125,18 @@ describe("createAgentGrantsPort.get", () => {
 });
 
 describe("createAgentGrantsPort.setSecretGrants", () => {
-  it("clears both annotations on `all` so absence is the canonical default", async () => {
-    const { client, patches } = fakeClient([
-      instanceCM("inst-1", {
-        [ANN_SECRET_MODE]: "selective",
-        [ANN_GRANTED_SECRET_IDS]: "aaa",
-      }),
-    ]);
-    const port = createAgentGrantsPort(client, "owner-1");
-    await port.setSecretGrants("agent-1", "all", []);
-    expect(patches).toHaveLength(1);
-    expect(patches[0]).toMatchObject({
-      name: "inst-1",
-      body: {
-        metadata: {
-          annotations: {
-            [ANN_SECRET_MODE]: null,
-            [ANN_GRANTED_SECRET_IDS]: null,
-          },
-        },
-      },
-    });
-  });
-
-  it("writes mode + comma-joined ids on selective", async () => {
+  it("writes the literal (possibly empty) list", async () => {
     const { client, patches } = fakeClient([instanceCM("inst-1")]);
     const port = createAgentGrantsPort(client, "owner-1");
-    await port.setSecretGrants("agent-1", "selective", ["aaa", "bbb"]);
-    expect(patches[0].body).toEqual({
-      metadata: {
-        annotations: {
-          [ANN_SECRET_MODE]: "selective",
-          [ANN_GRANTED_SECRET_IDS]: "aaa,bbb",
-        },
-      },
+
+    await port.setSecretGrants("agent-1", []);
+    expect(patches.at(-1)!.body).toEqual({
+      metadata: { annotations: { [ANN_GRANTED_SECRET_IDS]: "" } },
+    });
+
+    await port.setSecretGrants("agent-1", ["aaa", "bbb"]);
+    expect(patches.at(-1)!.body).toEqual({
+      metadata: { annotations: { [ANN_GRANTED_SECRET_IDS]: "aaa,bbb" } },
     });
   });
 
@@ -172,7 +146,7 @@ describe("createAgentGrantsPort.setSecretGrants", () => {
       instanceCM("inst-2"),
     ]);
     const port = createAgentGrantsPort(client, "owner-1");
-    await port.setSecretGrants("agent-1", "selective", ["aaa"]);
+    await port.setSecretGrants("agent-1", ["aaa"]);
     expect(patches.map((p) => p.name).sort()).toEqual(["inst-1", "inst-2"]);
   });
 });

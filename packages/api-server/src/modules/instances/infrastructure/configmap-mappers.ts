@@ -2,6 +2,7 @@ import type * as k8s from "@kubernetes/client-node";
 import yaml from "js-yaml";
 import {
   ANN_GRANTED_CONNECTION_IDS,
+  ANN_GRANTED_SECRET_IDS,
   LABEL_TYPE, LABEL_OWNER, LABEL_AGENT_REF, LAST_ACTIVITY_KEY,
   TYPE_INSTANCE, SPEC_KEY, STATUS_KEY,
 } from "../../agents/infrastructure/labels.js";
@@ -54,11 +55,12 @@ export function buildInstanceConfigMap(
       },
       annotations: {
         [LAST_ACTIVITY_KEY]: new Date().toISOString(),
-        // Initialize the connection-grant annotation explicitly to "" so the
-        // grants port reads it as "selective with empty list" instead of the
-        // legacy "missing annotation = all owner connections granted"
-        // semantics. New connections only become available to this agent
-        // when the user explicitly grants them via the configure dialog.
+        // Initialize both grant annotations to "" explicitly. Both grants
+        // are always selective; absent annotations would also read as
+        // empty after the legacy "all granted" mode was removed, but
+        // writing them at creation makes the intent visible on the CM
+        // and avoids surprises if a future read ever defaults differently.
+        [ANN_GRANTED_SECRET_IDS]: "",
         [ANN_GRANTED_CONNECTION_IDS]: "",
       },
     },

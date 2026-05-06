@@ -113,22 +113,22 @@ export function createSecretsService(deps: {
 
     async getAgentAccess(agentId: string) {
       const grants = await deps.grants.get(agentId);
-      return { mode: grants.secretMode, secretIds: grants.grantedSecretIds };
+      return { secretIds: grants.grantedSecretIds };
     },
 
     async setAgentAccess(agentId: string, access: AgentAccess) {
-      await deps.grants.setSecretGrants(agentId, access.mode, access.secretIds);
+      await deps.grants.setSecretGrants(agentId, access.secretIds);
 
       // Sync `connection:<id>` egress rules against the new grant list so
       // toggling an Anthropic / generic Secret produces matching rule
-      // changes. In "all" mode we sync an empty map (no per-secret rules);
-      // egress shape relies on presets / manual rules at that point.
+      // changes. Always-selective: empty list = no rules, no special "all"
+      // shortcut.
       if (deps.connectionRules && deps.ownerSub) {
-        // List once — used for both grant assembly (selective mode) and
-        // computing ownedSourceIds (every secret id this user owns).
+        // List once — used for both grant assembly and computing
+        // ownedSourceIds (every secret id this user owns).
         const allSecrets = await deps.k8sPort.listSecrets();
         const grants = new Map<string, { hosts: readonly { host: string; pathPattern?: string }[] }>();
-        if (access.mode === "selective" && access.secretIds.length > 0) {
+        if (access.secretIds.length > 0) {
           for (const s of allSecrets) {
             if (!access.secretIds.includes(s.id)) continue;
             grants.set(s.id, {

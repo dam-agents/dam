@@ -281,7 +281,6 @@ export function ConfigureAgentDialog({
       if (dirtyFields.assigned) {
         await setAccess.mutateAsync({
           agentId: agentId,
-          mode: "selective",
           secretIds: values.assigned,
         });
       }

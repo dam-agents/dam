@@ -144,7 +144,6 @@ export interface Schedule {
 }
 
 export type SecretType = "anthropic" | "generic";
-export type SecretMode = "all" | "selective";
 
 /** Prefix used for MCP OAuth secrets stored as K8s credential Secrets. */
 export const MCP_SECRET_PREFIX = "__mcp:";

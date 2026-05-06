@@ -44,7 +44,6 @@ export function useCreateAgent() {
         await withRetry(() =>
           api.secrets.setAgentAccess.mutate({
             agentId: agent.id,
-            mode: "selective",
             secretIds,
           }),
         );

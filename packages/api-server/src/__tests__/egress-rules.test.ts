@@ -279,7 +279,6 @@ describe("egress rules: enforcement", () => {
       if (!anthropic) return;
       await client.secrets.setAgentAccess.mutate({
         agentId: AGENT_ID,
-        mode: "selective",
         secretIds: [anthropic.id],
       });
 
@@ -297,7 +296,6 @@ describe("egress rules: enforcement", () => {
       // Cleanup: revoke the grant so subsequent tests start without it.
       await client.secrets.setAgentAccess.mutate({
         agentId: AGENT_ID,
-        mode: "selective",
         secretIds: [],
       });
     });

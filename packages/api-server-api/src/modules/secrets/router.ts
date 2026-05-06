@@ -123,13 +123,11 @@ export const secretsRouter = t.router({
     .input(
       z.object({
         agentId: z.string().min(1),
-        mode: z.enum(["all", "selective"]),
         secretIds: z.array(z.string().min(1)),
       }),
     )
     .mutation(({ ctx, input }) =>
       ctx.secrets.setAgentAccess(input.agentId, {
-        mode: input.mode,
         secretIds: input.secretIds,
       }),
     ),

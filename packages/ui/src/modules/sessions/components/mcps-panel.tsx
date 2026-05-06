@@ -3,13 +3,13 @@ import { Globe } from "lucide-react";
 export interface McpOption {
   id: string;          // K8s credential Secret id
   hostname: string;    // display label + session key
-  assigned: boolean;   // agent has this secret assigned (selective or via "all" mode)
+  assigned: boolean;   // agent has this secret assigned
 }
 
 /**
  * Right-panel picker for MCP servers. The list comes from the intersection of
- * "user's MCP connections" and "what the agent can access (credential mode)".
- * Toggling affects NEW sessions only — existing sessions keep their bake-in.
+ * "user's MCP connections" and "what the agent has been granted." Toggling
+ * affects NEW sessions only — existing sessions keep their bake-in.
  */
 export function McpsPanel({
   options,
@@ -18,7 +18,6 @@ export function McpsPanel({
   onSelectAll,
   onClearAll,
   hasActiveSession,
-  accessMode,
 }: {
   options: McpOption[];
   enabled: Set<string>;
@@ -26,14 +25,11 @@ export function McpsPanel({
   onSelectAll: () => void;
   onClearAll: () => void;
   hasActiveSession: boolean;
-  accessMode: "all" | "selective" | null;
 }) {
   if (options.length === 0) {
     return (
       <div className="px-4 py-4 text-[12px] text-text-muted">
-        {accessMode === "selective"
-          ? "No MCP connections assigned to this agent."
-          : "No MCP connections configured."}
+        No MCP connections assigned to this agent.
       </div>
     );
   }

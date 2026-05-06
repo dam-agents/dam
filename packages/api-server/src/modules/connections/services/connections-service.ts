@@ -103,13 +103,6 @@ export function createConnectionsService(deps: {
 
     async getAgentConnections(agentId: string): Promise<AgentAppConnections> {
       const g = await deps.grants.get(agentId);
-      // No annotation on the instance CM → "all granted" (legacy default).
-      // The UI uses connectionIds to show which checkboxes are ticked, so
-      // surface every owner connection in that case.
-      if (g.grantedConnectionIds === null) {
-        const all = await deps.port.listConnections();
-        return { connectionIds: all.map((c) => c.connection) };
-      }
       return { connectionIds: g.grantedConnectionIds };
     },
 

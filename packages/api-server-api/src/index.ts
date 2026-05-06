@@ -54,7 +54,6 @@ export type {
 
 export type {
   SecretType,
-  SecretMode,
   SecretView,
   CreateSecretInput,
   UpdateSecretInput,

@@ -28,7 +28,6 @@ type AgentSpec struct {
 	Env             []EnvVar                    `yaml:"env,omitempty"`
 	Resources       ResourceSpec                `yaml:"resources,omitempty"`
 	SecurityContext *SecurityContext             `yaml:"securityContext,omitempty"`
-	SecretMode      string                      `yaml:"secretMode,omitempty"` // "all" or "selective" (default)
 }
 
 type Mount struct {

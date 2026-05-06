@@ -38,15 +38,15 @@ func names(in []corev1.Secret) []string {
 	return out
 }
 
-func TestFilterByGrants_DefaultsToAll(t *testing.T) {
+func TestFilterByGrants_AbsentAnnotationsGrantNothing(t *testing.T) {
 	secrets := []corev1.Secret{
 		ownerSecret("platform-cred-aaa", "anthropic", ""),
 		ownerSecret("platform-cred-bbb", "generic", ""),
 		ownerSecret("platform-conn-github", "connection", "github"),
 	}
-	// Empty annotations → the legacy default — every owner Secret is granted.
+	// Always-selective: empty/absent grant annotations grant nothing.
 	got := filterByGrants(secrets, nil)
-	assert.ElementsMatch(t, []string{"platform-cred-aaa", "platform-cred-bbb", "platform-conn-github"}, names(got))
+	assert.Empty(t, got)
 }
 
 func TestFilterByGrants_SelectiveSecretsDropUngranted(t *testing.T) {
@@ -55,37 +55,28 @@ func TestFilterByGrants_SelectiveSecretsDropUngranted(t *testing.T) {
 		ownerSecret("platform-cred-bbb", "generic", ""),
 	}
 	got := filterByGrants(secrets, map[string]string{
-		grantSecretModeAnn: "selective",
-		grantSecretIdsAnn:  "aaa",
+		grantSecretIdsAnn: "aaa",
 	})
 	assert.Equal(t, []string{"platform-cred-aaa"}, names(got))
 }
 
-func TestFilterByGrants_SelectiveModeWithoutListGrantsNothing(t *testing.T) {
+func TestFilterByGrants_EmptySecretListGrantsNothing(t *testing.T) {
 	secrets := []corev1.Secret{
 		ownerSecret("platform-cred-aaa", "anthropic", ""),
 		ownerSecret("platform-cred-bbb", "generic", ""),
 	}
-	// `selective` with no granted IDs is a real state — user toggled
-	// everything off. Connection secrets are unaffected (no connection
-	// annotation set, so the legacy "all granted" default applies to them).
 	got := filterByGrants(secrets, map[string]string{
-		grantSecretModeAnn: "selective",
+		grantSecretIdsAnn: "",
 	})
 	assert.Empty(t, got)
 }
 
-func TestFilterByGrants_ConnectionAnnotationPresenceFlipsToSelective(t *testing.T) {
+func TestFilterByGrants_ConnectionGrantsByList(t *testing.T) {
 	secrets := []corev1.Secret{
 		ownerSecret("platform-conn-github", "connection", "github"),
 		ownerSecret("platform-conn-slack", "connection", "slack"),
 	}
-	// Annotation ABSENT → all granted.
-	got := filterByGrants(secrets, map[string]string{})
-	assert.ElementsMatch(t, []string{"platform-conn-github", "platform-conn-slack"}, names(got))
-
-	// Annotation PRESENT (even empty) → only listed connections.
-	got = filterByGrants(secrets, map[string]string{
+	got := filterByGrants(secrets, map[string]string{
 		grantConnectionIdsAnn: "github",
 	})
 	assert.Equal(t, []string{"platform-conn-github"}, names(got))
@@ -105,7 +96,6 @@ func TestFilterByGrants_SecretAndConnectionAxesAreIndependent(t *testing.T) {
 		ownerSecret("platform-conn-slack", "connection", "slack"),
 	}
 	got := filterByGrants(secrets, map[string]string{
-		grantSecretModeAnn:    "selective",
 		grantSecretIdsAnn:     "aaa",
 		grantConnectionIdsAnn: "slack",
 	})

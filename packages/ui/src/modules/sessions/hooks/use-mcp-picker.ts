@@ -25,9 +25,7 @@ export function useMcpPicker(selectedInstance: string | null) {
   const mcpOptions = useMemo<McpOption[]>(() => {
     const mcpSecrets = secrets.filter(isMcpSecret);
     if (!access) return [];
-    const pool = access.mode === "all"
-      ? mcpSecrets
-      : mcpSecrets.filter((s) => access.secretIds.includes(s.id));
+    const pool = mcpSecrets.filter((s) => access.secretIds.includes(s.id));
     return pool.map((s) => ({
       id: s.id,
       hostname: mcpHostnameFromSecretName(s.name),
@@ -86,6 +84,5 @@ export function useMcpPicker(selectedInstance: string | null) {
     selectAllMcps,
     clearAllMcps,
     selectedMcpServers,
-    access,
   };
 }

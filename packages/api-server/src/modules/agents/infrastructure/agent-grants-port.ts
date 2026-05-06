@@ -10,36 +10,35 @@
  * them with the owner's credential Secret list before mounting into the
  * Envoy sidecar — touching annotations is therefore enough to trigger a
  * pod roll on the next reconcile.
+ *
+ * Both grant lists are always selective: absence of the annotation reads
+ * as an empty grant set, never "all granted." New instance ConfigMaps are
+ * initialized with the empty annotation explicitly so the explicit-empty
+ * vs. legacy-absent distinction is moot for anything created today.
  */
 import type { K8sClient } from "./k8s.js";
 import {
   ANN_GRANTED_CONNECTION_IDS,
   ANN_GRANTED_SECRET_IDS,
-  ANN_SECRET_MODE,
   LABEL_AGENT_REF,
   LABEL_OWNER,
   LABEL_TYPE,
   TYPE_INSTANCE,
 } from "./labels.js";
-import type { SecretMode } from "api-server-api";
 
 export interface AgentGrants {
-  secretMode: SecretMode;
   grantedSecretIds: string[];
-  /** `null` means "no annotation set" → every owner connection is granted.
-   *  An empty array means "selective with no grants". */
-  grantedConnectionIds: string[] | null;
+  grantedConnectionIds: string[];
 }
 
 const DEFAULT_GRANTS: AgentGrants = {
-  secretMode: "all",
   grantedSecretIds: [],
-  grantedConnectionIds: null,
+  grantedConnectionIds: [],
 };
 
 export interface AgentGrantsPort {
   get(agentId: string): Promise<AgentGrants>;
-  setSecretGrants(agentId: string, mode: SecretMode, ids: string[]): Promise<void>;
+  setSecretGrants(agentId: string, ids: string[]): Promise<void>;
   setConnectionGrants(agentId: string, ids: string[]): Promise<void>;
 }
 
@@ -53,13 +52,10 @@ function parseList(raw: string | undefined): string[] {
 
 function readGrants(annotations: Record<string, string> | undefined): AgentGrants {
   const ann = annotations ?? {};
-  const mode = ann[ANN_SECRET_MODE];
-  const secretMode: SecretMode = mode === "selective" ? "selective" : "all";
-  const grantedSecretIds =
-    secretMode === "selective" ? parseList(ann[ANN_GRANTED_SECRET_IDS]) : [];
-  const connRaw = ann[ANN_GRANTED_CONNECTION_IDS];
-  const grantedConnectionIds = connRaw === undefined ? null : parseList(connRaw);
-  return { secretMode, grantedSecretIds, grantedConnectionIds };
+  return {
+    grantedSecretIds: parseList(ann[ANN_GRANTED_SECRET_IDS]),
+    grantedConnectionIds: parseList(ann[ANN_GRANTED_CONNECTION_IDS]),
+  };
 }
 
 export function createAgentGrantsPort(client: K8sClient, ownerSub: string): AgentGrantsPort {
@@ -86,20 +82,10 @@ export function createAgentGrantsPort(client: K8sClient, ownerSub: string): Agen
       return readGrants(cms[0].metadata?.annotations);
     },
 
-    async setSecretGrants(agentId, mode, ids) {
+    async setSecretGrants(agentId, ids) {
       const cms = await listInstancesForAgent(agentId);
-      const annotations: Record<string, string | null> =
-        mode === "selective"
-          ? {
-              [ANN_SECRET_MODE]: "selective",
-              [ANN_GRANTED_SECRET_IDS]: ids.join(","),
-            }
-          : {
-              // Clear both annotations on "all" — absence is the canonical
-              // "every owner Secret is granted" state.
-              [ANN_SECRET_MODE]: null,
-              [ANN_GRANTED_SECRET_IDS]: null,
-            };
+      // Always-selective: write the literal (possibly empty) value.
+      const annotations = { [ANN_GRANTED_SECRET_IDS]: ids.join(",") };
       await Promise.all(
         cms.map((cm) => patchAnnotations(cm.metadata!.name!, annotations)),
       );
@@ -107,10 +93,6 @@ export function createAgentGrantsPort(client: K8sClient, ownerSub: string): Agen
 
     async setConnectionGrants(agentId, ids) {
       const cms = await listInstancesForAgent(agentId);
-      // Empty list is "selective with no grants" — distinct from absent
-      // (which means "every owner connection"). The api-server only writes
-      // when the user makes a deliberate choice, so write the literal
-      // (possibly empty) value here.
       const annotations = { [ANN_GRANTED_CONNECTION_IDS]: ids.join(",") };
       await Promise.all(
         cms.map((cm) => patchAnnotations(cm.metadata!.name!, annotations)),

@@ -33,7 +33,6 @@ export function ConfigurationPanel({
   onSelectAllMcps,
   onClearAllMcps,
   hasActiveSession,
-  accessMode,
   onResumeSession,
   instanceId,
   instanceRunning,
@@ -45,7 +44,6 @@ export function ConfigurationPanel({
   onSelectAllMcps: () => void;
   onClearAllMcps: () => void;
   hasActiveSession: boolean;
-  accessMode: "all" | "selective" | null;
   /** Called when the user clicks a past run under a schedule card. */
   onResumeSession?: (sessionId: string) => void;
   instanceId: string | null;
@@ -70,7 +68,6 @@ export function ConfigurationPanel({
           onSelectAll={onSelectAllMcps}
           onClearAll={onClearAllMcps}
           hasActiveSession={hasActiveSession}
-          accessMode={accessMode}
         />
       </Section>
 

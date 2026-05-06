@@ -49,7 +49,7 @@ export function ChatView() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // ── Hooks ──
-  const { mcpOptions, enabledMcps, toggleMcp, selectAllMcps, clearAllMcps, selectedMcpServers, access } =
+  const { mcpOptions, enabledMcps, toggleMcp, selectAllMcps, clearAllMcps, selectedMcpServers } =
     useMcpPicker(selectedInstance);
 
   const { ensureConnection, resetSession, resumeSession, sendPrompt, stopAgent, busy, engagedSessionIdRef, loadingSession } =
@@ -147,7 +147,7 @@ export function ChatView() {
           <ConfigurationPanel
             mcpOptions={mcpOptions} enabledMcps={enabledMcps}
             onToggleMcp={toggleMcp} onSelectAllMcps={selectAllMcps} onClearAllMcps={clearAllMcps}
-            hasActiveSession={!!sessionId} accessMode={access?.mode ?? null}
+            hasActiveSession={!!sessionId}
             onResumeSession={mobileResumeSession}
             instanceId={selectedInstance}
             instanceRunning={instances.find((i) => i.id === selectedInstance)?.state === "running"}

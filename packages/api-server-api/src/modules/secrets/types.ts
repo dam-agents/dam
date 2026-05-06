@@ -1,7 +1,5 @@
 export type SecretType = "anthropic" | "generic";
 
-export type SecretMode = "all" | "selective";
-
 /**
  * Declares a pod env var to inject into every agent instance that has access
  * to this secret. `placeholder` is the literal value written into the env
@@ -95,7 +93,6 @@ export interface UpdateSecretInput {
 }
 
 export interface AgentAccess {
-  mode: SecretMode;
   secretIds: string[];
 }
 
