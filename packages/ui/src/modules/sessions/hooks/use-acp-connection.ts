@@ -1,12 +1,16 @@
 import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
 import { PROTOCOL_VERSION } from "@agentclientprotocol/sdk/dist/acp.js";
+import type { McpServer } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useStore } from "../../../store.js";
 import type { Message } from "../../../types.js";
 import { openConnection } from "../../acp/acp.js";
-import { finalizeAllStreaming } from "../../acp/session-projection.js";
-import type { UpdateHandler } from "../../acp/types.js";
+import {
+  applyUpdate,
+  finalizeAllStreaming,
+} from "../../acp/session-projection.js";
+import type { AcpUpdate, SessionConfigPayload, UpdateHandler } from "../../acp/types.js";
 import { RECONNECT_DELAYS } from "../../acp/utils.js";
 
 interface LiveConnection {
@@ -15,162 +19,255 @@ interface LiveConnection {
 }
 
 /**
- * Observable phase of the chat connection. Surfaced for UI badges
- * ("Reconnecting…" / "Reloading conversation…" etc.); the imperative API
- * (`ensureLive`) drives the underlying state machine.
+ * Connection state surfaced for UI badges.
  *
- *   idle          no live WS, no work in flight
- *   live          WS open + session engaged, ready for prompts
- *   reloading     live WS died — replaying history before reconnecting
- *   reconnecting  backoff timer waiting before next connect attempt
+ *   idle          no WS, no work in flight
+ *   loading       WS open + load/new session in flight (replaying history)
+ *   live          WS open + session bound, ready for prompts
+ *   reconnecting  backoff timer running before next connect attempt
  */
-export type ConnectionState = "idle" | "live" | "reloading" | "reconnecting";
+export type ConnectionState = "idle" | "loading" | "live" | "reconnecting";
 
 interface UseAcpConnectionOptions {
   selectedInstance: string | null;
   sessionId: string | null;
-  /** Block live-WS opening (e.g. while resumeSession's throwaway is replaying
-   *  history) — both channels would otherwise receive the replay stream. */
-  liveBlocked: boolean;
+  selectedMcpServers: McpServer[];
   makeUpdateHandler: () => UpdateHandler;
-  engage: (conn: ClientSideConnection) => Promise<void>;
-  clearEngagement: () => void;
-  loadHistory: (sid: string) => Promise<Message[]>;
+  captureSessionConfig: (response: SessionConfigPayload) => void;
+  handleConfigUpdate: (update: AcpUpdate) => void;
+  applySavedPreferences: (
+    conn: ClientSideConnection,
+    sid: string,
+    sessionResponse: SessionConfigPayload,
+  ) => Promise<void>;
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
+  setSessionId: (id: string | null) => void;
 }
 
 export interface UseAcpConnectionResult {
   state: ConnectionState;
-  /** Open + engage if needed; resolves to the live connection or null. */
+  /** Open + bind to the active session if needed; resolves to the live
+   *  connection or null on failure. */
   ensureLive: () => Promise<ClientSideConnection | null>;
   /** Connection handle for callers that need synchronous access (stopAgent
    *  cancels via the live conn without a round-trip through ensureLive). */
   connectionRef: React.MutableRefObject<LiveConnection | null>;
-  /** Hard close the live WS and clear any pending reconnect / reload state.
+  /** The session id the live WS is currently bound to. */
+  engagedSessionIdRef: React.MutableRefObject<string | null>;
+  /** Hard close the live WS and clear any pending reconnect / loading state.
    *  Used by resetSession / resumeSession before they take the connection
    *  through a different path. */
   reset: () => void;
 }
 
 /**
- * Owns the live ACP WebSocket lifecycle:
+ * Owns the entire chat WebSocket lifecycle: load + live on a single
+ * channel.
  *
- *   1. `ensureLive()` opens a WS if needed, wires close/error handlers, and
- *      asks the engagement hook to bind it to the active session.
- *   2. On unexpected WS close with an active session, schedules a reload-
- *      then-reconnect: the runtime appended events while we were offline,
- *      so we must `loadSession` before `unstable_resumeSession` (the latter
- *      only attaches the channel for *future* events).
- *   3. The keep-alive effect makes sure a live WS exists whenever the user
- *      is viewing a session — without it, sidebar-click resume opens a
- *      throwaway socket and never re-engages.
+ * Earlier this hook used a "throwaway WS for history then live WS for
+ * stream" pattern coordinated by a `liveBlocked` flag. That pattern lost
+ * frames the wrapper appended *between* the throwaway's close and the
+ * live WS's `unstable_resumeSession` — the wrapper's per-channel cursor
+ * jumped to the log tail at resume time, deliberately skipping replay,
+ * but on the assumption that the throwaway had already covered everything
+ * up to that point. It hadn't — the "between" window was unobserved on
+ * either channel.
  *
- * Concentrating all of this in one hook means the refs that today encode
- * the lifecycle (`pendingReloadRef`, `reconnectFnRef`, etc.) all live next
- * to the code that reads them.
+ * The fix: a single WS does `loadSession` (which makes the wrapper's
+ * `serveLoadFromLog` engage *this* channel and stream the full log) and
+ * keeps listening on the same channel for live updates. The wrapper's
+ * cursor advances naturally from catch-up into live; no gap.
+ *
+ * Replay vs. live phasing:
+ *   - During the loadSession round-trip, session/update notifications are
+ *     the wrapper's history replay. We accumulate them into a local array
+ *     (`replayed`) and don't touch the store, so the user keeps seeing the
+ *     existing conversation until the fresh array is ready.
+ *   - When loadSession resolves, we atomically swap `replayed` into the
+ *     store via `setMessages` and flip phase to live. Subsequent updates
+ *     run through the full live handler.
+ *
+ * Token-based ownership: every `inner()` call mints a fresh `Symbol`
+ * tracked in `activeTokenRef`. The WS close handler captures that symbol
+ * and only runs cleanup if it's still the active token — older close
+ * events (e.g. after a `reset()` that opens a fresh connection) are
+ * stale and ignored. `inner()` itself checks the token at every yield
+ * point and bails if a newer call has taken over.
  */
 export function useAcpConnection(opts: UseAcpConnectionOptions): UseAcpConnectionResult {
   const {
-    selectedInstance, sessionId, liveBlocked,
-    makeUpdateHandler, engage, clearEngagement, loadHistory, setMessages,
+    selectedInstance, sessionId, selectedMcpServers,
+    makeUpdateHandler,
+    captureSessionConfig, handleConfigUpdate, applySavedPreferences,
+    setMessages, setSessionId,
   } = opts;
 
   const connectionRef = useRef<LiveConnection | null>(null);
+  const engagedSessionIdRef = useRef<string | null>(null);
   const ensureInFlightRef = useRef<Promise<ClientSideConnection | null> | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptRef = useRef(0);
   const isMountedRef = useRef(true);
   const reconnectFnRef = useRef<(() => void) | null>(null);
-  // Set when a live WS dies unexpectedly so the next ensureLive reloads from
-  // the runtime log before reattaching. session/resume on its own only
-  // engages for *future* events, so anything appended during the gap stays
-  // stranded otherwise.
-  const pendingReloadRef = useRef(false);
+  /** Identity of the currently-active inner() call. Stale WS close events
+   *  (from a prior conn that's still tearing down) skip cleanup if their
+   *  captured token doesn't match. */
+  const activeTokenRef = useRef<symbol | null>(null);
 
   const [state, setState] = useState<ConnectionState>("idle");
 
-  // Cleanup on unmount: cancel any in-flight reconnect, close the live WS.
+  // Cleanup on unmount.
   useEffect(() => () => {
     isMountedRef.current = false;
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
     }
+    activeTokenRef.current = null;
     connectionRef.current?.ws.close();
     connectionRef.current = null;
-    clearEngagement();
-  }, [clearEngagement]);
+    engagedSessionIdRef.current = null;
+  }, []);
 
-  const ensureInner = useCallback(async (): Promise<ClientSideConnection | null> => {
+  const inner = useCallback(async (): Promise<ClientSideConnection | null> => {
     if (!selectedInstance) return null;
 
-    // If the previous live WS died with an active session, replay history
-    // before opening a fresh socket. We swap the messages array in one
-    // render rather than pre-clearing, so the user keeps seeing their
-    // existing conversation until the fresh array is ready.
-    if (pendingReloadRef.current) {
-      const sid = useStore.getState().sessionId;
-      pendingReloadRef.current = false;
-      if (sid) {
-        setState("reloading");
-        try {
-          const fresh = await loadHistory(sid);
-          
-          if (useStore.getState().sessionId !== sid) return null;
-          setMessages(fresh);
-        } catch (e) {
-          // Network still unreachable — restore the flag so the next
-          // ensureLive (likely the next reconnect-timer fire) tries again.
-          pendingReloadRef.current = true;
-          throw e;
-        }
-      }
+    // Re-use a healthy live connection if it's already bound to the
+    // currently-selected session.
+    const existing = connectionRef.current;
+    if (existing && existing.ws.readyState === WebSocket.OPEN
+        && engagedSessionIdRef.current
+        && engagedSessionIdRef.current === useStore.getState().sessionId) {
+      return existing.connection;
     }
 
-    if (!connectionRef.current || connectionRef.current.ws.readyState !== WebSocket.OPEN) {
-      const { connection, ws } = await openConnection(selectedInstance, makeUpdateHandler());
-      await connection.initialize({
+    const myToken = Symbol();
+    activeTokenRef.current = myToken;
+    const stillActive = () => activeTokenRef.current === myToken;
+
+    setState("loading");
+
+    let phase: "replay" | "live" = "replay";
+    let replayed: Message[] = [];
+    const liveHandler = makeUpdateHandler();
+
+    const handler: UpdateHandler = (update) => {
+      // Config notifications (mode / option changes) always go to the
+      // store: the popover should reflect the latest state regardless of
+      // whether we're replaying history or watching live.
+      handleConfigUpdate(update);
+      if (phase === "replay") {
+        replayed = applyUpdate(replayed, update);
+      } else {
+        liveHandler(update);
+      }
+    };
+
+    let conn: LiveConnection;
+    try {
+      conn = await openConnection(selectedInstance, handler);
+    } catch (err) {
+      if (stillActive()) setState("idle");
+      throw err;
+    }
+
+    if (!stillActive()) {
+      conn.ws.close();
+      return null;
+    }
+
+    // Wire close handler before we await further. A WS death during
+    // initialize / loadSession / newSession should still drive reconnect.
+    // Token check makes stale close events from prior conns no-ops.
+    conn.ws.addEventListener("close", () => {
+      if (activeTokenRef.current !== myToken) return;
+      activeTokenRef.current = null;
+      if (connectionRef.current?.ws === conn.ws) connectionRef.current = null;
+      engagedSessionIdRef.current = null;
+      ensureInFlightRef.current = null;
+      // Any in-flight stream is now dead. Finalize streaming bubbles so
+      // busy clears and the next turn opens a fresh bubble instead of
+      // merging into a stale one.
+      setMessages((prev) => finalizeAllStreaming(prev));
+      setState("idle");
+      // Auto-reconnect only if a session is bound; if user reset the
+      // session there's nothing to come back to.
+      if (useStore.getState().sessionId) reconnectFnRef.current?.();
+    });
+
+    try {
+      await conn.connection.initialize({
         protocolVersion: PROTOCOL_VERSION,
         clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
       });
-      // addEventListener (not onclose=) so we don't clobber the handler that
-      // closes the ACP ReadableStream controller inside openConnection.
-      ws.addEventListener("close", () => {
-        connectionRef.current = null;
-        clearEngagement();
-        // Mark reload-on-next-ensureLive only if a session is bound — no
-        // session means there's nothing to reload.
-        if (useStore.getState().sessionId) pendingReloadRef.current = true;
-        // Any in-flight stream is now dead. Finalize streaming bubbles so
-        // busy clears and the next turn opens a fresh bubble instead of
-        // merging into a stale one.
-        setMessages((prev) => finalizeAllStreaming(prev));
-        setState("idle");
-        reconnectFnRef.current?.();
-      });
-      ws.addEventListener("error", () => {
-        useStore.getState().addLog("error", { message: "WebSocket connection error" });
-      });
-      connectionRef.current = { connection, ws };
-    }
+      if (!stillActive()) { conn.ws.close(); return null; }
 
-    const conn = connectionRef.current.connection;
-    await engage(conn);
-    setState("live");
-    return conn;
-  }, [selectedInstance, makeUpdateHandler, engage, clearEngagement, loadHistory, setMessages]);
+      const targetSid = useStore.getState().sessionId;
+
+      if (targetSid) {
+        const resp = await conn.connection.loadSession({
+          sessionId: targetSid,
+          cwd: ".",
+          mcpServers: selectedMcpServers,
+        });
+        if (!stillActive() || useStore.getState().sessionId !== targetSid) {
+          conn.ws.close();
+          return null;
+        }
+        captureSessionConfig(resp);
+        engagedSessionIdRef.current = targetSid;
+        await applySavedPreferences(conn.connection, targetSid, resp);
+        if (!stillActive()) { conn.ws.close(); return null; }
+        phase = "live";
+        setMessages(finalizeAllStreaming(replayed));
+      } else {
+        const s = await conn.connection.newSession({
+          cwd: ".",
+          mcpServers: selectedMcpServers,
+        });
+        if (!stillActive() || useStore.getState().sessionId) {
+          // Token expired, OR user picked an existing session while we
+          // were creating a new one. Bail; the keepalive effect will
+          // pick up the right path.
+          conn.ws.close();
+          return null;
+        }
+        captureSessionConfig(s);
+        setSessionId(s.sessionId);
+        engagedSessionIdRef.current = s.sessionId;
+        await applySavedPreferences(conn.connection, s.sessionId, s);
+        if (!stillActive()) { conn.ws.close(); return null; }
+        phase = "live";
+      }
+
+      connectionRef.current = conn;
+      reconnectAttemptRef.current = 0;
+      setState("live");
+      return conn.connection;
+    } catch (err) {
+      if (stillActive()) {
+        conn.ws.close();
+        setState("idle");
+      }
+      throw err;
+    }
+  }, [
+    selectedInstance, selectedMcpServers,
+    makeUpdateHandler, captureSessionConfig, handleConfigUpdate,
+    applySavedPreferences, setMessages, setSessionId,
+  ]);
 
   const ensureLive = useCallback((): Promise<ClientSideConnection | null> => {
     if (!ensureInFlightRef.current) {
-      ensureInFlightRef.current = ensureInner().finally(() => {
+      ensureInFlightRef.current = inner().finally(() => {
         ensureInFlightRef.current = null;
       });
     }
     return ensureInFlightRef.current;
-  }, [ensureInner]);
+  }, [inner]);
 
   // Reconnect closure: late-bound via ref so the WS close handler can call
-  // it without participating in ensureInner's dep graph. Recreated each time
+  // it without participating in inner's dep graph. Recreated each time
   // selectedInstance / ensureLive change so the captured values stay fresh.
   useEffect(() => {
     reconnectFnRef.current = () => {
@@ -193,7 +290,6 @@ export function useAcpConnection(opts: UseAcpConnectionOptions): UseAcpConnectio
         if (!currentSid || currentInst !== selectedInstance) return;
         try {
           await ensureLive();
-          reconnectAttemptRef.current = 0;
         } catch {
           reconnectFnRef.current?.();
         }
@@ -211,27 +307,25 @@ export function useAcpConnection(opts: UseAcpConnectionOptions): UseAcpConnectio
     }
   }, [sessionId, selectedInstance]);
 
-  // Keep-alive: open a live channel whenever we're viewing a session. Without
-  // this, sidebar-click resume opens a throwaway WS for history replay, and
-  // any pending tool-permission prompt replayed there has no live channel to
-  // answer on.
+  // Keep-alive: open a live channel whenever we're viewing a session.
   useEffect(() => {
-    if (!selectedInstance || !sessionId || liveBlocked) return;
+    if (!selectedInstance || !sessionId) return;
     ensureLive().catch(() => {});
-  }, [selectedInstance, sessionId, liveBlocked, ensureLive]);
+  }, [selectedInstance, sessionId, ensureLive]);
 
   const reset = useCallback(() => {
+    activeTokenRef.current = null;
+    ensureInFlightRef.current = null;
     connectionRef.current?.ws.close();
     connectionRef.current = null;
-    clearEngagement();
-    pendingReloadRef.current = false;
+    engagedSessionIdRef.current = null;
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
     }
     reconnectAttemptRef.current = 0;
     setState("idle");
-  }, [clearEngagement]);
+  }, []);
 
-  return { state, ensureLive, connectionRef, reset };
+  return { state, ensureLive, connectionRef, engagedSessionIdRef, reset };
 }

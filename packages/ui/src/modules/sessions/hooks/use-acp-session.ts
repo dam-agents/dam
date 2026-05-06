@@ -1,5 +1,5 @@
 import type { McpServer } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
 
 import { api } from "../../../api.js";
 import { queryClient } from "../../../query-client.js";
@@ -10,17 +10,15 @@ import { useInstancesList } from "../../instances/api/queries.js";
 import { acpSessionsKeys } from "../api/queries.js";
 import { useAcpConfigCache } from "./use-acp-config-cache.js";
 import { useAcpConnection } from "./use-acp-connection.js";
-import { useAcpHistory } from "./use-acp-history.js";
 import { useAcpPrompt } from "./use-acp-prompt.js";
-import { useAcpSessionEngagement } from "./use-acp-session-engagement.js";
 import { useAcpUpdateHandler } from "./use-acp-update-handler.js";
 
 /**
- * Thin orchestrator: composes the connection, engagement, history, prompt,
- * config-cache, and update-handler hooks into the public surface that
- * chat-view consumes. Lifecycle decisions live in the sub-hooks; this file
- * just wires them up and runs the side effects that don't fit anywhere
- * else (wake-on-entry, busy-from-projection).
+ * Thin orchestrator: composes the connection, prompt, config-cache, and
+ * update-handler hooks into the public surface that chat-view consumes.
+ * Lifecycle decisions live in the connection hook; this file just wires
+ * sub-hooks together and runs side effects that don't fit anywhere else
+ * (wake-on-entry, busy-from-projection).
  */
 export function useAcpSession(
   selectedInstance: string | null,
@@ -33,9 +31,6 @@ export function useAcpSession(
   const setSessionId = useStore((s) => s.setSessionId);
   const setMessages = useStore((s) => s.setMessages);
   const setBusy = useStore((s) => s.setBusy);
-  const [loadingSession, setLoadingSession] = useState(false);
-  // resetSession clears the cached config alongside the engagement; the
-  // engagement + capture paths use the config-cache hook.
   const setSessionModes = useStore((s) => s.setSessionModes);
   const setSessionModels = useStore((s) => s.setSessionModels);
   const setSessionConfigOptions = useStore((s) => s.setSessionConfigOptions);
@@ -53,35 +48,21 @@ export function useAcpSession(
   const { captureSessionConfig, handleConfigUpdate, applySavedPreferences } =
     useAcpConfigCache(selectedInstance, sessionId, instanceRunState);
 
-  const { loadHistory } = useAcpHistory(
-    selectedInstance,
-    selectedMcpServers,
-    captureSessionConfig,
-    handleConfigUpdate,
-  );
-
-  const { engagedSessionIdRef, engage, clear: clearEngagement } = useAcpSessionEngagement(
-    selectedInstance,
-    selectedMcpServers,
-    captureSessionConfig,
-    applySavedPreferences,
-  );
-
   const makeUpdateHandler = useAcpUpdateHandler(handleConfigUpdate);
 
-  const { ensureLive, connectionRef, reset: resetConnection } = useAcpConnection({
-    selectedInstance,
-    sessionId,
-    // Don't open a live WS while resumeSession's throwaway is still
-    // replaying history — both channels would otherwise receive the replay
-    // stream and the live projection would double-apply every update.
-    liveBlocked: loadingSession,
-    makeUpdateHandler,
-    engage,
-    clearEngagement,
-    loadHistory,
-    setMessages,
+  const {
+    state: connectionState, ensureLive, connectionRef, engagedSessionIdRef, reset: resetConnection,
+  } = useAcpConnection({
+    selectedInstance, sessionId, selectedMcpServers,
+    makeUpdateHandler, captureSessionConfig, handleConfigUpdate,
+    applySavedPreferences, setMessages, setSessionId,
   });
+
+  // The chat-view shows a "Loading session…" splash while history is
+  // replaying. With load+live on a single channel, "loading" is exactly
+  // the connection state — the connection hook is in `loading` while the
+  // wrapper streams history through `loadSession`, then flips to `live`.
+  const loadingSession = connectionState === "loading";
 
   // Wake hibernated instance on entry.
   useEffect(() => {
@@ -103,23 +84,29 @@ export function useAcpSession(
 
   const resumeSession = useCallback(async (sid: string, opts?: { expectNotFound?: boolean }) => {
     if (!selectedInstance) return;
-
     resetConnection();
-    setLoadingSession(true);
     setMessages([]);
     setSessionError(null);
     setSessionId(sid);
     setMobileScreen("chat");
-
+    // ensureLive opens the load+live channel synchronously (state flips to
+    // "loading" before React re-renders, avoiding a brief empty-session
+    // flash). We await it so callers that opt into orphan cleanup — the
+    // chat <-> terminal toggle — can intercept a not-found loadSession
+    // before it would otherwise surface as an error card. The keepalive
+    // effect's ensureLive() fires on the next render and shares this
+    // promise via ensureInFlightRef.
     try {
-      const fresh = await loadHistory(sid);
+      await ensureLive();
+    } catch (err) {
+      // Drop if the user has already navigated to a different session —
+      // the error card would otherwise attach to the wrong session.
       if (useStore.getState().sessionId !== sid) return;
-      setMessages(fresh);
-    } catch (e) {
-      if (useStore.getState().sessionId !== sid) return;
-      const kind = classifyResumeError(e);
+      const kind = classifyResumeError(err);
       if (kind === "not-found" && opts?.expectNotFound) {
-        setLoadingSession(false);
+        // Caller knew the session might not exist on the agent (e.g.
+        // crossing back from terminal mode). Clean up the orphan DB row
+        // and reset state silently instead of showing an error card.
         await api.sessions.delete.mutate({ sessionId: sid, instanceId: selectedInstance });
         queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
         resetSession();
@@ -127,13 +114,11 @@ export function useAcpSession(
       }
       setSessionError({
         sessionId: sid,
-        message: extractErrorMessage(e),
+        message: extractErrorMessage(err),
         kind,
       });
-    } finally {
-      if (useStore.getState().sessionId === sid) setLoadingSession(false);
     }
-  }, [selectedInstance, loadHistory, resetConnection, resetSession, setMessages, setSessionError, setSessionId, setMobileScreen]);
+  }, [selectedInstance, resetConnection, resetSession, setMessages, setSessionError, setSessionId, setMobileScreen, ensureLive]);
 
   const { sendPrompt, stopAgent } = useAcpPrompt(
     selectedInstance,
