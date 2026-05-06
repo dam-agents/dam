@@ -43,6 +43,7 @@ This directory contains ADRs for the Platform project.
 | [036](036-redis-platform-primitive.md)        | Redis as a platform primitive — pub/sub, queues, cache | @jezekra1 |
 | [037](037-remote-terminal.md)                 | Remote terminal — split "chat" and "terminal" session modes | @JanPokorny |
 | [038](038-paired-gateway-pod.md)               | Paired agent and gateway pods — cluster-enforced credential boundary | @pilartomas |
+| [039](039-cli-foundation.md)                  | Platform CLI foundation — Node-on-npm, tRPC contract reuse | @PetrBulanek |
 
 ## Drafts
 
