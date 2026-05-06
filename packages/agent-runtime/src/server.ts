@@ -114,8 +114,11 @@ function attachPty(sessionId: string, ws: WsWebSocket, opts: { reset: boolean })
     let frame;
     try { frame = decodeFrame(raw); } catch { return; }
 
-    // First RESIZE tells us the client's terminal size — required before spawning.
-    if (!initialized && frame.op === OP_RESIZE) {
+    if (!initialized) {
+      if (frame.op !== OP_RESIZE) {
+        ws.close(1002, "first frame must be RESIZE");
+        return;
+      }
       initialized = true;
       const { cols, rows } = frame;
 

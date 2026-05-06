@@ -59,13 +59,14 @@ ingress:
   catchAllAppHost: true
 
 # Bootstrap a known dev/dev user for local cluster — never enabled in production.
-# Allow all origins for simplicity.
 keycloak:
   testUser:
     enabled: true
     username: dev
     password: dev
   extraRedirectUris:
-    - "*"
+    - "http://127.0.0.1:4444/*"
+    - "http://localhost:4444/*"
   extraWebOrigins:
-    - "*"
+    - "http://127.0.0.1:4444"
+    - "http://localhost:4444"

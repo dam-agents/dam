@@ -6,6 +6,7 @@ import type { InstancesRepository } from "../../modules/agents/infrastructure/in
 import { LAST_ACTIVITY_KEY, ACTIVE_SESSION_KEY } from "../../modules/agents/infrastructure/labels.js";
 
 const ACTIVITY_DEBOUNCE_MS = 30_000;
+const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;
 
 export function createTerminalRelay(namespace: string, repo: InstancesRepository) {
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
@@ -20,7 +21,18 @@ export function createTerminalRelay(namespace: string, repo: InstancesRepository
       client.on("error", () => { try { client.terminate(); } catch {} });
 
       const pending: { data: Buffer; isBinary: boolean }[] = [];
-      const buffer = (data: Buffer, isBinary: boolean) => { pending.push({ data, isBinary }); };
+      let pendingBytes = 0;
+      let bufferOverflow = false;
+      const buffer = (data: Buffer, isBinary: boolean) => {
+        if (bufferOverflow) return;
+        pendingBytes += data.byteLength;
+        if (pendingBytes > PENDING_BUFFER_MAX_BYTES) {
+          bufferOverflow = true;
+          try { client.close(1013, "buffer full"); } catch { client.terminate(); }
+          return;
+        }
+        pending.push({ data, isBinary });
+      };
       client.on("message", buffer);
 
       repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "true").catch(() => {});
@@ -32,6 +44,10 @@ export function createTerminalRelay(namespace: string, repo: InstancesRepository
           ws.on("error", (err) => { ws.close(); reject(err); });
         }))
         .then((upstream) => {
+          if (bufferOverflow) {
+            try { upstream.close(); } catch {}
+            return;
+          }
           client.off("message", buffer);
           for (const { data, isBinary } of pending) upstream.send(data, { binary: isBinary });
 

@@ -11,7 +11,8 @@ Last verified: 2026-05-06
 - [ADR-009 — Go for controller, TypeScript for api-server](../adrs/009-go-and-typescript.md) — language split and its rationale
 - [ADR-012 — Runtime lifetime](../adrs/012-runtime-lifetime.md) — single-use spawn/hibernate model
 - [ADR-022 — Harness API server](../adrs/022-harness-api-server.md) — separate port with a restricted, internal-only surface
-- [ADR-023 — Harness-agnostic agent base image](../adrs/023-harness-agnostic-base-image.md) — `AGENT_COMMAND` contract
+- [ADR-023 — Harness-agnostic agent base image](../adrs/023-harness-agnostic-base-image.md) — fixed-path harness-script contract
+- [ADR-037 — Remote terminal: split chat and terminal session modes](../adrs/037-remote-terminal.md) — sessions carry a mode; agent-runtime relays chat over ACP and terminal over a PTY
 - [ADR-033 — Envoy-based credential gateway](../adrs/033-envoy-credential-gateway.md) — Envoy is the credential gateway; mounts owner-labelled K8s Secrets and injects credentials on the wire
 - [ADR-038 — Paired agent and gateway pods](../adrs/038-paired-gateway-pod.md) — agent and gateway run in two paired pods per instance, glued by NetworkPolicy
 
@@ -61,9 +62,10 @@ The api-server proxies all ACP traffic to agent pods; clients never dial pods di
 
 ### agent-runtime
 
-The per-instance pod that runs the ACP WebSocket server and spawns the underlying agent binary via the `AGENT_COMMAND` contract ([ADR-023](../adrs/023-harness-agnostic-base-image.md)). Its responsibilities are:
+The per-instance pod that runs the ACP WebSocket server and spawns the underlying agent binary via the harness-script contract ([ADR-023](../adrs/023-harness-agnostic-base-image.md), [ADR-037](../adrs/037-remote-terminal.md)). Its responsibilities are:
 
-- Accept one ACP WebSocket connection (relayed from the api-server) and speak JSON-RPC 2.0 to the agent process.
+- Accept one ACP WebSocket connection (relayed from the api-server) and speak JSON-RPC 2.0 to the agent process. Chat-mode sessions spawn `/usr/local/bin/harness-chat` as the ACP subprocess.
+- Accept terminal-mode WebSocket connections on `/api/terminal` (relayed from the api-server). Each session gets a PTY running `/usr/local/bin/harness-terminal`; agent-runtime relays a binary input/output/resize frame protocol both ways and serializes scrollback so a refresh within a 30 s grace window reattaches.
 - Watch a well-known trigger directory and forward scheduled triggers to the api-server's harness port.
 - Expose a scoped tRPC router (via the api-server's tRPC proxy) for in-pod file operations surfaced to the UI.
 - Hold an SSE connection to the api-server's pod-files endpoint and materialize declarative file state under the agent's HOME — currently `~/.config/gh/hosts.yml` for granted GitHub Enterprise app connections, more producers might come. Refuses paths outside HOME (defense-in-depth) and skips the loop when `PLATFORM_POD_FILES_EVENTS_URL` is unset (forks).
@@ -83,8 +85,10 @@ A React + Vite single-page app served by the api-server. It uses tRPC over HTTP 
 | Edge | Protocol | Purpose |
 |------|----------|---------|
 | ui → api-server | tRPC over HTTP | CRUD on templates, instances, schedules, sessions |
-| ui → api-server | WebSocket (ACP, JSON-RPC 2.0) | Live session, permission prompts, streaming output |
-| api-server → agent-runtime | WebSocket (ACP, JSON-RPC 2.0) | Relay target — one hop, no fan-out |
+| ui → api-server | WebSocket (ACP, JSON-RPC 2.0) | Live chat session, permission prompts, streaming output |
+| ui → api-server | WebSocket (binary terminal frames) | Live terminal session — input / output / resize / exit, see [ADR-037](../adrs/037-remote-terminal.md) |
+| api-server → agent-runtime | WebSocket (ACP, JSON-RPC 2.0) | Chat-mode relay target — one hop, no fan-out |
+| api-server → agent-runtime | WebSocket (binary terminal frames) | Terminal-mode relay target — one hop, single client per session |
 | api-server → agent-runtime | HTTP (tRPC proxy) | In-pod file operations surfaced to the UI; the agent pod's NetworkPolicy admits this hop only from the api-server pod, so no in-process auth check is needed |
 | agent-runtime → api-server | HTTP (harness port) | Trigger receipt + MCP tool access |
 | controller → K8s API | watch / list / write | Resource reconciliation and status writes |

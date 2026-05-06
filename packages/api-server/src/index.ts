@@ -354,12 +354,3 @@ async function shutdown() {
 }
 process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);
-
-process.on("uncaughtException", (err) => {
-  if (err instanceof RangeError && "code" in err && typeof err.code === "string" && err.code.startsWith("WS_ERR_")) {
-    process.stderr.write(`[ws] suppressed WebSocket protocol error: ${err.code}\n`);
-    return;
-  }
-  process.stderr.write(`uncaught exception: ${err.stack ?? err.message}\n`);
-  process.exit(1);
-});

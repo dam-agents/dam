@@ -24,7 +24,10 @@ export function createSessionsService(deps: {
 
       const [dbRows, acpSessions] = await Promise.all([
         deps.listByInstance(instanceId),
-        acp.listSessions().catch(() => [] as AcpSessionInfo[]),
+        acp.listSessions().catch((err) => {
+          process.stderr.write(`[sessions] acp.listSessions failed for ${instanceId}: ${err?.message ?? err}\n`);
+          return [] as AcpSessionInfo[];
+        }),
       ]);
 
       const acpMap = new Map<string, AcpSessionInfo>(

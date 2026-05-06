@@ -28,7 +28,7 @@ Ship a single **`platform-base`** image that owns the platform-managed surface a
 
 ### Agent-authoring contract
 
-A concrete agent image is a ~5-line Dockerfile:
+A concrete agent image is a Dockerfile that drops two scripts at fixed paths:
 
 ```Dockerfile
 ARG BASE_IMAGE=platform-base
@@ -36,22 +36,27 @@ FROM ${BASE_IMAGE}
 
 RUN npm install -g <harness-package>
 
-ENV AGENT_COMMAND=<harness-binary>
+COPY harness-chat.sh /usr/local/bin/harness-chat
+COPY harness-terminal.sh /usr/local/bin/harness-terminal
+RUN chmod +x /usr/local/bin/harness-chat /usr/local/bin/harness-terminal
 
 COPY workspace/ /app/working-dir/
 ```
 
-The single platform knob is **`AGENT_COMMAND`** — a string the agent-runtime splits on whitespace and spawns as the ACP subprocess for each session (`packages/agent-runtime/src/server.ts:17`, `acp-bridge.ts:14`). When `AGENT_COMMAND` is unset, the runtime falls back to the bundled example agent.
+The platform contract is two executables at fixed paths ([ADR-037](037-remote-terminal.md)):
 
-Each ACP session gets its own subprocess; session state is the harness's responsibility (filesystem in `/home/agent/`, harness-specific stores under `~/.<harness>/`). The platform never parses harness-internal formats.
+- **`/usr/local/bin/harness-chat`** — agent-runtime spawns this as the ACP subprocess for chat-mode sessions (`packages/agent-runtime/src/server.ts`).
+- **`/usr/local/bin/harness-terminal`** — agent-runtime spawns this attached to a PTY for terminal-mode sessions, with `HARNESS_SESSION_ID` exported in the env so the harness can pick up the right resumable session.
+
+`platform-base` ships defaults for both (Claude Code in chat and terminal modes); concrete agents only need to override the script(s) whose harness differs. Each session gets its own subprocess; session state is the harness's responsibility (filesystem in `/home/agent/`, harness-specific stores under `~/.<harness>/`). The platform never parses harness-internal formats.
 
 ### Current concrete agents
 
-| Agent | Harness | `AGENT_COMMAND` |
+| Agent | Chat harness | Terminal harness |
 |---|---|---|
-| `example-agent` | Claude Code | default Claude Code ACP |
-| `google-workspace` | Claude Code + `gws` CLI | default Claude Code ACP |
-| `pi-agent` | pi + `pi-acp` + `@zhafron/pi-memory` | `pi-acp` |
+| `example-agent` | Claude Code ACP (default) | `claude` (default) |
+| `google-workspace` | Claude Code ACP (default) | `claude` (default) |
+| `pi-agent` | `pi-acp` | `pi --session $HARNESS_SESSION_ID` |
 
 See `packages/agents/pi-agent/README.md` for pi-specific config (memory scopes, system-prompt conventions, workspace layout).
 
@@ -61,7 +66,7 @@ See `packages/agents/pi-agent/README.md` for pi-specific config (memory scopes, 
 
 **Agent-runtime as a sidecar container.** Each agent runs its harness in one container, agent-runtime in another, communicating over a shared volume or localhost. Rejected: doubles the per-pod footprint, complicates the trigger/file path (two containers to exec into), and gains nothing — agent-runtime is lightweight and harness-agnostic already.
 
-**Per-harness base images** (`platform-base-claude`, `platform-base-pi`, …). Rejected: duplicates the platform code for each harness; every agent-runtime change has to be rebuilt N times. The single `platform-base` + `AGENT_COMMAND` layer already gives harness authors all the flexibility they need without forking the base.
+**Per-harness base images** (`platform-base-claude`, `platform-base-pi`, …). Rejected: duplicates the platform code for each harness; every agent-runtime change has to be rebuilt N times. The single `platform-base` + harness-script contract already gives harness authors all the flexibility they need without forking the base.
 
 **Drop `platform-base` and let agents embed agent-runtime directly.** Rejected: every agent repo would need to vendor or depend on the agent-runtime package and rebuild it, duplicating the Node + git + gh + CA bootstrap layers. `platform-base` consolidates that fixed cost once.
 
@@ -69,16 +74,18 @@ See `packages/agents/pi-agent/README.md` for pi-specific config (memory scopes, 
 
 - **Rebuild coupling.** Every agent image must be rebuilt when `platform-base` (and thus the bundled agent-runtime) changes. `mise run image:agent` builds `platform-base` + all three agents in one pass.
 - **Harness contract is narrow.** The platform assumes the harness speaks ACP over stdio and respects the trigger-file convention (ADR-008). Anything outside that — memory formats, skill registries, tool auth — is the harness's business.
-- **Low barrier for new agents.** Adding a new harness is: Dockerfile that extends `platform-base`, `npm install -g <harness>`, set `AGENT_COMMAND`, optionally seed `workspace/`. Example PRs: `feat(agent-runtime): add codex-ready agent image` (502366e), `feat(agents): add pi-agent with @zhafron/pi-memory` (4f7cfd0).
+- **Low barrier for new agents.** Adding a new harness is: Dockerfile that extends `platform-base`, `npm install -g <harness>`, drop `harness-chat.sh` / `harness-terminal.sh`, optionally seed `workspace/`. Example PRs: `feat(agent-runtime): add codex-ready agent image` (502366e), `feat(agents): add pi-agent with @zhafron/pi-memory` (4f7cfd0).
 - **Helm chart plumbs image + template per agent.** Each agent has a Helm values block (`pi-agent` at `deploy/helm/platform/values.yaml`, template at `deploy/helm/platform/templates/pi-agent-template.yaml`). Adding an agent requires a chart change — acceptable cost.
-- **Single `AGENT_COMMAND` assumes single-binary harnesses.** If a future harness needs a multi-process orchestration (e.g., sidecar MCP server), it must wrap itself in a shell script and expose one ACP entrypoint. No orchestration primitives in the platform.
+- **Two scripts per harness assume single-binary entrypoints.** If a future harness needs a multi-process orchestration (e.g., sidecar MCP server), the harness script wraps it and exposes one ACP / TUI entrypoint. No orchestration primitives in the platform.
 
 ## Key files
 
-- `packages/platform-base/Dockerfile` — base image definition.
-- `packages/agent-runtime/src/server.ts` — reads `AGENT_COMMAND`, runs the ACP server.
-- `packages/agent-runtime/src/acp-bridge.ts` — spawns the harness subprocess per session.
+- `packages/platform-base/Dockerfile` — base image definition; bakes default `harness-chat.sh` and `harness-terminal.sh` for Claude Code.
+- `packages/platform-base/harness-chat.sh`, `harness-terminal.sh` — default Claude Code entrypoints used by `example-agent` and `google-workspace`.
+- `packages/agent-runtime/src/server.ts` — spawns `/usr/local/bin/harness-chat` for ACP sessions and `/usr/local/bin/harness-terminal` for PTY sessions.
+- `packages/agent-runtime/src/acp-bridge.ts` — spawns the chat harness subprocess per session.
 - `packages/agent-runtime/src/trigger-watcher.ts` — watches `/home/agent/.triggers/` for scheduled-session files.
-- `packages/agents/{example-agent,google-workspace,pi-agent}/Dockerfile` — the three-line recipe in practice.
+- `packages/agents/{example-agent,google-workspace,pi-agent}/Dockerfile` — the per-harness recipe in practice.
+- `packages/agents/pi-agent/{harness-chat.sh,harness-terminal.sh}` — pi-specific overrides.
 - `packages/agents/pi-agent/README.md` — agent-specific documentation pattern (memory scopes, system-prompt conventions).
 - `tasks.toml` → `image:agent` — multi-agent build orchestration.
