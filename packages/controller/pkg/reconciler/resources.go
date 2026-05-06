@@ -438,6 +438,11 @@ func BuildAgentNetworkPolicy(pairKey string, cfg *config.Config, ownerCM *corev1
 			// api-server pod is the sole authorized caller of agent-runtime's
 			// ACP/tRPC port. The api-server has already verified the user
 			// JWT and instance ownership before forwarding.
+			//
+			// Port 15008 (HBONE) accompanies 8080 because the api-server
+			// is in ambient too — ambient mesh traffic hits the kernel
+			// filter on :15008 before ztunnel decapsulates. Allowing only
+			// :8080 drops every inbound request from the api-server.
 			Ingress: []networkingv1.NetworkPolicyIngressRule{{
 				From: []networkingv1.NetworkPolicyPeer{{
 					PodSelector: &metav1.LabelSelector{
@@ -447,9 +452,10 @@ func BuildAgentNetworkPolicy(pairKey string, cfg *config.Config, ownerCM *corev1
 						MatchLabels: map[string]string{"kubernetes.io/metadata.name": cfg.ReleaseNamespace},
 					},
 				}},
-				Ports: []networkingv1.NetworkPolicyPort{{
-					Protocol: &tcp, Port: &acpPort,
-				}},
+				Ports: []networkingv1.NetworkPolicyPort{
+					{Protocol: &tcp, Port: &acpPort},
+					{Protocol: &tcp, Port: &hbonePort},
+				},
 			}},
 		},
 	}

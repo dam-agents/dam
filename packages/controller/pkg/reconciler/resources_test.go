@@ -321,13 +321,20 @@ func TestBuildAgentNetworkPolicy(t *testing.T) {
 		}
 	}
 
-	// Ingress: ACP port admitted only from the api-server pod.
+	// Ingress: ACP + ambient HBONE admitted only from the api-server pod.
 	require.Len(t, np.Spec.Ingress, 1)
 	require.Len(t, np.Spec.Ingress[0].From, 1)
 	assert.Equal(t, "apiserver",
 		np.Spec.Ingress[0].From[0].PodSelector.MatchLabels["app.kubernetes.io/component"])
 	require.NotNil(t, np.Spec.Ingress[0].From[0].NamespaceSelector)
-	assert.Equal(t, int32(8080), np.Spec.Ingress[0].Ports[0].Port.IntVal)
+	require.Len(t, np.Spec.Ingress[0].Ports, 2)
+	ports := []int32{
+		np.Spec.Ingress[0].Ports[0].Port.IntVal,
+		np.Spec.Ingress[0].Ports[1].Port.IntVal,
+	}
+	assert.Contains(t, ports, int32(8080))
+	assert.Contains(t, ports, int32(15008),
+		"ambient HBONE port required so api-server→agent traffic isn't dropped at the kernel filter before ztunnel decapsulates")
 }
 
 func envToMap(envs []corev1.EnvVar) map[string]string {

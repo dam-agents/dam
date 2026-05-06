@@ -46,6 +46,12 @@ spec:
     # api-server pod is the waypoint's, not the agent's. The Gateway-API
     # mesh-controller stamps `gateway.networking.k8s.io/gateway-name` on
     # the synthesised waypoint Pod — that's the stable selector key.
+    #
+    # Port 15008 is the ambient HBONE port: the waypoint forwards to
+    # ambient backends via HBONE, so the connection that hits the
+    # destination pod's kernel filter is on :15008 (ztunnel intercepts
+    # AFTER netpol). Allowing only :4001 silently drops every inbound
+    # request and surfaces as `503 UF` at the waypoint.
     - from:
         - namespaceSelector:
             matchLabels:
@@ -56,12 +62,18 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.apiServer.harnessServerPort }}
+        - protocol: TCP
+          port: 15008
 
     # ext-authz: agent + fork pods only. Does NOT go through the waypoint
     # (the public+ext-authz Service deliberately does not carry the
     # use-waypoint annotation), so the source is the agent/fork pod itself.
     # `agent-platform.ai/instance` is set by the controller on both
     # StatefulSet pods and fork Jobs; Exists covers both.
+    #
+    # 15008 (HBONE) is allowed for the same reason the harness rule needs
+    # it — ext-authz callers (gateway pods) are in ambient too, so the
+    # inbound is HBONE.
     - from:
         - namespaceSelector:
             matchLabels:
@@ -73,4 +85,6 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.apiServer.extAuthzPort }}
+        - protocol: TCP
+          port: 15008
 {{- end }}
