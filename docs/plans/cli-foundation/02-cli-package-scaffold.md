@@ -67,7 +67,7 @@ Wire `cli:typecheck` and `cli:test` into the umbrella `check` and `test` tasks i
 
 - **`tseng/project-structure.md`** — add the entry under the client role:
   ```
-  <!-- package: cli | role: client | path: packages/cli | package_name: @dam-agents/cli -->
+  <!-- package: cli | role: client | path: packages/cli | package_name: cli -->
   ```
   (Exact line per spec §"Project metadata updates".)
 
