@@ -133,12 +133,17 @@ export function ConnectAppForm({ app, onCancel }: Props) {
 
   const submit = () => {
     if (!allFilled) return;
-    // Drop optional fields that weren't filled — the backend's
-    // family-credential merge will fill them from a sibling connection.
+    // Drop optional fields unless the override panel is open AND the user
+    // typed something into them. Without the `showOverride` gate, values
+    // typed into an override panel that the user later closed would
+    // silently leak through to the backend; gating ties "submit override"
+    // to "override is currently visible." Empty values fall through to
+    // the backend's family-credential merge, which fills them from a
+    // sibling connection.
     const input = Object.fromEntries(
       app.inputs
         .map((field) => [field.name, (values[field.name] ?? "").trim()] as const)
-        .filter(([, v], i) => !app.inputs[i]!.optional || v.length > 0),
+        .filter(([, v], i) => !app.inputs[i]!.optional || (showOverride && v.length > 0)),
     );
     startAppOAuth.mutate(
       { appId: app.id, input },
