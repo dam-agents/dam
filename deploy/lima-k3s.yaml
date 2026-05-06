@@ -8,7 +8,12 @@ images:
     arch: x86_64
 
 cpus: 4
-memory: 4GiB
+# 4GiB was the pre-ADR-039 baseline; Istio ambient (istiod + ztunnel +
+# istio-cni + waypoint Deployment) adds roughly 1 GiB of pod-level memory
+# requests on top of the existing platform stack (postgres, keycloak,
+# api-server, controller, UI, agent runtime) and pushes the scheduler into
+# `Insufficient memory` for any new pod.
+memory: 8GiB
 disk: 100GiB
 
 containerd:
