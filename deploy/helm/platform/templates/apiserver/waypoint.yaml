@@ -9,9 +9,15 @@ kind: Gateway
 metadata:
   name: {{ .Values.istio.waypointName }}
   namespace: {{ .Release.Namespace }}
+  # Istio propagates the Gateway's labels onto the synthesised waypoint
+  # Deployment + Pod. We deliberately omit `app.kubernetes.io/component:
+  # apiserver` here — combined with `app.kubernetes.io/instance` (from
+  # platform.labels) it would match the harness Service's pod selector,
+  # adding the waypoint Pod itself as a phantom endpoint and causing
+  # half the Service traffic to ECONNRESET (waypoint listens on HBONE
+  # 15008, not the harness port).
   labels:
     {{- include "platform.labels" . | nindent 4 }}
-    app.kubernetes.io/component: apiserver
     # Istio's standard label for ambient waypoints — narrows the waypoint
     # to L7 (HBONE) traffic, which is what we need for XFCC injection.
     istio.io/waypoint-for: service
