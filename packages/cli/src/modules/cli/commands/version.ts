@@ -31,12 +31,12 @@ export function buildVersionCommand(deps: VersionCommandDeps): Command {
             // Quietly stop — `version` works without a server.
             return;
           case "malformed-config":
-            process.stdout.write(
+            process.stderr.write(
               `server unreachable: ${result.error.reason}\n`,
             );
             return;
           case "probe-error":
-            process.stdout.write(
+            process.stderr.write(
               `server unreachable: ${result.error.message}\n`,
             );
             return;

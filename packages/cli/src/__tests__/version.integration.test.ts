@@ -146,7 +146,7 @@ describe("dam version (integration)", () => {
     expect(r.stdout).toContain("server 1.2.3 (min CLI 0.0.0)");
   });
 
-  it("unreachable server: prints local line + 'server unreachable', exit 0", async () => {
+  it("unreachable server: 'server unreachable' goes to stderr, exit 0", async () => {
     await configureServer("http://127.0.0.1:1");
 
     const r = await runDam(["version"], {
@@ -155,7 +155,8 @@ describe("dam version (integration)", () => {
     });
     expect(r.exitCode).toBe(0);
     expect(r.stdout).toContain(`dam ${LOCAL}`);
-    expect(r.stdout).toContain("server unreachable");
+    expect(r.stdout).not.toContain("server unreachable");
+    expect(r.stderr).toContain("server unreachable");
   });
 
   it("BehindCurrent: warns to stderr, still exit 0, prints server line", async () => {
