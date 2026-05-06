@@ -42,7 +42,7 @@ This directory contains ADRs for the Platform project.
 | [035](035-unified-hitl-ux.md)                 | Unified HITL UX — verdict authority outside the agent pod | @jezekra1 |
 | [036](036-redis-platform-primitive.md)        | Redis as a platform primitive — pub/sub, queues, cache | @jezekra1 |
 | [037](037-remote-terminal.md)                 | Remote terminal — split "chat" and "terminal" session modes | @JanPokorny |
-| [038](038-paired-gateway-pod.md)               | Paired agent and gateway pods — cluster-enforced credential boundary | @pilartomas |
+| [038](038-paired-gateway-pod.md)              | Paired agent and gateway pods — cluster-enforced credential boundary | @pilartomas |
 | [039](039-cli-foundation.md)                  | Platform CLI foundation — TypeScript on Node, npm distribution | @PetrBulanek |
 | [040](040-unified-secret-contributions.md)    | Unified secret contributions — controller-merged at render time | @Tomas2D |
 | [041](041-istio-ambient-mesh.md)              | Istio ambient mesh — SPIFFE identity for every internal hop | @pilartomas |
