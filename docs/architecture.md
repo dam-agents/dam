@@ -58,6 +58,7 @@ Each page describes how the accepted ADRs are realized in the current system. AD
 - [security-and-credentials](architecture/security-and-credentials.md) — Keycloak identity, Envoy sidecar credential gateway, K8s-Secret credential storage, ext_authz HITL, network boundary.
 - [channels](architecture/channels.md) — Slack and Telegram adapters inside the api-server, inbound relay, outbound MCP tool, identity linking.
 - [skills](architecture/skills.md) — connectable git-based skill sources, install onto the per-instance PVC, REST-only publish back as a PR, Envoy sidecar credential injection for GitHub.
+- [security-scanning](architecture/security-scanning.md) — Quay image scanning with auto-filed issues, CodeQL SAST, Dependabot, and the remediation flow.
 
 ## Strategy
 

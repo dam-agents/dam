@@ -1,0 +1,128 @@
+name: Quay vulnerability poll
+
+# Polls Quay's public security API for each image's `latest` tag once a day
+# and opens deduped GitHub issues per (repository, CVE). Polling instead of
+# webhook because Quay's webhook notifications cannot send custom auth
+# headers, so they cannot reach repository_dispatch directly.
+#
+# See docs/architecture/security-scanning.md for the full pipeline.
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        repo:
+          - api-server
+          - claude-code
+          - code-guardian
+          - controller
+          - google-workspace-agent
+          - pi-agent
+          - platform-base
+          - ui
+    steps:
+      - name: Scan and file issues
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          QUAY_REPO: dam-agents/${{ matrix.repo }}
+          TAG: latest
+        run: |
+          set -euo pipefail
+
+          digest=$(curl -fsSL \
+            "https://quay.io/api/v1/repository/${QUAY_REPO}/tag/?onlyActiveTags=true&filter_tag_name=eq:${TAG}" \
+            | jq -r '.tags[0].manifest_digest // empty')
+
+          if [ -z "$digest" ]; then
+            echo "::notice::No '${TAG}' tag yet for ${QUAY_REPO}"
+            exit 0
+          fi
+
+          security=$(curl -fsSL \
+            "https://quay.io/api/v1/repository/${QUAY_REPO}/manifest/${digest}/security?vulnerabilities=true")
+
+          status=$(echo "$security" | jq -r '.status')
+          if [ "$status" != "scanned" ]; then
+            echo "::notice::Scan not ready for ${QUAY_REPO}@${digest} (status=${status})"
+            exit 0
+          fi
+
+          # Flatten + dedupe vulns by (CVE, package). Filter on severity here
+          # if you want to suppress Low/Medium noise; left wide-open for now
+          # so nothing is hidden by default.
+          mapfile -t findings < <(echo "$security" | jq -c '
+            [.data.Layer.Features[]
+              | . as $f
+              | (.Vulnerabilities // [])[]
+              | { cve: .Name, severity: .Severity, link: .Link,
+                  description: .Description, fixed_by: .FixedBy,
+                  package: $f.Name, version: $f.Version }]
+            | unique_by(.cve + "|" + .package)
+            | .[]')
+
+          if [ "${#findings[@]}" -eq 0 ]; then
+            echo "::notice::Clean scan for ${QUAY_REPO}@${digest}"
+            exit 0
+          fi
+
+          for finding in "${findings[@]}"; do
+            cve=$(echo "$finding" | jq -r '.cve')
+            severity=$(echo "$finding" | jq -r '.severity')
+            link=$(echo "$finding" | jq -r '.link')
+            description=$(echo "$finding" | jq -r '.description')
+            package=$(echo "$finding" | jq -r '.package')
+            version=$(echo "$finding" | jq -r '.version')
+            fixed_by=$(echo "$finding" | jq -r '.fixed_by')
+
+            title="[${cve}] ${severity} vulnerability in ${QUAY_REPO}"
+
+            existing=$(gh issue list \
+              --repo "${GITHUB_REPOSITORY}" \
+              --state open \
+              --search "in:title \"${cve}\" \"${QUAY_REPO}\"" \
+              --json number \
+              --jq '.[0].number // empty')
+
+            comment_body=$(printf '%s\n' \
+              "Still present on tag \`${TAG}\` (manifest \`${digest}\`)." \
+              "Package: \`${package}\` ${version}." \
+              "Fixed by: \`${fixed_by:-—}\`.")
+
+            if [ -n "$existing" ]; then
+              gh issue comment "$existing" \
+                --repo "${GITHUB_REPOSITORY}" \
+                --body "$comment_body"
+              continue
+            fi
+
+            issue_body=$(printf '%s\n' \
+              "**Image:** \`${QUAY_REPO}:${TAG}\` (\`${digest}\`)" \
+              "**CVE:** \`${cve}\` (${severity})" \
+              "**Package:** \`${package}\` ${version}" \
+              "**Fixed by:** \`${fixed_by:-—}\`" \
+              "" \
+              "${description}" \
+              "" \
+              "[View advisory](${link})" \
+              "" \
+              "---" \
+              "See [docs/architecture/security-scanning.md](../blob/main/docs/architecture/security-scanning.md) for the remediation flow.")
+
+            gh issue create \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "$title" \
+              --body "$issue_body" \
+              --label "security,vulnerability"
+          done

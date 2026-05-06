@@ -13,8 +13,8 @@ permissions:
   packages: write
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE_PREFIX: ghcr.io/${{ github.repository }}
+  REGISTRY: quay.io
+  IMAGE_PREFIX: quay.io/dam-agents
 
 jobs:
   build-images:
@@ -41,9 +41,9 @@ jobs:
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
       - id: meta
         uses: docker/metadata-action@v5
         with:
@@ -70,9 +70,9 @@ jobs:
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
       - id: meta
         uses: docker/metadata-action@v5
         with:
@@ -101,9 +101,9 @@ jobs:
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
       - id: meta
         uses: docker/metadata-action@v5
         with:
@@ -132,9 +132,9 @@ jobs:
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
       - id: meta
         uses: docker/metadata-action@v5
         with:
@@ -163,9 +163,9 @@ jobs:
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
       - id: meta
         uses: docker/metadata-action@v5
         with:
@@ -191,13 +191,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: azure/setup-helm@v4
-      - name: Log in to GHCR OCI
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username ${{ github.actor }} --password-stdin
+      - name: Log in to Quay OCI
+        run: echo "${{ secrets.QUAY_PASSWORD }}" | helm registry login quay.io --username ${{ secrets.QUAY_USERNAME }} --password-stdin
       - name: Package Helm chart (SHA-pinned)
         run: helm package deploy/helm/platform --version 0.0.0-${{ github.sha }} --app-version ${{ github.sha }}
       - name: Push SHA-pinned chart
-        run: helm push platform-0.0.0-${{ github.sha }}.tgz oci://ghcr.io/${{ github.repository }}/charts
+        run: helm push platform-0.0.0-${{ github.sha }}.tgz oci://quay.io/dam-agents/charts
       - name: Package Helm chart (main floating tag)
         run: helm package deploy/helm/platform --version 0.0.0-main --app-version ${{ github.sha }}
       - name: Push main-floating chart
-        run: helm push platform-0.0.0-main.tgz oci://ghcr.io/${{ github.repository }}/charts
+        run: helm push platform-0.0.0-main.tgz oci://quay.io/dam-agents/charts
