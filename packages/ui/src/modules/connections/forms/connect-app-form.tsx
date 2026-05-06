@@ -73,6 +73,10 @@ interface Props {
 
 export function ConnectAppForm({ app, onCancel }: Props) {
   const [values, setValues] = useState<Record<string, string>>({});
+  // Override toggle — when `credentialsInherited`, optional inputs (e.g.
+  // clientId/clientSecret for a sibling Google connection) stay hidden
+  // until the user explicitly opts in to provide alternates.
+  const [showOverride, setShowOverride] = useState(false);
   // Discovery state — `host` carries the value we last discovered against,
   // so re-blurring on the same host doesn't refetch. `error` is shown
   // inline and is non-blocking.
@@ -85,7 +89,12 @@ export function ConnectAppForm({ app, onCancel }: Props) {
   const startAppOAuth = useStartAppOAuth();
   const lastDiscoveredHost = useRef<string | null>(null);
 
-  const allFilled = app.inputs.every((field) => (values[field.name] ?? "").trim().length > 0);
+  // Inputs the user actually sees and must fill: required ones plus any
+  // optional ones the override panel is showing.
+  const visibleInputs = app.inputs.filter((f) => !f.optional || showOverride);
+  const allFilled = app.inputs
+    .filter((field) => !field.optional)
+    .every((field) => (values[field.name] ?? "").trim().length > 0);
 
   const setField = (name: string, value: string) =>
     setValues((prev) => ({ ...prev, [name]: value }));
@@ -124,8 +133,12 @@ export function ConnectAppForm({ app, onCancel }: Props) {
 
   const submit = () => {
     if (!allFilled) return;
+    // Drop optional fields that weren't filled — the backend's
+    // family-credential merge will fill them from a sibling connection.
     const input = Object.fromEntries(
-      app.inputs.map((field) => [field.name, (values[field.name] ?? "").trim()]),
+      app.inputs
+        .map((field) => [field.name, (values[field.name] ?? "").trim()] as const)
+        .filter(([, v], i) => !app.inputs[i]!.optional || v.length > 0),
     );
     startAppOAuth.mutate(
       { appId: app.id, input },
@@ -168,10 +181,20 @@ export function ConnectAppForm({ app, onCancel }: Props) {
         <CallbackUrlField url={app.callbackUrl} />
         {app.credentialsInherited && (
           <div className="rounded-lg border-2 border-success/30 bg-success/5 px-4 py-3 text-[12px] text-text-secondary">
-            Reusing the Client ID and secret from another connected app in this family — no need to re-enter them.
+            <div>
+              Reusing the Client ID and secret from another connected app in
+              this family — no need to re-enter them.
+            </div>
+            <button
+              type="button"
+              className="mt-1.5 text-[12px] font-semibold text-accent hover:underline"
+              onClick={() => setShowOverride((v) => !v)}
+            >
+              {showOverride ? "Use stored credentials instead" : "Use different credentials"}
+            </button>
           </div>
         )}
-        {app.inputs.map((field) => {
+        {visibleInputs.map((field) => {
           const isDiscoveryHostField = app.discoverFromHostField === field.name;
           const helperOverride =
             isDiscoveryHostField && discovery.host === (values[field.name] ?? "").trim()
@@ -196,7 +219,7 @@ export function ConnectAppForm({ app, onCancel }: Props) {
                 }
                 placeholder={field.placeholder ?? ""}
                 autoComplete="off"
-                autoFocus={field === app.inputs[0]}
+                autoFocus={field === visibleInputs[0]}
               />
               {helperOverride ?? (field.helper && (
                 <span className="text-[12px] text-text-muted">{field.helper}</span>

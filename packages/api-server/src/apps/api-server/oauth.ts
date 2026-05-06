@@ -95,16 +95,22 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
     // host-rewritten callback (see `localhostCallbackAlias`).
     //
     // Descriptors with `credentialFamily` set get their credential inputs
-    // (clientId / clientSecret) pruned when the user already has a sibling
-    // connection in the same family — the connect form then renders only
-    // service-specific fields and the OAuth flow reuses the stored creds.
+    // marked `optional: true` when the user already has a sibling connection
+    // in the same family. The connect form hides those inputs behind an
+    // "override" toggle; on submit, empty fields fall through to the stored
+    // family creds (see the merge step in POST /api/oauth/apps/:id/connect),
+    // and filled fields override them.
     const user = c.get("user");
     const familyCreds = await readFamilyCreds(k8sConnectionsFor(user.sub));
     return c.json(
       apps.list().map((d) => {
         const inheritFamily = d.credentialFamily && familyCreds.has(d.credentialFamily);
         const inputs = inheritFamily
-          ? d.inputs.filter((i) => i.name !== "clientId" && i.name !== "clientSecret")
+          ? d.inputs.map((i) =>
+              i.name === "clientId" || i.name === "clientSecret"
+                ? { ...i, optional: true }
+                : i,
+            )
           : d.inputs;
         return {
           ...d,

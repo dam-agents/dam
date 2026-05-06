@@ -49,6 +49,8 @@ const oauthAppInputSchema = z.object({
   secret: z.boolean().optional(),
   placeholder: z.string().optional(),
   helper: z.string().optional(),
+  /** Empty value is acceptable; collapsed behind the override toggle. */
+  optional: z.boolean().optional(),
 });
 
 const oauthAppDescriptorSchema = z.object({

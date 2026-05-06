@@ -76,6 +76,13 @@ export interface OAuthAppInputField {
   placeholder?: string;
   /** Short hint shown beneath the field. */
   helper?: string;
+  /**
+   * Empty value is acceptable. The form renders these collapsed behind an
+   * override toggle; the backend either merges in a stored value (e.g.
+   * family-credential prefill) or omits the field. Required fields default
+   * to `optional: false`.
+   */
+  optional?: boolean;
 }
 
 export type OAuthAppCardinality = "single" | "multiple";
