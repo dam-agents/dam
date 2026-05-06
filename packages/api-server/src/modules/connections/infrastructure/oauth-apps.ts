@@ -279,10 +279,13 @@ const GOOGLE_SERVICES: Record<GoogleServiceId, GoogleServiceDef> = {
   },
   youtube: {
     displayName: "YouTube",
-    description:
-      "Read channels, playlists, playlist items, and subscriptions.",
+    description: "Manage playlists, videos, and channel content on YouTube.",
     hostPattern: "youtube.googleapis.com",
-    scopes: ["https://www.googleapis.com/auth/youtube.readonly"],
+    scopes: [
+      "https://www.googleapis.com/auth/youtube.readonly",
+      "https://www.googleapis.com/auth/youtube",
+      "https://www.googleapis.com/auth/youtube.force-ssl",
+    ],
   },
 };
 
