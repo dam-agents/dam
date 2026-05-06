@@ -26,7 +26,11 @@ func GatewayName(pairKey string) string {
 //
 // `instanceName` is both the pair key and the parent instance reference
 // (long-lived pairs collapse the two).
-func BuildGatewayStatefulSet(instanceName string, hibernated bool, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret) *appsv1.StatefulSet {
+//
+// `platformCredSecretName` is the per-pair Secret carrying the platform
+// credential SDS (issue #108). Mounted into the gateway pod so Envoy can
+// inject the per-instance Authorization header on api-server-bound traffic.
+func BuildGatewayStatefulSet(instanceName, platformCredSecretName string, hibernated bool, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret) *appsv1.StatefulSet {
 	replicas := int32(1)
 	if hibernated {
 		replicas = 0
@@ -39,7 +43,7 @@ func BuildGatewayStatefulSet(instanceName string, hibernated bool, cfg *config.C
 		LabelRole:     RoleGateway,
 	}
 
-	volumes := envoyVolumes(instanceName, credentialSecrets)
+	volumes := envoyVolumes(instanceName, platformCredSecretName, credentialSecrets)
 	containers := []corev1.Container{envoyContainer(cfg, credentialSecrets)}
 
 	falseVal := false
@@ -208,7 +212,13 @@ func BuildGatewayNetworkPolicy(pairKey string, cfg *config.Config, ownerCM *core
 // ext_authz Check calls from this gateway resolve under the parent
 // instance's egress rules (ADR-027). The pair key is the fork's own name
 // so the fork pair is structurally isolated from the parent instance pair.
-func BuildForkGatewayPod(forkName, parentInstanceID string, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret) *corev1.Pod {
+//
+// `platformCredSecretName` is the parent instance's Secret (issue #108) —
+// the fork's gateway authenticates to the api-server as the parent instance
+// because all api-server endpoints are URL-keyed on the parent (forks have
+// no separate URL surface). The per-fork credential boundary stays
+// elsewhere (ADR-027 §upstream-credential isolation, unchanged).
+func BuildForkGatewayPod(forkName, parentInstanceID, platformCredSecretName string, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret) *corev1.Pod {
 	gatewayName := GatewayName(forkName)
 	labels := map[string]string{
 		LabelInstance: parentInstanceID,
@@ -217,7 +227,7 @@ func BuildForkGatewayPod(forkName, parentInstanceID string, cfg *config.Config, 
 		ForkLabelType: ForkJobLabelType,
 	}
 
-	volumes := envoyVolumes(forkName, credentialSecrets)
+	volumes := envoyVolumes(forkName, platformCredSecretName, credentialSecrets)
 	containers := []corev1.Container{envoyContainer(cfg, credentialSecrets)}
 
 	falseVal := false

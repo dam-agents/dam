@@ -310,6 +310,26 @@ static_resources:
                       dns_cache_config:
                         name: dns_cache
                         dns_lookup_family: V4_PREFERRED
+                  # Per-instance platform credential (issue #108). Disabled
+                  # on every route except the platform-internal one so it
+                  # never leaks onto credentialed external traffic. Mounted
+                  # SDS file is per-pair; api-server compares SHA256 of
+                  # the inbound Authorization value against the hash on
+                  # the instance's ConfigMap status.
+                  - name: envoy.filters.http.credential_injector
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.credential_injector.v3.CredentialInjector
+                      overwrite: true
+                      credential:
+                        name: envoy.http.injected_credentials.generic
+                        typed_config:
+                          "@type": type.googleapis.com/envoy.extensions.http.injected_credentials.generic.v3.Generic
+                          credential:
+                            name: {{ $.PlatformCredSDSName }}
+                            sds_config:
+                              path_config_source:
+                                path: {{ $.PlatformCredMountPath }}/{{ $.PlatformCredSDSFile }}
+                          header: "Authorization"
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
@@ -329,6 +349,30 @@ static_resources:
                             envoy.filters.http.ext_authz:
                               "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute
                               disabled: true
+                            envoy.filters.http.credential_injector:
+                              "@type": type.googleapis.com/envoy.extensions.filters.http.credential_injector.v3.CredentialInjectorPerRoute
+                              disabled: true
+                        # Platform-internal route (issue #108). Plain HTTP
+                        # to the api-server's harness port (MCP, file-push
+                        # SSE, /internal/trigger). credential_injector
+                        # attaches the per-instance Authorization header;
+                        # ext_authz is disabled here because this is
+                        # control-plane traffic, not a credentialed user
+                        # egress. Pinned to a static cluster so the
+                        # agent's Host header cannot redirect it.
+                        - match:
+                            prefix: "/"
+                            headers:
+                              - name: ":authority"
+                                string_match:
+                                  exact: "{{ $.HarnessServerAuthority }}"
+                          route:
+                            cluster: platform_internal
+                            timeout: 0s
+                          typed_per_filter_config:
+                            envoy.filters.http.ext_authz:
+                              "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute
+                              disabled: true
                         # Plain HTTP fallthrough. The outer HCM's
                         # ext_authz fires here (CONNECT disables it
                         # per-route above; plain HTTP does not), passing
@@ -342,6 +386,10 @@ static_resources:
                           route:
                             cluster: dynamic_forward_proxy_http
                             timeout: 0s
+                          typed_per_filter_config:
+                            envoy.filters.http.credential_injector:
+                              "@type": type.googleapis.com/envoy.extensions.filters.http.credential_injector.v3.CredentialInjectorPerRoute
+                              disabled: true
 
     - name: tls_inspect_internal
       internal_listener: {}
@@ -535,6 +583,24 @@ static_resources:
             name: dns_cache
             dns_lookup_family: V4_PREFERRED
 
+    # Platform-internal upstream (issue #108). Pinned to the api-server's
+    # harness Service so an agent-supplied Host header can't redirect a
+    # credential-bearing request to a different host. Plain HTTP — the
+    # api-server harness port doesn't terminate TLS in-cluster.
+    - name: platform_internal
+      connect_timeout: 2s
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: platform_internal
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: {{ $.HarnessServerHost }}
+                      port_value: {{ $.HarnessServerPort }}
+
 {{- range .Routes }}
 {{- if .Credentialed }}
 
@@ -613,20 +679,31 @@ func renderEnvoyBootstrap(instanceName string, cfg *config.Config, routes []envo
 	// Envoy's per-call timeout sits ahead of the application-level hold so a
 	// hold-window timeout fires from the api-server side, not from Envoy.
 	extAuthzTimeoutSeconds := cfg.ExtAuthzHoldSeconds + 60
+	authority := cfg.HarnessServerAuthority()
+	host, _, ok := splitHostPort(authority)
+	if !ok {
+		return "", fmt.Errorf("harness authority %q is not host:port", authority)
+	}
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, struct {
-		ListenAddress          string
-		Port                   int
-		Routes                 []envoyRoute
-		CredentialsRoot        string
-		CredentialFile         string
-		CredentialSDSName      string
-		LeafTLSDir             string
-		InstanceID             string
-		ExtAuthzHost           string
-		ExtAuthzPort           int
-		ExtAuthzHoldSeconds    int
-		ExtAuthzTimeoutSeconds int
+		ListenAddress           string
+		Port                    int
+		Routes                  []envoyRoute
+		CredentialsRoot         string
+		CredentialFile          string
+		CredentialSDSName       string
+		LeafTLSDir              string
+		InstanceID              string
+		ExtAuthzHost            string
+		ExtAuthzPort            int
+		ExtAuthzHoldSeconds     int
+		ExtAuthzTimeoutSeconds  int
+		PlatformCredMountPath   string
+		PlatformCredSDSFile     string
+		PlatformCredSDSName     string
+		HarnessServerAuthority  string
+		HarnessServerHost       string
+		HarnessServerPort       int
 	}{
 		ListenAddress:          envoyListenAddress,
 		Port:                   cfg.EnvoyPort,
@@ -640,10 +717,27 @@ func renderEnvoyBootstrap(instanceName string, cfg *config.Config, routes []envo
 		ExtAuthzPort:           cfg.ExtAuthzPort,
 		ExtAuthzHoldSeconds:    cfg.ExtAuthzHoldSeconds,
 		ExtAuthzTimeoutSeconds: extAuthzTimeoutSeconds,
+		PlatformCredMountPath:  PlatformCredMountPath(),
+		PlatformCredSDSFile:    platformCredSDSKey,
+		PlatformCredSDSName:    platformCredSDSName,
+		HarnessServerAuthority: authority,
+		HarnessServerHost:      host,
+		HarnessServerPort:      cfg.HarnessServerPort,
 	}); err != nil {
 		return "", err
 	}
 	return buf.String(), nil
+}
+
+// splitHostPort splits "host:port" into (host, port). Lightweight stand-in
+// for net.SplitHostPort that doesn't depend on importing net just for this.
+func splitHostPort(s string) (string, string, bool) {
+	for i := len(s) - 1; i >= 0; i-- {
+		if s[i] == ':' {
+			return s[:i], s[i+1:], true
+		}
+	}
+	return "", "", false
 }
 
 // BuildEnvoyBootstrapConfigMap is the desired ConfigMap holding the rendered
@@ -672,12 +766,30 @@ func BuildEnvoyBootstrapConfigMap(instanceName string, cfg *config.Config, owner
 // TLS leaf used to terminate the agent's intercepted TLS. None of these are
 // referenced from the agent pod — the credential boundary lives at the pod
 // boundary (ADR-038).
-func envoyVolumes(instanceName string, secrets []corev1.Secret) []corev1.Volume {
+//
+// `platformCredSecretName` names the per-pair Secret holding the platform
+// credential SDS (issue #108). Long-lived instances mount their own pair's
+// Secret; forks mount the parent instance's Secret so a fork's gateway
+// authenticates as the parent instance to the api-server.
+func envoyVolumes(instanceName, platformCredSecretName string, secrets []corev1.Secret) []corev1.Volume {
 	volumes := []corev1.Volume{{
 		Name: envoyBootstrapVolume,
 		VolumeSource: corev1.VolumeSource{
 			ConfigMap: &corev1.ConfigMapVolumeSource{
 				LocalObjectReference: corev1.LocalObjectReference{Name: EnvoyBootstrapName(instanceName)},
+			},
+		},
+	}, {
+		Name: PlatformCredVolumeName(),
+		VolumeSource: corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: platformCredSecretName,
+				Items: []corev1.KeyToPath{
+					// Project only the SDS file — Envoy reads exactly this
+					// path. The raw `token` key the controller stores
+					// alongside is never visible inside the gateway pod.
+					{Key: platformCredSDSKey, Path: platformCredSDSKey},
+				},
 			},
 		},
 	}}
@@ -722,7 +834,7 @@ func ptrBool(b bool) *bool { return &b }
 // kubelet keeps the old bootstrap mounted.
 //
 // Bump on any template change that affects pod-visible behavior.
-const envoyBootstrapTemplateRev = "v3-paired-gateway"
+const envoyBootstrapTemplateRev = "v4-platform-cred"
 
 // envoySecretsRev is a stable digest of the Secret set that drives Envoy's
 // chain rendering: secret name + host + secret-type label + headerName,
@@ -755,6 +867,13 @@ func envoyContainer(cfg *config.Config, secrets []corev1.Secret) corev1.Containe
 	mounts := []corev1.VolumeMount{{
 		Name:      envoyBootstrapVolume,
 		MountPath: envoyBootstrapMount,
+		ReadOnly:  true,
+	}, {
+		// Platform credential SDS (issue #108). Mount path is
+		// `<envoyCredentialsRoot>/platform-cred/sds.yaml`; bootstrap
+		// references that path directly via path_config_source.
+		Name:      PlatformCredVolumeName(),
+		MountPath: PlatformCredMountPath(),
 		ReadOnly:  true,
 	}}
 	for _, s := range secrets {

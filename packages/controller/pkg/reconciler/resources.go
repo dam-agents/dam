@@ -76,14 +76,14 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 	// The agent container holds zero platform credentials. Inbound calls to
 	// agent-runtime's tRPC are gated at the kernel by the pod's
 	// NetworkPolicy (ingress admitted only from the api-server pod);
-	// outbound calls cross the paired gateway pod for credential injection.
+	// outbound calls — including platform-internal calls to the api-server's
+	// harness port — cross the paired gateway pod, which attaches the
+	// per-instance platform credential before forwarding (issue #108).
 	env := []corev1.EnvVar{
 		{Name: "HTTPS_PROXY", Value: proxyAddr},
 		{Name: "HTTP_PROXY", Value: proxyAddr},
 		{Name: "https_proxy", Value: proxyAddr},
 		{Name: "http_proxy", Value: proxyAddr},
-		{Name: "NO_PROXY", Value: cfg.APIServerHost},
-		{Name: "no_proxy", Value: cfg.APIServerHost},
 		{Name: "SSL_CERT_FILE", Value: caCertPath},
 		{Name: "NODE_EXTRA_CA_CERTS", Value: caCertPath},
 		{Name: "GIT_SSL_CAINFO", Value: caCertPath},

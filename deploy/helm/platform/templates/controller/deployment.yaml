@@ -52,8 +52,6 @@ spec:
             - name: AGENT_POD_ANNOTATIONS
               value: {{ toJson . | quote }}
             {{- end }}
-            - name: PLATFORM_API_SERVER_HOST
-              value: "{{ include "platform.fullname" . }}-apiserver.{{ .Release.Namespace }}.svc.cluster.local"
             - name: PLATFORM_HARNESS_SERVER_URL
               value: "http://{{ include "platform.fullname" . }}-apiserver.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.apiServer.harnessServerPort }}"
             - name: PLATFORM_HARNESS_SERVER_PORT

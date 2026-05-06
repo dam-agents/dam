@@ -11,6 +11,7 @@ Last verified: 2026-05-06
 - [ADR-033 — Envoy-based credential gateway](../adrs/033-envoy-credential-gateway.md) — Envoy mints per-instance leaf certs, MITMs egress, and injects credential headers
 - [ADR-035 — HITL ext_authz](../adrs/035-hitl-ext-authz.md) — Envoy gates credentialed egress through an api-server ext_authz call
 - [ADR-038 — Paired agent and gateway pods](../adrs/038-paired-gateway-pod.md) — agent and gateway run in two paired pods, with NetworkPolicies the cluster enforces
+- [ADR-039 — Per-instance platform credential](../adrs/039-platform-credential.md) — the paired gateway pod injects an `Authorization: PlatformInstance <token>` header on api-server-bound traffic; the agent pod never holds the token
 
 ## Overview
 
@@ -36,6 +37,15 @@ Three rules carry the security model:
    Kubernetes admits no other route. Envoy in the gateway pod enforces what
    each grant actually permits on the wire and gates each credentialed
    request through the ext_authz handler.
+4. **Platform-internal calls authenticate with a per-instance credential
+   the gateway pod injects.** The api-server harness port (MCP, file-push
+   SSE, `/internal/trigger`) reaches the gateway too: agent-runtime's
+   platform-bound traffic flows through the same `HTTP_PROXY`, where Envoy
+   attaches `Authorization: PlatformInstance <token>` from a per-pair
+   Secret mounted only on the gateway pod (ADR-039). The api-server
+   validates the header against `platformCredentialHash` stamped on the
+   instance ConfigMap status — pod-IP membership is no longer the only
+   gate.
 
 Workspace contents are explicitly outside the trust boundary — see the
 security note on [persistence](persistence.md).
@@ -196,6 +206,18 @@ instance so traffic resolves under the parent's egress rules; the fork's
 own pair key (`agent-platform.ai/pair`) isolates it from the parent
 instance's pair. See [ADR-027](../adrs/027-slack-user-impersonation.md)
 and [ADR-038](../adrs/038-paired-gateway-pod.md).
+
+## Platform-internal credential (ADR-039)
+
+The harness API surface — `/api/instances/<id>/mcp`, `/api/instances/<id>/pod-files/events`, `/internal/trigger` — used to authenticate callers solely by the source pod IP an admitted resolver mapped to an `agent-platform.ai/instance` label. With the paired-pod split (ADR-038) the gateway pod is structurally isolated from the harness, so a Secret mounted there is never reachable from the agent pod's filesystem or PID namespace. ADR-039 puts that property to use.
+
+The controller mints a 32-byte token per instance on first reconcile and stores it in `<pair>-platform-cred` (Secret), keys `token` (raw, controller-only) and `sds.yaml` (Envoy SDS payload, the only key projected into the gateway pod). SHA256(token) is stamped on the instance ConfigMap status as `platformCredentialHash`.
+
+The gateway's Envoy adds a `credential_injector` filter to its outer HCM, scoped via per-route config to a new `platform_internal` route that matches plain HTTP requests whose `:authority` equals the configured api-server harness `host:port`. The route disables ext_authz (control-plane traffic, not user egress) and forwards to a STRICT_DNS cluster pinned to the api-server Service — the agent's Host header cannot redirect a credentialed request elsewhere.
+
+agent-runtime's pod-files SSE client and trigger watcher use `fetch` (undici, `NODE_USE_ENV_PROXY=1`), so platform calls flow through `HTTP_PROXY = http://<pair>-gateway:<port>` like every other outbound. The agent-runtime never holds the token.
+
+[`verifyInstanceCredential`](../../packages/api-server/src/apps/harness-api-server/instance-auth.ts) reads `platformCredentialHash` from the URL-named instance's status, hashes the inbound token, and constant-time-compares. Cross-instance reuse fails by construction — instance-A's token hashed against instance-B's status will never match. Forks reuse the parent instance's Secret because all harness URLs are keyed on the parent (no fork URL surface); per-fork upstream-credential isolation (ADR-027) is unchanged.
 
 ## Network policy
 

@@ -206,7 +206,7 @@ What the agent sees:
 Why the dedicated MCP endpoint:
 
 - **Network isolation.** The MCP port is the only api-server port the agent's NetworkPolicy admits. The agent cannot reach the admin API (tRPC, OAuth, instance management) — only this one endpoint.
-- **Auth without an admin login.** Caller identity is derived from the source pod IP, mapped to a `platform.ai/instance` label via the api-server's `podIpResolver` cache. The agent does not present a Bearer token — a compromised harness can't claim to be a different instance because the kernel-verified source IP is the source of truth. Owner match (agent.owner == instance.owner) is the second check.
+- **Auth without an admin login.** Calls carry `Authorization: PlatformInstance <token>` injected by the paired gateway pod's Envoy ([ADR-039](../adrs/039-platform-credential.md)). The api-server compares SHA256 of the inbound token against the instance ConfigMap status's `platformCredentialHash` and rejects mismatches; cross-instance reuse fails by construction. The harness never sees the token — it lives in a Secret mounted only on the gateway pod, and the agent pod has no admitted route to TCP 80/443 except through that gateway (ADR-038).
 - **Direct path to channel infra.** The MCP endpoint dispatches into the same `ChannelManager.postMessage` that workers use internally — no agent-runtime round-trip, no second relay hop.
 
 ### Threading model

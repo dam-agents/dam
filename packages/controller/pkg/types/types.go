@@ -79,6 +79,13 @@ type InstanceStatus struct {
 	Version      string `yaml:"version"`
 	CurrentState string `yaml:"currentState"`
 	Error        string `yaml:"error,omitempty"`
+	// PlatformCredentialHash is the hex-encoded SHA256 of the per-instance
+	// platform credential the paired gateway pod injects on every request
+	// addressed to the api-server's harness port. The api-server compares
+	// this against SHA256 of the inbound `Authorization` header value (after
+	// stripping the `PlatformInstance ` scheme) — matching is the proof the
+	// caller is the instance it claims to be (issue #108).
+	PlatformCredentialHash string `yaml:"platformCredentialHash,omitempty"`
 }
 
 // --- Schedule ---

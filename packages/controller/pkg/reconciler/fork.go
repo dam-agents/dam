@@ -115,7 +115,13 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 	// ADR-038: paired gateway pod for the fork. Render the gateway-side
 	// resources first so HTTPS_PROXY's target exists by the time the
 	// agent Job's pod starts dialing it.
-	gatewayPod := BuildForkGatewayPod(forkName, forkSpec.Instance, r.config, cm, credentialSecrets)
+	//
+	// Forks reuse the parent instance's platform-credential Secret (issue
+	// #108) — api-server endpoints are URL-keyed on the parent instance
+	// and have no fork surface, so the fork's gateway authenticates as
+	// the parent. Per-fork upstream-credential isolation (ADR-027) is
+	// unchanged.
+	gatewayPod := BuildForkGatewayPod(forkName, forkSpec.Instance, PlatformCredSecretName(forkSpec.Instance), r.config, cm, credentialSecrets)
 	gatewaySvc := BuildForkGatewayService(forkName, r.config, cm)
 	gatewayNP := BuildForkGatewayNetworkPolicy(forkName, r.config, cm)
 	agentNP := BuildForkAgentNetworkPolicy(forkName, r.config, cm)

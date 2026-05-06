@@ -63,12 +63,14 @@ func BuildForkAgentJob(
 	proxyAddr := fmt.Sprintf("http://%s:%d", GatewayName(forkName), cfg.EnvoyPort)
 
 	env := []corev1.EnvVar{
+		// Issue #108: platform-internal traffic also flows through the
+		// paired fork gateway, so NO_PROXY no longer carves out the
+		// api-server's host. The gateway's Envoy attaches the parent
+		// instance's platform credential before forwarding.
 		{Name: "HTTPS_PROXY", Value: proxyAddr},
 		{Name: "HTTP_PROXY", Value: proxyAddr},
 		{Name: "https_proxy", Value: proxyAddr},
 		{Name: "http_proxy", Value: proxyAddr},
-		{Name: "NO_PROXY", Value: cfg.APIServerHost},
-		{Name: "no_proxy", Value: cfg.APIServerHost},
 		{Name: "SSL_CERT_FILE", Value: caCertPath},
 		{Name: "NODE_EXTRA_CA_CERTS", Value: caCertPath},
 		{Name: "GIT_SSL_CAINFO", Value: caCertPath},

@@ -5,6 +5,7 @@ import {
   mountPodFilesEventsRoute,
   type PodFilesEventsDeps,
 } from "./pod-files-events.js";
+import { verifyInstanceCredential } from "./instance-auth.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 
@@ -36,6 +37,19 @@ export function createHarnessRouter(deps: {
     const body = await c.req.json<TriggerRequest>();
     if (!body.instanceId || !body.schedule || !body.task) {
       return c.json({ error: "instanceId, schedule, task required" }, 400);
+    }
+    // Issue #108: trigger calls come from agent-runtime, routed through the
+    // paired gateway pod's Envoy which injects the per-instance credential.
+    // Validate against the instance the trigger names — a credential
+    // belonging to instance A must not fire a trigger on instance B.
+    const verified = await verifyInstanceCredential(
+      deps.k8s,
+      body.instanceId,
+      c.req.header("authorization"),
+    );
+    if (!verified) {
+      console.warn(`[trigger] credential check failed for instance=${body.instanceId}`);
+      return c.json({ error: "unauthorized" }, 401);
     }
     const result = await deps.handleTrigger(body);
     return c.json(result);

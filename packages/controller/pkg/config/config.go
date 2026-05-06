@@ -22,7 +22,6 @@ type Config struct {
 	AgentStorageSize          string // PVC size for persistent agent mounts (default: 10Gi)
 	IdleTimeout               time.Duration // Idle timeout before auto-hibernation (0 = disabled, default: 1h)
 	TerminationGracePeriod    int64         // Termination grace period in seconds for agent pods (default: 5)
-	APIServerHost        string // API server hostname (for NO_PROXY)
 	HarnessServerURL     string // Harness API server internal URL (separate port, agent-facing)
 	HarnessServerPort    int    // Harness API server port (for network policy egress rule)
 	EnvoyImage           string // Image for the Envoy credential-injector sidecar
@@ -64,7 +63,6 @@ func LoadFromEnv() (*Config, error) {
 		LeaseName:        envOrDefault("PLATFORM_LEASE_NAME", release+"-controller"),
 		PodName:          podName,
 	}
-	cfg.APIServerHost = os.Getenv("PLATFORM_API_SERVER_HOST")
 	cfg.HarnessServerURL = os.Getenv("PLATFORM_HARNESS_SERVER_URL")
 	cfg.HarnessServerPort = envOrDefaultInt("PLATFORM_HARNESS_SERVER_PORT", 4001)
 	cfg.AgentImagePullPolicy = envOrDefault("AGENT_IMAGE_PULL_POLICY", "IfNotPresent")
@@ -108,6 +106,14 @@ func LoadFromEnv() (*Config, error) {
 
 func (c *Config) APIServerURL() string {
 	return fmt.Sprintf("http://%s-apiserver.%s.svc.cluster.local:%d", c.ReleaseName, c.ReleaseNamespace, c.HarnessServerPort)
+}
+
+// HarnessServerAuthority is the `host:port` form clients send as the
+// `:authority` header when reaching the api-server's harness port through
+// HTTP_PROXY. The gateway's Envoy matches platform-bound traffic on this
+// exact value to attach the per-instance credential before forwarding.
+func (c *Config) HarnessServerAuthority() string {
+	return fmt.Sprintf("%s-apiserver.%s.svc.cluster.local:%d", c.ReleaseName, c.ReleaseNamespace, c.HarnessServerPort)
 }
 
 func envOrDefault(key, def string) string {

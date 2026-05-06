@@ -75,6 +75,15 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 		return r.setError(ctx, name, fmt.Sprintf("listing credential secrets: %v", err))
 	}
 
+	// Per-instance platform credential (issue #108). Idempotent — re-reads
+	// the existing token from the Secret on subsequent reconciles. The
+	// gateway pod mounts this Secret; the agent pod never sees it.
+	platformCredToken, err := EnsurePlatformCredSecret(ctx, r.client, r.config.Namespace, name, cm)
+	if err != nil {
+		return r.setError(ctx, name, fmt.Sprintf("ensuring platform credential: %v", err))
+	}
+	platformCredHash := HashPlatformCred(platformCredToken)
+
 	if !hasGitHubCredential(credentialSecrets) {
 		slog.Warn("no GitHub credential Secret attached — gh/octokit calls will be unauthenticated",
 			"instance", name, "owner", owner)
@@ -98,7 +107,7 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 	// ADR-038: paired pods, rendered as a unit. Render the gateway first
 	// so the agent's HTTPS_PROXY target exists by the time the agent pod
 	// starts dialing it.
-	gatewaySS := BuildGatewayStatefulSet(name, hibernated, r.config, cm, credentialSecrets)
+	gatewaySS := BuildGatewayStatefulSet(name, PlatformCredSecretName(name), hibernated, r.config, cm, credentialSecrets)
 	gatewaySvc := BuildGatewayService(name, r.config, cm)
 	gatewayNP := BuildGatewayNetworkPolicy(name, r.config, cm)
 
@@ -129,7 +138,9 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 	if state == "" {
 		state = "running"
 	}
-	return WriteInstanceStatus(ctx, r.client, r.config.Namespace, name, types.NewInstanceStatus(state, ""))
+	status := types.NewInstanceStatus(state, "")
+	status.PlatformCredentialHash = platformCredHash
+	return WriteInstanceStatus(ctx, r.client, r.config.Namespace, name, status)
 }
 
 // ensureAgentOwnerReference adds a non-controller OwnerReference from the
