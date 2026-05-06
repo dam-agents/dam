@@ -64,8 +64,12 @@ window is too wide.
 ## Workflows in this repo
 
 - [`.github/workflows/main.yml`](../../.github/workflows/main.yml) and [`publish.yml`](../../.github/workflows/publish.yml) — push to `quay.io/dam-agents/<component>`.
-- [`.github/workflows/codeql.yml`](../../.github/workflows/codeql.yml) — Go + TypeScript SAST on push, PR, and weekly cron, with the `security-extended` query suite.
 - [`.github/workflows/quay-vuln-issue.yml`](../../.github/workflows/quay-vuln-issue.yml) — daily poller; for each image's `latest` tag, hits Quay's security API, dedupes by `(repository, CVE, package)`, opens new issues or comments existing ones.
+
+CodeQL runs from GitHub's **default setup** (configured in repo Settings, no
+workflow file) — it picks Go and JavaScript/TypeScript automatically, runs on
+push and PR to default + protected branches, and weekly. Findings show up
+under **Security → Code scanning** the same way they would with a workflow.
 
 There is no `dependabot.yml`. Dependabot alerts and security PRs are repo-level
 toggles (Settings → Code security), not config-file driven; non-security
@@ -93,7 +97,7 @@ Repo-level toggles to flip in **Settings → Code security**:
 - Dependabot alerts: **on**
 - Dependabot security updates: **on**
 - Secret scanning + push protection: **on**
-- CodeQL: managed by `codeql.yml` here, not the default-setup toggle.
+- CodeQL default setup: **on** (Go + JavaScript/TypeScript).
 
 ## Remediation flow
 
