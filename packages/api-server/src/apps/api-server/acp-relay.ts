@@ -98,7 +98,6 @@ export function createAcpRelay(
     instanceId: string,
   ) {
     wss.handleUpgrade(req, socket, head, (client) => {
-      // Receiver throws on malformed frames; handle so it doesn't surface as uncaught.
       client.on("error", () => {
         try { client.terminate(); } catch {}
       });

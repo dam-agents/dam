@@ -72,10 +72,6 @@ const { runtime: acpRuntime } = composeAcp({
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
 });
 
-// One PTY per session id, kept alive across client reconnects via a headless
-// xterm that mirrors output and serializes the screen for replay.
-const PTY_DETACH_GRACE_MS = 30_000;
-
 interface PtySlot {
   pty: nodePty.IPty | null;
   headless: InstanceType<typeof HeadlessTerminal>;
@@ -97,22 +93,22 @@ function killPtySlot(sessionId: string): void {
   ptyLog(sessionId, "killed");
 }
 
-function bindClientClose(sessionId: string, slot: PtySlot, ws: WsWebSocket): void {
-  ws.on("close", () => {
-    if (slot.client !== ws) return;
-    slot.client = null;
-    if (!slot.pty) return;
-    ptyLog(sessionId, "client detached — starting grace timer");
-    slot.graceTimer = setTimeout(() => killPtySlot(sessionId), PTY_DETACH_GRACE_MS);
-  });
-  ws.on("error", () => { if (slot.client === ws) slot.client = null; });
-}
-
 function attachPty(sessionId: string, ws: WsWebSocket, opts: { reset: boolean }): void {
   if (opts.reset) killPtySlot(sessionId);
   let initialized = false;
   ws.binaryType = "nodebuffer";
-  ws.on("error", () => {});
+
+  ws.on("error", () => {
+    const slot = ptySlots.get(sessionId);
+    if (slot?.client === ws) slot.client = null;
+  });
+  ws.on("close", () => {
+    const slot = ptySlots.get(sessionId);
+    if (!slot || slot.client !== ws) return;
+    slot.client = null;
+    if (!slot.pty) return;
+    slot.graceTimer = setTimeout(() => killPtySlot(sessionId), 30_000);
+  });
 
   ws.on("message", (raw: Buffer) => {
     let frame;
@@ -132,25 +128,22 @@ function attachPty(sessionId: string, ws: WsWebSocket, opts: { reset: boolean })
         existing.client = ws;
         existing.headless.resize(cols, rows);
         existing.pty?.resize(cols, rows);
-
         const serialized = existing.serialize.serialize();
-        ptyLog(sessionId, `reconnect — replaying ${serialized.length} chars`);
         if (serialized.length > 0) ws.send(encodeDataFrame(OP_OUTPUT, serialized));
-        bindClientClose(sessionId, existing, ws);
         return;
       }
 
       const headless = new HeadlessTerminal({ cols, rows, scrollback: 1000, allowProposedApi: true });
       const serialize = new SerializeAddon();
       headless.loadAddon(serialize);
-      const env = Object.fromEntries(
-        Object.entries(process.env).filter(
-          ([k, v]) => v !== undefined && !k.startsWith("npm_config_") && !k.startsWith("npm_lifecycle_"),
-        ),
-      ) as Record<string, string>;
       const pty = nodePty.spawn("/usr/local/bin/harness-terminal", [], {
         name: "xterm-256color", cols, rows, cwd: workDir,
-        env: { ...env, TERM: "xterm-256color", COLORTERM: "truecolor", HARNESS_SESSION_ID: sessionId },
+        env: {
+          ...Object.fromEntries(
+            Object.entries(process.env).filter(([k, v]) => v !== undefined && !k.startsWith("npm_config_") && !k.startsWith("npm_lifecycle_")),
+          ) as Record<string, string>,
+          TERM: "xterm-256color", COLORTERM: "truecolor", HARNESS_SESSION_ID: sessionId,
+        },
       });
       const slot: PtySlot = { pty, headless, serialize, client: ws, graceTimer: null };
       ptySlots.set(sessionId, slot);
@@ -170,7 +163,6 @@ function attachPty(sessionId: string, ws: WsWebSocket, opts: { reset: boolean })
         slot.headless.dispose();
         ptySlots.delete(sessionId);
       });
-      bindClientClose(sessionId, slot, ws);
       return;
     }
 

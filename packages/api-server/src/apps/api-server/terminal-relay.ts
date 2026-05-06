@@ -1,6 +1,3 @@
-// Opaque binary WS tunnel between client and the agent-runtime's PTY endpoint.
-// No JSON-RPC, no permission mirroring.
-
 import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
@@ -22,7 +19,6 @@ export function createTerminalRelay(namespace: string, repo: InstancesRepository
     wss.handleUpgrade(req, socket, head, (client) => {
       client.on("error", () => { try { client.terminate(); } catch {} });
 
-      // Buffer client messages until upstream is open.
       const pending: { data: Buffer; isBinary: boolean }[] = [];
       const buffer = (data: Buffer, isBinary: boolean) => { pending.push({ data, isBinary }); };
       client.on("message", buffer);

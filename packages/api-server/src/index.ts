@@ -355,8 +355,6 @@ async function shutdown() {
 process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);
 
-// ws's Receiver throws synchronously on bad frames (e.g. RSV1 from
-// permessage-deflate), before the WebSocket "error" event fires — so it lands here.
 process.on("uncaughtException", (err) => {
   if (err instanceof RangeError && "code" in err && typeof err.code === "string" && err.code.startsWith("WS_ERR_")) {
     process.stderr.write(`[ws] suppressed WebSocket protocol error: ${err.code}\n`);

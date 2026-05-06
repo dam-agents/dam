@@ -16,7 +16,7 @@ export function Terminal({ instanceId, sessionId, fresh, onConnected }: { instan
   const [state, setState] = useState<ConnectionState>("connecting");
   const [exitCode, setExitCode] = useState<number | null>(null);
 
-  // Focus the terminal after React commits the "live" state.
+  // After React commits "live" the connecting overlay unmounts; refocus then.
   useEffect(() => {
     if (state === "live") requestAnimationFrame(() => termRef.current?.focus());
   }, [state]);
@@ -52,8 +52,7 @@ export function Terminal({ instanceId, sessionId, fresh, onConnected }: { instan
       const token = await getAccessToken();
       if (cancelled) return;
 
-      const proto = location.protocol === "https:" ? "wss:" : "ws:";
-      ws = new WebSocket(`${proto}//${location.host}/api/instances/${instanceId}/terminal?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(sessionId)}${fresh ? "&reset=1" : ""}`);
+      ws = new WebSocket(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/api/instances/${instanceId}/terminal?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(sessionId)}${fresh ? "&reset=1" : ""}`);
       ws.binaryType = "arraybuffer";
 
       ws.onopen = () => {

@@ -53,10 +53,8 @@ export function ChatView() {
 
   const [leftW, setLeftW] = useState(() => Number(localStorage.getItem("platform-left-w")) || 220);
   const [rightW, setRightW] = useState(() => Number(localStorage.getItem("platform-right-w")) || 340);
-  // Set when toggling chat → terminal so the next Terminal mount kills any
-  // running PTY (its claude has stale in-memory state vs. the updated jsonl).
-  // Stored as a ref (not state) because zustand's setSessionMode can trigger
-  // a synchronous re-render that mounts Terminal before React useState commits.
+  // Ref (not state) so the chat→terminal toggle propagates to Terminal's mount
+  // synchronously — zustand re-renders before useState commits.
   const terminalFreshRef = useRef(false);
   const messagesRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -118,12 +116,9 @@ export function ChatView() {
   const mobileResumeSession = useCallback((sid: string, mode?: SessionMode) => {
     setMobileScreen("chat");
     setSessionMode(mode ?? SessionMode.Chat);
-    if (mode === SessionMode.Terminal) {
-      // Terminal sessions don't use ACP — just set the session ID
-      setSessionId(sid);
-    } else {
-      resumeSession(sid);
-    }
+    // Terminal sessions don't use ACP.
+    if (mode === SessionMode.Terminal) setSessionId(sid);
+    else resumeSession(sid);
   }, [setMobileScreen, setSessionMode, setSessionId, resumeSession]);
 
   const handleNewSession = useCallback(() => {
@@ -138,17 +133,15 @@ export function ChatView() {
     if (!selectedInstance) return;
     const target = sessionMode === SessionMode.Terminal ? SessionMode.Chat : SessionMode.Terminal;
 
-    // Blank chat (nothing started yet) toggling to terminal: create a fresh terminal session, no warning.
+    // Blank chat → terminal: spawn a fresh terminal session with no confirmation.
     if (!sessionId && messages.length === 0) {
       if (target === SessionMode.Terminal) {
         const newSessionId = crypto.randomUUID();
         await api.sessions.create.mutate({ sessionId: newSessionId, instanceId: selectedInstance, mode: SessionMode.Terminal });
         queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
         setSessionId(newSessionId);
-        setSessionMode(SessionMode.Terminal);
-      } else {
-        setSessionMode(SessionMode.Chat);
       }
+      setSessionMode(target);
       return;
     }
 
@@ -165,7 +158,7 @@ export function ChatView() {
     if (target === SessionMode.Terminal) terminalFreshRef.current = true;
     setSessionMode(target);
     if (target === SessionMode.Chat && sessionId) resumeSession(sessionId);
-  }, [selectedInstance, sessionMode, sessionId, messages.length, busy, stopAgent, resumeSession, setSessionMode, showConfirm]);
+  }, [selectedInstance, sessionMode, sessionId, messages.length, showConfirm, busy, stopAgent, setSessionMode, resumeSession, setSessionId]);
 
   const handleBack = useCallback(() => {
     if (isMobile() && mobileScreen === "chat") {
@@ -175,6 +168,8 @@ export function ChatView() {
     resetSession();
     goBack();
   }, [mobileScreen, setMobileScreen, resetSession, goBack]);
+
+  const chatActive = (sessionMode ?? SessionMode.Chat) === SessionMode.Chat;
 
   // ── Right panel ──
   const rightTabs = ["files", "log", "configuration"] as const;
@@ -246,15 +241,15 @@ export function ChatView() {
           <div className="ml-auto flex items-center gap-2">
             <div className="flex h-7 rounded-md border border-border-light overflow-hidden">
               <button
-                className={`px-2 flex items-center gap-1 text-[11px] font-semibold transition-colors ${(sessionMode ?? SessionMode.Chat) === SessionMode.Chat ? "bg-accent-light text-accent" : "text-text-muted hover:text-accent"}`}
-                onClick={(sessionMode ?? SessionMode.Chat) === SessionMode.Chat ? undefined : handleToggleMode}
+                className={`px-2 flex items-center gap-1 text-[11px] font-semibold transition-colors ${chatActive ? "bg-accent-light text-accent" : "text-text-muted hover:text-accent"}`}
+                onClick={chatActive ? undefined : handleToggleMode}
                 title="Chat mode"
               >
                 <MessageSquare size={12} /> Chat
               </button>
               <button
-                className={`px-2 flex items-center gap-1 text-[11px] font-semibold border-l border-border-light transition-colors ${sessionMode === SessionMode.Terminal ? "bg-accent-light text-accent" : "text-text-muted hover:text-accent"}`}
-                onClick={sessionMode === SessionMode.Terminal ? undefined : handleToggleMode}
+                className={`px-2 flex items-center gap-1 text-[11px] font-semibold border-l border-border-light transition-colors ${!chatActive ? "bg-accent-light text-accent" : "text-text-muted hover:text-accent"}`}
+                onClick={!chatActive ? undefined : handleToggleMode}
                 title="Terminal mode"
               >
                 <TerminalSquare size={12} /> Terminal

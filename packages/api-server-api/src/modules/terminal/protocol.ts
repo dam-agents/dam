@@ -1,6 +1,3 @@
-// Terminal-relay wire format. Each frame is `<opcode byte><payload>`:
-// INPUT/OUTPUT = raw bytes; RESIZE = cols u16BE, rows u16BE; EXIT = code u8.
-
 export const OP_INPUT = 0x00;
 export const OP_OUTPUT = 0x01;
 export const OP_RESIZE = 0x02;
@@ -23,12 +20,7 @@ export function encodeDataFrame(
 }
 
 export function encodeResize(cols: number, rows: number): Uint8Array {
-  const frame = new Uint8Array(5);
-  frame[0] = OP_RESIZE;
-  const view = new DataView(frame.buffer);
-  view.setUint16(1, cols);
-  view.setUint16(3, rows);
-  return frame;
+  return new Uint8Array([OP_RESIZE, (cols >> 8) & 0xff, cols & 0xff, (rows >> 8) & 0xff, rows & 0xff]);
 }
 
 export function encodeExit(code: number): Uint8Array {
@@ -43,8 +35,7 @@ export function decodeFrame(buf: Uint8Array): TerminalFrame {
   if (op === OP_INPUT || op === OP_OUTPUT) return { op, data: payload };
   if (op === OP_RESIZE) {
     if (payload.byteLength < 4) throw new Error("resize frame too short");
-    const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
-    return { op, cols: view.getUint16(0), rows: view.getUint16(2) };
+    return { op, cols: (payload[0]! << 8) | payload[1]!, rows: (payload[2]! << 8) | payload[3]! };
   }
   if (op === OP_EXIT) return { op, code: payload.byteLength > 0 ? payload[0]! : 0 };
   throw new Error(`unknown terminal opcode: 0x${op.toString(16).padStart(2, "0")}`);
