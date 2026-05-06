@@ -159,8 +159,6 @@ spec:
               value: {{ .Values.apiServer.approvalHoldSeconds | quote }}
             - name: TRUSTED_HOSTS_PATH
               value: /etc/platform/trusted-hosts
-            - name: APP_CONNECTION_EGRESS_HOSTS_PATH
-              value: /etc/platform/app-connection-egress-hosts.json
             # Brand — drives UI title/theme, OAuth client_name, Slack
             # slash command, skill-publish git author + branch prefix.
             - name: BRAND_NAME
@@ -188,10 +186,6 @@ spec:
               mountPath: /etc/platform/trusted-hosts
               subPath: trusted-hosts
               readOnly: true
-            - name: app-connection-egress-hosts
-              mountPath: /etc/platform/app-connection-egress-hosts.json
-              subPath: app-connection-egress-hosts.json
-              readOnly: true
           # Probe the ext-authz gRPC port: if the ext-authz listener fails to
           # bind or its handler init blows up, Envoy filters with
           # `failure_mode_allow: false` would silently deny across the cluster
@@ -217,9 +211,3 @@ spec:
             items:
               - key: trusted-hosts
                 path: trusted-hosts
-        - name: app-connection-egress-hosts
-          configMap:
-            name: {{ include "platform.fullname" . }}-app-connection-egress-hosts
-            items:
-              - key: app-connection-egress-hosts.json
-                path: app-connection-egress-hosts.json

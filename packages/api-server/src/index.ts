@@ -61,7 +61,6 @@ import {
 import { createAgentArtifactsSweeper } from "./sagas/agent-artifacts-sweeper.js";
 import { createK8sClient as createAgentsK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
-import { loadAppConnectionEgressHosts } from "./bootstrap/app-connection-egress-hosts.js";
 import { createRedisBus } from "./core/redis-bus.js";
 import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
 
@@ -221,10 +220,6 @@ const redisBus = createRedisBus(config.redisUrl, { password: config.redisPasswor
 // Read once at boot; the helm ConfigMap is the operator-editable source.
 const trustedHosts = loadTrustedHosts(config.trustedHostsPath);
 const presetSeeder = createPresetSeederAdapter(db, trustedHosts);
-// Provider → API hosts map used by `setAgentConnections` to seed
-// `connection:<id>` rules on grant. Operator-owned ConfigMap; missing
-// providers contribute zero hosts (grants stay rule-less for them).
-const appConnectionEgressHosts = loadAppConnectionEgressHosts(config.appConnectionEgressHostsPath);
 
 const wrapperFrameSender = createWrapperFrameSender({
   resolveWrapperUrl: (instanceId) => `ws://${podBaseUrl(instanceId, config.namespace)}/api/acp`,
@@ -294,7 +289,6 @@ const { server: apiServer } = startApiServerApp({
   wrapperFrameSender,
   presetSeeder,
   trustedHosts,
-  appConnectionEgressHosts,
   agentCleanupHooks,
 });
 

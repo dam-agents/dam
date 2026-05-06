@@ -49,11 +49,6 @@ const configSchema = z.object({
    *  preset (ADR-035). Mounted from a Helm-managed ConfigMap.
    *  Empty/missing file → preset is empty (still selectable, just seeds nothing). */
   trustedHostsPath: z.string().default(""),
-  /** Path to a JSON map (`provider → string[]`) of API hosts each app-connection
-   *  provider needs to reach. App grants insert one `connection:<id>` egress
-   *  rule per host listed here. Empty/missing file → grants insert nothing
-   *  (matches pre-ADR-035 behavior). */
-  appConnectionEgressHostsPath: z.string().default(""),
   /** Brand presented to end users — display name, slash-command identifier,
    *  and theme accent colors. Surfaced to the UI via `GET /api/brand` and
    *  used internally for OAuth client_name, Slack slash command, skill
@@ -111,7 +106,6 @@ export function loadConfig(): Config {
     redisPassword: process.env.REDIS_PASSWORD,
     approvalHoldSeconds: process.env.APPROVAL_HOLD_SECONDS,
     trustedHostsPath: process.env.TRUSTED_HOSTS_PATH,
-    appConnectionEgressHostsPath: process.env.APP_CONNECTION_EGRESS_HOSTS_PATH,
     brand: {
       name: process.env.BRAND_NAME,
       short: process.env.BRAND_SHORT,

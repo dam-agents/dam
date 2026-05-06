@@ -170,10 +170,10 @@ describe("OAuth app registry — build()", () => {
     expect(built.connectionDisplayName).toBe("Google Drive");
   });
 
-  it("Google Health uses the googlehealth.googleapis.com host and health-specific scopes", () => {
+  it("Google Health uses the health.googleapis.com host and health-specific scopes", () => {
     const reg = createOAuthAppRegistry();
     const built = reg.build("google-health", { clientId: "id", clientSecret: "sec" });
-    expect(built.flow.hostPattern).toBe("googlehealth.googleapis.com");
+    expect(built.flow.hostPattern).toBe("health.googleapis.com");
     expect(built.provider.scopes).toContain(
       "https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly",
     );

@@ -69,7 +69,6 @@ export interface ApiServerAppDeps {
   wrapperFrameSender: WrapperFrameSender;
   presetSeeder: PresetSeeder;
   trustedHosts: readonly string[];
-  appConnectionEgressHosts: ReadonlyMap<string, readonly string[]>;
   /** Hooks fired after a successful agent K8s delete. Each one clears its
    *  module's per-agent durable state; the orphan-sweeper saga is the
    *  belt-and-suspenders for anything missed here. */
@@ -81,7 +80,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     config, api, db, channelManager, channelSecretStore, identityLinkService,
     pendingSlackOAuthFlows, pendingTelegramOAuthFlows, podFilesPublisher, seedSources,
     redisBus, approvalsRelay, wrapperFrameSender, presetSeeder, trustedHosts,
-    appConnectionEgressHosts, agentCleanupHooks,
+    agentCleanupHooks,
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
@@ -258,7 +257,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       grants,
       owner: user.sub,
       podFiles: podFilesPublisher,
-      egressHostsByProvider: appConnectionEgressHosts,
+      apps: oauthApps,
       connectionRules: createConnectionRulesSyncAdapter(db),
     });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>

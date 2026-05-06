@@ -24,7 +24,10 @@ export interface AgentConnectionRulesSync {
   syncForAgent(input: {
     agentId: string;
     decidedBy: string;
-    grants: Map<string, { hosts: readonly string[] }>;
+    grants: Map<string, { hosts: readonly { host: string; pathPattern?: string }[] }>;
+    /** Secret IDs the secrets module owns; rules from app-connections (which
+     *  share the `connection:<id>` source prefix) stay untouched. */
+    ownedSourceIds: ReadonlySet<string>;
   }): Promise<void>;
 }
 
@@ -121,18 +124,27 @@ export function createSecretsService(deps: {
       // changes. In "all" mode we sync an empty map (no per-secret rules);
       // egress shape relies on presets / manual rules at that point.
       if (deps.connectionRules && deps.ownerSub) {
-        const grants = new Map<string, { hosts: readonly string[] }>();
+        // List once — used for both grant assembly (selective mode) and
+        // computing ownedSourceIds (every secret id this user owns).
+        const allSecrets = await deps.k8sPort.listSecrets();
+        const grants = new Map<string, { hosts: readonly { host: string; pathPattern?: string }[] }>();
         if (access.mode === "selective" && access.secretIds.length > 0) {
-          const allSecrets = await deps.k8sPort.listSecrets();
           for (const s of allSecrets) {
             if (!access.secretIds.includes(s.id)) continue;
-            grants.set(s.id, { hosts: [s.hostPattern] });
+            grants.set(s.id, {
+              hosts: [{ host: s.hostPattern, ...(s.pathPattern ? { pathPattern: s.pathPattern } : {}) }],
+            });
           }
         }
+        // ownedSourceIds = every owner secret id, granted or not. Lets the
+        // sync revoke stale secret-derived rules without touching
+        // app-connection rows that share the `connection:<id>` prefix.
+        const ownedSourceIds = new Set(allSecrets.map((s) => s.id));
         await deps.connectionRules.syncForAgent({
           agentId,
           decidedBy: deps.ownerSub,
           grants,
+          ownedSourceIds,
         });
       }
     },

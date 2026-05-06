@@ -132,6 +132,18 @@ export interface OAuthAppDescriptor {
    * Calendar, etc. without re-entering credentials each time.
    */
   credentialFamily?: string;
+  /**
+   * API egress allowlist this descriptor opens when granted to an agent.
+   * Each rule is `{host, pathPattern?}`; multiple rules can target the
+   * same host as long as their path patterns differ (e.g. Drive at
+   * `www.googleapis.com/drive/*` and Calendar at `/calendar/*`).
+   *
+   * Static descriptors declare these here; dynamic-host apps (GHE,
+   * Generic) leave it undefined — the connections-service falls back to
+   * the connection's stored `hostPattern`/`pathPattern` metadata at
+   * grant time, since that's where the user-supplied host lives.
+   */
+  egressHosts?: readonly { host: string; pathPattern?: string }[];
 }
 
 export interface BuiltOAuthApp {
@@ -167,6 +179,15 @@ interface GoogleServiceDef {
   hostPattern: string;
   /** Service-specific scopes; baseline OIDC scopes are added automatically. */
   scopes: string[];
+  /**
+   * Egress allowlist rules opened when this service is granted to an
+   * agent. Mirrors onecli's host_rules table — each rule is the canonical
+   * Google API host plus, for services that share `www.googleapis.com`,
+   * a path-prefix discriminator. Drive's `/drive/` and `/upload/drive/`
+   * coexist with Calendar's `/calendar/` because the path is part of the
+   * rule key.
+   */
+  egressHosts: readonly { host: string; pathPattern?: string }[];
 }
 
 const GOOGLE_SERVICES: Record<GoogleServiceId, GoogleServiceDef> = {
@@ -179,18 +200,24 @@ const GOOGLE_SERVICES: Record<GoogleServiceId, GoogleServiceDef> = {
       "https://www.googleapis.com/auth/gmail.modify",
       "https://www.googleapis.com/auth/gmail.send",
     ],
+    egressHosts: [
+      { host: "gmail.googleapis.com" },
+      { host: "www.googleapis.com", pathPattern: "/gmail/*" },
+    ],
   },
   "google-admin": {
     displayName: "Google Admin",
     description: "Manage users, groups, and devices in Google Workspace.",
     hostPattern: "admin.googleapis.com",
     scopes: ["https://www.googleapis.com/auth/admin.directory.user"],
+    egressHosts: [{ host: "admin.googleapis.com" }],
   },
   "google-analytics": {
     displayName: "Google Analytics",
     description: "Access report data and run analytics queries.",
     hostPattern: "analyticsdata.googleapis.com",
     scopes: ["https://www.googleapis.com/auth/analytics"],
+    egressHosts: [{ host: "analyticsdata.googleapis.com" }],
   },
   "google-calendar": {
     displayName: "Google Calendar",
@@ -200,12 +227,14 @@ const GOOGLE_SERVICES: Record<GoogleServiceId, GoogleServiceDef> = {
       "https://www.googleapis.com/auth/calendar.readonly",
       "https://www.googleapis.com/auth/calendar.events",
     ],
+    egressHosts: [{ host: "www.googleapis.com", pathPattern: "/calendar/*" }],
   },
   "google-classroom": {
     displayName: "Google Classroom",
     description: "Manage classes, rosters, and invitations.",
     hostPattern: "classroom.googleapis.com",
     scopes: ["https://www.googleapis.com/auth/classroom.courses"],
+    egressHosts: [{ host: "classroom.googleapis.com" }],
   },
   "google-docs": {
     displayName: "Google Docs",
@@ -215,6 +244,7 @@ const GOOGLE_SERVICES: Record<GoogleServiceId, GoogleServiceDef> = {
       "https://www.googleapis.com/auth/drive.readonly",
       "https://www.googleapis.com/auth/drive.file",
     ],
+    egressHosts: [{ host: "docs.googleapis.com" }],
   },
   "google-drive": {
     displayName: "Google Drive",
@@ -224,41 +254,50 @@ const GOOGLE_SERVICES: Record<GoogleServiceId, GoogleServiceDef> = {
       "https://www.googleapis.com/auth/drive.readonly",
       "https://www.googleapis.com/auth/drive.file",
     ],
+    egressHosts: [
+      { host: "www.googleapis.com", pathPattern: "/drive/*" },
+      { host: "www.googleapis.com", pathPattern: "/upload/drive/*" },
+    ],
   },
   "google-forms": {
     displayName: "Google Forms",
     description: "Read, create, and edit forms and responses.",
     hostPattern: "forms.googleapis.com",
     scopes: ["https://www.googleapis.com/auth/forms.body"],
+    egressHosts: [{ host: "forms.googleapis.com" }],
   },
   "google-health": {
     displayName: "Google Health",
     description:
       "Access activity, sleep, and health metrics from Fitbit and connected devices.",
-    hostPattern: "googlehealth.googleapis.com",
+    hostPattern: "health.googleapis.com",
     scopes: [
       "https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly",
       "https://www.googleapis.com/auth/googlehealth.sleep.readonly",
       "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly",
     ],
+    egressHosts: [{ host: "health.googleapis.com" }],
   },
   "google-meet": {
     displayName: "Google Meet",
     description: "Create and manage meetings.",
     hostPattern: "meet.googleapis.com",
     scopes: ["https://www.googleapis.com/auth/meetings.space.created"],
+    egressHosts: [{ host: "meet.googleapis.com" }],
   },
   "google-photos": {
     displayName: "Google Photos",
     description: "Manage photos, videos, and albums.",
     hostPattern: "photoslibrary.googleapis.com",
     scopes: ["https://www.googleapis.com/auth/photoslibrary"],
+    egressHosts: [{ host: "photoslibrary.googleapis.com" }],
   },
   "google-search-console": {
     displayName: "Google Search Console",
     description: "View search traffic data and manage site presence.",
     hostPattern: "searchconsole.googleapis.com",
     scopes: ["https://www.googleapis.com/auth/webmasters"],
+    egressHosts: [{ host: "searchconsole.googleapis.com" }],
   },
   "google-sheets": {
     displayName: "Google Sheets",
@@ -268,6 +307,7 @@ const GOOGLE_SERVICES: Record<GoogleServiceId, GoogleServiceDef> = {
       "https://www.googleapis.com/auth/drive.readonly",
       "https://www.googleapis.com/auth/drive.file",
     ],
+    egressHosts: [{ host: "sheets.googleapis.com" }],
   },
   "google-slides": {
     displayName: "Google Slides",
@@ -277,12 +317,14 @@ const GOOGLE_SERVICES: Record<GoogleServiceId, GoogleServiceDef> = {
       "https://www.googleapis.com/auth/drive.readonly",
       "https://www.googleapis.com/auth/drive.file",
     ],
+    egressHosts: [{ host: "slides.googleapis.com" }],
   },
   "google-tasks": {
     displayName: "Google Tasks",
     description: "Manage task lists and tasks.",
     hostPattern: "tasks.googleapis.com",
     scopes: ["https://www.googleapis.com/auth/tasks"],
+    egressHosts: [{ host: "tasks.googleapis.com" }],
   },
   youtube: {
     displayName: "YouTube",
@@ -292,6 +334,10 @@ const GOOGLE_SERVICES: Record<GoogleServiceId, GoogleServiceDef> = {
       "https://www.googleapis.com/auth/youtube.readonly",
       "https://www.googleapis.com/auth/youtube",
       "https://www.googleapis.com/auth/youtube.force-ssl",
+    ],
+    egressHosts: [
+      { host: "youtube.googleapis.com" },
+      { host: "www.googleapis.com", pathPattern: "/youtube/*" },
     ],
   },
 };
@@ -317,6 +363,7 @@ function googleService(id: GoogleServiceId): OAuthAppDescriptor {
       { name: "clientSecret", label: "Client secret", secret: true, placeholder: "GOCSPX-…" },
     ],
     credentialFamily: "google",
+    egressHosts: def.egressHosts,
   };
 }
 
@@ -345,6 +392,7 @@ const DESCRIPTORS: Record<OAuthAppId, OAuthAppDescriptor> = {
       },
       { name: "clientSecret", label: "Client secret", secret: true },
     ],
+    egressHosts: [{ host: "api.github.com" }, { host: "github.com" }],
   },
   "github-enterprise": {
     id: "github-enterprise",
@@ -383,6 +431,7 @@ const DESCRIPTORS: Record<OAuthAppId, OAuthAppDescriptor> = {
     // since 2024) but accepts `127.0.0.1`. Reaching the api-server via the
     // catch-all ingress rule on the platform's local-dev cluster.
     localhostCallbackAlias: "127.0.0.1",
+    egressHosts: [{ host: "api.spotify.com" }],
   },
   ...googleServiceDescriptors(),
   generic: {
