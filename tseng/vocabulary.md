@@ -101,3 +101,13 @@ Pod-side operational view of skills. Distinct from the api-server's Skills conte
 | Host Pattern | The hostname pattern that identifies which outbound requests the Envoy sidecar should inject this secret into |
 | Secret Assignment | The linkage between a Secret and an Agent that makes the secret available to that agent's egress; stored as the `agent-platform.ai/secret-mode` + `agent-platform.ai/granted-secret-ids` annotations on the agent's instance ConfigMap |
 | Provider | The external service a secret authenticates against (e.g., Anthropic); for typed secrets the provider determines default routing rules |
+
+## Platform CLI (bounded context)
+
+| Term | Definition |
+|------|-----------|
+| Platform CLI | The `dam` command-line client that talks to a hosted Platform deployment from the user's terminal; package at `packages/cli/` |
+| Config | The CLI's resolved settings for the current invocation — currently only the target Server URL |
+| Config Source | One of the three inputs the Config is resolved from: command-line flag, environment variable, or config file |
+| Server URL | The Platform deployment the CLI is configured to talk to |
+| Compat Verdict | The result of comparing the local CLI's version against the server's reported `minClientVersion` and current version: `Ok`, `BehindMinClient` (hard-refuse), or `BehindCurrent` (soft-warn) |
