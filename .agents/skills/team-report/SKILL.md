@@ -113,11 +113,13 @@ For each active ticket, in order:
 2. **If the ticket is an Issue with linked PRs** (deduped from both sources above): fetch the latest commit across all of them and take the max timestamp.
 3. **If the ticket is an Issue with no linked PR at all**: there can be no commit activity tied to this ticket. Mark stale with reason **"no linked PR"** so the user can see the workflow gap rather than assume the assignee is idle.
 
-Latest-commit query for a PR:
+Latest-commit query for a PR — must walk every page, not just the first 30:
 
 ```sh
-gh api repos/<repo>/pulls/<num>/commits --jq '[.[].commit.committer.date] | max'
+gh api --paginate repos/<repo>/pulls/<num>/commits --jq '.[].commit.committer.date' | sort | tail -1
 ```
+
+`--paginate` runs the `--jq` filter on each page independently, so don't fold the `max` into the jq filter (you'd get one max per page). Emit raw dates line-by-line and let `sort | tail -1` pick the global latest.
 
 A ticket is **stale** when its latest linked-PR commit is older than the 48h cutoff (or no linked PR exists).
 
