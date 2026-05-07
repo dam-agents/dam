@@ -55,12 +55,16 @@ export async function startExtAuthzGrpcApp(deps: ExtAuthzGrpcAppDeps): Promise<{
   const impl: AuthorizationServer = {
     check: async (call, callback) => {
       try {
-        // ADR-040: extract instance ID from the gRPC :authority. grpc-js
-        // surfaces HTTP/2 pseudo-headers via call.metadata for ":authority"
-        // when the client sets one (Envoy does, from the upstream cluster's
-        // load_assignment endpoint). Fall back to the destination
-        // populated in the Check request body if metadata is not exposed.
-        const authority = readAuthority(call) ?? call.request.attributes?.destination?.address?.socketAddress?.address ?? "";
+        // ADR-040: extract instance ID from the gRPC :authority — i.e. the
+        // per-instance ext-authz Service hostname Envoy dialled. grpc-js
+        // exposes :authority via the public `getHost()` on ServerSurfaceCall;
+        // pseudo-headers are NOT in `call.metadata`. Fail closed if the
+        // host is missing or doesn't match the expected per-instance
+        // Service prefix — there is no other identity signal to fall back
+        // to under this design (the AuthorizationPolicy on each Service
+        // already gates by SA principal, so a non-matching host can only
+        // come from an out-of-mesh caller or a misconfigured client).
+        const authority = call.getHost();
         const instanceId = parseInstanceFromAuthority(authority, expectedPrefix);
         if (!instanceId) {
           callback(null, denied(`unable to derive instance from :authority='${authority}'`));
@@ -110,21 +114,6 @@ export async function startExtAuthzGrpcApp(deps: ExtAuthzGrpcAppDeps): Promise<{
     );
   });
   return { server };
-}
-
-/** Pull the gRPC `:authority` pseudo-header out of metadata. grpc-js
- *  exposes it under the lowercase key on incoming metadata for unary
- *  calls; some versions strip it. Returns null when absent. */
-function readAuthority(call: { metadata: grpc.Metadata }): string | null {
-  // grpc-js exposes :authority under several names depending on version.
-  for (const key of [":authority", "host"]) {
-    const v = call.metadata.get(key);
-    if (Array.isArray(v) && v.length > 0) {
-      const s = v[0]?.toString();
-      if (s) return s;
-    }
-  }
-  return null;
 }
 
 /** Parse `<id>` from `<release>-extauthz-<id>.<ns>.svc.cluster.local[:port]`.

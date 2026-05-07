@@ -6,18 +6,35 @@ controller) only apply to traffic ROUTED THROUGH the waypoint Service.
 Without this rule, an in-mesh pod could dial the api-server pod IP
 directly on :15008 and reach the harness handler bypassing the waypoint
 entirely (and therefore bypassing the per-instance principal-to-`:id`
-check). Same hazard for ext-authz on a non-per-instance dial.
+check). Same hazard for ext-authz: a release-namespace pod (controller,
+ui, postgres) sharing the namespace with the api-server is structurally
+in a position to dial the harness port directly unless we deny it.
 
-This policy targets the api-server pod and DENIES every inbound mesh
-request that does not arrive via either:
-  - the waypoint (whose source.principal is the waypoint's SA), OR
-  - a per-instance ext-authz dial (source SA is in the agent namespace
-    and the destination port is the ext-authz port — Istio resolves
-    "destination port" to the application port, not HBONE 15008).
+This policy DENIES every inbound mesh request to the api-server pod
+except:
+  - the waypoint principal (cluster.local/ns/<release-ns>/sa/<waypoint>)
+    on the harness port — Istio names the waypoint SA after the
+    Gateway resource;
+  - any per-instance SA in the agent namespace on the ext-authz port
+    (per-instance ext-authz Services + their AuthorizationPolicies
+    enforce principal == matching SA);
+  - any source on the public HTTP port (Keycloak JWT is the
+    application-layer gate).
+
+Trust-surface notes:
+  - Release-ns pods other than the waypoint cannot reach the harness
+    port (rule 3 below). They CAN reach the public HTTP port — that
+    is intentional; they're peers of the api-server and may legitimately
+    call it (controller does not, today, but the policy is permissive
+    here so we don't have to enumerate every release-ns peer).
+  - Non-mesh sources (e.g. Traefik in `kube-system` for the ingress
+    path) are NOT subject to this policy — Istio AuthorizationPolicy
+    only applies to mesh traffic. Cluster-edge ingress is gated by
+    NetworkPolicy and the Ingress resource.
 
 Istio AuthorizationPolicy semantics: when both ALLOW and DENY policies
 apply, DENY wins. ALLOWs are OR-ed, DENY is enforced first. So this
-policy can co-exist with the per-instance ALLOWs the controller writes.
+policy co-exists with the per-instance ALLOWs the controller writes.
 */ -}}
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
@@ -36,20 +53,18 @@ spec:
       app.kubernetes.io/instance: {{ .Release.Name }}
   action: DENY
   rules:
-    # Anything from outside the agent namespace AND not from the waypoint's
-    # SA gets denied. The waypoint forwards harness traffic from this same
-    # release namespace, so its principal is admitted via the negative
-    # match (notNamespaces: agentNamespace skips the waypoint hop).
+    # 1. Anything from outside both the agent and release namespaces is
+    #    denied. The waypoint Pod lives in the release namespace, so
+    #    admitting the release ns lets it through; agent-ns pods reach
+    #    only the ext-authz port (rule 2 narrows that).
     - from:
         - source:
             notNamespaces:
               - {{ .Values.agentNamespace | quote }}
               - {{ .Release.Namespace | quote }}
-    # Pod-IP bypass attempts that DO originate from the agent namespace
-    # but try to hit the harness port directly are denied — harness must
-    # go via the waypoint (per-instance principal-to-`:id` enforcement).
-    # ext-authz (separate port) is excluded so per-instance Services keep
-    # working.
+    # 2. Agent-ns sources hitting the harness port directly (pod-IP
+    #    bypass) are denied — harness must traverse the waypoint, where
+    #    per-instance AuthorizationPolicies enforce principal == URL :id.
     - to:
         - operation:
             ports:
@@ -58,3 +73,17 @@ spec:
         - source:
             namespaces:
               - {{ .Values.agentNamespace | quote }}
+    # 3. Release-ns sources hitting the harness port that are NOT the
+    #    waypoint principal are denied. Istio names the waypoint SA after
+    #    the Gateway resource (so it matches `istio.waypointName`). This
+    #    closes the "other release-ns pod calls harness directly" gap.
+    - to:
+        - operation:
+            ports:
+              - {{ .Values.apiServer.harnessServerPort | quote }}
+      from:
+        - source:
+            namespaces:
+              - {{ .Release.Namespace | quote }}
+            notPrincipals:
+              - "{{ .Values.istio.trustDomain }}/ns/{{ .Release.Namespace }}/sa/{{ .Values.istio.waypointName }}"
