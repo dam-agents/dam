@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-05-06
+Last verified: 2026-05-07
 
 ## Motivated by
 
@@ -20,6 +20,8 @@ Platform persists state on three durable substrates, split cleanly between the p
 **Agent-owned**:
 
 - **Per-instance PVCs** — the workspace and `$HOME` mounted into the agent pod. The agent process reads and writes here freely; it has no direct access to Postgres or to the ConfigMaps that describe it. Persists across hibernation; reclaimed when the instance is deleted.
+
+A fourth substrate, **Redis**, sits beneath these as api-server-only cross-replica coordination and transit (pub/sub bus, durable prompt outbox). It is not a source of truth — entries live for the duration of an in-flight operation and are removed on acknowledgement. The three substrates above remain canonical for all persisted state.
 
 **Choosing between Postgres and ConfigMaps.** A new resource belongs on a ConfigMap iff the controller reconciles it. If only the api-server reads and writes it, it belongs in Postgres. The spec/status single-writer split exists to coordinate api-server and controller; without a controller reader, it has no purpose, and putting api-server-only state on a ConfigMap is using the K8s API as a generic key-value store. ADR-006's "K8s is the database" framing predates Postgres landing in the platform — the rule above is the post-[ADR-017](../adrs/017-db-backed-sessions.md) refinement.
 
@@ -101,6 +103,15 @@ The default Claude Code template persists the workspace and `$HOME`. Together th
 PVCs survive hibernation — when a StatefulSet scales to zero replicas, the volume detaches but is retained. The controller explicitly deletes PVCs on instance deletion (the standard StatefulSet behavior is to retain them to prevent data loss; Platform opts back into reclamation because instance deletion is intentional).
 
 What does **not** survive hibernation: anything written to the container's ephemeral filesystem outside the persisted mounts — OS-level changes, packages installed at runtime, files in `/tmp`. Tools and dependencies the agent relies on must be baked into the image at build time.
+
+### Redis (transit)
+
+Redis is api-server-only — neither the controller nor the agent connects to it. Established as a platform primitive by [ADR-036](../adrs/036-redis-platform-primitive.md). Two roles today:
+
+- **Pub/sub bus** ([`core/redis-bus.ts`](../../packages/api-server/src/core/redis-bus.ts)) — generic cross-replica publish/subscribe. Channel names belong to the consumer (`approval:<id>` for HITL verdict fan-out, `inject:<instanceId>` for ACP frame injection). Messages are fire-and-forget; a replica with no live subscriber drops them.
+- **Prompts outbox** (`prompts:outbox`) — a Redis Stream + consumer group used for durable user-prompt submission. The api-server appends each prompt atomically via Lua (XADD + idempotency-key set in one step); a per-replica forwarder consumes via XREADGROUP, ships the prompt to the wrapper, and XACK + XDEL on success. XAUTOCLAIM rebalances entries off a dead replica. Idempotency keys carry a 1 h TTL — long enough to defeat browser-retry duplicates, short of anything we'd want to recover. See the durable-prompt-submission ADR (narrows [ADR-007](../adrs/007-acp-relay.md) for the prompt-send leg only).
+
+Nothing on Redis is canonical. Outbox entries are XDEL'd on ack; pub/sub messages are signals on the way to a subscriber that already holds (or is about to write) the durable record on Postgres / ConfigMap / PVC. Redis surviving an api-server replica restart is the load-bearing property — long-term durability beyond that lives elsewhere.
 
 ## Lifetime
 
