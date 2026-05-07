@@ -22,7 +22,7 @@ The CLI runs on the user's machine. It reads and writes only under the XDG confi
 Two persistence concerns are split across the XDG directories: editable configuration (this file, under `$XDG_CONFIG_HOME/dam/`) and credentials, which arrive with [`#80`](https://github.com/dam-agents/dam/issues/80) and live under `$XDG_STATE_HOME/dam/`.
 
 - **Location:** `$XDG_CONFIG_HOME/dam/config.toml` (default `~/.config/dam/config.toml`). Flat schema, no profile indirection.
-- **Keys:** v0 has one — `server` (URL). Adding a key is forced by a `satisfies Record<ConfigKey, true>` registry that fails to compile until the new field is registered.
+- **Keys:** v0 has one — `server` (URL). Adding a new config key requires registering it at compile time — undeclared keys are a build error.
 - **Precedence at resolve time:** flag (per-invocation `--server`, when commands grow one) > env var > file > error. There is no silent default.
 - **Env var:** `DAM_SERVER` for the server URL (matches the `dam` binary name). Future keys follow the same `DAM_<KEY>` convention.
 - **Writes:** read-merge-rename. The CLI never blows away unrelated top-level keys, so a user can hand-edit comments or future config knobs without losing them on the next `dam config set`.
@@ -33,6 +33,8 @@ Before any networked verb runs, the CLI hits the api-server's unauthenticated `G
 
 - **Ok** — local CLI is at or ahead of the server's reported version. Command proceeds.
 - **BehindCurrent** — local CLI is below the server but at or above the floor. The CLI warns to stderr and proceeds (exit 0).
-- **BelowFloor** — local CLI is below the server's `minClientVersion`. The CLI hard-fails with a non-zero exit and refuses to run, regardless of which verb the user invoked.
+- **BelowFloor** — local CLI is below the server's `minClientVersion`. Gated verbs (see below) hard-fail with a non-zero exit; un-gated verbs surface the same verdict but proceed.
+
+When no floor is configured (`minClientVersion` absent from the response), `BelowFloor` is never produced — the CLI proceeds with `Ok` or `BehindCurrent` as if the floor check were skipped.
 
 The floor is configurable via Helm (`apiServer.minClientCliVersion`) so operators can drop support for known-broken older clients without rebuilding the image. `dam ping` is the verb that opts into this gate explicitly; future networked verbs (`login`, `shell`, …) will too. `dam version` is the un-gated counterpart to `ping`: it surfaces the same verdict (and the same stderr warnings) but never refuses to run — it is informational, not gated, and always exits 0 even on probe failure.
