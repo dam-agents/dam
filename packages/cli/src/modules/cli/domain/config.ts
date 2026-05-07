@@ -1,25 +1,27 @@
+import { z } from "zod";
 import { err, ok, type Result } from "./result.js";
-import type { InvalidKeyError, MissingConfigError } from "./errors.js";
+import type {
+  InvalidKeyError,
+  InvalidValueError,
+  MissingConfigError,
+} from "./errors.js";
 
-export interface Config {
-  server: string;
-}
+export const configSchema = z.object({
+  server: z.url({
+    protocol: /^https?$/,
+    error: "must be an http(s) URL (e.g. https://platform.example)",
+  }),
+});
 
+export type Config = z.infer<typeof configSchema>;
 export type ConfigKey = keyof Config;
 
-// Adding a new key to `Config` is a compile error here until it's also
-// registered, so the runtime keyset cannot drift from the type. The
-// `satisfies` clause ensures every `keyof Config` appears as a property.
-const KEY_REGISTRY = {
-  server: true,
-} satisfies Record<ConfigKey, true>;
-
 export const CONFIG_KEYS: readonly ConfigKey[] = Object.keys(
-  KEY_REGISTRY,
+  configSchema.shape,
 ) as ConfigKey[];
 
 export function isConfigKey(input: string): input is ConfigKey {
-  return Object.prototype.hasOwnProperty.call(KEY_REGISTRY, input);
+  return Object.prototype.hasOwnProperty.call(configSchema.shape, input);
 }
 
 export function parseConfigKey(
@@ -27,6 +29,27 @@ export function parseConfigKey(
 ): Result<ConfigKey, InvalidKeyError> {
   if (isConfigKey(input)) return ok(input);
   return err({ kind: "invalid-key", input, validKeys: CONFIG_KEYS });
+}
+
+/**
+ * Validates a single config value against the schema for its key. Used by
+ * `dam config set` to fail fast on bad input before touching the file.
+ */
+export function validateValue(
+  key: ConfigKey,
+  rawValue: string,
+): Result<Partial<Config>, InvalidValueError> {
+  const fieldSchema = configSchema.shape[key];
+  const parsed = fieldSchema.safeParse(rawValue);
+  if (!parsed.success) {
+    return err({
+      kind: "invalid-value",
+      key,
+      input: rawValue,
+      reason: parsed.error.issues.map((i) => i.message).join("; "),
+    });
+  }
+  return ok({ [key]: parsed.data } as Partial<Config>);
 }
 
 export interface ConfigSources {

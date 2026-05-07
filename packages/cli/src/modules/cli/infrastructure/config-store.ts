@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { parse, stringify, type TomlTable } from "smol-toml";
-import type { Config } from "../domain/config.js";
+import { configSchema, type Config } from "../domain/config.js";
 import { err, ok, type Result } from "../domain/result.js";
 import type {
   FileWriteError,
@@ -13,6 +13,8 @@ export interface ConfigStore {
   write(partial: Partial<Config>): Promise<Result<void, FileWriteError>>;
 }
 
+const partialConfigSchema = configSchema.partial();
+
 function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
@@ -21,18 +23,6 @@ function errnoCode(e: unknown): string | undefined {
   return e instanceof Error && "code" in e && typeof e.code === "string"
     ? e.code
     : undefined;
-}
-
-function pickKnownKeys(raw: TomlTable): Partial<Config> {
-  // Add another `if (typeof raw.<key> === "string")` arm when extending
-  // `Config` with a new string field — TypeScript will flag the missing
-  // `out.<key>` assignment, but won't force you to read it from the file,
-  // so this list is a deliberate review point.
-  const out: Partial<Config> = {};
-  if (typeof raw.server === "string") {
-    out.server = raw.server;
-  }
-  return out;
 }
 
 export function createTomlConfigStore(filePath: string): ConfigStore {
@@ -49,14 +39,25 @@ export function createTomlConfigStore(filePath: string): ConfigStore {
           reason: `cannot read ${filePath}: ${errorMessage(e)}`,
         });
       }
+      let raw: unknown;
       try {
-        return ok(pickKnownKeys(parse(contents)));
+        raw = parse(contents);
       } catch (e) {
         return err({
           kind: "malformed-config",
           reason: `invalid TOML in ${filePath}: ${errorMessage(e)}`,
         });
       }
+      const parsed = partialConfigSchema.safeParse(raw);
+      if (!parsed.success) {
+        return err({
+          kind: "malformed-config",
+          reason: `invalid config in ${filePath}: ${parsed.error.issues
+            .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)
+            .join("; ")}`,
+        });
+      }
+      return ok(parsed.data);
     },
 
     async write(partial) {

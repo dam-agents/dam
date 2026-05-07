@@ -1,5 +1,5 @@
 import type { Config, ConfigKey } from "../domain/config.js";
-import { resolveConfig } from "../domain/config.js";
+import { resolveConfig, validateValue } from "../domain/config.js";
 import type {
   FileWriteError,
   InvalidValueError,
@@ -7,7 +7,6 @@ import type {
   MissingConfigError,
 } from "../domain/errors.js";
 import type { Result } from "../domain/result.js";
-import { validateValue } from "../domain/validate-value.js";
 import type { ConfigStore } from "../infrastructure/config-store.js";
 import type { EnvReader } from "../infrastructure/env-reader.js";
 
