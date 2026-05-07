@@ -19,11 +19,9 @@ import { startPodFilesSync } from "./modules/pod-files/index.js";
 let triggerWatcher: TriggerWatcher | undefined;
 
 const __dir = dirname(fileURLToPath(import.meta.url));
-const agentCommand = config.AGENT_COMMAND
-  ? config.AGENT_COMMAND.split(" ")
-  : config.PLATFORM_DEV
-    ? ["npx", "tsx", join(__dir, "agent.ts")]
-    : ["node", join(__dir, "agent.js")];
+const agentCommand = config.PLATFORM_DEV
+  ? ["npx", "tsx", join(__dir, "agent.ts")]
+  : ["/usr/local/bin/harness-chat"];
 const homeDir = config.PLATFORM_DEV
   ? join(__dir, "../working-dir")
   : config.HOME_DIR;
@@ -68,9 +66,7 @@ const { runtime: acpRuntime } = composeAcp({
 });
 
 const ptyManager = createPtyManager({
-  command: config.TERMINAL_COMMAND
-    ? config.TERMINAL_COMMAND.split(" ")
-    : process.env.SHELL ? [process.env.SHELL] : ["/bin/bash"],
+  command: ["/usr/local/bin/harness-terminal"],
   workingDir: workDir,
   log: (msg) => process.stderr.write(`[pty] ${msg}\n`),
 });

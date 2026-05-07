@@ -38,8 +38,6 @@ RUN npm install --omit=dev
 COPY --from=builder /app/packages/agent-runtime/dist/ dist/
 
 COPY packages/platform-base/skills/ /app/working-dir/.agents/skills/
-COPY packages/platform-base/claude-session.sh /usr/local/bin/claude-session
-RUN chmod +x /usr/local/bin/claude-session
 RUN mkdir -p /app/working-dir/.claude /app/working-dir/.pi/agent \
     && ln -s ../.agents/skills /app/working-dir/.claude/skills \
     && ln -s ../../.agents/skills /app/working-dir/.pi/agent/skills \
@@ -48,8 +46,6 @@ RUN mkdir -p /app/working-dir/.claude /app/working-dir/.pi/agent \
 RUN mkdir -p /etc/claude-code && echo '{"allowedMcpServers":["platform-outbound"]}' > /etc/claude-code/managed-settings.json
 
 USER 65532
-
-RUN mkdir -p /etc/claude-code && echo '{"enableAllProjectMcpServers":true}' > /etc/claude-code/managed-settings.json
 
 ENV PORT=8080
 EXPOSE 8080

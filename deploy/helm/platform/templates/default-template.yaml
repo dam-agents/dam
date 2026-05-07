@@ -35,8 +35,6 @@ data:
     env:
       - name: PORT
         value: "8080"
-      - name: TERMINAL_COMMAND
-        value: "claude-session {sessionId}"
     resources:
       requests:
         cpu: {{ .Values.defaultTemplate.resources.requests.cpu | quote }}

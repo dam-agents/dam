@@ -45,10 +45,7 @@ export function createPtyManager(opts: {
   }
 
   function spawnPty(sessionId: string, cols: number, rows: number): nodePty.IPty {
-    // Substitute {sessionId} placeholders so harnesses like claude can be told
-    // to use our own UUID for their on-disk session log (e.g. `claude --session-id {sessionId}`).
-    // This makes terminal-mode sessions resumable as chat without an id swap.
-    const [cmd, ...args] = opts.command.map((p) => p.replaceAll("{sessionId}", sessionId));
+    const [cmd, ...args] = opts.command;
     const cleanEnv: Record<string, string> = {};
     for (const [k, v] of Object.entries(process.env)) {
       if (v !== undefined && !k.startsWith("npm_config_") && !k.startsWith("npm_lifecycle_"))
@@ -62,6 +59,7 @@ export function createPtyManager(opts: {
     }
     cleanEnv.TERM = "xterm-256color";
     cleanEnv.COLORTERM = "truecolor";
+    cleanEnv.HARNESS_SESSION_ID = sessionId;
 
     return nodePty.spawn(cmd!, args, {
       name: "xterm-256color",
