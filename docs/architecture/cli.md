@@ -9,9 +9,9 @@ Last verified: 2026-05-07
 
 ## Overview
 
-The `dam` CLI is a TypeScript Node package, installed via `npm install -g @dam-agents/cli`, that points at a configured Platform deployment. Users run it on their own machine; it never runs inside the cluster. The v1 surface is complete: `dam --version`, `dam --help` (commander.js built-ins), `dam config set`, `dam ping`, and `dam version`. Future verbs — `dam login`, `dam shell`, `dam import` — slot into the same module.
+The `dam` CLI is a TypeScript Node package that users install on their own machine and point at a configured Platform deployment. It never runs inside the cluster. The v1 surface is complete: `dam --version`, `dam --help` (built-in flags), `dam config set`, `dam ping`, and `dam version`. Future verbs — `dam login`, `dam shell`, `dam import` — slot into the same module.
 
-The package shares the api-server's tRPC contract directly via the `api-server-api` workspace package. Every server-side type change reaches the CLI without codegen or manual mirroring. tRPC is not wired in this initial slice — the foundation lands first; verbs that need authenticated calls bring the client wiring with them.
+The CLI shares types directly with the api-server via a shared contract package, so server-side type changes reach the CLI without codegen or manual mirroring. The contract client is not wired in this initial slice — the foundation lands first; verbs that need authenticated calls bring the client wiring with them.
 
 ## Trust boundary
 
