@@ -70,6 +70,15 @@ export function upsertSession(db: Db) {
   };
 }
 
+export function setSessionMode(db: Db) {
+  return async (sessionId: string, instanceId: string, mode: SessionMode) => {
+    await db
+      .update(sessions)
+      .set({ mode })
+      .where(and(eq(sessions.sessionId, sessionId), eq(sessions.instanceId, instanceId)));
+  };
+}
+
 export function touchSession(db: Db) {
   return async (sessionId: string) => {
     await db

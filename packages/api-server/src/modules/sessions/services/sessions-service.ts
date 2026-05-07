@@ -6,6 +6,7 @@ export function createSessionsService(deps: {
   listByScheduleId: (scheduleId: string) => Promise<{ sessionId: string; instanceId: string; type: string; mode: string; scheduleId: string | null; scheduleActive: boolean; createdAt: Date }[]>;
   findActiveByScheduleId: (scheduleId: string) => Promise<{ sessionId: string; instanceId: string; type: string; mode: string; scheduleId: string | null; createdAt: Date } | null>;
   upsert: (sessionId: string, instanceId: string, type?: SessionType, scheduleId?: string, threadTs?: string, mode?: SessionMode) => Promise<void>;
+  setMode: (sessionId: string, instanceId: string, mode: SessionMode) => Promise<void>;
   delete: (sessionId: string, instanceId: string) => Promise<void>;
   isOwnedInstance: (instanceId: string) => Promise<boolean>;
   isOwnedSchedule: (scheduleId: string) => Promise<boolean>;
@@ -53,6 +54,11 @@ export function createSessionsService(deps: {
     async create(sessionId: string, instanceId: string, type?: SessionType, scheduleId?: string, mode?: SessionMode) {
       if (!await deps.isOwnedInstance(instanceId)) return;
       await deps.upsert(sessionId, instanceId, type, scheduleId, undefined, mode);
+    },
+
+    async setMode(sessionId: string, instanceId: string, mode: SessionMode) {
+      if (!await deps.isOwnedInstance(instanceId)) return;
+      await deps.setMode(sessionId, instanceId, mode);
     },
 
     async delete(sessionId: string, instanceId: string) {

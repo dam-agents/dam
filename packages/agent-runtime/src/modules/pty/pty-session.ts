@@ -11,7 +11,7 @@ import headlessPkg from "@xterm/headless";
 const { Terminal: HeadlessTerminal } = headlessPkg;
 import serializePkg from "@xterm/addon-serialize";
 const { SerializeAddon } = serializePkg;
-import * as nodePty from "node-pty";
+import * as nodePty from "@lydell/node-pty";
 import type { WebSocket as WsWebSocket } from "ws";
 import {
   OP_INPUT,
@@ -53,8 +53,11 @@ export function createPtyManager(opts: {
     log(`[${sessionId}] PTY killed`);
   }
 
-  function spawnPty(cols: number, rows: number): nodePty.IPty {
-    const [cmd, ...args] = opts.command;
+  function spawnPty(sessionId: string, cols: number, rows: number): nodePty.IPty {
+    // Substitute {sessionId} placeholders so harnesses like claude can be told
+    // to use our own UUID for their on-disk session log (e.g. `claude --session-id {sessionId}`).
+    // This makes terminal-mode sessions resumable as chat without an id swap.
+    const [cmd, ...args] = opts.command.map((p) => p.replaceAll("{sessionId}", sessionId));
     const cleanEnv: Record<string, string> = {};
     for (const [k, v] of Object.entries(process.env)) {
       if (v !== undefined && !k.startsWith("npm_config_") && !k.startsWith("npm_lifecycle_"))
@@ -116,7 +119,8 @@ export function createPtyManager(opts: {
     });
   }
 
-  function attach(sessionId: string, ws: WsWebSocket): void {
+  function attach(sessionId: string, ws: WsWebSocket, opts?: { reset?: boolean }): void {
+    if (opts?.reset) killSlot(sessionId);
     let initialized = false;
     ws.binaryType = "nodebuffer";
 
@@ -160,7 +164,7 @@ export function createPtyManager(opts: {
         headless.loadAddon(serialize);
         const slot: PtySlot = { pty: null, headless, serialize, client: ws, graceTimer: null };
         slots.set(sessionId, slot);
-        slot.pty = spawnPty(cols, rows);
+        slot.pty = spawnPty(sessionId, cols, rows);
         wirePty(sessionId, slot, slot.pty);
         wireClose(sessionId, slot, ws);
         log(`[${sessionId}] Spawned PTY (${cols}x${rows})`);

@@ -1,12 +1,12 @@
 import { SessionMode } from "api-server-api";
-import { AlertCircle, ArrowDown, ArrowLeft, FileText as FileIcon, RefreshCw,Settings2, Trash2 } from "lucide-react";
+import { AlertCircle, ArrowDown, ArrowLeft, FileText as FileIcon, MessageSquare,RefreshCw,Settings2, TerminalSquare,Trash2 } from "lucide-react";
 import { useCallback,useEffect, useRef, useState } from "react";
 
+import { api } from "../../../api.js";
 import { Markdown } from "../../../components/markdown.js";
 import { ResizeHandle } from "../../../components/resize-handle.js";
 import { StatusBadge } from "../../../components/status-indicator.js";
 import { isMobile } from "../../../lib/breakpoints.js";
-import { platform } from "../../../platform.js";
 import { queryClient } from "../../../query-client.js";
 import type { SessionError } from "../../../store.js";
 import { useStore } from "../../../store.js";
@@ -53,6 +53,11 @@ export function ChatView() {
 
   const [leftW, setLeftW] = useState(() => Number(localStorage.getItem("platform-left-w")) || 220);
   const [rightW, setRightW] = useState(() => Number(localStorage.getItem("platform-right-w")) || 340);
+  // Set when toggling chat → terminal so the next Terminal mount kills any
+  // running PTY (its claude has stale in-memory state vs. the updated jsonl).
+  // Stored as a ref (not state) because zustand's setSessionMode can trigger
+  // a synchronous re-render that mounts Terminal before React useState commits.
+  const terminalFreshRef = useRef(false);
   const messagesRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -128,20 +133,40 @@ export function ChatView() {
     setMobileScreen("chat");
   }, [sessionId, messages.length, resetSession, setMobileScreen, setSessionMode]);
 
-  const handleNewTerminalSession = useCallback(async () => {
+  const showConfirm = useStore((s) => s.showConfirm);
+  const handleToggleMode = useCallback(async () => {
     if (!selectedInstance) return;
-    const newSessionId = crypto.randomUUID();
-    await platform.sessions.create.mutate({
-      sessionId: newSessionId,
-      instanceId: selectedInstance,
-      mode: SessionMode.Terminal,
-    });
-    queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
-    resetSession();
-    setSessionId(newSessionId);
-    setSessionMode(SessionMode.Terminal);
-    setMobileScreen("chat");
-  }, [selectedInstance, resetSession, setSessionId, setSessionMode, setMobileScreen]);
+    const target = sessionMode === SessionMode.Terminal ? SessionMode.Chat : SessionMode.Terminal;
+
+    // Blank chat (nothing started yet) toggling to terminal: create a fresh terminal session, no warning.
+    if (!sessionId && messages.length === 0) {
+      if (target === SessionMode.Terminal) {
+        const newSessionId = crypto.randomUUID();
+        await api.sessions.create.mutate({ sessionId: newSessionId, instanceId: selectedInstance, mode: SessionMode.Terminal });
+        queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
+        setSessionId(newSessionId);
+        setSessionMode(SessionMode.Terminal);
+      } else {
+        setSessionMode(SessionMode.Chat);
+      }
+      return;
+    }
+
+    const ok = await showConfirm(
+      `Switch this session to ${target} mode? Files and history are preserved, but any running tasks will be cancelled.`,
+      "Switch session mode",
+    );
+    if (!ok) return;
+
+    if (busy) stopAgent();
+    if (sessionId) {
+      await api.sessions.setMode.mutate({ sessionId, instanceId: selectedInstance, mode: target });
+      queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
+    }
+    if (target === SessionMode.Terminal) terminalFreshRef.current = true;
+    setSessionMode(target);
+    if (target === SessionMode.Chat && sessionId) resumeSession(sessionId);
+  }, [selectedInstance, sessionMode, sessionId, messages.length, busy, stopAgent, resumeSession, setSessionMode, showConfirm]);
 
   const handleBack = useCallback(() => {
     if (isMobile() && mobileScreen === "chat") {
@@ -205,7 +230,6 @@ export function ChatView() {
         <SessionsSidebar
           onResumeSession={mobileResumeSession}
           onNewSession={handleNewSession}
-          onNewTerminalSession={handleNewTerminalSession}
         />
       </div>
       <ResizeHandle side="left" onResize={d => setLeftW(w => { const v = Math.max(140, Math.min(400, w + d)); localStorage.setItem("platform-left-w", String(v)); return v; })} />
@@ -221,6 +245,22 @@ export function ChatView() {
           <span className="w-px h-4 bg-border-light" />
           <h1 className="text-[14px] font-bold text-text truncate">{selectedInstance}</h1>
           <div className="ml-auto flex items-center gap-2">
+            <div className="flex h-7 rounded-md border border-border-light overflow-hidden">
+              <button
+                className={`px-2 flex items-center gap-1 text-[11px] font-semibold transition-colors ${(sessionMode ?? SessionMode.Chat) === SessionMode.Chat ? "bg-accent-light text-accent" : "text-text-muted hover:text-accent"}`}
+                onClick={(sessionMode ?? SessionMode.Chat) === SessionMode.Chat ? undefined : handleToggleMode}
+                title="Chat mode"
+              >
+                <MessageSquare size={12} /> Chat
+              </button>
+              <button
+                className={`px-2 flex items-center gap-1 text-[11px] font-semibold border-l border-border-light transition-colors ${sessionMode === SessionMode.Terminal ? "bg-accent-light text-accent" : "text-text-muted hover:text-accent"}`}
+                onClick={sessionMode === SessionMode.Terminal ? undefined : handleToggleMode}
+                title="Terminal mode"
+              >
+                <TerminalSquare size={12} /> Terminal
+              </button>
+            </div>
             <button
               className="md:hidden h-7 w-7 rounded-md border border-border-light flex items-center justify-center text-text-muted hover:text-accent hover:border-accent transition-colors"
               onClick={() => setShowMobilePanel(true)}
@@ -233,7 +273,7 @@ export function ChatView() {
 
         {/* Content: Terminal or Chat */}
         {sessionMode === SessionMode.Terminal && selectedInstance && sessionId ? (
-          <Terminal key={sessionId} instanceId={selectedInstance} sessionId={sessionId} />
+          <Terminal key={sessionId} instanceId={selectedInstance} sessionId={sessionId} fresh={terminalFreshRef.current} onConnected={() => { terminalFreshRef.current = false; }} />
         ) : (<>
         <div className="relative flex flex-1 flex-col min-h-0">
         <div ref={messagesRef} className="flex-1 overflow-y-auto">

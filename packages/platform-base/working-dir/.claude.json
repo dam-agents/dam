@@ -1,0 +1,28 @@
+{
+  "numStartups": 2,
+  "hasCompletedOnboarding": true,
+  "lastOnboardingVersion": "2.1.128",
+  "lastReleaseNotesSeen": "2.1.128",
+  "opusProMigrationComplete": true,
+  "sonnet1m45MigrationComplete": true,
+  "unpinOpus47LaunchEffort": true,
+  "migrationVersion": 13,
+  "officialMarketplaceAutoInstallAttempted": true,
+  "officialMarketplaceAutoInstalled": true,
+  "tipsHistory": {
+    "new-user-warmup": 2
+  },
+  "projects": {
+    "/home/agent/work": {
+      "allowedTools": [],
+      "mcpContextUris": [],
+      "mcpServers": {},
+      "enabledMcpjsonServers": [],
+      "disabledMcpjsonServers": [],
+      "hasTrustDialogAccepted": true,
+      "projectOnboardingSeenCount": 1,
+      "hasClaudeMdExternalIncludesApproved": false,
+      "hasClaudeMdExternalIncludesWarningShown": false
+    }
+  }
+}

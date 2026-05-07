@@ -29,6 +29,14 @@ export const sessionsRouter = t.router({
     }))
     .mutation(({ ctx, input }) => ctx.sessions.create(input.sessionId, input.instanceId, input.type, input.scheduleId, input.mode)),
 
+  setMode: t.procedure
+    .input(z.object({
+      sessionId: z.string().min(1),
+      instanceId: z.string().min(1),
+      mode: sessionMode,
+    }))
+    .mutation(({ ctx, input }) => ctx.sessions.setMode(input.sessionId, input.instanceId, input.mode)),
+
   delete: t.procedure
     .input(z.object({ sessionId: z.string().min(1), instanceId: z.string().min(1) }))
     .mutation(({ ctx, input }) => ctx.sessions.delete(input.sessionId, input.instanceId)),

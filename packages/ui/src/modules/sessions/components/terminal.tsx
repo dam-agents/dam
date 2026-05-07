@@ -10,13 +10,13 @@ import { getAccessToken } from "../../../auth.js";
 
 type ConnectionState = "connecting" | "live" | "disconnected" | "exited";
 
-async function terminalWsUrl(instanceId: string, sessionId: string): Promise<string> {
+async function terminalWsUrl(instanceId: string, sessionId: string, reset: boolean): Promise<string> {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const token = await getAccessToken();
-  return `${proto}//${location.host}/api/instances/${instanceId}/terminal?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(sessionId)}`;
+  return `${proto}//${location.host}/api/instances/${instanceId}/terminal?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(sessionId)}${reset ? "&reset=1" : ""}`;
 }
 
-export function Terminal({ instanceId, sessionId }: { instanceId: string; sessionId: string }) {
+export function Terminal({ instanceId, sessionId, fresh, onConnected }: { instanceId: string; sessionId: string; fresh?: boolean; onConnected?: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -79,7 +79,7 @@ export function Terminal({ instanceId, sessionId }: { instanceId: string; sessio
       fitAddon.fit();
 
       // Connect WebSocket
-      const url = await terminalWsUrl(instanceId, sessionId);
+      const url = await terminalWsUrl(instanceId, sessionId, !!fresh);
       if (cancelled) return;
 
       const ws = new WebSocket(url);
@@ -91,6 +91,7 @@ export function Terminal({ instanceId, sessionId }: { instanceId: string; sessio
         setState("live");
         ws.send(encodeResize(term.cols, term.rows).buffer);
         term.focus();
+        onConnected?.();
       };
 
       ws.onmessage = (e: MessageEvent<ArrayBuffer>) => {

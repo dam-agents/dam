@@ -19,10 +19,13 @@ controller:
     tag: latest
     pullPolicy: Never
   agentImagePullPolicy: Never
-  agentStorageClass: platform-rwx
+  # NFS RWX is unreliable in the locki sandbox (kubelet hits "Remote I/O error"
+  # on mount). Use the default local-path provisioner with RWO instead.
+  agentStorageClass: local-path
+  agentAccessMode: ReadWriteOnce
 
 nfsProvisioner:
-  enabled: true
+  enabled: false
 
 defaultTemplate:
   image:
@@ -58,14 +61,17 @@ ingress:
   catchAllAppHost: true
 
 # Bootstrap a known dev/dev user for local cluster — never enabled in production.
-# Also widen the OAuth allow-list so the cluster works when reached via
-# the catch-all ingress rule (e.g. http://127.0.0.1:4444).
+# Wide-open OAuth allow-list so the cluster works no matter how the developer
+# happens to reach it (catch-all ingress, locki port-forward random ports,
+# *.localtest.me aliases, etc.). Keycloak does not support port wildcards in
+# redirect URIs, so listing specific ports doesn't cover dynamic forwarders —
+# `*` is the only practical match. Local dev only — never use in production.
 keycloak:
   testUser:
     enabled: true
     username: dev
     password: dev
   extraRedirectUris:
-    - "http://127.0.0.1:4444/*"
+    - "*"
   extraWebOrigins:
-    - "http://127.0.0.1:4444"
+    - "*"

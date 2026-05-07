@@ -1,5 +1,5 @@
 import { SessionMode, SessionType } from "api-server-api";
-import { ArrowLeft, Plus, RefreshCw, TerminalSquare, Trash2 } from "lucide-react";
+import { ArrowLeft, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useStore } from "../../../store.js";
@@ -10,11 +10,9 @@ import { useAcpSessions } from "../api/queries.js";
 export function SessionsSidebar({
   onResumeSession,
   onNewSession,
-  onNewTerminalSession,
 }: {
   onResumeSession: (sid: string, mode?: string) => void;
   onNewSession: () => void;
-  onNewTerminalSession: () => void;
 }) {
   const selectedInstance = useStore((s) => s.selectedInstance);
   const sessionId = useStore((s) => s.sessionId);
@@ -101,21 +99,12 @@ export function SessionsSidebar({
       </div>
       <InstanceApprovalsTray instanceId={selectedInstance} />
       <div className="px-3 py-3 border-t border-border-light shrink-0">
-        <div className="flex gap-1">
-          <button
-            className="flex-1 h-9 rounded-md border border-border-light text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center justify-center gap-1.5 transition-colors"
-            onClick={onNewSession}
-          >
-            <Plus size={13} /> New Session
-          </button>
-          <button
-            className="h-9 w-9 rounded-md border border-border-light flex items-center justify-center text-text-muted hover:text-accent hover:border-accent transition-colors"
-            onClick={onNewTerminalSession}
-            title="New Terminal Session"
-          >
-            <TerminalSquare size={14} />
-          </button>
-        </div>
+        <button
+          className="w-full h-9 rounded-md border border-border-light text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center justify-center gap-1.5 transition-colors"
+          onClick={onNewSession}
+        >
+          <Plus size={13} /> New Session
+        </button>
       </div>
     </>
   );

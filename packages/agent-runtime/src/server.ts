@@ -125,9 +125,11 @@ server.on("upgrade", (req, socket, head) => {
   if (pathname === "/api/acp") {
     acpWss.handleUpgrade(req, socket, head, (ws) => acpWss.emit("connection", ws, req));
   } else if (pathname === "/api/terminal") {
-    const sessionId = new URL(req.url!, `http://${req.headers.host}`).searchParams.get("sessionId") ?? "default";
+    const params = new URL(req.url!, `http://${req.headers.host}`).searchParams;
+    const sessionId = params.get("sessionId") ?? "default";
+    const reset = params.get("reset") === "1";
     termWss.handleUpgrade(req, socket, head, (ws) => {
-      ptyManager.attach(sessionId, ws);
+      ptyManager.attach(sessionId, ws, { reset });
     });
   } else {
     socket.destroy();

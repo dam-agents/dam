@@ -30,6 +30,7 @@ export function createTerminalRelay(
   ) {
     const reqUrl = new URL(req.url!, `http://${req.headers.host}`);
     const sessionId = reqUrl.searchParams.get("sessionId") ?? "default";
+    const reset = reqUrl.searchParams.get("reset") === "1";
 
     wss.handleUpgrade(req, socket, head, (client) => {
       client.on("error", () => {
@@ -44,7 +45,7 @@ export function createTerminalRelay(
 
       repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "true").catch(() => {});
 
-      const upstreamUrl = `ws://${podBaseUrl(instanceId, namespace)}/api/terminal?sessionId=${encodeURIComponent(sessionId)}`;
+      const upstreamUrl = `ws://${podBaseUrl(instanceId, namespace)}/api/terminal?sessionId=${encodeURIComponent(sessionId)}${reset ? "&reset=1" : ""}`;
 
       repo.ensureReady(instanceId)
         .then(() => new Promise<WebSocket>((resolve, reject) => {

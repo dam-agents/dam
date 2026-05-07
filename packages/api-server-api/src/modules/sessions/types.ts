@@ -28,6 +28,7 @@ export interface SessionView {
 export interface SessionsService {
   list(instanceId: string, includeChannel?: boolean): Promise<SessionView[]>;
   create(sessionId: string, instanceId: string, type?: SessionType, scheduleId?: string, mode?: SessionMode): Promise<void>;
+  setMode(sessionId: string, instanceId: string, mode: SessionMode): Promise<void>;
   delete(sessionId: string, instanceId: string): Promise<void>;
   listByScheduleId(scheduleId: string): Promise<SessionView[]>;
   findByScheduleId(scheduleId: string): Promise<SessionView | null>;

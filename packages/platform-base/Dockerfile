@@ -38,6 +38,8 @@ RUN npm install --omit=dev
 COPY --from=builder /app/packages/agent-runtime/dist/ dist/
 
 COPY packages/platform-base/skills/ /app/working-dir/.agents/skills/
+COPY packages/platform-base/claude-session.sh /usr/local/bin/claude-session
+RUN chmod +x /usr/local/bin/claude-session
 RUN mkdir -p /app/working-dir/.claude /app/working-dir/.pi/agent \
     && ln -s ../.agents/skills /app/working-dir/.claude/skills \
     && ln -s ../../.agents/skills /app/working-dir/.pi/agent/skills \
