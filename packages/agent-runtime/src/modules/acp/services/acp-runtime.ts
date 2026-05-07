@@ -405,6 +405,19 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }
   }
 
+  /** Iterate every channel currently engaged with `sessionId` and open.
+   *  Used for direct fan-out (agent-initiated requests, synthetic
+   *  notifications) where the cursor model doesn't apply — those go
+   *  through `appendAndFanOut` instead. */
+  function forEachEngagedChannel(
+    sessionId: string,
+    fn: (channel: ClientChannel) => void,
+  ): void {
+    for (const [channel, sessions] of engagedSessions) {
+      if (sessions.has(sessionId) && channel.isOpen()) fn(channel);
+    }
+  }
+
   /**
    * Synthesize a `platform/permission_resolved` notification and fan it
    * out to channels engaged with the session. Lets other tabs (or the
@@ -433,9 +446,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       method: "platform/permission_resolved",
       params: { sessionId, requestId, toolCallId },
     });
-    for (const [channel, sessions] of engagedSessions) {
-      if (sessions.has(sessionId) && channel.isOpen()) channel.send(out);
-    }
+    forEachEngagedChannel(sessionId, (channel) => channel.send(out));
   }
 
   function sendToChannel(c: ClientChannel, line: string): void {
@@ -709,9 +720,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         // permission dialog. Fresh engagers still pick up currently-pending
         // requests via engage()'s replay from pendingFromAgent.
         const out = rewriteAuthError(line);
-        for (const [channel, sessions] of engagedSessions) {
-          if (sessions.has(sessionId) && channel.isOpen()) channel.send(out);
-        }
+        forEachEngagedChannel(sessionId, (channel) => channel.send(out));
         updateOrphanTimerForSession(sessionId);
       } else {
         broadcastToAll(line);

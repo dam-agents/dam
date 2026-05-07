@@ -76,6 +76,20 @@ function connectUpstream(url: string): Promise<WebSocket> {
   });
 }
 
+/**
+ * Catch-handler factory for `patchAnnotation` calls. Annotation failures
+ * are non-fatal — the annotation is a UI-presence hint, not auth state —
+ * but they signal real problems (RBAC drift, K8s API hiccup, network
+ * partition) that operators need to see. Previously these were swallowed
+ * with `.catch(() => {})`.
+ */
+function warnOnPatchFailure(label: string): (err: unknown) => void {
+  return (err) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[acp-relay] ${label} failed: ${msg}`);
+  };
+}
+
 /** Resolves an instance to its `(ownerSub, agentId)`. Injected by the
  *  composition root so the relay doesn't reach into the agents module's
  *  infrastructure for this lookup. */
@@ -147,7 +161,8 @@ export function createAcpRelay(
         approvals.resolveAcpNativeFromInSession(rowId).catch(() => {});
       }
 
-      repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "true").catch(() => {});
+      repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "true")
+        .catch(warnOnPatchFailure(`patch ${ACTIVE_SESSION_KEY}=true`));
 
       const pending: { data: Buffer | ArrayBuffer | Buffer[]; isBinary: boolean }[] = [];
       client.on("message", (data, isBinary) => {
@@ -166,7 +181,8 @@ export function createAcpRelay(
       let clientClosedDuringDial = false;
 
       client.on("close", () => {
-        repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "").catch(() => {});
+        repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "")
+          .catch(warnOnPatchFailure(`clear ${ACTIVE_SESSION_KEY}`));
         if (upstream === null) {
           clientClosedDuringDial = true;
           return;
@@ -222,7 +238,8 @@ export function createAcpRelay(
             return;
           }
 
-          repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "true").catch(() => {});
+          repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "true")
+        .catch(warnOnPatchFailure(`patch ${ACTIVE_SESSION_KEY}=true`));
 
           for (const msg of pending) {
             u.send(msg.data, { binary: msg.isBinary });
@@ -243,7 +260,7 @@ export function createAcpRelay(
                 repo.patchAnnotation(
                   instanceId,
                   LAST_ACTIVITY_KEY, new Date().toISOString(),
-                ).catch(() => {});
+                ).catch(warnOnPatchFailure(`patch ${LAST_ACTIVITY_KEY}`));
               }
             }
           });
