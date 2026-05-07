@@ -11,7 +11,7 @@ export function SessionsSidebar({
   onResumeSession,
   onNewSession,
 }: {
-  onResumeSession: (sid: string, mode?: string) => void;
+  onResumeSession: (sid: string, mode?: SessionMode) => void;
   onNewSession: () => void;
 }) {
   const selectedInstance = useStore((s) => s.selectedInstance);
@@ -123,7 +123,7 @@ function SessionRow({
     sessionId: string;
     title?: string | null;
     type: string;
-    mode?: string;
+    mode?: SessionMode;
     createdAt: string;
     updatedAt?: string | null;
   };
@@ -247,4 +247,3 @@ function SessionRow({
     </div>
   );
 }
-

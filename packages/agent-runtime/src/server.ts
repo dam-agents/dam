@@ -27,9 +27,6 @@ import { startPodFilesSync } from "./modules/pod-files/index.js";
 let triggerWatcher: TriggerWatcher | undefined;
 
 const __dir = dirname(fileURLToPath(import.meta.url));
-const agentCommand = config.PLATFORM_DEV
-  ? ["npx", "tsx", join(__dir, "agent.ts")]
-  : ["/usr/local/bin/harness-chat"];
 const homeDir = config.PLATFORM_DEV
   ? join(__dir, "../working-dir")
   : config.HOME_DIR;
@@ -68,7 +65,9 @@ const trpcHandler = createHTTPHandler({
 });
 
 const { runtime: acpRuntime } = composeAcp({
-  command: agentCommand,
+  command: config.PLATFORM_DEV
+    ? ["npx", "tsx", join(__dir, "agent.ts")]
+    : ["/usr/local/bin/harness-chat"],
   workingDir: workDir,
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
 });

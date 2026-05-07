@@ -1,7 +1,5 @@
-/**
- * Terminal WebSocket relay — opaque binary tunnel between client and the
- * agent-runtime's PTY endpoint. No JSON-RPC, no permission mirroring.
- */
+// Opaque binary WS tunnel between client and the agent-runtime's PTY endpoint.
+// No JSON-RPC, no permission mirroring.
 
 import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
@@ -11,15 +9,6 @@ import type { InstancesRepository } from "../../modules/agents/infrastructure/in
 import { LAST_ACTIVITY_KEY, ACTIVE_SESSION_KEY } from "../../modules/agents/infrastructure/labels.js";
 
 const ACTIVITY_DEBOUNCE_MS = 30_000;
-
-// Valid WebSocket close codes per RFC 6455 + 3000-4999 user range. Anything
-// else gets coerced to 1011 (server error) — `ws` throws on out-of-range codes.
-function safeCloseCode(code: number): number {
-  if (code === 1000) return code;
-  if (code >= 1001 && code <= 1014 && code !== 1004 && code !== 1005 && code !== 1006) return code;
-  if (code >= 3000 && code <= 4999) return code;
-  return 1011;
-}
 
 export function createTerminalRelay(namespace: string, repo: InstancesRepository) {
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
@@ -67,7 +56,7 @@ export function createTerminalRelay(namespace: string, repo: InstancesRepository
 
           upstream.on("close", (code, reason) => {
             if (client.readyState !== WebSocket.OPEN) return;
-            try { client.close(safeCloseCode(code), reason.toString() || "upstream closed"); }
+            try { client.close(code, reason.toString() || "upstream closed"); }
             catch { client.terminate(); }
           });
 

@@ -1,13 +1,10 @@
-/**
- * Binary WebSocket protocol for terminal relay. Each frame is `<opcode byte><payload>`.
- * INPUT/OUTPUT carry raw terminal bytes; RESIZE carries `cols u16BE, rows u16BE`;
- * EXIT carries `code u8`.
- */
+// Terminal-relay wire format. Each frame is `<opcode byte><payload>`:
+// INPUT/OUTPUT = raw bytes; RESIZE = cols u16BE, rows u16BE; EXIT = code u8.
 
-export const OP_INPUT = 0x00;   // client → server: keyboard / paste
-export const OP_OUTPUT = 0x01;  // server → client: PTY stdout
-export const OP_RESIZE = 0x02;  // client → server: resize
-export const OP_EXIT = 0x03;    // server → client: process exited
+export const OP_INPUT = 0x00;
+export const OP_OUTPUT = 0x01;
+export const OP_RESIZE = 0x02;
+export const OP_EXIT = 0x03;
 
 export type TerminalFrame =
   | { op: typeof OP_INPUT | typeof OP_OUTPUT; data: Uint8Array }

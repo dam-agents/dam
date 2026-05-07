@@ -316,10 +316,8 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
 
   server.on("upgrade", async (req, socket, head) => {
     const url = new URL(req.url!, `http://${req.headers.host}`);
-    const acpMatch = url.pathname.match(/^\/api\/instances\/([^/]+)\/acp$/);
-    const termMatch = url.pathname.match(/^\/api\/instances\/([^/]+)\/terminal$/);
-
-    if (!acpMatch && !termMatch) {
+    const match = url.pathname.match(/^\/api\/instances\/([^/]+)\/(acp|terminal)$/);
+    if (!match) {
       socket.destroy();
       return;
     }
@@ -341,18 +339,15 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       return;
     }
 
-    const instanceId = decodeURIComponent((acpMatch ?? termMatch)![1]);
+    const instanceId = decodeURIComponent(match[1]);
     if (!await verifyOwner(instanceId, user.sub)) {
       socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
       socket.destroy();
       return;
     }
 
-    if (acpMatch) {
-      acpRelay.handleUpgrade(req, socket, head, instanceId);
-    } else {
-      terminalRelay.handleUpgrade(req, socket, head, instanceId);
-    }
+    const relay = match[2] === "acp" ? acpRelay : terminalRelay;
+    relay.handleUpgrade(req, socket, head, instanceId);
   });
 
   return { server };

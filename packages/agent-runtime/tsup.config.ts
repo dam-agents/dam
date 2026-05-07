@@ -6,7 +6,7 @@ export default defineConfig({
   target: "node22",
   platform: "node",
   noExternal: ["agent-runtime-api", "api-server-api"],
-  external: ["node-pty", "@xterm/headless", "@xterm/addon-serialize"],
+  external: ["@lydell/node-pty", "@xterm/headless", "@xterm/addon-serialize"],
   splitting: false,
   clean: true,
 });

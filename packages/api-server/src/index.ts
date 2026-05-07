@@ -355,12 +355,8 @@ async function shutdown() {
 process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);
 
-// Prevent uncaught WebSocket protocol errors (e.g. RSV1 from compressed
-// frames) from crashing the process. These originate in the ws library's
-// Receiver and surface as uncaught exceptions because the throw happens
-// inside a synchronous socket.on("data") handler before the WebSocket
-// "error" event fires. Logging and moving on is safe — the individual
-// WebSocket connection is already dead at this point.
+// ws's Receiver throws synchronously on bad frames (e.g. RSV1 from
+// permessage-deflate), before the WebSocket "error" event fires — so it lands here.
 process.on("uncaughtException", (err) => {
   if (err instanceof RangeError && "code" in err && typeof err.code === "string" && err.code.startsWith("WS_ERR_")) {
     process.stderr.write(`[ws] suppressed WebSocket protocol error: ${err.code}\n`);

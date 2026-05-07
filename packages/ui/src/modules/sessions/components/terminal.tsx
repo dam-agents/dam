@@ -2,7 +2,7 @@ import "@xterm/xterm/css/xterm.css";
 
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as XTerm } from "@xterm/xterm";
-import { encodeDataFrame, encodeResize, OP_EXIT, OP_INPUT, OP_OUTPUT } from "api-server-api";
+import { decodeFrame, encodeDataFrame, encodeResize, OP_EXIT, OP_INPUT, OP_OUTPUT } from "api-server-api";
 import { Loader2, TerminalIcon, XCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -65,13 +65,11 @@ export function Terminal({ instanceId, sessionId, fresh, onConnected }: { instan
       };
 
       ws.onmessage = (e: MessageEvent<ArrayBuffer>) => {
-        const buf = new Uint8Array(e.data);
-        if (buf.byteLength === 0) return;
-        const op = buf[0];
-        const payload = buf.subarray(1);
-        if (op === OP_OUTPUT) term?.write(new TextDecoder().decode(payload));
-        else if (op === OP_EXIT) {
-          setExitCode(payload.byteLength > 0 ? payload[0]! : 0);
+        let frame;
+        try { frame = decodeFrame(new Uint8Array(e.data)); } catch { return; }
+        if (frame.op === OP_OUTPUT) term?.write(new TextDecoder().decode(frame.data));
+        else if (frame.op === OP_EXIT) {
+          setExitCode(frame.code);
           setState("exited");
         }
       };

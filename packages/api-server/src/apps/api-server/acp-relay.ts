@@ -98,10 +98,7 @@ export function createAcpRelay(
     instanceId: string,
   ) {
     wss.handleUpgrade(req, socket, head, (client) => {
-      // Catch protocol-level errors (e.g. invalid frames from misbehaving
-      // clients) so they don't become uncaught exceptions that crash the
-      // process. The ws library's Receiver throws synchronously on bad
-      // frames; this handler catches the resulting error event.
+      // Receiver throws on malformed frames; handle so it doesn't surface as uncaught.
       client.on("error", () => {
         try { client.terminate(); } catch {}
       });
