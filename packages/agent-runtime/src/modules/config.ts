@@ -19,6 +19,9 @@ const schema = z.object({
   /** Override the agent spawn command (e.g. "pi-acp"). When unset, spawns the
    *  default node-based ACP agent (dist/agent.js or src/agent.ts in dev). */
   AGENT_COMMAND: z.string().optional(),
+  /** Override the terminal-mode command (e.g. "claude"). When unset, falls back
+   *  to $SHELL or /bin/bash. */
+  TERMINAL_COMMAND: z.string().optional(),
 });
 
 export const config = schema.parse(process.env);

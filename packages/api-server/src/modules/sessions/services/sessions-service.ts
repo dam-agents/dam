@@ -1,11 +1,11 @@
-import { SessionType, type SessionsApiService, type SessionView } from "api-server-api";
+import { SessionMode, SessionType, type SessionsApiService, type SessionView } from "api-server-api";
 import { createAcpClient, type AcpSessionInfo } from "../../../core/acp-client.js";
 
 export function createSessionsService(deps: {
-  listByInstance: (instanceId: string) => Promise<{ sessionId: string; instanceId: string; type: string; scheduleId: string | null; scheduleActive: boolean; createdAt: Date }[]>;
-  listByScheduleId: (scheduleId: string) => Promise<{ sessionId: string; instanceId: string; type: string; scheduleId: string | null; scheduleActive: boolean; createdAt: Date }[]>;
-  findActiveByScheduleId: (scheduleId: string) => Promise<{ sessionId: string; instanceId: string; type: string; scheduleId: string | null; createdAt: Date } | null>;
-  upsert: (sessionId: string, instanceId: string, type?: SessionType, scheduleId?: string) => Promise<void>;
+  listByInstance: (instanceId: string) => Promise<{ sessionId: string; instanceId: string; type: string; mode: string; scheduleId: string | null; scheduleActive: boolean; createdAt: Date }[]>;
+  listByScheduleId: (scheduleId: string) => Promise<{ sessionId: string; instanceId: string; type: string; mode: string; scheduleId: string | null; scheduleActive: boolean; createdAt: Date }[]>;
+  findActiveByScheduleId: (scheduleId: string) => Promise<{ sessionId: string; instanceId: string; type: string; mode: string; scheduleId: string | null; createdAt: Date } | null>;
+  upsert: (sessionId: string, instanceId: string, type?: SessionType, scheduleId?: string, mode?: SessionMode) => Promise<void>;
   delete: (sessionId: string, instanceId: string) => Promise<void>;
   isOwnedInstance: (instanceId: string) => Promise<boolean>;
   isOwnedSchedule: (scheduleId: string) => Promise<boolean>;
@@ -23,7 +23,7 @@ export function createSessionsService(deps: {
 
       const [dbRows, acpSessions] = await Promise.all([
         deps.listByInstance(instanceId),
-        acp.listSessions(),
+        acp.listSessions().catch(() => [] as AcpSessionInfo[]),
       ]);
 
       const acpMap = new Map<string, AcpSessionInfo>(
@@ -41,6 +41,7 @@ export function createSessionsService(deps: {
           sessionId: row.sessionId,
           instanceId: row.instanceId,
           type: row.type as SessionType,
+          mode: row.mode as SessionMode,
           createdAt: row.createdAt.toISOString(),
           scheduleId: row.scheduleId,
           title: acp?.title ?? null,
@@ -49,9 +50,9 @@ export function createSessionsService(deps: {
       });
     },
 
-    async create(sessionId: string, instanceId: string, type?: SessionType, scheduleId?: string) {
+    async create(sessionId: string, instanceId: string, type?: SessionType, scheduleId?: string, mode?: SessionMode) {
       if (!await deps.isOwnedInstance(instanceId)) return;
-      await deps.upsert(sessionId, instanceId, type, scheduleId);
+      await deps.upsert(sessionId, instanceId, type, scheduleId, undefined, mode);
     },
 
     async delete(sessionId: string, instanceId: string) {
@@ -66,6 +67,7 @@ export function createSessionsService(deps: {
         sessionId: row.sessionId,
         instanceId: row.instanceId,
         type: row.type as SessionType,
+        mode: row.mode as SessionMode,
         createdAt: row.createdAt.toISOString(),
         scheduleId: row.scheduleId,
       }));
@@ -78,6 +80,7 @@ export function createSessionsService(deps: {
             sessionId: row.sessionId,
             instanceId: row.instanceId,
             type: row.type as SessionType,
+            mode: row.mode as SessionMode,
             createdAt: row.createdAt.toISOString(),
             scheduleId: row.scheduleId,
           }

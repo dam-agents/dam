@@ -1,3 +1,4 @@
+import type { SessionMode } from "api-server-api";
 import type { StateCreator } from "zustand";
 
 import { api } from "../../../api.js";
@@ -17,6 +18,7 @@ export interface SessionError {
 
 export interface SessionsSlice {
   sessionId: string | null;
+  sessionMode: SessionMode | null;
   messages: Message[];
   log: LogEntry[];
   sessionError: SessionError | null;
@@ -25,6 +27,7 @@ export interface SessionsSlice {
   busy: boolean;
 
   setSessionId: (id: string | null) => void;
+  setSessionMode: (mode: SessionMode | null) => void;
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
   setSessionError: (e: SessionError | null) => void;
   setIncludeChannelSessions: (v: boolean) => void;
@@ -52,6 +55,7 @@ export const createSessionsSlice: StateCreator<
   SessionsSlice
 > = (set, get) => ({
   sessionId: null,
+  sessionMode: null,
   messages: [],
   log: [],
   sessionError: null,
@@ -60,6 +64,7 @@ export const createSessionsSlice: StateCreator<
   busy: false,
 
   setSessionId: (id) => set({ sessionId: id }),
+  setSessionMode: (mode) => set({ sessionMode: mode }),
   setMessages: (updater) =>
     set((s) => ({
       messages: typeof updater === "function" ? updater(s.messages) : updater,
@@ -72,6 +77,7 @@ export const createSessionsSlice: StateCreator<
   resetChatContext: () =>
     set({
       sessionId: null,
+      sessionMode: null,
       messages: [],
       sessionError: null,
       openFilePath: null,

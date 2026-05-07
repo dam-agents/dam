@@ -1,3 +1,4 @@
+import { SessionMode } from "api-server-api";
 import { AlertCircle, ArrowDown, ArrowLeft, FileText as FileIcon, RefreshCw,Settings2, Trash2 } from "lucide-react";
 import { useCallback,useEffect, useRef, useState } from "react";
 
@@ -5,6 +6,8 @@ import { Markdown } from "../../../components/markdown.js";
 import { ResizeHandle } from "../../../components/resize-handle.js";
 import { StatusBadge } from "../../../components/status-indicator.js";
 import { isMobile } from "../../../lib/breakpoints.js";
+import { platform } from "../../../platform.js";
+import { queryClient } from "../../../query-client.js";
 import type { SessionError } from "../../../store.js";
 import { useStore } from "../../../store.js";
 import type { InstanceView } from "../../../types.js";
@@ -12,12 +15,14 @@ import { FilesPanel } from "../../files/components/files-panel.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
 import { useInstances } from "../../instances/api/queries.js";
 import { prefetchSchedules } from "../../schedules/api/queries.js";
+import { acpSessionsKeys } from "../api/queries.js";
 import { ChatInput } from "../components/chat-input.js";
 import { ConfigurationPanel } from "../components/configuration-panel.js";
 import { LogPanel } from "../components/log-panel.js";
 import { PermissionPrompt } from "../components/permission-prompt.js";
 import { SessionConfigBar } from "../components/session-config-popover.js";
 import { SessionsSidebar } from "../components/sessions-sidebar.js";
+import { Terminal } from "../components/terminal.js";
 import { ThoughtBlock } from "../components/thought-block.js";
 import { ToolChip } from "../components/tool-chip.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
@@ -28,6 +33,9 @@ export function ChatView() {
   const { data: instancesData } = useInstances();
   const instances = instancesData?.list ?? [];
   const sessionId = useStore((s) => s.sessionId);
+  const sessionMode = useStore((s) => s.sessionMode);
+  const setSessionMode = useStore((s) => s.setSessionMode);
+  const setSessionId = useStore((s) => s.setSessionId);
   const messages = useStore((s) => s.messages);
   const sessionError = useStore((s) => s.sessionError);
   const setSessionError = useStore((s) => s.setSessionError);
@@ -102,16 +110,38 @@ export function ChatView() {
     };
   }, []);
 
-  const mobileResumeSession = useCallback((sid: string) => {
+  const mobileResumeSession = useCallback((sid: string, mode?: string) => {
     setMobileScreen("chat");
-    resumeSession(sid);
-  }, [setMobileScreen, resumeSession]);
+    setSessionMode((mode as SessionMode) ?? SessionMode.Chat);
+    if (mode === SessionMode.Terminal) {
+      // Terminal sessions don't use ACP — just set the session ID
+      setSessionId(sid);
+    } else {
+      resumeSession(sid);
+    }
+  }, [setMobileScreen, setSessionMode, setSessionId, resumeSession]);
 
   const handleNewSession = useCallback(() => {
     if (!sessionId && messages.length === 0) { setMobileScreen("chat"); return; }
+    setSessionMode(SessionMode.Chat);
     resetSession();
     setMobileScreen("chat");
-  }, [sessionId, messages.length, resetSession, setMobileScreen]);
+  }, [sessionId, messages.length, resetSession, setMobileScreen, setSessionMode]);
+
+  const handleNewTerminalSession = useCallback(async () => {
+    if (!selectedInstance) return;
+    const newSessionId = crypto.randomUUID();
+    await platform.sessions.create.mutate({
+      sessionId: newSessionId,
+      instanceId: selectedInstance,
+      mode: SessionMode.Terminal,
+    });
+    queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
+    resetSession();
+    setSessionId(newSessionId);
+    setSessionMode(SessionMode.Terminal);
+    setMobileScreen("chat");
+  }, [selectedInstance, resetSession, setSessionId, setSessionMode, setMobileScreen]);
 
   const handleBack = useCallback(() => {
     if (isMobile() && mobileScreen === "chat") {
@@ -175,6 +205,7 @@ export function ChatView() {
         <SessionsSidebar
           onResumeSession={mobileResumeSession}
           onNewSession={handleNewSession}
+          onNewTerminalSession={handleNewTerminalSession}
         />
       </div>
       <ResizeHandle side="left" onResize={d => setLeftW(w => { const v = Math.max(140, Math.min(400, w + d)); localStorage.setItem("platform-left-w", String(v)); return v; })} />
@@ -200,7 +231,10 @@ export function ChatView() {
           </div>
         </header>
 
-        {/* Messages */}
+        {/* Content: Terminal or Chat */}
+        {sessionMode === SessionMode.Terminal && selectedInstance && sessionId ? (
+          <Terminal key={sessionId} instanceId={selectedInstance} sessionId={sessionId} />
+        ) : (<>
         <div className="relative flex flex-1 flex-col min-h-0">
         <div ref={messagesRef} className="flex-1 overflow-y-auto">
           <div className="mx-auto max-w-[760px] px-4 md:px-8 py-8 flex flex-col gap-6">
@@ -315,6 +349,7 @@ export function ChatView() {
             )}
           />
         )}
+        </>)}
       </div>
 
       {/* Right panel: desktop */}

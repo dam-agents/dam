@@ -1,5 +1,5 @@
-import { SessionType } from "api-server-api";
-import { ArrowLeft, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { SessionMode, SessionType } from "api-server-api";
+import { ArrowLeft, Plus, RefreshCw, TerminalSquare, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useStore } from "../../../store.js";
@@ -10,9 +10,11 @@ import { useAcpSessions } from "../api/queries.js";
 export function SessionsSidebar({
   onResumeSession,
   onNewSession,
+  onNewTerminalSession,
 }: {
-  onResumeSession: (sid: string) => void;
+  onResumeSession: (sid: string, mode?: string) => void;
   onNewSession: () => void;
+  onNewTerminalSession: () => void;
 }) {
   const selectedInstance = useStore((s) => s.selectedInstance);
   const sessionId = useStore((s) => s.sessionId);
@@ -92,20 +94,16 @@ export function SessionsSidebar({
             session={s}
             active={s.sessionId === sessionId}
             hasPending={pendingPermissions.some((p) => p.sessionId === s.sessionId)}
-            onResume={() => onResumeSession(s.sessionId)}
+            onResume={() => onResumeSession(s.sessionId, s.mode)}
             onDelete={() => confirmDelete(s.sessionId, s.title)}
           />
         ))}
       </div>
       <InstanceApprovalsTray instanceId={selectedInstance} />
-      <div className="px-3 py-3 border-t border-border-light shrink-0">
-        <button
-          className="w-full h-9 rounded-md border border-border-light text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center justify-center gap-1.5 transition-colors"
-          onClick={onNewSession}
-        >
-          <Plus size={13} /> New Session
-        </button>
-      </div>
+      <NewSessionButtons
+        onNewChat={onNewSession}
+        onNewTerminal={onNewTerminalSession}
+      />
     </>
   );
 }
@@ -123,6 +121,7 @@ function SessionRow({
     sessionId: string;
     title?: string | null;
     type: string;
+    mode?: string;
     createdAt: string;
     updatedAt?: string | null;
   };
@@ -199,6 +198,11 @@ function SessionRow({
           >
             {s.title || s.sessionId.slice(0, 12)}
           </span>
+          {s.mode === SessionMode.Terminal && (
+            <span className="text-[9px] font-bold uppercase tracking-wider text-accent bg-accent-light rounded px-1 py-0.5 shrink-0">
+              terminal
+            </span>
+          )}
           {(s.type === SessionType.ChannelSlack || s.type === SessionType.ChannelTelegram) && (
             <span className="text-[9px] font-bold uppercase tracking-wider text-text-muted bg-border-light rounded px-1 py-0.5 shrink-0">
               {s.type === SessionType.ChannelSlack ? "slack" : "telegram"}
@@ -238,6 +242,34 @@ function SessionRow({
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+function NewSessionButtons({
+  onNewChat,
+  onNewTerminal,
+}: {
+  onNewChat: () => void;
+  onNewTerminal: () => void;
+}) {
+  return (
+    <div className="px-3 py-3 border-t border-border-light shrink-0">
+      <div className="flex gap-1">
+        <button
+          className="flex-1 h-9 rounded-md border border-border-light text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center justify-center gap-1.5 transition-colors"
+          onClick={onNewChat}
+        >
+          <Plus size={13} /> New Session
+        </button>
+        <button
+          className="h-9 w-9 rounded-md border border-border-light flex items-center justify-center text-text-muted hover:text-accent hover:border-accent transition-colors"
+          onClick={onNewTerminal}
+          title="New Terminal Session"
+        >
+          <TerminalSquare size={14} />
+        </button>
+      </div>
     </div>
   );
 }

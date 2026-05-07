@@ -144,8 +144,12 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 			if storageSize == "" {
 				storageSize = "10Gi"
 			}
+			accessMode := corev1.ReadWriteMany
+			if cfg.AgentAccessMode == "ReadWriteOnce" {
+				accessMode = corev1.ReadWriteOnce
+			}
 			pvcSpec := corev1.PersistentVolumeClaimSpec{
-				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
+				AccessModes: []corev1.PersistentVolumeAccessMode{accessMode},
 				Resources: corev1.VolumeResourceRequirements{
 					Requests: corev1.ResourceList{
 						corev1.ResourceStorage: resource.MustParse(storageSize),

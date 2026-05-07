@@ -1,6 +1,6 @@
 import type { Db } from "db";
 import { sessions, eq, and, desc, sql } from "db";
-import { SessionType } from "api-server-api";
+import { SessionMode, SessionType } from "api-server-api";
 
 export function listSessionsByInstance(db: Db) {
   return async (instanceId: string) => {
@@ -61,10 +61,11 @@ export function upsertSession(db: Db) {
     type: SessionType = SessionType.Regular,
     scheduleId?: string,
     threadTs?: string,
+    mode: SessionMode = SessionMode.Chat,
   ) => {
     await db
       .insert(sessions)
-      .values({ sessionId, instanceId, type, scheduleId, threadTs })
+      .values({ sessionId, instanceId, type, scheduleId, threadTs, mode })
       .onConflictDoNothing();
   };
 }

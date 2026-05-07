@@ -24,6 +24,7 @@ import {
   isThreadAuthorized, authorizeThread, revokeThread, listAuthorizedThreads,
 } from "../../modules/channels/infrastructure/telegram-threads-repository.js";
 import { createAcpRelay } from "./acp-relay.js";
+import { createTerminalRelay } from "./terminal-relay.js";
 import { createOAuthRoutes } from "./oauth.js";
 import { mountBrandIconRoutes } from "./brand-icon.js";
 import { createOAuthAppRegistry } from "../../modules/connections/infrastructure/oauth-apps.js";
@@ -307,14 +308,18 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     { resolve: (id) => instancesRepo.resolveIdentity(id).then((r) => r ? { ownerSub: r.owner, agentId: r.agentId } : null) },
   );
 
+  const terminalRelay = createTerminalRelay(config.namespace, instancesRepo);
+
   const server = serve({ fetch: app.fetch, port: config.port }, () => {
     process.stderr.write(`api-server listening on http://localhost:${config.port}\n`);
   });
 
   server.on("upgrade", async (req, socket, head) => {
     const url = new URL(req.url!, `http://${req.headers.host}`);
-    const match = url.pathname.match(/^\/api\/instances\/([^/]+)\/acp$/);
-    if (!match) {
+    const acpMatch = url.pathname.match(/^\/api\/instances\/([^/]+)\/acp$/);
+    const termMatch = url.pathname.match(/^\/api\/instances\/([^/]+)\/terminal$/);
+
+    if (!acpMatch && !termMatch) {
       socket.destroy();
       return;
     }
@@ -336,14 +341,18 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       return;
     }
 
-    const instanceId = decodeURIComponent(match[1]);
+    const instanceId = decodeURIComponent((acpMatch ?? termMatch)![1]);
     if (!await verifyOwner(instanceId, user.sub)) {
       socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
       socket.destroy();
       return;
     }
 
-    acpRelay.handleUpgrade(req, socket, head, instanceId);
+    if (acpMatch) {
+      acpRelay.handleUpgrade(req, socket, head, instanceId);
+    } else {
+      terminalRelay.handleUpgrade(req, socket, head, instanceId);
+    }
   });
 
   return { server };

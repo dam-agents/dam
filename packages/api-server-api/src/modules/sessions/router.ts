@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { t } from "../../trpc.js";
-import { SessionType } from "./types.js";
+import { SessionMode, SessionType } from "./types.js";
 
 const sessionType = z.enum([
   SessionType.Regular,
@@ -8,6 +8,8 @@ const sessionType = z.enum([
   SessionType.ChannelTelegram,
   SessionType.ScheduleCron,
 ]);
+
+const sessionMode = z.enum([SessionMode.Chat, SessionMode.Terminal]);
 
 export const sessionsRouter = t.router({
   list: t.procedure
@@ -23,8 +25,9 @@ export const sessionsRouter = t.router({
       instanceId: z.string().min(1),
       type: sessionType.optional(),
       scheduleId: z.string().optional(),
+      mode: sessionMode.optional(),
     }))
-    .mutation(({ ctx, input }) => ctx.sessions.create(input.sessionId, input.instanceId, input.type, input.scheduleId)),
+    .mutation(({ ctx, input }) => ctx.sessions.create(input.sessionId, input.instanceId, input.type, input.scheduleId, input.mode)),
 
   delete: t.procedure
     .input(z.object({ sessionId: z.string().min(1), instanceId: z.string().min(1) }))

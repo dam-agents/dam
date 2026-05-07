@@ -105,6 +105,7 @@ export const sessions = pgTable("sessions", {
   sessionId: text("session_id").primaryKey(),
   instanceId: text("instance_id").notNull(),
   type: text("type").notNull().default("regular"),
+  mode: text("mode").notNull().default("chat"),
   scheduleId: text("schedule_id"),
   scheduleActive: boolean("schedule_active").default(true).notNull(),
   threadTs: text("thread_ts"),

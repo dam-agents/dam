@@ -12,6 +12,7 @@ import { composeSkills } from "./modules/skills/index.js";
 import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
 import { createWebSocketChannel } from "./modules/acp/infrastructure/create-websocket-channel.js";
+import { createPtyManager } from "./modules/pty/pty-session.js";
 import { startTriggerWatcher, type TriggerWatcher } from "./trigger-watcher.js";
 import { startPodFilesSync } from "./modules/pod-files/index.js";
 
@@ -66,6 +67,18 @@ const { runtime: acpRuntime } = composeAcp({
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
 });
 
+const terminalCommand = config.TERMINAL_COMMAND
+  ? config.TERMINAL_COMMAND.split(" ")
+  : process.env.SHELL
+    ? [process.env.SHELL]
+    : ["/bin/bash"];
+
+const ptyManager = createPtyManager({
+  command: terminalCommand,
+  workingDir: workDir,
+  log: (msg) => process.stderr.write(`[pty] ${msg}\n`),
+});
+
 const server = http.createServer((req, res) => {
   if (req.method === "OPTIONS") {
     res.writeHead(204, CORS).end();
@@ -85,6 +98,7 @@ const server = http.createServer((req, res) => {
       queuedPrompts: s.queuedPromptCount,
       agentAlive: s.agentAlive,
       activeTriggers: triggerWatcher?.activeCount() ?? 0,
+      terminalActive: ptyManager.activeCount() > 0,
     };
     res.writeHead(200, { "Content-Type": "application/json", ...CORS }).end(JSON.stringify(status));
     return;
@@ -100,10 +114,28 @@ const server = http.createServer((req, res) => {
   res.writeHead(404).end();
 });
 
-const wss = new WebSocketServer({ server, path: "/api/acp" });
+const acpWss = new WebSocketServer({ noServer: true });
+const termWss = new WebSocketServer({ noServer: true });
 
-wss.on("connection", (ws) => {
+acpWss.on("connection", (ws) => {
   acpRuntime.attach(createWebSocketChannel(ws));
+});
+
+// Terminal connections are handled in the upgrade handler below
+// where we extract the sessionId from the query string.
+
+server.on("upgrade", (req, socket, head) => {
+  const { pathname } = new URL(req.url!, `http://${req.headers.host}`);
+  if (pathname === "/api/acp") {
+    acpWss.handleUpgrade(req, socket, head, (ws) => acpWss.emit("connection", ws, req));
+  } else if (pathname === "/api/terminal") {
+    const sessionId = new URL(req.url!, `http://${req.headers.host}`).searchParams.get("sessionId") ?? "default";
+    termWss.handleUpgrade(req, socket, head, (ws) => {
+      ptyManager.attach(sessionId, ws);
+    });
+  } else {
+    socket.destroy();
+  }
 });
 
 if (config.PLATFORM_MCP_URL) {
