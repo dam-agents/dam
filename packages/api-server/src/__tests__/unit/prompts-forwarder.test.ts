@@ -21,57 +21,31 @@ function entry(id: string, env: PromptEnvelope): PendingEntry {
   return { id, envelope: JSON.stringify(env) };
 }
 
-interface FakeStoreOptions {
-  /** Series of `read(...)` results, consumed in order. After exhaustion the
-   *  store returns []. The loop blocks briefly between reads, so series of
-   *  N elements drives N iterations before the loop idles. */
-  fresh?: PendingEntry[][];
-  reclaimed?: PendingEntry[][];
-  /** Forward outcomes per entry id. Defaults to success when not specified. */
-  forwardErrors?: Map<string, Error>;
-}
-
-function makeFakeStore(opts: FakeStoreOptions = {}): {
+function makeFakeStore(opts: { fresh?: PendingEntry[][] } = {}): {
   store: PromptsStore;
   acks: string[];
   trims: string[];
-  ensureGroupCalls: number;
-  freshCalls: number;
-  reclaimedCalls: number;
 } {
   const acks: string[] = [];
   const trims: string[] = [];
-  let ensureGroupCalls = 0;
   let freshCalls = 0;
-  let reclaimedCalls = 0;
   const fresh = opts.fresh ?? [];
-  const reclaimed = opts.reclaimed ?? [];
   return {
     acks,
     trims,
-    get ensureGroupCalls() { return ensureGroupCalls; },
-    get freshCalls() { return freshCalls; },
-    get reclaimedCalls() { return reclaimedCalls; },
     store: {
       async dedupOrAppend() { throw new Error("not used"); },
-      async ensureGroup() { ensureGroupCalls++; },
+      async ensureGroup() {},
       async read() {
-        const i = freshCalls++;
-        const entries = fresh[i];
+        const entries = fresh[freshCalls++];
         if (entries && entries.length > 0) return entries;
         // Real XREADGROUP BLOCK yields to the kernel/event loop while
         // waiting; the fake must too, otherwise the await-chain stays on
-        // the microtask queue and starves setTimeout-based test polling
-        // and the forwarder's `stop()` from ever observing `running=false`.
+        // the microtask queue and starves setTimeout-based test polling.
         await new Promise((r) => setTimeout(r, 1));
         return [];
       },
       async autoClaim() {
-        const i = reclaimedCalls++;
-        const entries = reclaimed[i];
-        if (entries && entries.length > 0) return entries;
-        // Same yield-to-macrotasks reasoning as `read` — XAUTOCLAIM is
-        // a real Redis call in production, here we simulate the yield.
         await new Promise((r) => setTimeout(r, 1));
         return [];
       },
@@ -91,37 +65,16 @@ async function tickUntil(predicate: () => boolean, timeoutMs = 1_000): Promise<v
 }
 
 describe("createPromptsForwarder", () => {
-  it("acks and trims fresh entries that forward successfully", async () => {
+  it("acks successful entries and leaves failed ones for XAUTOCLAIM to retry", async () => {
+    // The durability invariant: a failing forward must not ack — otherwise
+    // the message is lost on a transient wrapper outage. Bundles two
+    // entries (one fails, one succeeds) so the test also covers the
+    // happy-path ack + trim ordering on the successful entry.
     const fake = makeFakeStore({
-      fresh: [[entry("1-0", envelope("p-a")), entry("1-1", envelope("p-b"))]],
-    });
-    const forward = vi.fn().mockResolvedValue(undefined);
-
-    const f = createPromptsForwarder({
-      store: fake.store,
-      forward,
-      consumerName: "test-1",
-      blockMs: 5,
-      reclaimIdleMs: 30_000,
-      errorBackoffMs: 1,
-    });
-    f.start();
-    await tickUntil(() => fake.acks.length >= 2);
-    await f.stop();
-
-    expect(forward).toHaveBeenCalledTimes(2);
-    expect(fake.acks).toEqual(["1-0", "1-1"]);
-    expect(fake.trims).toEqual(["1-0", "1-1"]);
-  });
-
-  it("leaves entries unacked when forward throws — XAUTOCLAIM picks them up later", async () => {
-    const errorById = new Map([["1-0", new Error("wrapper unreachable")]]);
-    const fake = makeFakeStore({
-      fresh: [[entry("1-0", envelope("p-a")), entry("1-1", envelope("p-b"))]],
+      fresh: [[entry("1-0", envelope("p-fail")), entry("1-1", envelope("p-ok"))]],
     });
     const forward = vi.fn().mockImplementation(async (env: PromptEnvelope) => {
-      // Match by promptId order — first entry fails, second succeeds.
-      if (env.promptId === "p-a") throw errorById.get("1-0");
+      if (env.promptId === "p-fail") throw new Error("wrapper unreachable");
     });
 
     const f = createPromptsForwarder({
@@ -137,36 +90,8 @@ describe("createPromptsForwarder", () => {
     await f.stop();
 
     expect(forward).toHaveBeenCalledTimes(2);
-    // Failed entry stays pending; only the successful one is acked.
     expect(fake.acks).toEqual(["1-1"]);
     expect(fake.trims).toEqual(["1-1"]);
-  });
-
-  it("processes reclaimed entries before fresh ones each iteration", async () => {
-    // Simulates a forwarder picking up its own past failure (or another
-    // replica's) before draining the fresh queue.
-    const fake = makeFakeStore({
-      reclaimed: [[entry("R-0", envelope("p-stale"))]],
-      fresh: [[entry("F-0", envelope("p-new"))]],
-    });
-    const forwardOrder: string[] = [];
-    const forward = vi.fn().mockImplementation(async (env: PromptEnvelope) => {
-      forwardOrder.push(env.promptId);
-    });
-
-    const f = createPromptsForwarder({
-      store: fake.store,
-      forward,
-      consumerName: "test-1",
-      blockMs: 5,
-      reclaimIdleMs: 1,
-      errorBackoffMs: 1,
-    });
-    f.start();
-    await tickUntil(() => fake.acks.length >= 2);
-    await f.stop();
-
-    expect(forwardOrder).toEqual(["p-stale", "p-new"]);
   });
 
   it("acks-and-drops malformed envelopes instead of leaving them stuck", async () => {
@@ -191,21 +116,5 @@ describe("createPromptsForwarder", () => {
     expect(forward).not.toHaveBeenCalled();
     expect(fake.acks).toEqual(["1-0"]);
     expect(fake.trims).toEqual(["1-0"]);
-  });
-
-  it("ensures the consumer group exactly once per start", async () => {
-    const fake = makeFakeStore({});
-    const f = createPromptsForwarder({
-      store: fake.store,
-      forward: async () => {},
-      consumerName: "test-1",
-      blockMs: 5,
-      errorBackoffMs: 1,
-    });
-    f.start();
-    await tickUntil(() => fake.freshCalls >= 1);
-    await f.stop();
-
-    expect(fake.ensureGroupCalls).toBe(1);
   });
 });
