@@ -51,7 +51,7 @@ import {
   createApprovalsCleanupHook,
   listPendingApprovalAgentIds,
 } from "./modules/approvals/compose.js";
-import { createWrapperFrameSender } from "./modules/approvals/infrastructure/wrapper-frame-sender.js";
+import { createWrapperFrameSender } from "./core/wrapper-frame-sender.js";
 import { composePromptsModule } from "./modules/prompts/compose.js";
 import {
   createEgressRuleMatchAdapter,
@@ -256,10 +256,10 @@ deliverySweeper.start();
 // forwarder ships it to the wrapper async. Browser/network blip after
 // Send no longer loses the message.
 const promptForwarderConsumer = `forwarder-${process.env.HOSTNAME ?? randomUUID()}`;
-const { store: _promptsStore, forwarder: promptsForwarder } = composePromptsModule({
+const { store: promptsStore, forwarder: promptsForwarder } = composePromptsModule({
   redisUrl: config.redisUrl,
   redisPassword: config.redisPassword ?? undefined,
-  resolveWrapperUrl: (instanceId) => `ws://${podBaseUrl(instanceId, config.namespace)}/api/acp`,
+  wrapperFrameSender,
   consumerName: promptForwarderConsumer,
   log: (msg) => process.stderr.write(`${msg}\n`),
 });
@@ -303,7 +303,7 @@ const { server: apiServer } = startApiServerApp({
   redisBus,
   approvalsRelay,
   wrapperFrameSender,
-  promptsStore: _promptsStore,
+  promptsStore,
   presetSeeder,
   trustedHosts,
   agentCleanupHooks,
@@ -352,7 +352,7 @@ async function shutdown() {
   await oauthRefreshService.stop();
   await deliverySweeper.stop();
   await promptsForwarder.stop();
-  await _promptsStore.close();
+  await promptsStore.close();
   await agentArtifactsSweeper.stop();
   await channelManager.stopAll();
   await redisBus.close();

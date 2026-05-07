@@ -1,87 +1,45 @@
-import { WebSocket } from "ws";
-
+import type { WrapperFrameSender } from "../../../core/wrapper-frame-sender.js";
 import type { PromptEnvelope } from "../domain/types.js";
 
 /** Function the consumer-group worker calls per stream entry. */
 export type ForwardPrompt = (envelope: PromptEnvelope) => Promise<void>;
 
-export interface CreateWrapperPromptForwarderDeps {
-  /** Resolve an instance to the wrapper's ACP WebSocket URL. The composition
-   *  root injects this — keeps prompts out of pod-networking details. */
-  resolveWrapperUrl(instanceId: string): string;
-  /** How long to wait for the WS to OPEN before failing. Failure leaves the
-   *  stream entry unacked, so XAUTOCLAIM picks it up on the next loop. */
-  connectTimeoutMs?: number;
-}
-
 /**
- * Opens a one-shot WebSocket to the wrapper, sends a single `session/prompt`
- * JSON-RPC request frame stamped with `_meta.promptId`, and closes.
+ * Builds a `session/prompt` JSON-RPC frame from an envelope and ships it via
+ * the shared `WrapperFrameSender`. Fire-and-forget: ACP prompt responses
+ * can take minutes, so holding the WS for a full prompt would tie one
+ * consumer slot to one in-flight prompt. The wrapper records this
+ * (closing) channel as the active prompt's owner, nullifies our reference
+ * on detach, and keeps the prompt running. Other engaged channels (the
+ * UI's WS) receive the synthesized `user_message_chunk` and the eventual
+ * `platform_turn_ended` via the wrapper's existing fan-out.
  *
- * Fire-and-forget on purpose: ACP prompt responses can take minutes, and
- * holding the WS for the full prompt duration would tie one consumer slot
- * to one in-flight prompt. The wrapper's runtime processes the inbound
- * frame synchronously on receipt — TCP delivery order guarantees the data
- * frame is read before the close frame, so closing immediately after the
- * send-callback is safe. The wrapper records this (closing) channel as the
- * active prompt's owner; it nullifies our reference on detach but keeps
- * the prompt running. Other engaged channels (the UI's WS) receive the
- * synthesized `user_message_chunk` and the eventual `platform_turn_ended`
- * via the wrapper's existing fan-out.
+ * Known shortcoming: if the wrapper rejects the prompt (PROMPT_QUEUE_CAP
+ * exceeded, session-not-found), the JSON-RPC error response is silently
+ * dropped — we close the WS as soon as `send` resolves, before the wrapper
+ * has had a chance to reply. The forwarder XACKs the entry and moves on,
+ * so the user sees no `platform_turn_ended` and the assistant bubble
+ * streams forever. Rare in practice (queue cap is 32 per session,
+ * session-not-found requires UI/wrapper sync drift). Future tightening:
+ * read responses with a short timeout and surface non-success as a
+ * forwarder error so XAUTOCLAIM retries.
  */
 export function createWrapperPromptForwarder(
-  deps: CreateWrapperPromptForwarderDeps,
+  sender: WrapperFrameSender,
 ): ForwardPrompt {
-  const connectTimeoutMs = deps.connectTimeoutMs ?? 10_000;
   return async function forwardPrompt(envelope) {
-    const url = deps.resolveWrapperUrl(envelope.instanceId);
-    const ws = new WebSocket(url);
-    try {
-      await waitForOpen(ws, connectTimeoutMs);
-      const frame = JSON.stringify({
-        jsonrpc: "2.0",
-        // Wrapper-side response (if any) lands at our about-to-close
-        // channel, where it's silently dropped — id only needs to be a
-        // valid JSON-RPC value.
-        id: 1,
-        method: "session/prompt",
-        params: {
-          sessionId: envelope.sessionId,
-          prompt: envelope.prompt,
-          _meta: { promptId: envelope.promptId },
-        },
-      });
-      await sendAndDrain(ws, frame);
-    } finally {
-      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-        ws.close();
-      }
-    }
+    const frame = JSON.stringify({
+      jsonrpc: "2.0",
+      // Wrapper-side response (if any) lands at our about-to-close channel
+      // and is silently dropped — id only needs to be a valid JSON-RPC value.
+      id: 1,
+      method: "session/prompt",
+      params: {
+        sessionId: envelope.sessionId,
+        prompt: envelope.prompt,
+        _meta: { promptId: envelope.promptId },
+      },
+    });
+    await sender.send(envelope.instanceId, frame);
   };
-}
-
-function waitForOpen(ws: WebSocket, timeoutMs: number): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      ws.removeAllListeners();
-      reject(new Error("wrapper WS connect timeout"));
-    }, timeoutMs);
-    ws.once("open", () => {
-      clearTimeout(timer);
-      resolve();
-    });
-    ws.once("error", (err) => {
-      clearTimeout(timer);
-      reject(err);
-    });
-  });
-}
-
-function sendAndDrain(ws: WebSocket, frame: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    ws.send(frame, (err) => {
-      if (err) reject(err);
-      else resolve();
-    });
-  });
 }

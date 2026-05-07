@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useStore } from "../../../store.js";
 import type { Message } from "../../../types.js";
 import { openConnection } from "../../acp/acp.js";
-import { hasLocalPromptId } from "../../acp/local-prompt-ids.js";
+import { clearLocalPromptIds, hasLocalPromptId } from "../../acp/local-prompt-ids.js";
 import {
   applyUpdate,
   finalizeAllStreaming,
@@ -312,12 +312,18 @@ export function useAcpConnection(opts: UseAcpConnectionOptions): UseAcpConnectio
 
   // Reset reconnect backoff when the user navigates to a different session
   // or instance — the delays are scoped to a single connection's run.
+  // Also clear the local-prompt-id skip-set: those ids only suppress echoes
+  // for prompts we sent in *this* session view. After a session change, a
+  // session/load replay must surface the user_message_chunks from the
+  // wrapper's log; leaving stale ids behind would filter them out and the
+  // user message would vanish from the rebuilt conversation.
   useEffect(() => {
     reconnectAttemptRef.current = 0;
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
     }
+    clearLocalPromptIds();
   }, [sessionId, selectedInstance]);
 
   // Keep-alive: open a live channel whenever we're viewing a session.

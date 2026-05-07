@@ -1,23 +1,36 @@
 import { WebSocket } from "ws";
-import type { WrapperFrameSender } from "../services/approvals-service.js";
+
+/**
+ * Cross-module port for delivering a single JSON-RPC frame to a wrapper
+ * (agent-runtime) over its ACP WebSocket. Used by:
+ *
+ *   - approvals — inbox resolve sends a permission response inline; the
+ *     delivery sweeper retries undelivered rows on a tick.
+ *   - prompts — the durable-prompt forwarder ships `session/prompt`
+ *     envelopes after an XREADGROUP pop.
+ *
+ * The wrapper deduplicates incoming responses by JSON-RPC id and silently
+ * drops anything that isn't pending, so concurrent / retried sends are
+ * harmless on the wire.
+ */
+export interface WrapperFrameSender {
+  send(instanceId: string, frame: string): Promise<void>;
+}
 
 export interface CreateWrapperFrameSenderDeps {
   /** Resolve an instance to the wrapper's ACP WebSocket URL. The composition
-   *  root injects this — keeps approvals out of pod-networking details. */
+   *  root injects this — keeps the sender out of pod-networking details. */
   resolveWrapperUrl(instanceId: string): string;
-  /** How long to wait for the WS to OPEN before failing. */
+  /** How long to wait for the WS to OPEN before failing. Failure surfaces
+   *  to the caller; both consumers (approvals sweep, prompts forwarder)
+   *  retry on their own cadence. */
   connectTimeoutMs?: number;
 }
 
 /**
- * Opens a one-shot WebSocket to the wrapper, sends a single JSON-RPC
- * response frame, and closes. Used by the inline delivery path on inbox
- * resolve and by the periodic sweep that retries undelivered rows.
- *
- * Idempotent at the wrapper: it matches incoming responses against its
- * `pendingFromAgent` map by JSON-RPC id and silently drops anything that
- * isn't pending. So if the inline send and a sweep retry race, the second
- * delivery is harmless.
+ * Opens a one-shot WebSocket to the wrapper, sends a single JSON-RPC frame,
+ * and closes. Frame construction is the caller's job — the sender is a
+ * neutral pipe.
  */
 export function createWrapperFrameSender(
   deps: CreateWrapperFrameSenderDeps,

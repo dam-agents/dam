@@ -1,4 +1,5 @@
 import type { PromptsService } from "api-server-api";
+import type { WrapperFrameSender } from "../../core/wrapper-frame-sender.js";
 import {
   createRedisPromptsStore,
   type PromptsStore,
@@ -18,15 +19,17 @@ import {
 
 /**
  * Boot-time composition for the prompts outbox + forwarder. Wires the Redis
- * store and the wrapper-WS forwarder into a single consumer-group worker
- * that's shared across all owners. The store handle is also returned so
- * the per-request `composePromptsService` can hand it to the tRPC service
- * without re-wiring Redis on every request.
+ * store and the shared `WrapperFrameSender` into a single consumer-group
+ * worker that's shared across all owners. The store handle is also returned
+ * so the per-request `composePromptsService` can hand it to the tRPC
+ * service without re-wiring Redis on every request.
  */
 export interface ComposePromptsModuleDeps {
   redisUrl: string;
   redisPassword?: string;
-  resolveWrapperUrl(instanceId: string): string;
+  /** Shared with the approvals delivery sweeper — same primitive, same
+   *  one-shot WS pattern, no duplicated WS plumbing. */
+  wrapperFrameSender: WrapperFrameSender;
   /** Forwarder consumer name; should be unique per replica so XAUTOCLAIM
    *  can move work off a dead replica. The api-server boot uses
    *  `forwarder-${podName}` or a uuid as fallback. */
@@ -41,9 +44,7 @@ export function composePromptsModule(deps: ComposePromptsModuleDeps): {
   const store = createRedisPromptsStore(deps.redisUrl, {
     password: deps.redisPassword,
   });
-  const forward: ForwardPrompt = createWrapperPromptForwarder({
-    resolveWrapperUrl: deps.resolveWrapperUrl,
-  });
+  const forward: ForwardPrompt = createWrapperPromptForwarder(deps.wrapperFrameSender);
   const forwarder = createPromptsForwarder({
     store,
     forward,

@@ -11,6 +11,9 @@ import {
   buildAcpPermissionResponse,
   pickOptionId,
 } from "../infrastructure/wrapper-response-frames.js";
+import type { WrapperFrameSender } from "../../../core/wrapper-frame-sender.js";
+
+export type { WrapperFrameSender };
 
 /** Notifier for cross-replica wake-up of held ext_authz calls. Publishes to
  *  `approval:<id>` on Redis; consumers read the verdict from Postgres. The
@@ -34,14 +37,6 @@ export interface EgressRuleWriter {
     decidedBy: string;
     source: EgressRuleSource;
   }): Promise<void>;
-}
-
-/** Outbox port: opens a one-shot WS to the wrapper and sends a JSON-RPC
- *  response frame. Used inline on inbox resolve so delivery happens on the
- *  click-handling replica without any Redis hop. The periodic sweep retries
- *  rows whose `delivered_at` is still null (e.g. replica died mid-send). */
-export interface WrapperFrameSender {
-  send(instanceId: string, frame: string): Promise<void>;
 }
 
 export interface CreateApprovalsServiceDeps {

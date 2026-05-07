@@ -1,3 +1,5 @@
+import { TRPCError } from "@trpc/server";
+
 import type { PromptsService, SendPromptInput } from "api-server-api";
 import type { PromptsStore } from "../infrastructure/redis-prompts-store.js";
 import type { PromptEnvelope } from "../domain/types.js";
@@ -25,7 +27,10 @@ export function createPromptsService(deps: CreatePromptsServiceDeps): PromptsSer
   return {
     async send(input: SendPromptInput) {
       if (!await deps.isInstanceOwnedBy(input.instanceId, deps.ownerSub)) {
-        throw new Error("instance not found");
+        // NOT_FOUND, not 500: a missing/unowned instance is a client error,
+        // not a server bug. Same wording as approvals' ownership-failure
+        // path so callers see one consistent shape.
+        throw new TRPCError({ code: "NOT_FOUND", message: "instance not found" });
       }
       const envelope: PromptEnvelope = {
         promptId: input.promptId,
