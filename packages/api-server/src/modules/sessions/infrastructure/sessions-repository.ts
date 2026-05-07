@@ -58,10 +58,10 @@ export function upsertSession(db: Db) {
   return async (
     sessionId: string,
     instanceId: string,
+    mode: SessionMode,
     type: SessionType = SessionType.Regular,
     scheduleId?: string,
     threadTs?: string,
-    mode: SessionMode = SessionMode.Chat,
   ) => {
     await db
       .insert(sessions)

@@ -1,5 +1,6 @@
 import { serve } from "@hono/node-server";
 import type { CoreV1Api } from "@kubernetes/client-node";
+import { SessionMode } from "api-server-api";
 import type { Db } from "db";
 import { createK8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { LABEL_OWNER } from "../../modules/agents/infrastructure/labels.js";
@@ -95,7 +96,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       const acp = createAcpClient({
         namespace: config.namespace,
         instanceName: body.instanceId,
-        onSessionCreated: (sid: string) => sessions.create(sid, body.instanceId, sessionType as any, body.schedule),
+        onSessionCreated: (sid: string) => sessions.create(sid, body.instanceId, SessionMode.Chat, sessionType as any, body.schedule),
       });
 
       return acp.triggerSession({

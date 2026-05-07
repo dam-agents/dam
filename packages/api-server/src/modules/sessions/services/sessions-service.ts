@@ -5,7 +5,7 @@ export function createSessionsService(deps: {
   listByInstance: (instanceId: string) => Promise<{ sessionId: string; instanceId: string; type: string; mode: string; scheduleId: string | null; scheduleActive: boolean; createdAt: Date }[]>;
   listByScheduleId: (scheduleId: string) => Promise<{ sessionId: string; instanceId: string; type: string; mode: string; scheduleId: string | null; scheduleActive: boolean; createdAt: Date }[]>;
   findActiveByScheduleId: (scheduleId: string) => Promise<{ sessionId: string; instanceId: string; type: string; mode: string; scheduleId: string | null; createdAt: Date } | null>;
-  upsert: (sessionId: string, instanceId: string, type?: SessionType, scheduleId?: string, threadTs?: string, mode?: SessionMode) => Promise<void>;
+  upsert: (sessionId: string, instanceId: string, mode: SessionMode, type?: SessionType, scheduleId?: string, threadTs?: string) => Promise<void>;
   setMode: (sessionId: string, instanceId: string, mode: SessionMode) => Promise<void>;
   delete: (sessionId: string, instanceId: string) => Promise<void>;
   isOwnedInstance: (instanceId: string) => Promise<boolean>;
@@ -19,7 +19,9 @@ export function createSessionsService(deps: {
       const acp = createAcpClient({
         namespace: deps.namespace,
         instanceName: instanceId,
-        onSessionCreated: (sid) => deps.upsert(sid, instanceId, SessionType.Regular),
+        // ACP-discovered sessions are always chat-mode by definition (the
+        // ACP session lifecycle doesn't apply to terminal-mode PTYs).
+        onSessionCreated: (sid) => deps.upsert(sid, instanceId, SessionMode.Chat, SessionType.Regular),
       });
 
       const [dbRows, acpSessions] = await Promise.all([
@@ -54,9 +56,9 @@ export function createSessionsService(deps: {
       });
     },
 
-    async create(sessionId: string, instanceId: string, type?: SessionType, scheduleId?: string, mode?: SessionMode) {
+    async create(sessionId: string, instanceId: string, mode: SessionMode, type?: SessionType, scheduleId?: string) {
       if (!await deps.isOwnedInstance(instanceId)) return;
-      await deps.upsert(sessionId, instanceId, type, scheduleId, undefined, mode);
+      await deps.upsert(sessionId, instanceId, mode, type, scheduleId);
     },
 
     async setMode(sessionId: string, instanceId: string, mode: SessionMode) {

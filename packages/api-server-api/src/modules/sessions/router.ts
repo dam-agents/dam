@@ -25,9 +25,11 @@ export const sessionsRouter = t.router({
       instanceId: z.string().min(1),
       type: sessionType.optional(),
       scheduleId: z.string().optional(),
-      mode: sessionMode.optional(),
+      // Default at the API edge so existing clients omitting `mode` still
+      // land at "chat"; internal callers receive a concrete SessionMode.
+      mode: sessionMode.default(SessionMode.Chat),
     }))
-    .mutation(({ ctx, input }) => ctx.sessions.create(input.sessionId, input.instanceId, input.type, input.scheduleId, input.mode)),
+    .mutation(({ ctx, input }) => ctx.sessions.create(input.sessionId, input.instanceId, input.mode, input.type, input.scheduleId)),
 
   setMode: t.procedure
     .input(z.object({
