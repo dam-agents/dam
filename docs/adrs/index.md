@@ -44,6 +44,7 @@ This directory contains ADRs for the Platform project.
 | [037](037-remote-terminal.md)                 | Remote terminal — split "chat" and "terminal" session modes | @JanPokorny |
 | [038](038-paired-gateway-pod.md)               | Paired agent and gateway pods — cluster-enforced credential boundary | @pilartomas |
 | [039](039-cli-foundation.md)                  | Platform CLI foundation — TypeScript on Node, npm distribution | @PetrBulanek |
+| [040](040-unified-secret-contributions.md)    | Unified secret contributions — controller-merged at render time | @Tomas2D |
 
 ## Drafts
 
