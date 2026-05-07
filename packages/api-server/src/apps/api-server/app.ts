@@ -56,7 +56,6 @@ import type { RedisBus } from "../../core/redis-bus.js";
 
 export interface ApiServerAppDeps {
   config: Config;
-  serverVersion: string;
   api: CoreV1Api;
   db: Db;
   channelManager: ChannelManager;
@@ -79,7 +78,7 @@ export interface ApiServerAppDeps {
 
 export function startApiServerApp(deps: ApiServerAppDeps) {
   const {
-    config, serverVersion, api, db, channelManager, channelSecretStore, identityLinkService,
+    config, api, db, channelManager, channelSecretStore, identityLinkService,
     pendingSlackOAuthFlows, pendingTelegramOAuthFlows, podFilesPublisher, seedSources,
     redisBus, approvalsRelay, wrapperFrameSender, presetSeeder, trustedHosts,
     agentCleanupHooks,
@@ -110,7 +109,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   app.get("/api/health", (c) => c.json({ status: "ok" }));
   app.get("/api/version", (c) =>
     c.json({
-      serverVersion,
+      serverVersion: config.serverVersion,
       ...(config.minClientCliVersion !== undefined && {
         minClientVersion: config.minClientCliVersion,
       }),

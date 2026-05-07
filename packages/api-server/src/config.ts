@@ -1,6 +1,11 @@
 import { z } from "zod/v4";
+import pkg from "../package.json" with { type: "json" };
 
 const configSchema = z.object({
+  /** Build-time semver from this package's package.json — not env-driven.
+   *  Bundled into `dist/index.js` by tsup at build time; in dev (tsx) it
+   *  resolves at module import. Surfaced on `GET /api/version`. */
+  serverVersion: z.string().min(1),
   namespace: z.string().default("platform-agents"),
   /** Helm release name. ADR-041: required at startup — used to parse
    *  instance ID out of the per-instance ext-authz Service hostname
@@ -88,6 +93,7 @@ export type Config = z.infer<typeof configSchema>;
 
 export function loadConfig(): Config {
   return configSchema.parse({
+    serverVersion: pkg.version,
     namespace: process.env.NAMESPACE,
     releaseName: process.env.PLATFORM_RELEASE_NAME,
     port: process.env.PORT,

@@ -60,12 +60,10 @@ import {
 import { createAgentArtifactsSweeper } from "./sagas/agent-artifacts-sweeper.js";
 import { createK8sClient as createAgentsK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
-import { getServerVersion } from "./bootstrap/server-version.js";
 import { createRedisBus } from "./core/redis-bus.js";
 import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
 
 const config = loadConfig();
-const serverVersion = getServerVersion(import.meta.url);
 
 const { api } = createApi(config.namespace);
 await runMigrations(config.databaseUrl, config.migrationsPath);
@@ -283,7 +281,7 @@ const agentArtifactsSweeper = createAgentArtifactsSweeper({
 agentArtifactsSweeper.start();
 
 const { server: apiServer } = startApiServerApp({
-  config, serverVersion, api, db, channelManager, channelSecretStore, identityLinkService,
+  config, api, db, channelManager, channelSecretStore, identityLinkService,
   pendingSlackOAuthFlows, pendingTelegramOAuthFlows, podFilesPublisher, seedSources,
   redisBus,
   approvalsRelay,
