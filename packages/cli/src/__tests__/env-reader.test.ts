@@ -13,20 +13,11 @@ describe("createProcessEnvReader", () => {
     else process.env[VAR] = original;
   });
 
-  it("returns the value when the variable is set", () => {
-    process.env[VAR] = "https://example.test";
-    expect(createProcessEnvReader().get(VAR)).toBe("https://example.test");
-  });
-
-  it("returns undefined when the variable is unset", () => {
-    delete process.env[VAR];
-    expect(createProcessEnvReader().get(VAR)).toBeUndefined();
-  });
-
-  it("returns undefined when the variable is the empty string", () => {
+  it("treats the empty string as unset", () => {
     // Empty exports (`DAM_SERVER=`) must look the same as 'unset' so that
     // `dam ping` produces the 'no server configured' hint, not a confusing
-    // network error against an empty URL.
+    // network error against an empty URL. The pass-through cases (set /
+    // unset) are exercised by ping/version integration tests.
     process.env[VAR] = "";
     expect(createProcessEnvReader().get(VAR)).toBeUndefined();
   });

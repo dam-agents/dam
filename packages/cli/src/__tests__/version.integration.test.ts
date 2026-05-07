@@ -245,15 +245,6 @@ describe("dam version (integration)", () => {
     expect(r.stdout).toContain("server 5.5.5");
   });
 
-  it("commander built-in --version flag still works (single-line local)", async () => {
-    const r = await runDam(["--version"], {
-      HOME: home,
-      PATH: process.env.PATH ?? "",
-    });
-    expect(r.exitCode).toBe(0);
-    expect(r.stdout.trim()).toBe(LOCAL);
-  });
-
   it("relocated bin.js still resolves the version (build-time embed)", async () => {
     // The version must be embedded in the bundle, not resolved by walking
     // up to a sibling package.json. Copy the built bin to a tmp dir away

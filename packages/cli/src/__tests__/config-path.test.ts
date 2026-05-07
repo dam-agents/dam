@@ -16,15 +16,9 @@ describe("defaultConfigPath", () => {
   });
 
   it("falls through to $HOME/.config when XDG_CONFIG_HOME is unset", () => {
-    expect(defaultConfigPath({})).toMatch(
-      /[/\\]\.config[/\\]dam[/\\]config\.toml$/,
-    );
-  });
-
-  it("default fallback uses .config/dam/config.toml under home", () => {
     // os.homedir() ignores process.env.HOME on some platforms, so assert
     // structural shape rather than the absolute path.
-    expect(defaultConfigPath({ HOME: "/Users/test" })).toMatch(
+    expect(defaultConfigPath({})).toMatch(
       /[/\\]\.config[/\\]dam[/\\]config\.toml$/,
     );
   });

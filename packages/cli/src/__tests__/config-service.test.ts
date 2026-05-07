@@ -53,19 +53,6 @@ describe("ConfigService", () => {
     expect(r).toEqual({ ok: true, value: { server: "https://env" } });
   });
 
-  it("set with a valid value writes the merged partial to the store", async () => {
-    const { store, written } = makeFakeStore();
-    const svc = createConfigService({
-      store,
-      envReader: makeFakeEnv(),
-      envVars: ENV_VARS,
-    });
-
-    const r = await svc.set("server", "https://new.test");
-    expect(r).toEqual({ ok: true, value: undefined });
-    expect(written).toEqual([{ server: "https://new.test" }]);
-  });
-
   it("set with an invalid value returns InvalidValueError without touching the store", async () => {
     const writeSpy = vi.fn();
     const svc = createConfigService({

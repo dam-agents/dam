@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile, mkdir } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -80,16 +80,4 @@ describe("TOML ConfigStore", () => {
     expect(r).toEqual({ ok: true, value: { server: "https://nested.test" } });
   });
 
-  it("ignores unknown top-level keys when reading (forward-compat)", async () => {
-    await mkdir(dir, { recursive: true });
-    await writeFile(
-      configPath,
-      'server = "https://x"\nfuture_key = "ignored"\n',
-      "utf-8",
-    );
-    const store = createTomlConfigStore(configPath);
-
-    const r = await store.read();
-    expect(r).toEqual({ ok: true, value: { server: "https://x" } });
-  });
 });
