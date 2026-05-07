@@ -222,7 +222,7 @@ ingress:
 # -- UI (nginx serving static SPA, reverse-proxies /api to API server)
 ui:
   image:
-    repository: ghcr.io/kagenti/platform/ui
+    repository: ghcr.io/dam-agents/dam/ui
     tag: "" # defaults to appVersion
     pullPolicy: IfNotPresent
   port: 8080
@@ -237,7 +237,7 @@ ui:
 # -- API Server
 apiServer:
   image:
-    repository: ghcr.io/kagenti/platform/api-server
+    repository: ghcr.io/dam-agents/dam/api-server
     tag: ""
     pullPolicy: IfNotPresent
   port: 4000
@@ -350,7 +350,7 @@ apiServer:
 # -- Controller (Go reconciler + scheduler)
 controller:
   image:
-    repository: ghcr.io/kagenti/platform/controller
+    repository: ghcr.io/dam-agents/dam/controller
     tag: ""
     pullPolicy: IfNotPresent
   agentImagePullPolicy: IfNotPresent
@@ -452,7 +452,7 @@ defaultTemplate:
   enabled: true
   name: claude-code
   image:
-    repository: ghcr.io/kagenti/platform/claude-code
+    repository: ghcr.io/dam-agents/dam/claude-code
     tag: ""
     pullPolicy: IfNotPresent
   description: "Default Claude Code agent"
@@ -473,7 +473,7 @@ googleWorkspaceTemplate:
   enabled: false
   name: google-workspace
   image:
-    repository: ghcr.io/kagenti/platform/google-workspace-agent
+    repository: ghcr.io/dam-agents/dam/google-workspace-agent
     tag: ""
     pullPolicy: IfNotPresent
   description: "Google Workspace agent with Drive and Gmail via gws CLI"
@@ -492,7 +492,7 @@ piAgentTemplate:
   enabled: false
   name: pi-agent
   image:
-    repository: ghcr.io/kagenti/platform/pi-agent
+    repository: ghcr.io/dam-agents/dam/pi-agent
     tag: ""
     pullPolicy: IfNotPresent
   description: "Pi coding agent with multi-LLM support"
@@ -511,7 +511,7 @@ codeGuardianTemplate:
   enabled: false
   name: code-guardian
   image:
-    repository: ghcr.io/kagenti/platform/code-guardian
+    repository: ghcr.io/dam-agents/dam/code-guardian
     tag: ""
     pullPolicy: IfNotPresent
   description: "PR code review agent (gh + Claude Code)"
