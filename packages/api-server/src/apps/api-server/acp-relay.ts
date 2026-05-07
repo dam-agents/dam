@@ -211,10 +211,12 @@ export function createAcpRelay(
           upstream = u;
 
           // Client gave up during the dial. Flush any queued messages
-          // anyway — the user may have typed a prompt before reloading,
-          // and the wrapper handles "channel detached mid-active-prompt"
-          // gracefully (session/update notifications still land in its
-          // log, so the user catches up on reconnect). Then close the
+          // anyway — the client may have sent `initialize` / `loadSession`
+          // / `cancel` / a permission response before closing, and the
+          // wrapper handles "channel detached mid-call" gracefully
+          // (responses are dropped, log entries persist). Prompts no
+          // longer ride this WS — they go through the durable outbox —
+          // but the rest of the ACP surface still does. Then close the
           // upstream so we don't leak it.
           if (clientClosedDuringDial) {
             if (u.readyState === WebSocket.OPEN) {
@@ -237,9 +239,6 @@ export function createAcpRelay(
             u.close();
             return;
           }
-
-          repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "true")
-        .catch(warnOnPatchFailure(`patch ${ACTIVE_SESSION_KEY}=true`));
 
           for (const msg of pending) {
             u.send(msg.data, { binary: msg.isBinary });

@@ -153,13 +153,17 @@ export function useAcpConnection(opts: UseAcpConnectionOptions): UseAcpConnectio
     const liveHandler = makeUpdateHandler();
 
     const handler: UpdateHandler = (update) => {
-      // Drop the wrapper's echo of our own prompts (durable-send path):
+      // Drop the wrapper's live echo of our own prompts (durable-send path):
       // the optimistic bubble is already keyed on the same promptId, and
-      // mergeParts would concatenate text otherwise. Filtering before the
-      // projection keeps the projection pure (no tab-local state). Other
-      // tabs and cold-replay are unaffected — their local sets don't
-      // contain this id.
-      if (update.sessionUpdate === "user_message_chunk") {
+      // `mergeParts` would concatenate text otherwise (turning "hi" into
+      // "hihi"). The filter only applies in live phase — in replay phase
+      // the projection's `appendOrExtendUser` merges by id correctly, and
+      // filtering would *destroy* the user's prompt from the rebuilt
+      // history (the optimistic bubble is about to be overwritten by
+      // `replayed`). On a same-session WS reconnect, `localPromptIds`
+      // carries over from the live phase before the drop; if we filtered
+      // during replay, the user's just-sent message would vanish.
+      if (update.sessionUpdate === "user_message_chunk" && phase === "live") {
         const promptId = typeof update._meta?.promptId === "string"
           ? update._meta.promptId
           : null;

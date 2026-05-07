@@ -21,7 +21,15 @@ function entry(id: string, env: PromptEnvelope): PendingEntry {
   return { id, envelope: JSON.stringify(env) };
 }
 
-function makeFakeStore(opts: { fresh?: PendingEntry[][] } = {}): {
+interface FakeStoreOptions {
+  fresh?: PendingEntry[][];
+  reclaim?: PendingEntry[][];
+  /** Throw on the Nth ack call (1-indexed). Lets tests simulate a Redis
+   *  blip after a successful forward. */
+  ackThrowsOn?: number;
+}
+
+function makeFakeStore(opts: FakeStoreOptions = {}): {
   store: PromptsStore;
   acks: string[];
   trims: string[];
@@ -29,7 +37,10 @@ function makeFakeStore(opts: { fresh?: PendingEntry[][] } = {}): {
   const acks: string[] = [];
   const trims: string[] = [];
   let freshCalls = 0;
+  let reclaimCalls = 0;
+  let ackAttempts = 0;
   const fresh = opts.fresh ?? [];
+  const reclaim = opts.reclaim ?? [];
   return {
     acks,
     trims,
@@ -46,10 +57,16 @@ function makeFakeStore(opts: { fresh?: PendingEntry[][] } = {}): {
         return [];
       },
       async autoClaim() {
+        const entries = reclaim[reclaimCalls++];
+        if (entries && entries.length > 0) return entries;
         await new Promise((r) => setTimeout(r, 1));
         return [];
       },
-      async ack(id) { acks.push(id); },
+      async ack(id) {
+        ackAttempts++;
+        if (opts.ackThrowsOn === ackAttempts) throw new Error("redis blip");
+        acks.push(id);
+      },
       async trim(id) { trims.push(id); },
       async close() {},
     },
@@ -92,6 +109,37 @@ describe("createPromptsForwarder", () => {
     expect(forward).toHaveBeenCalledTimes(2);
     expect(fake.acks).toEqual(["1-1"]);
     expect(fake.trims).toEqual(["1-1"]);
+  });
+
+  it("redelivers when ack throws after a successful forward", async () => {
+    // The flip side of the durability invariant: forward succeeded but
+    // Redis hiccuped on XACK. The entry stays unacked, so the next loop
+    // iteration's XAUTOCLAIM reclaims it and forward is called again.
+    // The wrapper-side promptId LRU is what prevents the duplicate forward
+    // from running at the agent — that's a separate test in acp-runtime.
+    const env = envelope("p-retry");
+    const fake = makeFakeStore({
+      fresh: [[entry("1-0", env)]],
+      reclaim: [[], [entry("1-0", env)]],
+      ackThrowsOn: 1,
+    });
+    const forward = vi.fn().mockResolvedValue(undefined);
+
+    const f = createPromptsForwarder({
+      store: fake.store,
+      forward,
+      consumerName: "test-1",
+      blockMs: 5,
+      reclaimIdleMs: 0,
+      errorBackoffMs: 1,
+    });
+    f.start();
+    await tickUntil(() => forward.mock.calls.length >= 2);
+    await f.stop();
+
+    expect(forward).toHaveBeenCalledTimes(2);
+    // Second ack succeeded; eventually one entry recorded.
+    expect(fake.acks).toEqual(["1-0"]);
   });
 
   it("acks-and-drops malformed envelopes instead of leaving them stuck", async () => {

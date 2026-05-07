@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-05-06
+Last verified: 2026-05-07
 
 ## Motivated by
 
@@ -110,7 +110,7 @@ Schedule sessions are typed (`schedule_cron`) in the sessions DB, which is the s
 
 ### Session inside the pod
 
-The harness child process runs for the pod's lifetime, not per-connection. Multiple ACP WebSocket channels (UI tabs, Slack worker, trigger watcher) attach to the same runtime concurrently and engage with sessions implicitly through the `sessionId` they carry on each frame ([ADR-026](../adrs/026-session-log-replay.md)).
+The harness child process runs for the pod's lifetime, not per-connection. Multiple ACP WebSocket channels (UI tabs, Slack worker, trigger watcher, the api-server's prompt forwarder) attach to the same runtime concurrently and engage with sessions implicitly through the `sessionId` they carry on each frame ([ADR-026](../adrs/026-session-log-replay.md)). UI-driven `session/prompt` frames in particular originate from the api-server's durable-prompt forwarder rather than the user's WS — the wrapper can't tell them apart, but the originator is a one-shot WS that closes immediately after the frame is on the wire. The wrapper drops duplicate `session/prompt` frames bearing the same `_meta.promptId` so that forwarder retries (e.g. after a transient ack failure in Redis) don't run the same turn twice.
 
 Each session is an append-only in-memory log (≤2 MB soft cap, with a truncation sentinel for older history). Every channel keeps a per-session cursor; new events are appended to the log and fanned out to engaged channels at or behind the new sequence number. `session/load` is served from the log on cache hit and falls through to the agent's on-disk store on cold start.
 

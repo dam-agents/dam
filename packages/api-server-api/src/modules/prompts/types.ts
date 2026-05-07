@@ -22,5 +22,9 @@ export interface SendPromptResult {
 }
 
 export interface PromptsService {
-  send(input: SendPromptInput): Promise<SendPromptResult>;
+  /** Returns null when the caller doesn't own the target instance — the
+   *  router maps this to a tRPC NOT_FOUND. Keeping the application-layer
+   *  return value tRPC-free lets the service stay free of validation-layer
+   *  imports (per slice-composition rules). */
+  send(input: SendPromptInput): Promise<SendPromptResult | null>;
 }

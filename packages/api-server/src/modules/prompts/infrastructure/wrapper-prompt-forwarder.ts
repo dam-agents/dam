@@ -1,3 +1,5 @@
+import { randomInt } from "node:crypto";
+
 import type { WrapperFrameSender } from "../../../core/wrapper-frame-sender.js";
 import type { PromptEnvelope } from "../domain/types.js";
 
@@ -30,9 +32,11 @@ export function createWrapperPromptForwarder(
   return async function forwardPrompt(envelope) {
     const frame = JSON.stringify({
       jsonrpc: "2.0",
-      // Wrapper-side response (if any) lands at our about-to-close channel
-      // and is silently dropped — id only needs to be a valid JSON-RPC value.
-      id: 1,
+      // Per-call random id. The wrapper-side response (if any) lands at our
+      // about-to-close channel and is silently dropped, so the value isn't
+      // load-bearing — but a constant is a footgun if anyone ever reuses
+      // the WS, and a random integer costs nothing.
+      id: randomInt(1, 2 ** 31 - 1),
       method: "session/prompt",
       params: {
         sessionId: envelope.sessionId,

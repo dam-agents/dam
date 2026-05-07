@@ -7,6 +7,17 @@ import { rewriteAuthError, rewriteCwd } from "../infrastructure/mappers.js";
 const PROMPT_QUEUE_CAP = 32;
 
 /**
+ * Bounded recent-promptIds set. The api-server's durable-prompt forwarder
+ * can re-deliver the same envelope (e.g. XACK failed in Redis after a
+ * successful forward, XAUTOCLAIM reclaims the entry on the next loop tick).
+ * The wrapper drops the duplicate so the agent doesn't run the same prompt
+ * twice and engaged channels don't see two synthesized user_message_chunks
+ * for one user action. FIFO eviction; cap chosen to comfortably exceed
+ * forwarder retry windows × concurrent active users.
+ */
+const SEEN_PROMPT_IDS_CAP = 256;
+
+/**
  * How long an agent→client request for a session can sit pending with no
  * channel engaged with that session before we give up and reject it back to
  * the agent. Keeps the buffer bounded on long-lived unattended sessions, and
@@ -210,6 +221,34 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   /** Per-session orphan timers. A session is orphaned when it has pending
    * agent-initiated requests but no channel engaged with it. */
   const orphanTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  /**
+   * Recent promptIds the wrapper has accepted. Used to drop duplicate
+   * `session/prompt` frames from the api-server forwarder's retry path.
+   * `Set` iteration is insertion-ordered, so `values().next().value` gives
+   * the FIFO eviction target.
+   */
+  const seenPromptIds = new Set<string>();
+
+  function recordPromptId(id: string): void {
+    if (seenPromptIds.has(id)) return;
+    seenPromptIds.add(id);
+    while (seenPromptIds.size > SEEN_PROMPT_IDS_CAP) {
+      const oldest = seenPromptIds.values().next().value;
+      if (oldest === undefined) break;
+      seenPromptIds.delete(oldest);
+    }
+  }
+
+  function extractPromptId(frame: unknown): string | null {
+    if (typeof frame !== "object" || frame === null) return null;
+    const f = frame as { params?: unknown };
+    if (typeof f.params !== "object" || f.params === null) return null;
+    const meta = (f.params as { _meta?: unknown })._meta;
+    if (typeof meta !== "object" || meta === null) return null;
+    const id = (meta as { promptId?: unknown }).promptId;
+    return typeof id === "string" ? id : null;
+  }
 
   // ── Session log ──
 
@@ -944,6 +983,23 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         };
         a.send(rewriteCwd(loadFrame, deps.workingDir));
         return;
+      }
+
+      // Forwarder-retry dedupe: if the api-server's durable-prompt
+      // forwarder ack'd then crashed, or XACK lost a packet to Redis, the
+      // same envelope can be re-delivered with the same `_meta.promptId`.
+      // Drop the duplicate at the wrapper so the agent doesn't run the
+      // prompt twice and engaged channels don't see two user_message_chunks
+      // for one user action. The originator (api-server's one-shot WS)
+      // closes immediately and never reads a response, so a silent return
+      // is correct — no synthetic success frame needed.
+      if (method === "session/prompt" && paramsSid) {
+        const promptId = extractPromptId(frame);
+        if (promptId && seenPromptIds.has(promptId)) {
+          deps.log?.(`dropping duplicate session/prompt ${promptId}`);
+          return;
+        }
+        if (promptId) recordPromptId(promptId);
       }
 
       // `session/load` short-circuit: if the runtime already has a log with

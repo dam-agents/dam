@@ -1169,6 +1169,58 @@ describe("createAcpRuntime", () => {
     expect(echoes(b).length).toBe(1);
   });
 
+  it("dedupes duplicate session/prompt frames by _meta.promptId — second forward is silent", () => {
+    // Forwarder retries (XAUTOCLAIM after an ack failure) re-deliver the
+    // same envelope. The wrapper drops the duplicate so the agent doesn't
+    // run the prompt twice and engaged channels don't see two
+    // user_message_chunks for one user action.
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+
+    const a = makeFakeChannel();
+    const b = makeFakeChannel();
+    runtime.attach(a.channel);
+    runtime.attach(b.channel);
+    a.pushMessage(resumeSessionRequest(1));
+    b.pushMessage(resumeSessionRequest(1));
+    completeResumeBootstrap(fa, SID);
+
+    const promptFrame = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 7,
+      method: "session/prompt",
+      params: {
+        sessionId: SID,
+        prompt: [{ type: "text", text: "hi" }],
+        _meta: { promptId: "p-dup" },
+      },
+    });
+
+    a.pushMessage(promptFrame);
+    const promptForwardsAfterFirst = fa.sent.filter(
+      (f: any) => f.method === "session/prompt",
+    ).length;
+
+    // Same envelope, second time. The api-server's forwarder would do this
+    // on XAUTOCLAIM after an ack failure.
+    a.pushMessage(promptFrame);
+
+    // Agent sees only one forward.
+    expect(
+      fa.sent.filter((f: any) => f.method === "session/prompt").length,
+    ).toBe(promptForwardsAfterFirst);
+
+    // Non-sender channel sees only one synthesized user_message_chunk.
+    const echoes = b.sent.filter((f) => {
+      try {
+        const p = JSON.parse(f);
+        return p.params?.update?.sessionUpdate === "user_message_chunk"
+          && p.params?.update?._meta?.promptId === "p-dup";
+      } catch { return false; }
+    });
+    expect(echoes.length).toBe(1);
+  });
+
   it("propagates session/prompt _meta.promptId onto synthesized user_message_chunk._meta", () => {
     // The api-server's durable-prompt outbox stamps every forwarded
     // session/prompt with `_meta.promptId`. The wrapper must surface that

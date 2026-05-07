@@ -66,6 +66,3 @@ export function composePromptsService(
 ): { service: PromptsService } {
   return { service: createPromptsService(deps) };
 }
-
-export type { PromptsForwarder } from "./services/prompts-forwarder.js";
-export type { PromptsStore } from "./infrastructure/redis-prompts-store.js";

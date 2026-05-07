@@ -1,6 +1,4 @@
-import { TRPCError } from "@trpc/server";
-
-import type { PromptsService, SendPromptInput } from "api-server-api";
+import type { PromptsService, SendPromptInput, SendPromptResult } from "api-server-api";
 import type { PromptsStore } from "../infrastructure/redis-prompts-store.js";
 import type { PromptEnvelope } from "../domain/types.js";
 
@@ -22,15 +20,15 @@ export interface CreatePromptsServiceDeps {
  * WS) to know when the agent is done. The originating tab dedupes the
  * wrapper's synthesized `user_message_chunk` against its optimistic
  * bubble using `_meta.promptId`.
+ *
+ * Returns null on ownership failure (router maps to NOT_FOUND) — keeps
+ * the service free of validation-layer imports per slice-composition.
  */
 export function createPromptsService(deps: CreatePromptsServiceDeps): PromptsService {
   return {
-    async send(input: SendPromptInput) {
+    async send(input: SendPromptInput): Promise<SendPromptResult | null> {
       if (!await deps.isInstanceOwnedBy(input.instanceId, deps.ownerSub)) {
-        // NOT_FOUND, not 500: a missing/unowned instance is a client error,
-        // not a server bug. Same wording as approvals' ownership-failure
-        // path so callers see one consistent shape.
-        throw new TRPCError({ code: "NOT_FOUND", message: "instance not found" });
+        return null;
       }
       const envelope: PromptEnvelope = {
         promptId: input.promptId,

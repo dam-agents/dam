@@ -59,7 +59,9 @@ A TypeScript server that hosts the user-facing surface and the ACP relay. It run
 - **Public port** — user-authenticated tRPC, REST (OAuth callbacks, health), and the ACP relay WebSocket.
 - **Harness port** — an internal-only endpoint consumed by agent pods for trigger handoff and MCP tool calls. Not exposed outside the cluster and carries no user authentication.
 
-The api-server proxies all ACP traffic to agent pods; clients never dial pods directly. It also wakes hibernated instances on demand before forwarding the first message of a session. Both the ACP relay and the tRPC proxy verify the user JWT and ownership at the public port and rewrite `Authorization` to the per-agent runtime token before forwarding — agent-runtime never sees user identity directly. See [security-and-credentials](security-and-credentials.md) and [`packages/api-server/`](../../packages/api-server/).
+The api-server proxies all ACP traffic to agent pods; clients never dial pods directly. It also wakes hibernated instances on demand before forwarding the first message of a session. Both the ACP relay and the tRPC proxy verify the user JWT and ownership at the public port and rewrite `Authorization` to the per-agent runtime token before forwarding — agent-runtime never sees user identity directly.
+
+User-driven prompts take a different shape from the rest of ACP: they are submitted via tRPC (`prompts.send`), persisted to a Redis Stream outbox keyed by an idempotency token, and forwarded to the wrapper asynchronously by a per-replica consumer-group worker. This survives browser/network blips between Send and the agent receiving the prompt — a UI close after the mutation returns can no longer drop the message. Multiple replicas share the outbox; XAUTOCLAIM rebalances entries off a dead replica. Other ACP traffic (initialize, session/load, cancel, permission responses) still rides the relay WebSocket. See [security-and-credentials](security-and-credentials.md) and [`packages/api-server/`](../../packages/api-server/).
 
 ### agent-runtime
 
@@ -85,10 +87,10 @@ A React + Vite single-page app served by the api-server. It uses tRPC over HTTP 
 
 | Edge | Protocol | Purpose |
 |------|----------|---------|
-| ui → api-server (`<rel>-apiserver`) | tRPC over HTTP | CRUD on templates, instances, schedules, sessions |
-| ui → api-server | WebSocket (ACP, JSON-RPC 2.0) | Live chat session, permission prompts, streaming output |
+| ui → api-server (`<rel>-apiserver`) | tRPC over HTTP | CRUD on templates, instances, schedules, sessions; durable user-prompt submission (`prompts.send`) |
+| ui → api-server | WebSocket (ACP, JSON-RPC 2.0) | Live chat session, permission prompts, streaming output (prompts ride tRPC, not this WS) |
 | ui → api-server | WebSocket (binary terminal frames) | Live terminal session — input / output / resize / exit, see [ADR-037](../adrs/037-remote-terminal.md) |
-| api-server → agent-runtime | WebSocket (ACP, JSON-RPC 2.0) | Chat-mode relay target — one hop, no fan-out |
+| api-server → agent-runtime | WebSocket (ACP, JSON-RPC 2.0) | Chat-mode relay target — one hop, no fan-out. Also one-shot WSes from the prompt forwarder per outbox entry. |
 | api-server → agent-runtime | WebSocket (binary terminal frames) | Terminal-mode relay target — one hop, single client per session |
 | api-server → agent-runtime | HTTP (tRPC proxy) | In-pod file operations surfaced to the UI |
 | agent-runtime → api-server (`<rel>-apiserver-harness`, via paired gateway → Istio waypoint) | HTTP | MCP tool access, pod-files SSE, `/api/instances/:id/internal/trigger` (ADR-041) |

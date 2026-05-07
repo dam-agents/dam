@@ -45,10 +45,8 @@ import {
   type ApprovalsRelayService,
   type WrapperFrameSender,
 } from "./../../modules/approvals/compose.js";
-import {
-  composePromptsService,
-  type PromptsStore,
-} from "./../../modules/prompts/compose.js";
+import { composePromptsService } from "./../../modules/prompts/compose.js";
+import type { PromptsStore } from "./../../modules/prompts/infrastructure/redis-prompts-store.js";
 import {
   composeEgressRulesModule,
   createConnectionRulesSyncAdapter,
