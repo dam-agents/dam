@@ -9,7 +9,7 @@ Last verified: 2026-05-06
 - [ADR-018 — Slack integration](../adrs/018-slack-integration.md) — identity linking and the per-instance `allowedUsers` gate that decides who can drive a thread
 - [ADR-027 — Slack per-turn user impersonation](../adrs/027-slack-user-impersonation.md) — foreign repliers fork the instance into a per-turn paired pod whose gateway mounts the replier's K8s credential Secrets
 - [ADR-033 — Envoy-based credential gateway](../adrs/033-envoy-credential-gateway.md) — Envoy mints per-instance leaf certs, MITMs egress, and injects credential headers
-- [ADR-035 — HITL ext_authz](../adrs/035-hitl-ext-authz.md) — Envoy gates credentialed egress through an api-server ext_authz call
+- [ADR-035 — HITL ext_authz](../adrs/035-unified-hitl-ux.md) — Envoy gates credentialed egress through an api-server ext_authz call
 - [ADR-038 — Paired agent and gateway pods](../adrs/038-paired-gateway-pod.md) — agent and gateway run in two paired pods, with NetworkPolicies the cluster enforces
 
 ## Overview

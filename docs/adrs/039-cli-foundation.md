@@ -14,7 +14,7 @@ This ADR implements [#79](https://github.com/dam-agents/dam/issues/79). Subseque
 
 ## Decision
 
-**The CLI is a TypeScript Node package, distributed via npm, that shares the API server's tRPC contract directly.** It runs on the user's installed Node — no bundled runtime. Cross-platform reach is macOS + Linux + Windows-via-WSL2. Configuration follows the [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html) — config under `$XDG_CONFIG_HOME/dam/` (default `~/.config/dam/`), state and credentials under `$XDG_STATE_HOME/dam/` (default `~/.local/state/dam/`).
+**The CLI is a TypeScript Node package, distributed via npm, that shares the API server's tRPC contract directly.** It runs on the user's installed Node — no bundled runtime. Cross-platform reach is macOS + Linux + Windows-via-WSL2. Configuration follows the [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir/basedir-spec-latest.html) — config under `$XDG_CONFIG_HOME/dam/` (default `~/.config/dam/`), state and credentials under `$XDG_STATE_HOME/dam/` (default `~/.local/state/dam/`).
 
 The load-bearing rules:
 

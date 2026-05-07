@@ -34,7 +34,7 @@ ACP-native permissions are different. They guard the *harness's own tool calls*;
 
 The harness's `canUseTool` callback is invoked synchronously inside the SDK's turn loop while processing a `session/prompt`. The `await this.client.requestPermission(...)` is a JavaScript Promise tied to the harness process's event loop — it cannot be persisted, serialized, or revived by another process. If the harness/pod dies, the entire promise chain vaporizes with it.
 
-ACP `session/resume` ([types.gen.d.ts:2492-2524](../../node_modules/.pnpm/@agentclientprotocol+sdk@0.17.1_zod@4.3.6/node_modules/@agentclientprotocol/sdk/dist/schema/types.gen.d.ts#L2492-L2524)) is marked **UNSTABLE** and explicitly does *not* deliver pending tool-call verdicts; it returns `configOptions / models / modes` only. There is no protocol entry point that says "here's the answer to a permission you asked for in a now-dead turn."
+ACP `session/resume` (defined in `@agentclientprotocol/sdk@0.17.1`, `dist/schema/types.gen.d.ts:2492-2524`) is marked **UNSTABLE** and explicitly does *not* deliver pending tool-call verdicts; it returns `configOptions / models / modes` only. There is no protocol entry point that says "here's the answer to a permission you asked for in a now-dead turn."
 
 Five candidate workarounds (replay request, synthesize fresh `requestPermission`, fork the SDK to add canUseTool checkpointing, fingerprint-based pre-approval, long-poll across hibernation) all fail for one of two reasons: no harness-side `await` to deliver the response to, or duplicating the harness's own `allow_always` / `addRules` durable-decision system. ACP-native is therefore live-only by protocol design.
 
