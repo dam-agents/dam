@@ -131,4 +131,8 @@ export const secretsRouter = t.router({
         secretIds: input.secretIds,
       }),
     ),
+
+  listGrantedAgents: t.procedure
+    .input(z.object({ id: z.string().min(1) }))
+    .query(({ ctx, input }) => ctx.secrets.listGrantedAgents(input.id)),
 });

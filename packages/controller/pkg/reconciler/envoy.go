@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -36,6 +37,12 @@ const (
 	envoyHostPatternAnn   = "agent-platform.ai/host-pattern"
 	envoyHeaderNameAnn    = "agent-platform.ai/injection-header-name"
 	envoyAuthModeAnn      = "agent-platform.ai/auth-mode"
+	// JSON-encoded list of {envName, placeholder} the api-server stamps on a
+	// user-typed credential Secret. Authoritative source for the env vars
+	// the agent harness needs as placeholders (ADR-040). Connection-type
+	// Secrets do not write this annotation today and fall through to the
+	// hardcoded mapping in `credentialEnvVars` below.
+	envoyEnvMappingsAnn   = "agent-platform.ai/env-mappings"
 	// Per-agent grant annotations stamped by the api-server on the
 	// instance ConfigMap. The controller reads them on every reconcile
 	// and intersects with the owner's credential Secret list. Both lists
@@ -151,38 +158,55 @@ func listOwnerCredentialSecrets(ctx context.Context, client kubernetes.Interface
 	return items, nil
 }
 
-// credentialEnvVars synthesizes the env vars the agent harness needs to even
-// *attempt* an upstream call when the corresponding credential Secret exists.
-// Envoy's credential_injector overrides the header on the wire, but harnesses
-// like Claude Code refuse to dispatch when the canonical env is unset, so the
-// in-pod env has to carry a placeholder.
+type envMapping struct {
+	EnvName     string `json:"envName"`
+	Placeholder string `json:"placeholder"`
+}
+
+// credentialEnvVars synthesizes the env-var placeholders the agent harness
+// needs so SDKs will dispatch (Envoy overwrites the real header on the wire).
 //
-// The placeholder value is opaque to the upstream — Envoy overwrites it — so
-// any non-empty string works. We use a stable `dummy-placeholder` token so
-// logs stay grep-friendly.
+// Source of truth (ADR-040): the api-server stamps `envoyEnvMappingsAnn` on
+// each user-typed credential Secret. Secrets are pre-sorted by Name in
+// `listOwnerCredentialSecrets`, so the inner dedup gives "first-granted
+// wins" on env-name collisions. When the annotation is missing or malformed
+// the legacy switch fills in the canonical env per secret type — covers
+// connection-type Secrets (no annotation today) and hand-crafted fixtures.
 func credentialEnvVars(secrets []corev1.Secret) []corev1.EnvVar {
-	const sentinel = "dummy-placeholder"
+	const fallbackPlaceholder = "dummy-placeholder"
 	seen := map[string]struct{}{}
-	add := func(envs []corev1.EnvVar, name string) []corev1.EnvVar {
+	add := func(envs []corev1.EnvVar, name, value string) []corev1.EnvVar {
+		if name == "" {
+			return envs
+		}
 		if _, dup := seen[name]; dup {
 			return envs
 		}
 		seen[name] = struct{}{}
-		return append(envs, corev1.EnvVar{Name: name, Value: sentinel})
+		return append(envs, corev1.EnvVar{Name: name, Value: value})
 	}
 	var envs []corev1.EnvVar
 	for _, s := range secrets {
+		if raw := s.Annotations[envoyEnvMappingsAnn]; raw != "" {
+			var mappings []envMapping
+			if err := json.Unmarshal([]byte(raw), &mappings); err == nil {
+				for _, m := range mappings {
+					envs = add(envs, m.EnvName, m.Placeholder)
+				}
+				continue
+			}
+		}
 		switch s.Labels[envoySecretTypeLabel] {
 		case "anthropic":
 			if s.Annotations[envoyAuthModeAnn] == "api-key" {
-				envs = add(envs, "ANTHROPIC_API_KEY")
+				envs = add(envs, "ANTHROPIC_API_KEY", fallbackPlaceholder)
 			} else {
-				envs = add(envs, "CLAUDE_CODE_OAUTH_TOKEN")
+				envs = add(envs, "CLAUDE_CODE_OAUTH_TOKEN", fallbackPlaceholder)
 			}
 		case "connection":
 			host := s.Annotations[envoyHostPatternAnn]
 			if host == "github.com" || host == "api.github.com" {
-				envs = add(envs, "GH_TOKEN")
+				envs = add(envs, "GH_TOKEN", fallbackPlaceholder)
 			}
 		}
 	}

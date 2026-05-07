@@ -40,3 +40,12 @@ export const ACTIVE_SESSION_KEY = "agent-platform.ai/active-session";
 // so the explicit-empty vs. legacy-absent distinction is moot.
 export const ANN_GRANTED_SECRET_IDS = "agent-platform.ai/granted-secret-ids";
 export const ANN_GRANTED_CONNECTION_IDS = "agent-platform.ai/granted-connection-ids";
+
+// Render-affecting hash of the agent's currently-granted secrets (ADR-040).
+// The api-server bumps this on the instance ConfigMap whenever a granted
+// secret's render-affecting fields change (envMappings, hostPattern,
+// pathPattern, injectionConfig). Bumping the annotation forces the
+// controller's ConfigMap watch to refire so the agent pod re-renders with
+// the merged env. The value is opaque to the controller — a roll trigger
+// only.
+export const ANN_SECRETS_REV = "agent-platform.ai/secrets-rev";

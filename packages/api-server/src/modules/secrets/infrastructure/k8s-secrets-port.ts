@@ -104,6 +104,11 @@ export interface K8sSecretsPort {
     authMode?: AuthMode;
     envMappings?: EnvMapping[];
   }): Promise<void>;
+  /**
+   * Apply the patch and return the before/after view so the service layer
+   * can diff render-affecting fields without a redundant read. Returns
+   * `null` when the secret doesn't exist (e.g. concurrent delete).
+   */
   updateSecret(
     id: string,
     input: {
@@ -115,7 +120,7 @@ export interface K8sSecretsPort {
       authMode?: AuthMode;
       envMappings?: EnvMapping[];
     },
-  ): Promise<void>;
+  ): Promise<{ before: K8sStoredSecret; after: K8sStoredSecret } | null>;
   deleteSecret(id: string): Promise<void>;
 }
 
@@ -139,6 +144,40 @@ function k8sSecretName(id: string): string {
   return `${K8S_NAME_PREFIX}${id}`;
 }
 
+/** Parse a V1Secret into the domain shape. Used by both `listSecrets` and the
+ *  before/after read in `updateSecret`. */
+function parseStoredSecret(s: k8s.V1Secret): K8sStoredSecret | null {
+  if (!s.metadata?.name?.startsWith(K8S_NAME_PREFIX)) return null;
+  const ann = s.metadata.annotations ?? {};
+  const labels = s.metadata.labels ?? {};
+  const id = s.metadata.name.slice(K8S_NAME_PREFIX.length);
+  const headerName = ann[ANN_HEADER_NAME];
+  const valueFormat = ann[ANN_VALUE_FORMAT];
+  const injectionConfig: InjectionConfig | undefined =
+    headerName && valueFormat ? { headerName, valueFormat } : undefined;
+  const authMode = ann[ANN_AUTH_MODE] as AuthMode | undefined;
+  const stored: K8sStoredSecret = {
+    id,
+    name: ann["agent-platform.ai/display-name"] ?? id,
+    type: labels[LABEL_SECRET_TYPE] ?? "generic",
+    hostPattern: ann[ANN_HOST_PATTERN] ?? "",
+    createdAt: s.metadata.creationTimestamp
+      ? new Date(s.metadata.creationTimestamp).toISOString()
+      : new Date().toISOString(),
+  };
+  if (ann[ANN_PATH_PATTERN]) stored.pathPattern = ann[ANN_PATH_PATTERN];
+  if (injectionConfig) stored.injectionConfig = injectionConfig;
+  if (authMode) stored.authMode = authMode;
+  if (ann[ANN_ENV_MAPPINGS]) {
+    try {
+      stored.envMappings = JSON.parse(ann[ANN_ENV_MAPPINGS]);
+    } catch {
+      /* malformed annotation — controller falls back to legacy switch */
+    }
+  }
+  return stored;
+}
+
 export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSecretsPort {
   return {
     async listSecrets() {
@@ -146,33 +185,8 @@ export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSe
         `${LABEL_OWNER}=${ownerSub},${LABEL_MANAGED_BY}=api-server`,
       );
       return list
-        .filter((s) => s.metadata?.name?.startsWith(K8S_NAME_PREFIX))
-        .map((s) => {
-          const ann = s.metadata?.annotations ?? {};
-          const labels = s.metadata?.labels ?? {};
-          const id = s.metadata!.name!.slice(K8S_NAME_PREFIX.length);
-          const headerName = ann[ANN_HEADER_NAME];
-          const valueFormat = ann[ANN_VALUE_FORMAT];
-          const injectionConfig: InjectionConfig | undefined =
-            headerName && valueFormat ? { headerName, valueFormat } : undefined;
-          const authMode = ann[ANN_AUTH_MODE] as AuthMode | undefined;
-          const stored: K8sStoredSecret = {
-            id,
-            name: ann["agent-platform.ai/display-name"] ?? id,
-            type: labels[LABEL_SECRET_TYPE] ?? "generic",
-            hostPattern: ann[ANN_HOST_PATTERN] ?? "",
-            createdAt: s.metadata?.creationTimestamp
-              ? new Date(s.metadata.creationTimestamp).toISOString()
-              : new Date().toISOString(),
-          };
-          if (ann[ANN_PATH_PATTERN]) stored.pathPattern = ann[ANN_PATH_PATTERN];
-          if (injectionConfig) stored.injectionConfig = injectionConfig;
-          if (authMode) stored.authMode = authMode;
-          if (ann[ANN_ENV_MAPPINGS]) {
-            try { stored.envMappings = JSON.parse(ann[ANN_ENV_MAPPINGS]); } catch { /* ignore malformed */ }
-          }
-          return stored;
-        });
+        .map(parseStoredSecret)
+        .filter((s): s is K8sStoredSecret => s !== null);
     },
 
     async createSecret({ id, name, type, value, hostPattern, pathPattern, injectionConfig, authMode, envMappings }) {
@@ -206,7 +220,9 @@ export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSe
 
     async updateSecret(id, patch) {
       const existing = await client.getSecret(k8sSecretName(id));
-      if (!existing) return;
+      if (!existing) return null;
+      const before = parseStoredSecret(existing);
+      if (!before) return null;
 
       const annotations = { ...(existing.metadata?.annotations ?? {}) };
       const labels = existing.metadata?.labels ?? {};
@@ -243,7 +259,9 @@ export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSe
         body.stringData = { ...(body.stringData ?? {}), "sds.yaml": sdsYamlContent(patch.value, valueFormat) };
         body.data = undefined;
       }
-      await client.replaceSecret(k8sSecretName(id), body);
+      const replaced = await client.replaceSecret(k8sSecretName(id), body);
+      const after = parseStoredSecret(replaced) ?? before;
+      return { before, after };
     },
 
     async deleteSecret(id) {

@@ -43,10 +43,6 @@ import {
   configureAgentSchema,
   type ConfigureAgentValues,
 } from "../forms/configure-agent-schema.js";
-import {
-  envsAfterUngrant,
-  envsToAddOnGrant,
-} from "../utils/connection-env-helpers.js";
 
 type Tab = "connections" | "env" | "egress";
 
@@ -118,9 +114,10 @@ export function ConfigureAgentDialog({
   }, [accessQuery.data, connectionsQuery.data, userInitialEnv, agent.name, reset]);
   const ready = baselinedRef.current;
 
-  // Granting/ungranting an app writes its declared envMappings into the user
-  // env list. This couples assignedAppIds → envVars, so we don't delegate to
-  // the picker's render-time toggle — we drive both fields here.
+  // ADR-040: grant toggles no longer mutate `envVars`. The controller merges
+  // contributed envs from granted secrets/apps at pod-render time using the
+  // K8s Secret's `env-mappings` annotation as the source of truth. The user
+  // env list stays clean — only entries the user typed live there.
   const toggleSecret = (id: string) => {
     const current = getValues("assigned");
     const next = current.includes(id)
@@ -130,23 +127,10 @@ export function ConfigureAgentDialog({
   };
   const toggleApp = (id: string) => {
     const current = getValues("assignedAppIds");
-    const currentEnv = getValues("envVars");
-    const app = apps.find((a) => a.id === id);
-    if (current.includes(id)) {
-      const next = current.filter((x) => x !== id);
-      const remaining = apps.filter((a) => next.includes(a.id));
-      setValue("assignedAppIds", next, { shouldDirty: true });
-      setValue("envVars", envsAfterUngrant(currentEnv, app, remaining), {
-        shouldDirty: true,
-      });
-    } else {
-      const next = [...current, id].sort();
-      const toAdd = envsToAddOnGrant(currentEnv, app);
-      setValue("assignedAppIds", next, { shouldDirty: true });
-      if (toAdd.length > 0) {
-        setValue("envVars", [...currentEnv, ...toAdd], { shouldDirty: true });
-      }
-    }
+    const next = current.includes(id)
+      ? current.filter((x) => x !== id)
+      : [...current, id].sort();
+    setValue("assignedAppIds", next, { shouldDirty: true });
   };
 
   const assigned = watch("assigned");

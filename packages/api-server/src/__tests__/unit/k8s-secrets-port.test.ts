@@ -337,4 +337,39 @@ describe("createK8sSecretsPort.updateSecret", () => {
 
     expect(replaced[0]!.body.metadata?.annotations?.["agent-platform.ai/display-name"]).toBe("New Name");
   });
+
+  it("returns before/after stored views so callers can diff render-affecting fields", async () => {
+    // ADR-040 fanout decides which side-effects to run by diffing before
+    // and after. The port surfaces both so the service avoids a redundant
+    // read.
+    const { client } = fakeClient();
+    const port = createK8sSecretsPort(client, "owner-1");
+
+    await port.createSecret({
+      id: "diff1",
+      name: "Secret",
+      type: "generic",
+      value: "tok",
+      hostPattern: "api.old.example",
+      envMappings: [{ envName: "OLD", placeholder: "ph" }],
+    });
+
+    const result = await port.updateSecret("diff1", {
+      hostPattern: "api.new.example",
+      envMappings: [{ envName: "NEW", placeholder: "ph2" }],
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.before.hostPattern).toBe("api.old.example");
+    expect(result!.after.hostPattern).toBe("api.new.example");
+    expect(result!.before.envMappings).toEqual([{ envName: "OLD", placeholder: "ph" }]);
+    expect(result!.after.envMappings).toEqual([{ envName: "NEW", placeholder: "ph2" }]);
+  });
+
+  it("returns null when the secret is not found", async () => {
+    const { client } = fakeClient();
+    const port = createK8sSecretsPort(client, "owner-1");
+    const result = await port.updateSecret("missing", { name: "Whatever" });
+    expect(result).toBeNull();
+  });
 });

@@ -96,6 +96,13 @@ export interface AgentAccess {
   secretIds: string[];
 }
 
+/** Minimal agent shape returned by `listGrantedAgents` — used by the UI's
+ *  env-affecting edit confirmation to show which agents will roll. */
+export interface GrantedAgentSummary {
+  id: string;
+  name: string;
+}
+
 export interface SecretsService {
   list(): Promise<SecretView[]>;
   create(input: CreateSecretInput): Promise<SecretView>;
@@ -103,4 +110,7 @@ export interface SecretsService {
   delete(id: string): Promise<void>;
   getAgentAccess(agentId: string): Promise<AgentAccess>;
   setAgentAccess(agentId: string, access: AgentAccess): Promise<void>;
+  /** Agents that currently have this secret in their granted set. Empty
+   *  when the secret is not granted to any agent. (ADR-040) */
+  listGrantedAgents(secretId: string): Promise<GrantedAgentSummary[]>;
 }
