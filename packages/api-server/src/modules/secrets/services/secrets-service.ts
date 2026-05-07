@@ -42,6 +42,7 @@ function toSecretView(s: K8sStoredSecret): SecretView {
   };
   if (s.pathPattern) view.pathPattern = s.pathPattern;
   if (type === "generic" && s.injectionConfig) view.injectionConfig = s.injectionConfig;
+  if (s.envMappings?.length) view.envMappings = s.envMappings;
   return view;
 }
 
@@ -83,6 +84,7 @@ export function createSecretsService(deps: {
         ...(input.pathPattern ? { pathPattern: input.pathPattern } : {}),
         ...(input.injectionConfig ? { injectionConfig: input.injectionConfig } : {}),
         ...(authMode ? { authMode } : {}),
+        ...(input.envMappings?.length ? { envMappings: input.envMappings } : {}),
       });
       const view: SecretView = {
         id,
@@ -95,15 +97,18 @@ export function createSecretsService(deps: {
       if (input.type === "generic" && input.injectionConfig) {
         view.injectionConfig = input.injectionConfig;
       }
+      if (input.envMappings?.length) view.envMappings = input.envMappings;
       return view;
     },
 
     async update({ id, ...patch }: UpdateSecretInput) {
       await deps.k8sPort.updateSecret(id, {
+        ...(patch.name !== undefined ? { name: patch.name } : {}),
         ...(patch.value !== undefined ? { value: patch.value } : {}),
         ...(patch.hostPattern !== undefined ? { hostPattern: patch.hostPattern } : {}),
         ...(patch.pathPattern !== undefined ? { pathPattern: patch.pathPattern } : {}),
         ...(patch.injectionConfig !== undefined ? { injectionConfig: patch.injectionConfig } : {}),
+        ...(patch.envMappings !== undefined ? { envMappings: patch.envMappings } : {}),
       });
     },
 

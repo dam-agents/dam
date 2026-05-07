@@ -106,11 +106,23 @@ func TestBuildGatewayNetworkPolicy(t *testing.T) {
 	assert.True(t, saw80, "gateway must permit egress on TCP 80")
 	assert.True(t, saw443, "gateway must permit egress on TCP 443")
 
-	extAuthz := np.Spec.Egress[1]
-	require.Len(t, extAuthz.To, 1)
-	assert.Equal(t, "apiserver", extAuthz.To[0].PodSelector.MatchLabels["app.kubernetes.io/component"])
-	require.Len(t, extAuthz.Ports, 1)
-	assert.Equal(t, int32(4002), extAuthz.Ports[0].Port.IntVal)
+	apiserver := np.Spec.Egress[1]
+	require.Len(t, apiserver.To, 1)
+	assert.Equal(t, "apiserver", apiserver.To[0].PodSelector.MatchLabels["app.kubernetes.io/component"])
+	// ext_authz (gRPC) + harness (HTTP). Both terminate at the apiserver pod;
+	// the same egress rule covers both ports.
+	require.Len(t, apiserver.Ports, 2)
+	var sawExtAuthz, sawHarness bool
+	for _, p := range apiserver.Ports {
+		if p.Port.IntVal == 4002 {
+			sawExtAuthz = true
+		}
+		if p.Port.IntVal == 4001 {
+			sawHarness = true
+		}
+	}
+	assert.True(t, sawExtAuthz, "gateway must permit egress to apiserver ext_authz port")
+	assert.True(t, sawHarness, "gateway must permit egress to apiserver harness port")
 
 	// Ingress: paired agent pod only, exact pair-match.
 	require.Len(t, np.Spec.Ingress, 1)

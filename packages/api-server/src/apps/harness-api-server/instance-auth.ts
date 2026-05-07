@@ -1,13 +1,24 @@
-import { createHash } from "node:crypto";
-import yaml from "js-yaml";
+import type { Context } from "hono";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import {
   LABEL_AGENT_REF,
   LABEL_OWNER,
-  STATUS_KEY,
 } from "../../modules/agents/infrastructure/labels.js";
 
-/** Resolved instance metadata derived from a successful Bearer-token check. */
+/** Header injected by the paired gateway pod's Envoy on harness-bound
+ *  traffic. The route that adds it strips any client-supplied value first
+ *  (`request_headers_to_remove` + `OVERWRITE_IF_EXISTS_OR_ADD`), so the
+ *  agent cannot forge identity even if it could route around `HTTP_PROXY`.
+ *  Trust here is topological: the api-server's harness-port ingress
+ *  NetworkPolicy admits only `role=gateway` pods, and the agent's egress
+ *  NetworkPolicy admits only the paired gateway — there is no path that
+ *  reaches this port without traversing an Envoy filter that owns this
+ *  header. */
+const INSTANCE_HEADER = "x-platform-instance";
+
+/** Resolved instance metadata. `instanceId` mirrors the URL parameter
+ *  after a successful header check; `agentId` and `owner` come from the
+ *  instance ConfigMap's labels. */
 export interface InstanceIdentity {
   instanceId: string;
   agentId: string;
@@ -15,36 +26,31 @@ export interface InstanceIdentity {
 }
 
 /**
- * Verify a per-instance Bearer token against the agent ConfigMap's
- * `accessTokenHash` and return the resolved (agent, owner) identity.
- * Returns null on any auth or lookup failure — callers map that to 401/404.
+ * Resolve the calling instance from the trusted `x-platform-instance`
+ * header injected by the paired gateway pod's Envoy. Returns null on any
+ * mismatch or lookup failure — callers map that to 404. Specifically:
+ *
+ *   - missing header → null (request did not traverse the gateway)
+ *   - header ≠ URL `:id` → null (caller addressing another instance)
+ *   - instance ConfigMap missing or unlabeled → null (drift)
+ *
+ * The header itself is not authenticated cryptographically; trust derives
+ * from the NetworkPolicy + Envoy topology described on `INSTANCE_HEADER`.
  */
-export async function verifyInstanceToken(
+export async function verifyInstanceFromHeader(
   k8s: K8sClient,
+  c: Context,
   instanceId: string,
-  token: string,
 ): Promise<InstanceIdentity | null> {
+  const claimed = c.req.header(INSTANCE_HEADER);
+  if (!claimed || claimed !== instanceId) return null;
+
   const instanceCm = await k8s.getConfigMap(instanceId);
   if (!instanceCm) return null;
 
   const agentId = instanceCm.metadata?.labels?.[LABEL_AGENT_REF];
   const owner = instanceCm.metadata?.labels?.[LABEL_OWNER];
   if (!agentId || !owner) return null;
-
-  const agentCm = await k8s.getConfigMap(agentId);
-  if (!agentCm) return null;
-  // Cross-check owner on both ConfigMaps so a relabeled instance (LABEL_AGENT_REF
-  // pointing at someone else's agent) can't authenticate against that agent's
-  // token hash.
-  if (agentCm.metadata?.labels?.[LABEL_OWNER] !== owner) return null;
-
-  const statusYaml = agentCm.data?.[STATUS_KEY];
-  if (!statusYaml) return null;
-  const status = yaml.load(statusYaml) as { accessTokenHash?: string };
-  if (!status?.accessTokenHash) return null;
-
-  const hash = createHash("sha256").update(token).digest("hex");
-  if (hash !== status.accessTokenHash) return null;
 
   return { instanceId, agentId, owner };
 }

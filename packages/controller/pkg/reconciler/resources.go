@@ -77,13 +77,17 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 	// agent-runtime's tRPC are gated at the kernel by the pod's
 	// NetworkPolicy (ingress admitted only from the api-server pod);
 	// outbound calls cross the paired gateway pod for credential injection.
+	//
+	// Harness API traffic ALSO crosses the paired gateway: there is no
+	// NO_PROXY carve-out for the api-server. Envoy on the gateway pod
+	// injects an `x-platform-instance` header that the api-server trusts
+	// for caller identity (the agent pod has no direct egress path to the
+	// harness port, so it cannot forge the header by bypassing Envoy).
 	env := []corev1.EnvVar{
 		{Name: "HTTPS_PROXY", Value: proxyAddr},
 		{Name: "HTTP_PROXY", Value: proxyAddr},
 		{Name: "https_proxy", Value: proxyAddr},
 		{Name: "http_proxy", Value: proxyAddr},
-		{Name: "NO_PROXY", Value: cfg.APIServerHost},
-		{Name: "no_proxy", Value: cfg.APIServerHost},
 		{Name: "SSL_CERT_FILE", Value: caCertPath},
 		{Name: "NODE_EXTRA_CA_CERTS", Value: caCertPath},
 		{Name: "GIT_SSL_CAINFO", Value: caCertPath},
@@ -357,7 +361,6 @@ func BuildAgentNetworkPolicy(pairKey string, cfg *config.Config, ownerCM *corev1
 	tcp := corev1.ProtocolTCP
 	udp := corev1.ProtocolUDP
 	acpPort := intstr.FromInt32(8080)
-	harnessPort := intstr.FromInt32(portInt32(cfg.HarnessServerPort))
 	envoyPort := intstr.FromInt32(portInt32(cfg.EnvoyPort))
 	dnsPort := intstr.FromInt32(53)
 	dnsTargetPort := intstr.FromInt32(5353)
@@ -367,6 +370,12 @@ func BuildAgentNetworkPolicy(pairKey string, cfg *config.Config, ownerCM *corev1
 			// Paired gateway pod only — exact-match on pair + role.
 			// Loosening to a wildcard would let one pair's agent dial
 			// another's gateway, defeating the boundary (ADR-038 §Threat Model).
+			//
+			// All TCP egress — including harness API calls to the api-server —
+			// flows through this single gateway hop. Envoy on the gateway pod
+			// stamps the trusted `x-platform-instance` header on harness
+			// traffic; without a direct path here the agent cannot bypass
+			// Envoy to forge identity.
 			To: []networkingv1.NetworkPolicyPeer{{
 				PodSelector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{
@@ -377,23 +386,6 @@ func BuildAgentNetworkPolicy(pairKey string, cfg *config.Config, ownerCM *corev1
 			}},
 			Ports: []networkingv1.NetworkPolicyPort{
 				{Protocol: &tcp, Port: &envoyPort},
-			},
-		},
-		{
-			// Harness API server: separate port exposing only the subset of
-			// API available to agent harnesses (triggers, MCP tools).
-			// Platform-internal control plane, not a credentialed external
-			// resource — no proxy hop needed.
-			To: []networkingv1.NetworkPolicyPeer{{
-				PodSelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{"app.kubernetes.io/component": "apiserver"},
-				},
-				NamespaceSelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{"kubernetes.io/metadata.name": cfg.ReleaseNamespace},
-				},
-			}},
-			Ports: []networkingv1.NetworkPolicyPort{
-				{Protocol: &tcp, Port: &harnessPort},
 			},
 		},
 		{

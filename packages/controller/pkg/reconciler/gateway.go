@@ -121,6 +121,7 @@ func BuildGatewayNetworkPolicy(pairKey string, cfg *config.Config, ownerCM *core
 	udp := corev1.ProtocolUDP
 	envoyPort := intstr.FromInt32(portInt32(cfg.EnvoyPort))
 	extAuthzPort := intstr.FromInt32(portInt32(cfg.ExtAuthzPort))
+	harnessPort := intstr.FromInt32(portInt32(cfg.HarnessServerPort))
 	httpsPort := intstr.FromInt32(443)
 	httpPort := intstr.FromInt32(80)
 	dnsPort := intstr.FromInt32(53)
@@ -136,9 +137,11 @@ func BuildGatewayNetworkPolicy(pairKey string, cfg *config.Config, ownerCM *core
 			},
 		},
 		{
-			// HITL ext_authz gate (ADR-035). gRPC Check on every credentialed
-			// request and on the L4 catch-all chain. failure_mode_allow=false
-			// in Envoy means a blocked Check fails closed.
+			// API server: HITL ext_authz gate (ADR-035) on the gRPC port and
+			// harness API (MCP, pod-files SSE, /internal/trigger) on the HTTP
+			// port. Both run on the apiserver pod; Envoy stamps a trusted
+			// `x-platform-instance` header on harness traffic and the
+			// agent has no path here that bypasses Envoy.
 			To: []networkingv1.NetworkPolicyPeer{{
 				PodSelector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{"app.kubernetes.io/component": "apiserver"},
@@ -149,6 +152,7 @@ func BuildGatewayNetworkPolicy(pairKey string, cfg *config.Config, ownerCM *core
 			}},
 			Ports: []networkingv1.NetworkPolicyPort{
 				{Protocol: &tcp, Port: &extAuthzPort},
+				{Protocol: &tcp, Port: &harnessPort},
 			},
 		},
 		{

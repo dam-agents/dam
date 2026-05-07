@@ -7,7 +7,7 @@
  * newly-created secrets land in K8s for the sidecar to discover.
  */
 import type * as k8s from "@kubernetes/client-node";
-import type { InjectionConfig } from "api-server-api";
+import type { EnvMapping, InjectionConfig } from "api-server-api";
 
 import type { K8sClient } from "../../agents/infrastructure/k8s.js";
 
@@ -19,6 +19,7 @@ const ANN_PATH_PATTERN = "agent-platform.ai/path-pattern";
 const ANN_HEADER_NAME = "agent-platform.ai/injection-header-name";
 const ANN_AUTH_MODE = "agent-platform.ai/auth-mode";
 const ANN_VALUE_FORMAT = "agent-platform.ai/injection-value-format";
+const ANN_ENV_MAPPINGS = "agent-platform.ai/env-mappings";
 
 export type AuthMode = "api-key" | "oauth";
 
@@ -87,6 +88,7 @@ export interface K8sStoredSecret {
   injectionConfig?: InjectionConfig | null;
   createdAt: string;
   authMode?: AuthMode;
+  envMappings?: EnvMapping[];
 }
 
 export interface K8sSecretsPort {
@@ -100,15 +102,18 @@ export interface K8sSecretsPort {
     pathPattern?: string;
     injectionConfig?: InjectionConfig;
     authMode?: AuthMode;
+    envMappings?: EnvMapping[];
   }): Promise<void>;
   updateSecret(
     id: string,
     input: {
+      name?: string;
       value?: string;
       hostPattern?: string;
       pathPattern?: string | null;
       injectionConfig?: InjectionConfig | null;
       authMode?: AuthMode;
+      envMappings?: EnvMapping[];
     },
   ): Promise<void>;
   deleteSecret(id: string): Promise<void>;
@@ -163,11 +168,14 @@ export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSe
           if (ann[ANN_PATH_PATTERN]) stored.pathPattern = ann[ANN_PATH_PATTERN];
           if (injectionConfig) stored.injectionConfig = injectionConfig;
           if (authMode) stored.authMode = authMode;
+          if (ann[ANN_ENV_MAPPINGS]) {
+            try { stored.envMappings = JSON.parse(ann[ANN_ENV_MAPPINGS]); } catch { /* ignore malformed */ }
+          }
           return stored;
         });
     },
 
-    async createSecret({ id, name, type, value, hostPattern, pathPattern, injectionConfig, authMode }) {
+    async createSecret({ id, name, type, value, hostPattern, pathPattern, injectionConfig, authMode, envMappings }) {
       const secretType = type === "anthropic" ? "anthropic" : "generic";
       const { headerName, valueFormat } = resolveInjection(secretType, authMode, injectionConfig);
       const annotations: Record<string, string> = {
@@ -178,6 +186,7 @@ export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSe
       };
       if (pathPattern) annotations[ANN_PATH_PATTERN] = pathPattern;
       if (authMode) annotations[ANN_AUTH_MODE] = authMode;
+      if (envMappings?.length) annotations[ANN_ENV_MAPPINGS] = JSON.stringify(envMappings);
 
       const body: k8s.V1Secret = {
         metadata: {
@@ -203,9 +212,14 @@ export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSe
       const labels = existing.metadata?.labels ?? {};
       const secretType = labels[LABEL_SECRET_TYPE] ?? "generic";
 
+      if (patch.name !== undefined) annotations["agent-platform.ai/display-name"] = patch.name;
       if (patch.hostPattern !== undefined) annotations[ANN_HOST_PATTERN] = patch.hostPattern;
       if (patch.pathPattern === null) delete annotations[ANN_PATH_PATTERN];
       else if (patch.pathPattern !== undefined) annotations[ANN_PATH_PATTERN] = patch.pathPattern;
+      if (patch.envMappings !== undefined) {
+        if (patch.envMappings.length > 0) annotations[ANN_ENV_MAPPINGS] = JSON.stringify(patch.envMappings);
+        else delete annotations[ANN_ENV_MAPPINGS];
+      }
 
       // Recompute header + value format if the injection config or auth mode
       // changed; otherwise keep what was stored at create time.

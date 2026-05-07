@@ -190,6 +190,78 @@ describe("createK8sSecretsPort.createSecret", () => {
   });
 });
 
+describe("createK8sSecretsPort.createSecret — envMappings", () => {
+  it("stores envMappings as a JSON annotation", async () => {
+    const { client, created } = fakeClient();
+    const port = createK8sSecretsPort(client, "owner-1");
+
+    await port.createSecret({
+      id: "env1",
+      name: "With Env",
+      type: "generic",
+      value: "tok",
+      hostPattern: "api.example.com",
+      envMappings: [{ envName: "MY_KEY", placeholder: "dummy-placeholder" }],
+    });
+
+    const ann = created[0]!.metadata?.annotations?.["agent-platform.ai/env-mappings"];
+    expect(ann).toBe(JSON.stringify([{ envName: "MY_KEY", placeholder: "dummy-placeholder" }]));
+  });
+
+  it("omits envMappings annotation when array is empty", async () => {
+    const { client, created } = fakeClient();
+    const port = createK8sSecretsPort(client, "owner-1");
+
+    await port.createSecret({
+      id: "env2",
+      name: "No Env",
+      type: "generic",
+      value: "tok",
+      hostPattern: "api.example.com",
+      envMappings: [],
+    });
+
+    expect(created[0]!.metadata?.annotations?.["agent-platform.ai/env-mappings"]).toBeUndefined();
+  });
+});
+
+describe("createK8sSecretsPort.listSecrets — envMappings", () => {
+  it("returns envMappings from the annotation", async () => {
+    const { client } = fakeClient();
+    const port = createK8sSecretsPort(client, "owner-1");
+
+    await port.createSecret({
+      id: "env3",
+      name: "Listed",
+      type: "generic",
+      value: "tok",
+      hostPattern: "api.example.com",
+      envMappings: [{ envName: "FOO", placeholder: "ph" }],
+    });
+
+    const secrets = await port.listSecrets();
+    const found = secrets.find((s) => s.id === "env3");
+    expect(found?.envMappings).toEqual([{ envName: "FOO", placeholder: "ph" }]);
+  });
+
+  it("returns no envMappings when annotation is absent", async () => {
+    const { client } = fakeClient();
+    const port = createK8sSecretsPort(client, "owner-1");
+
+    await port.createSecret({
+      id: "env4",
+      name: "Plain",
+      type: "generic",
+      value: "tok",
+      hostPattern: "api.example.com",
+    });
+
+    const secrets = await port.listSecrets();
+    const found = secrets.find((s) => s.id === "env4");
+    expect(found?.envMappings).toBeUndefined();
+  });
+});
+
 describe("createK8sSecretsPort.updateSecret", () => {
   it("re-bakes the file content when value changes, preserving stored authMode", async () => {
     const { client, replaced } = fakeClient();
@@ -209,5 +281,60 @@ describe("createK8sSecretsPort.updateSecret", () => {
     expect(replaced).toHaveLength(1);
     expect(replaced[0]!.body.stringData?.["sds.yaml"]).toContain('inline_string: "new"');
     expect(replaced[0]!.body.metadata?.annotations?.["agent-platform.ai/injection-header-name"]).toBe("x-api-key");
+  });
+
+  it("persists envMappings on update", async () => {
+    const { client, replaced } = fakeClient();
+    const port = createK8sSecretsPort(client, "owner-1");
+
+    await port.createSecret({
+      id: "upd1",
+      name: "Secret",
+      type: "generic",
+      value: "tok",
+      hostPattern: "api.example.com",
+    });
+
+    await port.updateSecret("upd1", {
+      envMappings: [{ envName: "NEW_VAR", placeholder: "ph" }],
+    });
+
+    const ann = replaced[0]!.body.metadata?.annotations?.["agent-platform.ai/env-mappings"];
+    expect(ann).toBe(JSON.stringify([{ envName: "NEW_VAR", placeholder: "ph" }]));
+  });
+
+  it("removes envMappings annotation when updated with empty array", async () => {
+    const { client, replaced } = fakeClient();
+    const port = createK8sSecretsPort(client, "owner-1");
+
+    await port.createSecret({
+      id: "upd2",
+      name: "Secret",
+      type: "generic",
+      value: "tok",
+      hostPattern: "api.example.com",
+      envMappings: [{ envName: "OLD_VAR", placeholder: "ph" }],
+    });
+
+    await port.updateSecret("upd2", { envMappings: [] });
+
+    expect(replaced[0]!.body.metadata?.annotations?.["agent-platform.ai/env-mappings"]).toBeUndefined();
+  });
+
+  it("updates display name", async () => {
+    const { client, replaced } = fakeClient();
+    const port = createK8sSecretsPort(client, "owner-1");
+
+    await port.createSecret({
+      id: "upd3",
+      name: "Old Name",
+      type: "generic",
+      value: "tok",
+      hostPattern: "api.example.com",
+    });
+
+    await port.updateSecret("upd3", { name: "New Name" });
+
+    expect(replaced[0]!.body.metadata?.annotations?.["agent-platform.ai/display-name"]).toBe("New Name");
   });
 });

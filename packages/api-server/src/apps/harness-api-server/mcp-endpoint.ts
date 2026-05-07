@@ -10,7 +10,7 @@ import { ChannelType, type SchedulesService, type SkillsService } from "api-serv
 import type { ChannelManager, ChannelAttachment } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
-import { verifyInstanceToken } from "./instance-auth.js";
+import { verifyInstanceFromHeader } from "./instance-auth.js";
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
 
@@ -355,14 +355,8 @@ export interface MountMcpDeps {
 
 export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
   app.all("/api/instances/:id/mcp", async (c) => {
-    const authHeader = c.req.header("authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return c.json({ error: "unauthorized" }, 401);
-    }
-    const token = authHeader.slice(7);
-
     const instanceId = c.req.param("id")!;
-    const verified = await verifyInstanceToken(deps.k8s, instanceId, token);
+    const verified = await verifyInstanceFromHeader(deps.k8s, c, instanceId);
     if (!verified) {
       return c.json({ error: "not found" }, 404);
     }
