@@ -1,6 +1,3 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
 import { createDb, runMigrations } from "db";
 import { createApi } from "./modules/agents/infrastructure/k8s.js";
 import {
@@ -63,20 +60,12 @@ import {
 import { createAgentArtifactsSweeper } from "./sagas/agent-artifacts-sweeper.js";
 import { createK8sClient as createAgentsK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
+import { getServerVersion } from "./bootstrap/server-version.js";
 import { createRedisBus } from "./core/redis-bus.js";
 import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
 
 const config = loadConfig();
-
-// `../package.json` resolves correctly from both `dist/index.js` (prod) and
-// `src/index.ts` (tsx dev) — both sit one directory below the package root.
-const serverVersion = (() => {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const pkg = JSON.parse(
-    readFileSync(resolve(here, "../package.json"), "utf-8"),
-  ) as { version: string };
-  return pkg.version;
-})();
+const serverVersion = getServerVersion(import.meta.url);
 
 const { api } = createApi(config.namespace);
 await runMigrations(config.databaseUrl, config.migrationsPath);
