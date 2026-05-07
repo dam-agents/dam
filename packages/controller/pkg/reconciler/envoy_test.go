@@ -223,3 +223,52 @@ func TestEnvoySecretsRev_TemplateRevBumpRollsExistingPods(t *testing.T) {
 	two := envoySecretsRev([]corev1.Secret{ownerSecret("platform-conn-slack", "connection", "slack")})
 	assert.NotEqual(t, one, two)
 }
+
+func TestCredentialEnvVars_RespectsEnvMappingsAnnotation(t *testing.T) {
+	// User-defined mappings on a generic Secret must land on the agent pod —
+	// without this, `env: GH_TOKEN=...` configured for a generic GitHub PAT
+	// is silently dropped because only anthropic / connection secret types
+	// were hardcoded to emit env vars.
+	s := ownerSecret("platform-cred-x", "generic", "")
+	s.Annotations[envoyEnvMappingsAnn] = `[{"envName":"GH_TOKEN","placeholder":"dummy-placeholder"},{"envName":"OTHER","placeholder":"ph"}]`
+
+	envs := credentialEnvVars([]corev1.Secret{s})
+
+	got := map[string]string{}
+	for _, e := range envs {
+		got[e.Name] = e.Value
+	}
+	assert.Equal(t, "dummy-placeholder", got["GH_TOKEN"])
+	assert.Equal(t, "ph", got["OTHER"])
+}
+
+func TestCredentialEnvVars_DedupesAcrossAnnotationAndHardcoded(t *testing.T) {
+	// The anthropic hardcoded path and the env-mappings annotation can
+	// agree on the same envName. Dedup must keep a single entry.
+	s := ownerSecret("platform-cred-anth", "anthropic", "")
+	s.Annotations[envoyAuthModeAnn] = "oauth"
+	s.Annotations[envoyEnvMappingsAnn] = `[{"envName":"CLAUDE_CODE_OAUTH_TOKEN","placeholder":"dummy-placeholder"}]`
+
+	envs := credentialEnvVars([]corev1.Secret{s})
+
+	count := 0
+	for _, e := range envs {
+		if e.Name == "CLAUDE_CODE_OAUTH_TOKEN" {
+			count++
+		}
+	}
+	assert.Equal(t, 1, count)
+}
+
+func TestCredentialEnvVars_MalformedAnnotationFallsBackCleanly(t *testing.T) {
+	// A malformed env-mappings JSON must not skip the per-type fallback or
+	// take down the reconcile loop.
+	s := ownerSecret("platform-cred-broken", "anthropic", "")
+	s.Annotations[envoyAuthModeAnn] = "api-key"
+	s.Annotations[envoyEnvMappingsAnn] = "not json"
+
+	envs := credentialEnvVars([]corev1.Secret{s})
+
+	require.Len(t, envs, 1)
+	assert.Equal(t, "ANTHROPIC_API_KEY", envs[0].Name)
+}

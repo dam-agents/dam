@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -36,6 +37,7 @@ const (
 	envoyHostPatternAnn   = "agent-platform.ai/host-pattern"
 	envoyHeaderNameAnn    = "agent-platform.ai/injection-header-name"
 	envoyAuthModeAnn      = "agent-platform.ai/auth-mode"
+	envoyEnvMappingsAnn   = "agent-platform.ai/env-mappings"
 	// Per-agent grant annotations stamped by the api-server on the
 	// instance ConfigMap. The controller reads them on every reconcile
 	// and intersects with the owner's credential Secret list. Both lists
@@ -163,26 +165,49 @@ func listOwnerCredentialSecrets(ctx context.Context, client kubernetes.Interface
 func credentialEnvVars(secrets []corev1.Secret) []corev1.EnvVar {
 	const sentinel = "dummy-placeholder"
 	seen := map[string]struct{}{}
-	add := func(envs []corev1.EnvVar, name string) []corev1.EnvVar {
+	add := func(envs []corev1.EnvVar, name, value string) []corev1.EnvVar {
+		if name == "" {
+			return envs
+		}
 		if _, dup := seen[name]; dup {
 			return envs
 		}
+		if value == "" {
+			value = sentinel
+		}
 		seen[name] = struct{}{}
-		return append(envs, corev1.EnvVar{Name: name, Value: sentinel})
+		return append(envs, corev1.EnvVar{Name: name, Value: value})
 	}
 	var envs []corev1.EnvVar
 	for _, s := range secrets {
+		// User-defined env mappings (api-server stamps this on every Secret).
+		// Any envName the user requested lands in the agent pod with its
+		// declared placeholder; Envoy overwrites the header on the wire.
+		if raw := s.Annotations[envoyEnvMappingsAnn]; raw != "" {
+			var mappings []struct {
+				EnvName     string `json:"envName"`
+				Placeholder string `json:"placeholder"`
+			}
+			if err := json.Unmarshal([]byte(raw), &mappings); err == nil {
+				for _, m := range mappings {
+					envs = add(envs, m.EnvName, m.Placeholder)
+				}
+			}
+		}
+		// Per-type fallbacks for legacy Secrets that predate the
+		// env-mappings annotation. Dedup keeps these no-ops when the
+		// annotation already contributed the same name.
 		switch s.Labels[envoySecretTypeLabel] {
 		case "anthropic":
 			if s.Annotations[envoyAuthModeAnn] == "api-key" {
-				envs = add(envs, "ANTHROPIC_API_KEY")
+				envs = add(envs, "ANTHROPIC_API_KEY", sentinel)
 			} else {
-				envs = add(envs, "CLAUDE_CODE_OAUTH_TOKEN")
+				envs = add(envs, "CLAUDE_CODE_OAUTH_TOKEN", sentinel)
 			}
 		case "connection":
 			host := s.Annotations[envoyHostPatternAnn]
 			if host == "github.com" || host == "api.github.com" {
-				envs = add(envs, "GH_TOKEN")
+				envs = add(envs, "GH_TOKEN", sentinel)
 			}
 		}
 	}
