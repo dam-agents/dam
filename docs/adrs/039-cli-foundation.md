@@ -1,6 +1,6 @@
 # ADR-039: Platform CLI foundation — TypeScript on Node, npm distribution
 
-**Date:** 2026-05-05 (revised 2026-05-07 to switch from `~/.dam/` to XDG paths after review feedback in [#100](https://github.com/dam-agents/dam/pull/100))
+**Date:** 2026-05-05
 **Status:** Accepted
 **Owner:** @PetrBulanek
 
@@ -20,7 +20,7 @@ The load-bearing rules:
 
 - **One language stack.** TypeScript, the same stack as the API server and UI ([ADR-009](009-go-and-typescript.md)). The team writes TypeScript daily; the repo's only non-TS package is the controller. Adding a third language stack for one tool is ongoing tax. The CLI also consumes `api-server-api` directly today, getting tRPC types end-to-end without codegen — a current convenience that depends on how the API surface evolves.
 - **Ship as a Node script, not a native binary.** `npm install -g @dam-agents/cli` is the only install path. Users must have Node ≥ 20. npm is also the prevailing AI-CLI install path, so the audience already has the toolchain.
-- **Config lives at `$XDG_CONFIG_HOME/dam/config.toml`** (default `~/.config/dam/config.toml`). TOML for hand-edit ergonomics and comment support. State and credentials live separately under `$XDG_STATE_HOME/dam/` (default `~/.local/state/dam/`) — config is editable user intent; state is machine-managed. The CLI honors `XDG_CONFIG_HOME` and `XDG_STATE_HOME` overrides; on macOS the same defaults apply (we do not use `~/Library/Application Support`).
+- **Config lives at `$XDG_CONFIG_HOME/dam/config.toml`** (default `~/.config/dam/config.toml`). TOML for hand-edit ergonomics and comment support. State and credentials live separately under `$XDG_STATE_HOME/dam/` (default `~/.local/state/dam/`) — config is editable user intent; state is machine-managed. The CLI honors `XDG_CONFIG_HOME` and `XDG_STATE_HOME` overrides.
 - **Flat config schema; no profiles.** A single configured server, no `current-profile` indirection.
 - **Configuration precedence: flag > env > file > error.** No silent default for the server URL. The CLI errors with a setup hint when nothing is configured.
 - **Independent semver, server-advertised compatibility floor.** The CLI versions independently of the platform. The server exposes an unauthenticated version endpoint returning its own version and the minimum CLI version it accepts. The CLI hard-refuses to run if below the floor and soft-warns to stderr if behind current. The endpoint is plain HTTP, deliberately outside the tRPC surface so it can be called before any authentication or client setup.
