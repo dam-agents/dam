@@ -25,6 +25,7 @@ RUN pnpm --filter api-server build \
 FROM registry.access.redhat.com/hi/nodejs:22 AS runner
 
 COPY --from=builder --chown=65532:0 /prod /app
+COPY --from=builder --chown=65532:0 /app/packages/db/drizzle /app/packages/db/drizzle
 
 EXPOSE 4000
 
