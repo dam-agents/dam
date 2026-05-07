@@ -4,6 +4,7 @@ import type { ChannelsService } from "./modules/channels/types.js";
 import type { ConnectionsService } from "./modules/connections/types.js";
 import type { EgressRulesService } from "./modules/egress-rules/types.js";
 import type { InstancesService } from "./modules/instances/types.js";
+import type { PromptsService } from "./modules/prompts/types.js";
 import type { SchedulesService } from "./modules/schedules/types.js";
 import type { SecretsService } from "./modules/secrets/types.js";
 import type { SessionsService } from "./modules/sessions/types.js";
@@ -21,6 +22,7 @@ export interface ApiContext {
   instances: InstancesService;
   schedules: SchedulesService;
   sessions: SessionsService;
+  prompts: PromptsService;
   secrets: SecretsService;
   channels: ChannelsService;
   connections: ConnectionsService;

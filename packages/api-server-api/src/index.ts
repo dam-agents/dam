@@ -95,6 +95,13 @@ export type {
   SessionsService as SessionsApiService,
 } from "./modules/sessions/types.js";
 
+export type {
+  AcpContentBlock,
+  SendPromptInput,
+  SendPromptResult,
+  PromptsService,
+} from "./modules/prompts/types.js";
+
 export {
   OP_INPUT,
   OP_OUTPUT,

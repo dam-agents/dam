@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { createDb, runMigrations } from "db";
 import { createApi } from "./modules/agents/infrastructure/k8s.js";
 import {
@@ -51,6 +52,7 @@ import {
   listPendingApprovalAgentIds,
 } from "./modules/approvals/compose.js";
 import { createWrapperFrameSender } from "./modules/approvals/infrastructure/wrapper-frame-sender.js";
+import { composePromptsModule } from "./modules/prompts/compose.js";
 import {
   createEgressRuleMatchAdapter,
   createEgressRulesCleanupHook,
@@ -248,6 +250,21 @@ const { relay: approvalsRelay, gate: extAuthzGate, sweeper: deliverySweeper } = 
 });
 deliverySweeper.start();
 
+// Durable user-prompt outbox. Replaces the prior UI-WS-only `session/prompt`
+// path: UIs now POST `prompts.send` (tRPC), the api-server XADDs the
+// envelope to `prompts:outbox` with idempotency, and this consumer-group
+// forwarder ships it to the wrapper async. Browser/network blip after
+// Send no longer loses the message.
+const promptForwarderConsumer = `forwarder-${process.env.HOSTNAME ?? randomUUID()}`;
+const { store: _promptsStore, forwarder: promptsForwarder } = composePromptsModule({
+  redisUrl: config.redisUrl,
+  redisPassword: config.redisPassword ?? undefined,
+  resolveWrapperUrl: (instanceId) => `ws://${podBaseUrl(instanceId, config.namespace)}/api/acp`,
+  consumerName: promptForwarderConsumer,
+  log: (msg) => process.stderr.write(`${msg}\n`),
+});
+promptsForwarder.start();
+
 // Per-agent cleanup hooks fired after a successful K8s delete. Each
 // module's adapter clears its own table; failures log + continue. The
 // orphan-sweeper saga catches anything missed (replica died mid-delete,
@@ -286,6 +303,7 @@ const { server: apiServer } = startApiServerApp({
   redisBus,
   approvalsRelay,
   wrapperFrameSender,
+  promptsStore: _promptsStore,
   presetSeeder,
   trustedHosts,
   agentCleanupHooks,
@@ -333,6 +351,8 @@ async function shutdown() {
   onSlackTurnRelayedSub.unsubscribe();
   await oauthRefreshService.stop();
   await deliverySweeper.stop();
+  await promptsForwarder.stop();
+  await _promptsStore.close();
   await agentArtifactsSweeper.stop();
   await channelManager.stopAll();
   await redisBus.close();

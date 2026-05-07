@@ -131,7 +131,12 @@ export function hasStreamingAssistant(messages: Message[]): boolean {
 
 function handleUserChunk(messages: Message[], u: ContentChunk): Message[] {
   const closed = closeActiveAssistant(messages);
-  const mid = u.messageId ?? null;
+  // Prefer the platform's promptId — every tab viewing the session keys its
+  // optimistic bubble on the same id, so the wrapper's fan-out merges with
+  // the sender's bubble instead of appending a duplicate. Falls back to the
+  // harness's messageId for cold-replay shapes that don't carry _meta.
+  const promptId = typeof u._meta?.promptId === "string" ? u._meta.promptId : null;
+  const mid = promptId ?? u.messageId ?? null;
 
   if (u.content.type === "text") {
     const txt = stripUserTags(u.content.text);

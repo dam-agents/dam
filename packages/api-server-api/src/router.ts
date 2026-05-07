@@ -5,6 +5,7 @@ import { channelsRouter } from "./modules/channels/router.js";
 import { connectionsRouter } from "./modules/connections/router.js";
 import { egressRulesRouter } from "./modules/egress-rules/router.js";
 import { instancesRouter } from "./modules/instances/router.js";
+import { promptsRouter } from "./modules/prompts/router.js";
 import { schedulesRouter } from "./modules/schedules/router.js";
 import { secretsRouter } from "./modules/secrets/router.js";
 import { sessionsRouter } from "./modules/sessions/router.js";
@@ -17,6 +18,7 @@ export const appRouter = t.router({
   instances: instancesRouter,
   schedules: schedulesRouter,
   sessions: sessionsRouter,
+  prompts: promptsRouter,
   secrets: secretsRouter,
   channels: channelsRouter,
   connections: connectionsRouter,

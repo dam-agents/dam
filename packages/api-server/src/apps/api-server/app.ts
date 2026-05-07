@@ -46,6 +46,10 @@ import {
   type WrapperFrameSender,
 } from "./../../modules/approvals/compose.js";
 import {
+  composePromptsService,
+  type PromptsStore,
+} from "./../../modules/prompts/compose.js";
+import {
   composeEgressRulesModule,
   createConnectionRulesSyncAdapter,
   createEgressRuleWriterAdapter,
@@ -68,6 +72,7 @@ export interface ApiServerAppDeps {
   redisBus: RedisBus;
   approvalsRelay: ApprovalsRelayService;
   wrapperFrameSender: WrapperFrameSender;
+  promptsStore: PromptsStore;
   presetSeeder: PresetSeeder;
   trustedHosts: readonly string[];
   /** Hooks fired after a successful agent K8s delete. Each one clears its
@@ -80,7 +85,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   const {
     config, api, db, channelManager, channelSecretStore, identityLinkService,
     pendingSlackOAuthFlows, pendingTelegramOAuthFlows, podFilesPublisher, seedSources,
-    redisBus, approvalsRelay, wrapperFrameSender, presetSeeder, trustedHosts,
+    redisBus, approvalsRelay, wrapperFrameSender, promptsStore, presetSeeder, trustedHosts,
     agentCleanupHooks,
   } = deps;
 
@@ -281,6 +286,11 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       bus: redisBus,
       wrapperFrameSender,
     });
+    const { service: prompts } = composePromptsService({
+      store: promptsStore,
+      ownerSub: user.sub,
+      isInstanceOwnedBy: (instanceId, ownerSub) => instancesRepo.isOwnedBy(instanceId, ownerSub),
+    });
 
     return fetchRequestHandler({
       endpoint: "/api/trpc",
@@ -298,6 +308,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         skills,
         approvals,
         egressRules,
+        prompts,
         user,
       }),
     });

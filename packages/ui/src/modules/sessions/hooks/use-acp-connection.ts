@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useStore } from "../../../store.js";
 import type { Message } from "../../../types.js";
 import { openConnection } from "../../acp/acp.js";
+import { hasLocalPromptId } from "../../acp/local-prompt-ids.js";
 import {
   applyUpdate,
   finalizeAllStreaming,
@@ -152,6 +153,18 @@ export function useAcpConnection(opts: UseAcpConnectionOptions): UseAcpConnectio
     const liveHandler = makeUpdateHandler();
 
     const handler: UpdateHandler = (update) => {
+      // Drop the wrapper's echo of our own prompts (durable-send path):
+      // the optimistic bubble is already keyed on the same promptId, and
+      // mergeParts would concatenate text otherwise. Filtering before the
+      // projection keeps the projection pure (no tab-local state). Other
+      // tabs and cold-replay are unaffected — their local sets don't
+      // contain this id.
+      if (update.sessionUpdate === "user_message_chunk") {
+        const promptId = typeof update._meta?.promptId === "string"
+          ? update._meta.promptId
+          : null;
+        if (promptId && hasLocalPromptId(promptId)) return;
+      }
       // Config notifications (mode / option changes) always go to the
       // store: the popover should reflect the latest state regardless of
       // whether we're replaying history or watching live.

@@ -212,6 +212,48 @@ describe("applyUpdate — turn boundaries", () => {
       { kind: "file", name: "image.png", mimeType: "" },
     ]);
   });
+
+  test("user_message_chunk merges into the optimistic bubble keyed on _meta.promptId", () => {
+    // The send hook keys its optimistic user bubble on `promptId`. The
+    // wrapper later fans out a synthesized chunk stamped with the same
+    // `_meta.promptId`. The projection must merge into the existing
+    // bubble — not append a duplicate — even though `messageId` is absent.
+    const optimistic: Message = {
+      id: "p-1",
+      role: "user",
+      parts: [{ kind: "text", text: "hi" }],
+      streaming: false,
+    };
+    const out = applyUpdate([optimistic], {
+      sessionUpdate: "user_message_chunk" as const,
+      content: { type: "text" as const, text: "hi" },
+      _meta: { promptId: "p-1" },
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0].id).toBe("p-1");
+  });
+
+  test("_meta.promptId takes precedence over messageId for dedupe", () => {
+    // Cold-replay shapes can carry both: harness messageId from disk plus
+    // platform-stamped promptId. The promptId is the cross-tab consensus
+    // key, so we use it. Otherwise the originating tab's optimistic bubble
+    // wouldn't dedupe with the wrapper's fan-out (different ids).
+    const optimistic: Message = {
+      id: "p-1",
+      role: "user",
+      parts: [{ kind: "text", text: "" }],
+      streaming: false,
+    };
+    const out = applyUpdate([optimistic], {
+      sessionUpdate: "user_message_chunk" as const,
+      messageId: "harness-99",
+      content: { type: "text" as const, text: "hi" },
+      _meta: { promptId: "p-1" },
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0].id).toBe("p-1");
+    expect(firstTextPart(out[0])).toBe("hi");
+  });
 });
 
 describe("applyUpdate — tool calls", () => {

@@ -6,6 +6,7 @@ import { api } from "../../../api.js";
 import { invalidateAcrossTabs } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import type { Attachment, Message } from "../../../types.js";
+import { addLocalPromptId } from "../../acp/local-prompt-ids.js";
 import { finalizeAllStreaming, hasStreamingAssistant } from "../../acp/session-projection.js";
 import { buildPromptBlocks, extractErrorMessage } from "../../acp/utils.js";
 import { acpSessionsKeys } from "../api/queries.js";
@@ -19,18 +20,18 @@ interface LiveConnection {
  * Owns the user-driven prompt + cancel actions:
  *
  *   - `sendPrompt(text, attachments)` writes optimistic user + assistant
- *     bubbles into the projection, ensures a live connection (which the
- *     orchestrator hands in), forwards the prompt over ACP, registers the
- *     session with the platform DB on first successful turn, and finalizes
- *     the assistant bubble.
+ *     bubbles into the projection, ensures a live connection (so the agent's
+ *     streaming response arrives over WS), and POSTs the prompt itself
+ *     through the durable tRPC outbox. The optimistic user bubble is keyed
+ *     on `promptId`; the wrapper later fans out a synthesized
+ *     `user_message_chunk` with the same `_meta.promptId`, so the UI's
+ *     projection merges instead of duplicating. The assistant bubble closes
+ *     when the wrapper emits `platform_turn_ended`.
  *
  *   - `stopAgent()` finalizes every streaming bubble locally so the UI
- *     reacts even if `cancel` hangs, then calls SDK cancel best-effort.
- *
- * The `persistedSessionsRef` dedup is local to this hook — only sendPrompt
- * reads it. `connectionRef` and `engagedSessionIdRef` come from the
- * orchestrator's connection layer; they will move into useAcpConnection
- * in a later step.
+ *     reacts immediately, then calls SDK cancel best-effort over the live
+ *     WS. (Cancel still rides the WS — out of scope for the durable-prompt
+ *     work; agent is still the one doing the cancellation.)
  */
 export function useAcpPrompt(
   selectedInstance: string | null,
@@ -59,13 +60,23 @@ export function useAcpPrompt(
     if (text) userParts.push({ kind: "text", text });
 
     const aId = crypto.randomUUID();
+    // Caller-generated promptId: doubles as the durable-outbox idempotency
+    // key (server-side dedupe within 1h) and as the user bubble's id. The
+    // wrapper stamps the same id on its synthesized `user_message_chunk`'s
+    // `_meta.promptId`. We register it as "rendered locally" so the
+    // connection's update handler suppresses the wrapper's echo for *this*
+    // tab — without that, mergeParts would concatenate the optimistic
+    // text with the echo's text ("hi" → "hihi"). Other tabs have no
+    // optimistic bubble and render the echo fresh.
+    const promptId = crypto.randomUUID();
+    addLocalPromptId(promptId);
 
     // If a prior turn is still streaming, this bubble starts `queued: true`
     // — the projection will promote it to active once prompt N's content
     // actually arrives. The user sees a "Waiting for previous prompt…"
     // indicator meanwhile.
     const startingQueued = hasStreamingAssistant(useStore.getState().messages);
-    const uMsg: Message = { id: crypto.randomUUID(), role: "user", parts: userParts, streaming: false };
+    const uMsg: Message = { id: promptId, role: "user", parts: userParts, streaming: false };
     const aMsg: Message = { id: aId, role: "assistant", parts: [], streaming: true, queued: startingQueued };
     // Drop Retry buttons on any prior failed send — only the latest failure
     // should offer a retry. The error text itself stays for history.
@@ -77,6 +88,9 @@ export function useAcpPrompt(
     addLog("prompt", { text });
 
     try {
+      // Establish the live WS so streaming agent updates land here. The
+      // prompt itself rides tRPC, but the response stream still arrives via
+      // the engaged ACP channel.
       const conn = await ensureConnection();
       if (!conn) throw new Error("Failed to establish connection");
 
@@ -106,12 +120,20 @@ export function useAcpPrompt(
       }
 
       const promptBlocks = await buildPromptBlocks(selectedInstance, sid, text, attachments);
-      const r = await conn.prompt({ sessionId: sid, prompt: promptBlocks });
-      addLog("done", { stopReason: r.stopReason });
-
-      // Belt-and-braces: if platform_turn_ended somehow didn't fire (server
-      // variant without our extension), force-close our bubble anyway.
-      setMessages((p) => p.map((m) => m.id === aId ? { ...m, streaming: false, queued: false } : m));
+      // Durable hand-off: server XADDs the envelope to `prompts:outbox`
+      // and returns immediately. The forwarder ships it to the wrapper
+      // async; agent updates stream back over the live WS that
+      // `ensureConnection` set up.
+      await api.prompts.send.mutate({
+        instanceId: selectedInstance,
+        sessionId: sid,
+        prompt: promptBlocks,
+        promptId,
+      });
+      addLog("queued", { promptId });
+      // Don't manually finalize the assistant bubble: `platform_turn_ended`
+      // (emitted by the wrapper on the agent's prompt response) closes it
+      // via the projection.
     } catch (err: unknown) {
       const errMsg = extractErrorMessage(err);
       addLog("error", { message: errMsg });

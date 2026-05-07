@@ -371,18 +371,28 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
    * still advanced, so subsequent fan-outs don't re-deliver this entry,
    * but a fresh channel (after reload) will catch it through the normal
    * catch-up from cursor=0.
+   *
+   * `promptId` flows in from the inbound `session/prompt` request's
+   * `params._meta.promptId`. When present we stamp it on each synthesized
+   * chunk's `_meta` so UIs can dedupe their optimistic bubble against the
+   * fan-out (the originator's send path is durable-tRPC; multiple WS tabs
+   * on the same session merge by the shared promptId).
    */
-  function appendUserPromptToLog(sessionId: string, prompt: unknown, originator: ClientChannel): void {
+  function appendUserPromptToLog(
+    sessionId: string,
+    prompt: unknown,
+    originator: ClientChannel,
+    promptId: string | null,
+  ): void {
     if (!Array.isArray(prompt)) return;
     for (const block of prompt) {
       if (!block || typeof block !== "object") continue;
+      const update: Record<string, unknown> = { sessionUpdate: "user_message_chunk", content: block };
+      if (promptId) update._meta = { promptId };
       const line = JSON.stringify({
         jsonrpc: "2.0",
         method: "session/update",
-        params: {
-          sessionId,
-          update: { sessionUpdate: "user_message_chunk", content: block },
-        },
+        params: { sessionId, update },
       });
       appendAndFanOut(sessionId, line, { skipChannel: originator });
     }
@@ -984,8 +994,14 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         // never see the user's message. The runtime fans out to everyone
         // including the sender; the sending client's UI reconciles the echo
         // against its optimistic bubble.
-        const promptBlocks = (frame as { params?: { prompt?: unknown } }).params?.prompt;
-        appendUserPromptToLog(promptSessionId, promptBlocks, channel);
+        const promptParams = (frame as {
+          params?: { prompt?: unknown; _meta?: { promptId?: unknown } };
+        }).params;
+        const promptBlocks = promptParams?.prompt;
+        const promptId = typeof promptParams?._meta?.promptId === "string"
+          ? promptParams._meta.promptId
+          : null;
+        appendUserPromptToLog(promptSessionId, promptBlocks, channel, promptId);
 
         if (activePromptBySession.has(promptSessionId)) {
           const queue = promptQueueBySession.get(promptSessionId) ?? [];
