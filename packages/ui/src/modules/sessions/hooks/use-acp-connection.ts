@@ -263,6 +263,13 @@ export function useAcpConnection(opts: UseAcpConnectionOptions): UseAcpConnectio
       return conn.connection;
     } catch (err) {
       if (stillActive()) {
+        // Null the token before closing so the close handler's reconnect
+        // path is suppressed for SDK-rejected calls (e.g. loadSession
+        // returning session-not-found). For transport deaths the close
+        // event fires first and already nulls the token; this branch only
+        // matters when the WS is still OPEN and the agent rejected us at
+        // the protocol layer — those are not retryable.
+        activeTokenRef.current = null;
         conn.ws.close();
         setState("idle");
       }
