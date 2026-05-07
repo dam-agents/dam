@@ -20,6 +20,32 @@ const injectionConfigSchema = z.object({
   valueFormat: z.string().max(1000).optional(),
 });
 
+export const updateSecretInputSchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1).max(100).optional(),
+    value: z.string().min(1).optional(),
+    hostPattern: z.string().min(1).max(253).optional(),
+    pathPattern: z.string().max(1000).nullable().optional(),
+    injectionConfig: injectionConfigSchema.nullable().optional(),
+    envMappings: envMappingsSchema.optional(),
+  })
+  .superRefine((d, ctx) => {
+    // The raw token is stored only inside the SDS file's `inline_string`
+    // pre-baked with the current `valueFormat`. Changing `injectionConfig`
+    // alone would leave that file out of sync with the new format, so we
+    // require callers to re-supply `value` and re-bake atomically. `null`
+    // (clear-to-defaults) counts as a change too — defaults aren't always
+    // identical to what was stored.
+    if (d.injectionConfig !== undefined && d.value === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "value is required when changing injectionConfig",
+        path: ["value"],
+      });
+    }
+  });
+
 function messageForStatus(status: number): string {
   if (status === 401) return "Invalid credential.";
   if (status === 403) return "Credential lacks required permissions.";
@@ -65,20 +91,7 @@ export const secretsRouter = t.router({
     )
     .mutation(({ ctx, input }) => ctx.secrets.create(input)),
 
-  update: t.procedure
-    .input(
-      z
-        .object({
-          id: z.string().min(1),
-          name: z.string().min(1).max(100).optional(),
-          value: z.string().min(1).optional(),
-          hostPattern: z.string().min(1).max(253).optional(),
-          pathPattern: z.string().max(1000).nullable().optional(),
-          injectionConfig: injectionConfigSchema.nullable().optional(),
-          envMappings: envMappingsSchema.optional(),
-        }),
-    )
-    .mutation(({ ctx, input }) => ctx.secrets.update(input)),
+  update: t.procedure.input(updateSecretInputSchema).mutation(({ ctx, input }) => ctx.secrets.update(input)),
 
   delete: t.procedure
     .input(z.object({ id: z.string().min(1) }))

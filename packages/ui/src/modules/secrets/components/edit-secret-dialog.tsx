@@ -25,6 +25,10 @@ const envMappingSchema = z.object({
 
 const baseShape = {
   name: z.string().trim().min(1, "Required"),
+  // The token (`value`) is NOT round-tripped from the api-server — it lives
+  // only inside the SDS file inside the K8s Secret. The field stays blank on
+  // open and is only sent on save when the user types into it.
+  value: z.string(),
   hostPattern: z.string().trim(),
   pathPattern: z.string().trim(),
   headerName: z.string().trim(),
@@ -52,6 +56,7 @@ const MONO_INPUT_CLASS = `${INPUT_CLASS} font-mono`;
 interface UpdateSecretPatch {
   id: string;
   name?: string;
+  value?: string;
   hostPattern?: string;
   pathPattern?: string | null;
   injectionConfig?: InjectionConfig | null;
@@ -68,11 +73,12 @@ export function EditSecretDialog({ secret, onClose }: Props) {
   const updateSecret = useUpdateSecret();
   const saving = updateSecret.isPending;
 
-  const { register, handleSubmit, control, formState } = useForm<EditSecretValues>({
+  const { register, handleSubmit, control, formState, setError } = useForm<EditSecretValues>({
     resolver: zodResolver(isGeneric ? genericSchema : anthropicSchema),
     mode: "onChange",
     defaultValues: {
       name: secret.name,
+      value: "",
       hostPattern: secret.hostPattern,
       pathPattern: secret.pathPattern ?? "",
       headerName: secret.injectionConfig?.headerName ?? "",
@@ -88,6 +94,7 @@ export function EditSecretDialog({ secret, onClose }: Props) {
   const onSubmit = handleSubmit((values) => {
     const patch: UpdateSecretPatch = { id: secret.id };
     if (dirtyFields.name) patch.name = values.name.trim();
+    if (dirtyFields.value && values.value.length > 0) patch.value = values.value;
     if (isGeneric) {
       if (dirtyFields.hostPattern) patch.hostPattern = values.hostPattern.trim();
       if (dirtyFields.pathPattern) {
@@ -95,7 +102,17 @@ export function EditSecretDialog({ secret, onClose }: Props) {
         patch.pathPattern = trimmed === "" ? null : trimmed;
       }
       if (dirtyFields.headerName || dirtyFields.valueFormat) {
-        const header = values.headerName.trim();
+        if (patch.value === undefined) {
+          // The api-server rejects this combination because the SDS file is
+          // pre-baked with the previous format and would drift. Surface it
+          // inline instead of round-tripping for the error.
+          setError("value", {
+            type: "manual",
+            message: "Re-enter the token when changing the header or value format.",
+          });
+          return;
+        }
+        const header = values.headerName.trim() || DEFAULT_INJECTION_CONFIG.headerName;
         const format = values.valueFormat.trim();
         patch.injectionConfig = {
           headerName: header,
@@ -125,6 +142,21 @@ export function EditSecretDialog({ secret, onClose }: Props) {
         <div className="flex-1 overflow-y-auto px-7 py-5 flex flex-col gap-5">
           <FormField label="Name" error={errors.name?.message}>
             <input className={INPUT_CLASS} autoFocus {...register("name")} />
+          </FormField>
+
+          <FormField
+            label="Token"
+            hint="Leave blank to keep the current token. Type a new value to rotate it."
+            error={errors.value?.message}
+          >
+            <input
+              className={INPUT_CLASS}
+              type="password"
+              placeholder="••••••••"
+              autoComplete="new-password"
+              disabled={saving}
+              {...register("value")}
+            />
           </FormField>
 
           {isGeneric && (

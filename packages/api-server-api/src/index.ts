@@ -70,6 +70,7 @@ export {
   ANTHROPIC_OAUTH_ENV_MAPPING,
   ANTHROPIC_API_KEY_ENV_MAPPING,
 } from "./modules/secrets/types.js";
+export { updateSecretInputSchema } from "./modules/secrets/router.js";
 
 export type { ChannelsService } from "./modules/channels/types.js";
 

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type * as k8s from "@kubernetes/client-node";
+import { updateSecretInputSchema } from "api-server-api";
 
 import {
   createK8sSecretsPort,
@@ -336,5 +337,64 @@ describe("createK8sSecretsPort.updateSecret", () => {
     await port.updateSecret("upd3", { name: "New Name" });
 
     expect(replaced[0]!.body.metadata?.annotations?.["agent-platform.ai/display-name"]).toBe("New Name");
+  });
+
+  it("re-bakes the SDS file with the new format when value+injectionConfig are patched together", async () => {
+    const { client, replaced } = fakeClient();
+    const port = createK8sSecretsPort(client, "owner-1");
+
+    await port.createSecret({
+      id: "rebake",
+      name: "GitHub PAT",
+      type: "generic",
+      value: "old-pat",
+      hostPattern: "github.com",
+      injectionConfig: { headerName: "Authorization", valueFormat: "Bearer {value}" },
+    });
+
+    await port.updateSecret("rebake", {
+      value: "new-pat",
+      injectionConfig: { headerName: "Authorization", valueFormat: "Basic {value}" },
+    });
+
+    expect(replaced[0]!.body.stringData?.["sds.yaml"]).toContain('inline_string: "Basic new-pat"');
+    expect(replaced[0]!.body.metadata?.annotations?.["agent-platform.ai/injection-value-format"]).toBe(
+      "Basic {value}",
+    );
+  });
+});
+
+describe("updateSecretInputSchema", () => {
+  it("accepts a value-only patch", () => {
+    expect(updateSecretInputSchema.safeParse({ id: "abc", value: "tok" }).success).toBe(true);
+  });
+
+  it("accepts injectionConfig + value together", () => {
+    const r = updateSecretInputSchema.safeParse({
+      id: "abc",
+      value: "tok",
+      injectionConfig: { headerName: "Authorization", valueFormat: "Basic {value}" },
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("rejects an injectionConfig change without value", () => {
+    const r = updateSecretInputSchema.safeParse({
+      id: "abc",
+      injectionConfig: { headerName: "Authorization", valueFormat: "Basic {value}" },
+    });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(r.error.issues[0]!.path).toEqual(["value"]);
+      expect(r.error.issues[0]!.message).toMatch(/value is required/);
+    }
+  });
+
+  it("rejects a clear-injectionConfig (null) without value", () => {
+    const r = updateSecretInputSchema.safeParse({ id: "abc", injectionConfig: null });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(r.error.issues[0]!.path).toEqual(["value"]);
+    }
   });
 });

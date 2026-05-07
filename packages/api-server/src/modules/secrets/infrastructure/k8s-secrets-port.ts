@@ -222,7 +222,10 @@ export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSe
       }
 
       // Recompute header + value format if the injection config or auth mode
-      // changed; otherwise keep what was stored at create time.
+      // changed; otherwise keep what was stored at create time. The router
+      // enforces that any `injectionConfig` change is paired with a new
+      // `value`, so we re-bake the SDS file in that branch below — there is
+      // no need to recover the prior value from the existing inline_string.
       const newAuthMode: AuthMode | undefined = patch.authMode ?? (annotations[ANN_AUTH_MODE] as AuthMode | undefined);
       const newInjection: InjectionConfig | undefined =
         patch.injectionConfig === null ? undefined :

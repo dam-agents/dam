@@ -68,6 +68,10 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
     const headerName = values.headerName.trim();
     const valueFormat = values.valueFormat.trim();
     const mappings = sanitizeEnvMappings(values.envMappings);
+    // Send injectionConfig if EITHER field was filled. When only the value
+    // format is customised (e.g. `Basic {value}`), default the header to
+    // `Authorization` so the user's chosen format isn't silently discarded.
+    const hasInjectionInput = headerName.length > 0 || valueFormat.length > 0;
     createSecret.mutate(
       {
         type: "generic",
@@ -75,9 +79,9 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
         value: values.value.trim(),
         hostPattern: values.hostPattern.trim(),
         ...(pathPattern.length > 0 && { pathPattern }),
-        ...(headerName.length > 0 && {
+        ...(hasInjectionInput && {
           injectionConfig: {
-            headerName,
+            headerName: headerName || DEFAULT_INJECTION_CONFIG.headerName,
             ...(valueFormat.length > 0 && { valueFormat }),
           },
         }),
