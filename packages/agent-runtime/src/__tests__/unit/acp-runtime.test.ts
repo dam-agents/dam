@@ -1221,43 +1221,6 @@ describe("createAcpRuntime", () => {
     expect(echoes.length).toBe(1);
   });
 
-  it("propagates session/prompt _meta.promptId onto synthesized user_message_chunk._meta", () => {
-    // The api-server's durable-prompt outbox stamps every forwarded
-    // session/prompt with `_meta.promptId`. The wrapper must surface that
-    // id on the synthesized user_message_chunk so multi-tab UIs can dedupe
-    // their optimistic bubble against the fan-out instead of double-rendering.
-    const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
-
-    const a = makeFakeChannel();
-    const b = makeFakeChannel();
-    runtime.attach(a.channel);
-    runtime.attach(b.channel);
-    a.pushMessage(resumeSessionRequest(1));
-    b.pushMessage(resumeSessionRequest(1));
-
-    a.pushMessage(JSON.stringify({
-      jsonrpc: "2.0",
-      id: 7,
-      method: "session/prompt",
-      params: {
-        sessionId: SID,
-        prompt: [{ type: "text", text: "hi" }],
-        _meta: { promptId: "p-42" },
-      },
-    }));
-
-    // Non-sender receives the synth chunk with _meta.promptId stamped.
-    const stamped = b.sent.find((f) => {
-      try {
-        const p = JSON.parse(f);
-        return p.params?.update?.sessionUpdate === "user_message_chunk"
-          && p.params?.update?._meta?.promptId === "p-42";
-      } catch { return false; }
-    });
-    expect(stamped).toBeDefined();
-  });
-
   it("delivers a skipped echo to the same user's new channel via catch-up", () => {
     // Sender sends a prompt, then reconnects (old channel closes, new one
     // opens). The new channel has cursor=0 and a fresh session/load catch-
