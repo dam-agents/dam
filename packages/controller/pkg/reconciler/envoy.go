@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"text/template"
@@ -188,7 +189,13 @@ func credentialEnvVars(secrets []corev1.Secret) []corev1.EnvVar {
 				EnvName     string `json:"envName"`
 				Placeholder string `json:"placeholder"`
 			}
-			if err := json.Unmarshal([]byte(raw), &mappings); err == nil {
+			if err := json.Unmarshal([]byte(raw), &mappings); err != nil {
+				// Bad annotation shouldn't crash the reconcile loop, but
+				// silently dropping it produces a pod missing env vars with
+				// no operator visibility — log it so the cause is findable.
+				slog.Warn("invalid env-mappings annotation; skipping",
+					"namespace", s.Namespace, "secret", s.Name, "error", err)
+			} else {
 				for _, m := range mappings {
 					envs = add(envs, m.EnvName, m.Placeholder)
 				}
