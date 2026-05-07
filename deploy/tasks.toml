@@ -194,6 +194,25 @@ rm -f "$tar"
 # Dev-cluster defaults (overridable via --set)
 DEV_DEFAULTS=(--set keycloak.admin.password=admin)
 
+# Detect btrfs-backed clusters (Fedora hosts default to btrfs) and bypass
+# the bundled nfs-ganesha provisioner — it returns EREMOTEIO on every write
+# against a btrfs export (userspace ganesha hits ENOSYS on handle-based
+# syscalls). Switch to the cluster's default RWO local-path instead.
+# ext4/xfs hosts (lima Ubuntu and most production storage) are unaffected.
+if [ -n "${IS_SANDBOX:-}" ]; then
+  ROOT_FSTYPE=$(df -T / 2>/dev/null | awk 'NR==2 {print $2}')
+else
+  ROOT_FSTYPE=$(limactl shell "$LIMA_INSTANCE" df -T / 2>/dev/null | awk 'NR==2 {print $2}')
+fi
+if [ "$ROOT_FSTYPE" = "btrfs" ]; then
+  echo "Detected btrfs root — bypassing nfs-ganesha (broken on btrfs), using RWO local-path."
+  HELM_EXTRA_ARGS+=(
+    --set controller.agentStorageClass=local-path
+    --set controller.agentAccessMode=ReadWriteOnce
+    --set nfsProvisioner.enabled=false
+  )
+fi
+
 echo "Installing/upgrading Platform chart..."
 # No --wait: the keycloak-provision post-install hook imports the platform realm
 # after deployments come up. With --wait, helm would block on readiness

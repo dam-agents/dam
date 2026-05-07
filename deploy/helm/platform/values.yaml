@@ -363,6 +363,13 @@ controller:
   # impersonation). Empty = cluster default (which must itself support RWX).
   # Set to "platform-rwx" to use the bundled in-cluster NFS provisioner below.
   agentStorageClass: ""
+  # -- PVC access mode for per-instance agent PVCs. Default ReadWriteMany
+  # is required in production so per-turn foreign-user fork pods can mount
+  # /home/agent concurrently with the main pod. Set to ReadWriteOnce on
+  # single-node clusters where you don't want to enable the bundled NFS
+  # stack and the cluster's default StorageClass is RWO-only; forks won't
+  # cross nodes in that mode but local single-node dev doesn't hit that.
+  agentAccessMode: ReadWriteMany
   # -- PVC size requested for persistent agent mounts (e.g. /home/agent).
   # Empty = controller default (10Gi). Lower this on resource-constrained
   # clusters such as the e2e test VM.
@@ -415,6 +422,12 @@ controller:
 # whose default provisioner is RWO-only. The agent instance PVC needs
 # ReadWriteMany so per-turn foreign-user fork pods can mount the same
 # /home/agent volume concurrently with the main pod.
+#
+# Note: the bundled nfs-ganesha v4.0.8 image is archived upstream and is
+# **broken on btrfs-backed exports** (writes return EREMOTEIO). Hosts with
+# a btrfs root (Fedora's default) should disable this and switch
+# `controller.agentAccessMode` to `ReadWriteOnce` instead — see the
+# storage knobs above. ext4 / xfs hosts (e.g. Ubuntu lima) work fine.
 #
 # Production deployments on managed K8s should leave this disabled and
 # point `controller.agentStorageClass` at the cloud-native RWX class

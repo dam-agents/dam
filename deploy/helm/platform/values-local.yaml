@@ -19,11 +19,10 @@ controller:
     tag: latest
     pullPolicy: Never
   agentImagePullPolicy: Never
-  agentStorageClass: local-path
-  agentAccessMode: ReadWriteOnce
+  agentStorageClass: platform-rwx
 
 nfsProvisioner:
-  enabled: false
+  enabled: true
 
 defaultTemplate:
   image:
