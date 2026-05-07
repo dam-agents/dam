@@ -153,6 +153,12 @@ func TestRenderEnvoyBootstrap_CredentialedRoutePinnedToStaticCluster(t *testing.
 	assert.Contains(t, got, "address: api.github.com")
 	assert.Contains(t, got, "port_value: 443")
 
+	// STRICT_DNS defaults to AUTO (IPv6-first); pods on IPv4-only egress
+	// would otherwise see "Network is unreachable" against the resolved
+	// AAAA. Match the explicit V4_PREFERRED used by every other DNS
+	// cluster in the bootstrap.
+	assert.Contains(t, got, "dns_lookup_family: V4_PREFERRED")
+
 	// Upstream TLS hard-binds SNI to the credential's host and SAN-validates
 	// the upstream cert against it. Even a poisoned DNS cache or misrouted
 	// cluster fails the upstream handshake before the credentialed body

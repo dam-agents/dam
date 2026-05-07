@@ -569,9 +569,16 @@ static_resources:
     # and validates the upstream cert's SAN against {{ .Host }}, so even a
     # poisoned cache or misrouted endpoint fails the handshake before any
     # credentialed body is on the wire.
+    #
+    # dns_lookup_family is set explicitly because STRICT_DNS defaults to
+    # AUTO (IPv6-first); clusters whose pods lack IPv6 egress would fail
+    # with "Network is unreachable" before the credentialed body lands on
+    # the wire. Mirrors the V4_PREFERRED choice used by every other DNS
+    # cluster in this bootstrap.
     - name: upstream_{{ .SecretName }}
       connect_timeout: 5s
       type: STRICT_DNS
+      dns_lookup_family: V4_PREFERRED
       lb_policy: ROUND_ROBIN
       load_assignment:
         cluster_name: upstream_{{ .SecretName }}
@@ -754,7 +761,7 @@ func ptrBool(b bool) *bool { return &b }
 // kubelet keeps the old bootstrap mounted.
 //
 // Bump on any template change that affects pod-visible behavior.
-const envoyBootstrapTemplateRev = "v4-harness-trusted-header"
+const envoyBootstrapTemplateRev = "v5-upstream-v4-preferred"
 
 // envoySecretsRev is a stable digest of the Secret set that drives Envoy's
 // chain rendering: secret name + host + secret-type label + headerName,
