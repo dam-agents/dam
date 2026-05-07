@@ -14,8 +14,9 @@ export interface PromptsForwarderDeps {
   /** How long an unacked entry has to sit before XAUTOCLAIM picks it up.
    *  Bounds worst-case retry delay on transient forwarder failures. */
   reclaimIdleMs?: number;
-  /** Per-loop block timeout for fresh reads. Lower = quicker shutdown,
-   *  higher = fewer wasted Redis round-trips on idle queues. */
+  /** Per-loop block timeout for fresh reads. Doubles as the worst-case
+   *  shutdown latency since `stop()` waits for the in-flight XREADGROUP to
+   *  unblock. Default keeps that under typical K8s pod grace windows. */
   blockMs?: number;
   /** Cap per loop iteration; bounds memory + concurrency. */
   batchSize?: number;
@@ -51,7 +52,7 @@ export function createPromptsForwarder(
   deps: PromptsForwarderDeps,
 ): PromptsForwarder {
   const reclaimIdleMs = deps.reclaimIdleMs ?? 30_000;
-  const blockMs = deps.blockMs ?? 5_000;
+  const blockMs = deps.blockMs ?? 1_500;
   const batchSize = deps.batchSize ?? 10;
   const errorBackoffMs = deps.errorBackoffMs ?? 1_000;
 
@@ -74,14 +75,35 @@ export function createPromptsForwarder(
     }
     try {
       await deps.forward(envelope);
-      await deps.store.ack(entry.id);
-      await deps.store.trim(entry.id);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       deps.log?.(
         `prompts-forwarder: forward failed for ${envelope.promptId} (entry ${entry.id}): ${msg}`,
       );
       // Leave unacked — XAUTOCLAIM picks it up after reclaimIdleMs.
+      return;
+    }
+    try {
+      await deps.store.ack(entry.id);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      deps.log?.(
+        `prompts-forwarder: ack failed for ${envelope.promptId} (entry ${entry.id}): ${msg}`,
+      );
+      // Leave unacked — XAUTOCLAIM redelivers; wrapper-side LRU dedups.
+      return;
+    }
+    try {
+      await deps.store.trim(entry.id);
+    } catch (err) {
+      // Entry is acked (no redelivery) but still in the stream body. The
+      // distinct log line lets ops detect persistent XDEL failures that
+      // would otherwise grow `prompts:outbox` unboundedly without any
+      // forward-side symptom.
+      const msg = err instanceof Error ? err.message : String(err);
+      deps.log?.(
+        `prompts-forwarder: trim failed for ${envelope.promptId} (entry ${entry.id}, already acked): ${msg}`,
+      );
     }
   }
 
