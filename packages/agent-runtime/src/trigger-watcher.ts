@@ -1,13 +1,5 @@
 import { watch, mkdirSync, readdirSync, readFileSync, unlinkSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { Agent, request } from "node:http";
-import { Agent as HttpsAgent, request as requestHttps } from "node:https";
-
-// Explicit agents bypass HTTP_PROXY env vars (agent pods route external
-// traffic through the Envoy sidecar, but internal cluster calls must go
-// direct).
-const directAgent = new Agent();
-const directHttpsAgent = new HttpsAgent();
 import { z } from "zod/v4";
 import { config } from "./modules/config.js";
 
@@ -107,8 +99,9 @@ async function processTrigger(
     }
     const mcpServers = [...trigger.mcpServers];
     if (config.PLATFORM_MCP_URL) {
-      // No Authorization header: the api-server's harness port admits agent
-      // pods via NetworkPolicy and identifies the caller by source IP.
+      // No Authorization header: harness traffic flows through the paired
+      // gateway pod's Envoy, which stamps the trusted `x-platform-instance`
+      // header the api-server identifies the caller from.
       mcpServers.push({ type: "http", name: "platform-outbound", url: config.PLATFORM_MCP_URL, headers: [] });
     }
 
@@ -128,41 +121,27 @@ async function processTrigger(
   }
 }
 
-/** POST to the API server's /internal/trigger endpoint using node:http (bypasses HTTP_PROXY). */
-function postTrigger(
+/** POST to the API server's /internal/trigger endpoint. fetch routes via
+ *  HTTP_PROXY because NODE_USE_ENV_PROXY=1 is set on agent pods, so the
+ *  request flows through the paired gateway pod's Envoy and picks up the
+ *  trusted `x-platform-instance` header on the way through. */
+async function postTrigger(
   apiServerUrl: string,
   body: object,
 ): Promise<{ sessionId: string; stopReason?: string }> {
-  return new Promise((resolve, reject) => {
-    const url = new URL("/internal/trigger", apiServerUrl);
-    const payload = JSON.stringify(body);
-    const doRequest = url.protocol === "https:" ? requestHttps : request;
-
-    const req = doRequest(url, {
-      method: "POST",
-      agent: url.protocol === "https:" ? directHttpsAgent : directAgent,
-      headers: {
-        "Content-Type": "application/json",
-        "Content-Length": Buffer.byteLength(payload),
-      },
-    }, (res) => {
-      let data = "";
-      res.on("data", (chunk) => { data += chunk; });
-      res.on("end", () => {
-        if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
-          try {
-            resolve(JSON.parse(data));
-          } catch {
-            reject(new Error(`Invalid JSON response: ${data}`));
-          }
-        } else {
-          reject(new Error(`POST /internal/trigger failed: ${res.statusCode} ${data}`));
-        }
-      });
-    });
-
-    req.on("error", reject);
-    req.write(payload);
-    req.end();
+  const url = new URL("/internal/trigger", apiServerUrl);
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
   });
+  const data = await res.text();
+  if (!res.ok) {
+    throw new Error(`POST /internal/trigger failed: ${res.status} ${data}`);
+  }
+  try {
+    return JSON.parse(data);
+  } catch {
+    throw new Error(`Invalid JSON response: ${data}`);
+  }
 }

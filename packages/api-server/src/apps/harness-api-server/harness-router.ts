@@ -5,6 +5,7 @@ import {
   mountPodFilesEventsRoute,
   type PodFilesEventsDeps,
 } from "./pod-files-events.js";
+import { verifyInstanceFromHeader } from "./instance-auth.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 
@@ -36,6 +37,14 @@ export function createHarnessRouter(deps: {
     const body = await c.req.json<TriggerRequest>();
     if (!body.instanceId || !body.schedule || !body.task) {
       return c.json({ error: "instanceId, schedule, task required" }, 400);
+    }
+    // The body's `instanceId` must match the trusted header that the
+    // gateway pod's Envoy stamps; without this an instance could fire
+    // triggers for someone else's instance even though it can only have
+    // the header for its own pair.
+    const verified = await verifyInstanceFromHeader(deps.k8s, c, body.instanceId);
+    if (!verified) {
+      return c.json({ error: "not found" }, 404);
     }
     const result = await deps.handleTrigger(body);
     return c.json(result);

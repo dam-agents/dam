@@ -14,9 +14,12 @@
 
   Policy shape:
     - `http` is allowed from anywhere (UI, ingress controller, in-cluster).
-    - `harness` + `ext-authz` are allowed only from pods carrying
-      `agent-platform.ai/instance` (instance pods + fork pods both set it) in the
-      configured `agentNamespace`.
+    - `harness` + `ext-authz` are allowed only from gateway pods
+      (`agent-platform.ai/role=gateway`) in the configured `agentNamespace`.
+      The api-server identifies the calling instance from the trusted
+      `x-platform-instance` header that gateway-pod Envoy injects on harness
+      traffic; admitting only gateway pods (and not the agent half of the
+      pair) ensures the agent cannot bypass Envoy to forge that header.
 
   K8s NetworkPolicy semantics: each ingress rule is OR-ed. A rule with no
   `from` allows from anywhere; a rule with `from` restricts to that source.
@@ -46,18 +49,19 @@ spec:
         - protocol: TCP
           port: {{ .Values.apiServer.port }}
 
-    # harness + ext-authz: agent + fork pods only. The pod-selector key
-    # `agent-platform.ai/instance` is set by the controller on both StatefulSet pods
-    # and fork Jobs (`ForkLabelInstanceRef`); matching by Exists covers
-    # both without listing each fork-id.
+    # harness + ext-authz: gateway pods only. Both long-lived pair gateways
+    # and per-fork gateways carry `agent-platform.ai/role=gateway`; matching
+    # on the role label admits both shapes without enumerating fork-ids.
+    # The agent half of each pair is deliberately NOT admitted here — it
+    # must traverse its paired gateway's Envoy, which stamps the trusted
+    # `x-platform-instance` header.
     - from:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: {{ .Values.agentNamespace | quote }}
           podSelector:
-            matchExpressions:
-              - key: agent-platform.ai/instance
-                operator: Exists
+            matchLabels:
+              agent-platform.ai/role: gateway
       ports:
         - protocol: TCP
           port: {{ .Values.apiServer.harnessServerPort }}

@@ -323,6 +323,37 @@ static_resources:
                             envoy.filters.http.ext_authz:
                               "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute
                               disabled: true
+                        # Platform-internal harness traffic. Match by
+                        # :authority so this route only applies to
+                        # api-server-bound calls; everything else falls
+                        # through to the egress fallthrough below.
+                        # Strip any client-supplied x-platform-instance
+                        # first, then re-add the trusted value — the
+                        # api-server identifies the caller from this
+                        # header and the agent must not be able to
+                        # forge it. ext_authz is disabled here: this is
+                        # control-plane traffic to the api-server, not
+                        # user egress, so HITL rules do not apply.
+                        - match:
+                            prefix: "/"
+                            headers:
+                              - name: ":authority"
+                                string_match:
+                                  exact: "{{ $.HarnessAuthority }}"
+                          route:
+                            cluster: dynamic_forward_proxy_http
+                            timeout: 0s
+                          request_headers_to_remove:
+                            - x-platform-instance
+                          request_headers_to_add:
+                            - header:
+                                key: x-platform-instance
+                                value: "{{ $.InstanceID }}"
+                              append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                          typed_per_filter_config:
+                            envoy.filters.http.ext_authz:
+                              "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute
+                              disabled: true
                         # Plain HTTP fallthrough. The outer HCM's
                         # ext_authz fires here (CONNECT disables it
                         # per-route above; plain HTTP does not), passing
@@ -607,6 +638,11 @@ func renderEnvoyBootstrap(instanceName string, cfg *config.Config, routes []envo
 	// Envoy's per-call timeout sits ahead of the application-level hold so a
 	// hold-window timeout fires from the api-server side, not from Envoy.
 	extAuthzTimeoutSeconds := cfg.ExtAuthzHoldSeconds + 60
+	// :authority value the api-server harness port is reached on. The agent
+	// builds harness URLs from cfg.HarnessServerURL, so the Host/:authority
+	// includes the port. We match on this exact string so the trusted-header
+	// route is scoped to api-server traffic only.
+	harnessAuthority := fmt.Sprintf("%s:%d", cfg.APIServerHost, cfg.HarnessServerPort)
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, struct {
 		ListenAddress          string
@@ -617,6 +653,7 @@ func renderEnvoyBootstrap(instanceName string, cfg *config.Config, routes []envo
 		CredentialSDSName      string
 		LeafTLSDir             string
 		InstanceID             string
+		HarnessAuthority       string
 		ExtAuthzHost           string
 		ExtAuthzPort           int
 		ExtAuthzHoldSeconds    int
@@ -630,6 +667,7 @@ func renderEnvoyBootstrap(instanceName string, cfg *config.Config, routes []envo
 		CredentialSDSName:      envoyCredentialSDSName,
 		LeafTLSDir:             envoyLeafTLSMount,
 		InstanceID:             instanceName,
+		HarnessAuthority:       harnessAuthority,
 		ExtAuthzHost:           cfg.ExtAuthzHost,
 		ExtAuthzPort:           cfg.ExtAuthzPort,
 		ExtAuthzHoldSeconds:    cfg.ExtAuthzHoldSeconds,
@@ -716,7 +754,7 @@ func ptrBool(b bool) *bool { return &b }
 // kubelet keeps the old bootstrap mounted.
 //
 // Bump on any template change that affects pod-visible behavior.
-const envoyBootstrapTemplateRev = "v3-paired-gateway"
+const envoyBootstrapTemplateRev = "v4-harness-trusted-header"
 
 // envoySecretsRev is a stable digest of the Secret set that drives Envoy's
 // chain rendering: secret name + host + secret-type label + headerName,

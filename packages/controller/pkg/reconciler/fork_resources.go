@@ -67,8 +67,6 @@ func BuildForkAgentJob(
 		{Name: "HTTP_PROXY", Value: proxyAddr},
 		{Name: "https_proxy", Value: proxyAddr},
 		{Name: "http_proxy", Value: proxyAddr},
-		{Name: "NO_PROXY", Value: cfg.APIServerHost},
-		{Name: "no_proxy", Value: cfg.APIServerHost},
 		{Name: "SSL_CERT_FILE", Value: caCertPath},
 		{Name: "NODE_EXTRA_CA_CERTS", Value: caCertPath},
 		{Name: "GIT_SSL_CAINFO", Value: caCertPath},

@@ -281,9 +281,12 @@ func TestBuildAgentNetworkPolicy(t *testing.T) {
 	assert.Equal(t, "agent", np.Spec.PodSelector.MatchLabels["agent-platform.ai/role"])
 	require.Len(t, np.OwnerReferences, 1)
 
-	// ADR-038: egress is gateway pod + harness + DNS. Open 80/443 to the
-	// world is gone — that bypass is the whole point of the split.
-	require.Len(t, np.Spec.Egress, 3)
+	// ADR-038: egress is paired gateway + DNS. The agent must have no path
+	// to 80/443 anywhere (that bypass is the point of the split) and no
+	// direct path to the harness port either — harness traffic must
+	// traverse the gateway's Envoy so the trusted x-platform-instance
+	// header is stamped on the way through.
+	require.Len(t, np.Spec.Egress, 2)
 
 	// 1: paired gateway pod only
 	gatewayEgress := np.Spec.Egress[0]
@@ -293,16 +296,18 @@ func TestBuildAgentNetworkPolicy(t *testing.T) {
 	require.Len(t, gatewayEgress.Ports, 1)
 	assert.Equal(t, int32(10000), gatewayEgress.Ports[0].Port.IntVal)
 
-	// 2: harness API server
-	harness := np.Spec.Egress[1]
-	require.Len(t, harness.To, 1)
-	assert.Equal(t, "apiserver", harness.To[0].PodSelector.MatchLabels["app.kubernetes.io/component"])
-	require.Len(t, harness.Ports, 1)
-	assert.Equal(t, int32(4001), harness.Ports[0].Port.IntVal)
-
-	// 3: DNS
-	dns := np.Spec.Egress[2]
+	// 2: DNS
+	dns := np.Spec.Egress[1]
 	assert.Empty(t, dns.To)
+
+	// No direct egress to the harness port: every harness call must go
+	// through the gateway's Envoy or the trusted-header trust model breaks.
+	for _, rule := range np.Spec.Egress {
+		for _, p := range rule.Ports {
+			assert.NotEqual(t, int32(testConfig.HarnessServerPort), p.Port.IntVal,
+				"agent NetworkPolicy must not admit direct egress to the harness port")
+		}
+	}
 
 	// Agent must NOT be allowed to dial 80/443 anywhere — that's the bypass.
 	for _, rule := range np.Spec.Egress {
