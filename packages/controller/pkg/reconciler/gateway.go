@@ -3,7 +3,6 @@ package reconciler
 import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
@@ -72,6 +71,11 @@ func BuildGatewayStatefulSet(instanceName string, hibernated bool, cfg *config.C
 					Annotations: annotations,
 				},
 				Spec: corev1.PodSpec{
+					// ADR-040: gateway pod runs as the per-instance SA so
+					// its SPIFFE workload identity matches the agent half
+					// of the pair (same SA on both pods). The gateway-side
+					// AuthorizationPolicy ALLOWs only this principal.
+					ServiceAccountName:            instanceName,
 					TerminationGracePeriodSeconds: &cfg.TerminationGracePeriod,
 					AutomountServiceAccountToken:  &falseVal,
 					Containers:                    containers,
@@ -110,99 +114,6 @@ func BuildGatewayService(instanceName string, cfg *config.Config, ownerCM *corev
 	}
 }
 
-// BuildGatewayNetworkPolicy admits ingress only from the paired agent pod
-// (exact-match on pair + role) and egress to upstream services + the
-// api-server's ext_authz endpoint + DNS.
-//
-// `pairKey` is the pair identifier — long-lived instances use the instance
-// name; forks use the fork name.
-func BuildGatewayNetworkPolicy(pairKey string, cfg *config.Config, ownerCM *corev1.ConfigMap) *networkingv1.NetworkPolicy {
-	tcp := corev1.ProtocolTCP
-	udp := corev1.ProtocolUDP
-	envoyPort := intstr.FromInt32(portInt32(cfg.EnvoyPort))
-	extAuthzPort := intstr.FromInt32(portInt32(cfg.ExtAuthzPort))
-	harnessPort := intstr.FromInt32(portInt32(cfg.HarnessServerPort))
-	httpsPort := intstr.FromInt32(443)
-	httpPort := intstr.FromInt32(80)
-	dnsPort := intstr.FromInt32(53)
-	dnsTargetPort := intstr.FromInt32(5353)
-
-	egress := []networkingv1.NetworkPolicyEgressRule{
-		{
-			// Envoy reaches arbitrary upstreams. ADR-033 §Decision keeps
-			// the first-cut allowlist permissive (no DNS allowlist in v1).
-			Ports: []networkingv1.NetworkPolicyPort{
-				{Protocol: &tcp, Port: &httpsPort},
-				{Protocol: &tcp, Port: &httpPort},
-			},
-		},
-		{
-			// API server: HITL ext_authz gate (ADR-035) on the gRPC port and
-			// harness API (MCP, pod-files SSE, /internal/trigger) on the HTTP
-			// port. Both run on the apiserver pod; Envoy stamps a trusted
-			// `x-platform-instance` header on harness traffic and the
-			// agent has no path here that bypasses Envoy.
-			To: []networkingv1.NetworkPolicyPeer{{
-				PodSelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{"app.kubernetes.io/component": "apiserver"},
-				},
-				NamespaceSelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{"kubernetes.io/metadata.name": cfg.ReleaseNamespace},
-				},
-			}},
-			Ports: []networkingv1.NetworkPolicyPort{
-				{Protocol: &tcp, Port: &extAuthzPort},
-				{Protocol: &tcp, Port: &harnessPort},
-			},
-		},
-		{
-			Ports: []networkingv1.NetworkPolicyPort{
-				{Protocol: &tcp, Port: &dnsPort},
-				{Protocol: &udp, Port: &dnsPort},
-				{Protocol: &tcp, Port: &dnsTargetPort},
-				{Protocol: &udp, Port: &dnsTargetPort},
-			},
-		},
-	}
-
-	return &networkingv1.NetworkPolicy{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      GatewayName(pairKey) + "-egress",
-			Namespace: cfg.Namespace,
-			Labels:    map[string]string{LabelPair: pairKey, LabelRole: RoleGateway},
-			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
-			},
-		},
-		Spec: networkingv1.NetworkPolicySpec{
-			PodSelector: metav1.LabelSelector{
-				MatchLabels: map[string]string{LabelPair: pairKey, LabelRole: RoleGateway},
-			},
-			PolicyTypes: []networkingv1.PolicyType{
-				networkingv1.PolicyTypeEgress,
-				networkingv1.PolicyTypeIngress,
-			},
-			Egress: egress,
-			// Ingress only from the paired agent pod. Wildcard or
-			// instance-only selectors would let other pairs' agents dial
-			// in (ADR-038 §Threat Model).
-			Ingress: []networkingv1.NetworkPolicyIngressRule{{
-				From: []networkingv1.NetworkPolicyPeer{{
-					PodSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							LabelPair: pairKey,
-							LabelRole: RoleAgent,
-						},
-					},
-				}},
-				Ports: []networkingv1.NetworkPolicyPort{{
-					Protocol: &tcp, Port: &envoyPort,
-				}},
-			}},
-		},
-	}
-}
-
 // BuildForkGatewayPod renders the gateway pod for a fork. Forks use a bare
 // Pod (not a StatefulSet) — there is exactly one fork pod ever, and the
 // owner reference on the fork ConfigMap GCs the Pod when the fork CM is
@@ -236,6 +147,12 @@ func BuildForkGatewayPod(forkName, parentInstanceID string, cfg *config.Config, 
 			},
 		},
 		Spec: corev1.PodSpec{
+			// ADR-040: forks reuse the parent's SA so the SPIFFE peer
+			// principal SA name equals the parent's URL `:id`. The fork's
+			// per-fork gateway-admission AuthorizationPolicy ALLOWs that
+			// principal, and the parent's harness/ext-authz policies admit
+			// it too — no fork-specific SA needed.
+			ServiceAccountName:            parentInstanceID,
 			RestartPolicy:                 corev1.RestartPolicyAlways,
 			TerminationGracePeriodSeconds: &cfg.TerminationGracePeriod,
 			AutomountServiceAccountToken:  &falseVal,
@@ -272,16 +189,3 @@ func BuildForkGatewayService(forkName string, cfg *config.Config, ownerCM *corev
 	}
 }
 
-// BuildForkAgentNetworkPolicy mirrors BuildAgentNetworkPolicy but scopes the
-// pair key to the fork's name (each fork has its own paired gateway). Today
-// fork pods get no NetworkPolicy at all — this closes the bypass for forks
-// alongside the long-lived case (ADR-038).
-func BuildForkAgentNetworkPolicy(forkName string, cfg *config.Config, ownerCM *corev1.ConfigMap) *networkingv1.NetworkPolicy {
-	return BuildAgentNetworkPolicy(forkName, cfg, ownerCM)
-}
-
-// BuildForkGatewayNetworkPolicy mirrors BuildGatewayNetworkPolicy for the
-// fork's gateway pod.
-func BuildForkGatewayNetworkPolicy(forkName string, cfg *config.Config, ownerCM *corev1.ConfigMap) *networkingv1.NetworkPolicy {
-	return BuildGatewayNetworkPolicy(forkName, cfg, ownerCM)
-}

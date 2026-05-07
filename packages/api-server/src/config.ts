@@ -2,6 +2,10 @@ import { z } from "zod/v4";
 
 const configSchema = z.object({
   namespace: z.string().default("platform-agents"),
+  /** Helm release name. ADR-040: used to parse instance ID out of the
+   *  per-instance ext-authz Service hostname (`<release>-extauthz-<id>`)
+   *  the gateway pod's Envoy was configured to dial. */
+  releaseName: z.string().default("platform"),
   port: z.coerce.number().default(4000),
   harnessServerPort: z.coerce.number().default(4001),
   /** gRPC ext_authz listener — serves both Envoy's HTTP filter (L7,
@@ -77,6 +81,7 @@ export type Config = z.infer<typeof configSchema>;
 export function loadConfig(): Config {
   return configSchema.parse({
     namespace: process.env.NAMESPACE,
+    releaseName: process.env.PLATFORM_RELEASE_NAME,
     port: process.env.PORT,
     harnessServerPort: process.env.MCP_PORT,
     extAuthzPort: process.env.EXT_AUTHZ_PORT,

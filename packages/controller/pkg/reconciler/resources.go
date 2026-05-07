@@ -5,7 +5,6 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -74,15 +73,17 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 	proxyAddr := agentProxyAddr(name, cfg)
 
 	// The agent container holds zero platform credentials. Inbound calls to
-	// agent-runtime's tRPC are gated at the kernel by the pod's
-	// NetworkPolicy (ingress admitted only from the api-server pod);
-	// outbound calls cross the paired gateway pod for credential injection.
+	// agent-runtime's tRPC are gated by the api-server's mesh
+	// AuthorizationPolicies; ALL outbound calls — external hosts AND the
+	// harness API — cross the paired gateway pod (no NO_PROXY).
 	//
-	// Harness API traffic ALSO crosses the paired gateway: there is no
-	// NO_PROXY carve-out for the api-server. Envoy on the gateway pod
-	// injects an `x-platform-instance` header that the api-server trusts
-	// for caller identity (the agent pod has no direct egress path to the
-	// harness port, so it cannot forge the header by bypassing Envoy).
+	// ADR-040: identity for harness traffic comes from the gateway pod's
+	// SPIFFE principal (gateway runs as the per-instance SA). When the
+	// gateway's Envoy forwards to the harness Service, ztunnel encapsulates
+	// the connection with the gateway's principal, and the waypoint
+	// enforces principal == URL `:id`. The Envoy bootstrap routes
+	// harness traffic without ext_authz HITL gating and without
+	// credential-header injection.
 	env := []corev1.EnvVar{
 		{Name: "HTTPS_PROXY", Value: proxyAddr},
 		{Name: "HTTP_PROXY", Value: proxyAddr},
@@ -316,6 +317,11 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 					Annotations: podAnnotations,
 				},
 				Spec: corev1.PodSpec{
+					// ADR-040: per-instance SA gives the pod its SPIFFE
+					// workload identity (`<td>/ns/<ns>/sa/<id>`).
+					// AutomountServiceAccountToken stays false — Istio
+					// identity is independent of SA-token mounts.
+					ServiceAccountName:            name,
 					TerminationGracePeriodSeconds: &cfg.TerminationGracePeriod,
 					ImagePullSecrets:              pullSecrets,
 					SecurityContext:               podSec,
@@ -349,94 +355,6 @@ func BuildAgentService(name string, cfg *config.Config, ownerCM *corev1.ConfigMa
 			Selector:  selector,
 			Ports: []corev1.ServicePort{{
 				Name: "acp", Port: 8080, TargetPort: intstr.FromString("acp"),
-			}},
-		},
-	}
-}
-
-// BuildAgentNetworkPolicy is the cluster-enforced half of the credential
-// boundary on the agent side (ADR-038): no path to TCP 80/443 anywhere except
-// the paired gateway pod, plus the api-server harness port and DNS.
-//
-// `pairKey` is the pair identifier — the long-lived instance name for
-// long-lived agent pairs, the fork name for fork pairs. Both halves of the
-// pair carry `agent-platform.ai/pair=<pairKey>`.
-func BuildAgentNetworkPolicy(pairKey string, cfg *config.Config, ownerCM *corev1.ConfigMap) *networkingv1.NetworkPolicy {
-	tcp := corev1.ProtocolTCP
-	udp := corev1.ProtocolUDP
-	acpPort := intstr.FromInt32(8080)
-	envoyPort := intstr.FromInt32(portInt32(cfg.EnvoyPort))
-	dnsPort := intstr.FromInt32(53)
-	dnsTargetPort := intstr.FromInt32(5353)
-
-	egress := []networkingv1.NetworkPolicyEgressRule{
-		{
-			// Paired gateway pod only — exact-match on pair + role.
-			// Loosening to a wildcard would let one pair's agent dial
-			// another's gateway, defeating the boundary (ADR-038 §Threat Model).
-			//
-			// All TCP egress — including harness API calls to the api-server —
-			// flows through this single gateway hop. Envoy on the gateway pod
-			// stamps the trusted `x-platform-instance` header on harness
-			// traffic; without a direct path here the agent cannot bypass
-			// Envoy to forge identity.
-			To: []networkingv1.NetworkPolicyPeer{{
-				PodSelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{
-						LabelPair: pairKey,
-						LabelRole: RoleGateway,
-					},
-				},
-			}},
-			Ports: []networkingv1.NetworkPolicyPort{
-				{Protocol: &tcp, Port: &envoyPort},
-			},
-		},
-		{
-			// DNS — service port (53) and CoreDNS-on-OpenShift target port (5353).
-			Ports: []networkingv1.NetworkPolicyPort{
-				{Protocol: &tcp, Port: &dnsPort},
-				{Protocol: &udp, Port: &dnsPort},
-				{Protocol: &tcp, Port: &dnsTargetPort},
-				{Protocol: &udp, Port: &dnsTargetPort},
-			},
-		},
-	}
-
-	return &networkingv1.NetworkPolicy{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      pairKey + "-egress",
-			Namespace: cfg.Namespace,
-			Labels:    map[string]string{LabelPair: pairKey, LabelRole: RoleAgent},
-			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
-			},
-		},
-		Spec: networkingv1.NetworkPolicySpec{
-			PodSelector: metav1.LabelSelector{
-				MatchLabels: map[string]string{LabelPair: pairKey, LabelRole: RoleAgent},
-			},
-			PolicyTypes: []networkingv1.PolicyType{
-				networkingv1.PolicyTypeEgress,
-				networkingv1.PolicyTypeIngress,
-			},
-			Egress: egress,
-			// Ingress is the only authentication boundary on this hop: the
-			// api-server pod is the sole authorized caller of agent-runtime's
-			// ACP/tRPC port. The api-server has already verified the user
-			// JWT and instance ownership before forwarding.
-			Ingress: []networkingv1.NetworkPolicyIngressRule{{
-				From: []networkingv1.NetworkPolicyPeer{{
-					PodSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{"app.kubernetes.io/component": "apiserver"},
-					},
-					NamespaceSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{"kubernetes.io/metadata.name": cfg.ReleaseNamespace},
-					},
-				}},
-				Ports: []networkingv1.NetworkPolicyPort{{
-					Protocol: &tcp, Port: &acpPort,
-				}},
 			}},
 		},
 	}

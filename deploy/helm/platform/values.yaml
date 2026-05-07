@@ -66,6 +66,19 @@ urls:
 #     - name: my-registry-secret
 imagePullSecrets: []
 
+# -- Istio ambient mesh settings (ADR-040). Istio is a hard prerequisite of
+# this chart — `validate-istio.yaml` fails install if the mesh is missing.
+# `mise run cluster:install` provisions Istio out-of-band (mirroring how
+# cert-manager is treated). There is no `enabled: false` mode; an
+# unauthenticated harness port is not a supported configuration.
+istio:
+  # SPIFFE trust domain. Default for an istioctl ambient install.
+  trustDomain: cluster.local
+  # Name of the waypoint Gateway that fronts the api-server's harness
+  # Service. Istio's mesh-controller synthesises the waypoint Deployment
+  # + Pod from the Gateway resource declared in apiserver/waypoint.yaml.
+  waypointName: apiserver-waypoint
+
 # -- Target namespace for agent workloads (instances, templates, schedules)
 agentNamespace: platform-agents
 

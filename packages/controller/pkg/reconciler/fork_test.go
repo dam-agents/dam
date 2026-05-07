@@ -30,9 +30,13 @@ func setupForkReconciler(t *testing.T, agents map[string]*corev1.ConfigMap, obje
 		HarnessServerPort: 4001,
 		EnvoyImage:        "envoyproxy/envoy:distroless-v1.37.2",
 		EnvoyPort:         10000,
+		IstioTrustDomain:  "cluster.local",
+		IstioWaypointName: "apiserver-waypoint",
 	}
 	getter := &fakeGetter{cms: agents}
-	r := NewForkReconciler(client, cfg, NewAgentResolver(getter))
+	// ADR-040: ForkReconciler writes per-fork AuthorizationPolicies via
+	// the dynamic client; tests need a fake that knows the GVR.
+	r := NewForkReconciler(client, cfg, NewAgentResolver(getter)).WithDynamicClient(newFakeDynamic())
 	r.now = func() time.Time { return time.Unix(1_000_000, 0) }
 	return r, client
 }

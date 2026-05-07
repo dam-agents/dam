@@ -1,0 +1,60 @@
+{{- /*
+ADR-040: pod-level DENY ringfencing the api-server pod.
+
+The waypoint AuthorizationPolicies (rendered per-instance by the
+controller) only apply to traffic ROUTED THROUGH the waypoint Service.
+Without this rule, an in-mesh pod could dial the api-server pod IP
+directly on :15008 and reach the harness handler bypassing the waypoint
+entirely (and therefore bypassing the per-instance principal-to-`:id`
+check). Same hazard for ext-authz on a non-per-instance dial.
+
+This policy targets the api-server pod and DENIES every inbound mesh
+request that does not arrive via either:
+  - the waypoint (whose source.principal is the waypoint's SA), OR
+  - a per-instance ext-authz dial (source SA is in the agent namespace
+    and the destination port is the ext-authz port — Istio resolves
+    "destination port" to the application port, not HBONE 15008).
+
+Istio AuthorizationPolicy semantics: when both ALLOW and DENY policies
+apply, DENY wins. ALLOWs are OR-ed, DENY is enforced first. So this
+policy can co-exist with the per-instance ALLOWs the controller writes.
+*/ -}}
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ include "platform.fullname" . }}-apiserver-pod-deny
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: apiserver
+spec:
+  # Pod-level selector — applies to traffic terminating directly at the
+  # api-server pod (i.e. NOT via the waypoint, which has its own SA).
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: apiserver
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  action: DENY
+  rules:
+    # Anything from outside the agent namespace AND not from the waypoint's
+    # SA gets denied. The waypoint forwards harness traffic from this same
+    # release namespace, so its principal is admitted via the negative
+    # match (notNamespaces: agentNamespace skips the waypoint hop).
+    - from:
+        - source:
+            notNamespaces:
+              - {{ .Values.agentNamespace | quote }}
+              - {{ .Release.Namespace | quote }}
+    # Pod-IP bypass attempts that DO originate from the agent namespace
+    # but try to hit the harness port directly are denied — harness must
+    # go via the waypoint (per-instance principal-to-`:id` enforcement).
+    # ext-authz (separate port) is excluded so per-instance Services keep
+    # working.
+    - to:
+        - operation:
+            ports:
+              - {{ .Values.apiServer.harnessServerPort | quote }}
+      from:
+        - source:
+            namespaces:
+              - {{ .Values.agentNamespace | quote }}

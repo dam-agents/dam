@@ -1,5 +1,11 @@
 {{- $appName := printf "%s-apiserver" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- $harnessSvc := printf "%s-harness" $appName | trunc 63 | trimSuffix "-" }}
 ---
+# Public Service. ADR-040: carries only the public HTTP/tRPC port; harness
+# moves to the -harness Service (waypoint-fronted) and ext-authz moves to
+# per-instance Services rendered by the controller. This Service therefore
+# never carries the istio.io/use-waypoint label — browser traffic continues
+# to authenticate via Keycloak JWT, no mesh hop needed.
 apiVersion: v1
 kind: Service
 metadata:
@@ -15,15 +21,33 @@ spec:
       targetPort: http
       protocol: TCP
       name: http
+  selector:
+    app.kubernetes.io/component: apiserver
+    app.kubernetes.io/instance: {{ .Release.Name }}
+---
+# Harness Service (ADR-040). The `istio.io/use-waypoint` LABEL (NOT
+# annotation — Istio 1.21+ silently ignores the annotation form) routes
+# inbound traffic via the waypoint Gateway declared in waypoint.yaml. The
+# waypoint terminates HBONE and applies per-instance AuthorizationPolicies
+# (rendered by the controller) before forwarding to the api-server pod.
+# A request that reaches the api-server has already been admitted against
+# the URL `:id`; handlers can treat `:id` as authenticated.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $harnessSvc }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: apiserver
+    istio.io/use-waypoint: {{ .Values.istio.waypointName | quote }}
+spec:
+  type: ClusterIP
+  ports:
     - port: {{ .Values.apiServer.harnessServerPort }}
       targetPort: harness
       protocol: TCP
       name: harness
-    - port: {{ .Values.apiServer.extAuthzPort }}
-      targetPort: ext-authz
-      protocol: TCP
-      name: ext-authz
-      appProtocol: grpc
   selector:
     app.kubernetes.io/component: apiserver
     app.kubernetes.io/instance: {{ .Release.Name }}
@@ -73,6 +97,11 @@ spec:
               value: {{ include "platform.apiserver.postgres.dsn" . | quote }}
             - name: NAMESPACE
               value: {{ .Values.agentNamespace | quote }}
+            # ADR-040: api-server parses instance ID out of the per-instance
+            # ext-authz Service hostname Envoy dialled. The release name is
+            # the prefix.
+            - name: PLATFORM_RELEASE_NAME
+              value: {{ include "platform.fullname" . | quote }}
             - name: PORT
               value: {{ .Values.apiServer.port | quote }}
             - name: MCP_PORT

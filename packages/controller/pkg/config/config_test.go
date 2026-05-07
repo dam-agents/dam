@@ -38,29 +38,35 @@ func TestLoadFromEnv_Defaults(t *testing.T) {
 	assert.Equal(t, "platform-controller", cfg.LeaseName)
 	assert.Equal(t, 1*time.Hour, cfg.IdleTimeout)
 	assert.Equal(t, "", cfg.AgentStorageClass)
-	assert.Equal(t, "platform-apiserver.default.svc.cluster.local", cfg.ExtAuthzHost)
+	// ADR-040: ext-authz host is per-instance (no shared default).
+	assert.Equal(t, "platform-extauthz-inst-1.default.svc.cluster.local", cfg.ExtAuthzHostFor("inst-1"))
 }
 
-func TestLoadFromEnv_ExtAuthzHost_DefaultUsesFQDN(t *testing.T) {
+// ADR-040: per-instance ext-authz host derives from release name +
+// instance ID + release namespace.
+func TestExtAuthzHostFor_ComposesFQDN(t *testing.T) {
 	setEnv(t, map[string]string{
 		"PLATFORM_RELEASE_NAME":      "my-release",
 		"PLATFORM_RELEASE_NAMESPACE": "custom-ns",
-		"POD_NAME":               "controller-0",
+		"POD_NAME":                   "controller-0",
 	})
 	cfg, err := LoadFromEnv()
 	require.NoError(t, err)
-	assert.Equal(t, "my-release-apiserver.custom-ns.svc.cluster.local", cfg.ExtAuthzHost)
+	assert.Equal(t, "my-release-extauthz-abc.custom-ns.svc.cluster.local", cfg.ExtAuthzHostFor("abc"))
 }
 
-func TestLoadFromEnv_ExtAuthzHost_OverrideWins(t *testing.T) {
+// ADR-040: principal string follows SPIFFE shape `<td>/ns/<ns>/sa/<sa>`,
+// matching how istiod stamps workload certs.
+func TestPrincipalFor_SPIFFEShape(t *testing.T) {
 	setEnv(t, map[string]string{
-		"PLATFORM_RELEASE_NAME": "platform",
-		"POD_NAME":          "controller-0",
-		"EXT_AUTHZ_HOST":    "ext-authz.example.svc.cluster.local",
+		"PLATFORM_RELEASE_NAME":         "platform",
+		"POD_NAME":                      "controller-0",
+		"PLATFORM_AGENT_NAMESPACE":      "agents",
+		"PLATFORM_ISTIO_TRUST_DOMAIN":   "td.local",
 	})
 	cfg, err := LoadFromEnv()
 	require.NoError(t, err)
-	assert.Equal(t, "ext-authz.example.svc.cluster.local", cfg.ExtAuthzHost)
+	assert.Equal(t, "td.local/ns/agents/sa/inst-x", cfg.PrincipalFor("inst-x"))
 }
 
 func TestLoadFromEnv_AgentStorageClass(t *testing.T) {
@@ -118,7 +124,8 @@ func setEnv(t *testing.T, vars map[string]string) {
 		"PLATFORM_AGENT_NAMESPACE", "PLATFORM_RELEASE_NAMESPACE", "PLATFORM_RELEASE_NAME",
 		"PLATFORM_LEASE_NAME", "POD_NAME", "PLATFORM_IDLE_TIMEOUT",
 		"AGENT_STORAGE_CLASS",
-		"EXT_AUTHZ_HOST", "EXT_AUTHZ_PORT", "EXT_AUTHZ_HOLD_SECONDS",
+		"EXT_AUTHZ_PORT", "EXT_AUTHZ_HOLD_SECONDS",
+		"PLATFORM_ISTIO_TRUST_DOMAIN", "PLATFORM_ISTIO_WAYPOINT_NAME",
 	} {
 		os.Unsetenv(key)
 		t.Cleanup(func() { os.Unsetenv(key) })

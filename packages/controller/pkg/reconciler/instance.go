@@ -7,7 +7,6 @@ import (
 	cmv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -80,7 +79,7 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 			"instance", name, "owner", owner)
 	}
 
-	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(name, r.config, cm, credentialSecrets)
+	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(name, name, r.config, cm, credentialSecrets)
 	if err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("rendering envoy bootstrap: %v", err))
 	}
@@ -93,18 +92,47 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 		}
 	}
 
+	// ADR-040: per-instance SA must exist before the agent + gateway pods
+	// start (kubelet rejects pod scheduling on a missing SA, and Istio
+	// stamps the SPIFFE workload cert from it).
+	if err := r.ensureServiceAccount(ctx, name, cm); err != nil {
+		return r.setError(ctx, name, err.Error())
+	}
+
+	// ADR-040: per-instance ext-authz Service in the release namespace —
+	// the gateway pod's Envoy bootstrap dials this Service for HITL
+	// approvals, and the per-instance AuthorizationPolicy below pins it
+	// to the matching SA principal.
+	extAuthzSvc := BuildExtAuthzService(name, r.config, cm)
+	if err := r.applyExtAuthzService(ctx, extAuthzSvc); err != nil {
+		return r.setError(ctx, name, fmt.Sprintf("applying ext-authz service: %v", err))
+	}
+
+	// ADR-040: three per-instance AuthorizationPolicies — gateway admission
+	// (agent ns), harness path-prefix at the waypoint (release ns),
+	// ext-authz Service principal (release ns).
+	if err := r.applyAuthorizationPolicy(ctx, BuildGatewayAuthorizationPolicy(name, name, r.config, cm)); err != nil {
+		return r.setError(ctx, name, fmt.Sprintf("applying gateway authz policy: %v", err))
+	}
+	if err := r.applyAuthorizationPolicy(ctx, BuildHarnessAuthorizationPolicy(name, r.config, cm)); err != nil {
+		return r.setError(ctx, name, fmt.Sprintf("applying harness authz policy: %v", err))
+	}
+	if err := r.applyAuthorizationPolicy(ctx, BuildExtAuthzAuthorizationPolicy(name, r.config, cm)); err != nil {
+		return r.setError(ctx, name, fmt.Sprintf("applying ext-authz authz policy: %v", err))
+	}
+
 	hibernated := instanceSpec.DesiredState == "hibernated"
 
 	// ADR-038: paired pods, rendered as a unit. Render the gateway first
 	// so the agent's HTTPS_PROXY target exists by the time the agent pod
-	// starts dialing it.
+	// starts dialing it. ADR-040: pair-key NetworkPolicies are gone —
+	// pair isolation is now enforced by the per-instance AuthorizationPolicy
+	// on the gateway Service (mesh-level, cryptographic).
 	gatewaySS := BuildGatewayStatefulSet(name, hibernated, r.config, cm, credentialSecrets)
 	gatewaySvc := BuildGatewayService(name, r.config, cm)
-	gatewayNP := BuildGatewayNetworkPolicy(name, r.config, cm)
 
 	agentSS := BuildAgentStatefulSet(name, instanceSpec, agentSpec, r.config, cm, credentialSecrets)
 	agentSvc := BuildAgentService(name, r.config, cm)
-	agentNP := BuildAgentNetworkPolicy(name, r.config, cm)
 
 	if err := r.applyStatefulSet(ctx, gatewaySS); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying gateway statefulset: %v", err))
@@ -112,17 +140,11 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 	if err := r.applyService(ctx, gatewaySvc); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying gateway service: %v", err))
 	}
-	if err := r.applyNetworkPolicy(ctx, gatewayNP); err != nil {
-		return r.setError(ctx, name, fmt.Sprintf("applying gateway networkpolicy: %v", err))
-	}
 	if err := r.applyStatefulSet(ctx, agentSS); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying agent statefulset: %v", err))
 	}
 	if err := r.applyService(ctx, agentSvc); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying agent service: %v", err))
-	}
-	if err := r.applyNetworkPolicy(ctx, agentNP); err != nil {
-		return r.setError(ctx, name, fmt.Sprintf("applying agent networkpolicy: %v", err))
 	}
 
 	state := instanceSpec.DesiredState
@@ -261,23 +283,6 @@ func (r *InstanceReconciler) applyService(ctx context.Context, desired *corev1.S
 		return err
 	}
 	return err
-}
-
-func (r *InstanceReconciler) applyNetworkPolicy(ctx context.Context, desired *networkingv1.NetworkPolicy) error {
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		existing, err := r.client.NetworkingV1().NetworkPolicies(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
-		if errors.IsNotFound(err) {
-			_, err = r.client.NetworkingV1().NetworkPolicies(desired.Namespace).Create(ctx, desired, metav1.CreateOptions{})
-			return err
-		}
-		if err != nil {
-			return err
-		}
-		// Update in place so flag toggles propagate to live policy.
-		existing.Spec = desired.Spec
-		_, err = r.client.NetworkingV1().NetworkPolicies(desired.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
-		return err
-	})
 }
 
 var certificateGVR = schema.GroupVersionResource{

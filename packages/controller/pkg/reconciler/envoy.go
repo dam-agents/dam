@@ -359,8 +359,11 @@ static_resources:
                       grpc_service:
                         envoy_grpc:
                           cluster_name: ext_authz_cluster
-                        initial_metadata:
-                          - { key: x-platform-instance, value: "{{ $.InstanceID }}" }
+                        # ADR-040: instance identity is conveyed by the
+                        # gRPC :authority of the per-instance ext-authz
+                        # Service this cluster dials, cryptographically
+                        # pinned by the AuthorizationPolicy on that
+                        # Service. No x-platform-instance metadata.
                         timeout: {{ $.ExtAuthzTimeoutSeconds }}s
                   - name: envoy.filters.http.dynamic_forward_proxy
                     typed_config:
@@ -391,13 +394,15 @@ static_resources:
                         # :authority so this route only applies to
                         # api-server-bound calls; everything else falls
                         # through to the egress fallthrough below.
-                        # Strip any client-supplied x-platform-instance
-                        # first, then re-add the trusted value — the
-                        # api-server identifies the caller from this
-                        # header and the agent must not be able to
-                        # forge it. ext_authz is disabled here: this is
-                        # control-plane traffic to the api-server, not
-                        # user egress, so HITL rules do not apply.
+                        # ADR-040: identity is conveyed by the SPIFFE
+                        # peer principal that ztunnel applies when
+                        # encapsulating outbound traffic — the gateway
+                        # pod runs as the per-instance SA, and the
+                        # waypoint enforces principal == URL :id. No
+                        # header injection needed. ext_authz is disabled
+                        # on this route: harness traffic is control-plane
+                        # to the api-server, not user egress, so HITL
+                        # rules do not apply.
                         - match:
                             prefix: "/"
                             headers:
@@ -407,13 +412,6 @@ static_resources:
                           route:
                             cluster: dynamic_forward_proxy_http
                             timeout: 0s
-                          request_headers_to_remove:
-                            - x-platform-instance
-                          request_headers_to_add:
-                            - header:
-                                key: x-platform-instance
-                                value: "{{ $.InstanceID }}"
-                              append_action: OVERWRITE_IF_EXISTS_OR_ADD
                           typed_per_filter_config:
                             envoy.filters.http.ext_authz:
                               "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute
@@ -471,8 +469,9 @@ static_resources:
                       grpc_service:
                         envoy_grpc:
                           cluster_name: ext_authz_cluster
-                        initial_metadata:
-                          - { key: x-platform-instance, value: "{{ $.InstanceID }}" }
+                        # ADR-040: instance identity is conveyed by the
+                        # gRPC :authority of the per-instance ext-authz
+                        # Service this cluster dials.
                         timeout: {{ $.ExtAuthzTimeoutSeconds }}s
 {{- if .Credentialed }}
                   - name: envoy.filters.http.credential_injector
@@ -546,8 +545,9 @@ static_resources:
                 grpc_service:
                   envoy_grpc:
                     cluster_name: ext_authz_cluster
-                  initial_metadata:
-                    - { key: x-platform-instance, value: "{{ $.InstanceID }}" }
+                  # ADR-040: see HCM ext_authz block above — instance
+                  # identity is conveyed by the per-instance ext-authz
+                  # Service the cluster dials, not by header.
                   timeout: {{ $.ExtAuthzTimeoutSeconds }}s
             - name: envoy.filters.network.sni_dynamic_forward_proxy
               typed_config:
@@ -701,7 +701,13 @@ const envoyListenAddress = "0.0.0.0"
 
 // renderEnvoyBootstrap returns the Envoy bootstrap YAML for an instance's
 // paired gateway pod.
-func renderEnvoyBootstrap(instanceName string, cfg *config.Config, routes []envoyRoute) (string, error) {
+//
+// `extAuthzInstanceID` is the instance whose per-instance ext-authz Service
+// the gateway dials (ADR-040). For long-lived pairs this equals the
+// instance name; for forks it is the parent instance's ID, since forks
+// reuse the parent's SA and therefore must dial the parent's per-instance
+// ext-authz Service to satisfy the AuthorizationPolicy.
+func renderEnvoyBootstrap(extAuthzInstanceID string, cfg *config.Config, routes []envoyRoute) (string, error) {
 	tmpl, err := template.New("envoy").Parse(envoyBootstrapTmpl)
 	if err != nil {
 		return "", err
@@ -709,11 +715,12 @@ func renderEnvoyBootstrap(instanceName string, cfg *config.Config, routes []envo
 	// Envoy's per-call timeout sits ahead of the application-level hold so a
 	// hold-window timeout fires from the api-server side, not from Envoy.
 	extAuthzTimeoutSeconds := cfg.ExtAuthzHoldSeconds + 60
-	// :authority value the api-server harness port is reached on. The agent
-	// builds harness URLs from cfg.HarnessServerURL, so the Host/:authority
-	// includes the port. We match on this exact string so the trusted-header
-	// route is scoped to api-server traffic only.
-	harnessAuthority := fmt.Sprintf("%s:%d", cfg.APIServerHost, cfg.HarnessServerPort)
+	// :authority value the harness Service is reached on. The agent
+	// builds harness URLs from cfg.HarnessServerURL (`<rel>-apiserver-harness`
+	// per ADR-040), so the Host/:authority includes the port. We match on
+	// this exact string so the harness route is scoped to api-server
+	// traffic only — fall-through goes through the regular egress paths.
+	harnessAuthority := fmt.Sprintf("%s:%d", cfg.HarnessHost(), cfg.HarnessServerPort)
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, struct {
 		ListenAddress          string
@@ -723,7 +730,6 @@ func renderEnvoyBootstrap(instanceName string, cfg *config.Config, routes []envo
 		CredentialFile         string
 		CredentialSDSName      string
 		LeafTLSDir             string
-		InstanceID             string
 		HarnessAuthority       string
 		ExtAuthzHost           string
 		ExtAuthzPort           int
@@ -737,9 +743,8 @@ func renderEnvoyBootstrap(instanceName string, cfg *config.Config, routes []envo
 		CredentialFile:         envoyCredentialKeySDS,
 		CredentialSDSName:      envoyCredentialSDSName,
 		LeafTLSDir:             envoyLeafTLSMount,
-		InstanceID:             instanceName,
 		HarnessAuthority:       harnessAuthority,
-		ExtAuthzHost:           cfg.ExtAuthzHost,
+		ExtAuthzHost:           cfg.ExtAuthzHostFor(extAuthzInstanceID),
 		ExtAuthzPort:           cfg.ExtAuthzPort,
 		ExtAuthzHoldSeconds:    cfg.ExtAuthzHoldSeconds,
 		ExtAuthzTimeoutSeconds: extAuthzTimeoutSeconds,
@@ -751,9 +756,13 @@ func renderEnvoyBootstrap(instanceName string, cfg *config.Config, routes []envo
 
 // BuildEnvoyBootstrapConfigMap is the desired ConfigMap holding the rendered
 // Envoy bootstrap YAML for an instance.
-func BuildEnvoyBootstrapConfigMap(instanceName string, cfg *config.Config, ownerCM *corev1.ConfigMap, secrets []corev1.Secret) (*corev1.ConfigMap, error) {
+//
+// `extAuthzInstanceID` is the instance whose per-instance ext-authz Service
+// the gateway dials (ADR-040). Long-lived pairs pass `instanceName` for
+// both args; forks pass the parent instance ID for the second.
+func BuildEnvoyBootstrapConfigMap(instanceName, extAuthzInstanceID string, cfg *config.Config, ownerCM *corev1.ConfigMap, secrets []corev1.Secret) (*corev1.ConfigMap, error) {
 	routes := routesFromSecrets(secrets)
-	yaml, err := renderEnvoyBootstrap(instanceName, cfg, routes)
+	yaml, err := renderEnvoyBootstrap(extAuthzInstanceID, cfg, routes)
 	if err != nil {
 		return nil, err
 	}

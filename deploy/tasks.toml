@@ -194,6 +194,47 @@ else
   echo "cert-manager already installed"
 fi
 
+# 2b. Install Istio ambient + Gateway-API CRDs (required by ADR-040).
+# Pinned: Gateway API v1.2.0 stable channel (introduced Gateway/HTTPRoute v1
+# and the gatewayClassName: istio-waypoint shape). Istio 1.29.x is the
+# floor for ambient L7 with locked-down waypoint HCM.
+GATEWAY_API_VERSION="v1.2.0"
+ISTIO_VERSION="1.29.1"
+
+if ! kubectl --kubeconfig="$KUBECONFIG" get crd gateways.gateway.networking.k8s.io >/dev/null 2>&1; then
+  echo "Installing Gateway API CRDs ($GATEWAY_API_VERSION)..."
+  kubectl --kubeconfig="$KUBECONFIG" apply -f "https://github.com/kubernetes-sigs/gateway-api/releases/download/$GATEWAY_API_VERSION/standard-install.yaml"
+else
+  echo "Gateway API CRDs already installed"
+fi
+
+echo "Ensuring Istio ambient mesh ($ISTIO_VERSION)..."
+helm repo add istio https://istio-release.storage.googleapis.com/charts >/dev/null 2>&1 || true
+helm repo update istio >/dev/null
+helm --kubeconfig="$KUBECONFIG" upgrade --install istio-base istio/base \
+  -n istio-system --version "$ISTIO_VERSION" --create-namespace --wait
+helm --kubeconfig="$KUBECONFIG" upgrade --install istiod istio/istiod \
+  -n istio-system --version "$ISTIO_VERSION" --set profile=ambient --wait
+# k3s places CNI dirs at non-upstream paths (/var/lib/rancher/k3s/...).
+# Without these overrides istio-cni-node loops "no networks found in
+# /host/etc/cni/net.d" and ambient redirection never engages.
+helm --kubeconfig="$KUBECONFIG" upgrade --install istio-cni istio/cni \
+  -n istio-system --version "$ISTIO_VERSION" \
+  --set profile=ambient \
+  --set cni.cniBinDir=/var/lib/rancher/k3s/data/cni \
+  --set cni.cniConfDir=/var/lib/rancher/k3s/agent/etc/cni/net.d \
+  --wait
+helm --kubeconfig="$KUBECONFIG" upgrade --install ztunnel istio/ztunnel \
+  -n istio-system --version "$ISTIO_VERSION" --wait
+kubectl --kubeconfig="$KUBECONFIG" -n istio-system rollout status ds/ztunnel --timeout=120s
+kubectl --kubeconfig="$KUBECONFIG" -n istio-system rollout status ds/istio-cni-node --timeout=120s
+
+# Release namespace must be ambient so the api-server pod and the
+# Istio-synthesised waypoint Pod participate in mesh mTLS. The helm
+# install below targets the `default` namespace; label it now (the
+# chart's validate-istio.yaml asserts this label is present).
+kubectl --kubeconfig="$KUBECONFIG" label namespace default istio.io/dataplane-mode=ambient --overwrite
+
 # 3. Load images into k3s (built by depends: image:*)
 echo "Loading images into k3s..."
 tar="/tmp/platform-images.tar"

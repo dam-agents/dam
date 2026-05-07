@@ -111,10 +111,13 @@ func TestFilterByGrants_SecretAndConnectionAxesAreIndependent(t *testing.T) {
 // exfiltration path called out in ADR-033 §Threat Model is structurally
 // closed by these properties — the assertions below are the regression spec.
 
+// ADR-040: ExtAuthzHost is no longer a flat config field — it is computed
+// per-instance via cfg.ExtAuthzHostFor(<id>) using ReleaseName + ReleaseNamespace.
 var bootstrapTestCfg = &config.Config{
 	Namespace:           "agents",
+	ReleaseName:         "platform",
+	ReleaseNamespace:    "platform",
 	EnvoyPort:           10000,
-	ExtAuthzHost:        "platform-apiserver.platform.svc",
 	ExtAuthzPort:        50051,
 	ExtAuthzHoldSeconds: 30,
 }

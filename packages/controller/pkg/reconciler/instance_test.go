@@ -11,10 +11,30 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	dynfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 )
+
+// authzPolicyListGVR is the schema.GroupVersionResource for List dispatch
+// in the dynamic fake client. The fake registry needs a List kind for
+// every Resource it might watch; otherwise Update/Get returns NotFound
+// even for objects we just Created via the fake.
+var authzPolicyListGVR = schema.GroupVersionResource{Group: "security.istio.io", Version: "v1", Resource: "authorizationpolicies"}
+
+// newFakeDynamic returns a dynamic fake that knows about the
+// AuthorizationPolicy CRD shape the controller writes (ADR-040). Tests
+// that exercise Reconcile() rely on this so the per-instance policies
+// can be Created/Updated through the fake.
+func newFakeDynamic() *dynfake.FakeDynamicClient {
+	scheme := runtime.NewScheme()
+	gvrToListKind := map[schema.GroupVersionResource]string{
+		authzPolicyListGVR: "AuthorizationPolicyList",
+	}
+	return dynfake.NewSimpleDynamicClientWithCustomListKinds(scheme, gvrToListKind)
+}
 
 func setupReconciler(t *testing.T, agents map[string]*corev1.ConfigMap, objects ...runtime.Object) (*InstanceReconciler, *fake.Clientset) {
 	t.Helper()
@@ -26,9 +46,11 @@ func setupReconciler(t *testing.T, agents map[string]*corev1.ConfigMap, objects 
 		HarnessServerPort: 4001,
 		EnvoyImage:        "envoyproxy/envoy:distroless-v1.37.2",
 		EnvoyPort:         10000,
+		IstioTrustDomain:  "cluster.local",
+		IstioWaypointName: "apiserver-waypoint",
 	}
 	getter := &fakeGetter{cms: agents}
-	r := NewInstanceReconciler(client, cfg, NewAgentResolver(getter))
+	r := NewInstanceReconciler(client, cfg, NewAgentResolver(getter)).WithDynamicClient(newFakeDynamic())
 	return r, client
 }
 
@@ -93,11 +115,26 @@ func TestReconcile_CreateResources(t *testing.T) {
 	require.NoError(t, err, "gateway Service must be created so HTTPS_PROXY DNS resolves")
 	assert.Equal(t, corev1.ClusterIPNone, gwSvc.Spec.ClusterIP)
 
-	// Both NetworkPolicies created
-	_, err = client.NetworkingV1().NetworkPolicies("test-agents").Get(ctx, "my-instance-egress", metav1.GetOptions{})
-	require.NoError(t, err)
-	_, err = client.NetworkingV1().NetworkPolicies("test-agents").Get(ctx, "my-instance-gateway-egress", metav1.GetOptions{})
-	require.NoError(t, err, "gateway NetworkPolicy must be created")
+	// ADR-040: pair-key NetworkPolicies are gone — pair isolation is now
+	// enforced by per-instance Istio AuthorizationPolicies. Coverage for
+	// the new resources lives in service_account_test.go (per-instance SA)
+	// and authorization_policy_test.go.
+
+	// Per-instance ServiceAccount (ADR-040)
+	sa, err := client.CoreV1().ServiceAccounts("test-agents").Get(ctx, "my-instance", metav1.GetOptions{})
+	require.NoError(t, err, "per-instance ServiceAccount must be created")
+	require.NotNil(t, sa.AutomountServiceAccountToken)
+	assert.False(t, *sa.AutomountServiceAccountToken)
+
+	// Per-instance ext-authz Service in the release namespace (ADR-040)
+	_, err = client.CoreV1().Services("default").Get(ctx, "platform-extauthz-my-instance", metav1.GetOptions{})
+	require.NoError(t, err, "per-instance ext-authz Service must be created")
+
+	// Pod specs use the per-instance SA (ADR-040)
+	assert.Equal(t, "my-instance", ss.Spec.Template.Spec.ServiceAccountName,
+		"agent pod must run as the per-instance SA so SPIFFE peer principal == URL :id")
+	assert.Equal(t, "my-instance", gws.Spec.Template.Spec.ServiceAccountName,
+		"gateway pod must run as the per-instance SA")
 
 	// Status written
 	updated, _ := client.CoreV1().ConfigMaps("test-agents").Get(ctx, "my-instance", metav1.GetOptions{})

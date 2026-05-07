@@ -22,6 +22,8 @@ var testConfig = &config.Config{
 	AgentHome:         "/home/agent",
 	EnvoyImage:        "envoyproxy/envoy:distroless-v1.37.2",
 	EnvoyPort:         10000,
+	IstioTrustDomain:  "cluster.local",
+	IstioWaypointName: "apiserver-waypoint",
 }
 
 var testAgent = &types.AgentSpec{
@@ -271,64 +273,9 @@ func TestBuildAgentService(t *testing.T) {
 	require.Len(t, svc.OwnerReferences, 1)
 }
 
-// --- Agent NetworkPolicy tests ---
-
-func TestBuildAgentNetworkPolicy(t *testing.T) {
-	np := BuildAgentNetworkPolicy("my-instance", testConfig, testOwnerCM)
-	assert.Equal(t, "my-instance-egress", np.Name)
-	assert.Equal(t, "test-agents", np.Namespace)
-	assert.Equal(t, "my-instance", np.Spec.PodSelector.MatchLabels["agent-platform.ai/pair"])
-	assert.Equal(t, "agent", np.Spec.PodSelector.MatchLabels["agent-platform.ai/role"])
-	require.Len(t, np.OwnerReferences, 1)
-
-	// ADR-038: egress is paired gateway + DNS. The agent must have no path
-	// to 80/443 anywhere (that bypass is the point of the split) and no
-	// direct path to the harness port either — harness traffic must
-	// traverse the gateway's Envoy so the trusted x-platform-instance
-	// header is stamped on the way through.
-	require.Len(t, np.Spec.Egress, 2)
-
-	// 1: paired gateway pod only
-	gatewayEgress := np.Spec.Egress[0]
-	require.Len(t, gatewayEgress.To, 1)
-	assert.Equal(t, "my-instance", gatewayEgress.To[0].PodSelector.MatchLabels["agent-platform.ai/pair"])
-	assert.Equal(t, "gateway", gatewayEgress.To[0].PodSelector.MatchLabels["agent-platform.ai/role"])
-	require.Len(t, gatewayEgress.Ports, 1)
-	assert.Equal(t, int32(10000), gatewayEgress.Ports[0].Port.IntVal)
-
-	// 2: DNS
-	dns := np.Spec.Egress[1]
-	assert.Empty(t, dns.To)
-
-	// No direct egress to the harness port: every harness call must go
-	// through the gateway's Envoy or the trusted-header trust model breaks.
-	for _, rule := range np.Spec.Egress {
-		for _, p := range rule.Ports {
-			assert.NotEqual(t, int32(testConfig.HarnessServerPort), p.Port.IntVal,
-				"agent NetworkPolicy must not admit direct egress to the harness port")
-		}
-	}
-
-	// Agent must NOT be allowed to dial 80/443 anywhere — that's the bypass.
-	for _, rule := range np.Spec.Egress {
-		if len(rule.To) == 0 {
-			for _, p := range rule.Ports {
-				assert.NotEqual(t, int32(443), p.Port.IntVal,
-					"agent NetworkPolicy must not admit open 443 egress (ADR-038)")
-				assert.NotEqual(t, int32(80), p.Port.IntVal,
-					"agent NetworkPolicy must not admit open 80 egress (ADR-038)")
-			}
-		}
-	}
-
-	// Ingress: ACP port admitted only from the api-server pod.
-	require.Len(t, np.Spec.Ingress, 1)
-	require.Len(t, np.Spec.Ingress[0].From, 1)
-	assert.Equal(t, "apiserver",
-		np.Spec.Ingress[0].From[0].PodSelector.MatchLabels["app.kubernetes.io/component"])
-	require.NotNil(t, np.Spec.Ingress[0].From[0].NamespaceSelector)
-	assert.Equal(t, int32(8080), np.Spec.Ingress[0].Ports[0].Port.IntVal)
-}
+// ADR-040: per-instance pair-key NetworkPolicy is gone (mesh
+// AuthorizationPolicy handles pair isolation cryptographically). The
+// previous TestBuildAgentNetworkPolicy is no longer applicable.
 
 func envToMap(envs []corev1.EnvVar) map[string]string {
 	m := make(map[string]string)
@@ -372,7 +319,7 @@ func TestBuildAgentStatefulSet_PodHardening(t *testing.T) {
 
 func TestBuildEnvoyBootstrapConfigMap(t *testing.T) {
 	secrets := []corev1.Secret{credSecret("platform-cred-aaa", "api.example.com")}
-	cm, err := BuildEnvoyBootstrapConfigMap("my-instance", testConfig, testOwnerCM, secrets)
+	cm, err := BuildEnvoyBootstrapConfigMap("my-instance", "my-instance", testConfig, testOwnerCM, secrets)
 	require.NoError(t, err)
 	assert.Equal(t, "my-instance-envoy-bootstrap", cm.Name)
 	assert.Equal(t, "test-agents", cm.Namespace)

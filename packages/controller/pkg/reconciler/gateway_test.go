@@ -81,59 +81,9 @@ func TestBuildGatewayService(t *testing.T) {
 	assert.Equal(t, "gateway", svc.Spec.Selector["agent-platform.ai/role"])
 }
 
-// --- Gateway NetworkPolicy ---
-
-func TestBuildGatewayNetworkPolicy(t *testing.T) {
-	np := BuildGatewayNetworkPolicy("my-instance", testConfig, testOwnerCM)
-	assert.Equal(t, "my-instance-gateway-egress", np.Name)
-	assert.Equal(t, "my-instance", np.Spec.PodSelector.MatchLabels["agent-platform.ai/pair"])
-	assert.Equal(t, "gateway", np.Spec.PodSelector.MatchLabels["agent-platform.ai/role"])
-
-	// Egress: 80/443 anywhere, ext_authz to api-server, DNS.
-	require.Len(t, np.Spec.Egress, 3)
-
-	upstream := np.Spec.Egress[0]
-	assert.Empty(t, upstream.To, "upstream egress must not have a peer selector")
-	var saw80, saw443 bool
-	for _, p := range upstream.Ports {
-		if p.Port.IntVal == 80 {
-			saw80 = true
-		}
-		if p.Port.IntVal == 443 {
-			saw443 = true
-		}
-	}
-	assert.True(t, saw80, "gateway must permit egress on TCP 80")
-	assert.True(t, saw443, "gateway must permit egress on TCP 443")
-
-	apiserver := np.Spec.Egress[1]
-	require.Len(t, apiserver.To, 1)
-	assert.Equal(t, "apiserver", apiserver.To[0].PodSelector.MatchLabels["app.kubernetes.io/component"])
-	// ext_authz (gRPC) + harness (HTTP). Both terminate at the apiserver pod;
-	// the same egress rule covers both ports.
-	require.Len(t, apiserver.Ports, 2)
-	var sawExtAuthz, sawHarness bool
-	for _, p := range apiserver.Ports {
-		if p.Port.IntVal == 4002 {
-			sawExtAuthz = true
-		}
-		if p.Port.IntVal == 4001 {
-			sawHarness = true
-		}
-	}
-	assert.True(t, sawExtAuthz, "gateway must permit egress to apiserver ext_authz port")
-	assert.True(t, sawHarness, "gateway must permit egress to apiserver harness port")
-
-	// Ingress: paired agent pod only, exact pair-match.
-	require.Len(t, np.Spec.Ingress, 1)
-	require.Len(t, np.Spec.Ingress[0].From, 1)
-	from := np.Spec.Ingress[0].From[0]
-	require.NotNil(t, from.PodSelector)
-	assert.Equal(t, "my-instance", from.PodSelector.MatchLabels["agent-platform.ai/pair"])
-	assert.Equal(t, "agent", from.PodSelector.MatchLabels["agent-platform.ai/role"])
-	require.Len(t, np.Spec.Ingress[0].Ports, 1)
-	assert.Equal(t, int32(10000), np.Spec.Ingress[0].Ports[0].Port.IntVal)
-}
+// ADR-040: TestBuildGatewayNetworkPolicy / TestBuildForkAgentNetworkPolicy
+// removed — pair-key NetworkPolicies are gone, replaced by per-instance
+// mesh AuthorizationPolicies (covered in authorization_policy_test.go).
 
 // --- Fork gateway ---
 
@@ -154,17 +104,6 @@ func TestBuildForkGatewayPod_Labels(t *testing.T) {
 
 	require.NotNil(t, pod.Spec.AutomountServiceAccountToken)
 	assert.False(t, *pod.Spec.AutomountServiceAccountToken)
-}
-
-func TestBuildForkAgentNetworkPolicy_PinsToForkGateway(t *testing.T) {
-	np := BuildForkAgentNetworkPolicy("fork-abc", testConfig, testForkOwnerCM)
-	// Egress to the gateway must use the fork's pair key, not the parent's.
-	require.NotEmpty(t, np.Spec.Egress)
-	gatewayEgress := np.Spec.Egress[0]
-	require.Len(t, gatewayEgress.To, 1)
-	assert.Equal(t, "fork-abc", gatewayEgress.To[0].PodSelector.MatchLabels["agent-platform.ai/pair"],
-		"fork agent must dial its OWN gateway, never the parent's (ADR-038)")
-	assert.Equal(t, "gateway", gatewayEgress.To[0].PodSelector.MatchLabels["agent-platform.ai/role"])
 }
 
 func TestBuildForkGatewayService(t *testing.T) {

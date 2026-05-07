@@ -58,10 +58,22 @@ spec:
             {{- end }}
             - name: PLATFORM_API_SERVER_HOST
               value: "{{ include "platform.fullname" . }}-apiserver.{{ .Release.Namespace }}.svc.cluster.local"
+            # ADR-040: harness traffic routes through the waypoint-fronted
+            # `-apiserver-harness` Service. The bare apiserver Service no
+            # longer carries the harness port.
             - name: PLATFORM_HARNESS_SERVER_URL
-              value: "http://{{ include "platform.fullname" . }}-apiserver.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.apiServer.harnessServerPort }}"
+              value: "http://{{ include "platform.fullname" . }}-apiserver-harness.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.apiServer.harnessServerPort }}"
             - name: PLATFORM_HARNESS_SERVER_PORT
               value: {{ .Values.apiServer.harnessServerPort | quote }}
+            # ADR-040: SPIFFE trust domain — used to render the principal
+            # string in the per-instance AuthorizationPolicies the
+            # controller writes alongside each instance.
+            - name: PLATFORM_ISTIO_TRUST_DOMAIN
+              value: {{ .Values.istio.trustDomain | quote }}
+            - name: PLATFORM_ISTIO_WAYPOINT_NAME
+              value: {{ .Values.istio.waypointName | quote }}
+            - name: PLATFORM_RELEASE_DOMAIN
+              value: "svc.cluster.local"
             - name: PLATFORM_IDLE_TIMEOUT
               value: {{ .Values.controller.idleTimeout | default "1h" | quote }}
             - name: PLATFORM_TERMINATION_GRACE_PERIOD
@@ -72,11 +84,12 @@ spec:
               value: {{ .Values.controller.envoyPort | default 10000 | quote }}
             - name: AGENT_HOME
               value: {{ .Values.agentHome | quote }}
-            - name: EXT_AUTHZ_HOST
-              # FQDN: agent pods live in a different namespace (`agents`) from
-              # the apiserver Service (`{{ .Release.Namespace }}`), so the
-              # bare service name doesn't resolve in the agent's DNS scope.
-              value: {{ printf "%s-apiserver.%s.svc.cluster.local" (include "platform.fullname" .) .Release.Namespace | quote }}
+            # ADR-040: ext-authz uses per-instance Services rendered by the
+            # controller (one Service per instance, AuthorizationPolicy-gated
+            # to the instance's own SA principal). The host is computed at
+            # render time as `<release>-extauthz-<id>.<release-ns>.svc.cluster.local`
+            # from PLATFORM_RELEASE_NAME + PLATFORM_RELEASE_NAMESPACE; no
+            # static EXT_AUTHZ_HOST is needed.
             - name: EXT_AUTHZ_PORT
               value: {{ .Values.apiServer.extAuthzPort | quote }}
             - name: EXT_AUTHZ_HOLD_SECONDS

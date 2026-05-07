@@ -236,6 +236,10 @@ func BuildForkAgentJob(
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
 				Spec: corev1.PodSpec{
+					// ADR-040: fork agent reuses the parent instance's SA
+					// (peer principal SA name == parent's URL `:id`). The
+					// parent's harness AuthorizationPolicy admits it.
+					ServiceAccountName:            forkSpec.Instance,
 					RestartPolicy:                 corev1.RestartPolicyNever,
 					TerminationGracePeriodSeconds: &cfg.TerminationGracePeriod,
 					ImagePullSecrets:              pullSecrets,

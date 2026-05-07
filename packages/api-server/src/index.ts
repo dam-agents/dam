@@ -4,7 +4,6 @@ import {
   composeInstancesModule,
   createInstancesRepository,
   createKeycloakUserDirectory,
-  createPodIpResolver,
   startK8sCleanupSaga,
   startChannelCleanupSaga,
   deleteChannelsByInstance,
@@ -305,19 +304,11 @@ const { server: harnessApiServer } = startHarnessApiServerApp({
   seedSources,
 });
 
-// Source-IP-derived identity for the ext_authz handler. NetworkPolicy
-// (deploy/helm/platform/templates/apiserver/networkpolicy.yaml) blocks
-// non-agent pods at the kernel; this cache turns a verified peer IP into
-// the pod's instance label so a compromised agent bypassing its sidecar
-// still can't impersonate a sibling. Refresh cadence is generous —
-// agent pods come and go at human cadence, the on-miss refresh covers
-// the cold-start path.
-const podIpResolver = createPodIpResolver({
-  k8s: createAgentsK8sClient(api, config.namespace),
-  refreshIntervalMs: 10_000,
-});
-await podIpResolver.start();
-
+// ADR-040: instance identity for ext-authz now flows from the per-instance
+// ext-authz Service the gateway pod's Envoy was configured to dial,
+// cryptographically pinned by the AuthorizationPolicy on each per-instance
+// Service. The pod-IP resolver and `x-platform-instance` header are gone.
+//
 // Single gRPC ext_authz server serves both Envoy filters: HTTP filter on
 // TLS-terminated chains (L7 — sees method/path) and the network filter on
 // the catch-all chain (L4 — SNI only). Same Check RPC, same gate service;
@@ -326,7 +317,7 @@ const { server: extAuthzGrpcServer } = await startExtAuthzGrpcApp({
   port: config.extAuthzPort,
   holdSeconds: config.approvalHoldSeconds,
   gate: extAuthzGate,
-  podIpResolver,
+  releaseName: config.releaseName,
 });
 
 listChannelsByOwner(db, "")().then((channelsByInstance) => {
@@ -343,7 +334,6 @@ async function shutdown() {
   await oauthRefreshService.stop();
   await deliverySweeper.stop();
   await agentArtifactsSweeper.stop();
-  await podIpResolver.stop();
   await channelManager.stopAll();
   await redisBus.close();
   await sql.end();
