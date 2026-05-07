@@ -17,7 +17,7 @@ export function buildConfigSetCommand(deps: ConfigSetCommandDeps): Command {
 
   config
     .command("set <key> <value>")
-    .description("Set a single config key in ~/.dam/config.toml")
+    .description("Set a single config key in the CLI config file")
     .action(async (rawKey: string, rawValue: string) => {
       const keyResult = parseConfigKey(rawKey);
       if (!keyResult.ok) {

@@ -1,10 +1,10 @@
 # CLI
 
-Last verified: 2026-05-06
+Last verified: 2026-05-07
 
 ## Motivated by
 
-- [ADR-039 — Platform CLI foundation](../adrs/039-cli-foundation.md) — TypeScript Node package distributed via npm; reuses the api-server tRPC contract; flat config under `~/.dam/`; server-advertised compatibility floor.
+- [ADR-039 — Platform CLI foundation](../adrs/039-cli-foundation.md) — TypeScript Node package distributed via npm; reuses the api-server tRPC contract; flat config under XDG-standard locations; server-advertised compatibility floor.
 - [ADR-037 — Remote terminal](../adrs/037-remote-terminal.md) — predecessor; established the "terminal" session mode the CLI complements with `dam shell` (a future verb).
 
 ## Overview
@@ -15,13 +15,13 @@ The package shares the api-server's tRPC contract directly via the `api-server-a
 
 ## Trust boundary
 
-The CLI runs on the user's machine. It reads and writes only under `~/.dam/` (today: `config.toml`; later, credentials in their own files), and makes outbound network calls only to the configured server. There is no telemetry and no anonymous reporting — the platform collects nothing today and the CLI does not break that posture.
+The CLI runs on the user's machine. It reads and writes only under the XDG config and state directories (today: `config.toml` under `$XDG_CONFIG_HOME/dam/`; later, credentials under `$XDG_STATE_HOME/dam/`), and makes outbound network calls only to the configured server. There is no telemetry and no anonymous reporting — the platform collects nothing today and the CLI does not break that posture.
 
 ## Config
 
-Two persistence concerns share `~/.dam/`: the configuration the user can edit (this file) and credentials, which arrive with [`#80`](https://github.com/dam-agents/dam/issues/80) and live in their own files.
+Two persistence concerns are split across the XDG directories: editable configuration (this file, under `$XDG_CONFIG_HOME/dam/`) and credentials, which arrive with [`#80`](https://github.com/dam-agents/dam/issues/80) and live under `$XDG_STATE_HOME/dam/`.
 
-- **Location:** `~/.dam/config.toml`. Flat schema, no profile indirection.
+- **Location:** `$XDG_CONFIG_HOME/dam/config.toml` (default `~/.config/dam/config.toml`). Flat schema, no profile indirection.
 - **Keys:** v0 has one — `server` (URL). Adding a key is forced by a `satisfies Record<ConfigKey, true>` registry that fails to compile until the new field is registered.
 - **Precedence at resolve time:** flag (per-invocation `--server`, when commands grow one) > env var > file > error. There is no silent default.
 - **Env var:** `DAM_SERVER` for the server URL (matches the `dam` binary name). Future keys follow the same `DAM_<KEY>` convention.

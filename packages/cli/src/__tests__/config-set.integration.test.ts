@@ -45,7 +45,7 @@ describe("dam config set (integration)", () => {
 
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), "dam-cfg-set-"));
-    configPath = join(home, ".dam", "config.toml");
+    configPath = join(home, ".config", "dam", "config.toml");
   });
 
   afterEach(async () => {
@@ -109,6 +109,26 @@ describe("dam config set (integration)", () => {
     expect(r.exitCode).not.toBe(0);
     expect(r.stderr).toContain("unknown config key 'unknown-key'");
     expect(r.stderr).toContain("server");
+  });
+
+  it("honors XDG_CONFIG_HOME when set", async () => {
+    const xdg = await mkdtemp(join(tmpdir(), "dam-xdg-"));
+    try {
+      const r = await runDam(
+        ["config", "set", "server", "https://example.test"],
+        { HOME: home, XDG_CONFIG_HOME: xdg, PATH: process.env.PATH ?? "" },
+      );
+
+      expect(r.exitCode).toBe(0);
+      const expected = join(xdg, "dam", "config.toml");
+      expect(r.stdout).toContain(expected);
+      const contents = await readFile(expected, "utf-8");
+      expect(contents.trim()).toBe('server = "https://example.test"');
+      // The HOME-derived path must NOT exist when XDG_CONFIG_HOME wins.
+      await expect(readFile(configPath, "utf-8")).rejects.toThrow();
+    } finally {
+      await rm(xdg, { recursive: true, force: true });
+    }
   });
 
   it("preserves unrelated top-level keys when overwriting server", async () => {

@@ -11,7 +11,8 @@ import { createCompatService } from "./services/compat-service.js";
 import { createConfigService } from "./services/config-service.js";
 
 export interface ComposeOptions {
-  /** Override for the production `${HOME}/.dam/config.toml` location.
+  /** Override for the production config path (resolved via XDG —
+   *  `$XDG_CONFIG_HOME/dam/config.toml`, default `~/.config/dam/config.toml`).
    *  Used by integration tests; defaults to the real path otherwise. */
   configPath?: string;
 }
