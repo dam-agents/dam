@@ -1,10 +1,13 @@
+import { z } from "zod";
 import { err, ok, type Result } from "../domain/result.js";
 import type { ProbeError } from "../domain/errors.js";
 
-export interface VersionInfo {
-  serverVersion: string;
-  minClientVersion: string;
-}
+const versionInfoSchema = z.object({
+  serverVersion: z.string(),
+  minClientVersion: z.string().optional(),
+});
+
+export type VersionInfo = z.infer<typeof versionInfoSchema>;
 
 export interface VersionProbe {
   probe(serverUrl: string): Promise<Result<VersionInfo, ProbeError>>;
@@ -62,31 +65,20 @@ export function createHttpVersionProbe(
         });
       }
 
-      if (!isVersionInfo(body)) {
+      const parsed = versionInfoSchema.safeParse(body);
+      if (!parsed.success) {
         return err({
           kind: "probe-error",
           code: "malformed-response",
-          message: "response missing serverVersion or minClientVersion",
+          message: parsed.error.issues
+            .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)
+            .join("; "),
         });
       }
 
-      return ok({
-        serverVersion: body.serverVersion,
-        minClientVersion: body.minClientVersion,
-      });
+      return ok(parsed.data);
     },
   };
-}
-
-function isVersionInfo(v: unknown): v is VersionInfo {
-  return (
-    typeof v === "object" &&
-    v !== null &&
-    "serverVersion" in v &&
-    typeof (v as { serverVersion: unknown }).serverVersion === "string" &&
-    "minClientVersion" in v &&
-    typeof (v as { minClientVersion: unknown }).minClientVersion === "string"
-  );
 }
 
 function errorMessage(e: unknown): string {

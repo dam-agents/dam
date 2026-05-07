@@ -48,9 +48,11 @@ export function buildVersionCommand(deps: VersionCommandDeps): Command {
       // preserves the spec'd contract that the server line always prints
       // when reachable, and matches the conventional stdout-then-stderr
       // shape so a trailing warning amplifies the line that just printed.
-      process.stdout.write(
-        `server ${verdict.serverVersion} (min CLI ${verdict.serverMinClient})\n`,
-      );
+      const minClient =
+        verdict.serverMinClient !== undefined
+          ? ` (min CLI ${verdict.serverMinClient})`
+          : "";
+      process.stdout.write(`server ${verdict.serverVersion}${minClient}\n`);
 
       if (verdict.kind === "behind-current") {
         process.stderr.write(

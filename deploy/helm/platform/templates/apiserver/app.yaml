@@ -110,8 +110,10 @@ spec:
               value: {{ .Values.apiServer.extAuthzPort | quote }}
             - name: UI_BASE_URL
               value: {{ include "platform.url.ui" . | quote }}
+            {{- if .Values.apiServer.minClientCliVersion }}
             - name: MIN_CLIENT_CLI_VERSION
               value: {{ .Values.apiServer.minClientCliVersion | quote }}
+            {{- end }}
             {{- if .Values.apiServer.slackBotToken }}
             - name: SLACK_BOT_TOKEN
               value: {{ .Values.apiServer.slackBotToken | quote }}

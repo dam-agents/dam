@@ -7,13 +7,13 @@ export type CompatVerdict =
       kind: "ok";
       localCli: string;
       serverVersion: string;
-      serverMinClient: string;
+      serverMinClient: string | undefined;
     }
   | {
       kind: "behind-current";
       localCli: string;
       serverVersion: string;
-      serverMinClient: string;
+      serverMinClient: string | undefined;
     }
   | {
       kind: "below-floor";
@@ -25,12 +25,15 @@ export type CompatVerdict =
 export interface VerdictInputs {
   localCli: string;
   serverVersion: string;
-  serverMinClient: string;
+  serverMinClient: string | undefined;
 }
 
 export function verdictFor(inputs: VerdictInputs): CompatVerdict {
   const { localCli, serverVersion, serverMinClient } = inputs;
-  if (compareVersions(localCli, serverMinClient) < 0) {
+  if (
+    serverMinClient !== undefined &&
+    compareVersions(localCli, serverMinClient) < 0
+  ) {
     return { kind: "below-floor", localCli, serverVersion, serverMinClient };
   }
   if (compareVersions(localCli, serverVersion) < 0) {

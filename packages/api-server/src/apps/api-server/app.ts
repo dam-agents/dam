@@ -27,7 +27,6 @@ import { createAcpRelay } from "./acp-relay.js";
 import { createTerminalRelay } from "./terminal-relay.js";
 import { createOAuthRoutes } from "./oauth.js";
 import { mountBrandIconRoutes } from "./brand-icon.js";
-import { registerVersionEndpoint } from "./version.js";
 import { createOAuthAppRegistry } from "../../modules/connections/infrastructure/oauth-apps.js";
 import type { Config } from "../../config.js";
 import { createAuth, ForbiddenError } from "./auth.js";
@@ -109,10 +108,14 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   const app = new Hono<{ Variables: { user: UserIdentity } }>();
 
   app.get("/api/health", (c) => c.json({ status: "ok" }));
-  registerVersionEndpoint(app, {
-    serverVersion,
-    minClientVersion: config.minClientCliVersion,
-  });
+  app.get("/api/version", (c) =>
+    c.json({
+      serverVersion,
+      ...(config.minClientCliVersion !== undefined && {
+        minClientVersion: config.minClientCliVersion,
+      }),
+    }),
+  );
   app.get("/api/auth/config", (c) =>
     c.json({
       issuer: `${config.keycloakExternalUrl}/realms/${config.keycloakRealm}`,

@@ -130,6 +130,20 @@ describe("dam ping (integration)", () => {
     expect(r.stdout.trim()).toBe("ok — server 1.0.0");
   });
 
+  it("server advertises no floor: still ok (exit 0)", async () => {
+    fixture.setResponse({
+      body: { serverVersion: "1.0.0" },
+    });
+    await configureServer(fixture.url);
+
+    const r = await runDam(["ping"], {
+      HOME: home,
+      PATH: process.env.PATH ?? "",
+    });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout.trim()).toBe("ok — server 1.0.0");
+  });
+
   it("BehindCurrent: warning on stderr, ok on stdout, exit 0", async () => {
     fixture.setResponse({
       body: { serverVersion: "99.0.0", minClientVersion: "0.0.0" },

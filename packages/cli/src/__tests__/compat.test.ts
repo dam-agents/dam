@@ -59,6 +59,16 @@ describe("verdictFor", () => {
       inputs: { localCli: "0.0.1", serverVersion: "2.0.0", serverMinClient: "1.0.0" },
       kind: "below-floor",
     },
+    {
+      name: "Ok when no floor is advertised and local matches server",
+      inputs: { localCli: "1.0.0", serverVersion: "1.0.0", serverMinClient: undefined },
+      kind: "ok",
+    },
+    {
+      name: "BehindCurrent when no floor is advertised and local lags server",
+      inputs: { localCli: "1.0.0", serverVersion: "2.0.0", serverMinClient: undefined },
+      kind: "behind-current",
+    },
   ])("$name", ({ inputs, kind }) => {
     const v = verdictFor(inputs);
     expect(v.kind).toBe(kind);

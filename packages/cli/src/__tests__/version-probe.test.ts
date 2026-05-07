@@ -101,8 +101,23 @@ describe("HttpVersionProbe", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.error.code).toBe("malformed-response");
-      expect(r.error.message).toContain("missing");
+      // Zod surfaces the missing required field by name; the floor is
+      // optional and must not appear in the error.
+      expect(r.error.message).toContain("serverVersion");
+      expect(r.error.message).not.toContain("minClientVersion");
     }
+  });
+
+  it("absent minClientVersion → Ok with undefined floor", async () => {
+    stubFetch(async () =>
+      new Response(JSON.stringify({ serverVersion: "1.2.3" }), { status: 200 }),
+    );
+
+    const r = await createHttpVersionProbe().probe("http://api.example");
+    expect(r).toEqual({
+      ok: true,
+      value: { serverVersion: "1.2.3" },
+    });
   });
 
   it("aborts with timeout error when fetch never resolves", async () => {

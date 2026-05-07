@@ -40,7 +40,7 @@
     "rrule": "^2.8.1",
     "tailwindcss": "^4.2.2",
     "vite-plugin-pwa": "^1.2.0",
-    "zod": "^4.3.6",
+    "zod": "^4.4.3",
     "zustand": "^5.0.12"
   },
   "devDependencies": {
