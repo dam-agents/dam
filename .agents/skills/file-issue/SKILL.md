@@ -8,7 +8,7 @@ argument-hint: "[what the issue is about]"
 
 # File an Issue
 
-Draft a GitHub issue and file it after the user approves. For the content shape — what belongs in an issue, what doesn't, and the template — follow [docs/guidelines/issue-guidelines.md](docs/guidelines/issue-guidelines.md). This skill layers the workflow (understand → research → dedupe → draft → approve → file) on top of those guidelines.
+Draft a GitHub issue and file it after the user approves. For the content shape — what belongs in an issue, what doesn't, and the template — follow [docs/guidelines/issue-guidelines.md](../../../docs/guidelines/issue-guidelines.md). This skill layers the workflow (understand → research → dedupe → draft → approve → file) on top of those guidelines.
 
 ## Workflow
 

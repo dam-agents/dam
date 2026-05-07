@@ -1,4 +1,5 @@
 import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
+import { SessionMode } from "api-server-api";
 import { useCallback, useRef } from "react";
 
 import { api } from "../../../api.js";
@@ -93,7 +94,7 @@ export function useAcpPrompt(
       if (!persistedSessionsRef.current.has(sid)) {
         persistedSessionsRef.current.add(sid);
         try {
-          await api.sessions.create.mutate({ sessionId: sid, instanceId: selectedInstance });
+          await api.sessions.create.mutate({ sessionId: sid, instanceId: selectedInstance, mode: SessionMode.Chat });
         } catch (err) {
           showToast({
             kind: "warning",

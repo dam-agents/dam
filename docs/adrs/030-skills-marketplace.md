@@ -7,7 +7,7 @@
 
 ## Context
 
-One user's breakthrough workflow never propagates. New users face a blank slate. [kagenti/platform-claw#5](https://github.com/kagenti/platform-claw/issues/5) asks for a shared skills surface in Platform, modeled on [Ramp's Glass](https://x.com/sebgoddijn/status/2042285915435937816).
+One user's breakthrough workflow never propagates. New users face a blank slate. Platform needs a shared skills surface, modeled on [Ramp's Glass](https://x.com/sebgoddijn/status/2042285915435937816).
 
 Prior decisions:
 

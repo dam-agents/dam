@@ -1,6 +1,6 @@
 import type { Db } from "db";
 import { sessions, eq, and, desc, sql } from "db";
-import { SessionType } from "api-server-api";
+import { SessionMode, SessionType } from "api-server-api";
 
 export function listSessionsByInstance(db: Db) {
   return async (instanceId: string) => {
@@ -58,14 +58,24 @@ export function upsertSession(db: Db) {
   return async (
     sessionId: string,
     instanceId: string,
+    mode: SessionMode,
     type: SessionType = SessionType.Regular,
     scheduleId?: string,
     threadTs?: string,
   ) => {
     await db
       .insert(sessions)
-      .values({ sessionId, instanceId, type, scheduleId, threadTs })
+      .values({ sessionId, instanceId, type, scheduleId, threadTs, mode })
       .onConflictDoNothing();
+  };
+}
+
+export function setSessionMode(db: Db) {
+  return async (sessionId: string, instanceId: string, mode: SessionMode) => {
+    await db
+      .update(sessions)
+      .set({ mode })
+      .where(and(eq(sessions.sessionId, sessionId), eq(sessions.instanceId, instanceId)));
   };
 }
 

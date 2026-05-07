@@ -126,13 +126,14 @@ func (c *IdleChecker) podIsBusy(instanceName string) bool {
 		return false
 	}
 	var status struct {
-		ActiveSessions int `json:"activeSessions"`
-		ActiveTriggers int `json:"activeTriggers"`
+		ActiveSessions int  `json:"activeSessions"`
+		ActiveTriggers int  `json:"activeTriggers"`
+		TerminalActive bool `json:"terminalActive"`
 	}
 	if err := json.Unmarshal(body, &status); err != nil {
 		return false
 	}
-	return status.ActiveSessions > 0 || status.ActiveTriggers > 0
+	return status.ActiveSessions > 0 || status.ActiveTriggers > 0 || status.TerminalActive
 }
 
 func (c *IdleChecker) hibernate(ctx context.Context, name string) error {

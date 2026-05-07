@@ -1,11 +1,12 @@
-import { SessionType, type SessionsApiService, type SessionView } from "api-server-api";
+import { SessionMode, SessionType, type SessionsApiService, type SessionView } from "api-server-api";
 import { createAcpClient, type AcpSessionInfo } from "../../../core/acp-client.js";
 
 export function createSessionsService(deps: {
-  listByInstance: (instanceId: string) => Promise<{ sessionId: string; instanceId: string; type: string; scheduleId: string | null; scheduleActive: boolean; createdAt: Date }[]>;
-  listByScheduleId: (scheduleId: string) => Promise<{ sessionId: string; instanceId: string; type: string; scheduleId: string | null; scheduleActive: boolean; createdAt: Date }[]>;
-  findActiveByScheduleId: (scheduleId: string) => Promise<{ sessionId: string; instanceId: string; type: string; scheduleId: string | null; createdAt: Date } | null>;
-  upsert: (sessionId: string, instanceId: string, type?: SessionType, scheduleId?: string) => Promise<void>;
+  listByInstance: (instanceId: string) => Promise<{ sessionId: string; instanceId: string; type: string; mode: string; scheduleId: string | null; scheduleActive: boolean; createdAt: Date }[]>;
+  listByScheduleId: (scheduleId: string) => Promise<{ sessionId: string; instanceId: string; type: string; mode: string; scheduleId: string | null; scheduleActive: boolean; createdAt: Date }[]>;
+  findActiveByScheduleId: (scheduleId: string) => Promise<{ sessionId: string; instanceId: string; type: string; mode: string; scheduleId: string | null; createdAt: Date } | null>;
+  upsert: (sessionId: string, instanceId: string, mode: SessionMode, type?: SessionType, scheduleId?: string, threadTs?: string) => Promise<void>;
+  setMode: (sessionId: string, instanceId: string, mode: SessionMode) => Promise<void>;
   delete: (sessionId: string, instanceId: string) => Promise<void>;
   isOwnedInstance: (instanceId: string) => Promise<boolean>;
   isOwnedSchedule: (scheduleId: string) => Promise<boolean>;
@@ -18,12 +19,17 @@ export function createSessionsService(deps: {
       const acp = createAcpClient({
         namespace: deps.namespace,
         instanceName: instanceId,
-        onSessionCreated: (sid) => deps.upsert(sid, instanceId, SessionType.Regular),
+        // ACP-discovered sessions are always chat-mode by definition (the
+        // ACP session lifecycle doesn't apply to terminal-mode PTYs).
+        onSessionCreated: (sid) => deps.upsert(sid, instanceId, SessionMode.Chat, SessionType.Regular),
       });
 
       const [dbRows, acpSessions] = await Promise.all([
         deps.listByInstance(instanceId),
-        acp.listSessions(),
+        acp.listSessions().catch((err) => {
+          process.stderr.write(`[sessions] acp.listSessions failed for ${instanceId}: ${err?.message ?? err}\n`);
+          return [] as AcpSessionInfo[];
+        }),
       ]);
 
       const acpMap = new Map<string, AcpSessionInfo>(
@@ -41,6 +47,7 @@ export function createSessionsService(deps: {
           sessionId: row.sessionId,
           instanceId: row.instanceId,
           type: row.type as SessionType,
+          mode: row.mode as SessionMode,
           createdAt: row.createdAt.toISOString(),
           scheduleId: row.scheduleId,
           title: acp?.title ?? null,
@@ -49,9 +56,14 @@ export function createSessionsService(deps: {
       });
     },
 
-    async create(sessionId: string, instanceId: string, type?: SessionType, scheduleId?: string) {
+    async create(sessionId: string, instanceId: string, mode: SessionMode, type?: SessionType, scheduleId?: string) {
       if (!await deps.isOwnedInstance(instanceId)) return;
-      await deps.upsert(sessionId, instanceId, type, scheduleId);
+      await deps.upsert(sessionId, instanceId, mode, type, scheduleId);
+    },
+
+    async setMode(sessionId: string, instanceId: string, mode: SessionMode) {
+      if (!await deps.isOwnedInstance(instanceId)) return;
+      await deps.setMode(sessionId, instanceId, mode);
     },
 
     async delete(sessionId: string, instanceId: string) {
@@ -66,6 +78,7 @@ export function createSessionsService(deps: {
         sessionId: row.sessionId,
         instanceId: row.instanceId,
         type: row.type as SessionType,
+        mode: row.mode as SessionMode,
         createdAt: row.createdAt.toISOString(),
         scheduleId: row.scheduleId,
       }));
@@ -78,6 +91,7 @@ export function createSessionsService(deps: {
             sessionId: row.sessionId,
             instanceId: row.instanceId,
             type: row.type as SessionType,
+            mode: row.mode as SessionMode,
             createdAt: row.createdAt.toISOString(),
             scheduleId: row.scheduleId,
           }

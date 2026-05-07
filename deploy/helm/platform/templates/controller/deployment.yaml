@@ -44,6 +44,10 @@ spec:
             - name: AGENT_STORAGE_CLASS
               value: {{ . | quote }}
             {{- end }}
+            {{- with .Values.controller.agentAccessMode }}
+            - name: AGENT_ACCESS_MODE
+              value: {{ . | quote }}
+            {{- end }}
             {{- with .Values.controller.agentStorageSize }}
             - name: AGENT_STORAGE_SIZE
               value: {{ . | quote }}

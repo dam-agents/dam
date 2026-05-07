@@ -16,7 +16,7 @@ The Platform CLI (`dam`) is a TypeScript Node command-line client that lets a us
   - Config is resolved by precedence: command-line flag → environment variable → config file → error. No silent default.
   - The config file is flat — top-level keys only, no profile indirection (no `[profiles.*]`, no `current-profile`).
   - Commands that need the server refuse to run when the CLI is below the server-advertised `minClientVersion`.
-  - `~/.dam/config.toml` is the only persistence location for configuration. Auth credentials ([#80](https://github.com/dam-agents/dam/issues/80)) live elsewhere under `~/.dam/`, never in this file.
+  - `$XDG_CONFIG_HOME/dam/config.toml` (default `~/.config/dam/config.toml`) is the only persistence location for configuration. Auth credentials and machine-managed state ([#80](https://github.com/dam-agents/dam/issues/80)) live under `$XDG_STATE_HOME/dam/` (default `~/.local/state/dam/`), never in the config file.
   - The package declares Node ≥ 20 as its engine and may rely on Node 20+ built-ins (native `fetch`, etc.).
   - The CLI's semver is independent of the Platform's; compatibility is negotiated at runtime, never assumed via version coupling.
 - **Layout:** module nested at `packages/cli/src/modules/cli/`, mirroring the architecture's standard `src/modules/<name>/` shape from day one. `bin.ts` lives at the package root as the entrypoint. When a second bounded context arrives ([#80](https://github.com/dam-agents/dam/issues/80)), it slots in as `src/modules/<name>/` next to this one.
@@ -77,7 +77,7 @@ Dropped from the server-style three-layer template:
 
 - **Single bounded context.** No inter-module coupling within the package.
 - **Outbound imports.** Only `api-server-api` (read-only consumer of contract types; no tRPC procedure called in v1). Never imports from `api-server`, `agent-runtime`, `controller`, or `ui`.
-- **File system.** Only `ConfigStore` reads/writes `~/.dam/config.toml`.
+- **File system.** Only `ConfigStore` reads/writes the config file under `$XDG_CONFIG_HOME/dam/` (default `~/.config/dam/`).
 - **Network.** Only `VersionProbe` performs network calls.
 - **Environment.** Only `EnvReader` reads `process.env`. Services depend on the port, never on the global directly.
 - **Coupling direction.** bootstrap → commands → services → domain ← infrastructure. Domain has zero outside imports. Infrastructure imports domain types only.
@@ -86,7 +86,7 @@ Risks and mitigations:
 
 - *Risk:* future verbs ([#80](https://github.com/dam-agents/dam/issues/80), [#86](https://github.com/dam-agents/dam/issues/86), [#73](https://github.com/dam-agents/dam/issues/73)) bypass services and import infrastructure directly. *Mitigation:* new commands go through application services; new ports follow `*Store` / `*Probe` / `*Reader` naming.
 - *Risk:* `api-server-api` types get re-declared inside the CLI. *Mitigation:* import directly, never duplicate. Enforced when tRPC is wired in [#80](https://github.com/dam-agents/dam/issues/80).
-- *Risk:* `~/.dam/` ownership contested when [#80](https://github.com/dam-agents/dam/issues/80) adds credentials. *Mitigation:* `ConfigStore` is scoped to `config.toml` only; [#80](https://github.com/dam-agents/dam/issues/80) introduces a separate adapter for credentials in the same directory.
+- *Risk:* directory ownership contested when [#80](https://github.com/dam-agents/dam/issues/80) adds credentials. *Mitigation:* the XDG split makes this a non-issue — `ConfigStore` owns `$XDG_CONFIG_HOME/dam/config.toml`; [#80](https://github.com/dam-agents/dam/issues/80) introduces a separate adapter rooted at `$XDG_STATE_HOME/dam/`.
 
 ## Project metadata updates
 

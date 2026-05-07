@@ -3,7 +3,6 @@
 **Status:** ACCEPTED
 **Date:** 2026-04-16
 **Owner:** @jezekra1
-**Issue:** [#129](https://github.com/kagenti/platform/issues/129)
 
 ## Context
 

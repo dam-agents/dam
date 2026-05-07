@@ -1,8 +1,12 @@
 ARG BASE_IMAGE=platform-base
 FROM ${BASE_IMAGE}
 
-# Claude Code harness + Google Workspace CLI
-RUN cd /app && npm install @agentclientprotocol/claude-agent-acp @anthropic-ai/claude-agent-sdk \
-    && npm install -g @anthropic-ai/claude-code @googleworkspace/cli@0.22.5
+USER root
 
-COPY workspace/ /app/working-dir/
+RUN npm install @agentclientprotocol/claude-agent-acp @anthropic-ai/claude-agent-sdk \
+    && npm install -g @anthropic-ai/claude-code @googleworkspace/cli@0.22.5 \
+    && chown -R 65532:0 /app
+
+COPY --chown=65532:0 workspace/ /app/working-dir/
+
+USER 65532

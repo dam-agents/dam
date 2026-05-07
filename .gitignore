@@ -42,3 +42,5 @@ context/
 # Playwright
 .playwright-mcp
 
+# Claude
+.claude/*.lock

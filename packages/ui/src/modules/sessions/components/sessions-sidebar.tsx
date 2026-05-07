@@ -1,4 +1,4 @@
-import { SessionType } from "api-server-api";
+import { SessionMode, SessionType } from "api-server-api";
 import { ArrowLeft, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -11,7 +11,7 @@ export function SessionsSidebar({
   onResumeSession,
   onNewSession,
 }: {
-  onResumeSession: (sid: string) => void;
+  onResumeSession: (sid: string, mode?: SessionMode) => void;
   onNewSession: () => void;
 }) {
   const selectedInstance = useStore((s) => s.selectedInstance);
@@ -92,7 +92,7 @@ export function SessionsSidebar({
             session={s}
             active={s.sessionId === sessionId}
             hasPending={pendingPermissions.some((p) => p.sessionId === s.sessionId)}
-            onResume={() => onResumeSession(s.sessionId)}
+            onResume={() => onResumeSession(s.sessionId, s.mode)}
             onDelete={() => confirmDelete(s.sessionId, s.title)}
           />
         ))}
@@ -123,6 +123,7 @@ function SessionRow({
     sessionId: string;
     title?: string | null;
     type: string;
+    mode?: SessionMode;
     createdAt: string;
     updatedAt?: string | null;
   };
@@ -199,6 +200,11 @@ function SessionRow({
           >
             {s.title || s.sessionId.slice(0, 12)}
           </span>
+          {s.mode === SessionMode.Terminal && (
+            <span className="text-[9px] font-bold uppercase tracking-wider text-accent bg-accent-light rounded px-1 py-0.5 shrink-0">
+              terminal
+            </span>
+          )}
           {(s.type === SessionType.ChannelSlack || s.type === SessionType.ChannelTelegram) && (
             <span className="text-[9px] font-bold uppercase tracking-wider text-text-muted bg-border-light rounded px-1 py-0.5 shrink-0">
               {s.type === SessionType.ChannelSlack ? "slack" : "telegram"}

@@ -1,5 +1,7 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, jsonb, uniqueIndex, index, primaryKey, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, jsonb, uniqueIndex, index, primaryKey, timestamp, boolean } from "drizzle-orm/pg-core";
+
+export const sessionModeEnum = pgEnum("session_mode", ["chat", "terminal"]);
 
 export const channels = pgTable("channels", {
   instanceId: text("instance_id").notNull(),
@@ -105,6 +107,7 @@ export const sessions = pgTable("sessions", {
   sessionId: text("session_id").primaryKey(),
   instanceId: text("instance_id").notNull(),
   type: text("type").notNull().default("regular"),
+  mode: sessionModeEnum("mode").notNull(),
   scheduleId: text("schedule_id"),
   scheduleActive: boolean("schedule_active").default(true).notNull(),
   threadTs: text("thread_ts"),

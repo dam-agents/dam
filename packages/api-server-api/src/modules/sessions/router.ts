@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { t } from "../../trpc.js";
-import { SessionType } from "./types.js";
+import { SessionMode, SessionType } from "./types.js";
 
 const sessionType = z.enum([
   SessionType.Regular,
@@ -8,6 +8,8 @@ const sessionType = z.enum([
   SessionType.ChannelTelegram,
   SessionType.ScheduleCron,
 ]);
+
+const sessionMode = z.enum([SessionMode.Chat, SessionMode.Terminal]);
 
 export const sessionsRouter = t.router({
   list: t.procedure
@@ -23,8 +25,19 @@ export const sessionsRouter = t.router({
       instanceId: z.string().min(1),
       type: sessionType.optional(),
       scheduleId: z.string().optional(),
+      // Default at the API edge so existing clients omitting `mode` still
+      // land at "chat"; internal callers receive a concrete SessionMode.
+      mode: sessionMode.default(SessionMode.Chat),
     }))
-    .mutation(({ ctx, input }) => ctx.sessions.create(input.sessionId, input.instanceId, input.type, input.scheduleId)),
+    .mutation(({ ctx, input }) => ctx.sessions.create(input.sessionId, input.instanceId, input.mode, input.type, input.scheduleId)),
+
+  setMode: t.procedure
+    .input(z.object({
+      sessionId: z.string().min(1),
+      instanceId: z.string().min(1),
+      mode: sessionMode,
+    }))
+    .mutation(({ ctx, input }) => ctx.sessions.setMode(input.sessionId, input.instanceId, input.mode)),
 
   delete: t.procedure
     .input(z.object({ sessionId: z.string().min(1), instanceId: z.string().min(1) }))

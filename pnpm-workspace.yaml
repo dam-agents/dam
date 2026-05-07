@@ -8,3 +8,7 @@ allowBuilds:
   koffi: true
   protobufjs: true
   sharp: true
+  # esbuild's postinstall extracts the per-platform native binary; without
+  # it, vite/tsup/vitest fail to start. pnpm 10 errors on un-approved build
+  # scripts even when `--frozen-lockfile`, so we have to list it.
+  esbuild: true

@@ -6,7 +6,7 @@ description: >
 
 # Draft an Issue
 
-Follow [docs/guidelines/issue-guidelines.md](docs/guidelines/issue-guidelines.md) for what to include, what to exclude, style, and the template.
+Follow [docs/guidelines/issue-guidelines.md](../../../docs/guidelines/issue-guidelines.md) for what to include, what to exclude, style, and the template.
 
 ## Workflow
 

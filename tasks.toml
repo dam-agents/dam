@@ -44,7 +44,12 @@ echo "$CLEANED" > "$FILE"
 
 # -- Setup --
 
+["common:setup:corepack"]
+run = "corepack enable"
+sources = ["package.json"]
+
 ["common:setup:pnpm"]
+depends = ["common:setup:corepack"]
 run = "pnpm install"
 sources = [
   "pnpm-lock.yaml",

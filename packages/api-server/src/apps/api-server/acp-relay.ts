@@ -89,7 +89,7 @@ export function createAcpRelay(
   approvals: ApprovalsRelayService,
   identityLookup: InstanceIdentityLookup,
 ) {
-  const wss = new WebSocketServer({ noServer: true });
+  const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
 
   function handleUpgrade(
     req: IncomingMessage,
@@ -98,6 +98,10 @@ export function createAcpRelay(
     instanceId: string,
   ) {
     wss.handleUpgrade(req, socket, head, (client) => {
+      client.on("error", () => {
+        try { client.terminate(); } catch {}
+      });
+
       // Resolve identity once per upgrade. The instance's owner/agent
       // can't change for the lifetime of this WS — capturing here avoids
       // a K8s ConfigMap GET per permission-request mirror. Failure to

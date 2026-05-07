@@ -78,6 +78,7 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
       return;
     }
     clearErrors("envMappings");
+    const hasInjectionInput = headerName.length > 0 || valueFormat.length > 0;
     createSecret.mutate(
       {
         type: "generic",
@@ -85,9 +86,9 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
         value: values.value.trim(),
         hostPattern: values.hostPattern.trim(),
         ...(pathPattern.length > 0 && { pathPattern }),
-        ...(headerName.length > 0 && {
+        ...(hasInjectionInput && {
           injectionConfig: {
-            headerName,
+            headerName: headerName || DEFAULT_INJECTION_CONFIG.headerName,
             ...(valueFormat.length > 0 && { valueFormat }),
           },
         }),

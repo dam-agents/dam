@@ -1,22 +1,32 @@
-FROM node:22-slim
+FROM registry.access.redhat.com/hi/nodejs:22-builder AS builder
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+USER root
 
-WORKDIR /app
+COPY scripts/install-pnpm.sh /usr/local/bin/install-pnpm
+COPY package.json ./
+RUN install-pnpm
 
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
+COPY pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
 COPY packages/api-server/package.json packages/api-server/
 COPY packages/api-server-api/package.json packages/api-server-api/
+COPY packages/agent-runtime-api/package.json packages/agent-runtime-api/
 COPY packages/db/package.json packages/db/
 
 RUN pnpm install --frozen-lockfile --filter api-server...
 
 COPY packages/api-server-api/ packages/api-server-api/
+COPY packages/agent-runtime-api/ packages/agent-runtime-api/
 COPY packages/api-server/ packages/api-server/
 COPY packages/db/ packages/db/
 
-RUN pnpm --filter api-server build
+RUN pnpm --filter api-server build \
+    && pnpm --filter api-server --prod --legacy deploy /prod
+
+FROM registry.access.redhat.com/hi/nodejs:22 AS runner
+
+COPY --from=builder --chown=65532:0 /prod /app
+COPY --from=builder --chown=65532:0 /app/packages/db/drizzle /app/packages/db/drizzle
 
 EXPOSE 4000
 
-CMD ["node", "packages/api-server/dist/index.js"]
+CMD ["node", "dist/index.js"]

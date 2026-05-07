@@ -1,10 +1,13 @@
-import { AlertCircle, ArrowDown, ArrowLeft, FileText as FileIcon, RefreshCw,Settings2, Trash2 } from "lucide-react";
+import { SessionMode } from "api-server-api";
+import { AlertCircle, ArrowDown, ArrowLeft, FileText as FileIcon, MessageSquare,RefreshCw,Settings2, TerminalSquare,Trash2 } from "lucide-react";
 import { useCallback,useEffect, useRef, useState } from "react";
 
+import { api } from "../../../api.js";
 import { Markdown } from "../../../components/markdown.js";
 import { ResizeHandle } from "../../../components/resize-handle.js";
 import { StatusBadge } from "../../../components/status-indicator.js";
 import { isMobile } from "../../../lib/breakpoints.js";
+import { queryClient } from "../../../query-client.js";
 import type { SessionError } from "../../../store.js";
 import { useStore } from "../../../store.js";
 import type { InstanceView } from "../../../types.js";
@@ -12,12 +15,14 @@ import { FilesPanel } from "../../files/components/files-panel.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
 import { useInstances } from "../../instances/api/queries.js";
 import { prefetchSchedules } from "../../schedules/api/queries.js";
+import { acpSessionsKeys } from "../api/queries.js";
 import { ChatInput } from "../components/chat-input.js";
 import { ConfigurationPanel } from "../components/configuration-panel.js";
 import { LogPanel } from "../components/log-panel.js";
 import { PermissionPrompt } from "../components/permission-prompt.js";
 import { SessionConfigBar } from "../components/session-config-popover.js";
 import { SessionsSidebar } from "../components/sessions-sidebar.js";
+import { Terminal } from "../components/terminal.js";
 import { ThoughtBlock } from "../components/thought-block.js";
 import { ToolChip } from "../components/tool-chip.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
@@ -28,6 +33,9 @@ export function ChatView() {
   const { data: instancesData } = useInstances();
   const instances = instancesData?.list ?? [];
   const sessionId = useStore((s) => s.sessionId);
+  const sessionMode = useStore((s) => s.sessionMode);
+  const setSessionMode = useStore((s) => s.setSessionMode);
+  const setSessionId = useStore((s) => s.setSessionId);
   const messages = useStore((s) => s.messages);
   const sessionError = useStore((s) => s.sessionError);
   const setSessionError = useStore((s) => s.setSessionError);
@@ -45,6 +53,9 @@ export function ChatView() {
 
   const [leftW, setLeftW] = useState(() => Number(localStorage.getItem("platform-left-w")) || 220);
   const [rightW, setRightW] = useState(() => Number(localStorage.getItem("platform-right-w")) || 340);
+  // Ref (not state) so the chat→terminal toggle propagates to Terminal's mount
+  // synchronously — zustand re-renders before useState commits.
+  const terminalFreshRef = useRef(false);
   const messagesRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -102,16 +113,55 @@ export function ChatView() {
     };
   }, []);
 
-  const mobileResumeSession = useCallback((sid: string) => {
+  const mobileResumeSession = useCallback((sid: string, mode?: SessionMode) => {
     setMobileScreen("chat");
-    resumeSession(sid);
-  }, [setMobileScreen, resumeSession]);
+    setSessionMode(mode ?? SessionMode.Chat);
+    // Terminal sessions don't use ACP.
+    if (mode === SessionMode.Terminal) setSessionId(sid);
+    else resumeSession(sid);
+  }, [setMobileScreen, setSessionMode, setSessionId, resumeSession]);
 
   const handleNewSession = useCallback(() => {
     if (!sessionId && messages.length === 0) { setMobileScreen("chat"); return; }
+    setSessionMode(SessionMode.Chat);
     resetSession();
     setMobileScreen("chat");
-  }, [sessionId, messages.length, resetSession, setMobileScreen]);
+  }, [sessionId, messages.length, resetSession, setMobileScreen, setSessionMode]);
+
+  const showConfirm = useStore((s) => s.showConfirm);
+  const handleToggleMode = useCallback(async () => {
+    if (!selectedInstance) return;
+    const target = sessionMode === SessionMode.Terminal ? SessionMode.Chat : SessionMode.Terminal;
+
+    // Blank chat → terminal: spawn a fresh terminal session with no confirmation.
+    if (!sessionId && messages.length === 0) {
+      if (target === SessionMode.Terminal) {
+        const newSessionId = crypto.randomUUID();
+        await api.sessions.create.mutate({ sessionId: newSessionId, instanceId: selectedInstance, mode: SessionMode.Terminal });
+        queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
+        setSessionId(newSessionId);
+      }
+      setSessionMode(target);
+      return;
+    }
+
+    if (!await showConfirm(
+      `Switch this session to ${target} mode? Files and history are preserved, but any running tasks will be cancelled.`,
+      "Switch session mode",
+    )) return;
+
+    if (busy) stopAgent();
+    if (sessionId) {
+      await api.sessions.setMode.mutate({ sessionId, instanceId: selectedInstance, mode: target });
+      queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
+    }
+    if (target === SessionMode.Terminal) terminalFreshRef.current = true;
+    setSessionMode(target);
+    if (target === SessionMode.Chat) {
+      if (sessionId) resumeSession(sessionId, { expectNotFound: sessionMode === SessionMode.Terminal });
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    }
+  }, [selectedInstance, sessionMode, sessionId, messages.length, showConfirm, busy, stopAgent, setSessionMode, resumeSession, setSessionId]);
 
   const handleBack = useCallback(() => {
     if (isMobile() && mobileScreen === "chat") {
@@ -121,6 +171,8 @@ export function ChatView() {
     resetSession();
     goBack();
   }, [mobileScreen, setMobileScreen, resetSession, goBack]);
+
+  const chatActive = (sessionMode ?? SessionMode.Chat) === SessionMode.Chat;
 
   // ── Right panel ──
   const rightTabs = ["files", "log", "configuration"] as const;
@@ -189,6 +241,22 @@ export function ChatView() {
           </button>
           <span className="w-px h-4 bg-border-light" />
           <h1 className="text-[14px] font-bold text-text truncate">{selectedInstance}</h1>
+          <div className="flex h-7 rounded-md border border-border-light overflow-hidden">
+            <button
+              className={`px-2 flex items-center gap-1 text-[11px] font-semibold transition-colors ${chatActive ? "bg-accent-light text-accent" : "text-text-muted hover:text-accent"}`}
+              onClick={chatActive ? undefined : handleToggleMode}
+              title="Chat mode"
+            >
+              <MessageSquare size={12} /> Chat
+            </button>
+            <button
+              className={`px-2 flex items-center gap-1 text-[11px] font-semibold border-l border-border-light transition-colors ${!chatActive ? "bg-accent-light text-accent" : "text-text-muted hover:text-accent"}`}
+              onClick={!chatActive ? undefined : handleToggleMode}
+              title="Terminal mode"
+            >
+              <TerminalSquare size={12} /> Terminal
+            </button>
+          </div>
           <div className="ml-auto flex items-center gap-2">
             <button
               className="md:hidden h-7 w-7 rounded-md border border-border-light flex items-center justify-center text-text-muted hover:text-accent hover:border-accent transition-colors"
@@ -200,7 +268,10 @@ export function ChatView() {
           </div>
         </header>
 
-        {/* Messages */}
+        {/* Content: Terminal or Chat */}
+        {sessionMode === SessionMode.Terminal && selectedInstance && sessionId ? (
+          <Terminal key={sessionId} instanceId={selectedInstance} sessionId={sessionId} fresh={terminalFreshRef.current} onConnected={() => { terminalFreshRef.current = false; }} />
+        ) : (<>
         <div className="relative flex flex-1 flex-col min-h-0">
         <div ref={messagesRef} className="flex-1 overflow-y-auto">
           <div className="mx-auto max-w-[760px] px-4 md:px-8 py-8 flex flex-col gap-6">
@@ -315,6 +386,7 @@ export function ChatView() {
             )}
           />
         )}
+        </>)}
       </div>
 
       {/* Right panel: desktop */}

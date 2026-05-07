@@ -112,9 +112,26 @@ if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
   if [ ! -d /var/lib/rancher/k3s ]; then
     echo "Provisioning k3s on host (sandbox mode)..."
-    echo "Installing nfs-common for RWX PVC support..."
-    sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nfs-common
+    echo "Installing NFS client for RWX PVC support..."
+    # Sandbox host distro varies (Ubuntu / Fedora / Alpine in Locki); pick
+    # the package manager that's actually present rather than assume Debian.
+    if command -v apt-get >/dev/null 2>&1; then
+      sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nfs-common
+    elif command -v dnf >/dev/null 2>&1; then
+      sudo dnf install -y nfs-utils
+      # Lima provision scripts shell out to apt-get; stub it so the loop
+      # below doesn't fail on a non-Debian host. Idempotent.
+      [ -x /usr/local/bin/apt-get ] || (
+        sudo install -m 0755 /dev/stdin /usr/local/bin/apt-get <<'SHIM'
+#!/bin/sh
+exit 0
+SHIM
+      )
+    else
+      echo "FATAL: neither apt-get nor dnf found; install nfs-common/nfs-utils manually." >&2
+      exit 1
+    fi
     echo "mount.nfs4: $(command -v mount.nfs4 || echo MISSING)"
     for i in $(seq 0 $(($(yq '.provision | length' "$LIMA_TEMPLATE") - 1))); do
       yq ".provision[$i].script" "$LIMA_TEMPLATE" | sudo bash
@@ -193,6 +210,25 @@ rm -f "$tar"
 # 4. Helm install or upgrade
 # Dev-cluster defaults (overridable via --set)
 DEV_DEFAULTS=(--set keycloak.admin.password=admin)
+
+# Detect btrfs-backed clusters (Fedora hosts default to btrfs) and bypass
+# the bundled nfs-ganesha provisioner — it returns EREMOTEIO on every write
+# against a btrfs export (userspace ganesha hits ENOSYS on handle-based
+# syscalls). Switch to the cluster's default RWO local-path instead.
+# ext4/xfs hosts (lima Ubuntu and most production storage) are unaffected.
+if [ -n "${IS_SANDBOX:-}" ]; then
+  ROOT_FSTYPE=$(df -T / 2>/dev/null | awk 'NR==2 {print $2}')
+else
+  ROOT_FSTYPE=$(limactl shell "$LIMA_INSTANCE" df -T / 2>/dev/null | awk 'NR==2 {print $2}')
+fi
+if [ "$ROOT_FSTYPE" = "btrfs" ]; then
+  echo "Detected btrfs root — bypassing nfs-ganesha (broken on btrfs), using RWO local-path."
+  HELM_EXTRA_ARGS+=(
+    --set controller.agentStorageClass=local-path
+    --set controller.agentAccessMode=ReadWriteOnce
+    --set nfsProvisioner.enabled=false
+  )
+fi
 
 echo "Installing/upgrading Platform chart..."
 # No --wait: the keycloak-provision post-install hook imports the platform realm

@@ -25,9 +25,13 @@ data:
             proxy_pass http://{{ $apiserverName }}:{{ .Values.apiServer.port }};
             proxy_http_version 1.1;
 
-            # WebSocket support (ACP relay) — only upgrade when client requests it
+            # WebSocket support (ACP + terminal relay) — only upgrade when client requests it
             proxy_set_header Upgrade $http_upgrade;
             proxy_set_header Connection $connection_upgrade;
+            # Strip compression negotiation — the ws library on the API server
+            # does not enable permessage-deflate; passing this header through
+            # causes the browser to send compressed frames that ws rejects.
+            proxy_set_header Sec-WebSocket-Extensions "";
 
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;

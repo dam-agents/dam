@@ -3,10 +3,19 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { WebSocketServer } from "ws";
+import headlessPkg from "@xterm/headless";
+const { Terminal: HeadlessTerminal } = headlessPkg;
+import serializePkg from "@xterm/addon-serialize";
+const { SerializeAddon } = serializePkg;
+import * as nodePty from "@lydell/node-pty";
+import { WebSocketServer, type WebSocket as WsWebSocket } from "ws";
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { appRouter } from "agent-runtime-api/router";
 import type { AgentRuntimeContext } from "agent-runtime-api";
+import {
+  OP_INPUT, OP_OUTPUT, OP_RESIZE,
+  decodeFrame, encodeDataFrame, encodeExit,
+} from "api-server-api";
 import { createFilesService } from "./modules/files.js";
 import { composeSkills } from "./modules/skills/index.js";
 import { config } from "./modules/config.js";
@@ -18,11 +27,6 @@ import { startPodFilesSync } from "./modules/pod-files/index.js";
 let triggerWatcher: TriggerWatcher | undefined;
 
 const __dir = dirname(fileURLToPath(import.meta.url));
-const agentCommand = config.AGENT_COMMAND
-  ? config.AGENT_COMMAND.split(" ")
-  : config.PLATFORM_DEV
-    ? ["npx", "tsx", join(__dir, "agent.ts")]
-    : ["node", join(__dir, "agent.js")];
 const homeDir = config.PLATFORM_DEV
   ? join(__dir, "../working-dir")
   : config.HOME_DIR;
@@ -61,10 +65,120 @@ const trpcHandler = createHTTPHandler({
 });
 
 const { runtime: acpRuntime } = composeAcp({
-  command: agentCommand,
+  command: config.PLATFORM_DEV
+    ? ["npx", "tsx", join(__dir, "agent.ts")]
+    : ["/usr/local/bin/harness-chat"],
   workingDir: workDir,
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
 });
+
+interface PtySlot {
+  pty: nodePty.IPty | null;
+  headless: InstanceType<typeof HeadlessTerminal>;
+  serialize: InstanceType<typeof SerializeAddon>;
+  client: WsWebSocket | null;
+  graceTimer: ReturnType<typeof setTimeout> | null;
+}
+
+const ptySlots = new Map<string, PtySlot>();
+const ptyLog = (sid: string, msg: string) => process.stderr.write(`[pty] [${sid}] ${msg}\n`);
+
+function killPtySlot(sessionId: string): void {
+  const slot = ptySlots.get(sessionId);
+  if (!slot) return;
+  if (slot.graceTimer) clearTimeout(slot.graceTimer);
+  try { slot.pty?.kill(); } catch {}
+  slot.headless.dispose();
+  ptySlots.delete(sessionId);
+  ptyLog(sessionId, "killed");
+}
+
+function attachPty(sessionId: string, ws: WsWebSocket, opts: { reset: boolean }): void {
+  if (opts.reset) killPtySlot(sessionId);
+  let initialized = false;
+  ws.binaryType = "nodebuffer";
+
+  ws.on("error", () => {
+    const slot = ptySlots.get(sessionId);
+    if (slot?.client === ws) slot.client = null;
+  });
+  ws.on("close", () => {
+    const slot = ptySlots.get(sessionId);
+    if (!slot || slot.client !== ws) return;
+    slot.client = null;
+    if (!slot.pty) return;
+    slot.graceTimer = setTimeout(() => killPtySlot(sessionId), 30_000);
+  });
+
+  ws.on("message", (raw: Buffer) => {
+    let frame;
+    try { frame = decodeFrame(raw); } catch { return; }
+
+    if (!initialized) {
+      if (frame.op !== OP_RESIZE) {
+        ws.close(1002, "first frame must be RESIZE");
+        return;
+      }
+      initialized = true;
+      const { cols, rows } = frame;
+
+      const existing = ptySlots.get(sessionId);
+      if (existing) {
+        if (existing.graceTimer) clearTimeout(existing.graceTimer);
+        if (existing.client && existing.client !== ws && existing.client.readyState === 1) {
+          existing.client.close(1000, "replaced by new connection");
+        }
+        existing.client = ws;
+        existing.headless.resize(cols, rows);
+        existing.pty?.resize(cols, rows);
+        const serialized = existing.serialize.serialize();
+        if (serialized.length > 0) ws.send(encodeDataFrame(OP_OUTPUT, serialized));
+        return;
+      }
+
+      const headless = new HeadlessTerminal({ cols, rows, scrollback: 1000, allowProposedApi: true });
+      const serialize = new SerializeAddon();
+      headless.loadAddon(serialize);
+      const pty = nodePty.spawn("/usr/local/bin/harness-terminal", [], {
+        name: "xterm-256color", cols, rows, cwd: workDir,
+        env: {
+          ...Object.fromEntries(
+            Object.entries(process.env).filter(([k, v]) => v !== undefined && !k.startsWith("npm_config_") && !k.startsWith("npm_lifecycle_")),
+          ) as Record<string, string>,
+          TERM: "xterm-256color", COLORTERM: "truecolor", HARNESS_SESSION_ID: sessionId,
+        },
+      });
+      const slot: PtySlot = { pty, headless, serialize, client: ws, graceTimer: null };
+      ptySlots.set(sessionId, slot);
+      ptyLog(sessionId, `spawned PTY (${cols}x${rows})`);
+
+      pty.onData((data) => {
+        slot.headless.write(data);
+        if (slot.client?.readyState === 1) slot.client.send(encodeDataFrame(OP_OUTPUT, data));
+      });
+      pty.onExit(({ exitCode }) => {
+        ptyLog(sessionId, `exited ${exitCode}`);
+        if (slot.client?.readyState === 1) {
+          slot.client.send(encodeExit(exitCode));
+          slot.client.close(1000, "pty exited");
+        }
+        slot.pty = null;
+        slot.headless.dispose();
+        ptySlots.delete(sessionId);
+      });
+      return;
+    }
+
+    const slot = ptySlots.get(sessionId);
+    if (!slot) return;
+    if (frame.op === OP_INPUT) {
+      slot.pty?.write(new TextDecoder().decode(frame.data));
+    } else if (frame.op === OP_RESIZE) {
+      slot.headless.resize(frame.cols, frame.rows);
+      slot.pty?.resize(frame.cols, frame.rows);
+    }
+  });
+}
 
 const server = http.createServer((req, res) => {
   if (req.method === "OPTIONS") {
@@ -85,6 +199,7 @@ const server = http.createServer((req, res) => {
       queuedPrompts: s.queuedPromptCount,
       agentAlive: s.agentAlive,
       activeTriggers: triggerWatcher?.activeCount() ?? 0,
+      terminalActive: ptySlots.size > 0,
     };
     res.writeHead(200, { "Content-Type": "application/json", ...CORS }).end(JSON.stringify(status));
     return;
@@ -100,10 +215,24 @@ const server = http.createServer((req, res) => {
   res.writeHead(404).end();
 });
 
-const wss = new WebSocketServer({ server, path: "/api/acp" });
+const acpWss = new WebSocketServer({ noServer: true });
+const termWss = new WebSocketServer({ noServer: true });
 
-wss.on("connection", (ws) => {
+acpWss.on("connection", (ws) => {
   acpRuntime.attach(createWebSocketChannel(ws));
+});
+
+server.on("upgrade", (req, socket, head) => {
+  const url = new URL(req.url!, `http://${req.headers.host}`);
+  if (url.pathname === "/api/acp") {
+    acpWss.handleUpgrade(req, socket, head, (ws) => acpWss.emit("connection", ws, req));
+  } else if (url.pathname === "/api/terminal") {
+    const sessionId = url.searchParams.get("sessionId") ?? "default";
+    const reset = url.searchParams.get("reset") === "1";
+    termWss.handleUpgrade(req, socket, head, (ws) => attachPty(sessionId, ws, { reset }));
+  } else {
+    socket.destroy();
+  }
 });
 
 if (config.PLATFORM_MCP_URL) {

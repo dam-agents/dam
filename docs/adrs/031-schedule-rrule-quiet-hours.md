@@ -12,7 +12,7 @@ Today a schedule is a single standard cron string plus an `enabled` toggle (see 
 - "Mondays and Wednesdays at 07:30, in my timezone."
 - "Every hour, but pause during our team holiday week."
 
-Cron has no timezone (the controller runs in UTC), no way to express an overnight window that crosses midnight, and no "skip this range" primitive. Users can disable the whole schedule with the manual toggle, but have to remember to flip it twice a day. Issue [#253](https://github.com/kagenti/platform/issues/253) captures the user need: a way to say "run like this, but not during these windows."
+Cron has no timezone (the controller runs in UTC), no way to express an overnight window that crosses midnight, and no "skip this range" primitive. Users can disable the whole schedule with the manual toggle, but have to remember to flip it twice a day. The user need: a way to say "run like this, but not during these windows."
 
 We considered two families of solutions:
 
@@ -53,9 +53,9 @@ enabled: true                            # schedule-level on/off
 
 **Window semantics: `[startTime, endTime)`.** `startTime` is inside the quiet window (fire suppressed); `endTime` is outside (fire allowed). Concretely, a `22:00–06:00` window suppresses the 22:00 tick — agent work started at 22:00 would bleed into the quiet period — and fires at 06:00, since the reply lands shortly after and is safely outside the window. `endTime < startTime` is valid and means the window crosses midnight, evaluated as `[start, 24:00) ∪ [00:00, end)`.
 
-**Suppressed runs are dropped, not deferred.** If the cron would have fired three times during a quiet window, zero runs happen — we don't queue them for when the window closes. This matches the intent in issue #253 ("run often but politely") and avoids thundering-herd bursts.
+**Suppressed runs are dropped, not deferred.** If the cron would have fired three times during a quiet window, zero runs happen — we don't queue them for when the window closes. This matches the "run often but politely" intent and avoids thundering-herd bursts.
 
-**Libraries.** [`github.com/teambition/rrule-go`](https://pkg.go.dev/github.com/teambition/rrule-go) on the controller side, [`rrule`](https://www.npmjs.com/package/rrule) on the API-server / UI side. Both are mature ports of python-dateutil with matching semantics. The controller's current dependency on `robfig/cron/v3` is removed for `type: rrule` schedules; a per-schedule goroutine sleeps to the next computed occurrence, fires or skips, and recomputes.
+**Libraries.** [`github.com/teambition/rrule-go`](https://pkg.go.dev/github.com/teambition/rrule-go) on the controller side, [`rrule`](https://github.com/jkbrzt/rrule) on the API-server / UI side. Both are mature ports of python-dateutil with matching semantics. The controller's current dependency on `robfig/cron/v3` is removed for `type: rrule` schedules; a per-schedule goroutine sleeps to the next computed occurrence, fires or skips, and recomputes.
 
 **Backwards compatibility.** Existing `type: "cron"` schedules continue to work via the legacy `robfig/cron` path. The UI will create only `type: "rrule"` schedules going forward; a future ADR may convert existing cron schedules if we decide to unify.
 
