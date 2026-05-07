@@ -8,6 +8,7 @@ Last verified: 2026-05-07
 flowchart LR
   user[browser user]
   slack-user[Slack user]
+  cli[dam CLI]
   llm[LLM APIs]
   github[GitHub]
 
@@ -31,6 +32,8 @@ flowchart LR
   user -->|OIDC| keycloak
 
   slack-user <-->|Slack API| api-server
+
+  cli -->|REST| api-server
 
   api-server <-->|ACP relay / tRPC proxy| agent-runtime
   api-server -->|REST| k8s-api
