@@ -5,20 +5,21 @@ import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import {
   ANN_GRANTED_CONNECTION_IDS,
   ANN_GRANTED_SECRET_IDS,
+  ANN_SECRETS_REV,
   LABEL_AGENT_REF,
   LABEL_OWNER,
   LABEL_TYPE,
   TYPE_INSTANCE,
 } from "../../modules/agents/infrastructure/labels.js";
 
-function instanceCM(name: string, annotations: Record<string, string> = {}): k8s.V1ConfigMap {
+function instanceCM(name: string, annotations: Record<string, string> = {}, agentRef = "agent-1"): k8s.V1ConfigMap {
   return {
     metadata: {
       name,
       labels: {
         [LABEL_TYPE]: TYPE_INSTANCE,
         [LABEL_OWNER]: "owner-1",
-        [LABEL_AGENT_REF]: "agent-1",
+        [LABEL_AGENT_REF]: agentRef,
       },
       annotations,
     },
@@ -164,6 +165,52 @@ describe("createAgentGrantsPort.setConnectionGrants", () => {
     await port.setConnectionGrants("agent-1", ["github", "slack"]);
     expect(patches.at(-1)!.body).toEqual({
       metadata: { annotations: { [ANN_GRANTED_CONNECTION_IDS]: "github,slack" } },
+    });
+  });
+});
+
+describe("createAgentGrantsPort.listAgentsGrantedSecret", () => {
+  it("returns each unique agent (with all instance CM names) that has the secret granted", async () => {
+    const { client } = fakeClient([
+      instanceCM("a1-inst-1", { [ANN_GRANTED_SECRET_IDS]: "secret-x,secret-y" }, "agent-a"),
+      instanceCM("a1-inst-2", { [ANN_GRANTED_SECRET_IDS]: "secret-x,secret-y" }, "agent-a"),
+      instanceCM("b1-inst", { [ANN_GRANTED_SECRET_IDS]: "secret-y" }, "agent-b"),
+      instanceCM("c1-inst", { [ANN_GRANTED_SECRET_IDS]: "secret-z" }, "agent-c"),
+    ]);
+    const port = createAgentGrantsPort(client, "owner-1");
+    const result = await port.listAgentsGrantedSecret("secret-x");
+    expect(result).toHaveLength(1);
+    expect(result[0]!.agentId).toBe("agent-a");
+    expect(result[0]!.instanceCmNames.sort()).toEqual(["a1-inst-1", "a1-inst-2"]);
+    expect(result[0]!.grantedSecretIds.sort()).toEqual(["secret-x", "secret-y"]);
+  });
+
+  it("returns empty array when the secret is not granted to any agent", async () => {
+    const { client } = fakeClient([
+      instanceCM("a1-inst", { [ANN_GRANTED_SECRET_IDS]: "secret-y" }, "agent-a"),
+    ]);
+    const port = createAgentGrantsPort(client, "owner-1");
+    expect(await port.listAgentsGrantedSecret("secret-x")).toEqual([]);
+  });
+
+  it("ignores instance CMs with absent or empty granted-secret-ids", async () => {
+    const { client } = fakeClient([
+      instanceCM("a1-inst", {}, "agent-a"),
+      instanceCM("b1-inst", { [ANN_GRANTED_SECRET_IDS]: "" }, "agent-b"),
+    ]);
+    const port = createAgentGrantsPort(client, "owner-1");
+    expect(await port.listAgentsGrantedSecret("secret-x")).toEqual([]);
+  });
+});
+
+describe("createAgentGrantsPort.bumpSecretsRev", () => {
+  it("patches the secrets-rev annotation on the named instance CM", async () => {
+    const { client, patches } = fakeClient([instanceCM("inst-1")]);
+    const port = createAgentGrantsPort(client, "owner-1");
+    await port.bumpSecretsRev("inst-1", "abc123def456");
+    expect(patches.at(-1)).toEqual({
+      name: "inst-1",
+      body: { metadata: { annotations: { [ANN_SECRETS_REV]: "abc123def456" } } },
     });
   });
 });

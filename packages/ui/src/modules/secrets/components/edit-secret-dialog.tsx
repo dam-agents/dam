@@ -1,4 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 
@@ -17,6 +18,8 @@ import {
   type SecretView,
 } from "../../../types.js";
 import { useUpdateSecret } from "../api/mutations.js";
+import { useGrantedAgentsForSecret } from "../api/queries.js";
+import { validateEnvMappingsSize } from "../utils/env-mappings-size.js";
 
 const envMappingSchema = z.object({
   envName: z.string(),
@@ -67,8 +70,14 @@ export function EditSecretDialog({ secret, onClose }: Props) {
   const isGeneric = secret.type !== "anthropic";
   const updateSecret = useUpdateSecret();
   const saving = updateSecret.isPending;
+  const [pendingPatch, setPendingPatch] = useState<UpdateSecretPatch | null>(null);
+  // Only fetch when there's a pending env-affecting patch to confirm —
+  // skips the tRPC roundtrip for cosmetic edits and the initial render.
+  const grantedAgentsQuery = useGrantedAgentsForSecret(secret.id, {
+    enabled: pendingPatch !== null,
+  });
 
-  const { register, handleSubmit, control, formState } = useForm<EditSecretValues>({
+  const { register, handleSubmit, control, formState, setError, clearErrors } = useForm<EditSecretValues>({
     resolver: zodResolver(isGeneric ? genericSchema : anthropicSchema),
     mode: "onChange",
     defaultValues: {
@@ -104,10 +113,36 @@ export function EditSecretDialog({ secret, onClose }: Props) {
       }
     }
     if (dirtyFields.envMappings) {
-      patch.envMappings = sanitizeEnvMappings(values.envMappings);
+      const sanitized = sanitizeEnvMappings(values.envMappings);
+      const sizeCheck = validateEnvMappingsSize(sanitized);
+      if (!sizeCheck.ok) {
+        setError("envMappings", {
+          type: "manual",
+          message: `Env mappings exceed allowed size (${sizeCheck.bytes} bytes; limit ${sizeCheck.limit}). Reduce or split across secrets.`,
+        });
+        return;
+      }
+      clearErrors("envMappings");
+      patch.envMappings = sanitized;
+    }
+    // ADR-040: envMappings is the only field that rolls the agent pod
+    // (pod env is immutable). Other dirty fields are hot — apply directly.
+    if (dirtyFields.envMappings) {
+      setPendingPatch(patch);
+      return;
     }
     updateSecret.mutate(patch, { onSuccess: onClose });
   });
+
+  const confirmAndApply = () => {
+    if (!pendingPatch) return;
+    updateSecret.mutate(pendingPatch, {
+      onSuccess: () => {
+        setPendingPatch(null);
+        onClose();
+      },
+    });
+  };
 
   return (
     <Modal widthClass="w-[540px]">
@@ -231,6 +266,83 @@ export function EditSecretDialog({ secret, onClose }: Props) {
           </button>
         </div>
       </form>
+      {pendingPatch && (
+        <RollConfirmation
+          loading={grantedAgentsQuery.isLoading}
+          agents={grantedAgentsQuery.data ?? []}
+          saving={saving}
+          onCancel={() => setPendingPatch(null)}
+          onConfirm={confirmAndApply}
+        />
+      )}
     </Modal>
+  );
+}
+
+// Pod env is immutable on a running pod, so envMappings edits roll every
+// granted agent (ADR-040). Show the user what they're about to disturb.
+function RollConfirmation({
+  loading,
+  agents,
+  saving,
+  onCancel,
+  onConfirm,
+}: {
+  loading: boolean;
+  agents: { id: string; name: string }[];
+  saving: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="absolute inset-0 flex items-center justify-center bg-black/40 z-10 rounded-2xl">
+      <div className="w-[420px] rounded-xl border-2 border-border bg-bg p-6 shadow-brutal-lg flex flex-col gap-4">
+        <div>
+          <h3 className="text-[16px] font-bold text-text">Restart granted agents?</h3>
+          <p className="text-[13px] text-text-secondary mt-2">
+            Editing env mappings on this secret rolls every agent that has it
+            granted. Running sessions on those agents will be interrupted.
+          </p>
+        </div>
+        {loading ? (
+          <p className="text-[12px] text-text-muted italic">
+            Looking up affected agents…
+          </p>
+        ) : agents.length === 0 ? (
+          <p className="text-[12px] text-text-muted">
+            No agents currently have this secret granted.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] font-bold text-text-muted uppercase tracking-[0.05em]">
+              Affected ({agents.length})
+            </span>
+            <ul className="list-disc pl-5 text-[12px] text-text-secondary max-h-32 overflow-y-auto">
+              {agents.map((a) => (
+                <li key={a.id}>{a.name}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <div className="flex justify-end gap-3 pt-2">
+          <button
+            type="button"
+            className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
+            onClick={onCancel}
+            disabled={saving}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent"
+            onClick={onConfirm}
+            disabled={saving || loading}
+          >
+            {saving ? "Saving…" : "Restart and save"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

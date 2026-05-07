@@ -17,7 +17,6 @@ import {
 } from "../../connections/api/queries.js";
 import { useSecrets } from "../../secrets/api/queries.js";
 import { addAgentSchema, type AddAgentValues } from "../forms/add-agent-schema.js";
-import { envsToAddOnGrant } from "../utils/connection-env-helpers.js";
 
 type Step = "pick" | "configure";
 
@@ -146,19 +145,14 @@ export function AddAgentDialog({
   };
 
   const submitForm = handleSubmit((values) => {
-    // Derive env from each granted app's envMappings (dedupe by name across
-    // apps — e.g. Gmail + Drive both declare GOOGLE_WORKSPACE_CLI_TOKEN).
-    const grantedApps = apps.filter((a) => selAppsSet.has(a.id));
-    const env = grantedApps.reduce<EnvVar[]>((acc, app) => {
-      const toAdd = envsToAddOnGrant(acc, app);
-      return toAdd.length > 0 ? [...acc, ...toAdd] : acc;
-    }, []);
+    // ADR-040: env contributions from granted secrets/apps are merged at
+    // pod-render time by the controller. Don't pre-stamp them onto the
+    // agent spec.
     onSubmit({
       name: values.name.trim(),
       templateId: selectedTemplate?.id,
       image: selectedTemplate ? undefined : customImage.trim(),
       description: values.description.trim() || undefined,
-      env: env.length > 0 ? env : undefined,
       // Always send the picker's state — even when the user hasn't toggled,
       // the baselined default (single Anthropic provider) is real intent
       // and `setAgentAccess` is what triggers the connection-rules sync

@@ -129,10 +129,6 @@ unaffected by user shadowing.
   model.
 - [ADR-033](033-envoy-credential-gateway.md) — Envoy filter chains and
   on-the-wire injection unchanged.
-- [ADR-035](035-unified-hitl-ux.md) — title is "Unified HITL UX," but it
-  is also where the per-agent `egress_rules` table model was introduced
-  (see ADR-035 §"Single rules table"). This ADR leaves that table and
-  its read path untouched; the host fanout described above is just
-  calling the same `syncForAgent` entry point that already lives there,
-  for every granted agent rather than only the toggled-grant agent.
+- [ADR-035](035-unified-hitl-ux.md) — `egress_rules` model unchanged;
+  host fanout calls existing `syncForAgent` for every granted agent.
 - Closes #122; supersedes the partial fix in #118.

@@ -208,6 +208,109 @@ func TestRenderEnvoyBootstrap_MixedRoutesOnlyPinCredentialed(t *testing.T) {
 	assert.NotContains(t, got, "name: upstream_platform-allow-only-npm")
 }
 
+// secretWithEnvMappings returns an owner-labelled Secret carrying an
+// `agent-platform.ai/env-mappings` annotation with the given mappings JSON-
+// encoded. Caller may pass `rawJSON` directly to test malformed inputs.
+func secretWithEnvMappings(name, secretType string, rawJSON string) corev1.Secret {
+	s := ownerSecret(name, secretType, "")
+	if s.Annotations == nil {
+		s.Annotations = map[string]string{}
+	}
+	s.Annotations[envoyEnvMappingsAnn] = rawJSON
+	return s
+}
+
+func envByName(envs []corev1.EnvVar) map[string]string {
+	out := map[string]string{}
+	for _, e := range envs {
+		out[e.Name] = e.Value
+	}
+	return out
+}
+
+func TestCredentialEnvVars_ReadsEnvMappingsAnnotation(t *testing.T) {
+	// ADR-040: the secret's `env-mappings` annotation is the source of truth
+	// — controller emits exactly the listed envs with their placeholders.
+	got := credentialEnvVars([]corev1.Secret{
+		secretWithEnvMappings(
+			"platform-cred-aaa",
+			"generic",
+			`[{"envName":"FOO","placeholder":"foo-sentinel"},{"envName":"BAR","placeholder":"bar-sentinel"}]`,
+		),
+	})
+	envs := envByName(got)
+	assert.Equal(t, "foo-sentinel", envs["FOO"])
+	assert.Equal(t, "bar-sentinel", envs["BAR"])
+	assert.Len(t, envs, 2)
+}
+
+func TestCredentialEnvVars_FirstSecretWinsOnEnvNameCollision(t *testing.T) {
+	// Two granted secrets contributing the same env name. Owner secret list
+	// is lex-sorted by Name (`listOwnerCredentialSecrets`), so the lex-
+	// smallest one wins via the inner dedup. ADR-040 §Precedence.
+	got := credentialEnvVars([]corev1.Secret{
+		secretWithEnvMappings(
+			"platform-cred-aaa",
+			"generic",
+			`[{"envName":"SHARED","placeholder":"first"}]`,
+		),
+		secretWithEnvMappings(
+			"platform-cred-zzz",
+			"generic",
+			`[{"envName":"SHARED","placeholder":"second"}]`,
+		),
+	})
+	envs := envByName(got)
+	assert.Equal(t, "first", envs["SHARED"])
+	assert.Len(t, envs, 1)
+}
+
+func TestCredentialEnvVars_MalformedJSONFallsBackToLegacySwitch(t *testing.T) {
+	// Parse-tolerant fallback: malformed JSON should not hide the canonical
+	// Anthropic env. Hand-edited Secrets and pre-ADR-040 fixtures rely on
+	// this path.
+	s := ownerSecret("platform-cred-aaa", "anthropic", "")
+	s.Annotations[envoyAuthModeAnn] = "api-key"
+	s.Annotations[envoyEnvMappingsAnn] = "{not-json}"
+	got := credentialEnvVars([]corev1.Secret{s})
+	envs := envByName(got)
+	assert.Equal(t, "dummy-placeholder", envs["ANTHROPIC_API_KEY"])
+}
+
+func TestCredentialEnvVars_MissingAnnotationFallsBackToLegacySwitch(t *testing.T) {
+	// Anthropic OAuth Secret with no `env-mappings` annotation (e.g. the
+	// secret was created via raw `kubectl apply`) — legacy switch fills in
+	// `CLAUDE_CODE_OAUTH_TOKEN`.
+	oauthSecret := ownerSecret("platform-cred-aaa", "anthropic", "")
+	oauthSecret.Annotations[envoyAuthModeAnn] = "oauth"
+
+	// Connection-type Secret for GitHub — connections don't write
+	// `env-mappings` today, so the legacy switch emits `GH_TOKEN`.
+	ghSecret := ownerSecret("platform-conn-github", "connection", "github")
+	ghSecret.Annotations[envoyHostPatternAnn] = "api.github.com"
+
+	got := credentialEnvVars([]corev1.Secret{oauthSecret, ghSecret})
+	envs := envByName(got)
+	assert.Equal(t, "dummy-placeholder", envs["CLAUDE_CODE_OAUTH_TOKEN"])
+	assert.Equal(t, "dummy-placeholder", envs["GH_TOKEN"])
+}
+
+func TestCredentialEnvVars_AnnotationOverridesLegacyDefault(t *testing.T) {
+	// Anthropic Secret carrying an explicit annotation overrides what the
+	// legacy auth-mode switch would have produced. Tests the ADR-040 path
+	// for the typical UI-created Anthropic secret.
+	got := credentialEnvVars([]corev1.Secret{
+		secretWithEnvMappings(
+			"platform-cred-aaa",
+			"anthropic",
+			`[{"envName":"ANTHROPIC_API_KEY","placeholder":"dummy-placeholder"}]`,
+		),
+	})
+	envs := envByName(got)
+	assert.Equal(t, "dummy-placeholder", envs["ANTHROPIC_API_KEY"])
+	assert.Len(t, envs, 1)
+}
+
 func TestEnvoySecretsRev_TemplateRevBumpRollsExistingPods(t *testing.T) {
 	// The rev hash must include a template-revision marker so any structural
 	// template change rolls existing pods on chart upgrade. Without it, the

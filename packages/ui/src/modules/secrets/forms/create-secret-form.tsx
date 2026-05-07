@@ -12,6 +12,7 @@ import { FormField } from "../../../components/form-field.js";
 import { Modal } from "../../../components/modal.js";
 import { DEFAULT_INJECTION_CONFIG } from "../../../types.js";
 import { useCreateSecret } from "../api/mutations.js";
+import { validateEnvMappingsSize } from "../utils/env-mappings-size.js";
 
 const envMappingSchema = z.object({
   envName: z.string(),
@@ -45,7 +46,7 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
   const createSecret = useCreateSecret();
   const saving = createSecret.isPending;
 
-  const { register, handleSubmit, control, formState } = useForm<CreateSecretValues>({
+  const { register, handleSubmit, control, formState, setError, clearErrors } = useForm<CreateSecretValues>({
     resolver: zodResolver(createSecretSchema),
     mode: "onChange",
     defaultValues: {
@@ -68,6 +69,15 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
     const headerName = values.headerName.trim();
     const valueFormat = values.valueFormat.trim();
     const mappings = sanitizeEnvMappings(values.envMappings);
+    const sizeCheck = validateEnvMappingsSize(mappings);
+    if (!sizeCheck.ok) {
+      setError("envMappings", {
+        type: "manual",
+        message: `Env mappings exceed allowed size (${sizeCheck.bytes} bytes; limit ${sizeCheck.limit}). Reduce or split across secrets.`,
+      });
+      return;
+    }
+    clearErrors("envMappings");
     createSecret.mutate(
       {
         type: "generic",
