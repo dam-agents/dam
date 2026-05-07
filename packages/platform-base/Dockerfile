@@ -43,6 +43,8 @@ RUN mkdir -p /app/working-dir/.claude /app/working-dir/.pi/agent \
     && ln -s ../../.agents/skills /app/working-dir/.pi/agent/skills \
     && chown -R 65532:0 /app
 
+RUN mkdir -p /etc/claude-code && echo '{"allowedMcpServers":["platform-outbound"]}' > /etc/claude-code/managed-settings.json
+    
 USER 65532
 
 ENV PORT=8080
