@@ -21,12 +21,12 @@ export interface AppConnectionView {
    */
   envMappings?: EnvMapping[];
   /**
-   * API hosts this provider needs to reach (ADR-035). Joined
-   * server-side from the operator-owned `appConnectionEgressHosts` ConfigMap
-   * keyed by `provider`. Granting the connection inserts one
+   * API hosts this provider needs to reach (ADR-035). Sourced server-side
+   * from `OAuthAppDescriptor.egressHosts` for static apps, or from the
+   * connection's stored host pattern for dynamic-host apps (Generic OAuth,
+   * GitHub Enterprise). Granting the connection inserts one
    * `(host, *, *, allow, source=connection:<id>)` rule per host; ungranting
-   * sweeps them. Empty / missing → grants don't produce egress rules
-   * (some providers' hosts haven't been declared yet).
+   * sweeps them. Empty / missing → grants don't produce egress rules.
    */
   egressHosts?: string[];
 }
