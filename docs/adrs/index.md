@@ -52,3 +52,4 @@ This directory contains ADRs for the Platform project.
 | Draft | Title | Owner |
 |-------|-------|-------|
 | [DRAFT](DRAFT-multi-agent.md) | Multi-agent collaboration — isolated instances with shared artifacts | @tomkis |
+| [DRAFT](DRAFT-durable-prompt-submission.md) | Durable user-prompt submission — narrows ADR-007 | @janjeliga |
