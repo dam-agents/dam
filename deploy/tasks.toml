@@ -112,9 +112,26 @@ if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
   if [ ! -d /var/lib/rancher/k3s ]; then
     echo "Provisioning k3s on host (sandbox mode)..."
-    echo "Installing nfs-common for RWX PVC support..."
-    sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nfs-common
+    echo "Installing NFS client for RWX PVC support..."
+    # Sandbox host distro varies (Ubuntu / Fedora / Alpine in Locki); pick
+    # the package manager that's actually present rather than assume Debian.
+    if command -v apt-get >/dev/null 2>&1; then
+      sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nfs-common
+    elif command -v dnf >/dev/null 2>&1; then
+      sudo dnf install -y nfs-utils
+      # Lima provision scripts shell out to apt-get; stub it so the loop
+      # below doesn't fail on a non-Debian host. Idempotent.
+      [ -x /usr/local/bin/apt-get ] || (
+        sudo install -m 0755 /dev/stdin /usr/local/bin/apt-get <<'SHIM'
+#!/bin/sh
+exit 0
+SHIM
+      )
+    else
+      echo "FATAL: neither apt-get nor dnf found; install nfs-common/nfs-utils manually." >&2
+      exit 1
+    fi
     echo "mount.nfs4: $(command -v mount.nfs4 || echo MISSING)"
     for i in $(seq 0 $(($(yq '.provision | length' "$LIMA_TEMPLATE") - 1))); do
       yq ".provision[$i].script" "$LIMA_TEMPLATE" | sudo bash
