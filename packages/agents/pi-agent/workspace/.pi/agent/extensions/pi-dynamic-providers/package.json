@@ -1,0 +1,10 @@
+{
+  "name": "pi-dynamic-providers-extension",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Local-only types for the pi-dynamic-providers extension. Not installed at runtime; pi-coding-agent is provided globally by the agent image.",
+  "devDependencies": {
+    "@mariozechner/pi-coding-agent": "^0.73.0",
+    "@types/node": "^22.0.0"
+  }
+}

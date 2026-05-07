@@ -20,8 +20,8 @@ workspace/
   work/
     .pi/
       APPEND_SYSTEM.md   ← appended to the system prompt (project-scoped)
-  .pi/agent/extensions/pi-rits/
-    index.ts             ← auto-discovered by pi on startup; registers the RITS provider from env vars
+  .pi/agent/extensions/pi-dynamic-providers/
+    index.ts             ← auto-discovered by pi on startup; registers any of {rits, openai-proxy} whose env vars are set
 ```
 
 ## Providers and models
@@ -119,7 +119,7 @@ For non-Bearer auth, override `injectionConfig` on the secret instead of changin
 
 ### RITS (custom provider via extension)
 
-The [`pi-rits`](workspace/.pi/agent/extensions/pi-rits/index.ts) extension is auto-discovered by pi from `~/.pi/agent/extensions/`. It registers a `rits` provider tuned for vLLM (what RITS runs) and mirrors the config into `~/.pi/agent/models.json`. Use an extension instead of a static `models.json` entry when provider knobs need to be derived from env vars at pod start.
+The [`pi-dynamic-providers`](workspace/.pi/agent/extensions/pi-dynamic-providers/index.ts) extension is auto-discovered by pi from `~/.pi/agent/extensions/`. It registers a `rits` provider (tuned for vLLM, what RITS runs) and/or an `openai-proxy` provider — each activates only when its env vars are set — and mirrors the resulting config into `~/.pi/agent/models.json` and `~/.pi/agent/auth.json`. Use an extension instead of a static `models.json` entry when provider knobs need to be derived from env vars at pod start.
 
 | Env var | Required | Default | Purpose |
 |---|---|---|---|
