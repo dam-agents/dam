@@ -37,6 +37,14 @@ RUN npm install --omit=dev
 
 COPY --from=builder /app/packages/agent-runtime/dist/ dist/
 
+# ADR-037: agent-runtime spawns `/usr/local/bin/harness-chat` for chat
+# sessions and `/usr/local/bin/harness-terminal` for terminal sessions.
+# The shell shims live in this package's source; install them as
+# executables on the PATH the runtime expects.
+COPY packages/platform-base/harness-chat.sh /usr/local/bin/harness-chat
+COPY packages/platform-base/harness-terminal.sh /usr/local/bin/harness-terminal
+RUN chmod +x /usr/local/bin/harness-chat /usr/local/bin/harness-terminal
+
 COPY packages/platform-base/skills/ /app/working-dir/.agents/skills/
 RUN mkdir -p /app/working-dir/.claude /app/working-dir/.pi/agent \
     && ln -s ../.agents/skills /app/working-dir/.claude/skills \
