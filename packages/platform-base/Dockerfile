@@ -51,7 +51,18 @@ RUN mkdir -p /app/working-dir/.claude /app/working-dir/.pi/agent \
     && ln -s ../../.agents/skills /app/working-dir/.pi/agent/skills \
     && chown -R 65532:0 /app
 
-RUN mkdir -p /etc/claude-code && echo '{"allowedMcpServers":["platform-outbound"]}' > /etc/claude-code/managed-settings.json
+# Claude Code 2.x changed the managed-settings.json schema: `allowedMcpServers`
+# is no longer a `string[]` of server names — the array entries are expected
+# to be objects (or the field has been retired entirely). The legacy shape
+# made every agent pod fail Claude Code startup with:
+#   Unable to read managed policy settings.
+#   Detail: /etc/claude-code/managed-settings.json: Expected object, but
+#   received string
+# which manifested upstream as `Claude Code process exited with code 1` on
+# session/new. Stub the file to an empty object so startup succeeds; the
+# platform-outbound MCP server now goes through the standard "first use
+# allow" prompt until we re-derive the explicit allowlist for the v2 schema.
+RUN mkdir -p /etc/claude-code && echo '{}' > /etc/claude-code/managed-settings.json
 
 USER 65532
 
