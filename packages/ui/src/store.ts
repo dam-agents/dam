@@ -5,10 +5,6 @@ import {
   createInstancesSlice,
   type InstancesSlice,
 } from "./modules/instances/store.js";
-import {
-  createOnboardingSlice,
-  type OnboardingSlice,
-} from "./modules/onboarding/store.js";
 import { pathToState } from "./modules/platform/lib/routes.js";
 import {
   createDialogSlice,
@@ -57,8 +53,7 @@ export type PlatformStore =
   & SessionsSlice
   & SessionConfigSlice
   & FilesSlice
-  & PermissionsSlice
-  & OnboardingSlice;
+  & PermissionsSlice;
 
 export const useStore = create<PlatformStore>()((...a) => ({
   ...createDialogSlice(...a),
@@ -70,7 +65,6 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createSessionConfigSlice(...a),
   ...createFilesSlice(...a),
   ...createPermissionsSlice(...a),
-  ...createOnboardingSlice(...a),
 }));
 
 // Reuse the path parser for browser back/forward hydration
