@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { MODE_KEYS, MODES, stripWhitespace } from "../components/anthropic/modes.js";
+import { MODE_KEYS, MODES, stripWhitespace } from "./modes.js";
 
 /**
  * The credential field reads as raw user input but validates against the

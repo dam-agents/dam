@@ -4,12 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 
 import { useTestAnthropic } from "../../../secrets/api/mutations.js";
+import { CardIcon } from "../shared/card-icon.js";
+import { IconButton } from "../shared/icon-button.js";
 import {
   anthropicCredentialSchema,
   type AnthropicCredentialValues,
-} from "../../forms/anthropic-credential-schema.js";
-import { CardIcon } from "../shared/card-icon.js";
-import { IconButton } from "../shared/icon-button.js";
+} from "./credential-schema.js";
 import { type Mode, MODE_KEYS, MODES, stripWhitespace } from "./modes.js";
 
 export function AnthropicForm({
