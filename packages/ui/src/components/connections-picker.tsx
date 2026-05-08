@@ -1,6 +1,10 @@
 import type { AppConnectionView } from "api-server-api";
 import { Globe, Info, KeyRound, Lock, Sparkles } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+
 import { OAuthAppIcon } from "../modules/connections/components/oauth-app-icon.js";
 import type { SecretView } from "../types.js";
 import {
@@ -28,13 +32,13 @@ export interface OAuthAppEntry {
 
 export function ConnectionsHeader() {
   return (
-    <span className="flex items-center gap-1.5 text-[12px] font-bold text-text-secondary uppercase tracking-[0.03em]">
+    <span className="flex items-center gap-1.5 text-[12px] font-bold text-foreground/80 uppercase tracking-[0.03em]">
       Connections
       <HoverTooltip
         trigger={
           <Info
             size={13}
-            className="text-text-muted hover:text-text-secondary cursor-help"
+            className="text-muted-foreground hover:text-foreground/80 cursor-help"
           />
         }
       >
@@ -90,20 +94,21 @@ export function ConnectionsPicker({
       <ConnectionsHeader />
 
       {loading && (
-        <span className="text-[12px] text-text-muted">Loading...</span>
+        <span className="text-[12px] text-muted-foreground">Loading...</span>
       )}
       {!loading && secrets.length === 0 && apps.length === 0 && staleAppIds.length === 0 && (
-        <span className="text-[12px] text-text-muted">
+        <span className="text-[12px] text-muted-foreground">
           No connections yet.
           {onGoToProviders && (
             <>
               {" "}
-              <button
-                className="text-accent font-semibold hover:underline"
+              <Button
+                variant="link"
+                className="h-auto p-0 text-[12px] font-semibold"
                 onClick={onGoToProviders}
               >
                 Add one
-              </button>
+              </Button>
             </>
           )}
         </span>
@@ -199,7 +204,7 @@ function Section({
 }) {
   return (
     <div>
-      <div className="text-[10px] font-bold text-text-muted uppercase tracking-[0.05em] mb-2">
+      <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.05em] mb-2">
         {title}
       </div>
       <div className="flex flex-col gap-2">{children}</div>
@@ -222,18 +227,13 @@ function ItemRow({
 }) {
   return (
     <label
-      className={`flex items-center gap-3 rounded-lg border-2 bg-bg px-4 py-3 cursor-pointer transition-colors hover:border-accent ${
-        checked ? "border-accent bg-accent-light" : "border-border-light"
+      className={`flex items-center gap-3 rounded-lg border bg-background px-4 py-3 cursor-pointer transition-colors hover:border-primary ${
+        checked ? "border-primary bg-primary/10" : "border-border"
       }`}
     >
-      <input
-        type="checkbox"
-        className="accent-[var(--color-accent)] w-4 h-4"
-        checked={checked}
-        onChange={onToggle}
-      />
+      <Checkbox checked={checked} onCheckedChange={onToggle} />
       {icon}
-      <span className="text-[13px] font-medium text-text flex-1">{label}</span>
+      <span className="text-[13px] font-medium text-foreground flex-1">{label}</span>
       {trailing}
     </label>
   );
@@ -254,38 +254,33 @@ function SecretItemRow({
   const envNames = secret.envMappings?.map((m) => m.envName) ?? [];
   return (
     <label
-      className={`flex items-start gap-3 rounded-lg border-2 bg-bg px-4 py-3 cursor-pointer transition-colors hover:border-accent ${
-        checked ? "border-accent bg-accent-light" : "border-border-light"
+      className={`flex items-start gap-3 rounded-lg border bg-background px-4 py-3 cursor-pointer transition-colors hover:border-primary ${
+        checked ? "border-primary bg-primary/10" : "border-border"
       }`}
     >
-      <input
-        type="checkbox"
-        className="accent-[var(--color-accent)] w-4 h-4 mt-0.5"
-        checked={checked}
-        onChange={onToggle}
-      />
-      <Lock size={14} className="text-text-secondary shrink-0 mt-0.5" />
+      <Checkbox checked={checked} onCheckedChange={onToggle} className="mt-0.5" />
+      <Lock size={14} className="text-foreground/80 shrink-0 mt-0.5" />
       <div className="flex-1 min-w-0">
-        <div className="text-[13px] font-medium text-text truncate">
+        <div className="text-[13px] font-medium text-foreground truncate">
           {secret.name}
         </div>
-        <div className="text-[11px] font-mono text-text-muted truncate">
+        <div className="text-[11px] font-mono text-muted-foreground truncate">
           {secret.hostPattern}
           {secret.pathPattern && (
-            <span className="text-text-secondary">{secret.pathPattern}</span>
+            <span className="text-foreground/80">{secret.pathPattern}</span>
           )}
         </div>
         {customHeader && (
-          <div className="text-[11px] text-text-secondary truncate">
-            <span className="text-text-muted uppercase tracking-[0.05em] font-bold mr-1.5">
+          <div className="text-[11px] text-foreground/80 truncate">
+            <span className="text-muted-foreground uppercase tracking-[0.05em] font-bold mr-1.5">
               header
             </span>
             <span className="font-mono">{customHeader}</span>
           </div>
         )}
         {envNames.length > 0 && (
-          <div className="text-[11px] text-accent truncate">
-            <span className="text-text-muted uppercase tracking-[0.05em] font-bold mr-1.5">
+          <div className="text-[11px] text-primary truncate">
+            <span className="text-muted-foreground uppercase tracking-[0.05em] font-bold mr-1.5">
               env
             </span>
             <span className="font-mono">{envNames.join(", ")}</span>
@@ -307,27 +302,22 @@ function OAuthAppItemRow({
 }) {
   return (
     <label
-      className={`flex items-start gap-3 rounded-lg border-2 bg-bg px-4 py-3 cursor-pointer transition-colors hover:border-accent ${
-        checked ? "border-accent bg-accent-light" : "border-border-light"
+      className={`flex items-start gap-3 rounded-lg border bg-background px-4 py-3 cursor-pointer transition-colors hover:border-primary ${
+        checked ? "border-primary bg-primary/10" : "border-border"
       }`}
     >
-      <input
-        type="checkbox"
-        className="accent-[var(--color-accent)] w-4 h-4 mt-0.5"
-        checked={checked}
-        onChange={onToggle}
-      />
-      <span className="shrink-0 mt-0.5 text-text-secondary">
+      <Checkbox checked={checked} onCheckedChange={onToggle} className="mt-0.5" />
+      <span className="shrink-0 mt-0.5 text-foreground/80">
         <OAuthAppIcon appId={entry.appId} alt={entry.displayName} size={14} />
       </span>
       <div className="flex-1 min-w-0">
-        <div className="text-[13px] font-medium text-text truncate">{entry.displayName}</div>
-        <div className="text-[11px] font-mono text-text-muted truncate">{entry.hostPattern}</div>
+        <div className="text-[13px] font-medium text-foreground truncate">{entry.displayName}</div>
+        <div className="text-[11px] font-mono text-muted-foreground truncate">{entry.hostPattern}</div>
       </div>
       {entry.expired && (
-        <span className="text-[11px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 shrink-0 bg-danger-light text-danger border-danger">
+        <Badge variant="destructive" className="shrink-0 uppercase tracking-[0.03em]">
           Expired
-        </span>
+        </Badge>
       )}
     </label>
   );
@@ -350,27 +340,22 @@ function AppItemRow({
 }) {
   return (
     <label
-      className={`flex items-start gap-3 rounded-lg border-2 bg-bg px-4 py-3 cursor-pointer transition-colors hover:border-accent ${
-        checked ? "border-accent bg-accent-light" : "border-border-light"
+      className={`flex items-start gap-3 rounded-lg border bg-background px-4 py-3 cursor-pointer transition-colors hover:border-primary ${
+        checked ? "border-primary bg-primary/10" : "border-border"
       }`}
     >
-      <input
-        type="checkbox"
-        className="accent-[var(--color-accent)] w-4 h-4 mt-0.5"
-        checked={checked}
-        onChange={onToggle}
-      />
-      <KeyRound size={14} className="text-text-secondary shrink-0 mt-0.5" />
+      <Checkbox checked={checked} onCheckedChange={onToggle} className="mt-0.5" />
+      <KeyRound size={14} className="text-foreground/80 shrink-0 mt-0.5" />
       <div className="flex-1 min-w-0">
-        <div className="text-[13px] font-medium text-text truncate">{label}</div>
+        <div className="text-[13px] font-medium text-foreground truncate">{label}</div>
         {identity && (
-          <div className="text-[11px] font-mono text-text-muted truncate">
+          <div className="text-[11px] font-mono text-muted-foreground truncate">
             {identity}
           </div>
         )}
         {envNames.length > 0 && (
-          <div className="text-[11px] text-accent truncate">
-            <span className="text-text-muted uppercase tracking-[0.05em] font-bold mr-1.5">
+          <div className="text-[11px] text-primary truncate">
+            <span className="text-muted-foreground uppercase tracking-[0.05em] font-bold mr-1.5">
               env
             </span>
             <span className="font-mono">{envNames.join(", ")}</span>

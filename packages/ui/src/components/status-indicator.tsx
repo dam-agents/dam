@@ -1,3 +1,6 @@
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
+
 import type { AgentDisplayState } from "../modules/agents/utils/agent-resolver.js";
 
 const stateLabel: Record<AgentDisplayState, string> = {
@@ -10,55 +13,60 @@ const stateLabel: Record<AgentDisplayState, string> = {
   "no-instance": "No instance",
 };
 
-const badgeColors: Record<AgentDisplayState, string> = {
+const badgeClasses: Record<AgentDisplayState, string> = {
   running: "bg-success-light text-success border-success",
   starting: "bg-warning-light text-warning border-warning",
   hibernating: "bg-warning-light text-warning border-warning",
-  hibernated: "bg-info-light text-info/50 border-info/25",
-  error: "bg-danger-light text-danger border-danger",
+  hibernated: "bg-info-light text-info/70 border-info/30",
+  error: "bg-destructive/10 text-destructive border-destructive",
   restarting: "bg-warning-light text-warning border-warning",
-  "no-instance": "bg-surface text-text-muted border-border-light",
+  "no-instance": "bg-muted text-muted-foreground border-border",
 };
 
-const dotColors: Record<AgentDisplayState, string> = {
+const dotClasses: Record<AgentDisplayState, string> = {
   running: "bg-success",
-  starting: "bg-warning anim-pulse",
-  hibernating: "bg-warning anim-pulse",
-  hibernated: "bg-info/50",
-  error: "bg-danger",
-  restarting: "bg-warning anim-pulse",
-  "no-instance": "bg-text-muted",
+  starting: "bg-warning animate-pulse",
+  hibernating: "bg-warning animate-pulse",
+  hibernated: "bg-info/60",
+  error: "bg-destructive",
+  restarting: "bg-warning animate-pulse",
+  "no-instance": "bg-muted-foreground",
 };
 
-/** Shared state pill used in the agents list and the chat header. `sm` matches
- *  the denser chat header treatment; `md` matches the agents-list card.
- *  When both `state` and an override (`label`/`colorClasses`/`dotColorClasses`)
- *  are passed, the overrides win — used for ad-hoc pills like "Busy" that sit
- *  outside the instance-state taxonomy. */
+/**
+ * Shared state pill used in the agents list and the chat header.
+ */
 export function StatusBadge({
   state,
   size = "md",
   label,
   colorClasses,
   dotColorClasses,
+  className,
 }: {
   state?: AgentDisplayState;
   size?: "sm" | "md";
-  /** Override label + colors for ad-hoc pills (e.g. "Busy" on the chat header).
-   *  When provided, `state` is ignored. */
   label?: string;
   colorClasses?: string;
   dotColorClasses?: string;
+  className?: string;
 }) {
-  const border = size === "sm" ? "border" : "border-2";
-  const dot = size === "sm" ? "w-1.5 h-1.5" : "w-2.5 h-2.5";
+  const dot = size === "sm" ? "w-1.5 h-1.5" : "w-2 h-2";
   const resolvedLabel = label ?? (state ? stateLabel[state] : "");
-  const resolvedColors = colorClasses ?? (state ? badgeColors[state] : "");
-  const resolvedDot = dotColorClasses ?? (state ? dotColors[state] : "");
+  const resolvedColors = colorClasses ?? (state ? badgeClasses[state] : "");
+  const resolvedDot = dotColorClasses ?? (state ? dotClasses[state] : "");
   return (
-    <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.03em] ${border} rounded-full px-2.5 py-0.5 ${resolvedColors}`}>
-      <span className={`inline-block ${dot} rounded-full shrink-0 ${resolvedDot}`} />
+    <Badge
+      variant="outline"
+      className={cn(
+        "gap-1.5 font-semibold uppercase tracking-wide",
+        size === "sm" ? "text-[10px] px-2 py-0" : "text-[11px] px-2.5 py-0.5",
+        resolvedColors,
+        className,
+      )}
+    >
+      <span className={cn("inline-block rounded-full shrink-0", dot, resolvedDot)} />
       {resolvedLabel}
-    </span>
+    </Badge>
   );
 }

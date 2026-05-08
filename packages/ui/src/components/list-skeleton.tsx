@@ -4,8 +4,7 @@ interface Props {
 }
 
 /**
- * Placeholder rows shown while a list query is in flight. Matches the
- * rounded-xl card chrome used across the connections / secrets lists.
+ * Placeholder rows shown while a list query is in flight.
  */
 export function ListSkeleton({ rowHeight = 68, rows = 1 }: Props) {
   return (
@@ -13,7 +12,7 @@ export function ListSkeleton({ rowHeight = 68, rows = 1 }: Props) {
       {Array.from({ length: rows }).map((_, i) => (
         <div
           key={i}
-          className="rounded-xl border-2 border-border-light bg-surface anim-pulse"
+          className="rounded-lg border bg-card animate-pulse"
           style={{ height: `${rowHeight}px` }}
         />
       ))}

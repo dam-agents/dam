@@ -1,4 +1,7 @@
-import { AlertCircle, AlertTriangle, CheckCircle2, Info, type LucideIcon,X } from "lucide-react";
+import { AlertCircle, AlertTriangle, CheckCircle2, Info, type LucideIcon, X } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 import type { Toast, ToastKind } from "../modules/platform/store/toast.js";
 import { useStore } from "../store.js";
@@ -10,11 +13,11 @@ const ICON: Record<ToastKind, LucideIcon> = {
   info: Info,
 };
 
-const COLOR: Record<ToastKind, { border: string; tint: string; icon: string }> = {
-  error:   { border: "border-danger",  tint: "var(--color-danger)",  icon: "text-danger" },
-  warning: { border: "border-warning", tint: "var(--color-warning)", icon: "text-warning" },
-  success: { border: "border-success", tint: "var(--color-success)", icon: "text-success" },
-  info:    { border: "border-info",    tint: "var(--color-info)",    icon: "text-info" },
+const TONE: Record<ToastKind, string> = {
+  error: "border-destructive text-destructive",
+  warning: "border-warning text-warning",
+  success: "border-success text-success",
+  info: "border-info text-info",
 };
 
 export function ToastOverlay() {
@@ -32,38 +35,37 @@ export function ToastOverlay() {
 
 function ToastRow({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }) {
   const Icon = ICON[toast.kind];
-  const c = COLOR[toast.kind];
   const isError = toast.kind === "error";
   return (
     <div
-      className={`pointer-events-auto rounded-lg border-2 ${c.border} p-3 flex items-start gap-2.5 anim-scale-in`}
-      style={{
-        boxShadow: "var(--shadow-brutal-sm)",
-        // Solid tinted bg — the theme's *-light tokens are alpha in dark mode,
-        // which bled through whatever the toast floated over. color-mix keeps
-        // the tint identity while staying fully opaque.
-        backgroundColor: `color-mix(in srgb, ${c.tint} 10%, var(--color-surface))`,
-      }}
+      className={cn(
+        "pointer-events-auto rounded-md border bg-popover text-popover-foreground p-3 flex items-start gap-2.5 shadow-md",
+        TONE[toast.kind],
+      )}
       role={isError ? "alert" : "status"}
       aria-live={isError ? "assertive" : "polite"}
     >
-      <Icon size={16} className={`${c.icon} shrink-0 mt-0.5`} />
-      <div className="flex-1 min-w-0 text-[13px] text-text leading-snug break-words">{toast.message}</div>
+      <Icon className="h-4 w-4 shrink-0 mt-0.5" />
+      <div className="flex-1 min-w-0 text-sm text-foreground leading-snug break-words">{toast.message}</div>
       {toast.action && (
-        <button
+        <Button
+          variant="link"
+          size="sm"
+          className="h-auto p-0 shrink-0 font-semibold"
           onClick={() => { toast.action!.onClick(); onDismiss(); }}
-          className="shrink-0 text-[12px] font-bold text-accent hover:underline"
         >
           {toast.action.label}
-        </button>
+        </Button>
       )}
-      <button
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-5 w-5 shrink-0"
         onClick={onDismiss}
-        className="shrink-0 h-5 w-5 rounded-md flex items-center justify-center text-text-muted hover:text-text transition-colors"
         aria-label="Dismiss"
       >
-        <X size={12} />
-      </button>
+        <X className="h-3 w-3" />
+      </Button>
     </div>
   );
 }

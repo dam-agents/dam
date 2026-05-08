@@ -1,27 +1,31 @@
 import type { ReactNode } from "react";
 
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
+
 interface ModalProps {
   widthClass?: string;
   children: ReactNode;
 }
 
 /**
- * Centered overlay modal with brutal styling. Closes only via explicit
- * actions in the modal body — backdrop clicks and Escape are ignored so
- * users can't lose in-progress form state by accident.
+ * Centered modal. Thin wrapper around the shadcn Dialog that matches the
+ * prior `<Modal>` API — always open, closed only by explicit actions in the
+ * body (the surrounding component controls mount/unmount).
  */
 export function Modal({
   widthClass = "w-[560px]",
   children,
 }: ModalProps) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[4px] anim-in">
-      <div
-        className={`${widthClass} max-h-[85vh] overflow-hidden rounded-xl border-2 border-border bg-surface flex flex-col anim-scale-in`}
-        style={{ boxShadow: "var(--shadow-brutal)" }}
+    <Dialog open onOpenChange={() => undefined}>
+      <DialogContent
+        className={cn("max-h-[85vh] overflow-hidden flex flex-col p-0", widthClass)}
+        onInteractOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
       >
         {children}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

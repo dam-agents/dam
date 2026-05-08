@@ -109,24 +109,24 @@ export function Terminal({ instanceId, sessionId, fresh, onConnected }: { instan
   return (
     <div className="flex flex-1 flex-col min-h-0 relative">
       {state === "connecting" && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-bg/80 backdrop-blur-sm">
-          <div className="flex items-center gap-3 text-[14px] text-text-muted">
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          <div className="flex items-center gap-3 text-[14px] text-muted-foreground">
             <Loader2 size={18} className="animate-spin" />
             Connecting terminal...
           </div>
         </div>
       )}
       {state === "disconnected" && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-bg/80 backdrop-blur-sm">
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-3 text-center">
-            <XCircle size={24} className="text-danger" />
-            <p className="text-[14px] text-text-secondary">Terminal disconnected</p>
+            <XCircle size={24} className="text-destructive" />
+            <p className="text-[14px] text-foreground/80">Terminal disconnected</p>
           </div>
         </div>
       )}
       {state === "exited" && (
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
-          <div className="flex items-center gap-2 rounded-full border border-border-light bg-surface-raised px-4 py-2 text-[12px] text-text-muted shadow-md">
+          <div className="flex items-center gap-2 rounded-full border border-border bg-muted px-4 py-2 text-[12px] text-muted-foreground shadow-md">
             <TerminalIcon size={14} />
             Process exited with code {exitCode}
           </div>

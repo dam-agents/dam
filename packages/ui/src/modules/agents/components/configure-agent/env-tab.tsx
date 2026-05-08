@@ -22,7 +22,7 @@ export function EnvTab({
 }) {
   return (
     <>
-      <p className="text-[12px] text-text-muted">
+      <p className="text-[12px] text-muted-foreground">
         Applied to every instance of this agent. Restart the instance pod to
         pick up changes.
       </p>
@@ -30,10 +30,10 @@ export function EnvTab({
       {inherited.length > 0 && (
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold text-text-muted uppercase tracking-[0.05em]">
+            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.05em]">
               Inherited
             </span>
-            <span className="text-[10px] text-text-muted">
+            <span className="text-[10px] text-muted-foreground">
               · managed elsewhere
             </span>
           </div>
@@ -46,7 +46,7 @@ export function EnvTab({
       )}
 
       <div className="flex flex-col gap-2">
-        <span className="text-[10px] font-bold text-text-muted uppercase tracking-[0.05em]">
+        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.05em]">
           Custom
         </span>
         <EnvVarsEditor value={envVars} onChange={setEnvVars} disabled={saving} />
@@ -64,22 +64,22 @@ function InheritedEnvRow({ entry }: { entry: InheritedEnv }) {
         ? entry.source.secretName
         : entry.source.appLabel;
   return (
-    <div className="group flex items-center gap-2 rounded-md border-2 border-border-light bg-surface-raised px-3 py-1.5 text-[12px]">
+    <div className="group flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-1.5 text-[12px]">
       <span
-        className={`shrink-0 ${isSystem ? "text-text-muted" : "text-accent"}`}
+        className={`shrink-0 ${isSystem ? "text-muted-foreground" : "text-primary"}`}
         title={isSystem ? "Platform-managed" : `From connection: ${sourceName}`}
       >
         {isSystem ? <Lock size={12} /> : <KeyRound size={12} />}
       </span>
-      <span className="font-mono font-semibold text-text truncate">
+      <span className="font-mono font-semibold text-foreground truncate">
         {entry.name}
       </span>
-      <span className="text-text-muted">=</span>
-      <span className="font-mono text-text-muted truncate flex-1" title={entry.value}>
+      <span className="text-muted-foreground">=</span>
+      <span className="font-mono text-muted-foreground truncate flex-1" title={entry.value}>
         {entry.value}
       </span>
       {!isSystem && (
-        <span className="text-[10px] text-text-muted italic truncate max-w-[160px]">
+        <span className="text-[10px] text-muted-foreground italic truncate max-w-[160px]">
           {sourceName}
         </span>
       )}

@@ -1,11 +1,11 @@
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+
 import { Modal } from "../../../components/modal.js";
 import { useStore } from "../../../store.js";
 import { useStartMcpOAuth } from "../api/mutations.js";
-
-const INPUT_CLASS =
-  "w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted";
 
 interface Props {
   initialUrl?: string;
@@ -37,12 +37,11 @@ export function AddMcpForm({ initialUrl = "", onCancel }: Props) {
   return (
     <Modal widthClass="w-[480px]">
       <div className="flex flex-col gap-5 p-5 md:p-7">
-        <h2 className="text-[20px] font-bold text-text">Connect MCP Server</h2>
-        <p className="text-[13px] text-text-secondary">
+        <h2 className="text-[20px] font-bold text-foreground">Connect MCP Server</h2>
+        <p className="text-[13px] text-foreground/80">
           Enter the URL of a remote MCP server to connect via OAuth.
         </p>
-        <input
-          className={INPUT_CLASS}
+        <Input
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && submit()}
@@ -50,21 +49,20 @@ export function AddMcpForm({ initialUrl = "", onCancel }: Props) {
           autoFocus
         />
         <div className="flex justify-end gap-3">
-          <button
+          <Button
             type="button"
-            className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
+            variant="outline"
             onClick={onCancel}
           >
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent"
             onClick={submit}
             disabled={!url.trim() || startMcpOAuth.isPending}
           >
             {startMcpOAuth.isPending ? "..." : "Connect"}
-          </button>
+          </Button>
         </div>
       </div>
     </Modal>

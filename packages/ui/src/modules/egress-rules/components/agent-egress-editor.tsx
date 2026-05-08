@@ -2,6 +2,9 @@ import type { EgressPreset, EgressRuleView } from "api-server-api";
 import { Plus, RotateCcw, Trash2 } from "lucide-react";
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+
 import {
   useApplyEgressPreset,
   useCreateEgressRule,
@@ -210,22 +213,22 @@ export function AgentEgressEditor({
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-[12px] text-text-muted leading-relaxed max-w-prose">
+      <p className="text-[12px] text-muted-foreground leading-relaxed max-w-prose">
         Rules decide which outbound HTTP requests this agent can make. The
         most-specific rule wins; <code>*</code> in <em>method</em> or
         <em>path</em> matches any value. Without a matching rule, the request
         goes to the inbox for your approval.
       </p>
 
-      <div className="rounded-lg border border-border-light bg-surface px-3 py-3 flex flex-wrap items-end gap-2">
+      <div className="rounded-lg border border-border bg-card px-3 py-3 flex flex-wrap items-end gap-2">
         <div className="flex flex-col gap-1 flex-1 min-w-[260px]">
-          <span className="text-[10px] uppercase tracking-wider text-text-muted">
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
             {stagedMode ? "Preset" : "Apply preset"}
           </span>
           <select
             value={dropdownValue}
             onChange={(e) => onPresetSelect(e.target.value as EgressPreset)}
-            className="h-7 px-2 rounded border border-border-light bg-bg text-[12px]"
+            className="h-7 px-2 rounded border border-input bg-background text-[12px] text-foreground"
           >
             <option value="trusted">Trusted defaults (npm, PyPI, GitHub, Anthropic, …)</option>
             <option value="none">Strict default-deny (no rules added)</option>
@@ -233,16 +236,18 @@ export function AgentEgressEditor({
           </select>
         </div>
         {!stagedMode && (
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 text-[11px]"
             onClick={onApplyPresetLive}
             disabled={applyPreset.isPending}
-            className="h-7 inline-flex items-center gap-1 rounded-md border border-border-light bg-bg px-2.5 text-[11px] hover:border-accent hover:text-accent disabled:opacity-40 transition-colors"
           >
             Apply
-          </button>
+          </Button>
         )}
-        <p className="basis-full text-[11px] text-text-muted">
+        <p className="basis-full text-[11px] text-muted-foreground">
           {stagedMode
             ? presetPending
               ? `Save will replace existing preset rules with "${staged.preset}". Manual and connection-derived rules are preserved.`
@@ -251,54 +256,55 @@ export function AgentEgressEditor({
         </p>
       </div>
 
-      <div className="rounded-lg border border-border-light bg-surface overflow-hidden">
-        <div className="px-3 py-3 border-b border-border-light flex flex-wrap items-end gap-2">
+      <div className="rounded-lg border border-border bg-card overflow-hidden">
+        <div className="px-3 py-3 border-b border-border flex flex-wrap items-end gap-2">
           <Field label="Host" widthClass="min-w-[220px] flex-1">
-            <input
+            <Input
               value={draft.host}
               onChange={(e) => setDraft({ ...draft, host: e.target.value })}
               onKeyDown={onInputKeyDown}
               placeholder="api.anthropic.com"
-              className="w-full h-7 px-2 rounded border border-border-light bg-bg text-[12px]"
+              className="h-7 text-[12px]"
             />
           </Field>
           <Field label="Method" widthClass="w-[100px]">
             <select
               value={ALL_METHODS.includes(draft.method as (typeof ALL_METHODS)[number]) || draft.method === "*" ? draft.method : "*"}
               onChange={(e) => setDraft({ ...draft, method: e.target.value })}
-              className="w-full h-7 px-2 rounded border border-border-light bg-bg text-[12px]"
+              className="w-full h-7 px-2 rounded border border-input bg-background text-[12px] text-foreground"
             >
               <option value="*">* (any)</option>
               {ALL_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
             </select>
           </Field>
           <Field label="Path" widthClass="min-w-[160px] flex-1">
-            <input
+            <Input
               value={draft.pathPattern}
               onChange={(e) => setDraft({ ...draft, pathPattern: e.target.value })}
               onKeyDown={onInputKeyDown}
               placeholder="*  or  /v1/messages*"
-              className="w-full h-7 px-2 rounded border border-border-light bg-bg text-[12px] font-mono"
+              className="h-7 text-[12px] font-mono"
             />
           </Field>
           <Field label="Verdict" widthClass="w-[100px]">
             <select
               value={draft.verdict}
               onChange={(e) => setDraft({ ...draft, verdict: e.target.value as "allow" | "deny" })}
-              className="w-full h-7 px-2 rounded border border-border-light bg-bg text-[12px]"
+              className="w-full h-7 px-2 rounded border border-input bg-background text-[12px] text-foreground"
             >
               <option value="allow">allow</option>
               <option value="deny">deny</option>
             </select>
           </Field>
-          <button
+          <Button
             type="button"
+            size="sm"
+            className="h-7 text-[11px]"
             onClick={onAddRule}
             disabled={!canAdd}
-            className="h-7 inline-flex items-center gap-1 rounded-md bg-accent px-2.5 text-[11px] text-white hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
           >
             <Plus size={11} /> Add rule
-          </button>
+          </Button>
           {draftRequiresRestart && (
             <p className="basis-full text-[11px] text-warning">
               {stagedMode
@@ -309,9 +315,9 @@ export function AgentEgressEditor({
         </div>
 
         {isLoading ? (
-          <p className="px-4 py-5 text-[12px] text-text-muted">loading…</p>
+          <p className="px-4 py-5 text-[12px] text-muted-foreground">loading…</p>
         ) : serverRules.length === 0 && stagedAddCount === 0 && previewRows.length === 0 ? (
-          <p className="px-4 py-5 text-[12px] text-text-muted">
+          <p className="px-4 py-5 text-[12px] text-muted-foreground">
             No rules yet. Every outbound request will surface in the inbox.
           </p>
         ) : (
@@ -356,7 +362,7 @@ export function AgentEgressEditor({
           </ul>
         )}
         {stagedMode && (stagedAddCount > 0 || stagedDeleteCount > 0 || presetPending) && (
-          <p className="px-3 py-2 text-[11px] text-text-muted border-t border-border-light bg-bg/40">
+          <p className="px-3 py-2 text-[11px] text-muted-foreground border-t border-border bg-background/40">
             Pending: {[
               presetPending && `apply preset ${staged.preset}`,
               stagedAddCount > 0 && `${stagedAddCount} new rule${stagedAddCount === 1 ? "" : "s"}`,
@@ -380,7 +386,7 @@ function Field({
 }) {
   return (
     <label className={`flex flex-col gap-1 ${widthClass}`}>
-      <span className="text-[10px] uppercase tracking-wider text-text-muted">{label}</span>
+      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</span>
       {children}
     </label>
   );
@@ -411,39 +417,41 @@ function RuleRow({
 }) {
   const verdictTone =
     rule.verdict === "allow"
-      ? "text-accent border-accent/40"
-      : "text-danger border-danger/40";
+      ? "text-primary border-primary/40"
+      : "text-destructive border-destructive/40";
   const sourceLabel = sourceLabelOverride ?? formatSource(rule.source);
   const dim = pendingDelete ? "opacity-40 line-through" : "";
   return (
-    <li className={`border-b border-border-light px-3 py-2 flex items-center gap-2 text-[12px] ${dim}`}>
+    <li className={`border-b border-border px-3 py-2 flex items-center gap-2 text-[12px] ${dim}`}>
       <span className={`uppercase tracking-wider text-[10px] rounded border px-1.5 py-0.5 ${verdictTone}`}>
         {rule.verdict}
       </span>
-      <span className="font-mono text-[11px] text-text-muted w-[60px]">{rule.method}</span>
+      <span className="font-mono text-[11px] text-muted-foreground w-[60px]">{rule.method}</span>
       <span className="font-medium truncate">{rule.host}</span>
-      <span className="font-mono text-[11px] text-text-muted truncate">{rule.pathPattern}</span>
+      <span className="font-mono text-[11px] text-muted-foreground truncate">{rule.pathPattern}</span>
       {sourceLabel && (
         <span
           title={`source: ${rule.source}`}
-          className="text-[10px] text-text-muted rounded border border-border-light px-1.5 py-0.5"
+          className="text-[10px] text-muted-foreground rounded border border-border px-1.5 py-0.5"
         >
           {sourceLabel}
         </span>
       )}
-      <span className="ml-auto text-[10px] text-text-muted hidden sm:block">
+      <span className="ml-auto text-[10px] text-muted-foreground hidden sm:block">
         by {rule.decidedBy.slice(0, 8)}
       </span>
       {!hideAction && (
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6 text-muted-foreground hover:text-destructive"
           onClick={onAction}
           disabled={disabled}
           title={pendingDelete ? "Undo delete" : "Revoke rule"}
-          className="h-6 inline-flex items-center justify-center rounded border border-border-light text-text-muted hover:text-danger hover:border-danger px-1.5 disabled:opacity-40 transition-colors"
         >
           {pendingDelete ? <RotateCcw size={11} /> : <Trash2 size={11} />}
-        </button>
+        </Button>
       )}
     </li>
   );
@@ -458,28 +466,30 @@ function PendingAddRow({
 }) {
   const verdictTone =
     add.verdict === "allow"
-      ? "text-accent border-accent/40"
-      : "text-danger border-danger/40";
+      ? "text-primary border-primary/40"
+      : "text-destructive border-destructive/40";
   return (
-    <li className="border-b border-border-light px-3 py-2 flex items-center gap-2 text-[12px] bg-accent-light/30">
+    <li className="border-b border-border px-3 py-2 flex items-center gap-2 text-[12px] bg-primary/10">
       <span className={`uppercase tracking-wider text-[10px] rounded border px-1.5 py-0.5 ${verdictTone}`}>
         {add.verdict}
       </span>
-      <span className="font-mono text-[11px] text-text-muted w-[60px]">{add.method}</span>
+      <span className="font-mono text-[11px] text-muted-foreground w-[60px]">{add.method}</span>
       <span className="font-medium truncate">{add.host}</span>
-      <span className="font-mono text-[11px] text-text-muted truncate">{add.pathPattern}</span>
-      <span className="text-[10px] text-accent rounded border border-accent/40 px-1.5 py-0.5">
+      <span className="font-mono text-[11px] text-muted-foreground truncate">{add.pathPattern}</span>
+      <span className="text-[10px] text-primary rounded border border-primary/40 px-1.5 py-0.5">
         new
       </span>
       <span className="ml-auto" />
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="icon"
+        className="h-6 w-6 text-muted-foreground hover:text-destructive"
         onClick={onCancel}
         title="Discard pending rule"
-        className="h-6 inline-flex items-center justify-center rounded border border-border-light text-text-muted hover:text-danger hover:border-danger px-1.5 transition-colors"
       >
         <Trash2 size={11} />
-      </button>
+      </Button>
     </li>
   );
 }
@@ -519,21 +529,21 @@ function buildPresetPreviewRows(preset: EgressPreset, trustedHosts: readonly str
 
 function PreviewPresetRow({ row }: { row: PreviewRow }) {
   return (
-    <li className="border-b border-border-light px-3 py-2 flex items-center gap-2 text-[12px] bg-accent-light/20">
-      <span className="uppercase tracking-wider text-[10px] rounded border px-1.5 py-0.5 text-accent border-accent/40">
+    <li className="border-b border-border px-3 py-2 flex items-center gap-2 text-[12px] bg-primary/5">
+      <span className="uppercase tracking-wider text-[10px] rounded border px-1.5 py-0.5 text-primary border-primary/40">
         allow
       </span>
-      <span className="font-mono text-[11px] text-text-muted w-[60px]">{row.method}</span>
+      <span className="font-mono text-[11px] text-muted-foreground w-[60px]">{row.method}</span>
       <span className="font-medium truncate">{row.host}</span>
-      <span className="font-mono text-[11px] text-text-muted truncate">{row.pathPattern}</span>
+      <span className="font-mono text-[11px] text-muted-foreground truncate">{row.pathPattern}</span>
       <span
         title={`Preview — ${row.sourceBadge} (saved on commit)`}
-        className="text-[10px] text-text-muted rounded border border-border-light px-1.5 py-0.5"
+        className="text-[10px] text-muted-foreground rounded border border-border px-1.5 py-0.5"
       >
         {row.sourceBadge}
       </span>
       <span
-        className="text-[10px] text-accent rounded border border-accent/40 px-1.5 py-0.5"
+        className="text-[10px] text-primary rounded border border-primary/40 px-1.5 py-0.5"
         title="This rule will be saved on commit"
       >
         preview

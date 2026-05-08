@@ -1,5 +1,8 @@
 import { Lock, Pencil, X } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+
 import { useStore } from "../../../store.js";
 import type { SecretView } from "../../../types.js";
 import { useDeleteSecret } from "../../secrets/api/mutations.js";
@@ -22,44 +25,48 @@ export function SecretRow({ secret, animationDelayMs, onEdit }: Props) {
 
   return (
     <div
-      className="flex items-center gap-4 rounded-xl border-2 border-border bg-surface px-5 py-4 transition-shadow hover:shadow-[4px_4px_0_#292524] shadow-brutal anim-in"
+      className="flex items-center gap-4 rounded-xl border border-border bg-card px-5 py-4 transition-shadow hover:shadow-sm anim-in"
       style={{ animationDelay: `${animationDelayMs}ms` }}
     >
-      <div className="w-9 h-9 shrink-0 rounded-lg border-2 border-border-light bg-bg flex items-center justify-center text-text-secondary">
+      <div className="w-9 h-9 shrink-0 rounded-lg border border-border bg-background flex items-center justify-center text-foreground/80">
         <Lock size={16} />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-[14px] font-semibold text-text truncate">{name}</div>
-        <div className="text-[12px] font-mono text-text-muted truncate">
+        <div className="text-[14px] font-semibold text-foreground truncate">{name}</div>
+        <div className="text-[12px] font-mono text-muted-foreground truncate">
           {hostPattern}
-          {pathPattern && <span className="text-text-secondary">{pathPattern}</span>}
+          {pathPattern && <span className="text-foreground/80">{pathPattern}</span>}
           {envMappings && envMappings.length > 0 && (
             <>
               {" · "}
-              <span className="text-accent">
+              <span className="text-primary">
                 {envMappings.map((m) => m.envName).join(", ")}
               </span>
             </>
           )}
         </div>
       </div>
-      <span className="text-[11px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 shrink-0 bg-surface-raised text-text-muted border-border-light">
+      <Badge variant="secondary" className="shrink-0 uppercase tracking-[0.03em]">
         Secret
-      </span>
-      <button
+      </Badge>
+      <Button
+        variant="outline"
+        size="icon"
         onClick={() => onEdit(secret)}
-        className="btn-brutal h-7 w-7 rounded-md border-2 border-border-light bg-surface flex items-center justify-center text-text-muted hover:text-accent hover:border-accent shadow-brutal-sm"
+        className="h-7 w-7 text-muted-foreground hover:text-primary hover:border-primary"
         title="Edit"
       >
         <Pencil size={13} />
-      </button>
-      <button
+      </Button>
+      <Button
+        variant="outline"
+        size="icon"
         onClick={handleRemove}
-        className="btn-brutal h-7 w-7 rounded-md border-2 border-border-light bg-surface flex items-center justify-center text-text-muted hover:text-danger hover:border-danger shadow-brutal-sm"
+        className="h-7 w-7 text-muted-foreground hover:text-destructive hover:border-destructive"
         title="Remove"
       >
         <X size={13} />
-      </button>
+      </Button>
     </div>
   );
 }

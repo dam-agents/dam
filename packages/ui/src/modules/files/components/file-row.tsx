@@ -1,5 +1,7 @@
 import { ChevronDown, ChevronRight, FileText, Folder, Image as ImageIcon, MoreHorizontal } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
+
 import type { TreeEntry } from "../../../types.js";
 import { useFileRowDrag } from "../hooks/use-file-row-drag.js";
 
@@ -56,7 +58,7 @@ export function FileRow({
 
   return (
     <div
-      className={`group relative flex items-center py-[5px] text-[12px] cursor-pointer transition-colors ${menuActive ? "z-20" : ""} ${highlight ? "bg-accent-light ring-1 ring-accent ring-inset" : isDir ? "text-text-secondary font-medium hover:bg-surface-raised" : "text-text-secondary hover:bg-accent-light hover:text-accent"}`}
+      className={`group relative flex items-center py-[5px] text-[12px] cursor-pointer transition-colors ${menuActive ? "z-20" : ""} ${highlight ? "bg-primary/10 ring-1 ring-primary ring-inset" : isDir ? "text-foreground/80 font-medium hover:bg-muted" : "text-foreground/80 hover:bg-primary/10 hover:text-primary"}`}
       style={{ paddingLeft: `${12 + depth * 14}px`, paddingRight: 12 }}
       onClick={isDir ? () => onToggleDir(path) : () => onOpenFile(path)}
       onContextMenu={(e) => { e.preventDefault(); onRequestMenu(path, e.clientX, e.clientY); }}
@@ -68,14 +70,16 @@ export function FileRow({
       >
         <RowIcons isDir={isDir} isCollapsed={isCollapsed} path={path} />
         <span className="truncate flex-1">{filename}</span>
-        <button
-          className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-text-muted hover:text-text-secondary p-0.5 rounded transition-opacity"
+        <Button
+          variant="ghost"
+          size="icon"
+          className="opacity-0 group-hover:opacity-100 focus:opacity-100 h-5 w-5 text-muted-foreground hover:text-foreground/80 transition-opacity"
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => { e.stopPropagation(); onRequestMenu(path, e.clientX, e.clientY); }}
           title="More actions"
         >
           <MoreHorizontal size={13} />
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -87,8 +91,8 @@ function RowIcons({ isDir, isCollapsed, path }: { isDir: boolean; isCollapsed: b
     <>
       {isDir
         ? (isCollapsed
-          ? <ChevronRight size={13} className="shrink-0 text-text-muted" />
-          : <ChevronDown size={13} className="shrink-0 text-text-muted" />)
+          ? <ChevronRight size={13} className="shrink-0 text-muted-foreground" />
+          : <ChevronDown size={13} className="shrink-0 text-muted-foreground" />)
         : <span className="w-[13px] shrink-0" />}
       {isDir
         ? <Folder size={13} className="shrink-0" />

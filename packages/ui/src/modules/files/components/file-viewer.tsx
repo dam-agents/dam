@@ -1,6 +1,8 @@
 import { ArrowLeft, Code, Download, Eye, Pencil, Save, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { Button } from "@/components/ui/button";
+
 import { HighlightedCode } from "../../../components/highlighted-code.js";
 import { Markdown } from "../../../components/markdown.js";
 import { useStore } from "../../../store.js";
@@ -159,67 +161,84 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex items-center gap-2 px-3 h-9 border-b border-border-light shrink-0">
-        <button className="flex items-center gap-1 text-[12px] font-semibold text-text-muted hover:text-accent transition-colors shrink-0" onClick={onClose}>
+      <div className="flex items-center gap-2 px-3 h-9 border-b border-border shrink-0">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-auto px-2 py-1 text-[12px] font-semibold text-muted-foreground hover:text-primary shrink-0"
+          onClick={onClose}
+        >
           <ArrowLeft size={12} /> Back
-        </button>
-        <span className="text-[12px] font-mono text-text-secondary truncate flex-1" title={path}>{pathLabel}</span>
+        </Button>
+        <span className="text-[12px] font-mono text-foreground/80 truncate flex-1" title={path}>{pathLabel}</span>
         {editable && !editMode && (
-          <button
-            className="flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md text-text-muted hover:text-accent transition-colors"
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-auto px-2 py-0.5 text-[11px] font-semibold text-muted-foreground hover:text-primary"
             onClick={() => setEditMode(true)}
             title="Edit file"
           >
             <Pencil size={11} /> Edit
-          </button>
+          </Button>
         )}
         {editMode && (
           <>
-            <button
-              className="flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md text-text-muted hover:text-text-secondary transition-colors"
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-auto px-2 py-0.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground/80"
               onClick={cancelEdit}
               title="Cancel"
             >
               <X size={11} /> Cancel
-            </button>
-            <button
-              className="flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md text-accent bg-accent-light hover:opacity-90 transition-opacity disabled:opacity-50"
+            </Button>
+            <Button
+              size="sm"
+              className="h-auto px-2 py-0.5 text-[11px] font-semibold text-primary bg-primary/10 hover:bg-primary/20 hover:text-primary"
+              variant="ghost"
               onClick={save}
               disabled={!dirty || writeMutation.isPending}
               title="Save (Cmd/Ctrl+S)"
             >
               <Save size={11} /> {writeMutation.isPending ? "Saving…" : "Save"}
-            </button>
+            </Button>
           </>
         )}
         {hasContent && !editMode && (
-          <button
-            className="flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md text-text-muted hover:text-accent transition-colors"
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-auto px-2 py-0.5 text-[11px] font-semibold text-muted-foreground hover:text-primary"
             onClick={downloadFile}
             title="Download file"
           >
             <Download size={11} />
-          </button>
+          </Button>
         )}
         {isSvg && !editMode && (
-          <button
-            className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md transition-colors ${renderSvg ? "text-accent bg-accent-light" : "text-text-muted hover:text-text-secondary"}`}
+          <Button
+            variant="ghost"
+            size="sm"
+            className={`h-auto px-2 py-0.5 text-[11px] font-semibold ${renderSvg ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground/80"}`}
             onClick={() => setRenderSvg(p => !p)}
             title={renderSvg ? "Show raw SVG" : "Render SVG"}
           >
             {renderSvg ? <Code size={11} /> : <Eye size={11} />}
             {renderSvg ? "Raw" : "Render"}
-          </button>
+          </Button>
         )}
         {isMarkdown && !editMode && (
-          <button
-            className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md transition-colors ${renderMd ? "text-accent bg-accent-light" : "text-text-muted hover:text-text-secondary"}`}
+          <Button
+            variant="ghost"
+            size="sm"
+            className={`h-auto px-2 py-0.5 text-[11px] font-semibold ${renderMd ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground/80"}`}
             onClick={() => setRenderMd(p => !p)}
             title={renderMd ? "Show raw" : "Render markdown"}
           >
             {renderMd ? <Code size={11} /> : <Eye size={11} />}
             {renderMd ? "Raw" : "Render"}
-          </button>
+          </Button>
         )}
       </div>
       <div className={editMode ? "flex-1 overflow-hidden p-2" : "flex-1 overflow-auto p-4"}>
@@ -235,35 +254,35 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
             <img
               src={`data:${mime};base64,${content}`}
               alt={filename ?? "image"}
-              className="max-w-full max-h-[calc(100dvh-200px)] object-contain rounded border border-border-light"
+              className="max-w-full max-h-[calc(100dvh-200px)] object-contain rounded border border-border"
             />
           </div>
         ) : isPdf && pdfBlobUrl ? (
           <iframe
             src={pdfBlobUrl}
             title={filename ?? "pdf"}
-            className="w-full h-[calc(100dvh-200px)] rounded border border-border-light bg-white"
+            className="w-full h-[calc(100dvh-200px)] rounded border border-border bg-white"
           />
         ) : binary && !content ? (
-          <div className="py-12 text-center text-[13px] text-text-muted">
+          <div className="py-12 text-center text-[13px] text-muted-foreground">
             <p>File too large to preview</p>
             <p className="mt-1 text-[11px]">Files over 10 MB cannot be displayed</p>
           </div>
         ) : binary ? (
           <div>
             <div className="mb-2 flex items-baseline gap-2">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-text-muted">Binary file — hex dump</p>
-              {mime && <p className="text-[11px] font-mono text-text-muted">{mime}</p>}
+              <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">Binary file — hex dump</p>
+              {mime && <p className="text-[11px] font-mono text-muted-foreground">{mime}</p>}
             </div>
-            <p className="mb-3 text-[11px] text-text-muted">This file is not directly viewable. The first bytes are shown below.</p>
-            <pre className="text-[11px] font-mono leading-[1.6] text-text-secondary whitespace-pre overflow-x-auto">{hexDump(content)}</pre>
+            <p className="mb-3 text-[11px] text-muted-foreground">This file is not directly viewable. The first bytes are shown below.</p>
+            <pre className="text-[11px] font-mono leading-[1.6] text-foreground/80 whitespace-pre overflow-x-auto">{hexDump(content)}</pre>
           </div>
         ) : isSvg && renderSvg ? (
           <div className="flex items-center justify-center">
             <img
               src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(content)}`}
               alt={filename ?? "image"}
-              className="max-w-full max-h-[calc(100dvh-200px)] object-contain rounded border border-border-light"
+              className="max-w-full max-h-[calc(100dvh-200px)] object-contain rounded border border-border"
             />
           </div>
         ) : isMarkdown && renderMd ? (

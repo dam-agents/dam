@@ -119,5 +119,5 @@ export function CodeEditor({ value, path, onChange, onSave, readOnly }: Props) {
     view.dispatch({ effects: readOnlyCompRef.current.reconfigure(EditorState.readOnly.of(!!readOnly)) });
   }, [readOnly]);
 
-  return <div ref={hostRef} className="h-full min-h-[200px] border border-border-light rounded overflow-hidden" />;
+  return <div ref={hostRef} className="h-full min-h-[200px] border border-border rounded overflow-hidden" />;
 }

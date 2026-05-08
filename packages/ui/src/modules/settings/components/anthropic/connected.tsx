@@ -1,10 +1,11 @@
 import { Pencil, X } from "lucide-react";
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
+
 import type { SecretView } from "../../../../types.js";
 import { CardIcon } from "./card-icon.js";
 import { AnthropicForm } from "./form.js";
-import { IconButton } from "./icon-button.js";
 import { detectMode, type Mode,MODES } from "./modes.js";
 
 export function AnthropicConnected({
@@ -34,21 +35,35 @@ export function AnthropicConnected({
   }
 
   return (
-    <div className="rounded-xl border-2 border-accent bg-accent-light p-5 anim-in shadow-brutal-accent">
+    <div className="rounded-xl border bg-card p-5 anim-in shadow-sm">
       <div className="flex items-center gap-4">
         <CardIcon variant="accent" />
         <div className="flex-1 min-w-0">
-          <div className="text-[15px] font-bold text-text mb-0.5">Anthropic</div>
-          <div className="text-[12px] text-text-muted">
+          <div className="text-[15px] font-bold text-foreground mb-0.5">Anthropic</div>
+          <div className="text-[12px] text-muted-foreground">
             Set up with {MODES[currentMode].label}
           </div>
         </div>
-        <IconButton onClick={() => setEditing(true)} title="Edit" hoverTone="accent">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          onClick={() => setEditing(true)}
+          title="Edit"
+        >
           <Pencil size={13} />
-        </IconButton>
-        <IconButton onClick={onRemove} title="Remove" hoverTone="danger">
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 hover:text-destructive"
+          onClick={onRemove}
+          title="Remove"
+        >
           <X size={13} />
-        </IconButton>
+        </Button>
       </div>
     </div>
   );

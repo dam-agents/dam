@@ -1,6 +1,8 @@
 import { FileText, Folder } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { Input } from "@/components/ui/input";
+
 import type { FileEntryKind } from "../hooks/use-file-mutations.js";
 
 interface Props {
@@ -59,9 +61,9 @@ function InlineNameInput({ initial, placeholder, onCommit, onCancel }: InputProp
   };
 
   return (
-    <input
+    <Input
       ref={ref}
-      className="flex-1 bg-surface border border-accent rounded px-1 py-0 text-[12px] font-mono outline-none"
+      className="flex-1 h-6 px-1 py-0 text-[12px] font-mono bg-card border-primary"
       value={value}
       placeholder={placeholder}
       onChange={(e) => setValue(e.target.value)}

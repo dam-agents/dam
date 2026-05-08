@@ -3,13 +3,15 @@ import { useEffect } from "react";
 import { DialogOverlay } from "./components/dialog-overlay.js";
 import { MobileNav } from "./components/mobile-nav.js";
 import { OfflineBanner } from "./components/offline-banner.js";
-import { SetupProgressBar } from "./components/setup-progress-bar.js";
+import { StyleGuideToggle } from "./mocks/style-guide-toggle.js";
 import { Sidebar } from "./components/sidebar.js";
 import { ToastOverlay } from "./components/toast-overlay.js";
 import { ListView } from "./modules/agents/views/list-view.js";
 import { InboxView } from "./modules/approvals/views/inbox-view.js";
 import { ConnectionsView } from "./modules/connections/views/connections-view.js";
 import { AgentEgressView } from "./modules/egress-rules/views/agent-egress-view.js";
+import { WelcomeBanner } from "./modules/onboarding/welcome-banner.js";
+import { WelcomeWizard } from "./modules/onboarding/welcome-wizard.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { ProvidersView } from "./modules/settings/views/providers-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
@@ -76,32 +78,36 @@ export default function App() {
   }, []);
 
   // Chat view is full-screen (has its own layout)
-  if (view === "chat") return <><ChatView /><DialogOverlay /><ToastOverlay /><OfflineBanner /></>;
+  if (view === "chat") return <><ChatView /><DialogOverlay /><ToastOverlay /><OfflineBanner /><StyleGuideToggle /></>;
 
   // All non-chat views share the sidebar shell
   return (
-    <div className="flex h-dvh bg-bg relative overflow-hidden">
+    <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
       {/* Floating blobs */}
       <div className="blob blob-1" />
       <div className="blob blob-2" />
       <div className="blob blob-3" />
 
-      <Sidebar />
-      <main className="relative z-10 flex-1 overflow-y-auto">
-        <SetupProgressBar />
-        <div className="mx-auto w-full max-w-[960px] px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10">
-          {view === "settings" ? <SettingsView />
-            : view === "providers" ? <ProvidersView />
-            : view === "connections" ? <ConnectionsView />
-            : view === "inbox" ? <InboxView />
-            : view === "agent-egress" ? <AgentEgressView />
-            : <ListView />}
-        </div>
-      </main>
+      <WelcomeBanner />
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        <Sidebar />
+        <main className="relative z-10 flex-1 overflow-y-auto">
+          <div className="mx-auto w-full max-w-[960px] px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10">
+            {view === "settings" ? <SettingsView />
+              : view === "providers" ? <ProvidersView />
+              : view === "connections" ? <ConnectionsView />
+              : view === "inbox" ? <InboxView />
+              : view === "agent-egress" ? <AgentEgressView />
+              : <ListView />}
+          </div>
+        </main>
+      </div>
       <MobileNav />
       <DialogOverlay />
       <ToastOverlay />
       <OfflineBanner />
+      <WelcomeWizard />
+      <StyleGuideToggle />
     </div>
   );
 }

@@ -2,6 +2,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+
 import {
   allEnvMappingsValid,
   EnvMappingsEditor,
@@ -31,10 +34,6 @@ const createSecretSchema = z.object({
 });
 
 type CreateSecretValues = z.infer<typeof createSecretSchema>;
-
-const INPUT_CLASS =
-  "w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)]";
-const MONO_INPUT_CLASS = `${INPUT_CLASS} font-mono`;
 
 interface Props {
   onCancel: () => void;
@@ -94,9 +93,9 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
   return (
     <Modal widthClass="w-[480px]">
       <form onSubmit={onSubmit} className="contents">
-        <div className="px-7 pt-7 pb-4 border-b-2 border-border-light">
-          <h2 className="text-[20px] font-bold text-text">Add Secret</h2>
-          <p className="text-[13px] text-text-secondary leading-relaxed mt-1">
+        <div className="px-7 pt-7 pb-4 border-b border-border">
+          <h2 className="text-[20px] font-bold text-foreground">Add Secret</h2>
+          <p className="text-[13px] text-foreground/80 leading-relaxed mt-1">
             Injects a bearer token into outgoing HTTP requests whose host
             matches the pattern below.
           </p>
@@ -108,8 +107,7 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
             hint="A label so you can identify this secret later."
             error={errors.name?.message}
           >
-            <input
-              className={INPUT_CLASS}
+            <Input
               placeholder="e.g. Linear Token"
               autoFocus
               {...register("name")}
@@ -127,8 +125,7 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
             }
             error={errors.value?.message}
           >
-            <input
-              className={INPUT_CLASS}
+            <Input
               type="password"
               placeholder="The secret value to inject"
               {...register("value")}
@@ -145,8 +142,8 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
             }
             error={errors.hostPattern?.message}
           >
-            <input
-              className={MONO_INPUT_CLASS}
+            <Input
+              className="font-mono"
               placeholder="e.g. api.linear.app"
               {...register("hostPattern")}
             />
@@ -156,8 +153,8 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
             label="Path Pattern (optional)"
             hint="Restrict injection to URL paths matching this pattern. Leave blank to match every path on the host."
           >
-            <input
-              className={MONO_INPUT_CLASS}
+            <Input
+              className="font-mono"
               placeholder="e.g. /v1/*"
               {...register("pathPattern")}
             />
@@ -172,8 +169,8 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
               </>
             }
           >
-            <input
-              className={MONO_INPUT_CLASS}
+            <Input
+              className="font-mono"
               placeholder={DEFAULT_INJECTION_CONFIG.headerName}
               {...register("headerName")}
             />
@@ -189,18 +186,18 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
               </>
             }
           >
-            <input
-              className={MONO_INPUT_CLASS}
+            <Input
+              className="font-mono"
               placeholder={DEFAULT_INJECTION_CONFIG.valueFormat}
               {...register("valueFormat")}
             />
           </FormField>
 
           <div className="flex flex-col gap-2">
-            <span className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
+            <span className="text-[11px] font-bold text-foreground/80 uppercase tracking-[0.03em]">
               Pod Env Vars (optional)
             </span>
-            <p className="text-[11px] text-text-muted">
+            <p className="text-[11px] text-muted-foreground">
               Inject env vars into every agent instance granted this secret.
               The placeholder (typically{" "}
               <span className="font-mono">dummy-placeholder</span>) is swapped
@@ -221,21 +218,20 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
           </div>
         </div>
 
-        <div className="px-7 py-4 border-t-2 border-border-light flex justify-end gap-3">
-          <button
+        <div className="px-7 py-4 border-t border-border flex justify-end gap-3">
+          <Button
             type="button"
-            className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
+            variant="outline"
             onClick={onCancel}
           >
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             type="submit"
-            className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent"
             disabled={!canSave}
           >
             {saving ? "..." : "Add Secret"}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>

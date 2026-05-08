@@ -8,6 +8,12 @@ import type {
 import { ChevronDown, ChevronRight, ExternalLink, Eye, Plus, RefreshCw, Share2, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+
 import { api } from "../../../api.js";
 import { ACTION_FAILED, runAction } from "../../../lib/query-helpers.js";
 import { useStore } from "../../../store.js";
@@ -370,28 +376,26 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
     }
   };
 
-  const inp = "w-full h-8 rounded-md border-2 border-border-light bg-surface px-3 text-[12px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)]";
-
   return (
     <div className="flex flex-col">
       {!isRunning && instanceId && (
-        <div className="px-4 py-2 border-b border-border-light text-[11px] text-text-muted bg-warning-light">
+        <div className="px-4 py-2 border-b border-border text-[11px] text-muted-foreground bg-warning-light">
           Start the instance to manage skills.
         </div>
       )}
 
       {localSkills.length > 0 && (
-        <div className="border-b border-border-light">
-          <div className="flex items-center gap-2 px-4 py-2.5 bg-surface-raised">
-            <span className="text-[12px] font-bold text-text flex-1 truncate">Standalone</span>
+        <div className="border-b border-border">
+          <div className="flex items-center gap-2 px-4 py-2.5 bg-muted">
+            <span className="text-[12px] font-bold text-foreground flex-1 truncate">Standalone</span>
           </div>
           {publishFor && (
-            <div className="flex flex-col gap-3 border-b border-border-light p-4 anim-in bg-surface">
-              <div className="text-[11px] text-text-muted">
-                Publishing <span className="font-mono text-text">{publishFor.name}</span> as a pull request.
+            <div className="flex flex-col gap-3 border-b border-border p-4 anim-in bg-card">
+              <div className="text-[11px] text-muted-foreground">
+                Publishing <span className="font-mono text-foreground">{publishFor.name}</span> as a pull request.
               </div>
               <select
-                className={inp}
+                className="w-full h-8 rounded-md border-2 border-border bg-card px-3 text-[12px] text-foreground outline-none focus:border-primary"
                 value={publishForm.sourceId}
                 onChange={(e) => setPublishForm((f) => ({ ...f, sourceId: e.target.value }))}
               >
@@ -399,34 +403,36 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
                   <option key={s.id} value={s.id}>{s.name} ({s.gitUrl.replace(/^https:\/\/(github|gitlab)\.com\//, "")})</option>
                 ))}
               </select>
-              <input
-                className={inp}
+              <Input
+                className="h-8 text-[12px]"
                 placeholder="Pull request title"
                 value={publishForm.title}
                 onChange={(e) => setPublishForm((f) => ({ ...f, title: e.target.value }))}
               />
-              <textarea
-                className="w-full rounded-md border-2 border-border-light bg-surface px-3 py-2 text-[12px] text-text outline-none transition-all focus:border-accent resize-y min-h-[60px]"
+              <Textarea
+                className="text-[12px] min-h-[60px]"
                 placeholder="Pull request body (optional)"
                 value={publishForm.body}
                 onChange={(e) => setPublishForm((f) => ({ ...f, body: e.target.value }))}
                 rows={3}
               />
               <div className="flex justify-end gap-2">
-                <button
-                  className="h-7 rounded-md border-2 border-border-light px-3 text-[11px] font-semibold text-text-muted hover:text-text transition-colors"
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-3 text-[11px] font-semibold"
                   onClick={() => setPublishFor(null)}
                 >
                   Cancel
-                </button>
-                <button
-                  className="btn-brutal h-7 rounded-md border-2 border-accent-hover bg-accent px-3.5 text-[11px] font-bold text-white disabled:opacity-40"
-                  style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+                </Button>
+                <Button
+                  size="sm"
+                  className="h-7 px-3.5 text-[11px] font-bold"
                   disabled={publishBusy || !publishForm.sourceId}
                   onClick={publish}
                 >
                   {publishBusy ? "Publishing…" : "Publish"}
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -434,11 +440,11 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
           {localSkills.map((skill) => (
             <div
               key={`${skill.skillPath}::${skill.name}`}
-              className="flex items-start gap-3 border-b border-border-light last:border-b-0 px-4 py-3"
+              className="flex items-start gap-3 border-b border-border last:border-b-0 px-4 py-3"
             >
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-[13px] font-medium text-text truncate">{skill.name}</span>
+                  <span className="text-[13px] font-medium text-foreground truncate">{skill.name}</span>
                   {(() => {
                     const pub = latestPublishByName.get(skill.name);
                     if (!pub) return null;
@@ -455,18 +461,22 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
                     );
                   })()}
                   {onOpenFile && (
-                    <button
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       type="button"
-                      className="text-text-muted hover:text-accent transition-colors shrink-0"
+                      className="h-5 w-5 text-muted-foreground hover:text-primary shrink-0"
                       title="View SKILL.md in Files"
                       onClick={() => onOpenFile(localSkillMdPath(skill))}
                     >
                       <Eye size={11} />
-                    </button>
+                    </Button>
                   )}
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     type="button"
-                    className="text-text-muted hover:text-accent transition-colors shrink-0 disabled:opacity-40 disabled:hover:text-text-muted"
+                    className="h-5 w-5 text-muted-foreground hover:text-primary shrink-0 disabled:opacity-40"
                     title={
                       publishableSources.length === 0
                         ? "Add a GitHub source first to publish there"
@@ -476,10 +486,10 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
                     onClick={() => openPublish(skill)}
                   >
                     <Share2 size={11} />
-                  </button>
+                  </Button>
                 </div>
                 {skill.description && (
-                  <div className="mt-0.5 text-[11px] text-text-muted line-clamp-2" title={skill.description}>
+                  <div className="mt-0.5 text-[11px] text-muted-foreground line-clamp-2" title={skill.description}>
                     {skill.description}
                   </div>
                 )}
@@ -490,49 +500,53 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
       )}
 
       <div className="px-3 py-2.5 shrink-0">
-        <button
-          className="w-full h-7 rounded-md border border-border-light text-[11px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center justify-center gap-1 transition-colors"
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full h-7 text-[11px] font-semibold text-foreground/80 hover:text-primary hover:border-primary gap-1"
           onClick={() => { setAddForm({ name: "", gitUrl: "" }); setShowAdd(true); }}
         >
           <Plus size={12} /> Add Source
-        </button>
+        </Button>
       </div>
 
       {showAdd && (
-        <div className="flex flex-col gap-3 border-b border-border-light p-4 anim-in">
-          <input
-            className={inp}
+        <div className="flex flex-col gap-3 border-b border-border p-4 anim-in">
+          <Input
+            className="h-8 text-[12px]"
             placeholder='Name (e.g. "Apocohq Skills")'
             value={addForm.name}
             onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))}
           />
-          <input
-            className={`${inp} font-mono`}
+          <Input
+            className="h-8 text-[12px] font-mono"
             placeholder="https://github.com/apocohq/skills"
             value={addForm.gitUrl}
             onChange={(e) => setAddForm((f) => ({ ...f, gitUrl: e.target.value }))}
           />
           <div className="flex justify-end gap-2">
-            <button
-              className="h-7 rounded-md border-2 border-border-light px-3 text-[11px] font-semibold text-text-muted hover:text-text transition-colors"
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 px-3 text-[11px] font-semibold"
               onClick={() => setShowAdd(false)}
             >
               Cancel
-            </button>
-            <button
-              className="btn-brutal h-7 rounded-md border-2 border-accent-hover bg-accent px-3.5 text-[11px] font-bold text-white disabled:opacity-40"
-              style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+            </Button>
+            <Button
+              size="sm"
+              className="h-7 px-3.5 text-[11px] font-bold"
               disabled={addBusy || !addForm.name.trim() || !addForm.gitUrl.trim()}
               onClick={addSource}
             >
               {addBusy ? "..." : "Add"}
-            </button>
+            </Button>
           </div>
         </div>
       )}
 
       {sources.length === 0 && !showAdd && (
-        <p className="px-4 py-5 text-[12px] text-text-muted">No sources. Add a public git repo with skills.</p>
+        <p className="px-4 py-5 text-[12px] text-muted-foreground">No sources. Add a public git repo with skills.</p>
       )}
 
       {sources.map((src) => {
@@ -541,44 +555,46 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
         const error = errorBySource[src.id];
         const collapsed = isCollapsed(src);
         return (
-          <div key={src.id} className="border-b border-border-light">
+          <div key={src.id} className="border-b border-border">
             {/* Whole header is the click target for collapse/expand. Nested
                 buttons (refresh, delete) stop propagation so they don't
                 accidentally toggle the section. */}
             <button
               type="button"
               onClick={() => toggleCollapsed(src.id)}
-              className="w-full flex items-center gap-2 px-4 py-2.5 bg-surface-raised hover:bg-[var(--color-border-light)] transition-colors text-left"
+              className="w-full flex items-center gap-2 px-4 py-2.5 bg-muted hover:bg-border transition-colors text-left"
               aria-expanded={!collapsed}
               aria-label={`${collapsed ? "Expand" : "Collapse"} ${src.name}`}
             >
               {collapsed
-                ? <ChevronRight size={14} className="text-text-muted shrink-0" />
-                : <ChevronDown size={14} className="text-text-muted shrink-0" />}
-              <span className="text-[12px] font-bold text-text flex-1 truncate">{src.name}</span>
+                ? <ChevronRight size={14} className="text-muted-foreground shrink-0" />
+                : <ChevronDown size={14} className="text-muted-foreground shrink-0" />}
+              <span className="text-[12px] font-bold text-foreground flex-1 truncate">{src.name}</span>
               {src.system && (
-                <span
+                <Badge
+                  variant="outline"
                   className="text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 bg-info-light text-info border-info"
                   title="Configured by the cluster admin, visible to every user"
                 >
                   Platform
-                </span>
+                </Badge>
               )}
               {src.fromTemplate && (
-                <span
+                <Badge
+                  variant="outline"
                   className="text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 bg-template-light text-template border-template"
                   title={`Included with the ${src.fromTemplate.templateName} agent template`}
                 >
                   Agent
-                </span>
+                </Badge>
               )}
-              <span className="text-[11px] text-text-muted truncate max-w-[200px]" title={src.gitUrl}>
+              <span className="text-[11px] text-muted-foreground truncate max-w-[200px]" title={src.gitUrl}>
                 {src.gitUrl.replace(/^https:\/\/github\.com\//, "")}
               </span>
               <span
                 role="button"
                 tabIndex={0}
-                className={`text-text-muted hover:text-accent transition-colors ${loading ? "anim-spin" : ""} ${loading ? "pointer-events-none opacity-50" : ""}`}
+                className={`text-muted-foreground hover:text-primary transition-colors ${loading ? "anim-spin" : ""} ${loading ? "pointer-events-none opacity-50" : ""}`}
                 onClick={(e) => { e.stopPropagation(); if (!loading) void refreshSource(src.id); }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
@@ -595,7 +611,7 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
                 <span
                   role="button"
                   tabIndex={0}
-                  className="text-text-muted hover:text-danger transition-colors"
+                  className="text-muted-foreground hover:text-destructive transition-colors"
                   onClick={(e) => { e.stopPropagation(); void deleteSource(src); }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
@@ -612,7 +628,7 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
             </button>
 
             {!collapsed && loading && (
-              <div className="px-4 py-3 text-[11px] text-text-muted">Loading skills...</div>
+              <div className="px-4 py-3 text-[11px] text-muted-foreground">Loading skills...</div>
             )}
 
             {!collapsed && error && (() => {
@@ -625,7 +641,7 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
               const cta = error.match(/platform-cta:(\S+)/)?.[1];
               const message = error.replace(/\nplatform-cta:\S+/, "").trim();
               return (
-                <div className="px-4 py-2 text-[11px] text-danger bg-danger-light flex items-center gap-2">
+                <div className="px-4 py-2 text-[11px] text-destructive bg-destructive/10 flex items-center gap-2">
                   <span className="flex-1">{message}</span>
                   {cta && (
                     <a
@@ -642,7 +658,7 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
             })()}
 
             {!collapsed && !loading && !error && list.length === 0 && (
-              <p className="px-4 py-3 text-[11px] text-text-muted">No skills in this source.</p>
+              <p className="px-4 py-3 text-[11px] text-muted-foreground">No skills in this source.</p>
             )}
 
             {!collapsed && list.map((skill) => {
@@ -662,18 +678,17 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
               return (
                 <label
                   key={key}
-                  className={`flex items-start gap-3 border-b border-border-light last:border-b-0 px-4 py-3 transition-colors ${isInst ? "bg-accent-light" : ""} ${disabled ? "opacity-60" : "cursor-pointer hover:bg-surface-raised"}`}
+                  className={`flex items-start gap-3 border-b border-border last:border-b-0 px-4 py-3 transition-colors ${isInst ? "bg-primary/10" : ""} ${disabled ? "opacity-60" : "cursor-pointer hover:bg-muted"}`}
                 >
-                  <input
-                    type="checkbox"
-                    className="accent-[var(--color-accent)] w-4 h-4 mt-0.5"
+                  <Checkbox
+                    className="mt-0.5"
                     checked={isInst}
                     disabled={disabled}
-                    onChange={() => toggle(skill)}
+                    onCheckedChange={() => toggle(skill)}
                   />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-[13px] font-medium text-text truncate">{skill.name}</span>
+                      <span className="text-[13px] font-medium text-foreground truncate">{skill.name}</span>
                       <a
                         href={skillSourceUrl(
                           skill.source,
@@ -683,29 +698,31 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
                         )}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-text-muted hover:text-accent transition-colors shrink-0"
+                        className="text-muted-foreground hover:text-primary transition-colors shrink-0"
                         title={hasDrift ? "View changes since installed version" : "View SKILL.md at the pinned commit"}
                         onClick={(e) => e.stopPropagation()}
                       >
                         <ExternalLink size={11} />
                       </a>
                       {hasDrift && (
-                        <button
+                        <Button
                           type="button"
-                          className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 bg-info-light text-info border-info hover:opacity-80 disabled:opacity-40"
+                          variant="outline"
+                          size="sm"
+                          className="h-auto flex items-center gap-1 text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 bg-info-light text-info border-info hover:opacity-80 disabled:opacity-40"
                           title={`Skill contents changed since install (installed ${installed?.version.slice(0, 8)} → ${skill.version.slice(0, 8)})`}
                           disabled={disabled}
                           onClick={(e) => { e.preventDefault(); e.stopPropagation(); updateDrift(skill); }}
                         >
                           <RefreshCw size={10} /> Update
-                        </button>
+                        </Button>
                       )}
                       {rowBusy && (
-                        <span className="w-3 h-3 rounded-full border-2 border-border-light border-t-accent anim-spin shrink-0" />
+                        <span className="w-3 h-3 rounded-full border-2 border-border border-t-primary anim-spin shrink-0" />
                       )}
                     </div>
                     {skill.description && (
-                      <div className="mt-0.5 text-[11px] text-text-muted line-clamp-2" title={skill.description}>
+                      <div className="mt-0.5 text-[11px] text-muted-foreground line-clamp-2" title={skill.description}>
                         {skill.description}
                       </div>
                     )}

@@ -3,12 +3,28 @@ import { Sparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+
 import {
   ConnectionsPicker,
   type OAuthAppEntry,
 } from "../../../components/connections-picker.js";
 import { FormField } from "../../../components/form-field.js";
-import { HoverTooltip } from "../../../components/hover-tooltip.js";
 import type { EgressPreset, EnvVar, TemplateView } from "../../../types.js";
 import { APP_OAUTH_SECRET_PREFIX } from "../../../types.js";
 import {
@@ -20,9 +36,6 @@ import { addAgentSchema, type AddAgentValues } from "../forms/add-agent-schema.j
 import { envsToAddOnGrant } from "../utils/connection-env-helpers.js";
 
 type Step = "pick" | "configure";
-
-const INPUT_CLASS =
-  "w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted";
 
 export function AddAgentDialog({
   templates,
@@ -173,104 +186,104 @@ export function AddAgentDialog({
   const anthropicSecrets = secrets.filter((s) => s.type === "anthropic");
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[4px] anim-in">
-      <div className="w-[520px] max-w-[calc(100vw-2rem)] max-h-[85vh] overflow-y-auto rounded-xl border-2 border-border bg-surface p-5 md:p-7 flex flex-col gap-5 anim-scale-in shadow-brutal">
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onCancel();
+      }}
+    >
+      <DialogContent className="w-[520px] max-w-[calc(100vw-2rem)] max-h-[85vh] overflow-y-auto sm:max-w-[520px]">
         {step === "pick" ? (
           <>
-            <h2 className="text-[20px] font-bold text-text">Add Agent</h2>
+            <DialogHeader>
+              <DialogTitle>Add Agent</DialogTitle>
+            </DialogHeader>
 
             {templates.length > 0 && (
               <div className="flex flex-col gap-2">
-                <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">
+                <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.05em]">
                   From Template
                 </span>
                 {templates.map((tmpl) => (
                   <button
                     key={tmpl.id}
                     onClick={() => pickTemplate(tmpl)}
-                    className="flex flex-col gap-1 rounded-lg border-2 border-border-light bg-bg px-4 py-3 text-left transition-colors hover:border-accent hover:bg-accent-light min-w-0"
+                    className="flex flex-col gap-1 rounded-lg border border-border bg-background px-4 py-3 text-left transition-colors hover:border-primary hover:bg-primary/10 min-w-0"
                   >
-                    <div className="text-[14px] font-semibold text-text truncate w-full">{tmpl.name}</div>
-                    {tmpl.description && <div className="text-[12px] text-text-muted truncate w-full">{tmpl.description}</div>}
+                    <div className="text-[14px] font-semibold text-foreground truncate w-full">{tmpl.name}</div>
+                    {tmpl.description && <div className="text-[12px] text-muted-foreground truncate w-full">{tmpl.description}</div>}
                   </button>
                 ))}
               </div>
             )}
 
             <div className="flex flex-col gap-2">
-              <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">
+              <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.05em]">
                 Custom Image
               </span>
               <div className="flex gap-2">
-                <input
-                  className={INPUT_CLASS}
+                <Input
                   value={customImage}
                   onChange={(e) => setCustomImage(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && pickCustom()}
                   placeholder="ghcr.io/org/agent:latest"
                 />
-                <button
+                <Button
                   type="button"
-                  className="btn-brutal h-10 rounded-lg border-2 border-accent-hover bg-accent px-4 text-[13px] font-bold text-white disabled:opacity-40 shrink-0 shadow-brutal-accent"
                   onClick={pickCustom}
                   disabled={!customImage.trim()}
+                  className="shrink-0"
                 >
                   Use
-                </button>
+                </Button>
               </div>
             </div>
 
-            <div className="flex justify-end pt-1">
-              <button
-                type="button"
-                className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
-                onClick={onCancel}
-              >
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={onCancel}>
                 Cancel
-              </button>
-            </div>
+              </Button>
+            </DialogFooter>
           </>
         ) : (
           <form onSubmit={submitForm} className="contents">
-            <div>
-              <h2 className="text-[20px] font-bold text-text">Configure Agent</h2>
-              <p className="text-[12px] text-text-muted mt-1">
+            <DialogHeader>
+              <DialogTitle>Configure Agent</DialogTitle>
+              <p className="text-[12px] text-muted-foreground mt-1">
                 {selectedTemplate ? (
                   <>
                     Template:{" "}
-                    <HoverTooltip
-                      placement="right"
-                      trigger={
-                        <span className="font-semibold text-text-secondary border-b border-dotted border-text-muted cursor-help">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="font-semibold text-foreground/80 border-b border-dotted border-muted-foreground cursor-help">
                           {selectedTemplate.name}
                         </span>
-                      }
-                    >
-                      <span className="font-mono">{selectedTemplate.image}</span>
-                    </HoverTooltip>
+                      </TooltipTrigger>
+                      <TooltipContent side="right">
+                        <span className="font-mono">{selectedTemplate.image}</span>
+                      </TooltipContent>
+                    </Tooltip>
                   </>
                 ) : (
                   <>
                     Image:{" "}
-                    <span className="font-mono text-text-secondary break-all">
+                    <span className="font-mono text-foreground/80 break-all">
                       {customImage}
                     </span>
                   </>
                 )}
               </p>
-            </div>
+            </DialogHeader>
 
             <FormField label="Name" error={errors.name?.message}>
-              <input
-                className={INPUT_CLASS}
+              <Input
                 placeholder="my-agent"
                 autoFocus
                 {...register("name")}
               />
             </FormField>
             <FormField label="Description">
-              <input
-                className={INPUT_CLASS}
+              <Input
                 placeholder="Optional"
                 {...register("description")}
               />
@@ -279,12 +292,12 @@ export function AddAgentDialog({
             {!loadSecrets && anthropicSecrets.length === 0 && (
               <div className="rounded-lg border-2 border-warning bg-warning-light px-4 py-3 flex items-center gap-3">
                 <Sparkles size={16} className="text-warning shrink-0" />
-                <p className="text-[12px] text-text-secondary">
+                <p className="text-[12px] text-foreground/80">
                   No provider configured, so this agent won't be able to reach an
                   AI model.{" "}
                   <button
                     type="button"
-                    className="text-accent font-semibold hover:underline"
+                    className="text-primary font-semibold hover:underline"
                     onClick={onGoToProviders}
                   >
                     Set one up
@@ -306,73 +319,71 @@ export function AddAgentDialog({
             />
 
             <fieldset className="flex flex-col gap-2">
-              <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">
+              <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.05em]">
                 Network access
               </span>
-              <p className="text-[12px] text-text-muted">
+              <p className="text-[12px] text-muted-foreground">
                 Initial set of hosts the agent can reach. Anything not covered
                 surfaces in the inbox; you can change this later from the
                 agent's Network access tab.
               </p>
-              <div className="flex flex-col gap-1.5">
-                <label className="flex items-start gap-2 cursor-pointer rounded-lg border-2 border-border-light bg-bg px-4 py-2.5">
-                  <input
-                    type="radio"
-                    value="trusted"
-                    className="mt-0.5 w-4 h-4 accent-[var(--color-accent)]"
-                    {...register("egressPreset")}
-                  />
+              <RadioGroup
+                value={watch("egressPreset")}
+                onValueChange={(v) =>
+                  setValue("egressPreset", v as EgressPreset, {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  })
+                }
+                className="flex flex-col gap-1.5"
+              >
+                <Label
+                  htmlFor="egress-trusted"
+                  className="flex items-start gap-2 cursor-pointer rounded-lg border border-border bg-background px-4 py-2.5"
+                >
+                  <RadioGroupItem value="trusted" id="egress-trusted" className="mt-0.5" />
                   <span className="flex flex-col gap-0.5">
-                    <span className="text-[13px] font-semibold text-text">Trusted defaults (recommended)</span>
-                    <span className="text-[12px] text-text-muted">npm, PyPI, GitHub, package mirrors, Anthropic</span>
+                    <span className="text-[13px] font-semibold text-foreground">Trusted defaults (recommended)</span>
+                    <span className="text-[12px] text-muted-foreground">npm, PyPI, GitHub, package mirrors, Anthropic</span>
                   </span>
-                </label>
-                <label className="flex items-start gap-2 cursor-pointer rounded-lg border-2 border-border-light bg-bg px-4 py-2.5">
-                  <input
-                    type="radio"
-                    value="none"
-                    className="mt-0.5 w-4 h-4 accent-[var(--color-accent)]"
-                    {...register("egressPreset")}
-                  />
+                </Label>
+                <Label
+                  htmlFor="egress-none"
+                  className="flex items-start gap-2 cursor-pointer rounded-lg border border-border bg-background px-4 py-2.5"
+                >
+                  <RadioGroupItem value="none" id="egress-none" className="mt-0.5" />
                   <span className="flex flex-col gap-0.5">
-                    <span className="text-[13px] font-semibold text-text">Strict default-deny</span>
-                    <span className="text-[12px] text-text-muted">Every host hits the inbox until you approve</span>
+                    <span className="text-[13px] font-semibold text-foreground">Strict default-deny</span>
+                    <span className="text-[12px] text-muted-foreground">Every host hits the inbox until you approve</span>
                   </span>
-                </label>
-                <label className="flex items-start gap-2 cursor-pointer rounded-lg border-2 border-warning/40 bg-bg px-4 py-2.5">
-                  <input
-                    type="radio"
-                    value="all"
-                    className="mt-0.5 w-4 h-4 accent-[var(--color-accent)]"
-                    {...register("egressPreset")}
-                  />
+                </Label>
+                <Label
+                  htmlFor="egress-all"
+                  className="flex items-start gap-2 cursor-pointer rounded-lg border-2 border-warning/40 bg-background px-4 py-2.5"
+                >
+                  <RadioGroupItem value="all" id="egress-all" className="mt-0.5" />
                   <span className="flex flex-col gap-0.5">
-                    <span className="text-[13px] font-semibold text-text">Allow everything</span>
-                    <span className="text-[12px] text-text-muted">Development escape hatch — no inbox prompts</span>
+                    <span className="text-[13px] font-semibold text-foreground">Allow everything</span>
+                    <span className="text-[12px] text-muted-foreground">Development escape hatch — no inbox prompts</span>
                   </span>
-                </label>
-              </div>
+                </Label>
+              </RadioGroup>
             </fieldset>
 
-            <div className="flex items-center justify-end gap-3 pt-1">
-              <button
-                type="button"
-                className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
-                onClick={() => setStep("pick")}
-              >
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setStep("pick")}>
                 Back
-              </button>
-              <button
+              </Button>
+              <Button
                 type="submit"
-                className={`btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent ${!isValid ? "opacity-40" : ""}`}
-                disabled={isSubmitting}
+                disabled={isSubmitting || !isValid}
               >
                 Create Agent
-              </button>
-            </div>
+              </Button>
+            </DialogFooter>
           </form>
         )}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

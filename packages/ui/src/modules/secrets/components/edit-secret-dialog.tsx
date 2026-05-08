@@ -2,6 +2,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+
 import {
   allEnvMappingsValid,
   EnvMappingsEditor,
@@ -48,10 +51,6 @@ const genericSchema = z.object({
 });
 
 type EditSecretValues = z.infer<typeof anthropicSchema>;
-
-const INPUT_CLASS =
-  "w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)]";
-const MONO_INPUT_CLASS = `${INPUT_CLASS} font-mono`;
 
 interface UpdateSecretPatch {
   id: string;
@@ -129,19 +128,19 @@ export function EditSecretDialog({ secret, onClose }: Props) {
   return (
     <Modal widthClass="w-[540px]">
       <form onSubmit={onSubmit} className="contents">
-        <div className="px-7 pt-7 pb-4 border-b-2 border-border-light">
-          <h2 className="text-[20px] font-bold text-text">Edit Secret</h2>
-          <p className="text-[12px] text-text-muted mt-1 font-mono">
+        <div className="px-7 pt-7 pb-4 border-b border-border">
+          <h2 className="text-[20px] font-bold text-foreground">Edit Secret</h2>
+          <p className="text-[12px] text-muted-foreground mt-1 font-mono">
             {secret.hostPattern}
             {secret.pathPattern && (
-              <span className="text-text-secondary">{secret.pathPattern}</span>
+              <span className="text-foreground/80">{secret.pathPattern}</span>
             )}
           </p>
         </div>
 
         <div className="flex-1 overflow-y-auto px-7 py-5 flex flex-col gap-5">
           <FormField label="Name" error={errors.name?.message}>
-            <input className={INPUT_CLASS} autoFocus {...register("name")} />
+            <Input autoFocus {...register("name")} />
           </FormField>
 
           <FormField
@@ -149,8 +148,7 @@ export function EditSecretDialog({ secret, onClose }: Props) {
             hint="Leave blank to keep the current token. Type a new value to rotate it."
             error={errors.value?.message}
           >
-            <input
-              className={INPUT_CLASS}
+            <Input
               type="password"
               placeholder="••••••••"
               autoComplete="new-password"
@@ -165,8 +163,8 @@ export function EditSecretDialog({ secret, onClose }: Props) {
               hint="Hostname the Envoy sidecar matches against outbound requests. Required."
               error={errors.hostPattern?.message}
             >
-              <input
-                className={MONO_INPUT_CLASS}
+              <Input
+                className="font-mono"
                 placeholder="e.g. api.example.com"
                 disabled={saving}
                 {...register("hostPattern")}
@@ -179,8 +177,8 @@ export function EditSecretDialog({ secret, onClose }: Props) {
               label="Path Pattern"
               hint="Restrict injection to URL paths matching this pattern. Leave blank to match every path on the host."
             >
-              <input
-                className={MONO_INPUT_CLASS}
+              <Input
+                className="font-mono"
                 placeholder="e.g. /v1/*"
                 disabled={saving}
                 {...register("pathPattern")}
@@ -194,8 +192,8 @@ export function EditSecretDialog({ secret, onClose }: Props) {
               hint="HTTP header the Envoy sidecar writes the secret into."
               error={errors.headerName?.message}
             >
-              <input
-                className={MONO_INPUT_CLASS}
+              <Input
+                className="font-mono"
                 placeholder={DEFAULT_INJECTION_CONFIG.headerName}
                 disabled={saving}
                 {...register("headerName")}
@@ -214,8 +212,8 @@ export function EditSecretDialog({ secret, onClose }: Props) {
                 </>
               }
             >
-              <input
-                className={MONO_INPUT_CLASS}
+              <Input
+                className="font-mono"
                 placeholder={DEFAULT_INJECTION_CONFIG.valueFormat}
                 disabled={saving}
                 {...register("valueFormat")}
@@ -224,10 +222,10 @@ export function EditSecretDialog({ secret, onClose }: Props) {
           )}
 
           <div className="flex flex-col gap-2">
-            <span className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
+            <span className="text-[11px] font-bold text-foreground/80 uppercase tracking-[0.03em]">
               Pod Env Vars
             </span>
-            <p className="text-[11px] text-text-muted">
+            <p className="text-[11px] text-muted-foreground">
               Applied to every instance granted this connector on next pod
               restart.
             </p>
@@ -246,21 +244,20 @@ export function EditSecretDialog({ secret, onClose }: Props) {
           </div>
         </div>
 
-        <div className="px-7 py-4 border-t-2 border-border-light flex justify-end gap-3">
-          <button
+        <div className="px-7 py-4 border-t border-border flex justify-end gap-3">
+          <Button
             type="button"
-            className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
+            variant="outline"
             onClick={onClose}
           >
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             type="submit"
-            className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent"
             disabled={!canSave}
           >
             {saving ? "..." : "Save"}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>

@@ -65,7 +65,7 @@ export function FileRowMenu({ isDir, x, y, onClose, onAction }: Props) {
     <div
       ref={ref}
       role="menu"
-      className="fixed z-50 min-w-[160px] rounded-md border border-border-light bg-surface shadow-md py-1 text-[12px]"
+      className="fixed z-50 min-w-[160px] rounded-md border border-border bg-popover text-popover-foreground shadow-md py-1 text-[12px]"
       style={pos ? { left: pos.left, top: pos.top } : { left: x, top: y, visibility: "hidden" }}
       onClick={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.preventDefault()}
@@ -88,7 +88,7 @@ function MenuItem({ children, danger, onSelect }: { children: React.ReactNode; d
   return (
     <button
       role="menuitem"
-      className={`block w-full text-left px-3 py-1.5 hover:bg-surface-raised ${danger ? "text-red-500" : ""}`}
+      className={`block w-full text-left px-3 py-1.5 hover:bg-muted ${danger ? "text-destructive" : ""}`}
       onClick={onSelect}
     >
       {children}

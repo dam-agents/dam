@@ -1,13 +1,16 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 @import "highlight.js/styles/github.css";
 @import "./styles/hljs-dark.css";
+
+@custom-variant dark (&:is(.dark *));
 
 @theme {
   /* ── Color tokens (resolved via CSS vars set in :root / .dark) ── */
   --color-bg: var(--c-bg);
   --color-surface: var(--c-surface);
   --color-surface-raised: var(--c-surface-raised);
-  --color-border: var(--c-border);
+  --color-border: var(--border-ui);
   --color-border-light: var(--c-border-light);
   --color-text: var(--c-text);
   --color-text-secondary: var(--c-text-secondary);
@@ -29,8 +32,33 @@
   --shadow-brutal: var(--s-brutal);
   --shadow-brutal-sm: var(--s-brutal-sm);
   --shadow-brutal-accent: var(--s-brutal-accent);
-  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
-  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  /* ── shadcn/ui token mapping (see :root below for source values) ── */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent-alt: var(--accent-alt);
+  --color-accent-alt-foreground: var(--accent-alt-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border-ui: var(--border-ui);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
 }
 
 /* ── Light theme (default) ── */
@@ -39,27 +67,49 @@
   --c-surface: #ffffff;
   --c-surface-raised: #f5f5f4;
   --c-border: #292524;
-  --c-border-light: #e7e5e4;
-  --c-text: #1c1917;
+  --c-border-light: #dde1e6;
+  --c-text: #121619;
   --c-text-secondary: #57534e;
   --c-text-muted: #a8a29e;
   --c-accent: #1D6BE1;
   --c-accent-hover: #1556B8;
   --c-accent-light: #eaf2fe;
   --c-accent-glow: rgba(29, 107, 225, 0.15);
-  --c-success: #059669;
-  --c-success-light: #ecfdf5;
-  --c-warning: #d97706;
+  --c-success: #24a148;
+  --c-success-light: #a7f0ba;
+  --c-warning: #ff832b;
   --c-warning-light: #fffbeb;
   --c-danger: #dc2626;
   --c-danger-light: #fef2f2;
-  --c-info: #2563eb;
-  --c-info-light: #eff6ff;
+  --c-info: #0f62fe;
+  --c-info-light: #edf5ff;
   --c-template: #7c3aed;
   --c-template-light: #f5f3ff;
   --s-brutal: 3px 3px 0 #292524;
   --s-brutal-sm: 2px 2px 0 #292524;
   --s-brutal-accent: 3px 3px 0 #1D6BE1;
+
+  /* shadcn tokens — mapped to brand palette above */
+  --radius: 0.5rem;
+  --background: #ffffff;
+  --foreground: #121619;
+  --card: #ffffff;
+  --card-foreground: #121619;
+  --popover: #ffffff;
+  --popover-foreground: #121619;
+  --primary: #0f62fe;
+  --primary-foreground: #ffffff;
+  --secondary: #f2f4f8;
+  --secondary-foreground: #1c1917;
+  --muted: #f2f4f8;
+  --muted-foreground: #4d5358;
+  --accent-alt: #eaf2fe;
+  --accent-alt-foreground: #1556B8;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border-ui: #dde1e6;
+  --input: #dde1e6;
+  --ring: #0f62fe;
 }
 
 /* ── Dark theme ── */
@@ -90,10 +140,31 @@
   --s-brutal-sm: 2px 2px 0 #000000;
   --s-brutal-accent: 3px 3px 0 #3C92FD;
   color-scheme: dark;
+
+  /* shadcn tokens — dark */
+  --background: #0c0a09;
+  --foreground: #fafaf9;
+  --card: #1c1917;
+  --card-foreground: #fafaf9;
+  --popover: #1c1917;
+  --popover-foreground: #fafaf9;
+  --primary: #3C92FD;
+  --primary-foreground: #0c0a09;
+  --secondary: #292524;
+  --secondary-foreground: #fafaf9;
+  --muted: #292524;
+  --muted-foreground: #a8a29e;
+  --accent-alt: #0f1f3a;
+  --accent-alt-foreground: #3C92FD;
+  --destructive: #f87171;
+  --destructive-foreground: #fafaf9;
+  --border-ui: #44403c;
+  --input: #44403c;
+  --ring: #3C92FD;
 }
 
 @layer base {
-  *, *::before, *::after { box-sizing: border-box; }
+  *, *::before, *::after { box-sizing: border-box; border-color: var(--color-border); }
 
   html, body, #root {
     height: 100%;

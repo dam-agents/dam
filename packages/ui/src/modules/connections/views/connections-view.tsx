@@ -1,6 +1,8 @@
 import { Plus, RefreshCw } from "lucide-react";
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
+
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { isCustomSecret, type SecretView } from "../../../types.js";
 import { useSecrets } from "../../secrets/api/queries.js";
@@ -80,34 +82,36 @@ export function ConnectionsView() {
   return (
     <div className="w-full max-w-2xl">
       <div className="flex items-center gap-3 mb-8">
-        <h1 className="text-[20px] md:text-[24px] font-bold text-text">Connections</h1>
-        <button
+        <h1 className="text-[20px] md:text-[24px] font-bold text-foreground">Connections</h1>
+        <Button
+          variant="outline"
+          size="icon"
           onClick={refreshAll}
-          className="ml-auto h-8 w-8 rounded-lg border-2 border-border bg-surface flex items-center justify-center text-text-secondary hover:text-accent hover:border-accent btn-brutal shadow-brutal-sm"
+          className="ml-auto h-8 w-8 text-foreground/80 hover:text-primary hover:border-primary"
         >
           <span className={isFetching ? "anim-spin" : ""}>
             <RefreshCw size={13} />
           </span>
-        </button>
+        </Button>
       </div>
 
-      <p className="text-[14px] text-text-secondary mb-8 leading-relaxed">
+      <p className="text-[14px] text-foreground/80 mb-8 leading-relaxed">
         External services and credentials available to your agents. Injected into outbound HTTP requests — agents never see raw tokens.
       </p>
 
       {/* Apps */}
       <section className="mb-10">
-        <h2 className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em] mb-2">
+        <h2 className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.05em] mb-2">
           Apps
         </h2>
-        <p className="text-[12px] text-text-muted mb-4">
+        <p className="text-[12px] text-muted-foreground mb-4">
           OAuth apps like GitHub. Connect them here to grant agents API access on your behalf.
         </p>
 
         {isPendingOAuthApps && <ListSkeleton />}
 
         {!isPendingOAuthApps && oauthAppConnections.length === 0 && availableToConnect.length === 0 && (
-          <div className="rounded-xl border-2 border-border-light bg-surface px-6 py-8 text-center text-[14px] text-text-muted anim-in">
+          <div className="rounded-xl border border-border bg-card px-6 py-8 text-center text-[14px] text-muted-foreground anim-in">
             No OAuth apps available.
           </div>
         )}
@@ -142,10 +146,10 @@ export function ConnectionsView() {
 
       {/* MCP Servers */}
       <section className="mb-10">
-        <h2 className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em] mb-2">
+        <h2 className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.05em] mb-2">
           MCP Servers
         </h2>
-        <p className="text-[12px] text-text-muted mb-4">
+        <p className="text-[12px] text-muted-foreground mb-4">
           Remote tool servers connected via OAuth. They provide tools your agents can use during sessions.
         </p>
 
@@ -154,7 +158,7 @@ export function ConnectionsView() {
         )}
 
         {!isPendingMcpConnections && mcpConnections.length === 0 && !showAddMcp && (
-          <div className="rounded-xl border-2 border-border-light bg-surface px-6 py-8 text-center text-[14px] text-text-muted anim-in">
+          <div className="rounded-xl border border-border bg-card px-6 py-8 text-center text-[14px] text-muted-foreground anim-in">
             No MCP servers connected yet
           </div>
         )}
@@ -174,22 +178,19 @@ export function ConnectionsView() {
 
         {!isPendingMcpConnections && (
           <div className="mt-4">
-            <button
-              onClick={() => openAddMcp()}
-              className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-4 text-[13px] font-semibold text-white flex items-center gap-1.5 shadow-brutal-accent"
-            >
+            <Button onClick={() => openAddMcp()}>
               <Plus size={14} /> Connect MCP Server
-            </button>
+            </Button>
           </div>
         )}
       </section>
 
       {/* Secrets */}
       <section>
-        <h2 className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em] mb-2">
+        <h2 className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.05em] mb-2">
           Secrets
         </h2>
-        <p className="text-[12px] text-text-muted mb-4">
+        <p className="text-[12px] text-muted-foreground mb-4">
           Custom bearer tokens injected into outbound requests matching a host pattern.
         </p>
 
@@ -198,7 +199,7 @@ export function ConnectionsView() {
         )}
 
         {!isPendingSecrets && customSecrets.length === 0 && !showAddSecret && (
-          <div className="rounded-xl border-2 border-border-light bg-surface px-6 py-8 text-center text-[14px] text-text-muted anim-in">
+          <div className="rounded-xl border border-border bg-card px-6 py-8 text-center text-[14px] text-muted-foreground anim-in">
             No custom secrets yet
           </div>
         )}
@@ -218,12 +219,9 @@ export function ConnectionsView() {
 
         {!isPendingSecrets && (
           <div className="mt-4">
-            <button
-              onClick={() => setShowAddSecret(true)}
-              className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-4 text-[13px] font-semibold text-white flex items-center gap-1.5 shadow-brutal-accent"
-            >
+            <Button onClick={() => setShowAddSecret(true)}>
               <Plus size={14} /> Add Secret
-            </button>
+            </Button>
           </div>
         )}
       </section>

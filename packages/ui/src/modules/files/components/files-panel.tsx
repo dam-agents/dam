@@ -1,6 +1,8 @@
 import { FilePlus, FolderPlus, Upload } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { Button } from "@/components/ui/button";
+
 import { useStore } from "../../../store.js";
 import type { TreeEntry } from "../../../types.js";
 import { useFileContentQuery } from "../api/queries.js";
@@ -216,29 +218,35 @@ export function FilesPanel({ onOpenFile }: { onOpenFile: (path: string) => void 
           e.target.value = "";
         }}
       />
-      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border-light">
-        <span className="text-[11px] font-mono text-text-muted flex-1 truncate">/home/agent</span>
-        <button
-          className="text-text-muted hover:text-accent p-0.5 rounded transition-colors"
+      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border">
+        <span className="text-[11px] font-mono text-muted-foreground flex-1 truncate">/home/agent</span>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6 text-muted-foreground hover:text-primary"
           title="Upload files"
           onClick={() => openFilePickerFor("")}
         >
           <Upload size={13} />
-        </button>
-        <button
-          className="text-text-muted hover:text-accent p-0.5 rounded transition-colors"
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6 text-muted-foreground hover:text-primary"
           title="New file"
           onClick={() => startNewIn("file", "")}
         >
           <FilePlus size={13} />
-        </button>
-        <button
-          className="text-text-muted hover:text-accent p-0.5 rounded transition-colors"
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6 text-muted-foreground hover:text-primary"
           title="New folder"
           onClick={() => startNewIn("dir", "")}
         >
           <FolderPlus size={13} />
-        </button>
+        </Button>
       </div>
       {pendingNew && pendingNew.dir === "" && (
         <InlineNameRow
@@ -250,7 +258,7 @@ export function FilesPanel({ onOpenFile }: { onOpenFile: (path: string) => void 
         />
       )}
       {visibleEntries.length === 0 && !pendingNew && (
-        <p className="px-4 py-5 text-[12px] text-text-muted">No files yet</p>
+        <p className="px-4 py-5 text-[12px] text-muted-foreground">No files yet</p>
       )}
       {visibleEntries.map(entry => (
         <Fragment key={entry.path}>
@@ -299,8 +307,8 @@ export function FilesPanel({ onOpenFile }: { onOpenFile: (path: string) => void 
         />
       )}
       {showPanelOverlay && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-accent-light/80 border-2 border-dashed border-accent rounded">
-          <div className="text-[12px] font-semibold text-accent">Drop files to upload to /home/agent</div>
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-primary/10 border-2 border-dashed border-primary rounded">
+          <div className="text-[12px] font-semibold text-primary">Drop files to upload to /home/agent</div>
         </div>
       )}
     </div>

@@ -8,6 +8,10 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
+
 import { getBrand } from "../brand.js";
 import { InboxBell } from "../modules/approvals/components/inbox-bell.js";
 import { useStore } from "../store.js";
@@ -25,9 +29,7 @@ export function Sidebar() {
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
 
-  const [collapsed, setCollapsed] = useState(() => {
-    return localStorage.getItem(STORAGE_KEY) === "true";
-  });
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem(STORAGE_KEY) === "true");
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, String(collapsed));
@@ -35,83 +37,85 @@ export function Sidebar() {
 
   return (
     <nav
-      className={`hidden md:flex flex-col h-dvh bg-surface border-r border-border-light shrink-0 transition-[width] duration-200 ${collapsed ? "w-[52px]" : "w-[200px]"}`}
+      className={cn(
+        "hidden md:flex flex-col h-full bg-card border-r shrink-0 transition-[width] duration-200",
+        collapsed ? "w-[52px]" : "w-[200px]",
+      )}
     >
       {/* Logo */}
-      <button
+      <Button
+        variant="ghost"
         onClick={() => setView("list")}
-        className={`flex items-center gap-2.5 px-3.5 h-12 shrink-0 hover:bg-surface-raised transition-colors ${collapsed ? "justify-center" : ""}`}
+        className={cn("h-12 rounded-none justify-start gap-2.5 px-3.5", collapsed && "justify-center px-0")}
         title="Home"
       >
-        <Logo size={22} className="text-accent shrink-0" />
+        <Logo size={22} className="text-primary shrink-0" />
         {!collapsed && (
-          <span className="text-[15px] font-extrabold tracking-[-0.03em] text-accent">
+          <span className="text-[15px] font-extrabold tracking-tight text-primary">
             {getBrand().short}
           </span>
         )}
-      </button>
+      </Button>
 
-      {/* Divider */}
-      <div className="mx-2.5 border-t border-border-light" />
+      <Separator className="mx-2.5 w-auto" />
 
       {/* Nav items */}
       <div className="flex flex-col gap-0.5 mt-2 px-2">
         {navItems.map(({ view: v, label, icon: Icon }) => {
           const active = view === v;
           return (
-            <button
+            <Button
               key={v}
+              variant={active ? "secondary" : "ghost"}
               onClick={() => setView(v)}
               title={collapsed ? label : undefined}
-              className={`flex items-center gap-2.5 rounded-lg transition-colors h-9 ${collapsed ? "justify-center px-0" : "px-2.5"} ${active ? "text-accent bg-accent-light" : "text-text-secondary hover:text-text hover:bg-surface-raised"}`}
-            >
-              <Icon size={18} className="shrink-0" />
-              {!collapsed && (
-                <span className="text-[14px] font-medium">{label}</span>
+              className={cn(
+                "h-9 justify-start gap-2.5",
+                collapsed ? "justify-center px-0" : "px-2.5",
+                active && "text-primary bg-primary/10 hover:bg-primary/15",
               )}
-            </button>
+            >
+              <Icon className="shrink-0" />
+              {!collapsed && <span className="text-sm font-medium">{label}</span>}
+            </Button>
           );
         })}
       </div>
 
-      {/* Spacer */}
       <div className="flex-1" />
 
-      {/* Bottom section */}
       <div className="flex flex-col gap-0.5 px-2 mb-2">
-        {/* Divider */}
-        <div className="mx-0.5 mb-1 border-t border-border-light" />
+        <Separator className="mb-1 w-auto" />
 
-        {/* Inbox */}
         <InboxBell collapsed={collapsed} />
 
-        {/* Settings */}
-        <button
+        <Button
+          variant={view === "settings" ? "secondary" : "ghost"}
           onClick={() => setView("settings")}
           title={collapsed ? "Settings" : undefined}
-          className={`flex items-center gap-2.5 rounded-lg transition-colors h-9 ${collapsed ? "justify-center px-0" : "px-2.5"} ${view === "settings" ? "text-accent bg-accent-light" : "text-text-secondary hover:text-text hover:bg-surface-raised"}`}
-        >
-          <Settings size={18} className="shrink-0" />
-          {!collapsed && (
-            <span className="text-[14px] font-medium">Settings</span>
+          className={cn(
+            "h-9 justify-start gap-2.5",
+            collapsed ? "justify-center px-0" : "px-2.5",
+            view === "settings" && "text-primary bg-primary/10 hover:bg-primary/15",
           )}
-        </button>
+        >
+          <Settings className="shrink-0" />
+          {!collapsed && <span className="text-sm font-medium">Settings</span>}
+        </Button>
 
-        {/* Collapse toggle */}
-        <button
+        <Button
+          variant="ghost"
           onClick={() => setCollapsed((c) => !c)}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className={`flex items-center gap-2.5 rounded-lg transition-colors h-9 text-text-secondary hover:text-text hover:bg-surface-raised ${collapsed ? "justify-center px-0" : "px-2.5"}`}
+          className={cn("h-9 justify-start gap-2.5", collapsed ? "justify-center px-0" : "px-2.5")}
         >
           {collapsed ? (
-            <PanelLeftOpen size={18} className="shrink-0" />
+            <PanelLeftOpen className="shrink-0" />
           ) : (
-            <PanelLeftClose size={18} className="shrink-0" />
+            <PanelLeftClose className="shrink-0" />
           )}
-          {!collapsed && (
-            <span className="text-[14px] font-medium">Collapse</span>
-          )}
-        </button>
+          {!collapsed && <span className="text-sm font-medium">Collapse</span>}
+        </Button>
       </div>
     </nav>
   );

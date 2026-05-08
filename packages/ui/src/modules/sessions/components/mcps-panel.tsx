@@ -1,5 +1,8 @@
 import { Globe } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+
 export interface McpOption {
   id: string;          // K8s credential Secret id
   hostname: string;    // display label + session key
@@ -28,7 +31,7 @@ export function McpsPanel({
 }) {
   if (options.length === 0) {
     return (
-      <div className="px-4 py-4 text-[12px] text-text-muted">
+      <div className="px-4 py-4 text-[12px] text-muted-foreground">
         No MCP connections assigned to this agent.
       </div>
     );
@@ -36,19 +39,19 @@ export function McpsPanel({
 
   return (
     <div className="flex flex-1 flex-col overflow-y-auto">
-      <div className="px-4 py-3 border-b-2 border-border-light shrink-0 flex items-center text-[11px] text-text-muted">
+      <div className="px-4 py-3 border-b-2 border-border shrink-0 flex items-center text-[11px] text-muted-foreground">
         <span>
-          <strong className="text-text">{enabled.size}</strong> of {options.length} enabled
+          <strong className="text-foreground">{enabled.size}</strong> of {options.length} enabled
         </span>
         <span className="ml-auto flex gap-3">
-          <button className="hover:text-accent font-semibold" onClick={onSelectAll}>All</button>
+          <Button variant="link" size="sm" className="h-auto p-0 font-semibold text-muted-foreground hover:text-primary" onClick={onSelectAll}>All</Button>
           <span>·</span>
-          <button className="hover:text-accent font-semibold" onClick={onClearAll}>None</button>
+          <Button variant="link" size="sm" className="h-auto p-0 font-semibold text-muted-foreground hover:text-primary" onClick={onClearAll}>None</Button>
         </span>
       </div>
 
       {hasActiveSession && (
-        <div className="px-4 py-2 border-b-2 border-border-light text-[11px] text-text-muted bg-warning-light">
+        <div className="px-4 py-2 border-b-2 border-border text-[11px] text-muted-foreground bg-warning-light">
           Changes apply to new sessions — the current session keeps its original selection.
         </div>
       )}
@@ -56,16 +59,14 @@ export function McpsPanel({
       {options.map((o) => (
         <label
           key={o.hostname}
-          className={`flex items-center gap-3 border-b border-border-light px-4 py-3 cursor-pointer transition-colors ${enabled.has(o.hostname) ? "bg-accent-light" : "hover:bg-surface-raised"}`}
+          className={`flex items-center gap-3 border-b border-border px-4 py-3 cursor-pointer transition-colors ${enabled.has(o.hostname) ? "bg-primary/10" : "hover:bg-muted"}`}
         >
-          <input
-            type="checkbox"
-            className="accent-[var(--color-accent)] w-4 h-4"
+          <Checkbox
             checked={enabled.has(o.hostname)}
-            onChange={() => onToggle(o.hostname)}
+            onCheckedChange={() => onToggle(o.hostname)}
           />
           <Globe size={14} className="text-info shrink-0" />
-          <span className="text-[13px] font-medium text-text truncate">{o.hostname}</span>
+          <span className="text-[13px] font-medium text-foreground truncate">{o.hostname}</span>
         </label>
       ))}
     </div>
