@@ -188,14 +188,42 @@ func (r *InstanceReconciler) ensureAgentOwnerReference(ctx context.Context, inst
 }
 
 func (r *InstanceReconciler) Delete(ctx context.Context, name string) {
-	// Owner references handle cascade deletion of both StatefulSets
-	// (agent + gateway), both Services, both NetworkPolicies, the Envoy
-	// bootstrap ConfigMap, and the cert-manager Certificate / leaf Secret.
+	// Owner references in the agent namespace cascade-delete agent +
+	// gateway StatefulSets, the agent + gateway Services, the per-instance
+	// ServiceAccount, the gateway-admission AuthorizationPolicy, the
+	// Envoy bootstrap ConfigMap, and the cert-manager Certificate / leaf
+	// Secret.
 	//
+	// ADR-040 release-namespace resources (per-instance ext-authz
+	// Service, harness + ext-authz AuthorizationPolicies) cannot use a
+	// cross-namespace ownerRef — K8s assumes same-namespace ownerRefs and
+	// the GC controller reaps them as orphans. Clean up explicitly.
+	r.deleteReleaseNsInstanceResources(ctx, name)
+
 	// PVCs created via VolumeClaimTemplates on the agent StatefulSet are
-	// intentionally NOT deleted by Kubernetes (to prevent data loss).
-	// We clean them up explicitly on instance removal.
+	// intentionally NOT cascade-deleted by K8s (to prevent data loss).
+	// We clean them up explicitly here.
 	r.deletePVCs(ctx, name)
+}
+
+// deleteReleaseNsInstanceResources deletes the release-namespace resources
+// the controller renders for this instance: the per-instance ext-authz
+// Service and the two AuthorizationPolicies (harness + ext-authz). Errors
+// are logged but not returned — instance deletion best-effort proceeds.
+func (r *InstanceReconciler) deleteReleaseNsInstanceResources(ctx context.Context, instanceName string) {
+	svcName := r.config.ExtAuthzServiceName(instanceName)
+	if err := r.client.CoreV1().Services(r.config.ReleaseNamespace).Delete(ctx, svcName, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
+		slog.Warn("deleting per-instance ext-authz Service", "service", svcName, "instance", instanceName, "error", err)
+	}
+	if r.dynamic == nil {
+		return
+	}
+	for _, name := range []string{instanceName + "-harness-allow", instanceName + "-extauthz-allow"} {
+		if err := r.dynamic.Resource(authzPolicyGVR).Namespace(r.config.ReleaseNamespace).
+			Delete(ctx, name, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
+			slog.Warn("deleting per-instance AuthorizationPolicy", "policy", name, "instance", instanceName, "error", err)
+		}
+	}
 }
 
 func (r *InstanceReconciler) deletePVCs(ctx context.Context, instanceName string) {

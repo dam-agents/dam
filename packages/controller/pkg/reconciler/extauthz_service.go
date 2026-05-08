@@ -27,19 +27,23 @@ import (
 // part of the principal string, so this is unambiguous.
 
 // BuildExtAuthzService renders the per-instance ext-authz Service.
-func BuildExtAuthzService(instanceName string, cfg *config.Config, ownerCM *corev1.ConfigMap) *corev1.Service {
+//
+// No OwnerReference: the owner instance CM lives in the agent namespace,
+// but this Service lives in the release namespace; K8s ownerRef does not
+// carry a namespace and assumes same-namespace, so a cross-namespace ref
+// makes the K8s GC controller reap the Service as orphaned. Cleanup is
+// label-driven instead — `instance.go Delete()` lists by `LabelInstance`
+// and deletes by name on instance removal.
+func BuildExtAuthzService(instanceName string, cfg *config.Config, _ *corev1.ConfigMap) *corev1.Service {
 	extAuthzPort := portInt32(cfg.ExtAuthzPort)
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cfg.ExtAuthzServiceName(instanceName),
 			Namespace: cfg.ReleaseNamespace,
 			Labels: map[string]string{
-				LabelInstance:                   instanceName,
-				"app.kubernetes.io/component":   "apiserver",
-				"app.kubernetes.io/managed-by":  "platform-controller",
-			},
-			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
+				LabelInstance:                  instanceName,
+				"app.kubernetes.io/component":  "apiserver",
+				"app.kubernetes.io/managed-by": "platform-controller",
 			},
 		},
 		Spec: corev1.ServiceSpec{

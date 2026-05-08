@@ -47,21 +47,30 @@ var authzPolicyGVR = schema.GroupVersionResource{
 
 // authzPolicy builds an unstructured AuthorizationPolicy with the given
 // metadata + spec. Centralised so the three Build* helpers stay terse.
+//
+// `ownerCM` is consulted only when its namespace matches the policy's
+// namespace — K8s ownerRef does not carry a namespace and assumes same-
+// namespace, so a cross-namespace ref triggers K8s GC to reap the
+// policy as orphaned. For policies in the release namespace (harness,
+// ext-authz) we omit the ownerRef and clean them up by label in
+// `instance.go Delete()`.
 func authzPolicy(name, namespace string, ownerCM *corev1.ConfigMap, labels map[string]string, spec map[string]interface{}) *unstructured.Unstructured {
-	u := &unstructured.Unstructured{Object: map[string]interface{}{
+	meta := map[string]interface{}{
+		"name":      name,
+		"namespace": namespace,
+		"labels":    toInterfaceMap(labels),
+	}
+	if ownerCM.Namespace == namespace {
+		meta["ownerReferences"] = []interface{}{
+			ownerRefAsMap(metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap"))),
+		}
+	}
+	return &unstructured.Unstructured{Object: map[string]interface{}{
 		"apiVersion": fmt.Sprintf("%s/%s", istioGroup, istioVersion),
 		"kind":       "AuthorizationPolicy",
-		"metadata": map[string]interface{}{
-			"name":      name,
-			"namespace": namespace,
-			"labels":    toInterfaceMap(labels),
-			"ownerReferences": []interface{}{
-				ownerRefAsMap(metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap"))),
-			},
-		},
-		"spec": spec,
+		"metadata":   meta,
+		"spec":       spec,
 	}}
-	return u
 }
 
 func toInterfaceMap(m map[string]string) map[string]interface{} {
