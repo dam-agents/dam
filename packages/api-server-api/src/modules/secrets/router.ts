@@ -1,12 +1,12 @@
 import { z } from "zod";
 import { t } from "../../trpc.js";
-import { ANTHROPIC_API_KEY_ENV_MAPPING } from "./types.js";
 import {
   envMappingsSchema,
   injectionConfigSchema,
   secretTypeSchema,
   updateSecretInputSchema,
 } from "./schemas.js";
+import { ANTHROPIC_API_KEY_ENV_MAPPING } from "./types.js";
 
 // Re-export so existing barrel consumers (`api-server-api`'s index.ts +
 // the api-server's tests) keep working. UI code that imports
@@ -38,12 +38,12 @@ export const secretsRouter = t.router({
           envMappings: envMappingsSchema.optional(),
         })
         .superRefine((d, ctx) => {
-          if (d.type === "anthropic") {
+          if (d.type === "anthropic" || d.type === "ibm-litellm") {
             for (const field of ["hostPattern", "pathPattern", "injectionConfig"] as const) {
               if (d[field] != null) {
                 ctx.addIssue({
                   code: z.ZodIssueCode.custom,
-                  message: `${field} cannot be set for anthropic secrets`,
+                  message: `${field} cannot be set for ${d.type} secrets`,
                   path: [field],
                 });
               }

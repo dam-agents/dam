@@ -3,6 +3,7 @@ import { TRPCError } from "@trpc/server";
 import {
   ANTHROPIC_API_KEY_ENV_MAPPING,
   ANTHROPIC_OAUTH_ENV_MAPPING,
+  ibmLitellmEnvMappings,
   type EnvMapping,
   type SecretsService,
   type CreateSecretInput,
@@ -84,7 +85,8 @@ export interface AgentConnectionRulesSync {
 }
 
 function toSecretView(s: K8sStoredSecret): SecretView {
-  const type: SecretType = s.type === "anthropic" ? "anthropic" : "generic";
+  const type: SecretType =
+    s.type === "anthropic" || s.type === "ibm-litellm" ? s.type : "generic";
   const view: SecretView = {
     id: s.id,
     name: s.name,
@@ -130,8 +132,8 @@ export function createSecretsService(deps: {
             ? "oauth"
             : "api-key"
           : undefined;
-      // Default Anthropic envMappings when the caller didn't supply any —
-      // makes the controller's source-of-truth read robust to non-UI callers
+      // Default preset envMappings when the caller didn't supply any — makes
+      // the controller's source-of-truth read robust to non-UI callers
       // (ADR-040). Generic secrets are not defaulted: the user declares what
       // env they need.
       const envMappings: EnvMapping[] | undefined =
@@ -139,7 +141,9 @@ export function createSecretsService(deps: {
           ? input.envMappings
           : input.type === "anthropic" && authMode
             ? defaultAnthropicEnvMappings(authMode)
-            : undefined;
+            : input.type === "ibm-litellm"
+              ? ibmLitellmEnvMappings()
+              : undefined;
       await deps.k8sPort.createSecret({
         id,
         name: input.name,

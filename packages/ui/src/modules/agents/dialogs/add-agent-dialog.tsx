@@ -10,7 +10,7 @@ import {
 import { FormField } from "../../../components/form-field.js";
 import { HoverTooltip } from "../../../components/hover-tooltip.js";
 import type { EgressPreset, EnvVar, TemplateView } from "../../../types.js";
-import { APP_OAUTH_SECRET_PREFIX } from "../../../types.js";
+import { APP_OAUTH_SECRET_PREFIX, isProviderPresetType } from "../../../types.js";
 import {
   useAppConnections,
   useOAuthAppConnections,
@@ -69,17 +69,18 @@ export function AddAgentDialog({
   });
   const { errors, isSubmitting, isValid } = formState;
 
-  // Auto-baseline the selSecrets default with the lone Anthropic provider
-  // so the picker reflects the typical "of course you want this" default.
-  // The submit always sends selSecrets — `setAgentAccess` is what creates
-  // the connection-derived egress rules, and skipping it on undirty
-  // leaves the agent with no rules for the granted secret.
+  // Auto-baseline the selSecrets default with the lone provider preset
+  // (Anthropic / IBM LiteLLM) so the picker reflects the typical "of course
+  // you want this" default. The submit always sends selSecrets —
+  // `setAgentAccess` is what creates the connection-derived egress rules,
+  // and skipping it on undirty leaves the agent with no rules for the
+  // granted secret.
   const baselinedRef = useRef(false);
   useEffect(() => {
     if (baselinedRef.current) return;
     if (secrets.length === 0) return;
     baselinedRef.current = true;
-    const providers = secrets.filter((s) => s.type === "anthropic");
+    const providers = secrets.filter((s) => isProviderPresetType(s.type));
     if (providers.length === 1) {
       reset({ ...getValues(), selSecrets: [providers[0].id] });
     }
@@ -154,8 +155,8 @@ export function AddAgentDialog({
       image: selectedTemplate ? undefined : customImage.trim(),
       description: values.description.trim() || undefined,
       // Always send the picker's state — even when the user hasn't toggled,
-      // the baselined default (single Anthropic provider) is real intent
-      // and `setAgentAccess` is what triggers the connection-rules sync
+      // the baselined default (single provider preset) is real intent and
+      // `setAgentAccess` is what triggers the connection-rules sync
       // server-side. Skipping it on undirty leaves the agent with no
       // connection-derived egress rules.
       secretIds: values.selSecrets,
@@ -164,7 +165,7 @@ export function AddAgentDialog({
     });
   });
 
-  const anthropicSecrets = secrets.filter((s) => s.type === "anthropic");
+  const providerSecrets = secrets.filter((s) => isProviderPresetType(s.type));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[4px] anim-in">
@@ -270,7 +271,7 @@ export function AddAgentDialog({
               />
             </FormField>
 
-            {!loadSecrets && anthropicSecrets.length === 0 && (
+            {!loadSecrets && providerSecrets.length === 0 && (
               <div className="rounded-lg border-2 border-warning bg-warning-light px-4 py-3 flex items-center gap-3">
                 <Sparkles size={16} className="text-warning shrink-0" />
                 <p className="text-[12px] text-text-secondary">

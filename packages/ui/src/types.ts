@@ -1,4 +1,5 @@
 import type { EnvMapping, EnvVar, InjectionConfig } from "api-server-api";
+import { isProviderPresetType } from "api-server-api";
 
 export type Role = "user" | "assistant";
 
@@ -143,7 +144,7 @@ export interface Schedule {
   status: { lastRun?: string; nextRun?: string; lastResult?: string } | null;
 }
 
-export type SecretType = "anthropic" | "generic";
+export type SecretType = "anthropic" | "ibm-litellm" | "generic";
 
 /** Prefix used for MCP OAuth secrets stored as K8s credential Secrets. */
 export const MCP_SECRET_PREFIX = "__mcp:";
@@ -152,14 +153,14 @@ export const MCP_SECRET_PREFIX = "__mcp:";
 export const APP_OAUTH_SECRET_PREFIX = "__oauth:";
 
 export function isMcpSecret(s: { name: string; type: SecretType }): boolean {
-  return s.type !== "anthropic" && s.name.startsWith(MCP_SECRET_PREFIX);
+  return !isProviderPresetType(s.type) && s.name.startsWith(MCP_SECRET_PREFIX);
 }
 
-/** User-visible "Secrets" — excludes the Anthropic key and platform-internal
- *  mirrors (MCP OAuth blobs and app-OAuth token mirrors). */
+/** User-visible "Secrets" — excludes provider presets (Anthropic, IBM LiteLLM)
+ *  and platform-internal mirrors (MCP OAuth blobs and app-OAuth token mirrors). */
 export function isCustomSecret(s: { name: string; type: SecretType }): boolean {
   return (
-    s.type !== "anthropic" &&
+    !isProviderPresetType(s.type) &&
     !s.name.startsWith(MCP_SECRET_PREFIX) &&
     !s.name.startsWith(APP_OAUTH_SECRET_PREFIX)
   );
@@ -171,12 +172,17 @@ export function mcpHostnameFromSecretName(name: string): string {
     : name;
 }
 
-export type { EgressPreset,EnvMapping, EnvVar, InjectionConfig } from "api-server-api";
+export type { EgressPreset,EnvMapping, EnvVar, IbmLitellmModelPins,InjectionConfig } from "api-server-api";
 export {
   ANTHROPIC_API_KEY_ENV_MAPPING,
   ANTHROPIC_OAUTH_ENV_MAPPING,
   DEFAULT_ENV_PLACEHOLDER,
   DEFAULT_INJECTION_CONFIG,
+  IBM_LITELLM_DEFAULT_MODEL_PINS,
+  IBM_LITELLM_HOST_PATTERN,
+  ibmLitellmEnvMappings,
+  ibmLitellmPinsFromEnvMappings,
+  isProviderPresetType,
   isValidEnvName,
 } from "api-server-api";
 

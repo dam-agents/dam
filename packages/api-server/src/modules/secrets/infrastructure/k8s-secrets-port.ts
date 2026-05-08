@@ -190,7 +190,8 @@ export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSe
     },
 
     async createSecret({ id, name, type, value, hostPattern, pathPattern, injectionConfig, authMode, envMappings }) {
-      const secretType = type === "anthropic" ? "anthropic" : "generic";
+      const secretType =
+        type === "anthropic" || type === "ibm-litellm" ? type : "generic";
       const { headerName, valueFormat } = resolveInjection(secretType, authMode, injectionConfig);
       const annotations: Record<string, string> = {
         [ANN_HOST_PATTERN]: hostPattern,

@@ -6,6 +6,7 @@ import type { SecretView } from "../types.js";
 import {
   APP_OAUTH_SECRET_PREFIX,
   isMcpSecret,
+  isProviderPresetType,
   mcpHostnameFromSecretName,
 } from "../types.js";
 import { AppStatusPill } from "./app-status-pill.js";
@@ -67,14 +68,14 @@ export function ConnectionsPicker({
   onToggleApp: (id: string) => void;
   onGoToProviders?: () => void;
 }) {
-  const anthropicSecrets = secrets.filter((s) => s.type === "anthropic");
+  const providerSecrets = secrets.filter((s) => isProviderPresetType(s.type));
   const mcpSecrets = secrets.filter((s) => isMcpSecret(s));
-  // Generic secrets exclude both platform-internal mirrors (MCP secrets and
-  // app-OAuth token mirrors). Mirrors render under their own subsections so
-  // they don't leak into the user-facing "Secrets" list.
+  // Generic secrets exclude provider presets (Anthropic, IBM LiteLLM — they
+  // render under "providers") and platform-internal mirrors (MCP secrets,
+  // app-OAuth token mirrors — own subsections).
   const genericSecrets = secrets.filter(
     (s) =>
-      s.type !== "anthropic" &&
+      s.type === "generic" &&
       !isMcpSecret(s) &&
       !s.name.startsWith(APP_OAUTH_SECRET_PREFIX),
   );
@@ -110,9 +111,9 @@ export function ConnectionsPicker({
       )}
 
       <div className="flex flex-col gap-4">
-        {anthropicSecrets.length > 0 && (
+        {providerSecrets.length > 0 && (
           <Section title="Provider">
-            {anthropicSecrets.map((s) => (
+            {providerSecrets.map((s) => (
               <ItemRow
                 key={s.id}
                 checked={selSecrets.has(s.id)}
@@ -121,6 +122,13 @@ export function ConnectionsPicker({
                 label={s.name}
               />
             ))}
+            {providerSecrets.filter((s) => selSecrets.has(s.id)).length > 1 && (
+              <div className="text-[11px] text-warning font-medium px-1 pt-1">
+                Granting more than one Anthropic-family provider to a single agent
+                produces undefined behavior — only one set of <code className="font-mono">ANTHROPIC_*</code>{" "}
+                env vars actually wins at runtime.
+              </div>
+            )}
           </Section>
         )}
 

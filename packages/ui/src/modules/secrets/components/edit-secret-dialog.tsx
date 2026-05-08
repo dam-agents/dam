@@ -72,7 +72,7 @@ interface Props {
 }
 
 export function EditSecretDialog({ secret, onClose }: Props) {
-  const isGeneric = secret.type !== "anthropic";
+  const isGeneric = secret.type === "generic";
   const updateSecret = useUpdateSecret();
   const saving = updateSecret.isPending;
   const [pendingPatch, setPendingPatch] = useState<UpdateSecretPatch | null>(null);

@@ -3,6 +3,9 @@ import {
   ANTHROPIC_API_KEY_ENV_MAPPING,
   ANTHROPIC_OAUTH_ENV_MAPPING,
   type EnvMapping,
+  IBM_LITELLM_DEFAULT_MODEL_PINS,
+  IBM_LITELLM_HOST_PATTERN,
+  ibmLitellmEnvMappings,
 } from "api-server-api";
 
 import { createSecretsService } from "../../modules/secrets/services/secrets-service.js";
@@ -150,6 +153,65 @@ describe("secrets-service.create — Anthropic envMappings default (ADR-040)", (
       envMappings: userMappings,
     });
     expect(created[0]!.envMappings).toEqual(userMappings);
+  });
+
+  it("defaults the 13-entry env bundle for ibm-litellm secrets", async () => {
+    const { port, created, store } = makePort([]);
+    const { port: grants } = makeGrants();
+    const svc = createSecretsService({
+      k8sPort: port,
+      grants,
+      ownerSub: "owner-1",
+    });
+    const view = await svc.create({
+      type: "ibm-litellm",
+      name: "IBM LiteLLM ETE Proxy",
+      value: "sk-litellm-foo",
+    });
+    expect(created[0]!.envMappings).toEqual(ibmLitellmEnvMappings());
+    // Spot-check the bundle: credential placeholder, the BASE_URL pin
+    // (must mirror the host pattern), and a default model pin.
+    const envByName = new Map(
+      created[0]!.envMappings!.map((m) => [m.envName, m.placeholder]),
+    );
+    expect(envByName.get("ANTHROPIC_AUTH_TOKEN")).toBe("sk-dummy");
+    expect(envByName.get("ANTHROPIC_BASE_URL")).toBe(
+      `https://${IBM_LITELLM_HOST_PATTERN}`,
+    );
+    expect(envByName.get("ANTHROPIC_DEFAULT_OPUS_MODEL")).toBe(
+      IBM_LITELLM_DEFAULT_MODEL_PINS.opus,
+    );
+    // pi-agent SPECS slot is also primed so the same secret configures pi.
+    expect(envByName.get("OPENAI_PROXY_URL")).toBe(
+      `https://${IBM_LITELLM_HOST_PATTERN}`,
+    );
+    // SecretView must round-trip the new type instead of collapsing to "generic".
+    expect(view.type).toBe("ibm-litellm");
+    expect(store.get(view.id)!.hostPattern).toBe(IBM_LITELLM_HOST_PATTERN);
+  });
+
+  it("respects caller-supplied envMappings on ibm-litellm (form-driven model overrides)", async () => {
+    const { port, created } = makePort([]);
+    const { port: grants } = makeGrants();
+    const svc = createSecretsService({
+      k8sPort: port,
+      grants,
+      ownerSub: "owner-1",
+    });
+    const overridden = ibmLitellmEnvMappings({
+      ...IBM_LITELLM_DEFAULT_MODEL_PINS,
+      opus: "aws/claude-opus-4-7",
+    });
+    await svc.create({
+      type: "ibm-litellm",
+      name: "IBM LiteLLM ETE Proxy",
+      value: "sk-litellm-foo",
+      envMappings: overridden,
+    });
+    expect(created[0]!.envMappings).toEqual(overridden);
+    expect(
+      created[0]!.envMappings!.find((m) => m.envName === "ANTHROPIC_DEFAULT_OPUS_MODEL")?.placeholder,
+    ).toBe("aws/claude-opus-4-7");
   });
 
   it("does not default envMappings for generic secrets", async () => {

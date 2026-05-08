@@ -8,8 +8,8 @@ import {
   anthropicCredentialSchema,
   type AnthropicCredentialValues,
 } from "../../forms/anthropic-credential-schema.js";
-import { CardIcon } from "./card-icon.js";
-import { IconButton } from "./icon-button.js";
+import { CardIcon } from "../shared/card-icon.js";
+import { IconButton } from "../shared/icon-button.js";
 import { type Mode, MODE_KEYS, MODES, stripWhitespace } from "./modes.js";
 
 export function AnthropicForm({
