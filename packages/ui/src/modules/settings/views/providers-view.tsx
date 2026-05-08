@@ -1,151 +1,49 @@
 import { RefreshCw } from "lucide-react";
 
-import { useStore } from "../../../store.js";
-import { ibmLitellmEnvMappings, PROVIDERS } from "../../../types.js";
-import { useAgents } from "../../agents/api/queries.js";
-import {
-  useCreateSecret,
-  useDeleteSecret,
-  useUpdateSecret,
-} from "../../secrets/api/mutations.js";
+import { PROVIDER_PRESET_TYPES, type ProviderPresetType } from "../../../types.js";
 import { useSecrets } from "../../secrets/api/queries.js";
-import { AnthropicConnected } from "../components/anthropic/connected.js";
-import { AnthropicForm } from "../components/anthropic/form.js";
-import { MODES } from "../components/anthropic/modes.js";
 import { ComingSoonCard } from "../components/coming-soon-card.js";
-import { IbmLitellmConnected } from "../components/ibm-litellm/connected.js";
-import { IbmLitellmForm } from "../components/ibm-litellm/form.js";
-import { OpenAIConnected } from "../components/openai/connected.js";
-import { OpenAIForm } from "../components/openai/form.js";
+import { PROVIDER_CARDS } from "../components/provider-cards.js";
 
 export function ProvidersView() {
-  const { data: agents = [] } = useAgents();
-  const showConfirm = useStore((s) => s.showConfirm);
-  const setView = useStore((s) => s.setView);
-
   const {
     data: secrets = [],
-    refetch: refetchSecrets,
-    isFetching: isFetchingSecrets,
-    isPending: isPendingSecrets,
+    refetch,
+    isFetching,
+    isPending,
   } = useSecrets();
-  const createSecret = useCreateSecret();
-  const updateSecret = useUpdateSecret();
-  const deleteSecret = useDeleteSecret();
 
-  const anthropic = secrets.find((s) => s.type === "anthropic");
-  const ibmLitellm = secrets.find((s) => s.type === "ibm-litellm");
-  const openai = secrets.find((s) => s.type === "openai");
+  // Index by SecretType so each Card receives its own (or undefined for the
+  // wizard flow). One pass over the secrets list, then constant lookups.
+  const secretByType = Object.fromEntries(
+    secrets.map((s) => [s.type, s]),
+  ) as Partial<Record<ProviderPresetType, (typeof secrets)[number]>>;
 
   return (
     <div className="w-full max-w-2xl">
-      <div className="flex items-center gap-3 mb-8">
+      <header className="flex items-center gap-3 mb-8">
         <h1 className="text-[20px] md:text-[24px] font-bold text-text">Providers</h1>
         <button
-          onClick={() => refetchSecrets()}
+          onClick={() => refetch()}
           className="ml-auto h-8 w-8 rounded-lg border-2 border-border bg-surface flex items-center justify-center text-text-secondary hover:text-accent hover:border-accent btn-brutal shadow-brutal-sm"
         >
-          <span className={isFetchingSecrets ? "anim-spin" : ""}>
+          <span className={isFetching ? "anim-spin" : ""}>
             <RefreshCw size={13} />
           </span>
         </button>
-      </div>
+      </header>
 
       <p className="text-[14px] text-text-secondary mb-8 leading-relaxed">
         API keys for the AI harnesses that power your agents.
       </p>
 
       <section className="mb-8 flex flex-col gap-4">
-        {isPendingSecrets ? (
-          <div className="rounded-xl border-2 border-border-light bg-surface px-5 py-4 h-[72px] anim-pulse" />
-        ) : anthropic ? (
-          <AnthropicConnected
-            secret={anthropic}
-            onRemove={async () => {
-              if (!(await showConfirm("Remove Anthropic API key?", "Remove Key"))) return;
-              deleteSecret.mutate({ id: anthropic.id });
-            }}
-            onSave={async ({ mode, value }) => {
-              await updateSecret.mutateAsync({
-                id: anthropic.id,
-                value,
-                envMappings: [MODES[mode].mapping],
-              });
-            }}
-          />
-        ) : (
-          <AnthropicForm
-            variant="wizard"
-            initialMode="oauth"
-            onSave={async ({ mode, value }) => {
-              const isFirst = agents.length === 0;
-              await createSecret.mutateAsync({
-                type: "anthropic",
-                name: "Anthropic API Key",
-                value,
-                envMappings: [MODES[mode].mapping],
-              });
-              if (isFirst) setView("list");
-            }}
-          />
-        )}
-
-        {isPendingSecrets ? null : ibmLitellm ? (
-          <IbmLitellmConnected
-            secret={ibmLitellm}
-            onRemove={async () => {
-              if (!(await showConfirm(`Remove ${PROVIDERS["ibm-litellm"].displayName} token?`, "Remove Token"))) return;
-              deleteSecret.mutate({ id: ibmLitellm.id });
-            }}
-            onSave={async ({ value, pins }) => {
-              await updateSecret.mutateAsync({
-                id: ibmLitellm.id,
-                value,
-                envMappings: ibmLitellmEnvMappings(pins),
-              });
-            }}
-          />
-        ) : (
-          <IbmLitellmForm
-            variant="wizard"
-            onSave={async ({ value, pins }) => {
-              const isFirst = agents.length === 0;
-              await createSecret.mutateAsync({
-                type: "ibm-litellm",
-                name: PROVIDERS["ibm-litellm"].displayName,
-                value,
-                envMappings: ibmLitellmEnvMappings(pins),
-              });
-              if (isFirst) setView("list");
-            }}
-          />
-        )}
-
-        {isPendingSecrets ? null : openai ? (
-          <OpenAIConnected
-            secret={openai}
-            onRemove={async () => {
-              if (!(await showConfirm(`Remove ${PROVIDERS.openai.displayName} API key?`, "Remove Key"))) return;
-              deleteSecret.mutate({ id: openai.id });
-            }}
-            onSave={async ({ value }) => {
-              await updateSecret.mutateAsync({ id: openai.id, value });
-            }}
-          />
-        ) : (
-          <OpenAIForm
-            variant="wizard"
-            onSave={async ({ value }) => {
-              const isFirst = agents.length === 0;
-              await createSecret.mutateAsync({
-                type: "openai",
-                name: PROVIDERS.openai.displayName,
-                value,
-              });
-              if (isFirst) setView("list");
-            }}
-          />
-        )}
+        {isPending
+          ? <SkeletonCard />
+          : PROVIDER_PRESET_TYPES.map((id) => {
+              const Card = PROVIDER_CARDS[id];
+              return <Card key={id} secret={secretByType[id]} />;
+            })}
       </section>
 
       <section>
@@ -158,4 +56,8 @@ export function ProvidersView() {
       </section>
     </div>
   );
+}
+
+function SkeletonCard() {
+  return <div className="rounded-xl border-2 border-border-light bg-surface px-5 py-4 h-[72px] anim-pulse" />;
 }
