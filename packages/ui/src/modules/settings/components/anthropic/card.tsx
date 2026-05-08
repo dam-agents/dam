@@ -1,43 +1,27 @@
-import { useStore } from "../../../../store.js";
 import { PROVIDERS, type SecretView } from "../../../../types.js";
-import { useAgents } from "../../../agents/api/queries.js";
-import {
-  useCreateSecret,
-  useDeleteSecret,
-  useUpdateSecret,
-} from "../../../secrets/api/mutations.js";
+import { useProviderActions } from "../use-provider-actions.js";
 import { AnthropicConnected } from "./connected.js";
 import { AnthropicForm } from "./form.js";
 import { MODES } from "./modes.js";
 
-/**
- * Self-contained card for the Anthropic preset. Renders the connected
- * card when a secret exists, the wizard form otherwise. Owns its
- * mutation hooks so `providers-view.tsx` only places the card in layout.
- */
+const NAME = PROVIDERS.anthropic.displayName;
+
+/** Self-contained card for the Anthropic preset. */
 export function AnthropicCard({ secret }: { secret?: SecretView }) {
-  const showConfirm = useStore((s) => s.showConfirm);
-  const setView = useStore((s) => s.setView);
-  const { data: agents = [] } = useAgents();
-  const createSecret = useCreateSecret();
-  const updateSecret = useUpdateSecret();
-  const deleteSecret = useDeleteSecret();
+  const actions = useProviderActions();
 
   if (secret) {
     return (
       <AnthropicConnected
         secret={secret}
-        onRemove={async () => {
-          if (!(await showConfirm("Remove Anthropic API key?", "Remove Key"))) return;
-          deleteSecret.mutate({ id: secret.id });
-        }}
-        onSave={async ({ mode, value }) => {
-          await updateSecret.mutateAsync({
+        onRemove={() => actions.remove(secret.id, `Remove ${NAME} API key?`, "Remove Key")}
+        onSave={({ mode, value }) =>
+          actions.update({
             id: secret.id,
             value,
             envMappings: [MODES[mode].mapping],
-          });
-        }}
+          })
+        }
       />
     );
   }
@@ -46,16 +30,14 @@ export function AnthropicCard({ secret }: { secret?: SecretView }) {
     <AnthropicForm
       variant="wizard"
       initialMode="oauth"
-      onSave={async ({ mode, value }) => {
-        const isFirst = agents.length === 0;
-        await createSecret.mutateAsync({
+      onSave={({ mode, value }) =>
+        actions.create({
           type: "anthropic",
-          name: PROVIDERS.anthropic.displayName,
+          name: NAME,
           value,
           envMappings: [MODES[mode].mapping],
-        });
-        if (isFirst) setView("list");
-      }}
+        })
+      }
     />
   );
 }

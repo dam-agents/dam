@@ -1,4 +1,4 @@
-import type { EnvMapping, EnvVar, InjectionConfig } from "api-server-api";
+import type { EnvMapping, EnvVar, InjectionConfig, SecretType } from "api-server-api";
 import { isProviderPresetType } from "api-server-api";
 
 export type Role = "user" | "assistant";
@@ -144,7 +144,10 @@ export interface Schedule {
   status: { lastRun?: string; nextRun?: string; lastResult?: string } | null;
 }
 
-export type SecretType = "anthropic" | "ibm-litellm" | "openai" | "generic";
+// `SecretType` is re-exported from `api-server-api` near the bottom of
+// this file alongside the rest of the secrets shared types — keeping
+// one source of truth so a new provider added to the api-server-api
+// union can't be silently missed here.
 
 /** Prefix used for MCP OAuth secrets stored as K8s credential Secrets. */
 export const MCP_SECRET_PREFIX = "__mcp:";
@@ -181,6 +184,7 @@ export type {
   ProviderPreset,
   ProviderPresetMode,
   ProviderPresetType,
+  SecretType,
 } from "api-server-api";
 export {
   DEFAULT_ENV_PLACEHOLDER,
@@ -190,6 +194,7 @@ export {
   ibmLitellmPinsFromEnvMappings,
   isProviderPresetType,
   isValidEnvName,
+  PROVIDER_PRESET_TYPES,
   PROVIDERS,
 } from "api-server-api";
 
