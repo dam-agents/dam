@@ -12,7 +12,8 @@ const StyleGuide = lazy(() => import("./style-guide.js").then((m) => ({ default:
 export function StyleGuideToggle() {
   const [open, setOpen] = useState(false);
 
-  if (import.meta.env.VITE_USE_MOCKS !== "true") return null;
+  // Dev-only design tool — never rendered in production builds.
+  if (!import.meta.env.DEV) return null;
 
   return (
     <>

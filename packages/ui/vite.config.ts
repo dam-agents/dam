@@ -2,22 +2,21 @@ import path from "node:path";
 
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig, loadEnv, type Plugin } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
-// === Mock mode — pairs with packages/ui/src/mocks/. Safe to delete this
-// plugin + its usage below + the mocks/ folder to remove mock mode entirely. ===
-function mockApiServerApiTrpc(): Plugin {
+// Stubs out the server-side tRPC init that `api-server-api`'s index.ts pulls
+// in at module load (via a router re-export). tRPC v11 blocks
+// `initTRPC.create()` from running outside a Node server, which breaks the
+// UI in the browser. The UI only uses the tRPC *client* — the router values
+// get constructed but never invoked in the browser — so a no-op `t` is safe
+// regardless of mode.
+function stubApiServerApiTrpc(): Plugin {
   return {
-    name: "ui-mocks:stub-api-server-api-trpc",
+    name: "ui:stub-api-server-api-trpc",
     enforce: "pre",
     load(id) {
       if (/\/api-server-api\/src\/trpc\.(ts|js)$/.test(id)) {
-        // Stubs out the tRPC server init that the api-server-api package
-        // evaluates at module load (via a router re-export in index.ts).
-        // tRPC v11 blocks `initTRPC.create()` outside server environments,
-        // which breaks the UI dev build. In mock mode we never call these
-        // routers — we only need their values to exist without throwing.
         return `
           const noop = new Proxy(() => noop, { get: () => noop });
           export const t = { router: (r) => r, procedure: noop, middleware: noop, mergeRouters: (...r) => r[0] ?? {} };
@@ -27,14 +26,11 @@ function mockApiServerApiTrpc(): Plugin {
     },
   };
 }
-// === End mock mode ===
 
-export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), "");
-  const useMocks = env.VITE_USE_MOCKS === "true";
+export default defineConfig(() => {
   return {
   plugins: [
-    ...(useMocks ? [mockApiServerApiTrpc()] : []),
+    stubApiServerApiTrpc(),
     tailwindcss(),
     react(),
     VitePWA({

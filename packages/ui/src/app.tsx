@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { DialogOverlay } from "./components/dialog-overlay.js";
 import { MobileNav } from "./components/mobile-nav.js";
 import { OfflineBanner } from "./components/offline-banner.js";
+import { LoginPreviewToggle } from "./mocks/login-preview-toggle.js";
 import { StyleGuideToggle } from "./mocks/style-guide-toggle.js";
 import { Sidebar } from "./components/sidebar.js";
 import { ToastOverlay } from "./components/toast-overlay.js";
@@ -108,6 +109,7 @@ export default function App() {
       <OfflineBanner />
       <WelcomeModal />
       <StyleGuideToggle />
+      <LoginPreviewToggle />
     </div>
   );
 }
