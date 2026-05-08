@@ -218,9 +218,9 @@ caller identification all flow through the same SPIFFE primitive:
   AuthorizationPolicy keyed on the SA the pair runs as. Both pods
   share the SA so the rule is "self-talk only". Replaces ADR-038's
   pair-key NetworkPolicy.
-- **Gateway → api-server harness.** The agent dials the harness via
-  HTTPS_PROXY (no NO_PROXY carve-out — all agent egress flows through
-  the gateway), so what reaches the mesh is gateway → harness.
+- **Gateway → api-server harness.** All agent egress (including the
+  harness call) flows through the paired gateway pod's Envoy, so what
+  reaches the mesh is gateway → harness.
   The harness Service is `<rel>-apiserver-harness`, carrying
   `istio.io/use-waypoint`; Istio synthesises a waypoint Gateway pod
   in front of it. A per-instance AuthorizationPolicy on the waypoint

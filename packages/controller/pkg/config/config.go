@@ -23,7 +23,6 @@ type Config struct {
 	AgentStorageSize          string // PVC size for persistent agent mounts (default: 10Gi)
 	IdleTimeout               time.Duration // Idle timeout before auto-hibernation (0 = disabled, default: 1h)
 	TerminationGracePeriod    int64         // Termination grace period in seconds for agent pods (default: 5)
-	APIServerHost        string // API server hostname (for NO_PROXY)
 	HarnessServerURL     string // Harness API server internal URL (separate port, agent-facing)
 	HarnessServerPort    int    // Harness API server port (for network policy egress rule)
 	EnvoyImage           string // Image for the Envoy credential-injector sidecar
@@ -79,7 +78,6 @@ func LoadFromEnv() (*Config, error) {
 		LeaseName:        envOrDefault("PLATFORM_LEASE_NAME", release+"-controller"),
 		PodName:          podName,
 	}
-	cfg.APIServerHost = os.Getenv("PLATFORM_API_SERVER_HOST")
 	cfg.HarnessServerURL = os.Getenv("PLATFORM_HARNESS_SERVER_URL")
 	cfg.HarnessServerPort = envOrDefaultInt("PLATFORM_HARNESS_SERVER_PORT", 4001)
 	cfg.AgentImagePullPolicy = envOrDefault("AGENT_IMAGE_PULL_POLICY", "IfNotPresent")
@@ -142,9 +140,9 @@ func (c *Config) ExtAuthzHostFor(instanceID string) string {
 }
 
 // HarnessHost returns the bare hostname of the harness Service (no
-// scheme, no port). Useful for NO_PROXY lists where the agent must dial
-// the harness directly (waypoint-routed) rather than through the
-// per-instance gateway pod's MITM Envoy.
+// scheme, no port). Used as the gateway pod Envoy bootstrap's
+// `:authority` match so harness traffic flows down a credential-injection-
+// free route rather than the credentialed external-host chains.
 func (c *Config) HarnessHost() string {
 	return fmt.Sprintf("%s-apiserver-harness.%s.svc.cluster.local", c.ReleaseName, c.ReleaseNamespace)
 }

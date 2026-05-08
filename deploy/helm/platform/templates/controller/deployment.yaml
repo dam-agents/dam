@@ -56,8 +56,6 @@ spec:
             - name: AGENT_POD_ANNOTATIONS
               value: {{ toJson . | quote }}
             {{- end }}
-            - name: PLATFORM_API_SERVER_HOST
-              value: "{{ include "platform.fullname" . }}-apiserver.{{ .Release.Namespace }}.svc.cluster.local"
             # ADR-040: harness traffic routes through the waypoint-fronted
             # `-apiserver-harness` Service. The bare apiserver Service no
             # longer carries the harness port.

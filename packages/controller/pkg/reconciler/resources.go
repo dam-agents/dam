@@ -75,7 +75,7 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 	// The agent container holds zero platform credentials. Inbound calls to
 	// agent-runtime's tRPC are gated by the api-server's mesh
 	// AuthorizationPolicies; ALL outbound calls — external hosts AND the
-	// harness API — cross the paired gateway pod (no NO_PROXY).
+	// harness API — cross the paired gateway pod.
 	//
 	// ADR-040: identity for harness traffic comes from the gateway pod's
 	// SPIFFE principal (gateway runs as the per-instance SA). When the
