@@ -176,6 +176,29 @@ func TestRenderEnvoyBootstrap_CredentialedRoutePinnedToStaticCluster(t *testing.
 	assert.Contains(t, got, `host_rewrite_literal: "api.github.com"`)
 }
 
+func TestRenderEnvoyBootstrap_EmptyRoutesNoLeafTLSReferences(t *testing.T) {
+	// Reconcile race: when an agent is created and the secret is granted in
+	// two API calls, the controller renders a rev-1 StatefulSet with empty
+	// secrets (no leaf-TLS volume mounted) before rev-2 picks up the grant.
+	// The bootstrap CM is named by instance, not by revision — so a pod
+	// from rev-1's spec that survives into rev-2 will read a CM whose
+	// content may have shifted. The bootstrap MUST NOT reference any
+	// `/etc/envoy/tls/*` paths when there are no credentialed routes,
+	// otherwise a no-grants render would crash with "Failed to load
+	// incomplete private key" the moment the CM is updated to include
+	// routes (the volume backing that path doesn't exist yet).
+	got, err := renderEnvoyBootstrap("inst-1", bootstrapTestCfg, nil)
+	require.NoError(t, err)
+	assert.NotContains(t, got, "tls.key",
+		"empty-routes bootstrap must not reference the leaf TLS private key — pod has no envoy-tls volume to back it")
+	assert.NotContains(t, got, "tls.crt",
+		"empty-routes bootstrap must not reference the leaf TLS cert chain — pod has no envoy-tls volume to back it")
+	// The L4 SNI-miss catch-all chain is still present so the pod boots
+	// to a useful state and starts gating egress as soon as the chain set
+	// updates; without this, an empty-routes pod would be a noop.
+	assert.Contains(t, got, "l4_authz_passthrough")
+}
+
 func TestRenderEnvoyBootstrap_NoCredentialedRouteForwardsViaDynamicForwardProxy(t *testing.T) {
 	// With no credentialed routes there should be no per-credential cluster
 	// and no host_rewrite_literal — the catch-all/L4 paths still use

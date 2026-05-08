@@ -53,6 +53,20 @@ func TestBuildGatewayStatefulSet_AutomountSAFalse(t *testing.T) {
 		"gateway pod must have no SA token — Secret-read RBAC would bypass volume-mount scoping")
 }
 
+func TestBuildGatewayStatefulSet_RollingUpdateMaxUnavailable(t *testing.T) {
+	// Gateway is single-replica; default RollingUpdate would deadlock if
+	// pod-0 is in CrashLoopBackOff (it never goes Ready, so K8s never
+	// evicts it to apply the new template). maxUnavailable: 1 unblocks
+	// that path. Without it, the rev-1 → rev-2 transition that happens
+	// when grants land after agent creation would strand the pod in
+	// CrashLoopBackOff indefinitely.
+	ss := BuildGatewayStatefulSet("my-instance", false, testConfig, testOwnerCM, nil)
+	require.NotNil(t, ss.Spec.UpdateStrategy.RollingUpdate, "rolling update strategy must be set explicitly")
+	require.NotNil(t, ss.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable)
+	assert.Equal(t, "1", ss.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable.String(),
+		"single-replica gateway must allow 1 unavailable so rollouts can proceed past a CrashLoop pod")
+}
+
 func TestBuildGatewayStatefulSet_NoAgentVolumes(t *testing.T) {
 	// Workspace PVCs and CA-only mounts belong to the agent pod, not the
 	// gateway. The gateway only mounts the bootstrap CM, the leaf TLS

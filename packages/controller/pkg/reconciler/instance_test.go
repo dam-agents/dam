@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -178,6 +179,139 @@ func TestReconcile_UpdateReplicas(t *testing.T) {
 
 	ss, _ := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "my-instance", metav1.GetOptions{})
 	assert.Equal(t, int32(1), *ss.Spec.Replicas)
+}
+
+func TestForceRollStuckPod_DeletesNotReadyPodAtOldRev(t *testing.T) {
+	// The deadlock case: SS template has been updated to rev-2 but the
+	// pod is still at rev-1, NotReady (CrashLoopBackOff). Without help,
+	// the SS controller refuses to evict a NotReady pod, leaving the
+	// rollout stuck. forceRollStuckPod must delete the pod so the SS
+	// can recreate it at the new revision.
+	ss := &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-instance-gateway", Namespace: "test-agents", UID: "ss-uid"},
+		Spec: appsv1.StatefulSetSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"agent-platform.ai/role": "gateway", "agent-platform.ai/pair": "my-instance"}},
+		},
+		Status: appsv1.StatefulSetStatus{
+			CurrentRevision: "rev-1",
+			UpdateRevision:  "rev-2",
+		},
+	}
+	stalePod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-instance-gateway-0",
+			Namespace: "test-agents",
+			Labels: map[string]string{
+				"agent-platform.ai/role":   "gateway",
+				"agent-platform.ai/pair":   "my-instance",
+				"controller-revision-hash": "rev-1",
+			},
+		},
+		Status: corev1.PodStatus{
+			Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionFalse}},
+		},
+	}
+	r, client := setupReconciler(t, nil, ss, stalePod)
+
+	require.NoError(t, r.forceRollStuckPod(context.Background(), "test-agents", "my-instance-gateway"))
+
+	_, err := client.CoreV1().Pods("test-agents").Get(context.Background(), "my-instance-gateway-0", metav1.GetOptions{})
+	assert.True(t, errors.IsNotFound(err), "stale NotReady pod at old rev should be deleted; got err=%v", err)
+}
+
+func TestForceRollStuckPod_LeavesReadyOldRevPodAlone(t *testing.T) {
+	// On clusters where MaxUnavailableStatefulSet IS enabled, the SS
+	// controller can roll past Ready old-rev pods normally. Don't
+	// pre-empt that — only intervene when the pod is NotReady.
+	ss := &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-instance-gateway", Namespace: "test-agents"},
+		Spec: appsv1.StatefulSetSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"agent-platform.ai/role": "gateway"}},
+		},
+		Status: appsv1.StatefulSetStatus{
+			CurrentRevision: "rev-1",
+			UpdateRevision:  "rev-2",
+		},
+	}
+	healthyPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-instance-gateway-0",
+			Namespace: "test-agents",
+			Labels: map[string]string{
+				"agent-platform.ai/role":   "gateway",
+				"controller-revision-hash": "rev-1",
+			},
+		},
+		Status: corev1.PodStatus{
+			Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}},
+		},
+	}
+	r, client := setupReconciler(t, nil, ss, healthyPod)
+
+	require.NoError(t, r.forceRollStuckPod(context.Background(), "test-agents", "my-instance-gateway"))
+
+	_, err := client.CoreV1().Pods("test-agents").Get(context.Background(), "my-instance-gateway-0", metav1.GetOptions{})
+	assert.NoError(t, err, "Ready old-rev pod must not be deleted — let normal rolling-update handle it")
+}
+
+func TestForceRollStuckPod_NoopWhenRevisionsMatch(t *testing.T) {
+	// No pending update → no rollout to unstick. Even if a pod is NotReady
+	// (e.g. transient liveness flap), don't churn it; only deadlocks
+	// caused by stale revisions are our concern.
+	ss := &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-instance-gateway", Namespace: "test-agents"},
+		Spec: appsv1.StatefulSetSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"agent-platform.ai/role": "gateway"}},
+		},
+		Status: appsv1.StatefulSetStatus{
+			CurrentRevision: "rev-1",
+			UpdateRevision:  "rev-1",
+		},
+	}
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-instance-gateway-0",
+			Namespace: "test-agents",
+			Labels:    map[string]string{"agent-platform.ai/role": "gateway", "controller-revision-hash": "rev-1"},
+		},
+		Status: corev1.PodStatus{
+			Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionFalse}},
+		},
+	}
+	r, client := setupReconciler(t, nil, ss, pod)
+
+	require.NoError(t, r.forceRollStuckPod(context.Background(), "test-agents", "my-instance-gateway"))
+
+	_, err := client.CoreV1().Pods("test-agents").Get(context.Background(), "my-instance-gateway-0", metav1.GetOptions{})
+	assert.NoError(t, err, "no-op required when SS revisions match")
+}
+
+func TestReconcile_PatchesGatewayUpdateStrategyOnExistingStatefulSet(t *testing.T) {
+	// applyStatefulSet must propagate UpdateStrategy to existing StatefulSets,
+	// not just newly-created ones. Without this, updating the controller
+	// to set maxUnavailable: 1 on the gateway only takes effect for
+	// fresh installs — already-running pairs keep the default rolling
+	// strategy and stay stuck behind CrashLoop pods on rev transitions.
+	cm := instanceCM("running")
+	// An existing gateway StatefulSet at the default (empty) update
+	// strategy, simulating a pre-fix install.
+	existingGateway := &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-instance-gateway", Namespace: "test-agents"},
+		Spec:       appsv1.StatefulSetSpec{Replicas: int32Ptr(1)},
+	}
+	r, client := setupReconciler(t,
+		map[string]*corev1.ConfigMap{"claude-code": agentCM()},
+		cm, existingGateway,
+	)
+
+	err := r.Reconcile(context.Background(), cm)
+	require.NoError(t, err)
+
+	got, err := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "my-instance-gateway", metav1.GetOptions{})
+	require.NoError(t, err)
+	require.NotNil(t, got.Spec.UpdateStrategy.RollingUpdate, "rolling update strategy must be patched onto existing StatefulSets")
+	require.NotNil(t, got.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable)
+	assert.Equal(t, "1", got.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable.String())
 }
 
 func TestReconcile_AgentNotFound(t *testing.T) {

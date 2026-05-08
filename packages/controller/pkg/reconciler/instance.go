@@ -137,6 +137,20 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 	if err := r.applyStatefulSet(ctx, gatewaySS); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying gateway statefulset: %v", err))
 	}
+	// The gateway pair is single-replica and may legitimately CrashLoop on a
+	// stale revision (e.g. when grants land after agent creation: rev-1 has
+	// no leaf TLS volume but kubelet refreshes the bootstrap CM in place,
+	// so the live pod ends up reading rev-2 config against rev-1 volumes).
+	// Default StatefulSet rolling-update semantics refuse to evict a
+	// NotReady pod, deadlocking the rollout. The MaxUnavailableStatefulSet
+	// gate fixes this upstream but isn't always enabled (k3s ≤ 1.35
+	// disables it by default), so we do the eviction ourselves: delete any
+	// gateway pod stuck on the old revision so the StatefulSet recreates
+	// it at updateRevision.
+	if err := r.forceRollStuckPod(ctx, gatewaySS.Namespace, gatewaySS.Name); err != nil {
+		slog.Warn("force-rolling stuck gateway pod failed; rollout may be deadlocked",
+			"namespace", gatewaySS.Namespace, "statefulset", gatewaySS.Name, "error", err)
+	}
 	if err := r.applyService(ctx, gatewaySvc); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying gateway service: %v", err))
 	}
@@ -299,9 +313,67 @@ func (r *InstanceReconciler) applyStatefulSet(ctx context.Context, desired *apps
 		}
 		existing.Spec.Replicas = desired.Spec.Replicas
 		existing.Spec.Template = desired.Spec.Template
+		// UpdateStrategy is also patched so changes to RollingUpdate
+		// semantics (e.g. setting maxUnavailable: 1 to unstick rollouts
+		// past CrashLoop pods on the gateway StatefulSet) reach already-
+		// installed StatefulSets — without this, the strategy diff is
+		// silently dropped on every Update call.
+		existing.Spec.UpdateStrategy = desired.Spec.UpdateStrategy
 		_, err = r.client.AppsV1().StatefulSets(desired.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
 		return err
 	})
+}
+
+// forceRollStuckPod evicts any pod owned by the named StatefulSet that's
+// stuck on the old revision while the StatefulSet has a newer
+// updateRevision pending. Only acts when the existing pod is NotReady — a
+// healthy old-revision pod is left alone so normal rolling-update
+// semantics still apply on clusters where the MaxUnavailableStatefulSet
+// feature gate is enabled.
+//
+// Best-effort: returns the first error encountered but does not roll
+// back. The caller logs the error; the next reconcile will retry.
+func (r *InstanceReconciler) forceRollStuckPod(ctx context.Context, namespace, statefulSetName string) error {
+	ss, err := r.client.AppsV1().StatefulSets(namespace).Get(ctx, statefulSetName, metav1.GetOptions{})
+	if errors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("getting statefulset: %w", err)
+	}
+	if ss.Status.UpdateRevision == "" || ss.Status.UpdateRevision == ss.Status.CurrentRevision {
+		return nil
+	}
+	// Selector restricts to pods this SS actually manages; combined with
+	// the controller-revision-hash label that pins to the OLD revision,
+	// we never touch a pod that's already on the new spec.
+	sel, err := metav1.LabelSelectorAsSelector(ss.Spec.Selector)
+	if err != nil {
+		return fmt.Errorf("building selector: %w", err)
+	}
+	pods, err := r.client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: sel.String()})
+	if err != nil {
+		return fmt.Errorf("listing pods: %w", err)
+	}
+	for _, p := range pods.Items {
+		if p.Labels["controller-revision-hash"] != ss.Status.CurrentRevision {
+			continue
+		}
+		if isPodReady(p) {
+			continue
+		}
+		if p.DeletionTimestamp != nil {
+			// Already being deleted by something else; let it complete.
+			continue
+		}
+		slog.Info("force-rolling stuck StatefulSet pod past CrashLoop deadlock",
+			"namespace", namespace, "statefulset", statefulSetName, "pod", p.Name,
+			"oldRev", ss.Status.CurrentRevision, "newRev", ss.Status.UpdateRevision)
+		if err := r.client.CoreV1().Pods(namespace).Delete(ctx, p.Name, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
+			return fmt.Errorf("deleting stuck pod %s: %w", p.Name, err)
+		}
+	}
+	return nil
 }
 
 func (r *InstanceReconciler) applyService(ctx context.Context, desired *corev1.Service) error {

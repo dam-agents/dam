@@ -65,6 +65,20 @@ func BuildGatewayStatefulSet(instanceName string, hibernated bool, cfg *config.C
 			Replicas:    &replicas,
 			ServiceName: gatewayName,
 			Selector:    &metav1.LabelSelector{MatchLabels: labels},
+			// Single-replica pair (ADR-038): there is no "graceful rolling"
+			// to preserve. Default StatefulSet rollouts wait for the existing
+			// pod to be Ready before replacing it, which deadlocks if the
+			// pod is in CrashLoopBackOff (e.g. when the bootstrap CM was
+			// updated to reference TLS chains while pod-0 still has the
+			// rev-without-leaf-TLS-volume mounts). maxUnavailable: 1 lets
+			// K8s evict the broken pod immediately so the new template can
+			// roll out instead of getting stuck behind a NotReady pod.
+			UpdateStrategy: appsv1.StatefulSetUpdateStrategy{
+				Type: appsv1.RollingUpdateStatefulSetStrategyType,
+				RollingUpdate: &appsv1.RollingUpdateStatefulSetStrategy{
+					MaxUnavailable: ptrIntOrString(intstr.FromInt(1)),
+				},
+			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels:      labels,
@@ -85,6 +99,8 @@ func BuildGatewayStatefulSet(instanceName string, hibernated bool, cfg *config.C
 		},
 	}
 }
+
+func ptrIntOrString(v intstr.IntOrString) *intstr.IntOrString { return &v }
 
 // BuildGatewayService is the headless Service the agent reaches via
 // `HTTPS_PROXY`. Service-form is stable across gateway pod restarts; pod-DNS
