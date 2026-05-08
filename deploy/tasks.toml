@@ -495,9 +495,28 @@ if [ -n "${IS_SANDBOX:-}" ]; then
 else
   KUBECONFIG="$HOME/.lima/platform-k3s/copied-from-guest/kubeconfig.yaml"
 fi
+KCTL=(kubectl --kubeconfig="$KUBECONFIG")
+
+# Drain RWX-mounting workloads BEFORE helm uninstall. The chart ships the NFS
+# provisioner that backs `platform-rwx`; once helm uninstall removes it, any
+# pod still mounting one of its PVCs hangs in Terminating (kubelet can't
+# unmount from the dead NFS server) and blocks namespace deletion forever.
+if "${KCTL[@]}" get ns platform-agents >/dev/null 2>&1; then
+  echo "Draining platform-agents while NFS provisioner is still alive..."
+  "${KCTL[@]}" -n platform-agents delete sts --all --wait=true --timeout=60s 2>/dev/null || true
+  "${KCTL[@]}" -n platform-agents wait --for=delete pod --all --timeout=60s 2>/dev/null || true
+  "${KCTL[@]}" -n platform-agents delete pvc --all --wait=true --timeout=60s 2>/dev/null || true
+  "${KCTL[@]}" delete ns platform-agents --ignore-not-found --wait=true --timeout=60s 2>/dev/null || true
+fi
+
 helm --kubeconfig="$KUBECONFIG" uninstall platform || true
-kubectl --kubeconfig="$KUBECONFIG" delete pvc --all 2>/dev/null || true
-kubectl --kubeconfig="$KUBECONFIG" delete ns platform-agents --ignore-not-found 2>/dev/null || true
+
+# Clean up StatefulSet-managed PVCs in the release namespace (postgres, redis,
+# nfs-provisioner export). These aren't owned by the helm release, so helm
+# leaves them behind. Delete them AFTER helm uninstall — pods are gone now,
+# so pvc-protection finalizers clear immediately.
+"${KCTL[@]}" delete pvc --all --ignore-not-found 2>/dev/null || true
+
 echo "Platform uninstalled and cleaned up. Use 'mise run cluster:delete' to remove the entire cluster."
 '''
 
