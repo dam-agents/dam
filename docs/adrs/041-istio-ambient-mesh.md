@@ -45,11 +45,23 @@ pod-IP resolver, and the trusted `x-platform-instance` header.
 - **Per-instance SA.** Controller writes one SA per instance in the
   agent namespace, name == instance ID. Owner-refed to the instance
   ConfigMap; K8s GC reaps it on delete. Both pods of the long-lived
-  pair (agent + gateway) and every fork pair run as that SA — forks
-  reuse the parent's SA so the SPIFFE peer principal SA name equals
-  the URL `:id` for both shapes. `automountServiceAccountToken: false`
-  is preserved; Istio workload identity does not depend on SA-token
-  mounts.
+  pair (agent + gateway) run as that SA. `automountServiceAccountToken:
+  false` is preserved; Istio workload identity does not depend on
+  SA-token mounts.
+
+- **Per-fork SA, narrower harness surface.** Fork pairs (ADR-027) get
+  their **own** SA, not the parent's, so a compromised fork (i.e. a
+  compromised foreign replier) cannot reach the parent's full
+  `/api/instances/<parent>/*` surface. The controller renders two
+  per-fork policies in the release namespace alongside the per-fork
+  SA: a *fork-harness* AuthorizationPolicy admitting the fork SA only
+  to `/api/instances/<parent>/mcp`, and a *fork-ext-authz*
+  AuthorizationPolicy admitting the fork SA to the parent's
+  per-instance ext-authz Service (the parent owner's HITL rules stay
+  the gate; the fork's gateway then injects the replier's credential
+  on the wire). Istio OR-s ALLOWs across multiple policies on the
+  same Service / waypoint, so the per-fork policies are purely
+  additive.
 
 - **Three per-instance AuthorizationPolicies.** Controller writes them
   alongside the SA:
@@ -109,10 +121,14 @@ expands from user IdP to the identity authority for every internal call.
 Standards/federation wins only matter when something off-cluster needs
 to authenticate, which is not on the roadmap.
 
-**Per-pair SA** (one SA per pair-key). Rejected: forks have a pair-key
-distinct from the parent instance, so the SPIFFE SA name would not equal
-the URL `:id` and the cross-check would need a side lookup. Per-instance
-SA collapses that to identity equality.
+**Forks reuse the parent's SA.** Rejected: a fork pod with the parent's
+SPIFFE principal would be admitted to the parent's full
+`/api/instances/<parent>/*` surface, including pod-files SSE and the
+trigger endpoint — exposing the parent owner's connection data to the
+foreign replier. Per-fork SA + per-fork narrow harness policy preserves
+ADR-027's intent: the fork acts on the parent's session but with the
+replier's credentials and a tighter authorization surface than the
+parent itself has.
 
 **Istio sidecar mode** instead of ambient. Rejected: 30–50 MB RSS per
 pod on top of the existing Envoy credential gateway ([ADR-033](033-envoy-credential-gateway.md));
@@ -168,6 +184,7 @@ wanted.
 - [ADR-038](038-paired-gateway-pod.md) — pair-isolation concept preserved;
   kernel NetworkPolicy mechanism superseded by per-instance Istio
   AuthorizationPolicy.
-- [ADR-027](027-slack-user-impersonation.md) — forks reuse the parent's
-  per-instance SA; per-fork gateway-admission AuthorizationPolicy is
-  rendered alongside the existing per-fork resources.
+- [ADR-027](027-slack-user-impersonation.md) — fork pairs get their
+  OWN per-fork SA + per-fork harness/ext-authz AuthorizationPolicies
+  scoped narrowly to `/api/instances/<parent>/mcp` and the parent's
+  ext-authz Service, preserving the fork's reduced trust surface.

@@ -179,6 +179,91 @@ func BuildHarnessAuthorizationPolicy(principalInstanceID string, cfg *config.Con
 	return authzPolicy(principalInstanceID+"-harness-allow", cfg.ReleaseNamespace, ownerCM, labels, spec)
 }
 
+// BuildForkHarnessAuthorizationPolicy admits the fork's SA principal to a
+// **narrow** path under the parent instance — `/api/instances/<parent>/mcp`
+// only, not the parent's full `/api/instances/<parent>/*` surface. This
+// preserves the ADR-027 trust boundary: a compromised fork (i.e. a
+// compromised foreign replier) cannot reach pod-files SSE,
+// `/internal/trigger`, or any future per-instance harness endpoint scoped
+// to the parent. Lives in the release namespace alongside the parent's
+// harness-allow policy; Istio OR-s ALLOWs from multiple policies on the
+// same waypoint, so this is purely additive.
+func BuildForkHarnessAuthorizationPolicy(forkName, parentInstanceID string, cfg *config.Config, ownerCM *corev1.ConfigMap) *unstructured.Unstructured {
+	spec := map[string]interface{}{
+		"targetRefs": []interface{}{
+			map[string]interface{}{
+				"group": "gateway.networking.k8s.io",
+				"kind":  "Gateway",
+				"name":  cfg.IstioWaypointName,
+			},
+		},
+		"action": "ALLOW",
+		"rules": []interface{}{
+			map[string]interface{}{
+				"from": []interface{}{
+					map[string]interface{}{
+						"source": map[string]interface{}{
+							"principals": []interface{}{cfg.PrincipalFor(forkName)},
+						},
+					},
+				},
+				"to": []interface{}{
+					map[string]interface{}{
+						"operation": map[string]interface{}{
+							"paths": []interface{}{fmt.Sprintf("/api/instances/%s/mcp", parentInstanceID)},
+						},
+					},
+				},
+			},
+		},
+	}
+	labels := map[string]string{
+		LabelInstance:                  parentInstanceID,
+		"agent-platform.ai/managed-by": "platform-controller",
+		"app.kubernetes.io/component":  "apiserver",
+		ForkLabelForkID:                forkName,
+	}
+	return authzPolicy(forkName+"-harness-allow", cfg.ReleaseNamespace, ownerCM, labels, spec)
+}
+
+// BuildForkExtAuthzAuthorizationPolicy admits the fork's SA principal to
+// the **parent**'s per-instance ext-authz Service. Forks dial the
+// parent's ext-authz endpoint (the parent owner's HITL rules approve
+// the request; the fork's gateway then injects the replier's
+// credential on the wire). The parent's own ext-authz-allow continues
+// to admit the parent SA; Istio OR-s the principal lists across both
+// policies on the same Service.
+func BuildForkExtAuthzAuthorizationPolicy(forkName, parentInstanceID string, cfg *config.Config, ownerCM *corev1.ConfigMap) *unstructured.Unstructured {
+	spec := map[string]interface{}{
+		"targetRefs": []interface{}{
+			map[string]interface{}{
+				"group": "",
+				"kind":  "Service",
+				"name":  cfg.ExtAuthzServiceName(parentInstanceID),
+			},
+		},
+		"action": "ALLOW",
+		"rules": []interface{}{
+			map[string]interface{}{
+				"from": []interface{}{
+					map[string]interface{}{
+						"source": map[string]interface{}{
+							"principals": []interface{}{cfg.PrincipalFor(forkName)},
+						},
+					},
+				},
+			},
+		},
+	}
+	labels := map[string]string{
+		LabelInstance:                  parentInstanceID,
+		"agent-platform.ai/managed-by": "platform-controller",
+		"app.kubernetes.io/component":  "apiserver",
+		ForkLabelForkID:                forkName,
+	}
+	return authzPolicy(forkName+"-extauthz-allow", cfg.ReleaseNamespace, ownerCM, labels, spec)
+}
+
 // BuildExtAuthzAuthorizationPolicy admits traffic to the per-instance
 // ext-authz Service from the matching SA principal only. Lives in the
 // release namespace alongside the per-instance ext-authz Service it

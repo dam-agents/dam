@@ -147,12 +147,13 @@ func BuildForkGatewayPod(forkName, parentInstanceID string, cfg *config.Config, 
 			},
 		},
 		Spec: corev1.PodSpec{
-			// ADR-040: forks reuse the parent's SA so the SPIFFE peer
-			// principal SA name equals the parent's URL `:id`. The fork's
-			// per-fork gateway-admission AuthorizationPolicy ALLOWs that
-			// principal, and the parent's harness/ext-authz policies admit
-			// it too — no fork-specific SA needed.
-			ServiceAccountName:            parentInstanceID,
+			// ADR-040 + ADR-027: fork gateway pod runs as the per-fork SA
+			// (its own identity, NOT the parent's). The per-fork
+			// gateway-admission AuthorizationPolicy ALLOWs only this SA
+			// (both pods of the fork pair share it), and per-fork
+			// harness + ext-authz policies admit it to a narrow surface
+			// scoped to the parent.
+			ServiceAccountName:            forkName,
 			RestartPolicy:                 corev1.RestartPolicyAlways,
 			TerminationGracePeriodSeconds: &cfg.TerminationGracePeriod,
 			AutomountServiceAccountToken:  &falseVal,
