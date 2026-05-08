@@ -211,21 +211,34 @@ fi
 echo "Ensuring Istio ambient mesh ($ISTIO_VERSION)..."
 helm repo add istio https://istio-release.storage.googleapis.com/charts >/dev/null 2>&1 || true
 helm repo update istio >/dev/null
-helm --kubeconfig="$KUBECONFIG" upgrade --install istio-base istio/base \
-  -n istio-system --version "$ISTIO_VERSION" --create-namespace --wait
-helm --kubeconfig="$KUBECONFIG" upgrade --install istiod istio/istiod \
-  -n istio-system --version "$ISTIO_VERSION" --set profile=ambient --wait
+
+# Install-only path. Avoids helm upgrade conflicts with istiod, which
+# patches `istiod-default-validator` ValidatingWebhookConfiguration's
+# `failurePolicy` after start; a subsequent `helm upgrade istio-base`
+# fails server-side apply because pilot-discovery owns that field.
+# This task is the dev install loop, not the prod upgrade path; in-place
+# Istio upgrades are an out-of-band operation when needed.
+istio_install_if_missing() {
+  local release="$1" chart="$2"
+  shift 2
+  if helm --kubeconfig="$KUBECONFIG" -n istio-system status "$release" >/dev/null 2>&1; then
+    echo "  $release already installed, skipping"
+    return 0
+  fi
+  helm --kubeconfig="$KUBECONFIG" install "$release" "$chart" \
+    -n istio-system --version "$ISTIO_VERSION" --create-namespace --wait "$@"
+}
+
+istio_install_if_missing istio-base istio/base
+istio_install_if_missing istiod istio/istiod --set profile=ambient
 # k3s places CNI dirs at non-upstream paths (/var/lib/rancher/k3s/...).
 # Without these overrides istio-cni-node loops "no networks found in
 # /host/etc/cni/net.d" and ambient redirection never engages.
-helm --kubeconfig="$KUBECONFIG" upgrade --install istio-cni istio/cni \
-  -n istio-system --version "$ISTIO_VERSION" \
+istio_install_if_missing istio-cni istio/cni \
   --set profile=ambient \
   --set cni.cniBinDir=/var/lib/rancher/k3s/data/cni \
-  --set cni.cniConfDir=/var/lib/rancher/k3s/agent/etc/cni/net.d \
-  --wait
-helm --kubeconfig="$KUBECONFIG" upgrade --install ztunnel istio/ztunnel \
-  -n istio-system --version "$ISTIO_VERSION" --wait
+  --set cni.cniConfDir=/var/lib/rancher/k3s/agent/etc/cni/net.d
+istio_install_if_missing ztunnel istio/ztunnel
 kubectl --kubeconfig="$KUBECONFIG" -n istio-system rollout status ds/ztunnel --timeout=120s
 kubectl --kubeconfig="$KUBECONFIG" -n istio-system rollout status ds/istio-cni-node --timeout=120s
 
