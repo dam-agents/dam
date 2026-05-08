@@ -46,10 +46,15 @@ export function WelcomeStepper() {
     (k === "provider" && hasProvider) || (k === "agent" && hasAgent);
 
   const currentStepIdx = STEPS.findIndex((s) => s.view === currentView);
-  const nextStep =
-    currentStepIdx >= 0 && currentStepIdx < STEPS.length - 1
-      ? STEPS[currentStepIdx + 1]
-      : null;
+  const isOnStep = currentStepIdx >= 0;
+  const isLastStep = currentStepIdx === STEPS.length - 1;
+  const nextStep = isOnStep && !isLastStep ? STEPS[currentStepIdx + 1] : null;
+
+  const ctaLabel = isLastStep ? "Done" : "Next step";
+  const onCta = () => {
+    if (isLastStep) setView("list");
+    else if (nextStep) setView(nextStep.view);
+  };
 
   return (
     <div className="bg-template text-white border-b border-template shrink-0 shadow-sm">
@@ -98,16 +103,16 @@ export function WelcomeStepper() {
           })}
         </div>
 
-        {/* Right: next step CTA */}
-        {nextStep && (
+        {/* Right: next step / done CTA */}
+        {isOnStep && (
           <>
             <div className="h-8 w-px bg-white/25 shrink-0 hidden md:block" />
             <Button
               size="sm"
-              onClick={() => setView(nextStep.view)}
+              onClick={onCta}
               className="bg-white text-template hover:bg-white/90 shrink-0"
             >
-              Next step <ArrowRight />
+              {ctaLabel} {isLastStep ? <Check /> : <ArrowRight />}
             </Button>
           </>
         )}
