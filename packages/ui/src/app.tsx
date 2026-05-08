@@ -84,11 +84,6 @@ export default function App() {
   // All non-chat views share the sidebar shell
   return (
     <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
-      {/* Floating blobs */}
-      <div className="blob blob-1" />
-      <div className="blob blob-2" />
-      <div className="blob blob-3" />
-
       <WelcomeStepper />
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <Sidebar />

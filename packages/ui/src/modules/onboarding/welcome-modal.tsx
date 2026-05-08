@@ -73,9 +73,7 @@ export function WelcomeModal() {
     <Dialog open={shouldShow} onOpenChange={(open) => !open && dismiss()}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="text-3xl font-light tracking-tight leading-[1.05]">
-            Deploy Agents Massively
-          </DialogTitle>
+          <DialogTitle>Welcome to DAM</DialogTitle>
           <DialogDescription className="text-sm leading-relaxed pt-1">
             Run agent harnesses like Claude Code headless in the cloud, on a
             schedule, connected to your tools — without exposing your tokens.

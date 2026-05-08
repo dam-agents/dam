@@ -15,7 +15,6 @@ import { cn } from "@/lib/utils";
 import { getBrand } from "../brand.js";
 import { InboxBell } from "../modules/approvals/components/inbox-bell.js";
 import { useStore } from "../store.js";
-import { Logo } from "./logo.js";
 
 const STORAGE_KEY = "platform-sidebar-collapsed";
 
@@ -42,19 +41,16 @@ export function Sidebar() {
         collapsed ? "w-[52px]" : "w-[200px]",
       )}
     >
-      {/* Logo */}
+      {/* Brand */}
       <Button
         variant="ghost"
         onClick={() => setView("list")}
-        className={cn("h-12 rounded-none justify-start gap-2.5 px-3.5", collapsed && "justify-center px-0")}
+        className={cn("h-12 rounded-none justify-start px-3.5", collapsed && "justify-center px-0")}
         title="Home"
       >
-        <Logo size={22} className="text-primary shrink-0" />
-        {!collapsed && (
-          <span className="text-[15px] font-extrabold tracking-tight text-primary">
-            {getBrand().short}
-          </span>
-        )}
+        <span className="text-[15px] font-extrabold tracking-tight text-foreground uppercase">
+          {getBrand().short}
+        </span>
       </Button>
 
       <Separator className="mx-2.5 w-auto" />
@@ -66,13 +62,13 @@ export function Sidebar() {
           return (
             <Button
               key={v}
-              variant={active ? "secondary" : "ghost"}
+              variant="ghost"
               onClick={() => setView(v)}
               title={collapsed ? label : undefined}
               className={cn(
                 "h-9 justify-start gap-2.5",
                 collapsed ? "justify-center px-0" : "px-2.5",
-                active && "text-primary bg-primary/10 hover:bg-primary/15",
+                active && "bg-muted",
               )}
             >
               <Icon className="shrink-0" />
@@ -90,13 +86,13 @@ export function Sidebar() {
         <InboxBell collapsed={collapsed} />
 
         <Button
-          variant={view === "settings" ? "secondary" : "ghost"}
+          variant="ghost"
           onClick={() => setView("settings")}
           title={collapsed ? "Settings" : undefined}
           className={cn(
             "h-9 justify-start gap-2.5",
             collapsed ? "justify-center px-0" : "px-2.5",
-            view === "settings" && "text-primary bg-primary/10 hover:bg-primary/15",
+            view === "settings" && "bg-muted",
           )}
         >
           <Settings className="shrink-0" />
