@@ -359,6 +359,12 @@ static_resources:
                       grpc_service:
                         envoy_grpc:
                           cluster_name: ext_authz_cluster
+                          # ADR-040: pin :authority to the per-instance
+                          # ext-authz Service hostname. Without this,
+                          # Envoy's default :authority is the cluster
+                          # name and the api-server cannot derive
+                          # instance ID from it.
+                          authority: "{{ $.ExtAuthzHost }}"
                         # ADR-040: instance identity is conveyed by the
                         # gRPC :authority of the per-instance ext-authz
                         # Service this cluster dials, cryptographically
@@ -469,6 +475,12 @@ static_resources:
                       grpc_service:
                         envoy_grpc:
                           cluster_name: ext_authz_cluster
+                          # ADR-040: pin :authority to the per-instance
+                          # ext-authz Service hostname. Without this,
+                          # Envoy's default :authority is the cluster
+                          # name and the api-server cannot derive
+                          # instance ID from it.
+                          authority: "{{ $.ExtAuthzHost }}"
                         # ADR-040: instance identity is conveyed by the
                         # gRPC :authority of the per-instance ext-authz
                         # Service this cluster dials.
@@ -545,9 +557,10 @@ static_resources:
                 grpc_service:
                   envoy_grpc:
                     cluster_name: ext_authz_cluster
-                  # ADR-040: see HCM ext_authz block above — instance
-                  # identity is conveyed by the per-instance ext-authz
-                  # Service the cluster dials, not by header.
+                    # ADR-040: pin :authority to the per-instance
+                    # ext-authz Service hostname (see HCM ext_authz
+                    # block above for rationale).
+                    authority: "{{ $.ExtAuthzHost }}"
                   timeout: {{ $.ExtAuthzTimeoutSeconds }}s
             - name: envoy.filters.network.sni_dynamic_forward_proxy
               typed_config:

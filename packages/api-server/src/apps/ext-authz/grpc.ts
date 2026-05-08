@@ -67,6 +67,7 @@ export async function startExtAuthzGrpcApp(deps: ExtAuthzGrpcAppDeps): Promise<{
         const authority = call.getHost();
         const instanceId = parseInstanceFromAuthority(authority, expectedPrefix);
         if (!instanceId) {
+          process.stderr.write(`[ext-authz] denied: unparsable :authority='${authority}'\n`);
           callback(null, denied(`unable to derive instance from :authority='${authority}'`));
           return;
         }
