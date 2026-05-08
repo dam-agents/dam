@@ -54,6 +54,8 @@ export type {
 
 export type {
   SecretType,
+  ProviderPreset,
+  ProviderPresetMode,
   ProviderPresetType,
   SecretView,
   CreateSecretInput,
@@ -69,11 +71,9 @@ export {
   DEFAULT_INJECTION_CONFIG,
   ENV_NAME_RE,
   isValidEnvName,
+  PROVIDERS,
   PROVIDER_PRESET_TYPES,
   isProviderPresetType,
-  ANTHROPIC_OAUTH_ENV_MAPPING,
-  ANTHROPIC_API_KEY_ENV_MAPPING,
-  IBM_LITELLM_HOST_PATTERN,
   IBM_LITELLM_DEFAULT_MODEL_PINS,
   ibmLitellmEnvMappings,
   ibmLitellmPinsFromEnvMappings,

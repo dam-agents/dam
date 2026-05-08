@@ -144,7 +144,7 @@ export interface Schedule {
   status: { lastRun?: string; nextRun?: string; lastResult?: string } | null;
 }
 
-export type SecretType = "anthropic" | "ibm-litellm" | "generic";
+export type SecretType = "anthropic" | "ibm-litellm" | "openai" | "generic";
 
 /** Prefix used for MCP OAuth secrets stored as K8s credential Secrets. */
 export const MCP_SECRET_PREFIX = "__mcp:";
@@ -172,18 +172,25 @@ export function mcpHostnameFromSecretName(name: string): string {
     : name;
 }
 
-export type { EgressPreset,EnvMapping, EnvVar, IbmLitellmModelPins,InjectionConfig } from "api-server-api";
+export type {
+  EgressPreset,
+  EnvMapping,
+  EnvVar,
+  IbmLitellmModelPins,
+  InjectionConfig,
+  ProviderPreset,
+  ProviderPresetMode,
+  ProviderPresetType,
+} from "api-server-api";
 export {
-  ANTHROPIC_API_KEY_ENV_MAPPING,
-  ANTHROPIC_OAUTH_ENV_MAPPING,
   DEFAULT_ENV_PLACEHOLDER,
   DEFAULT_INJECTION_CONFIG,
   IBM_LITELLM_DEFAULT_MODEL_PINS,
-  IBM_LITELLM_HOST_PATTERN,
   ibmLitellmEnvMappings,
   ibmLitellmPinsFromEnvMappings,
   isProviderPresetType,
   isValidEnvName,
+  PROVIDERS,
 } from "api-server-api";
 
 export interface SecretView {

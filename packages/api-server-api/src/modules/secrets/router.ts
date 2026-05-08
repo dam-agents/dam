@@ -6,7 +6,7 @@ import {
   secretTypeSchema,
   updateSecretInputSchema,
 } from "./schemas.js";
-import { ANTHROPIC_API_KEY_ENV_MAPPING } from "./types.js";
+import { isProviderPresetType } from "./types.js";
 
 // Re-export so existing barrel consumers (`api-server-api`'s index.ts +
 // the api-server's tests) keep working. UI code that imports
@@ -38,7 +38,7 @@ export const secretsRouter = t.router({
           envMappings: envMappingsSchema.optional(),
         })
         .superRefine((d, ctx) => {
-          if (d.type === "anthropic" || d.type === "ibm-litellm") {
+          if (isProviderPresetType(d.type)) {
             for (const field of ["hostPattern", "pathPattern", "injectionConfig"] as const) {
               if (d[field] != null) {
                 ctx.addIssue({
@@ -78,7 +78,7 @@ export const secretsRouter = t.router({
     )
     .mutation(async ({ input }) => {
       const headers: Record<string, string> = { "anthropic-version": "2023-06-01" };
-      if (input.envName === ANTHROPIC_API_KEY_ENV_MAPPING.envName) {
+      if (input.envName === "ANTHROPIC_API_KEY") {
         headers["x-api-key"] = input.value;
       } else {
         headers["Authorization"] = `Bearer ${input.value}`;

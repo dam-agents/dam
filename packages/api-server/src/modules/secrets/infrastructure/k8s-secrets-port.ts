@@ -7,7 +7,7 @@
  * newly-created secrets land in K8s for the sidecar to discover.
  */
 import type * as k8s from "@kubernetes/client-node";
-import type { EnvMapping, InjectionConfig } from "api-server-api";
+import { isProviderPresetType, PROVIDERS, type EnvMapping, type InjectionConfig, type SecretType } from "api-server-api";
 
 import type { K8sClient } from "../../agents/infrastructure/k8s.js";
 
@@ -24,9 +24,10 @@ const ANN_ENV_MAPPINGS = "agent-platform.ai/env-mappings";
 export type AuthMode = "api-key" | "oauth";
 
 /**
- * Resolves the header name + value-format template for a secret. Anthropic
- * gets a fixed shape per authMode; generic respects the user-supplied
- * `InjectionConfig` (with the `Authorization: Bearer {value}` default).
+ * Resolves the header name + value-format template for a secret. Provider
+ * presets read their injection config from the {@link PROVIDERS} registry
+ * (per mode); generic respects the user-supplied `InjectionConfig` and
+ * falls back to `Authorization: Bearer {value}`.
  *
  * On the wire, Envoy's generic credential source loads the file under the
  * configured header verbatim — there is no upstream prefix template (see
@@ -38,11 +39,18 @@ export function resolveInjection(
   authMode: AuthMode | undefined,
   injectionConfig: InjectionConfig | undefined,
 ): { headerName: string; valueFormat: string } {
-  if (type === "anthropic") {
-    if (authMode === "api-key") {
-      return { headerName: "x-api-key", valueFormat: "{value}" };
+  if (isProviderPresetType(type as SecretType)) {
+    const preset = PROVIDERS[type as Exclude<SecretType, "generic">];
+    const mode = authMode
+      ? preset.modes.find((m) => m.key === authMode)
+      : preset.modes[0];
+    if (mode?.injection) {
+      return {
+        headerName: mode.injection.headerName,
+        valueFormat: mode.injection.valueFormat ?? "{value}",
+      };
     }
-    return { headerName: "Authorization", valueFormat: "Bearer {value}" };
+    // Fall through to default Bearer for presets without an explicit override.
   }
   return {
     headerName: injectionConfig?.headerName ?? "Authorization",
@@ -190,8 +198,7 @@ export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSe
     },
 
     async createSecret({ id, name, type, value, hostPattern, pathPattern, injectionConfig, authMode, envMappings }) {
-      const secretType =
-        type === "anthropic" || type === "ibm-litellm" ? type : "generic";
+      const secretType = isProviderPresetType(type as SecretType) ? type : "generic";
       const { headerName, valueFormat } = resolveInjection(secretType, authMode, injectionConfig);
       const annotations: Record<string, string> = {
         [ANN_HOST_PATTERN]: hostPattern,

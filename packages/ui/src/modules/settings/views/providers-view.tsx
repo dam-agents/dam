@@ -1,7 +1,7 @@
 import { RefreshCw } from "lucide-react";
 
 import { useStore } from "../../../store.js";
-import { ibmLitellmEnvMappings } from "../../../types.js";
+import { ibmLitellmEnvMappings, PROVIDERS } from "../../../types.js";
 import { useAgents } from "../../agents/api/queries.js";
 import {
   useCreateSecret,
@@ -15,6 +15,8 @@ import { MODES } from "../components/anthropic/modes.js";
 import { ComingSoonCard } from "../components/coming-soon-card.js";
 import { IbmLitellmConnected } from "../components/ibm-litellm/connected.js";
 import { IbmLitellmForm } from "../components/ibm-litellm/form.js";
+import { OpenAIConnected } from "../components/openai/connected.js";
+import { OpenAIForm } from "../components/openai/form.js";
 
 export function ProvidersView() {
   const { data: agents = [] } = useAgents();
@@ -33,6 +35,7 @@ export function ProvidersView() {
 
   const anthropic = secrets.find((s) => s.type === "anthropic");
   const ibmLitellm = secrets.find((s) => s.type === "ibm-litellm");
+  const openai = secrets.find((s) => s.type === "openai");
 
   return (
     <div className="w-full max-w-2xl">
@@ -91,7 +94,7 @@ export function ProvidersView() {
           <IbmLitellmConnected
             secret={ibmLitellm}
             onRemove={async () => {
-              if (!(await showConfirm("Remove IBM LiteLLM ETE Proxy token?", "Remove Token"))) return;
+              if (!(await showConfirm(`Remove ${PROVIDERS["ibm-litellm"].displayName} token?`, "Remove Token"))) return;
               deleteSecret.mutate({ id: ibmLitellm.id });
             }}
             onSave={async ({ value, pins }) => {
@@ -109,9 +112,35 @@ export function ProvidersView() {
               const isFirst = agents.length === 0;
               await createSecret.mutateAsync({
                 type: "ibm-litellm",
-                name: "IBM LiteLLM ETE Proxy",
+                name: PROVIDERS["ibm-litellm"].displayName,
                 value,
                 envMappings: ibmLitellmEnvMappings(pins),
+              });
+              if (isFirst) setView("list");
+            }}
+          />
+        )}
+
+        {isPendingSecrets ? null : openai ? (
+          <OpenAIConnected
+            secret={openai}
+            onRemove={async () => {
+              if (!(await showConfirm(`Remove ${PROVIDERS.openai.displayName} API key?`, "Remove Key"))) return;
+              deleteSecret.mutate({ id: openai.id });
+            }}
+            onSave={async ({ value }) => {
+              await updateSecret.mutateAsync({ id: openai.id, value });
+            }}
+          />
+        ) : (
+          <OpenAIForm
+            variant="wizard"
+            onSave={async ({ value }) => {
+              const isFirst = agents.length === 0;
+              await createSecret.mutateAsync({
+                type: "openai",
+                name: PROVIDERS.openai.displayName,
+                value,
               });
               if (isFirst) setView("list");
             }}
@@ -124,7 +153,6 @@ export function ProvidersView() {
           Coming Soon
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <ComingSoonCard name="OpenAI" description="Powers Codex agents" />
           <ComingSoonCard name="Google" description="Powers Gemini CLI agents" />
         </div>
       </section>

@@ -1,13 +1,13 @@
-export type SecretType = "anthropic" | "ibm-litellm" | "generic";
+export type SecretType = "anthropic" | "ibm-litellm" | "openai" | "generic";
 
-/** Provider preset secret types — `SecretType`s that carry a fixed host
- *  pattern + canonical env-var bundle and render in the Providers view. */
-export const PROVIDER_PRESET_TYPES = ["anthropic", "ibm-litellm"] as const;
-export type ProviderPresetType = (typeof PROVIDER_PRESET_TYPES)[number];
-
-export function isProviderPresetType(type: SecretType): type is ProviderPresetType {
-  return (PROVIDER_PRESET_TYPES as readonly SecretType[]).includes(type);
-}
+/**
+ * SecretTypes that have a {@link PROVIDERS} registry entry — the providers
+ * rendered as cards in the Providers view. The registry is constrained
+ * against this union so adding a new provider means widening this type
+ * AND adding a {@link PROVIDERS} entry; TypeScript will fail if either
+ * half is missing.
+ */
+export type ProviderPresetType = "anthropic" | "ibm-litellm" | "openai";
 
 /**
  * Declares a pod env var to inject into every agent instance that has access
@@ -30,16 +30,6 @@ export function isValidEnvName(name: string): boolean {
 }
 
 /**
- * OAuth-token mode. The Claude Code SDK sends `CLAUDE_CODE_OAUTH_TOKEN` via
- * `Authorization: Bearer …`, which the Envoy sidecar's credential_injector
- * filter rewrites to the stored OAuth credential on the wire.
- */
-export const ANTHROPIC_OAUTH_ENV_MAPPING: EnvMapping = {
-  envName: "CLAUDE_CODE_OAUTH_TOKEN",
-  placeholder: DEFAULT_ENV_PLACEHOLDER,
-};
-
-/**
  * How the Envoy sidecar injects a generic secret into matching outbound
  * requests. `valueFormat` may reference the literal token `{value}`;
  * defaults to `{value}` when omitted.
@@ -56,28 +46,10 @@ export const DEFAULT_INJECTION_CONFIG: InjectionConfig = {
 };
 
 /**
- * API-key mode. Tools that read `ANTHROPIC_API_KEY` (e.g. `@anthropic-ai/sdk`)
- * send the sentinel via `x-api-key`, which the Envoy sidecar's
- * credential_injector filter rewrites to the stored api-key credential on
- * the wire.
+ * IBM LiteLLM model pins. The IBM LiteLLM preset's default env-var bundle
+ * pins all five Claude model env vars to AWS-hosted Claude IDs; the form's
+ * "Advanced — model overrides" disclosure lets the user change them.
  */
-export const ANTHROPIC_API_KEY_ENV_MAPPING: EnvMapping = {
-  envName: "ANTHROPIC_API_KEY",
-  placeholder: DEFAULT_ENV_PLACEHOLDER,
-};
-
-/**
- * IBM LiteLLM ETE Proxy. A single endpoint that speaks both the Anthropic
- * Messages API (consumed by Claude Code via `ANTHROPIC_BASE_URL` +
- * `ANTHROPIC_AUTH_TOKEN`) and an OpenAI-compatible API (consumed by pi-agent's
- * `pi-dynamic-providers` extension via `OPENAI_PROXY_*`). One pasted token
- * configures both harnesses; Envoy injects the real Bearer on the wire.
- */
-export const IBM_LITELLM_HOST_PATTERN = "ete-litellm.ai-models.vpc-int.res.ibm.com";
-const IBM_LITELLM_BASE_URL = `https://${IBM_LITELLM_HOST_PATTERN}`;
-
-/** Default model pin set shipped with the IBM LiteLLM preset. Overridable
- *  via the form's "Advanced" disclosure. */
 export interface IbmLitellmModelPins {
   opus: string;
   sonnet: string;
@@ -96,11 +68,22 @@ export const IBM_LITELLM_DEFAULT_MODEL_PINS: IbmLitellmModelPins = {
   default: "aws/claude-opus-4-6",
 };
 
-/** Builds the full env-var bundle for an IBM LiteLLM secret. Mints 13
- *  EnvMapping entries: 1 credential placeholder, 1 endpoint pin, 2 behavior
- *  flags, 5 Claude Code model pins, 4 pi-agent `openai-proxy` SPECS overrides
- *  (`pi-dynamic-providers/index.ts`). */
-export function ibmLitellmEnvMappings(pins: IbmLitellmModelPins = IBM_LITELLM_DEFAULT_MODEL_PINS): EnvMapping[] {
+const IBM_LITELLM_HOST = "ete-litellm.ai-models.vpc-int.res.ibm.com";
+const IBM_LITELLM_BASE_URL = `https://${IBM_LITELLM_HOST}`;
+
+/**
+ * Builds the IBM LiteLLM env-var bundle from a model-pin set. The form
+ * uses this to mint a fresh bundle when the user changes any pin in the
+ * advanced disclosure; the default bundle (with `IBM_LITELLM_DEFAULT_MODEL_PINS`)
+ * is what the registry stores.
+ *
+ * 13 entries: 1 credential placeholder, 1 endpoint pin, 2 behavior flags,
+ * 5 Claude Code model pins, 4 pi-agent `openai-proxy` SPECS overrides
+ * (`pi-dynamic-providers/index.ts`).
+ */
+export function ibmLitellmEnvMappings(
+  pins: IbmLitellmModelPins = IBM_LITELLM_DEFAULT_MODEL_PINS,
+): EnvMapping[] {
   return [
     { envName: "ANTHROPIC_AUTH_TOKEN", placeholder: "sk-dummy" },
     { envName: "ANTHROPIC_BASE_URL", placeholder: IBM_LITELLM_BASE_URL },
@@ -118,11 +101,16 @@ export function ibmLitellmEnvMappings(pins: IbmLitellmModelPins = IBM_LITELLM_DE
   ];
 }
 
-/** Reverse map: extract user-facing model pins from a stored env-mapping
- *  set so the edit form can pre-populate the advanced disclosure. Falls back
- *  to defaults for any pin that isn't present. */
-export function ibmLitellmPinsFromEnvMappings(envMappings: readonly EnvMapping[] | undefined): IbmLitellmModelPins {
-  const lookup = (name: string) => envMappings?.find((m) => m.envName === name)?.placeholder;
+/**
+ * Reverse map: extract user-facing model pins from a stored env-mapping
+ * set so the edit form can pre-populate the advanced disclosure. Falls
+ * back to defaults for any pin not present.
+ */
+export function ibmLitellmPinsFromEnvMappings(
+  envMappings: readonly EnvMapping[] | undefined,
+): IbmLitellmModelPins {
+  const lookup = (name: string) =>
+    envMappings?.find((m) => m.envName === name)?.placeholder;
   return {
     opus: lookup("ANTHROPIC_DEFAULT_OPUS_MODEL") ?? IBM_LITELLM_DEFAULT_MODEL_PINS.opus,
     sonnet: lookup("ANTHROPIC_DEFAULT_SONNET_MODEL") ?? IBM_LITELLM_DEFAULT_MODEL_PINS.sonnet,
@@ -130,6 +118,108 @@ export function ibmLitellmPinsFromEnvMappings(envMappings: readonly EnvMapping[]
     subagent: lookup("CLAUDE_CODE_SUBAGENT_MODEL") ?? IBM_LITELLM_DEFAULT_MODEL_PINS.subagent,
     default: lookup("ANTHROPIC_MODEL") ?? IBM_LITELLM_DEFAULT_MODEL_PINS.default,
   };
+}
+
+/**
+ * One auth mode of a provider preset. Most presets have exactly one mode
+ * (a Bearer API key); Anthropic has two (oauth + api-key) which differ in
+ * both env-var name and Envoy injection header.
+ */
+export interface ProviderPresetMode {
+  /** Stable mode key. Stored as the `auth-mode` annotation on the K8s
+   *  Secret so reads can recover which mode was selected. */
+  key: string;
+  /** UI label for the mode toggle. */
+  label: string;
+  /** Default env-var bundle. Forms with dynamic configuration (IBM LiteLLM
+   *  model overrides) compute a custom bundle and pass it as `envMappings`
+   *  to `create()`; this is what `create()` falls back to otherwise. */
+  defaultEnvMappings: EnvMapping[];
+  /** Override the default `Authorization: Bearer {value}` injection.
+   *  Set for Anthropic api-key mode (`x-api-key`); omit elsewhere. */
+  injection?: InjectionConfig;
+}
+
+/**
+ * Provider preset — a fixed (host, path, env-bundle) tuple surfaced as a
+ * card in the Providers view. Replaces the per-provider scattered
+ * constants. Add a new provider by adding one entry to {@link PROVIDERS}.
+ */
+export interface ProviderPreset {
+  /** SecretType literal — the canonical id of this preset. */
+  id: ProviderPresetType;
+  /** Human-readable name for cards, toasts, and the connections picker. */
+  displayName: string;
+  /** Envoy host pattern. Also drives the per-instance leaf-cert SAN list. */
+  hostPattern: string;
+  /** Path scope for injection. Omit for whole-host coverage. */
+  pathPattern?: string;
+  /** Auth modes. Length 1 for IBM LiteLLM and OpenAI; length 2 for Anthropic. */
+  modes: readonly ProviderPresetMode[];
+}
+
+export const PROVIDERS = {
+  anthropic: {
+    id: "anthropic",
+    displayName: "Anthropic",
+    hostPattern: "api.anthropic.com",
+    modes: [
+      {
+        key: "oauth",
+        label: "OAuth Token",
+        // Claude Code SDK reads CLAUDE_CODE_OAUTH_TOKEN; sends Bearer.
+        defaultEnvMappings: [
+          { envName: "CLAUDE_CODE_OAUTH_TOKEN", placeholder: DEFAULT_ENV_PLACEHOLDER },
+        ],
+      },
+      {
+        key: "api-key",
+        label: "API Key",
+        // @anthropic-ai/sdk reads ANTHROPIC_API_KEY; sends x-api-key.
+        defaultEnvMappings: [
+          { envName: "ANTHROPIC_API_KEY", placeholder: DEFAULT_ENV_PLACEHOLDER },
+        ],
+        injection: { headerName: "x-api-key", valueFormat: "{value}" },
+      },
+    ],
+  },
+  "ibm-litellm": {
+    id: "ibm-litellm",
+    displayName: "IBM LiteLLM ETE Proxy",
+    hostPattern: IBM_LITELLM_HOST,
+    modes: [
+      {
+        key: "api-key",
+        label: "API Token",
+        defaultEnvMappings: ibmLitellmEnvMappings(),
+      },
+    ],
+  },
+  openai: {
+    id: "openai",
+    displayName: "OpenAI",
+    hostPattern: "api.openai.com",
+    // OpenAI's API lives under /v1/*; scoping injection to that path keeps
+    // status pages and other host endpoints from getting a spurious
+    // Authorization header.
+    pathPattern: "/v1/*",
+    modes: [
+      {
+        key: "api-key",
+        label: "API Key",
+        defaultEnvMappings: [
+          { envName: "OPENAI_API_KEY", placeholder: DEFAULT_ENV_PLACEHOLDER },
+        ],
+      },
+    ],
+  },
+} satisfies Record<ProviderPresetType, ProviderPreset>;
+
+/** Iteration helper — every provider id that has a {@link PROVIDERS} entry. */
+export const PROVIDER_PRESET_TYPES = Object.keys(PROVIDERS) as readonly ProviderPresetType[];
+
+export function isProviderPresetType(type: SecretType): type is ProviderPresetType {
+  return type in PROVIDERS;
 }
 
 export interface SecretView {

@@ -1,9 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import {
-  ANTHROPIC_API_KEY_ENV_MAPPING,
-  ANTHROPIC_OAUTH_ENV_MAPPING,
-  ibmLitellmEnvMappings,
+  isProviderPresetType,
+  PROVIDERS,
   type EnvMapping,
   type SecretsService,
   type CreateSecretInput,
@@ -17,15 +16,23 @@ import type {
   K8sStoredSecret,
 } from "./../infrastructure/k8s-secrets-port.js";
 import type { AgentGrantsPort } from "../../agents/infrastructure/agent-grants-port.js";
-import { hostPatternFor } from "../domain/types.js";
+import { hostPatternFor, pathPatternFor } from "../domain/types.js";
 
-// Anthropic envMappings the api-server defaults onto created secrets when
-// the caller didn't supply any — keeps non-UI clients (CLI, scripts) from
-// producing secrets the controller can't merge into agent pod env. ADR-040.
-function defaultAnthropicEnvMappings(authMode: "api-key" | "oauth"): EnvMapping[] {
-  return authMode === "api-key"
-    ? [ANTHROPIC_API_KEY_ENV_MAPPING]
-    : [ANTHROPIC_OAUTH_ENV_MAPPING];
+/**
+ * Default env-var bundle for a provider preset+mode, sourced from the
+ * registry. Returns `undefined` for generic secrets (the user declares
+ * their own env). ADR-040: keeps non-UI clients (CLI, scripts) from
+ * producing secrets the controller can't merge into agent pod env.
+ */
+function registryEnvMappings(type: SecretType, authMode?: string): EnvMapping[] | undefined {
+  if (type === "generic") return undefined;
+  const preset = PROVIDERS[type];
+  // Anthropic has 2 modes — picked by the value-prefix discriminator
+  // (authMode). Other presets have exactly one mode.
+  const mode = authMode
+    ? preset.modes.find((m) => m.key === authMode)
+    : preset.modes[0];
+  return mode?.defaultEnvMappings;
 }
 
 // `secrets-rev` hashes only what affects the agent pod's env. hostPattern,
@@ -85,8 +92,12 @@ export interface AgentConnectionRulesSync {
 }
 
 function toSecretView(s: K8sStoredSecret): SecretView {
-  const type: SecretType =
-    s.type === "anthropic" || s.type === "ibm-litellm" ? s.type : "generic";
+  // K8sStoredSecret.type is `string` (label value); narrow to the typed
+  // SecretType union via the registry. Anything not a known preset
+  // collapses to "generic".
+  const type: SecretType = isProviderPresetType(s.type as SecretType)
+    ? (s.type as SecretType)
+    : "generic";
   const view: SecretView = {
     id: s.id,
     name: s.name,
@@ -132,25 +143,24 @@ export function createSecretsService(deps: {
             ? "oauth"
             : "api-key"
           : undefined;
-      // Default preset envMappings when the caller didn't supply any — makes
-      // the controller's source-of-truth read robust to non-UI callers
-      // (ADR-040). Generic secrets are not defaulted: the user declares what
-      // env they need.
+      // Default preset envMappings when the caller didn't supply any.
+      // Sources the bundle from the PROVIDERS registry — adding a new
+      // preset requires only one entry there, not a branch here.
       const envMappings: EnvMapping[] | undefined =
         input.envMappings?.length
           ? input.envMappings
-          : input.type === "anthropic" && authMode
-            ? defaultAnthropicEnvMappings(authMode)
-            : input.type === "ibm-litellm"
-              ? ibmLitellmEnvMappings()
-              : undefined;
+          : registryEnvMappings(input.type, authMode);
+      // Path pattern: presets that scope to a path (currently only OpenAI's
+      // `/v1/*`) take it from the registry; generic secrets respect the
+      // user-supplied value.
+      const pathPattern = pathPatternFor(input.type) ?? input.pathPattern;
       await deps.k8sPort.createSecret({
         id,
         name: input.name,
         type: input.type,
         value: input.value,
         hostPattern,
-        ...(input.pathPattern ? { pathPattern: input.pathPattern } : {}),
+        ...(pathPattern ? { pathPattern } : {}),
         ...(input.injectionConfig ? { injectionConfig: input.injectionConfig } : {}),
         ...(authMode ? { authMode } : {}),
         ...(envMappings?.length ? { envMappings } : {}),
@@ -162,7 +172,7 @@ export function createSecretsService(deps: {
         hostPattern,
         createdAt: new Date().toISOString(),
       };
-      if (input.pathPattern) view.pathPattern = input.pathPattern;
+      if (pathPattern) view.pathPattern = pathPattern;
       if (input.type === "generic" && input.injectionConfig) {
         view.injectionConfig = input.injectionConfig;
       }
