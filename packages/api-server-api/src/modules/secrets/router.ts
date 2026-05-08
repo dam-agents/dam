@@ -1,50 +1,18 @@
 import { z } from "zod";
 import { t } from "../../trpc.js";
-import { ANTHROPIC_API_KEY_ENV_MAPPING, ENV_NAME_RE } from "./types.js";
+import { ANTHROPIC_API_KEY_ENV_MAPPING } from "./types.js";
+import {
+  envMappingsSchema,
+  injectionConfigSchema,
+  secretTypeSchema,
+  updateSecretInputSchema,
+} from "./schemas.js";
 
-const secretTypeSchema = z.enum(["anthropic", "generic"]);
-
-const envMappingSchema = z.object({
-  envName: z
-    .string()
-    .min(1)
-    .max(255)
-    .regex(ENV_NAME_RE, "envName must match [A-Z_][A-Z0-9_]*"),
-  placeholder: z.string().min(1).max(1000),
-});
-
-const envMappingsSchema = z.array(envMappingSchema).max(32);
-
-const injectionConfigSchema = z.object({
-  headerName: z.string().min(1).max(255),
-  valueFormat: z.string().max(1000).optional(),
-});
-
-export const updateSecretInputSchema = z
-  .object({
-    id: z.string().min(1),
-    name: z.string().min(1).max(100).optional(),
-    value: z.string().min(1).optional(),
-    hostPattern: z.string().min(1).max(253).optional(),
-    pathPattern: z.string().max(1000).nullable().optional(),
-    injectionConfig: injectionConfigSchema.nullable().optional(),
-    envMappings: envMappingsSchema.optional(),
-  })
-  .superRefine((d, ctx) => {
-    // The raw token is stored only inside the SDS file's `inline_string`
-    // pre-baked with the current `valueFormat`. Changing `injectionConfig`
-    // alone would leave that file out of sync with the new format, so we
-    // require callers to re-supply `value` and re-bake atomically. `null`
-    // (clear-to-defaults) counts as a change too — defaults aren't always
-    // identical to what was stored.
-    if (d.injectionConfig !== undefined && d.value === undefined) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "value is required when changing injectionConfig",
-        path: ["value"],
-      });
-    }
-  });
+// Re-export so existing barrel consumers (`api-server-api`'s index.ts +
+// the api-server's tests) keep working. UI code that imports
+// `updateSecretInputSchema` should prefer the schemas.ts path so the
+// UI bundle doesn't pull in @trpc/server through this file.
+export { updateSecretInputSchema };
 
 function messageForStatus(status: number): string {
   if (status === 401) return "Invalid credential.";
