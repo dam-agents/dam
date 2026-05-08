@@ -84,6 +84,43 @@ pod-IP resolver, and the trusted `x-platform-instance` header.
   controller-rendered and use L4 ambient — no waypoint hop on the
   credential-injection hot path.
 
+- **Why harness and ext-authz use different enforcement shapes.** The
+  asymmetry is driven by request shape, not preference:
+
+  | | Harness | ext-authz |
+  |---|---|---|
+  | Protocol | HTTP/REST | gRPC, fixed method path |
+  | Instance ID in request | URL path: `/api/instances/<id>/...` | nowhere |
+  | Latency budget | slack — occasional MCP / SSE / trigger | hot path — fires on every credentialed agent egress |
+
+  Harness has `<id>` in the URL, so the natural binding is **L7
+  path-matching at a waypoint**: one shared Service, one waypoint, one
+  per-instance AuthorizationPolicy keyed on `principal == <id>` AND
+  `path == /api/instances/<id>/*`. The handlers were already written
+  to take `:id` from route params — REST-shaped — so this is the
+  least-disruptive fit.
+
+  ext-authz has no `<id>` anywhere in the request (the gRPC method is
+  fixed). To get instance identity into the api-server we'd have to
+  derive it from `:authority`, a header, or `context_extensions`. L4
+  AuthorizationPolicy can't match on `:authority` (that's L7), so a
+  shared Service would force a waypoint — adding latency to every
+  credential injection. **Per-instance Service + L4 policy** pushes
+  the principal-to-instance binding into the routing topology
+  instead: each Service has one ALLOW rule with one principal, no L7
+  needed, and the api-server reads `:authority` (already populated
+  by Envoy from the upstream cluster) to know which instance is
+  calling. The cryptographic pinning happens at L4 *before* the call
+  lands on the api-server.
+
+  Heuristic for future endpoints joining this stack:
+
+  - **Has an `<id>`-bearing URL or other L7 field** → shared Service
+    via waypoint, path-based AuthorizationPolicy.
+  - **No instance discriminator in the request** → per-instance
+    Service, L4 AuthorizationPolicy, derive instance from
+    `:authority`.
+
 - **`/internal/trigger` moves under `/api/instances/:id/internal/trigger`.**
   Falls under the same path-prefix AuthorizationPolicy as MCP and
   pod-files; the body's `instanceId` field is preserved for

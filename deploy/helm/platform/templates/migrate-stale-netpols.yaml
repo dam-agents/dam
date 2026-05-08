@@ -96,7 +96,9 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: kubectl
-          image: bitnami/kubectl:1.30
+          # alpine/k8s ships kubectl + a shell on alpine. Bitnami's
+          # `bitnami/kubectl` was retired from Docker Hub mid-2025.
+          image: alpine/k8s:1.30.4
           command:
             - sh
             - -c
