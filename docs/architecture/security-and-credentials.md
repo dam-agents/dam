@@ -207,25 +207,35 @@ Per-instance pair isolation, harness-port admission, and ext-authz
 caller identification all flow through the same SPIFFE primitive:
 
 - **Per-instance ServiceAccount** in the agent namespace, name ==
-  instance ID. Both pods of the long-lived pair and every fork pair
-  run as this SA — forks reuse the parent's. `automountServiceAccountToken`
+  instance ID. Both pods of the long-lived pair run as this SA. Fork
+  pairs (ADR-027) get their **own** per-fork SA — distinct from the
+  parent's — paired with narrow per-fork AuthorizationPolicies, so a
+  compromised fork cannot reach the parent's full
+  `/api/instances/<parent>/*` surface. `automountServiceAccountToken`
   stays false; istiod issues the workload cert independent of SA-token
   mounts.
 - **Agent → gateway** (CONNECT proxy port) is admitted by an
-  AuthorizationPolicy keyed on the same SA — same identity on both
-  ends, so the rule is "self-talk only". This replaces ADR-038's
+  AuthorizationPolicy keyed on the SA the pair runs as. Both pods
+  share the SA so the rule is "self-talk only". Replaces ADR-038's
   pair-key NetworkPolicy.
-- **Agent → api-server harness** routes through the `<rel>-apiserver-harness`
-  Service (carries `istio.io/use-waypoint`) and a waypoint Gateway
-  Istio synthesises. A per-instance AuthorizationPolicy on the waypoint
+- **Gateway → api-server harness.** The agent dials the harness via
+  HTTPS_PROXY (no NO_PROXY carve-out — all agent egress flows through
+  the gateway), so what reaches the mesh is gateway → harness.
+  The harness Service is `<rel>-apiserver-harness`, carrying
+  `istio.io/use-waypoint`; Istio synthesises a waypoint Gateway pod
+  in front of it. A per-instance AuthorizationPolicy on the waypoint
   ALLOWs the SA principal to `/api/instances/<id>/*`; handlers can
-  treat URL `:id` as authenticated.
+  treat URL `:id` as authenticated. For forks, an additional per-fork
+  policy admits the fork SA only to `/api/instances/<parent>/mcp` —
+  pod-files SSE and `/internal/trigger` stay parent-only.
 - **Gateway → api-server ext-authz** routes through a per-instance
   Service `<rel>-extauthz-<id>` rendered by the controller alongside
   each instance. The AuthorizationPolicy on each Service ALLOWs only
-  the matching SA principal, so the destination Service is
-  cryptographically pinned to the calling instance; the api-server
-  derives instance ID from the gRPC `:authority`.
+  the matching SA principal (plus per-fork ALLOWs that admit fork
+  SAs to the parent's Service so the parent owner's HITL rules stay
+  the gate). The destination Service is cryptographically pinned to
+  the calling instance; the api-server derives instance ID from the
+  gRPC `:authority`.
 - **Pod-level DENY AuthorizationPolicy** on the api-server pod
   rejects anything that isn't either the waypoint's SA (harness) or a
   per-instance SA from the agent namespace (ext-authz), closing the
