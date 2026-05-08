@@ -25,9 +25,10 @@ func TestBuildServiceAccount_Shape(t *testing.T) {
 	assert.Equal(t, testOwnerCM.UID, sa.OwnerReferences[0].UID)
 }
 
-// ADR-041: forks reuse the parent's SA, so the build helper can be called
-// with the parent's instance name regardless of which pod is being rendered.
-// This pins the contract: name == argument, no implicit transformation.
+// ADR-041: the SA name is whatever the caller passes — long-lived pairs
+// pass the instance name, forks pass the fork name (forks have their own
+// per-fork SA, see ADR-027 + authorization_policy.go). This test pins the
+// contract: name == argument, no implicit transformation.
 func TestBuildServiceAccount_NameEqualsInstanceID(t *testing.T) {
 	for _, id := range []string{"abc", "instance-with-dashes", "x"} {
 		sa := BuildServiceAccount(id, testConfig, testOwnerCM)

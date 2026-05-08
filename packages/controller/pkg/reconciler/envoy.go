@@ -717,9 +717,11 @@ const envoyListenAddress = "0.0.0.0"
 //
 // `extAuthzInstanceID` is the instance whose per-instance ext-authz Service
 // the gateway dials (ADR-041). For long-lived pairs this equals the
-// instance name; for forks it is the parent instance's ID, since forks
-// reuse the parent's SA and therefore must dial the parent's per-instance
-// ext-authz Service to satisfy the AuthorizationPolicy.
+// instance name; for forks it is the parent instance's ID — fork pods
+// run as their *own* per-fork SA (ADR-027), but the parent owner's HITL
+// rules should gate fork egress, so the fork's gateway dials the parent's
+// per-instance ext-authz Service. The fork SA is admitted there via a
+// separate per-fork AuthorizationPolicy (`BuildForkExtAuthzAuthorizationPolicy`).
 func renderEnvoyBootstrap(extAuthzInstanceID string, cfg *config.Config, routes []envoyRoute) (string, error) {
 	tmpl, err := template.New("envoy").Parse(envoyBootstrapTmpl)
 	if err != nil {

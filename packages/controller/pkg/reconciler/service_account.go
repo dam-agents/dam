@@ -14,10 +14,13 @@ import (
 
 // ADR-041: per-instance ServiceAccount in the agent namespace, name == instance ID.
 //
-// Both pods of the long-lived pair (agent-runtime + gateway) and every fork
-// pair mount the same SA — forks reuse the parent's SA so the SPIFFE peer
-// principal SA name equals the URL `:id` for both shapes. K8s GC reaps the
-// SA on instance delete via the owner reference to the instance ConfigMap.
+// Both pods of the long-lived pair (agent-runtime + gateway) mount this SA.
+// Fork pairs (ADR-027) get their **own** per-fork SA — distinct from the
+// parent's — rendered by the same `BuildServiceAccount` helper with the
+// fork name as `instanceName`. The fork's narrower harness surface is
+// enforced by per-fork AuthorizationPolicies (see authorization_policy.go).
+// K8s GC reaps each SA on instance/fork delete via the owner reference to
+// the matching ConfigMap.
 //
 // `automountServiceAccountToken: false` is preserved: Istio workload identity
 // does not depend on SA-token mounts, and we keep the agent + gateway pods
