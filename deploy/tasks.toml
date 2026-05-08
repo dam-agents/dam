@@ -194,7 +194,7 @@ else
   echo "cert-manager already installed"
 fi
 
-# 2b. Install Istio ambient + Gateway-API CRDs (required by ADR-040).
+# 2b. Install Istio ambient + Gateway-API CRDs (required by ADR-041).
 # Pinned: Gateway API v1.2.0 stable channel (introduced Gateway/HTTPRoute v1
 # and the gatewayClassName: istio-waypoint shape). Istio 1.29.x is the
 # floor for ambient L7 with locked-down waypoint HCM.

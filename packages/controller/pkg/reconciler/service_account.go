@@ -12,7 +12,7 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 )
 
-// ADR-040: per-instance ServiceAccount in the agent namespace, name == instance ID.
+// ADR-041: per-instance ServiceAccount in the agent namespace, name == instance ID.
 //
 // Both pods of the long-lived pair (agent-runtime + gateway) and every fork
 // pair mount the same SA — forks reuse the parent's SA so the SPIFFE peer

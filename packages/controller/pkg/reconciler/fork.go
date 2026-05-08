@@ -111,7 +111,7 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 		}
 	}
 
-	// ADR-040: per-fork ServiceAccount in the agent namespace. Forks get
+	// ADR-041: per-fork ServiceAccount in the agent namespace. Forks get
 	// their OWN identity (not the parent's) so a compromised fork cannot
 	// reach the parent's full `/api/instances/<parent>/*` surface — only
 	// the narrow paths the per-fork harness AuthorizationPolicy below
@@ -121,13 +121,13 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, err.Error())
 	}
 
-	// ADR-040: gateway admission — both pods of the fork pair share the
+	// ADR-041: gateway admission — both pods of the fork pair share the
 	// fork SA so this is "self-talk only" (same shape as long-lived pairs).
 	if err := r.applyAuthorizationPolicy(ctx, BuildGatewayAuthorizationPolicy(forkName, forkName, r.config, cm)); err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying fork gateway authz policy: %v", err))
 	}
 
-	// ADR-040 + ADR-027: per-fork harness policy admits the fork SA only
+	// ADR-041 + ADR-027: per-fork harness policy admits the fork SA only
 	// to `/api/instances/<parent>/mcp` (not the parent's full surface),
 	// and the per-fork ext-authz policy admits the fork SA to the
 	// parent's per-instance ext-authz Service so the parent owner's
@@ -141,7 +141,7 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 
 	// ADR-038: paired gateway pod for the fork. Render the gateway-side
 	// resources first so HTTPS_PROXY's target exists by the time the
-	// agent Job's pod starts dialing it. ADR-040: pair-key NetworkPolicy
+	// agent Job's pod starts dialing it. ADR-041: pair-key NetworkPolicy
 	// is gone — pair isolation is now enforced by the AuthorizationPolicy
 	// above.
 	gatewayPod := BuildForkGatewayPod(forkName, forkSpec.Instance, r.config, cm, credentialSecrets)
@@ -381,7 +381,7 @@ func (r *ForkReconciler) applyConfigMap(ctx context.Context, desired *corev1.Con
 }
 
 // applyAuthorizationPolicy mirrors `InstanceReconciler.applyAuthorizationPolicy`
-// for fork-scoped policies (per-fork gateway admission, ADR-040).
+// for fork-scoped policies (per-fork gateway admission, ADR-041).
 func (r *ForkReconciler) applyAuthorizationPolicy(ctx context.Context, desired *unstructured.Unstructured) error {
 	if r.dynamic == nil {
 		return fmt.Errorf("dynamic client not configured (AuthorizationPolicy cannot be applied)")

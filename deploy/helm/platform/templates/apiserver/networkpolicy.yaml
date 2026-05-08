@@ -1,6 +1,6 @@
 {{- if .Values.apiServer.networkPolicy.enabled }}
 {{- /*
-  ADR-040: pruned to a coarse perimeter only.
+  ADR-041: pruned to a coarse perimeter only.
 
   Per-instance / per-pair admission moved entirely to mesh AuthorizationPolicy
   (the controller renders per-instance policies; chart renders the pod-level

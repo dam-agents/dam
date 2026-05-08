@@ -40,7 +40,7 @@ const (
 	envoyAuthModeAnn      = "agent-platform.ai/auth-mode"
 	// JSON-encoded list of {envName, placeholder} the api-server stamps on a
 	// user-typed credential Secret. Authoritative source for the env vars
-	// the agent harness needs as placeholders (ADR-040). Connection-type
+	// the agent harness needs as placeholders (ADR-041). Connection-type
 	// Secrets do not write this annotation today and fall through to the
 	// hardcoded mapping in `credentialEnvVars` below.
 	envoyEnvMappingsAnn   = "agent-platform.ai/env-mappings"
@@ -135,7 +135,7 @@ func filterByGrants(secrets []corev1.Secret, ann map[string]string) []corev1.Sec
 		}
 	}
 
-	// ADR-040: a granted-id that doesn't resolve to an owner-owned Secret
+	// ADR-041: a granted-id that doesn't resolve to an owner-owned Secret
 	// silently contributes nothing (parse-tolerant fallback). Operators need
 	// a signal so the missing-env mode is diagnosable; emit one log line per
 	// reconcile naming the unresolved ids.
@@ -197,7 +197,7 @@ type envMapping struct {
 // credentialEnvVars synthesizes the env-var placeholders the agent harness
 // needs so SDKs will dispatch (Envoy overwrites the real header on the wire).
 //
-// Source of truth (ADR-040): the api-server stamps `envoyEnvMappingsAnn` on
+// Source of truth (ADR-041): the api-server stamps `envoyEnvMappingsAnn` on
 // each user-typed credential Secret. Secrets are pre-sorted by Name in
 // `listOwnerCredentialSecrets`, so the inner dedup gives "first-granted
 // wins" on env-name collisions. When the annotation is missing or malformed
@@ -359,13 +359,13 @@ static_resources:
                       grpc_service:
                         envoy_grpc:
                           cluster_name: ext_authz_cluster
-                          # ADR-040: pin :authority to the per-instance
+                          # ADR-041: pin :authority to the per-instance
                           # ext-authz Service hostname. Without this,
                           # Envoy's default :authority is the cluster
                           # name and the api-server cannot derive
                           # instance ID from it.
                           authority: "{{ $.ExtAuthzHost }}"
-                        # ADR-040: instance identity is conveyed by the
+                        # ADR-041: instance identity is conveyed by the
                         # gRPC :authority of the per-instance ext-authz
                         # Service this cluster dials, cryptographically
                         # pinned by the AuthorizationPolicy on that
@@ -400,7 +400,7 @@ static_resources:
                         # :authority so this route only applies to
                         # api-server-bound calls; everything else falls
                         # through to the egress fallthrough below.
-                        # ADR-040: identity is conveyed by the SPIFFE
+                        # ADR-041: identity is conveyed by the SPIFFE
                         # peer principal that ztunnel applies when
                         # encapsulating outbound traffic — the gateway
                         # pod runs as the per-instance SA, and the
@@ -475,13 +475,13 @@ static_resources:
                       grpc_service:
                         envoy_grpc:
                           cluster_name: ext_authz_cluster
-                          # ADR-040: pin :authority to the per-instance
+                          # ADR-041: pin :authority to the per-instance
                           # ext-authz Service hostname. Without this,
                           # Envoy's default :authority is the cluster
                           # name and the api-server cannot derive
                           # instance ID from it.
                           authority: "{{ $.ExtAuthzHost }}"
-                        # ADR-040: instance identity is conveyed by the
+                        # ADR-041: instance identity is conveyed by the
                         # gRPC :authority of the per-instance ext-authz
                         # Service this cluster dials.
                         timeout: {{ $.ExtAuthzTimeoutSeconds }}s
@@ -557,7 +557,7 @@ static_resources:
                 grpc_service:
                   envoy_grpc:
                     cluster_name: ext_authz_cluster
-                    # ADR-040: pin :authority to the per-instance
+                    # ADR-041: pin :authority to the per-instance
                     # ext-authz Service hostname (see HCM ext_authz
                     # block above for rationale).
                     authority: "{{ $.ExtAuthzHost }}"
@@ -716,7 +716,7 @@ const envoyListenAddress = "0.0.0.0"
 // paired gateway pod.
 //
 // `extAuthzInstanceID` is the instance whose per-instance ext-authz Service
-// the gateway dials (ADR-040). For long-lived pairs this equals the
+// the gateway dials (ADR-041). For long-lived pairs this equals the
 // instance name; for forks it is the parent instance's ID, since forks
 // reuse the parent's SA and therefore must dial the parent's per-instance
 // ext-authz Service to satisfy the AuthorizationPolicy.
@@ -730,7 +730,7 @@ func renderEnvoyBootstrap(extAuthzInstanceID string, cfg *config.Config, routes 
 	extAuthzTimeoutSeconds := cfg.ExtAuthzHoldSeconds + 60
 	// :authority value the harness Service is reached on. The agent
 	// builds harness URLs from cfg.HarnessServerURL (`<rel>-apiserver-harness`
-	// per ADR-040), so the Host/:authority includes the port. We match on
+	// per ADR-041), so the Host/:authority includes the port. We match on
 	// this exact string so the harness route is scoped to api-server
 	// traffic only — fall-through goes through the regular egress paths.
 	harnessAuthority := fmt.Sprintf("%s:%d", cfg.HarnessHost(), cfg.HarnessServerPort)
@@ -771,7 +771,7 @@ func renderEnvoyBootstrap(extAuthzInstanceID string, cfg *config.Config, routes 
 // Envoy bootstrap YAML for an instance.
 //
 // `extAuthzInstanceID` is the instance whose per-instance ext-authz Service
-// the gateway dials (ADR-040). Long-lived pairs pass `instanceName` for
+// the gateway dials (ADR-041). Long-lived pairs pass `instanceName` for
 // both args; forks pass the parent instance ID for the second.
 func BuildEnvoyBootstrapConfigMap(instanceName, extAuthzInstanceID string, cfg *config.Config, ownerCM *corev1.ConfigMap, secrets []corev1.Secret) (*corev1.ConfigMap, error) {
 	routes := routesFromSecrets(secrets)

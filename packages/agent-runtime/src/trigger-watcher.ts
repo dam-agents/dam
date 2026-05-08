@@ -102,7 +102,7 @@ async function processTrigger(
       // No Authorization header: harness traffic flows through the paired
       // gateway pod's Envoy and on through the Istio mesh, which conveys
       // the gateway pod's SPIFFE peer principal to the waypoint. The
-      // waypoint enforces principal == URL `:id` (ADR-040).
+      // waypoint enforces principal == URL `:id` (ADR-041).
       mcpServers.push({ type: "http", name: "platform-outbound", url: config.PLATFORM_MCP_URL, headers: [] });
     }
 
@@ -122,7 +122,7 @@ async function processTrigger(
   }
 }
 
-/** POST to the API server's per-instance trigger endpoint. ADR-040: the
+/** POST to the API server's per-instance trigger endpoint. ADR-041: the
  *  endpoint moved under `/api/instances/:id/internal/trigger` so it falls
  *  under the same waypoint AuthorizationPolicy as MCP and pod-files —
  *  identity is enforced by Istio (principal == URL `:id`), not a header. */

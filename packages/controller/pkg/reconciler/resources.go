@@ -77,7 +77,7 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 	// AuthorizationPolicies; ALL outbound calls — external hosts AND the
 	// harness API — cross the paired gateway pod.
 	//
-	// ADR-040: identity for harness traffic comes from the gateway pod's
+	// ADR-041: identity for harness traffic comes from the gateway pod's
 	// SPIFFE principal (gateway runs as the per-instance SA). When the
 	// gateway's Envoy forwards to the harness Service, ztunnel encapsulates
 	// the connection with the gateway's principal, and the waypoint
@@ -317,7 +317,7 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 					Annotations: podAnnotations,
 				},
 				Spec: corev1.PodSpec{
-					// ADR-040: per-instance SA gives the pod its SPIFFE
+					// ADR-041: per-instance SA gives the pod its SPIFFE
 					// workload identity (`<td>/ns/<ns>/sa/<id>`).
 					// AutomountServiceAccountToken stays false — Istio
 					// identity is independent of SA-token mounts.

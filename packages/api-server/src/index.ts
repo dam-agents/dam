@@ -304,7 +304,7 @@ const { server: harnessApiServer } = startHarnessApiServerApp({
   seedSources,
 });
 
-// ADR-040: instance identity for ext-authz now flows from the per-instance
+// ADR-041: instance identity for ext-authz now flows from the per-instance
 // ext-authz Service the gateway pod's Envoy was configured to dial,
 // cryptographically pinned by the AuthorizationPolicy on each per-instance
 // Service. The pod-IP resolver and `x-platform-instance` header are gone.

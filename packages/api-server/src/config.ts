@@ -2,7 +2,7 @@ import { z } from "zod/v4";
 
 const configSchema = z.object({
   namespace: z.string().default("platform-agents"),
-  /** Helm release name. ADR-040: required at startup — used to parse
+  /** Helm release name. ADR-041: required at startup — used to parse
    *  instance ID out of the per-instance ext-authz Service hostname
    *  (`<release>-extauthz-<id>`) the gateway pod's Envoy was configured
    *  to dial. A wrong/missing value produces an `expectedPrefix` that

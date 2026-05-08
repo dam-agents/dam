@@ -1,9 +1,9 @@
 {{- /*
-ADR-040 migration: drop stale pair-key NetworkPolicies left over from
+ADR-041 migration: drop stale pair-key NetworkPolicies left over from
 ADR-038's enforcement model.
 
 The old controller wrote per-instance pair-key NetworkPolicies (`<id>-egress`,
-`<id>-gateway-egress`) in the agent namespace. ADR-040 retires that
+`<id>-gateway-egress`) in the agent namespace. ADR-041 retires that
 mechanism in favour of mesh AuthorizationPolicy and removes the
 controller's `networkpolicies` write RBAC, so the new controller cannot
 delete the leftover NPs itself.
@@ -22,7 +22,7 @@ Job is a no-op on a fresh install. helm.sh/hook-delete-policy reaps
 the Job + RBAC after a successful run.
 
 Removable in a future minor: once every supported deployment has
-upgraded past ADR-040, this template can be deleted.
+upgraded past ADR-041, this template can be deleted.
 */ -}}
 {{- $jobName := printf "%s-migrate-stale-netpols" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
 apiVersion: v1
@@ -109,7 +109,7 @@ spec:
               # controller on every per-instance NetworkPolicy and is not
               # used anywhere else, so this selector is precise.
               count=$(kubectl -n "$ns" get networkpolicy -l agent-platform.ai/pair -o name 2>/dev/null | wc -l | tr -d ' ')
-              echo "ADR-040 migration: deleting $count stale pair-key NetworkPolicy(s) in $ns"
+              echo "ADR-041 migration: deleting $count stale pair-key NetworkPolicy(s) in $ns"
               if [ "$count" != "0" ]; then
                 kubectl -n "$ns" delete networkpolicy -l agent-platform.ai/pair --ignore-not-found
               fi

@@ -15,7 +15,7 @@ export interface PodFilesEventsDeps {
 /**
  * Mount the SSE channel that the agent-pod sidecar holds open.
  *
- * ADR-040: Auth is the per-instance Istio AuthorizationPolicy at the
+ * ADR-041: Auth is the per-instance Istio AuthorizationPolicy at the
  * waypoint — principal == URL `:id`. This handler resolves the instance
  * label-set (agentId, owner) by name. Topics are keyed by agent name
  * because connection grants are agent-scoped: every running instance of

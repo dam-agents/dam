@@ -92,14 +92,14 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 		}
 	}
 
-	// ADR-040: per-instance SA must exist before the agent + gateway pods
+	// ADR-041: per-instance SA must exist before the agent + gateway pods
 	// start (kubelet rejects pod scheduling on a missing SA, and Istio
 	// stamps the SPIFFE workload cert from it).
 	if err := r.ensureServiceAccount(ctx, name, cm); err != nil {
 		return r.setError(ctx, name, err.Error())
 	}
 
-	// ADR-040: per-instance ext-authz Service in the release namespace —
+	// ADR-041: per-instance ext-authz Service in the release namespace —
 	// the gateway pod's Envoy bootstrap dials this Service for HITL
 	// approvals, and the per-instance AuthorizationPolicy below pins it
 	// to the matching SA principal.
@@ -108,7 +108,7 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 		return r.setError(ctx, name, fmt.Sprintf("applying ext-authz service: %v", err))
 	}
 
-	// ADR-040: three per-instance AuthorizationPolicies — gateway admission
+	// ADR-041: three per-instance AuthorizationPolicies — gateway admission
 	// (agent ns), harness path-prefix at the waypoint (release ns),
 	// ext-authz Service principal (release ns).
 	if err := r.applyAuthorizationPolicy(ctx, BuildGatewayAuthorizationPolicy(name, name, r.config, cm)); err != nil {
@@ -125,7 +125,7 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 
 	// ADR-038: paired pods, rendered as a unit. Render the gateway first
 	// so the agent's HTTPS_PROXY target exists by the time the agent pod
-	// starts dialing it. ADR-040: pair-key NetworkPolicies are gone —
+	// starts dialing it. ADR-041: pair-key NetworkPolicies are gone —
 	// pair isolation is now enforced by the per-instance AuthorizationPolicy
 	// on the gateway Service (mesh-level, cryptographic).
 	gatewaySS := BuildGatewayStatefulSet(name, hibernated, r.config, cm, credentialSecrets)
@@ -194,7 +194,7 @@ func (r *InstanceReconciler) Delete(ctx context.Context, name string) {
 	// Envoy bootstrap ConfigMap, and the cert-manager Certificate / leaf
 	// Secret.
 	//
-	// ADR-040 release-namespace resources (per-instance ext-authz
+	// ADR-041 release-namespace resources (per-instance ext-authz
 	// Service, harness + ext-authz AuthorizationPolicies) cannot use a
 	// cross-namespace ownerRef — K8s assumes same-namespace ownerRefs and
 	// the GC controller reaps them as orphans. Clean up explicitly.

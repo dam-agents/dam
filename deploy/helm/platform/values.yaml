@@ -66,7 +66,7 @@ urls:
 #     - name: my-registry-secret
 imagePullSecrets: []
 
-# -- Istio ambient mesh settings (ADR-040). Istio is a hard prerequisite of
+# -- Istio ambient mesh settings (ADR-041). Istio is a hard prerequisite of
 # this chart — `validate-istio.yaml` fails install if the mesh is missing.
 # `mise run cluster:install` provisions Istio out-of-band (mirroring how
 # cert-manager is treated). There is no `enabled: false` mode; an

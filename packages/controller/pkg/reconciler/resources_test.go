@@ -273,7 +273,7 @@ func TestBuildAgentService(t *testing.T) {
 	require.Len(t, svc.OwnerReferences, 1)
 }
 
-// ADR-040: per-instance pair-key NetworkPolicy is gone (mesh
+// ADR-041: per-instance pair-key NetworkPolicy is gone (mesh
 // AuthorizationPolicy handles pair isolation cryptographically). The
 // previous TestBuildAgentNetworkPolicy is no longer applicable.
 

@@ -34,7 +34,7 @@ func setupForkReconciler(t *testing.T, agents map[string]*corev1.ConfigMap, obje
 		IstioWaypointName: "apiserver-waypoint",
 	}
 	getter := &fakeGetter{cms: agents}
-	// ADR-040: ForkReconciler writes per-fork AuthorizationPolicies via
+	// ADR-041: ForkReconciler writes per-fork AuthorizationPolicies via
 	// the dynamic client; tests need a fake that knows the GVR.
 	r := NewForkReconciler(client, cfg, NewAgentResolver(getter)).WithDynamicClient(newFakeDynamic())
 	r.now = func() time.Time { return time.Unix(1_000_000, 0) }

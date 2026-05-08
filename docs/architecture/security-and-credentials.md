@@ -11,7 +11,7 @@ Last verified: 2026-05-07
 - [ADR-033 — Envoy-based credential gateway](../adrs/033-envoy-credential-gateway.md) — Envoy mints per-instance leaf certs, MITMs egress, and injects credential headers
 - [ADR-035 — HITL ext_authz](../adrs/035-unified-hitl-ux.md) — Envoy gates credentialed egress through an api-server ext_authz call
 - [ADR-038 — Paired agent and gateway pods](../adrs/038-paired-gateway-pod.md) — agent and gateway run in two paired pods, with the credential boundary at the pod boundary
-- [ADR-040 — Istio ambient mesh](../adrs/040-istio-ambient-mesh.md) — SPIFFE identity for every internal hop; supersedes ADR-038's NetworkPolicy mechanism, the `x-platform-instance` header, and the pod-IP resolver
+- [ADR-041 — Istio ambient mesh](../adrs/041-istio-ambient-mesh.md) — SPIFFE identity for every internal hop; supersedes ADR-038's NetworkPolicy mechanism, the `x-platform-instance` header, and the pod-IP resolver
 
 ## Overview
 
@@ -37,7 +37,7 @@ Three rules carry the security model:
    waypoint ALLOWs that principal to `/api/instances/<id>/*`; the
    per-instance ext-authz Service ALLOWs only the matching SA. Identity
    no longer flows through pod IPs or the trusted `x-platform-instance`
-   header — both are removed (ADR-040).
+   header — both are removed (ADR-041).
 
 Workspace contents are explicitly outside the trust boundary — see the
 security note on [persistence](persistence.md).
@@ -171,7 +171,7 @@ passthrough chains.
 ## HITL ext_authz
 
 Each credentialed request goes through an ext_authz Check call against
-the api-server. ADR-040: identity is the **per-instance ext-authz
+the api-server. ADR-041: identity is the **per-instance ext-authz
 Service** the gateway pod's Envoy was configured to dial
 (`<release>-extauthz-<id>`); the AuthorizationPolicy on each Service
 ALLOWs only the matching SA principal, so by the time a Check arrives
@@ -201,7 +201,7 @@ own pair key (`agent-platform.ai/pair`) isolates it from the parent
 instance's pair. See [ADR-027](../adrs/027-slack-user-impersonation.md)
 and [ADR-038](../adrs/038-paired-gateway-pod.md).
 
-## Mesh identity (ADR-040)
+## Mesh identity (ADR-041)
 
 Per-instance pair isolation, harness-port admission, and ext-authz
 caller identification all flow through the same SPIFFE primitive:

@@ -236,7 +236,7 @@ func BuildForkAgentJob(
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
 				Spec: corev1.PodSpec{
-					// ADR-040 + ADR-027: fork agent runs as the per-fork SA
+					// ADR-041 + ADR-027: fork agent runs as the per-fork SA
 					// (its own identity, NOT the parent's). The per-fork
 					// harness AuthorizationPolicy admits this SA only to
 					// `/api/instances/<parent>/mcp` — narrower than the

@@ -1,5 +1,5 @@
 {{- /*
-ADR-040: pod-level DENY ringfencing the api-server pod.
+ADR-041: pod-level DENY ringfencing the api-server pod.
 
 The waypoint AuthorizationPolicies (rendered per-instance by the
 controller) only apply to traffic ROUTED THROUGH the waypoint Service.

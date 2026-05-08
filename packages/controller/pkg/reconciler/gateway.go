@@ -71,7 +71,7 @@ func BuildGatewayStatefulSet(instanceName string, hibernated bool, cfg *config.C
 					Annotations: annotations,
 				},
 				Spec: corev1.PodSpec{
-					// ADR-040: gateway pod runs as the per-instance SA so
+					// ADR-041: gateway pod runs as the per-instance SA so
 					// its SPIFFE workload identity matches the agent half
 					// of the pair (same SA on both pods). The gateway-side
 					// AuthorizationPolicy ALLOWs only this principal.
@@ -147,7 +147,7 @@ func BuildForkGatewayPod(forkName, parentInstanceID string, cfg *config.Config, 
 			},
 		},
 		Spec: corev1.PodSpec{
-			// ADR-040 + ADR-027: fork gateway pod runs as the per-fork SA
+			// ADR-041 + ADR-027: fork gateway pod runs as the per-fork SA
 			// (its own identity, NOT the parent's). The per-fork
 			// gateway-admission AuthorizationPolicy ALLOWs only this SA
 			// (both pods of the fork pair share it), and per-fork

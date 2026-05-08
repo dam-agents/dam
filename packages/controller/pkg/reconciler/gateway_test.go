@@ -81,7 +81,7 @@ func TestBuildGatewayService(t *testing.T) {
 	assert.Equal(t, "gateway", svc.Spec.Selector["agent-platform.ai/role"])
 }
 
-// ADR-040: TestBuildGatewayNetworkPolicy / TestBuildForkAgentNetworkPolicy
+// ADR-041: TestBuildGatewayNetworkPolicy / TestBuildForkAgentNetworkPolicy
 // removed — pair-key NetworkPolicies are gone, replaced by per-instance
 // mesh AuthorizationPolicies (covered in authorization_policy_test.go).
 

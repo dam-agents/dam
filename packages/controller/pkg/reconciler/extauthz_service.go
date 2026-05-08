@@ -12,7 +12,7 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 )
 
-// ADR-040: per-instance ext-authz Service. One Service per instance,
+// ADR-041: per-instance ext-authz Service. One Service per instance,
 // pointing at the api-server pod, named `<release>-extauthz-<id>` in the
 // release namespace. The gateway pod's Envoy bootstrap dials this Service;
 // the per-instance AuthorizationPolicy on each Service ALLOWs only the

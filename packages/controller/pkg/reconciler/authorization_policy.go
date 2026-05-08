@@ -14,7 +14,7 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 )
 
-// ADR-040: per-instance Istio AuthorizationPolicies. The controller writes
+// ADR-041: per-instance Istio AuthorizationPolicies. The controller writes
 // three per instance:
 //
 //   1. `<id>-gateway-allow`        — admission to the gateway Service (CONNECT

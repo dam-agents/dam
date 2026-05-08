@@ -25,7 +25,7 @@ import (
 var authzPolicyListGVR = schema.GroupVersionResource{Group: "security.istio.io", Version: "v1", Resource: "authorizationpolicies"}
 
 // newFakeDynamic returns a dynamic fake that knows about the
-// AuthorizationPolicy CRD shape the controller writes (ADR-040). Tests
+// AuthorizationPolicy CRD shape the controller writes (ADR-041). Tests
 // that exercise Reconcile() rely on this so the per-instance policies
 // can be Created/Updated through the fake.
 func newFakeDynamic() *dynfake.FakeDynamicClient {
@@ -115,22 +115,22 @@ func TestReconcile_CreateResources(t *testing.T) {
 	require.NoError(t, err, "gateway Service must be created so HTTPS_PROXY DNS resolves")
 	assert.Equal(t, corev1.ClusterIPNone, gwSvc.Spec.ClusterIP)
 
-	// ADR-040: pair-key NetworkPolicies are gone — pair isolation is now
+	// ADR-041: pair-key NetworkPolicies are gone — pair isolation is now
 	// enforced by per-instance Istio AuthorizationPolicies. Coverage for
 	// the new resources lives in service_account_test.go (per-instance SA)
 	// and authorization_policy_test.go.
 
-	// Per-instance ServiceAccount (ADR-040)
+	// Per-instance ServiceAccount (ADR-041)
 	sa, err := client.CoreV1().ServiceAccounts("test-agents").Get(ctx, "my-instance", metav1.GetOptions{})
 	require.NoError(t, err, "per-instance ServiceAccount must be created")
 	require.NotNil(t, sa.AutomountServiceAccountToken)
 	assert.False(t, *sa.AutomountServiceAccountToken)
 
-	// Per-instance ext-authz Service in the release namespace (ADR-040)
+	// Per-instance ext-authz Service in the release namespace (ADR-041)
 	_, err = client.CoreV1().Services("default").Get(ctx, "platform-extauthz-my-instance", metav1.GetOptions{})
 	require.NoError(t, err, "per-instance ext-authz Service must be created")
 
-	// Pod specs use the per-instance SA (ADR-040)
+	// Pod specs use the per-instance SA (ADR-041)
 	assert.Equal(t, "my-instance", ss.Spec.Template.Spec.ServiceAccountName,
 		"agent pod must run as the per-instance SA so SPIFFE peer principal == URL :id")
 	assert.Equal(t, "my-instance", gws.Spec.Template.Spec.ServiceAccountName,

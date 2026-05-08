@@ -56,14 +56,14 @@ spec:
             - name: AGENT_POD_ANNOTATIONS
               value: {{ toJson . | quote }}
             {{- end }}
-            # ADR-040: harness traffic routes through the waypoint-fronted
+            # ADR-041: harness traffic routes through the waypoint-fronted
             # `-apiserver-harness` Service. The bare apiserver Service no
             # longer carries the harness port.
             - name: PLATFORM_HARNESS_SERVER_URL
               value: "http://{{ include "platform.fullname" . }}-apiserver-harness.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.apiServer.harnessServerPort }}"
             - name: PLATFORM_HARNESS_SERVER_PORT
               value: {{ .Values.apiServer.harnessServerPort | quote }}
-            # ADR-040: SPIFFE trust domain — used to render the principal
+            # ADR-041: SPIFFE trust domain — used to render the principal
             # string in the per-instance AuthorizationPolicies the
             # controller writes alongside each instance.
             - name: PLATFORM_ISTIO_TRUST_DOMAIN
@@ -82,7 +82,7 @@ spec:
               value: {{ .Values.controller.envoyPort | default 10000 | quote }}
             - name: AGENT_HOME
               value: {{ .Values.agentHome | quote }}
-            # ADR-040: ext-authz uses per-instance Services rendered by the
+            # ADR-041: ext-authz uses per-instance Services rendered by the
             # controller (one Service per instance, AuthorizationPolicy-gated
             # to the instance's own SA principal). The host is computed at
             # render time as `<release>-extauthz-<id>.<release-ns>.svc.cluster.local`

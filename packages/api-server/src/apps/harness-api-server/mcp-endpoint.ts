@@ -356,7 +356,7 @@ export interface MountMcpDeps {
 export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
   app.all("/api/instances/:id/mcp", async (c) => {
     const instanceId = c.req.param("id")!;
-    // ADR-040: principal == URL :id is enforced at the waypoint; this
+    // ADR-041: principal == URL :id is enforced at the waypoint; this
     // resolve is just a label lookup for owner / agentId.
     const verified = await resolveInstance(deps.k8s, instanceId);
     if (!verified) {
