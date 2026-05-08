@@ -1,4 +1,4 @@
-import { ArrowRight, Sparkles } from "lucide-react";
+import { ArrowRight, CalendarClock, Cloud, ShieldCheck, Users } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -19,24 +19,35 @@ const DISMISS_KEY = "platform-welcome-modal-dismissed";
 // reload. Skip persistence so dismissal only survives the current session.
 const PERSIST_DISMISS = import.meta.env.VITE_USE_MOCKS !== "true";
 
-const SETUP_STEPS: { title: string; description: string }[] = [
+const FEATURES: { icon: React.ComponentType<{ className?: string }>; title: string; description: string }[] = [
   {
-    title: "Set up a provider",
-    description: "Connect Anthropic so your agents can reach Claude.",
+    icon: Cloud,
+    title: "Sessions that don't die",
+    description:
+      "Your agent runs in the cloud — close your laptop, go home, come back tomorrow. It's still there.",
   },
   {
-    title: "Create your first agent",
-    description: "Pick a template, name it, and you're running.",
+    icon: ShieldCheck,
+    title: "Credentials stay safe",
+    description:
+      "Tokens are injected on the wire by a separate gateway. The agent never sees them — even if compromised.",
   },
   {
-    title: "Add connections (optional)",
-    description: "Give agents access to GitHub, Google Workspace, and more.",
+    icon: Users,
+    title: "Team collaboration",
+    description:
+      "Colleagues interact via Slack using their own credentials. No token sharing, no security trade-offs.",
+  },
+  {
+    icon: CalendarClock,
+    title: "Scheduled execution",
+    description: "“Review all new PRs every morning at 9am.” Set it and forget it.",
   },
 ];
 
 /**
- * One-time welcome dialog. Short and setup-focused: tagline, a preview of
- * the three steps, a single CTA that routes to the providers page (where
+ * One-time welcome dialog. Product intro with the "Why DAM?" pitch — tagline,
+ * four feature cards, and a CTA that routes to the providers page (where
  * step 1 happens and the stepper banner takes over).
  */
 export function WelcomeModal() {
@@ -60,38 +71,36 @@ export function WelcomeModal() {
 
   return (
     <Dialog open={shouldShow} onOpenChange={(open) => !open && dismiss()}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <div className="h-12 w-12 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-2">
-            <Sparkles className="h-6 w-6 text-primary" />
-          </div>
-          <DialogTitle className="text-2xl">Welcome to DAM</DialogTitle>
-          <DialogDescription className="text-sm leading-relaxed">
-            Run agent harnesses in the cloud — without exposing your tokens.
+          <DialogTitle className="text-3xl font-light tracking-tight leading-[1.05]">
+            Deploy Agents Massively
+          </DialogTitle>
+          <DialogDescription className="text-sm leading-relaxed pt-1">
+            Run agent harnesses like Claude Code headless in the cloud, on a
+            schedule, connected to your tools — without exposing your tokens.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="py-1">
+        <div className="py-2">
           <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-3">
-            You'll do 3 things
+            Why DAM?
           </div>
-          <ol className="space-y-3">
-            {SETUP_STEPS.map((s, i) => (
-              <li key={s.title} className="flex gap-3">
-                <span className="h-6 w-6 shrink-0 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[11px] font-bold">
-                  {i + 1}
-                </span>
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold">{s.title}</div>
-                  <div className="text-xs text-muted-foreground">{s.description}</div>
+          <div className="grid sm:grid-cols-2 gap-3">
+            {FEATURES.map((f) => (
+              <div key={f.title} className="rounded-lg border bg-card p-3">
+                <div className="h-7 w-7 rounded-md bg-primary/10 text-primary flex items-center justify-center mb-2">
+                  <f.icon className="h-4 w-4" />
                 </div>
-              </li>
+                <div className="text-sm font-semibold mb-0.5">{f.title}</div>
+                <div className="text-xs text-muted-foreground leading-snug">{f.description}</div>
+              </div>
             ))}
-          </ol>
+          </div>
         </div>
 
         <DialogFooter>
-          <Button onClick={handleGetStarted} size="lg" className="w-full">
+          <Button onClick={handleGetStarted} size="lg" className="w-full sm:w-auto">
             Get started <ArrowRight />
           </Button>
         </DialogFooter>
