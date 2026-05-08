@@ -127,9 +127,10 @@ func BuildGatewayAuthorizationPolicy(pairKey, principalInstanceID string, cfg *c
 		},
 	}
 	labels := map[string]string{
-		LabelInstance: principalInstanceID,
-		LabelPair:     pairKey,
-		LabelRole:     RoleGateway,
+		LabelInstance:                  principalInstanceID,
+		LabelPair:                      pairKey,
+		LabelRole:                      RoleGateway,
+		"agent-platform.ai/managed-by": "platform-controller",
 	}
 	return authzPolicy(pairKey+"-gateway-allow", cfg.Namespace, ownerCM, labels, spec)
 }
@@ -172,8 +173,8 @@ func BuildHarnessAuthorizationPolicy(principalInstanceID string, cfg *config.Con
 	}
 	labels := map[string]string{
 		LabelInstance:                  principalInstanceID,
+		"agent-platform.ai/managed-by": "platform-controller",
 		"app.kubernetes.io/component":  "apiserver",
-		"app.kubernetes.io/managed-by": "platform-controller",
 	}
 	return authzPolicy(principalInstanceID+"-harness-allow", cfg.ReleaseNamespace, ownerCM, labels, spec)
 }
@@ -206,8 +207,8 @@ func BuildExtAuthzAuthorizationPolicy(instanceName string, cfg *config.Config, o
 	}
 	labels := map[string]string{
 		LabelInstance:                  instanceName,
+		"agent-platform.ai/managed-by": "platform-controller",
 		"app.kubernetes.io/component":  "apiserver",
-		"app.kubernetes.io/managed-by": "platform-controller",
 	}
 	return authzPolicy(instanceName+"-extauthz-allow", cfg.ReleaseNamespace, ownerCM, labels, spec)
 }
