@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { TRPCError } from "@trpc/server";
 import {
   ANTHROPIC_API_KEY_ENV_MAPPING,
   ANTHROPIC_OAUTH_ENV_MAPPING,
@@ -177,7 +178,11 @@ export function createSecretsService(deps: {
       // ADR-040 fanout. Host edits → re-sync egress_rules per granted
       // agent (hot, no roll). envMappings edits → bump secrets-rev so the
       // controller re-renders the agent pod with the merged env.
-      if (!result) return;
+      //
+      // `updateSecret` returns null when the K8s Secret was deleted between
+      // our read and write — surface that as NOT_FOUND so the user sees the
+      // save was lost instead of a silent success and a closed dialog.
+      if (!result) throw new TRPCError({ code: "NOT_FOUND" });
       const { before, after } = result;
       const hostChanged = hostOrPathChanged(before, after);
       const envChanged = envMappingsChanged(before, after);

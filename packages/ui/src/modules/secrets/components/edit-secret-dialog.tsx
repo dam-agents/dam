@@ -301,6 +301,7 @@ export function EditSecretDialog({ secret, onClose }: Props) {
       {pendingPatch && (
         <RollConfirmation
           loading={grantedAgentsQuery.isLoading}
+          error={grantedAgentsQuery.isError}
           agents={grantedAgentsQuery.data ?? []}
           saving={saving}
           onCancel={() => setPendingPatch(null)}
@@ -315,12 +316,14 @@ export function EditSecretDialog({ secret, onClose }: Props) {
 // granted agent (ADR-040). Show the user what they're about to disturb.
 function RollConfirmation({
   loading,
+  error,
   agents,
   saving,
   onCancel,
   onConfirm,
 }: {
   loading: boolean;
+  error: boolean;
   agents: { id: string; name: string }[];
   saving: boolean;
   onCancel: () => void;
@@ -339,6 +342,13 @@ function RollConfirmation({
         {loading ? (
           <p className="text-[12px] text-text-muted italic">
             Looking up affected agents…
+          </p>
+        ) : error ? (
+          // Without this branch, an isError state collapses to `agents=[]`
+          // and the dialog would say "no agents granted" — letting the user
+          // confirm a roll against an empty list produced by an API failure.
+          <p className="text-[12px] text-danger">
+            Couldn't load the list of affected agents. Cancel and try again.
           </p>
         ) : agents.length === 0 ? (
           <p className="text-[12px] text-text-muted">
@@ -369,7 +379,7 @@ function RollConfirmation({
             type="button"
             className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent"
             onClick={onConfirm}
-            disabled={saving || loading}
+            disabled={saving || loading || error}
           >
             {saving ? "Saving…" : "Restart and save"}
           </button>

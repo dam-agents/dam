@@ -66,8 +66,13 @@ must be avoided.
 Public API is unchanged. The UI's grant-toggle stops mutating
 `spec.env`; `connection-env-helpers.ts` and its callers shrink.
 Existing agent specs that already carry secret-derived placeholders
-need no migration — the merge dedupes exact `(name, value)` matches at
-render time, and they fall out as users edit agents.
+need no migration: every reconcile dedupes exact `(name, value)`
+matches at render time, so duplicates never reach the running pod.
+Stale entries persist on the ConfigMap's `spec.env` until a user
+explicitly saves the agent — no controller path rewrites `spec.env`,
+so a deploy alone will not roll pods to clean them up. Operators
+should expect the cleanup to lag behind deploy and only complete as
+users edit affected agents.
 
 ## Alternatives Considered
 
@@ -108,7 +113,12 @@ unaffected by user shadowing.
   is hard to diagnose. The secret-edit form must size-check the encoded
   `env-mappings` (and the per-secret total annotation budget) at submit
   time and reject obviously-too-large input with a clear error, rather
-  than letting the K8s write succeed and the runtime go quiet.
+  than letting the K8s write succeed and the runtime go quiet. To make
+  the post-write silent path observable, the controller emits a
+  `slog.Warn` per reconcile naming any `granted-secret-ids` (and
+  `granted-connection-ids`) entries that resolve to no owner-owned
+  Secret — operators have a log signal for "id present, contributes
+  nothing" without depending on a future metric.
 - **Controller learns one merge step.** [`resources.go`](../../packages/controller/pkg/reconciler/resources.go)
   reads `granted-secret-ids` and each referenced Secret's annotations.
   The Secrets are already mounted into the gateway pod; the access

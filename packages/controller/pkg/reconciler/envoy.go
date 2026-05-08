@@ -114,22 +114,52 @@ func filterByGrants(secrets []corev1.Secret, ann map[string]string) []corev1.Sec
 	grantedSecretIds := splitGrant(ann[grantSecretIdsAnn])
 	grantedConnIds := splitGrant(ann[grantConnectionIdsAnn])
 
+	resolvedSecrets := map[string]bool{}
+	resolvedConns := map[string]bool{}
+
 	out := secrets[:0:0]
 	for _, s := range secrets {
 		switch s.Labels[envoySecretTypeLabel] {
 		case "connection":
 			connKey := s.Labels[envoyConnectionLabel]
 			if grantedConnIds[connKey] {
+				resolvedConns[connKey] = true
 				out = append(out, s)
 			}
 		default:
 			id := strings.TrimPrefix(s.Name, credentialSecretNamePrefix)
 			if grantedSecretIds[id] {
+				resolvedSecrets[id] = true
 				out = append(out, s)
 			}
 		}
 	}
+
+	// ADR-040: a granted-id that doesn't resolve to an owner-owned Secret
+	// silently contributes nothing (parse-tolerant fallback). Operators need
+	// a signal so the missing-env mode is diagnosable; emit one log line per
+	// reconcile naming the unresolved ids.
+	if unresolved := unresolvedKeys(grantedSecretIds, resolvedSecrets); len(unresolved) > 0 {
+		slog.Warn("granted-secret-ids contains ids with no matching owner Secret; entries contribute nothing",
+			"unresolvedIds", unresolved)
+	}
+	if unresolved := unresolvedKeys(grantedConnIds, resolvedConns); len(unresolved) > 0 {
+		slog.Warn("granted-connection-ids contains ids with no matching owner Secret; entries contribute nothing",
+			"unresolvedIds", unresolved)
+	}
+
 	return out
+}
+
+func unresolvedKeys(granted, resolved map[string]bool) []string {
+	var missing []string
+	for id := range granted {
+		if !resolved[id] {
+			missing = append(missing, id)
+		}
+	}
+	sort.Strings(missing)
+	return missing
 }
 
 func splitGrant(raw string) map[string]bool {
