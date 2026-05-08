@@ -163,6 +163,18 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   let agent: AgentProcess | null = null;
   let agentExited = false;
   /**
+   * Whether the agent advertised `agentCapabilities.sessionCapabilities.close`
+   * in its `initialize` response. Some harnesses (notably pi-acp) don't
+   * implement `session/close`, and sending it raises an error / kills the
+   * subprocess — so the runtime must check the capability before reaping.
+   *
+   * Defaults to `true` (optimistic): the flag is updated on the first
+   * `initialize` response, which under ACP must precede any session-creating
+   * request, so the value reflects the real agent before any close is
+   * considered. The default only matters in tests that bypass `initialize`.
+   */
+  let sessionCloseSupported = true;
+  /**
    * Every attached channel → set of sessions it is engaged with. Used both
    * as the source of truth for "who's attached" (Map.size) and to decide
    * which channels receive fan-out broadcasts.
@@ -523,6 +535,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
    */
   function maybeCloseIdleSession(sessionId: string): void {
     if (!agent || agentExited) return;
+    // Skip if the agent didn't advertise `sessionCapabilities.close` in its
+    // initialize response. The session lives on inside the agent — keep the
+    // local log + cursors so a future session/resume can serve from cache
+    // without forcing a cold re-bootstrap the agent likely can't satisfy.
+    if (!sessionCloseSupported) return;
     if (hasEngagedChannel(sessionId)) return;
     if (activePromptBySession.has(sessionId)) return;
     if (promptQueueBySession.has(sessionId)) return;
@@ -664,6 +681,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       const mapping = outboundIdToClient.get(outboundId);
       if (mapping) {
         outboundIdToClient.delete(outboundId);
+
+        // Cache the agent's session capabilities from the initialize response.
+        // Per ACP, support for `session/close` is signalled by the presence of
+        // `agentCapabilities.sessionCapabilities.close` (a non-null object).
+        if (mapping.method === "initialize") {
+          sessionCloseSupported = extractSessionCloseSupported(frame);
+        }
 
         // Engage the originating channel with a session identified by the
         // response. session/new and session/fork put the new sessionId in
@@ -982,6 +1006,18 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (agent && !agentExited) agent.kill();
     },
   };
+}
+
+function extractSessionCloseSupported(frame: unknown): boolean {
+  if (typeof frame !== "object" || frame === null) return false;
+  const result = (frame as { result?: unknown }).result;
+  if (typeof result !== "object" || result === null) return false;
+  const caps = (result as { agentCapabilities?: unknown }).agentCapabilities;
+  if (typeof caps !== "object" || caps === null) return false;
+  const session = (caps as { sessionCapabilities?: unknown }).sessionCapabilities;
+  if (typeof session !== "object" || session === null) return false;
+  const close = (session as { close?: unknown }).close;
+  return typeof close === "object" && close !== null;
 }
 
 function extractParamsSessionId(frame: unknown): string | null {
