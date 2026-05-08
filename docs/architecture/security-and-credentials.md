@@ -28,16 +28,21 @@ Three rules carry the security model:
    `platform.ai/owner` label on the K8s Secret — the controller's selector
    refuses to mount any other owner's Secret into a given owner's gateway pod.
 3. **The trust line is SPIFFE workload identity.** Each instance runs as
-   two paired pods (ADR-038) under one **per-instance ServiceAccount**;
-   forks reuse the parent's SA. istiod stamps every pod with a SPIFFE
-   workload cert whose SA name equals the instance ID. Three per-instance
-   AuthorizationPolicies enforce the boundary cryptographically:
-   the gateway Service ALLOWs only its own SA principal (replaces the
-   pair-key NetworkPolicy from ADR-038); the api-server's harness
-   waypoint ALLOWs that principal to `/api/instances/<id>/*`; the
-   per-instance ext-authz Service ALLOWs only the matching SA. Identity
-   no longer flows through pod IPs or the trusted `x-platform-instance`
-   header — both are removed (ADR-041).
+   two paired pods (ADR-038) under one **per-instance ServiceAccount**.
+   Fork pairs (ADR-027) get their **own** per-fork SA — distinct from
+   the parent's — so a compromised fork can't impersonate the parent on
+   the harness path. istiod stamps every pod with a SPIFFE workload
+   cert whose SA name equals the instance (or fork) name. Three
+   per-instance AuthorizationPolicies enforce the boundary
+   cryptographically: the gateway Service ALLOWs only its own SA
+   principal (replaces the pair-key NetworkPolicy from ADR-038); the
+   api-server's harness waypoint ALLOWs that principal to
+   `/api/instances/<id>/*`; the per-instance ext-authz Service ALLOWs
+   only the matching SA. Per-fork policies layer narrowly on top —
+   admitting the fork SA only to `/api/instances/<parent>/mcp` and to
+   the parent's ext-authz Service. Identity no longer flows through
+   pod IPs or the trusted `x-platform-instance` header — both are
+   removed (ADR-041).
 
 Workspace contents are explicitly outside the trust boundary — see the
 security note on [persistence](persistence.md).

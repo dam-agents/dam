@@ -29,9 +29,14 @@ import (
 // URL `:id` (harness) or gRPC `:authority` (ext-authz) as already
 // authenticated by the time the request reaches them.
 //
-// Forks reuse the parent's SA, so a fork pair's gateway Service requires a
-// per-fork policy keyed on the parent SA's principal — see
-// BuildForkGatewayAuthorizationPolicy.
+// Forks (ADR-027) get their **own** per-fork SA — distinct from the parent —
+// paired with two release-namespace policies that scope the fork narrowly
+// to the parent's surface: `BuildForkHarnessAuthorizationPolicy` admits the
+// fork SA only to `/api/instances/<parent>/mcp`, and
+// `BuildForkExtAuthzAuthorizationPolicy` admits it to the parent's
+// per-instance ext-authz Service. The fork's gateway-admission policy
+// uses `BuildGatewayAuthorizationPolicy(forkName, forkName, ...)` —
+// "self-talk only" within the fork pair, same shape as long-lived pairs.
 
 const (
 	istioGroup    = "security.istio.io"
@@ -102,9 +107,13 @@ func ownerRefAsMap(r *metav1.OwnerReference) map[string]interface{} {
 // of this pair (so the policy doesn't accidentally apply to anything else
 // with the same Service name in the same ns).
 //
-// `pairKey` is the pair identifier (instance name for long-lived, fork name
-// for forks). `principalInstanceID` is the instance ID whose SA is allowed
-// — equal to pairKey for long-lived pairs, parent instance ID for forks.
+// `pairKey` is the pair identifier (instance name for long-lived pairs,
+// fork name for fork pairs). `principalInstanceID` is the instance ID
+// whose SA is allowed — for both long-lived and fork pairs this equals
+// `pairKey` since each pair runs as the SA named after its own pairKey
+// ("self-talk only"). The two-parameter shape is preserved so callers
+// can still admit a *different* SA on a pair Service if a future use
+// case ever needs it.
 func BuildGatewayAuthorizationPolicy(pairKey, principalInstanceID string, cfg *config.Config, ownerCM *corev1.ConfigMap) *unstructured.Unstructured {
 	spec := map[string]interface{}{
 		"selector": map[string]interface{}{
