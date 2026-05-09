@@ -1,4 +1,4 @@
-import { ArrowRight, Check, Sparkles } from "lucide-react";
+import { ArrowRight, Check } from "lucide-react";
 import { Fragment } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -24,10 +24,10 @@ const STEPS: Step[] = [
 ];
 
 /**
- * Setup progress banner. Soft template-light surface with a DAM-setup label
- * on the left, a progress stepper in the middle, and a Next-step CTA on
- * the right. Each step navigates to its corresponding page. Hides once the
- * user has both a provider and at least one agent.
+ * Setup progress banner. Compact three-step indicator (numbered circles +
+ * connector lines) with the current step's label inline and a Next-step
+ * CTA. Per-step labels next to each circle are dropped to reduce visual
+ * weight. Hides once the user has both a provider and at least one agent.
  */
 export function WelcomeStepper() {
   const { data: agents = [], isSuccess: agentsLoaded } = useAgents();
@@ -46,9 +46,17 @@ export function WelcomeStepper() {
     (k === "provider" && hasProvider) || (k === "agent" && hasAgent);
 
   const currentStepIdx = STEPS.findIndex((s) => s.view === currentView);
-  const isOnStep = currentStepIdx >= 0;
-  const isLastStep = currentStepIdx === STEPS.length - 1;
-  const nextStep = isOnStep && !isLastStep ? STEPS[currentStepIdx + 1] : null;
+  const onStepPage = currentStepIdx >= 0 && !isDone(STEPS[currentStepIdx].key);
+  const firstIncompleteIdx = STEPS.findIndex((s) => !isDone(s.key) && !s.optional);
+  const displayedIdx = onStepPage
+    ? currentStepIdx
+    : firstIncompleteIdx < 0
+      ? STEPS.length - 1
+      : firstIncompleteIdx;
+  const displayedStep = STEPS[displayedIdx];
+
+  const isLastStep = displayedIdx === STEPS.length - 1;
+  const nextStep = !isLastStep ? STEPS[displayedIdx + 1] : null;
 
   const ctaLabel = isLastStep ? "Done" : "Next step";
   const onCta = () => {
@@ -58,42 +66,46 @@ export function WelcomeStepper() {
 
   return (
     <div className="bg-template-light text-foreground shrink-0">
-      <div className="mx-auto w-full max-w-[1200px] px-4 md:px-6 py-3 flex items-center justify-center gap-3 md:gap-4 overflow-x-auto">
-        {/* Left: identity label */}
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="h-7 w-7 rounded-md bg-template/10 border border-template/20 flex items-center justify-center shrink-0 text-template">
-            <Sparkles className="h-4 w-4" />
-          </div>
-          <div className="flex flex-col leading-tight">
-            <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
-              DAM Setup
-            </span>
-            <span className="text-sm font-semibold">Finish setting up</span>
-          </div>
+      <div className="mx-auto w-full max-w-[1200px] px-4 md:px-6 py-3 flex items-center justify-center gap-4 md:gap-5 overflow-x-auto">
+        <div className="flex flex-col leading-tight shrink-0">
+          <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+            DAM Setup
+          </span>
+          <span className="text-sm font-semibold text-foreground">
+            {displayedStep.label}
+            {displayedStep.optional && (
+              <span className="text-muted-foreground font-normal"> (optional)</span>
+            )}
+          </span>
         </div>
 
-        <div className="h-8 w-px bg-border shrink-0 hidden md:block" />
-
-        {/* Middle: stepper */}
-        <div className="flex items-center gap-2 md:gap-3 shrink-0">
+        {/* Step indicator — numbered circles, no per-step labels */}
+        <div className="flex items-center gap-1.5 shrink-0">
           {STEPS.map((s, i) => {
             const done = isDone(s.key);
-            const active = currentView === s.view && !done;
+            const active = i === displayedIdx && !done;
             const nextDone = i < STEPS.length - 1 && isDone(STEPS[i + 1].key);
             return (
               <Fragment key={s.key}>
-                <StepItem
-                  index={i + 1}
-                  label={s.label}
-                  optional={s.optional}
-                  done={done}
-                  active={active}
+                <button
+                  type="button"
                   onClick={() => setView(s.view)}
-                />
+                  aria-label={`Step ${i + 1}: ${s.label}`}
+                  className={cn(
+                    "h-6 w-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 transition-colors",
+                    active
+                      ? "bg-template text-white"
+                      : done
+                        ? "bg-template/20 text-template"
+                        : "border border-border text-muted-foreground hover:border-template hover:text-template",
+                  )}
+                >
+                  {done ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : i + 1}
+                </button>
                 {i < STEPS.length - 1 && (
                   <div
                     className={cn(
-                      "h-px w-3 md:w-5 shrink-0 transition-colors",
+                      "h-px w-3 md:w-4 shrink-0",
                       done && nextDone ? "bg-template" : done ? "bg-template/60" : "bg-border",
                     )}
                   />
@@ -103,70 +115,14 @@ export function WelcomeStepper() {
           })}
         </div>
 
-        {/* Right: next step / done CTA */}
-        {isOnStep && (
-          <>
-            <div className="h-8 w-px bg-border shrink-0 hidden md:block" />
-            <Button
-              size="sm"
-              onClick={onCta}
-              className="bg-template text-white hover:bg-template/90 shrink-0"
-            >
-              {ctaLabel} {isLastStep ? <Check /> : <ArrowRight />}
-            </Button>
-          </>
-        )}
+        <Button
+          size="sm"
+          onClick={onCta}
+          className="bg-template text-white hover:bg-template/90 shrink-0 ml-auto md:ml-0"
+        >
+          {ctaLabel} {isLastStep ? <Check /> : <ArrowRight />}
+        </Button>
       </div>
     </div>
-  );
-}
-
-function StepItem({
-  index,
-  label,
-  optional,
-  done,
-  active,
-  onClick,
-}: {
-  index: number;
-  label: string;
-  optional?: boolean;
-  done: boolean;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="group flex items-center gap-2 shrink-0 rounded-md px-1 py-0.5 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      <span
-        className={cn(
-          "h-6 w-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 transition-colors",
-          active
-            ? "bg-template text-white"
-            : done
-              ? "bg-template/20 text-template"
-              : "border border-border text-muted-foreground group-hover:border-template group-hover:text-template",
-        )}
-      >
-        {done ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : index}
-      </span>
-      <span
-        className={cn(
-          "text-sm transition-colors hidden sm:inline",
-          active
-            ? "text-foreground font-semibold"
-            : done
-              ? "text-muted-foreground font-medium line-through"
-              : "text-muted-foreground font-medium group-hover:text-foreground",
-        )}
-      >
-        {label}
-        {optional && <span className="text-muted-foreground font-normal"> (optional)</span>}
-      </span>
-    </button>
   );
 }
