@@ -1,7 +1,8 @@
-import { Plus, RefreshCw } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { isCustomSecret, type SecretView } from "../../../types.js";
@@ -24,25 +25,18 @@ import { ConnectAppForm } from "../forms/connect-app-form.js";
 export function ConnectionsView() {
   const {
     data: secrets = [],
-    refetch: refetchSecrets,
     isPending: isPendingSecrets,
   } = useSecrets();
   const {
     data: mcpConnections = [],
-    refetch: refetchMcpConnections,
-    isFetching: isFetchingMcpConnections,
     isPending: isPendingMcpConnections,
   } = useMcpConnections();
   const {
     data: oauthApps = [],
-    refetch: refetchOAuthApps,
-    isFetching: isFetchingOAuthApps,
     isPending: isPendingOAuthApps,
   } = useOAuthApps();
   const {
     data: oauthAppConnections = [],
-    refetch: refetchOAuthAppConnections,
-    isFetching: isFetchingOAuthAppConnections,
   } = useOAuthAppConnections();
 
   const [addMcpInitialUrl, setAddMcpInitialUrl] = useState("");
@@ -63,17 +57,6 @@ export function ConnectionsView() {
     (app) => app.cardinality === "multiple" || !singleAppsConnected.has(app.id),
   );
 
-  const refreshAll = () => {
-    refetchMcpConnections();
-    refetchOAuthApps();
-    refetchOAuthAppConnections();
-    refetchSecrets();
-  };
-  const isFetching =
-    isFetchingMcpConnections ||
-    isFetchingOAuthApps ||
-    isFetchingOAuthAppConnections;
-
   const openAddMcp = (initialUrl = "") => {
     setAddMcpInitialUrl(initialUrl);
     setShowAddMcp(true);
@@ -81,18 +64,8 @@ export function ConnectionsView() {
 
   return (
     <div className="w-full max-w-2xl">
-      <div className="flex items-center gap-3 mb-8">
+      <div id="tour-connections-header" className="flex items-center gap-3 mb-8">
         <h1 className="text-[20px] md:text-[24px] font-bold text-foreground">Connections</h1>
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={refreshAll}
-          className="ml-auto h-8 w-8 text-foreground/80 hover:text-primary hover:border-primary"
-        >
-          <span className={isFetching ? "anim-spin" : ""}>
-            <RefreshCw size={13} />
-          </span>
-        </Button>
       </div>
 
       <p className="text-[14px] text-foreground/80 mb-8 leading-relaxed">
@@ -111,9 +84,9 @@ export function ConnectionsView() {
         {isPendingOAuthApps && <ListSkeleton />}
 
         {!isPendingOAuthApps && oauthAppConnections.length === 0 && availableToConnect.length === 0 && (
-          <div className="rounded-xl border border-border bg-card px-6 py-8 text-center text-[14px] text-muted-foreground anim-in">
+          <Card className="px-6 py-8 text-center text-[14px] text-muted-foreground anim-in">
             No OAuth apps available.
-          </div>
+          </Card>
         )}
 
         {!isPendingOAuthApps && oauthAppConnections.length > 0 && (
@@ -158,9 +131,9 @@ export function ConnectionsView() {
         )}
 
         {!isPendingMcpConnections && mcpConnections.length === 0 && !showAddMcp && (
-          <div className="rounded-xl border border-border bg-card px-6 py-8 text-center text-[14px] text-muted-foreground anim-in">
+          <Card className="px-6 py-8 text-center text-[14px] text-muted-foreground anim-in">
             No MCP servers connected yet
-          </div>
+          </Card>
         )}
 
         {!isPendingMcpConnections && mcpConnections.length > 0 && (
@@ -199,9 +172,9 @@ export function ConnectionsView() {
         )}
 
         {!isPendingSecrets && customSecrets.length === 0 && !showAddSecret && (
-          <div className="rounded-xl border border-border bg-card px-6 py-8 text-center text-[14px] text-muted-foreground anim-in">
+          <Card className="px-6 py-8 text-center text-[14px] text-muted-foreground anim-in">
             No custom secrets yet
-          </div>
+          </Card>
         )}
 
         {!isPendingSecrets && (

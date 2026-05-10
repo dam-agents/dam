@@ -76,13 +76,13 @@
   --c-accent-light: #eaf2fe;
   --c-accent-glow: rgba(29, 107, 225, 0.15);
   --c-success: #24a148;
-  --c-success-light: #a7f0ba;
+  --c-success-light: #defbe6;
   --c-warning: #ff832b;
   --c-warning-light: #fffbeb;
   --c-danger: #dc2626;
   --c-danger-light: #fef2f2;
-  --c-info: #0f62fe;
-  --c-info-light: #edf5ff;
+  --c-info: #000000;
+  --c-info-light: #f2f4f8;
   --c-template: #7c3aed;
   --c-template-light: #f5f3ff;
   --s-brutal: 3px 3px 0 #292524;
@@ -97,7 +97,7 @@
   --card-foreground: #121619;
   --popover: #ffffff;
   --popover-foreground: #121619;
-  --primary: #0f62fe;
+  --primary: #000000;
   --primary-foreground: #ffffff;
   --secondary: #f2f4f8;
   --secondary-foreground: #1c1917;
@@ -109,7 +109,7 @@
   --destructive-foreground: #ffffff;
   --border-ui: #dde1e6;
   --input: #dde1e6;
-  --ring: #0f62fe;
+  --ring: #000000;
 }
 
 /* ── Dark theme ── */

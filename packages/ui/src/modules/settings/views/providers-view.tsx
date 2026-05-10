@@ -1,6 +1,5 @@
-import { RefreshCw } from "lucide-react";
-
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 
 import { useStore } from "../../../store.js";
 import { useAgents } from "../../agents/api/queries.js";
@@ -23,8 +22,6 @@ export function ProvidersView() {
 
   const {
     data: secrets = [],
-    refetch: refetchSecrets,
-    isFetching: isFetchingSecrets,
     isPending: isPendingSecrets,
   } = useSecrets();
   const createSecret = useCreateSecret();
@@ -37,26 +34,15 @@ export function ProvidersView() {
     <div className="w-full max-w-2xl">
       <div className="flex items-center gap-3 mb-8">
         <h1 className="text-[20px] md:text-[24px] font-bold text-foreground">Providers</h1>
-        <Button
-          variant="outline"
-          size="icon"
-          className="ml-auto h-8 w-8"
-          onClick={() => refetchSecrets()}
-          aria-label="Refresh"
-        >
-          <span className={isFetchingSecrets ? "anim-spin" : ""}>
-            <RefreshCw size={13} />
-          </span>
-        </Button>
       </div>
 
       <p className="text-[14px] text-foreground/80 mb-8 leading-relaxed">
         API keys for the AI harnesses that power your agents.
       </p>
 
-      <section className="mb-8">
+      <section id="tour-anthropic-card" className="mb-8">
         {isPendingSecrets ? (
-          <div className="rounded-xl border border-border bg-card px-5 py-4 h-[72px] anim-pulse" />
+          <Card className="h-[72px] anim-pulse" />
         ) : anthropic ? (
           <AnthropicConnected
             secret={anthropic}

@@ -1,3 +1,5 @@
+import { Card } from "@/components/ui/card";
+
 interface Props {
   rowHeight?: number;
   rows?: number;
@@ -10,9 +12,9 @@ export function ListSkeleton({ rowHeight = 68, rows = 1 }: Props) {
   return (
     <div className="flex flex-col gap-3">
       {Array.from({ length: rows }).map((_, i) => (
-        <div
+        <Card
           key={i}
-          className="rounded-lg border bg-card animate-pulse"
+          className="animate-pulse"
           style={{ height: `${rowHeight}px` }}
         />
       ))}

@@ -1,5 +1,5 @@
 import { SessionMode, SessionType } from "api-server-api";
-import { ArrowLeft, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -28,7 +28,7 @@ export function SessionsSidebar({
 
   const instances = useInstancesList();
   const instanceRunState = instances.find((i) => i.id === selectedInstance)?.state;
-  const { data: sessions = [], isFetching, refetch } = useAcpSessions(
+  const { data: sessions = [], isFetching } = useAcpSessions(
     selectedInstance,
     includeChannel,
     { enabled: instanceRunState === "running" },
@@ -60,16 +60,6 @@ export function SessionsSidebar({
         <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.05em]">
           Sessions
         </span>
-        <Button
-          variant="outline"
-          size="icon"
-          className="ml-auto h-6 w-6 text-muted-foreground hover:text-primary hover:border-primary"
-          onClick={() => refetch()}
-        >
-          <span className={loading ? "anim-spin" : ""}>
-            <RefreshCw size={11} />
-          </span>
-        </Button>
         {loading && (
           <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-primary/20 overflow-hidden">
             <div className="h-full w-1/3 bg-primary rounded-full anim-slide" />

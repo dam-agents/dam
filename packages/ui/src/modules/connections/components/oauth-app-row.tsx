@@ -2,6 +2,7 @@ import { Unplug } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 
 import { useStore } from "../../../store.js";
 import type { OAuthAppConnection, OAuthAppDescriptor } from "../api/fetchers.js";
@@ -39,8 +40,8 @@ export function OAuthAppRow({ app, connection, animationDelayMs, onReconnect }: 
     : `Connected ${new Date(connection.connectedAt).toLocaleDateString()} · ${connection.hostPattern}`;
 
   return (
-    <div
-      className="flex items-center gap-4 rounded-xl border border-border bg-card px-5 py-4 transition-shadow hover:shadow-sm anim-in"
+    <Card
+      className="flex items-center gap-4 px-5 py-4 transition-shadow hover:shadow-md anim-in"
       style={{ animationDelay: `${animationDelayMs}ms` }}
     >
       <div className="w-9 h-9 shrink-0 rounded-lg border border-border bg-background flex items-center justify-center text-foreground/80">
@@ -74,6 +75,6 @@ export function OAuthAppRow({ app, connection, animationDelayMs, onReconnect }: 
       >
         <Unplug size={13} />
       </Button>
-    </div>
+    </Card>
   );
 }

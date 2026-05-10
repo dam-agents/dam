@@ -1,7 +1,8 @@
-import { KeyRound, Play, Plus, RefreshCw, RotateCw, Trash2 } from "lucide-react";
+import { KeyRound, Play, Plus, RotateCw, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 
 import { StatusBadge } from "../../../components/status-indicator.js";
 import { useStore } from "../../../store.js";
@@ -16,15 +17,13 @@ import { ConfigureAgentDialog } from "../dialogs/configure-agent-dialog.js";
 import { resolveAgentDisplay } from "../utils/agent-resolver.js";
 
 export function ListView() {
-  const { data: templates = [], refetch: refetchTemplates } = useTemplates();
+  const { data: templates = [] } = useTemplates();
   const {
     data: agents = [],
-    refetch: refetchAgents,
     isSuccess: agentsLoaded,
   } = useAgents();
   const {
     data: instancesData,
-    refetch: refetchInstances,
     isSuccess: instancesLoaded,
   } = useInstances();
   const instances = instancesData?.list ?? [];
@@ -61,14 +60,7 @@ export function ListView() {
           <h1 className="text-[20px] md:text-[24px] font-bold text-foreground">Agents</h1>
           <div className="ml-auto flex items-center gap-2 md:gap-3">
             <Button
-              variant="outline"
-              size="icon"
-              onClick={() => { refetchTemplates(); refetchAgents(); refetchInstances(); }}
-              aria-label="Refresh"
-            >
-              <RefreshCw />
-            </Button>
-            <Button
+              id="tour-add-agent"
               onClick={() => setShowAddAgent(true)}
               disabled={busyAgent}
             >
@@ -80,14 +72,14 @@ export function ListView() {
         {/* Skeleton during initial load — only when we expect agents */}
         {!initialLoaded && agents.length > 0 && (
           <div className="flex flex-col gap-6">
-            <div className="rounded-xl border border-border bg-card h-[88px] anim-pulse" />
-            <div className="rounded-xl border border-border bg-card h-[88px] anim-pulse" />
+            <Card className="h-[88px] anim-pulse" />
+            <Card className="h-[88px] anim-pulse" />
           </div>
         )}
 
         {/* Empty state — consistent placeholder when no agents exist */}
         {initialLoaded && agents.length === 0 && !busyAgent && (
-          <div className="rounded-xl border border-border bg-card px-6 py-8 text-center text-[14px] text-muted-foreground anim-in">
+          <div className="px-6 py-8 text-center text-[14px] text-muted-foreground anim-in">
             No agents yet
           </div>
         )}
@@ -99,10 +91,10 @@ export function ListView() {
             const inst = display.instance;
             const onOpen = () => { if (inst && display.clickable) selectInstance(inst.id); };
             return (
-              <div
+              <Card
                 key={agent.id}
                 onClick={onOpen}
-                className={`rounded-xl border border-input bg-card overflow-hidden anim-in shadow-sm transition-shadow ${display.clickable ? "group cursor-pointer hover:not-has-[button:hover]:shadow-md" : ""}`}
+                className={`overflow-hidden anim-in transition-shadow ${display.clickable ? "group cursor-pointer hover:not-has-[button:hover]:shadow-md" : ""}`}
               >
                 <div className="px-4 md:px-6 py-4 md:py-5">
                   <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
@@ -165,7 +157,7 @@ export function ListView() {
                     </div>
                   </div>
                 </div>
-              </div>
+              </Card>
             );
           })}
         </div>

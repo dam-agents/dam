@@ -215,10 +215,6 @@ export function ChatView() {
   // ── Layout ──
   return (
     <div className="flex h-dvh bg-background relative overflow-hidden">
-      <div className="blob blob-1" />
-      <div className="blob blob-2" />
-      <div className="blob blob-3" />
-
       {/* Left: Sessions */}
       <div
         style={{ width: leftW }}

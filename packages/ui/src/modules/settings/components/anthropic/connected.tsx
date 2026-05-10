@@ -2,6 +2,7 @@ import { Pencil, X } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 
 import type { SecretView } from "../../../../types.js";
 import { CardIcon } from "./card-icon.js";
@@ -35,7 +36,7 @@ export function AnthropicConnected({
   }
 
   return (
-    <div className="rounded-xl border bg-card p-5 anim-in shadow-sm">
+    <Card className="anim-in p-5">
       <div className="flex items-center gap-4">
         <CardIcon variant="accent" />
         <div className="flex-1 min-w-0">
@@ -65,6 +66,6 @@ export function AnthropicConnected({
           <X size={13} />
         </Button>
       </div>
-    </div>
+    </Card>
   );
 }

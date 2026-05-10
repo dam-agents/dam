@@ -3,6 +3,7 @@ import { Plus, RotateCcw, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
 import {
@@ -220,7 +221,7 @@ export function AgentEgressEditor({
         goes to the inbox for your approval.
       </p>
 
-      <div className="rounded-lg border border-border bg-card px-3 py-3 flex flex-wrap items-end gap-2">
+      <Card className="px-3 py-3 flex flex-wrap items-end gap-2">
         <div className="flex flex-col gap-1 flex-1 min-w-[260px]">
           <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
             {stagedMode ? "Preset" : "Apply preset"}
@@ -254,9 +255,9 @@ export function AgentEgressEditor({
               : "Pick a preset and Save to replace existing preset rules. Manual and connection-derived rules are preserved."
             : "Replaces previous preset rules. Manual edits and connection-derived rules are preserved."}
         </p>
-      </div>
+      </Card>
 
-      <div className="rounded-lg border border-border bg-card overflow-hidden">
+      <Card className="overflow-hidden">
         <div className="px-3 py-3 border-b border-border flex flex-wrap items-end gap-2">
           <Field label="Host" widthClass="min-w-[220px] flex-1">
             <Input
@@ -370,7 +371,7 @@ export function AgentEgressEditor({
             ].filter(Boolean).join(" · ")}. Save to commit.
           </p>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

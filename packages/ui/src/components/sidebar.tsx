@@ -9,7 +9,6 @@ import {
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 
 import { getBrand } from "../brand.js";
@@ -53,8 +52,6 @@ export function Sidebar() {
         </span>
       </Button>
 
-      <Separator className="mx-2.5 w-auto" />
-
       {/* Nav items */}
       <div className="flex flex-col gap-0.5 mt-2 px-2">
         {navItems.map(({ view: v, label, icon: Icon }) => {
@@ -62,6 +59,7 @@ export function Sidebar() {
           return (
             <Button
               key={v}
+              id={`tour-nav-${v}`}
               variant="ghost"
               onClick={() => setView(v)}
               title={collapsed ? label : undefined}
@@ -81,8 +79,6 @@ export function Sidebar() {
       <div className="flex-1" />
 
       <div className="flex flex-col gap-0.5 px-2 mb-2">
-        <Separator className="mb-1 w-auto" />
-
         <InboxBell collapsed={collapsed} />
 
         <Button

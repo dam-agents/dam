@@ -11,8 +11,7 @@ import { ListView } from "./modules/agents/views/list-view.js";
 import { InboxView } from "./modules/approvals/views/inbox-view.js";
 import { ConnectionsView } from "./modules/connections/views/connections-view.js";
 import { AgentEgressView } from "./modules/egress-rules/views/agent-egress-view.js";
-import { WelcomeModal } from "./modules/onboarding/welcome-modal.js";
-import { WelcomeStepper } from "./modules/onboarding/welcome-stepper.js";
+import { WelcomeTour } from "./modules/onboarding/welcome-tour.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { ProvidersView } from "./modules/settings/views/providers-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
@@ -84,7 +83,6 @@ export default function App() {
   // All non-chat views share the sidebar shell
   return (
     <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
-      <WelcomeStepper />
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <Sidebar />
         <main className="relative z-10 flex-1 overflow-y-auto">
@@ -102,7 +100,7 @@ export default function App() {
       <DialogOverlay />
       <ToastOverlay />
       <OfflineBanner />
-      <WelcomeModal />
+      <WelcomeTour />
       <StyleGuideToggle />
       <LoginPreviewToggle />
     </div>

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
@@ -26,8 +27,8 @@ export function AnthropicForm({
   initialMode: Mode;
   onSave: (input: { mode: Mode; value: string }) => Promise<void>;
   onCancel?: () => void;
-  /** When true, renders without the card chrome (border, bg, padding, shadow).
-   *  Use inside already-bordered surfaces like the welcome wizard. */
+  /** When true, renders the form bare (no Card wrapper, no padding). Use
+   *  inside already-bordered surfaces like the welcome wizard. */
   embedded?: boolean;
 }) {
   const { register, handleSubmit, control, watch, getValues, trigger, formState } =
@@ -84,14 +85,8 @@ export function AnthropicForm({
     }
   };
 
-  return (
-    <form
-      onSubmit={onSubmit}
-      className={cn(
-        "anim-in flex flex-col gap-4",
-        !embedded && "rounded-xl border p-5 shadow-sm bg-card",
-      )}
-    >
+  const body = (
+    <>
       <div className="flex items-center gap-3">
         <CardIcon variant="accent" />
         <div className="flex-1 min-w-0">
@@ -144,11 +139,7 @@ export function AnthropicForm({
         >
           {testing ? "..." : "Test"}
         </Button>
-        <Button
-          type="submit"
-          disabled={submitDisabled}
-          className="shrink-0"
-        >
+        <Button type="submit" disabled={submitDisabled} className="shrink-0">
           {isSubmitting ? "..." : isEdit ? "Replace" : "Save"}
         </Button>
       </div>
@@ -166,7 +157,23 @@ export function AnthropicForm({
       {!errors.value && testResult && !testResult.ok && (
         <div className="text-[12px] font-medium text-destructive">{testResult.message}</div>
       )}
-    </form>
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <form onSubmit={onSubmit} className="anim-in flex flex-col gap-4">
+        {body}
+      </form>
+    );
+  }
+
+  return (
+    <Card className="anim-in">
+      <form onSubmit={onSubmit} className="flex flex-col gap-4 p-5">
+        {body}
+      </form>
+    </Card>
   );
 }
 

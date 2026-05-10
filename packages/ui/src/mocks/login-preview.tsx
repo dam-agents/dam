@@ -43,8 +43,9 @@ export function LoginPreview({ onClose }: { onClose: () => void }) {
 
       {/* Split layout — centered content well so the two columns stay
           together as the viewport grows wider. */}
-      <div className="min-h-[calc(100dvh-57px)] flex items-center justify-center px-6 py-12 md:px-12 md:py-16">
-        <div className="w-full max-w-[1400px] flex flex-col md:flex-row md:items-center gap-12 md:gap-16">
+      <div className="relative min-h-[calc(100dvh-57px)] flex items-center justify-center px-6 py-12 md:px-12 md:py-16">
+        <LoginBackdrop />
+        <div className="relative z-10 w-full max-w-[1400px] flex flex-col md:flex-row md:items-center gap-12 md:gap-16">
         {/* Left: sign-in form */}
         <div className="md:w-1/2 flex">
           <div className="w-full max-w-sm space-y-6">
@@ -130,5 +131,79 @@ export function LoginPreview({ onClose }: { onClose: () => void }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Ambient gradient backdrop for the login mockup — three blurred color
+ * blobs anchored to the right half of the viewport, each drifting and
+ * pulsing on its own slow loop so the composition feels alive but not
+ * distracting.
+ */
+function LoginBackdrop() {
+  return (
+    <>
+      <style>{`
+        @keyframes login-drift-1 {
+          0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.55; }
+          33% { transform: translate(-70px, 80px) scale(1.2); opacity: 0.85; }
+          66% { transform: translate(55px, -65px) scale(0.85); opacity: 0.42; }
+        }
+        @keyframes login-drift-2 {
+          0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.5; }
+          33% { transform: translate(80px, -55px) scale(0.85); opacity: 0.35; }
+          66% { transform: translate(-50px, 75px) scale(1.22); opacity: 0.78; }
+        }
+        @keyframes login-drift-3 {
+          0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.4; }
+          33% { transform: translate(-60px, -75px) scale(1.18); opacity: 0.68; }
+          66% { transform: translate(70px, 60px) scale(0.88); opacity: 0.3; }
+        }
+      `}</style>
+      <div
+        aria-hidden
+        className="absolute top-0 right-0 w-1/2 h-full overflow-hidden pointer-events-none z-0"
+      >
+        {/* Top-right green */}
+        <div
+          className="absolute rounded-full"
+          style={{
+            top: "-5%",
+            right: "8%",
+            width: "60%",
+            aspectRatio: "1",
+            background: "radial-gradient(circle, #95dca6 0%, transparent 70%)",
+            filter: "blur(70px)",
+            animation: "login-drift-1 12s ease-in-out infinite",
+          }}
+        />
+        {/* Middle-right lavender */}
+        <div
+          className="absolute rounded-full"
+          style={{
+            top: "30%",
+            right: "-5%",
+            width: "55%",
+            aspectRatio: "1",
+            background: "radial-gradient(circle, #d4b8f0 0%, transparent 70%)",
+            filter: "blur(80px)",
+            animation: "login-drift-2 15s ease-in-out infinite",
+          }}
+        />
+        {/* Lower mint accent */}
+        <div
+          className="absolute rounded-full"
+          style={{
+            top: "60%",
+            right: "35%",
+            width: "45%",
+            aspectRatio: "1",
+            background: "radial-gradient(circle, #b5e8c4 0%, transparent 70%)",
+            filter: "blur(90px)",
+            animation: "login-drift-3 18s ease-in-out infinite",
+          }}
+        />
+      </div>
+    </>
   );
 }
