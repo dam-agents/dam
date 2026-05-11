@@ -142,6 +142,9 @@ export interface AuthServiceDeps {
   sleepMs?: (ms: number) => Promise<void>;
 }
 
+const ENV_USERNAME_PLACEHOLDER = "(env)";
+const ENV_ISSUER_PLACEHOLDER = "(unknown — token supplied via DAM_TOKEN)";
+
 function decodeJwtPayload(jwt: string): Record<string, unknown> | null {
   const parts = jwt.split(".");
   if (parts.length !== 3) return null;
@@ -418,13 +421,19 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
       const entries: StatusEntry[] = [];
       for (const [host, entry] of stored.value) {
         const isActive = host === activeHost;
+        const shadowed = isActive && envToken !== undefined;
+        // When DAM_TOKEN shadows the active host, the env bearer is what
+        // every command will actually use — the file-backed username,
+        // issuer, and expiry belong to a credential that won't be sent.
+        // Surface the env shape instead so the report can't mislead the
+        // user about whose identity is in effect (review §2).
         entries.push({
           host,
-          issuer: entry.issuer,
-          username: entry.username,
-          source: isActive && envToken !== undefined ? "env" : "file",
+          issuer: shadowed ? ENV_ISSUER_PLACEHOLDER : entry.issuer,
+          username: shadowed ? ENV_USERNAME_PLACEHOLDER : entry.username,
+          source: shadowed ? "env" : "file",
           isActive,
-          expiresAt: entry.expiresAt,
+          expiresAt: shadowed ? undefined : entry.expiresAt,
         });
       }
 
@@ -438,8 +447,8 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
       ) {
         entries.push({
           host: activeHost,
-          issuer: "(unknown — token supplied via DAM_TOKEN)",
-          username: "(env)",
+          issuer: ENV_ISSUER_PLACEHOLDER,
+          username: ENV_USERNAME_PLACEHOLDER,
           source: "env",
           isActive: true,
         });

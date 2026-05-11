@@ -385,4 +385,41 @@ describe("auth-service.status", () => {
       expect(r.value.activeHostValid).toBe(true); // env-sourced is considered valid.
     }
   });
+
+  it("DAM_TOKEN shadows an existing file entry → hides file-backed metadata (review §2)", async () => {
+    const store = emptyStore();
+    await store.write(HOST, {
+      issuer: "http://idp/realms/platform",
+      username: "alice",
+      sub: "alice-sub",
+      accessToken: "file-access",
+      refreshToken: "file-refresh",
+      expiresAt: new Date("2099-01-01T00:00:00Z"),
+    });
+    const svc = createAuthService({
+      compatService: compatVerdict("ok"),
+      configService: unusedConfigService(),
+      authConfigProbe: authConfigProbeOk(),
+      oidcDiscovery: oidcOk(),
+      deviceFlowClient: deviceFlowUnused(),
+      tokenEndpointClient: tokenClientUnused(),
+      revokeClient: revokeUnused(),
+      browserOpener: browserUnused(),
+      authStore: store,
+      authEnvReader: { damToken: () => "env-token-value" },
+    });
+
+    const r = await svc.status();
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      const active = r.value.entries.find((e) => e.isActive);
+      expect(active?.source).toBe("env");
+      // The env token will be sent on every command; the file-backed
+      // username/issuer/expiry belong to a credential that won't be used,
+      // so the report must not present them as the active identity.
+      expect(active?.username).not.toBe("alice");
+      expect(active?.issuer).not.toBe("http://idp/realms/platform");
+      expect(active?.expiresAt).toBeUndefined();
+    }
+  });
 });
