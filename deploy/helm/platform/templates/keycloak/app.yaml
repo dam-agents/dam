@@ -109,6 +109,9 @@ spec:
               port: 9000
             initialDelaySeconds: 60
             periodSeconds: 30
+          {{- else }}
+          readinessProbe: null
+          livenessProbe: null
           {{- end }}
           resources:
             {{- toYaml .Values.keycloak.resources | nindent 12 }}
