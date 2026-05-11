@@ -97,6 +97,50 @@ export interface BrowserOpenError {
   reason: string;
 }
 
+/**
+ * Errors specific to the Token Provider's `getValidAccessToken(host)` seam.
+ * Each variant carries the host so command-layer messages can address the
+ * Active Host vs an explicit `--server` without re-plumbing.
+ */
+export interface NotLoggedInError {
+  kind: "not-logged-in";
+  /** Host URL — kept as a plain string to avoid a circular type import
+   *  with the auth-store module. */
+  host: string;
+}
+
+export interface SessionExpiredError {
+  kind: "session-expired";
+  host: string;
+}
+
+export interface RefreshFailedError {
+  kind: "refresh-failed";
+  host: string;
+  reason: string;
+}
+
+export interface RefreshTransientError {
+  kind: "refresh-transient";
+  host: string;
+  reason: string;
+}
+
+/**
+ * The union the Token Provider returns. Includes the Auth Store error
+ * variants verbatim — the Token Provider does not translate them, since a
+ * malformed or unreadable store needs a distinct user-visible message
+ * (`auth status` for diagnostics) rather than a generic "refresh failed".
+ */
+export type TokenProviderError =
+  | NotLoggedInError
+  | SessionExpiredError
+  | RefreshFailedError
+  | RefreshTransientError
+  | AuthStoreReadError
+  | AuthStoreWriteError
+  | MalformedAuthStoreError;
+
 export type AuthDomainError =
   | AuthStoreReadError
   | AuthStoreWriteError
@@ -105,4 +149,8 @@ export type AuthDomainError =
   | OidcDiscoveryError
   | DeviceFlowError
   | TokenTransportError
-  | BrowserOpenError;
+  | BrowserOpenError
+  | NotLoggedInError
+  | SessionExpiredError
+  | RefreshFailedError
+  | RefreshTransientError;
