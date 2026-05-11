@@ -491,37 +491,37 @@ run = '''
 #!/usr/bin/env bash
 set -eo pipefail
 if [ -n "${IS_SANDBOX:-}" ]; then
-  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+  export KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
 else
-  KUBECONFIG="$HOME/.lima/platform-k3s/copied-from-guest/kubeconfig.yaml"
+  export KUBECONFIG="$HOME/.lima/platform-k3s/copied-from-guest/kubeconfig.yaml"
 fi
-KC=(--kubeconfig="$KUBECONFIG")
 
 # Drain RWX-mounting workloads BEFORE helm uninstall. The chart ships the NFS
 # provisioner that backs `platform-rwx`; once helm uninstall removes it, any
 # pod still mounting one of its PVCs hangs in Terminating (kubelet can't
 # unmount from the dead NFS server) and blocks namespace deletion forever.
-# Tear down in order (sts → pods → pvcs → ns) while NFS is still alive;
-# force-evict if anything stalls.
-if kubectl "${KC[@]}" get ns platform-agents >/dev/null 2>&1; then
+# Tear down in order (sts → wait for pods → pvcs → ns) while NFS is still
+# alive; force-evict if the namespace deletion stalls.
+if kubectl get ns platform-agents >/dev/null 2>&1; then
   echo "Draining platform-agents while NFS provisioner is still alive..."
-  kubectl "${KC[@]}" -n platform-agents delete sts --all --wait=true --timeout=60s 2>/dev/null || true
-  kubectl "${KC[@]}" -n platform-agents wait --for=delete pod --all --timeout=60s 2>/dev/null || true
-  kubectl "${KC[@]}" -n platform-agents delete pvc --all --wait=true --timeout=60s 2>/dev/null || true
-  if ! kubectl "${KC[@]}" delete ns platform-agents --ignore-not-found --timeout=60s 2>/dev/null; then
-    echo "Drain stalled — force-evicting stuck pods..."
-    kubectl "${KC[@]}" delete pod --all -n platform-agents --force --grace-period=0 2>/dev/null || true
-    kubectl "${KC[@]}" delete ns platform-agents --ignore-not-found 2>/dev/null || true
+  kubectl -n platform-agents delete sts --all --wait=true --timeout=60s --ignore-not-found
+  kubectl -n platform-agents wait --for=delete pod --all --timeout=60s 2>/dev/null || true
+  kubectl -n platform-agents delete pvc --all --wait=true --timeout=60s --ignore-not-found
+  if ! kubectl delete ns platform-agents --ignore-not-found --timeout=60s; then
+    echo "Namespace deletion stalled — force-evicting stuck pods..."
+    kubectl -n platform-agents delete pod --all --force --grace-period=0 --ignore-not-found
+    kubectl delete ns platform-agents --ignore-not-found
   fi
 fi
 
-helm "${KC[@]}" uninstall platform || true
+helm uninstall platform || true
 
 # Clean up StatefulSet-managed PVCs in the release namespace (postgres, redis,
 # nfs-provisioner export). These aren't owned by the helm release, so helm
 # leaves them behind. Delete them AFTER helm uninstall — pods are gone now,
 # so pvc-protection finalizers clear immediately.
-kubectl "${KC[@]}" delete pvc --all -n default --ignore-not-found 2>/dev/null || true
+kubectl delete pvc --all --ignore-not-found
+
 echo "Platform uninstalled and cleaned up. Use 'mise run cluster:delete' to remove the entire cluster."
 '''
 
