@@ -1,0 +1,39 @@
+import { Command } from "commander";
+import { composeAuthModule } from "./modules/auth/compose.js";
+import { composeCliModule } from "./modules/cli/compose.js";
+
+export interface ComposeOptions {
+  /** Override for the production config path (resolved via XDG —
+   *  `$XDG_CONFIG_HOME/dam/config.toml`, default
+   *  `~/.config/dam/config.toml`). Used by integration tests. */
+  configPath?: string;
+  /** Override for the production auth-state path (resolved via XDG —
+   *  `$XDG_STATE_HOME/dam/auth.toml`, default
+   *  `~/.local/state/dam/auth.toml`). Used by integration tests. */
+  authPath?: string;
+  /** Env consulted for path resolution (`XDG_*`). Defaults to
+   *  `process.env`; tests can isolate without monkey-patching. */
+  env?: NodeJS.ProcessEnv;
+}
+
+/**
+ * Package-level wiring. Each bounded context's `compose()` returns its
+ * commands (and any cross-module services); this function stitches them
+ * into a single commander program. Adding a third module is one import
+ * and one `addCommand` loop.
+ */
+export function compose(opts: ComposeOptions = {}): Command {
+  const cli = composeCliModule({ configPath: opts.configPath });
+  const auth = composeAuthModule({ authPath: opts.authPath, env: opts.env });
+
+  const program = new Command();
+  program
+    .name("dam")
+    .description("Command-line client for a Platform deployment")
+    .version(cli.cliVersion);
+
+  for (const command of cli.commands) program.addCommand(command);
+  for (const command of auth.commands) program.addCommand(command);
+
+  return program;
+}
