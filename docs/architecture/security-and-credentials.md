@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-05-07
+Last verified: 2026-05-11
 
 ## Motivated by
 
@@ -74,7 +74,7 @@ flowchart LR
 
   api-server -->|write K8s Secrets<br/>platform.ai/owner=sub| gatewaypod
   controller -->|render bootstrap + leaf cert<br/>list owner Secrets| gatewaypod
-  controller -->|render agent + paired gateway<br/>+ role-scoped NetworkPolicies| agentpod
+  controller -->|render agent + paired gateway<br/>+ AuthorizationPolicies<br/>+ per-pair agent egress NetworkPolicy| agentpod
 
   agent-runtime -->|HTTPS_PROXY=&lt;instance&gt;-gateway| envoy
   envoy -->|ext_authz Check| api-server
@@ -83,7 +83,21 @@ flowchart LR
 
 The credential boundary is the pod: K8s Secrets are mounted into the
 gateway pod only, and the agent pod has no admitted route to TCP 80/443
-other than its paired gateway. The agent pod has no service account token
+other than its paired gateway. Enforcement is layered:
+
+- **Mesh AuthorizationPolicy** (ADR-041) gates *ingress* on the gateway
+  pod by SA principal, so another instance's agent cannot reach this
+  gateway even if the pod IP is known.
+- **Per-pair agent egress NetworkPolicy** (controller-rendered,
+  `<id>-agent-egress`) restricts the agent pod's *egress* at the kernel
+  layer to DNS, its paired gateway pod, and the ambient HBONE port.
+  Without this, an agent process can ignore `HTTPS_PROXY` and dial
+  external hosts directly, escaping Envoy's MITM, credential
+  injection, and ext-authz HITL gates. The NetworkPolicy selects on
+  `pair=<id>, role=agent`, so the gateway pod's own egress (which
+  legitimately dials credentialed upstreams) stays unrestricted.
+
+The agent pod has no service account token
 (`automountServiceAccountToken: false`), and there is no co-located
 sidecar to share a network or PID namespace with. See
 [ADR-033 §Threat Model](../adrs/033-envoy-credential-gateway.md#threat-model)
@@ -246,7 +260,14 @@ caller identification all flow through the same SPIFFE primitive:
   per-instance SA from the agent namespace (ext-authz), closing the
   direct pod-IP bypass.
 
-NetworkPolicy retracts to coarse perimeter only — namespace-level
-egress allowlists and cluster-edge ingress where identity-blind kernel
-enforcement is still load-bearing. The fine-grained pair-key policies
-from ADR-038 are gone.
+NetworkPolicy retracts to coarse perimeter only — cluster-edge ingress
+and a per-pair *agent egress* policy (`<id>-agent-egress`, controller-
+rendered alongside the gateway-admission AuthorizationPolicy) that
+locks the agent pod's L3/L4 egress to its paired gateway plus DNS and
+ambient HBONE. The pair-pinning here is structural defence-in-depth on
+top of mesh AuthorizationPolicy: the AuthorizationPolicy on each
+gateway pod still cryptographically denies traffic from a non-matching
+SA, but the NetworkPolicy is what keeps the agent process from
+side-stepping `HTTPS_PROXY` and reaching external hosts that the mesh
+doesn't see. The fine-grained pair-key *ingress* policies from
+ADR-038 are gone — Istio AuthorizationPolicy owns that boundary now.

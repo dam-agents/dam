@@ -131,6 +131,14 @@ func TestReconcile_CreateResources(t *testing.T) {
 	_, err = client.CoreV1().Services("default").Get(ctx, "platform-extauthz-my-instance", metav1.GetOptions{})
 	require.NoError(t, err, "per-instance ext-authz Service must be created")
 
+	// ADR-041: per-pair agent egress NetworkPolicy. AuthorizationPolicy
+	// only gates ingress; this closes the symmetric egress hole at the
+	// kernel layer so an agent can't bypass HTTPS_PROXY.
+	np, err := client.NetworkingV1().NetworkPolicies("test-agents").Get(ctx, "my-instance-agent-egress", metav1.GetOptions{})
+	require.NoError(t, err, "per-pair agent egress NetworkPolicy must be created")
+	assert.Equal(t, "my-instance", np.Spec.PodSelector.MatchLabels["agent-platform.ai/pair"])
+	assert.Equal(t, "agent", np.Spec.PodSelector.MatchLabels["agent-platform.ai/role"])
+
 	// Pod specs use the per-instance SA (ADR-041)
 	assert.Equal(t, "my-instance", ss.Spec.Template.Spec.ServiceAccountName,
 		"agent pod must run as the per-instance SA so SPIFFE peer principal == URL :id")

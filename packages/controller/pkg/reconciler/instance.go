@@ -121,6 +121,14 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 		return r.setError(ctx, name, fmt.Sprintf("applying ext-authz authz policy: %v", err))
 	}
 
+	// ADR-041: per-pair agent egress NetworkPolicy. AuthorizationPolicy on
+	// the gateway only gates ingress; without an egress NP the agent
+	// process can bypass HTTPS_PROXY and dial external hosts directly,
+	// escaping Envoy's credential and HITL gates.
+	if err := r.applyAgentEgressNetworkPolicy(ctx, BuildAgentEgressNetworkPolicy(name, r.config, cm)); err != nil {
+		return r.setError(ctx, name, err.Error())
+	}
+
 	hibernated := instanceSpec.DesiredState == "hibernated"
 
 	// ADR-038: paired pods, rendered as a unit. Render the gateway first

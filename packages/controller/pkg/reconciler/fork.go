@@ -139,6 +139,13 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying fork ext-authz authz policy: %v", err))
 	}
 
+	// ADR-041: per-pair agent egress NetworkPolicy (same rationale as the
+	// long-lived shape — kernel-level perimeter so the agent process
+	// cannot bypass HTTPS_PROXY).
+	if err := r.applyAgentEgressNetworkPolicy(ctx, BuildAgentEgressNetworkPolicy(forkName, r.config, cm)); err != nil {
+		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, err.Error())
+	}
+
 	// ADR-038: paired gateway pod for the fork. Render the gateway-side
 	// resources first so HTTPS_PROXY's target exists by the time the
 	// agent Job's pod starts dialing it. ADR-041: pair-key NetworkPolicy
