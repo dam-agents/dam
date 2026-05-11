@@ -66,6 +66,13 @@ urls:
 #     - name: my-registry-secret
 imagePullSecrets: []
 
+# -- Kubelet probes for chart-managed pods (api-server, ui, keycloak,
+# postgres, redis). Set `enabled: false` to drop all readiness and liveness
+# probes — escape hatch for production clusters where the kubelet's probe
+# behavior is causing churn (false-positive restarts, slow rollouts).
+probes:
+  enabled: true
+
 # -- Istio ambient mesh settings (ADR-041). Istio is a hard prerequisite of
 # this chart — `validate-istio.yaml` fails install if the mesh is missing.
 # `mise run cluster:install` provisions Istio out-of-band (mirroring how
