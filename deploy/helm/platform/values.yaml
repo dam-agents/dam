@@ -162,6 +162,9 @@ keycloak:
   # -- Confidential client for API server
   apiClientId: platform-api
   apiClientSecret: ""
+  # -- Public client for the dam CLI (Device Authorization Grant, RFC 8628).
+  # Surfaced to the CLI via `/api/auth/config` as `cliClientId`.
+  cliClientId: platform-cli
 
   # -- Additional redirect URIs and web origins to register on the public
   # `clientId` client. The chart always allows `{urls.ui}/*` and the Vite

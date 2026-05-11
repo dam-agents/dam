@@ -135,6 +135,8 @@ spec:
               value: {{ .Values.keycloak.realm | quote }}
             - name: KEYCLOAK_CLIENT_ID
               value: {{ .Values.keycloak.clientId | quote }}
+            - name: KEYCLOAK_CLI_CLIENT_ID
+              value: {{ .Values.keycloak.cliClientId | quote }}
             - name: KEYCLOAK_API_AUDIENCE
               value: {{ .Values.keycloak.apiAudience | quote }}
             - name: KEYCLOAK_API_CLIENT_ID

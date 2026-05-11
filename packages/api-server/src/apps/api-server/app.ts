@@ -119,6 +119,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     c.json({
       issuer: `${config.keycloakExternalUrl}/realms/${config.keycloakRealm}`,
       clientId: config.keycloakClientId,
+      cliClientId: config.keycloakCliClientId,
     }),
   );
   // Public — UI fetches this on bootstrap (before auth) to set the page

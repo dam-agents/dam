@@ -51,6 +51,10 @@ const configSchema = z.object({
   keycloakExternalUrl: z.url().default("http://keycloak.localhost:4444"),
   keycloakRealm: z.string().default("platform"),
   keycloakClientId: z.string().default("platform-ui"),
+  /** Public Keycloak client id used by the `dam` CLI's Device Authorization
+   *  Grant (RFC 8628). Surfaced to the CLI via `GET /api/auth/config` as
+   *  `cliClientId`; never used by the api-server itself. */
+  keycloakCliClientId: z.string().default("platform-cli"),
   keycloakApiAudience: z.string().default("platform-api"),
   keycloakApiClientId: z.string().default("platform-api"),
   keycloakApiClientSecret: z.string().default(""),
@@ -134,6 +138,7 @@ export function loadConfig(): Config {
     keycloakExternalUrl: process.env.KEYCLOAK_EXTERNAL_URL,
     keycloakRealm: process.env.KEYCLOAK_REALM,
     keycloakClientId: process.env.KEYCLOAK_CLIENT_ID,
+    keycloakCliClientId: process.env.KEYCLOAK_CLI_CLIENT_ID,
     keycloakApiAudience: process.env.KEYCLOAK_API_AUDIENCE,
     keycloakApiClientId: process.env.KEYCLOAK_API_CLIENT_ID,
     keycloakApiClientSecret: process.env.KEYCLOAK_API_CLIENT_SECRET,
