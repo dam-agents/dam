@@ -104,9 +104,6 @@ spec:
             initialDelaySeconds: 15
             periodSeconds: 15
             timeoutSeconds: 3
-          {{- else }}
-          readinessProbe: null
-          livenessProbe: null
           {{- end }}
           resources:
             {{- toYaml .Values.redis.resources | nindent 12 }}

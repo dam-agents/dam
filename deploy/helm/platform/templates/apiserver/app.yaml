@@ -228,12 +228,6 @@ spec:
               port: http
             initialDelaySeconds: 10
             periodSeconds: 30
-          {{- else }}
-          # Explicit null (not omission) so a `helm upgrade` from a release
-          # that previously had probes generates a delete patch; otherwise
-          # K8s rejects the upgrade with "must specify a handler type".
-          readinessProbe: null
-          livenessProbe: null
           {{- end }}
           resources:
             {{- toYaml .Values.apiServer.resources | nindent 12 }}

@@ -112,9 +112,6 @@ spec:
               port: http
             initialDelaySeconds: 5
             periodSeconds: 30
-          {{- else }}
-          readinessProbe: null
-          livenessProbe: null
           {{- end }}
           resources:
             {{- toYaml .Values.ui.resources | nindent 12 }}
