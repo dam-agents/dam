@@ -1,13 +1,15 @@
-import { FilePlus, FolderPlus, Upload } from "lucide-react";
+import { FilePlus, FolderPlus, FolderUp, Upload } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useStore } from "../../../store.js";
 import type { TreeEntry } from "../../../types.js";
+import { type BundleEntry, walkDataTransfer } from "../api/import-bundle.js";
 import { useFileContentQuery } from "../api/queries.js";
 import { type FileEntryKind, useFileMutations } from "../hooks/use-file-mutations.js";
 import { FileRow } from "./file-row.js";
 import { FileRowMenu,type FileRowMenuAction } from "./file-row-menu.js";
 import { FileViewer } from "./file-viewer.js";
+import { ImportConflictModal } from "./import-conflict-modal.js";
 import { InlineNameRow } from "./inline-name-row.js";
 
 interface PendingNew {
@@ -27,6 +29,14 @@ function isDotName(path: string): boolean {
 
 function depthOf(path: string): number {
   return path.split("/").length - 1;
+}
+
+function hasDirectoryItem(items: DataTransferItemList): boolean {
+  for (let i = 0; i < items.length; i++) {
+    const ent = items[i].webkitGetAsEntry?.();
+    if (ent?.isDirectory) return true;
+  }
+  return false;
 }
 
 function compareTreeEntries(a: TreeEntry, b: TreeEntry): number {
@@ -49,7 +59,10 @@ export function FilesPanel({ onOpenFile }: { onOpenFile: (path: string) => void 
   const openFilePath = useStore(s => s.openFilePath);
   const setOpenFilePath = useStore(s => s.setOpenFilePath);
 
-  const { fileTree, createEntry, renameEntry, deleteEntry, uploadFiles } = useFileMutations(selectedInstance);
+  const {
+    fileTree, createEntry, renameEntry, deleteEntry, uploadFiles,
+    uploadBundle, pendingImportConflicts, resolveImportConflict,
+  } = useFileMutations(selectedInstance);
   const { data: openFile, error: openFileError } = useFileContentQuery(selectedInstance, openFilePath);
 
   // If the file disappeared (rename, delete, git switch), close the viewer
@@ -66,9 +79,11 @@ export function FilesPanel({ onOpenFile }: { onOpenFile: (path: string) => void 
   const [menu, setMenu] = useState<MenuState | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const folderInputRef = useRef<HTMLInputElement | null>(null);
   // Stashes the dir the next picker invocation should upload into. Cleared
   // after onChange fires so subsequent toolbar picks default to root.
   const pickerTargetDirRef = useRef<string>("");
+  const folderPickerTargetDirRef = useRef<string>("");
 
   const sortedTree = useMemo(() => [...fileTree].sort(compareTreeEntries), [fileTree]);
 
@@ -195,13 +210,22 @@ export function FilesPanel({ onOpenFile }: { onOpenFile: (path: string) => void 
         setDragTargetPath(null);
       }}
       onDrop={(e) => {
-        if (!e.dataTransfer?.files?.length) return;
+        if (!e.dataTransfer) return;
         e.preventDefault();
         setPanelDragActive(false);
         setDragTargetPath(null);
         // Row handlers stopPropagation before this fires, so reaching here
         // means the drop happened on empty panel space → upload to root.
-        void uploadFiles(e.dataTransfer.files);
+        const items = e.dataTransfer.items;
+        if (items && hasDirectoryItem(items)) {
+          // Async: capture the items list snapshot via webkitGetAsEntry now.
+          void (async () => {
+            const entries = await walkDataTransfer(items);
+            void uploadBundle(entries);
+          })();
+          return;
+        }
+        if (e.dataTransfer.files?.length) void uploadFiles(e.dataTransfer.files);
       }}
     >
       <input
@@ -216,6 +240,28 @@ export function FilesPanel({ onOpenFile }: { onOpenFile: (path: string) => void 
           e.target.value = "";
         }}
       />
+      <input
+        ref={folderInputRef}
+        type="file"
+        multiple
+        // @ts-expect-error -- non-standard but supported by Chromium-based + Safari + Firefox
+        webkitdirectory=""
+        directory=""
+        className="hidden"
+        onChange={(e) => {
+          const target = folderPickerTargetDirRef.current;
+          folderPickerTargetDirRef.current = "";
+          const files = e.target.files;
+          if (files && files.length > 0) {
+            const entries: BundleEntry[] = Array.from(files).map((f) => ({
+              path: (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name,
+              file: f,
+            }));
+            void uploadBundle(entries, target);
+          }
+          e.target.value = "";
+        }}
+      />
       <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border-light">
         <span className="text-[11px] font-mono text-text-muted flex-1 truncate">/home/agent</span>
         <button
@@ -224,6 +270,16 @@ export function FilesPanel({ onOpenFile }: { onOpenFile: (path: string) => void 
           onClick={() => openFilePickerFor("")}
         >
           <Upload size={13} />
+        </button>
+        <button
+          className="text-text-muted hover:text-accent p-0.5 rounded transition-colors"
+          title="Upload folder"
+          onClick={() => {
+            folderPickerTargetDirRef.current = "";
+            folderInputRef.current?.click();
+          }}
+        >
+          <FolderUp size={13} />
         </button>
         <button
           className="text-text-muted hover:text-accent p-0.5 rounded transition-colors"
@@ -302,6 +358,12 @@ export function FilesPanel({ onOpenFile }: { onOpenFile: (path: string) => void 
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-accent-light/80 border-2 border-dashed border-accent rounded">
           <div className="text-[12px] font-semibold text-accent">Drop files to upload to /home/agent</div>
         </div>
+      )}
+      {pendingImportConflicts && (
+        <ImportConflictModal
+          conflicts={pendingImportConflicts.conflicts}
+          onChoose={resolveImportConflict}
+        />
       )}
     </div>
   );

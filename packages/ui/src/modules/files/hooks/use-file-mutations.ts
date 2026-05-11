@@ -1,6 +1,12 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 
 import { useStore } from "../../../store.js";
+import {
+  type BundleEntry,
+  importBundle,
+  importPreflight,
+  topLevelOf,
+} from "../api/import-bundle.js";
 import {
   MAX_UPLOAD_BYTES,
   useFileCreateMutation,
@@ -172,5 +178,54 @@ export function useFileMutations(instanceId: string | null) {
     }
   }, [uploadMutation, showConfirm, showToast]);
 
-  return { fileTree, createEntry, renameEntry, deleteEntry, uploadFiles };
+  const [pendingImportConflicts, setPendingImportConflicts] = useState<{
+    entries: BundleEntry[];
+    conflicts: string[];
+    targetDir: string;
+  } | null>(null);
+
+  const uploadBundle = useCallback(async (entries: BundleEntry[], targetDir = "") => {
+    if (!instanceId || entries.length === 0) return;
+    const prefix = targetDir.replace(/^\/+|\/+$/g, "");
+    try {
+      const tops = topLevelOf(entries);
+      const conflicts = await importPreflight(instanceId, tops, prefix);
+      if (conflicts.length === 0) {
+        await importBundle({ instanceId, entries, mode: "merge", prefix });
+        showToast({ kind: "success", message: `Imported ${entries.length} file${entries.length === 1 ? "" : "s"}` });
+        return;
+      }
+      setPendingImportConflicts({ entries, conflicts, targetDir: prefix });
+    } catch (err) {
+      showToast({ kind: "error", message: errorMessage(err, "Import failed") });
+    }
+  }, [instanceId, showToast]);
+
+  const resolveImportConflict = useCallback(async (choice: "replace" | "merge" | "cancel") => {
+    const pending = pendingImportConflicts;
+    setPendingImportConflicts(null);
+    if (!pending || !instanceId || choice === "cancel") return;
+    try {
+      await importBundle({
+        instanceId,
+        entries: pending.entries,
+        mode: choice,
+        prefix: pending.targetDir,
+      });
+      showToast({ kind: "success", message: `Imported ${pending.entries.length} file${pending.entries.length === 1 ? "" : "s"}` });
+    } catch (err) {
+      showToast({ kind: "error", message: errorMessage(err, "Import failed") });
+    }
+  }, [pendingImportConflicts, instanceId, showToast]);
+
+  return {
+    fileTree,
+    createEntry,
+    renameEntry,
+    deleteEntry,
+    uploadFiles,
+    uploadBundle,
+    pendingImportConflicts,
+    resolveImportConflict,
+  };
 }

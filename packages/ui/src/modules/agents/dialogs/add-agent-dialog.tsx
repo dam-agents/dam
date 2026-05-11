@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Sparkles } from "lucide-react";
+import { FolderUp, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 
@@ -15,6 +15,7 @@ import {
   useAppConnections,
   useOAuthAppConnections,
 } from "../../connections/api/queries.js";
+import { type BundleEntry, isTarballName } from "../../files/api/import-bundle.js";
 import { useSecrets } from "../../secrets/api/queries.js";
 import { addAgentSchema, type AddAgentValues } from "../forms/add-agent-schema.js";
 
@@ -39,6 +40,8 @@ export function AddAgentDialog({
     secretIds?: string[];
     appConnectionIds?: string[];
     egressPreset?: EgressPreset;
+    importEntries?: BundleEntry[];
+    importRawBundle?: File;
   }) => void;
   onCancel: () => void;
   onGoToProviders: () => void;
@@ -48,6 +51,16 @@ export function AddAgentDialog({
     null,
   );
   const [customImage, setCustomImage] = useState("");
+  // Two pickers, three possible payload shapes:
+  //   - folder pick → BundleEntry[] (gets tar-wrapped client-side)
+  //   - non-tar single file → BundleEntry[] of length 1
+  //   - tar / tar.gz / tgz → File, sent through verbatim (no re-wrap)
+  // Only one of the two is non-empty at a time; switching pickers clears
+  // the other so the dialog never holds conflicting selections.
+  const [importEntries, setImportEntries] = useState<BundleEntry[]>([]);
+  const [importRawBundle, setImportRawBundle] = useState<File | null>(null);
+  const importFolderInputRef = useRef<HTMLInputElement | null>(null);
+  const importFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const { data: secrets = [], isLoading: loadSecrets } = useSecrets();
   const { data: apps = [] } = useAppConnections();
@@ -162,6 +175,8 @@ export function AddAgentDialog({
       secretIds: values.selSecrets,
       appConnectionIds: values.selApps.length > 0 ? values.selApps : undefined,
       egressPreset: values.egressPreset,
+      importEntries: importEntries.length > 0 ? importEntries : undefined,
+      importRawBundle: importRawBundle ?? undefined,
     });
   });
 
@@ -269,6 +284,85 @@ export function AddAgentDialog({
                 placeholder="Optional"
                 {...register("description")}
               />
+            </FormField>
+
+            <FormField label="Import local context (optional)">
+              <input
+                ref={importFolderInputRef}
+                type="file"
+                multiple
+                // @ts-expect-error -- non-standard but supported by Chromium-based + Safari + Firefox
+                webkitdirectory=""
+                directory=""
+                className="hidden"
+                onChange={(e) => {
+                  const files = e.target.files;
+                  if (!files || files.length === 0) return;
+                  setImportRawBundle(null);
+                  setImportEntries(
+                    Array.from(files).map((f) => ({
+                      path: (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name,
+                      file: f,
+                    })),
+                  );
+                  e.target.value = "";
+                }}
+              />
+              <input
+                ref={importFileInputRef}
+                type="file"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  if (isTarballName(file.name)) {
+                    setImportEntries([]);
+                    setImportRawBundle(file);
+                  } else {
+                    setImportRawBundle(null);
+                    setImportEntries([{ path: file.name, file }]);
+                  }
+                  e.target.value = "";
+                }}
+              />
+              <div className="flex items-center gap-3 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => importFolderInputRef.current?.click()}
+                  className="btn-brutal h-9 rounded-lg border-2 border-border bg-bg px-3 text-[13px] font-semibold text-text shadow-brutal-sm flex items-center gap-1.5"
+                >
+                  <FolderUp size={14} /> Choose folder
+                </button>
+                <button
+                  type="button"
+                  onClick={() => importFileInputRef.current?.click()}
+                  className="btn-brutal h-9 rounded-lg border-2 border-border bg-bg px-3 text-[13px] font-semibold text-text shadow-brutal-sm flex items-center gap-1.5"
+                >
+                  <FolderUp size={14} /> Choose file
+                </button>
+                {importRawBundle ? (
+                  <span className="text-[12px] text-text-muted">
+                    Pre-built bundle: <code className="font-mono">{importRawBundle.name}</code>
+                  </span>
+                ) : importEntries.length > 0 ? (
+                  <span className="text-[12px] text-text-muted">
+                    {importEntries.length} file{importEntries.length === 1 ? "" : "s"} ready to import
+                  </span>
+                ) : (
+                  <span className="text-[12px] text-text-muted">
+                    A folder, a single file, or a pre-built <code className="font-mono">.tar.gz</code>.
+                  </span>
+                )}
+                {(importRawBundle || importEntries.length > 0) && (
+                  <button
+                    type="button"
+                    onClick={() => { setImportEntries([]); setImportRawBundle(null); }}
+                    className="text-[12px] text-text-muted hover:text-text underline"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
             </FormField>
 
             {!loadSecrets && providerSecrets.length === 0 && (

@@ -17,6 +17,8 @@ import {
   decodeFrame, encodeDataFrame, encodeExit,
 } from "api-server-api";
 import { createFilesService } from "./modules/files.js";
+import { createImportHandlers } from "./modules/import/http.js";
+import { sweepStaging } from "./modules/import/sweeper.js";
 import { composeSkills } from "./modules/skills/index.js";
 import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
@@ -38,6 +40,10 @@ const workDir = config.PLATFORM_DEV
 // lifetime of the process; createContext just hands them out per-request.
 const filesService = createFilesService(homeDir);
 const skillsService = composeSkills();
+const importHandlers = createImportHandlers(
+  homeDir,
+  (msg) => process.stderr.write(`[import] ${msg}\n`),
+);
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -205,6 +211,16 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (req.method === "POST" && req.url === "/api/import") {
+    void importHandlers.handleImport(req, res);
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/import-preflight") {
+    void importHandlers.handleImportPreflight(req, res);
+    return;
+  }
+
   if (req.url?.startsWith("/api/trpc")) {
     req.url = req.url.replace("/api/trpc", "");
     Object.entries(CORS).forEach(([k, v]) => res.setHeader(k, v));
@@ -269,6 +285,8 @@ try {
 
 server.listen(config.PORT, () => {
   process.stderr.write(`Platform on http://localhost:${config.PORT}\n`);
+
+  void sweepStaging(homeDir, (msg) => process.stderr.write(`[import] ${msg}\n`));
 
   triggerWatcher = startTriggerWatcher({
     triggersDir: config.TRIGGERS_DIR,

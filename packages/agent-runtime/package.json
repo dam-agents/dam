@@ -19,15 +19,18 @@
     "@xterm/headless": "5.5.0",
     "agent-runtime-api": "workspace:*",
     "api-server-api": "workspace:*",
+    "busboy": "^1.6.0",
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",
     "file-type": "^22.0.1",
     "js-yaml": "^4.1.0",
     "@lydell/node-pty": "1.1.0",
+    "tar": "^7.5.13",
     "ws": "^8.20.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/busboy": "^1.5.4",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^25.5.0",
     "@types/ws": "^8.18.1",

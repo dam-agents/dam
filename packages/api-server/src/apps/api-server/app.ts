@@ -240,6 +240,68 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     }
   });
 
+  // File import — bundle is a tar.gz inside multipart/form-data; we wake
+  // the pod via the reachability primitive and stream the body straight
+  // to agent-runtime, which extracts it under /home/agent. See
+  // docs/superpowers/specs/2026-05-07-file-import-design.md.
+  app.post("/api/instances/:id/import", async (c) => {
+    const user = c.get("user");
+    const instanceId = c.req.param("id")!;
+    if (!await verifyOwner(instanceId, user.sub)) {
+      return c.json({ error: "not found" }, 404);
+    }
+    try {
+      await instancesRepo.ensureReady(instanceId);
+    } catch (err) {
+      return c.json({ error: `instance unreachable: ${(err as Error).message}` }, 502);
+    }
+    const upstreamUrl = `http://${podBaseUrl(instanceId, config.namespace)}/api/import`;
+    const headers = new Headers(c.req.raw.headers);
+    headers.delete("host");
+    headers.delete("authorization");
+    try {
+      const upstream = await fetch(upstreamUrl, {
+        method: "POST",
+        headers,
+        body: c.req.raw.body,
+        // @ts-expect-error -- node fetch supports duplex
+        duplex: "half",
+      });
+      return new Response(upstream.body, { status: upstream.status, headers: upstream.headers });
+    } catch {
+      return c.json({ error: "instance unreachable" }, 502);
+    }
+  });
+
+  app.post("/api/instances/:id/import-preflight", async (c) => {
+    const user = c.get("user");
+    const instanceId = c.req.param("id")!;
+    if (!await verifyOwner(instanceId, user.sub)) {
+      return c.json({ error: "not found" }, 404);
+    }
+    try {
+      await instancesRepo.ensureReady(instanceId);
+    } catch (err) {
+      return c.json({ error: `instance unreachable: ${(err as Error).message}` }, 502);
+    }
+    const upstreamUrl = `http://${podBaseUrl(instanceId, config.namespace)}/api/import-preflight`;
+    const headers = new Headers(c.req.raw.headers);
+    headers.delete("host");
+    headers.delete("authorization");
+    try {
+      const upstream = await fetch(upstreamUrl, {
+        method: "POST",
+        headers,
+        body: c.req.raw.body,
+        // @ts-expect-error -- node fetch supports duplex
+        duplex: "half",
+      });
+      return new Response(upstream.body, { status: upstream.status, headers: upstream.headers });
+    } catch {
+      return c.json({ error: "instance unreachable" }, 502);
+    }
+  });
+
   app.all("/api/trpc/*", (c) => {
     const user = c.get("user");
 
