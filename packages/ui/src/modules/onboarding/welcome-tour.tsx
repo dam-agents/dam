@@ -147,7 +147,7 @@ export function WelcomeTour() {
             <ul className="grid sm:grid-cols-2 gap-x-5 gap-y-5">
               {FEATURES.map((f) => (
                 <li key={f.text} className="flex gap-4 items-start">
-                  <span className="h-12 w-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                  <span className="h-12 w-12 rounded-xl bg-info-light text-info flex items-center justify-center shrink-0">
                     <f.icon className="h-6 w-6" />
                   </span>
                   <span className="text-[13.5px] leading-snug pt-2.5">{f.text}</span>
