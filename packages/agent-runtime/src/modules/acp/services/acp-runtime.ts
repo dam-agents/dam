@@ -241,11 +241,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   }
 
   function extractPromptId(frame: unknown): string | null {
-    if (typeof frame !== "object" || frame === null) return null;
+    if (frame == null || typeof frame !== "object") return null;
     const f = frame as { params?: unknown };
-    if (typeof f.params !== "object" || f.params === null) return null;
+    if (f.params == null || typeof f.params !== "object") return null;
     const meta = (f.params as { _meta?: unknown })._meta;
-    if (typeof meta !== "object" || meta === null) return null;
+    if (meta == null || typeof meta !== "object") return null;
     const id = (meta as { promptId?: unknown }).promptId;
     return typeof id === "string" ? id : null;
   }
