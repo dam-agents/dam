@@ -61,9 +61,48 @@ export interface OidcDiscoveryError {
   message: string;
 }
 
+/**
+ * `POST <device_authorization_endpoint>` failures. The device-authorization
+ * request happens once, before polling begins; its failures are simple
+ * transport conditions plus malformed-response.
+ */
+export type DeviceFlowErrorCode =
+  | "network"
+  | "non-ok-status"
+  | "malformed-response";
+
+export interface DeviceFlowError {
+  kind: "device-flow";
+  code: DeviceFlowErrorCode;
+  message: string;
+}
+
+/**
+ * `POST <token_endpoint>` HTTP-transport failures. OAuth-level errors
+ * (the response body's `error` / `error_description` fields) do NOT come
+ * through here — those parse as a valid TokenEndpointResponse and feed
+ * the state machine, which decides what is terminal. This variant is
+ * only for the cases where the call did not produce a parseable OAuth
+ * response at all: connection refused, malformed JSON, non-2xx without
+ * an OAuth error body, etc.
+ */
+export interface TokenTransportError {
+  kind: "token-transport";
+  reason: string;
+}
+
+/** The `open` package rejected — typically no GUI available (SSH / CI). */
+export interface BrowserOpenError {
+  kind: "browser-open";
+  reason: string;
+}
+
 export type AuthDomainError =
   | AuthStoreReadError
   | AuthStoreWriteError
   | MalformedAuthStoreError
   | AuthConfigProbeError
-  | OidcDiscoveryError;
+  | OidcDiscoveryError
+  | DeviceFlowError
+  | TokenTransportError
+  | BrowserOpenError;
