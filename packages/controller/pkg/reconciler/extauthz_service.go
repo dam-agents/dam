@@ -48,9 +48,16 @@ func BuildExtAuthzService(instanceName string, cfg *config.Config, _ *corev1.Con
 		},
 		Spec: corev1.ServiceSpec{
 			Type: corev1.ServiceTypeClusterIP,
+			// Match the chart's selectorLabels (`app.kubernetes.io/instance` =
+			// `.Release.Name`). `cfg.ReleaseName` carries `platform.fullname`
+			// instead, which diverges from `.Release.Name` whenever the chart
+			// name isn't a substring of the release name — using it here would
+			// produce a selector that matches no pods, leaving the Service
+			// with zero endpoints and envoy ext-authz returning "no healthy
+			// upstream" (HTTP 403 with empty body).
 			Selector: map[string]string{
 				"app.kubernetes.io/component": "apiserver",
-				"app.kubernetes.io/instance":  cfg.ReleaseName,
+				"app.kubernetes.io/instance":  cfg.APIServerInstanceLabel,
 			},
 			Ports: []corev1.ServicePort{{
 				Name:        "ext-authz",

@@ -12,7 +12,14 @@ import (
 type Config struct {
 	Namespace        string // Agent workload namespace
 	ReleaseNamespace string // Helm release namespace (where controller runs)
-	ReleaseName      string // Helm release name
+	ReleaseName      string // Helm release name — used as the prefix for controller-rendered object names (matches `platform.fullname` in the chart). May differ from APIServerInstanceLabel when the chart name isn't contained in the release name.
+	// APIServerInstanceLabel is the value of `app.kubernetes.io/instance` on
+	// chart-rendered apiserver pods — i.e. the literal Helm `.Release.Name`.
+	// Used to select apiserver pods from the per-instance ext-authz Service.
+	// Diverges from `ReleaseName` (= `platform.fullname`) whenever the chart
+	// name isn't a substring of the release name (e.g. release `dam`, chart
+	// `platform` → fullname `dam-platform`, instance label `dam`).
+	APIServerInstanceLabel string
 	LeaseName        string // Leader election lease name
 	PodName          string // This pod's name (from downward API)
 	AgentImagePullPolicy      string            // ImagePullPolicy for agent pods (default: IfNotPresent)
@@ -76,6 +83,10 @@ func LoadFromEnv() (*Config, error) {
 		Namespace:        envOrDefault("PLATFORM_AGENT_NAMESPACE", "platform-agents"),
 		ReleaseNamespace: envOrDefault("PLATFORM_RELEASE_NAMESPACE", "default"),
 		ReleaseName:      release,
+		// Defaults to ReleaseName so unit tests and older deployments that
+		// don't set the var continue to behave as before; the chart always
+		// sets it explicitly to `.Release.Name`.
+		APIServerInstanceLabel: envOrDefault("PLATFORM_INSTANCE_LABEL", release),
 		LeaseName:        envOrDefault("PLATFORM_LEASE_NAME", release+"-controller"),
 		PodName:          podName,
 	}

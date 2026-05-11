@@ -30,6 +30,13 @@ spec:
           env:
             - name: PLATFORM_RELEASE_NAME
               value: {{ include "platform.fullname" . }}
+            # Value of `app.kubernetes.io/instance` on chart-rendered apiserver
+            # pods — i.e. the literal Helm `.Release.Name`. Used by the
+            # controller to populate the selector on per-instance ext-authz
+            # Services so they actually resolve to apiserver pods even when
+            # release name and `platform.fullname` diverge.
+            - name: PLATFORM_INSTANCE_LABEL
+              value: {{ .Release.Name | quote }}
             - name: PLATFORM_AGENT_NAMESPACE
               value: {{ .Values.agentNamespace }}
             - name: PLATFORM_RELEASE_NAMESPACE
