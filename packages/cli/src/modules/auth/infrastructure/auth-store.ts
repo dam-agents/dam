@@ -136,6 +136,13 @@ async function writeFileAtomic(
   }
 }
 
+// Note: `write` and `remove` use read-merge-rename. The rename itself is
+// atomic, but the read→merge→rename sequence is not coordinated across
+// processes — two concurrent `dam` invocations can each persist their own
+// merged snapshot and the later rename silently reverts the other host's
+// entry. Accepted for v1 (solo-terminal use); see docs/architecture/cli.md
+// "Authentication" section for the deferred fix (per-host files or
+// cross-process locking).
 export function createTomlAuthStore(filePath: string): AuthStore {
   return {
     async read() {
