@@ -73,9 +73,9 @@ interface Props {
 
 export function ConnectAppForm({ app, onCancel }: Props) {
   const [values, setValues] = useState<Record<string, string>>({});
-  // Override toggle — when `credentialsInherited`, optional inputs (e.g.
-  // clientId/clientSecret for a sibling Google connection) stay hidden
-  // until the user explicitly opts in to provide alternates.
+  // Override toggle — when `credentialsInherited`, overridable inputs
+  // (e.g. clientId/clientSecret for a sibling Google connection) stay
+  // hidden until the user explicitly opts in to provide alternates.
   const [showOverride, setShowOverride] = useState(false);
   // Discovery state — `host` carries the value we last discovered against,
   // so re-blurring on the same host doesn't refetch. `error` is shown
@@ -89,12 +89,21 @@ export function ConnectAppForm({ app, onCancel }: Props) {
   const startAppOAuth = useStartAppOAuth();
   const lastDiscoveredHost = useRef<string | null>(null);
 
-  // Inputs the user actually sees and must fill: required ones plus any
-  // optional ones the override panel is showing.
-  const visibleInputs = app.inputs.filter((f) => !f.optional || showOverride);
+  // Inputs the user actually sees. `overridable` fields are covered by a
+  // stored fallback (family creds, admin defaults) and hide behind the
+  // override panel; `optional` fields have no fallback and stay visible
+  // always.
+  const visibleInputs = app.inputs.filter((f) => !f.overridable || showOverride);
   const allFilled = app.inputs
-    .filter((field) => !field.optional)
+    .filter((field) => !field.overridable && !field.optional)
     .every((field) => (values[field.name] ?? "").trim().length > 0);
+
+  // True when an admin has wired a platform-wide default for every required
+  // input (GitHub OAuth client + secret, optionally a GitHub App slug). We
+  // hide the "register your own OAuth app" guidance and the callback-URL
+  // copier in this case — the user just clicks Connect, unless they decide
+  // to substitute their own app via the override toggle.
+  const usingDefaultApp = app.defaultsApplied && !showOverride;
 
   const setField = (name: string, value: string) =>
     setValues((prev) => ({ ...prev, [name]: value }));
@@ -133,17 +142,28 @@ export function ConnectAppForm({ app, onCancel }: Props) {
 
   const submit = () => {
     if (!allFilled) return;
-    // Drop optional fields unless the override panel is open AND the user
-    // typed something into them. Without the `showOverride` gate, values
-    // typed into an override panel that the user later closed would
-    // silently leak through to the backend; gating ties "submit override"
-    // to "override is currently visible." Empty values fall through to
-    // the backend's family-credential merge, which fills them from a
-    // sibling connection.
+    // Drop:
+    //  - `overridable` fields unless the override panel is open AND the
+    //    user typed something — gating "submit override" to "override is
+    //    currently visible" prevents stale typed values from leaking after
+    //    the user closes the panel; the backend's family-creds /
+    //    admin-defaults merge fills the field from its fallback when we
+    //    don't send one.
+    //  - `optional` fields when empty — there's no fallback to merge, but
+    //    sending an empty string would override an admin default with ""
+    //    and silently disable the feature (e.g. an admin-configured
+    //    GitHub App slug stripped because the form submitted appSlug="").
+    //    Forwarded when non-empty so user input still wins over the
+    //    default.
     const input = Object.fromEntries(
       app.inputs
         .map((field) => [field.name, (values[field.name] ?? "").trim()] as const)
-        .filter(([, v], i) => !app.inputs[i]!.optional || (showOverride && v.length > 0)),
+        .filter(([, v], i) => {
+          const f = app.inputs[i]!;
+          if (f.optional) return v.length > 0;
+          if (f.overridable) return showOverride && v.length > 0;
+          return true;
+        }),
     );
     startAppOAuth.mutate(
       { appId: app.id, input },
@@ -173,7 +193,7 @@ export function ConnectAppForm({ app, onCancel }: Props) {
       <div className="min-h-0 flex-1 overflow-y-auto flex flex-col gap-5 p-5 md:p-7">
         <h2 className="text-[20px] font-bold text-text">Connect {app.displayName}</h2>
         <p className="text-[13px] text-text-secondary">{app.description}</p>
-        {app.registrationUrl && (
+        {app.registrationUrl && !usingDefaultApp && (
           <a
             href={app.registrationUrl}
             target="_blank"
@@ -183,8 +203,23 @@ export function ConnectAppForm({ app, onCancel }: Props) {
             Register an OAuth app first <ExternalLink size={13} />
           </a>
         )}
-        <CallbackUrlField url={app.callbackUrl} />
-        {app.credentialsInherited && (
+        {!usingDefaultApp && <CallbackUrlField url={app.callbackUrl} />}
+        {app.defaultsApplied && (
+          <div className="rounded-lg border-2 border-success/30 bg-success/5 px-4 py-3 text-[12px] text-text-secondary">
+            <div>
+              Connecting to the platform's pre-configured {app.displayName}{" "}
+              app — no setup required.
+            </div>
+            <button
+              type="button"
+              className="mt-1.5 text-[12px] font-semibold text-accent hover:underline"
+              onClick={() => setShowOverride((v) => !v)}
+            >
+              {showOverride ? "Use the platform's app instead" : "Use a different app"}
+            </button>
+          </div>
+        )}
+        {app.credentialsInherited && !app.defaultsApplied && (
           <div className="rounded-lg border-2 border-success/30 bg-success/5 px-4 py-3 text-[12px] text-text-secondary">
             <div>
               Reusing the Client ID and secret from another connected app in

@@ -1,8 +1,9 @@
-import { Unplug } from "lucide-react";
+import { ExternalLink, Unplug } from "lucide-react";
 
 import { useStore } from "../../../store.js";
 import type { OAuthAppConnection, OAuthAppDescriptor } from "../api/fetchers.js";
 import { useDisconnectApp } from "../api/mutations.js";
+import { appInstallUrl } from "../lib/install-url.js";
 import { OAuthAppIcon } from "./oauth-app-icon.js";
 
 interface Props {
@@ -35,6 +36,8 @@ export function OAuthAppRow({ app, connection, animationDelayMs, onReconnect }: 
     ? "Expired — reconnect to refresh access"
     : `Connected ${new Date(connection.connectedAt).toLocaleDateString()} · ${connection.hostPattern}`;
 
+  const installUrl = appInstallUrl(connection);
+
   return (
     <div
       className="flex items-center gap-4 rounded-xl border-2 border-border bg-surface px-5 py-4 transition-shadow hover:shadow-[4px_4px_0_#292524] shadow-brutal anim-in"
@@ -63,6 +66,17 @@ export function OAuthAppRow({ app, connection, animationDelayMs, onReconnect }: 
         >
           Reconnect
         </button>
+      )}
+      {installUrl && (
+        <a
+          href={installUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="btn-brutal h-7 rounded-md border-2 border-border bg-surface px-3 text-[11px] font-bold text-text-secondary hover:text-accent hover:border-accent shadow-brutal-sm inline-flex items-center gap-1.5"
+          title="Install or manage which repositories this GitHub App can access"
+        >
+          Install to repository <ExternalLink size={11} />
+        </a>
       )}
       <button
         onClick={handleDisconnect}

@@ -46,6 +46,7 @@ const ANN_CONNECTION_STATUS = "agent-platform.ai/connection-status";
 const ANN_CONNECTED_AT = "agent-platform.ai/connected-at";
 const ANN_DISPLAY_NAME = "agent-platform.ai/display-name";
 const ANN_SCOPES = "agent-platform.ai/scopes";
+const ANN_APP_SLUG = "agent-platform.ai/app-slug";
 
 const SECRET_TYPE_CONNECTION = "connection";
 const NAME_PREFIX = "platform-conn-";
@@ -80,6 +81,13 @@ export interface ConnectionMetadata {
   displayName?: string;
   /** Comma-separated scopes — surfaced for diagnostics. Optional. */
   scopes?: string;
+  /**
+   * GitHub App slug — set when the connection's credentials belong to a
+   * GitHub App. Surfaced on the connections list so the UI can offer an
+   * "Install" / "Manage installation" action linking to
+   * https://github.com/apps/{slug}/installations/new.
+   */
+  appSlug?: string;
 }
 
 export interface ConnectionSummary {
@@ -90,6 +98,9 @@ export interface ConnectionSummary {
   expiresAt?: number;
   connectedAt?: string;
   displayName?: string;
+  /** GitHub App slug — only set when the connection's credentials belong
+   *  to a GitHub App. See `ConnectionMetadata.appSlug`. */
+  appSlug?: string;
 }
 
 export interface ConnectionRecord {
@@ -150,6 +161,7 @@ function buildAnnotations(
   if (metadata.authorizationUrl) ann[ANN_AUTHORIZATION_URL] = metadata.authorizationUrl;
   if (metadata.displayName) ann[ANN_DISPLAY_NAME] = metadata.displayName;
   if (metadata.scopes) ann[ANN_SCOPES] = metadata.scopes;
+  if (metadata.appSlug) ann[ANN_APP_SLUG] = metadata.appSlug;
   if (tokens.expiresAt != null) ann[ANN_EXPIRES_AT] = String(tokens.expiresAt);
   return ann;
 }
@@ -191,6 +203,7 @@ function readSummary(secret: k8s.V1Secret): ConnectionSummary | null {
   }
   if (ann[ANN_CONNECTED_AT]) summary.connectedAt = ann[ANN_CONNECTED_AT];
   if (ann[ANN_DISPLAY_NAME]) summary.displayName = ann[ANN_DISPLAY_NAME];
+  if (ann[ANN_APP_SLUG]) summary.appSlug = ann[ANN_APP_SLUG];
   return summary;
 }
 
@@ -219,6 +232,7 @@ function readRecord(secret: k8s.V1Secret): ConnectionRecord | null {
   if (ann[ANN_AUTHORIZATION_URL]) metadata.authorizationUrl = ann[ANN_AUTHORIZATION_URL];
   if (ann[ANN_DISPLAY_NAME]) metadata.displayName = ann[ANN_DISPLAY_NAME];
   if (ann[ANN_SCOPES]) metadata.scopes = ann[ANN_SCOPES];
+  if (ann[ANN_APP_SLUG]) metadata.appSlug = ann[ANN_APP_SLUG];
   const clientSecret = decodeData(secret, "client_secret");
   if (clientSecret) metadata.clientSecret = clientSecret;
   return {

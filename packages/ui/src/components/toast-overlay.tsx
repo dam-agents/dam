@@ -57,13 +57,23 @@ function ToastRow({ toast, onDismiss }: { toast: Toast; onDismiss: () => void })
           {toast.action.label}
         </button>
       )}
-      <button
-        onClick={onDismiss}
-        className="shrink-0 h-5 w-5 rounded-md flex items-center justify-center text-text-muted hover:text-text transition-colors"
-        aria-label="Dismiss"
-      >
-        <X size={12} />
-      </button>
+      {toast.secondaryAction && (
+        <button
+          onClick={() => { toast.secondaryAction!.onClick?.(); onDismiss(); }}
+          className="shrink-0 text-[12px] font-semibold text-text-muted hover:text-text"
+        >
+          {toast.secondaryAction.label}
+        </button>
+      )}
+      {!toast.secondaryAction && (
+        <button
+          onClick={onDismiss}
+          className="shrink-0 h-5 w-5 rounded-md flex items-center justify-center text-text-muted hover:text-text transition-colors"
+          aria-label="Dismiss"
+        >
+          <X size={12} />
+        </button>
+      )}
     </div>
   );
 }

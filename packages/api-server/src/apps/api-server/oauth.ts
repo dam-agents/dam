@@ -95,11 +95,11 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
     // host-rewritten callback (see `localhostCallbackAlias`).
     //
     // Descriptors with `credentialFamily` set get their credential inputs
-    // marked `optional: true` when the user already has a sibling connection
-    // in the same family. The connect form hides those inputs behind an
-    // "override" toggle; on submit, empty fields fall through to the stored
-    // family creds (see the merge step in POST /api/oauth/apps/:id/connect),
-    // and filled fields override them.
+    // marked `overridable: true` when the user already has a sibling
+    // connection in the same family. The connect form hides those inputs
+    // behind an "override" toggle; on submit, empty fields fall through
+    // to the stored family creds (see the merge step in POST
+    // /api/oauth/apps/:id/connect), and filled fields override them.
     const user = c.get("user");
     const familyCreds = await readFamilyCreds(k8sConnectionsFor(user.sub));
     return c.json(
@@ -108,7 +108,7 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
         const inputs = inheritFamily
           ? d.inputs.map((i) =>
               i.name === "clientId" || i.name === "clientSecret"
-                ? { ...i, optional: true }
+                ? { ...i, overridable: true }
                 : i,
             )
           : d.inputs;
@@ -199,6 +199,10 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
             hostPattern: conn.hostPattern,
             connectedAt: conn.connectedAt ?? "",
             expired,
+            // Surfaces the GitHub App slug when the connection's credentials
+            // belong to a GitHub App — drives the "Install on GitHub" /
+            // "Manage installation" affordance in the UI.
+            ...(conn.appSlug ? { appSlug: conn.appSlug } : {}),
           };
         })
         .filter((x): x is NonNullable<typeof x> => x !== null);
@@ -428,6 +432,7 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
       ...(pending.provider.scopes && pending.provider.scopes.length > 0
         ? { scopes: pending.provider.scopes.join(" ") }
         : {}),
+      ...(pending.flow.appSlug ? { appSlug: pending.flow.appSlug } : {}),
     };
     try {
       await k8sConnectionsFor(pending.userSub).upsertConnection({
@@ -444,10 +449,18 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
       return c.redirect(`${uiBaseUrl}?oauth=error&message=${encodeURIComponent(msg)}`);
     }
 
-    const successQuery = isMcp
-      ? `oauth=success&host=${pending.flow.hostPattern}`
-      : `oauth=success&app=${encodeURIComponent(pending.flow.connectionKey)}`;
-    return c.redirect(`${uiBaseUrl}?${successQuery}`);
+    // Always return the user to the platform UI after OAuth, even for
+    // GitHub App connections that still need an install step. The UI then
+    // reads the just-stored connection (which carries `appSlug` for
+    // GitHub Apps) and surfaces an in-platform Install prompt — keeps the
+    // user in our context, avoids stranding them on GitHub's install page
+    // when the app is already installed, and removes the open-redirect
+    // surface the previous server-side install bounce required.
+    const successParams = new URLSearchParams();
+    successParams.set("oauth", "success");
+    if (isMcp) successParams.set("host", pending.flow.hostPattern);
+    else successParams.set("app", pending.flow.connectionKey);
+    return c.redirect(`${uiBaseUrl}?${successParams.toString()}`);
   });
 
   return oauth;

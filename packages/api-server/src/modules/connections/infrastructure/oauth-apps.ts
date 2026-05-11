@@ -77,10 +77,25 @@ export interface OAuthAppInputField {
   /** Short hint shown beneath the field. */
   helper?: string;
   /**
-   * Empty value is acceptable. The form renders these collapsed behind an
-   * override toggle; the backend either merges in a stored value (e.g.
-   * family-credential prefill) or omits the field. Required fields default
-   * to `optional: false`.
+   * The field is currently covered by a stored value the backend will
+   * merge in at submit time (sibling family credentials, admin defaults).
+   * The form hides the input behind an "override" toggle ("Use a
+   * different app" / "Use different credentials") so the user doesn't
+   * have to re-enter what we already have; on submit, the field is
+   * dropped unless the override panel is open and the user typed
+   * something.
+   *
+   * Set dynamically — descriptors don't carry it. For inputs that are
+   * *intrinsically* optional (no stored fallback, the user may just
+   * leave them empty), use `optional` instead.
+   */
+  overridable?: boolean;
+  /**
+   * The field may be left empty by the user — there is no stored fallback,
+   * just nothing to fill in. The form keeps the input always visible and
+   * doesn't count it toward the "Connect" enable check; on submit, the
+   * field is dropped if empty and forwarded if filled. Used for the
+   * GitHub App `appSlug` input: OAuth Apps don't have one, GitHub Apps do.
    */
   optional?: boolean;
 }
@@ -106,6 +121,25 @@ export interface OAuthAppDescriptor {
    * their own OAuth app at the provider.
    */
   registrationUrl?: string;
+  /**
+   * GitHub App slug (URL-friendly identifier from the app's GitHub URL —
+   * `https://github.com/apps/{slug}`). Only meaningful for the github /
+   * github-enterprise descriptors when the credentials belong to a GitHub
+   * App (not an OAuth App). When set, the platform offers users an
+   * installation step after authorization, since GitHub Apps see no private
+   * data without an installation. Carried on the descriptor (admin default)
+   * and stored on the connection (so the UI can surface a "Manage
+   * installation" link later).
+   */
+  appSlug?: string;
+  /**
+   * True when an admin has pre-configured a platform-wide default for
+   * every required input on this descriptor. The connect form drops the
+   * "register your own OAuth app" guidance and the redirect-URI helper,
+   * and renders a one-click "Connect" plus an override toggle that
+   * unmasks the now-`overridable` inputs.
+   */
+  defaultsApplied?: boolean;
   /**
    * When set, the connect form runs RFC 8414 / OIDC issuer discovery against
    * the value of the named input field on blur, and auto-fills the
@@ -391,6 +425,14 @@ const DESCRIPTORS: Record<OAuthAppId, OAuthAppDescriptor> = {
         helper: "From the OAuth app you registered on github.com.",
       },
       { name: "clientSecret", label: "Client secret", secret: true },
+      {
+        name: "appSlug",
+        label: "GitHub App slug",
+        placeholder: "my-platform-app",
+        helper:
+          "Only for GitHub Apps (not OAuth Apps). The slug from https://github.com/apps/{slug}. When set, users are prompted to install the app after authorizing.",
+        optional: true,
+      },
     ],
     egressHosts: [{ host: "api.github.com" }, { host: "github.com" }],
   },
@@ -409,6 +451,14 @@ const DESCRIPTORS: Record<OAuthAppId, OAuthAppDescriptor> = {
       },
       { name: "clientId", label: "Client ID" },
       { name: "clientSecret", label: "Client secret", secret: true },
+      {
+        name: "appSlug",
+        label: "GitHub App slug",
+        placeholder: "my-platform-app",
+        helper:
+          "Only for GitHub Apps (not OAuth Apps). The slug from https://{host}/github-apps/{slug}. When set, users are prompted to install the app after authorizing.",
+        optional: true,
+      },
     ],
   },
   spotify: {
@@ -478,9 +528,41 @@ const DESCRIPTORS: Record<OAuthAppId, OAuthAppDescriptor> = {
   },
 };
 
+// `appSlug` (GitHub App URL slug) follows GitHub's slug rules:
+//   - lowercase letters, digits, hyphens
+//   - 1–39 characters
+//   - no leading or trailing hyphens
+//   - no consecutive hyphens
+// (Matches the rules GitHub itself enforces when registering an app or
+// renaming an account.) Empty string is treated as "not set" so admin
+// defaults can pass through `appSlug: ""` without forcing the field on.
+//
+// Exported so the api-server config can apply the same check to
+// admin-default slugs at startup — a misconfigured Helm value should
+// crash the pod, not surface as a confusing 400 to the next user who
+// tries to connect.
+export const APP_SLUG_MAX_LENGTH = 39;
+export const APP_SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+export function isValidAppSlug(value: string): boolean {
+  return value.length <= APP_SLUG_MAX_LENGTH && APP_SLUG_RE.test(value);
+}
+
+const APP_SLUG_VALIDATION_MESSAGE =
+  "App slug must be 1–39 lowercase letters, digits, and single hyphens — no leading, trailing, or consecutive hyphens.";
+
+const appSlugSchema = z
+  .string()
+  .optional()
+  .transform((v) => (v && v.length > 0 ? v : undefined))
+  .refine(
+    (v) => v === undefined || isValidAppSlug(v),
+    APP_SLUG_VALIDATION_MESSAGE,
+  );
+
 const githubInputSchema = z.object({
   clientId: z.string().min(1, "Client ID is required"),
   clientSecret: z.string().min(1, "Client secret is required"),
+  appSlug: appSlugSchema,
 });
 
 const spotifyInputSchema = z.object({
@@ -530,6 +612,7 @@ const gheInputSchema = z.object({
     .regex(HOSTNAME_RE, "Host must be a valid DNS hostname (no scheme)."),
   clientId: z.string().min(1),
   clientSecret: z.string().min(1),
+  appSlug: appSlugSchema,
 });
 
 const httpsUrlSchema = z
@@ -558,18 +641,26 @@ export type GenericInput = z.infer<typeof genericInputSchema>;
 
 /**
  * Optional platform-wide defaults for OAuth app credentials. When a field
- * is set, the connect form's matching input disappears and `build()` uses
- * the default. Fields the admin doesn't set are required from the user.
+ * is set, the connect form's matching input is collapsed behind an
+ * "override" toggle and `build()` uses the default. Fields the admin
+ * doesn't set are still required from the user.
+ *
+ * `appSlug` is the GitHub App slug — when supplied alongside the OAuth
+ * client credentials, the connection flow recognises that the credentials
+ * belong to a GitHub App (not an OAuth App) and offers an installation
+ * step after authorization.
  */
 export interface OAuthAppDefaults {
   github?: {
     clientId?: string;
     clientSecret?: string;
+    appSlug?: string;
   };
   githubEnterprise?: {
     host?: string;
     clientId?: string;
     clientSecret?: string;
+    appSlug?: string;
   };
 }
 
@@ -641,6 +732,7 @@ function buildGithub(input: GithubInput): BuiltOAuthApp {
       hostPattern: "api.github.com",
       displayName: "GitHub",
       envMappings: [GH_TOKEN_ENV_MAPPING],
+      ...(input.appSlug ? { appSlug: input.appSlug } : {}),
     },
     connectionDisplayName: "GitHub",
   };
@@ -671,6 +763,7 @@ function buildGhe(input: GheInput): BuiltOAuthApp {
         GH_TOKEN_ENV_MAPPING,
         { envName: "GH_HOST", placeholder: host },
       ],
+      ...(input.appSlug ? { appSlug: input.appSlug } : {}),
     },
     connectionDisplayName: `GitHub Enterprise (${host})`,
   };
@@ -759,18 +852,40 @@ function buildGeneric(input: GenericInput): BuiltOAuthApp {
 
 /**
  * Returns a copy of the descriptor with inputs covered by `defaultsForApp`
- * pruned. Fields the admin pre-set never appear in the form; the user only
- * sees what they still need to supply.
+ * marked `overridable: true` (so the connect form collapses them behind
+ * an override toggle) and the descriptor flagged with `appSlug` /
+ * `defaultsApplied` when the admin has wired a platform-wide default app.
+ *
+ * We don't prune the inputs outright: the connect form needs to know which
+ * fields are *available* to override, even when none of them are required
+ * for the happy path.
  */
-function pruneDescriptorInputs(
+function decorateDescriptorWithDefaults(
   descriptor: OAuthAppDescriptor,
   defaultsForApp: Record<string, string | undefined>,
 ): OAuthAppDescriptor {
-  const filtered = descriptor.inputs.filter(
-    (input) => !defaultsForApp[input.name],
+  const hasAnyDefault = Object.values(defaultsForApp).some(
+    (v) => v !== undefined && v !== "",
   );
-  if (filtered.length === descriptor.inputs.length) return descriptor;
-  return { ...descriptor, inputs: filtered };
+  if (!hasAnyDefault) return descriptor;
+  const inputs = descriptor.inputs.map((input) =>
+    defaultsForApp[input.name]
+      ? { ...input, overridable: true as const }
+      : input,
+  );
+  // "All required inputs are admin-defaulted" — the form can render the
+  // connect button without asking the user for anything. `optional`
+  // inputs (e.g. appSlug) don't count: they're intrinsically optional, so
+  // the form is fully fillable whether or not the admin set them.
+  const requiredInputs = inputs.filter((i) => !i.overridable && !i.optional);
+  const defaultsApplied = requiredInputs.length === 0;
+  const defaultedAppSlug = defaultsForApp.appSlug;
+  return {
+    ...descriptor,
+    inputs,
+    ...(defaultsApplied ? { defaultsApplied: true as const } : {}),
+    ...(defaultedAppSlug ? { appSlug: defaultedAppSlug } : {}),
+  };
 }
 
 function defaultsObject(
@@ -781,6 +896,7 @@ function defaultsObject(
     return {
       clientId: defaults.github?.clientId,
       clientSecret: defaults.github?.clientSecret,
+      appSlug: defaults.github?.appSlug,
     };
   }
   if (descriptor.id === "github-enterprise") {
@@ -788,6 +904,7 @@ function defaultsObject(
       host: defaults.githubEnterprise?.host,
       clientId: defaults.githubEnterprise?.clientId,
       clientSecret: defaults.githubEnterprise?.clientSecret,
+      appSlug: defaults.githubEnterprise?.appSlug,
     };
   }
   return {};
@@ -797,7 +914,7 @@ export function createOAuthAppRegistry(
   defaults: OAuthAppDefaults = {},
 ): OAuthAppRegistry {
   const decorated: OAuthAppDescriptor[] = Object.values(DESCRIPTORS).map((d) =>
-    pruneDescriptorInputs(d, defaultsObject(d, defaults)),
+    decorateDescriptorWithDefaults(d, defaultsObject(d, defaults)),
   );
   const byId = new Map(decorated.map((d) => [d.id, d]));
 

@@ -348,17 +348,28 @@ apiServer:
     - cdn.mise.run
 
   # -- Optional platform-wide defaults for OAuth app credentials. When a field
-  # is set the connect form for the matching app drops the corresponding
-  # input — every user shares the admin-registered OAuth app. Leave empty
-  # to require each user to supply their own client id / secret.
+  # is set the connect form for the matching app collapses the corresponding
+  # input behind an "override" toggle — every user shares the admin-registered
+  # app by default, but can still substitute their own credentials when needed.
+  # Leave empty to require each user to supply their own client id / secret.
+  #
+  # `appSlug` is only relevant when the registered app is a GitHub App (not
+  # an OAuth App). The slug is the URL-friendly identifier from the app's
+  # GitHub URL (`https://github.com/apps/{slug}`). When set, the platform
+  # offers users a one-click installation step after authorizing the app —
+  # GitHub Apps see no private data without an installation, so without this
+  # the user would only have access to public repos. Leave empty for OAuth
+  # Apps.
   oauthAppDefaults:
     github:
       clientId: ""
       clientSecret: ""
+      appSlug: ""
     githubEnterprise:
       host: ""
       clientId: ""
       clientSecret: ""
+      appSlug: ""
 
   # -- Database connection (empty host = use shared local postgres)
   db:

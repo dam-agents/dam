@@ -164,6 +164,10 @@ spec:
             - name: PLATFORM_DEFAULT_GITHUB_CLIENT_SECRET
               value: {{ .clientSecret | quote }}
             {{- end }}
+            {{- if .appSlug }}
+            - name: PLATFORM_DEFAULT_GITHUB_APP_SLUG
+              value: {{ .appSlug | quote }}
+            {{- end }}
             {{- end }}
             {{- with .Values.apiServer.oauthAppDefaults.githubEnterprise }}
             {{- if .host }}
@@ -177,6 +181,10 @@ spec:
             {{- if .clientSecret }}
             - name: PLATFORM_DEFAULT_GHE_CLIENT_SECRET
               value: {{ .clientSecret | quote }}
+            {{- end }}
+            {{- if .appSlug }}
+            - name: PLATFORM_DEFAULT_GHE_APP_SLUG
+              value: {{ .appSlug | quote }}
             {{- end }}
             {{- end }}
             - name: REDIS_URL

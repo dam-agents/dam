@@ -156,11 +156,13 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     github: {
       ...(config.defaultGithubClientId ? { clientId: config.defaultGithubClientId } : {}),
       ...(config.defaultGithubClientSecret ? { clientSecret: config.defaultGithubClientSecret } : {}),
+      ...(config.defaultGithubAppSlug ? { appSlug: config.defaultGithubAppSlug } : {}),
     },
     githubEnterprise: {
       ...(config.defaultGithubEnterpriseHost ? { host: config.defaultGithubEnterpriseHost } : {}),
       ...(config.defaultGithubEnterpriseClientId ? { clientId: config.defaultGithubEnterpriseClientId } : {}),
       ...(config.defaultGithubEnterpriseClientSecret ? { clientSecret: config.defaultGithubEnterpriseClientSecret } : {}),
+      ...(config.defaultGithubEnterpriseAppSlug ? { appSlug: config.defaultGithubEnterpriseAppSlug } : {}),
     },
   });
   app.route(

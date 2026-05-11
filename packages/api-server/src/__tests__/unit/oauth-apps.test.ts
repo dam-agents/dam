@@ -74,11 +74,27 @@ describe("OAuth app registry — descriptors", () => {
   it("each descriptor surfaces input fields the UI needs to render the connect form", () => {
     const reg = createOAuthAppRegistry();
     const github = reg.get("github")!;
-    expect(github.inputs.map((i) => i.name)).toEqual(["clientId", "clientSecret"]);
+    expect(github.inputs.map((i) => i.name)).toEqual([
+      "clientId",
+      "clientSecret",
+      "appSlug",
+    ]);
     expect(github.inputs.find((i) => i.name === "clientSecret")?.secret).toBe(true);
+    // appSlug is intrinsically optional (OAuth Apps don't have one) — always
+    // visible in the form, not gated behind the override toggle that
+    // dynamic family-creds / admin-default coverage uses.
+    expect(github.inputs.find((i) => i.name === "appSlug")?.optional).toBe(true);
+    expect(github.inputs.find((i) => i.name === "appSlug")?.overridable).toBeUndefined();
 
     const ghe = reg.get("github-enterprise")!;
-    expect(ghe.inputs.map((i) => i.name)).toEqual(["host", "clientId", "clientSecret"]);
+    expect(ghe.inputs.map((i) => i.name)).toEqual([
+      "host",
+      "clientId",
+      "clientSecret",
+      "appSlug",
+    ]);
+    expect(ghe.inputs.find((i) => i.name === "appSlug")?.optional).toBe(true);
+    expect(ghe.inputs.find((i) => i.name === "appSlug")?.overridable).toBeUndefined();
   });
 
   it("descriptors carry a stable connectionKey separate from the id", () => {
@@ -285,19 +301,39 @@ describe("OAuth app registry — build()", () => {
 });
 
 describe("OAuth app registry — admin defaults", () => {
-  it("prunes inputs covered by GitHub admin defaults from the descriptor", () => {
+  it("marks inputs covered by GitHub admin defaults as overridable and flags the descriptor", () => {
     const reg = createOAuthAppRegistry({
       github: { clientId: "admin-id", clientSecret: "admin-secret" },
     });
-    expect(reg.get("github")!.inputs).toEqual([]);
+    const github = reg.get("github")!;
+    // All required fields are admin-defaulted, so the form has nothing to ask
+    // for on the happy path — but the inputs are still surfaced so the UI
+    // can offer an override toggle ("use a different app").
+    expect(github.defaultsApplied).toBe(true);
+    // Required = !overridable && !optional (appSlug is optional so it
+    // never appears in the required set regardless of admin coverage).
+    expect(
+      github.inputs.filter((i) => !i.overridable && !i.optional).map((i) => i.name),
+    ).toEqual([]);
+    expect(github.inputs.map((i) => i.name)).toEqual([
+      "clientId",
+      "clientSecret",
+      "appSlug",
+    ]);
   });
 
-  it("partial defaults prune only the matching field", () => {
+  it("partial defaults make only the matching field overridable", () => {
     const reg = createOAuthAppRegistry({
       github: { clientId: "admin-id" },
     });
-    const inputs = reg.get("github")!.inputs.map((i) => i.name);
-    expect(inputs).toEqual(["clientSecret"]);
+    const github = reg.get("github")!;
+    // Required (non-overridable, non-optional) inputs remain — the form
+    // still asks the user for clientSecret. The descriptor is *not* flagged
+    // as defaultsApplied because the form still requires user input.
+    expect(github.defaultsApplied).toBeUndefined();
+    expect(
+      github.inputs.filter((i) => !i.overridable && !i.optional).map((i) => i.name),
+    ).toEqual(["clientSecret"]);
   });
 
   it("uses GitHub defaults to fill missing fields when build() is called with empty input", () => {
@@ -320,7 +356,68 @@ describe("OAuth app registry — admin defaults", () => {
     expect(built.provider.clientId).toBe("user-override");
   });
 
-  it("GHE defaults: full config produces an empty form", () => {
+  it("admin-default appSlug surfaces on the descriptor and threads through the built flow", () => {
+    const reg = createOAuthAppRegistry({
+      github: {
+        clientId: "admin-id",
+        clientSecret: "admin-secret",
+        appSlug: "platform-app",
+      },
+    });
+    expect(reg.get("github")!.appSlug).toBe("platform-app");
+    expect(reg.get("github")!.defaultsApplied).toBe(true);
+    const built = reg.build("github", {});
+    expect(built.flow.appSlug).toBe("platform-app");
+  });
+
+  it("user-supplied appSlug overrides admin default when both are present", () => {
+    const reg = createOAuthAppRegistry({
+      github: {
+        clientId: "admin-id",
+        clientSecret: "admin-secret",
+        appSlug: "default-app",
+      },
+    });
+    const built = reg.build("github", { appSlug: "user-app" });
+    expect(built.flow.appSlug).toBe("user-app");
+  });
+
+  it("rejects appSlugs that violate GitHub's slug rules", () => {
+    const reg = createOAuthAppRegistry();
+    const baseInput = { clientId: "id", clientSecret: "sec" };
+    // Whitespace / uppercase — should never have been accepted.
+    expect(() => reg.build("github", { ...baseInput, appSlug: "Has Spaces" })).toThrow(/App slug/);
+    expect(() => reg.build("github", { ...baseInput, appSlug: "MyApp" })).toThrow(/App slug/);
+    // GitHub disallows leading, trailing, and consecutive hyphens — mirror that.
+    expect(() => reg.build("github", { ...baseInput, appSlug: "-leading" })).toThrow(/App slug/);
+    expect(() => reg.build("github", { ...baseInput, appSlug: "trailing-" })).toThrow(/App slug/);
+    expect(() => reg.build("github", { ...baseInput, appSlug: "double--hyphen" })).toThrow(/App slug/);
+    // 1–39 chars: 40 chars is one over the limit.
+    expect(() =>
+      reg.build("github", { ...baseInput, appSlug: "a".repeat(40) }),
+    ).toThrow(/App slug/);
+  });
+
+  it("accepts well-formed GitHub App slugs", () => {
+    const reg = createOAuthAppRegistry();
+    const baseInput = { clientId: "id", clientSecret: "sec" };
+    for (const slug of ["a", "dependabot", "github-actions", "my-app-1", "a".repeat(39)]) {
+      const built = reg.build("github", { ...baseInput, appSlug: slug });
+      expect(built.flow.appSlug).toBe(slug);
+    }
+  });
+
+  it("treats an empty-string appSlug input as 'not set' (no flow.appSlug)", () => {
+    const reg = createOAuthAppRegistry();
+    const built = reg.build("github", {
+      clientId: "id",
+      clientSecret: "sec",
+      appSlug: "",
+    });
+    expect(built.flow.appSlug).toBeUndefined();
+  });
+
+  it("GHE defaults: full config flags defaultsApplied and surfaces all inputs as overridable", () => {
     const reg = createOAuthAppRegistry({
       githubEnterprise: {
         host: "ghe.corp.example",
@@ -328,12 +425,30 @@ describe("OAuth app registry — admin defaults", () => {
         clientSecret: "sec",
       },
     });
-    expect(reg.get("github-enterprise")!.inputs).toEqual([]);
+    const ghe = reg.get("github-enterprise")!;
+    expect(ghe.defaultsApplied).toBe(true);
+    expect(
+      ghe.inputs.filter((i) => !i.overridable && !i.optional).map((i) => i.name),
+    ).toEqual([]);
     const built = reg.build("github-enterprise", {});
     expect(built.flow.hostPattern).toBe("ghe.corp.example");
     expect(built.provider.authorizationUrl).toBe(
       "https://ghe.corp.example/login/oauth/authorize",
     );
+  });
+
+  it("GHE admin-default appSlug threads through to the flow", () => {
+    const reg = createOAuthAppRegistry({
+      githubEnterprise: {
+        host: "ghe.corp.example",
+        clientId: "id",
+        clientSecret: "sec",
+        appSlug: "ghe-platform-app",
+      },
+    });
+    expect(reg.get("github-enterprise")!.appSlug).toBe("ghe-platform-app");
+    const built = reg.build("github-enterprise", {});
+    expect(built.flow.appSlug).toBe("ghe-platform-app");
   });
 
   it("Generic descriptor is unaffected by GitHub-only defaults", () => {
@@ -349,6 +464,7 @@ describe("OAuth app registry — admin defaults", () => {
       "clientId",
       "clientSecret",
     ]);
+    expect(reg.get("generic")!.defaultsApplied).toBeUndefined();
   });
 });
 

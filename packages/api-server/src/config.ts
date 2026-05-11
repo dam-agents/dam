@@ -1,5 +1,25 @@
 import { z } from "zod/v4";
 import pkg from "../package.json" with { type: "json" };
+import { isValidAppSlug } from "./modules/connections/infrastructure/oauth-apps.js";
+
+// Admin-default GitHub App slugs come from Helm values
+// (`apiServer.oauthAppDefaults.{github,githubEnterprise}.appSlug`). Treat
+// empty string as unset so operators can leave the value blank in
+// values.yaml; reject anything else that GitHub itself wouldn't accept,
+// so a typo crashes the api-server pod at startup with a clear error
+// rather than surfacing as a 400 the next time someone tries to connect.
+const adminAppSlugSchema = z
+  .string()
+  .nullable()
+  .default(null)
+  .transform((v) => (v == null || v === "" ? null : v))
+  .refine(
+    (v) => v == null || isValidAppSlug(v),
+    {
+      message:
+        "Admin-default GitHub App slug must be 1–39 lowercase letters, digits, and single hyphens — no leading, trailing, or consecutive hyphens.",
+    },
+  );
 
 const configSchema = z.object({
   /** Build-time semver from this package's package.json — not env-driven.
@@ -47,9 +67,13 @@ const configSchema = z.object({
   // serve every user on a deployment.
   defaultGithubClientId: z.string().nullable().default(null),
   defaultGithubClientSecret: z.string().nullable().default(null),
+  // GitHub App slug — only set when the platform-default app is a GitHub
+  // App (not an OAuth App). Drives the post-authorization install prompt.
+  defaultGithubAppSlug: adminAppSlugSchema,
   defaultGithubEnterpriseHost: z.string().nullable().default(null),
   defaultGithubEnterpriseClientId: z.string().nullable().default(null),
   defaultGithubEnterpriseClientSecret: z.string().nullable().default(null),
+  defaultGithubEnterpriseAppSlug: adminAppSlugSchema,
   redisUrl: z.string().nullable().default(null),
   /** Optional Redis AUTH password. The chart provisions a generated
    *  per-release password and binds it via secretKeyRef; standalone dev
@@ -118,9 +142,11 @@ export function loadConfig(): Config {
     skillSourcesSeed: process.env.SKILL_SOURCES_SEED,
     defaultGithubClientId: process.env.PLATFORM_DEFAULT_GITHUB_CLIENT_ID,
     defaultGithubClientSecret: process.env.PLATFORM_DEFAULT_GITHUB_CLIENT_SECRET,
+    defaultGithubAppSlug: process.env.PLATFORM_DEFAULT_GITHUB_APP_SLUG,
     defaultGithubEnterpriseHost: process.env.PLATFORM_DEFAULT_GHE_HOST,
     defaultGithubEnterpriseClientId: process.env.PLATFORM_DEFAULT_GHE_CLIENT_ID,
     defaultGithubEnterpriseClientSecret: process.env.PLATFORM_DEFAULT_GHE_CLIENT_SECRET,
+    defaultGithubEnterpriseAppSlug: process.env.PLATFORM_DEFAULT_GHE_APP_SLUG,
     redisUrl: process.env.REDIS_URL,
     redisPassword: process.env.REDIS_PASSWORD,
     approvalHoldSeconds: process.env.APPROVAL_HOLD_SECONDS,

@@ -57,6 +57,13 @@ export interface OAuthFlowMetadata {
    * tooling convention to enforce).
    */
   envMappings?: import("api-server-api").EnvMapping[];
+  /**
+   * GitHub App slug — set when the connection's credentials belong to a
+   * GitHub App (not an OAuth App). Threaded through the engine so the
+   * callback handler can persist it on the resulting K8s Secret without
+   * having to re-look-it-up via the registry.
+   */
+  appSlug?: string;
 }
 
 export interface PendingFlow {

@@ -49,7 +49,12 @@ const oauthAppInputSchema = z.object({
   secret: z.boolean().optional(),
   placeholder: z.string().optional(),
   helper: z.string().optional(),
-  /** Empty value is acceptable; collapsed behind the override toggle. */
+  /** Covered by a stored fallback (family creds, admin default); collapsed
+   *  behind the override toggle ("Use a different app" / "Use different
+   *  credentials"). */
+  overridable: z.boolean().optional(),
+  /** Intrinsically optional — no fallback, the user may just leave it empty.
+   *  Always visible, dropped at submit if empty. */
   optional: z.boolean().optional(),
 });
 
@@ -74,6 +79,18 @@ const oauthAppDescriptorSchema = z.object({
    * Drives a "Using your stored credentials" hint in the connect form.
    */
   credentialsInherited: z.boolean().optional(),
+  /**
+   * GitHub App slug — only set for github / github-enterprise descriptors
+   * where the admin has wired a default GitHub App. UI uses this to offer
+   * a post-connect installation step.
+   */
+  appSlug: z.string().optional(),
+  /**
+   * True when the admin has pre-configured every required input. The
+   * connect form drops the registration / redirect-URI guidance and shows
+   * a one-click "Connect" plus an "Use a different app" override toggle.
+   */
+  defaultsApplied: z.boolean().optional(),
 });
 const oauthAppsSchema = z.array(oauthAppDescriptorSchema);
 export type OAuthAppDescriptor = z.infer<typeof oauthAppDescriptorSchema>;
@@ -87,6 +104,10 @@ const oauthAppConnectionSchema = z.object({
   hostPattern: z.string(),
   connectedAt: z.string(),
   expired: z.boolean(),
+  /** GitHub App slug — only set when the connection's credentials belong
+   *  to a GitHub App. Drives the "Install on GitHub" affordance on the
+   *  connection row. */
+  appSlug: z.string().optional(),
 });
 const oauthAppConnectionsSchema = z.array(oauthAppConnectionSchema);
 export type OAuthAppConnection = z.infer<typeof oauthAppConnectionSchema>;
