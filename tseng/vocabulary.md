@@ -111,3 +111,8 @@ Pod-side operational view of skills. Distinct from the api-server's Skills conte
 | Config Source | One of the three inputs the Config is resolved from: command-line flag, environment variable, or config file |
 | Server URL | The Platform deployment the CLI is configured to talk to |
 | Compat Verdict | The result of comparing the local CLI's version against the server's reported `minClientVersion` and current version: `Ok`, `BehindMinClient` (hard-refuse), or `BehindCurrent` (soft-warn) |
+| Active Host | The Server URL the CLI sends commands to by default — resolved from `--server` flag, env var, or `config.toml` in that order. Also the key into the Auth Store for the credential a given invocation should use |
+| Host Auth | The per-Host credential record persisted by `dam auth login` — issuer, username, sub, the rotated access/refresh tokens, and the access token's expiry instant |
+| Auth Store | The machine-managed credential file at `$XDG_STATE_HOME/dam/auth.toml` (mode 0600, atomic writes) holding Host Auth entries keyed by Host URL — distinct from Config, which is user-editable |
+| Token Provider | The single cross-module application service every authenticated CLI verb calls to obtain a valid bearer for a Host — owns `DAM_TOKEN` precedence, proactive refresh within 60s of expiry, and the `invalid_grant` → clear-creds policy |
+| CLI Client | The Platform CLI's public OAuth client registered in Keycloak (`platform-cli` by default, advertised as `cliClientId` on `/api/auth/config`); device-grant only, no client secret, no redirect URIs |
