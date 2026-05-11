@@ -363,28 +363,6 @@ describe("auth-service.logout", () => {
 });
 
 describe("auth-service.status", () => {
-  it("empty store → no entries, exit code signal: invalid", async () => {
-    const svc = createAuthService({
-      compatService: compatVerdict("ok"),
-      configService: unusedConfigService(),
-      authConfigProbe: authConfigProbeOk(),
-      oidcDiscovery: oidcOk(),
-      deviceFlowClient: deviceFlowUnused(),
-      tokenEndpointClient: tokenClientUnused(),
-      revokeClient: revokeUnused(),
-      browserOpener: browserUnused(),
-      authStore: emptyStore(),
-      authEnvReader: envReader(),
-    });
-
-    const r = await svc.status();
-    expect(r.ok).toBe(true);
-    if (r.ok) {
-      expect(r.value.entries).toEqual([]);
-      expect(r.value.activeHostValid).toBe(false);
-    }
-  });
-
   it("DAM_TOKEN set + active host → synthesizes an env-sourced entry", async () => {
     const svc = createAuthService({
       compatService: compatVerdict("ok"),

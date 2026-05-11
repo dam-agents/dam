@@ -3,8 +3,8 @@
  * `host` is the key into the file; the rest live inside the corresponding
  * `[hosts."..."]` table.
  *
- * Pure value type — no I/O, no Date.now(). Predicates take `now` as a
- * parameter so they are deterministic and unit-testable.
+ * Pure value type — no I/O, no Date.now(). The proactive-refresh predicate
+ * takes `now` as a parameter so it is deterministic and unit-testable.
  */
 export interface HostAuth {
   issuer: string;
@@ -13,11 +13,6 @@ export interface HostAuth {
   accessToken: string;
   refreshToken: string;
   expiresAt: Date;
-}
-
-/** True when `expiresAt` is at or before `now`. */
-export function isExpired(host: HostAuth, now: Date): boolean {
-  return host.expiresAt.getTime() <= now.getTime();
 }
 
 /**
