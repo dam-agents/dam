@@ -14,16 +14,17 @@ import (
 )
 
 var testConfig = &config.Config{
-	Namespace:         "test-agents",
-	ReleaseNamespace:  "default",
-	ReleaseName:       "platform",
-	HarnessServerPort: 4001,
-	ExtAuthzPort:      4002,
-	AgentHome:         "/home/agent",
-	EnvoyImage:        "envoyproxy/envoy:distroless-v1.37.2",
-	EnvoyPort:         10000,
-	IstioTrustDomain:  "cluster.local",
-	IstioWaypointName: "apiserver-waypoint",
+	Namespace:          "test-agents",
+	ReleaseNamespace:   "default",
+	ReleaseName:        "platform",
+	HarnessServerPort:  4001,
+	ExtAuthzPort:       4002,
+	AgentHome:          "/home/agent",
+	EnvoyImage:         "envoyproxy/envoy:distroless-v1.37.2",
+	EnvoyPort:          10000,
+	IstioTrustDomain:   "cluster.local",
+	IstioWaypointName:  "apiserver-waypoint",
+	AgentProbesEnabled: true,
 }
 
 var testAgent = &types.AgentSpec{
@@ -119,6 +120,18 @@ func TestBuildAgentStatefulSet_Running(t *testing.T) {
 	assert.Equal(t, resource.MustParse("2Gi"), *c.Resources.Limits.Memory())
 
 	assert.True(t, *ss.Spec.Template.Spec.SecurityContext.RunAsNonRoot)
+}
+
+func TestBuildAgentStatefulSet_ProbesDisabled(t *testing.T) {
+	cfg := *testConfig
+	cfg.AgentProbesEnabled = false
+	instance := &types.InstanceSpec{DesiredState: "running"}
+	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, &cfg, testOwnerCM, nil)
+
+	c := ss.Spec.Template.Spec.Containers[0]
+	assert.Nil(t, c.StartupProbe)
+	assert.Nil(t, c.ReadinessProbe)
+	assert.Nil(t, c.LivenessProbe)
 }
 
 func TestBuildAgentStatefulSet_Hibernated(t *testing.T) {

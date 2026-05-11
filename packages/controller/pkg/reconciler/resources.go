@@ -247,6 +247,27 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 	}
 	env = append(env, corev1.EnvVar{Name: "PLATFORM_GH_TOKEN_AVAILABLE", Value: ghAvail})
 
+	// Fast (1s) during startup so wake-up is detected quickly, slow
+	// (10s) afterwards so we're not probing every agent pod every
+	// second forever. FailureThreshold=120 → ~2 min of startup
+	// runway, enough for a cold pull of a large agent image.
+	var startupProbe, readinessProbe, livenessProbe *corev1.Probe
+	if cfg.AgentProbesEnabled {
+		startupProbe = &corev1.Probe{
+			ProbeHandler:     corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
+			PeriodSeconds:    1,
+			FailureThreshold: 120,
+		}
+		readinessProbe = &corev1.Probe{
+			ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
+			PeriodSeconds: 10,
+		}
+		livenessProbe = &corev1.Probe{
+			ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
+			PeriodSeconds: 10,
+		}
+	}
+
 	containers := []corev1.Container{{
 		Name:            "agent",
 		Image:           agentSpec.Image,
@@ -254,25 +275,11 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 		Ports: []corev1.ContainerPort{{
 			Name: "acp", ContainerPort: 8080,
 		}},
-		Env:     env,
-		EnvFrom: envFrom,
-		// Fast (1s) during startup so wake-up is detected quickly, slow
-		// (10s) afterwards so we're not probing every agent pod every
-		// second forever. FailureThreshold=120 → ~2 min of startup
-		// runway, enough for a cold pull of a large agent image.
-		StartupProbe: &corev1.Probe{
-			ProbeHandler:     corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
-			PeriodSeconds:    1,
-			FailureThreshold: 120,
-		},
-		ReadinessProbe: &corev1.Probe{
-			ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
-			PeriodSeconds: 10,
-		},
-		LivenessProbe: &corev1.Probe{
-			ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
-			PeriodSeconds: 10,
-		},
+		Env:            env,
+		EnvFrom:        envFrom,
+		StartupProbe:   startupProbe,
+		ReadinessProbe: readinessProbe,
+		LivenessProbe:  livenessProbe,
 		SecurityContext: &corev1.SecurityContext{
 			Capabilities: &corev1.Capabilities{
 				Drop: []corev1.Capability{"ALL"},

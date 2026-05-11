@@ -53,6 +53,17 @@ func TestBuildForkAgentJob_BasicShape(t *testing.T) {
 	assert.True(t, *job.OwnerReferences[0].Controller)
 }
 
+func TestBuildForkAgentJob_ProbesDisabled(t *testing.T) {
+	cfg := *testConfig
+	cfg.AgentProbesEnabled = false
+	job := BuildForkAgentJob("fork-abc", testForkSpec, testForkInstance, testAgent, &cfg, testForkOwnerCM, nil)
+
+	c := job.Spec.Template.Spec.Containers[0]
+	assert.Nil(t, c.StartupProbe)
+	assert.Nil(t, c.ReadinessProbe)
+	assert.Nil(t, c.LivenessProbe)
+}
+
 func TestBuildForkAgentJob_LifecycleGuarantees(t *testing.T) {
 	job := BuildForkAgentJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, nil)
 

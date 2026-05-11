@@ -67,9 +67,11 @@ urls:
 imagePullSecrets: []
 
 # -- Kubelet probes for chart-managed pods (api-server, ui, keycloak,
-# postgres, redis). Set `enabled: false` to drop all readiness and liveness
-# probes — escape hatch for production clusters where the kubelet's probe
-# behavior is causing churn (false-positive restarts, slow rollouts).
+# postgres, redis) AND controller-managed agent / fork pods. Set
+# `enabled: false` to drop all readiness/liveness/startup probes — escape
+# hatch for clusters where the kubelet's probe behavior is causing churn
+# (false-positive restarts, slow rollouts). Plumbed into the controller via
+# `AGENT_PROBES_ENABLED` so newly reconciled pods follow the same setting.
 probes:
   enabled: true
 

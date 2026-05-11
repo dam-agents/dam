@@ -18,6 +18,7 @@ type Config struct {
 	AgentImagePullPolicy      string            // ImagePullPolicy for agent pods (default: IfNotPresent)
 	AgentImagePullSecrets     []string          // Pull secret names for agent pods (comma-separated via env)
 	AgentPodAnnotations       map[string]string // Extra annotations stamped on every agent pod (e.g. admission webhook break-glass)
+	AgentProbesEnabled        bool              // Render startup/readiness/liveness probes on agent pods (default: true; matches the chart's probes.enabled)
 	AgentStorageClass         string
 	AgentAccessMode           string // PVC access mode: ReadWriteMany (default) or ReadWriteOnce
 	AgentStorageSize          string // PVC size for persistent agent mounts (default: 10Gi)
@@ -81,6 +82,7 @@ func LoadFromEnv() (*Config, error) {
 	cfg.HarnessServerURL = os.Getenv("PLATFORM_HARNESS_SERVER_URL")
 	cfg.HarnessServerPort = envOrDefaultInt("PLATFORM_HARNESS_SERVER_PORT", 4001)
 	cfg.AgentImagePullPolicy = envOrDefault("AGENT_IMAGE_PULL_POLICY", "IfNotPresent")
+	cfg.AgentProbesEnabled = envOrDefaultBool("AGENT_PROBES_ENABLED", true)
 	if v := os.Getenv("AGENT_IMAGE_PULL_SECRETS"); v != "" {
 		for _, s := range strings.Split(v, ",") {
 			if name := strings.TrimSpace(s); name != "" {
@@ -166,6 +168,15 @@ func envOrDefaultInt(key string, def int) int {
 	if v := os.Getenv(key); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			return n
+		}
+	}
+	return def
+}
+
+func envOrDefaultBool(key string, def bool) bool {
+	if v := os.Getenv(key); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			return b
 		}
 	}
 	return def

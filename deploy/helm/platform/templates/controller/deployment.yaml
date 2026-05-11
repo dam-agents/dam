@@ -88,6 +88,8 @@ spec:
             # render time as `<release>-extauthz-<id>.<release-ns>.svc.cluster.local`
             # from PLATFORM_RELEASE_NAME + PLATFORM_RELEASE_NAMESPACE; no
             # static EXT_AUTHZ_HOST is needed.
+            - name: AGENT_PROBES_ENABLED
+              value: {{ .Values.probes.enabled | quote }}
             - name: EXT_AUTHZ_PORT
               value: {{ .Values.apiServer.extAuthzPort | quote }}
             - name: EXT_AUTHZ_HOLD_SECONDS

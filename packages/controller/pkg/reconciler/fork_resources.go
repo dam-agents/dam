@@ -187,6 +187,19 @@ func BuildForkAgentJob(
 	}
 	env = append(env, corev1.EnvVar{Name: "PLATFORM_GH_TOKEN_AVAILABLE", Value: ghAvail})
 
+	var readinessProbe, livenessProbe *corev1.Probe
+	if cfg.AgentProbesEnabled {
+		readinessProbe = &corev1.Probe{
+			ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
+			PeriodSeconds: 1,
+		}
+		livenessProbe = &corev1.Probe{
+			ProbeHandler:        corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
+			InitialDelaySeconds: 10,
+			PeriodSeconds:       10,
+		}
+	}
+
 	containers := []corev1.Container{{
 		Name:            "agent",
 		Image:           agentSpec.Image,
@@ -194,17 +207,10 @@ func BuildForkAgentJob(
 		Ports: []corev1.ContainerPort{{
 			Name: "acp", ContainerPort: 8080,
 		}},
-		Env:     env,
-		EnvFrom: envFrom,
-		ReadinessProbe: &corev1.Probe{
-			ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
-			PeriodSeconds: 1,
-		},
-		LivenessProbe: &corev1.Probe{
-			ProbeHandler:        corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
-			InitialDelaySeconds: 10,
-			PeriodSeconds:       10,
-		},
+		Env:            env,
+		EnvFrom:        envFrom,
+		ReadinessProbe: readinessProbe,
+		LivenessProbe:  livenessProbe,
 		SecurityContext: &corev1.SecurityContext{
 			Capabilities: &corev1.Capabilities{
 				Drop: []corev1.Capability{"ALL"},

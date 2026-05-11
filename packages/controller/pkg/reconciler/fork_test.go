@@ -24,14 +24,15 @@ func setupForkReconciler(t *testing.T, agents map[string]*corev1.ConfigMap, obje
 	t.Helper()
 	client := fake.NewSimpleClientset(objects...)
 	cfg := &config.Config{
-		Namespace:         "test-agents",
-		ReleaseNamespace:  "default",
-		ReleaseName:       "platform",
-		HarnessServerPort: 4001,
-		EnvoyImage:        "envoyproxy/envoy:distroless-v1.37.2",
-		EnvoyPort:         10000,
-		IstioTrustDomain:  "cluster.local",
-		IstioWaypointName: "apiserver-waypoint",
+		Namespace:          "test-agents",
+		ReleaseNamespace:   "default",
+		ReleaseName:        "platform",
+		HarnessServerPort:  4001,
+		EnvoyImage:         "envoyproxy/envoy:distroless-v1.37.2",
+		EnvoyPort:          10000,
+		IstioTrustDomain:   "cluster.local",
+		IstioWaypointName:  "apiserver-waypoint",
+		AgentProbesEnabled: true,
 	}
 	getter := &fakeGetter{cms: agents}
 	// ADR-041: ForkReconciler writes per-fork AuthorizationPolicies via
