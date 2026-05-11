@@ -27,9 +27,16 @@ export function buildLoginCommand(deps: LoginCommandDeps): Command {
       if (!host) {
         const resolved = await deps.configService.getResolved({});
         if (!resolved.ok) {
-          process.stderr.write(
-            `error: no server configured; pass --server <url> or run "dam config set server <url>"\n`,
-          );
+          // Distinguish "no server configured" from "config.toml is broken"
+          // so the remediation hint matches the underlying cause —
+          // matches ping's handling (review §3).
+          if (resolved.error.kind === "malformed-config") {
+            process.stderr.write(`error: ${resolved.error.reason}\n`);
+          } else {
+            process.stderr.write(
+              `error: no server configured; pass --server <url> or run "dam config set server <url>"\n`,
+            );
+          }
           process.exit(EXIT_AUTH_INVALID_INPUT);
         }
         host = resolved.value.server;

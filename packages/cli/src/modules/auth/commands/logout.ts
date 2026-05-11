@@ -20,9 +20,15 @@ export function buildLogoutCommand(deps: LogoutCommandDeps): Command {
       if (!host) {
         const resolved = await deps.configService.getResolved({});
         if (!resolved.ok) {
-          process.stderr.write(
-            `error: no server configured; pass --server <url> or run "dam config set server <url>"\n`,
-          );
+          // Same distinction as login (review §3): a malformed config.toml
+          // needs a different remediation than an unset server.
+          if (resolved.error.kind === "malformed-config") {
+            process.stderr.write(`error: ${resolved.error.reason}\n`);
+          } else {
+            process.stderr.write(
+              `error: no server configured; pass --server <url> or run "dam config set server <url>"\n`,
+            );
+          }
           process.exit(EXIT_AUTH_INVALID_INPUT);
         }
         host = resolved.value.server;
