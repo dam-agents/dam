@@ -98,6 +98,16 @@ export interface BrowserOpenError {
 }
 
 /**
+ * `POST <revocation_endpoint>` (RFC 7009) HTTP failures. Logout treats
+ * revocation as best-effort — this variant exists so the command layer
+ * can warn to stderr rather than abort the local clear.
+ */
+export interface RevokeError {
+  kind: "revoke-failed";
+  reason: string;
+}
+
+/**
  * Errors specific to the Token Provider's `getValidAccessToken(host)` seam.
  * Each variant carries the host so command-layer messages can address the
  * Active Host vs an explicit `--server` without re-plumbing.
@@ -153,4 +163,5 @@ export type AuthDomainError =
   | NotLoggedInError
   | SessionExpiredError
   | RefreshFailedError
-  | RefreshTransientError;
+  | RefreshTransientError
+  | RevokeError;

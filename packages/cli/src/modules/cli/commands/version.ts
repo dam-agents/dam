@@ -60,7 +60,7 @@ export function buildVersionCommand(deps: VersionCommandDeps): Command {
         );
       } else if (verdict.kind === "below-floor") {
         process.stderr.write(
-          `error: CLI ${verdict.localCli} is below the server's minimum required version ${verdict.serverMinClient}. ping/login/shell will fail until you upgrade.\n`,
+          `error: CLI ${verdict.localCli} is below the server's minimum required version ${verdict.serverMinClient}. ping/auth login/shell will fail until you upgrade.\n`,
         );
       }
     });

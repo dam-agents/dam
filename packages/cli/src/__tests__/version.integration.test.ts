@@ -205,11 +205,11 @@ describe("dam version (integration)", () => {
     expect(r.stderr).toContain(
       "below the server's minimum required version 99.0.0",
     );
-    expect(r.stderr).toContain("ping/login/shell will fail");
+    expect(r.stderr).toContain("ping/auth login/shell will fail");
     // Server line goes to stdout; warning to stderr. stdout carries the
     // matter-of-fact status, stderr carries the human-facing diagnostic.
     expect(r.stdout).toContain("server 1.0.0 (min CLI 99.0.0)");
-    expect(r.stdout).not.toContain("ping/login/shell will fail");
+    expect(r.stdout).not.toContain("ping/auth login/shell will fail");
   });
 
   it("CONTRAST: same below-floor scenario — `version` exits 0, `ping` exits 3", async () => {

@@ -1,0 +1,481 @@
+import { setTimeout as sleep } from "node:timers/promises";
+import { err, ok, type Result } from "../../cli/domain/result.js";
+import type {
+  CompatService,
+  ConfigService,
+  MalformedConfigError,
+  MissingConfigError,
+  ProbeError,
+} from "../../cli/index.js";
+import type {
+  AuthConfigProbeError,
+  AuthStoreReadError,
+  AuthStoreWriteError,
+  BrowserOpenError,
+  DeviceFlowError,
+  MalformedAuthStoreError,
+  OidcDiscoveryError,
+  RevokeError,
+} from "../domain/errors.js";
+import { nextFlowStep, type DeviceFlowFailure } from "../domain/flow.js";
+import type { HostAuth } from "../domain/host-auth.js";
+import type { AuthStore, HostUrl } from "../infrastructure/auth-store.js";
+import type { AuthEnvReader } from "../infrastructure/auth-env-reader.js";
+import type { AuthConfigProbe } from "../infrastructure/auth-config-probe.js";
+import type { BrowserOpener } from "../infrastructure/browser-opener.js";
+import type { DeviceFlowClient } from "../infrastructure/device-flow-client.js";
+import type { OidcDiscovery } from "../infrastructure/oidc-discovery.js";
+import type { RevokeClient } from "../infrastructure/revoke-client.js";
+import type { TokenEndpointClient } from "../infrastructure/token-endpoint-client.js";
+
+export interface LoginOk {
+  host: HostUrl;
+  username: string;
+  /** Set when the CompatService verdict was `behind-current` — non-fatal,
+   *  but the command layer surfaces it to stderr. */
+  serverVersionWarning?: string;
+  /** True when the browser was opened on the user's behalf. */
+  openedBrowser: boolean;
+  /** The Keycloak device-flow `verification_uri_complete` — surfaced so
+   *  the command layer can print it for `--no-browser` or when the
+   *  browser opener failed. */
+  verificationUri: string;
+  userCode: string;
+}
+
+export interface LoginInput {
+  host: HostUrl;
+  openBrowser: boolean;
+  force: boolean;
+  /** True when stdin is a TTY — controls the re-login confirm prompt.
+   *  The command layer owns the actual prompt I/O; the service only
+   *  decides whether `--force` is required. */
+  isTty: boolean;
+  /** When supplied, after a successful login the service persists this
+   *  as the new active server in `config.toml`. */
+  persistServer?: HostUrl;
+  /** Side-channel for the command layer to print the user-code line
+   *  before polling begins. */
+  onPromptUser?: (
+    info: {
+      userCode: string;
+      verificationUri: string;
+      openedBrowser: boolean;
+    },
+  ) => void;
+}
+
+export interface LogoutOk {
+  host: HostUrl;
+  /** True when revocation succeeded; false when the local clear ran
+   *  but revocation was best-effort. */
+  revoked: boolean;
+  /** True when there was no entry to remove. */
+  alreadyLoggedOut: boolean;
+  /** When `revoked` is false but the host was present, this captures
+   *  why revocation failed. The command layer turns it into a stderr
+   *  warning; logout still exits 0. */
+  revokeWarning?: string;
+}
+
+export interface StatusEntry {
+  host: HostUrl;
+  issuer: string;
+  username: string;
+  source: "env" | "file";
+  isActive: boolean;
+  /** Only present for `source === "file"` — env-supplied tokens are
+   *  opaque to the CLI. */
+  expiresAt?: Date;
+}
+
+export interface StatusReport {
+  activeHost?: HostUrl;
+  entries: ReadonlyArray<StatusEntry>;
+  /** True when the Active Host has a valid (non-expired) credential. */
+  activeHostValid: boolean;
+}
+
+export type LoginError =
+  | { kind: "below-floor"; localCli: string; serverMinClient: string }
+  | { kind: "preflight"; reason: PreflightReason; detail: string }
+  | { kind: "aborted" }
+  | { kind: "requires-force" }
+  | { kind: "auth-store"; detail: string }
+  | { kind: "device-flow"; reason: DeviceFlowFailure; detail?: string }
+  | { kind: "transport"; detail: string };
+
+export type PreflightReason =
+  | "compat"
+  | "server-unreachable"
+  | "missing-cli-client-id"
+  | "missing-device-endpoint"
+  | "discovery-failed";
+
+export type LogoutError =
+  | { kind: "auth-store"; detail: string };
+
+export type StatusError =
+  | { kind: "auth-store"; detail: string };
+
+export interface AuthService {
+  login(input: LoginInput): Promise<Result<LoginOk, LoginError>>;
+  logout(host: HostUrl): Promise<Result<LogoutOk, LogoutError>>;
+  status(): Promise<Result<StatusReport, StatusError>>;
+}
+
+export interface AuthServiceDeps {
+  compatService: CompatService;
+  configService: ConfigService;
+  authConfigProbe: AuthConfigProbe;
+  oidcDiscovery: OidcDiscovery;
+  deviceFlowClient: DeviceFlowClient;
+  tokenEndpointClient: TokenEndpointClient;
+  revokeClient: RevokeClient;
+  browserOpener: BrowserOpener;
+  authStore: AuthStore;
+  authEnvReader: AuthEnvReader;
+  /** Defaults to wall clock; tests override. */
+  now?: () => Date;
+  /** Sleep between polling iterations; tests override to avoid wall-time
+   *  waits. Receives the next interval in **milliseconds**. */
+  sleepMs?: (ms: number) => Promise<void>;
+}
+
+function decodeJwtPayload(jwt: string): Record<string, unknown> | null {
+  const parts = jwt.split(".");
+  if (parts.length !== 3) return null;
+  try {
+    const payload = Buffer.from(parts[1] ?? "", "base64url").toString("utf-8");
+    const parsed = JSON.parse(payload);
+    return typeof parsed === "object" && parsed !== null
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function stringField(payload: Record<string, unknown> | null, key: string): string | undefined {
+  const v = payload?.[key];
+  return typeof v === "string" && v.length > 0 ? v : undefined;
+}
+
+function describeAuthConfigError(e: AuthConfigProbeError): {
+  reason: PreflightReason;
+  detail: string;
+} {
+  switch (e.code) {
+    case "missing-cli-client-id":
+      return { reason: "missing-cli-client-id", detail: e.message };
+    case "network":
+    case "non-ok-status":
+      return { reason: "server-unreachable", detail: e.message };
+    case "malformed-response":
+      return { reason: "discovery-failed", detail: e.message };
+  }
+}
+
+function describeOidcError(e: OidcDiscoveryError): {
+  reason: PreflightReason;
+  detail: string;
+} {
+  if (e.code === "missing-device-endpoint") {
+    return { reason: "missing-device-endpoint", detail: e.message };
+  }
+  return { reason: "discovery-failed", detail: e.message };
+}
+
+function describeCompatError(
+  e: MissingConfigError | MalformedConfigError | ProbeError,
+): { reason: PreflightReason; detail: string } {
+  if (e.kind === "probe-error") {
+    return { reason: "server-unreachable", detail: e.message };
+  }
+  if (e.kind === "missing-config") {
+    return {
+      reason: "compat",
+      detail: `no server configured for key '${e.key}'`,
+    };
+  }
+  return { reason: "compat", detail: e.reason };
+}
+
+export function createAuthService(deps: AuthServiceDeps): AuthService {
+  const now = deps.now ?? (() => new Date());
+  const sleepMs = deps.sleepMs ?? ((ms) => sleep(ms));
+
+  async function readAuthStore(): Promise<
+    Result<
+      ReadonlyMap<HostUrl, HostAuth>,
+      AuthStoreReadError | MalformedAuthStoreError
+    >
+  > {
+    return deps.authStore.read();
+  }
+
+  return {
+    async login(input) {
+      // Re-login guard (step 0).
+      const existing = await readAuthStore();
+      if (!existing.ok) {
+        return err({ kind: "auth-store", detail: existing.error.reason });
+      }
+      if (existing.value.has(input.host) && !input.force) {
+        if (!input.isTty) return err({ kind: "requires-force" });
+        return err({ kind: "aborted" }); // command layer handles the TTY prompt.
+      }
+
+      // 1. CompatService pre-flight.
+      const compat = await deps.compatService.check({
+        flag: { server: input.host },
+      });
+      if (!compat.ok) {
+        const desc = describeCompatError(compat.error);
+        return err({ kind: "preflight", reason: desc.reason, detail: desc.detail });
+      }
+      let serverVersionWarning: string | undefined;
+      switch (compat.value.kind) {
+        case "below-floor":
+          return err({
+            kind: "below-floor",
+            localCli: compat.value.localCli,
+            serverMinClient: compat.value.serverMinClient,
+          });
+        case "behind-current":
+          serverVersionWarning = `CLI ${compat.value.localCli} is behind server ${compat.value.serverVersion}`;
+          break;
+        case "ok":
+          break;
+      }
+
+      // 2. /api/auth/config.
+      const cfg = await deps.authConfigProbe.probe(input.host);
+      if (!cfg.ok) {
+        const desc = describeAuthConfigError(cfg.error);
+        return err({ kind: "preflight", reason: desc.reason, detail: desc.detail });
+      }
+
+      // 3. OIDC discovery.
+      const oidc = await deps.oidcDiscovery.discover(cfg.value.issuer);
+      if (!oidc.ok) {
+        const desc = describeOidcError(oidc.error);
+        return err({ kind: "preflight", reason: desc.reason, detail: desc.detail });
+      }
+
+      // 4. Device authorization request.
+      const auth = await deps.deviceFlowClient.authorize({
+        deviceAuthorizationEndpoint: oidc.value.deviceAuthorizationEndpoint,
+        clientId: cfg.value.cliClientId,
+      });
+      if (!auth.ok) {
+        return err({ kind: "transport", detail: describeDeviceFlowError(auth.error) });
+      }
+
+      // 5. Prompt the user. The command layer is responsible for the
+      //    actual stdout — we just hand it the info and a flag indicating
+      //    whether we managed to open the browser.
+      let openedBrowser = false;
+      if (input.openBrowser) {
+        const opened = await deps.browserOpener.open(
+          auth.value.verificationUriComplete ?? auth.value.verificationUri,
+        );
+        openedBrowser = opened.ok;
+      }
+      input.onPromptUser?.({
+        userCode: auth.value.userCode,
+        verificationUri:
+          auth.value.verificationUriComplete ?? auth.value.verificationUri,
+        openedBrowser,
+      });
+
+      // 6. Polling loop.
+      const startedAt = now();
+      let intervalSeconds = auth.value.interval;
+      // Spin until we either succeed, fail, or the state machine sends us
+      // back with `expired-token` via the pre-check.
+      // Outer loop calls sleep(interval) before each token-endpoint hit.
+      // The first iteration sleeps `interval` per RFC 8628 §3.4.
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        await sleepMs(intervalSeconds * 1000);
+        const tokenResult = await deps.tokenEndpointClient.exchangeDeviceCode({
+          tokenEndpoint: oidc.value.tokenEndpoint,
+          clientId: cfg.value.cliClientId,
+          deviceCode: auth.value.deviceCode,
+        });
+        if (!tokenResult.ok) {
+          return err({ kind: "transport", detail: tokenResult.error.reason });
+        }
+        const step = nextFlowStep({
+          response: tokenResult.value,
+          currentIntervalSeconds: intervalSeconds,
+          startedAt,
+          now: now(),
+          expiresInSeconds: auth.value.expiresIn,
+        });
+        if (step.action === "poll-again") {
+          intervalSeconds = step.intervalSeconds;
+          continue;
+        }
+        if (step.action === "fail") {
+          return err({
+            kind: "device-flow",
+            reason: step.reason,
+            detail: step.message,
+          });
+        }
+        // 7. Success.
+        const tokens = step.tokens;
+        const payload = decodeJwtPayload(tokens.accessToken);
+        const username = stringField(payload, "preferred_username") ?? "(unknown)";
+        const sub = stringField(payload, "sub") ?? "";
+        const hostAuth: HostAuth = {
+          issuer: cfg.value.issuer,
+          username,
+          sub,
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          expiresAt: new Date(now().getTime() + tokens.expiresIn * 1000),
+        };
+        const written = await deps.authStore.write(input.host, hostAuth);
+        if (!written.ok) {
+          return err({ kind: "auth-store", detail: written.error.reason });
+        }
+        if (input.persistServer !== undefined) {
+          const cfgWrite = await deps.configService.set(
+            "server",
+            input.persistServer,
+          );
+          if (!cfgWrite.ok && cfgWrite.error.kind === "file-write") {
+            // Non-fatal: the login worked. Surface via a warning in the
+            // ok payload so the command layer can still print it.
+            serverVersionWarning =
+              `${serverVersionWarning ?? ""}; failed to update config.toml: ${cfgWrite.error.reason}`.trim();
+          }
+        }
+        return ok({
+          host: input.host,
+          username,
+          serverVersionWarning,
+          openedBrowser,
+          verificationUri:
+            auth.value.verificationUriComplete ?? auth.value.verificationUri,
+          userCode: auth.value.userCode,
+        });
+      }
+    },
+
+    async logout(host) {
+      const stored = await deps.authStore.read();
+      if (!stored.ok) {
+        return err({ kind: "auth-store", detail: stored.error.reason });
+      }
+      const entry = stored.value.get(host);
+      if (!entry) {
+        return ok({ host, revoked: false, alreadyLoggedOut: true });
+      }
+
+      // Best-effort revocation. Discovery needs to succeed to find the
+      // revocation endpoint; if discovery fails we still clear locally
+      // and surface the warning.
+      let revoked = false;
+      let revokeWarning: string | undefined;
+      const oidc = await deps.oidcDiscovery.discover(entry.issuer);
+      if (oidc.ok) {
+        const cfg = await deps.authConfigProbe.probe(host);
+        const clientId = cfg.ok ? cfg.value.cliClientId : "platform-cli";
+        const revoke = await deps.revokeClient.revoke({
+          revocationEndpoint: oidc.value.revocationEndpoint,
+          clientId,
+          refreshToken: entry.refreshToken,
+        });
+        if (revoke.ok) {
+          revoked = true;
+        } else {
+          revokeWarning = describeRevokeError(revoke.error);
+        }
+      } else {
+        revokeWarning = `cannot resolve revocation endpoint: ${oidc.error.message}`;
+      }
+
+      const removed = await deps.authStore.remove(host);
+      if (!removed.ok) {
+        return err({ kind: "auth-store", detail: removed.error.reason });
+      }
+      return ok({ host, revoked, alreadyLoggedOut: false, revokeWarning });
+    },
+
+    async status() {
+      const stored = await deps.authStore.read();
+      if (!stored.ok) {
+        return err({ kind: "auth-store", detail: stored.error.reason });
+      }
+      const cfg = await deps.configService.getResolved({});
+      const activeHost = cfg.ok ? cfg.value.server : undefined;
+      const envToken = deps.authEnvReader.damToken();
+
+      const entries: StatusEntry[] = [];
+      for (const [host, entry] of stored.value) {
+        const isActive = host === activeHost;
+        entries.push({
+          host,
+          issuer: entry.issuer,
+          username: entry.username,
+          source: isActive && envToken !== undefined ? "env" : "file",
+          isActive,
+          expiresAt: entry.expiresAt,
+        });
+      }
+
+      // If an env-supplied token shadows the active host but there's no
+      // file entry for that host, surface a synthetic entry so users
+      // know which host the env value applies to.
+      if (
+        envToken !== undefined &&
+        activeHost !== undefined &&
+        !entries.some((e) => e.host === activeHost)
+      ) {
+        entries.push({
+          host: activeHost,
+          issuer: "(unknown — token supplied via DAM_TOKEN)",
+          username: "(env)",
+          source: "env",
+          isActive: true,
+        });
+      }
+
+      const activeEntry = entries.find((e) => e.isActive);
+      const activeHostValid = activeEntry !== undefined && (
+        activeEntry.source === "env" ||
+        (activeEntry.expiresAt !== undefined &&
+          activeEntry.expiresAt.getTime() > now().getTime())
+      );
+
+      return ok({ activeHost, entries, activeHostValid });
+    },
+  };
+}
+
+function describeDeviceFlowError(e: DeviceFlowError): string {
+  switch (e.code) {
+    case "network":
+      return `device authorization request failed: ${e.message}`;
+    case "non-ok-status":
+      return `device authorization endpoint returned ${e.message}`;
+    case "malformed-response":
+      return `device authorization endpoint returned unexpected response: ${e.message}`;
+  }
+}
+
+function describeRevokeError(e: RevokeError): string {
+  return `token revocation failed (logout still cleared local creds): ${e.reason}`;
+}
+
+// Re-exports so tests don't need to deep-import auth-store types when
+// they only ever touch the service surface.
+export type AuthServiceWriteError =
+  | AuthStoreReadError
+  | AuthStoreWriteError
+  | MalformedAuthStoreError
+  | BrowserOpenError;

@@ -19,12 +19,18 @@ export interface ComposeOptions {
 /**
  * Package-level wiring. Each bounded context's `compose()` returns its
  * commands (and any cross-module services); this function stitches them
- * into a single commander program. Adding a third module is one import
- * and one `addCommand` loop.
+ * into a single commander program. The auth module receives the
+ * compat- and config-services it needs via injection — it never imports
+ * cli internals directly.
  */
 export function compose(opts: ComposeOptions = {}): Command {
   const cli = composeCliModule({ configPath: opts.configPath });
-  const auth = composeAuthModule({ authPath: opts.authPath, env: opts.env });
+  const auth = composeAuthModule({
+    authPath: opts.authPath,
+    env: opts.env,
+    compatService: cli.services.compatService,
+    configService: cli.services.configService,
+  });
 
   const program = new Command();
   program

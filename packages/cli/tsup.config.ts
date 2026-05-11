@@ -17,7 +17,7 @@ export default defineConfig({
   clean: true,
   // Ship a self-contained dist/bin.js. Node-builtins stay external; runtime
   // deps fold into the bundle so `node dist/bin.js` works from anywhere.
-  noExternal: ["commander", "smol-toml", "zod"],
+  noExternal: ["commander", "open", "smol-toml", "zod"],
   // CJS deps (commander) use dynamic `require()` of node builtins; ESM
   // doesn't expose `require` by default, so synthesize one at the top of
   // the bundle. Without this, `node dist/bin.js` throws on first call.
