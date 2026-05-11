@@ -9,6 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
 
 	"github.com/kagenti/platform/packages/controller/pkg/config"
@@ -89,6 +90,12 @@ func BuildAgentEgressNetworkPolicy(pairKey string, cfg *config.Config, ownerCM *
 					},
 				},
 				{
+					// Bare PodSelector with no NamespaceSelector implicitly
+					// scopes to the policy's own namespace — correct today
+					// since agent + gateway pods of a pair share
+					// `cfg.Namespace`. If pods ever split across namespaces
+					// this peer must grow a NamespaceSelector or the rule
+					// silently denies the legitimate egress path.
 					To: []networkingv1.NetworkPolicyPeer{{
 						PodSelector: &metav1.LabelSelector{
 							MatchLabels: map[string]string{
@@ -119,78 +126,32 @@ func BuildAgentEgressNetworkPolicy(pairKey string, cfg *config.Config, ownerCM *
 
 // applyNetworkPolicy creates or updates a NetworkPolicy. Mirrors
 // applyAuthorizationPolicy / applyServiceAccount shape.
-func applyNetworkPolicy(ctx context.Context, client networkPolicyClient, desired *networkingv1.NetworkPolicy) error {
+func applyNetworkPolicy(ctx context.Context, client kubernetes.Interface, desired *networkingv1.NetworkPolicy) error {
+	cli := client.NetworkingV1().NetworkPolicies(desired.Namespace)
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		existing, err := client.Get(ctx, desired.Name, desired.Namespace)
+		existing, err := cli.Get(ctx, desired.Name, metav1.GetOptions{})
 		if errors.IsNotFound(err) {
-			return client.Create(ctx, desired)
+			_, err = cli.Create(ctx, desired, metav1.CreateOptions{})
+			return err
 		}
 		if err != nil {
 			return err
 		}
 		desired.ResourceVersion = existing.ResourceVersion
-		return client.Update(ctx, desired)
+		_, err = cli.Update(ctx, desired, metav1.UpdateOptions{})
+		return err
 	})
 }
 
-// networkPolicyClient narrows the K8s networking client surface to the
-// three verbs applyNetworkPolicy needs, so unit tests can wire a fake
-// without dragging in the full kubernetes.Interface.
-type networkPolicyClient interface {
-	Get(ctx context.Context, name, namespace string) (*networkingv1.NetworkPolicy, error)
-	Create(ctx context.Context, np *networkingv1.NetworkPolicy) error
-	Update(ctx context.Context, np *networkingv1.NetworkPolicy) error
-}
-
-// k8sNetworkPolicyClient adapts kubernetes.Interface to networkPolicyClient.
-type k8sNetworkPolicyClient struct {
-	r *InstanceReconciler
-}
-
-func (c k8sNetworkPolicyClient) Get(ctx context.Context, name, namespace string) (*networkingv1.NetworkPolicy, error) {
-	return c.r.client.NetworkingV1().NetworkPolicies(namespace).Get(ctx, name, metav1.GetOptions{})
-}
-
-func (c k8sNetworkPolicyClient) Create(ctx context.Context, np *networkingv1.NetworkPolicy) error {
-	_, err := c.r.client.NetworkingV1().NetworkPolicies(np.Namespace).Create(ctx, np, metav1.CreateOptions{})
-	return err
-}
-
-func (c k8sNetworkPolicyClient) Update(ctx context.Context, np *networkingv1.NetworkPolicy) error {
-	_, err := c.r.client.NetworkingV1().NetworkPolicies(np.Namespace).Update(ctx, np, metav1.UpdateOptions{})
-	return err
-}
-
-// applyAgentEgressNetworkPolicy is the InstanceReconciler entry point.
 func (r *InstanceReconciler) applyAgentEgressNetworkPolicy(ctx context.Context, np *networkingv1.NetworkPolicy) error {
-	if err := applyNetworkPolicy(ctx, k8sNetworkPolicyClient{r: r}, np); err != nil {
+	if err := applyNetworkPolicy(ctx, r.client, np); err != nil {
 		return fmt.Errorf("applying agent egress NetworkPolicy: %w", err)
 	}
 	return nil
 }
 
-// forkNetworkPolicyClient adapts the ForkReconciler's kubernetes.Interface
-// to networkPolicyClient — same shape as k8sNetworkPolicyClient.
-type forkNetworkPolicyClient struct {
-	r *ForkReconciler
-}
-
-func (c forkNetworkPolicyClient) Get(ctx context.Context, name, namespace string) (*networkingv1.NetworkPolicy, error) {
-	return c.r.client.NetworkingV1().NetworkPolicies(namespace).Get(ctx, name, metav1.GetOptions{})
-}
-
-func (c forkNetworkPolicyClient) Create(ctx context.Context, np *networkingv1.NetworkPolicy) error {
-	_, err := c.r.client.NetworkingV1().NetworkPolicies(np.Namespace).Create(ctx, np, metav1.CreateOptions{})
-	return err
-}
-
-func (c forkNetworkPolicyClient) Update(ctx context.Context, np *networkingv1.NetworkPolicy) error {
-	_, err := c.r.client.NetworkingV1().NetworkPolicies(np.Namespace).Update(ctx, np, metav1.UpdateOptions{})
-	return err
-}
-
 func (r *ForkReconciler) applyAgentEgressNetworkPolicy(ctx context.Context, np *networkingv1.NetworkPolicy) error {
-	if err := applyNetworkPolicy(ctx, forkNetworkPolicyClient{r: r}, np); err != nil {
+	if err := applyNetworkPolicy(ctx, r.client, np); err != nil {
 		return fmt.Errorf("applying fork agent egress NetworkPolicy: %w", err)
 	}
 	return nil
