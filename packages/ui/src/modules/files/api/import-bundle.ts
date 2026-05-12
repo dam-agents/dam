@@ -26,7 +26,12 @@ const EXCLUDE_FROM_IMPORT = new Set([
   ".DS_Store",
 ]);
 
-export function filterImportEntries(entries: BundleEntry[]): { kept: BundleEntry[]; dropped: number } {
+export interface FilterReport {
+  kept: BundleEntry[];
+  dropped: number;
+}
+
+export function filterImportEntries(entries: BundleEntry[]): FilterReport {
   let dropped = 0;
   const kept: BundleEntry[] = [];
   for (const e of entries) {
@@ -40,17 +45,27 @@ export function filterImportEntries(entries: BundleEntry[]): { kept: BundleEntry
   return { kept, dropped };
 }
 
-/** Flatten a DataTransferItemList (from a drop) into BundleEntry[]. */
+/** Flatten a DataTransferItemList (from a drop) into BundleEntry[].
+ *  Paths are deduped — dropping the same folder twice yields one entry per
+ *  child, not two with identical paths that would later confuse tar
+ *  consumers (last entry would silently win on extract). */
 export async function walkDataTransfer(items: DataTransferItemList): Promise<BundleEntry[]> {
-  const entries: BundleEntry[] = [];
+  const raw: BundleEntry[] = [];
   const promises: Promise<void>[] = [];
   for (let i = 0; i < items.length; i++) {
     const fsEntry = items[i].webkitGetAsEntry?.();
     if (!fsEntry) continue;
-    promises.push(walkEntry(fsEntry, "", entries));
+    promises.push(walkEntry(fsEntry, "", raw));
   }
   await Promise.all(promises);
-  return entries;
+  const seen = new Set<string>();
+  const out: BundleEntry[] = [];
+  for (const e of raw) {
+    if (seen.has(e.path)) continue;
+    seen.add(e.path);
+    out.push(e);
+  }
+  return out;
 }
 
 async function walkEntry(entry: FileSystemEntry, prefix: string, out: BundleEntry[]): Promise<void> {
@@ -91,50 +106,93 @@ export function topLevelOf(entries: BundleEntry[]): string[] {
 }
 
 /**
- * USTAR's `name` field is 100 bytes. We don't bother with the `prefix`
- * extension yet — paths longer than 100 bytes get rejected loudly here
- * rather than truncated into a different (and possibly traversal-unsafe)
- * server-side path.
+ * USTAR's `name` field is 100 bytes, plus a 155-byte `prefix` field that
+ * concatenates as `prefix + "/" + name`. Real-world trees (`.git/objects`,
+ * deep node_modules) easily exceed 100 bytes, so we use the prefix when
+ * we have to. Paths that don't fit even after split are rejected loudly
+ * — long-name PAX extensions are out of scope for the demo cut.
  */
 const MAX_TAR_NAME_BYTES = 100;
+const MAX_TAR_PREFIX_BYTES = 155;
+
+type UstarPath = { name: string; prefix: string };
+
+/** Split `path` into USTAR `prefix`/`name` so that both fit their fields.
+ *  Returns null when no `/` boundary produces a valid split. */
+function splitUstarPath(path: string, enc: TextEncoder): UstarPath | null {
+  if (enc.encode(path).byteLength <= MAX_TAR_NAME_BYTES) {
+    return { name: path, prefix: "" };
+  }
+  // Walk slash positions right-to-left to find the rightmost split where
+  // `name` (after the slash) fits 100 bytes; reject if the prefix part
+  // (before the slash) exceeds 155 bytes.
+  let slash = path.lastIndexOf("/");
+  while (slash > 0) {
+    const namePart = path.slice(slash + 1);
+    const prefixPart = path.slice(0, slash);
+    if (
+      enc.encode(namePart).byteLength <= MAX_TAR_NAME_BYTES
+      && enc.encode(prefixPart).byteLength <= MAX_TAR_PREFIX_BYTES
+    ) {
+      return { name: namePart, prefix: prefixPart };
+    }
+    slash = path.lastIndexOf("/", slash - 1);
+  }
+  return null;
+}
 
 /**
- * Build a tar.gz Blob from the entries. Hand-rolls a USTAR tar layer
- * and pipes through CompressionStream("gzip"). Sufficient for our
- * use case (regular files only, no symlinks or perms) and avoids
- * pulling in a tar npm bundle just for the browser side.
+ * Build a raw (uncompressed) USTAR tar Blob from the entries. We
+ * deliberately don't gzip in the browser:
+ *
+ *  1. Most pain inputs are already-compressed binary (MKV, MP4, .git
+ *     pack files) where gzip barely shrinks anything.
+ *  2. `CompressionStream` piped into `new Response(stream).blob()`
+ *     forces the browser to materialize the whole compressed output
+ *     into a Blob before the upload starts. For multi-GB inputs that
+ *     hits the origin storage quota and the underlying stream gets
+ *     aborted mid-write, leaving a truncated body that the server
+ *     extracts as a partial tar with no EOF blocks — the parser then
+ *     hangs waiting for more bytes.
+ *
+ * The resulting Blob references each `File` lazily (Blob's constructor
+ * accepts Blobs as parts), so the fetch upload reads from disk as the
+ * stream is consumed. No memory or disk materialization here. The
+ * `tar` package on the server auto-detects gzip vs raw input, so the
+ * extract side needs no change. The upload size ceiling is the
+ * server's `maxImportBundleBytes` cap.
  */
 export async function buildBundle(entries: BundleEntry[]): Promise<Blob> {
   const enc = new TextEncoder();
-  for (const ent of entries) {
-    const nameBytes = enc.encode(ent.path).byteLength;
-    if (nameBytes > MAX_TAR_NAME_BYTES) {
-      throw new Error(`path too long for tar header (${nameBytes} bytes, limit ${MAX_TAR_NAME_BYTES}): ${ent.path}`);
+  const splits: UstarPath[] = entries.map((ent) => {
+    const split = splitUstarPath(ent.path, enc);
+    if (!split) {
+      throw new Error(`path too long for USTAR tar header (name>${MAX_TAR_NAME_BYTES}B and no /-split fits within prefix ${MAX_TAR_PREFIX_BYTES}B): ${ent.path}`);
     }
-  }
-  const tarChunks: BlobPart[] = [];
-  // Casts to ArrayBuffer: TS's strict ArrayBufferLike includes
-  // SharedArrayBuffer, which BlobPart doesn't accept. Our buffers
-  // come from `await file.arrayBuffer()` and `new Uint8Array(n)`
-  // — both produce regular ArrayBuffers; the cast is a narrow.
-  for (const ent of entries) {
-    const data = new Uint8Array(await ent.file.arrayBuffer());
-    tarChunks.push(tarHeader(ent.path, data.length).buffer as ArrayBuffer);
-    tarChunks.push(data.buffer as ArrayBuffer);
-    const pad = (512 - (data.length % 512)) % 512;
-    if (pad) tarChunks.push(new Uint8Array(pad).buffer as ArrayBuffer);
+    return split;
+  });
+
+  const tarParts: BlobPart[] = [];
+  // Casts to ArrayBuffer: TS's strict `ArrayBufferLike` includes
+  // `SharedArrayBuffer`, which `BlobPart` doesn't accept. Our buffers
+  // come from `new Uint8Array(n)` — all regular ArrayBuffers; the cast
+  // narrows the type without changing runtime behavior.
+  for (let i = 0; i < entries.length; i++) {
+    const ent = entries[i];
+    tarParts.push(tarHeader(splits[i], ent.file.size).buffer as ArrayBuffer);
+    tarParts.push(ent.file);
+    const pad = (512 - (ent.file.size % 512)) % 512;
+    if (pad) tarParts.push(new Uint8Array(pad).buffer as ArrayBuffer);
   }
   // Two zero blocks to mark end-of-archive.
-  tarChunks.push(new Uint8Array(1024).buffer as ArrayBuffer);
-  const tarBlob = new Blob(tarChunks);
-  const gz = tarBlob.stream().pipeThrough(new CompressionStream("gzip"));
-  return new Response(gz).blob();
+  tarParts.push(new Uint8Array(1024).buffer as ArrayBuffer);
+  return new Blob(tarParts, { type: "application/x-tar" });
 }
 
-function tarHeader(path: string, size: number): Uint8Array {
+function tarHeader(path: UstarPath, size: number): Uint8Array {
   const buf = new Uint8Array(512);
   // name (100)
-  writeStr(buf, 0, path, 100);
+  writeStr(buf, 0, path.name, 100);
   // mode "0000666\0"
   writeOct(buf, 100, 0o666, 8);
   // uid, gid
@@ -152,6 +210,8 @@ function tarHeader(path: string, size: number): Uint8Array {
   writeStr(buf, 257, "ustar", 6);
   buf[263] = 0x30;
   buf[264] = 0x30;
+  // prefix (155) at offset 345 — concatenated as prefix + "/" + name on read
+  if (path.prefix.length > 0) writeStr(buf, 345, path.prefix, 155);
   // checksum
   let sum = 0;
   for (let i = 0; i < 512; i++) sum += buf[i];
@@ -213,7 +273,7 @@ export async function importBundle({
   prefix,
 }: ImportBundleArgs): Promise<ImportBundleResult> {
   const bundle = await buildBundle(entries);
-  return postBundle(instanceId, bundle, mode, prefix, "bundle.tar.gz");
+  return postBundle(instanceId, bundle, mode, prefix, "bundle.tar");
 }
 
 /**

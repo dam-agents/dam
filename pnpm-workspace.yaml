@@ -3,6 +3,14 @@ packages:
   - "packages/agents/pi-agent/workspace/.pi/agent/extensions/*"
 minimumReleaseAge: 10080 # 7 days (in minutes)
 trustPolicy: no-downgrade
+trustPolicyExclude:
+  # verified manually
+  - 'rollup@2.80.0'
+  - 'semver@6.3.1'
+  # chokidar dropped OIDC provenance for 4.0.2/4.0.3 (Dec 2024) — same
+  # maintainer (paulmillr), GitHub tag matches, restored in 5.0.0 via
+  # `trustedPublisher: github`. Benign publisher-side workflow change.
+  - 'chokidar@4.0.3'
 allowBuilds:
   # grpc-tools downloads the protoc binary in a postinstall step; needed
   # by `mise run api-server:gen:proto` (ts-proto codegen for ext_authz).

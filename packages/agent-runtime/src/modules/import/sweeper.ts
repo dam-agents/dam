@@ -1,7 +1,8 @@
 import { readdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 
-const STAGING_PREFIX = ".import-staging-";
+import { STAGING_PREFIX } from "./constants.js";
+
 const MAX_AGE_MS = 60 * 60 * 1000;
 
 /**

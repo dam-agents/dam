@@ -6,7 +6,7 @@ import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
 import type { EgressPreset, EnvVar } from "../../../types.js";
 import { egressRulesKeys } from "../../egress-rules/api/queries.js";
-import { type BundleEntry, importBundle, importRawBundle } from "../../files/api/import-bundle.js";
+import { type BundleEntry, buildBundle, importRawBundle } from "../../files/api/import-bundle.js";
 import { instancesKeys } from "../../instances/api/queries.js";
 
 const invalidatesAgentsAndInstances = {
@@ -45,38 +45,42 @@ export interface CreateAgentInput {
 export function useCreateAgent() {
   return useMutation({
     mutationFn: async ({ secretIds, appConnectionIds, egressPreset, importEntries, importRawBundle: rawBundle, ...input }: CreateAgentInput) => {
+      // Step order is tuned for fastest user-visible feedback:
+      //   1. agents.create + invalidate → tile appears
+      //   2. instances.create + invalidate → instance state on the tile
+      //   3. buildBundle (lazy Blob, microseconds) + upload
+      //   4. setAgentAccess / setAgentConnections
+      // Import goes BEFORE access/connection mutations: those rewrite the
+      // instance ConfigMap's grant annotations, which the controller
+      // applies by deleting and recreating the pod — running the import
+      // after them races with the pod swap and surfaces as "instance
+      // unreachable". The PVC outlives the pod so files land regardless
+      // of when the pod comes back. Raw bundle wins when both are
+      // provided.
       const agent = await api.agents.create.mutate({ ...input, egressPreset });
+      void queryClient.invalidateQueries({ queryKey: trpc.agents.list.queryKey() });
+
       const instance = await api.instances.create.mutate({
         name: input.name,
         agentId: agent.id,
       });
-
-      // Show the agent in the list immediately. The remaining work (import,
-      // access/connection grants) can take 30–60s on first boot — the mutation's
-      // default invalidation only fires once mutationFn returns, so without this
-      // the tile only appears after the entire post-create flow finishes.
-      void queryClient.invalidateQueries({ queryKey: trpc.agents.list.queryKey() });
       void queryClient.invalidateQueries({ queryKey: instancesKeys.listWithChannels() });
 
-      // Import goes BEFORE setAgentAccess / setAgentConnections. Those mutate
-      // the instance ConfigMap's grant annotations, which the controller
-      // applies by re-rendering pod env — i.e. by deleting and recreating
-      // the pod. Running the import after them races with the controller's
-      // pod swap and surfaces as "instance unreachable". The PVC outlives
-      // the pod, so importing first leaves the files in place when the pod
-      // comes back. Raw bundle wins when both are provided.
-      const hasRaw = rawBundle != null;
-      const hasEntries = importEntries && importEntries.length > 0;
-      if (hasRaw || hasEntries) {
+      let preparedBundle: { blob: Blob; label: string } | undefined;
+      if (rawBundle != null) {
+        preparedBundle = { blob: rawBundle, label: rawBundle.name };
+      } else if (importEntries && importEntries.length > 0) {
+        const count = importEntries.length;
+        preparedBundle = {
+          blob: await buildBundle(importEntries),
+          label: `${count} file${count === 1 ? "" : "s"}`,
+        };
+      }
+
+      if (preparedBundle) {
         try {
-          if (hasRaw) {
-            await importRawBundle({ instanceId: instance.id, bundle: rawBundle, mode: "replace" });
-            emitToast({ kind: "success", message: `Imported ${rawBundle.name} into ${input.name}` });
-          } else if (hasEntries) {
-            const count = importEntries.length;
-            await importBundle({ instanceId: instance.id, entries: importEntries, mode: "replace" });
-            emitToast({ kind: "success", message: `Imported ${count} file${count === 1 ? "" : "s"} into ${input.name}` });
-          }
+          await importRawBundle({ instanceId: instance.id, bundle: preparedBundle.blob, mode: "replace" });
+          emitToast({ kind: "success", message: `Imported ${preparedBundle.label} into ${input.name}` });
         } catch (err) {
           emitToast({
             kind: "error",

@@ -94,6 +94,14 @@ const configSchema = z.object({
    *  preset (ADR-035). Mounted from a Helm-managed ConfigMap.
    *  Empty/missing file → preset is empty (still selectable, just seeds nothing). */
   trustedHostsPath: z.string().default(""),
+  /** Hard ceiling for file-import bundle uploads, in bytes. Enforced at the
+   *  api-server proxy boundary before any byte reaches agent-runtime, so a
+   *  misbehaving client can't fill the PVC. Default 5 GiB — generous enough
+   *  to carry a real `.git/` directory while still under the 10 GiB
+   *  controller-default agent PVC. Admins on tighter PVCs (the bundled
+   *  `claude-code` template ships with a 5 GiB `homeMountSize`) should
+   *  lower this via `MAX_IMPORT_BUNDLE_BYTES`. */
+  maxImportBundleBytes: z.coerce.number().int().positive().default(5 * 1024 * 1024 * 1024),
   /** Brand presented to end users — display name, slash-command identifier,
    *  and theme accent colors. Surfaced to the UI via `GET /api/brand` and
    *  used internally for OAuth client_name, Slack slash command, skill
@@ -157,6 +165,7 @@ export function loadConfig(): Config {
     approvalHoldSeconds: process.env.APPROVAL_HOLD_SECONDS,
     minClientCliVersion: process.env.MIN_CLIENT_CLI_VERSION,
     trustedHostsPath: process.env.TRUSTED_HOSTS_PATH,
+    maxImportBundleBytes: process.env.MAX_IMPORT_BUNDLE_BYTES,
     brand: {
       name: process.env.BRAND_NAME,
       short: process.env.BRAND_SHORT,

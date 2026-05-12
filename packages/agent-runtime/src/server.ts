@@ -17,8 +17,7 @@ import {
   decodeFrame, encodeDataFrame, encodeExit,
 } from "api-server-api";
 import { createFilesService } from "./modules/files.js";
-import { createImportHandlers } from "./modules/import/http.js";
-import { sweepStaging } from "./modules/import/sweeper.js";
+import { createImportHandlers, sweepStaging } from "./modules/import/index.js";
 import { composeSkills } from "./modules/skills/index.js";
 import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
@@ -282,6 +281,14 @@ try {
 } catch (e) {
   process.stderr.write(`[git] failed to configure credential helper: ${(e as Error).message}\n`);
 }
+
+// Node defaults `requestTimeout` to 5 minutes. The import route holds a
+// request open through extract+finalize of a multi-GB tar — easily
+// >5 min on slower uploads. Disable the per-request timeout; the import
+// handler installs its own inactivity (30s) + wall-clock (30min)
+// deadlines, so a stuck connection still gets aborted.
+server.requestTimeout = 0;
+server.headersTimeout = 0;
 
 server.listen(config.PORT, () => {
   process.stderr.write(`Platform on http://localhost:${config.PORT}\n`);

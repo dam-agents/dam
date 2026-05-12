@@ -26,7 +26,7 @@ RUN pnpm --filter agent-runtime build
 
 # Materialize a flat, prod-only runtime tree from agent-runtime/package.json; strip devDeps so downstream `npm install` doesn't choke on workspace:* specifiers.
 RUN pnpm --filter agent-runtime deploy --legacy --prod --node-linker=hoisted /deploy \
-    && node -e 'const f="/deploy/package.json",p=JSON.parse(require("fs").readFileSync(f,"utf8"));delete p.devDependencies;require("fs").writeFileSync(f,JSON.stringify(p,null,2)+"\n")'
+    && (cd /deploy && pnpm pkg delete devDependencies)
 
 # -builder base: agent images extending this need dnf+npm install at build time.
 FROM base AS runner

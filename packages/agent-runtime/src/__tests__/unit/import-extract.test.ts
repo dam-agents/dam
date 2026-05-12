@@ -75,9 +75,10 @@ describe("extractBundle", () => {
       writeFileSync(join(src, ".claude/settings.json"), "{}");
       const buf = await tarFromDir(src, ["CLAUDE.md", ".claude"]);
       const result = await extractBundle(Readable.from(buf), tmp);
+      expect(result.ok).toBe(true);
       expect(readFileSync(join(tmp, "CLAUDE.md"), "utf8")).toBe("hello");
       expect(readFileSync(join(tmp, ".claude/settings.json"), "utf8")).toBe("{}");
-      expect(result.filesWritten).toBe(2);
+      if (result.ok) expect(result.value.filesWritten).toBe(2);
     } finally {
       rmSync(src, { recursive: true, force: true });
     }
@@ -88,7 +89,9 @@ describe("extractBundle", () => {
     try {
       symlinkSync("/etc/passwd", join(src, "evil-link"));
       const buf = await tarFromDir(src, ["evil-link"]);
-      await expect(extractBundle(Readable.from(buf), tmp)).rejects.toThrow();
+      const result = await extractBundle(Readable.from(buf), tmp);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.kind).toBe("InvalidEntry");
       expect(existsSync(join(tmp, "evil-link"))).toBe(false);
     } finally {
       rmSync(src, { recursive: true, force: true });
@@ -97,13 +100,31 @@ describe("extractBundle", () => {
 
   it("rejects absolute-path entries", async () => {
     const buf = rawTarFile("/etc/evil", "evil");
-    await expect(extractBundle(Readable.from(buf), tmp)).rejects.toThrow();
+    const result = await extractBundle(Readable.from(buf), tmp);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe("InvalidEntry");
+      if (result.error.kind === "InvalidEntry") expect(result.error.reason).toBe("absolute path");
+    }
     expect(existsSync(join(tmp, "etc/evil"))).toBe(false);
   });
 
   it("rejects path-traversal entries", async () => {
     const buf = rawTarFile("../escape", "evil");
-    await expect(extractBundle(Readable.from(buf), tmp)).rejects.toThrow();
+    const result = await extractBundle(Readable.from(buf), tmp);
+    expect(result.ok).toBe(false);
+    if (!result.ok && result.error.kind === "InvalidEntry") {
+      expect(result.error.reason).toBe("path traversal");
+    }
+  });
+
+  it("rejects Windows-style absolute paths", async () => {
+    const buf = rawTarFile("C:\\evil", "evil");
+    const result = await extractBundle(Readable.from(buf), tmp);
+    expect(result.ok).toBe(false);
+    if (!result.ok && result.error.kind === "InvalidEntry") {
+      expect(result.error.reason).toBe("absolute path");
+    }
   });
 
   it("rejects platform-reserved path segments", async () => {
@@ -112,7 +133,12 @@ describe("extractBundle", () => {
       mkdirSync(join(src, ".triggers"));
       writeFileSync(join(src, ".triggers/evil.json"), "{}");
       const buf = await tarFromDir(src, [".triggers"]);
-      await expect(extractBundle(Readable.from(buf), tmp)).rejects.toThrow(/reserved/i);
+      const result = await extractBundle(Readable.from(buf), tmp);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.kind).toBe("ReservedSegment");
+        if (result.error.kind === "ReservedSegment") expect(result.error.segment).toBe(".triggers");
+      }
       expect(existsSync(join(tmp, ".triggers/evil.json"))).toBe(false);
     } finally {
       rmSync(src, { recursive: true, force: true });

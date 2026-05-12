@@ -102,6 +102,18 @@ Pod-side operational view of skills. Distinct from the api-server's Skills conte
 | Secret Assignment | The linkage between a Secret and an Agent that makes the secret available to that agent's egress; stored as the `agent-platform.ai/secret-mode` + `agent-platform.ai/granted-secret-ids` annotations on the agent's instance ConfigMap |
 | Provider | The external service a secret authenticates against (e.g., Anthropic); for typed secrets the provider determines default routing rules |
 
+## Import (bounded context)
+
+Pod-side operation that lands a user-supplied snapshot of local project context into the agent's `/home/agent`. Owned by agent-runtime; orchestrated by api-server. See [ADR-DRAFT-file-import](../docs/adrs/DRAFT-file-import.md).
+
+| Term | Definition |
+|------|-----------|
+| Bundle | A `tar.gz` carrying the files to land; the on-the-wire contract between clients (UI, future CLI) and agent-runtime |
+| Staging Dir | A `.import-staging-*` directory on the PVC into which the bundle is extracted before swap; reclaimed by the boot sweeper if its mtime exceeds 1h |
+| Finalize Mode | Either `replace` (per-top-level `rm`+`rename`) or `merge` (per-file `rename`, leaves untouched paths alone) |
+| Preflight | A separate JSON call that reports which top-level paths from the client's bundle already exist under `/home/agent + prefix`, driving the Replace/Merge/Cancel UX without uploading |
+| Reserved Segment | A platform-owned path segment the bundle must not target (`.triggers`, `.initialized`); rejected at extract time |
+
 ## Platform CLI (bounded context)
 
 | Term | Definition |

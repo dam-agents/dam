@@ -1,4 +1,6 @@
-import { Hono } from "hono";
+import { request as httpRequest } from "node:http";
+import { Readable } from "node:stream";
+import { Hono, type Context } from "hono";
 import { serve } from "@hono/node-server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter } from "api-server-api/router";
@@ -240,67 +242,95 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     }
   });
 
-  // File import — bundle is a tar.gz inside multipart/form-data; we wake
-  // the pod via the reachability primitive and stream the body straight
-  // to agent-runtime, which extracts it under /home/agent. See
-  // docs/superpowers/specs/2026-05-07-file-import-design.md.
-  app.post("/api/instances/:id/import", async (c) => {
+  // File import — bundle is a tar (or tar.gz) inside multipart/form-data;
+  // we wake the pod via the reachability primitive and stream the body
+  // straight to agent-runtime, which extracts it under /home/agent. See
+  // docs/adrs/DRAFT-file-import.md.
+  //
+  // The proxy uses node:http directly (NOT undici fetch). undici buffers
+  // arbitrary-sized request bodies in memory even with `duplex: "half"`,
+  // which OOMs the api-server pod on multi-GB uploads. node:http with a
+  // raw stream pipe respects backpressure end-to-end so memory stays
+  // flat regardless of body size.
+  //
+  // Bundle (`/import`) and preflight (`/import-preflight`) share this
+  // plumbing — only the size cap differs.
+  const PROXY_RESPONSE_HEADER_ALLOWLIST = new Set(["content-type", "content-length"]);
+  type ImportCtx = Context<{ Variables: { user: UserIdentity } }>;
+  async function proxyImport(c: ImportCtx, upstreamPath: string, opts: { enforceSizeCap: boolean }) {
     const user = c.get("user");
     const instanceId = c.req.param("id")!;
     if (!await verifyOwner(instanceId, user.sub)) {
       return c.json({ error: "not found" }, 404);
+    }
+    if (opts.enforceSizeCap) {
+      // Hard byte ceiling at the proxy boundary. Requires Content-Length so
+      // a chunked-encoding client can't slip past the cap. The agent-runtime
+      // also has an inactivity + wall-clock deadline; together they bound
+      // stuck and unbounded streams.
+      const lengthHeader = c.req.header("content-length");
+      if (!lengthHeader) {
+        return c.json({ error: "Content-Length required for import upload" }, 411);
+      }
+      const length = Number.parseInt(lengthHeader, 10);
+      if (!Number.isFinite(length) || length < 0) {
+        return c.json({ error: "invalid Content-Length" }, 400);
+      }
+      if (length > config.maxImportBundleBytes) {
+        return c.json({ error: `bundle exceeds maximum size of ${config.maxImportBundleBytes} bytes` }, 413);
+      }
     }
     try {
       await instancesRepo.ensureReady(instanceId);
     } catch (err) {
       return c.json({ error: `instance unreachable: ${(err as Error).message}` }, 502);
     }
-    const upstreamUrl = `http://${podBaseUrl(instanceId, config.namespace)}/api/import`;
-    const headers = new Headers(c.req.raw.headers);
-    headers.delete("host");
-    headers.delete("authorization");
-    try {
-      const upstream = await fetch(upstreamUrl, {
-        method: "POST",
-        headers,
-        body: c.req.raw.body,
-        // @ts-expect-error -- node fetch supports duplex
-        duplex: "half",
-      });
-      return new Response(upstream.body, { status: upstream.status, headers: upstream.headers });
-    } catch {
-      return c.json({ error: "instance unreachable" }, 502);
-    }
-  });
+    const upstreamUrl = new URL(`http://${podBaseUrl(instanceId, config.namespace)}${upstreamPath}`);
+    // Forward incoming headers minus hop-by-hop and auth — agent-runtime's
+    // NetworkPolicy is the auth boundary for this hop.
+    const outHeaders: Record<string, string> = {};
+    c.req.raw.headers.forEach((v, k) => {
+      const lk = k.toLowerCase();
+      if (lk === "host" || lk === "authorization" || lk === "connection") return;
+      outHeaders[k] = v;
+    });
 
-  app.post("/api/instances/:id/import-preflight", async (c) => {
-    const user = c.get("user");
-    const instanceId = c.req.param("id")!;
-    if (!await verifyOwner(instanceId, user.sub)) {
-      return c.json({ error: "not found" }, 404);
-    }
-    try {
-      await instancesRepo.ensureReady(instanceId);
-    } catch (err) {
-      return c.json({ error: `instance unreachable: ${(err as Error).message}` }, 502);
-    }
-    const upstreamUrl = `http://${podBaseUrl(instanceId, config.namespace)}/api/import-preflight`;
-    const headers = new Headers(c.req.raw.headers);
-    headers.delete("host");
-    headers.delete("authorization");
-    try {
-      const upstream = await fetch(upstreamUrl, {
+    return new Promise<Response>((resolve) => {
+      const upstreamReq = httpRequest({
+        protocol: upstreamUrl.protocol,
+        hostname: upstreamUrl.hostname,
+        port: upstreamUrl.port,
+        path: upstreamUrl.pathname + upstreamUrl.search,
         method: "POST",
-        headers,
-        body: c.req.raw.body,
-        // @ts-expect-error -- node fetch supports duplex
-        duplex: "half",
+        headers: outHeaders,
+      }, (upstreamRes) => {
+        const responseHeaders = new Headers();
+        for (const [name, value] of Object.entries(upstreamRes.headers)) {
+          if (value === undefined) continue;
+          if (!PROXY_RESPONSE_HEADER_ALLOWLIST.has(name.toLowerCase())) continue;
+          responseHeaders.set(name, Array.isArray(value) ? value.join(", ") : value);
+        }
+        // toWeb gives a Web ReadableStream backed by the IncomingMessage —
+        // Hono streams this back to the client without buffering.
+        const body = Readable.toWeb(upstreamRes) as ReadableStream<Uint8Array>;
+        resolve(new Response(body, { status: upstreamRes.statusCode ?? 502, headers: responseHeaders }));
       });
-      return new Response(upstream.body, { status: upstream.status, headers: upstream.headers });
-    } catch {
-      return c.json({ error: "instance unreachable" }, 502);
-    }
-  });
+      upstreamReq.on("error", () => {
+        resolve(c.json({ error: "instance unreachable" }, 502));
+      });
+      // Pipe incoming request body straight into the upstream socket.
+      const incomingBody = c.req.raw.body;
+      if (!incomingBody) {
+        upstreamReq.end();
+        return;
+      }
+      Readable.fromWeb(incomingBody as unknown as Parameters<typeof Readable.fromWeb>[0])
+        .on("error", () => { try { upstreamReq.destroy(); } catch {} })
+        .pipe(upstreamReq);
+    });
+  }
+  app.post("/api/instances/:id/import", (c) => proxyImport(c, "/api/import", { enforceSizeCap: true }));
+  app.post("/api/instances/:id/import-preflight", (c) => proxyImport(c, "/api/import-preflight", { enforceSizeCap: false }));
 
   app.all("/api/trpc/*", (c) => {
     const user = c.get("user");
@@ -388,6 +418,20 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   const server = serve({ fetch: app.fetch, port: config.port }, () => {
     process.stderr.write(`api-server listening on http://localhost:${config.port}\n`);
   });
+  // Node defaults `requestTimeout` to 5 minutes — that hard-caps the
+  // file-import proxy roundtrip, because we hold the request open until
+  // the agent-runtime finishes extracting + finalizing the bundle, and
+  // a multi-GB tar can take well over 5 minutes end-to-end. Disable the
+  // timeout: agent-runtime enforces its own inactivity + wall-clock
+  // deadlines, so we don't lose runaway-connection protection.
+  // @hono/node-server's ServerType is the union of http/https/http2
+  // server types; cast to access the timeout fields directly.
+  const nodeServer = server as unknown as {
+    requestTimeout: number;
+    headersTimeout: number;
+  };
+  nodeServer.requestTimeout = 0;
+  nodeServer.headersTimeout = 0;
 
   server.on("upgrade", async (req, socket, head) => {
     const url = new URL(req.url!, `http://${req.headers.host}`);

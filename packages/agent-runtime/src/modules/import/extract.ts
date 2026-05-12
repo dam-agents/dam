@@ -3,6 +3,9 @@ import { resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { extract, type ReadEntry } from "tar";
+import { err, ok, type Result } from "agent-runtime-api";
+
+import type { ImportDomainError } from "./errors.js";
 
 export type ExtractResult = {
   filesWritten: number;
@@ -31,10 +34,11 @@ const RESERVED_SEGMENTS = new Set([
  * Stream-extract a tar (or tar.gz) bundle into `stagingDir`.
  *
  * Path safety: every entry is validated. Any entry that is not a regular
- * file or directory, has an absolute path, contains `..`, whose first
- * segment is platform-reserved, or whose final resolved path escapes
- * `stagingDir`, aborts extraction with an error. The caller is responsible
- * for cleaning up `stagingDir` on failure.
+ * file or directory, has an absolute path (POSIX or Windows-style),
+ * contains `..`, whose first segment is platform-reserved, or whose final
+ * resolved path escapes `stagingDir`, returns an `InvalidEntry` /
+ * `ReservedSegment` Err. The caller is responsible for cleaning up
+ * `stagingDir` on failure.
  *
  * Permissions: files land at 0o666 and directories at 0o777, regardless
  * of the source mode. The non-root agent process shares the PVC with
@@ -45,16 +49,16 @@ const RESERVED_SEGMENTS = new Set([
 export async function extractBundle(
   stream: Readable,
   stagingDir: string,
-): Promise<ExtractResult> {
+): Promise<Result<ExtractResult, ImportDomainError>> {
   const root = resolve(stagingDir);
   let filesWritten = 0;
   let bytes = 0;
-  let abortReason: Error | undefined;
+  let firstError: ImportDomainError | undefined;
 
   // Note: `tar`'s `filter` is called synchronously inside the parser.
   // Throwing from inside it escapes as an uncaught exception. Instead,
-  // skip the bad entry (return false) and remember the first reason —
-  // we throw after the pipeline completes. The caller deletes the
+  // skip the bad entry (return false) and remember the first error —
+  // we return it after the pipeline completes. The caller deletes the
   // staging dir on failure, so any partial extraction is discarded.
   const sink = extract({
     cwd: root,
@@ -64,9 +68,9 @@ export async function extractBundle(
     },
     filter: (path: string, entry: Stats | ReadEntry) => {
       if (!isReadEntry(entry)) return false;
-      const reason = validateEntry(path, entry, root);
-      if (reason) {
-        if (!abortReason) abortReason = new Error(reason);
+      const error = validateEntry(path, entry, root);
+      if (error) {
+        if (!firstError) firstError = error;
         return false;
       }
       return true;
@@ -78,9 +82,13 @@ export async function extractBundle(
     dmode: 0o777,
   });
 
-  await pipeline(stream, sink);
-  if (abortReason) throw abortReason;
-  return { filesWritten, bytes };
+  try {
+    await pipeline(stream, sink);
+  } catch (e) {
+    return err({ kind: "TarParseError", detail: (e as Error).message });
+  }
+  if (firstError) return err(firstError);
+  return ok({ filesWritten, bytes });
 }
 
 // `extract`'s filter option is typed `Stats | ReadEntry` because it's
@@ -90,25 +98,31 @@ function isReadEntry(entry: Stats | ReadEntry): entry is ReadEntry {
   return typeof (entry as ReadEntry).type === "string";
 }
 
-function validateEntry(path: string, entry: ReadEntry, root: string): string | null {
+// Windows-style absolute path prefixes. We're a Linux runtime, so these
+// would be treated as literal segments by node:path/resolve, not as
+// absolute paths — but a tar containing them is a clear sign of crafted
+// input, so refuse them up front.
+const WINDOWS_ABS_RE = /^([A-Za-z]:[\\/]|\\\\)/;
+
+function validateEntry(path: string, entry: ReadEntry, root: string): ImportDomainError | null {
   if (entry.type !== "File" && entry.type !== "Directory") {
-    return `refusing tar entry of type ${entry.type} at ${path}`;
+    return { kind: "InvalidEntry", path, reason: `unsupported tar entry type ${entry.type}` };
   }
-  if (path.startsWith("/")) {
-    return `refusing absolute path entry: ${path}`;
+  if (path.startsWith("/") || WINDOWS_ABS_RE.test(path)) {
+    return { kind: "InvalidEntry", path, reason: "absolute path" };
   }
   const segments = path.split(/[\\/]/);
   if (segments.some((seg) => seg === "..")) {
-    return `refusing path traversal entry: ${path}`;
+    return { kind: "InvalidEntry", path, reason: "path traversal" };
   }
   for (const seg of segments) {
     if (RESERVED_SEGMENTS.has(seg)) {
-      return `refusing reserved path segment ${JSON.stringify(seg)}: ${path}`;
+      return { kind: "ReservedSegment", path, segment: seg };
     }
   }
   const final = resolve(root, path);
   if (final !== root && !final.startsWith(root + "/")) {
-    return `refusing entry that escapes staging dir: ${path}`;
+    return { kind: "InvalidEntry", path, reason: "escapes staging dir" };
   }
   return null;
 }
