@@ -9,7 +9,6 @@ depends = ["*:check"]
 ["fix"]
 depends = ["*:fix"]
 
-
 ["test"]
 depends = ["*:test"]
 
@@ -86,23 +85,26 @@ sources = ["pnpm-lock.yaml"]
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
-export _C=$(date -ud "-${MINIMUM_RELEASE_AGE_DAYS:-7} days" +%Y-%m-%dT%H:%M:%SZ)
-export _F=$(mktemp); trap 'rm -f "$_F"' EXIT
-yq '.packages | keys | .[]' pnpm-lock.yaml | sed 's/\(.*\)@/\1\t/' > "$_F"
-_chk() {
-  export _N="$1" _V=$(awk -F'\t' -v n="$1" '$1==n{printf(c++?",":"[")"\""$2"\""}END{print"]"}' "$_F")
-  curl -sf --max-time 10 "https://registry.npmjs.org/$1" | \
-  yq -p json -r '.time as $t | (strenv(_V) | fromjson | .[]) as $ver |
-    $t[$ver] | select(. != null and . > strenv(_C)) | "  " + strenv(_N) + "@" + $ver + "  " + .' || true
+DAYS=${MINIMUM_RELEASE_AGE_DAYS:-7}
+export CUTOFF=$(date -ud "-$DAYS days" +%Y-%m-%dT%H:%M:%SZ)
+export LOCKFILE_ENTRIES=$(mktemp); trap 'rm -f "$LOCKFILE_ENTRIES"' EXIT
+yq '.packages | keys | .[]' pnpm-lock.yaml | sed 's/\(.*\)@/\1\t/' > "$LOCKFILE_ENTRIES"
+check_pkg() {
+  export PKG_NAME="$1" PKG_VERSIONS=$(awk -F'\t' -v n="$1" '$1==n{printf(c++?",":"[")"\""$2"\""}END{print"]"}' "$LOCKFILE_ENTRIES")
+  curl -sf --max-time 10 -H 'Accept: application/json' \
+    "https://registry.npmjs.org/$1" | \
+  yq -p json -r '.time as $t | (strenv(PKG_VERSIONS) | fromjson | .[]) as $ver |
+    $t[$ver] | select(. != null and . > strenv(CUTOFF)) | "  " + strenv(PKG_NAME) + "@" + $ver + "  " + .' || true
 }
-export -f _chk
-HITS=$(cut -f1 "$_F" | sort -u | xargs -P30 -I{} bash -c '_chk "{}"')
+export -f check_pkg
+bash -c 'type check_pkg' >/dev/null 2>&1 || { echo "FAIL: export -f unsupported"; exit 1; }
+HITS=$(cut -f1 "$LOCKFILE_ENTRIES" | sort -u | xargs -P30 -I{} bash -c 'check_pkg "{}"')
 if [[ -n "$HITS" ]]; then
   echo ""; echo "$HITS" | sort -rk2
-  printf '\nFAIL: packages published <%sd ago (cutoff %s). Wait or pin older.\n' "${MINIMUM_RELEASE_AGE_DAYS:-7}" "$_C"
+  printf '\nFAIL: packages published <%sd ago (cutoff %s). Wait or pin older.\n' "$DAYS" "$CUTOFF"
   exit 1
 fi
-echo "OK: $(wc -l < "$_F") lockfile entries all older than ${MINIMUM_RELEASE_AGE_DAYS:-7}d"
+echo "OK: $(wc -l < "$LOCKFILE_ENTRIES") lockfile entries all older than ${DAYS}d"
 '''
 
 ["common:check:lint"]
