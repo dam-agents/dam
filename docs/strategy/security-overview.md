@@ -14,34 +14,38 @@ nothing real for the agent to expose in the first place.
 
 ```mermaid
 flowchart LR
-  L1["<b>Identity</b><br/>every workload has a cryptographic name"]
-  L2["<b>Boundary</b><br/>the agent runs alone in its own pod"]
-  L3["<b>Network</b><br/>the kernel decides what an agent can reach"]
-  L4["<b>Credentials</b><br/>real tokens never reach the agent"]
+  L1["<b>Identity</b><br/>per-instance ServiceAccount<br/>+ SPIFFE cert via Istio mesh"]
+  L2["<b>Boundary</b><br/>agent isolated in its own pod,<br/>no ServiceAccount token mounted"]
+  L3["<b>Network</b><br/>NetworkPolicy restricts the agent's<br/>L3/L4 egress to a narrow allow-list"]
+  L4["<b>Credentials</b><br/>K8s Secrets stay outside the agent,<br/>injected on the wire under ext-authz"]
   L1 ~~~ L2 ~~~ L3 ~~~ L4
 ```
 
-**Identity.** Every workload runs as a per-instance ServiceAccount,
-and istiod stamps that SA into a SPIFFE workload certificate. Mesh
-admission decisions are made on the certificate, not on IP or port —
-a peer instance can resolve the address but its call is denied before
-it lands.
+**Identity.** Every workload runs as a per-instance Kubernetes
+ServiceAccount, and istiod stamps that SA into a SPIFFE workload
+certificate as the pod joins the Istio ambient mesh. Admission across
+the mesh is decided on the certificate's SA principal, not on IP or
+port — a peer instance can resolve the address, but the
+AuthorizationPolicy denies the call before it lands.
 
-**Boundary.** Each agent runs alone in its own pod, with its own
-kernel view, its own filesystem, and no shared address space. The
-agent has no service-account token mounted and no co-located sidecar
-to share a namespace with.
+**Boundary.** The agent runs alone in its own pod, with its own
+kernel view, its own filesystem, and no shared address space.
+`automountServiceAccountToken` is false on the pod, so there is no
+Kubernetes API token sitting in the agent's filesystem; istiod issues
+the workload cert independently. There is no co-located sidecar to
+share a namespace with.
 
 **Network.** Even if the agent process ignored `HTTPS_PROXY` and tried
-to dial external hosts directly, the kernel refuses. A per-pair
-NetworkPolicy restricts the agent's L3/L4 egress to a narrow, fixed
-allow-list — DNS, the mesh, and the single outbound path it is
-permitted to use.
+to dial external hosts directly, the kernel refuses. A Kubernetes
+NetworkPolicy restricts the agent pod's L3/L4 egress to a narrow
+allow-list — DNS, the Istio ambient data path, and the single sibling
+pod it is paired with for outbound calls.
 
-**Credentials.** Real upstream tokens never reach the agent. A
-separate process holds them and adds the credential header on the
-wire, just before the request leaves the cluster. The agent process
-never sees a real token to leak in the first place.
+**Credentials.** Real upstream tokens never reach the agent. They
+live in Kubernetes Secrets mounted into a sibling pod, which adds the
+credential header on the wire just before the request leaves the
+cluster. Every credentialed call goes through an ext-authz Check
+first, so injection is gated on per-instance authorization.
 
 ## Trust boundary
 
