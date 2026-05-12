@@ -11,33 +11,33 @@ an instance.
 ```mermaid
 flowchart TB
   L1["<b>Identity</b><br/>every workload has a cryptographic name"]
-  L2["<b>Boundary</b><br/>agent and gateway run in separate pods"]
+  L2["<b>Boundary</b><br/>the agent runs alone in its own pod"]
   L3["<b>Network</b><br/>the kernel decides what an agent can reach"]
-  L4["<b>Credentials</b><br/>real tokens never leave the gateway"]
+  L4["<b>Credentials</b><br/>real tokens never reach the agent"]
   L1 --> L2 --> L3 --> L4
 ```
 
 **Identity.** Every workload runs as a per-instance ServiceAccount,
 and istiod stamps that SA into a SPIFFE workload certificate. Mesh
 admission decisions are made on the certificate, not on IP or port —
-a peer instance can resolve the gateway's address but its call is
-denied before it lands.
+a peer instance can resolve the address but its call is denied before
+it lands.
 
-**Boundary.** Agent and gateway run as two separate pods, not as
-sidecars in one pod. The credential boundary is a pod boundary, with
-its own kernel view and no shared address space. The agent has no
-service-account token mounted and no co-located sidecar to share a
-namespace with.
+**Boundary.** Each agent runs alone in its own pod, with its own
+kernel view, its own filesystem, and no shared address space. The
+agent has no service-account token mounted and no co-located sidecar
+to share a namespace with.
 
 **Network.** Even if the agent process ignored `HTTPS_PROXY` and tried
 to dial external hosts directly, the kernel refuses. A per-pair
-agent-egress NetworkPolicy restricts L3/L4 egress to DNS, the paired
-gateway, and the mesh — so Envoy stays on the only path out.
+NetworkPolicy restricts the agent's L3/L4 egress to a narrow, fixed
+allow-list — DNS, the mesh, and the single outbound path it is
+permitted to use.
 
-**Credentials.** Real upstream tokens never leave the gateway pod.
-Envoy reads them via SDS and adds the credential header on the wire,
-just before the request exits. The agent process never sees a real
-token to leak in the first place.
+**Credentials.** Real upstream tokens never reach the agent. A
+separate process holds them and adds the credential header on the
+wire, just before the request leaves the cluster. The agent process
+never sees a real token to leak in the first place.
 
 ## Trust boundary
 
