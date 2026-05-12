@@ -35,6 +35,7 @@ import { createOAuthRefreshService } from "./modules/connections/services/oauth-
 import { createPodFilesBus } from "./modules/pod-files/bus.js";
 import { createPodFilesPublisher } from "./modules/pod-files/publisher.js";
 import { buildPodFilesRegistry } from "./modules/pod-files/registry.js";
+import { createGrantedConnectionsAdapter } from "./modules/pod-files/adapters/granted-connections.js";
 import {
   composeForksModule,
   startOnForeignReplySaga,
@@ -199,13 +200,11 @@ const podFilesRegistry = buildPodFilesRegistry({
   // Agent HOME from the helm chart. Must agree with the controller's mount
   // path; both read the same chart value.
   agentHome: config.agentHome,
-  /**
-   * Per-agent connection grants are not modelled in the K8s-Secret world:
-   * every owner-Secret is visible to every owner-instance via the
-   * controller's selector, so producers see no per-agent slice. Returning
-   * empty is a no-op for downstream registries.
-   */
-  fetchAgentGrantedConnections: async () => [],
+  // Resolves an agent's granted connection records against live K8s state
+  // (instance CM annotations for grants, owner-scoped connection Secrets
+  // for the records). Two API calls per snapshot — fine for the SSE-connect
+  // and grant-change cadence.
+  fetchAgentGrantedConnections: createGrantedConnectionsAdapter(k8sClient),
 });
 const podFilesPublisher = createPodFilesPublisher({
   bus: podFilesBus,

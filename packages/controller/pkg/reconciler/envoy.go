@@ -386,6 +386,31 @@ static_resources:
                     - name: connect
                       domains: [ "*" ]
                       routes:
+                        # Harness CONNECT: Node's fetch (NODE_USE_ENV_PROXY=1
+                        # → EnvHttpProxyAgent) tunnels plain HTTP via CONNECT
+                        # rather than absolute-URI proxying. The generic
+                        # connect_matcher below routes into the TLS-intercept
+                        # chain — wrong for a plain-HTTP target, so it RSTs.
+                        # Match harness CONNECTs by :authority and splice raw
+                        # TCP to a pinned upstream. ztunnel still encapsulates
+                        # the gateway's outbound with the per-instance SPIFFE
+                        # principal, so the waypoint policy fires the same as
+                        # on the absolute-URI route below.
+                        - match:
+                            connect_matcher: {}
+                            headers:
+                              - name: ":authority"
+                                string_match:
+                                  exact: "{{ $.HarnessAuthority }}"
+                          route:
+                            cluster: harness_passthrough
+                            upgrade_configs:
+                              - upgrade_type: CONNECT
+                                connect_config: {}
+                          typed_per_filter_config:
+                            envoy.filters.http.ext_authz:
+                              "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute
+                              disabled: true
                         - match: { connect_matcher: {} }
                           route:
                             cluster: tls_inspect_internal
@@ -637,6 +662,27 @@ static_resources:
             name: dns_cache
             dns_lookup_family: V4_PREFERRED
 
+    # Pinned TCP-passthrough upstream for harness CONNECT tunnels. STRICT_DNS
+    # so Envoy resolves at refresh cadence; the destination is fixed in
+    # config — the inner bytes after CONNECT cannot redirect Envoy elsewhere
+    # the way an inner Host header could on the absolute-URI route. ztunnel
+    # picks up the outbound TCP socket from the gateway pod and encapsulates
+    # it with the gateway's SPIFFE principal for the waypoint policy check.
+    - name: harness_passthrough
+      connect_timeout: 5s
+      type: STRICT_DNS
+      dns_lookup_family: V4_PREFERRED
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: harness_passthrough
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: {{ $.HarnessHost }}
+                      port_value: {{ $.HarnessPort }}
+
 {{- range .Routes }}
 {{- if .Credentialed }}
 
@@ -746,6 +792,8 @@ func renderEnvoyBootstrap(extAuthzInstanceID string, cfg *config.Config, routes 
 		CredentialSDSName      string
 		LeafTLSDir             string
 		HarnessAuthority       string
+		HarnessHost            string
+		HarnessPort            int
 		ExtAuthzHost           string
 		ExtAuthzPort           int
 		ExtAuthzHoldSeconds    int
@@ -759,6 +807,8 @@ func renderEnvoyBootstrap(extAuthzInstanceID string, cfg *config.Config, routes 
 		CredentialSDSName:      envoyCredentialSDSName,
 		LeafTLSDir:             envoyLeafTLSMount,
 		HarnessAuthority:       harnessAuthority,
+		HarnessHost:            cfg.HarnessHost(),
+		HarnessPort:            cfg.HarnessServerPort,
 		ExtAuthzHost:           cfg.ExtAuthzHostFor(extAuthzInstanceID),
 		ExtAuthzPort:           cfg.ExtAuthzPort,
 		ExtAuthzHoldSeconds:    cfg.ExtAuthzHoldSeconds,
@@ -849,7 +899,7 @@ func ptrBool(b bool) *bool { return &b }
 // kubelet keeps the old bootstrap mounted.
 //
 // Bump on any template change that affects pod-visible behavior.
-const envoyBootstrapTemplateRev = "v5-upstream-v4-preferred"
+const envoyBootstrapTemplateRev = "v6-harness-connect-passthrough"
 
 // envoySecretsRev is a stable digest of the Secret set that drives Envoy's
 // chain rendering: secret name + host + secret-type label + headerName,
