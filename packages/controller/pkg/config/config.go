@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 type Config struct {
@@ -122,13 +124,6 @@ func LoadFromEnv() (*Config, error) {
 	if cfg.AgentTemplateDefaults.AgentHome == "" {
 		cfg.AgentTemplateDefaults.AgentHome = cfg.AgentHome
 	}
-	// Safety floor: TerminationGracePeriod=0 means "send SIGKILL immediately"
-	// — never what we want. Helm always sets this, but a binary launched
-	// without the AGENT_BASE env var (e.g., local debugging) would otherwise
-	// inherit the zero value.
-	if cfg.AgentBase.TerminationGracePeriod == 0 {
-		cfg.AgentBase.TerminationGracePeriod = 5
-	}
 	cfg.EnvoyImage = envOrDefault("ENVOY_IMAGE", "envoyproxy/envoy:distroless-v1.37.2")
 	cfg.EnvoyPort = envOrDefaultInt("ENVOY_PORT", 10000)
 	cfg.EnvoyMitmCAIssuer = envOrDefault("ENVOY_MITM_CA_ISSUER", "platform-mitm-ca-issuer")
@@ -138,7 +133,31 @@ func LoadFromEnv() (*Config, error) {
 	cfg.ExtAuthzHoldSeconds = envOrDefaultInt("EXT_AUTHZ_HOLD_SECONDS", 1800)
 	cfg.IstioTrustDomain = envOrDefault("PLATFORM_ISTIO_TRUST_DOMAIN", "cluster.local")
 	cfg.IstioWaypointName = envOrDefault("PLATFORM_ISTIO_WAYPOINT_NAME", "apiserver-waypoint")
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
 	return cfg, nil
+}
+
+// validate fails-loud on missing/invalid chart values so the controller
+// errors at startup with a clear pointer to the broken Helm field instead
+// of panicking later inside the reconciler. Helm's bundled values.yaml
+// always satisfies these; this guards against operators clearing fields
+// (e.g. `--set controller.agent.templateDefaults.storageSize=""`).
+func (c *Config) validate() error {
+	if c.AgentBase.TerminationGracePeriod <= 0 {
+		return fmt.Errorf("controller.agent.base.terminationGracePeriod must be > 0 (got %d)", c.AgentBase.TerminationGracePeriod)
+	}
+	if c.AgentBase.AccessMode == "" {
+		return fmt.Errorf("controller.agent.base.accessMode is required")
+	}
+	if c.AgentTemplateDefaults.StorageSize == "" {
+		return fmt.Errorf("controller.agent.templateDefaults.storageSize is required")
+	}
+	if _, err := resource.ParseQuantity(c.AgentTemplateDefaults.StorageSize); err != nil {
+		return fmt.Errorf("controller.agent.templateDefaults.storageSize %q is not a valid K8s quantity: %w", c.AgentTemplateDefaults.StorageSize, err)
+	}
+	return nil
 }
 
 // APIServerURL is the harness Service URL, used by agent-runtime to dial

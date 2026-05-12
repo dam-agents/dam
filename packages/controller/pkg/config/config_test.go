@@ -36,15 +36,33 @@ func TestLoadFromEnv_Defaults(t *testing.T) {
 	assert.Equal(t, "platform-agents", cfg.Namespace)
 	assert.Equal(t, "default", cfg.ReleaseNamespace)
 	assert.Equal(t, "platform-controller", cfg.LeaseName)
-	// Defaults live in the Helm chart's values.yaml (controller.agent.base
-	// / templateDefaults). When env vars are unset, most fields stay at
-	// their zero value — the exceptions are safety floors filled in by
-	// LoadFromEnv: AgentHome and TerminationGracePeriod (to avoid an
-	// accidental SIGKILL-immediately pod).
+	// AgentHome falls through from AGENT_HOME (with its env-var default).
 	assert.Equal(t, "/home/agent", cfg.AgentTemplateDefaults.AgentHome)
-	assert.Equal(t, int64(5), cfg.AgentBase.TerminationGracePeriod)
 	// ADR-041: ext-authz host is per-instance (no shared default).
 	assert.Equal(t, "platform-extauthz-inst-1.default.svc.cluster.local", cfg.ExtAuthzHostFor("inst-1"))
+}
+
+// LoadFromEnv fails-loud when the chart-required fields are missing.
+func TestLoadFromEnv_RejectsMissingRequiredAgentBase(t *testing.T) {
+	setEnv(t, map[string]string{
+		"PLATFORM_RELEASE_NAME": "platform",
+		"POD_NAME":              "controller-0",
+		"AGENT_BASE":            `{}`, // accessMode + terminationGracePeriod missing
+	})
+	_, err := LoadFromEnv()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "terminationGracePeriod")
+}
+
+func TestLoadFromEnv_RejectsMissingStorageSize(t *testing.T) {
+	setEnv(t, map[string]string{
+		"PLATFORM_RELEASE_NAME":   "platform",
+		"POD_NAME":                "controller-0",
+		"AGENT_TEMPLATE_DEFAULTS": `{}`, // storageSize missing
+	})
+	_, err := LoadFromEnv()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "storageSize")
 }
 
 // ADR-041: per-instance ext-authz host derives from release name +
@@ -154,7 +172,7 @@ func TestLoadFromEnv_AgentBase_IdleTimeoutZero(t *testing.T) {
 	setEnv(t, map[string]string{
 		"PLATFORM_RELEASE_NAME": "platform",
 		"POD_NAME":              "controller-0",
-		"AGENT_BASE":            `{"idleTimeout": "0s"}`,
+		"AGENT_BASE":            `{"accessMode": "ReadWriteMany", "terminationGracePeriod": 5, "idleTimeout": "0s"}`,
 	})
 	cfg, err := LoadFromEnv()
 	require.NoError(t, err)
@@ -174,6 +192,15 @@ func TestLoadFromEnv_UnknownFieldRejected(t *testing.T) {
 	assert.Contains(t, err.Error(), "AGENT_BASE")
 }
 
+// Minimum AGENT_BASE / AGENT_TEMPLATE_DEFAULTS JSON that satisfies
+// Config.validate. Tests that don't override these inherit the floor;
+// tests that override AGENT_BASE / AGENT_TEMPLATE_DEFAULTS take full
+// responsibility for satisfying validation themselves.
+const (
+	minAgentBaseJSON             = `{"accessMode": "ReadWriteMany", "terminationGracePeriod": 5}`
+	minAgentTemplateDefaultsJSON = `{"storageSize": "10Gi"}`
+)
+
 func setEnv(t *testing.T, vars map[string]string) {
 	t.Helper()
 	for _, key := range []string{
@@ -185,6 +212,12 @@ func setEnv(t *testing.T, vars map[string]string) {
 	} {
 		os.Unsetenv(key)
 		t.Cleanup(func() { os.Unsetenv(key) })
+	}
+	if _, ok := vars["AGENT_BASE"]; !ok {
+		t.Setenv("AGENT_BASE", minAgentBaseJSON)
+	}
+	if _, ok := vars["AGENT_TEMPLATE_DEFAULTS"]; !ok {
+		t.Setenv("AGENT_TEMPLATE_DEFAULTS", minAgentTemplateDefaultsJSON)
 	}
 	for k, v := range vars {
 		t.Setenv(k, v)
