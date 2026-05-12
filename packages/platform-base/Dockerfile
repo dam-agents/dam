@@ -24,6 +24,10 @@ COPY packages/agent-runtime/ packages/agent-runtime/
 
 RUN pnpm --filter agent-runtime build
 
+# Materialize a flat, prod-only runtime tree from agent-runtime/package.json; strip devDeps so downstream `npm install` doesn't choke on workspace:* specifiers.
+RUN pnpm --filter agent-runtime deploy --legacy --prod --node-linker=hoisted /deploy \
+    && node -e 'const f="/deploy/package.json",p=JSON.parse(require("fs").readFileSync(f,"utf8"));delete p.devDependencies;require("fs").writeFileSync(f,JSON.stringify(p,null,2)+"\n")'
+
 # -builder base: agent images extending this need dnf+npm install at build time.
 FROM base AS runner
 
@@ -32,10 +36,10 @@ ARG GH_VERSION=2.89.0
 RUN curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${TARGETARCH}.tar.gz" \
     | tar -xz --strip-components=1 -C /usr/local
 
-COPY packages/platform-base/package.json ./
-RUN npm install --omit=dev
-
-COPY --from=builder /app/packages/agent-runtime/dist/ dist/
+COPY --from=builder /deploy/package.json ./
+COPY --from=builder /deploy/node_modules ./node_modules
+# dist/ is gitignored so pnpm deploy skips it.
+COPY --from=builder /app/packages/agent-runtime/dist/ ./dist/
 
 # ADR-037: agent-runtime spawns `/usr/local/bin/harness-chat` for chat
 # sessions and `/usr/local/bin/harness-terminal` for terminal sessions.
