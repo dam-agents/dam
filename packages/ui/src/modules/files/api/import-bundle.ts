@@ -114,6 +114,9 @@ export function topLevelOf(entries: BundleEntry[]): string[] {
  */
 const MAX_TAR_NAME_BYTES = 100;
 const MAX_TAR_PREFIX_BYTES = 155;
+// Hoisted: TextEncoder is stateless; allocating one per `writeStr` call
+// adds up across deep trees with thousands of header writes.
+const TAR_ENCODER = new TextEncoder();
 
 type UstarPath = { name: string; prefix: string };
 
@@ -163,9 +166,8 @@ function splitUstarPath(path: string, enc: TextEncoder): UstarPath | null {
  * server's `maxImportBundleBytes` cap.
  */
 export async function buildBundle(entries: BundleEntry[]): Promise<Blob> {
-  const enc = new TextEncoder();
   const splits: UstarPath[] = entries.map((ent) => {
-    const split = splitUstarPath(ent.path, enc);
+    const split = splitUstarPath(ent.path, TAR_ENCODER);
     if (!split) {
       throw new Error(`path too long for USTAR tar header (name>${MAX_TAR_NAME_BYTES}B and no /-split fits within prefix ${MAX_TAR_PREFIX_BYTES}B): ${ent.path}`);
     }
@@ -221,7 +223,7 @@ function tarHeader(path: UstarPath, size: number): Uint8Array {
 }
 
 function writeStr(buf: Uint8Array, off: number, s: string, len: number) {
-  const enc = new TextEncoder().encode(s);
+  const enc = TAR_ENCODER.encode(s);
   buf.set(enc.subarray(0, len), off);
 }
 

@@ -187,6 +187,14 @@ export function createImportHandlers(homeDir: string, log: (msg: string) => void
           return fail(statusForDomainError(finalizeResult.error), messageForDomainError(finalizeResult.error));
         }
         await rm(staging, { recursive: true, force: true }).catch(() => {});
+        // A timeout/deadline firing between extract-complete and here
+        // would have flipped `finished` and already sent a 408 — in that
+        // case the disk is in the right state (finalize ran) but the
+        // wire response is taken; don't double-write.
+        if (finished) {
+          log(`finalize committed but response already sent (likely timeout race) — skipping 200 write`);
+          return;
+        }
         finished = true;
         const { filesWritten, bytes } = extractResult.value;
         log(`import ok mode=${mode} prefix=${prefix} files=${filesWritten} bytes=${bytes} durationMs=${Date.now() - startedAt}`);

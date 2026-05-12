@@ -286,9 +286,12 @@ try {
 // request open through extract+finalize of a multi-GB tar — easily
 // >5 min on slower uploads. Disable the per-request timeout; the import
 // handler installs its own inactivity (30s) + wall-clock (30min)
-// deadlines, so a stuck connection still gets aborted.
+// deadlines, so a stuck connection still gets aborted. Keep
+// `headersTimeout` (60s) so a misbehaving client can't slow-loris the
+// header line indefinitely on other routes (/api/status, /api/trpc,
+// /healthz).
 server.requestTimeout = 0;
-server.headersTimeout = 0;
+server.headersTimeout = 60_000;
 
 server.listen(config.PORT, () => {
   process.stderr.write(`Platform on http://localhost:${config.PORT}\n`);

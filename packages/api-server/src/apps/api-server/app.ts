@@ -1,5 +1,5 @@
 import { request as httpRequest } from "node:http";
-import { Readable } from "node:stream";
+import { Readable, Transform } from "node:stream";
 import { Hono, type Context } from "hono";
 import { serve } from "@hono/node-server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
@@ -256,6 +256,16 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   // Bundle (`/import`) and preflight (`/import-preflight`) share this
   // plumbing — only the size cap differs.
   const PROXY_RESPONSE_HEADER_ALLOWLIST = new Set(["content-type", "content-length"]);
+  // RFC 7230 §6.1 hop-by-hop headers + auth — never forwarded upstream.
+  // `transfer-encoding: chunked` alongside `content-length` from a buggy
+  // or hostile client is a request-smuggling shape; strip both `te` and
+  // `transfer-encoding` so the upstream sees only a single consistent
+  // framing signal.
+  const PROXY_HOP_BY_HOP_HEADERS = new Set([
+    "host", "authorization",
+    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+    "te", "trailer", "transfer-encoding", "upgrade", "expect",
+  ]);
   type ImportCtx = Context<{ Variables: { user: UserIdentity } }>;
   async function proxyImport(c: ImportCtx, upstreamPath: string, opts: { enforceSizeCap: boolean }) {
     const user = c.get("user");
@@ -267,7 +277,10 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       // Hard byte ceiling at the proxy boundary. Requires Content-Length so
       // a chunked-encoding client can't slip past the cap. The agent-runtime
       // also has an inactivity + wall-clock deadline; together they bound
-      // stuck and unbounded streams.
+      // stuck and unbounded streams. The Content-Length header is
+      // client-supplied — we additionally enforce the cap with a streaming
+      // byte counter below, so a client lying with `Content-Length: 1`
+      // can't trickle bytes past us.
       const lengthHeader = c.req.header("content-length");
       if (!lengthHeader) {
         return c.json({ error: "Content-Length required for import upload" }, 411);
@@ -286,16 +299,26 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       return c.json({ error: `instance unreachable: ${(err as Error).message}` }, 502);
     }
     const upstreamUrl = new URL(`http://${podBaseUrl(instanceId, config.namespace)}${upstreamPath}`);
-    // Forward incoming headers minus hop-by-hop and auth — agent-runtime's
-    // NetworkPolicy is the auth boundary for this hop.
     const outHeaders: Record<string, string> = {};
     c.req.raw.headers.forEach((v, k) => {
-      const lk = k.toLowerCase();
-      if (lk === "host" || lk === "authorization" || lk === "connection") return;
+      if (PROXY_HOP_BY_HOP_HEADERS.has(k.toLowerCase())) return;
       outHeaders[k] = v;
     });
 
     return new Promise<Response>((resolve) => {
+      // Single-shot resolve guard. Without this, both the upstream
+      // response handler and the error/close handlers can race —
+      // resulting in either a double-resolve (no-op in practice but
+      // confusing) or, more importantly, a Promise that never resolves
+      // when the *client* aborts before any upstream event fires
+      // (Node may emit `close` without `error` on upstreamReq, which
+      // would otherwise dangle).
+      let resolved = false;
+      const resolveOnce = (resp: Response) => {
+        if (resolved) return;
+        resolved = true;
+        resolve(resp);
+      };
       const upstreamReq = httpRequest({
         protocol: upstreamUrl.protocol,
         hostname: upstreamUrl.hostname,
@@ -313,20 +336,50 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         // toWeb gives a Web ReadableStream backed by the IncomingMessage —
         // Hono streams this back to the client without buffering.
         const body = Readable.toWeb(upstreamRes) as ReadableStream<Uint8Array>;
-        resolve(new Response(body, { status: upstreamRes.statusCode ?? 502, headers: responseHeaders }));
+        resolveOnce(new Response(body, { status: upstreamRes.statusCode ?? 502, headers: responseHeaders }));
       });
       upstreamReq.on("error", () => {
-        resolve(c.json({ error: "instance unreachable" }, 502));
+        resolveOnce(c.json({ error: "instance unreachable" }, 502));
       });
+      upstreamReq.on("close", () => {
+        // Backstop: if the upstream socket closed without ever emitting
+        // either `response` or `error` (Node sometimes does this on
+        // mid-request aborts), the Promise would otherwise hang.
+        resolveOnce(c.json({ error: "instance closed connection" }, 502));
+      });
+
       // Pipe incoming request body straight into the upstream socket.
+      // Wrap with a Transform that counts bytes when the cap is on, so
+      // even a lying Content-Length client can't trickle past the limit.
       const incomingBody = c.req.raw.body;
       if (!incomingBody) {
         upstreamReq.end();
         return;
       }
-      Readable.fromWeb(incomingBody as unknown as Parameters<typeof Readable.fromWeb>[0])
-        .on("error", () => { try { upstreamReq.destroy(); } catch {} })
-        .pipe(upstreamReq);
+      const source = Readable.fromWeb(incomingBody as unknown as Parameters<typeof Readable.fromWeb>[0]);
+      const sink: NodeJS.WritableStream = opts.enforceSizeCap
+        ? (() => {
+            let seen = 0;
+            const cap = config.maxImportBundleBytes;
+            const counter = new Transform({
+              transform(chunk: Buffer, _enc, cb) {
+                seen += chunk.length;
+                if (seen > cap) {
+                  cb(new Error(`bundle exceeds cap ${cap}B`));
+                  return;
+                }
+                cb(null, chunk);
+              },
+            });
+            counter.on("error", () => {
+              try { upstreamReq.destroy(); } catch {}
+              resolveOnce(c.json({ error: `bundle exceeds maximum size of ${cap} bytes` }, 413));
+            });
+            counter.pipe(upstreamReq);
+            return counter;
+          })()
+        : upstreamReq;
+      source.on("error", () => { try { upstreamReq.destroy(); } catch {} }).pipe(sink);
     });
   }
   app.post("/api/instances/:id/import", (c) => proxyImport(c, "/api/import", { enforceSizeCap: true }));
@@ -421,9 +474,13 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   // Node defaults `requestTimeout` to 5 minutes — that hard-caps the
   // file-import proxy roundtrip, because we hold the request open until
   // the agent-runtime finishes extracting + finalizing the bundle, and
-  // a multi-GB tar can take well over 5 minutes end-to-end. Disable the
-  // timeout: agent-runtime enforces its own inactivity + wall-clock
-  // deadlines, so we don't lose runaway-connection protection.
+  // a multi-GB tar can take well over 5 minutes end-to-end. Disable
+  // `requestTimeout` cluster-wide; agent-runtime enforces its own
+  // inactivity + wall-clock deadlines on the import path, so we don't
+  // lose runaway-connection protection. Keep `headersTimeout` set
+  // (60s) — there's no legitimate reason any client needs longer to
+  // finish sending headers, and disabling it would expose every route
+  // on the api-server to slow-loris-style request-line dribbling.
   // @hono/node-server's ServerType is the union of http/https/http2
   // server types; cast to access the timeout fields directly.
   const nodeServer = server as unknown as {
@@ -431,7 +488,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     headersTimeout: number;
   };
   nodeServer.requestTimeout = 0;
-  nodeServer.headersTimeout = 0;
+  nodeServer.headersTimeout = 60_000;
 
   server.on("upgrade", async (req, socket, head) => {
     const url = new URL(req.url!, `http://${req.headers.host}`);

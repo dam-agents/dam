@@ -290,6 +290,16 @@ apiServer:
   # timeouts are an external ceiling — see ADR §Timeouts.
   approvalHoldSeconds: 1800
 
+  # -- Hard ceiling for file-import bundle uploads, in bytes. Enforced at
+  # the api-server proxy boundary (rejects oversized Content-Length AND
+  # destroys the upstream pipe when streamed bytes pass the cap). The
+  # default 5 GiB is generous enough for a `.git/`-bearing project import
+  # while sitting below the controller-default agent PVC of 10 GiB.
+  # **Lower this on clusters with smaller per-agent PVCs** — e.g. the
+  # bundled `claude-code` template ships with `homeMountSize: 5Gi`, so a
+  # 5 GiB import could fill the disk.
+  maxImportBundleBytes: 5368709120
+
   # -- Minimum dam CLI version this server accepts (semver, e.g. "1.2.0").
   # Empty/unset means no floor — every CLI is accepted (a soft-warn fires
   # if the CLI is behind the current server version). Set this to retire a

@@ -200,6 +200,10 @@ spec:
             {{- end }}
             - name: APPROVAL_HOLD_SECONDS
               value: {{ .Values.apiServer.approvalHoldSeconds | quote }}
+            {{- if .Values.apiServer.maxImportBundleBytes }}
+            - name: MAX_IMPORT_BUNDLE_BYTES
+              value: {{ .Values.apiServer.maxImportBundleBytes | quote }}
+            {{- end }}
             - name: TRUSTED_HOSTS_PATH
               value: /etc/platform/trusted-hosts
             # Brand — drives UI title/theme, OAuth client_name, Slack

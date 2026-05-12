@@ -41,8 +41,12 @@ export async function finalize(
   if (mode === "replace") {
     // Per-entry interleave: rm-then-rename one entry at a time so the
     // crash window is a single entry, not the entire top-level set.
-    // True atomicity would need renameat2(RENAME_EXCHANGE) which Node
-    // doesn't expose — see ADR-DRAFT-file-import "Consequences".
+    // True atomicity would need renameat2(RENAME_EXCHANGE) — a Linux
+    // syscall that atomically swaps two paths — which Node doesn't
+    // expose. There is still a tiny window per entry between `rm` and
+    // `rename` where both the old and the new copy are absent; a crash
+    // there loses that one entry. See ADR-DRAFT-file-import
+    // "Consequences" §"Atomicity, scoped".
     for (const name of topLevel) {
       await rm(join(target, name), { recursive: true, force: true });
       await rename(join(stagingDir, name), join(target, name));

@@ -1,6 +1,7 @@
 /**
  * Prefix for per-import staging directories created under the agent's home
- * dir. Shared by the extract pipeline (which creates them) and the boot
- * sweeper (which reclaims stale ones after a crash) — keep in sync.
+ * dir. The HTTP handler (`http.ts`) creates `mkdtemp(homeDir, STAGING_PREFIX)`
+ * per request; the boot sweeper (`sweeper.ts`) reclaims stale ones from
+ * earlier crashes by matching this prefix — keep the two in sync.
  */
 export const STAGING_PREFIX = ".import-staging-";
