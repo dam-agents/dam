@@ -64,8 +64,7 @@ instance's egress rules and answers allow, deny, or hold-open. A
 held-open Check waits while the owner approves or denies the egress
 from the inbox in the UI; if the verdict is deny — or none arrives —
 the Check fails closed and the agent gets a 403 with no credential
-ever injected. Fork pairs (per-turn Slack threads) get their own
-ServiceAccount and narrower policies on top.
+ever injected.
 
 ## Threats and mitigations
 
@@ -76,7 +75,6 @@ ServiceAccount and narrower policies on top.
 | Agent reaches a peer instance's gateway | Per-instance AuthorizationPolicy denies traffic from any non-matching ServiceAccount |
 | Agent bypasses the proxy to call external hosts directly | Per-pair agent-egress NetworkPolicy restricts L3/L4 egress to DNS, the paired gateway, and the ambient mesh |
 | Route-confusion exfil through the gateway | Per-host Envoy filter chains pinned to each credential's host, with SAN-bound upstream TLS validation |
-| Cross-tenant fork access to parent surface | Per-fork ServiceAccount; fork policies admit only the parent's MCP path |
 | Direct pod-IP bypass of the api-server | Pod-level DENY AuthorizationPolicy admits only the waypoint's SA (harness) or a per-instance SA (ext-authz) |
 
 ## See also
