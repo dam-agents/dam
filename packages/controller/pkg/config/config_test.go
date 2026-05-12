@@ -36,12 +36,13 @@ func TestLoadFromEnv_Defaults(t *testing.T) {
 	assert.Equal(t, "platform-agents", cfg.Namespace)
 	assert.Equal(t, "default", cfg.ReleaseNamespace)
 	assert.Equal(t, "platform-controller", cfg.LeaseName)
-	// No Go-side defaults — defaults live in the Helm chart's values.yaml
-	// (`controller.agent.base` / `templateDefaults`). When the env vars
-	// are unset entirely the zero values are what we get.
-	assert.Equal(t, AgentBase{}, cfg.AgentBase)
-	// AgentHome falls back to its env-var default.
+	// Defaults live in the Helm chart's values.yaml (controller.agent.base
+	// / templateDefaults). When env vars are unset, most fields stay at
+	// their zero value — the exceptions are safety floors filled in by
+	// LoadFromEnv: AgentHome and TerminationGracePeriod (to avoid an
+	// accidental SIGKILL-immediately pod).
 	assert.Equal(t, "/home/agent", cfg.AgentTemplateDefaults.AgentHome)
+	assert.Equal(t, int64(5), cfg.AgentBase.TerminationGracePeriod)
 	// ADR-041: ext-authz host is per-instance (no shared default).
 	assert.Equal(t, "platform-extauthz-inst-1.default.svc.cluster.local", cfg.ExtAuthzHostFor("inst-1"))
 }

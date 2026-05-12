@@ -122,6 +122,13 @@ func LoadFromEnv() (*Config, error) {
 	if cfg.AgentTemplateDefaults.AgentHome == "" {
 		cfg.AgentTemplateDefaults.AgentHome = cfg.AgentHome
 	}
+	// Safety floor: TerminationGracePeriod=0 means "send SIGKILL immediately"
+	// — never what we want. Helm always sets this, but a binary launched
+	// without the AGENT_BASE env var (e.g., local debugging) would otherwise
+	// inherit the zero value.
+	if cfg.AgentBase.TerminationGracePeriod == 0 {
+		cfg.AgentBase.TerminationGracePeriod = 5
+	}
 	cfg.EnvoyImage = envOrDefault("ENVOY_IMAGE", "envoyproxy/envoy:distroless-v1.37.2")
 	cfg.EnvoyPort = envOrDefaultInt("ENVOY_PORT", 10000)
 	cfg.EnvoyMitmCAIssuer = envOrDefault("ENVOY_MITM_CA_ISSUER", "platform-mitm-ca-issuer")

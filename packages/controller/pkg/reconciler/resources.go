@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"fmt"
+	"log/slog"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -164,12 +165,20 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 			if storageSize == "" {
 				storageSize = defaults.StorageSize
 			}
+			storageQty, err := resource.ParseQuantity(storageSize)
+			if err != nil {
+				// Degenerate chart config (storageSize=""). Skip the PVC so the
+				// pod fails to start with a missing-volume error instead of
+				// panicking the reconciler. Helm always sets storageSize, so
+				// this only fires when an operator explicitly clears it.
+				slog.Error("agent storageSize invalid; skipping PVC",
+					"instance", name, "mount", path, "size", storageSize, "err", err)
+				continue
+			}
 			pvcSpec := corev1.PersistentVolumeClaimSpec{
 				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.PersistentVolumeAccessMode(base.AccessMode)},
 				Resources: corev1.VolumeResourceRequirements{
-					Requests: corev1.ResourceList{
-						corev1.ResourceStorage: resource.MustParse(storageSize),
-					},
+					Requests: corev1.ResourceList{corev1.ResourceStorage: storageQty},
 				},
 			}
 			if base.StorageClass != "" {
