@@ -39,25 +39,35 @@ flowchart LR
 
   subgraph pair[Instance pair]
     agent[agent pod]
-    gw["gateway pod<br/>Envoy + ext-authz"]
+    gw["gateway pod<br/>Envoy"]
   end
 
   user -->|OIDC JWT| api
   agent -->|HTTPS_PROXY| gw
   gw -->|harness call| api
-  gw -->|inject credential| ext
+  gw -->|ext-authz Check<br/>per credentialed request| api
+  api -->|"allow · deny · hold for HITL"| gw
+  user -.->|verdict from inbox| api
+  gw -->|inject credential on allow| ext
 ```
 
 Three AuthorizationPolicies per instance form the cryptographic
-boundary. The gateway pod admits only its own pair's
-ServiceAccount — agents in other instances can resolve the gateway's
-address but the call is denied at the mesh. The api-server's harness
-path admits the per-instance ServiceAccount only to its own
-`/api/instances/<id>/*` prefix. And the per-instance ext-authz Service
-admits only the matching ServiceAccount, so by the time a HITL check
-arrives the calling instance is already proven cryptographically. Fork
-pairs (per-turn Slack threads) get their own ServiceAccount and a
-narrower set of policies on top.
+boundary: gateway admission, the harness path on the api-server, and
+the per-instance ext-authz Service. Each is keyed on the per-instance
+ServiceAccount, so peer instances are denied at the mesh — they can
+resolve the address but the call never lands.
+
+On top of that boundary, every credentialed request runs through a
+second gate. An Envoy filter on the gateway makes a gRPC ext-authz
+Check to the api-server before injecting a credential, with the
+calling instance proven cryptographically by the ServiceAccount on
+the connection. The api-server matches the request against the
+instance's egress rules and answers allow, deny, or hold-open. A
+held-open Check waits while the owner approves or denies the egress
+from the inbox in the UI; if the verdict is deny — or none arrives —
+the Check fails closed and the agent gets a 403 with no credential
+ever injected. Fork pairs (per-turn Slack threads) get their own
+ServiceAccount and narrower policies on top.
 
 ## Threats and mitigations
 
