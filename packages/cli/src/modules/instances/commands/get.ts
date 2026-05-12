@@ -85,7 +85,9 @@ function renderInstance(instance: Instance): string {
   lines.push(`STATE:       ${instance.state}`);
   if (instance.description) lines.push(`DESCRIPTION: ${instance.description}`);
   lines.push(`CHANNELS:    ${renderChannels(instance.channels)}`);
-  lines.push(`ALLOWED:     ${instance.allowedUserEmails.join(", ")}`);
+  lines.push(
+    `ALLOWED:     ${instance.allowedUserEmails.length === 0 ? "<none>" : instance.allowedUserEmails.join(", ")}`,
+  );
   if (instance.state === "error" && instance.error) {
     lines.push(`ERROR:       ${instance.error}`);
   }
@@ -93,7 +95,7 @@ function renderInstance(instance: Instance): string {
 }
 
 function renderChannels(channels: readonly ChannelConfig[]): string {
-  if (channels.length === 0) return "";
+  if (channels.length === 0) return "<none>";
   return channels
     .map((c) => {
       if (c.type === ChannelType.Slack) return `slack(${c.slackChannelId})`;
