@@ -12,16 +12,16 @@ import {
  * the resolver and command layers never see thrown errors.
  *
  * Mapping:
- *   - `AuthRequiredAtTransportError` from the trpc-client adapter →
- *     `AuthRequiredError` (the request never reached the wire).
- *   - tRPC `NOT_FOUND` on `get` → `Result.ok(null)` (matches the
+ *   - `AuthRequiredAtTransportError` (carried as the trpc-client error's
+ *     `cause`) → `AuthRequiredError`. The request never reached the wire.
+ *   - tRPC `NOT_FOUND` on `get` → `Result.ok(null)`. Matches the
  *     api-server's `instances.get` semantics where a missing instance
- *     is a normal, non-error response). The resolver decides how to
+ *     is a normal, non-error response; the resolver decides how to
  *     report this to the user.
  *   - Any other thrown error → `TransportError` carrying a message.
  *
  * The service has no business rules of its own; centralising it gives
- * the resolver (issue 3) and the two commands (issue 3) a single seam.
+ * the resolver and the two commands a single seam.
  */
 
 export interface InstancesService {
@@ -40,12 +40,6 @@ export function createInstancesService(deps: InstancesServiceDeps): InstancesSer
     const sentinel = findAuthSentinel(e);
     if (sentinel) {
       return err({ kind: "auth-required", reason: sentinel.message });
-    }
-    if (isTrpcClientError(e) && hasCode(e, "UNAUTHORIZED")) {
-      // The server rejected the bearer outright. Surfaces as
-      // `auth-required` so the command layer points the user at
-      // `dam auth login` instead of a generic transport message.
-      return err({ kind: "auth-required", reason: tRpcMessage(e) });
     }
     return err({ kind: "transport", reason: errorReason(e) });
   }
@@ -78,35 +72,19 @@ export function createInstancesService(deps: InstancesServiceDeps): InstancesSer
         const value = await deps.trpc.instances.get.query({ id });
         return ok(value as Instance);
       } catch (e) {
-        if (isTrpcClientError(e) && hasCode(e, "NOT_FOUND")) {
-          return ok(null);
-        }
+        if (hasTrpcCode(e, "NOT_FOUND")) return ok(null);
         return classify(e);
       }
     },
   };
 }
 
-interface TRPCClientErrorLike {
-  message: string;
-  data?: { code?: string };
-}
-
-function isTrpcClientError(e: unknown): e is TRPCClientErrorLike {
+function hasTrpcCode(e: unknown, code: string): boolean {
   return (
     typeof e === "object"
     && e !== null
-    && "message" in e
-    && typeof (e as { message: unknown }).message === "string"
+    && (e as { data?: { code?: string } }).data?.code === code
   );
-}
-
-function hasCode(e: TRPCClientErrorLike, code: string): boolean {
-  return e.data?.code === code;
-}
-
-function tRpcMessage(e: TRPCClientErrorLike): string {
-  return e.message || "request rejected";
 }
 
 function errorReason(e: unknown): string {

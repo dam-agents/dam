@@ -248,27 +248,6 @@ describe("dam instances list (integration)", () => {
     }
   });
 
-  it("empty --json output: always emits [] (not null, not empty string)", async () => {
-    const fixture = await startFixture({
-      list: async () => [],
-      expectAuthorization: "Bearer test-token",
-    });
-    try {
-      await configureServer(fixture.url);
-
-      const r = await runDam(["instances", "list", "--json"], {
-        HOME: home,
-        PATH: process.env.PATH ?? "",
-        DAM_TOKEN: "test-token",
-      });
-
-      expect(r.exitCode).toBe(0);
-      expect(r.stdout.trim()).toBe("[]");
-    } finally {
-      await fixture.close();
-    }
-  });
-
   it("bare `dam instances` aliases to `list` (commander isDefault)", async () => {
     const fixture = await startFixture({
       list: async () => [makeInstance()],

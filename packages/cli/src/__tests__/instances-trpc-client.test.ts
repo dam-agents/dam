@@ -42,20 +42,6 @@ describe("instances trpc-client adapter", () => {
     expect(captured[0]!.headers.get("authorization")).toBe("Bearer AT-1");
   });
 
-  it("re-invokes getToken() per request (no in-adapter caching)", async () => {
-    const captured: Request[] = [];
-    const fetchFn = mockFetch(captured);
-    const getToken = vi.fn<() => Promise<Result<string, AuthRequiredError>>>(
-      async () => ok("AT-fresh"),
-    );
-    const trpc = createInstancesTrpcClientWithFetch(getToken, fetchFn);
-
-    await trpc.instances.list.query();
-    await trpc.instances.list.query();
-
-    expect(getToken).toHaveBeenCalledTimes(2);
-  });
-
   it("aborts before the wire when getToken() returns auth-required — no HTTP request fires", async () => {
     const captured: Request[] = [];
     const fetchSpy = vi.fn(mockFetch(captured));

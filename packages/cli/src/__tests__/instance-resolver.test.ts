@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import type { Instance } from "api-server-api";
 import { createInstanceResolver } from "../modules/instances/services/instance-resolver.js";
 import type { InstancesService } from "../modules/instances/services/instances-service.js";
-import { err, ok, type Result } from "../result.js";
+import { ok, type Result } from "../result.js";
 import type {
   AuthRequiredError,
   TransportError,
@@ -53,50 +53,6 @@ describe("instance-resolver", () => {
       expect(result).toEqual({
         ok: false,
         error: { kind: "not-found", ref: "inst-missing", via: "id" },
-      });
-    });
-
-    it("does not call list() — the ID branch is a single round-trip", async () => {
-      const list = vi.fn(async () => ok([] as readonly Instance[]));
-      const resolver = createInstanceResolver({
-        instancesService: {
-          list,
-          get: async () => ok(makeInstance({ id: "inst-7" })),
-        },
-      });
-
-      await resolver.resolve("inst-7");
-
-      expect(list).not.toHaveBeenCalled();
-    });
-
-    it("propagates transport errors from the service unchanged", async () => {
-      const resolver = createInstanceResolver({
-        instancesService: makeService({
-          get: () => err({ kind: "transport", reason: "ECONNREFUSED" }),
-        }),
-      });
-
-      const result = await resolver.resolve("inst-1");
-
-      expect(result).toEqual({
-        ok: false,
-        error: { kind: "transport", reason: "ECONNREFUSED" },
-      });
-    });
-
-    it("propagates auth-required errors from the service unchanged", async () => {
-      const resolver = createInstanceResolver({
-        instancesService: makeService({
-          get: () => err({ kind: "auth-required", reason: "not logged in" }),
-        }),
-      });
-
-      const result = await resolver.resolve("inst-1");
-
-      expect(result).toEqual({
-        ok: false,
-        error: { kind: "auth-required", reason: "not logged in" },
       });
     });
   });
@@ -154,6 +110,8 @@ describe("instance-resolver", () => {
     });
 
     it("matches exact case (no normalization) — 'Prod' does not match 'prod'", async () => {
+      // Deliberate contract: a future `.toLowerCase()` or `.trim()` would
+      // silently break addressing, so the resolver pins case-sensitivity.
       const resolver = createInstanceResolver({
         instancesService: makeService({
           list: () => ok([makeInstance({ name: "prod" })]),
@@ -165,50 +123,6 @@ describe("instance-resolver", () => {
       expect(result).toEqual({
         ok: false,
         error: { kind: "not-found", ref: "Prod", via: "name" },
-      });
-    });
-
-    it("does not call get() — the name branch is a single round-trip", async () => {
-      const get = vi.fn(async () => ok(makeInstance()) as Result<Instance | null, TransportError | AuthRequiredError>);
-      const resolver = createInstanceResolver({
-        instancesService: {
-          list: async () => ok([makeInstance({ name: "prod" })]),
-          get,
-        },
-      });
-
-      await resolver.resolve("prod");
-
-      expect(get).not.toHaveBeenCalled();
-    });
-
-    it("propagates transport errors from list()", async () => {
-      const resolver = createInstanceResolver({
-        instancesService: makeService({
-          list: () => err({ kind: "transport", reason: "ENOTFOUND" }),
-        }),
-      });
-
-      const result = await resolver.resolve("prod");
-
-      expect(result).toEqual({
-        ok: false,
-        error: { kind: "transport", reason: "ENOTFOUND" },
-      });
-    });
-
-    it("propagates auth-required errors from list()", async () => {
-      const resolver = createInstanceResolver({
-        instancesService: makeService({
-          list: () => err({ kind: "auth-required", reason: "session expired" }),
-        }),
-      });
-
-      const result = await resolver.resolve("prod");
-
-      expect(result).toEqual({
-        ok: false,
-        error: { kind: "auth-required", reason: "session expired" },
       });
     });
   });

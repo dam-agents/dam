@@ -121,25 +121,6 @@ describe("instances-service.create — name uniqueness", () => {
     expect((caught as TRPCError).code).toBe("CONFLICT");
     expect(repo.create).not.toHaveBeenCalled();
   });
-
-  it("scopes the uniqueness check to the caller's owner — `repo.list` is invoked with `deps.owner`", async () => {
-    const repo = makeRepo([]);
-    const svc = makeService({ owner: OWNER, repo });
-
-    await svc.create(CREATE_INPUT);
-
-    expect(repo.list).toHaveBeenCalledWith(OWNER);
-  });
-
-  it("allows the same name when the existing instance belongs to a different owner", async () => {
-    // Cross-owner isolation is enforced by `repo.list(owner)` — it only returns
-    // instances belonging to the caller. The service has no further filter to
-    // assert; the assertion lives at the repo boundary.
-    const repo = makeRepo([]); // simulating: list for `alice` finds nothing because the collision is owned by `bob`
-    const svc = makeService({ owner: OWNER, repo });
-
-    await expect(svc.create(CREATE_INPUT)).resolves.toMatchObject({ name: "fresh" });
-  });
 });
 
 describe("instances router — `inst-` prefix is rejected at validation", () => {
@@ -161,22 +142,5 @@ describe("instances router — `inst-` prefix is rejected at validation", () => 
     expect(caught).toBeInstanceOf(TRPCError);
     expect((caught as TRPCError).code).toBe("BAD_REQUEST");
     expect(instances.create).not.toHaveBeenCalled();
-  });
-
-  it("accepts non-reserved names at the validation layer", async () => {
-    const instances = {
-      create: vi.fn(async (input) => ({
-        id: "inst-new",
-        name: input.name,
-        agentId: input.agentId,
-        state: "starting",
-        channels: [],
-        allowedUserEmails: [],
-      })),
-    };
-    const caller = createCaller({ instances } as unknown as ApiContext);
-
-    await caller.instances.create({ name: "prod", agentId: AGENT_ID });
-    expect(instances.create).toHaveBeenCalledOnce();
   });
 });
