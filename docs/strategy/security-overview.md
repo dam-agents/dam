@@ -7,10 +7,10 @@ from the credentials they use to reach external services.
 
 ```mermaid
 flowchart LR
-  L1["<b>Identity</b><br/>per-instance ServiceAccount<br/>+ SPIFFE cert via Istio mesh"]
-  L2["<b>Boundary</b><br/>agent isolated in its own container,<br/>no SA-token mounted on the pod"]
-  L3["<b>Network</b><br/>NetworkPolicy + AuthorizationPolicy<br/>at L3, L4, and L7"]
-  L4["<b>Credentials</b><br/>K8s Secrets stay outside the agent,<br/>injected on the wire after authz"]
+  L1["<b>Identity</b><br/>SPIFFE cert via Istio mesh"]
+  L2["<b>Boundary</b><br/>Agent isolated in its own container"]
+  L3["<b>Network</b><br/>NetworkPolicy + AuthorizationPolicy"]
+  L4["<b>Credentials</b><br/>Injected on egress"]
   L1 ~~~ L2 ~~~ L3 ~~~ L4
 ```
 
