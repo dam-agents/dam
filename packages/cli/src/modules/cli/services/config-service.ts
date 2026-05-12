@@ -6,7 +6,7 @@ import type {
   MalformedConfigError,
   MissingConfigError,
 } from "../domain/errors.js";
-import type { Result } from "../domain/result.js";
+import type { Result } from "../../../result.js";
 import type { ConfigStore } from "../infrastructure/config-store.js";
 import type { EnvReader } from "../infrastructure/env-reader.js";
 

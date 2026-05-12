@@ -1,5 +1,5 @@
 import { setTimeout as sleep } from "node:timers/promises";
-import { err, ok, type Result } from "../../cli/domain/result.js";
+import { err, ok, type Result } from "../../../result.js";
 import type {
   CompatService,
   ConfigService,
@@ -31,9 +31,10 @@ import type { TokenEndpointClient } from "../infrastructure/token-endpoint-clien
 export interface LoginOk {
   host: HostUrl;
   username: string;
-  /** Set when the CompatService verdict was `behind-current` — non-fatal,
-   *  but the command layer surfaces it to stderr. */
-  serverVersionWarning?: string;
+  /** Non-fatal warnings to surface to stderr — compat verdict
+   *  `behind-current`, config-persist failures, missing identity claims.
+   *  Empty on the clean happy path. */
+  warnings: ReadonlyArray<string>;
   /** True when the browser was opened on the user's behalf. */
   openedBrowser: boolean;
   /** The Keycloak device-flow `verification_uri_complete` — surfaced so
@@ -237,7 +238,7 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
         const desc = describeCompatError(compat.error);
         return err({ kind: "preflight", reason: desc.reason, detail: desc.detail });
       }
-      let serverVersionWarning: string | undefined;
+      const warnings: string[] = [];
       switch (compat.value.kind) {
         case "below-floor":
           return err({
@@ -246,7 +247,9 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
             serverMinClient: compat.value.serverMinClient,
           });
         case "behind-current":
-          serverVersionWarning = `CLI ${compat.value.localCli} is behind server ${compat.value.serverVersion}`;
+          warnings.push(
+            `CLI ${compat.value.localCli} is behind server ${compat.value.serverVersion}`,
+          );
           break;
         case "ok":
           break;
@@ -299,7 +302,6 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
       // back with `expired-token` via the pre-check.
       // Outer loop calls sleep(interval) before each token-endpoint hit.
       // The first iteration sleeps `interval` per RFC 8628 §3.4.
-      // eslint-disable-next-line no-constant-condition
       while (true) {
         await sleepMs(intervalSeconds * 1000);
         const tokenResult = await deps.tokenEndpointClient.exchangeDeviceCode({
@@ -331,12 +333,25 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
         // 7. Success.
         const tokens = step.tokens;
         const payload = decodeJwtPayload(tokens.accessToken);
-        const username = stringField(payload, "preferred_username") ?? "(unknown)";
-        const sub = stringField(payload, "sub") ?? "";
+        const rawUsername = stringField(payload, "preferred_username");
+        const rawSub = stringField(payload, "sub");
+        const username = rawUsername ?? "(unknown)";
+        const sub = rawSub ?? "";
+        if (rawUsername === undefined) {
+          warnings.push(
+            "access token has no preferred_username claim; status will show '(unknown)'",
+          );
+        }
+        if (rawSub === undefined) {
+          warnings.push(
+            "access token has no sub claim; identity is not pinned to a stable user id",
+          );
+        }
         const hostAuth: HostAuth = {
           issuer: cfg.value.issuer,
           username,
           sub,
+          cliClientId: cfg.value.cliClientId,
           accessToken: tokens.accessToken,
           refreshToken: tokens.refreshToken,
           expiresAt: new Date(now().getTime() + tokens.expiresIn * 1000),
@@ -351,16 +366,16 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
             input.persistServer,
           );
           if (!cfgWrite.ok && cfgWrite.error.kind === "file-write") {
-            // Non-fatal: the login worked. Surface via a warning in the
-            // ok payload so the command layer can still print it.
-            serverVersionWarning =
-              `${serverVersionWarning ?? ""}; failed to update config.toml: ${cfgWrite.error.reason}`.trim();
+            // Non-fatal: the login worked. Surface as a separate warning.
+            warnings.push(
+              `failed to update config.toml: ${cfgWrite.error.reason}`,
+            );
           }
         }
         return ok({
           host: input.host,
           username,
-          serverVersionWarning,
+          warnings,
           openedBrowser,
           verificationUri:
             auth.value.verificationUriComplete ?? auth.value.verificationUri,
@@ -379,18 +394,18 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
         return ok({ host, revoked: false, alreadyLoggedOut: true });
       }
 
-      // Best-effort revocation. Discovery needs to succeed to find the
-      // revocation endpoint; if discovery fails we still clear locally
-      // and surface the warning.
+      // Best-effort revocation. Uses the cliClientId persisted at login,
+      // so an operator rotating `keycloak.cliClientId` between login and
+      // logout doesn't silently produce wrong-client revocations.
+      // Discovery still needs to succeed to find the revocation endpoint;
+      // if it fails we clear locally and surface the warning.
       let revoked = false;
       let revokeWarning: string | undefined;
       const oidc = await deps.oidcDiscovery.discover(entry.issuer);
       if (oidc.ok) {
-        const cfg = await deps.authConfigProbe.probe(host);
-        const clientId = cfg.ok ? cfg.value.cliClientId : "platform-cli";
         const revoke = await deps.revokeClient.revoke({
           revocationEndpoint: oidc.value.revocationEndpoint,
-          clientId,
+          clientId: entry.cliClientId,
           refreshToken: entry.refreshToken,
         });
         if (revoke.ok) {

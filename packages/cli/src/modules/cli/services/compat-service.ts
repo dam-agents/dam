@@ -6,7 +6,7 @@ import type {
   MissingConfigError,
   ProbeError,
 } from "../domain/errors.js";
-import { ok, type Result } from "../domain/result.js";
+import { ok, type Result } from "../../../result.js";
 import type { VersionProbe } from "../infrastructure/version-probe.js";
 import type { ConfigService } from "./config-service.js";
 

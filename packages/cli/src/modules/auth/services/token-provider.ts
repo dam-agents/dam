@@ -1,4 +1,4 @@
-import { err, ok, type Result } from "../../cli/domain/result.js";
+import { err, ok, type Result } from "../../../result.js";
 import type { HostAuth } from "../domain/host-auth.js";
 import { isWithinRefreshBuffer } from "../domain/host-auth.js";
 import type { TokenProviderError } from "../domain/errors.js";
@@ -25,12 +25,13 @@ export interface TokenProvider {
   getValidAccessToken(host: HostUrl): Promise<Result<string, TokenProviderError>>;
 }
 
-/** Resolves discovery results for a host. Issue 6 wires this from the
- *  cached auth-config + OIDC discovery payloads. */
+/** Resolves the token endpoint for a host via OIDC discovery. The
+ *  `cliClientId` used at refresh is read from the stored HostAuth, not
+ *  re-probed here — see `auth-service.ts` for the login-time persist. */
 export interface HostMetadataResolver {
   resolve(host: HostUrl): Promise<
     Result<
-      { tokenEndpoint: string; cliClientId: string },
+      { tokenEndpoint: string },
       { kind: "refresh-failed"; host: HostUrl; reason: string }
     >
   >;
@@ -75,7 +76,7 @@ export function createTokenProvider(deps: TokenProviderDeps): TokenProvider {
 
       const refreshResult = await deps.tokenEndpointClient.refresh({
         tokenEndpoint: metaResult.value.tokenEndpoint,
-        clientId: metaResult.value.cliClientId,
+        clientId: hostAuth.cliClientId,
         refreshToken: hostAuth.refreshToken,
       });
 
@@ -115,6 +116,7 @@ export function createTokenProvider(deps: TokenProviderDeps): TokenProvider {
         issuer: hostAuth.issuer,
         username: hostAuth.username,
         sub: hostAuth.sub,
+        cliClientId: hostAuth.cliClientId,
         accessToken: body.access_token,
         refreshToken: body.refresh_token,
         expiresAt: new Date(now().getTime() + body.expires_in * 1000),

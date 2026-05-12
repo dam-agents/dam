@@ -10,6 +10,9 @@ export interface HostAuth {
   issuer: string;
   username: string;
   sub: string;
+  /** Public OAuth client id used at login; persisted so refresh/logout
+   *  use the same client id without re-probing `/api/auth/config`. */
+  cliClientId: string;
   accessToken: string;
   refreshToken: string;
   expiresAt: Date;

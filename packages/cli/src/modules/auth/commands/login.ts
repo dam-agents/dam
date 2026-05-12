@@ -53,27 +53,34 @@ export function buildLoginCommand(deps: LoginCommandDeps): Command {
       // Re-login confirm prompt is owned by the command — service only
       // signals whether `--force` is required.
       const isTty = Boolean(process.stdin.isTTY);
-      const initial = await deps.authService.login({
-        host,
-        openBrowser: opts.browser !== false,
-        force: opts.force ?? false,
-        isTty,
-        persistServer: opts.server,
-        onPromptUser: ({ userCode, verificationUri, openedBrowser }) => {
-          process.stdout.write(
-            `Open this URL in a browser to authorize:\n  ${verificationUri}\n`,
-          );
-          process.stdout.write(`Confirm the user code:\n  ${userCode}\n\n`);
-          if (openedBrowser) {
-            process.stdout.write("Opened your browser. Waiting for authorization...\n");
-          } else {
-            process.stdout.write("Waiting for authorization...\n");
-          }
-        },
-      });
+      const onPromptUser = (info: {
+        userCode: string;
+        verificationUri: string;
+        openedBrowser: boolean;
+      }): void => {
+        process.stdout.write(
+          `Open this URL in a browser to authorize:\n  ${info.verificationUri}\n`,
+        );
+        process.stdout.write(`Confirm the user code:\n  ${info.userCode}\n\n`);
+        process.stdout.write(
+          info.openedBrowser
+            ? "Opened your browser. Waiting for authorization...\n"
+            : "Waiting for authorization...\n",
+        );
+      };
+      const attemptLogin = (force: boolean) =>
+        deps.authService.login({
+          host: host!,
+          openBrowser: opts.browser !== false,
+          force,
+          isTty,
+          persistServer: opts.server,
+          onPromptUser,
+        });
+
+      let result = await attemptLogin(opts.force ?? false);
 
       // Handle re-login confirm — retry with force after user agreement.
-      let result = initial;
       if (!result.ok && result.error.kind === "aborted") {
         const rl = createInterface({ input: process.stdin, output: process.stderr });
         const answer = (await rl.question(
@@ -84,24 +91,7 @@ export function buildLoginCommand(deps: LoginCommandDeps): Command {
           process.stdout.write("Aborted.\n");
           process.exit(EXIT_AUTH_SUCCESS_OR_ABORT);
         }
-        result = await deps.authService.login({
-          host,
-          openBrowser: opts.browser !== false,
-          force: true,
-          isTty,
-          persistServer: opts.server,
-          onPromptUser: ({ userCode, verificationUri, openedBrowser }) => {
-            process.stdout.write(
-              `Open this URL in a browser to authorize:\n  ${verificationUri}\n`,
-            );
-            process.stdout.write(`Confirm the user code:\n  ${userCode}\n\n`);
-            if (openedBrowser) {
-              process.stdout.write("Opened your browser. Waiting for authorization...\n");
-            } else {
-              process.stdout.write("Waiting for authorization...\n");
-            }
-          },
-        });
+        result = await attemptLogin(true);
       }
 
       if (!result.ok) {
@@ -109,8 +99,8 @@ export function buildLoginCommand(deps: LoginCommandDeps): Command {
         process.exit(exitCodeFor(result.error));
       }
 
-      if (result.value.serverVersionWarning) {
-        process.stderr.write(`warning: ${result.value.serverVersionWarning}\n`);
+      for (const w of result.value.warnings) {
+        process.stderr.write(`warning: ${w}\n`);
       }
       process.stdout.write(
         `✓ Logged in to ${result.value.host} as ${result.value.username}\n`,

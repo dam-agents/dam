@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Config } from "../modules/cli/domain/config.js";
-import { ok, type Result } from "../modules/cli/domain/result.js";
+import { ok, type Result } from "../result.js";
 import type {
   FileWriteError,
   MalformedConfigError,

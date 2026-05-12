@@ -29,7 +29,7 @@ import {
 } from "./services/token-provider.js";
 import type { AuthConfig } from "./infrastructure/auth-config-probe.js";
 import type { OidcMetadata } from "./infrastructure/oidc-discovery.js";
-import { ok } from "../cli/domain/result.js";
+import { ok } from "../../result.js";
 
 export interface AuthModuleOptions {
   authPath?: string;
@@ -46,18 +46,16 @@ export interface AuthModule {
 }
 
 /**
- * Caches discovery results per CLI invocation. The TokenProvider needs
- * to know the `tokenEndpoint` and `cliClientId` for each host it sees,
- * but it has no way to call /api/auth/config + /.well-known itself
- * without re-introducing the inverse coupling. So compose owns a small
- * map populated by AuthService when login/logout run, and TokenProvider
- * reads from it for refresh.
+ * Resolves the token endpoint for a host on demand. Used only by the
+ * TokenProvider during refresh — the AuthService runs its own probe path
+ * during login. Caches per CLI invocation; `cliClientId` is read from
+ * the stored HostAuth, not re-probed here.
  */
-function createDiscoveryCache(
+function createTokenEndpointResolver(
   authConfigProbe: ReturnType<typeof createAuthConfigProbe>,
   oidcDiscovery: ReturnType<typeof createOidcDiscovery>,
 ): HostMetadataResolver {
-  const cache = new Map<string, { tokenEndpoint: string; cliClientId: string }>();
+  const cache = new Map<string, { tokenEndpoint: string }>();
   return {
     async resolve(host) {
       const cached = cache.get(host);
@@ -66,28 +64,17 @@ function createDiscoveryCache(
       if (!cfg.ok) {
         return {
           ok: false,
-          error: {
-            kind: "refresh-failed",
-            host,
-            reason: cfg.error.message,
-          },
+          error: { kind: "refresh-failed", host, reason: cfg.error.message },
         };
       }
       const oidc = await oidcDiscovery.discover(cfg.value.issuer);
       if (!oidc.ok) {
         return {
           ok: false,
-          error: {
-            kind: "refresh-failed",
-            host,
-            reason: oidc.error.message,
-          },
+          error: { kind: "refresh-failed", host, reason: oidc.error.message },
         };
       }
-      const value = {
-        tokenEndpoint: oidc.value.tokenEndpoint,
-        cliClientId: cfg.value.cliClientId,
-      };
+      const value = { tokenEndpoint: oidc.value.tokenEndpoint };
       cache.set(host, value);
       return ok(value);
     },
@@ -107,7 +94,7 @@ export function composeAuthModule(opts: AuthModuleOptions): AuthModule {
   const revokeClient = createRevokeClient();
   const browserOpener = createBrowserOpener();
 
-  const hostMetadata = createDiscoveryCache(authConfigProbe, oidcDiscovery);
+  const hostMetadata = createTokenEndpointResolver(authConfigProbe, oidcDiscovery);
 
   const tokenProvider = createTokenProvider({
     authStore,

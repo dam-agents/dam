@@ -280,13 +280,18 @@ describe.runIf(true)("dam auth login (integration vs local k3s Keycloak)", () =>
 
     const tomlContent = await readFile(authPath, "utf-8");
     const parsed = parseToml(tomlContent) as {
-      hosts?: Record<string, { access_token?: string; refresh_token?: string }>;
+      hosts?: Record<string, {
+        access_token?: string;
+        refresh_token?: string;
+        cli_client_id?: string;
+      }>;
     };
     expect(parsed.hosts).toBeDefined();
     const entry = parsed.hosts?.[API_BASE];
     expect(entry, `auth.toml missing entry for ${API_BASE}`).toBeDefined();
     expect(entry?.access_token).toBeTruthy();
     expect(entry?.refresh_token).toBeTruthy();
+    expect(entry?.cli_client_id).toBe("platform-cli");
 
     // The persisted access token should authorize a request to the
     // api-server (any tRPC route works — health is unauthenticated, so we

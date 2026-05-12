@@ -1,4 +1,4 @@
-import { err, ok, type Result } from "../../cli/domain/result.js";
+import { err, ok, type Result } from "../../../result.js";
 import type { RevokeError } from "../domain/errors.js";
 
 export interface RevokeClient {

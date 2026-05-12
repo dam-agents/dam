@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { err, ok, type Result } from "../domain/result.js";
+import { err, ok, type Result } from "../../../result.js";
 import type { ProbeError } from "../domain/errors.js";
 
 const versionInfoSchema = z.object({

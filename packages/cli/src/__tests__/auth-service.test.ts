@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ok, err, type Result } from "../modules/cli/domain/result.js";
+import { ok, err, type Result } from "../result.js";
 import { createAuthService } from "../modules/auth/services/auth-service.js";
 import type {
   AuthConfigProbe,
@@ -277,6 +277,7 @@ describe("auth-service.login pre-flight (claim 9: distinct error kinds)", () => 
       issuer: "x",
       username: "u",
       sub: "s",
+      cliClientId: "platform-cli",
       accessToken: "a",
       refreshToken: "r",
       expiresAt: new Date("2099-01-01"),
@@ -329,6 +330,7 @@ describe("auth-service.logout", () => {
       issuer: "http://idp/realms/platform",
       username: "u",
       sub: "s",
+      cliClientId: "platform-cli",
       accessToken: "a",
       refreshToken: "r",
       expiresAt: new Date("2099-01-01"),
@@ -392,6 +394,7 @@ describe("auth-service.status", () => {
       issuer: "http://idp/realms/platform",
       username: "alice",
       sub: "alice-sub",
+      cliClientId: "platform-cli",
       accessToken: "file-access",
       refreshToken: "file-refresh",
       expiresAt: new Date("2099-01-01T00:00:00Z"),

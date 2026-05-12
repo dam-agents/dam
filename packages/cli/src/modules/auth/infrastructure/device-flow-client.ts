@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { err, ok, type Result } from "../../cli/domain/result.js";
+import { err, ok, type Result } from "../../../result.js";
 import type { DeviceFlowError } from "../domain/errors.js";
 
 /** Scopes hardcoded per analysis §3.1. `offline_access` is required so
@@ -32,13 +32,16 @@ export interface HttpDeviceFlowClientOpts {
   timeoutMs?: number;
 }
 
+// `interval` is OPTIONAL in RFC 8628 §3.2 with a recommended default of 5
+// seconds. Keycloak always emits it; defaulting here keeps non-Keycloak
+// IdPs from tripping `malformed-response`.
 const deviceAuthorizationSchema = z.object({
   device_code: z.string().min(1),
   user_code: z.string().min(1),
   verification_uri: z.string().min(1),
   verification_uri_complete: z.string().min(1).optional(),
   expires_in: z.number().int().positive(),
-  interval: z.number().int().positive(),
+  interval: z.number().int().positive().default(5),
 });
 
 function errorMessage(e: unknown): string {

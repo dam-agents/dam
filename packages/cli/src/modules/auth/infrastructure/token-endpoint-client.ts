@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { err, ok, type Result } from "../../cli/domain/result.js";
+import { err, ok, type Result } from "../../../result.js";
 import type { TokenTransportError } from "../domain/errors.js";
 import type { TokenEndpointResponse } from "../domain/tokens.js";
 

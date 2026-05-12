@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ok, type Result } from "../modules/cli/domain/result.js";
+import { ok, type Result } from "../result.js";
 import { createTokenProvider } from "../modules/auth/services/token-provider.js";
 import type {
   AuthStore,
@@ -20,6 +20,7 @@ function makeAuth(expiresAtIso: string): HostAuth {
     issuer: "http://idp/realms/platform",
     username: "petr",
     sub: "s",
+    cliClientId: "platform-cli",
     accessToken: "AT-old",
     refreshToken: "RT-old",
     expiresAt: new Date(expiresAtIso),
@@ -62,10 +63,7 @@ function envReader(token: string | undefined): AuthEnvReader {
 function metadataResolver(): HostMetadataResolver {
   return {
     async resolve() {
-      return ok({
-        tokenEndpoint: "http://idp/token",
-        cliClientId: "platform-cli",
-      });
+      return ok({ tokenEndpoint: "http://idp/token" });
     },
   };
 }
