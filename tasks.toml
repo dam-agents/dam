@@ -6,20 +6,12 @@ depends = ["*:setup"]
 ["check"]
 depends = ["*:check"]
 
-["lint:check"]
-dir = "{{config_root}}"
-run = "pnpm exec eslint ."
-
 ["fix"]
 depends = ["*:fix"]
 
-["lint:fix"]
-dir = "{{config_root}}"
-run = "pnpm exec eslint --fix ."
 
 ["test"]
-depends = ["*:test", "*:test:unit"]
-
+depends = ["*:test"]
 
 # -- Git hooks --
 
@@ -81,3 +73,45 @@ chmod +x .git/hooks/commit-msg
 
 echo "Git hooks installed."
 '''
+
+# -- Common --
+
+["common:check"]
+depends = ["common:check:*"]
+
+["common:check:lockfile-age"]
+description = "Verify no lockfile dependency is newer than 7 days"
+dir = "{{config_root}}"
+sources = ["pnpm-lock.yaml"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+export _C=$(date -ud "-${MINIMUM_RELEASE_AGE_DAYS:-7} days" +%Y-%m-%dT%H:%M:%SZ)
+export _F=$(mktemp); trap 'rm -f "$_F"' EXIT
+yq '.packages | keys | .[]' pnpm-lock.yaml | sed 's/\(.*\)@/\1\t/' > "$_F"
+_chk() {
+  export _N="$1" _V=$(awk -F'\t' -v n="$1" '$1==n{printf(c++?",":"[")"\""$2"\""}END{print"]"}' "$_F")
+  curl -sf --max-time 10 "https://registry.npmjs.org/$1" | \
+  yq -p json -r '.time as $t | (strenv(_V) | fromjson | .[]) as $ver |
+    $t[$ver] | select(. != null and . > strenv(_C)) | "  " + strenv(_N) + "@" + $ver + "  " + .' || true
+}
+export -f _chk
+HITS=$(cut -f1 "$_F" | sort -u | xargs -P30 -I{} bash -c '_chk "{}"')
+if [[ -n "$HITS" ]]; then
+  echo ""; echo "$HITS" | sort -rk2
+  printf '\nFAIL: packages published <%sd ago (cutoff %s). Wait or pin older.\n' "${MINIMUM_RELEASE_AGE_DAYS:-7}" "$_C"
+  exit 1
+fi
+echo "OK: $(wc -l < "$_F") lockfile entries all older than ${MINIMUM_RELEASE_AGE_DAYS:-7}d"
+'''
+
+["common:check:lint"]
+dir = "{{config_root}}"
+run = "pnpm exec eslint ."
+
+["common:fix"]
+depends = ["common:fix:*"]
+
+["common:fix:lint"]
+dir = "{{config_root}}"
+run = "pnpm exec eslint --fix ."

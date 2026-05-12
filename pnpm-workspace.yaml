@@ -1,6 +1,8 @@
 packages:
   - "packages/*"
   - "packages/agents/pi-agent/workspace/.pi/agent/extensions/*"
+minimumReleaseAge: 10080 # 7 days (in minutes)
+trustPolicy: no-downgrade
 allowBuilds:
   # grpc-tools downloads the protoc binary in a postinstall step; needed
   # by `mise run api-server:gen:proto` (ts-proto codegen for ext_authz).

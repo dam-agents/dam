@@ -11,7 +11,7 @@ node_modules/.bin/grpc_tools_node_protoc \
   proto/external_auth.proto
 '''
 
-["api-server:test:unit"]
+["api-server:test"]
 description = "Run api-server unit tests"
 dir = "{{config_root}}"
 run = 'pnpm --filter api-server exec vitest run --config vitest.unit.config.ts'
