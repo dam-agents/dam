@@ -9,7 +9,7 @@ from the credentials they use to reach external services.
 flowchart LR
   L1["<b>Identity</b><br/>per-instance ServiceAccount<br/>+ SPIFFE cert via Istio mesh"]
   L2["<b>Boundary</b><br/>agent isolated in its own pod,<br/>no ServiceAccount token mounted"]
-  L3["<b>Network</b><br/>NetworkPolicy at L3/L4,<br/>ext-authz on every egress request"]
+  L3["<b>Network</b><br/>NetworkPolicy + AuthorizationPolicy<br/>at L3, L4, and L7"]
   L4["<b>Credentials</b><br/>K8s Secrets stay outside the agent,<br/>injected on the wire after authz"]
   L1 ~~~ L2 ~~~ L3 ~~~ L4
 ```
@@ -28,14 +28,14 @@ Kubernetes API token sitting in the agent's filesystem; istiod issues
 the workload cert independently. There is no co-located sidecar to
 share a namespace with.
 
-- **Network.** Even if the agent process ignored `HTTPS_PROXY` and tried
-to dial external hosts directly, the kernel refuses. A Kubernetes
-NetworkPolicy restricts the agent pod's L3/L4 egress to a narrow
-allow-list — DNS, the Istio ambient data path, and the single sibling
-pod it is paired with for outbound calls. Above that, every egress
-request through the sibling pod is gated by an ext-authz Check
-against the api-server, so each call is authorized per-instance
-before it leaves.
+- **Network.** Multiple layers restrict where the agent can talk. At
+the kernel, a Kubernetes NetworkPolicy locks the agent pod's L3/L4
+egress to a narrow allow-list — DNS, the Istio ambient data path, and
+the single sibling pod it is paired with. At the mesh, Istio
+AuthorizationPolicies key on the per-instance ServiceAccount: peer-pod
+admission is gated at L4, and the harness path on the api-server is
+gated at L7. And every egress request through the sibling pod runs
+through an ext-authz Check at the api-server before being forwarded.
 
 - **Credentials.** Real upstream tokens never reach the agent. They
 live in Kubernetes Secrets mounted into a sibling pod. For hosts
