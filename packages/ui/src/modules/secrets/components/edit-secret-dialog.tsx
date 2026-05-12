@@ -26,6 +26,10 @@ const envMappingSchema = z.object({
   placeholder: z.string(),
 });
 
+// Mirrors api-server-api's queryParamName charset (RFC 3986 unreserved +
+// hyphen). Empty is allowed — it means "stay in header-only mode".
+const QUERY_PARAM_RE = /^[A-Za-z0-9._~-]+$/;
+
 const baseShape = {
   name: z.string().trim().min(1, "Required"),
   // The token (`value`) is NOT round-tripped from the api-server — it lives
@@ -36,6 +40,13 @@ const baseShape = {
   pathPattern: z.string().trim(),
   headerName: z.string().trim(),
   valueFormat: z.string().trim(),
+  queryParamName: z
+    .string()
+    .trim()
+    .refine(
+      (v) => v.length === 0 || QUERY_PARAM_RE.test(v),
+      "Use only A-Z a-z 0-9 . _ ~ -",
+    ),
   envMappings: z
     .array(envMappingSchema)
     .refine(allEnvMappingsValid, "All mappings need an env name and a placeholder"),
@@ -92,6 +103,7 @@ export function EditSecretDialog({ secret, onClose }: Props) {
       pathPattern: secret.pathPattern ?? "",
       headerName: secret.injectionConfig?.headerName ?? "",
       valueFormat: secret.injectionConfig?.valueFormat ?? "",
+      queryParamName: secret.injectionConfig?.queryParamName ?? "",
       envMappings: secret.envMappings ?? [],
     },
   });
@@ -110,22 +122,24 @@ export function EditSecretDialog({ secret, onClose }: Props) {
         const trimmed = values.pathPattern.trim();
         patch.pathPattern = trimmed === "" ? null : trimmed;
       }
-      if (dirtyFields.headerName || dirtyFields.valueFormat) {
+      if (dirtyFields.headerName || dirtyFields.valueFormat || dirtyFields.queryParamName) {
         if (patch.value === undefined) {
           // The api-server rejects this combination because the SDS file is
           // pre-baked with the previous format and would drift. Surface it
           // inline instead of round-tripping for the error.
           setError("value", {
             type: "manual",
-            message: "Re-enter the token when changing the header or value format.",
+            message: "Re-enter the token when changing the header, value format, or query parameter.",
           });
           return;
         }
         const header = values.headerName.trim() || DEFAULT_INJECTION_CONFIG.headerName;
         const format = values.valueFormat.trim();
+        const queryParam = values.queryParamName.trim();
         patch.injectionConfig = {
           headerName: header,
           ...(format.length > 0 && { valueFormat: format }),
+          ...(queryParam.length > 0 && { queryParamName: queryParam }),
         };
       }
     }
@@ -254,6 +268,31 @@ export function EditSecretDialog({ secret, onClose }: Props) {
                 placeholder={DEFAULT_INJECTION_CONFIG.valueFormat}
                 disabled={saving}
                 {...register("valueFormat")}
+              />
+            </FormField>
+          )}
+
+          {isGeneric && (
+            <FormField
+              label="URL Query Parameter"
+              hint={
+                <>
+                  For APIs that read the credential from the URL (e.g.{" "}
+                  <span className="font-mono">?key=&lt;value&gt;</span>). When
+                  set, the bare value is moved into this query parameter and
+                  the header is stripped — <span className="font-mono">Value
+                  Format</span> doesn't apply here. Need <em>both</em> a
+                  header and a URL injection on the same endpoint? Create two
+                  Secrets with the same host pattern.
+                </>
+              }
+              error={errors.queryParamName?.message}
+            >
+              <input
+                className={MONO_INPUT_CLASS}
+                placeholder="e.g. key"
+                disabled={saving}
+                {...register("queryParamName")}
               />
             </FormField>
           )}

@@ -28,18 +28,14 @@ func EnvoyLeafSecretName(instanceName string) string {
 	return instanceName + envoyLeafSecretSuffix
 }
 
-// dnsNamesFromRoutes extracts a sorted, deduplicated list of host-patterns
-// from the per-Secret routes. Sort keeps Certificate spec stable across
-// reconciles so cert-manager doesn't churn renewals.
-func dnsNamesFromRoutes(routes []envoyRoute) []string {
-	seen := make(map[string]struct{}, len(routes))
-	out := make([]string, 0, len(routes))
-	for _, r := range routes {
-		if _, dup := seen[r.Host]; dup {
-			continue
-		}
-		seen[r.Host] = struct{}{}
-		out = append(out, r.Host)
+// dnsNamesFromChains extracts a sorted list of host-patterns from the
+// per-host chains. Chains are already host-unique, but we sort the result
+// to keep the Certificate spec stable across reconciles so cert-manager
+// doesn't churn renewals.
+func dnsNamesFromChains(chains []envoyHostChain) []string {
+	out := make([]string, 0, len(chains))
+	for _, c := range chains {
+		out = append(out, c.Host)
 	}
 	sort.Strings(out)
 	return out
@@ -50,7 +46,7 @@ func dnsNamesFromRoutes(routes []envoyRoute) []string {
 // hosts to MITM (no credential Secrets) — the caller should treat that as
 // "do not apply".
 func BuildEnvoyLeafCertificate(instanceName string, cfg *config.Config, ownerCM *corev1.ConfigMap, secrets []corev1.Secret) *cmv1.Certificate {
-	hosts := dnsNamesFromRoutes(routesFromSecrets(secrets))
+	hosts := dnsNamesFromChains(chainsFromSecrets(secrets))
 	if len(hosts) == 0 {
 		return nil
 	}

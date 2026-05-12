@@ -21,6 +21,15 @@ export const envMappingsSchema = z.array(envMappingSchema).max(32);
 export const injectionConfigSchema = z.object({
   headerName: z.string().min(1).max(255),
   valueFormat: z.string().max(1000).optional(),
+  // RFC 3986 unreserved + a handful of reserved sub-delims that survive
+  // unencoded query keys. Locks out characters that would either need
+  // percent-encoding or break the Lua splitter's `&` / `=` framing.
+  queryParamName: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(/^[A-Za-z0-9._~-]+$/, "queryParamName must be URL-safe (A-Z a-z 0-9 . _ ~ -)")
+    .optional(),
 });
 
 export const updateSecretInputSchema = z

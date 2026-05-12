@@ -33,10 +33,25 @@ export function isValidEnvName(name: string): boolean {
  * How the Envoy sidecar injects a generic secret into matching outbound
  * requests. `valueFormat` may reference the literal token `{value}`;
  * defaults to `{value}` when omitted.
+ *
+ * When `queryParamName` is set, a per-route Lua filter runs after the
+ * Envoy credential_injector and moves the (bare) credential from the
+ * `headerName` header into the URL query parameter named `queryParamName`,
+ * then strips the header before the request leaves the sidecar. Use this
+ * for upstreams that read the credential from the URL rather than a
+ * header (e.g. APIs that accept `?key=<value>`). The `headerName` is an
+ * internal-only transport in this mode — pick a name that won't collide
+ * with another credential's injection on the same host (the controller
+ * drops collisions to avoid `credential_injector overwrite` clobbering).
+ *
+ * To inject the same credential into BOTH a header AND a URL parameter
+ * on the same endpoint, create two Secrets with the same host pattern —
+ * one header-only, one with `queryParamName`.
  */
 export interface InjectionConfig {
   headerName: string;
   valueFormat?: string;
+  queryParamName?: string;
 }
 
 /** Default used when the user doesn't override it: `Authorization: Bearer <value>`. */

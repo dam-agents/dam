@@ -84,6 +84,22 @@ describe("resolveInjection", () => {
       valueFormat: "Bearer {value}",
     });
   });
+
+  it("query-param injection still resolves the default Bearer valueFormat", () => {
+    // The valueFormat default doesn't depend on queryParamName — the
+    // controller's per-route Lua filter is what actually moves the
+    // (bare-stored, see sdsInlineString) value into the URL. Confirm
+    // resolveInjection doesn't accidentally branch on it.
+    expect(
+      resolveInjection("generic", undefined, {
+        headerName: "X-Bob-Internal",
+        queryParamName: "key",
+      }),
+    ).toEqual({
+      headerName: "X-Bob-Internal",
+      valueFormat: "Bearer {value}",
+    });
+  });
 });
 
 describe("injectionFileContent", () => {
@@ -99,15 +115,15 @@ describe("injectionFileContent", () => {
 });
 
 describe("sdsYamlContent", () => {
-  it("emits an SDS DiscoveryResponse with the formatted credential as inline_string", () => {
-    const yaml = sdsYamlContent("abc", "Bearer {value}");
+  it("emits an SDS DiscoveryResponse with the supplied string as inline_string", () => {
+    const yaml = sdsYamlContent("Bearer abc");
     expect(yaml).toContain('"@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret');
     expect(yaml).toContain("name: credential");
     expect(yaml).toContain("generic_secret:");
     expect(yaml).toContain('inline_string: "Bearer abc"');
   });
   it("JSON-encodes the inline_string so quotes/newlines are safe in YAML", () => {
-    const yaml = sdsYamlContent('weird"\nvalue', "{value}");
+    const yaml = sdsYamlContent('weird"\nvalue');
     expect(yaml).toContain('inline_string: "weird\\"\\nvalue"');
   });
 });
@@ -260,6 +276,81 @@ describe("createK8sSecretsPort.listSecrets — envMappings", () => {
     const secrets = await port.listSecrets();
     const found = secrets.find((s) => s.id === "env4");
     expect(found?.envMappings).toBeUndefined();
+  });
+});
+
+describe("createK8sSecretsPort — queryParamName injection", () => {
+  it("persists queryParamName as an annotation on create", async () => {
+    const { client, created } = fakeClient();
+    const port = createK8sSecretsPort(client, "owner-1");
+
+    await port.createSecret({
+      id: "bob",
+      name: "Bob API key",
+      type: "generic",
+      value: "sk-real-key",
+      hostPattern: "prod.ibm-bob-staging.cloud.ibm.com",
+      injectionConfig: {
+        headerName: "X-Bobshell-Credential",
+        valueFormat: "{value}",
+        queryParamName: "key",
+      },
+    });
+
+    const ann = created[0]!.metadata?.annotations ?? {};
+    expect(ann["agent-platform.ai/injection-query-param"]).toBe("key");
+    expect(ann["agent-platform.ai/injection-header-name"]).toBe("X-Bobshell-Credential");
+  });
+
+  it("round-trips queryParamName through listSecrets", async () => {
+    const { client } = fakeClient();
+    const port = createK8sSecretsPort(client, "owner-1");
+
+    await port.createSecret({
+      id: "bob",
+      name: "Bob",
+      type: "generic",
+      value: "sk-x",
+      hostPattern: "prod.ibm-bob-staging.cloud.ibm.com",
+      injectionConfig: {
+        headerName: "X-Bobshell-Credential",
+        valueFormat: "{value}",
+        queryParamName: "key",
+      },
+    });
+
+    const found = (await port.listSecrets()).find((s) => s.id === "bob");
+    expect(found?.injectionConfig).toEqual({
+      headerName: "X-Bobshell-Credential",
+      valueFormat: "{value}",
+      queryParamName: "key",
+    });
+  });
+
+  it("drops the annotation when injectionConfig is reset to null", async () => {
+    const { client, replaced } = fakeClient();
+    const port = createK8sSecretsPort(client, "owner-1");
+
+    await port.createSecret({
+      id: "bob",
+      name: "Bob",
+      type: "generic",
+      value: "sk-x",
+      hostPattern: "prod.ibm-bob-staging.cloud.ibm.com",
+      injectionConfig: {
+        headerName: "X-Bobshell-Credential",
+        valueFormat: "{value}",
+        queryParamName: "key",
+      },
+    });
+
+    await port.updateSecret("bob", {
+      value: "sk-y",
+      injectionConfig: null,
+    });
+
+    const ann = replaced[0]!.body.metadata?.annotations ?? {};
+    expect(ann["agent-platform.ai/injection-query-param"]).toBeUndefined();
   });
 });
 

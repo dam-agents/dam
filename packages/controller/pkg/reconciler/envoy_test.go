@@ -123,28 +123,70 @@ var bootstrapTestCfg = &config.Config{
 	ExtAuthzHoldSeconds: 30,
 }
 
-func credentialedRoute(secretName, host string) envoyRoute {
-	return envoyRoute{
-		SecretName:   secretName,
-		Host:         host,
-		HeaderName:   "Authorization",
-		VolumeName:   "cred-" + secretName,
-		Credentialed: true,
+func credentialedChain(secretName, host string) envoyHostChain {
+	return envoyHostChain{
+		ChainID:         "chain_" + secretName,
+		UpstreamCluster: "upstream_" + secretName,
+		Host:            host,
+		Credentials: []envoyCredential{{
+			SecretName: secretName,
+			HeaderName: "Authorization",
+			VolumeName: "cred-" + secretName,
+		}},
 	}
 }
 
-func allowOnlyRoute(secretName, host string) envoyRoute {
-	return envoyRoute{
-		SecretName:   secretName,
-		Host:         host,
-		VolumeName:   "cred-" + secretName,
-		Credentialed: false,
+func allowOnlyChain(secretName, host string) envoyHostChain {
+	return envoyHostChain{
+		ChainID:         "chain_" + secretName,
+		UpstreamCluster: "upstream_" + secretName,
+		Host:            host,
+		// Empty Credentials → Credentialed() == false.
+	}
+}
+
+func queryParamChain(secretName, host, headerName, queryParamName string) envoyHostChain {
+	return envoyHostChain{
+		ChainID:         "chain_" + secretName,
+		UpstreamCluster: "upstream_" + secretName,
+		Host:            host,
+		Credentials: []envoyCredential{{
+			SecretName:     secretName,
+			HeaderName:     headerName,
+			QueryParamName: queryParamName,
+			VolumeName:     "cred-" + secretName,
+		}},
+	}
+}
+
+// twoCredentialChain expresses the "two injections on the same host"
+// shape — a header-only credential + a query-only credential targeting
+// the same SNI. Used to assert merge semantics in chainsFromSecrets
+// produce a single filter chain with two credential_injector + one Lua.
+func twoCredentialChain(firstName, secondName, host string) envoyHostChain {
+	return envoyHostChain{
+		ChainID:         "chain_" + firstName,
+		UpstreamCluster: "upstream_" + firstName,
+		Host:            host,
+		Credentials: []envoyCredential{
+			{
+				SecretName: firstName,
+				HeaderName: "Authorization",
+				VolumeName: "cred-" + firstName,
+			},
+			{
+				SecretName:     secondName,
+				HeaderName:     "X-Internal-Query-" + secondName,
+				QueryParamName: "key",
+				VolumeName:     "cred-" + secondName,
+			},
+		},
 	}
 }
 
 func TestRenderEnvoyBootstrap_CredentialedRoutePinnedToStaticCluster(t *testing.T) {
-	got, err := renderEnvoyBootstrap("inst-1", bootstrapTestCfg, []envoyRoute{
-		credentialedRoute("platform-conn-github", "api.github.com"),
+	got, err := renderEnvoyBootstrap("inst-1", bootstrapTestCfg, []envoyHostChain{
+		credentialedChain("platform-conn-github", "api.github.com"),
 	})
 	require.NoError(t, err)
 
@@ -204,8 +246,8 @@ func TestRenderEnvoyBootstrap_NoCredentialedRouteForwardsViaDynamicForwardProxy(
 	// With no credentialed routes there should be no per-credential cluster
 	// and no host_rewrite_literal — the catch-all/L4 paths still use
 	// dynamic_forward_proxy clusters but those are non-credentialed.
-	got, err := renderEnvoyBootstrap("inst-1", bootstrapTestCfg, []envoyRoute{
-		allowOnlyRoute("platform-allow-only-npm", "registry.npmjs.org"),
+	got, err := renderEnvoyBootstrap("inst-1", bootstrapTestCfg, []envoyHostChain{
+		allowOnlyChain("platform-allow-only-npm", "registry.npmjs.org"),
 	})
 	require.NoError(t, err)
 
@@ -220,9 +262,9 @@ func TestRenderEnvoyBootstrap_MixedRoutesOnlyPinCredentialed(t *testing.T) {
 	// Credentialed and allow-only side-by-side: only the credentialed one
 	// gets a pinned cluster. The two chains are visually adjacent in the
 	// output, so we anchor each assertion on its specific cluster name.
-	got, err := renderEnvoyBootstrap("inst-1", bootstrapTestCfg, []envoyRoute{
-		credentialedRoute("platform-conn-github", "api.github.com"),
-		allowOnlyRoute("platform-allow-only-npm", "registry.npmjs.org"),
+	got, err := renderEnvoyBootstrap("inst-1", bootstrapTestCfg, []envoyHostChain{
+		credentialedChain("platform-conn-github", "api.github.com"),
+		allowOnlyChain("platform-allow-only-npm", "registry.npmjs.org"),
 	})
 	require.NoError(t, err)
 
@@ -336,6 +378,169 @@ func TestCredentialEnvVars_AnnotationOverridesLegacyDefault(t *testing.T) {
 	envs := envByName(got)
 	assert.Equal(t, "dummy-placeholder", envs["ANTHROPIC_API_KEY"])
 	assert.Len(t, envs, 1)
+}
+
+func TestRenderEnvoyBootstrap_QueryParamCredentialRendersLuaFilter(t *testing.T) {
+	// A credential with QueryParamName set renders an extra Lua filter
+	// after credential_injector. credential_injector writes the (bare)
+	// SDS value into the credential's header; Lua moves it into the URL
+	// query parameter and strips the header before the request leaves
+	// the sidecar.
+	got, err := renderEnvoyBootstrap("inst-1", bootstrapTestCfg, []envoyHostChain{
+		queryParamChain("platform-cred-bob", "prod.ibm-bob-staging.cloud.ibm.com", "X-Bobshell-Cred", "key"),
+	})
+	require.NoError(t, err)
+
+	assert.Contains(t, got, "envoy.filters.http.lua")
+	// credential_injector targets the credential's header.
+	assert.Contains(t, got, `header: "X-Bobshell-Cred"`)
+	// Lua-visible names come through %q so credential bytes can't bind
+	// to Lua pattern or backreference syntax.
+	assert.Contains(t, got, `local HEADER = "X-Bobshell-Cred"`)
+	assert.Contains(t, got, `local PARAM  = "key"`)
+}
+
+func TestRenderEnvoyBootstrap_HeaderOnlyChainSkipsLua(t *testing.T) {
+	// Without QueryParamName the chain has only credential_injector — no
+	// Lua. credential_injector writes the pre-formatted SDS value (baked
+	// by api-server) directly into the user header.
+	got, err := renderEnvoyBootstrap("inst-1", bootstrapTestCfg, []envoyHostChain{
+		credentialedChain("platform-conn-github", "api.github.com"),
+	})
+	require.NoError(t, err)
+	assert.NotContains(t, got, "envoy.filters.http.lua")
+	assert.Contains(t, got, `header: "Authorization"`)
+}
+
+func TestRenderEnvoyBootstrap_TwoCredentialsOnSameHostStackInOneChain(t *testing.T) {
+	// Multi-secret-per-host merge: two credentials targeting the same SNI
+	// stack as two credential_injector entries inside a single TLS chain.
+	// Exactly one chain definition, one route-config, one upstream cluster —
+	// the second credential MUST NOT spawn a duplicate filter chain.
+	got, err := renderEnvoyBootstrap("inst-1", bootstrapTestCfg, []envoyHostChain{
+		twoCredentialChain("platform-cred-header", "platform-cred-query", "prod.ibm-bob-staging.cloud.ibm.com"),
+	})
+	require.NoError(t, err)
+
+	// Both credential_injector filters in the same chain. We pick the
+	// per-route header name (rendered as `header: "<name>"`) so we don't
+	// confuse cluster `name:` lines with filter `header:` lines.
+	injectorHeaders := strings.Count(got, `header: "Authorization"`)
+	assert.Equal(t, 1, injectorHeaders, "header-injection credential renders one Authorization injector")
+	assert.Contains(t, got, `header: "X-Internal-Query-platform-cred-query"`)
+
+	// Exactly one filter chain for the host — not two.
+	chainCount := strings.Count(got, "name: terminate_chain_platform-cred-header")
+	assert.Equal(t, 1, chainCount)
+
+	// Exactly one Lua filter (only the query-injection credential needs it).
+	luaCount := strings.Count(got, "envoy.filters.http.lua")
+	assert.Equal(t, 1, luaCount)
+
+	// One pinned upstream cluster for the chain (shared by both credentials).
+	upstreamCount := strings.Count(got, "- name: upstream_platform-cred-header")
+	assert.Equal(t, 1, upstreamCount)
+}
+
+func TestChainsFromSecrets_MergesSameHostIntoOneChain(t *testing.T) {
+	// Two granted Secrets on the same host → one chain with two
+	// envoyCredential entries (in name-sorted order, which the upstream
+	// `listOwnerCredentialSecrets` guarantees).
+	hdr := ownerSecret("platform-cred-aaa-header", "generic", "")
+	hdr.Annotations[envoyHostPatternAnn] = "bob.example.com"
+	hdr.Annotations[envoyHeaderNameAnn] = "Authorization"
+
+	qry := ownerSecret("platform-cred-bbb-query", "generic", "")
+	qry.Annotations[envoyHostPatternAnn] = "bob.example.com"
+	qry.Annotations[envoyHeaderNameAnn] = "X-Query-Cred"
+	qry.Annotations[envoyQueryParamAnn] = "key"
+
+	chains := chainsFromSecrets([]corev1.Secret{hdr, qry})
+	require.Len(t, chains, 1)
+	require.Len(t, chains[0].Credentials, 2)
+	assert.Equal(t, "bob.example.com", chains[0].Host)
+	assert.Equal(t, "Authorization", chains[0].Credentials[0].HeaderName)
+	assert.Equal(t, "X-Query-Cred", chains[0].Credentials[1].HeaderName)
+	assert.Equal(t, "key", chains[0].Credentials[1].QueryParamName)
+}
+
+func TestChainsFromSecrets_DuplicateHeaderOnSameHostKeepsLexFirst(t *testing.T) {
+	// credential_injector overwrite=true means two injectors writing the
+	// same header step on each other — the second clobbers the first
+	// silently. Drop the later one (input is name-sorted upstream) and
+	// emit a warning. api-server should also reject this at create time
+	// but defense-in-depth here keeps the gateway up.
+	first := ownerSecret("platform-cred-a-first", "generic", "")
+	first.Annotations[envoyHostPatternAnn] = "api.example.com"
+	first.Annotations[envoyHeaderNameAnn] = "Authorization"
+
+	second := ownerSecret("platform-cred-b-second", "generic", "")
+	second.Annotations[envoyHostPatternAnn] = "api.example.com"
+	second.Annotations[envoyHeaderNameAnn] = "Authorization"
+
+	chains := chainsFromSecrets([]corev1.Secret{first, second})
+	require.Len(t, chains, 1)
+	require.Len(t, chains[0].Credentials, 1)
+	assert.Equal(t, first.Name, chains[0].Credentials[0].SecretName)
+}
+
+func TestChainsFromSecrets_DistinctHostsEachGetTheirOwnChain(t *testing.T) {
+	a := ownerSecret("platform-cred-a", "generic", "")
+	a.Annotations[envoyHostPatternAnn] = "api.first.com"
+	b := ownerSecret("platform-cred-b", "generic", "")
+	b.Annotations[envoyHostPatternAnn] = "api.second.com"
+
+	chains := chainsFromSecrets([]corev1.Secret{a, b})
+	assert.Len(t, chains, 2)
+}
+
+func TestChainsFromSecrets_AllowOnlySecretRendersUncredentialedChain(t *testing.T) {
+	// An allow-only Secret on a host renders the chain with zero
+	// credentials — the host still terminates TLS for the egress gate,
+	// but credential_injector isn't applied and the route forwards via
+	// dynamic_forward_proxy (there's nothing to misroute).
+	allowOnly := ownerSecret("platform-allow-only-npm", envoySecretTypeAllowOnly, "")
+	allowOnly.Annotations[envoyHostPatternAnn] = "registry.npmjs.org"
+
+	chains := chainsFromSecrets([]corev1.Secret{allowOnly})
+	require.Len(t, chains, 1)
+	assert.Equal(t, "registry.npmjs.org", chains[0].Host)
+	assert.Empty(t, chains[0].Credentials)
+	assert.False(t, chains[0].Credentialed())
+}
+
+func TestChainsFromSecrets_AllowOnlyAndCredentialedOnSameHost(t *testing.T) {
+	// Mixed shape: a host with both an allow-only Secret AND a
+	// credentialed Secret renders as a credentialed chain. Allow-only
+	// contributes nothing — it's a path-policy hint, not an instruction
+	// to skip injection.
+	cred := ownerSecret("platform-cred-a", "generic", "")
+	cred.Annotations[envoyHostPatternAnn] = "api.example.com"
+	cred.Annotations[envoyHeaderNameAnn] = "Authorization"
+
+	allowOnly := ownerSecret("platform-allow-only-b", envoySecretTypeAllowOnly, "")
+	allowOnly.Annotations[envoyHostPatternAnn] = "api.example.com"
+
+	chains := chainsFromSecrets([]corev1.Secret{cred, allowOnly})
+	require.Len(t, chains, 1)
+	require.Len(t, chains[0].Credentials, 1)
+	assert.Equal(t, cred.Name, chains[0].Credentials[0].SecretName)
+	assert.True(t, chains[0].Credentialed())
+}
+
+func TestEnvoySecretsRev_QueryParamAnnotationRollsExistingPods(t *testing.T) {
+	// Adding the query-param annotation must change the hash so the
+	// StatefulSet rolls — the bootstrap shape changes (Lua filter added)
+	// and the existing pod would otherwise keep serving the no-filter
+	// bootstrap.
+	plain := ownerSecret("platform-cred-bob", "generic", "")
+	plain.Annotations[envoyHeaderNameAnn] = "X-Bobshell-Credential"
+
+	withParam := ownerSecret("platform-cred-bob", "generic", "")
+	withParam.Annotations[envoyHeaderNameAnn] = "X-Bobshell-Credential"
+	withParam.Annotations[envoyQueryParamAnn] = "key"
+
+	assert.NotEqual(t, envoySecretsRev([]corev1.Secret{plain}), envoySecretsRev([]corev1.Secret{withParam}))
 }
 
 func TestEnvoySecretsRev_TemplateRevBumpRollsExistingPods(t *testing.T) {

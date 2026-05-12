@@ -37,6 +37,7 @@ const (
 	envoyConnectionLabel  = "agent-platform.ai/connection"
 	envoyHostPatternAnn   = "agent-platform.ai/host-pattern"
 	envoyHeaderNameAnn    = "agent-platform.ai/injection-header-name"
+	envoyQueryParamAnn    = "agent-platform.ai/injection-query-param"
 	envoyAuthModeAnn      = "agent-platform.ai/auth-mode"
 	// JSON-encoded list of {envName, placeholder} the api-server stamps on a
 	// user-typed credential Secret. Authoritative source for the env vars
@@ -67,19 +68,52 @@ func EnvoyBootstrapName(instanceName string) string {
 	return instanceName + "-envoy-bootstrap"
 }
 
-// envoyRoute is the per-Secret data the bootstrap template needs.
-//
-// `Credentialed=false` is the L7-promoted MITM-only flavor (ADR-035):
-// the host has at least one path-specific egress_rule but no attached credential.
-// We render TLS-terminating chain + ext_authz, but skip credential_injector and
-// the credential SDS mount.
-type envoyRoute struct {
-	SecretName   string // K8s Secret name, used for the per-route credential file path
-	Host         string // host the credential is scoped to (matched on :authority)
-	HeaderName   string // header to inject (e.g. "Authorization")
-	VolumeName   string // pod-level volume name for this Secret
-	Credentialed bool   // true → render credential_injector; false → MITM-only chain
+// envoyCredential is one injection step in a host's filter chain. Each
+// credentialed K8s Secret renders to one of these; multiple credentials
+// pointing at the same host stack inside a single `envoyHostChain` so
+// users can express "two injections on the same endpoint" by creating
+// two Secrets with the same host-pattern.
+type envoyCredential struct {
+	SecretName string // K8s Secret name, used for the per-credential file path
+	HeaderName string // header credential_injector writes into
+	// When non-empty, a Lua filter after credential_injector moves the
+	// injected header value into this URL query parameter and strips the
+	// header before the request leaves the sidecar. Used for APIs that
+	// read the credential from the URL. The Secret's SDS file stores the
+	// raw value in that case so the URL doesn't grow a `Bearer ` prefix.
+	QueryParamName string
+	VolumeName     string // pod-level volume name for this Secret
 }
+
+// envoyHostChain is one TLS-terminating filter chain. `Credentials` is
+// the per-Secret injection list applied to every request through the
+// chain, in deterministic order (Secrets are name-sorted upstream). Empty
+// `Credentials` is the allow-only / MITM-only flavor (ADR-035): the host
+// has at least one path-specific egress_rule but no attached credential —
+// we still terminate TLS for the gate but skip credential_injector.
+type envoyHostChain struct {
+	// Chain identifier — used as Envoy `name:` and stat_prefix. Must be
+	// unique across all chains in the listener; derived from the first
+	// Secret's name so the chain is stable across reconciles (granting
+	// an extra Secret on the same host adds a credential to an existing
+	// chain instead of renaming it).
+	ChainID string
+	// Host the chain terminates TLS for (SNI match).
+	Host string
+	// Per-credential injection steps, in name-sorted order.
+	Credentials []envoyCredential
+	// Name of the per-chain STRICT_DNS upstream cluster used when the
+	// chain has at least one credential. Pinned to `Host:443` with
+	// SAN-bound TLS validation so the agent's Host header cannot
+	// redirect the credentialed body to an attacker-controlled upstream
+	// (ADR-033 §Threat Model).
+	UpstreamCluster string
+}
+
+// Credentialed reports whether the chain has any credential injections.
+// Allow-only chains (no credentials) skip credential_injector and forward
+// via dynamic_forward_proxy — there's no credential to misroute.
+func (c envoyHostChain) Credentialed() bool { return len(c.Credentials) > 0 }
 
 // envoySecretTypeAllowOnly marks Secrets that exist solely to extend the
 // cert SAN list and force a host onto the L7 path so path-specific egress
@@ -266,30 +300,84 @@ func hasGitHubCredential(secrets []corev1.Secret) bool {
 	return false
 }
 
-func routesFromSecrets(secrets []corev1.Secret) []envoyRoute {
-	routes := make([]envoyRoute, 0, len(secrets))
+// chainsFromSecrets groups Secrets by host-pattern into one filter chain
+// per host. Multiple credentialed Secrets sharing a host stack as
+// separate `envoyCredential` entries inside the chain — that's how users
+// express "two injections on the same endpoint" (e.g. a header AND a
+// URL query parameter, possibly with different formats).
+//
+// Within a chain each credential MUST use a unique header name. Envoy's
+// credential_injector runs in `overwrite: true` mode, so two injectors
+// writing the same header would silently clobber one another. We drop
+// the later one (input is name-sorted upstream) and emit a warning;
+// validating this at api-server create time is the right long-term home
+// but defense-in-depth here keeps the gateway up either way.
+//
+// A host with ONLY allow-only Secrets renders as an uncredentialed
+// chain (MITM termination for the gate, then dynamic_forward_proxy).
+// A host with both allow-only AND credentialed Secrets renders as a
+// credentialed chain — allow-only contributes nothing in that case
+// (it's a path-policy hint, not an instruction to skip injection).
+func chainsFromSecrets(secrets []corev1.Secret) []envoyHostChain {
+	type bucket struct {
+		host        string
+		seenHeader  map[string]string
+		credentials []envoyCredential
+		first       string // first Secret name encountered for this host (drives ChainID)
+	}
+	byHost := map[string]*bucket{}
+	order := []string{}
 	for _, s := range secrets {
 		host := s.Annotations[envoyHostPatternAnn]
 		if host == "" {
+			continue
+		}
+		b := byHost[host]
+		if b == nil {
+			b = &bucket{host: host, seenHeader: map[string]string{}, first: s.Name}
+			byHost[host] = b
+			order = append(order, host)
+		}
+		if s.Labels[envoySecretTypeLabel] == envoySecretTypeAllowOnly {
+			// Allow-only Secrets carry no credential payload — they only
+			// exist to extend the leaf cert's SAN list so the host
+			// terminates on the L7 chain at all. Nothing to add to
+			// `credentials`; if the host has no other credentialed
+			// Secrets the chain stays uncredentialed.
 			continue
 		}
 		header := s.Annotations[envoyHeaderNameAnn]
 		if header == "" {
 			header = "Authorization"
 		}
-		// Default credentialed for back-compat with Secrets predating the
-		// secret-type label. Allow-only Secrets carry no credential payload
-		// and exist purely to extend the cert SAN list.
-		credentialed := s.Labels[envoySecretTypeLabel] != envoySecretTypeAllowOnly
-		routes = append(routes, envoyRoute{
-			SecretName:   s.Name,
-			Host:         host,
-			HeaderName:   header,
-			VolumeName:   "cred-" + s.Name,
-			Credentialed: credentialed,
+		if winner, dup := b.seenHeader[header]; dup {
+			slog.Warn("duplicate injection header on host; later secret skipped to avoid credential_injector clobber",
+				"host", host, "headerName", header,
+				"winningSecret", winner, "skippedSecret", s.Name)
+			continue
+		}
+		b.seenHeader[header] = s.Name
+		b.credentials = append(b.credentials, envoyCredential{
+			SecretName:     s.Name,
+			HeaderName:     header,
+			QueryParamName: s.Annotations[envoyQueryParamAnn],
+			VolumeName:     "cred-" + s.Name,
 		})
 	}
-	return routes
+	chains := make([]envoyHostChain, 0, len(order))
+	for _, host := range order {
+		b := byHost[host]
+		chains = append(chains, envoyHostChain{
+			// ChainID + UpstreamCluster are derived from the first
+			// Secret's name. Stable across reconciles so kubelet diffs
+			// stay tight when an extra Secret is granted on the host.
+			ChainID:         "chain_" + b.first,
+			UpstreamCluster: "upstream_" + b.first,
+			Host:            host,
+			Credentials:     b.credentials,
+		})
+	}
+	return chains
 }
 
 // Bootstrap template — TLS-intercepting CONNECT proxy.
@@ -468,10 +556,10 @@ static_resources:
           typed_config:
             "@type": type.googleapis.com/envoy.extensions.filters.listener.tls_inspector.v3.TlsInspector
       filter_chains:
-{{- range .Routes }}
-        - name: terminate_{{ .SecretName }}
+{{- range $chain := .Chains }}
+        - name: terminate_{{ $chain.ChainID }}
           filter_chain_match:
-            server_names: [ "{{ .Host }}" ]
+            server_names: [ "{{ $chain.Host }}" ]
           transport_socket:
             name: envoy.transport_sockets.tls
             typed_config:
@@ -484,7 +572,7 @@ static_resources:
             - name: envoy.filters.network.http_connection_manager
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
-                stat_prefix: terminate_{{ .SecretName }}
+                stat_prefix: terminate_{{ $chain.ChainID }}
                 http_filters:
                   # HITL gate (ADR-035). gRPC ext_authz to the
                   # api-server's single auth endpoint — same Check RPC used
@@ -510,7 +598,8 @@ static_resources:
                         # gRPC :authority of the per-instance ext-authz
                         # Service this cluster dials.
                         timeout: {{ $.ExtAuthzTimeoutSeconds }}s
-{{- if .Credentialed }}
+{{- range $cred := $chain.Credentials }}
+                  # Credential {{ $cred.SecretName }} → header {{ $cred.HeaderName }}{{ if $cred.QueryParamName }} → URL ?{{ $cred.QueryParamName }}{{ end }}
                   - name: envoy.filters.http.credential_injector
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.credential_injector.v3.CredentialInjector
@@ -523,8 +612,60 @@ static_resources:
                             name: {{ $.CredentialSDSName }}
                             sds_config:
                               path_config_source:
-                                path: {{ $.CredentialsRoot }}/{{ .VolumeName }}/{{ $.CredentialFile }}
-                          header: "{{ .HeaderName }}"
+                                path: {{ $.CredentialsRoot }}/{{ $cred.VolumeName }}/{{ $.CredentialFile }}
+                          header: "{{ $cred.HeaderName }}"
+{{- if $cred.QueryParamName }}
+                  # Query-param injection. credential_injector wrote the
+                  # SDS value into header {{ $cred.HeaderName }}; this
+                  # filter moves it into URL query parameter
+                  # {{ $cred.QueryParamName }} and strips the header so
+                  # it never reaches the upstream. The SDS file is
+                  # stored as the bare value (api-server sdsInlineString)
+                  # so the URL doesn't grow a Bearer prefix. Path is
+                  # parsed manually (no Lua-pattern gsub) so credential
+                  # bytes can't be interpreted as Lua replacement
+                  # backreferences.
+                  - name: envoy.filters.http.lua
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+                      default_source_code:
+                        inline_string: |
+                          local HEADER = {{ printf "%q" $cred.HeaderName }}
+                          local PARAM  = {{ printf "%q" $cred.QueryParamName }}
+                          function envoy_on_request(rh)
+                            local h = rh:headers()
+                            local cred = h:get(HEADER)
+                            if cred == nil or cred == "" then return end
+                            h:remove(HEADER)
+                            local path = h:get(":path")
+                            if path == nil then return end
+                            local qi = string.find(path, "?", 1, true)
+                            local prefix, query
+                            if qi then
+                              prefix = string.sub(path, 1, qi)
+                              query  = string.sub(path, qi + 1)
+                            else
+                              prefix = path .. "?"
+                              query  = ""
+                            end
+                            local out = {}
+                            local replaced = false
+                            for pair in string.gmatch(query, "[^&]+") do
+                              local eq = string.find(pair, "=", 1, true)
+                              local key = eq and string.sub(pair, 1, eq - 1) or pair
+                              if key == PARAM then
+                                out[#out + 1] = PARAM .. "=" .. cred
+                                replaced = true
+                              else
+                                out[#out + 1] = pair
+                              end
+                            end
+                            if not replaced then
+                              out[#out + 1] = PARAM .. "=" .. cred
+                            end
+                            h:replace(":path", prefix .. table.concat(out, "&"))
+                          end
+{{- end }}
 {{- end }}
                   - name: envoy.filters.http.dynamic_forward_proxy
                     typed_config:
@@ -536,23 +677,23 @@ static_resources:
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
                 route_config:
-                  name: forward_{{ .SecretName }}
+                  name: forward_{{ $chain.ChainID }}
                   virtual_hosts:
                     - name: default
                       domains: [ "*" ]
                       routes:
                         - match: { prefix: "/" }
                           route:
-{{- if .Credentialed }}
-                            # Pinned to a per-credential static cluster
-                            # (clusters list below). The agent's Host header
-                            # cannot steer this request to a different
-                            # upstream; the cluster's destination is fixed in
-                            # config. host_rewrite_literal additionally
-                            # canonicalises the upstream Host so honest
-                            # backends never see an agent-manipulated value.
-                            cluster: upstream_{{ .SecretName }}
-                            host_rewrite_literal: "{{ .Host }}"
+{{- if $chain.Credentialed }}
+                            # Pinned to a per-chain static cluster (clusters
+                            # list below). The agent's Host header cannot
+                            # steer this request to a different upstream;
+                            # the cluster's destination is fixed in config.
+                            # host_rewrite_literal additionally canonicalises
+                            # the upstream Host so honest backends never see
+                            # an agent-manipulated value.
+                            cluster: {{ $chain.UpstreamCluster }}
+                            host_rewrite_literal: "{{ $chain.Host }}"
 {{- else }}
                             # Allow-only (path-rule promoted, no credential
                             # injection). Forward via dynamic_forward_proxy;
@@ -683,40 +824,40 @@ static_resources:
                       address: {{ $.HarnessHost }}
                       port_value: {{ $.HarnessPort }}
 
-{{- range .Routes }}
-{{- if .Credentialed }}
+{{- range $chain := .Chains }}
+{{- if $chain.Credentialed }}
 
-    # Pinned upstream for the credentialed chain matching SNI={{ .Host }}.
-    # STRICT_DNS resolves {{ .Host }}:443 directly; the agent's Host header
-    # plays no role in destination selection. Upstream TLS hard-binds SNI
-    # and validates the upstream cert's SAN against {{ .Host }}, so even a
-    # poisoned cache or misrouted endpoint fails the handshake before any
-    # credentialed body is on the wire.
+    # Pinned upstream for the credentialed chain matching SNI={{ $chain.Host }}.
+    # STRICT_DNS resolves {{ $chain.Host }}:443 directly; the agent's Host
+    # header plays no role in destination selection. Upstream TLS hard-binds
+    # SNI and validates the upstream cert's SAN against {{ $chain.Host }},
+    # so even a poisoned cache or misrouted endpoint fails the handshake
+    # before any credentialed body is on the wire.
     #
     # dns_lookup_family is set explicitly because STRICT_DNS defaults to
     # AUTO (IPv6-first); clusters whose pods lack IPv6 egress would fail
     # with "Network is unreachable" before the credentialed body lands on
     # the wire. Mirrors the V4_PREFERRED choice used by every other DNS
     # cluster in this bootstrap.
-    - name: upstream_{{ .SecretName }}
+    - name: {{ $chain.UpstreamCluster }}
       connect_timeout: 5s
       type: STRICT_DNS
       dns_lookup_family: V4_PREFERRED
       lb_policy: ROUND_ROBIN
       load_assignment:
-        cluster_name: upstream_{{ .SecretName }}
+        cluster_name: {{ $chain.UpstreamCluster }}
         endpoints:
           - lb_endpoints:
               - endpoint:
                   address:
                     socket_address:
-                      address: {{ .Host }}
+                      address: {{ $chain.Host }}
                       port_value: 443
       transport_socket:
         name: envoy.transport_sockets.tls
         typed_config:
           "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
-          sni: {{ .Host }}
+          sni: {{ $chain.Host }}
           auto_host_sni: false
           common_tls_context:
             validation_context:
@@ -725,7 +866,7 @@ static_resources:
               match_typed_subject_alt_names:
                 - san_type: DNS
                   matcher:
-                    exact: {{ .Host }}
+                    exact: {{ $chain.Host }}
 {{- end }}
 {{- end }}
 
@@ -768,7 +909,7 @@ const envoyListenAddress = "0.0.0.0"
 // rules should gate fork egress, so the fork's gateway dials the parent's
 // per-instance ext-authz Service. The fork SA is admitted there via a
 // separate per-fork AuthorizationPolicy (`BuildForkExtAuthzAuthorizationPolicy`).
-func renderEnvoyBootstrap(extAuthzInstanceID string, cfg *config.Config, routes []envoyRoute) (string, error) {
+func renderEnvoyBootstrap(extAuthzInstanceID string, cfg *config.Config, chains []envoyHostChain) (string, error) {
 	tmpl, err := template.New("envoy").Parse(envoyBootstrapTmpl)
 	if err != nil {
 		return "", err
@@ -786,7 +927,7 @@ func renderEnvoyBootstrap(extAuthzInstanceID string, cfg *config.Config, routes 
 	if err := tmpl.Execute(&buf, struct {
 		ListenAddress          string
 		Port                   int
-		Routes                 []envoyRoute
+		Chains                 []envoyHostChain
 		CredentialsRoot        string
 		CredentialFile         string
 		CredentialSDSName      string
@@ -801,7 +942,7 @@ func renderEnvoyBootstrap(extAuthzInstanceID string, cfg *config.Config, routes 
 	}{
 		ListenAddress:          envoyListenAddress,
 		Port:                   cfg.EnvoyPort,
-		Routes:                 routes,
+		Chains:                 chains,
 		CredentialsRoot:        envoyCredentialsRoot,
 		CredentialFile:         envoyCredentialKeySDS,
 		CredentialSDSName:      envoyCredentialSDSName,
@@ -826,8 +967,8 @@ func renderEnvoyBootstrap(extAuthzInstanceID string, cfg *config.Config, routes 
 // the gateway dials (ADR-041). Long-lived pairs pass `instanceName` for
 // both args; forks pass the parent instance ID for the second.
 func BuildEnvoyBootstrapConfigMap(instanceName, extAuthzInstanceID string, cfg *config.Config, ownerCM *corev1.ConfigMap, secrets []corev1.Secret) (*corev1.ConfigMap, error) {
-	routes := routesFromSecrets(secrets)
-	yaml, err := renderEnvoyBootstrap(extAuthzInstanceID, cfg, routes)
+	chains := chainsFromSecrets(secrets)
+	yaml, err := renderEnvoyBootstrap(extAuthzInstanceID, cfg, chains)
 	if err != nil {
 		return nil, err
 	}
@@ -899,22 +1040,24 @@ func ptrBool(b bool) *bool { return &b }
 // kubelet keeps the old bootstrap mounted.
 //
 // Bump on any template change that affects pod-visible behavior.
-const envoyBootstrapTemplateRev = "v6-harness-connect-passthrough"
+const envoyBootstrapTemplateRev = "v9-harness-passthrough-multi-secret"
 
 // envoySecretsRev is a stable digest of the Secret set that drives Envoy's
-// chain rendering: secret name + host + secret-type label + headerName,
-// plus a template-revision marker. Stamped on the pod template so the
-// StatefulSet rolls when any of those change (new credentialed connection,
-// allow-only Secret added, host retargeted, template format bumped). Sort
-// first so reconcile order doesn't churn the hash.
+// chain rendering: secret name + host + secret-type label + headerName +
+// queryParamName, plus a template-revision marker. Stamped on the pod
+// template so the StatefulSet rolls when any of those change (new
+// credentialed connection, allow-only Secret added, host retargeted,
+// header renamed, query-param flipped on/off, template format bumped).
+// Sort first so reconcile order doesn't churn the hash.
 func envoySecretsRev(secrets []corev1.Secret) string {
 	parts := []string{"tmpl=" + envoyBootstrapTemplateRev}
 	for _, s := range secrets {
-		parts = append(parts, fmt.Sprintf("%s|%s|%s|%s",
+		parts = append(parts, fmt.Sprintf("%s|%s|%s|%s|%s",
 			s.Name,
 			s.Annotations[envoyHostPatternAnn],
 			s.Labels[envoySecretTypeLabel],
 			s.Annotations[envoyHeaderNameAnn],
+			s.Annotations[envoyQueryParamAnn],
 		))
 	}
 	// Keep the template marker first; sort the rest so reconcile order

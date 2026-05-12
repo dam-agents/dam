@@ -171,7 +171,7 @@ function buildStringData(
   tokens: ConnectionTokens,
 ): Record<string, string> {
   const data: Record<string, string> = {
-    "sds.yaml": sdsYamlContent(tokens.accessToken, metadata.valueFormat),
+    "sds.yaml": sdsYamlContent(injectionFileContent(tokens.accessToken, metadata.valueFormat)),
     access_token: injectionFileContent(tokens.accessToken, metadata.valueFormat),
     raw_access_token: tokens.accessToken,
     client_id: metadata.clientId,
