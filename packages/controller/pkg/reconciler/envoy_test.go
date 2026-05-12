@@ -398,6 +398,11 @@ func TestRenderEnvoyBootstrap_QueryParamCredentialRendersLuaFilter(t *testing.T)
 	// to Lua pattern or backreference syntax.
 	assert.Contains(t, got, `local HEADER = "X-Bobshell-Cred"`)
 	assert.Contains(t, got, `local PARAM  = "key"`)
+	// Credential is percent-encoded before being appended to the URL —
+	// without this a value containing `&` or `=` would break out of
+	// the query parameter and inject extra params downstream.
+	assert.Contains(t, got, "local function urlencode")
+	assert.Contains(t, got, "cred = urlencode(cred)")
 }
 
 func TestRenderEnvoyBootstrap_HeaderOnlyChainSkipsLua(t *testing.T) {

@@ -183,12 +183,20 @@ function parseStoredSecret(s: k8s.V1Secret): K8sStoredSecret | null {
   const headerName = ann[ANN_HEADER_NAME];
   const valueFormat = ann[ANN_VALUE_FORMAT];
   const queryParamName = ann[ANN_QUERY_PARAM] || undefined;
-  const injectionConfig: InjectionConfig | undefined =
-    headerName && valueFormat
-      ? queryParamName
+  // Query-only secrets may legitimately have no ANN_VALUE_FORMAT — the
+  // Lua filter doesn't apply it and the api-server doesn't stamp the
+  // default. Header-only / dual secrets still require valueFormat for
+  // injectionConfig to be returned.
+  let injectionConfig: InjectionConfig | undefined;
+  if (headerName) {
+    if (valueFormat) {
+      injectionConfig = queryParamName
         ? { headerName, valueFormat, queryParamName }
-        : { headerName, valueFormat }
-      : undefined;
+        : { headerName, valueFormat };
+    } else if (queryParamName) {
+      injectionConfig = { headerName, queryParamName };
+    }
+  }
   const authMode = ann[ANN_AUTH_MODE] as AuthMode | undefined;
   const stored: K8sStoredSecret = {
     id,
@@ -229,9 +237,16 @@ export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSe
       const annotations: Record<string, string> = {
         [ANN_HOST_PATTERN]: hostPattern,
         [ANN_HEADER_NAME]: headerName,
-        [ANN_VALUE_FORMAT]: valueFormat,
         "agent-platform.ai/display-name": name,
       };
+      // Skip ANN_VALUE_FORMAT for query-only secrets where the user didn't
+      // explicitly supply a valueFormat — the Lua filter ignores it (SDS
+      // holds the bare value), and stamping the default `Bearer {value}`
+      // would mislead anyone reading the raw Secret. Always stamp it for
+      // header-only secrets, since the SDS file content is baked from it.
+      if (injectionConfig?.valueFormat !== undefined || !injectionConfig?.queryParamName) {
+        annotations[ANN_VALUE_FORMAT] = valueFormat;
+      }
       if (pathPattern) annotations[ANN_PATH_PATTERN] = pathPattern;
       if (authMode) annotations[ANN_AUTH_MODE] = authMode;
       if (envMappings?.length) annotations[ANN_ENV_MAPPINGS] = JSON.stringify(envMappings);
@@ -284,26 +299,34 @@ export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSe
       // `value`, so we re-bake the SDS file in that branch below — there is
       // no need to recover the prior value from the existing inline_string.
       const newAuthMode: AuthMode | undefined = patch.authMode ?? (annotations[ANN_AUTH_MODE] as AuthMode | undefined);
-      const existingInjection: InjectionConfig | undefined =
-        annotations[ANN_HEADER_NAME] && annotations[ANN_VALUE_FORMAT]
-          ? annotations[ANN_QUERY_PARAM]
-            ? {
-                headerName: annotations[ANN_HEADER_NAME]!,
-                valueFormat: annotations[ANN_VALUE_FORMAT]!,
-                queryParamName: annotations[ANN_QUERY_PARAM]!,
-              }
-            : {
-                headerName: annotations[ANN_HEADER_NAME]!,
-                valueFormat: annotations[ANN_VALUE_FORMAT]!,
-              }
-          : undefined;
+      // Recover the existing InjectionConfig from annotations to seed
+      // resolveInjection when the caller didn't supply a fresh one.
+      // Query-only secrets may have no ANN_VALUE_FORMAT (we skip
+      // stamping the default for them); accept that shape.
+      let existingInjection: InjectionConfig | undefined;
+      if (annotations[ANN_HEADER_NAME]) {
+        const h = annotations[ANN_HEADER_NAME]!;
+        const v = annotations[ANN_VALUE_FORMAT];
+        const q = annotations[ANN_QUERY_PARAM];
+        if (v) {
+          existingInjection = q ? { headerName: h, valueFormat: v, queryParamName: q } : { headerName: h, valueFormat: v };
+        } else if (q) {
+          existingInjection = { headerName: h, queryParamName: q };
+        }
+      }
       const newInjection: InjectionConfig | undefined =
         patch.injectionConfig === null ? undefined :
         patch.injectionConfig ?? existingInjection;
 
       const { headerName, valueFormat } = resolveInjection(secretType, newAuthMode, newInjection);
       annotations[ANN_HEADER_NAME] = headerName;
-      annotations[ANN_VALUE_FORMAT] = valueFormat;
+      // Mirror createSecret: skip stamping ANN_VALUE_FORMAT for query-only
+      // secrets where the user didn't explicitly supply a valueFormat.
+      if (newInjection?.valueFormat !== undefined || !newInjection?.queryParamName) {
+        annotations[ANN_VALUE_FORMAT] = valueFormat;
+      } else {
+        delete annotations[ANN_VALUE_FORMAT];
+      }
       if (newAuthMode) annotations[ANN_AUTH_MODE] = newAuthMode;
       if (newInjection?.queryParamName) annotations[ANN_QUERY_PARAM] = newInjection.queryParamName;
       else delete annotations[ANN_QUERY_PARAM];

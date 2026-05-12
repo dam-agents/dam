@@ -283,7 +283,12 @@ export function EditSecretDialog({ secret, onClose }: Props) {
                   the header is stripped — <span className="font-mono">Value
                   Format</span> doesn't apply here. Need <em>both</em> a
                   header and a URL injection on the same endpoint? Create two
-                  Secrets with the same host pattern.
+                  Secrets with the same host pattern.{" "}
+                  <strong className="text-warning">
+                    Credentials in query strings are routinely logged by web
+                    servers, CDNs, and load balancers — prefer header injection
+                    unless the upstream API requires this.
+                  </strong>
                 </>
               }
               error={errors.queryParamName?.message}

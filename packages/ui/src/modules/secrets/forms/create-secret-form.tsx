@@ -230,7 +230,12 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
                 <span className="font-mono"> Value Format</span> doesn't apply
                 here. Need <em>both</em> a header and a URL injection on the
                 same endpoint? Create two Secrets with the same host pattern —
-                one header-only, one with this field set.
+                one header-only, one with this field set.{" "}
+                <strong className="text-warning">
+                  Credentials in query strings are routinely logged by web
+                  servers, CDNs, and load balancers — prefer header injection
+                  unless the upstream API requires this.
+                </strong>
               </>
             }
             error={errors.queryParamName?.message}

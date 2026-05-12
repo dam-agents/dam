@@ -632,11 +632,25 @@ static_resources:
                         inline_string: |
                           local HEADER = {{ printf "%q" $cred.HeaderName }}
                           local PARAM  = {{ printf "%q" $cred.QueryParamName }}
+                          -- Percent-encode every byte outside RFC 3986
+                          -- unreserved. Without this, a credential
+                          -- containing & or = would break out of its
+                          -- query parameter — the splitter below frames
+                          -- on those bytes literally. We encode the
+                          -- credential value but not PARAM (PARAM is
+                          -- api-server-validated against the URL-safe
+                          -- charset, so it's already safe).
+                          local function urlencode(s)
+                            return (string.gsub(s, "[^A-Za-z0-9%-_.~]", function(c)
+                              return string.format("%%%02X", string.byte(c))
+                            end))
+                          end
                           function envoy_on_request(rh)
                             local h = rh:headers()
                             local cred = h:get(HEADER)
                             if cred == nil or cred == "" then return end
                             h:remove(HEADER)
+                            cred = urlencode(cred)
                             local path = h:get(":path")
                             if path == nil then return end
                             local qi = string.find(path, "?", 1, true)
@@ -1040,7 +1054,7 @@ func ptrBool(b bool) *bool { return &b }
 // kubelet keeps the old bootstrap mounted.
 //
 // Bump on any template change that affects pod-visible behavior.
-const envoyBootstrapTemplateRev = "v9-harness-passthrough-multi-secret"
+const envoyBootstrapTemplateRev = "v10-url-encode-cred"
 
 // envoySecretsRev is a stable digest of the Secret set that drives Envoy's
 // chain rendering: secret name + host + secret-type label + headerName +

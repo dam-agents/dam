@@ -327,6 +327,51 @@ describe("createK8sSecretsPort — queryParamName injection", () => {
     });
   });
 
+  it("omits ANN_VALUE_FORMAT for query-only secrets when valueFormat is not explicit", async () => {
+    // For query-injection the Lua filter ignores valueFormat (SDS holds
+    // the bare value), so stamping the resolved default `Bearer {value}`
+    // would mislead anyone reading the raw K8s Secret.
+    const { client, created } = fakeClient();
+    const port = createK8sSecretsPort(client, "owner-1");
+
+    await port.createSecret({
+      id: "bob",
+      name: "Bob",
+      type: "generic",
+      value: "sk-x",
+      hostPattern: "prod.ibm-bob-staging.cloud.ibm.com",
+      injectionConfig: {
+        headerName: "X-Bobshell-Credential",
+        queryParamName: "key",
+      },
+    });
+
+    const ann = created[0]!.metadata?.annotations ?? {};
+    expect(ann["agent-platform.ai/injection-query-param"]).toBe("key");
+    expect(ann["agent-platform.ai/injection-value-format"]).toBeUndefined();
+  });
+
+  it("keeps ANN_VALUE_FORMAT for query-only secrets when valueFormat is explicit", async () => {
+    const { client, created } = fakeClient();
+    const port = createK8sSecretsPort(client, "owner-1");
+
+    await port.createSecret({
+      id: "bob",
+      name: "Bob",
+      type: "generic",
+      value: "sk-x",
+      hostPattern: "prod.ibm-bob-staging.cloud.ibm.com",
+      injectionConfig: {
+        headerName: "X-Bobshell-Credential",
+        valueFormat: "Custom {value}",
+        queryParamName: "key",
+      },
+    });
+
+    const ann = created[0]!.metadata?.annotations ?? {};
+    expect(ann["agent-platform.ai/injection-value-format"]).toBe("Custom {value}");
+  });
+
   it("drops the annotation when injectionConfig is reset to null", async () => {
     const { client, replaced } = fakeClient();
     const port = createK8sSecretsPort(client, "owner-1");
