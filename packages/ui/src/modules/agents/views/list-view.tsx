@@ -2,7 +2,7 @@ import {
   Add as Plus,
   Password as KeyRound,
   Play,
-  RotateClockwise as RotateCw,
+  Renew as RotateCw,
   TrashCan as Trash2,
 } from "@carbon/icons-react";
 import { useMemo, useState } from "react";
