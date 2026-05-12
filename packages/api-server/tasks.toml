@@ -79,7 +79,7 @@ if [ -z "${IS_SANDBOX:-}" ]; then
   mise run cluster:delete -- --vm-name="$VM_NAME" --force
 fi
 
-INSTALL_ARGS=(--lima-template=deploy/lima-k3s-test.yaml --set=domain=localtest.me --set=port=5555 --set=controller.agentStorageSize=1Gi --no-restart)
+INSTALL_ARGS=(--lima-template=deploy/lima-k3s-test.yaml --set=domain=localtest.me --set=port=5555 --set=controller.agent.storageSize=1Gi --no-restart)
 if [ -z "${IS_SANDBOX:-}" ]; then
   INSTALL_ARGS+=(--vm-name="$VM_NAME")
 fi

@@ -15,7 +15,7 @@ func TestLoadFromEnv_AllSet(t *testing.T) {
 		"PLATFORM_RELEASE_NAMESPACE": "custom-ns",
 		"PLATFORM_RELEASE_NAME":      "my-release",
 		"PLATFORM_LEASE_NAME":        "custom-lease",
-		"POD_NAME":               "controller-0",
+		"POD_NAME":                   "controller-0",
 	})
 	cfg, err := LoadFromEnv()
 	require.NoError(t, err)
@@ -29,7 +29,7 @@ func TestLoadFromEnv_AllSet(t *testing.T) {
 func TestLoadFromEnv_Defaults(t *testing.T) {
 	setEnv(t, map[string]string{
 		"PLATFORM_RELEASE_NAME": "platform",
-		"POD_NAME":          "controller-0",
+		"POD_NAME":              "controller-0",
 	})
 	cfg, err := LoadFromEnv()
 	require.NoError(t, err)
@@ -37,7 +37,11 @@ func TestLoadFromEnv_Defaults(t *testing.T) {
 	assert.Equal(t, "default", cfg.ReleaseNamespace)
 	assert.Equal(t, "platform-controller", cfg.LeaseName)
 	assert.Equal(t, 1*time.Hour, cfg.IdleTimeout)
-	assert.Equal(t, "", cfg.AgentStorageClass)
+	// AgentConfig defaults applied when AGENT_CONFIG is unset.
+	assert.Equal(t, "IfNotPresent", cfg.AgentConfig.ImagePullPolicy)
+	assert.Equal(t, "ReadWriteMany", cfg.AgentConfig.AccessMode)
+	assert.Equal(t, "10Gi", cfg.AgentConfig.StorageSize)
+	assert.Equal(t, "", cfg.AgentConfig.StorageClass)
 	// ADR-041: ext-authz host is per-instance (no shared default).
 	assert.Equal(t, "platform-extauthz-inst-1.default.svc.cluster.local", cfg.ExtAuthzHostFor("inst-1"))
 }
@@ -59,31 +63,20 @@ func TestExtAuthzHostFor_ComposesFQDN(t *testing.T) {
 // matching how istiod stamps workload certs.
 func TestPrincipalFor_SPIFFEShape(t *testing.T) {
 	setEnv(t, map[string]string{
-		"PLATFORM_RELEASE_NAME":         "platform",
-		"POD_NAME":                      "controller-0",
-		"PLATFORM_AGENT_NAMESPACE":      "agents",
-		"PLATFORM_ISTIO_TRUST_DOMAIN":   "td.local",
+		"PLATFORM_RELEASE_NAME":       "platform",
+		"POD_NAME":                    "controller-0",
+		"PLATFORM_AGENT_NAMESPACE":    "agents",
+		"PLATFORM_ISTIO_TRUST_DOMAIN": "td.local",
 	})
 	cfg, err := LoadFromEnv()
 	require.NoError(t, err)
 	assert.Equal(t, "td.local/ns/agents/sa/inst-x", cfg.PrincipalFor("inst-x"))
 }
 
-func TestLoadFromEnv_AgentStorageClass(t *testing.T) {
-	setEnv(t, map[string]string{
-		"PLATFORM_RELEASE_NAME":   "platform",
-		"POD_NAME":            "controller-0",
-		"AGENT_STORAGE_CLASS": "platform-rwx",
-	})
-	cfg, err := LoadFromEnv()
-	require.NoError(t, err)
-	assert.Equal(t, "platform-rwx", cfg.AgentStorageClass)
-}
-
 func TestLoadFromEnv_IdleTimeout(t *testing.T) {
 	setEnv(t, map[string]string{
 		"PLATFORM_RELEASE_NAME": "platform",
-		"POD_NAME":          "controller-0",
+		"POD_NAME":              "controller-0",
 		"PLATFORM_IDLE_TIMEOUT": "30m",
 	})
 	cfg, err := LoadFromEnv()
@@ -94,7 +87,7 @@ func TestLoadFromEnv_IdleTimeout(t *testing.T) {
 func TestLoadFromEnv_IdleTimeoutDisabled(t *testing.T) {
 	setEnv(t, map[string]string{
 		"PLATFORM_RELEASE_NAME": "platform",
-		"POD_NAME":          "controller-0",
+		"POD_NAME":              "controller-0",
 		"PLATFORM_IDLE_TIMEOUT": "0s",
 	})
 	cfg, err := LoadFromEnv()
@@ -118,12 +111,60 @@ func TestLoadFromEnv_MissingPodName(t *testing.T) {
 	assert.Contains(t, err.Error(), "POD_NAME")
 }
 
+func TestLoadFromEnv_AgentConfig_Parsed(t *testing.T) {
+	setEnv(t, map[string]string{
+		"PLATFORM_RELEASE_NAME": "platform",
+		"POD_NAME":              "controller-0",
+		"AGENT_CONFIG": `{
+			"imagePullPolicy": "Always",
+			"imagePullSecrets": ["regcred"],
+			"storageClass": "platform-rwx",
+			"accessMode": "ReadWriteOnce",
+			"storageSize": "20Gi",
+			"runtimeClassName": "kata",
+			"nodeSelector": {"workload": "agents"},
+			"tolerations": [{"key": "dedicated", "operator": "Equal", "value": "agents", "effect": "NoSchedule"}],
+			"extraEnv": [{"name": "OPERATOR_FLAG", "value": "true"}],
+			"probes": {"startup": {"httpGet": {"path": "/h", "port": "acp"}, "periodSeconds": 5}}
+		}`,
+	})
+	cfg, err := LoadFromEnv()
+	require.NoError(t, err)
+	ac := cfg.AgentConfig
+	assert.Equal(t, "Always", ac.ImagePullPolicy)
+	assert.Equal(t, []string{"regcred"}, ac.ImagePullSecrets)
+	assert.Equal(t, "platform-rwx", ac.StorageClass)
+	assert.Equal(t, "ReadWriteOnce", ac.AccessMode)
+	assert.Equal(t, "20Gi", ac.StorageSize)
+	assert.Equal(t, "kata", ac.RuntimeClassName)
+	assert.Equal(t, "agents", ac.NodeSelector["workload"])
+	require.Len(t, ac.Tolerations, 1)
+	assert.Equal(t, "dedicated", ac.Tolerations[0].Key)
+	require.Len(t, ac.ExtraEnv, 1)
+	assert.Equal(t, "OPERATOR_FLAG", ac.ExtraEnv[0].Name)
+	require.NotNil(t, ac.Probes)
+	require.NotNil(t, ac.Probes.Startup)
+}
+
+func TestLoadFromEnv_AgentConfig_UnknownFieldRejected(t *testing.T) {
+	// Operators who mistype a field name get a loud startup error rather
+	// than a silently-ignored value.
+	setEnv(t, map[string]string{
+		"PLATFORM_RELEASE_NAME": "platform",
+		"POD_NAME":              "controller-0",
+		"AGENT_CONFIG":          `{"runtimeClasName": "kata"}`,
+	})
+	_, err := LoadFromEnv()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "AGENT_CONFIG")
+}
+
 func setEnv(t *testing.T, vars map[string]string) {
 	t.Helper()
 	for _, key := range []string{
 		"PLATFORM_AGENT_NAMESPACE", "PLATFORM_RELEASE_NAMESPACE", "PLATFORM_RELEASE_NAME",
 		"PLATFORM_LEASE_NAME", "POD_NAME", "PLATFORM_IDLE_TIMEOUT",
-		"AGENT_STORAGE_CLASS",
+		"AGENT_CONFIG",
 		"EXT_AUTHZ_PORT", "EXT_AUTHZ_HOLD_SECONDS",
 		"PLATFORM_ISTIO_TRUST_DOMAIN", "PLATFORM_ISTIO_WAYPOINT_NAME",
 	} {

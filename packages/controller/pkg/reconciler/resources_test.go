@@ -166,7 +166,7 @@ func TestBuildAgentStatefulSet_Volumes(t *testing.T) {
 	pvc := ss.Spec.VolumeClaimTemplates[0]
 	assert.Equal(t, "home-agent", pvc.Name)
 	assert.Equal(t, []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany}, pvc.Spec.AccessModes)
-	assert.Nil(t, pvc.Spec.StorageClassName, "unset AgentStorageClass → PVC gets cluster-default class")
+	assert.Nil(t, pvc.Spec.StorageClassName, "unset StorageClass → PVC gets cluster-default class")
 
 	volMap := make(map[string]corev1.Volume)
 	for _, v := range ss.Spec.Template.Spec.Volumes {
@@ -210,7 +210,7 @@ func TestBuildAgentStatefulSet_PVCSize(t *testing.T) {
 
 func TestBuildAgentStatefulSet_AgentStorageClass(t *testing.T) {
 	cfg := *testConfig
-	cfg.AgentStorageClass = "platform-rwx"
+	cfg.AgentConfig.StorageClass = "platform-rwx"
 	instance := &types.InstanceSpec{DesiredState: "running"}
 	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, &cfg, testOwnerCM, nil)
 

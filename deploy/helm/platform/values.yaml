@@ -395,31 +395,74 @@ controller:
     repository: quay.io/dam-agents/controller
     tag: ""
     pullPolicy: IfNotPresent
-  agentImagePullPolicy: IfNotPresent
-  # -- Pull secrets for agent pods (in agentNamespace, separate from chart-level imagePullSecrets).
-  # The referenced secrets must exist in agentNamespace.
-  agentImagePullSecrets: []
-  # -- StorageClass for per-instance agent PVCs. Must support ReadWriteMany
-  # so per-turn foreign-user fork pods can mount the same /home/agent volume
-  # concurrently with the main pod (see ADR DRAFT — Slack per-turn user
-  # impersonation). Empty = cluster default (which must itself support RWX).
-  # Set to "platform-rwx" to use the bundled in-cluster NFS provisioner below.
-  agentStorageClass: ""
-  # -- PVC access mode for per-instance agent PVCs. Default ReadWriteMany
-  # is required in production so per-turn foreign-user fork pods can mount
-  # /home/agent concurrently with the main pod. Set to ReadWriteOnce on
-  # single-node clusters where you don't want to enable the bundled NFS
-  # stack and the cluster's default StorageClass is RWO-only; forks won't
-  # cross nodes in that mode but local single-node dev doesn't hit that.
-  agentAccessMode: ReadWriteMany
-  # -- PVC size requested for persistent agent mounts (e.g. /home/agent).
-  # Empty = controller default (10Gi). Lower this on resource-constrained
-  # clusters such as the e2e test VM.
-  agentStorageSize: ""
-  # -- Extra annotations stamped on every agent pod. Useful for admission-webhook
-  # break-glass annotations (e.g. `admission.stackrox.io/break-glass: ticket-1234`)
-  # or for cluster-specific scheduling/observability hints.
-  agentPodAnnotations: {}
+  # -- Every knob that shapes controller-rendered agent / fork / gateway pods.
+  # Shipped as a single JSON env var (`AGENT_CONFIG`) to the controller; unknown
+  # fields fail loudly at startup so typos in values.yaml surface immediately.
+  #
+  # Scope split (enforced by the controller, not by the schema):
+  #   - Pull/storage + pod-metadata + scheduling fields apply to all four pod
+  #     types (long-lived agent + paired gateway, fork agent + paired fork
+  #     gateway) so the paired pair stays co-scheduled and shares runtime class.
+  #   - extraEnv / extraVolumes / extraVolumeMounts / resources / probes apply
+  #     only to the AGENT container (long-lived + fork). The gateway pod's
+  #     Envoy bootstrap is platform-managed; widening this knob there could
+  #     silently break the credential-injection chain.
+  #   - Controller-managed labels/annotations/env always win on collision —
+  #     operators cannot overwrite selector labels (`agent-platform.ai/instance`,
+  #     `.../pair`, `.../role`), the gateway's `envoy-secrets-rev` annotation,
+  #     `agent-platform.ai/gh-token-available`, or platform env (HTTPS_PROXY,
+  #     SSL_CERT_FILE, API_SERVER_URL, ...).
+  #
+  # Future: per-agent partial AgentConfig in the agent ConfigMap will ride on
+  # top of this via AgentConfig.Merge — particularly extraVolumes / extraVolumeMounts /
+  # storageSize / imagePullSecrets where per-agent needs diverge from chart-wide policy.
+  agent:
+    # --- Pull / storage ---
+    imagePullPolicy: IfNotPresent
+    # -- Pull secrets for agent pods (in agentNamespace, separate from chart-level imagePullSecrets).
+    # The referenced secrets must exist in agentNamespace.
+    imagePullSecrets: []
+    # -- StorageClass for per-instance agent PVCs. Must support ReadWriteMany
+    # so per-turn foreign-user fork pods can mount the same /home/agent volume
+    # concurrently with the main pod (see ADR DRAFT — Slack per-turn user
+    # impersonation). Empty = cluster default (which must itself support RWX).
+    # Set to "platform-rwx" to use the bundled in-cluster NFS provisioner below.
+    storageClass: ""
+    # -- PVC access mode for per-instance agent PVCs. Default ReadWriteMany
+    # is required in production so per-turn foreign-user fork pods can mount
+    # /home/agent concurrently with the main pod. Set to ReadWriteOnce on
+    # single-node clusters where you don't want to enable the bundled NFS
+    # stack and the cluster's default StorageClass is RWO-only; forks won't
+    # cross nodes in that mode but local single-node dev doesn't hit that.
+    accessMode: ReadWriteMany
+    # -- PVC size requested for persistent agent mounts (e.g. /home/agent).
+    # Empty = controller default (10Gi). Lower this on resource-constrained
+    # clusters such as the e2e test VM.
+    storageSize: ""
+
+    # --- Pod metadata (applies to all four pod types) ---
+    # e.g. admission-webhook break-glass: `admission.stackrox.io/break-glass: ticket-1234`
+    extraLabels: {}
+    extraAnnotations: {}
+
+    # --- Scheduling (applies to all four pod types) ---
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+    topologySpreadConstraints: []
+    priorityClassName: ""
+    runtimeClassName: ""  # e.g. "kata" for sandboxed runtimes
+
+    # --- Agent container additions (long-lived agent + fork agent only) ---
+    extraEnv: []
+    extraVolumes: []
+    extraVolumeMounts: []
+    # Resources: when set, REPLACES the agent template's container resources
+    # (operator policy wins — same pattern as cluster LimitRange admission).
+    resources: {}
+    # Probes: each sub-field replaces the matching default. Probes also
+    # require `probes.enabled: true` (master switch) to be rendered at all.
+    probes: {}  # { startup, readiness, liveness } — each optional
   replicas: 1
   # -- Idle timeout before auto-hibernating running instances (Go duration, 0 = disabled)
   idleTimeout: "1h"
@@ -468,11 +511,11 @@ controller:
 # Note: the bundled nfs-ganesha v4.0.8 image is archived upstream and is
 # **broken on btrfs-backed exports** (writes return EREMOTEIO). Hosts with
 # a btrfs root (Fedora's default) should disable this and switch
-# `controller.agentAccessMode` to `ReadWriteOnce` instead — see the
+# `controller.agent.accessMode` to `ReadWriteOnce` instead — see the
 # storage knobs above. ext4 / xfs hosts (e.g. Ubuntu lima) work fine.
 #
 # Production deployments on managed K8s should leave this disabled and
-# point `controller.agentStorageClass` at the cloud-native RWX class
+# point `controller.agent.storageClass` at the cloud-native RWX class
 # (EFS / Filestore / Azure Files).
 nfsProvisioner:
   enabled: false
@@ -485,7 +528,7 @@ nfsProvisioner:
   podAnnotations: {}
   image: registry.k8s.io/sig-storage/nfs-provisioner:v4.0.8
   # -- Name of the RWX StorageClass created by this provisioner. Set
-  # `controller.agentStorageClass` to this value to use it for agent PVCs.
+  # `controller.agent.storageClass` to this value to use it for agent PVCs.
   storageClassName: platform-rwx
   # -- Size of the single backing volume that hosts all NFS-served exports.
   # Individual agent PVCs are carved out of this pool as subdirectories.

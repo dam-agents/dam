@@ -278,8 +278,8 @@ fi
 if [ "$ROOT_FSTYPE" = "btrfs" ]; then
   echo "Detected btrfs root — bypassing nfs-ganesha (broken on btrfs), using RWO local-path."
   HELM_EXTRA_ARGS+=(
-    --set controller.agentStorageClass=local-path
-    --set controller.agentAccessMode=ReadWriteOnce
+    --set controller.agent.storageClass=local-path
+    --set controller.agent.accessMode=ReadWriteOnce
     --set nfsProvisioner.enabled=false
   )
 fi

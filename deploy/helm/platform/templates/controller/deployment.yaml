@@ -41,28 +41,11 @@ spec:
               value: {{ .Values.agentNamespace }}
             - name: PLATFORM_RELEASE_NAMESPACE
               value: {{ .Release.Namespace }}
-            - name: AGENT_IMAGE_PULL_POLICY
-              value: {{ .Values.controller.agentImagePullPolicy | default "IfNotPresent" }}
-            {{- with .Values.controller.agentImagePullSecrets }}
-            - name: AGENT_IMAGE_PULL_SECRETS
-              value: {{ include "platform.nameList" . }}
-            {{- end }}
-            {{- with .Values.controller.agentStorageClass }}
-            - name: AGENT_STORAGE_CLASS
-              value: {{ . | quote }}
-            {{- end }}
-            {{- with .Values.controller.agentAccessMode }}
-            - name: AGENT_ACCESS_MODE
-              value: {{ . | quote }}
-            {{- end }}
-            {{- with .Values.controller.agentStorageSize }}
-            - name: AGENT_STORAGE_SIZE
-              value: {{ . | quote }}
-            {{- end }}
-            {{- with .Values.controller.agentPodAnnotations }}
-            - name: AGENT_POD_ANNOTATIONS
-              value: {{ toJson . | quote }}
-            {{- end }}
+            # Every knob shaping controller-rendered pods rides in one JSON
+            # env var (see config.AgentConfig). Unknown fields fail loudly at
+            # controller startup so values.yaml typos don't slip through silently.
+            - name: AGENT_CONFIG
+              value: {{ .Values.controller.agent | toJson | quote }}
             # ADR-041: harness traffic routes through the waypoint-fronted
             # `-apiserver-harness` Service. The bare apiserver Service no
             # longer carries the harness port.

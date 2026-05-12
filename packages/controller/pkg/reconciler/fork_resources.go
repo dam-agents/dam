@@ -162,14 +162,14 @@ func BuildForkAgentJob(
 		initContainers = append(initContainers, corev1.Container{
 			Name:            "init",
 			Image:           agentSpec.Image,
-			ImagePullPolicy: corev1.PullPolicy(cfg.AgentImagePullPolicy),
+			ImagePullPolicy: corev1.PullPolicy(cfg.AgentConfig.ImagePullPolicy),
 			Command:         []string{"sh", "-c", agentSpec.Init},
 			VolumeMounts:    volumeMounts,
 		})
 	}
 
 	var pullSecrets []corev1.LocalObjectReference
-	for _, name := range cfg.AgentImagePullSecrets {
+	for _, name := range cfg.AgentConfig.ImagePullSecrets {
 		pullSecrets = append(pullSecrets, corev1.LocalObjectReference{Name: name})
 	}
 
@@ -203,7 +203,7 @@ func BuildForkAgentJob(
 	containers := []corev1.Container{{
 		Name:            "agent",
 		Image:           agentSpec.Image,
-		ImagePullPolicy: corev1.PullPolicy(cfg.AgentImagePullPolicy),
+		ImagePullPolicy: corev1.PullPolicy(cfg.AgentConfig.ImagePullPolicy),
 		Ports: []corev1.ContainerPort{{
 			Name: "acp", ContainerPort: 8080,
 		}},
@@ -219,6 +219,8 @@ func BuildForkAgentJob(
 		Resources:    resourceReqs,
 		VolumeMounts: volumeMounts,
 	}}
+	applyAgentContainer(&containers[0], cfg.AgentConfig)
+	volumes = append(volumes, cfg.AgentConfig.ExtraVolumes...)
 
 	falseVal := false
 	automountSAToken := &falseVal
@@ -226,6 +228,31 @@ func BuildForkAgentJob(
 
 	ttl := int32(60)
 	backoff := int32(0)
+
+	podMeta := metav1.ObjectMeta{Labels: labels}
+	applyAgentPodMeta(&podMeta, cfg.AgentConfig)
+
+	podSpec := corev1.PodSpec{
+		// ADR-041 + ADR-027: fork agent runs as the per-fork SA
+		// (its own identity, NOT the parent's). The per-fork
+		// harness AuthorizationPolicy admits this SA only to
+		// `/api/instances/<parent>/mcp` — narrower than the
+		// parent's surface, so a compromised fork (i.e. a
+		// compromised replier) cannot reach pod-files SSE,
+		// `/internal/trigger`, or any other parent-scoped
+		// harness endpoint.
+		ServiceAccountName:            forkName,
+		RestartPolicy:                 corev1.RestartPolicyNever,
+		TerminationGracePeriodSeconds: &cfg.TerminationGracePeriod,
+		ImagePullSecrets:              pullSecrets,
+		SecurityContext:               podSec,
+		InitContainers:                initContainers,
+		AutomountServiceAccountToken:  automountSAToken,
+		ShareProcessNamespace:         shareProcessNS,
+		Containers:                    containers,
+		Volumes:                       volumes,
+	}
+	applyAgentPodScheduling(&podSpec, cfg.AgentConfig)
 
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
@@ -240,27 +267,8 @@ func BuildForkAgentJob(
 			BackoffLimit:            &backoff,
 			TTLSecondsAfterFinished: &ttl,
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: labels},
-				Spec: corev1.PodSpec{
-					// ADR-041 + ADR-027: fork agent runs as the per-fork SA
-					// (its own identity, NOT the parent's). The per-fork
-					// harness AuthorizationPolicy admits this SA only to
-					// `/api/instances/<parent>/mcp` — narrower than the
-					// parent's surface, so a compromised fork (i.e. a
-					// compromised replier) cannot reach pod-files SSE,
-					// `/internal/trigger`, or any other parent-scoped
-					// harness endpoint.
-					ServiceAccountName:            forkName,
-					RestartPolicy:                 corev1.RestartPolicyNever,
-					TerminationGracePeriodSeconds: &cfg.TerminationGracePeriod,
-					ImagePullSecrets:              pullSecrets,
-					SecurityContext:               podSec,
-					InitContainers:                initContainers,
-					AutomountServiceAccountToken:  automountSAToken,
-					ShareProcessNamespace:         shareProcessNS,
-					Containers:                    containers,
-					Volumes:                       volumes,
-				},
+				ObjectMeta: podMeta,
+				Spec:       podSpec,
 			},
 		},
 	}

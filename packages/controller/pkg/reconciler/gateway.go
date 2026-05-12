@@ -52,6 +52,25 @@ func BuildGatewayStatefulSet(instanceName string, hibernated bool, cfg *config.C
 		"agent-platform.ai/envoy-secrets-rev": envoySecretsRev(credentialSecrets),
 	}
 
+	podMeta := metav1.ObjectMeta{
+		Labels:      labels,
+		Annotations: annotations,
+	}
+	applyAgentPodMeta(&podMeta, cfg.AgentConfig)
+
+	podSpec := corev1.PodSpec{
+		// ADR-041: gateway pod runs as the per-instance SA so
+		// its SPIFFE workload identity matches the agent half
+		// of the pair (same SA on both pods). The gateway-side
+		// AuthorizationPolicy ALLOWs only this principal.
+		ServiceAccountName:            instanceName,
+		TerminationGracePeriodSeconds: &cfg.TerminationGracePeriod,
+		AutomountServiceAccountToken:  &falseVal,
+		Containers:                    containers,
+		Volumes:                       volumes,
+	}
+	applyAgentPodScheduling(&podSpec, cfg.AgentConfig)
+
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      gatewayName,
@@ -80,21 +99,8 @@ func BuildGatewayStatefulSet(instanceName string, hibernated bool, cfg *config.C
 				},
 			},
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels:      labels,
-					Annotations: annotations,
-				},
-				Spec: corev1.PodSpec{
-					// ADR-041: gateway pod runs as the per-instance SA so
-					// its SPIFFE workload identity matches the agent half
-					// of the pair (same SA on both pods). The gateway-side
-					// AuthorizationPolicy ALLOWs only this principal.
-					ServiceAccountName:            instanceName,
-					TerminationGracePeriodSeconds: &cfg.TerminationGracePeriod,
-					AutomountServiceAccountToken:  &falseVal,
-					Containers:                    containers,
-					Volumes:                       volumes,
-				},
+				ObjectMeta: podMeta,
+				Spec:       podSpec,
 			},
 		},
 	}
@@ -153,29 +159,35 @@ func BuildForkGatewayPod(forkName, parentInstanceID string, cfg *config.Config, 
 
 	falseVal := false
 
+	podMeta := metav1.ObjectMeta{
+		Name:      gatewayName,
+		Namespace: cfg.Namespace,
+		Labels:    labels,
+		OwnerReferences: []metav1.OwnerReference{
+			*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
+		},
+	}
+	applyAgentPodMeta(&podMeta, cfg.AgentConfig)
+
+	podSpec := corev1.PodSpec{
+		// ADR-041 + ADR-027: fork gateway pod runs as the per-fork SA
+		// (its own identity, NOT the parent's). The per-fork
+		// gateway-admission AuthorizationPolicy ALLOWs only this SA
+		// (both pods of the fork pair share it), and per-fork
+		// harness + ext-authz policies admit it to a narrow surface
+		// scoped to the parent.
+		ServiceAccountName:            forkName,
+		RestartPolicy:                 corev1.RestartPolicyAlways,
+		TerminationGracePeriodSeconds: &cfg.TerminationGracePeriod,
+		AutomountServiceAccountToken:  &falseVal,
+		Containers:                    containers,
+		Volumes:                       volumes,
+	}
+	applyAgentPodScheduling(&podSpec, cfg.AgentConfig)
+
 	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      gatewayName,
-			Namespace: cfg.Namespace,
-			Labels:    labels,
-			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
-			},
-		},
-		Spec: corev1.PodSpec{
-			// ADR-041 + ADR-027: fork gateway pod runs as the per-fork SA
-			// (its own identity, NOT the parent's). The per-fork
-			// gateway-admission AuthorizationPolicy ALLOWs only this SA
-			// (both pods of the fork pair share it), and per-fork
-			// harness + ext-authz policies admit it to a narrow surface
-			// scoped to the parent.
-			ServiceAccountName:            forkName,
-			RestartPolicy:                 corev1.RestartPolicyAlways,
-			TerminationGracePeriodSeconds: &cfg.TerminationGracePeriod,
-			AutomountServiceAccountToken:  &falseVal,
-			Containers:                    containers,
-			Volumes:                       volumes,
-		},
+		ObjectMeta: podMeta,
+		Spec:       podSpec,
 	}
 }
 

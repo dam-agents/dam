@@ -18,8 +18,9 @@ controller:
     repository: platform-controller
     tag: latest
     pullPolicy: Never
-  agentImagePullPolicy: Never
-  agentStorageClass: platform-rwx
+  agent:
+    imagePullPolicy: Never
+    storageClass: platform-rwx
 
 nfsProvisioner:
   enabled: true

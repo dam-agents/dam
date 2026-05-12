@@ -140,13 +140,13 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 		if m.Persist {
 			storageSize := m.Size
 			if storageSize == "" {
-				storageSize = cfg.AgentStorageSize
+				storageSize = cfg.AgentConfig.StorageSize
 			}
 			if storageSize == "" {
 				storageSize = "10Gi"
 			}
 			accessMode := corev1.ReadWriteMany
-			if cfg.AgentAccessMode == "ReadWriteOnce" {
+			if cfg.AgentConfig.AccessMode == "ReadWriteOnce" {
 				accessMode = corev1.ReadWriteOnce
 			}
 			pvcSpec := corev1.PersistentVolumeClaimSpec{
@@ -157,8 +157,8 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 					},
 				},
 			}
-			if cfg.AgentStorageClass != "" {
-				sc := cfg.AgentStorageClass
+			if cfg.AgentConfig.StorageClass != "" {
+				sc := cfg.AgentConfig.StorageClass
 				pvcSpec.StorageClassName = &sc
 			}
 			pvcs = append(pvcs, corev1.PersistentVolumeClaim{
@@ -218,7 +218,7 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 		initContainers = append(initContainers, corev1.Container{
 			Name:            "init",
 			Image:           agentSpec.Image,
-			ImagePullPolicy: corev1.PullPolicy(cfg.AgentImagePullPolicy),
+			ImagePullPolicy: corev1.PullPolicy(cfg.AgentConfig.ImagePullPolicy),
 			Command:         []string{"sh", "-c", agentSpec.Init},
 			VolumeMounts:    volumeMounts,
 		})
@@ -226,7 +226,7 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 
 	// Image pull secrets
 	var pullSecrets []corev1.LocalObjectReference
-	for _, name := range cfg.AgentImagePullSecrets {
+	for _, name := range cfg.AgentConfig.ImagePullSecrets {
 		pullSecrets = append(pullSecrets, corev1.LocalObjectReference{Name: name})
 	}
 
@@ -271,7 +271,7 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 	containers := []corev1.Container{{
 		Name:            "agent",
 		Image:           agentSpec.Image,
-		ImagePullPolicy: corev1.PullPolicy(cfg.AgentImagePullPolicy),
+		ImagePullPolicy: corev1.PullPolicy(cfg.AgentConfig.ImagePullPolicy),
 		Ports: []corev1.ContainerPort{{
 			Name: "acp", ContainerPort: 8080,
 		}},
@@ -288,12 +288,12 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 		Resources:    resourceReqs,
 		VolumeMounts: volumeMounts,
 	}}
+	applyAgentContainer(&containers[0], cfg.AgentConfig)
+	volumes = append(volumes, cfg.AgentConfig.ExtraVolumes...)
 
-	podAnnotations := map[string]string{}
-	for k, v := range cfg.AgentPodAnnotations {
-		podAnnotations[k] = v
+	podAnnotations := map[string]string{
+		"agent-platform.ai/gh-token-available": ghAvail,
 	}
-	podAnnotations["agent-platform.ai/gh-token-available"] = ghAvail
 
 	// ADR-033 Threat Model: agent must have no SA token (Secret-read RBAC
 	// would otherwise bypass the per-pod credential boundary). With the
@@ -303,6 +303,29 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 	falseVal := false
 	automountSAToken := &falseVal
 	shareProcessNS := &falseVal
+
+	podMeta := metav1.ObjectMeta{
+		Labels:      labels,
+		Annotations: podAnnotations,
+	}
+	applyAgentPodMeta(&podMeta, cfg.AgentConfig)
+
+	podSpec := corev1.PodSpec{
+		// ADR-041: per-instance SA gives the pod its SPIFFE
+		// workload identity (`<td>/ns/<ns>/sa/<id>`).
+		// AutomountServiceAccountToken stays false — Istio
+		// identity is independent of SA-token mounts.
+		ServiceAccountName:            name,
+		TerminationGracePeriodSeconds: &cfg.TerminationGracePeriod,
+		ImagePullSecrets:              pullSecrets,
+		SecurityContext:               podSec,
+		InitContainers:                initContainers,
+		AutomountServiceAccountToken:  automountSAToken,
+		ShareProcessNamespace:         shareProcessNS,
+		Containers:                    containers,
+		Volumes:                       volumes,
+	}
+	applyAgentPodScheduling(&podSpec, cfg.AgentConfig)
 
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -319,25 +342,8 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 			Selector:             &metav1.LabelSelector{MatchLabels: labels},
 			VolumeClaimTemplates: pvcs,
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels:      labels,
-					Annotations: podAnnotations,
-				},
-				Spec: corev1.PodSpec{
-					// ADR-041: per-instance SA gives the pod its SPIFFE
-					// workload identity (`<td>/ns/<ns>/sa/<id>`).
-					// AutomountServiceAccountToken stays false — Istio
-					// identity is independent of SA-token mounts.
-					ServiceAccountName:            name,
-					TerminationGracePeriodSeconds: &cfg.TerminationGracePeriod,
-					ImagePullSecrets:              pullSecrets,
-					SecurityContext:               podSec,
-					InitContainers:                initContainers,
-					AutomountServiceAccountToken:  automountSAToken,
-					ShareProcessNamespace:         shareProcessNS,
-					Containers:                    containers,
-					Volumes:                       volumes,
-				},
+				ObjectMeta: podMeta,
+				Spec:       podSpec,
 			},
 		},
 	}
