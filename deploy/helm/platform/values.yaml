@@ -435,10 +435,11 @@ controller:
     # stack and the cluster's default StorageClass is RWO-only; forks won't
     # cross nodes in that mode but local single-node dev doesn't hit that.
     accessMode: ReadWriteMany
-    # -- PVC size requested for persistent agent mounts (e.g. /home/agent).
-    # Empty = controller default (10Gi). Lower this on resource-constrained
-    # clusters such as the e2e test VM.
-    storageSize: ""
+    # -- PVC size requested for persistent agent mounts (e.g. /home/agent)
+    # when the agent template's `mount.size` doesn't set one. Per-template
+    # `mount.size` takes precedence — this is the chart-level fallback.
+    # Lower it on resource-constrained clusters such as the e2e test VM.
+    storageSize: "10Gi"
 
     # --- Pod metadata (applies to all four pod types) ---
     # e.g. admission-webhook break-glass: `admission.stackrox.io/break-glass: ticket-1234`

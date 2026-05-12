@@ -34,8 +34,9 @@ type Mount struct {
 	Path    string `yaml:"path"`
 	Persist bool   `yaml:"persist"`
 	// Size is an optional K8s resource Quantity (e.g. "2Gi") for a persisted
-	// mount's PVC. When empty the controller defaults to 10Gi to match the
-	// pre-issue-#244 behavior. Ignored when Persist is false.
+	// mount's PVC. When empty, falls back to `controller.agent.storageSize`
+	// from the Helm chart (the platform-wide fallback). Ignored when
+	// Persist is false.
 	Size string `yaml:"size,omitempty"`
 }
 

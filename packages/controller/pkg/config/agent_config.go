@@ -54,9 +54,11 @@ type AgentConfig struct {
 	Probes            *AgentProbes                 `json:"probes,omitempty"`    // each sub-field replaces the matching default
 }
 
-// AgentProbes — sub-field nil means "keep the controller default". A non-nil
-// sub-field replaces that probe. The `probes.enabled` master switch
-// (AgentProbesEnabled in Config) still gates whether any probes render.
+// AgentProbes — sub-field nil means "use the controller's built-in probe
+// for this pod kind" (HTTP GET /healthz on `acp`, see resources.go). A
+// non-nil sub-field replaces that probe. The `probes.enabled` master
+// switch (AgentProbesEnabled in Config) still gates whether any probes
+// render at all.
 type AgentProbes struct {
 	Startup   *corev1.Probe `json:"startup,omitempty"`
 	Readiness *corev1.Probe `json:"readiness,omitempty"`
