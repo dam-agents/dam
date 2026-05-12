@@ -25,19 +25,14 @@ FROM ${BASE_IMAGE}
 
 USER root
 
-# Bob shell harness — pinned tgz + sha256 instead of `curl | bash` from the
-# upstream installer. Bobshell is not on npmjs.org; the only distribution
-# channel is the IBM Cloud Object Storage bucket below. Pinning the version
-# AND verifying a recorded sha256 means a compromised bucket would have to
-# match the hash to land in our image build. Bump both args together when
-# moving bobshell forward.
-ARG BOBSHELL_VERSION=1.0.3
-ARG BOBSHELL_SHA256=9c0057498e52e301c97781db8b82abfd67c34273f8daa270dbb6be639f243a4f
-RUN curl -fsSLo /tmp/bobshell.tgz \
-      "https://s3.us-south.cloud-object-storage.appdomain.cloud/bobshell/bobshell-${BOBSHELL_VERSION}.tgz" \
-    && echo "${BOBSHELL_SHA256}  /tmp/bobshell.tgz" | sha256sum -c - \
-    && npm install -g /tmp/bobshell.tgz \
-    && rm /tmp/bobshell.tgz \
+# Bob shell harness — installer is the upstream-recommended entrypoint
+# served from IBM's internal S3 bucket (the only distribution channel —
+# bobshell is not on npmjs.org). The bucket is trusted, so we use the
+# installer's own version detection rather than pinning. `--pm npm` pins
+# the package manager so it doesn't try to detect pnpm/yarn from the
+# platform-base layer.
+RUN curl -fsSL https://s3.us-south.cloud-object-storage.appdomain.cloud/bobshell/install-bobshell.sh \
+    | bash -s -- --pm npm \
     && chown -R 65532:0 /app
 
 # Bob's storage layer calls os.userInfo() to derive a local encryption key,
