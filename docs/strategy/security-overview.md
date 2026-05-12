@@ -3,7 +3,7 @@
 How Platform isolates agents from each other, from the cluster, and
 from the credentials they use to reach external services.
 
-## Layers of defence
+## Layers of defense
 
 ```mermaid
 flowchart LR
