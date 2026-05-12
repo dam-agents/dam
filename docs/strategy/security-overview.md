@@ -5,13 +5,6 @@ from the credentials they use to reach external services.
 
 ## Layers of defence
 
-Four controls, layered for defence in depth. They overlap and
-reinforce each other rather than working in isolation — identity
-underpins authorization, the pod boundary contains a credential leak,
-kernel-level network policy forces traffic through the proxy
-regardless of process intent, and credential isolation means there's
-nothing real for the agent to expose in the first place.
-
 ```mermaid
 flowchart LR
   L1["<b>Identity</b><br/>per-instance ServiceAccount<br/>+ SPIFFE cert via Istio mesh"]
