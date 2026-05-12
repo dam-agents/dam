@@ -431,7 +431,6 @@ export function AddAgentDialog({
                   <>
                     <FileIcon size={24} className="text-text-muted" />
                     <div className="text-[13px] text-text">
-                      Pre-built bundle:{" "}
                       <code className="font-mono">{importRawBundle.name}</code>
                     </div>
                   </>

@@ -65,8 +65,9 @@ describe("import (e2e)", () => {
       headers: { Authorization: `Bearer ${TOKEN}` },
       body: form,
     });
-    expect(res.status, await res.text().catch(() => "")).toBe(200);
-    const result = await res.json() as { filesWritten: number };
+    const resBody = await res.text();
+    expect(res.status, resBody).toBe(200);
+    const result = JSON.parse(resBody) as { filesWritten: number };
     expect(result.filesWritten).toBe(2);
 
     // Read CLAUDE.md back via the existing files tRPC, proxied through
@@ -76,8 +77,9 @@ describe("import (e2e)", () => {
       `${API_BASE}/api/instances/${INSTANCE_ID}/trpc/files.read?input=${encodeURIComponent(JSON.stringify({ path: "CLAUDE.md" }))}`,
       { headers: { Authorization: `Bearer ${TOKEN}` } },
     );
-    expect(readRes.status, await readRes.text().catch(() => "")).toBe(200);
-    const body = await readRes.json() as { result?: { data?: { content?: string } } };
+    const readBody = await readRes.text();
+    expect(readRes.status, readBody).toBe(200);
+    const body = JSON.parse(readBody) as { result?: { data?: { content?: string } } };
     expect(body.result?.data?.content).toContain("project context");
   }, 180_000);
 });

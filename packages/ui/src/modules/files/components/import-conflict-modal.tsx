@@ -22,18 +22,18 @@ export function ImportConflictModal({ conflicts, onChoose }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[4px] anim-in">
       <div className="w-[480px] max-w-[calc(100vw-2rem)] rounded-xl border-2 border-border bg-surface p-5 md:p-7 flex flex-col gap-5 anim-scale-in shadow-brutal">
-        <h2 className="text-[20px] font-bold text-text">Folder already exists</h2>
+        <h2 className="text-[20px] font-bold text-text">Already exists</h2>
         <div className="text-[13px] text-text-secondary leading-relaxed flex flex-col gap-2">
           <p>
             {conflicts.length === 1 ? (
-              <>A folder named <code className="font-mono">{conflicts[0]}</code> already exists.</>
+              <>An entry named <code className="font-mono">{conflicts[0]}</code> already exists.</>
             ) : (
               <>{conflicts.length} top-level entries already exist: <code className="font-mono">{sample}</code>{more}.</>
             )}
           </p>
           <p>
-            <strong className="text-text">Replace</strong> wipes the existing folder and uses the imported one.{" "}
-            <strong className="text-text">Merge</strong> keeps the existing folder and overwrites only same-path files.
+            <strong className="text-text">Replace</strong> wipes the existing entry and uses the imported one.{" "}
+            <strong className="text-text">Merge</strong> keeps the existing entry and overwrites only same-path files.
           </p>
         </div>
         <div className="flex gap-2 justify-end">
