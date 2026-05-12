@@ -18,39 +18,27 @@ What enforces isolation at each level of the stack:
 
 ```mermaid
 flowchart TB
-  subgraph cluster[Cluster]
-    direction TB
-    note_cluster["RuntimeClass (gVisor/Kata)<br/><i>cluster-operator responsibility — Platform does not set</i>"]
+  L1["<b>Cluster</b><br/>RuntimeClass — gVisor / Kata<br/><i>cluster-operator responsibility; Platform sets none</i>"]
+  L2["<b>Namespace</b><br/>Istio ambient label · coarse-perimeter NetworkPolicy<br/>per-instance AuthorizationPolicies · pod-level DENY on api-server"]
+  L3["<b>Pod</b><br/>Paired agent + gateway · per-instance SA → SPIFFE<br/>per-pair agent-egress NetworkPolicy · no SA-token mount"]
+  L4["<b>Container</b><br/><i>no seccomp / AppArmor / dropped capabilities today</i>"]
+  L5["<b>Process</b><br/><i>no in-process sandbox (no bwrap)</i>"]
 
-    subgraph release_ns[release namespace]
-      direction TB
-      note_relns["istio.io/dataplane-mode=ambient<br/>coarse-perimeter NetworkPolicy<br/>pod-level DENY AuthorizationPolicy on api-server"]
-      apiserver_pod[api-server pod]
-      waypoint_pod[harness waypoint pod]
-    end
+  L1 --> L2 --> L3 --> L4 --> L5
 
-    subgraph agent_ns[agent namespace]
-      direction TB
-      note_agentns["istio.io/dataplane-mode=ambient<br/>per-instance AuthorizationPolicies<br/>per-pair agent-egress NetworkPolicy"]
-
-      subgraph pair[Instance pair — per-instance ServiceAccount → SPIFFE]
-        direction LR
-        subgraph agent_pod[agent pod]
-          note_agentpod["automountServiceAccountToken: false<br/><i>no seccomp / AppArmor / dropped caps today</i>"]
-          agent_proc["agent process<br/><i>no in-process sandbox (no bwrap)</i>"]
-        end
-        subgraph gw_pod[gateway pod]
-          note_gwpod["mounts owner-scoped K8s Secrets<br/>Envoy SDS, ext-authz HITL"]
-          envoy_proc[Envoy]
-        end
-      end
-    end
-  end
+  classDef owned fill:#dff5e1,stroke:#2a7a3a,color:#0b3d18
+  classDef external fill:#e5edf7,stroke:#3a5a8a,color:#0b1f3d
+  classDef gap fill:#fbe5e5,stroke:#8a2a2a,color:#3d0b0b
+  class L1 external
+  class L2,L3 owned
+  class L4,L5 gap
 ```
 
-The labels on each box are the mechanisms Platform owns. Italicised
-text marks responsibility that lives *below* Platform (cluster
-operator) or gaps the architecture acknowledges today.
+Green bands are mechanisms Platform owns end-to-end. Blue is cluster-
+operator responsibility Platform documents and assumes but cannot
+enforce. Red bands mark gaps the architecture acknowledges today —
+progression along the spectrum (below) means moving these one step
+right.
 
 ## Trust boundary and data flow
 
