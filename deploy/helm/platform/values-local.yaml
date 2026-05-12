@@ -76,6 +76,13 @@ agentTemplates:
       - name: GITHUB_REPO
         value: ""
 
+  - name: bob
+    enabled: true
+    description: "Bob shell agent"
+    image:
+      repository: platform-bob
+      tag: latest
+    storageSize: "2Gi"
 
 # Local dev convenience: route requests with any Host header (including
 # IP literals like 127.0.0.1) to the app, so the cluster is reachable
