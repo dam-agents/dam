@@ -1,4 +1,7 @@
-import { ChevronDown, ChevronRight } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+} from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";

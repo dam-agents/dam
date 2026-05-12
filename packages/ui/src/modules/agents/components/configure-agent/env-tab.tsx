@@ -1,4 +1,7 @@
-import { KeyRound, Lock } from "lucide-react";
+import {
+  Password as KeyRound,
+  Password as Lock,
+} from "@carbon/icons-react";
 
 import { EnvVarsEditor } from "../../../../components/env-vars-editor.js";
 import type { EnvVar } from "../../../../types.js";

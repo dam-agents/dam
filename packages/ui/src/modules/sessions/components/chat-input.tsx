@@ -1,4 +1,10 @@
-import { FileText as FileIcon,Paperclip, Send as SendIcon, Square, X } from "lucide-react";
+import {
+  Attachment as Paperclip,
+  Close as X,
+  Document as FileIcon,
+  Send as SendIcon,
+  Stop as Square,
+} from "@carbon/icons-react";
 import { type KeyboardEvent, type ReactNode, type RefObject,useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";

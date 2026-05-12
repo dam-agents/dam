@@ -1,4 +1,10 @@
-import { KeyRound, Play, Plus, RotateCw, Trash2 } from "lucide-react";
+import {
+  Add as Plus,
+  Password as KeyRound,
+  Play,
+  RotateClockwise as RotateCw,
+  TrashCan as Trash2,
+} from "@carbon/icons-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";

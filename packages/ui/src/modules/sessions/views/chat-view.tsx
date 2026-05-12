@@ -1,5 +1,15 @@
+import {
+  ArrowDown,
+  ArrowLeft,
+  Chat as MessageSquare,
+  Document as FileIcon,
+  Renew as RefreshCw,
+  SettingsAdjust as Settings2,
+  Terminal as TerminalSquare,
+  TrashCan as Trash2,
+  WarningAlt as AlertCircle,
+} from "@carbon/icons-react";
 import { SessionMode } from "api-server-api";
-import { AlertCircle, ArrowDown, ArrowLeft, FileText as FileIcon, MessageSquare,RefreshCw,Settings2, TerminalSquare,Trash2 } from "lucide-react";
 import { useCallback,useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";

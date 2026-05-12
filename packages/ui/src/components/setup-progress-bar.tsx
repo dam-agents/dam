@@ -1,4 +1,7 @@
-import { Check, ChevronRight } from "lucide-react";
+import {
+  Checkmark as Check,
+  ChevronRight,
+} from "@carbon/icons-react";
 
 import {
   computeOnboardingState,

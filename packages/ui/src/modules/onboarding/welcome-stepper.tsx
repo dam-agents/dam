@@ -1,12 +1,15 @@
-import { ArrowRight, Check } from "lucide-react";
+import {
+  ArrowRight,
+  Checkmark as Check,
+} from "@carbon/icons-react";
 import { Fragment } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+import { useStore } from "../../store.js";
 import { useAgents } from "../agents/api/queries.js";
 import { useSecrets } from "../secrets/api/queries.js";
-import { useStore } from "../../store.js";
 
 type ViewKey = "providers" | "list" | "connections";
 

@@ -3,7 +3,15 @@
  * uses so the designer can audit and tweak. Only renders when
  * `VITE_USE_MOCKS=true`. See ./README.md for removal.
  */
-import { Bell, ChevronDown, ChevronRight, Moon, Palette, Sun, X } from "lucide-react";
+import {
+  Asleep as Moon,
+  ChevronDown,
+  ChevronRight,
+  Close as X,
+  ColorPalette as Palette,
+  Light as Sun,
+  Notification as Bell,
+} from "@carbon/icons-react";
 import { useEffect, useState } from "react";
 
 import { AppStatusPill } from "@/components/app-status-pill";

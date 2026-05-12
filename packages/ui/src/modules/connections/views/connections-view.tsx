@@ -1,4 +1,6 @@
-import { Plus } from "lucide-react";
+import {
+  Add as Plus,
+} from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";

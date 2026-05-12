@@ -2,7 +2,9 @@
  * Dev-only floating toggle that opens the style guide overlay. Renders
  * nothing when `VITE_USE_MOCKS` is off. See ./README.md for removal.
  */
-import { Palette } from "lucide-react";
+import {
+  ColorPalette as Palette,
+} from "@carbon/icons-react";
 import { lazy, Suspense, useState } from "react";
 
 import { Button } from "@/components/ui/button";

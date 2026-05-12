@@ -4,7 +4,11 @@ import type {
   SessionConfigSelectGroup,
   SessionConfigSelectOption,
 } from "@agentclientprotocol/sdk/dist/acp.js";
-import { Check, ChevronDown,ChevronUp } from "lucide-react";
+import {
+  Checkmark as Check,
+  ChevronDown,
+  ChevronUp,
+} from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";

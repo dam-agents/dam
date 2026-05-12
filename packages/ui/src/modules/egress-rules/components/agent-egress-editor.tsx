@@ -1,5 +1,9 @@
+import {
+  Add as Plus,
+  RotateCounterclockwise as RotateCcw,
+  TrashCan as Trash2,
+} from "@carbon/icons-react";
 import type { EgressPreset, EgressRuleView } from "api-server-api";
-import { Plus, RotateCcw, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";

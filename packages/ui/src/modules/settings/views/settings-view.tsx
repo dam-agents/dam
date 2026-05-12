@@ -1,4 +1,9 @@
-import { LogOut, Monitor, Moon, Sun } from "lucide-react";
+import {
+  Asleep as Moon,
+  Light as Sun,
+  Logout as LogOut,
+  Screen as Monitor,
+} from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";

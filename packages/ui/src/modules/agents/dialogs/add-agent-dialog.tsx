@@ -1,5 +1,7 @@
+import {
+  AiLaunch as Sparkles,
+} from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Sparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 

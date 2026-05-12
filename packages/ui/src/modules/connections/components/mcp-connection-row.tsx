@@ -1,4 +1,7 @@
-import { Globe, Unplug } from "lucide-react";
+import {
+  Globe,
+  Unlink as Unplug,
+} from "@carbon/icons-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

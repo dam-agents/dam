@@ -1,4 +1,6 @@
-import { Globe } from "lucide-react";
+import {
+  Globe,
+} from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";

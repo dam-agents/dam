@@ -1,4 +1,13 @@
-import { AlertCircle, AlertTriangle, CheckCircle2, Info, type LucideIcon, X } from "lucide-react";
+import type {
+  CarbonIconType,
+} from "@carbon/icons-react";
+import {
+  CheckmarkOutline as CheckCircle2,
+  Close as X,
+  Information as Info,
+  Warning as AlertTriangle,
+  WarningAlt as AlertCircle,
+} from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -6,7 +15,7 @@ import { cn } from "@/lib/utils";
 import type { Toast, ToastKind } from "../modules/platform/store/toast.js";
 import { useStore } from "../store.js";
 
-const ICON: Record<ToastKind, LucideIcon> = {
+const ICON: Record<ToastKind, CarbonIconType> = {
   error: AlertCircle,
   warning: AlertTriangle,
   success: CheckCircle2,

@@ -1,4 +1,8 @@
-import { Check, Copy, ExternalLink } from "lucide-react";
+import {
+  Checkmark as Check,
+  Copy,
+  Launch as ExternalLink,
+} from "@carbon/icons-react";
 import { useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";

@@ -1,4 +1,10 @@
-import { Check, ChevronDown, ChevronRight, Loader,X } from "lucide-react";
+import {
+  Checkmark as Check,
+  ChevronDown,
+  ChevronRight,
+  Close as X,
+  Renew as Loader,
+} from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";

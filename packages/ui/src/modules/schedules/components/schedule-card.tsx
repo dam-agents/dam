@@ -1,4 +1,10 @@
-import { ChevronDown, ChevronRight, Clock, Pencil, X } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Close as X,
+  Edit as Pencil,
+  Time as Clock,
+} from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
 

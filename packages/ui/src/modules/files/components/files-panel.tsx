@@ -1,4 +1,8 @@
-import { FilePlus, FolderPlus, Upload } from "lucide-react";
+import {
+  DocumentAdd as FilePlus,
+  FolderAdd as FolderPlus,
+  Upload,
+} from "@carbon/icons-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";

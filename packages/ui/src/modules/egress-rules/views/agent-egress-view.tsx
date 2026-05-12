@@ -1,4 +1,6 @@
-import { ArrowLeft } from "lucide-react";
+import {
+  ArrowLeft,
+} from "@carbon/icons-react";
 import { useMemo } from "react";
 
 import { Button } from "@/components/ui/button";

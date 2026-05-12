@@ -1,9 +1,13 @@
 import "@xterm/xterm/css/xterm.css";
 
+import {
+  Misuse as XCircle,
+  Renew as Loader2,
+  Terminal as TerminalIcon,
+} from "@carbon/icons-react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { decodeFrame, encodeDataFrame, encodeResize, OP_EXIT, OP_INPUT, OP_OUTPUT } from "api-server-api";
-import { Loader2, TerminalIcon, XCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { getAccessToken } from "../../../auth.js";

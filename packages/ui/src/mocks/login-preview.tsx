@@ -3,7 +3,9 @@
  * no real auth. Shown so designers can hand off a target for the real
  * Keycloak theme work. See ./README.md.
  */
-import { X } from "lucide-react";
+import {
+  Close as X,
+} from "@carbon/icons-react";
 import { useEffect, useState } from "react";
 
 import ibmLogo from "@/assets/ibm-logo.svg";

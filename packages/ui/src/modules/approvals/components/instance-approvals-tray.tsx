@@ -1,4 +1,8 @@
-import { ChevronDown, ChevronRight, ShieldAlert } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  WarningAlt as ShieldAlert,
+} from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";

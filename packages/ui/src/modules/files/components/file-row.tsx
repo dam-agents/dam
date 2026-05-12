@@ -1,4 +1,11 @@
-import { ChevronDown, ChevronRight, FileText, Folder, Image as ImageIcon, MoreHorizontal } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Document as FileText,
+  Folder,
+  Image as ImageIcon,
+  OverflowMenuHorizontal as MoreHorizontal,
+} from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
 

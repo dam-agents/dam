@@ -1,5 +1,11 @@
+import {
+  AiLaunch as Sparkles,
+  Globe,
+  Information as Info,
+  Password as KeyRound,
+  Password as Lock,
+} from "@carbon/icons-react";
 import type { AppConnectionView } from "api-server-api";
-import { Globe, Info, KeyRound, Lock, Sparkles } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

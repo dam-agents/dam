@@ -1,4 +1,6 @@
-import { AlertTriangle } from "lucide-react";
+import {
+  Warning as AlertTriangle,
+} from "@carbon/icons-react";
 
 import {
   AlertDialog,

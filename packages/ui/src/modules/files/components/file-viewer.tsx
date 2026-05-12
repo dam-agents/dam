@@ -1,4 +1,12 @@
-import { ArrowLeft, Code, Download, Eye, Pencil, Save, X } from "lucide-react";
+import {
+  ArrowLeft,
+  Close as X,
+  Code,
+  Download,
+  Edit as Pencil,
+  Save,
+  View as Eye,
+} from "@carbon/icons-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";

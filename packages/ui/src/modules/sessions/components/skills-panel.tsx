@@ -1,3 +1,13 @@
+import {
+  Add as Plus,
+  ChevronDown,
+  ChevronRight,
+  Close as X,
+  Launch as ExternalLink,
+  Renew as RefreshCw,
+  Share as Share2,
+  View as Eye,
+} from "@carbon/icons-react";
 import type {
   LocalSkill,
   Skill,
@@ -5,7 +15,6 @@ import type {
   SkillRef,
   SkillSource,
 } from "api-server-api";
-import { ChevronDown, ChevronRight, ExternalLink, Eye, Plus, RefreshCw, Share2, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";

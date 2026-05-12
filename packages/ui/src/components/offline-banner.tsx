@@ -1,4 +1,6 @@
-import { WifiOff } from "lucide-react";
+import {
+  WifiOff,
+} from "@carbon/icons-react";
 
 import { useOnline } from "../hooks/use-online.js";
 

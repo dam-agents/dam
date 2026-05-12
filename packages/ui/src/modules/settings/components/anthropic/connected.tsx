@@ -1,4 +1,7 @@
-import { Pencil, X } from "lucide-react";
+import {
+  Close as X,
+  Edit as Pencil,
+} from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";

@@ -1,4 +1,7 @@
-import { Plus,X } from "lucide-react";
+import {
+  Add as Plus,
+  Close as X,
+} from "@carbon/icons-react";
 import { useEffect,useState } from "react";
 
 import { Button } from "@/components/ui/button";

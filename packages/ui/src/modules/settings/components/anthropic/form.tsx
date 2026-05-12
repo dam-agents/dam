@@ -1,5 +1,9 @@
+import {
+  Checkmark as Check,
+  Close as X,
+  Copy,
+} from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Check, Copy, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 

@@ -1,4 +1,9 @@
-import { Bot, Settings, Sparkles, Unplug } from "lucide-react";
+import {
+  AiLaunch as Sparkles,
+  Bot,
+  Settings,
+  Unlink as Unplug,
+} from "@carbon/icons-react";
 
 import { cn } from "@/lib/utils";
 

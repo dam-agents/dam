@@ -1,11 +1,11 @@
 import {
+  AiLaunch as Sparkles,
   Bot,
-  PanelLeftClose,
-  PanelLeftOpen,
+  OpenPanelLeft as PanelLeftOpen,
   Settings,
-  Sparkles,
-  Unplug,
-} from "lucide-react";
+  SidePanelClose as PanelLeftClose,
+  Unlink as Unplug,
+} from "@carbon/icons-react";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";

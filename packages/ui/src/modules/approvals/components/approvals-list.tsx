@@ -1,5 +1,12 @@
+import {
+  Checkmark as Check,
+  CheckmarkFilled as CheckCheck,
+  Close as X,
+  Globe,
+  Security as ShieldOff,
+  SettingsAdjust as Settings2,
+} from "@carbon/icons-react";
 import type { ApprovalView } from "api-server-api";
-import { Check, CheckCheck, Globe, Settings2, ShieldOff, X } from "lucide-react";
 import { useMemo } from "react";
 
 import { Badge } from "@/components/ui/badge";

@@ -1,5 +1,9 @@
+import {
+  Add as Plus,
+  ArrowLeft,
+  TrashCan as Trash2,
+} from "@carbon/icons-react";
 import { SessionMode, SessionType } from "api-server-api";
-import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";

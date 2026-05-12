@@ -1,4 +1,6 @@
-import { Trash2 } from "lucide-react";
+import {
+  TrashCan as Trash2,
+} from "@carbon/icons-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";

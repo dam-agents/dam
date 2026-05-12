@@ -1,4 +1,8 @@
-import { Lock, Pencil, X } from "lucide-react";
+import {
+  Close as X,
+  Edit as Pencil,
+  Password as Lock,
+} from "@carbon/icons-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

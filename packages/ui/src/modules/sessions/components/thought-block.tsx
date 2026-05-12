@@ -1,4 +1,8 @@
-import { Brain, ChevronDown, ChevronRight } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  MachineLearning as Brain,
+} from "@carbon/icons-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
