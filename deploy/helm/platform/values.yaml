@@ -395,57 +395,10 @@ controller:
     repository: quay.io/dam-agents/controller
     tag: ""
     pullPolicy: IfNotPresent
-  # -- Every knob that shapes controller-rendered agent / fork / gateway pods.
-  # Shipped as a single JSON env var (`AGENT_CONFIG`) to the controller; unknown
-  # fields fail loudly at startup so typos in values.yaml surface immediately.
-  #
-  # PRECEDENCE — three layers, applied most-specific-wins:
-  #
-  #     1. per-instance (future, not wired)
-  #     2. per-agent template — the `config:` block in the agent ConfigMap,
-  #        parsed into AgentSpec.Config
-  #     3. chart-level (this block) — platform-wide fallback
-  #
-  # The reconciler computes the effective config as
-  # `chart.Merge(template)` today, and will become
-  # `chart.Merge(template).Merge(instance)` when per-instance lands —
-  # AgentConfig.Merge already encodes the rules below.
-  #
-  # FIELD-BY-FIELD RULES (merge semantics):
-  #   - Scalars (imagePullPolicy, storageClass, accessMode, storageSize,
-  #     priorityClassName, runtimeClassName, idleTimeout,
-  #     terminationGracePeriod): more-specific wins when non-empty/non-zero.
-  #     Empty/zero at any layer = "defer to the layer below".
-  #   - resources: more-specific wins when set (any requests or limits
-  #     populated). An empty `resources: {}` does NOT clobber the layer
-  #     below — agent templates that omit resources fall through to the
-  #     chart-level value here.
-  #   - imagePullSecrets, extraEnv, extraVolumes, extraVolumeMounts:
-  #     ADDITIVE — every layer's entries land on the pod (pull secrets
-  #     dedupe by name).
-  #   - extraLabels, extraAnnotations: per-key merge, more-specific wins
-  #     on collision.
-  #   - nodeSelector, tolerations, affinity, topologySpreadConstraints:
-  #     wholesale REPLACE when more-specific sets a non-empty value. A
-  #     half-overridden scheduling policy is worse than either side.
-  #   - probes: per-probe replace (startup / readiness / liveness each
-  #     replaced independently when set).
-  #
-  # CONTROLLER-MANAGED FIELDS — these always win on collision regardless of
-  # layer, because they're load-bearing for the security model:
-  #   - selector labels (`agent-platform.ai/instance|pair|role`)
-  #   - the gateway's `envoy-secrets-rev` annotation (roll trigger)
-  #   - `agent-platform.ai/gh-token-available` annotation
-  #   - platform env (HTTPS_PROXY, SSL_CERT_FILE, API_SERVER_URL, ...)
-  #
-  # SCOPE — applies on the reconciler side (NOT enforced by this schema):
-  #   - Pull/storage + lifecycle + metadata + scheduling fields land on all
-  #     four pod types (long-lived agent + paired gateway, fork agent +
-  #     paired fork gateway) so the pair co-schedules and shares runtime class.
-  #   - extraEnv / extraVolumes / extraVolumeMounts / resources / probes
-  #     apply to the AGENT container only — the gateway pod's Envoy
-  #     bootstrap is platform-managed; widening these knobs there could
-  #     silently break the credential-injection chain.
+  # -- Platform-wide defaults for controller-rendered agent / fork / gateway pods.
+  # Per-agent templates can override these via the `config:` block in the
+  # agent ConfigMap (more-specific wins). Merge rules live with the
+  # controller code; see `config.AgentConfig.Merge` for the details.
   agent:
     # --- Pull / storage ---
     imagePullPolicy: IfNotPresent
