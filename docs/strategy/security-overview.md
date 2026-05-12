@@ -50,6 +50,29 @@ where a credential is configured, the sibling pod adds the credential
 header on the wire after the ext-authz Check has authorized the
 request — for everything else, traffic passes through unchanged.
 
+## Security boundary
+
+The pod is the security boundary. Everything inside it — the agent
+process, any tools it spawns, any content it reads — is treated as
+untrusted. The controls above all live outside the pod (in the mesh,
+in the kernel's network stack, in a sibling pod that holds the
+credentials), so that a compromised agent cannot reach beyond what
+its network and identity allow.
+
+By default, pods run on the cluster's container runtime — typically
+runc — which shares a kernel with the node. The four controls above
+stand regardless, but a kernel-level escape from the agent's
+container reaches the node directly, and from there anything
+co-located on it.
+
+For deployments where that risk matters, the cluster operator should
+run Platform's pods under a stronger runtime — [gVisor](https://gvisor.dev/)
+or [Kata Containers](https://katacontainers.io/) — via a Kubernetes
+RuntimeClass. Platform itself does not pin a RuntimeClass; the
+choice of substrate sits with whoever operates the cluster. See
+[security-model § Execution](security-model.md#execution) for the
+longer framing.
+
 ## Authorization flow
 
 Every internal hop carries a SPIFFE identity stamped by istiod, and
