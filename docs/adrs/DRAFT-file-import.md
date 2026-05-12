@@ -12,10 +12,12 @@ Local Claude Code users accumulate per-project context (`CLAUDE.md`, `.claude/`,
 
 Imports are a **one-shot, bundled, atomic** operation owned by api-server (orchestration) and agent-runtime (disk landing).
 
-- Clients build a single `tar.gz` and submit it through one ownership-checked api-server route, which streams it to agent-runtime with no buffering.
+- Clients build a single tar bundle (gzip optional) and submit it through one ownership-checked api-server route, which streams it to agent-runtime with no buffering.
 - agent-runtime extracts to a staging directory on the per-instance PVC, then swaps it into `/home/agent` under the chosen `mode` (`replace` or `merge`) with per-entry interleaved `rm`+`rename` so the crash window is a single top-level entry, not the whole bundle.
 - A companion preflight call returns top-level conflicts so clients can drive an OS-style Replace/Merge/Cancel UX without uploading first.
 - One import per instance at a time; concurrent imports are rejected.
+- Platform-owned paths are off-limits — bundles targeting them are refused at extract.
+- Both legs enforce hard bounds: the proxy caps total upload size, the pod aborts stalled and runaway uploads.
 
 Imports leave no record outside the PVC — the files themselves are the state.
 

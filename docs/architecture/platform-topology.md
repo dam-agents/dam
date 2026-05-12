@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-05-07
+Last verified: 2026-05-12
 
 ## Motivated by
 
@@ -61,6 +61,8 @@ A TypeScript server that hosts the user-facing surface and the ACP relay. It run
 
 The api-server proxies all ACP traffic to agent pods; clients never dial pods directly. It also wakes hibernated instances on demand before forwarding the first message of a session. Both the ACP relay and the tRPC proxy verify the user JWT and ownership at the public port and rewrite `Authorization` to the per-agent runtime token before forwarding — agent-runtime never sees user identity directly. See [security-and-credentials](security-and-credentials.md) and [`packages/api-server/`](../../packages/api-server/).
 
+The public port also accepts streamed bundled file imports per instance and proxies them to the target agent-runtime without buffering — ownership-checked and size-capped at the proxy boundary.
+
 ### agent-runtime
 
 The per-instance pod that runs the ACP WebSocket server and spawns the underlying agent binary via the harness-script contract ([ADR-023](../adrs/023-harness-agnostic-base-image.md), [ADR-037](../adrs/037-remote-terminal.md)). Its responsibilities are:
@@ -70,6 +72,7 @@ The per-instance pod that runs the ACP WebSocket server and spawns the underlyin
 - Watch a well-known trigger directory and forward scheduled triggers to the api-server's harness port.
 - Expose a scoped tRPC router (via the api-server's tRPC proxy) for in-pod file operations surfaced to the UI.
 - Hold an SSE connection to the api-server's pod-files endpoint and materialize declarative file state under the agent's HOME — currently `~/.config/gh/hosts.yml` for granted GitHub Enterprise app connections, more producers might come. Refuses paths outside HOME (defense-in-depth) and skips the loop when `PLATFORM_POD_FILES_EVENTS_URL` is unset (forks).
+- Accept bundled file imports on the harness port — extract the tarball to a staging directory on the per-instance PVC, then swap entries into the agent's HOME. One import per instance at a time; a boot sweeper reclaims staging dirs orphaned by crashes (see [persistence](persistence.md)).
 
 The agent-runtime pod holds zero credential Secrets and has no admitted route to TCP 80/443 except its paired gateway pod ([ADR-038](../adrs/038-paired-gateway-pod.md)). Its `HTTPS_PROXY` value is the per-instance gateway Service DNS, but the value is decorative — Kubernetes admits no other route. See [`packages/agent-runtime/`](../../packages/agent-runtime/) and [`packages/agent-runtime-api/`](../../packages/agent-runtime-api/).
 
@@ -91,6 +94,7 @@ A React + Vite single-page app served by the api-server. It uses tRPC over HTTP 
 | api-server → agent-runtime | WebSocket (ACP, JSON-RPC 2.0) | Chat-mode relay target — one hop, no fan-out |
 | api-server → agent-runtime | WebSocket (binary terminal frames) | Terminal-mode relay target — one hop, single client per session |
 | api-server → agent-runtime | HTTP (tRPC proxy) | In-pod file operations surfaced to the UI |
+| ui → api-server → agent-runtime | HTTP (multipart, streamed) | Bundled file import + preflight — single streamed roundtrip, no buffering on the relay |
 | agent-runtime → api-server (`<rel>-apiserver-harness`, via paired gateway → Istio waypoint) | HTTP | MCP tool access, pod-files SSE, `/api/instances/:id/internal/trigger` (ADR-041) |
 | gateway → api-server (`<rel>-extauthz-<id>`) | gRPC | HITL ext_authz Check; per-instance Service pinned by AuthorizationPolicy to the gateway's SA principal (ADR-041) |
 | controller → K8s API | watch / list / write | Resource reconciliation and status writes |
