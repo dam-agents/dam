@@ -8,7 +8,6 @@ import type {
 } from "../domain/errors.js";
 import {
   EXIT_INSTANCES_BELOW_FLOOR,
-  EXIT_INSTANCES_INVALID_INPUT,
   EXIT_INSTANCES_RUNTIME_FAILURE,
   EXIT_INSTANCES_SUCCESS,
 } from "./exit-codes.js";
@@ -33,10 +32,13 @@ export function buildListCommand(deps: ListCommandDeps): Command {
       const flag = opts.server ? { server: opts.server } : undefined;
 
       // Compat pre-flight — same gate `ping` and `auth login` use.
+      // Matches `ping`: all compat-resolve failures (missing-config,
+      // malformed-config, probe-error) exit as runtime failure so the
+      // exit code is consistent across commands that share this gate.
       const compat = await deps.compatService.check({ flag });
       if (!compat.ok) {
         printCompatResolveError(compat.error, deps.serverEnvVar);
-        process.exit(EXIT_INSTANCES_INVALID_INPUT);
+        process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
       }
       const verdict = compat.value;
       if (verdict.kind === "below-floor") {

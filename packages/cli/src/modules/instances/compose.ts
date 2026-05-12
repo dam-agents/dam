@@ -47,10 +47,15 @@ export function composeInstancesModule(opts: InstancesModuleOptions): InstancesM
       getToken: async () => {
         const result = await opts.tokenProvider.getValidAccessToken(host);
         if (result.ok) return result;
-        return {
-          ok: false,
-          error: { kind: "auth-required", reason: tokenProviderReason(result.error) },
-        };
+        const classified = classifyTokenProviderError(result.error);
+        if (classified.kind === "auth-required") {
+          return { ok: false, error: classified };
+        }
+        // Non-auth failure — surface as a thrown error so the service
+        // layer classifies it as `transport`. Login won't fix these:
+        // refresh failures and auth-store I/O errors need different
+        // remediation, not `dam auth login`.
+        throw new Error(classified.reason);
       },
     });
     return createInstancesService({ trpc });
@@ -91,16 +96,29 @@ interface ReasonBearing {
   kind: string;
 }
 
-/** Best-effort flattening of any `TokenProviderError` variant to a
- *  human-readable reason. Avoids importing the auth domain's
- *  discriminant directly. */
-function tokenProviderReason(e: unknown): string {
-  if (typeof e === "object" && e !== null) {
-    const re = e as ReasonBearing;
-    if (re.reason) return re.reason;
-    if (re.kind === "not-logged-in" && re.host) return `not logged in to ${re.host}`;
-    if (re.kind === "session-expired" && re.host) return `session expired for ${re.host}`;
-    return re.kind;
+type ClassifiedError =
+  | { kind: "auth-required"; reason: string }
+  | { kind: "non-auth"; reason: string };
+
+/** Classify a `TokenProviderError` into two buckets without importing the
+ *  auth domain's discriminant.
+ *
+ *  Only `not-logged-in` and `session-expired` route to `auth-required` —
+ *  those are the cases where `dam auth login` is the fix. Everything else
+ *  (refresh failures, auth-store I/O errors, malformed auth store) is a
+ *  non-auth condition that login can't repair; the service layer surfaces
+ *  those as `transport` errors carrying the original reason. */
+function classifyTokenProviderError(e: unknown): ClassifiedError {
+  if (typeof e !== "object" || e === null) {
+    return { kind: "non-auth", reason: "auth failure" };
   }
-  return "auth failure";
+  const re = e as ReasonBearing;
+  switch (re.kind) {
+    case "not-logged-in":
+      return { kind: "auth-required", reason: re.host ? `not logged in to ${re.host}` : "not logged in" };
+    case "session-expired":
+      return { kind: "auth-required", reason: re.host ? `session expired for ${re.host}` : "session expired" };
+    default:
+      return { kind: "non-auth", reason: re.reason ?? re.kind };
+  }
 }
