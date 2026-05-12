@@ -5,26 +5,39 @@ from the credentials they use to reach external services.
 
 ## Layers of defence
 
-Isolation is layered, with each layer doing one job:
+Each layer does one job; you'd have to break all four to compromise
+an instance.
 
 ```mermaid
 flowchart TB
-  L1["<b>Namespace</b><br/>Istio ambient mesh on every internal hop · NetworkPolicy at the perimeter"]
-  L2["<b>Pod pair</b><br/>agent and gateway run as two separate pods<br/>per-instance ServiceAccount stamped with a SPIFFE workload identity"]
-  L3["<b>Network</b><br/>per-pair agent-egress NetworkPolicy at L3/L4<br/>per-instance AuthorizationPolicies on every internal call"]
-  L4["<b>Credentials</b><br/>K8s Secrets mounted into the gateway pod only<br/>Envoy injects on the wire; ext-authz gates each credentialed call"]
+  L1["<b>Identity</b><br/>every workload has a cryptographic name"]
+  L2["<b>Boundary</b><br/>agent and gateway run in separate pods"]
+  L3["<b>Network</b><br/>the kernel decides what an agent can reach"]
+  L4["<b>Credentials</b><br/>real tokens never leave the gateway"]
   L1 --> L2 --> L3 --> L4
 ```
 
-The mesh layer gives every workload a cryptographic name, so admission
-decisions are made on identity rather than IP or port. The pod-pair
-layer puts the credential boundary at a real Linux boundary — the
-agent process and the gateway process are in different pods, with
-different kernels' view of the world. The network layer is structural
-defence in depth: even if the agent process tried to ignore
-`HTTPS_PROXY` and dial out directly, the kernel refuses. And the
-credential layer means the agent never holds a real upstream token in
-the first place — Envoy holds them, and only on the wire.
+**Identity.** Every workload runs as a per-instance ServiceAccount,
+and istiod stamps that SA into a SPIFFE workload certificate. Mesh
+admission decisions are made on the certificate, not on IP or port —
+a peer instance can resolve the gateway's address but its call is
+denied before it lands.
+
+**Boundary.** Agent and gateway run as two separate pods, not as
+sidecars in one pod. The credential boundary is a pod boundary, with
+its own kernel view and no shared address space. The agent has no
+service-account token mounted and no co-located sidecar to share a
+namespace with.
+
+**Network.** Even if the agent process ignored `HTTPS_PROXY` and tried
+to dial external hosts directly, the kernel refuses. A per-pair
+agent-egress NetworkPolicy restricts L3/L4 egress to DNS, the paired
+gateway, and the mesh — so Envoy stays on the only path out.
+
+**Credentials.** Real upstream tokens never leave the gateway pod.
+Envoy reads them via SDS and adds the credential header on the wire,
+just before the request exits. The agent process never sees a real
+token to leak in the first place.
 
 ## Trust boundary
 
