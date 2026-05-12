@@ -11,8 +11,6 @@ import (
 	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/api/resource"
 	sigsyaml "sigs.k8s.io/yaml"
-
-	"github.com/kagenti/platform/packages/controller/pkg/config"
 )
 
 var quietHoursTimeRE = regexp.MustCompile(`^([01][0-9]|2[0-3]):[0-5][0-9]$`)
@@ -21,32 +19,35 @@ const SpecVersion = "agent-platform.ai/v1"
 
 // --- Agent ---
 
+// AgentSpec is the parsed agent template ConfigMap (spec.yaml). It carries
+// the fields a template can declare, plus the optional Layer B overrides
+// (ImagePullPolicy, StorageSize, Resources) that fall back to chart-wide
+// `controller.agent.templateDefaults.*` when empty.
+//
+// Security context and scheduling/metadata are chart-only — they live on
+// `config.AgentBase` and cannot be set here by design.
 type AgentSpec struct {
-	Version         string           `yaml:"version" json:"version"`
-	Name            string           `yaml:"name,omitempty" json:"name,omitempty"`
-	Image           string           `yaml:"image" json:"image"`
-	Description     string           `yaml:"description,omitempty" json:"description,omitempty"`
-	Mounts          []Mount          `yaml:"mounts,omitempty" json:"mounts,omitempty"`
-	Init            string           `yaml:"init,omitempty" json:"init,omitempty"`
-	Env             []EnvVar         `yaml:"env,omitempty" json:"env,omitempty"`
-	Resources       ResourceSpec     `yaml:"resources,omitempty" json:"resources,omitempty"`
-	SecurityContext *SecurityContext `yaml:"securityContext,omitempty" json:"securityContext,omitempty"`
-	// Config is the per-agent override layer for chart-level controller.agent
-	// settings. Riding the same shape as Helm `controller.agent`, it merges
-	// over the chart default at reconcile time (config.AgentConfig.Merge).
-	// Most useful for fields where per-agent needs diverge from cluster
-	// policy — extraVolumes / extraVolumeMounts / storageSize / imagePullSecrets.
-	// Unset (nil) means "inherit chart defaults".
-	Config *config.AgentConfig `yaml:"config,omitempty" json:"config,omitempty"`
+	Version     string       `yaml:"version" json:"version"`
+	Name        string       `yaml:"name,omitempty" json:"name,omitempty"`
+	Image       string       `yaml:"image" json:"image"`
+	Description string       `yaml:"description,omitempty" json:"description,omitempty"`
+	Init        string       `yaml:"init,omitempty" json:"init,omitempty"`
+	SkillPaths  []string     `yaml:"skillPaths,omitempty" json:"skillPaths,omitempty"`
+	Mounts      []Mount      `yaml:"mounts,omitempty" json:"mounts,omitempty"`
+	Env         []EnvVar     `yaml:"env,omitempty" json:"env,omitempty"`
+	Resources   ResourceSpec `yaml:"resources,omitempty" json:"resources,omitempty"`
+
+	// Layer B overrides for chart-wide AgentTemplateDefaults. Empty = inherit.
+	ImagePullPolicy string `yaml:"imagePullPolicy,omitempty" json:"imagePullPolicy,omitempty"`
+	StorageSize     string `yaml:"storageSize,omitempty" json:"storageSize,omitempty"`
 }
 
 type Mount struct {
 	Path    string `yaml:"path"`
 	Persist bool   `yaml:"persist"`
 	// Size is an optional K8s resource Quantity (e.g. "2Gi") for a persisted
-	// mount's PVC. When empty, falls back to `controller.agent.storageSize`
-	// from the Helm chart (the platform-wide fallback). Ignored when
-	// Persist is false.
+	// mount's PVC. Empty = falls back to AgentSpec.StorageSize, then to
+	// AgentTemplateDefaults.StorageSize. Ignored when Persist is false.
 	Size string `yaml:"size,omitempty"`
 }
 
@@ -58,11 +59,6 @@ type EnvVar struct {
 type ResourceSpec struct {
 	Requests map[string]string `yaml:"requests,omitempty"`
 	Limits   map[string]string `yaml:"limits,omitempty"`
-}
-
-type SecurityContext struct {
-	RunAsNonRoot           *bool `yaml:"runAsNonRoot,omitempty"`
-	ReadOnlyRootFilesystem *bool `yaml:"readOnlyRootFilesystem,omitempty"`
 }
 
 // --- MCP Server ---
@@ -172,9 +168,8 @@ const (
 // --- Parsing + Validation ---
 
 func ParseAgentSpec(data string) (*AgentSpec, error) {
-	// sigs.k8s.io/yaml routes through JSON unmarshaling so the embedded
-	// config.AgentConfig (with corev1 types like Toleration / Affinity /
-	// Probe — JSON-tagged only) parses cleanly. The simple AgentSpec
+	// sigs.k8s.io/yaml routes through JSON unmarshaling so JSON-tagged
+	// fields parse cleanly even when only json tags are present. AgentSpec
 	// fields match by case-insensitive Go field name, which is
 	// behaviorally identical to the yaml.v3 unmarshal we used before.
 	var spec AgentSpec

@@ -1,18 +1,21 @@
 package reconciler
 
 import (
+	"strings"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/kagenti/platform/packages/controller/pkg/config"
+	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
-// applyAgentPodMeta merges operator-supplied labels and annotations into the
-// pod template metadata. Controller-managed keys (already present in `meta`)
-// win on collision — load-bearing selectors and the gateway's
+// applyAgentBaseMeta merges chart-level ExtraLabels / ExtraAnnotations into
+// the pod template metadata. Controller-managed keys already present in
+// `meta` win on collision — load-bearing selectors and the gateway's
 // `envoy-secrets-rev` annotation must not be overwritten.
-func applyAgentPodMeta(meta *metav1.ObjectMeta, ac config.AgentConfig) {
-	for k, v := range ac.ExtraLabels {
+func applyAgentBaseMeta(meta *metav1.ObjectMeta, base config.AgentBase) {
+	for k, v := range base.ExtraLabels {
 		if _, taken := meta.Labels[k]; taken {
 			continue
 		}
@@ -21,7 +24,7 @@ func applyAgentPodMeta(meta *metav1.ObjectMeta, ac config.AgentConfig) {
 		}
 		meta.Labels[k] = v
 	}
-	for k, v := range ac.ExtraAnnotations {
+	for k, v := range base.ExtraAnnotations {
 		if _, taken := meta.Annotations[k]; taken {
 			continue
 		}
@@ -32,62 +35,73 @@ func applyAgentPodMeta(meta *metav1.ObjectMeta, ac config.AgentConfig) {
 	}
 }
 
-// applyAgentPodScheduling stamps the pod-level scheduling / runtime fields
-// onto every controller-rendered pod. Only non-zero values apply — leaving a
-// field unset in values.yaml keeps cluster defaults.
-func applyAgentPodScheduling(spec *corev1.PodSpec, ac config.AgentConfig) {
-	if len(ac.NodeSelector) > 0 {
-		spec.NodeSelector = ac.NodeSelector
+// applyAgentBaseScheduling stamps chart-level scheduling fields onto agent
+// and fork-agent pods. Only non-zero values apply.
+func applyAgentBaseScheduling(spec *corev1.PodSpec, base config.AgentBase) {
+	if len(base.NodeSelector) > 0 {
+		spec.NodeSelector = base.NodeSelector
 	}
-	if len(ac.Tolerations) > 0 {
-		spec.Tolerations = ac.Tolerations
+	if len(base.Tolerations) > 0 {
+		spec.Tolerations = base.Tolerations
 	}
-	if ac.Affinity != nil {
-		spec.Affinity = ac.Affinity
+	if base.Affinity != nil {
+		spec.Affinity = base.Affinity
 	}
-	if len(ac.TopologySpreadConstraints) > 0 {
-		spec.TopologySpreadConstraints = ac.TopologySpreadConstraints
+	if len(base.TopologySpreadConstraints) > 0 {
+		spec.TopologySpreadConstraints = base.TopologySpreadConstraints
 	}
-	if ac.PriorityClassName != "" {
-		spec.PriorityClassName = ac.PriorityClassName
+	if base.PriorityClassName != "" {
+		spec.PriorityClassName = base.PriorityClassName
 	}
-	if ac.RuntimeClassName != "" {
-		rc := ac.RuntimeClassName
+	if base.RuntimeClassName != "" {
+		rc := base.RuntimeClassName
 		spec.RuntimeClassName = &rc
 	}
 }
 
-// applyAgentContainer appends operator-supplied env / volume mounts to the
-// agent container and replaces probes / resources when overrides are set.
-// ExtraEnv appends AFTER the user's instance/agent-spec env so operator
-// policy wins — K8s resolves duplicate env names by keeping the last
-// occurrence. ExtraVolumes are appended to the pod's Volumes slice in the
-// caller; this only touches the container side.
-func applyAgentContainer(c *corev1.Container, ac config.AgentConfig) {
-	c.Env = append(c.Env, ac.ExtraEnv...)
-	c.VolumeMounts = append(c.VolumeMounts, ac.ExtraVolumeMounts...)
-	// Resources precedence: more-specific wins. The agent template's
-	// resources (set on the container before we get here) take precedence
-	// over the chart-level fallback in AgentConfig. The chart value only
-	// applies when the agent template didn't specify anything — a
-	// platform-wide floor for templates that omit resources entirely. An
-	// empty `resources: {}` in values.yaml decodes to a zero struct and
-	// must not act as a fallback.
-	chartHasResources := ac.Resources != nil && (ac.Resources.Requests != nil || ac.Resources.Limits != nil)
-	templateHasResources := c.Resources.Requests != nil || c.Resources.Limits != nil
-	if chartHasResources && !templateHasResources {
-		c.Resources = *ac.Resources
+// substituteHome replaces the literal `$HOME` placeholder with the chart's
+// agentHome value. Used for AgentSpec mount paths and skill paths so
+// templates don't have to hardcode the home directory.
+func substituteHome(s, home string) string {
+	if home == "" {
+		return s
 	}
-	if ac.Probes == nil {
-		return
+	return strings.ReplaceAll(s, "$HOME", home)
+}
+
+func substituteHomeAll(paths []string, home string) []string {
+	if len(paths) == 0 || home == "" {
+		return paths
 	}
-	if ac.Probes.Startup != nil && c.StartupProbe != nil {
-		c.StartupProbe = ac.Probes.Startup
+	out := make([]string, len(paths))
+	for i, p := range paths {
+		out[i] = substituteHome(p, home)
 	}
-	if ac.Probes.Readiness != nil && c.ReadinessProbe != nil {
-		c.ReadinessProbe = ac.Probes.Readiness
+	return out
+}
+
+// configMountsToTypes / configEnvToTypes shuttle the chart-side fallback
+// shapes (config.Mount / config.EnvVar) into the per-instance types the
+// reconciler already builds pods from. The shapes are identical bar the
+// package — splitting them keeps `config` independent of `types`.
+func configMountsToTypes(in []config.Mount) []types.Mount {
+	if len(in) == 0 {
+		return nil
 	}
-	if ac.Probes.Liveness != nil && c.LivenessProbe != nil {
-		c.LivenessProbe = ac.Probes.Liveness
+	out := make([]types.Mount, len(in))
+	for i, m := range in {
+		out[i] = types.Mount{Path: m.Path, Persist: m.Persist, Size: m.Size}
 	}
+	return out
+}
+
+func configEnvToTypes(in []config.EnvVar) []types.EnvVar {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]types.EnvVar, len(in))
+	for i, e := range in {
+		out[i] = types.EnvVar{Name: e.Name, Value: e.Value}
+	}
+	return out
 }

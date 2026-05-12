@@ -32,9 +32,10 @@ resources:
   limits:
     cpu: "1"
     memory: "2Gi"
-securityContext:
-  runAsNonRoot: true
-  readOnlyRootFilesystem: false
+imagePullPolicy: Always
+storageSize: "5Gi"
+skillPaths:
+  - $HOME/.claude/skills/
 `
 
 func TestParseAgentSpec(t *testing.T) {
@@ -52,50 +53,25 @@ func TestParseAgentSpec(t *testing.T) {
 	assert.Equal(t, "ACP_PORT", spec.Env[0].Name)
 	assert.Equal(t, "250m", spec.Resources.Requests["cpu"])
 	assert.Equal(t, "2Gi", spec.Resources.Limits["memory"])
-	assert.True(t, *spec.SecurityContext.RunAsNonRoot)
-	assert.False(t, *spec.SecurityContext.ReadOnlyRootFilesystem)
+	// Layer B overrides for AgentTemplateDefaults.
+	assert.Equal(t, "Always", spec.ImagePullPolicy)
+	assert.Equal(t, "5Gi", spec.StorageSize)
+	assert.Equal(t, []string{"$HOME/.claude/skills/"}, spec.SkillPaths)
 }
 
-// Per-agent override block (AgentConfig) parsed from agent ConfigMap YAML.
-// The `config:` field rides on top of the chart-level `controller.agent`
-// at reconcile time via config.AgentConfig.Merge.
-func TestParseAgentSpec_PerAgentConfig(t *testing.T) {
-	spec, err := ParseAgentSpec(`version: agent-platform.ai/v1
-image: foo
-config:
-  imagePullSecrets:
-    - my-registry-cred
-  storageSize: "50Gi"
-  extraVolumes:
-    - name: my-data
-      emptyDir: {}
-  extraVolumeMounts:
-    - name: my-data
-      mountPath: /data
-  runtimeClassName: kata
-  nodeSelector:
-    workload: heavy-agents
-`)
-	require.NoError(t, err)
-	require.NotNil(t, spec.Config, "agent ConfigMap's `config:` should parse into AgentSpec.Config")
-	assert.Equal(t, []string{"my-registry-cred"}, spec.Config.ImagePullSecrets)
-	assert.Equal(t, "50Gi", spec.Config.StorageSize)
-	require.Len(t, spec.Config.ExtraVolumes, 1)
-	assert.Equal(t, "my-data", spec.Config.ExtraVolumes[0].Name)
-	require.NotNil(t, spec.Config.ExtraVolumes[0].EmptyDir)
-	require.Len(t, spec.Config.ExtraVolumeMounts, 1)
-	assert.Equal(t, "/data", spec.Config.ExtraVolumeMounts[0].MountPath)
-	assert.Equal(t, "kata", spec.Config.RuntimeClassName)
-	assert.Equal(t, "heavy-agents", spec.Config.NodeSelector["workload"])
-}
-
-// Backwards-compat: agent ConfigMaps without `config:` still parse.
-func TestParseAgentSpec_NoConfigField(t *testing.T) {
+// Minimal agent ConfigMap: image only. The controller fills the rest from
+// chart-wide AgentTemplateDefaults at reconcile time. Used for the bare-image
+// agent path the api-server creates.
+func TestParseAgentSpec_BareImage(t *testing.T) {
 	spec, err := ParseAgentSpec(`version: agent-platform.ai/v1
 image: foo
 `)
 	require.NoError(t, err)
-	assert.Nil(t, spec.Config, "missing `config:` should produce nil override")
+	assert.Equal(t, "foo", spec.Image)
+	assert.Empty(t, spec.Mounts)
+	assert.Empty(t, spec.Env)
+	assert.Empty(t, spec.ImagePullPolicy)
+	assert.Empty(t, spec.StorageSize)
 }
 
 func TestParseAgentSpec_MissingVersion(t *testing.T) {

@@ -76,7 +76,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       }
       const { readSpec: readTemplateSpec } = composeTemplatesModule(api, config.namespace);
       const { agents } = composeAgentsModule({
-        api, namespace: config.namespace, owner, agentHome: config.agentHome, readTemplateSpec,
+        api, namespace: config.namespace, owner, readTemplateSpec,
       });
       const { isOwnedInstance } = composeInstancesModule({
         api, namespace: config.namespace, owner, db, userDirectory, channelSecretStore,

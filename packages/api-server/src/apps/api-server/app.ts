@@ -245,7 +245,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
 
     const { templates, readSpec: readTemplateSpec } = composeTemplatesModule(api, config.namespace);
     const { agents } = composeAgentsModule({
-      api, namespace: config.namespace, owner: user.sub, agentHome: config.agentHome,
+      api, namespace: config.namespace, owner: user.sub,
       readTemplateSpec, presetSeeder, cleanupHooks: agentCleanupHooks,
     });
     const { instances, isOwnedInstance } = composeInstancesModule({

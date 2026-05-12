@@ -14,7 +14,6 @@ import (
 // is allowed (commonly used to disable a timer; see IdleTimeout).
 type Duration time.Duration
 
-// AsDuration returns the wrapped time.Duration so callers don't need to cast.
 func (d Duration) AsDuration() time.Duration { return time.Duration(d) }
 
 func (d *Duration) UnmarshalJSON(data []byte) error {
@@ -34,45 +33,28 @@ func (d Duration) MarshalJSON() ([]byte, error) {
 	return json.Marshal(time.Duration(d).String())
 }
 
-// AgentConfig is the single, flat schema describing every operator-tunable
-// aspect of controller-rendered pods — PVC sizing, image pull policy/secrets,
-// pod metadata, scheduling, and agent-container additions. The chart writes
-// the whole `controller.agent` block into AGENT_CONFIG (JSON) at deploy time.
+// AgentBase is the chart-only platform policy applied verbatim to every
+// controller-rendered agent / fork agent pod. Agent ConfigMaps cannot
+// override these fields by design — security, scheduling, and cluster
+// integration are operator policy. Shipped via the AGENT_BASE env var.
 //
-// Designed to be partially overridden per-agent later: AgentConfig.Merge lets
-// a per-agent AgentConfig (parsed from an agent ConfigMap) ride on top of the
-// chart-level default. The merge isn't wired through the API yet, but the
-// shape and rules are fixed so dropping it into AgentSpec is a one-line
-// addition (`Config *AgentConfig` field + `cfg.AgentConfig.Merge(spec.Config)`).
-//
-// Scope boundaries the reconciler enforces — NOT enforced by this type:
-//   - Pod metadata + scheduling fields apply to all four pod types (agent,
-//     paired gateway, fork agent, fork gateway) so the paired pair stays
-//     co-scheduled and shares runtime class.
-//   - ExtraEnv/ExtraVolumes/ExtraVolumeMounts/Resources/Probes apply to the
-//     agent container only — the gateway pod's Envoy bootstrap is
-//     platform-managed and these knobs could silently break it.
-//   - Controller-managed labels/annotations/env always win on collision:
-//     selector labels (`agent-platform.ai/instance|pair|role`), the gateway's
-//     `envoy-secrets-rev` annotation, and platform env (HTTPS_PROXY,
-//     SSL_CERT_FILE, API_SERVER_URL, ...). The override drops silently.
-type AgentConfig struct {
-	// --- Pull / storage knobs ---
-	ImagePullPolicy  string   `json:"imagePullPolicy,omitempty"`
+// Gateway pods are platform-managed and don't read this config; their
+// scheduling and security are controller-internal.
+type AgentBase struct {
+	// Cluster details
 	ImagePullSecrets []string `json:"imagePullSecrets,omitempty"`
 	StorageClass     string   `json:"storageClass,omitempty"`
 	AccessMode       string   `json:"accessMode,omitempty"` // ReadWriteMany (default) or ReadWriteOnce
-	StorageSize      string   `json:"storageSize,omitempty"`
 
-	// --- Lifecycle ---
-	IdleTimeout            Duration `json:"idleTimeout,omitempty"`            // hibernate idle instances after this; 0 disables.
-	TerminationGracePeriod int64    `json:"terminationGracePeriod,omitempty"` // PodSpec.TerminationGracePeriodSeconds for agent + gateway + fork pods.
+	// Lifecycle
+	IdleTimeout            Duration `json:"idleTimeout,omitempty"`            // hibernate idle instances; 0 disables.
+	TerminationGracePeriod int64    `json:"terminationGracePeriod,omitempty"` // agent + fork agent only.
 
-	// --- Pod metadata ---
+	// Pod metadata
 	ExtraLabels      map[string]string `json:"extraLabels,omitempty"`
 	ExtraAnnotations map[string]string `json:"extraAnnotations,omitempty"`
 
-	// --- Scheduling ---
+	// Scheduling
 	NodeSelector              map[string]string                 `json:"nodeSelector,omitempty"`
 	Tolerations               []corev1.Toleration               `json:"tolerations,omitempty"`
 	Affinity                  *corev1.Affinity                  `json:"affinity,omitempty"`
@@ -80,12 +62,12 @@ type AgentConfig struct {
 	PriorityClassName         string                            `json:"priorityClassName,omitempty"`
 	RuntimeClassName          string                            `json:"runtimeClassName,omitempty"`
 
-	// --- Agent container additions (long-lived agent + fork agent) ---
-	ExtraEnv          []corev1.EnvVar              `json:"extraEnv,omitempty"`
-	ExtraVolumes      []corev1.Volume              `json:"extraVolumes,omitempty"`
-	ExtraVolumeMounts []corev1.VolumeMount         `json:"extraVolumeMounts,omitempty"`
-	Resources         *corev1.ResourceRequirements `json:"resources,omitempty"` // replaces agent template resources when set
-	Probes            *AgentProbes                 `json:"probes,omitempty"`    // each sub-field replaces the matching default
+	// Probes — per-probe overrides; the master switch is Config.AgentProbesEnabled.
+	Probes *AgentProbes `json:"probes,omitempty"`
+
+	// Security — chart-only floor. The agent ConfigMap cannot set these.
+	PodSecurityContext       *corev1.PodSecurityContext `json:"podSecurityContext,omitempty"`
+	ContainerSecurityContext *corev1.SecurityContext    `json:"containerSecurityContext,omitempty"`
 }
 
 // AgentProbes — sub-field nil means "use the controller's built-in probe
@@ -99,131 +81,54 @@ type AgentProbes struct {
 	Liveness  *corev1.Probe `json:"liveness,omitempty"`
 }
 
-// Merge returns a new AgentConfig combining the receiver (chart default) with
-// `override` (per-agent). Rules:
+// AgentTemplateDefaults is the chart-wide fallback applied at reconcile
+// time when an agent template (or bare-image AgentSpec) omits a field.
+// Shipped via the AGENT_TEMPLATE_DEFAULTS env var.
 //
-//   - Scalars (ImagePullPolicy, StorageClass, …): override wins when non-empty.
-//   - "Extra*" slices (ExtraEnv, ExtraVolumes, ExtraVolumeMounts, ImagePullSecrets):
-//     append — additive by definition.
-//   - "Extra*" maps (ExtraLabels, ExtraAnnotations): per-key merge, override wins.
-//   - Whole-policy fields (NodeSelector, Tolerations, Affinity,
-//     TopologySpreadConstraints, Resources): replace when non-empty/non-nil
-//     — partial scheduling policies don't compose cleanly.
-//   - Probes: per-probe replace (Startup/Readiness/Liveness) when non-nil.
-//
-// Receiver and override are not mutated. A nil receiver behaves as zero; a
-// nil override returns a deep-enough copy of the receiver.
-func (c *AgentConfig) Merge(override *AgentConfig) *AgentConfig {
-	out := AgentConfig{}
-	if c != nil {
-		out = *c
-	}
-	if override == nil {
-		return &out
-	}
+// Semantics are per-field "template wins if set, else this value":
+//   - Scalars (ImagePullPolicy, StorageSize, AgentHome): empty = fall back.
+//   - Slices (Mounts, Env, SkillSources): empty = fall back (REPLACE, not
+//     additive — a template that sets the field owns the whole list).
+//   - Resources: empty (no requests/limits set) = fall back.
+type AgentTemplateDefaults struct {
+	// AgentHome is the HOME inside agent containers. The controller sets it
+	// as the `HOME` env var and substitutes the literal string `$HOME` in
+	// any AgentSpec mount path or skill-path. Must agree with the agent
+	// image's user HOME or pod-files materialization breaks silently.
+	// Plumbed to the api-server too — pod-files producers write to this path
+	// on the shared volume.
+	AgentHome string `json:"agentHome,omitempty"`
 
-	// Scalars — override wins when non-empty.
-	if override.ImagePullPolicy != "" {
-		out.ImagePullPolicy = override.ImagePullPolicy
-	}
-	if override.StorageClass != "" {
-		out.StorageClass = override.StorageClass
-	}
-	if override.AccessMode != "" {
-		out.AccessMode = override.AccessMode
-	}
-	if override.StorageSize != "" {
-		out.StorageSize = override.StorageSize
-	}
-	if override.PriorityClassName != "" {
-		out.PriorityClassName = override.PriorityClassName
-	}
-	if override.RuntimeClassName != "" {
-		out.RuntimeClassName = override.RuntimeClassName
-	}
-	if override.IdleTimeout != 0 {
-		out.IdleTimeout = override.IdleTimeout
-	}
-	if override.TerminationGracePeriod != 0 {
-		out.TerminationGracePeriod = override.TerminationGracePeriod
-	}
+	ImagePullPolicy string                       `json:"imagePullPolicy,omitempty"`
+	StorageSize     string                       `json:"storageSize,omitempty"`
+	Resources       *corev1.ResourceRequirements `json:"resources,omitempty"`
 
-	// Extra* — additive.
-	out.ImagePullSecrets = appendDistinct(out.ImagePullSecrets, override.ImagePullSecrets)
-	out.ExtraEnv = append(append([]corev1.EnvVar{}, out.ExtraEnv...), override.ExtraEnv...)
-	out.ExtraVolumes = append(append([]corev1.Volume{}, out.ExtraVolumes...), override.ExtraVolumes...)
-	out.ExtraVolumeMounts = append(append([]corev1.VolumeMount{}, out.ExtraVolumeMounts...), override.ExtraVolumeMounts...)
-	out.ExtraLabels = mergeStringMaps(out.ExtraLabels, override.ExtraLabels)
-	out.ExtraAnnotations = mergeStringMaps(out.ExtraAnnotations, override.ExtraAnnotations)
-
-	// Whole-policy fields — replace when non-empty/non-nil.
-	if len(override.NodeSelector) > 0 {
-		out.NodeSelector = override.NodeSelector
-	}
-	if len(override.Tolerations) > 0 {
-		out.Tolerations = override.Tolerations
-	}
-	if override.Affinity != nil {
-		out.Affinity = override.Affinity
-	}
-	if len(override.TopologySpreadConstraints) > 0 {
-		out.TopologySpreadConstraints = override.TopologySpreadConstraints
-	}
-	if override.Resources != nil && (override.Resources.Requests != nil || override.Resources.Limits != nil) {
-		out.Resources = override.Resources
-	}
-
-	// Probes — per-probe replace.
-	if override.Probes != nil {
-		if out.Probes == nil {
-			out.Probes = &AgentProbes{}
-		} else {
-			p := *out.Probes
-			out.Probes = &p
-		}
-		if override.Probes.Startup != nil {
-			out.Probes.Startup = override.Probes.Startup
-		}
-		if override.Probes.Readiness != nil {
-			out.Probes.Readiness = override.Probes.Readiness
-		}
-		if override.Probes.Liveness != nil {
-			out.Probes.Liveness = override.Probes.Liveness
-		}
-	}
-
-	return &out
+	// Mounts, Env, SkillSources, Init are baked into the rendered pod when
+	// the AgentSpec omits the corresponding field. Templates that need a
+	// different shape REPLACE the whole value.
+	Mounts       []Mount       `json:"mounts,omitempty"`
+	Env          []EnvVar      `json:"env,omitempty"`
+	SkillSources []SkillSource `json:"skillSources,omitempty"`
+	// Init is a shell script run as the init container's entrypoint.
+	// `$HOME` is shell-expanded at runtime — the controller sets the
+	// HOME env var on the init container; do not pre-substitute here.
+	Init string `json:"init,omitempty"`
 }
 
-func appendDistinct(base, extra []string) []string {
-	if len(extra) == 0 {
-		return base
-	}
-	seen := make(map[string]struct{}, len(base))
-	for _, s := range base {
-		seen[s] = struct{}{}
-	}
-	out := append([]string{}, base...)
-	for _, s := range extra {
-		if _, ok := seen[s]; ok {
-			continue
-		}
-		seen[s] = struct{}{}
-		out = append(out, s)
-	}
-	return out
+// Mount mirrors types.Mount on the JSON side — defined here so config
+// doesn't depend on the types package.
+type Mount struct {
+	Path    string `json:"path"`
+	Persist bool   `json:"persist,omitempty"`
+	Size    string `json:"size,omitempty"`
 }
 
-func mergeStringMaps(base, override map[string]string) map[string]string {
-	if len(override) == 0 {
-		return base
-	}
-	out := make(map[string]string, len(base)+len(override))
-	for k, v := range base {
-		out[k] = v
-	}
-	for k, v := range override {
-		out[k] = v
-	}
-	return out
+type EnvVar struct {
+	Name  string `json:"name"`
+	Value string `json:"value,omitempty"`
+}
+
+type SkillSource struct {
+	Name   string `json:"name"`
+	GitURL string `json:"gitUrl"`
 }

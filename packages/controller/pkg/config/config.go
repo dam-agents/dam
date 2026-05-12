@@ -23,11 +23,16 @@ type Config struct {
 	LeaseName              string // Leader election lease name
 	PodName                string // This pod's name (from downward API)
 
-	// AgentConfig is the chart-level default for everything that shapes
-	// controller-rendered agent / gateway / fork pods. Threaded in via a
-	// single JSON env var (AGENT_CONFIG) from Helm value `controller.agent`.
-	// Per-agent overrides ride on top through AgentConfig.Merge when wired.
-	AgentConfig AgentConfig
+	// AgentBase carries chart-only platform policy applied verbatim to every
+	// controller-rendered agent / fork agent pod. Threaded in via the
+	// AGENT_BASE env var from Helm `controller.agent.base`. Not overridable
+	// by agent ConfigMaps.
+	AgentBase AgentBase
+
+	// AgentTemplateDefaults are chart-wide fallbacks used when an agent
+	// template (or bare-image AgentSpec) omits a field. Threaded in via the
+	// AGENT_TEMPLATE_DEFAULTS env var from `controller.agent.templateDefaults`.
+	AgentTemplateDefaults AgentTemplateDefaults
 
 	AgentProbesEnabled       bool          // Render startup/readiness/liveness probes on agent pods (default: true; matches the chart's probes.enabled)
 	HarnessServerURL         string        // Harness API server internal URL (separate port, agent-facing)
@@ -87,22 +92,36 @@ func LoadFromEnv() (*Config, error) {
 		PodName:                podName,
 	}
 
-	// AgentConfig — single JSON blob. Defaults live in the Helm chart
-	// (values.yaml `controller.agent`), not here. DisallowUnknownFields
+	// AGENT_BASE + AGENT_TEMPLATE_DEFAULTS — chart-only and template-fallback
+	// JSON blobs. Defaults live in values.yaml (controller.agent.base and
+	// controller.agent.templateDefaults), not here. DisallowUnknownFields
 	// fails-loud on typos so the operator gets a clear startup error
 	// instead of a silently-ignored field (e.g. `runtimeClasName` sic).
-	if v := os.Getenv("AGENT_CONFIG"); v != "" {
+	if v := os.Getenv("AGENT_BASE"); v != "" {
 		dec := json.NewDecoder(strings.NewReader(v))
 		dec.DisallowUnknownFields()
-		if err := dec.Decode(&cfg.AgentConfig); err != nil {
-			return nil, fmt.Errorf("AGENT_CONFIG: invalid JSON: %w", err)
+		if err := dec.Decode(&cfg.AgentBase); err != nil {
+			return nil, fmt.Errorf("AGENT_BASE: invalid JSON: %w", err)
+		}
+	}
+	if v := os.Getenv("AGENT_TEMPLATE_DEFAULTS"); v != "" {
+		dec := json.NewDecoder(strings.NewReader(v))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&cfg.AgentTemplateDefaults); err != nil {
+			return nil, fmt.Errorf("AGENT_TEMPLATE_DEFAULTS: invalid JSON: %w", err)
 		}
 	}
 
 	cfg.HarnessServerURL = os.Getenv("PLATFORM_HARNESS_SERVER_URL")
 	cfg.HarnessServerPort = envOrDefaultInt("PLATFORM_HARNESS_SERVER_PORT", 4001)
 	cfg.AgentProbesEnabled = envOrDefaultBool("AGENT_PROBES_ENABLED", true)
+	// AGENT_HOME mirrors AgentTemplateDefaults.AgentHome — read from env so
+	// the api-server (which doesn't get the AGENT_TEMPLATE_DEFAULTS blob)
+	// can still source it directly. Both come from the same Helm value.
 	cfg.AgentHome = envOrDefault("AGENT_HOME", "/home/agent")
+	if cfg.AgentTemplateDefaults.AgentHome == "" {
+		cfg.AgentTemplateDefaults.AgentHome = cfg.AgentHome
+	}
 	cfg.EnvoyImage = envOrDefault("ENVOY_IMAGE", "envoyproxy/envoy:distroless-v1.37.2")
 	cfg.EnvoyPort = envOrDefaultInt("ENVOY_PORT", 10000)
 	cfg.EnvoyMitmCAIssuer = envOrDefault("ENVOY_MITM_CA_ISSUER", "platform-mitm-ca-issuer")

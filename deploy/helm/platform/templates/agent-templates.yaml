@@ -1,0 +1,57 @@
+{{/*
+Agent template ConfigMaps. One per enabled entry in `.Values.agentTemplates`.
+Each becomes an agent-template ConfigMap the api-server lists by the
+`agent-platform.ai/type: agent-template` label.
+
+Only fields the template differs on are rendered. Anything omitted falls
+through at reconcile time to `controller.agent.templateDefaults.*` (chart
+fallback) or `controller.agent.base.*` (chart-only policy).
+*/}}
+{{- range $tmpl := .Values.agentTemplates }}
+{{- if $tmpl.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $tmpl.name }}
+  namespace: {{ $.Values.agentNamespace }}
+  labels:
+    {{- include "platform.labels" $ | nindent 4 }}
+    agent-platform.ai/type: agent-template
+data:
+  spec.yaml: |
+    version: agent-platform.ai/v1
+    image: "{{ $tmpl.image.repository }}:{{ $tmpl.image.tag | default $.Chart.AppVersion }}"
+    description: {{ $tmpl.description | quote }}
+    {{- with $tmpl.image.pullPolicy }}
+    imagePullPolicy: {{ . | quote }}
+    {{- end }}
+    {{- with $tmpl.storageSize }}
+    storageSize: {{ . | quote }}
+    {{- end }}
+    {{- with $tmpl.resources }}
+    resources:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with $tmpl.mounts }}
+    mounts:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with $tmpl.env }}
+    env:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with $tmpl.skillPaths }}
+    skillPaths:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with $tmpl.skillSources }}
+    skillSources:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with $tmpl.init }}
+    init: |
+      {{- . | nindent 6 }}
+    {{- end }}
+{{- end }}
+{{- end }}

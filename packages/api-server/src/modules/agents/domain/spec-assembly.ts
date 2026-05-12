@@ -1,6 +1,5 @@
 import type { TemplateSpec } from "api-server-api";
 import { SPEC_VERSION } from "api-server-api";
-import { defaultTemplateSpec } from "./defaults.js";
 
 export function assembleSpecFromTemplate(
   name: string,
@@ -16,25 +15,26 @@ export function assembleSpecFromTemplate(
     init: tmplSpec.init,
     env: tmplSpec.env,
     resources: tmplSpec.resources,
-    securityContext: tmplSpec.securityContext,
-    // Without this, the template's skillPaths is dropped and the
-    // skills-service falls back to the hardcoded /home/agent/.agents/skills
-    // default — so `defaultTemplate` (claude-code) installs end up in the
-    // wrong dir for the harness to find.
+    imagePullPolicy: tmplSpec.imagePullPolicy,
+    storageSize: tmplSpec.storageSize,
+    // skillPaths is required for the harness's skills-service to find the
+    // installed skills directory; the chart sets it per template.
     skillPaths: tmplSpec.skillPaths,
   };
 }
 
+// Bare-image agents (no template) ship a minimal spec — just enough for
+// the controller to identify the image. Everything else (mounts, env,
+// resources, security context) falls through to the chart's
+// `controller.agent.base` / `templateDefaults` at reconcile time.
 export function assembleSpecFromImage(
   name: string,
   opts: { image?: string; description?: string },
-  agentHome: string,
 ): Record<string, unknown> {
   return {
     name,
     version: SPEC_VERSION,
     image: opts.image,
     description: opts.description,
-    ...defaultTemplateSpec(agentHome),
   };
 }

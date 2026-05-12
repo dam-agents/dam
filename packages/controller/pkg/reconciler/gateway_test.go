@@ -12,7 +12,7 @@ import (
 
 func TestBuildGatewayStatefulSet_Shape(t *testing.T) {
 	secrets := []corev1.Secret{credSecret("platform-cred-aaa", "api.example.com")}
-	ss := BuildGatewayStatefulSet("my-instance", false, testAgent, testConfig, testOwnerCM, secrets)
+	ss := BuildGatewayStatefulSet("my-instance", false, testConfig, testOwnerCM, secrets)
 
 	require.NotNil(t, ss)
 	assert.Equal(t, "my-instance-gateway", ss.Name)
@@ -42,12 +42,12 @@ func TestBuildGatewayStatefulSet_Shape(t *testing.T) {
 }
 
 func TestBuildGatewayStatefulSet_Hibernated(t *testing.T) {
-	ss := BuildGatewayStatefulSet("my-instance", true, testAgent, testConfig, testOwnerCM, nil)
+	ss := BuildGatewayStatefulSet("my-instance", true, testConfig, testOwnerCM, nil)
 	assert.Equal(t, int32(0), *ss.Spec.Replicas, "gateway scales with the agent")
 }
 
 func TestBuildGatewayStatefulSet_AutomountSAFalse(t *testing.T) {
-	ss := BuildGatewayStatefulSet("my-instance", false, testAgent, testConfig, testOwnerCM, nil)
+	ss := BuildGatewayStatefulSet("my-instance", false, testConfig, testOwnerCM, nil)
 	require.NotNil(t, ss.Spec.Template.Spec.AutomountServiceAccountToken)
 	assert.False(t, *ss.Spec.Template.Spec.AutomountServiceAccountToken,
 		"gateway pod must have no SA token — Secret-read RBAC would bypass volume-mount scoping")
@@ -60,7 +60,7 @@ func TestBuildGatewayStatefulSet_RollingUpdateMaxUnavailable(t *testing.T) {
 	// that path. Without it, the rev-1 → rev-2 transition that happens
 	// when grants land after agent creation would strand the pod in
 	// CrashLoopBackOff indefinitely.
-	ss := BuildGatewayStatefulSet("my-instance", false, testAgent, testConfig, testOwnerCM, nil)
+	ss := BuildGatewayStatefulSet("my-instance", false, testConfig, testOwnerCM, nil)
 	require.NotNil(t, ss.Spec.UpdateStrategy.RollingUpdate, "rolling update strategy must be set explicitly")
 	require.NotNil(t, ss.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable)
 	assert.Equal(t, "1", ss.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable.String(),
@@ -71,7 +71,7 @@ func TestBuildGatewayStatefulSet_NoAgentVolumes(t *testing.T) {
 	// Workspace PVCs and CA-only mounts belong to the agent pod, not the
 	// gateway. The gateway only mounts the bootstrap CM, the leaf TLS
 	// Secret, and per-credential Secrets.
-	ss := BuildGatewayStatefulSet("my-instance", false, testAgent, testConfig, testOwnerCM, nil)
+	ss := BuildGatewayStatefulSet("my-instance", false, testConfig, testOwnerCM, nil)
 	for _, v := range ss.Spec.Template.Spec.Volumes {
 		assert.NotContains(t, v.Name, "home-agent",
 			"gateway must not mount the workspace PVC (ADR-038)")
@@ -102,7 +102,7 @@ func TestBuildGatewayService(t *testing.T) {
 // --- Fork gateway ---
 
 func TestBuildForkGatewayPod_Labels(t *testing.T) {
-	pod := BuildForkGatewayPod("fork-abc", "parent-instance", testAgent, testConfig, testForkOwnerCM, nil)
+	pod := BuildForkGatewayPod("fork-abc", "parent-instance", testConfig, testForkOwnerCM, nil)
 	assert.Equal(t, "fork-abc-gateway", pod.Name)
 	// Instance label points at the PARENT instance — ext_authz identity
 	// flows through this label, and forks inherit the parent's egress

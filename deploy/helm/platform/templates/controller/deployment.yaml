@@ -41,11 +41,17 @@ spec:
               value: {{ .Values.agentNamespace }}
             - name: PLATFORM_RELEASE_NAMESPACE
               value: {{ .Release.Namespace }}
-            # Every knob shaping controller-rendered pods rides in one JSON
-            # env var (see config.AgentConfig). Unknown fields fail loudly at
-            # controller startup so values.yaml typos don't slip through silently.
-            - name: AGENT_CONFIG
-              value: {{ .Values.controller.agent | toJson | quote }}
+            # Three layers shape controller-rendered pods. Each ships as its
+            # own JSON env var; the controller fails loudly on unknown fields
+            # so values.yaml typos surface at startup.
+            #   - AGENT_BASE: chart-only platform policy (security, scheduling,
+            #     cluster details). Never overridable by an agent ConfigMap.
+            #   - AGENT_TEMPLATE_DEFAULTS: chart-wide fallbacks for fields a
+            #     template can override (template wins when set).
+            - name: AGENT_BASE
+              value: {{ .Values.controller.agent.base | toJson | quote }}
+            - name: AGENT_TEMPLATE_DEFAULTS
+              value: {{ .Values.controller.agent.templateDefaults | toJson | quote }}
             # ADR-041: harness traffic routes through the waypoint-fronted
             # `-apiserver-harness` Service. The bare apiserver Service no
             # longer carries the harness port.
@@ -67,7 +73,7 @@ spec:
             - name: ENVOY_PORT
               value: {{ .Values.controller.envoyPort | default 10000 | quote }}
             - name: AGENT_HOME
-              value: {{ .Values.agentHome | quote }}
+              value: {{ .Values.controller.agent.templateDefaults.agentHome | quote }}
             # ADR-041: ext-authz uses per-instance Services rendered by the
             # controller (one Service per instance, AuthorizationPolicy-gated
             # to the instance's own SA principal). The host is computed at

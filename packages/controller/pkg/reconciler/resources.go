@@ -58,10 +58,22 @@ func agentProxyAddr(instanceName string, cfg *config.Config) string {
 // surfaced as an env var and pod annotation; no Secret material is mounted
 // into the agent pod.
 func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec *types.AgentSpec, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret) *appsv1.StatefulSet {
-	// Effective config = chart-level controller.agent ⨯ per-agent override
-	// (AgentSpec.Config, parsed from the agent ConfigMap). Most-specific
-	// wins per AgentConfig.Merge — see config/agent_config.go for the rules.
-	ac := *cfg.AgentConfig.Merge(agentSpec.Config)
+	base := cfg.AgentBase
+	defaults := cfg.AgentTemplateDefaults
+
+	// Layer B fallbacks — template wins when set, else chart-wide default.
+	pullPolicy := agentSpec.ImagePullPolicy
+	if pullPolicy == "" {
+		pullPolicy = defaults.ImagePullPolicy
+	}
+	specMounts := agentSpec.Mounts
+	if len(specMounts) == 0 {
+		specMounts = configMountsToTypes(defaults.Mounts)
+	}
+	specEnv := agentSpec.Env
+	if len(specEnv) == 0 {
+		specEnv = configEnvToTypes(defaults.Env)
+	}
 
 	replicas := int32(1)
 	if instance.DesiredState == "hibernated" {
@@ -115,7 +127,7 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 	// "is this env set?" check; Envoy in the paired gateway overwrites the
 	// header on the wire.
 	env = append(env, credentialEnvVars(credentialSecrets)...)
-	for _, e := range agentSpec.Env {
+	for _, e := range specEnv {
 		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
 	}
 	for _, e := range instance.Env {
@@ -137,31 +149,31 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 	var volumeMounts []corev1.VolumeMount
 	var pvcs []corev1.PersistentVolumeClaim
 
-	for _, m := range agentSpec.Mounts {
-		volName := types.SanitizeMountName(m.Path)
+	for _, m := range specMounts {
+		path := substituteHome(m.Path, defaults.AgentHome)
+		volName := types.SanitizeMountName(path)
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name: volName, MountPath: m.Path,
+			Name: volName, MountPath: path,
 		})
 		if m.Persist {
-			// More-specific wins: per-mount `Size` from the agent template
-			// overrides the chart-level fallback in AgentConfig. Both empty
-			// means the chart is misconfigured — `controller.agent.storageSize`
-			// is non-empty in values.yaml; an explicit override to "" is an
-			// operator mistake we surface by letting K8s reject the PVC.
+			// Size precedence: per-mount > AgentSpec.StorageSize > chart default.
 			storageSize := m.Size
 			if storageSize == "" {
-				storageSize = ac.StorageSize
+				storageSize = agentSpec.StorageSize
+			}
+			if storageSize == "" {
+				storageSize = defaults.StorageSize
 			}
 			pvcSpec := corev1.PersistentVolumeClaimSpec{
-				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.PersistentVolumeAccessMode(ac.AccessMode)},
+				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.PersistentVolumeAccessMode(base.AccessMode)},
 				Resources: corev1.VolumeResourceRequirements{
 					Requests: corev1.ResourceList{
 						corev1.ResourceStorage: resource.MustParse(storageSize),
 					},
 				},
 			}
-			if ac.StorageClass != "" {
-				sc := ac.StorageClass
+			if base.StorageClass != "" {
+				sc := base.StorageClass
 				pvcSpec.StorageClassName = &sc
 			}
 			pvcs = append(pvcs, corev1.PersistentVolumeClaim{
@@ -206,7 +218,7 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 		Name: "ca-cert", MountPath: "/etc/platform/ca", ReadOnly: true,
 	})
 
-	// Resources
+	// Resources: template wins when set, else chart-wide default.
 	resourceReqs := corev1.ResourceRequirements{}
 	if agentSpec.Resources.Requests != nil {
 		resourceReqs.Requests = toResourceList(agentSpec.Resources.Requests)
@@ -214,31 +226,31 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 	if agentSpec.Resources.Limits != nil {
 		resourceReqs.Limits = toResourceList(agentSpec.Resources.Limits)
 	}
+	if resourceReqs.Requests == nil && resourceReqs.Limits == nil && defaults.Resources != nil {
+		resourceReqs = *defaults.Resources
+	}
 
-	// Init containers: optional user-defined init only.
+	// Init container: template wins, else chart-wide default.
+	initScript := agentSpec.Init
+	if initScript == "" {
+		initScript = defaults.Init
+	}
 	var initContainers []corev1.Container
-	if agentSpec.Init != "" {
+	if initScript != "" {
 		initContainers = append(initContainers, corev1.Container{
 			Name:            "init",
 			Image:           agentSpec.Image,
-			ImagePullPolicy: corev1.PullPolicy(ac.ImagePullPolicy),
-			Command:         []string{"sh", "-c", agentSpec.Init},
+			ImagePullPolicy: corev1.PullPolicy(pullPolicy),
+			Command:         []string{"sh", "-c", initScript},
+			Env:             []corev1.EnvVar{{Name: "HOME", Value: defaults.AgentHome}},
 			VolumeMounts:    volumeMounts,
 		})
 	}
 
-	// Image pull secrets
+	// Image pull secrets — chart-only.
 	var pullSecrets []corev1.LocalObjectReference
-	for _, name := range ac.ImagePullSecrets {
-		pullSecrets = append(pullSecrets, corev1.LocalObjectReference{Name: name})
-	}
-
-	// Pod security context
-	var podSec *corev1.PodSecurityContext
-	if agentSpec.SecurityContext != nil {
-		podSec = &corev1.PodSecurityContext{
-			RunAsNonRoot: agentSpec.SecurityContext.RunAsNonRoot,
-		}
+	for _, n := range base.ImagePullSecrets {
+		pullSecrets = append(pullSecrets, corev1.LocalObjectReference{Name: n})
 	}
 
 	// GH_TOKEN signal. Surface whether a GitHub credential is wired up so
@@ -271,28 +283,39 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 		}
 	}
 
+	// Probes — chart-level Probes overrides (base.Probes) replace the
+	// matching default per-field when the master switch is on.
+	if base.Probes != nil {
+		if base.Probes.Startup != nil && startupProbe != nil {
+			startupProbe = base.Probes.Startup
+		}
+		if base.Probes.Readiness != nil && readinessProbe != nil {
+			readinessProbe = base.Probes.Readiness
+		}
+		if base.Probes.Liveness != nil && livenessProbe != nil {
+			livenessProbe = base.Probes.Liveness
+		}
+	}
+
+	skillPaths := substituteHomeAll(agentSpec.SkillPaths, defaults.AgentHome)
+	_ = skillPaths // reserved for harness/skills-service wiring; emitted via spec.yaml today
+
 	containers := []corev1.Container{{
 		Name:            "agent",
 		Image:           agentSpec.Image,
-		ImagePullPolicy: corev1.PullPolicy(ac.ImagePullPolicy),
+		ImagePullPolicy: corev1.PullPolicy(pullPolicy),
 		Ports: []corev1.ContainerPort{{
 			Name: "acp", ContainerPort: 8080,
 		}},
-		Env:            env,
-		EnvFrom:        envFrom,
-		StartupProbe:   startupProbe,
-		ReadinessProbe: readinessProbe,
-		LivenessProbe:  livenessProbe,
-		SecurityContext: &corev1.SecurityContext{
-			Capabilities: &corev1.Capabilities{
-				Drop: []corev1.Capability{"ALL"},
-			},
-		},
-		Resources:    resourceReqs,
-		VolumeMounts: volumeMounts,
+		Env:             env,
+		EnvFrom:         envFrom,
+		StartupProbe:    startupProbe,
+		ReadinessProbe:  readinessProbe,
+		LivenessProbe:   livenessProbe,
+		SecurityContext: base.ContainerSecurityContext,
+		Resources:       resourceReqs,
+		VolumeMounts:    volumeMounts,
 	}}
-	applyAgentContainer(&containers[0], ac)
-	volumes = append(volumes, ac.ExtraVolumes...)
 
 	podAnnotations := map[string]string{
 		"agent-platform.ai/gh-token-available": ghAvail,
@@ -311,7 +334,7 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 		Labels:      labels,
 		Annotations: podAnnotations,
 	}
-	applyAgentPodMeta(&podMeta, ac)
+	applyAgentBaseMeta(&podMeta, base)
 
 	podSpec := corev1.PodSpec{
 		// ADR-041: per-instance SA gives the pod its SPIFFE
@@ -319,16 +342,16 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 		// AutomountServiceAccountToken stays false — Istio
 		// identity is independent of SA-token mounts.
 		ServiceAccountName:            name,
-		TerminationGracePeriodSeconds: &ac.TerminationGracePeriod,
+		TerminationGracePeriodSeconds: &base.TerminationGracePeriod,
 		ImagePullSecrets:              pullSecrets,
-		SecurityContext:               podSec,
+		SecurityContext:               base.PodSecurityContext,
 		InitContainers:                initContainers,
 		AutomountServiceAccountToken:  automountSAToken,
 		ShareProcessNamespace:         shareProcessNS,
 		Containers:                    containers,
 		Volumes:                       volumes,
 	}
-	applyAgentPodScheduling(&podSpec, ac)
+	applyAgentBaseScheduling(&podSpec, base)
 
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{

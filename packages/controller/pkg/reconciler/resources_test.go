@@ -28,9 +28,16 @@ var testConfig = &config.Config{
 	EnvoyPort:         10000,
 	IstioTrustDomain:  "cluster.local",
 	IstioWaypointName: "apiserver-waypoint",
-	AgentConfig: config.AgentConfig{
+	AgentBase: config.AgentBase{
+		AccessMode:             "ReadWriteMany",
+		TerminationGracePeriod: 5,
+		ContainerSecurityContext: &corev1.SecurityContext{
+			Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+		},
+	},
+	AgentTemplateDefaults: config.AgentTemplateDefaults{
+		AgentHome:       "/home/agent",
 		ImagePullPolicy: "IfNotPresent",
-		AccessMode:      "ReadWriteMany",
 		StorageSize:     "10Gi",
 	},
 	AgentProbesEnabled: true,
@@ -47,10 +54,6 @@ var testAgent = &types.AgentSpec{
 	Resources: types.ResourceSpec{
 		Requests: map[string]string{"cpu": "250m", "memory": "512Mi"},
 		Limits:   map[string]string{"cpu": "1", "memory": "2Gi"},
-	},
-	SecurityContext: &types.SecurityContext{
-		RunAsNonRoot:           boolPtr(true),
-		ReadOnlyRootFilesystem: boolPtr(false),
 	},
 }
 
@@ -128,7 +131,10 @@ func TestBuildAgentStatefulSet_Running(t *testing.T) {
 	assert.Equal(t, resource.MustParse("250m"), *c.Resources.Requests.Cpu())
 	assert.Equal(t, resource.MustParse("2Gi"), *c.Resources.Limits.Memory())
 
-	assert.True(t, *ss.Spec.Template.Spec.SecurityContext.RunAsNonRoot)
+	// Security context is chart-only — applied from AgentBase.ContainerSecurityContext.
+	require.NotNil(t, c.SecurityContext)
+	require.NotNil(t, c.SecurityContext.Capabilities)
+	assert.Equal(t, []corev1.Capability{"ALL"}, c.SecurityContext.Capabilities.Drop)
 }
 
 func TestBuildAgentStatefulSet_ProbesDisabled(t *testing.T) {
@@ -219,7 +225,7 @@ func TestBuildAgentStatefulSet_PVCSize(t *testing.T) {
 
 func TestBuildAgentStatefulSet_AgentStorageClass(t *testing.T) {
 	cfg := *testConfig
-	cfg.AgentConfig.StorageClass = "platform-rwx"
+	cfg.AgentBase.StorageClass = "platform-rwx"
 	instance := &types.InstanceSpec{DesiredState: "running"}
 	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, &cfg, testOwnerCM, nil)
 

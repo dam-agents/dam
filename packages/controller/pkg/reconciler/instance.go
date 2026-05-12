@@ -136,7 +136,7 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 	// starts dialing it. ADR-041: pair-key NetworkPolicies are gone —
 	// pair isolation is now enforced by the per-instance AuthorizationPolicy
 	// on the gateway Service (mesh-level, cryptographic).
-	gatewaySS := BuildGatewayStatefulSet(name, hibernated, agentSpec, r.config, cm, credentialSecrets)
+	gatewaySS := BuildGatewayStatefulSet(name, hibernated, r.config, cm, credentialSecrets)
 	gatewaySvc := BuildGatewayService(name, r.config, cm)
 
 	agentSS := BuildAgentStatefulSet(name, instanceSpec, agentSpec, r.config, cm, credentialSecrets)

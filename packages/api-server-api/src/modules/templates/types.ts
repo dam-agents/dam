@@ -3,16 +3,15 @@ import type { EnvVar } from "../shared.js";
 export interface Mount {
   path: string;
   persist: boolean;
+  /** Optional per-mount PVC size (K8s resource Quantity, e.g. "5Gi"). When
+   *  empty, falls back to TemplateSpec.storageSize, then to the chart-wide
+   *  `controller.agent.templateDefaults.storageSize`. */
+  size?: string;
 }
 
 export interface Resources {
   requests?: Record<string, string>;
   limits?: Record<string, string>;
-}
-
-export interface SecurityContext {
-  runAsNonRoot?: boolean;
-  readOnlyRootFilesystem?: boolean;
 }
 
 export const SPEC_VERSION = "agent-platform.ai/v1";
@@ -25,6 +24,9 @@ export interface SkillSourceSeed {
   gitUrl: string;
 }
 
+// Per ADR-042, an agent template's spec.yaml carries Layer B + C fields.
+// Layer A (security context, scheduling, cluster details) is chart-only and
+// intentionally absent from this surface — operators set it via Helm values.
 export interface TemplateSpec {
   version: string;
   image: string;
@@ -33,7 +35,12 @@ export interface TemplateSpec {
   init?: string;
   env?: EnvVar[];
   resources?: Resources;
-  securityContext?: SecurityContext;
+  /** Overrides `controller.agent.templateDefaults.imagePullPolicy` for
+   *  instances created from this template. Empty = inherit. */
+  imagePullPolicy?: string;
+  /** Overrides `controller.agent.templateDefaults.storageSize` for the
+   *  persistent home mount. Per-mount `size` (if set) wins over this. */
+  storageSize?: string;
   /** Filesystem paths the harness reads skills from. Copied onto the agent
    *  spec at creation time so the skills-service knows where to install. */
   skillPaths?: string[];

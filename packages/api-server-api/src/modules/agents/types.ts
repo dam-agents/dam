@@ -1,10 +1,6 @@
 import type { EnvVar } from "../shared.js";
 import type { EgressPreset } from "../egress-rules/types.js";
-import type {
-  Mount,
-  Resources,
-  SecurityContext,
-} from "../templates/types.js";
+import type { Mount, Resources } from "../templates/types.js";
 
 /** Env names that are managed by the platform/template and cannot be edited by users. */
 export const PROTECTED_AGENT_ENV_NAMES: readonly string[] = ["PORT"];
@@ -13,6 +9,9 @@ export function isProtectedAgentEnvName(name: string): boolean {
   return PROTECTED_AGENT_ENV_NAMES.includes(name);
 }
 
+// Per ADR-042, an agent spec carries Layer B + C fields only. Layer A
+// (security context, scheduling, pod metadata, cluster details) is
+// chart-only and applied by the controller at reconcile time.
 export interface AgentSpec {
   version: string;
   name: string;
@@ -23,7 +22,10 @@ export interface AgentSpec {
   init?: string;
   env?: EnvVar[];
   resources?: Resources;
-  securityContext?: SecurityContext;
+  /** Overrides chart-wide imagePullPolicy. Empty = inherit. */
+  imagePullPolicy?: string;
+  /** Overrides chart-wide storageSize for the persistent home mount. */
+  storageSize?: string;
   skillPaths?: string[];
 }
 

@@ -15,7 +15,6 @@ export function composeAgentsModule(deps: {
   api: k8s.CoreV1Api;
   namespace: string;
   owner: string;
-  agentHome: string;
   readTemplateSpec: ReadTemplateSpec;
   presetSeeder?: PresetSeeder;
   cleanupHooks?: readonly AgentCleanupHook[];
@@ -29,7 +28,6 @@ export function composeAgentsModule(deps: {
     agents: createAgentsService({
       repo,
       owner: deps.owner,
-      agentHome: deps.agentHome,
       readTemplateSpec: deps.readTemplateSpec,
       presetSeeder: deps.presetSeeder,
       cleanupHooks: deps.cleanupHooks,

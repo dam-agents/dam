@@ -30,7 +30,7 @@ func NewIdleChecker(client kubernetes.Interface, cfg *config.Config) *IdleChecke
 // RunLoop periodically scans running instances and hibernates idle ones.
 // It blocks until ctx is cancelled.
 func (c *IdleChecker) RunLoop(ctx context.Context) {
-	timeout := c.config.AgentConfig.IdleTimeout.AsDuration()
+	timeout := c.config.AgentBase.IdleTimeout.AsDuration()
 	if timeout <= 0 {
 		slog.Info("idle checker disabled (timeout <= 0)")
 		return
@@ -53,7 +53,7 @@ func (c *IdleChecker) RunLoop(ctx context.Context) {
 
 // checkInterval returns how often to run idle checks — 1/6 of the timeout, clamped to [30s, 5m].
 func (c *IdleChecker) checkInterval() time.Duration {
-	d := c.config.AgentConfig.IdleTimeout.AsDuration() / 6
+	d := c.config.AgentBase.IdleTimeout.AsDuration() / 6
 	if d < 30*time.Second {
 		d = 30 * time.Second
 	}
@@ -95,7 +95,7 @@ func (c *IdleChecker) check(ctx context.Context) {
 			continue
 		}
 
-		if now.Sub(t) <= c.config.AgentConfig.IdleTimeout.AsDuration() {
+		if now.Sub(t) <= c.config.AgentBase.IdleTimeout.AsDuration() {
 			continue
 		}
 

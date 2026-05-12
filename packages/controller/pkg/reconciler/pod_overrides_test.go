@@ -7,26 +7,25 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
-// configWith returns testConfig with `ac` stamped onto its AgentConfig so the
-// shared testConfig isn't mutated across tests.
-func configWith(ac config.AgentConfig) *config.Config {
+// configWith returns testConfig with `base` stamped onto its AgentBase so
+// tests can swap the chart-level policy without mutating the shared fixture.
+func configWith(base config.AgentBase) *config.Config {
 	c := *testConfig
-	// Preserve testConfig defaults (e.g. ImagePullPolicy IfNotPresent set by
-	// the test setup) while letting the caller layer override fields.
-	c.AgentConfig = *c.AgentConfig.Merge(&ac)
+	c.AgentBase = base
 	return &c
 }
 
-// fullAgentConfig exercises every override field at once so the apply
-// helpers don't silently drop something during refactors.
-func fullAgentConfig() config.AgentConfig {
-	return config.AgentConfig{
+// fullAgentBase exercises every Layer-A field so the apply helpers don't
+// silently drop any during refactors.
+func fullAgentBase() config.AgentBase {
+	return config.AgentBase{
 		ExtraLabels:      map[string]string{"team": "platform"},
 		ExtraAnnotations: map[string]string{"sidecar.istio.io/inject": "false"},
 		NodeSelector:     map[string]string{"workload": "agents"},
@@ -49,21 +48,6 @@ func fullAgentConfig() config.AgentConfig {
 		}},
 		PriorityClassName: "platform-agent",
 		RuntimeClassName:  "kata",
-		ExtraEnv:          []corev1.EnvVar{{Name: "OPERATOR_FLAG", Value: "true"}},
-		ExtraVolumes: []corev1.Volume{{
-			Name: "extra-ca", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
-		}},
-		ExtraVolumeMounts: []corev1.VolumeMount{{Name: "extra-ca", MountPath: "/etc/extra-ca"}},
-		Resources: &corev1.ResourceRequirements{
-			Requests: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("2"),
-				corev1.ResourceMemory: resource.MustParse("4Gi"),
-			},
-			Limits: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("4"),
-				corev1.ResourceMemory: resource.MustParse("8Gi"),
-			},
-		},
 		Probes: &config.AgentProbes{
 			Startup: &corev1.Probe{
 				ProbeHandler:     corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/custom-startup", Port: intstr.FromString("acp")}},
@@ -71,13 +55,61 @@ func fullAgentConfig() config.AgentConfig {
 				FailureThreshold: 60,
 			},
 		},
+		ContainerSecurityContext: &corev1.SecurityContext{
+			Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+		},
+		AccessMode:             "ReadWriteMany",
+		TerminationGracePeriod: 5,
 	}
 }
 
-// --- BuildAgentStatefulSet (long-lived agent) ---
+// applyAgentBaseMeta + Scheduling cover all of Layer A's pod-shape effects.
 
-func TestBuildAgentStatefulSet_AgentConfig_FullSurface(t *testing.T) {
-	cfg := configWith(fullAgentConfig())
+func TestApplyAgentBaseMeta_AddsExtraLabelsAndAnnotations(t *testing.T) {
+	meta := &metav1.ObjectMeta{
+		Labels:      map[string]string{LabelInstance: "my-instance"},
+		Annotations: map[string]string{"agent-platform.ai/gh-token-available": "true"},
+	}
+	applyAgentBaseMeta(meta, fullAgentBase())
+	assert.Equal(t, "platform", meta.Labels["team"])
+	assert.Equal(t, "false", meta.Annotations["sidecar.istio.io/inject"])
+
+	// Controller-managed keys must not be overwritten.
+	assert.Equal(t, "my-instance", meta.Labels[LabelInstance])
+	assert.Equal(t, "true", meta.Annotations["agent-platform.ai/gh-token-available"])
+}
+
+func TestApplyAgentBaseScheduling_StampsAllFields(t *testing.T) {
+	spec := &corev1.PodSpec{}
+	applyAgentBaseScheduling(spec, fullAgentBase())
+	assert.Equal(t, "agents", spec.NodeSelector["workload"])
+	require.Len(t, spec.Tolerations, 1)
+	require.NotNil(t, spec.Affinity)
+	require.Len(t, spec.TopologySpreadConstraints, 1)
+	assert.Equal(t, "platform-agent", spec.PriorityClassName)
+	require.NotNil(t, spec.RuntimeClassName)
+	assert.Equal(t, "kata", *spec.RuntimeClassName)
+}
+
+// $HOME substitution — mount paths and skill paths.
+
+func TestSubstituteHome(t *testing.T) {
+	assert.Equal(t, "/home/agent", substituteHome("$HOME", "/home/agent"))
+	assert.Equal(t, "/home/agent/.claude/skills", substituteHome("$HOME/.claude/skills", "/home/agent"))
+	assert.Equal(t, "/tmp", substituteHome("/tmp", "/home/agent"), "non-HOME paths untouched")
+	assert.Equal(t, "$HOME", substituteHome("$HOME", ""), "empty home leaves placeholder untouched")
+}
+
+func TestSubstituteHomeAll(t *testing.T) {
+	got := substituteHomeAll([]string{"$HOME/.claude/skills", "/tmp/other"}, "/home/agent")
+	assert.Equal(t, []string{"/home/agent/.claude/skills", "/tmp/other"}, got)
+}
+
+// End-to-end via BuildAgentStatefulSet — chart-level AgentBase fields land
+// on the pod; gateway pod (covered in gateway_test.go) does NOT receive them.
+
+func TestBuildAgentStatefulSet_AgentBase_FullSurface(t *testing.T) {
+	cfg := configWith(fullAgentBase())
 	instance := &types.InstanceSpec{DesiredState: "running"}
 	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, cfg, testOwnerCM, nil)
 	require.NotNil(t, ss)
@@ -88,7 +120,6 @@ func TestBuildAgentStatefulSet_AgentConfig_FullSurface(t *testing.T) {
 	assert.Equal(t, "false", meta.Annotations["sidecar.istio.io/inject"])
 	assert.Equal(t, "agents", spec.NodeSelector["workload"])
 	require.Len(t, spec.Tolerations, 1)
-	assert.Equal(t, "dedicated", spec.Tolerations[0].Key)
 	require.NotNil(t, spec.Affinity)
 	require.Len(t, spec.TopologySpreadConstraints, 1)
 	assert.Equal(t, "platform-agent", spec.PriorityClassName)
@@ -96,274 +127,67 @@ func TestBuildAgentStatefulSet_AgentConfig_FullSurface(t *testing.T) {
 	assert.Equal(t, "kata", *spec.RuntimeClassName)
 
 	agent := spec.Containers[0]
-	var sawOperatorEnv bool
-	for _, e := range agent.Env {
-		if e.Name == "OPERATOR_FLAG" && e.Value == "true" {
-			sawOperatorEnv = true
-		}
-	}
-	assert.True(t, sawOperatorEnv, "extraEnv should be appended to agent container env")
-
-	var sawExtraMount bool
-	for _, m := range agent.VolumeMounts {
-		if m.Name == "extra-ca" && m.MountPath == "/etc/extra-ca" {
-			sawExtraMount = true
-		}
-	}
-	assert.True(t, sawExtraMount, "extraVolumeMounts should be appended to agent container")
-
-	var sawExtraVolume bool
-	for _, v := range spec.Volumes {
-		if v.Name == "extra-ca" {
-			sawExtraVolume = true
-		}
-	}
-	assert.True(t, sawExtraVolume, "extraVolumes should be appended to pod volumes")
-
+	require.NotNil(t, agent.SecurityContext)
+	require.NotNil(t, agent.SecurityContext.Capabilities)
+	assert.Equal(t, []corev1.Capability{"ALL"}, agent.SecurityContext.Capabilities.Drop)
 	require.NotNil(t, agent.StartupProbe)
 	require.NotNil(t, agent.StartupProbe.HTTPGet)
 	assert.Equal(t, "/custom-startup", agent.StartupProbe.HTTPGet.Path)
-	// Resources precedence is covered in dedicated tests below — the
-	// agent template's resources win over chart-level here.
 }
 
-func TestBuildAgentStatefulSet_AgentConfig_ControllerLabelsWin(t *testing.T) {
-	// Operator must not be able to overwrite selector labels — those are
-	// load-bearing for the Service selector and pair-scoping NetworkPolicy.
-	cfg := configWith(config.AgentConfig{
-		ExtraLabels: map[string]string{
-			LabelInstance: "OVERRIDDEN",
-			"team":        "platform",
+// Per-template Layer-B overrides — template values win over chart defaults.
+
+func TestBuildAgentStatefulSet_TemplateOverridesPullPolicyAndResources(t *testing.T) {
+	cfg := *testConfig
+	cfg.AgentTemplateDefaults.ImagePullPolicy = "IfNotPresent"
+	cfg.AgentTemplateDefaults.Resources = &corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("100m"),
+			corev1.ResourceMemory: resource.MustParse("256Mi"),
 		},
-		ExtraAnnotations: map[string]string{
-			"agent-platform.ai/gh-token-available": "OVERRIDDEN",
-			"sidecar.istio.io/inject":              "false",
-		},
-	})
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, cfg, testOwnerCM, nil)
-	meta := ss.Spec.Template.ObjectMeta
+	}
 
-	assert.Equal(t, "my-instance", meta.Labels[LabelInstance], "controller label must not be overridden")
-	assert.Equal(t, "platform", meta.Labels["team"], "new label should still land")
-	assert.Equal(t, "false", meta.Annotations["agent-platform.ai/gh-token-available"], "controller annotation must not be overridden — gh-token-available comes from the credential set")
-	assert.Equal(t, "false", meta.Annotations["sidecar.istio.io/inject"], "new annotation should still land")
-}
-
-func TestBuildAgentStatefulSet_AgentConfig_ProbesGatedByMasterSwitch(t *testing.T) {
-	// AgentProbesEnabled=false → overrides do nothing (master switch wins).
-	cfg := configWith(fullAgentConfig())
-	cfg.AgentProbesEnabled = false
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, cfg, testOwnerCM, nil)
-	agent := ss.Spec.Template.Spec.Containers[0]
-	assert.Nil(t, agent.StartupProbe, "probe overrides should not bypass the master enable switch")
-	assert.Nil(t, agent.ReadinessProbe)
-	assert.Nil(t, agent.LivenessProbe)
-}
-
-func TestBuildAgentStatefulSet_AgentConfig_Empty(t *testing.T) {
-	// Sanity: zero AgentConfig must not panic and must not perturb the pod
-	// shape — only the chart-default fields (ImagePullPolicy, etc.) apply.
-	cfg := configWith(config.AgentConfig{})
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, cfg, testOwnerCM, nil)
-	spec := ss.Spec.Template.Spec
-	assert.Nil(t, spec.RuntimeClassName)
-	assert.Nil(t, spec.NodeSelector)
-	assert.Empty(t, spec.Tolerations)
-}
-
-func TestBuildAgentStatefulSet_AgentConfig_ResourcesEmptyKeepsTemplate(t *testing.T) {
-	// An empty `resources: {}` block (no requests/limits) must not silently
-	// wipe the agent template's resources. Operators get the template's
-	// values until they explicitly set requests or limits.
-	cfg := configWith(config.AgentConfig{Resources: &corev1.ResourceRequirements{}})
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, cfg, testOwnerCM, nil)
-	agent := ss.Spec.Template.Spec.Containers[0]
-	// testAgent.Resources sets cpu=250m / memory=512Mi as requests
-	assert.Equal(t, resource.MustParse("250m"), agent.Resources.Requests[corev1.ResourceCPU])
-}
-
-func TestBuildAgentStatefulSet_AgentConfig_TemplateResourcesWinOverChart(t *testing.T) {
-	// More-specific wins: when the agent template sets resources, the
-	// chart-level fallback in AgentConfig does NOT override it. The chart
-	// only fills in for templates that omitted resources entirely.
-	cfg := configWith(config.AgentConfig{
-		Resources: &corev1.ResourceRequirements{
-			Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("8")},
-			Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("16")},
-		},
-	})
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, cfg, testOwnerCM, nil)
-	agent := ss.Spec.Template.Spec.Containers[0]
-	// testAgent.Resources.Requests = cpu=250m / memory=512Mi — template wins.
-	assert.Equal(t, resource.MustParse("250m"), agent.Resources.Requests[corev1.ResourceCPU])
-	assert.Equal(t, resource.MustParse("1"), agent.Resources.Limits[corev1.ResourceCPU])
-}
-
-func TestBuildAgentStatefulSet_AgentConfig_ChartResourcesFillForTemplateWithoutResources(t *testing.T) {
-	// Mirror of the above: an agent template that omits resources picks up
-	// the chart-level fallback as a platform-wide floor.
-	cfg := configWith(config.AgentConfig{
-		Resources: &corev1.ResourceRequirements{
-			Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("8")},
-			Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("16")},
-		},
-	})
-	templateNoRes := *testAgent
-	templateNoRes.Resources = types.ResourceSpec{} // empty — defer to chart
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, &templateNoRes, cfg, testOwnerCM, nil)
-	agent := ss.Spec.Template.Spec.Containers[0]
-	assert.Equal(t, resource.MustParse("8"), agent.Resources.Requests[corev1.ResourceCPU])
-	assert.Equal(t, resource.MustParse("16"), agent.Resources.Limits[corev1.ResourceCPU])
-}
-
-// --- Per-agent override (AgentSpec.Config) end-to-end ---
-
-func TestBuildAgentStatefulSet_PerAgentOverride_LandsOnPod(t *testing.T) {
-	// Chart-level: runtimeClassName=base, two pull secrets.
-	// Per-agent: runtimeClassName=kata (override scalar), one extra pull
-	// secret (additive), extra volume + mount (additive). Effective pod
-	// should reflect the merge result.
-	cfg := configWith(config.AgentConfig{
-		RuntimeClassName: "base",
-		ImagePullSecrets: []string{"cluster-reg"},
-	})
-	agent := *testAgent
-	agent.Config = &config.AgentConfig{
-		RuntimeClassName: "kata",
-		ImagePullSecrets: []string{"agent-reg"},
-		ExtraVolumes: []corev1.Volume{{
-			Name: "agent-data", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
-		}},
-		ExtraVolumeMounts: []corev1.VolumeMount{{Name: "agent-data", MountPath: "/data"}},
+	tmpl := *testAgent
+	tmpl.ImagePullPolicy = "Always"
+	tmpl.Resources = types.ResourceSpec{
+		Requests: map[string]string{"cpu": "2", "memory": "4Gi"},
 	}
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, &agent, cfg, testOwnerCM, nil)
-	spec := ss.Spec.Template.Spec
+	ss := BuildAgentStatefulSet("my-instance", instance, &tmpl, &cfg, testOwnerCM, nil)
+	c := ss.Spec.Template.Spec.Containers[0]
+	assert.Equal(t, corev1.PullAlways, c.ImagePullPolicy, "template pullPolicy wins")
+	assert.Equal(t, resource.MustParse("2"), c.Resources.Requests[corev1.ResourceCPU], "template resources win")
+}
 
-	require.NotNil(t, spec.RuntimeClassName)
-	assert.Equal(t, "kata", *spec.RuntimeClassName, "per-agent scalar wins over chart")
+// When AgentSpec omits mounts/env, the chart's AgentTemplateDefaults supplies
+// the fallback list (replace semantics — see config.AgentTemplateDefaults).
 
-	gotSecrets := map[string]bool{}
-	for _, s := range spec.ImagePullSecrets {
-		gotSecrets[s.Name] = true
+func TestBuildAgentStatefulSet_FallsBackToTemplateDefaultsMountsAndEnv(t *testing.T) {
+	cfg := *testConfig
+	cfg.AgentTemplateDefaults.Mounts = []config.Mount{
+		{Path: "$HOME", Persist: true},
+		{Path: "/tmp", Persist: false},
 	}
-	assert.True(t, gotSecrets["cluster-reg"], "chart pull secret preserved")
-	assert.True(t, gotSecrets["agent-reg"], "per-agent pull secret appended")
+	cfg.AgentTemplateDefaults.Env = []config.EnvVar{{Name: "PORT", Value: "8080"}}
 
-	var sawAgentData bool
-	for _, v := range spec.Volumes {
-		if v.Name == "agent-data" {
-			sawAgentData = true
+	bare := &types.AgentSpec{Image: "ghcr.io/myorg/agent:latest", Version: types.SpecVersion}
+	instance := &types.InstanceSpec{DesiredState: "running"}
+	ss := BuildAgentStatefulSet("my-instance", instance, bare, &cfg, testOwnerCM, nil)
+
+	// $HOME substituted into the rendered mount path.
+	var sawHome bool
+	for _, vm := range ss.Spec.Template.Spec.Containers[0].VolumeMounts {
+		if vm.MountPath == "/home/agent" {
+			sawHome = true
 		}
 	}
-	assert.True(t, sawAgentData, "per-agent extraVolume should land")
-}
+	assert.True(t, sawHome, "chart-default mount with $HOME placeholder rendered as /home/agent")
 
-func TestBuildAgentStatefulSet_PerAgentOverride_PropagatesToGateway(t *testing.T) {
-	// Scheduling fields on per-agent must propagate to the paired gateway
-	// pod too — otherwise the pair can't co-schedule on the kata node.
-	cfg := configWith(config.AgentConfig{})
-	agent := *testAgent
-	agent.Config = &config.AgentConfig{
-		RuntimeClassName: "kata",
-		NodeSelector:     map[string]string{"workload": "agents"},
-	}
-	gw := BuildGatewayStatefulSet("my-instance", false, &agent, cfg, testOwnerCM, nil)
-	require.NotNil(t, gw.Spec.Template.Spec.RuntimeClassName)
-	assert.Equal(t, "kata", *gw.Spec.Template.Spec.RuntimeClassName, "per-agent scheduling propagates to gateway")
-	assert.Equal(t, "agents", gw.Spec.Template.Spec.NodeSelector["workload"])
-}
-
-func TestBuildAgentStatefulSet_PerAgentOverride_NilConfigFallsBack(t *testing.T) {
-	// AgentSpec.Config = nil → chart-level config applies as-is, no panic.
-	cfg := configWith(config.AgentConfig{RuntimeClassName: "kata"})
-	agent := *testAgent
-	agent.Config = nil
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, &agent, cfg, testOwnerCM, nil)
-	require.NotNil(t, ss.Spec.Template.Spec.RuntimeClassName)
-	assert.Equal(t, "kata", *ss.Spec.Template.Spec.RuntimeClassName)
-}
-
-// --- BuildGatewayStatefulSet (long-lived gateway) ---
-
-func TestBuildGatewayStatefulSet_AgentConfig_SchedulingAndMeta(t *testing.T) {
-	cfg := configWith(fullAgentConfig())
-	ss := BuildGatewayStatefulSet("my-instance", false, testAgent, cfg, testOwnerCM, nil)
-	spec := ss.Spec.Template.Spec
-	meta := ss.Spec.Template.ObjectMeta
-
-	assert.Equal(t, "platform", meta.Labels["team"])
-	assert.Equal(t, "agents", spec.NodeSelector["workload"])
-	require.NotNil(t, spec.RuntimeClassName)
-	assert.Equal(t, "kata", *spec.RuntimeClassName)
-	assert.Equal(t, "platform-agent", spec.PriorityClassName)
-
-	// Gateway must NOT inherit extraEnv / extraVolumes — those are agent-only.
-	envoy := spec.Containers[0]
-	for _, e := range envoy.Env {
-		assert.NotEqual(t, "OPERATOR_FLAG", e.Name, "gateway container must not receive agent-scoped extraEnv")
-	}
-	for _, v := range spec.Volumes {
-		assert.NotEqual(t, "extra-ca", v.Name, "gateway pod must not receive agent-scoped extraVolumes")
-	}
-
-	// envoy-secrets-rev annotation must survive — operator can't overwrite the roll trigger.
-	_, hasRev := meta.Annotations["agent-platform.ai/envoy-secrets-rev"]
-	assert.True(t, hasRev, "gateway roll-trigger annotation must always be present")
-}
-
-// --- BuildForkAgentJob (per-turn fork agent) ---
-
-func TestBuildForkAgentJob_AgentConfig_FullSurface(t *testing.T) {
-	cfg := configWith(fullAgentConfig())
-	fork := &types.ForkSpec{Instance: "parent-inst", ForeignSub: "user-42"}
-	job := BuildForkAgentJob("fork-1", fork, &types.InstanceSpec{}, testAgent, cfg, testOwnerCM, nil)
-	spec := job.Spec.Template.Spec
-	meta := job.Spec.Template.ObjectMeta
-
-	assert.Equal(t, "platform", meta.Labels["team"])
-	require.NotNil(t, spec.RuntimeClassName)
-	assert.Equal(t, "kata", *spec.RuntimeClassName)
-	assert.Equal(t, "agents", spec.NodeSelector["workload"])
-
-	agent := spec.Containers[0]
-	var sawOperatorEnv bool
-	for _, e := range agent.Env {
-		if e.Name == "OPERATOR_FLAG" {
-			sawOperatorEnv = true
+	var sawPort bool
+	for _, e := range ss.Spec.Template.Spec.Containers[0].Env {
+		if e.Name == "PORT" && e.Value == "8080" {
+			sawPort = true
 		}
 	}
-	assert.True(t, sawOperatorEnv, "fork agent should receive operator-supplied extraEnv")
-
-	var sawExtraVolume bool
-	for _, v := range spec.Volumes {
-		if v.Name == "extra-ca" {
-			sawExtraVolume = true
-		}
-	}
-	assert.True(t, sawExtraVolume)
-}
-
-// --- BuildForkGatewayPod (per-turn fork gateway) ---
-
-func TestBuildForkGatewayPod_AgentConfig_SchedulingAndMeta(t *testing.T) {
-	cfg := configWith(fullAgentConfig())
-	pod := BuildForkGatewayPod("fork-1", "parent-inst", testAgent, cfg, testOwnerCM, nil)
-
-	assert.Equal(t, "platform", pod.Labels["team"])
-	require.NotNil(t, pod.Spec.RuntimeClassName)
-	assert.Equal(t, "kata", *pod.Spec.RuntimeClassName)
-	assert.Equal(t, "agents", pod.Spec.NodeSelector["workload"])
-
-	envoy := pod.Spec.Containers[0]
-	for _, e := range envoy.Env {
-		assert.NotEqual(t, "OPERATOR_FLAG", e.Name, "fork gateway must not receive agent-scoped extraEnv")
-	}
+	assert.True(t, sawPort, "chart-default env applied when AgentSpec omits env")
 }

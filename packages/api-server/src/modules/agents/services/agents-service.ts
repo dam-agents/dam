@@ -44,7 +44,6 @@ function preserveProtectedEnvs(current: EnvVar[], incoming: EnvVar[]): EnvVar[] 
 export function createAgentsService(deps: {
   repo: AgentsRepository;
   owner: string;
-  agentHome: string;
   readTemplateSpec: (id: string) => Promise<{ spec: TemplateSpec; isOwned: boolean } | null>;
   /** Seeds egress_rules at create time. Optional so the system-instances
    *  composition (which never creates agents) can omit it. */
@@ -70,11 +69,10 @@ export function createAgentsService(deps: {
         });
         templateId = input.templateId;
       } else {
-        spec = assembleSpecFromImage(
-          input.name,
-          { image: input.image, description: input.description },
-          deps.agentHome,
-        );
+        spec = assembleSpecFromImage(input.name, {
+          image: input.image,
+          description: input.description,
+        });
       }
       // Append caller-supplied extras (e.g. envMappings from granted app
       // connections). `preserveProtectedEnvs` ensures PORT is always sourced

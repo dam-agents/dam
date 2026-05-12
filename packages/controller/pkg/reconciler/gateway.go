@@ -7,13 +7,23 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/kagenti/platform/packages/controller/pkg/config"
-	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
 // Paired gateway pod (ADR-038). The gateway runs Envoy and is the only
 // pod the paired agent can reach for TCP 80/443. Credential Secrets, the
 // leaf TLS Secret, and the Envoy bootstrap ConfigMap mount here only —
 // the agent pod has no path to Secret material.
+//
+// Gateway pods are platform-managed: they do NOT inherit operator-facing
+// agent config (controller.agent.*). Scheduling, metadata, and lifecycle
+// are controller-internal — same category as `envoyImage`/`envoyPort`,
+// which are platform-managed Envoy bootstrap concerns. The pair is paired
+// at the Service-DNS level, so co-scheduling agent and gateway on the same
+// node isn't a requirement.
+
+// gatewayTerminationGracePeriod is Envoy's drain window. Hardcoded — Envoy's
+// default drain is ~5s and there's nothing else in the pod that needs longer.
+const gatewayTerminationGracePeriod int64 = 5
 
 // GatewayName returns the per-pair gateway pod / Service name.
 func GatewayName(pairKey string) string {
@@ -26,13 +36,7 @@ func GatewayName(pairKey string) string {
 //
 // `instanceName` is both the pair key and the parent instance reference
 // (long-lived pairs collapse the two).
-func BuildGatewayStatefulSet(instanceName string, hibernated bool, agentSpec *types.AgentSpec, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret) *appsv1.StatefulSet {
-	// Per-agent override (most-specific wins) — pod metadata + scheduling
-	// fields propagate to the gateway half of the pair so it co-schedules
-	// with the agent. Agent-container-only fields (ExtraEnv, ExtraVolumes,
-	// ExtraVolumeMounts, Resources, Probes) live on `ac` but the gateway
-	// builder simply doesn't read them (gateway runs platform-managed Envoy).
-	ac := *cfg.AgentConfig.Merge(agentSpec.Config)
+func BuildGatewayStatefulSet(instanceName string, hibernated bool, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret) *appsv1.StatefulSet {
 	replicas := int32(1)
 	if hibernated {
 		replicas = 0
@@ -49,6 +53,7 @@ func BuildGatewayStatefulSet(instanceName string, hibernated bool, agentSpec *ty
 	containers := []corev1.Container{envoyContainer(cfg, credentialSecrets)}
 
 	falseVal := false
+	gracePeriod := gatewayTerminationGracePeriod
 
 	annotations := map[string]string{
 		// Roll trigger (ADR-035): hash of the Secret set driving the Envoy
@@ -59,24 +64,17 @@ func BuildGatewayStatefulSet(instanceName string, hibernated bool, agentSpec *ty
 		"agent-platform.ai/envoy-secrets-rev": envoySecretsRev(credentialSecrets),
 	}
 
-	podMeta := metav1.ObjectMeta{
-		Labels:      labels,
-		Annotations: annotations,
-	}
-	applyAgentPodMeta(&podMeta, ac)
-
 	podSpec := corev1.PodSpec{
 		// ADR-041: gateway pod runs as the per-instance SA so
 		// its SPIFFE workload identity matches the agent half
 		// of the pair (same SA on both pods). The gateway-side
 		// AuthorizationPolicy ALLOWs only this principal.
 		ServiceAccountName:            instanceName,
-		TerminationGracePeriodSeconds: &ac.TerminationGracePeriod,
+		TerminationGracePeriodSeconds: &gracePeriod,
 		AutomountServiceAccountToken:  &falseVal,
 		Containers:                    containers,
 		Volumes:                       volumes,
 	}
-	applyAgentPodScheduling(&podSpec, ac)
 
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -106,8 +104,11 @@ func BuildGatewayStatefulSet(instanceName string, hibernated bool, agentSpec *ty
 				},
 			},
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: podMeta,
-				Spec:       podSpec,
+				ObjectMeta: metav1.ObjectMeta{
+					Labels:      labels,
+					Annotations: annotations,
+				},
+				Spec: podSpec,
 			},
 		},
 	}
@@ -152,11 +153,7 @@ func BuildGatewayService(instanceName string, cfg *config.Config, ownerCM *corev
 // ext_authz Check calls from this gateway resolve under the parent
 // instance's egress rules (ADR-027). The pair key is the fork's own name
 // so the fork pair is structurally isolated from the parent instance pair.
-func BuildForkGatewayPod(forkName, parentInstanceID string, agentSpec *types.AgentSpec, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret) *corev1.Pod {
-	// Per-agent override (most-specific wins). Same merge as the long-lived
-	// gateway: pod metadata + scheduling propagate so the fork pair co-schedules.
-	ac := *cfg.AgentConfig.Merge(agentSpec.Config)
-
+func BuildForkGatewayPod(forkName, parentInstanceID string, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret) *corev1.Pod {
 	gatewayName := GatewayName(forkName)
 	labels := map[string]string{
 		LabelInstance: parentInstanceID,
@@ -169,36 +166,31 @@ func BuildForkGatewayPod(forkName, parentInstanceID string, agentSpec *types.Age
 	containers := []corev1.Container{envoyContainer(cfg, credentialSecrets)}
 
 	falseVal := false
-
-	podMeta := metav1.ObjectMeta{
-		Name:      gatewayName,
-		Namespace: cfg.Namespace,
-		Labels:    labels,
-		OwnerReferences: []metav1.OwnerReference{
-			*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
-		},
-	}
-	applyAgentPodMeta(&podMeta, ac)
-
-	podSpec := corev1.PodSpec{
-		// ADR-041 + ADR-027: fork gateway pod runs as the per-fork SA
-		// (its own identity, NOT the parent's). The per-fork
-		// gateway-admission AuthorizationPolicy ALLOWs only this SA
-		// (both pods of the fork pair share it), and per-fork
-		// harness + ext-authz policies admit it to a narrow surface
-		// scoped to the parent.
-		ServiceAccountName:            forkName,
-		RestartPolicy:                 corev1.RestartPolicyAlways,
-		TerminationGracePeriodSeconds: &ac.TerminationGracePeriod,
-		AutomountServiceAccountToken:  &falseVal,
-		Containers:                    containers,
-		Volumes:                       volumes,
-	}
-	applyAgentPodScheduling(&podSpec, ac)
+	gracePeriod := gatewayTerminationGracePeriod
 
 	return &corev1.Pod{
-		ObjectMeta: podMeta,
-		Spec:       podSpec,
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      gatewayName,
+			Namespace: cfg.Namespace,
+			Labels:    labels,
+			OwnerReferences: []metav1.OwnerReference{
+				*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
+			},
+		},
+		Spec: corev1.PodSpec{
+			// ADR-041 + ADR-027: fork gateway pod runs as the per-fork SA
+			// (its own identity, NOT the parent's). The per-fork
+			// gateway-admission AuthorizationPolicy ALLOWs only this SA
+			// (both pods of the fork pair share it), and per-fork
+			// harness + ext-authz policies admit it to a narrow surface
+			// scoped to the parent.
+			ServiceAccountName:            forkName,
+			RestartPolicy:                 corev1.RestartPolicyAlways,
+			TerminationGracePeriodSeconds: &gracePeriod,
+			AutomountServiceAccountToken:  &falseVal,
+			Containers:                    containers,
+			Volumes:                       volumes,
+		},
 	}
 }
 

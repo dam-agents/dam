@@ -41,10 +41,21 @@ func BuildForkAgentJob(
 	ownerCM *corev1.ConfigMap,
 	credentialSecrets []corev1.Secret,
 ) *batchv1.Job {
-	// Effective config = chart-level controller.agent ⨯ per-agent override
-	// (AgentSpec.Config). Forks inherit the same agent-template overrides
-	// as the long-lived shape — same agent ConfigMap drives both.
-	ac := *cfg.AgentConfig.Merge(agentSpec.Config)
+	base := cfg.AgentBase
+	defaults := cfg.AgentTemplateDefaults
+
+	pullPolicy := agentSpec.ImagePullPolicy
+	if pullPolicy == "" {
+		pullPolicy = defaults.ImagePullPolicy
+	}
+	specMounts := agentSpec.Mounts
+	if len(specMounts) == 0 {
+		specMounts = configMountsToTypes(defaults.Mounts)
+	}
+	specEnv := agentSpec.Env
+	if len(specEnv) == 0 {
+		specEnv = configEnvToTypes(defaults.Env)
+	}
 
 	labels := map[string]string{
 		ForkLabelType:   ForkJobLabelType,
@@ -88,7 +99,7 @@ func BuildForkAgentJob(
 	// purpose as the long-lived shape: satisfy the harness's is-env-set
 	// check; the gateway's Envoy overwrites the header on the wire.
 	env = append(env, credentialEnvVars(credentialSecrets)...)
-	for _, e := range agentSpec.Env {
+	for _, e := range specEnv {
 		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
 	}
 	for _, e := range instanceSpec.Env {
@@ -107,10 +118,11 @@ func BuildForkAgentJob(
 	var volumes []corev1.Volume
 	var volumeMounts []corev1.VolumeMount
 
-	for _, m := range agentSpec.Mounts {
-		volName := types.SanitizeMountName(m.Path)
+	for _, m := range specMounts {
+		path := substituteHome(m.Path, defaults.AgentHome)
+		volName := types.SanitizeMountName(path)
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name: volName, MountPath: m.Path,
+			Name: volName, MountPath: path,
 		})
 		if m.Persist {
 			pvcName := fmt.Sprintf("%s-%s-0", volName, forkSpec.Instance)
@@ -160,29 +172,30 @@ func BuildForkAgentJob(
 	if agentSpec.Resources.Limits != nil {
 		resourceReqs.Limits = toResourceList(agentSpec.Resources.Limits)
 	}
+	if resourceReqs.Requests == nil && resourceReqs.Limits == nil && defaults.Resources != nil {
+		resourceReqs = *defaults.Resources
+	}
 
-	// Init containers: optional user-defined init only.
+	// Init container: template wins, else chart-wide default.
+	initScript := agentSpec.Init
+	if initScript == "" {
+		initScript = defaults.Init
+	}
 	var initContainers []corev1.Container
-	if agentSpec.Init != "" {
+	if initScript != "" {
 		initContainers = append(initContainers, corev1.Container{
 			Name:            "init",
 			Image:           agentSpec.Image,
-			ImagePullPolicy: corev1.PullPolicy(ac.ImagePullPolicy),
-			Command:         []string{"sh", "-c", agentSpec.Init},
+			ImagePullPolicy: corev1.PullPolicy(pullPolicy),
+			Command:         []string{"sh", "-c", initScript},
+			Env:             []corev1.EnvVar{{Name: "HOME", Value: defaults.AgentHome}},
 			VolumeMounts:    volumeMounts,
 		})
 	}
 
 	var pullSecrets []corev1.LocalObjectReference
-	for _, name := range ac.ImagePullSecrets {
-		pullSecrets = append(pullSecrets, corev1.LocalObjectReference{Name: name})
-	}
-
-	var podSec *corev1.PodSecurityContext
-	if agentSpec.SecurityContext != nil {
-		podSec = &corev1.PodSecurityContext{
-			RunAsNonRoot: agentSpec.SecurityContext.RunAsNonRoot,
-		}
+	for _, n := range base.ImagePullSecrets {
+		pullSecrets = append(pullSecrets, corev1.LocalObjectReference{Name: n})
 	}
 
 	// GH_TOKEN signal — mirrors the long-lived shape.
@@ -204,28 +217,30 @@ func BuildForkAgentJob(
 			PeriodSeconds:       10,
 		}
 	}
+	if base.Probes != nil {
+		if base.Probes.Readiness != nil && readinessProbe != nil {
+			readinessProbe = base.Probes.Readiness
+		}
+		if base.Probes.Liveness != nil && livenessProbe != nil {
+			livenessProbe = base.Probes.Liveness
+		}
+	}
 
 	containers := []corev1.Container{{
 		Name:            "agent",
 		Image:           agentSpec.Image,
-		ImagePullPolicy: corev1.PullPolicy(ac.ImagePullPolicy),
+		ImagePullPolicy: corev1.PullPolicy(pullPolicy),
 		Ports: []corev1.ContainerPort{{
 			Name: "acp", ContainerPort: 8080,
 		}},
-		Env:            env,
-		EnvFrom:        envFrom,
-		ReadinessProbe: readinessProbe,
-		LivenessProbe:  livenessProbe,
-		SecurityContext: &corev1.SecurityContext{
-			Capabilities: &corev1.Capabilities{
-				Drop: []corev1.Capability{"ALL"},
-			},
-		},
-		Resources:    resourceReqs,
-		VolumeMounts: volumeMounts,
+		Env:             env,
+		EnvFrom:         envFrom,
+		ReadinessProbe:  readinessProbe,
+		LivenessProbe:   livenessProbe,
+		SecurityContext: base.ContainerSecurityContext,
+		Resources:       resourceReqs,
+		VolumeMounts:    volumeMounts,
 	}}
-	applyAgentContainer(&containers[0], ac)
-	volumes = append(volumes, ac.ExtraVolumes...)
 
 	falseVal := false
 	automountSAToken := &falseVal
@@ -235,7 +250,7 @@ func BuildForkAgentJob(
 	backoff := int32(0)
 
 	podMeta := metav1.ObjectMeta{Labels: labels}
-	applyAgentPodMeta(&podMeta, ac)
+	applyAgentBaseMeta(&podMeta, base)
 
 	podSpec := corev1.PodSpec{
 		// ADR-041 + ADR-027: fork agent runs as the per-fork SA
@@ -248,16 +263,16 @@ func BuildForkAgentJob(
 		// harness endpoint.
 		ServiceAccountName:            forkName,
 		RestartPolicy:                 corev1.RestartPolicyNever,
-		TerminationGracePeriodSeconds: &ac.TerminationGracePeriod,
+		TerminationGracePeriodSeconds: &base.TerminationGracePeriod,
 		ImagePullSecrets:              pullSecrets,
-		SecurityContext:               podSec,
+		SecurityContext:               base.PodSecurityContext,
 		InitContainers:                initContainers,
 		AutomountServiceAccountToken:  automountSAToken,
 		ShareProcessNamespace:         shareProcessNS,
 		Containers:                    containers,
 		Volumes:                       volumes,
 	}
-	applyAgentPodScheduling(&podSpec, ac)
+	applyAgentBaseScheduling(&podSpec, base)
 
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{

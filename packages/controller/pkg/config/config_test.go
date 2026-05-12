@@ -37,9 +37,11 @@ func TestLoadFromEnv_Defaults(t *testing.T) {
 	assert.Equal(t, "default", cfg.ReleaseNamespace)
 	assert.Equal(t, "platform-controller", cfg.LeaseName)
 	// No Go-side defaults — defaults live in the Helm chart's values.yaml
-	// (`controller.agent`). When AGENT_CONFIG is unset entirely the
-	// AgentConfig zero value is what we get.
-	assert.Equal(t, AgentConfig{}, cfg.AgentConfig)
+	// (`controller.agent.base` / `templateDefaults`). When the env vars
+	// are unset entirely the zero values are what we get.
+	assert.Equal(t, AgentBase{}, cfg.AgentBase)
+	// AgentHome falls back to its env-var default.
+	assert.Equal(t, "/home/agent", cfg.AgentTemplateDefaults.AgentHome)
 	// ADR-041: ext-authz host is per-instance (no shared default).
 	assert.Equal(t, "platform-extauthz-inst-1.default.svc.cluster.local", cfg.ExtAuthzHostFor("inst-1"))
 }
@@ -87,68 +89,88 @@ func TestLoadFromEnv_MissingPodName(t *testing.T) {
 	assert.Contains(t, err.Error(), "POD_NAME")
 }
 
-func TestLoadFromEnv_AgentConfig_Parsed(t *testing.T) {
+func TestLoadFromEnv_AgentBase_Parsed(t *testing.T) {
 	setEnv(t, map[string]string{
 		"PLATFORM_RELEASE_NAME": "platform",
 		"POD_NAME":              "controller-0",
-		"AGENT_CONFIG": `{
-			"imagePullPolicy": "Always",
+		"AGENT_BASE": `{
 			"imagePullSecrets": ["regcred"],
 			"storageClass": "platform-rwx",
 			"accessMode": "ReadWriteOnce",
-			"storageSize": "20Gi",
 			"idleTimeout": "30m",
 			"terminationGracePeriod": 10,
 			"runtimeClassName": "kata",
 			"nodeSelector": {"workload": "agents"},
 			"tolerations": [{"key": "dedicated", "operator": "Equal", "value": "agents", "effect": "NoSchedule"}],
-			"extraEnv": [{"name": "OPERATOR_FLAG", "value": "true"}],
-			"probes": {"startup": {"httpGet": {"path": "/h", "port": "acp"}, "periodSeconds": 5}}
+			"probes": {"startup": {"httpGet": {"path": "/h", "port": "acp"}, "periodSeconds": 5}},
+			"containerSecurityContext": {"capabilities": {"drop": ["ALL"]}}
 		}`,
 	})
 	cfg, err := LoadFromEnv()
 	require.NoError(t, err)
-	ac := cfg.AgentConfig
-	assert.Equal(t, "Always", ac.ImagePullPolicy)
-	assert.Equal(t, []string{"regcred"}, ac.ImagePullSecrets)
-	assert.Equal(t, "platform-rwx", ac.StorageClass)
-	assert.Equal(t, "ReadWriteOnce", ac.AccessMode)
-	assert.Equal(t, "20Gi", ac.StorageSize)
-	assert.Equal(t, 30*time.Minute, ac.IdleTimeout.AsDuration())
-	assert.Equal(t, int64(10), ac.TerminationGracePeriod)
-	assert.Equal(t, "kata", ac.RuntimeClassName)
-	assert.Equal(t, "agents", ac.NodeSelector["workload"])
-	require.Len(t, ac.Tolerations, 1)
-	assert.Equal(t, "dedicated", ac.Tolerations[0].Key)
-	require.Len(t, ac.ExtraEnv, 1)
-	assert.Equal(t, "OPERATOR_FLAG", ac.ExtraEnv[0].Name)
-	require.NotNil(t, ac.Probes)
-	require.NotNil(t, ac.Probes.Startup)
+	b := cfg.AgentBase
+	assert.Equal(t, []string{"regcred"}, b.ImagePullSecrets)
+	assert.Equal(t, "platform-rwx", b.StorageClass)
+	assert.Equal(t, "ReadWriteOnce", b.AccessMode)
+	assert.Equal(t, 30*time.Minute, b.IdleTimeout.AsDuration())
+	assert.Equal(t, int64(10), b.TerminationGracePeriod)
+	assert.Equal(t, "kata", b.RuntimeClassName)
+	assert.Equal(t, "agents", b.NodeSelector["workload"])
+	require.Len(t, b.Tolerations, 1)
+	assert.Equal(t, "dedicated", b.Tolerations[0].Key)
+	require.NotNil(t, b.Probes)
+	require.NotNil(t, b.Probes.Startup)
+	require.NotNil(t, b.ContainerSecurityContext)
 }
 
-func TestLoadFromEnv_AgentConfig_IdleTimeoutZero(t *testing.T) {
+func TestLoadFromEnv_AgentTemplateDefaults_Parsed(t *testing.T) {
+	setEnv(t, map[string]string{
+		"PLATFORM_RELEASE_NAME": "platform",
+		"POD_NAME":              "controller-0",
+		"AGENT_TEMPLATE_DEFAULTS": `{
+			"agentHome": "/home/agent",
+			"imagePullPolicy": "IfNotPresent",
+			"storageSize": "10Gi",
+			"mounts": [{"path": "$HOME", "persist": true}, {"path": "/tmp"}],
+			"env": [{"name": "PORT", "value": "8080"}]
+		}`,
+	})
+	cfg, err := LoadFromEnv()
+	require.NoError(t, err)
+	d := cfg.AgentTemplateDefaults
+	assert.Equal(t, "/home/agent", d.AgentHome)
+	assert.Equal(t, "IfNotPresent", d.ImagePullPolicy)
+	assert.Equal(t, "10Gi", d.StorageSize)
+	require.Len(t, d.Mounts, 2)
+	assert.Equal(t, "$HOME", d.Mounts[0].Path)
+	assert.True(t, d.Mounts[0].Persist)
+	require.Len(t, d.Env, 1)
+	assert.Equal(t, "PORT", d.Env[0].Name)
+}
+
+func TestLoadFromEnv_AgentBase_IdleTimeoutZero(t *testing.T) {
 	// "0s" disables the idle checker — must round-trip through JSON cleanly.
 	setEnv(t, map[string]string{
 		"PLATFORM_RELEASE_NAME": "platform",
 		"POD_NAME":              "controller-0",
-		"AGENT_CONFIG":          `{"idleTimeout": "0s"}`,
+		"AGENT_BASE":            `{"idleTimeout": "0s"}`,
 	})
 	cfg, err := LoadFromEnv()
 	require.NoError(t, err)
-	assert.Equal(t, time.Duration(0), cfg.AgentConfig.IdleTimeout.AsDuration())
+	assert.Equal(t, time.Duration(0), cfg.AgentBase.IdleTimeout.AsDuration())
 }
 
-func TestLoadFromEnv_AgentConfig_UnknownFieldRejected(t *testing.T) {
+func TestLoadFromEnv_UnknownFieldRejected(t *testing.T) {
 	// Operators who mistype a field name get a loud startup error rather
 	// than a silently-ignored value.
 	setEnv(t, map[string]string{
 		"PLATFORM_RELEASE_NAME": "platform",
 		"POD_NAME":              "controller-0",
-		"AGENT_CONFIG":          `{"runtimeClasName": "kata"}`,
+		"AGENT_BASE":            `{"runtimeClasName": "kata"}`,
 	})
 	_, err := LoadFromEnv()
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "AGENT_CONFIG")
+	assert.Contains(t, err.Error(), "AGENT_BASE")
 }
 
 func setEnv(t *testing.T, vars map[string]string) {
@@ -156,7 +178,7 @@ func setEnv(t *testing.T, vars map[string]string) {
 	for _, key := range []string{
 		"PLATFORM_AGENT_NAMESPACE", "PLATFORM_RELEASE_NAMESPACE", "PLATFORM_RELEASE_NAME",
 		"PLATFORM_LEASE_NAME", "POD_NAME",
-		"AGENT_CONFIG",
+		"AGENT_BASE", "AGENT_TEMPLATE_DEFAULTS",
 		"EXT_AUTHZ_PORT", "EXT_AUTHZ_HOLD_SECONDS",
 		"PLATFORM_ISTIO_TRUST_DOMAIN", "PLATFORM_ISTIO_WAYPOINT_NAME",
 	} {

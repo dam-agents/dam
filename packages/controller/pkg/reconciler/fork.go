@@ -151,7 +151,7 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 	// agent Job's pod starts dialing it. ADR-041: pair-key NetworkPolicy
 	// is gone — pair isolation is now enforced by the AuthorizationPolicy
 	// above.
-	gatewayPod := BuildForkGatewayPod(forkName, forkSpec.Instance, agentSpec, r.config, cm, credentialSecrets)
+	gatewayPod := BuildForkGatewayPod(forkName, forkSpec.Instance, r.config, cm, credentialSecrets)
 	gatewaySvc := BuildForkGatewayService(forkName, r.config, cm)
 
 	if err := r.applyPod(ctx, gatewayPod); err != nil {
