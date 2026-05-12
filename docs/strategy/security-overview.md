@@ -8,7 +8,7 @@ from the credentials they use to reach external services.
 ```mermaid
 flowchart LR
   L1["<b>Identity</b><br/>per-instance ServiceAccount<br/>+ SPIFFE cert via Istio mesh"]
-  L2["<b>Boundary</b><br/>agent isolated in its own pod,<br/>no ServiceAccount token mounted"]
+  L2["<b>Boundary</b><br/>agent isolated in its own container,<br/>no SA-token mounted on the pod"]
   L3["<b>Network</b><br/>NetworkPolicy + AuthorizationPolicy<br/>at L3, L4, and L7"]
   L4["<b>Credentials</b><br/>K8s Secrets stay outside the agent,<br/>injected on the wire after authz"]
   L1 ~~~ L2 ~~~ L3 ~~~ L4
@@ -21,12 +21,13 @@ the mesh is decided on the certificate's SA principal, not on IP or
 port — a peer instance can resolve the address, but the
 AuthorizationPolicy denies the call before it lands.
 
-- **Boundary.** The agent runs alone in its own pod, with its own
-kernel view, its own filesystem, and no shared address space.
-`automountServiceAccountToken` is false on the pod, so there is no
-Kubernetes API token sitting in the agent's filesystem; istiod issues
-the workload cert independently. There is no co-located sidecar to
-share a namespace with.
+- **Boundary.** The agent runs in its own container, with its own
+kernel namespaces, its own filesystem, and no shared address space.
+The pod hosts only that one container — no co-located sidecar to
+share a namespace with. `automountServiceAccountToken` is false on
+the pod (a pod-level setting in Kubernetes), so there is no
+Kubernetes API token sitting in the agent's filesystem; istiod
+issues the workload cert independently.
 
 - **Network.** Multiple layers restrict where the agent can talk. At
 the kernel, a Kubernetes NetworkPolicy locks the agent pod's L3/L4
@@ -45,17 +46,22 @@ request — for everything else, traffic passes through unchanged.
 
 ## Security boundary
 
-The pod is the security boundary. Everything inside it — the agent
-process, any tools it spawns, any content it reads — is treated as
-untrusted. The controls above all live outside the pod (in the mesh,
-in the kernel's network stack, in a sibling pod that holds the
-credentials), so that a compromised agent cannot reach beyond what
-its network and identity allow.
+The container is the security boundary. Everything inside it — the
+agent process, any tools it spawns, any content it reads — is
+treated as untrusted. The agent pod hosts a single agent container,
+and the controls above all live outside it (in the mesh, in the
+kernel's network stack, in a sibling pod that holds the credentials),
+so that a compromised agent cannot reach beyond what its network and
+identity allow. Some of those controls are written at the pod level
+rather than per-container — NetworkPolicy and
+`automountServiceAccountToken` are pod-scoped, because that's the
+granularity Kubernetes exposes — but with one container per agent
+pod, the two coincide.
 
-By default, pods run on the cluster's container runtime — typically
-runc — which shares a kernel with the node. The four controls above
-stand regardless, but a kernel-level escape from the agent's
-container reaches the node directly, and from there anything
+By default, containers run on the cluster's container runtime —
+typically runc — which shares a kernel with the node. The four
+controls above stand regardless, but a kernel-level escape from the
+agent's container reaches the node directly, and from there anything
 co-located on it.
 
 For deployments where that risk matters, the cluster operator should
