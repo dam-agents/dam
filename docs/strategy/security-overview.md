@@ -33,21 +33,19 @@ every admission is gated on it.
 
 ```mermaid
 flowchart LR
-  user[browser]
-  api[api-server]
-  ext[external services]
-
   subgraph pair[Instance pair]
+    direction LR
     agent[agent pod]
     gw["gateway pod<br/>Envoy"]
   end
 
-  user -->|OIDC JWT| api
+  api[api-server]
+  owner[owner inbox]
+  ext[external services]
+
   agent -->|HTTPS_PROXY| gw
-  gw -->|harness call| api
-  gw -->|ext-authz Check<br/>per credentialed request| api
-  api -->|"allow · deny · hold for HITL"| gw
-  user -.->|verdict from inbox| api
+  gw <-->|"ext-authz Check<br/>allow · deny · hold"| api
+  api <-.->|HITL hold-open| owner
   gw -->|inject credential on allow| ext
 ```
 
