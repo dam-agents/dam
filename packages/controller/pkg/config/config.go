@@ -30,8 +30,6 @@ type Config struct {
 	AgentConfig AgentConfig
 
 	AgentProbesEnabled       bool          // Render startup/readiness/liveness probes on agent pods (default: true; matches the chart's probes.enabled)
-	IdleTimeout              time.Duration // Idle timeout before auto-hibernation (0 = disabled, default: 1h)
-	TerminationGracePeriod   int64         // Termination grace period in seconds for agent pods (default: 5)
 	HarnessServerURL         string        // Harness API server internal URL (separate port, agent-facing)
 	HarnessServerPort        int           // Harness API server port (for network policy egress rule)
 	EnvoyImage               string        // Image for the Envoy credential-injector sidecar
@@ -105,8 +103,6 @@ func LoadFromEnv() (*Config, error) {
 	cfg.HarnessServerPort = envOrDefaultInt("PLATFORM_HARNESS_SERVER_PORT", 4001)
 	cfg.AgentProbesEnabled = envOrDefaultBool("AGENT_PROBES_ENABLED", true)
 	cfg.AgentHome = envOrDefault("AGENT_HOME", "/home/agent")
-	cfg.IdleTimeout = envOrDefaultDuration("PLATFORM_IDLE_TIMEOUT", 1*time.Hour)
-	cfg.TerminationGracePeriod = int64(envOrDefaultInt("PLATFORM_TERMINATION_GRACE_PERIOD", 5))
 	cfg.EnvoyImage = envOrDefault("ENVOY_IMAGE", "envoyproxy/envoy:distroless-v1.37.2")
 	cfg.EnvoyPort = envOrDefaultInt("ENVOY_PORT", 10000)
 	cfg.EnvoyMitmCAIssuer = envOrDefault("ENVOY_MITM_CA_ISSUER", "platform-mitm-ca-issuer")

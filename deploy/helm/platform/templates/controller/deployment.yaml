@@ -62,10 +62,6 @@ spec:
               value: {{ .Values.istio.waypointName | quote }}
             - name: PLATFORM_RELEASE_DOMAIN
               value: "svc.cluster.local"
-            - name: PLATFORM_IDLE_TIMEOUT
-              value: {{ .Values.controller.idleTimeout | default "1h" | quote }}
-            - name: PLATFORM_TERMINATION_GRACE_PERIOD
-              value: {{ .Values.controller.terminationGracePeriod | default 5 | quote }}
             - name: ENVOY_IMAGE
               value: {{ .Values.controller.envoyImage | default "envoyproxy/envoy:distroless-v1.37.2" | quote }}
             - name: ENVOY_PORT

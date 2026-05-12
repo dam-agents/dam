@@ -7,6 +7,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/kagenti/platform/packages/controller/pkg/config"
+	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
 // Paired gateway pod (ADR-038). The gateway runs Envoy and is the only
@@ -25,7 +26,13 @@ func GatewayName(pairKey string) string {
 //
 // `instanceName` is both the pair key and the parent instance reference
 // (long-lived pairs collapse the two).
-func BuildGatewayStatefulSet(instanceName string, hibernated bool, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret) *appsv1.StatefulSet {
+func BuildGatewayStatefulSet(instanceName string, hibernated bool, agentSpec *types.AgentSpec, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret) *appsv1.StatefulSet {
+	// Per-agent override (most-specific wins) — pod metadata + scheduling
+	// fields propagate to the gateway half of the pair so it co-schedules
+	// with the agent. Agent-container-only fields (ExtraEnv, ExtraVolumes,
+	// ExtraVolumeMounts, Resources, Probes) live on `ac` but the gateway
+	// builder simply doesn't read them (gateway runs platform-managed Envoy).
+	ac := *cfg.AgentConfig.Merge(agentSpec.Config)
 	replicas := int32(1)
 	if hibernated {
 		replicas = 0
@@ -56,7 +63,7 @@ func BuildGatewayStatefulSet(instanceName string, hibernated bool, cfg *config.C
 		Labels:      labels,
 		Annotations: annotations,
 	}
-	applyAgentPodMeta(&podMeta, cfg.AgentConfig)
+	applyAgentPodMeta(&podMeta, ac)
 
 	podSpec := corev1.PodSpec{
 		// ADR-041: gateway pod runs as the per-instance SA so
@@ -64,12 +71,12 @@ func BuildGatewayStatefulSet(instanceName string, hibernated bool, cfg *config.C
 		// of the pair (same SA on both pods). The gateway-side
 		// AuthorizationPolicy ALLOWs only this principal.
 		ServiceAccountName:            instanceName,
-		TerminationGracePeriodSeconds: &cfg.TerminationGracePeriod,
+		TerminationGracePeriodSeconds: &ac.TerminationGracePeriod,
 		AutomountServiceAccountToken:  &falseVal,
 		Containers:                    containers,
 		Volumes:                       volumes,
 	}
-	applyAgentPodScheduling(&podSpec, cfg.AgentConfig)
+	applyAgentPodScheduling(&podSpec, ac)
 
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -145,7 +152,11 @@ func BuildGatewayService(instanceName string, cfg *config.Config, ownerCM *corev
 // ext_authz Check calls from this gateway resolve under the parent
 // instance's egress rules (ADR-027). The pair key is the fork's own name
 // so the fork pair is structurally isolated from the parent instance pair.
-func BuildForkGatewayPod(forkName, parentInstanceID string, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret) *corev1.Pod {
+func BuildForkGatewayPod(forkName, parentInstanceID string, agentSpec *types.AgentSpec, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret) *corev1.Pod {
+	// Per-agent override (most-specific wins). Same merge as the long-lived
+	// gateway: pod metadata + scheduling propagate so the fork pair co-schedules.
+	ac := *cfg.AgentConfig.Merge(agentSpec.Config)
+
 	gatewayName := GatewayName(forkName)
 	labels := map[string]string{
 		LabelInstance: parentInstanceID,
@@ -167,7 +178,7 @@ func BuildForkGatewayPod(forkName, parentInstanceID string, cfg *config.Config, 
 			*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
 		},
 	}
-	applyAgentPodMeta(&podMeta, cfg.AgentConfig)
+	applyAgentPodMeta(&podMeta, ac)
 
 	podSpec := corev1.PodSpec{
 		// ADR-041 + ADR-027: fork gateway pod runs as the per-fork SA
@@ -178,12 +189,12 @@ func BuildForkGatewayPod(forkName, parentInstanceID string, cfg *config.Config, 
 		// scoped to the parent.
 		ServiceAccountName:            forkName,
 		RestartPolicy:                 corev1.RestartPolicyAlways,
-		TerminationGracePeriodSeconds: &cfg.TerminationGracePeriod,
+		TerminationGracePeriodSeconds: &ac.TerminationGracePeriod,
 		AutomountServiceAccountToken:  &falseVal,
 		Containers:                    containers,
 		Volumes:                       volumes,
 	}
-	applyAgentPodScheduling(&podSpec, cfg.AgentConfig)
+	applyAgentPodScheduling(&podSpec, ac)
 
 	return &corev1.Pod{
 		ObjectMeta: podMeta,

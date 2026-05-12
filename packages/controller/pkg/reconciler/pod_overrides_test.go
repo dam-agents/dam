@@ -222,11 +222,80 @@ func TestBuildAgentStatefulSet_AgentConfig_ChartResourcesFillForTemplateWithoutR
 	assert.Equal(t, resource.MustParse("16"), agent.Resources.Limits[corev1.ResourceCPU])
 }
 
+// --- Per-agent override (AgentSpec.Config) end-to-end ---
+
+func TestBuildAgentStatefulSet_PerAgentOverride_LandsOnPod(t *testing.T) {
+	// Chart-level: runtimeClassName=base, two pull secrets.
+	// Per-agent: runtimeClassName=kata (override scalar), one extra pull
+	// secret (additive), extra volume + mount (additive). Effective pod
+	// should reflect the merge result.
+	cfg := configWith(config.AgentConfig{
+		RuntimeClassName: "base",
+		ImagePullSecrets: []string{"cluster-reg"},
+	})
+	agent := *testAgent
+	agent.Config = &config.AgentConfig{
+		RuntimeClassName: "kata",
+		ImagePullSecrets: []string{"agent-reg"},
+		ExtraVolumes: []corev1.Volume{{
+			Name: "agent-data", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+		}},
+		ExtraVolumeMounts: []corev1.VolumeMount{{Name: "agent-data", MountPath: "/data"}},
+	}
+	instance := &types.InstanceSpec{DesiredState: "running"}
+	ss := BuildAgentStatefulSet("my-instance", instance, &agent, cfg, testOwnerCM, nil)
+	spec := ss.Spec.Template.Spec
+
+	require.NotNil(t, spec.RuntimeClassName)
+	assert.Equal(t, "kata", *spec.RuntimeClassName, "per-agent scalar wins over chart")
+
+	gotSecrets := map[string]bool{}
+	for _, s := range spec.ImagePullSecrets {
+		gotSecrets[s.Name] = true
+	}
+	assert.True(t, gotSecrets["cluster-reg"], "chart pull secret preserved")
+	assert.True(t, gotSecrets["agent-reg"], "per-agent pull secret appended")
+
+	var sawAgentData bool
+	for _, v := range spec.Volumes {
+		if v.Name == "agent-data" {
+			sawAgentData = true
+		}
+	}
+	assert.True(t, sawAgentData, "per-agent extraVolume should land")
+}
+
+func TestBuildAgentStatefulSet_PerAgentOverride_PropagatesToGateway(t *testing.T) {
+	// Scheduling fields on per-agent must propagate to the paired gateway
+	// pod too — otherwise the pair can't co-schedule on the kata node.
+	cfg := configWith(config.AgentConfig{})
+	agent := *testAgent
+	agent.Config = &config.AgentConfig{
+		RuntimeClassName: "kata",
+		NodeSelector:     map[string]string{"workload": "agents"},
+	}
+	gw := BuildGatewayStatefulSet("my-instance", false, &agent, cfg, testOwnerCM, nil)
+	require.NotNil(t, gw.Spec.Template.Spec.RuntimeClassName)
+	assert.Equal(t, "kata", *gw.Spec.Template.Spec.RuntimeClassName, "per-agent scheduling propagates to gateway")
+	assert.Equal(t, "agents", gw.Spec.Template.Spec.NodeSelector["workload"])
+}
+
+func TestBuildAgentStatefulSet_PerAgentOverride_NilConfigFallsBack(t *testing.T) {
+	// AgentSpec.Config = nil → chart-level config applies as-is, no panic.
+	cfg := configWith(config.AgentConfig{RuntimeClassName: "kata"})
+	agent := *testAgent
+	agent.Config = nil
+	instance := &types.InstanceSpec{DesiredState: "running"}
+	ss := BuildAgentStatefulSet("my-instance", instance, &agent, cfg, testOwnerCM, nil)
+	require.NotNil(t, ss.Spec.Template.Spec.RuntimeClassName)
+	assert.Equal(t, "kata", *ss.Spec.Template.Spec.RuntimeClassName)
+}
+
 // --- BuildGatewayStatefulSet (long-lived gateway) ---
 
 func TestBuildGatewayStatefulSet_AgentConfig_SchedulingAndMeta(t *testing.T) {
 	cfg := configWith(fullAgentConfig())
-	ss := BuildGatewayStatefulSet("my-instance", false, cfg, testOwnerCM, nil)
+	ss := BuildGatewayStatefulSet("my-instance", false, testAgent, cfg, testOwnerCM, nil)
 	spec := ss.Spec.Template.Spec
 	meta := ss.Spec.Template.ObjectMeta
 
@@ -286,7 +355,7 @@ func TestBuildForkAgentJob_AgentConfig_FullSurface(t *testing.T) {
 
 func TestBuildForkGatewayPod_AgentConfig_SchedulingAndMeta(t *testing.T) {
 	cfg := configWith(fullAgentConfig())
-	pod := BuildForkGatewayPod("fork-1", "parent-inst", cfg, testOwnerCM, nil)
+	pod := BuildForkGatewayPod("fork-1", "parent-inst", testAgent, cfg, testOwnerCM, nil)
 
 	assert.Equal(t, "platform", pod.Labels["team"])
 	require.NotNil(t, pod.Spec.RuntimeClassName)

@@ -56,6 +56,48 @@ func TestParseAgentSpec(t *testing.T) {
 	assert.False(t, *spec.SecurityContext.ReadOnlyRootFilesystem)
 }
 
+// Per-agent override block (AgentConfig) parsed from agent ConfigMap YAML.
+// The `config:` field rides on top of the chart-level `controller.agent`
+// at reconcile time via config.AgentConfig.Merge.
+func TestParseAgentSpec_PerAgentConfig(t *testing.T) {
+	spec, err := ParseAgentSpec(`version: agent-platform.ai/v1
+image: foo
+config:
+  imagePullSecrets:
+    - my-registry-cred
+  storageSize: "50Gi"
+  extraVolumes:
+    - name: my-data
+      emptyDir: {}
+  extraVolumeMounts:
+    - name: my-data
+      mountPath: /data
+  runtimeClassName: kata
+  nodeSelector:
+    workload: heavy-agents
+`)
+	require.NoError(t, err)
+	require.NotNil(t, spec.Config, "agent ConfigMap's `config:` should parse into AgentSpec.Config")
+	assert.Equal(t, []string{"my-registry-cred"}, spec.Config.ImagePullSecrets)
+	assert.Equal(t, "50Gi", spec.Config.StorageSize)
+	require.Len(t, spec.Config.ExtraVolumes, 1)
+	assert.Equal(t, "my-data", spec.Config.ExtraVolumes[0].Name)
+	require.NotNil(t, spec.Config.ExtraVolumes[0].EmptyDir)
+	require.Len(t, spec.Config.ExtraVolumeMounts, 1)
+	assert.Equal(t, "/data", spec.Config.ExtraVolumeMounts[0].MountPath)
+	assert.Equal(t, "kata", spec.Config.RuntimeClassName)
+	assert.Equal(t, "heavy-agents", spec.Config.NodeSelector["workload"])
+}
+
+// Backwards-compat: agent ConfigMaps without `config:` still parse.
+func TestParseAgentSpec_NoConfigField(t *testing.T) {
+	spec, err := ParseAgentSpec(`version: agent-platform.ai/v1
+image: foo
+`)
+	require.NoError(t, err)
+	assert.Nil(t, spec.Config, "missing `config:` should produce nil override")
+}
+
 func TestParseAgentSpec_MissingVersion(t *testing.T) {
 	_, err := ParseAgentSpec(`image: ghcr.io/myorg/agent:latest`)
 	assert.Error(t, err)

@@ -58,6 +58,11 @@ func agentProxyAddr(instanceName string, cfg *config.Config) string {
 // surfaced as an env var and pod annotation; no Secret material is mounted
 // into the agent pod.
 func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec *types.AgentSpec, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret) *appsv1.StatefulSet {
+	// Effective config = chart-level controller.agent ⨯ per-agent override
+	// (AgentSpec.Config, parsed from the agent ConfigMap). Most-specific
+	// wins per AgentConfig.Merge — see config/agent_config.go for the rules.
+	ac := *cfg.AgentConfig.Merge(agentSpec.Config)
+
 	replicas := int32(1)
 	if instance.DesiredState == "hibernated" {
 		replicas = 0
@@ -145,18 +150,18 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 			// operator mistake we surface by letting K8s reject the PVC.
 			storageSize := m.Size
 			if storageSize == "" {
-				storageSize = cfg.AgentConfig.StorageSize
+				storageSize = ac.StorageSize
 			}
 			pvcSpec := corev1.PersistentVolumeClaimSpec{
-				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.PersistentVolumeAccessMode(cfg.AgentConfig.AccessMode)},
+				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.PersistentVolumeAccessMode(ac.AccessMode)},
 				Resources: corev1.VolumeResourceRequirements{
 					Requests: corev1.ResourceList{
 						corev1.ResourceStorage: resource.MustParse(storageSize),
 					},
 				},
 			}
-			if cfg.AgentConfig.StorageClass != "" {
-				sc := cfg.AgentConfig.StorageClass
+			if ac.StorageClass != "" {
+				sc := ac.StorageClass
 				pvcSpec.StorageClassName = &sc
 			}
 			pvcs = append(pvcs, corev1.PersistentVolumeClaim{
@@ -216,7 +221,7 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 		initContainers = append(initContainers, corev1.Container{
 			Name:            "init",
 			Image:           agentSpec.Image,
-			ImagePullPolicy: corev1.PullPolicy(cfg.AgentConfig.ImagePullPolicy),
+			ImagePullPolicy: corev1.PullPolicy(ac.ImagePullPolicy),
 			Command:         []string{"sh", "-c", agentSpec.Init},
 			VolumeMounts:    volumeMounts,
 		})
@@ -224,7 +229,7 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 
 	// Image pull secrets
 	var pullSecrets []corev1.LocalObjectReference
-	for _, name := range cfg.AgentConfig.ImagePullSecrets {
+	for _, name := range ac.ImagePullSecrets {
 		pullSecrets = append(pullSecrets, corev1.LocalObjectReference{Name: name})
 	}
 
@@ -269,7 +274,7 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 	containers := []corev1.Container{{
 		Name:            "agent",
 		Image:           agentSpec.Image,
-		ImagePullPolicy: corev1.PullPolicy(cfg.AgentConfig.ImagePullPolicy),
+		ImagePullPolicy: corev1.PullPolicy(ac.ImagePullPolicy),
 		Ports: []corev1.ContainerPort{{
 			Name: "acp", ContainerPort: 8080,
 		}},
@@ -286,8 +291,8 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 		Resources:    resourceReqs,
 		VolumeMounts: volumeMounts,
 	}}
-	applyAgentContainer(&containers[0], cfg.AgentConfig)
-	volumes = append(volumes, cfg.AgentConfig.ExtraVolumes...)
+	applyAgentContainer(&containers[0], ac)
+	volumes = append(volumes, ac.ExtraVolumes...)
 
 	podAnnotations := map[string]string{
 		"agent-platform.ai/gh-token-available": ghAvail,
@@ -306,7 +311,7 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 		Labels:      labels,
 		Annotations: podAnnotations,
 	}
-	applyAgentPodMeta(&podMeta, cfg.AgentConfig)
+	applyAgentPodMeta(&podMeta, ac)
 
 	podSpec := corev1.PodSpec{
 		// ADR-041: per-instance SA gives the pod its SPIFFE
@@ -314,7 +319,7 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 		// AutomountServiceAccountToken stays false — Istio
 		// identity is independent of SA-token mounts.
 		ServiceAccountName:            name,
-		TerminationGracePeriodSeconds: &cfg.TerminationGracePeriod,
+		TerminationGracePeriodSeconds: &ac.TerminationGracePeriod,
 		ImagePullSecrets:              pullSecrets,
 		SecurityContext:               podSec,
 		InitContainers:                initContainers,
@@ -323,7 +328,7 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 		Containers:                    containers,
 		Volumes:                       volumes,
 	}
-	applyAgentPodScheduling(&podSpec, cfg.AgentConfig)
+	applyAgentPodScheduling(&podSpec, ac)
 
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{

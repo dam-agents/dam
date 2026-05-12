@@ -10,6 +10,9 @@ import (
 	"github.com/teambition/rrule-go"
 	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/api/resource"
+	sigsyaml "sigs.k8s.io/yaml"
+
+	"github.com/kagenti/platform/packages/controller/pkg/config"
 )
 
 var quietHoursTimeRE = regexp.MustCompile(`^([01][0-9]|2[0-3]):[0-5][0-9]$`)
@@ -19,15 +22,22 @@ const SpecVersion = "agent-platform.ai/v1"
 // --- Agent ---
 
 type AgentSpec struct {
-	Version         string                      `yaml:"version"`
-	Name            string                      `yaml:"name,omitempty"`
-	Image           string                      `yaml:"image"`
-	Description     string                      `yaml:"description,omitempty"`
-	Mounts          []Mount                     `yaml:"mounts,omitempty"`
-	Init            string                      `yaml:"init,omitempty"`
-	Env             []EnvVar                    `yaml:"env,omitempty"`
-	Resources       ResourceSpec                `yaml:"resources,omitempty"`
-	SecurityContext *SecurityContext             `yaml:"securityContext,omitempty"`
+	Version         string           `yaml:"version" json:"version"`
+	Name            string           `yaml:"name,omitempty" json:"name,omitempty"`
+	Image           string           `yaml:"image" json:"image"`
+	Description     string           `yaml:"description,omitempty" json:"description,omitempty"`
+	Mounts          []Mount          `yaml:"mounts,omitempty" json:"mounts,omitempty"`
+	Init            string           `yaml:"init,omitempty" json:"init,omitempty"`
+	Env             []EnvVar         `yaml:"env,omitempty" json:"env,omitempty"`
+	Resources       ResourceSpec     `yaml:"resources,omitempty" json:"resources,omitempty"`
+	SecurityContext *SecurityContext `yaml:"securityContext,omitempty" json:"securityContext,omitempty"`
+	// Config is the per-agent override layer for chart-level controller.agent
+	// settings. Riding the same shape as Helm `controller.agent`, it merges
+	// over the chart default at reconcile time (config.AgentConfig.Merge).
+	// Most useful for fields where per-agent needs diverge from cluster
+	// policy — extraVolumes / extraVolumeMounts / storageSize / imagePullSecrets.
+	// Unset (nil) means "inherit chart defaults".
+	Config *config.AgentConfig `yaml:"config,omitempty" json:"config,omitempty"`
 }
 
 type Mount struct {
@@ -162,8 +172,13 @@ const (
 // --- Parsing + Validation ---
 
 func ParseAgentSpec(data string) (*AgentSpec, error) {
+	// sigs.k8s.io/yaml routes through JSON unmarshaling so the embedded
+	// config.AgentConfig (with corev1 types like Toleration / Affinity /
+	// Probe — JSON-tagged only) parses cleanly. The simple AgentSpec
+	// fields match by case-insensitive Go field name, which is
+	// behaviorally identical to the yaml.v3 unmarshal we used before.
 	var spec AgentSpec
-	if err := yaml.Unmarshal([]byte(data), &spec); err != nil {
+	if err := sigsyaml.Unmarshal([]byte(data), &spec); err != nil {
 		return nil, fmt.Errorf("parsing agent spec: %w", err)
 	}
 	if err := validateVersion(spec.Version); err != nil {

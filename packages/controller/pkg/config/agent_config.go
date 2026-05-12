@@ -1,8 +1,38 @@
 package config
 
 import (
+	"encoding/json"
+	"fmt"
+	"time"
+
 	corev1 "k8s.io/api/core/v1"
 )
+
+// Duration wraps time.Duration with JSON support — values.yaml ships
+// human-readable strings like "1h" / "30m" through `toJson`, and the
+// controller parses them on startup via time.ParseDuration. Zero value
+// is allowed (commonly used to disable a timer; see IdleTimeout).
+type Duration time.Duration
+
+// AsDuration returns the wrapped time.Duration so callers don't need to cast.
+func (d Duration) AsDuration() time.Duration { return time.Duration(d) }
+
+func (d *Duration) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return fmt.Errorf("Duration: expected duration string, got %s", data)
+	}
+	parsed, err := time.ParseDuration(s)
+	if err != nil {
+		return fmt.Errorf("Duration: %w", err)
+	}
+	*d = Duration(parsed)
+	return nil
+}
+
+func (d Duration) MarshalJSON() ([]byte, error) {
+	return json.Marshal(time.Duration(d).String())
+}
 
 // AgentConfig is the single, flat schema describing every operator-tunable
 // aspect of controller-rendered pods — PVC sizing, image pull policy/secrets,
@@ -33,6 +63,10 @@ type AgentConfig struct {
 	StorageClass     string   `json:"storageClass,omitempty"`
 	AccessMode       string   `json:"accessMode,omitempty"` // ReadWriteMany (default) or ReadWriteOnce
 	StorageSize      string   `json:"storageSize,omitempty"`
+
+	// --- Lifecycle ---
+	IdleTimeout            Duration `json:"idleTimeout,omitempty"`            // hibernate idle instances after this; 0 disables.
+	TerminationGracePeriod int64    `json:"terminationGracePeriod,omitempty"` // PodSpec.TerminationGracePeriodSeconds for agent + gateway + fork pods.
 
 	// --- Pod metadata ---
 	ExtraLabels      map[string]string `json:"extraLabels,omitempty"`
@@ -106,6 +140,12 @@ func (c *AgentConfig) Merge(override *AgentConfig) *AgentConfig {
 	}
 	if override.RuntimeClassName != "" {
 		out.RuntimeClassName = override.RuntimeClassName
+	}
+	if override.IdleTimeout != 0 {
+		out.IdleTimeout = override.IdleTimeout
+	}
+	if override.TerminationGracePeriod != 0 {
+		out.TerminationGracePeriod = override.TerminationGracePeriod
 	}
 
 	// Extra* — additive.

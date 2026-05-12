@@ -41,6 +41,11 @@ func BuildForkAgentJob(
 	ownerCM *corev1.ConfigMap,
 	credentialSecrets []corev1.Secret,
 ) *batchv1.Job {
+	// Effective config = chart-level controller.agent ⨯ per-agent override
+	// (AgentSpec.Config). Forks inherit the same agent-template overrides
+	// as the long-lived shape — same agent ConfigMap drives both.
+	ac := *cfg.AgentConfig.Merge(agentSpec.Config)
+
 	labels := map[string]string{
 		ForkLabelType:   ForkJobLabelType,
 		ForkLabelForkID: forkName,
@@ -162,14 +167,14 @@ func BuildForkAgentJob(
 		initContainers = append(initContainers, corev1.Container{
 			Name:            "init",
 			Image:           agentSpec.Image,
-			ImagePullPolicy: corev1.PullPolicy(cfg.AgentConfig.ImagePullPolicy),
+			ImagePullPolicy: corev1.PullPolicy(ac.ImagePullPolicy),
 			Command:         []string{"sh", "-c", agentSpec.Init},
 			VolumeMounts:    volumeMounts,
 		})
 	}
 
 	var pullSecrets []corev1.LocalObjectReference
-	for _, name := range cfg.AgentConfig.ImagePullSecrets {
+	for _, name := range ac.ImagePullSecrets {
 		pullSecrets = append(pullSecrets, corev1.LocalObjectReference{Name: name})
 	}
 
@@ -203,7 +208,7 @@ func BuildForkAgentJob(
 	containers := []corev1.Container{{
 		Name:            "agent",
 		Image:           agentSpec.Image,
-		ImagePullPolicy: corev1.PullPolicy(cfg.AgentConfig.ImagePullPolicy),
+		ImagePullPolicy: corev1.PullPolicy(ac.ImagePullPolicy),
 		Ports: []corev1.ContainerPort{{
 			Name: "acp", ContainerPort: 8080,
 		}},
@@ -219,8 +224,8 @@ func BuildForkAgentJob(
 		Resources:    resourceReqs,
 		VolumeMounts: volumeMounts,
 	}}
-	applyAgentContainer(&containers[0], cfg.AgentConfig)
-	volumes = append(volumes, cfg.AgentConfig.ExtraVolumes...)
+	applyAgentContainer(&containers[0], ac)
+	volumes = append(volumes, ac.ExtraVolumes...)
 
 	falseVal := false
 	automountSAToken := &falseVal
@@ -230,7 +235,7 @@ func BuildForkAgentJob(
 	backoff := int32(0)
 
 	podMeta := metav1.ObjectMeta{Labels: labels}
-	applyAgentPodMeta(&podMeta, cfg.AgentConfig)
+	applyAgentPodMeta(&podMeta, ac)
 
 	podSpec := corev1.PodSpec{
 		// ADR-041 + ADR-027: fork agent runs as the per-fork SA
@@ -243,7 +248,7 @@ func BuildForkAgentJob(
 		// harness endpoint.
 		ServiceAccountName:            forkName,
 		RestartPolicy:                 corev1.RestartPolicyNever,
-		TerminationGracePeriodSeconds: &cfg.TerminationGracePeriod,
+		TerminationGracePeriodSeconds: &ac.TerminationGracePeriod,
 		ImagePullSecrets:              pullSecrets,
 		SecurityContext:               podSec,
 		InitContainers:                initContainers,
@@ -252,7 +257,7 @@ func BuildForkAgentJob(
 		Containers:                    containers,
 		Volumes:                       volumes,
 	}
-	applyAgentPodScheduling(&podSpec, cfg.AgentConfig)
+	applyAgentPodScheduling(&podSpec, ac)
 
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{

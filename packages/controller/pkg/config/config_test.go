@@ -36,7 +36,6 @@ func TestLoadFromEnv_Defaults(t *testing.T) {
 	assert.Equal(t, "platform-agents", cfg.Namespace)
 	assert.Equal(t, "default", cfg.ReleaseNamespace)
 	assert.Equal(t, "platform-controller", cfg.LeaseName)
-	assert.Equal(t, 1*time.Hour, cfg.IdleTimeout)
 	// No Go-side defaults — defaults live in the Helm chart's values.yaml
 	// (`controller.agent`). When AGENT_CONFIG is unset entirely the
 	// AgentConfig zero value is what we get.
@@ -72,28 +71,6 @@ func TestPrincipalFor_SPIFFEShape(t *testing.T) {
 	assert.Equal(t, "td.local/ns/agents/sa/inst-x", cfg.PrincipalFor("inst-x"))
 }
 
-func TestLoadFromEnv_IdleTimeout(t *testing.T) {
-	setEnv(t, map[string]string{
-		"PLATFORM_RELEASE_NAME": "platform",
-		"POD_NAME":              "controller-0",
-		"PLATFORM_IDLE_TIMEOUT": "30m",
-	})
-	cfg, err := LoadFromEnv()
-	require.NoError(t, err)
-	assert.Equal(t, 30*time.Minute, cfg.IdleTimeout)
-}
-
-func TestLoadFromEnv_IdleTimeoutDisabled(t *testing.T) {
-	setEnv(t, map[string]string{
-		"PLATFORM_RELEASE_NAME": "platform",
-		"POD_NAME":              "controller-0",
-		"PLATFORM_IDLE_TIMEOUT": "0s",
-	})
-	cfg, err := LoadFromEnv()
-	require.NoError(t, err)
-	assert.Equal(t, time.Duration(0), cfg.IdleTimeout)
-}
-
 func TestLoadFromEnv_MissingRequired(t *testing.T) {
 	setEnv(t, map[string]string{})
 	_, err := LoadFromEnv()
@@ -120,6 +97,8 @@ func TestLoadFromEnv_AgentConfig_Parsed(t *testing.T) {
 			"storageClass": "platform-rwx",
 			"accessMode": "ReadWriteOnce",
 			"storageSize": "20Gi",
+			"idleTimeout": "30m",
+			"terminationGracePeriod": 10,
 			"runtimeClassName": "kata",
 			"nodeSelector": {"workload": "agents"},
 			"tolerations": [{"key": "dedicated", "operator": "Equal", "value": "agents", "effect": "NoSchedule"}],
@@ -135,6 +114,8 @@ func TestLoadFromEnv_AgentConfig_Parsed(t *testing.T) {
 	assert.Equal(t, "platform-rwx", ac.StorageClass)
 	assert.Equal(t, "ReadWriteOnce", ac.AccessMode)
 	assert.Equal(t, "20Gi", ac.StorageSize)
+	assert.Equal(t, 30*time.Minute, ac.IdleTimeout.AsDuration())
+	assert.Equal(t, int64(10), ac.TerminationGracePeriod)
 	assert.Equal(t, "kata", ac.RuntimeClassName)
 	assert.Equal(t, "agents", ac.NodeSelector["workload"])
 	require.Len(t, ac.Tolerations, 1)
@@ -143,6 +124,18 @@ func TestLoadFromEnv_AgentConfig_Parsed(t *testing.T) {
 	assert.Equal(t, "OPERATOR_FLAG", ac.ExtraEnv[0].Name)
 	require.NotNil(t, ac.Probes)
 	require.NotNil(t, ac.Probes.Startup)
+}
+
+func TestLoadFromEnv_AgentConfig_IdleTimeoutZero(t *testing.T) {
+	// "0s" disables the idle checker — must round-trip through JSON cleanly.
+	setEnv(t, map[string]string{
+		"PLATFORM_RELEASE_NAME": "platform",
+		"POD_NAME":              "controller-0",
+		"AGENT_CONFIG":          `{"idleTimeout": "0s"}`,
+	})
+	cfg, err := LoadFromEnv()
+	require.NoError(t, err)
+	assert.Equal(t, time.Duration(0), cfg.AgentConfig.IdleTimeout.AsDuration())
 }
 
 func TestLoadFromEnv_AgentConfig_UnknownFieldRejected(t *testing.T) {
@@ -162,7 +155,7 @@ func setEnv(t *testing.T, vars map[string]string) {
 	t.Helper()
 	for _, key := range []string{
 		"PLATFORM_AGENT_NAMESPACE", "PLATFORM_RELEASE_NAMESPACE", "PLATFORM_RELEASE_NAME",
-		"PLATFORM_LEASE_NAME", "POD_NAME", "PLATFORM_IDLE_TIMEOUT",
+		"PLATFORM_LEASE_NAME", "POD_NAME",
 		"AGENT_CONFIG",
 		"EXT_AUTHZ_PORT", "EXT_AUTHZ_HOLD_SECONDS",
 		"PLATFORM_ISTIO_TRUST_DOMAIN", "PLATFORM_ISTIO_WAYPOINT_NAME",
