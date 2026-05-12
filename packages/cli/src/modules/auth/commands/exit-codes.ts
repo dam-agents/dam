@@ -7,5 +7,9 @@ export const EXIT_AUTH_SUCCESS = 0;
 export const EXIT_AUTH_RUNTIME_FAILURE = 1;
 export const EXIT_AUTH_INVALID_INPUT = 2;
 export const EXIT_AUTH_BELOW_FLOOR = 3;
-/** Status: active host has no valid credentials. */
-export const EXIT_AUTH_STATUS_NO_VALID = 1;
+/**
+ * `dam auth status`: active host has no valid credentials. Distinct from
+ * `EXIT_AUTH_RUNTIME_FAILURE` so wrapper scripts can branch on "need to
+ * re-authenticate" vs "the CLI itself crashed reading the store".
+ */
+export const EXIT_AUTH_STATUS_NO_VALID = 4;

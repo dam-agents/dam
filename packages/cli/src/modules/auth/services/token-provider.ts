@@ -111,7 +111,11 @@ export function createTokenProvider(deps: TokenProviderDeps): TokenProvider {
       }
 
       // 200 success — persist rotated tokens atomically and return the new
-      // access token. The auth-store layer handles atomicity.
+      // access token. The IdP has already invalidated the old refresh
+      // token; if we lose this write, the next refresh will fail and the
+      // user is forced to re-login. Retry once on transient write
+      // failures (e.g. EEXIST on the tmp file from a concurrent process,
+      // or a flaky filesystem) before surfacing the error.
       const newAuth: HostAuth = {
         issuer: hostAuth.issuer,
         username: hostAuth.username,
@@ -121,7 +125,10 @@ export function createTokenProvider(deps: TokenProviderDeps): TokenProvider {
         refreshToken: body.refresh_token,
         expiresAt: new Date(now().getTime() + body.expires_in * 1000),
       };
-      const written = await deps.authStore.write(host, newAuth);
+      let written = await deps.authStore.write(host, newAuth);
+      if (!written.ok) {
+        written = await deps.authStore.write(host, newAuth);
+      }
       if (!written.ok) return written;
       return ok(body.access_token);
     },
