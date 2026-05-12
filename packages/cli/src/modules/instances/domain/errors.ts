@@ -28,4 +28,35 @@ export interface AuthRequiredError {
   reason: string;
 }
 
-export type InstancesDomainError = TransportError | AuthRequiredError;
+/**
+ * The user-typed reference resolved to nothing. The `via` discriminator
+ * lets the command layer pick the right stderr wording without inspecting
+ * the ref itself:
+ *   - `"id"`: a ref starting with the Reserved ID Prefix (`inst-`) hit
+ *     a server-side NOT_FOUND.
+ *   - `"name"`: a name-shaped ref matched zero owned Instances.
+ */
+export interface NotFoundError {
+  kind: "not-found";
+  ref: string;
+  via: "id" | "name";
+}
+
+/**
+ * A name-shaped ref matched two or more Instances. Carries the matches
+ * (id + name) so the command layer can render a disambiguation listing
+ * without re-querying. Only reachable for legacy duplicates that
+ * predate the api-server's `(owner, name)` uniqueness invariant; new
+ * duplicates can no longer be created.
+ */
+export interface AmbiguousError {
+  kind: "ambiguous";
+  ref: string;
+  matches: readonly { id: string; name: string }[];
+}
+
+export type InstancesDomainError =
+  | TransportError
+  | AuthRequiredError
+  | NotFoundError
+  | AmbiguousError;

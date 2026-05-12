@@ -259,6 +259,9 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      '@trpc/server':
+        specifier: ^11.16.0
+        version: 11.16.0(typescript@6.0.2)
       '@types/node':
         specifier: ^25.5.0
         version: 25.5.0

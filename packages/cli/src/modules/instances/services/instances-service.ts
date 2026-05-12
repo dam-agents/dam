@@ -37,8 +37,9 @@ export function createInstancesService(deps: InstancesServiceDeps): InstancesSer
   function classify(
     e: unknown,
   ): Result<never, TransportError | AuthRequiredError> {
-    if (e instanceof AuthRequiredAtTransportError) {
-      return err({ kind: "auth-required", reason: e.message });
+    const sentinel = findAuthSentinel(e);
+    if (sentinel) {
+      return err({ kind: "auth-required", reason: sentinel.message });
     }
     if (isTrpcClientError(e) && hasCode(e, "UNAUTHORIZED")) {
       // The server rejected the bearer outright. Surfaces as
@@ -47,6 +48,19 @@ export function createInstancesService(deps: InstancesServiceDeps): InstancesSer
       return err({ kind: "auth-required", reason: tRpcMessage(e) });
     }
     return err({ kind: "transport", reason: errorReason(e) });
+  }
+
+  /** Walk the `cause` chain — the trpc-client wraps thrown header
+   *  errors into a TRPCClientError, exposing the original via `cause`. */
+  function findAuthSentinel(e: unknown): AuthRequiredAtTransportError | null {
+    let cursor: unknown = e;
+    let depth = 0;
+    while (cursor && depth < 8) {
+      if (cursor instanceof AuthRequiredAtTransportError) return cursor;
+      cursor = (cursor as { cause?: unknown }).cause;
+      depth++;
+    }
+    return null;
   }
 
   return {

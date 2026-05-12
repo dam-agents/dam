@@ -1,6 +1,8 @@
-import type { Command } from "commander";
+import { Command } from "commander";
 import type { TokenProvider } from "../auth/index.js";
 import type { CompatService, ConfigService } from "../cli/index.js";
+import { buildGetCommand } from "./commands/get.js";
+import { buildListCommand } from "./commands/list.js";
 import { createInstancesTrpcClient } from "./infrastructure/trpc-client.js";
 import {
   createInstancesService,
@@ -23,12 +25,17 @@ export interface InstancesModuleOptions {
   tokenProvider: TokenProvider;
   configService: ConfigService;
   compatService: CompatService;
+  /** Env var name for the server URL — surfaced in the
+   *  `no server configured` hints in command actions. */
+  serverEnvVar: string;
 }
 
 export interface InstancesModule {
   commands: ReadonlyArray<Command>;
   exports: {
-    /** Build an `InstancesService` bound to the resolved Active Host. */
+    /** Build an `InstancesService` bound to the resolved Active Host.
+     *  Exposed so future verbs (`dam shell`, #86) can reuse it without
+     *  re-implementing the bearer-supplier wiring. */
     createService: (host: string) => InstancesService;
   };
 }
@@ -49,14 +56,31 @@ export function composeInstancesModule(opts: InstancesModuleOptions): InstancesM
     return createInstancesService({ trpc });
   };
 
-  // Touch the injected services so the unused-parameter checker stays
-  // honest while issue 3 is still pending. They become real consumers
-  // when commands land.
-  void opts.configService;
-  void opts.compatService;
+  // `dam instances` — parent group. Bare `dam instances` aliases to
+  // `list` via commander's `isDefault: true` on the subcommand.
+  const parent = new Command("instances").description(
+    "Address Instances by name or ID",
+  );
+  parent.addCommand(
+    buildListCommand({
+      compatService: opts.compatService,
+      configService: opts.configService,
+      createInstancesService: createService,
+      serverEnvVar: opts.serverEnvVar,
+    }),
+    { isDefault: true },
+  );
+  parent.addCommand(
+    buildGetCommand({
+      compatService: opts.compatService,
+      configService: opts.configService,
+      createInstancesService: createService,
+      serverEnvVar: opts.serverEnvVar,
+    }),
+  );
 
   return {
-    commands: [],
+    commands: [parent],
     exports: { createService },
   };
 }
