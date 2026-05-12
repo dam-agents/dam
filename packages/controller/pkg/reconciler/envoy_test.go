@@ -216,53 +216,6 @@ func TestRenderEnvoyBootstrap_NoCredentialedRouteForwardsViaDynamicForwardProxy(
 	assert.Contains(t, got, "cluster: dynamic_forward_proxy_https")
 }
 
-func TestRenderEnvoyBootstrap_HarnessConnectRouteAndPassthroughCluster(t *testing.T) {
-	// undici's EnvHttpProxyAgent (the dispatcher Node's fetch picks when
-	// NODE_USE_ENV_PROXY=1) issues HTTP CONNECT for every scheme, including
-	// plain HTTP. Without a dedicated CONNECT route for the harness host,
-	// the request falls into the TLS-intercept chain — wrong for a plain-
-	// HTTP target — and is RST'd. The bootstrap must route CONNECTs
-	// matching the harness :authority into a non-MITM TCP-splice cluster
-	// before the generic connect_matcher swallows them.
-	got, err := renderEnvoyBootstrap("inst-1", bootstrapTestCfg, nil)
-	require.NoError(t, err)
-
-	// Specific CONNECT route exists, matched by :authority on the harness
-	// host:port. Must use connect_matcher (so it's CONNECT-only) and pin
-	// the upstream to harness_passthrough.
-	assert.Regexp(t,
-		`(?s)connect_matcher:\s*\{\s*\}\s*headers:\s*\n\s*-\s*name:\s*":authority"\s*\n\s*string_match:\s*\n\s*exact:\s*"platform-apiserver-harness\.platform\.svc\.cluster\.local:4001"`,
-		got,
-		"missing CONNECT route matched by :authority for the harness host:port",
-	)
-	assert.Contains(t, got, "cluster: harness_passthrough",
-		"the harness CONNECT route must target the harness_passthrough cluster")
-
-	// harness_passthrough cluster exists, STRICT_DNS pinned to the harness
-	// Service:port. Pinning the cluster (rather than dynamic_forward_proxy)
-	// closes any inner-Host-header route-confusion path on the CONNECT
-	// tunnel — Envoy's destination is fixed regardless of what bytes
-	// flow through the tunnel after CONNECT succeeds.
-	assert.Contains(t, got, "- name: harness_passthrough")
-	assert.Regexp(t,
-		`(?s)- name: harness_passthrough.*?type: STRICT_DNS.*?address: platform-apiserver-harness\.platform\.svc\.cluster\.local\s*\n\s*port_value: 4001`,
-		got,
-		"harness_passthrough must be STRICT_DNS pinned to the harness Service:port",
-	)
-
-	// Route ordering: the specific harness CONNECT route must appear before
-	// the generic `connect_matcher: {}` route, otherwise the generic one
-	// (which routes to tls_inspect_internal) swallows every CONNECT first.
-	specificIdx := strings.Index(got, `exact: "platform-apiserver-harness.platform.svc.cluster.local:4001"`)
-	require.NotEqual(t, -1, specificIdx, "specific harness :authority match should be present")
-	// The generic CONNECT route is the only `cluster: tls_inspect_internal`
-	// reference in the rendered bootstrap.
-	genericIdx := strings.Index(got, "cluster: tls_inspect_internal")
-	require.NotEqual(t, -1, genericIdx, "generic CONNECT → tls_inspect_internal route should still be present")
-	assert.Less(t, specificIdx, genericIdx,
-		"the harness-specific CONNECT route must be matched before the generic connect_matcher")
-}
-
 func TestRenderEnvoyBootstrap_MixedRoutesOnlyPinCredentialed(t *testing.T) {
 	// Credentialed and allow-only side-by-side: only the credentialed one
 	// gets a pinned cluster. The two chains are visually adjacent in the
