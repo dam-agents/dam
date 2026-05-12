@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { composeAuthModule } from "./modules/auth/compose.js";
 import { composeCliModule } from "./modules/cli/compose.js";
+import { composeInstancesModule } from "./modules/instances/compose.js";
 
 export interface ComposeOptions {
   /** Override for the production config path (resolved via XDG —
@@ -31,6 +32,14 @@ export function compose(opts: ComposeOptions = {}): Command {
     compatService: cli.services.compatService,
     configService: cli.services.configService,
   });
+  // The instances module is wired after auth so its bearer-supplier
+  // closure can reach `auth.exports.tokenProvider`. `instances.commands`
+  // is empty for now — issue 3 of the cli-instance-ref plan populates it.
+  const instances = composeInstancesModule({
+    tokenProvider: auth.exports.tokenProvider,
+    configService: cli.services.configService,
+    compatService: cli.services.compatService,
+  });
 
   const program = new Command();
   program
@@ -40,6 +49,7 @@ export function compose(opts: ComposeOptions = {}): Command {
 
   for (const command of cli.commands) program.addCommand(command);
   for (const command of auth.commands) program.addCommand(command);
+  for (const command of instances.commands) program.addCommand(command);
 
   return program;
 }
