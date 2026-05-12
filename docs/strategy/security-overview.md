@@ -32,16 +32,16 @@ issues the workload cert independently.
 - **Network.** Multiple layers restrict where the agent can talk. At
 the kernel, a Kubernetes NetworkPolicy locks the agent pod's L3/L4
 egress to a narrow allow-list — DNS, the Istio ambient data path, and
-the single sibling pod it is paired with. At the mesh, Istio
+the single sibling gateway pod it is paired with. At the mesh, Istio
 AuthorizationPolicies key on the per-instance ServiceAccount: peer-pod
 admission is gated at L4, and the harness path on the api-server is
 gated at L7. And every egress request through the sibling pod runs
-through an ext-authz Check at the api-server before being forwarded.
+through an ext-authz check at the api-server before being forwarded.
 
 - **Credentials.** Real upstream tokens never reach the agent. They
-live in Kubernetes Secrets mounted into a sibling pod. For hosts
+live in Kubernetes Secrets mounted into a sibling gateway pod. For hosts
 where a credential is configured, the sibling pod adds the credential
-header on the wire after the ext-authz Check has authorized the
+header on the wire after the ext-authz check has authorized the
 request — for everything else, traffic passes through unchanged.
 
 ## Security boundary
