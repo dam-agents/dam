@@ -36,6 +36,19 @@ data:
       # config from <workdir>/.bob/settings.json.
       - name: MCP_CONFIG_PATH
         value: {{ .Values.bobAgentTemplate.mcpConfigPath | quote }}
+      # Placeholder so bobshell's harness check passes (it throws "API key
+      # required" if BOBSHELL_API_KEY is unset and falls back to OAuth BFF
+      # login flow). The `sk-` prefix is load-bearing: bobshell uses it to
+      # detect a legacy api-key and switch baseUrl to the old backend
+      # (prod.ibm-bob-staging.cloud.ibm.com) — see `rU()` in the bundle.
+      # Without the prefix, bobshell talks to api.us-east.bob.ibm.com
+      # (production) instead, which expects a JWT and rejects everything
+      # else with `API Key verification failed`.
+      # Envoy's credential_injector overwrites the wire-level Authorization
+      # header from the per-host Secret, so the placeholder never reaches
+      # the upstream.
+      - name: BOBSHELL_API_KEY
+        value: "sk-humr-sentinel"
     resources:
       requests:
         cpu: {{ .Values.bobAgentTemplate.resources.requests.cpu | quote }}

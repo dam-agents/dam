@@ -90,7 +90,7 @@ let messageCarry = "";
 let outsideBuf = "";
 let lastSessionId = null;
 
-const bob = spawn("bob", ["--experimental-acp", "--yolo", ...process.argv.slice(2)], {
+const bob = spawn("bob", ["--experimental-acp", "--yolo", "--auth-method", "api-key", ...process.argv.slice(2)], {
   stdio: ["pipe", "pipe", "inherit"],
   cwd: process.cwd(),
   env: process.env,
