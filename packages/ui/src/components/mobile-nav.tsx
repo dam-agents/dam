@@ -1,8 +1,8 @@
 import {
-  AiLaunch as Sparkles,
   Bot,
+  Connect,
+  Model,
   Settings,
-  Unlink as Unplug,
 } from "@carbon/icons-react";
 
 import { cn } from "@/lib/utils";
@@ -11,8 +11,8 @@ import { useStore } from "../store.js";
 
 const navItems = [
   { view: "list" as const, label: "Agents", icon: Bot },
-  { view: "providers" as const, label: "Providers", icon: Sparkles },
-  { view: "connections" as const, label: "Connections", icon: Unplug },
+  { view: "providers" as const, label: "Providers", icon: Model },
+  { view: "connections" as const, label: "Connections", icon: Connect },
   { view: "settings" as const, label: "Settings", icon: Settings },
 ] as const;
 

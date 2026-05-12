@@ -13,18 +13,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { cn } from "@/lib/utils";
-
-type BackdropKey = "aurora" | "silk";
-const BACKDROPS: { key: BackdropKey; label: string }[] = [
-  { key: "aurora", label: "Aurora" },
-  { key: "silk", label: "Silk" },
-];
 
 export function LoginPreview({ onClose }: { onClose: () => void }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [backdrop, setBackdrop] = useState<BackdropKey>("aurora");
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -40,23 +32,6 @@ export function LoginPreview({ onClose }: { onClose: () => void }) {
       <div className="sticky top-0 z-[50] border-b bg-background/95 backdrop-blur-xl">
         <div className="mx-auto max-w-6xl px-6 py-3 flex items-center gap-3">
           <Badge variant="secondary">Design preview</Badge>
-          <div className="flex items-center gap-1">
-            {BACKDROPS.map((b) => (
-              <button
-                key={b.key}
-                type="button"
-                onClick={() => setBackdrop(b.key)}
-                className={cn(
-                  "text-xs px-2.5 py-1 rounded-md transition-colors",
-                  backdrop === b.key
-                    ? "bg-foreground text-background font-semibold"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted",
-                )}
-              >
-                {b.label}
-              </button>
-            ))}
-          </div>
           <div className="ml-auto">
             <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close">
               <X />
@@ -68,8 +43,7 @@ export function LoginPreview({ onClose }: { onClose: () => void }) {
       {/* Split layout — centered content well so the two columns stay
           together as the viewport grows wider. */}
       <div className="relative min-h-[calc(100dvh-57px)] flex items-center justify-center px-6 py-12 md:px-12 md:py-16">
-        {backdrop === "aurora" && <AuroraBackdrop />}
-        {backdrop === "silk" && <SilkBackdrop />}
+        <AuroraBackdrop />
         <div className="relative z-10 w-full max-w-[1400px] flex flex-col md:flex-row md:items-center gap-12 md:gap-16">
         {/* Left: sign-in form */}
         <div className="md:w-1/2 flex">
@@ -189,67 +163,6 @@ const BLOBS: AuroraBlob[] = [
   { top: "50%", right: "28%", width: "48%", color: "#ff7eb6", blur: 90, duration: 20, keyframe: "aurora-c" },
   { top: "72%", right: "-8%", width: "44%", color: "#8a3ffc", blur: 80, duration: 24, keyframe: "aurora-d" },
 ];
-
-/**
- * Silk backdrop — stacked conic gradients with heavy blur, each rotating
- * on a slow loop at different speeds/directions. Creates a flowing "sheet
- * of light" quality where ribbons of color sweep through the color field.
- * Palette: blue 40/60 + purple 30/50/60 + blue 20 highlight.
- */
-function SilkBackdrop() {
-  return (
-    <>
-      <style>{`
-        @keyframes silk-cw { from { transform: rotate(0deg) scale(1.4); } to { transform: rotate(360deg) scale(1.4); } }
-        @keyframes silk-ccw { from { transform: rotate(0deg) scale(1.4); } to { transform: rotate(-360deg) scale(1.4); } }
-        @keyframes silk-highlight {
-          0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.55; }
-          33% { transform: translate(-80px, 120px) scale(1.3); opacity: 0.8; }
-          66% { transform: translate(60px, -90px) scale(0.9); opacity: 0.4; }
-        }
-      `}</style>
-      <BackdropShell>
-        {/* Base color mass — full-coverage conic, heavy blur, slow rotation */}
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              "conic-gradient(from 45deg at 60% 50%, #0f62fe 0deg, #8a3ffc 90deg, #be95ff 180deg, #78a9ff 270deg, #0f62fe 360deg)",
-            filter: "blur(80px)",
-            animation: "silk-cw 45s linear infinite",
-            opacity: 0.85,
-          }}
-        />
-        {/* Counter-rotating overlay — breaks the symmetry, creates flowing ribbons */}
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              "conic-gradient(from 200deg at 35% 45%, transparent 0deg, #a56eff 60deg, #d4bbff 140deg, transparent 220deg, #4589ff 300deg, transparent 360deg)",
-            filter: "blur(100px)",
-            animation: "silk-ccw 60s linear infinite",
-            opacity: 0.6,
-            mixBlendMode: "screen",
-          }}
-        />
-        {/* Pale highlight that drifts around — the "gleam" */}
-        <div
-          className="absolute rounded-full"
-          style={{
-            top: "10%",
-            right: "40%",
-            width: "50%",
-            aspectRatio: "1",
-            background:
-              "radial-gradient(circle, #edf5ff 0%, transparent 60%)",
-            filter: "blur(60px)",
-            animation: "silk-highlight 18s ease-in-out infinite",
-          }}
-        />
-      </BackdropShell>
-    </>
-  );
-}
 
 function AuroraBackdrop() {
   return (
