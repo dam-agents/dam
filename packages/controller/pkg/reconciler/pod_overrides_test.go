@@ -123,9 +123,8 @@ func TestBuildAgentStatefulSet_AgentConfig_FullSurface(t *testing.T) {
 	require.NotNil(t, agent.StartupProbe)
 	require.NotNil(t, agent.StartupProbe.HTTPGet)
 	assert.Equal(t, "/custom-startup", agent.StartupProbe.HTTPGet.Path)
-
-	assert.Equal(t, resource.MustParse("2"), agent.Resources.Requests[corev1.ResourceCPU])
-	assert.Equal(t, resource.MustParse("8Gi"), agent.Resources.Limits[corev1.ResourceMemory])
+	// Resources precedence is covered in dedicated tests below — the
+	// agent template's resources win over chart-level here.
 }
 
 func TestBuildAgentStatefulSet_AgentConfig_ControllerLabelsWin(t *testing.T) {
@@ -185,6 +184,42 @@ func TestBuildAgentStatefulSet_AgentConfig_ResourcesEmptyKeepsTemplate(t *testin
 	agent := ss.Spec.Template.Spec.Containers[0]
 	// testAgent.Resources sets cpu=250m / memory=512Mi as requests
 	assert.Equal(t, resource.MustParse("250m"), agent.Resources.Requests[corev1.ResourceCPU])
+}
+
+func TestBuildAgentStatefulSet_AgentConfig_TemplateResourcesWinOverChart(t *testing.T) {
+	// More-specific wins: when the agent template sets resources, the
+	// chart-level fallback in AgentConfig does NOT override it. The chart
+	// only fills in for templates that omitted resources entirely.
+	cfg := configWith(config.AgentConfig{
+		Resources: &corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("8")},
+			Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("16")},
+		},
+	})
+	instance := &types.InstanceSpec{DesiredState: "running"}
+	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, cfg, testOwnerCM, nil)
+	agent := ss.Spec.Template.Spec.Containers[0]
+	// testAgent.Resources.Requests = cpu=250m / memory=512Mi — template wins.
+	assert.Equal(t, resource.MustParse("250m"), agent.Resources.Requests[corev1.ResourceCPU])
+	assert.Equal(t, resource.MustParse("1"), agent.Resources.Limits[corev1.ResourceCPU])
+}
+
+func TestBuildAgentStatefulSet_AgentConfig_ChartResourcesFillForTemplateWithoutResources(t *testing.T) {
+	// Mirror of the above: an agent template that omits resources picks up
+	// the chart-level fallback as a platform-wide floor.
+	cfg := configWith(config.AgentConfig{
+		Resources: &corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("8")},
+			Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("16")},
+		},
+	})
+	templateNoRes := *testAgent
+	templateNoRes.Resources = types.ResourceSpec{} // empty — defer to chart
+	instance := &types.InstanceSpec{DesiredState: "running"}
+	ss := BuildAgentStatefulSet("my-instance", instance, &templateNoRes, cfg, testOwnerCM, nil)
+	agent := ss.Spec.Template.Spec.Containers[0]
+	assert.Equal(t, resource.MustParse("8"), agent.Resources.Requests[corev1.ResourceCPU])
+	assert.Equal(t, resource.MustParse("16"), agent.Resources.Limits[corev1.ResourceCPU])
 }
 
 // --- BuildGatewayStatefulSet (long-lived gateway) ---

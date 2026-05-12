@@ -66,11 +66,16 @@ func applyAgentPodScheduling(spec *corev1.PodSpec, ac config.AgentConfig) {
 func applyAgentContainer(c *corev1.Container, ac config.AgentConfig) {
 	c.Env = append(c.Env, ac.ExtraEnv...)
 	c.VolumeMounts = append(c.VolumeMounts, ac.ExtraVolumeMounts...)
-	// Resources override replaces the agent template's resources entirely —
-	// operator policy wins (cluster LimitRange pattern). An empty Resources
-	// block decodes to a zero struct and must not silently wipe the
-	// template's requests/limits.
-	if ac.Resources != nil && (ac.Resources.Requests != nil || ac.Resources.Limits != nil) {
+	// Resources precedence: more-specific wins. The agent template's
+	// resources (set on the container before we get here) take precedence
+	// over the chart-level fallback in AgentConfig. The chart value only
+	// applies when the agent template didn't specify anything — a
+	// platform-wide floor for templates that omit resources entirely. An
+	// empty `resources: {}` in values.yaml decodes to a zero struct and
+	// must not act as a fallback.
+	chartHasResources := ac.Resources != nil && (ac.Resources.Requests != nil || ac.Resources.Limits != nil)
+	templateHasResources := c.Resources.Requests != nil || c.Resources.Limits != nil
+	if chartHasResources && !templateHasResources {
 		c.Resources = *ac.Resources
 	}
 	if ac.Probes == nil {

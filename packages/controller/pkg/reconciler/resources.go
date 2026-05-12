@@ -138,19 +138,17 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 			Name: volName, MountPath: m.Path,
 		})
 		if m.Persist {
+			// More-specific wins: per-mount `Size` from the agent template
+			// overrides the chart-level fallback in AgentConfig. Both empty
+			// means the chart is misconfigured — `controller.agent.storageSize`
+			// is non-empty in values.yaml; an explicit override to "" is an
+			// operator mistake we surface by letting K8s reject the PVC.
 			storageSize := m.Size
 			if storageSize == "" {
 				storageSize = cfg.AgentConfig.StorageSize
 			}
-			if storageSize == "" {
-				storageSize = "10Gi"
-			}
-			accessMode := corev1.ReadWriteMany
-			if cfg.AgentConfig.AccessMode == "ReadWriteOnce" {
-				accessMode = corev1.ReadWriteOnce
-			}
 			pvcSpec := corev1.PersistentVolumeClaimSpec{
-				AccessModes: []corev1.PersistentVolumeAccessMode{accessMode},
+				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.PersistentVolumeAccessMode(cfg.AgentConfig.AccessMode)},
 				Resources: corev1.VolumeResourceRequirements{
 					Requests: corev1.ResourceList{
 						corev1.ResourceStorage: resource.MustParse(storageSize),

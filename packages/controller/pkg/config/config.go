@@ -89,8 +89,9 @@ func LoadFromEnv() (*Config, error) {
 		PodName:                podName,
 	}
 
-	// AgentConfig — single JSON blob. DisallowUnknownFields fails-loud on
-	// typos in values.yaml so the operator gets a clear startup error
+	// AgentConfig — single JSON blob. Defaults live in the Helm chart
+	// (values.yaml `controller.agent`), not here. DisallowUnknownFields
+	// fails-loud on typos so the operator gets a clear startup error
 	// instead of a silently-ignored field (e.g. `runtimeClasName` sic).
 	if v := os.Getenv("AGENT_CONFIG"); v != "" {
 		dec := json.NewDecoder(strings.NewReader(v))
@@ -98,17 +99,6 @@ func LoadFromEnv() (*Config, error) {
 		if err := dec.Decode(&cfg.AgentConfig); err != nil {
 			return nil, fmt.Errorf("AGENT_CONFIG: invalid JSON: %w", err)
 		}
-	}
-	// Defaults — applied after JSON decode so an unset chart value (empty
-	// JSON field) falls back to a sensible default rather than zero.
-	if cfg.AgentConfig.ImagePullPolicy == "" {
-		cfg.AgentConfig.ImagePullPolicy = "IfNotPresent"
-	}
-	if cfg.AgentConfig.AccessMode == "" {
-		cfg.AgentConfig.AccessMode = "ReadWriteMany"
-	}
-	if cfg.AgentConfig.StorageSize == "" {
-		cfg.AgentConfig.StorageSize = "10Gi"
 	}
 
 	cfg.HarnessServerURL = os.Getenv("PLATFORM_HARNESS_SERVER_URL")

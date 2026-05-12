@@ -37,11 +37,10 @@ func TestLoadFromEnv_Defaults(t *testing.T) {
 	assert.Equal(t, "default", cfg.ReleaseNamespace)
 	assert.Equal(t, "platform-controller", cfg.LeaseName)
 	assert.Equal(t, 1*time.Hour, cfg.IdleTimeout)
-	// AgentConfig defaults applied when AGENT_CONFIG is unset.
-	assert.Equal(t, "IfNotPresent", cfg.AgentConfig.ImagePullPolicy)
-	assert.Equal(t, "ReadWriteMany", cfg.AgentConfig.AccessMode)
-	assert.Equal(t, "10Gi", cfg.AgentConfig.StorageSize)
-	assert.Equal(t, "", cfg.AgentConfig.StorageClass)
+	// No Go-side defaults — defaults live in the Helm chart's values.yaml
+	// (`controller.agent`). When AGENT_CONFIG is unset entirely the
+	// AgentConfig zero value is what we get.
+	assert.Equal(t, AgentConfig{}, cfg.AgentConfig)
 	// ADR-041: ext-authz host is per-instance (no shared default).
 	assert.Equal(t, "platform-extauthz-inst-1.default.svc.cluster.local", cfg.ExtAuthzHostFor("inst-1"))
 }

@@ -49,6 +49,14 @@ func setupReconciler(t *testing.T, agents map[string]*corev1.ConfigMap, objects 
 		EnvoyPort:         10000,
 		IstioTrustDomain:  "cluster.local",
 		IstioWaypointName: "apiserver-waypoint",
+		// Mirror values.yaml `controller.agent` defaults — the controller
+		// has no Go-side defaults, so tests must set these explicitly to
+		// produce valid PVCs etc.
+		AgentConfig: config.AgentConfig{
+			ImagePullPolicy: "IfNotPresent",
+			AccessMode:      "ReadWriteMany",
+			StorageSize:     "10Gi",
+		},
 	}
 	getter := &fakeGetter{cms: agents}
 	r := NewInstanceReconciler(client, cfg, NewAgentResolver(getter)).WithDynamicClient(newFakeDynamic())
