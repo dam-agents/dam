@@ -1,8 +1,8 @@
 # Security overview
 
-A single-page synthesis of where Platform sits on the security spectrum
-today: what isolation each layer provides, what it does *not* provide,
-and where the architecture would progress to get stronger guarantees.
+A single-page synthesis of Platform's security posture today: what
+isolation each layer provides, what it does *not* provide, and where
+the architecture would progress to get stronger guarantees.
 
 This page is forward-looking and crosses subsystems. The companion
 [security-model](security-model.md) frames the *why* (execution,
@@ -36,9 +36,7 @@ flowchart TB
 
 Green bands are mechanisms Platform owns end-to-end. Blue is cluster-
 operator responsibility Platform documents and assumes but cannot
-enforce. Red bands mark gaps the architecture acknowledges today —
-progression along the spectrum (below) means moving these one step
-right.
+enforce. Red bands mark gaps the architecture acknowledges today.
 
 ## Trust boundary and data flow
 
@@ -80,48 +78,6 @@ NetworkPolicy on agent egress is structural defence-in-depth: it stops
 a misbehaving agent from side-stepping `HTTPS_PROXY` at the kernel
 layer, independent of mesh AuthZ.
 
-## Isolation spectrum
-
-Two axes describe the posture: how strongly the runtime contains
-broken-out code, and how tightly the network constrains where the
-agent can reach.
-
-**Execution sandboxing** — what stands between a compromised process
-and the host kernel:
-
-```mermaid
-flowchart LR
-  nothing[nothing<br/>default runc] --> bwrap[bwrap]
-  bwrap --> nono[nono]
-  nono --> gvisor[gVisor]
-  gvisor --> kata[Kata]
-  kata --> vm[full VM]
-
-  marker(["▲ Platform today"]) -.-> nothing
-```
-
-Platform itself sets no RuntimeClass and applies no in-process
-sandbox. Stronger runtimes (gVisor, Kata) are a cluster-operator
-decision Platform documents and assumes but cannot enforce — see
-[security-model § Execution](security-model.md#execution).
-
-**Network isolation** — what constrains where an agent's traffic can
-go:
-
-```mermaid
-flowchart LR
-  flat[flat namespace<br/>no policy] --> netpol[NetworkPolicy]
-  netpol --> mtls[mesh mTLS]
-  mtls --> wlid[workload-identity authz]
-
-  marker(["▲ Platform today<br/>Istio ambient + per-instance AuthZ<br/>+ per-pair agent egress NetworkPolicy"]) -.-> wlid
-```
-
-The execution and network axes move independently. Platform's
-posture is asymmetric by design: weak on execution sandboxing
-(deferred to the cluster), strong on network and identity (owned by
-the chart).
-
 ## Threats today
 
 Every row traces to an accepted ADR or to the architecture page; no
@@ -142,11 +98,11 @@ novel claims are introduced here.
 
 ## Staged progression
 
-The position on the spectrum is intentionally uneven: the identity
-and credential layers are strong because Platform owns them
-end-to-end; the runtime sandboxing layer is weak because Platform
-runs on whatever the cluster provides and cannot enforce a stronger
-runtime from inside the chart.
+The posture is intentionally uneven: the identity and credential
+layers are strong because Platform owns them end-to-end; the runtime
+sandboxing layer is weak because Platform runs on whatever the
+cluster provides and cannot enforce a stronger runtime from inside
+the chart.
 
 **Where Platform sits today**
 
@@ -178,9 +134,8 @@ runtime from inside the chart.
   exfiltration along legitimate egress paths beyond shrinking the
   outbound surface.
 
-Progression along the spectrum means moving each of these gaps one
-step right on the diagrams above. The order is a future decision,
-not a commitment of this document.
+Closing any of these gaps is a future decision, not a commitment of
+this document.
 
 ## References
 
