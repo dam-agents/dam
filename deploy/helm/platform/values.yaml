@@ -399,15 +399,17 @@ controller:
   # Shipped as a single JSON env var (`AGENT_CONFIG`) to the controller; unknown
   # fields fail loudly at startup so typos in values.yaml surface immediately.
   #
-  # PRECEDENCE — there are three layers, applied most-specific-wins:
+  # PRECEDENCE — three layers, applied most-specific-wins:
   #
   #     1. per-instance (future, not wired)
-  #     2. per-agent template (agent ConfigMap; future, not wired)
+  #     2. per-agent template — the `config:` block in the agent ConfigMap,
+  #        parsed into AgentSpec.Config
   #     3. chart-level (this block) — platform-wide fallback
   #
-  # When per-agent overrides land, the controller will compute the effective
-  # config as `chart.Merge(template).Merge(instance)` via AgentConfig.Merge,
-  # which already encodes the rules below.
+  # The reconciler computes the effective config as
+  # `chart.Merge(template)` today, and will become
+  # `chart.Merge(template).Merge(instance)` when per-instance lands —
+  # AgentConfig.Merge already encodes the rules below.
   #
   # FIELD-BY-FIELD RULES (merge semantics):
   #   - Scalars (imagePullPolicy, storageClass, accessMode, storageSize,
