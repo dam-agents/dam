@@ -77,6 +77,16 @@ agentTemplates:
         cpu: "2"
         memory: "4Gi"
 
+  - name: software-factory
+    enabled: true
+    description: "Software Factory agent — builds production-quality software with Claude Code"
+    image:
+      repository: platform-software-factory
+      tag: latest
+    storageSize: "5Gi"
+    skillPaths:
+      - $HOME/.claude/skills/
+
 # Local dev convenience: route requests with any Host header (including
 # IP literals like 127.0.0.1) to the app, so the cluster is reachable
 # however the developer happens to address it.

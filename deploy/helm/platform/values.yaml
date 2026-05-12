@@ -610,6 +610,16 @@ agentTemplates:
         cpu: "2"
         memory: "4Gi"
 
+  - name: software-factory
+    enabled: false
+    description: "Software Factory agent — builds production-quality software with Claude Code"
+    image:
+      repository: quay.io/dam-agents/software-factory
+      tag: ""
+    storageSize: "5Gi"
+    skillPaths:
+      - $HOME/.claude/skills/
+
 # -- Platform-wide skill sources (shared catalog visible to all users).
 # Rendered into the api-server pod as SKILL_SOURCES_SEED. The same
 # `{name, gitUrl}` shape works for per-template sources under
