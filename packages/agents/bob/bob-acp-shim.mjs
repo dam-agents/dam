@@ -275,13 +275,11 @@ function processMessageChunk(sessionId, text) {
     flushOutside(sessionId, false);
 
     if (idx === -1) {
-      const retain = THINK_OPEN.length - 1;
       // Any remaining chars in outsideBuf came from flushOutside's unclosed-meta
-      // hold; don't touch that. Retain a tail from the raw stream to catch
-      // a <thinking> tag that arrives split across chunks.
-      // The chars we'd want to retain were already consumed into outsideBuf,
-      // so we only carry in messageCarry if buf had untouched suffix — which
-      // it doesn't here (chunkEnd = buf.length). Nothing to do.
+      // hold; don't touch that. The chars we'd want to retain to catch a
+      // <thinking> tag split across chunks were already consumed into
+      // outsideBuf, so we only carry in messageCarry if buf had untouched
+      // suffix — which it doesn't here (chunkEnd = buf.length). Nothing to do.
       return;
     }
     messageState = "inside";
