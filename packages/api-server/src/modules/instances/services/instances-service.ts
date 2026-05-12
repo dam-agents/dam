@@ -6,6 +6,7 @@ import type {
   Agent,
 } from "api-server-api";
 import { SPEC_VERSION, ChannelType } from "api-server-api";
+import { TRPCError } from "@trpc/server";
 import type { InstancesRepository } from "../infrastructure/instances-repository.js";
 import type { KeycloakUserDirectory } from "../infrastructure/keycloak-user-directory.js";
 import type { ChannelSecretStore } from "../../channels/infrastructure/channel-secret-store.js";
@@ -101,6 +102,14 @@ export function createInstancesService(deps: {
     async create(input: CreateInstanceInput) {
       const agent = await deps.getAgent(input.agentId);
       if (!agent) throw new Error(`Agent "${input.agentId}" not found`);
+
+      const existing = await deps.repo.list(deps.owner);
+      if (existing.some((i) => i.name === input.name)) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "instance name already exists",
+        });
+      }
 
       const spec = {
         name: input.name,

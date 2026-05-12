@@ -20,7 +20,9 @@ export const instancesRouter = t.router({
 
   create: t.procedure
     .input(z.object({
-      name: z.string().min(1),
+      name: z.string().min(1).refine((n) => !n.startsWith("inst-"), {
+        message: "instance name cannot start with 'inst-' (reserved for IDs)",
+      }),
       agentId: z.string().min(1),
       env: z.array(envVarSchema).optional(),
       secretRef: z.string().optional(),
