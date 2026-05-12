@@ -524,40 +524,6 @@ agentTemplates:
     skillPaths:
       - $HOME/.claude/skills/
 
-  - name: google-workspace
-    enabled: false
-    description: "Google Workspace agent with Drive and Gmail via gws CLI"
-    image:
-      repository: quay.io/dam-agents/google-workspace-agent
-      tag: ""
-    storageSize: "2Gi"
-    skillPaths:
-      - $HOME/.claude/skills/
-
-  - name: pi-agent
-    enabled: false
-    description: "Pi coding agent with multi-LLM support"
-    image:
-      repository: quay.io/dam-agents/pi-agent
-      tag: ""
-    storageSize: "2Gi"
-    skillPaths:
-      - $HOME/.pi/agent/skills/
-
-  - name: code-guardian
-    enabled: false
-    description: "PR code review agent (gh + Claude Code)"
-    image:
-      repository: quay.io/dam-agents/code-guardian
-      tag: ""
-    storageSize: "10Gi"             # larger — clones real repos
-    skillPaths:
-      - $HOME/.claude/skills/
-    # Empty repo = the agent detects via `gh repo view`.
-    env:
-      - name: GITHUB_REPO
-        value: ""
-
 # -- Platform-wide skill sources (shared catalog visible to all users).
 # Rendered into the api-server pod as SKILL_SOURCES_SEED. The same
 # `{name, gitUrl}` shape works for per-template sources under
