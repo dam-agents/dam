@@ -22,8 +22,6 @@ const PKG_ROOT = resolve(HERE, "../..");
 const BIN_PATH = join(PKG_ROOT, "dist", "bin.js");
 
 const API_BASE = "http://api-server.localhost:4444";
-const KEYCLOAK_BASE = "http://keycloak.localhost:4444";
-const REALM = "platform";
 
 // Gate: skip the suite if no cluster is responding. Mirrors the existing
 // integration-test pattern — the test must not fail when there is no k3s.
@@ -204,6 +202,9 @@ beforeAll(async () => {
   await exec("pnpm", ["exec", "tsup"], { cwd: PKG_ROOT });
 }, 60_000);
 
+// `runIf(true)` rather than `runIf(clusterUp)` because vitest evaluates the
+// argument at registration time, before `beforeAll` has set `clusterUp`.
+// Each `it` checks `clusterUp` early-return instead.
 describe.runIf(true)("dam auth login (integration vs local k3s Keycloak)", () => {
   let tmpHome: string;
   let tmpState: string;

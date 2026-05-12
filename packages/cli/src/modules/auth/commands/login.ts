@@ -9,6 +9,8 @@ import {
   EXIT_AUTH_RUNTIME_FAILURE,
 } from "./exit-codes.js";
 
+const EXIT_AUTH_SUCCESS_OR_ABORT = 0;
+
 export interface LoginCommandDeps {
   authService: AuthService;
   configService: ConfigService;
@@ -107,8 +109,6 @@ export function buildLoginCommand(deps: LoginCommandDeps): Command {
       );
     });
 }
-
-const EXIT_AUTH_SUCCESS_OR_ABORT = 0;
 
 function exitCodeFor(e: LoginError): number {
   switch (e.kind) {
