@@ -21,21 +21,21 @@ flowchart LR
   L1 ~~~ L2 ~~~ L3 ~~~ L4
 ```
 
-**Identity.** Every workload runs as a per-instance Kubernetes
+- **Identity.** Every workload runs as a per-instance Kubernetes
 ServiceAccount, and istiod stamps that SA into a SPIFFE workload
 certificate as the pod joins the Istio ambient mesh. Admission across
 the mesh is decided on the certificate's SA principal, not on IP or
 port — a peer instance can resolve the address, but the
 AuthorizationPolicy denies the call before it lands.
 
-**Boundary.** The agent runs alone in its own pod, with its own
+- **Boundary.** The agent runs alone in its own pod, with its own
 kernel view, its own filesystem, and no shared address space.
 `automountServiceAccountToken` is false on the pod, so there is no
 Kubernetes API token sitting in the agent's filesystem; istiod issues
 the workload cert independently. There is no co-located sidecar to
 share a namespace with.
 
-**Network.** Even if the agent process ignored `HTTPS_PROXY` and tried
+- **Network.** Even if the agent process ignored `HTTPS_PROXY` and tried
 to dial external hosts directly, the kernel refuses. A Kubernetes
 NetworkPolicy restricts the agent pod's L3/L4 egress to a narrow
 allow-list — DNS, the Istio ambient data path, and the single sibling
@@ -44,13 +44,13 @@ request through the sibling pod is gated by an ext-authz Check
 against the api-server, so each call is authorized per-instance
 before it leaves.
 
-**Credentials.** Real upstream tokens never reach the agent. They
+- **Credentials.** Real upstream tokens never reach the agent. They
 live in Kubernetes Secrets mounted into a sibling pod. For hosts
 where a credential is configured, the sibling pod adds the credential
 header on the wire after the ext-authz Check has authorized the
 request — for everything else, traffic passes through unchanged.
 
-## Trust boundary
+## Authorization flow
 
 Every internal hop carries a SPIFFE identity stamped by istiod, and
 every admission is gated on it.
@@ -73,14 +73,14 @@ flowchart LR
   gw -->|"egress on allow<br/>(credential injected if configured)"| ext
 ```
 
-Three AuthorizationPolicies per instance form the cryptographic
-boundary: gateway admission, the harness path on the api-server, and
-the per-instance ext-authz Service. Each is keyed on the per-instance
-ServiceAccount, so peer instances are denied at the mesh — they can
-resolve the address but the call never lands.
+Three AuthorizationPolicies per instance gate admission
+cryptographically: gateway admission, the harness path on the
+api-server, and the per-instance ext-authz Service. Each is keyed on
+the per-instance ServiceAccount, so peer instances are denied at the
+mesh — they can resolve the address but the call never lands.
 
-On top of that boundary, every egress request through the gateway
-runs through a second gate. Envoy makes a gRPC ext-authz Check to the
+Layered above that, every egress request through the gateway runs
+through a second gate. Envoy makes a gRPC ext-authz Check to the
 api-server before forwarding the request, with the calling instance
 proven cryptographically by the ServiceAccount on the connection. The
 api-server matches the request against the instance's egress rules
