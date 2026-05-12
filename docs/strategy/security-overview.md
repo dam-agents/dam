@@ -5,16 +5,17 @@ from the credentials they use to reach external services.
 
 ## Layers of defence
 
-Each layer does one job; you'd have to break all four to compromise
-an instance.
+Four independent controls. They don't stack on top of each other —
+each one tackles a different concern, and an attacker would need to
+break all four to compromise an instance.
 
 ```mermaid
-flowchart TB
+flowchart LR
   L1["<b>Identity</b><br/>every workload has a cryptographic name"]
   L2["<b>Boundary</b><br/>the agent runs alone in its own pod"]
   L3["<b>Network</b><br/>the kernel decides what an agent can reach"]
   L4["<b>Credentials</b><br/>real tokens never reach the agent"]
-  L1 --> L2 --> L3 --> L4
+  L1 ~~~ L2 ~~~ L3 ~~~ L4
 ```
 
 **Identity.** Every workload runs as a per-instance ServiceAccount,
