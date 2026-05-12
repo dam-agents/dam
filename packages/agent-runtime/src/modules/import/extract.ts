@@ -11,20 +11,20 @@ export type ExtractResult = {
 
 /**
  * Path segments the platform owns. Bundles that target any of these
- * are refused; importing them would corrupt agent-runtime state
- * (`.triggers/` queue, `.initialized` boot marker, harness on-disk
- * caches, the credential helper config). Mirrors the EXCLUDE set in
- * `modules/files.ts` so import-vs-files-panel writes share the same
- * guardrail.
+ * are refused; importing them would corrupt control-plane state — the
+ * trigger queue actively written by the controller, or the pod boot
+ * marker the platform reads on start.
+ *
+ * Narrower than `FilesService.EXCLUDE` on purpose: that set covers what
+ * shouldn't be hand-edited via the file panel (`.git/`, `node_modules/`,
+ * `.claude.json`, etc.). Import is the user explicitly bringing context
+ * at create-time when nothing is running yet, so it can include user
+ * state files (`.git/`, `.claude.json`) that the file editor protects
+ * from live edits. Junk filtering for ergonomics lives client-side.
  */
 const RESERVED_SEGMENTS = new Set([
-  ".git",
-  ".npm",
   ".triggers",
-  ".claude.json",
   ".initialized",
-  "node_modules",
-  ".DS_Store",
 ]);
 
 /**

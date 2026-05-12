@@ -1,5 +1,43 @@
 export type BundleEntry = { path: string; file: File };
 
+/**
+ * Path segments dropped before upload — for ergonomics, not safety.
+ * Two kinds:
+ *   - Build/cache dirs whose contents are OS- or arch-specific and
+ *     regenerate inside the pod (your mac's compiled `sharp` won't
+ *     load on Linux; `npm install` will rebuild it correctly).
+ *   - Platform-reserved paths the server will reject anyway — filtered
+ *     here so the user doesn't see a confusing 422 for those files.
+ *
+ * `.git/` is deliberately NOT in this set: bringing repo history is
+ * legitimate context. Size is the user's call.
+ */
+const EXCLUDE_FROM_IMPORT = new Set([
+  // arch/OS-specific or regenerable — wastes the upload, can break runtime
+  "node_modules",
+  ".venv",
+  "__pycache__",
+  // server-reserved (mirrors RESERVED_SEGMENTS in extract.ts)
+  ".triggers",
+  ".initialized",
+  // cosmetic noise
+  ".DS_Store",
+]);
+
+export function filterImportEntries(entries: BundleEntry[]): { kept: BundleEntry[]; dropped: number } {
+  let dropped = 0;
+  const kept: BundleEntry[] = [];
+  for (const e of entries) {
+    const segs = e.path.split("/");
+    if (segs.some((s) => EXCLUDE_FROM_IMPORT.has(s))) {
+      dropped++;
+      continue;
+    }
+    kept.push(e);
+  }
+  return { kept, dropped };
+}
+
 /** Flatten a DataTransferItemList (from a drop) into BundleEntry[]. */
 export async function walkDataTransfer(items: DataTransferItemList): Promise<BundleEntry[]> {
   const entries: BundleEntry[] = [];

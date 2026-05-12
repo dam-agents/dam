@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { FolderUp, Sparkles } from "lucide-react";
+import { File as FileIcon, Folder as FolderIcon, FolderUp, Sparkles, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 
@@ -15,7 +15,7 @@ import {
   useAppConnections,
   useOAuthAppConnections,
 } from "../../connections/api/queries.js";
-import { type BundleEntry, isTarballName } from "../../files/api/import-bundle.js";
+import { type BundleEntry, filterImportEntries, isTarballName, walkDataTransfer } from "../../files/api/import-bundle.js";
 import { useSecrets } from "../../secrets/api/queries.js";
 import { addAgentSchema, type AddAgentValues } from "../forms/add-agent-schema.js";
 
@@ -51,16 +51,87 @@ export function AddAgentDialog({
     null,
   );
   const [customImage, setCustomImage] = useState("");
-  // Two pickers, three possible payload shapes:
-  //   - folder pick → BundleEntry[] (gets tar-wrapped client-side)
-  //   - non-tar single file → BundleEntry[] of length 1
-  //   - tar / tar.gz / tgz → File, sent through verbatim (no re-wrap)
-  // Only one of the two is non-empty at a time; switching pickers clears
-  // the other so the dialog never holds conflicting selections.
+  // Two payload shapes the dialog can hold:
+  //   - BundleEntry[] (folder pick, multi-file pick, walked drop) — wrapped
+  //     into a tar client-side at submit time.
+  //   - File (single .tar/.tar.gz/.tgz) — sent through verbatim, no re-wrap.
+  // Pass-through only applies as a "clean slate happy path". The moment the
+  // user adds anything else, we fold the raw bundle into entries and switch
+  // to wrap mode so additional picks keep working.
   const [importEntries, setImportEntries] = useState<BundleEntry[]>([]);
   const [importRawBundle, setImportRawBundle] = useState<File | null>(null);
+  // Running totals across every pick/drop the user has done so far.
+  // `kept` and `dropped` sum to the browser's pre-filter count (the number
+  // shown in Chrome's "Upload N files?" confirmation), so the caption can
+  // expose both numbers and they reconcile.
+  const [importDropped, setImportDropped] = useState(0);
+  const [dropActive, setDropActive] = useState(false);
   const importFolderInputRef = useRef<HTMLInputElement | null>(null);
   const importFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const appendEntries = (incoming: BundleEntry[]) => {
+    const { kept, dropped } = filterImportEntries(incoming);
+    setImportEntries((prev) => {
+      // If we were in pass-through mode, the user is now building a
+      // multi-file import — fold the raw bundle in as a regular file so
+      // it's still included.
+      const base = importRawBundle && prev.length === 0
+        ? [{ path: importRawBundle.name, file: importRawBundle }]
+        : prev;
+      const seen = new Set(base.map((e) => e.path));
+      const merged = [...base];
+      for (const e of kept) {
+        if (seen.has(e.path)) continue;
+        seen.add(e.path);
+        merged.push(e);
+      }
+      return merged;
+    });
+    setImportRawBundle(null);
+    setImportDropped((prev) => prev + dropped);
+  };
+
+  // Group flat entries by their top-level path segment so the chip list
+  // can show one row per dropped folder / picked file rather than thousands.
+  // `count` is entries under that top-level; `isFolder` is true when any
+  // entry lives below it (i.e. has a `/` after the top segment).
+  const importGroups = useMemo(() => {
+    const counts = new Map<string, number>();
+    const folders = new Set<string>();
+    for (const e of importEntries) {
+      const top = e.path.split("/")[0];
+      counts.set(top, (counts.get(top) ?? 0) + 1);
+      if (e.path.includes("/")) folders.add(top);
+    }
+    return Array.from(counts.entries()).map(([name, count]) => ({
+      name,
+      count,
+      isFolder: folders.has(name),
+    }));
+  }, [importEntries]);
+
+  const removeGroup = (name: string) => {
+    setImportEntries((prev) =>
+      prev.filter((e) => e.path.split("/")[0] !== name),
+    );
+  };
+
+  // Pass-through only when the user picks/drops exactly one tarball and
+  // nothing else is selected yet. Otherwise the tarball is bundled with
+  // everything else as a regular file.
+  const handleIncoming = (incoming: BundleEntry[]) => {
+    if (
+      incoming.length === 1
+      && isTarballName(incoming[0].path)
+      && importEntries.length === 0
+      && !importRawBundle
+    ) {
+      setImportRawBundle(incoming[0].file);
+      setImportDropped(0);
+      return;
+    }
+    appendEntries(incoming);
+  };
 
   const { data: secrets = [], isLoading: loadSecrets } = useSecrets();
   const { data: apps = [] } = useAppConnections();
@@ -298,8 +369,7 @@ export function AddAgentDialog({
                 onChange={(e) => {
                   const files = e.target.files;
                   if (!files || files.length === 0) return;
-                  setImportRawBundle(null);
-                  setImportEntries(
+                  handleIncoming(
                     Array.from(files).map((f) => ({
                       path: (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name,
                       file: f,
@@ -311,58 +381,142 @@ export function AddAgentDialog({
               <input
                 ref={importFileInputRef}
                 type="file"
+                multiple
                 className="hidden"
                 onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  if (isTarballName(file.name)) {
-                    setImportEntries([]);
-                    setImportRawBundle(file);
-                  } else {
-                    setImportRawBundle(null);
-                    setImportEntries([{ path: file.name, file }]);
-                  }
+                  const files = e.target.files;
+                  if (!files || files.length === 0) return;
+                  handleIncoming(
+                    Array.from(files).map((f) => ({ path: f.name, file: f })),
+                  );
                   e.target.value = "";
                 }}
               />
-              <div className="flex items-center gap-3 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => importFolderInputRef.current?.click()}
-                  className="btn-brutal h-9 rounded-lg border-2 border-border bg-bg px-3 text-[13px] font-semibold text-text shadow-brutal-sm flex items-center gap-1.5"
-                >
-                  <FolderUp size={14} /> Choose folder
-                </button>
-                <button
-                  type="button"
-                  onClick={() => importFileInputRef.current?.click()}
-                  className="btn-brutal h-9 rounded-lg border-2 border-border bg-bg px-3 text-[13px] font-semibold text-text shadow-brutal-sm flex items-center gap-1.5"
-                >
-                  <FolderUp size={14} /> Choose file
-                </button>
+              <div
+                onDragEnter={(e) => {
+                  if (e.dataTransfer?.types?.includes("Files")) {
+                    e.preventDefault();
+                    setDropActive(true);
+                  }
+                }}
+                onDragOver={(e) => {
+                  if (e.dataTransfer?.types?.includes("Files")) {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "copy";
+                  }
+                }}
+                onDragLeave={(e) => {
+                  if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+                  setDropActive(false);
+                }}
+                onDrop={(e) => {
+                  if (!e.dataTransfer) return;
+                  e.preventDefault();
+                  setDropActive(false);
+                  const items = e.dataTransfer.items;
+                  if (items && items.length > 0) {
+                    void (async () => {
+                      const entries = await walkDataTransfer(items);
+                      handleIncoming(entries);
+                    })();
+                  }
+                }}
+                className={`rounded-lg border-2 border-dashed px-4 py-6 transition-colors flex flex-col items-center gap-3 text-center ${
+                  dropActive
+                    ? "border-accent bg-accent-light"
+                    : "border-border hover:border-border-light bg-bg/50"
+                }`}
+              >
                 {importRawBundle ? (
-                  <span className="text-[12px] text-text-muted">
-                    Pre-built bundle: <code className="font-mono">{importRawBundle.name}</code>
-                  </span>
+                  <>
+                    <FileIcon size={24} className="text-text-muted" />
+                    <div className="text-[13px] text-text">
+                      Pre-built bundle:{" "}
+                      <code className="font-mono">{importRawBundle.name}</code>
+                    </div>
+                  </>
                 ) : importEntries.length > 0 ? (
-                  <span className="text-[12px] text-text-muted">
-                    {importEntries.length} file{importEntries.length === 1 ? "" : "s"} ready to import
-                  </span>
+                  <>
+                    <Upload size={24} className="text-text-muted" />
+                    <div className="text-[13px] text-text">
+                      <span className="font-semibold">{importEntries.length + importDropped}</span> file{importEntries.length + importDropped === 1 ? "" : "s"} selected ·{" "}
+                      <span className="text-text-secondary">{importEntries.length} to import</span>
+                      {importDropped > 0 && (
+                        <>
+                          {" "}·{" "}
+                          <span className="text-text-muted">{importDropped} filtered (<code className="font-mono">node_modules</code>, <code className="font-mono">.venv</code>, etc.)</span>
+                        </>
+                      )}
+                    </div>
+                  </>
                 ) : (
-                  <span className="text-[12px] text-text-muted">
-                    A folder, a single file, or a pre-built <code className="font-mono">.tar.gz</code>.
-                  </span>
+                  <>
+                    <Upload size={28} className="text-text-muted" />
+                    <div className="text-[13px] text-text">
+                      Drop a folder or files here
+                    </div>
+                    <div className="text-[11px] text-text-muted">
+                      <code className="font-mono">.tar.gz</code> bundles pass through verbatim
+                    </div>
+                  </>
                 )}
-                {(importRawBundle || importEntries.length > 0) && (
+                <div className="flex items-center gap-2 flex-wrap justify-center">
                   <button
                     type="button"
-                    onClick={() => { setImportEntries([]); setImportRawBundle(null); }}
-                    className="text-[12px] text-text-muted hover:text-text underline"
+                    onClick={() => importFolderInputRef.current?.click()}
+                    className="btn-brutal h-9 rounded-lg border-2 border-border bg-bg px-3 text-[13px] font-semibold text-text shadow-brutal-sm flex items-center gap-1.5"
                   >
-                    Clear
+                    <FolderUp size={14} /> Choose folder
                   </button>
-                )}
+                  <button
+                    type="button"
+                    onClick={() => importFileInputRef.current?.click()}
+                    className="btn-brutal h-9 rounded-lg border-2 border-border bg-bg px-3 text-[13px] font-semibold text-text shadow-brutal-sm flex items-center gap-1.5"
+                  >
+                    <FileIcon size={14} /> Choose files
+                  </button>
+                  {(importRawBundle || importEntries.length > 0) && (
+                    <button
+                      type="button"
+                      onClick={() => { setImportEntries([]); setImportRawBundle(null); setImportDropped(0); }}
+                      className="text-[12px] text-text-muted hover:text-text underline"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <div className="text-[11px] text-text-muted italic">
+                  Tip: drag-and-drop supports a mix of folders and files in one go.
+                </div>
               </div>
+              {importGroups.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {importGroups.map((g) => (
+                    <span
+                      key={g.name}
+                      className="inline-flex items-center gap-1.5 rounded-md border-2 border-border-light bg-bg px-2 py-1 text-[12px] text-text max-w-full"
+                    >
+                      {g.isFolder ? (
+                        <FolderIcon size={12} className="text-text-muted shrink-0" />
+                      ) : (
+                        <FileIcon size={12} className="text-text-muted shrink-0" />
+                      )}
+                      <span className="font-mono truncate" title={g.name}>{g.name}</span>
+                      {g.isFolder && (
+                        <span className="text-text-muted shrink-0">({g.count})</span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => removeGroup(g.name)}
+                        className="text-text-muted hover:text-text shrink-0"
+                        aria-label={`Remove ${g.name}`}
+                      >
+                        <X size={12} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
             </FormField>
 
             {!loadSecrets && providerSecrets.length === 0 && (
