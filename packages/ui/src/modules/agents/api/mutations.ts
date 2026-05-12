@@ -6,7 +6,7 @@ import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
 import type { EgressPreset, EnvVar } from "../../../types.js";
 import { egressRulesKeys } from "../../egress-rules/api/queries.js";
-import { type BundleEntry, buildBundle, importRawBundle } from "../../files/api/import-bundle.js";
+import { buildBundle, type BundleEntry, importRawBundle } from "../../files/api/import-bundle.js";
 import { instancesKeys } from "../../instances/api/queries.js";
 
 const invalidatesAgentsAndInstances = {

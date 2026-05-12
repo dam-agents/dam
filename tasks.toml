@@ -86,7 +86,11 @@ run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 DAYS=${MINIMUM_RELEASE_AGE_DAYS:-7}
-export CUTOFF=$(date -ud "-$DAYS days" +%Y-%m-%dT%H:%M:%SZ)
+if date -u -d "-1 days" +%Y >/dev/null 2>&1; then
+  export CUTOFF=$(date -u -d "-$DAYS days" +%Y-%m-%dT%H:%M:%SZ)
+else
+  export CUTOFF=$(date -u -v-"${DAYS}"d +%Y-%m-%dT%H:%M:%SZ)
+fi
 export LOCKFILE_ENTRIES=$(mktemp); trap 'rm -f "$LOCKFILE_ENTRIES"' EXIT
 yq '.packages | keys | .[]' pnpm-lock.yaml | sed 's/\(.*\)@/\1\t/' > "$LOCKFILE_ENTRIES"
 check_pkg() {
