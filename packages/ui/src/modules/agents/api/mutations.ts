@@ -51,29 +51,20 @@ export function useCreateAgent() {
         agentId: agent.id,
       });
 
-      if (secretIds !== undefined) {
-        await withRetry(() =>
-          api.secrets.setAgentAccess.mutate({
-            agentId: agent.id,
-            secretIds,
-          }),
-        );
-      }
-      if (appConnectionIds?.length) {
-        await withRetry(() =>
-          api.connections.setAgentConnections.mutate({
-            agentId: agent.id,
-            connectionIds: appConnectionIds,
-          }),
-        );
-      }
+      // Show the agent in the list immediately. The remaining work (import,
+      // access/connection grants) can take 30–60s on first boot — the mutation's
+      // default invalidation only fires once mutationFn returns, so without this
+      // the tile only appears after the entire post-create flow finishes.
+      void queryClient.invalidateQueries({ queryKey: trpc.agents.list.queryKey() });
+      void queryClient.invalidateQueries({ queryKey: instancesKeys.listWithChannels() });
 
-      // Import is best-effort: the agent and instance are already
-      // created and persisted. A failure here (pod not ready in time,
-      // bundle invalid) shouldn't surface as "Failed to create agent" —
-      // toast it separately so the user can retry from the files panel.
-      // Raw bundle wins when both are provided (the dialog clears one
-      // when the other is set, so this should not happen in practice).
+      // Import goes BEFORE setAgentAccess / setAgentConnections. Those mutate
+      // the instance ConfigMap's grant annotations, which the controller
+      // applies by re-rendering pod env — i.e. by deleting and recreating
+      // the pod. Running the import after them races with the controller's
+      // pod swap and surfaces as "instance unreachable". The PVC outlives
+      // the pod, so importing first leaves the files in place when the pod
+      // comes back. Raw bundle wins when both are provided.
       const hasRaw = rawBundle != null;
       const hasEntries = importEntries && importEntries.length > 0;
       if (hasRaw || hasEntries) {
@@ -92,6 +83,23 @@ export function useCreateAgent() {
             message: `Agent created, but import failed: ${err instanceof Error ? err.message : String(err)}`,
           });
         }
+      }
+
+      if (secretIds !== undefined) {
+        await withRetry(() =>
+          api.secrets.setAgentAccess.mutate({
+            agentId: agent.id,
+            secretIds,
+          }),
+        );
+      }
+      if (appConnectionIds?.length) {
+        await withRetry(() =>
+          api.connections.setAgentConnections.mutate({
+            agentId: agent.id,
+            connectionIds: appConnectionIds,
+          }),
+        );
       }
       return agent;
     },

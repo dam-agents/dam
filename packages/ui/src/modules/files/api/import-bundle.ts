@@ -1,3 +1,5 @@
+import { authFetch } from "../../../auth.js";
+
 export type BundleEntry = { path: string; file: File };
 
 /**
@@ -193,10 +195,9 @@ async function postBundle(
   form.set("mode", mode);
   if (prefix) form.set("prefix", prefix);
   form.set("bundle", bundle, filename);
-  const res = await fetch(`/api/instances/${encodeURIComponent(instanceId)}/import`, {
+  const res = await authFetch(`/api/instances/${encodeURIComponent(instanceId)}/import`, {
     method: "POST",
     body: form,
-    credentials: "include",
   });
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
@@ -253,11 +254,10 @@ export async function importPreflight(
   paths: string[],
   prefix?: string,
 ): Promise<string[]> {
-  const res = await fetch(`/api/instances/${encodeURIComponent(instanceId)}/import-preflight`, {
+  const res = await authFetch(`/api/instances/${encodeURIComponent(instanceId)}/import-preflight`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ paths, prefix }),
-    credentials: "include",
   });
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
