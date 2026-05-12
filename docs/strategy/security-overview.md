@@ -37,7 +37,7 @@ flowchart TB
         direction LR
         subgraph agent_pod[agent pod]
           note_agentpod["automountServiceAccountToken: false<br/><i>no seccomp / AppArmor / dropped caps today</i>"]
-          agent_proc[agent process<br/><i>no in-process sandbox (no bwrap)</i>]
+          agent_proc["agent process<br/><i>no in-process sandbox (no bwrap)</i>"]
         end
         subgraph gw_pod[gateway pod]
           note_gwpod["mounts owner-scoped K8s Secrets<br/>Envoy SDS, ext-authz HITL"]
@@ -70,11 +70,11 @@ flowchart LR
   end
 
   subgraph waypoint[harness waypoint]
-    wp[/AuthZ: SA → /api/instances/&lt;id&gt;/*/]
+    wp["AuthZ: SA → /api/instances/&lt;id&gt;/*"]
   end
 
   subgraph extauthz[per-instance ext-authz Service]
-    ea[/AuthZ: SA only/]
+    ea["AuthZ: SA only"]
   end
 
   user -->|OIDC| api
