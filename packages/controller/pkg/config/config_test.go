@@ -65,6 +65,17 @@ func TestLoadFromEnv_RejectsMissingStorageSize(t *testing.T) {
 	assert.Contains(t, err.Error(), "storageSize")
 }
 
+func TestLoadFromEnv_RejectsMissingContainerSecurityContext(t *testing.T) {
+	setEnv(t, map[string]string{
+		"PLATFORM_RELEASE_NAME": "platform",
+		"POD_NAME":              "controller-0",
+		"AGENT_BASE":            `{"accessMode": "ReadWriteMany", "terminationGracePeriod": 5}`, // containerSecurityContext missing
+	})
+	_, err := LoadFromEnv()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "containerSecurityContext")
+}
+
 // ADR-041: per-instance ext-authz host derives from release name +
 // instance ID + release namespace.
 func TestExtAuthzHostFor_ComposesFQDN(t *testing.T) {
@@ -172,7 +183,7 @@ func TestLoadFromEnv_AgentBase_IdleTimeoutZero(t *testing.T) {
 	setEnv(t, map[string]string{
 		"PLATFORM_RELEASE_NAME": "platform",
 		"POD_NAME":              "controller-0",
-		"AGENT_BASE":            `{"accessMode": "ReadWriteMany", "terminationGracePeriod": 5, "idleTimeout": "0s"}`,
+		"AGENT_BASE":            `{"accessMode": "ReadWriteMany", "terminationGracePeriod": 5, "idleTimeout": "0s", "containerSecurityContext": {"capabilities": {"drop": ["ALL"]}}}`,
 	})
 	cfg, err := LoadFromEnv()
 	require.NoError(t, err)
@@ -197,7 +208,7 @@ func TestLoadFromEnv_UnknownFieldRejected(t *testing.T) {
 // tests that override AGENT_BASE / AGENT_TEMPLATE_DEFAULTS take full
 // responsibility for satisfying validation themselves.
 const (
-	minAgentBaseJSON             = `{"accessMode": "ReadWriteMany", "terminationGracePeriod": 5}`
+	minAgentBaseJSON             = `{"accessMode": "ReadWriteMany", "terminationGracePeriod": 5, "containerSecurityContext": {"capabilities": {"drop": ["ALL"]}}}`
 	minAgentTemplateDefaultsJSON = `{"storageSize": "10Gi"}`
 )
 

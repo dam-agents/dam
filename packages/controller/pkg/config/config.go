@@ -156,6 +156,13 @@ func (c *Config) validate() error {
 	if _, err := resource.ParseQuantity(c.AgentTemplateDefaults.StorageSize); err != nil {
 		return fmt.Errorf("controller.agent.templateDefaults.storageSize %q is not a valid K8s quantity: %w", c.AgentTemplateDefaults.StorageSize, err)
 	}
+	// Defense in depth: refuse to start if the container security context
+	// floor was cleared. The chart ships `capabilities.drop: ["ALL"]`; if a
+	// deployment clears it the operator hears about it at startup, not by
+	// noticing privileged agent containers in prod.
+	if c.AgentBase.ContainerSecurityContext == nil {
+		return fmt.Errorf("controller.agent.base.containerSecurityContext is required (chart default ships capabilities.drop: [\"ALL\"])")
+	}
 	return nil
 }
 

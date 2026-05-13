@@ -1,4 +1,4 @@
-# ADR-042: Three-layer agent pod configuration
+# ADR-043: Three-layer agent pod configuration
 
 **Date:** 2026-05-12
 **Status:** Accepted
