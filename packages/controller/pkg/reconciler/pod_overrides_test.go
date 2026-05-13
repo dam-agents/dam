@@ -91,19 +91,10 @@ func TestApplyAgentBaseScheduling_StampsAllFields(t *testing.T) {
 	assert.Equal(t, "kata", *spec.RuntimeClassName)
 }
 
-// $HOME substitution — mount paths and skill paths.
-
-func TestSubstituteHome(t *testing.T) {
-	assert.Equal(t, "/home/agent", substituteHome("$HOME", "/home/agent"))
-	assert.Equal(t, "/home/agent/.claude/skills", substituteHome("$HOME/.claude/skills", "/home/agent"))
-	assert.Equal(t, "/tmp", substituteHome("/tmp", "/home/agent"), "non-HOME paths untouched")
-	assert.Equal(t, "$HOME", substituteHome("$HOME", ""), "empty home leaves placeholder untouched")
-}
-
-func TestSubstituteHomeAll(t *testing.T) {
-	got := substituteHomeAll([]string{"$HOME/.claude/skills", "/tmp/other"}, "/home/agent")
-	assert.Equal(t, []string{"/home/agent/.claude/skills", "/tmp/other"}, got)
-}
+// $HOME substitution lives in the chart (agent-templates.yaml + the
+// controller/deployment.yaml AGENT_TEMPLATE_DEFAULTS replace). The
+// controller and reconciler tests assert resolved paths flow through
+// unchanged; the substitution itself is exercised by `helm template`.
 
 // End-to-end via BuildAgentStatefulSet — chart-level AgentBase fields land
 // on the pod; gateway pod (covered in gateway_test.go) does NOT receive them.
@@ -163,9 +154,11 @@ func TestBuildAgentStatefulSet_TemplateOverridesPullPolicyAndResources(t *testin
 // the fallback list (replace semantics — see config.AgentTemplateDefaults).
 
 func TestBuildAgentStatefulSet_FallsBackToTemplateDefaultsMountsAndEnv(t *testing.T) {
+	// AGENT_TEMPLATE_DEFAULTS ships with absolute paths — the chart's
+	// `replace "$HOME"` resolves the placeholder at install time.
 	cfg := *testConfig
 	cfg.AgentTemplateDefaults.Mounts = []config.Mount{
-		{Path: "$HOME", Persist: true},
+		{Path: "/home/agent", Persist: true},
 		{Path: "/tmp", Persist: false},
 	}
 	cfg.AgentTemplateDefaults.Env = []config.EnvVar{{Name: "PORT", Value: "8080"}}
@@ -174,14 +167,13 @@ func TestBuildAgentStatefulSet_FallsBackToTemplateDefaultsMountsAndEnv(t *testin
 	instance := &types.InstanceSpec{DesiredState: "running"}
 	ss := BuildAgentStatefulSet("my-instance", instance, bare, &cfg, testOwnerCM, nil)
 
-	// $HOME substituted into the rendered mount path.
 	var sawHome bool
 	for _, vm := range ss.Spec.Template.Spec.Containers[0].VolumeMounts {
 		if vm.MountPath == "/home/agent" {
 			sawHome = true
 		}
 	}
-	assert.True(t, sawHome, "chart-default mount with $HOME placeholder rendered as /home/agent")
+	assert.True(t, sawHome, "chart-default mount applied when AgentSpec omits mounts")
 
 	var sawPort bool
 	for _, e := range ss.Spec.Template.Spec.Containers[0].Env {

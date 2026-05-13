@@ -6,9 +6,15 @@ Each becomes an agent-template ConfigMap the api-server lists by the
 Only fields the template differs on are rendered. Anything omitted falls
 through at reconcile time to `controller.agent.templateDefaults.*` (chart
 fallback) or `controller.agent.base.*` (chart-only policy).
+
+The literal string `$HOME` in mount paths and skillPaths is substituted
+HERE (chart render time) using the template's `agentHome` if set, else
+`controller.agent.templateDefaults.agentHome`. The rendered ConfigMap
+ships absolute paths — the controller and agent-runtime never see `$HOME`.
 */}}
 {{- range $tmpl := .Values.agentTemplates }}
 {{- if $tmpl.enabled }}
+{{- $home := $tmpl.agentHome | default $.Values.controller.agent.templateDefaults.agentHome }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -23,6 +29,7 @@ data:
     version: agent-platform.ai/v1
     image: "{{ $tmpl.image.repository }}:{{ $tmpl.image.tag | default $.Chart.AppVersion }}"
     description: {{ $tmpl.description | quote }}
+    agentHome: {{ $home | quote }}
     {{- with $tmpl.image.pullPolicy }}
     imagePullPolicy: {{ . | quote }}
     {{- end }}
@@ -35,7 +42,13 @@ data:
     {{- end }}
     {{- with $tmpl.mounts }}
     mounts:
-      {{- toYaml . | nindent 6 }}
+      {{- range . }}
+      - path: {{ .path | replace "$HOME" $home | quote }}
+        persist: {{ .persist }}
+        {{- with .size }}
+        size: {{ . | quote }}
+        {{- end }}
+      {{- end }}
     {{- end }}
     {{- with $tmpl.env }}
     env:
@@ -43,7 +56,9 @@ data:
     {{- end }}
     {{- with $tmpl.skillPaths }}
     skillPaths:
-      {{- toYaml . | nindent 6 }}
+      {{- range . }}
+      - {{ . | replace "$HOME" $home | quote }}
+      {{- end }}
     {{- end }}
     {{- with $tmpl.skillSources }}
     skillSources:

@@ -44,7 +44,6 @@ type Config struct {
 	EnvoyMitmCAIssuer        string        // cert-manager ClusterIssuer that mints per-instance leaf certs for the Envoy sidecar's TLS interception
 	EnvoyMitmLeafDuration    time.Duration // 0 = cert-manager default
 	EnvoyMitmLeafRenewBefore time.Duration // 0 = cert-manager default
-	AgentHome                string        // HOME inside agent containers. Used for the HOME env var on the agent pod.
 	// ExtAuthzPort identifies the API server's HITL ext_authz listener
 	// (gRPC). Both Envoy filters use the same endpoint:
 	//   - HTTP filter on TLS-terminated chains (L7 — sees method/path)
@@ -117,12 +116,12 @@ func LoadFromEnv() (*Config, error) {
 	cfg.HarnessServerURL = os.Getenv("PLATFORM_HARNESS_SERVER_URL")
 	cfg.HarnessServerPort = envOrDefaultInt("PLATFORM_HARNESS_SERVER_PORT", 4001)
 	cfg.AgentProbesEnabled = envOrDefaultBool("AGENT_PROBES_ENABLED", true)
-	// AGENT_HOME mirrors AgentTemplateDefaults.AgentHome — read from env so
-	// the api-server (which doesn't get the AGENT_TEMPLATE_DEFAULTS blob)
-	// can still source it directly. Both come from the same Helm value.
-	cfg.AgentHome = envOrDefault("AGENT_HOME", "/home/agent")
+	// AGENT_HOME mirrors AgentTemplateDefaults.AgentHome for environments
+	// that ship only the env var (e.g. tests). The chart's deployment.yaml
+	// always sets both from the same `templateDefaults.agentHome` value;
+	// the api-server gets its own AGENT_HOME env var directly.
 	if cfg.AgentTemplateDefaults.AgentHome == "" {
-		cfg.AgentTemplateDefaults.AgentHome = cfg.AgentHome
+		cfg.AgentTemplateDefaults.AgentHome = envOrDefault("AGENT_HOME", "/home/agent")
 	}
 	cfg.EnvoyImage = envOrDefault("ENVOY_IMAGE", "envoyproxy/envoy:distroless-v1.37.2")
 	cfg.EnvoyPort = envOrDefaultInt("ENVOY_PORT", 10000)

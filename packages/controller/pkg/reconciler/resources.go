@@ -66,6 +66,10 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 	if pullPolicy == "" {
 		pullPolicy = defaults.ImagePullPolicy
 	}
+	agentHome := agentSpec.AgentHome
+	if agentHome == "" {
+		agentHome = defaults.AgentHome
+	}
 	specMounts := agentSpec.Mounts
 	if len(specMounts) == 0 {
 		specMounts = configMountsToTypes(defaults.Mounts)
@@ -113,7 +117,7 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 		{Name: "GIT_HTTP_PROXY_AUTHMETHOD", Value: "basic"},
 		{Name: "ADK_INSTANCE_ID", Value: name},
 		{Name: "API_SERVER_URL", Value: cfg.APIServerURL()},
-		{Name: "HOME", Value: cfg.AgentHome},
+		{Name: "HOME", Value: agentHome},
 		{Name: "PLATFORM_MCP_URL", Value: fmt.Sprintf("%s/api/instances/%s/mcp", cfg.HarnessServerURL, name)},
 		// agent-runtime opens this SSE stream and materializes pod-files
 		// (gh hosts.yml today; more producers later) directly under HOME.
@@ -150,10 +154,9 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 	var pvcs []corev1.PersistentVolumeClaim
 
 	for _, m := range specMounts {
-		path := substituteHome(m.Path, defaults.AgentHome)
-		volName := types.SanitizeMountName(path)
+		volName := types.SanitizeMountName(m.Path)
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name: volName, MountPath: path,
+			Name: volName, MountPath: m.Path,
 		})
 		if m.Persist {
 			// Size precedence: per-mount > AgentSpec.StorageSize > chart default.
@@ -242,7 +245,7 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 			Image:           agentSpec.Image,
 			ImagePullPolicy: corev1.PullPolicy(pullPolicy),
 			Command:         []string{"sh", "-c", initScript},
-			Env:             []corev1.EnvVar{{Name: "HOME", Value: defaults.AgentHome}},
+			Env:             []corev1.EnvVar{{Name: "HOME", Value: agentHome}},
 			VolumeMounts:    volumeMounts,
 		})
 	}
@@ -296,9 +299,6 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 			livenessProbe = base.Probes.Liveness
 		}
 	}
-
-	skillPaths := substituteHomeAll(agentSpec.SkillPaths, defaults.AgentHome)
-	_ = skillPaths // reserved for harness/skills-service wiring; emitted via spec.yaml today
 
 	containers := []corev1.Container{{
 		Name:            "agent",

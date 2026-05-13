@@ -48,6 +48,10 @@ func BuildForkAgentJob(
 	if pullPolicy == "" {
 		pullPolicy = defaults.ImagePullPolicy
 	}
+	agentHome := agentSpec.AgentHome
+	if agentHome == "" {
+		agentHome = defaults.AgentHome
+	}
 	specMounts := agentSpec.Mounts
 	if len(specMounts) == 0 {
 		specMounts = configMountsToTypes(defaults.Mounts)
@@ -90,7 +94,7 @@ func BuildForkAgentJob(
 		{Name: "GIT_HTTP_PROXY_AUTHMETHOD", Value: "basic"},
 		{Name: "ADK_INSTANCE_ID", Value: forkSpec.Instance},
 		{Name: "API_SERVER_URL", Value: cfg.APIServerURL()},
-		{Name: "HOME", Value: cfg.AgentHome},
+		{Name: "HOME", Value: agentHome},
 		{Name: "PLATFORM_MCP_URL", Value: fmt.Sprintf("%s/api/instances/%s/mcp", cfg.HarnessServerURL, forkSpec.Instance)},
 		{Name: "PLATFORM_FORK_ID", Value: forkName},
 		{Name: "PLATFORM_FOREIGN_SUB", Value: forkSpec.ForeignSub},
@@ -119,10 +123,9 @@ func BuildForkAgentJob(
 	var volumeMounts []corev1.VolumeMount
 
 	for _, m := range specMounts {
-		path := substituteHome(m.Path, defaults.AgentHome)
-		volName := types.SanitizeMountName(path)
+		volName := types.SanitizeMountName(m.Path)
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name: volName, MountPath: path,
+			Name: volName, MountPath: m.Path,
 		})
 		if m.Persist {
 			pvcName := fmt.Sprintf("%s-%s-0", volName, forkSpec.Instance)
@@ -188,7 +191,7 @@ func BuildForkAgentJob(
 			Image:           agentSpec.Image,
 			ImagePullPolicy: corev1.PullPolicy(pullPolicy),
 			Command:         []string{"sh", "-c", initScript},
-			Env:             []corev1.EnvVar{{Name: "HOME", Value: defaults.AgentHome}},
+			Env:             []corev1.EnvVar{{Name: "HOME", Value: agentHome}},
 			VolumeMounts:    volumeMounts,
 		})
 	}

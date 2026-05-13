@@ -1,8 +1,6 @@
 package reconciler
 
 import (
-	"strings"
-
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -57,27 +55,6 @@ func applyAgentBaseScheduling(spec *corev1.PodSpec, base config.AgentBase) {
 		rc := base.RuntimeClassName
 		spec.RuntimeClassName = &rc
 	}
-}
-
-// substituteHome replaces the literal `$HOME` placeholder with the chart's
-// agentHome value. Used for AgentSpec mount paths and skill paths so
-// templates don't have to hardcode the home directory.
-func substituteHome(s, home string) string {
-	if home == "" {
-		return s
-	}
-	return strings.ReplaceAll(s, "$HOME", home)
-}
-
-func substituteHomeAll(paths []string, home string) []string {
-	if len(paths) == 0 || home == "" {
-		return paths
-	}
-	out := make([]string, len(paths))
-	for i, p := range paths {
-		out[i] = substituteHome(p, home)
-	}
-	return out
 }
 
 // configMountsToTypes / configEnvToTypes shuttle the chart-side fallback

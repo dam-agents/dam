@@ -13,17 +13,16 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
-// testConfig mirrors what the Helm chart writes into AGENT_CONFIG by default
-// (see values.yaml `controller.agent`). The controller has no Go-side
-// defaults for these — the chart is the sole source of truth — so tests
-// must set them explicitly to match production behavior.
+// testConfig mirrors what the Helm chart writes into AGENT_BASE and
+// AGENT_TEMPLATE_DEFAULTS (see values.yaml `controller.agent`). The
+// controller has no Go-side defaults for these — the chart is the sole
+// source of truth — so tests must set them explicitly to match production.
 var testConfig = &config.Config{
 	Namespace:         "test-agents",
 	ReleaseNamespace:  "default",
 	ReleaseName:       "platform",
 	HarnessServerPort: 4001,
 	ExtAuthzPort:      4002,
-	AgentHome:         "/home/agent",
 	EnvoyImage:        "envoyproxy/envoy:distroless-v1.37.2",
 	EnvoyPort:         10000,
 	IstioTrustDomain:  "cluster.local",

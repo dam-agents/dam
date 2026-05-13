@@ -396,7 +396,8 @@ controller:
   #                           can override (template wins when set).
   #   3. agentTemplates[]   — per-template values (further down).
   # Use the literal string `$HOME` in mount paths or skillPaths; the
-  # controller substitutes it with `templateDefaults.agentHome` at render.
+  # chart substitutes it at render time with the template's `agentHome`
+  # if set, else `templateDefaults.agentHome`.
   agent:
     base:
       # Cluster details (immutable per-agent)
@@ -437,10 +438,12 @@ controller:
       # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     templateDefaults:
-      # HOME inside agent containers — set as $HOME env var and substituted
-      # into any `$HOME` placeholder in mount paths / skillPaths. Must match
-      # the image's user HOME or pod-files materialization breaks silently.
-      # Plumbed to api-server too for the pod-files producers.
+      # HOME inside agent containers — set as the `HOME` env var and used at
+      # chart render time to substitute any literal `$HOME` in mount paths /
+      # skillPaths. Per-template `agentTemplates[i].agentHome` overrides
+      # this for that template's instances. Must match the image's user
+      # HOME or pod-files materialization breaks silently. Also plumbed to
+      # api-server for pod-files producers (currently one global value).
       agentHome: /home/agent
 
       imagePullPolicy: IfNotPresent
@@ -511,8 +514,8 @@ controller:
 # -- Agent templates. Each enabled entry renders an agent-template ConfigMap
 # in `agentNamespace`. Fields named identically to `controller.agent.templateDefaults.*`
 # override the chart-wide default for instances created from this template.
-# Use `$HOME` in mount paths / skillPaths — the controller substitutes it with
-# `controller.agent.templateDefaults.agentHome` at reconcile time.
+# `$HOME` in mount paths / skillPaths is substituted at chart render time
+# using this entry's `agentHome` if set, else `templateDefaults.agentHome`.
 agentTemplates:
   - name: claude-code
     enabled: true
@@ -538,10 +541,10 @@ skills:
 # -- Opt-in in-cluster NFS server + external provisioner. Provides an RWX
 # StorageClass for dev clusters whose default provisioner is RWO-only.
 # Production deployments should leave this disabled and point
-# `controller.agent.storageClass` at a cloud-native RWX class (EFS, Filestore,
-# Azure Files). The bundled nfs-ganesha image is archived upstream and breaks
-# on btrfs-backed exports — set `controller.agent.accessMode: ReadWriteOnce`
-# instead on btrfs hosts.
+# `controller.agent.base.storageClass` at a cloud-native RWX class (EFS,
+# Filestore, Azure Files). The bundled nfs-ganesha image is archived upstream
+# and breaks on btrfs-backed exports — set `controller.agent.base.accessMode:
+# ReadWriteOnce` instead on btrfs hosts.
 nfsProvisioner:
   enabled: false
   # Break-glass annotations for admission controllers (e.g. StackRox) since
@@ -550,7 +553,7 @@ nfsProvisioner:
   podAnnotations: {}
   image: registry.k8s.io/sig-storage/nfs-provisioner:v4.0.8
   # Name of the RWX StorageClass created here. Reference it from
-  # `controller.agent.storageClass`.
+  # `controller.agent.base.storageClass`.
   storageClassName: platform-rwx
   # Single backing volume that hosts all NFS exports; individual agent PVCs
   # are carved out as subdirectories.

@@ -50,8 +50,11 @@ spec:
             #     template can override (template wins when set).
             - name: AGENT_BASE
               value: {{ .Values.controller.agent.base | toJson | quote }}
+            # `$HOME` literals in mount paths / skillPaths are substituted at
+            # chart render time using templateDefaults.agentHome, so the
+            # controller and api-server only ever see absolute paths.
             - name: AGENT_TEMPLATE_DEFAULTS
-              value: {{ .Values.controller.agent.templateDefaults | toJson | quote }}
+              value: {{ .Values.controller.agent.templateDefaults | toJson | replace "$HOME" .Values.controller.agent.templateDefaults.agentHome | quote }}
             # ADR-041: harness traffic routes through the waypoint-fronted
             # `-apiserver-harness` Service. The bare apiserver Service no
             # longer carries the harness port.

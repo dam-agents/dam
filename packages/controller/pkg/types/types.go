@@ -40,6 +40,11 @@ type AgentSpec struct {
 	// Layer B overrides for chart-wide AgentTemplateDefaults. Empty = inherit.
 	ImagePullPolicy string `yaml:"imagePullPolicy,omitempty" json:"imagePullPolicy,omitempty"`
 	StorageSize     string `yaml:"storageSize,omitempty" json:"storageSize,omitempty"`
+	// AgentHome is the HOME inside the agent container. The chart writes
+	// this into spec.yaml from the template's `agentHome` (with chart-wide
+	// fallback), so any `$HOME` literals in Mounts / SkillPaths are already
+	// resolved by the time the controller sees them.
+	AgentHome string `yaml:"agentHome,omitempty" json:"agentHome,omitempty"`
 }
 
 type Mount struct {

@@ -23,7 +23,9 @@ x := agentSpec.X
 if isEmpty(x) { x = defaults.X }
 ```
 
-Slice fields (`mounts`, `env`, `skillSources`) use **replace** semantics — a template that sets the field owns the whole list. The literal string `$HOME` in mount paths and skill paths is substituted with `templateDefaults.agentHome` at render time so templates don't hardcode the home directory; init scripts use shell-native `$HOME` (the controller sets the env var on the init container).
+Slice fields (`mounts`, `env`, `skillSources`) use **replace** semantics — a template that sets the field owns the whole list.
+
+The literal string `$HOME` in mount paths, skill paths, and the templateDefaults bundle is substituted at **chart render time** (Helm Sprig `replace`) using the template's `agentHome` field if set, else `templateDefaults.agentHome`. The rendered agent-template ConfigMaps and the `AGENT_TEMPLATE_DEFAULTS` env var both ship absolute paths — the controller, api-server, and agent-runtime never see the placeholder. Init scripts are rendered through the same `replace`, but `$HOME` inside them is also a valid shell variable at runtime (the controller sets `HOME` on the init container), so either form works.
 
 ## Alternatives Considered
 
@@ -37,4 +39,4 @@ Slice fields (`mounts`, `env`, `skillSources`) use **replace** semantics — a t
 - Bare-image agents (no template) ship a minimal `spec.yaml` (`{image, version, description}`); the controller fills in everything else from chart defaults. The api-server's `defaultTemplateSpec()` was removed.
 - All four bundled agent templates collapsed into a single `agentTemplates: []` array and one ranged Helm template file. New templates are added as array entries, not new files.
 - `AgentConfig.Merge` is gone; per-field inline fallback (~8 lines per call site) replaces an ~80-line generic merge. Easier to read, easier to extend.
-- `$HOME` substitution lets templates inherit chart-wide mounts unchanged regardless of the configured `agentHome`.
+- `$HOME` substitution lets templates inherit chart-wide mounts unchanged regardless of the configured `agentHome`. Per-template `agentHome` overrides the chart-wide default for that template's substitution and lands on `AgentSpec.AgentHome`, which the controller then uses for the `HOME` env var. The api-server pod-files producer (`packages/api-server/src/modules/pod-files/producers/github-enterprise-hosts.ts`) still reads one global `AGENT_HOME`; per-instance lookup there is a separate cross-stack refactor.
