@@ -7,6 +7,7 @@ import {
   type EnvVar,
   type TemplateSpec,
 } from "api-server-api";
+import { TRPCError } from "@trpc/server";
 import type { AgentsRepository } from "../infrastructure/agents-repository.js";
 import { assembleSpecFromTemplate, assembleSpecFromImage } from "../domain/spec-assembly.js";
 
@@ -63,7 +64,12 @@ export function createAgentsService(deps: {
       let templateId: string | undefined;
       if (input.templateId) {
         const tmpl = await deps.readTemplateSpec(input.templateId);
-        if (!tmpl || tmpl.isOwned) throw new Error(`Template "${input.templateId}" not found`);
+        if (!tmpl || tmpl.isOwned) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: `template "${input.templateId}" not found`,
+          });
+        }
         spec = assembleSpecFromTemplate(input.name, tmpl.spec, {
           description: input.description,
         });

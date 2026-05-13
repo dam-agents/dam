@@ -81,10 +81,19 @@ export function createInstancesService(deps: {
         ? await deps.userDirectory.resolveManyBySub(allSubs)
         : new Map<string, string>();
 
+      const agentIds = [...new Set(infraInstances.map((i) => i.agentId))];
+      const agents = await Promise.all(agentIds.map((id) => deps.getAgent(id)));
+      const agentById = new Map(agents.flatMap((a) => (a ? [[a.id, a]] : [])));
+
       return infraInstances.map((infra) => {
         const subs = allowedUsersMap.get(infra.id) ?? [];
         const emails = subs.map((s) => subEmailMap.get(s) ?? s);
-        return assembleInstance(infra, channelMap.get(infra.id) ?? [], emails);
+        return assembleInstance(
+          infra,
+          agentById.get(infra.agentId) ?? null,
+          channelMap.get(infra.id) ?? [],
+          emails,
+        );
       });
     },
 
@@ -95,8 +104,11 @@ export function createInstancesService(deps: {
         deps.listAllowedUsersByInstance(id),
       ]);
       if (!infra) return null;
-      const emails = await subsToEmails(allowedSubs);
-      return assembleInstance(infra, channels, emails);
+      const [emails, agent] = await Promise.all([
+        subsToEmails(allowedSubs),
+        deps.getAgent(infra.agentId),
+      ]);
+      return assembleInstance(infra, agent, channels, emails);
     },
 
     async create(input: CreateInstanceInput) {
@@ -126,7 +138,7 @@ export function createInstancesService(deps: {
         const subs = await emailsToSubs(emails);
         await deps.setAllowedUsers(infra.id, subs);
       }
-      const instance = assembleInstance(infra, [], emails);
+      const instance = assembleInstance(infra, agent, [], emails);
 
       emit({ type: EventType.InstanceCreated, instanceId: instance.id, agentId: input.agentId });
       return instance;
@@ -142,12 +154,13 @@ export function createInstancesService(deps: {
         const subs = await emailsToSubs(input.allowedUserEmails);
         await deps.setAllowedUsers(input.id, subs);
       }
-      const [channels, allowedSubs] = await Promise.all([
+      const [channels, allowedSubs, agent] = await Promise.all([
         deps.listChannelsByInstance(input.id),
         deps.listAllowedUsersByInstance(input.id),
+        deps.getAgent(infra.agentId),
       ]);
       const emails = await subsToEmails(allowedSubs);
-      const instance = assembleInstance(infra, channels, emails);
+      const instance = assembleInstance(infra, agent, channels, emails);
 
       emit({ type: EventType.InstanceUpdated, instanceId: input.id });
       return instance;
@@ -157,12 +170,13 @@ export function createInstancesService(deps: {
       if (deps.owner && !await deps.repo.isOwnedBy(id, deps.owner)) return null;
       const infra = await deps.repo.wake(id);
       if (!infra) return null;
-      const [channels, allowedSubs] = await Promise.all([
+      const [channels, allowedSubs, agent] = await Promise.all([
         deps.listChannelsByInstance(id),
         deps.listAllowedUsersByInstance(id),
+        deps.getAgent(infra.agentId),
       ]);
       const emails = await subsToEmails(allowedSubs);
-      const instance = assembleInstance(infra, channels, emails);
+      const instance = assembleInstance(infra, agent, channels, emails);
 
       if (infra.desiredState === "running") {
         emit({ type: EventType.InstanceWoken, instanceId: id });
@@ -194,9 +208,12 @@ export function createInstancesService(deps: {
 
       emit({ type: EventType.SlackConnected, instanceId: id, slackChannelId });
 
-      const allowedSubs = await deps.listAllowedUsersByInstance(id);
+      const [allowedSubs, agent] = await Promise.all([
+        deps.listAllowedUsersByInstance(id),
+        deps.getAgent(infra.agentId),
+      ]);
       const emails = await subsToEmails(allowedSubs);
-      return ok(assembleInstance(infra, txResult.value.channels, emails));
+      return ok(assembleInstance(infra, agent, txResult.value.channels, emails));
     },
 
     async disconnectSlack(id) {
@@ -206,12 +223,13 @@ export function createInstancesService(deps: {
       await deps.deleteChannelByType(id, ChannelType.Slack);
       emit({ type: EventType.SlackDisconnected, instanceId: id });
 
-      const [channels, allowedSubs] = await Promise.all([
+      const [channels, allowedSubs, agent] = await Promise.all([
         deps.listChannelsByInstance(id),
         deps.listAllowedUsersByInstance(id),
+        deps.getAgent(infra.agentId),
       ]);
       const emails = await subsToEmails(allowedSubs);
-      return assembleInstance(infra, channels, emails);
+      return assembleInstance(infra, agent, channels, emails);
     },
 
     async connectTelegram(id, botToken) {
@@ -222,12 +240,13 @@ export function createInstancesService(deps: {
       await deps.upsertChannel(id, { type: ChannelType.Telegram });
       emit({ type: EventType.TelegramConnected, instanceId: id });
 
-      const [channels, allowedSubs] = await Promise.all([
+      const [channels, allowedSubs, agent] = await Promise.all([
         deps.listChannelsByInstance(id),
         deps.listAllowedUsersByInstance(id),
+        deps.getAgent(infra.agentId),
       ]);
       const emails = await subsToEmails(allowedSubs);
-      return assembleInstance(infra, channels, emails);
+      return assembleInstance(infra, agent, channels, emails);
     },
 
     async disconnectTelegram(id) {
@@ -238,12 +257,13 @@ export function createInstancesService(deps: {
       await deps.channelSecretStore.deleteChannelSecret(id, ChannelType.Telegram);
       emit({ type: EventType.TelegramDisconnected, instanceId: id });
 
-      const [channels, allowedSubs] = await Promise.all([
+      const [channels, allowedSubs, agent] = await Promise.all([
         deps.listChannelsByInstance(id),
         deps.listAllowedUsersByInstance(id),
+        deps.getAgent(infra.agentId),
       ]);
       const emails = await subsToEmails(allowedSubs);
-      return assembleInstance(infra, channels, emails);
+      return assembleInstance(infra, agent, channels, emails);
     },
 
     async delete(id) {

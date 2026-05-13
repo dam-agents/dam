@@ -138,6 +138,8 @@ function makeInstance(overrides: Partial<Instance> = {}): Instance {
     id: "inst-1",
     name: "demo",
     agentId: "claude-code",
+    templateId: null,
+    image: "",
     state: "running",
     channels: [],
     allowedUserEmails: [],
