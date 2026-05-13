@@ -71,20 +71,75 @@ run = '''
 docker build -f packages/ui/Dockerfile -t platform-ui:latest .
 '''
 
-["image:agent"]
-description = "Build agent Docker images (platform-base + claude-code + google-workspace + pi-agent + bob + software-factory)"
+["image:base"]
+description = "Build platform-base Docker image (shared base for all agents)"
 dir = "{{config_root}}"
 run = '''
 #!/usr/bin/env bash
-set -eo pipefail
 [ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
 docker build -f packages/platform-base/Dockerfile -t platform-base .
+'''
+
+["image:agent:claude-code"]
+description = "Build claude-code agent Docker image"
+depends = ["image:base"]
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
 docker build -t platform-claude-code:latest packages/agents/claude-code
+'''
+
+["image:agent:google-workspace"]
+description = "Build google-workspace agent Docker image"
+depends = ["image:base"]
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
 docker build -t platform-google-workspace-agent:latest packages/agents/google-workspace
+'''
+
+["image:agent:pi-agent"]
+description = "Build pi-agent Docker image"
+depends = ["image:base"]
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
 docker build -t platform-pi-agent:latest packages/agents/pi-agent
+'''
+
+["image:agent:bob"]
+description = "Build bob agent Docker image"
+depends = ["image:base"]
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
 docker build -t platform-bob:latest packages/agents/bob
+'''
+
+["image:agent:software-factory"]
+description = "Build software-factory agent Docker image"
+depends = ["image:base"]
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
 docker build -t platform-software-factory:latest packages/agents/software-factory
 '''
+
+["image:agent"]
+description = "Build all agent Docker images (platform-base + claude-code + google-workspace + pi-agent + bob + software-factory)"
+depends = [
+  "image:agent:claude-code",
+  "image:agent:google-workspace",
+  "image:agent:pi-agent",
+  "image:agent:bob",
+  "image:agent:software-factory",
+]
+run = 'true'
 
 # -- Cluster lifecycle (k3s via lima) --
 #
@@ -516,7 +571,7 @@ echo "Done."
 '''
 
 ["cluster:build-agent"]
-description = "Build and load agent images into k3s, restart agent pods"
+description = "Build and load all agent images into k3s, restart all agent pods"
 depends = ["image:agent"]
 dir = "{{config_root}}"
 run = '''
@@ -554,6 +609,36 @@ fi
 
 echo "Done. Agent pods will restart with new image."
 '''
+
+["cluster:build-agent:claude-code"]
+description = "Build and load claude-code agent image into k3s, restart its pods only"
+depends = ["image:agent:claude-code"]
+dir = "{{config_root}}"
+run = 'deploy/scripts/build-agent-single.sh claude-code platform-claude-code:latest'
+
+["cluster:build-agent:google-workspace"]
+description = "Build and load google-workspace agent image into k3s, restart its pods only"
+depends = ["image:agent:google-workspace"]
+dir = "{{config_root}}"
+run = 'deploy/scripts/build-agent-single.sh google-workspace platform-google-workspace-agent:latest'
+
+["cluster:build-agent:pi-agent"]
+description = "Build and load pi-agent image into k3s, restart its pods only"
+depends = ["image:agent:pi-agent"]
+dir = "{{config_root}}"
+run = 'deploy/scripts/build-agent-single.sh pi-agent platform-pi-agent:latest'
+
+["cluster:build-agent:bob"]
+description = "Build and load bob agent image into k3s, restart its pods only"
+depends = ["image:agent:bob"]
+dir = "{{config_root}}"
+run = 'deploy/scripts/build-agent-single.sh bob platform-bob:latest'
+
+["cluster:build-agent:software-factory"]
+description = "Build and load software-factory agent image into k3s, restart its pods only"
+depends = ["image:agent:software-factory"]
+dir = "{{config_root}}"
+run = 'deploy/scripts/build-agent-single.sh software-factory platform-software-factory:latest'
 
 ["cluster:kubectl"]
 description = "Run kubectl against the platform-k3s cluster. Usage: mise run cluster:kubectl -- get pods"
@@ -716,6 +801,29 @@ fi
 
 echo "[4/4] Disk usage on the cluster VM:"
 $RUN_IN_VM df -h /
+'''
+
+["cluster:fix-certs"]
+description = "Recover from expired Istio ambient workload certs (24h TTL; missed rotation after host sleep). Restarts ztunnel + default-ns workloads to force fresh SDS certs."
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+if [ -n "${IS_SANDBOX:-}" ]; then
+  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+else
+  KUBECONFIG="$HOME/.lima/platform-k3s/copied-from-guest/kubeconfig.yaml"
+fi
+KCTL=(kubectl --kubeconfig="$KUBECONFIG")
+
+echo "Restarting ztunnel..."
+"${KCTL[@]}" -n istio-system rollout restart ds/ztunnel
+"${KCTL[@]}" -n istio-system rollout status ds/ztunnel --timeout=120s
+
+echo "Restarting default-ns workloads..."
+"${KCTL[@]}" -n default rollout restart deployment --selector app.kubernetes.io/instance=platform
+"${KCTL[@]}" -n default rollout status deployment --selector app.kubernetes.io/instance=platform --timeout=180s
+
+echo "Done. Reload the UI."
 '''
 
 ["cluster:status"]

@@ -30,13 +30,14 @@ mise run ui:run             # start UI dev server
 ### Cluster lifecycle (k3s via lima)
 
 ```sh
-mise run cluster:install      # create k3s VM, build images, install cert-manager + Platform chart (or upgrade if already installed)
-mise run cluster:build-agent  # rebuild agent image only, restart agent pods
-mise run cluster:status       # show pods and cluster state
-mise run cluster:logs         # show api-server pod logs
-mise run cluster:stop         # stop k3s VM (preserves data)
-mise run cluster:uninstall    # helm uninstall + cleanup PVCs
-mise run cluster:delete       # destroy k3s VM entirely
+mise run cluster:install                       # create k3s VM, build images, install cert-manager + Platform chart (or upgrade if already installed)
+mise run cluster:build-agent                   # rebuild all agent images, restart all agent pods
+mise run cluster:build-agent:software-factory  # rebuild one agent only (also: claude-code, google-workspace, pi-agent, code-guardian) — much faster
+mise run cluster:status                        # show pods and cluster state
+mise run cluster:logs                          # show api-server pod logs
+mise run cluster:stop                          # stop k3s VM (preserves data)
+mise run cluster:uninstall                     # helm uninstall + cleanup PVCs
+mise run cluster:delete                        # destroy k3s VM entirely
 ```
 
 Services are available at `*.localhost:4444` automatically (Traefik on port 4444, auto-forwarded by lima). `*.localtest.me:4444` also works as an alias.

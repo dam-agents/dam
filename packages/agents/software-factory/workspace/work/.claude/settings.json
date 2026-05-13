@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -fsS --noproxy '*' -X POST http://127.0.0.1:7777/lock/refresh -o /dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -fsS --noproxy '*' -X POST http://127.0.0.1:7777/lock/release -o /dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ]
+  }
+}
