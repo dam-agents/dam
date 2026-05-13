@@ -1,4 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+import { QUERY_PARAM_RE } from "api-server-api";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 
@@ -18,11 +19,6 @@ const envMappingSchema = z.object({
   envName: z.string(),
   placeholder: z.string(),
 });
-
-// Same charset the api-server-api zod schema enforces (RFC 3986 unreserved +
-// hyphen). Locks out characters that would either need percent-encoding or
-// break the Envoy Lua splitter's & / = framing.
-const QUERY_PARAM_RE = /^[A-Za-z0-9._~-]+$/;
 
 const createSecretSchema = z.object({
   name: z.string().trim().min(1, "Required"),

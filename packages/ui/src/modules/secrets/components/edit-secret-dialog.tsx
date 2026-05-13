@@ -1,4 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+import { QUERY_PARAM_RE } from "api-server-api";
 import { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
@@ -25,10 +26,6 @@ const envMappingSchema = z.object({
   envName: z.string(),
   placeholder: z.string(),
 });
-
-// Mirrors api-server-api's queryParamName charset (RFC 3986 unreserved +
-// hyphen). Empty is allowed — it means "stay in header-only mode".
-const QUERY_PARAM_RE = /^[A-Za-z0-9._~-]+$/;
 
 const baseShape = {
   name: z.string().trim().min(1, "Required"),

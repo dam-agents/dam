@@ -29,6 +29,11 @@ export function isValidEnvName(name: string): boolean {
   return name.length > 0 && ENV_NAME_RE.test(name);
 }
 
+// RFC 3986 unreserved set — the only characters guaranteed safe in a URL
+// query parameter name without percent-encoding. Shared by the Zod schema
+// and both UI forms; keep them in sync.
+export const QUERY_PARAM_RE = /^[A-Za-z0-9._~-]+$/;
+
 /**
  * How the Envoy sidecar injects a generic secret into matching outbound
  * requests. `valueFormat` may reference the literal token `{value}`;

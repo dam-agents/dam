@@ -72,6 +72,7 @@ export {
   isValidEnvName,
   PROVIDERS,
   PROVIDER_PRESET_TYPES,
+  QUERY_PARAM_RE,
   isProviderPresetType,
   IBM_LITELLM_DEFAULT_MODEL_PINS,
   ibmLitellmEnvMappings,

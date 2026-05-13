@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ENV_NAME_RE } from "./types.js";
+import { ENV_NAME_RE, QUERY_PARAM_RE } from "./types.js";
 
 // Browser-safe Zod schemas for the secrets module. Lives in its own
 // file so UI code can import these without dragging in @trpc/server
@@ -28,7 +28,7 @@ export const injectionConfigSchema = z.object({
     .string()
     .min(1)
     .max(128)
-    .regex(/^[A-Za-z0-9._~-]+$/, "queryParamName must be URL-safe (A-Z a-z 0-9 . _ ~ -)")
+    .regex(QUERY_PARAM_RE, "queryParamName must be URL-safe (A-Z a-z 0-9 . _ ~ -)")
     .optional(),
 });
 
