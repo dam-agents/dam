@@ -1,28 +1,28 @@
 import { Command } from "commander";
-import type { Instance } from "api-server-api";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import type { InstancesService } from "../services/instances-service.js";
 import type {
   AuthRequiredError,
   TransportError,
-} from "../domain/errors.js";
+} from "../../instances/domain/errors.js";
 import {
   describeConfigError,
   formatTransportError,
   printCompatResolveError,
-} from "./errors.js";
+} from "../../instances/commands/errors.js";
+import type { Template, TemplatesService } from "../services/templates-service.js";
 import {
-  EXIT_INSTANCES_BELOW_FLOOR,
-  EXIT_INSTANCES_RUNTIME_FAILURE,
-  EXIT_INSTANCES_SUCCESS,
+  EXIT_TEMPLATES_BELOW_FLOOR,
+  EXIT_TEMPLATES_RUNTIME_FAILURE,
+  EXIT_TEMPLATES_SUCCESS,
 } from "./exit-codes.js";
+
+const DESCRIPTION_MAX = 60;
 
 export interface ListCommandDeps {
   compatService: CompatService;
   configService: ConfigService;
-  /** Per-host factory — produced by the module's compose. Called once
-   *  per command invocation against the resolved Active Host. */
-  createInstancesService: (host: string) => InstancesService;
+  /** Per-host factory — produced by the module's compose. */
+  createTemplatesService: (host: string) => TemplatesService;
   /** Env var name for the server URL — surfaced in the
    *  `no server configured` hint. */
   serverEnvVar: string;
@@ -30,31 +30,27 @@ export interface ListCommandDeps {
 
 export function buildListCommand(deps: ListCommandDeps): Command {
   return new Command("list")
-    .description("List your Instances")
+    .description("List agent templates available on the active host")
     .option("--server <url>", "override the configured server URL for this call")
     .option("--json", "emit raw JSON instead of the default table")
     .addHelpText(
       "after",
-      "\nExamples:\n  dam instances list\n  dam instances list --json\n",
+      "\nExamples:\n  dam templates list\n  dam templates list --json | jq '.[].id'\n",
     )
     .action(async (opts: { server?: string; json?: boolean }) => {
       const flag = opts.server ? { server: opts.server } : undefined;
 
-      // Compat pre-flight — same gate `ping` and `auth login` use.
-      // Matches `ping`: all compat-resolve failures (missing-config,
-      // malformed-config, probe-error) exit as runtime failure so the
-      // exit code is consistent across commands that share this gate.
       const compat = await deps.compatService.check({ flag });
       if (!compat.ok) {
         printCompatResolveError(compat.error, deps.serverEnvVar);
-        process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+        process.exit(EXIT_TEMPLATES_RUNTIME_FAILURE);
       }
       const verdict = compat.value;
       if (verdict.kind === "below-floor") {
         process.stderr.write(
           `error: CLI ${verdict.localCli} is below the server's minimum required version ${verdict.serverMinClient}; upgrade and retry\n`,
         );
-        process.exit(EXIT_INSTANCES_BELOW_FLOOR);
+        process.exit(EXIT_TEMPLATES_BELOW_FLOOR);
       }
       if (verdict.kind === "behind-current") {
         process.stderr.write(
@@ -62,51 +58,41 @@ export function buildListCommand(deps: ListCommandDeps): Command {
         );
       }
 
-      // Resolve host. The Config file existed at compat time, so a
-      // failure here is the rare malformed-mid-flight case — surface it
-      // as a runtime failure.
       const cfg = await deps.configService.getResolved({ flag });
       if (!cfg.ok) {
         process.stderr.write(`error: ${describeConfigError(cfg.error)}\n`);
-        process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+        process.exit(EXIT_TEMPLATES_RUNTIME_FAILURE);
       }
 
       const host = cfg.value.server;
-      const svc = deps.createInstancesService(host);
+      const svc = deps.createTemplatesService(host);
       const result = await svc.list();
       if (!result.ok) {
         printServiceError(result.error, host);
-        process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+        process.exit(EXIT_TEMPLATES_RUNTIME_FAILURE);
       }
 
       if (opts.json) {
-        // Always emit `[]` on empty regardless of TTY — scripts consume
-        // this unconditionally.
         process.stdout.write(`${JSON.stringify(result.value)}\n`);
-        process.exit(EXIT_INSTANCES_SUCCESS);
+        process.exit(EXIT_TEMPLATES_SUCCESS);
       }
 
       if (result.value.length === 0) {
-        // Matches `kubectl get pods` / `gh pr list` conventions: stderr
-        // note, empty stdout, exit 0.
-        process.stderr.write("No instances.\n");
-        process.stderr.write(
-          "hint: create one with `dam instances create <name> --template <id>`\n",
-        );
-        process.exit(EXIT_INSTANCES_SUCCESS);
+        process.stderr.write("No templates.\n");
+        process.stderr.write("hint: ask your operator to add one to the cluster\n");
+        process.exit(EXIT_TEMPLATES_SUCCESS);
       }
 
       process.stdout.write(renderTable(result.value));
-      process.exit(EXIT_INSTANCES_SUCCESS);
+      process.exit(EXIT_TEMPLATES_SUCCESS);
     });
 }
 
-/** Default human format: 4 columns, alphabetical by name, no truncation. */
-function renderTable(instances: readonly Instance[]): string {
-  const sorted = [...instances].sort((a, b) => a.name.localeCompare(b.name));
+function renderTable(templates: readonly Template[]): string {
+  const sorted = [...templates].sort((a, b) => a.name.localeCompare(b.name));
   const rows = [
-    ["NAME", "ID", "TEMPLATE", "STATE"],
-    ...sorted.map((i) => [i.name, i.id, i.templateId ?? "<custom>", i.state]),
+    ["NAME", "ID", "DESCRIPTION"],
+    ...sorted.map((t) => [t.name, t.id, truncate(t.description ?? "", DESCRIPTION_MAX)]),
   ];
   const widths = rows[0]!.map((_, col) =>
     Math.max(...rows.map((r) => r[col]!.length)),
@@ -117,6 +103,10 @@ function renderTable(instances: readonly Instance[]): string {
       row.map((cell, col) => (col === row.length - 1 ? cell : pad(cell, widths[col]!))).join("   "),
     )
     .join("\n") + "\n";
+}
+
+function truncate(s: string, n: number): string {
+  return s.length <= n ? s : `${s.slice(0, n - 1)}…`;
 }
 
 function printServiceError(error: TransportError | AuthRequiredError, host: string): void {

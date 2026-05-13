@@ -32,6 +32,10 @@ export function buildGetCommand(deps: GetCommandDeps): Command {
     .argument("<ref>", "Instance Ref — name or 'inst-…' ID")
     .option("--server <url>", "override the configured server URL for this call")
     .option("--json", "emit raw JSON instead of the default vertical layout")
+    .addHelpText(
+      "after",
+      "\nExamples:\n  dam instances get my-agent\n  dam instances get inst-abc123 --json\n",
+    )
     .action(async (ref: string, opts: { server?: string; json?: boolean }) => {
       const flag = opts.server ? { server: opts.server } : undefined;
 
