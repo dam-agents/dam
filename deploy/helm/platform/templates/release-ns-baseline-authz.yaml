@@ -37,14 +37,19 @@ metadata:
   labels:
     {{- include "platform.labels" . | nindent 4 }}
 spec:
-  # No selector → applies to every workload in release-ns.
+  # No selector → applies to every workload in release-ns. Per ADR-042,
+  # any ALLOW attached to a workload switches it to default-deny for
+  # non-matching sources — this policy needs to enumerate every
+  # legitimate inbound, or those paths get TCP-refused at ztunnel L4
+  # before higher-layer policies (waypoint-targeted L7
+  # AuthorizationPolicy, application auth) get a chance.
   action: ALLOW
   rules:
     # Intra-namespace: any release-ns mesh peer can dial any release-ns
     # workload. Covers api-server ↔ postgres / keycloak / redis,
-    # ui ↔ api-server, controller-issued probes, and the waypoint pod
-    # synthesised by Istio. Per-pod DENYs (apiserver-pod-deny) still
-    # apply on top and beat this ALLOW for harness + ext-authz ports.
+    # ui ↔ api-server, controller-issued probes, and the apiserver
+    # waypoint pod forwarding to the api-server pod (source =
+    # apiserver-waypoint SA in release-ns).
     - from:
         - source:
             namespaces:
@@ -52,11 +57,10 @@ spec:
 
     # Cluster-edge ingress on public ports. Ingress controllers
     # (Traefik in kube-system on k3s/lima, ALB / NGINX / etc. elsewhere)
-    # are non-mesh sources, so they have no SPIFFE identity; rules with
-    # only a `to` clause admit any source. Application-layer auth
-    # (Keycloak JWT for api-server tRPC) is the gate; the policy keeps
-    # postgres / redis / harness / ext-authz off-limits from outside the
-    # mesh by not listing those ports.
+    # are non-mesh sources with no SPIFFE identity; rules with only a
+    # `to` clause admit any source. Application-layer auth (Keycloak
+    # JWT for api-server tRPC) is the gate; postgres / redis stay
+    # off-limits from outside the namespace by NOT being listed.
     - to:
         - operation:
             ports:
@@ -65,3 +69,22 @@ spec:
               {{- if .Values.keycloak.enabled }}
               - {{ .Values.keycloak.port | quote }}
               {{- end }}
+
+    # Agent-namespace → api-server harness + ext-authz. The L4 ALLOW
+    # here just admits the traffic to the waypoint / Service; the
+    # per-instance AuthorizationPolicies attached to the waypoint
+    # (L7, path-prefix-scoped) and the ext-authz Service
+    # (SA-scoped), plus the `apiserver-pod-deny` DENY rules on the
+    # api-server pod itself (waypoint-only for harness,
+    # agent-ns-only for ext-authz), do the per-instance narrowing.
+    # Without this rule, ztunnel L4 default-denies the agent-ns hop
+    # before any of those finer policies get to evaluate.
+    - to:
+        - operation:
+            ports:
+              - {{ .Values.apiServer.harnessServerPort | quote }}
+              - {{ .Values.apiServer.extAuthzPort | quote }}
+      from:
+        - source:
+            namespaces:
+              - {{ .Values.agentNamespace | quote }}
