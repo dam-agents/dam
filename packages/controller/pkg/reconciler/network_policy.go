@@ -25,8 +25,15 @@ import (
 // proxied through the gateway, gated by Envoy's ext_authz filter (ADR-035).
 //
 // Allowed egress:
-//   - DNS to kube-system (TCP/UDP 53) — needed for resolving the gateway
-//     Service hostname.
+//   - DNS (TCP/UDP 53) to any peer. The rule is port-only — no
+//     namespace selector — because cluster DNS lives in different
+//     namespaces across distributions (`kube-system` on upstream k8s,
+//     `openshift-dns` on OpenShift, others elsewhere) and pinning to a
+//     namespace label silently drops every lookup on the wrong distro.
+//     The security delta over namespace-pinned DNS is negligible: the
+//     agent can only generate DNS-shaped traffic on port 53, and the
+//     destination is a kube-proxy-translated IP whose backing pod's
+//     namespace is incidental.
 //   - The paired gateway pod (`pair=<id>, role=gateway`) on the Envoy
 //     proxy port only. The per-pair selector pins reachability to *this*
 //     agent's gateway; the gateway pod itself is the only structural
@@ -75,11 +82,10 @@ func BuildAgentEgressNetworkPolicy(pairKey string, cfg *config.Config, ownerCM *
 			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeEgress},
 			Egress: []networkingv1.NetworkPolicyEgressRule{
 				{
-					To: []networkingv1.NetworkPolicyPeer{{
-						NamespaceSelector: &metav1.LabelSelector{
-							MatchLabels: map[string]string{"kubernetes.io/metadata.name": "kube-system"},
-						},
-					}},
+					// Port-only DNS: no `To` peer. Cluster DNS lives in
+					// `kube-system` on upstream k8s and `openshift-dns`
+					// on OpenShift; pinning a namespace silently breaks
+					// the other distro.
 					Ports: []networkingv1.NetworkPolicyPort{
 						{Protocol: &udp, Port: &dnsPort},
 						{Protocol: &tcp, Port: &dnsPort},

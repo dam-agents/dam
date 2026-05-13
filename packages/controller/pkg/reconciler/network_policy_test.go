@@ -33,11 +33,14 @@ func TestBuildAgentEgressNetworkPolicy_LongLivedPair(t *testing.T) {
 
 	require.Len(t, np.Spec.Egress, 2, "DNS + paired gateway, nothing else")
 
-	// DNS to kube-system (resolving the gateway Service hostname).
+	// DNS is admitted port-only (no `To` peer). Cluster DNS lives in
+	// `kube-system` on upstream k8s and `openshift-dns` on OpenShift;
+	// pinning a namespace silently breaks the other distro. The security
+	// delta is negligible — the agent can only generate DNS-shaped
+	// traffic on 53.
 	dnsRule := np.Spec.Egress[0]
-	require.Len(t, dnsRule.To, 1)
-	require.NotNil(t, dnsRule.To[0].NamespaceSelector)
-	assert.Equal(t, "kube-system", dnsRule.To[0].NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"])
+	assert.Empty(t, dnsRule.To,
+		"DNS rule must be port-only; pinning a namespace breaks portability across k8s distributions")
 	assert.Len(t, dnsRule.Ports, 2, "both UDP/53 and TCP/53 — modern resolvers fall through to TCP")
 	protocols := map[corev1.Protocol]bool{}
 	for _, p := range dnsRule.Ports {

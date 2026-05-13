@@ -249,13 +249,16 @@ differ:
   stays false on both pods; the gateway's SPIFFE cert is independent
   of SA-token mounts.
 - **Agent → paired gateway** is gated at the kernel by the per-pair
-  `<id>-agent-egress` NetworkPolicy. Two egress rules: DNS to
-  `kube-system`, and the paired gateway pod (`pair=<id>, role=gateway`)
-  on the Envoy proxy port. HBONE 15008 is not admitted; the agent has
-  no ztunnel and never speaks HBONE. Pair pinning is structural — the
-  policy's pod-selector is the gateway pod itself, so a compromised
-  agent has no admitted IP-and-port combination to reach anything
-  else in the cluster.
+  `<id>-agent-egress` NetworkPolicy. Two egress rules: DNS on TCP/UDP
+  53 (port-only, no namespace selector — cluster DNS lives in
+  different namespaces across distributions, and the security delta
+  of pinning is negligible since the agent can only generate
+  DNS-shaped traffic on 53), and the paired gateway pod (`pair=<id>,
+  role=gateway`) on the Envoy proxy port. HBONE 15008 is not admitted;
+  the agent has no ztunnel and never speaks HBONE. Pair pinning is
+  structural — the policy's pod-selector is the gateway pod itself,
+  so a compromised agent has no admitted IP-and-port combination to
+  reach anything else in the cluster.
 - **Gateway → api-server harness.** All agent egress (including the
   harness call) flows through the paired gateway pod's Envoy, so what
   reaches the mesh is gateway → harness. The harness Service is
