@@ -42,12 +42,46 @@ This matches upstream Bob's deployment shape and is **deliberate** — the trust
 
 If you need per-tool human-in-the-loop confirmation for Bob, that has to be re-introduced upstream — the shim's `pickAllowOption()` would need to fall through to an interactive path. The longer SECURITY NOTE in [`Dockerfile`](Dockerfile) covers the boundary in more detail.
 
+## Configuration
+
+Bob accepts settings from two channels: env vars it reads directly (resolved by Bob's runtime — set them in the Configure Agent → Env tab) and CLI flags that have no env equivalent (the harness scripts translate platform env vars into the right flag).
+
+### Env vars Bob reads directly
+
+Set them as custom env vars in the **Configure Agent** dialog → Env tab. They reach Bob's process unchanged.
+
+| Env var | Effect |
+|---|---|
+| `BOBSHELL_API_KEY` | API key the Envoy sidecar swaps to the real value on the wire. Already wired by the secret's `envMappings`; no manual entry needed. |
+| `BOB_SHELL_MODEL` | Default model for new sessions. Examples: `gemini-2.5-pro`, `gpt-5.6`, `claude-sonnet-5`. Empty → Bob picks its built-in default. |
+| `BOBSHELL_HIDE_ENVS` | Set to `1` to suppress the env-var banner Bob prints at startup. |
+| `BOB_SHELL_PRE_CHECK_AUTO_APPROVED` | Set to `1` to make Bob run a safety pre-check before executing auto-approved commands. Recommended on top of the shim's `--yolo` posture. |
+| `BOB_SHELL_SYSTEM_MD` | Path to a markdown file appended to Bob's system prompt. Lives on the workspace PVC. |
+| `IBM_TELEMETRY_ENABLED` | Set to `false` to opt out of Bob's telemetry. |
+
+### Platform env vars translated to CLI flags
+
+These are Bob CLI flags with no env equivalent — the harness scripts (`harness-chat.sh` and `harness-terminal.sh`) translate `BOB_*` env vars into the flag form before spawning Bob. Set them the same way (Configure Agent → Env tab).
+
+| Env var | Translated to | Effect |
+|---|---|---|
+| `BOB_INSTANCE_ID` | `--instance-id` | Sets the `x-instance-id` header on Bob's outbound API calls (IBM tenant scoping). |
+| `BOB_TEAM_ID` | `--team-id` | Sets the `x-team-id` header (IBM tenant scoping). |
+| `BOB_MAX_COINS` | `--max-coins` | Budget cap — Bob exits with code 1 if exceeded. |
+| `BOB_CHAT_MODE` | `--chat-mode` | One of `plan`, `code`, `advanced`, `ask`. Sets the default chat persona for new sessions. |
+
+Settings that **cannot** be configured this way without changes to the shim:
+
+- **Approval mode** — the shim hardcodes `--yolo` and auto-selects the first `allow_*` option on every `session/request_permission`. Moving Bob to `default` or `auto_edit` mode would require reworking `pickAllowOption()` in [`bob-acp-shim.mjs`](bob-acp-shim.mjs). See the SECURITY NOTE in [`Dockerfile`](Dockerfile) for why we accept the YOLO posture today.
+- **Auth method** — the shim spawns Bob with `--auth-method api-key`. OAuth / Vertex paths would need a different shim invocation.
+- **Sandbox** — Bob's `--sandbox` runs commands inside a separate sandbox subprocess. Overlaps with the platform's K8s-level sandboxing model (ADR-033); leave off.
+
 ## Harness scripts
 
 | Script | Behavior |
 |---|---|
-| `harness-chat.sh` | `exec node /app/bob-acp-shim.mjs`. Bob advertises `agentCapabilities.loadSession: false` over ACP, so every `session/new` from agent-runtime spawns a fresh Bob session — chat resume is not possible at the ACP layer. |
-| `harness-terminal.sh` | `bob --resume latest` when the project has any prior session, otherwise `exec bob`. Bob's TUI persists sessions in a project-scoped numeric index rather than per-UUID files (the way pi-agent and claude-code do), so `$HARNESS_SESSION_ID` can't be mapped one-to-one — `--resume latest` is the best approximation for "reopen this user's last conversation". |
+| `harness-chat.sh` | `exec node /app/bob-acp-shim.mjs` with the translated CLI flags from the table above. Bob advertises `agentCapabilities.loadSession: false` over ACP, so every `session/new` from agent-runtime spawns a fresh Bob session — chat resume is not possible at the ACP layer. |
+| `harness-terminal.sh` | Same flag translation, then `bob --resume latest` when the project has any prior session, otherwise `exec bob`. Bob's TUI persists sessions in a project-scoped numeric index rather than per-UUID files (the way pi-agent and claude-code do), so `$HARNESS_SESSION_ID` can't be mapped one-to-one — `--resume latest` is the best approximation for "reopen this user's last conversation". |
 
 ## Persistence
 
