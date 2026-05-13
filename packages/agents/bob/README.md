@@ -80,8 +80,8 @@ Settings that **cannot** be configured this way without changes to the shim:
 
 | Script | Behavior |
 |---|---|
-| `harness-chat.sh` | `exec node /app/bob-acp-shim.mjs` with the translated CLI flags from the table above. Bob advertises `agentCapabilities.loadSession: false` over ACP, so every `session/new` from agent-runtime spawns a fresh Bob session — chat resume is not possible at the ACP layer. |
-| `harness-terminal.sh` | Same flag translation, then `bob --resume latest` when the project has any prior session, otherwise `exec bob`. Bob's TUI persists sessions in a project-scoped numeric index rather than per-UUID files (the way pi-agent and claude-code do), so `$HARNESS_SESSION_ID` can't be mapped one-to-one — `--resume latest` is the best approximation for "reopen this user's last conversation". |
+| `harness-chat.sh` | Translates the `BOB_*` env vars and `exec`s `node /app/bob-acp-shim.mjs`. Bob advertises `agentCapabilities.loadSession: false` over ACP, so every `session/new` from agent-runtime spawns a fresh Bob session — chat resume is not possible at the ACP layer. |
+| `harness-terminal.sh` | Same flag translation, then `exec bob --yolo --auth-method api-key`. Each terminal open starts a **fresh** Bob TUI session — Bob persists sessions in a project-scoped numeric index, not per-UUID files (the way pi-agent and claude-code do), so `$HARNESS_SESSION_ID` can't be mapped one-to-one. Users can browse prior sessions from inside the TUI with `--list-sessions` if needed. |
 
 ## Persistence
 
