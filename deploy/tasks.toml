@@ -357,11 +357,11 @@ echo "Restarting apiserver pod..."
 kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-apiserver
 kubectl --kubeconfig="$KUBECONFIG" rollout status deployment platform-apiserver --timeout=60s
 
-# Drop image layers no longer pinned by a running container (issue #244).
+PRUNE_DANGLING='sudo k3s crictl images 2>/dev/null | sed -nE "s/^<none>[[:space:]]+<none>[[:space:]]+([^[:space:]]+).*/\\1/p" | xargs -r sudo k3s crictl rmi >/dev/null 2>&1 || true'
 if [ -n "${IS_SANDBOX:-}" ]; then
-  sudo k3s crictl rmi --prune >/dev/null 2>&1 || true
+  bash -c "$PRUNE_DANGLING"
 else
-  limactl shell "$LIMA_INSTANCE" sudo k3s crictl rmi --prune >/dev/null 2>&1 || true
+  limactl shell "$LIMA_INSTANCE" bash -c "$PRUNE_DANGLING"
 fi
 
 echo "Done."
@@ -394,10 +394,11 @@ echo "Restarting UI pod..."
 kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-ui
 kubectl --kubeconfig="$KUBECONFIG" rollout status deployment platform-ui --timeout=60s
 
+PRUNE_DANGLING='sudo k3s crictl images 2>/dev/null | sed -nE "s/^<none>[[:space:]]+<none>[[:space:]]+([^[:space:]]+).*/\\1/p" | xargs -r sudo k3s crictl rmi >/dev/null 2>&1 || true'
 if [ -n "${IS_SANDBOX:-}" ]; then
-  sudo k3s crictl rmi --prune >/dev/null 2>&1 || true
+  bash -c "$PRUNE_DANGLING"
 else
-  limactl shell "$LIMA_INSTANCE" sudo k3s crictl rmi --prune >/dev/null 2>&1 || true
+  limactl shell "$LIMA_INSTANCE" bash -c "$PRUNE_DANGLING"
 fi
 
 echo "Done."
