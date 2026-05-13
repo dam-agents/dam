@@ -9,9 +9,12 @@ export const acpSessionsKeys = {
 };
 
 /**
- * The session list lives on the agent pod, not the platform DB; it's only
- * meaningful when the instance is `running`. Pass `enabled: false` (e.g. while
- * waking) to keep the query in cache without firing requests.
+ * Sessions list with live ACP enrichment (title, updatedAt) overlaid on the
+ * platform DB rows. Pass `enabled: false` (e.g. while the instance is waking)
+ * to keep the query in cache without firing requests.
+ *
+ * `refetchOnMount: "always"` because the title is harness-set after the first
+ * turn — a returning user must see the updated title without a manual refresh.
  *
  * meta.errorToast is intentionally vague — sustained outages get the toast
  * once per outage via the global query cache wiring.
@@ -27,6 +30,8 @@ export function useAcpSessions(
     queryFn: live
       ? () => api.sessions.list.query({ instanceId, includeChannel })
       : skipToken,
+    refetchOnMount: "always",
+    staleTime: 5_000,
     meta: { errorToast: "Couldn't refresh session list" },
   });
 }
