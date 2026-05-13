@@ -44,6 +44,14 @@ func BuildExtAuthzService(instanceName string, cfg *config.Config, _ *corev1.Con
 				LabelInstance:                  instanceName,
 				"app.kubernetes.io/component":  "apiserver",
 				"app.kubernetes.io/managed-by": "platform-controller",
+				// ADR-042: bind this Service to the apiserver-waypoint so
+				// the per-instance `<id>-extauthz-allow` AuthorizationPolicy
+				// (which uses `targetRefs: Service`) actually attaches to
+				// the waypoint and gets enforced. Without this label, the
+				// policy reports `AncestorNotBound: Service is not bound
+				// to a waypoint` and ztunnel L4 default-denies the gateway
+				// → ext-authz hop.
+				"istio.io/use-waypoint": cfg.IstioWaypointName,
 			},
 		},
 		Spec: corev1.ServiceSpec{
