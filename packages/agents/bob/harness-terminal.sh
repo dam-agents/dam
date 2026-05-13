@@ -1,24 +1,24 @@
 #!/bin/sh
-# Bob's TUI persists sessions in a project-scoped index, not per-session
-# files keyed by UUID the way pi-agent and claude-code do — so we can't
-# pass $HARNESS_SESSION_ID through. Best we can do is `--resume latest`
-# when a session exists, otherwise start fresh. The agent's home (and
-# therefore bob's session index) is per-instance (ADR-027 PVC), so
-# "latest" always belongs to the current owner. `--list-sessions` lists
-# numbered sessions when any exist; falls through to a fresh session
-# otherwise so the first terminal open doesn't error out.
+# Mirror the shim's spawn shape (`--yolo --auth-method api-key`) so
+# the TUI uses the same auth path as chat. No --experimental-acp.
 #
-# Platform env → bob CLI flag translation. Same vars as harness-chat:
-# tenant scoping and budget caps live only on the CLI, so we translate
-# them here. Bob reads BOB_SHELL_MODEL and friends from env directly,
-# so those don't need a flag pass-through.
+# BOBSHELL_NO_RELAUNCH=true: bob re-execs itself with stdio:"inherit"
+# at startup, which breaks the TTY chain in node-pty (relaunched
+# child sees isTTY=false → "No input provided via stdin" → exits).
+#
+# Session resume isn't wired up — bob's TUI keys sessions by a
+# project-scoped index, not by UUID, so $HARNESS_SESSION_ID can't
+# map. Each terminal open starts fresh; use --list-sessions inside.
+#
+# Run on Node 24 (see Dockerfile); PATH covers any internal shebang
+# lookups bob does.
+#
+# Tenant / budget / chat-mode flags translated from platform env.
+export PATH="/opt/node24/bin:$PATH"
+export BOBSHELL_NO_RELAUNCH=true
 set --
 [ -n "$BOB_INSTANCE_ID" ] && set -- "$@" --instance-id "$BOB_INSTANCE_ID"
 [ -n "$BOB_TEAM_ID" ]     && set -- "$@" --team-id     "$BOB_TEAM_ID"
 [ -n "$BOB_MAX_COINS" ]   && set -- "$@" --max-coins   "$BOB_MAX_COINS"
 [ -n "$BOB_CHAT_MODE" ]   && set -- "$@" --chat-mode   "$BOB_CHAT_MODE"
-if bob --list-sessions 2>/dev/null | grep -qE '^[[:space:]]*[0-9]'; then
-  exec bob --resume latest "$@"
-else
-  exec bob "$@"
-fi
+exec /opt/node24/bin/node /usr/local/lib/node_modules/bobshell/bundle/bob.js --yolo --auth-method api-key "$@"
