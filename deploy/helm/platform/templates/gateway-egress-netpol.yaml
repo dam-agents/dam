@@ -53,12 +53,35 @@ spec:
       ports:
         - protocol: TCP
           port: 15008
-    {{- with .Values.clusterCidrs }}
+    {{- /* External-internet allows. Split into IPv4 (cidr 0.0.0.0/0) and
+           IPv6 (cidr ::/0) peers — Kubernetes NetworkPolicy requires every
+           `except` CIDR to be a strict subset of its `cidr`, so mixed-family
+           except lists are rejected by the apiserver. clusterCidrs is split
+           by presence of `:` (IPv6 indicator). */}}
+    {{- $v4 := list }}
+    {{- $v6 := list }}
+    {{- range .Values.clusterCidrs }}
+      {{- if contains ":" . }}
+        {{- $v6 = append $v6 . }}
+      {{- else }}
+        {{- $v4 = append $v4 . }}
+      {{- end }}
+    {{- end }}
+    {{- if $v4 }}
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
             except:
-              {{- range . }}
+              {{- range $v4 }}
+              - {{ . | quote }}
+              {{- end }}
+    {{- end }}
+    {{- if $v6 }}
+    - to:
+        - ipBlock:
+            cidr: ::/0
+            except:
+              {{- range $v6 }}
               - {{ . | quote }}
               {{- end }}
     {{- end }}
