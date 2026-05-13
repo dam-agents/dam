@@ -94,6 +94,23 @@ agentNamespace: platform-agents
 # -- Whether to create the agent namespace (disable if it already exists or is managed externally)
 createAgentNamespace: true
 
+# -- OpenShift-specific knobs. No-op on vanilla Kubernetes.
+openshift:
+  scc:
+    # Bind `system:openshift:scc:anyuid` to every ServiceAccount in
+    # `agentNamespace` so agent / gateway pods may run as UID 0 (required
+    # for kata-containers workloads that need root inside the sandbox).
+    # Default restricted-v2 admission strips runAsUser=0; flip this on
+    # when running on OpenShift with kata runtime.
+    #
+    # Requires `controller.agent.base.runtimeClassName` to be a kata
+    # runtime (e.g. "kata", "kata-nvidia-gpu"). The chart's validator
+    # refuses to render otherwise — granting anyuid without kata
+    # isolation puts agents at UID 0 on the host's default OCI runtime,
+    # which defeats the sandbox boundary.
+    anyuid:
+      enabled: false
+
 # -- Shared local PostgreSQL instance
 # Set enabled: false when using external/cloud DBs for all services.
 postgres:

@@ -1,0 +1,32 @@
+{{- if .Values.openshift.scc.anyuid.enabled }}
+{{/*
+OpenShift SCC binding for the agent namespace.
+
+Default OpenShift admission (`restricted-v2`) forces a random UID and
+strips `runAsUser: 0`, which breaks harnesses that need root inside the
+kata-containers sandbox. Binding `system:openshift:scc:anyuid` to the
+`system:serviceaccounts:<agentNamespace>` group lets every per-instance
+ServiceAccount the controller creates (see ADR-041) pick its own UID,
+including 0. Scope is intentionally one namespace — no cluster-wide
+escalation.
+
+`anyuid` does not grant capabilities, host paths, or privileged mode;
+it only loosens the UID constraint. Under kata, "root" is guest-VM root,
+not host root.
+*/}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "platform.fullname" . }}-agent-anyuid
+  namespace: {{ .Values.agentNamespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:openshift:scc:anyuid
+subjects:
+  - kind: Group
+    apiGroup: rbac.authorization.k8s.io
+    name: system:serviceaccounts:{{ .Values.agentNamespace }}
+{{- end }}
