@@ -94,6 +94,26 @@ agentNamespace: platform-agents
 # -- Whether to create the agent namespace (disable if it already exists or is managed externally)
 createAgentNamespace: true
 
+# -- Cluster pod + service CIDRs, excepted from the gateway pod's
+# "allow external internet" NetworkPolicy egress rule. The gateway must
+# reach the open internet to inject credentials into upstream API calls,
+# but must NOT be able to reach arbitrary in-cluster destinations by pod
+# IP — only explicit allowlist peers (DNS, ambient HBONE, api-server).
+# Defaults: RFC1918 IPv4 (covers EKS / GKE / AKS / k3s / kind / kubeadm)
+# plus RFC4193 ULA + RFC4291 link-local IPv6 (covers dual-stack clusters).
+# Operators whose cluster routes any of these ranges to legitimate
+# corporate networks the agent should reach must narrow this to the
+# actual pod + service CIDRs of their cluster.
+# Empty list disables the external-internet rule entirely, blocking
+# all gateway egress — only useful as an intentional lockdown, NOT a
+# convenience default.
+clusterCidrs:
+  - 10.0.0.0/8
+  - 172.16.0.0/12
+  - 192.168.0.0/16
+  - fc00::/7
+  - fe80::/10
+
 # -- Home directory inside agent containers. Used for the HOME env var, the
 # pod-files sidecar mount paths, and pod-files producer paths in api-server.
 # Must match the HOME of the agent image's user — a mismatch silently breaks

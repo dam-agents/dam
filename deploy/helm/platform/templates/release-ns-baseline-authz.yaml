@@ -1,0 +1,67 @@
+{{- /*
+Namespace-wide baseline AuthorizationPolicy on the release namespace.
+
+In ambient mesh, NetworkPolicy can't gate intra-cluster destinations
+(istio-cni redirects egress to ztunnel before NetworkPolicy enforcement;
+the kernel-level destination is always ztunnel:15008, not the target
+workload). All cross-namespace gating shifts to destination-side
+AuthorizationPolicy.
+
+This policy has no `selector`, so it attaches to every workload in
+release-ns. Istio's "any ALLOW switches to default-deny" semantic means
+every release-ns pod becomes default-deny once this lands; the rules
+below enumerate the legitimate inbound paths. Per-instance ALLOWs
+rendered by the controller (`<id>-harness-allow`, `<id>-extauthz-allow`)
+are OR'd on top — agent-ns gateways still reach the waypoint and the
+per-instance ext-authz Services.
+
+Workloads previously default-allow that this policy locks down:
+  - keycloak, postgres, redis, controller, ui, nfs-provisioner
+  - apiserver public + harness + ext-authz ports (further narrowed by
+    `apiserver-pod-deny`, which stays in place and beats this ALLOW
+    for harness/ext-authz from non-matching principals).
+
+The companion controls:
+  - `agent-pod-authz-allow.yaml` — same pattern on agent pods.
+  - `apiserver-pod-deny` — pod-level DENY for harness + ext-authz
+    ports; preserved so ui / postgres / redis can't reach those ports
+    even though they share the namespace.
+  - Controller-rendered per-instance ALLOWs — admit agent-ns gateways
+    to harness path and ext-authz Service.
+*/}}
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ include "platform.fullname" . }}-release-ns-baseline
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+spec:
+  # No selector → applies to every workload in release-ns.
+  action: ALLOW
+  rules:
+    # Intra-namespace: any release-ns mesh peer can dial any release-ns
+    # workload. Covers api-server ↔ postgres / keycloak / redis,
+    # ui ↔ api-server, controller-issued probes, and the waypoint pod
+    # synthesised by Istio. Per-pod DENYs (apiserver-pod-deny) still
+    # apply on top and beat this ALLOW for harness + ext-authz ports.
+    - from:
+        - source:
+            namespaces:
+              - {{ .Release.Namespace | quote }}
+
+    # Cluster-edge ingress on public ports. Ingress controllers
+    # (Traefik in kube-system on k3s/lima, ALB / NGINX / etc. elsewhere)
+    # are non-mesh sources, so they have no SPIFFE identity; rules with
+    # only a `to` clause admit any source. Application-layer auth
+    # (Keycloak JWT for api-server tRPC) is the gate; the policy keeps
+    # postgres / redis / harness / ext-authz off-limits from outside the
+    # mesh by not listing those ports.
+    - to:
+        - operation:
+            ports:
+              - {{ .Values.apiServer.port | quote }}
+              - {{ .Values.ui.port | quote }}
+              {{- if .Values.keycloak.enabled }}
+              - {{ .Values.keycloak.port | quote }}
+              {{- end }}

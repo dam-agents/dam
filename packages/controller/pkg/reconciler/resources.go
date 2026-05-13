@@ -324,11 +324,12 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 					Annotations: podAnnotations,
 				},
 				Spec: corev1.PodSpec{
-					// ADR-041: per-instance SA gives the pod its SPIFFE
-					// workload identity (`<td>/ns/<ns>/sa/<id>`).
-					// AutomountServiceAccountToken stays false — Istio
-					// identity is independent of SA-token mounts.
-					ServiceAccountName:            name,
+					// ADR-042: agent pod runs as `<id>` (distinct from the
+					// gateway's `<id>-gateway`). SPIFFE workload identity:
+					// `<td>/ns/<ns>/sa/<id>`. AutomountServiceAccountToken
+					// stays false — Istio identity is independent of SA-token
+					// mounts.
+					ServiceAccountName:            cfg.AgentServiceAccountName(name),
 					TerminationGracePeriodSeconds: &cfg.TerminationGracePeriod,
 					ImagePullSecrets:              pullSecrets,
 					SecurityContext:               podSec,

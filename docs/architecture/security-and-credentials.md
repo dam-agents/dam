@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-05-11
+Last verified: 2026-05-12
 
 ## Motivated by
 
@@ -12,6 +12,7 @@ Last verified: 2026-05-11
 - [ADR-035 — HITL ext_authz](../adrs/035-unified-hitl-ux.md) — Envoy gates credentialed egress through an api-server ext_authz call
 - [ADR-038 — Paired agent and gateway pods](../adrs/038-paired-gateway-pod.md) — agent and gateway run in two paired pods, with the credential boundary at the pod boundary
 - [ADR-041 — Istio ambient mesh](../adrs/041-istio-ambient-mesh.md) — SPIFFE identity for every internal hop; supersedes ADR-038's NetworkPolicy mechanism, the `x-platform-instance` header, and the pod-IP resolver
+- [ADR-042 — AuthorizationPolicy as primary access control in ambient mesh](../adrs/042-authz-as-primary-access-control.md) — AuthorizationPolicy is the sole source of truth for intra-cluster destination access; NetworkPolicy retracts to defense-in-depth perimeter
 
 ## Overview
 
@@ -83,19 +84,64 @@ flowchart LR
 
 The credential boundary is the pod: K8s Secrets are mounted into the
 gateway pod only, and the agent pod has no admitted route to TCP 80/443
-other than its paired gateway. Enforcement is layered:
+other than its paired gateway. Per [ADR-042](../adrs/042-authz-as-primary-access-control.md),
+intra-cluster destination access is governed by Istio AuthorizationPolicy;
+NetworkPolicy is defense-in-depth perimeter only.
 
-- **Mesh AuthorizationPolicy** (ADR-041) gates *ingress* on the gateway
-  pod by SA principal, so another instance's agent cannot reach this
-  gateway even if the pod IP is known.
-- **Per-pair agent egress NetworkPolicy** (controller-rendered,
-  `<id>-agent-egress`) restricts the agent pod's *egress* at the kernel
-  layer to DNS, its paired gateway pod, and the ambient HBONE port.
-  Without this, an agent process can ignore `HTTPS_PROXY` and dial
-  external hosts directly, escaping Envoy's MITM, credential
-  injection, and ext-authz HITL gates. The NetworkPolicy selects on
-  `pair=<id>, role=agent`, so the gateway pod's own egress (which
-  legitimately dials credentialed upstreams) stays unrestricted.
+**AuthorizationPolicies — the access-control surface:**
+
+- **Per-instance pair admission** (ADR-041 + ADR-042, controller-rendered):
+  agent and gateway run under distinct SAs (`<id>` and `<id>-gateway`).
+  `<id>-gateway-allow` admits the **agent** SA at the gateway pod;
+  `<id>-harness-allow` admits only the **gateway** SA to
+  `/api/instances/<id>/*` at the api-server waypoint;
+  `<id>-extauthz-allow` admits only the **gateway** SA at the
+  per-instance ext-authz Service. The agent's SPIFFE principal is
+  admitted at exactly one place: its paired gateway. All harness +
+  ext-authz traffic must route through the gateway by construction.
+- **Agent pods** (chart-rendered, `<release>-agent-pod-allow`,
+  selector `role=agent`): admits only the api-server and controller SA
+  principals on port 8080. Closes the path where an agent driving its
+  gateway as a confused deputy could mesh-HBONE another instance's
+  agent pod and POST directly to its ACP WebSocket, bypassing the
+  api-server relay ([ADR-007](../adrs/007-acp-relay.md)).
+- **Release-namespace baseline** (chart-rendered,
+  `<release>-release-ns-baseline`, no selector): default-denies every
+  release-ns workload, allowing intra-namespace traffic and ingress to
+  public ports (api-server tRPC, UI, keycloak HTTP). Postgres, Redis,
+  harness, and ext-authz ports stay off-limits from outside the
+  namespace; agent-ns reach to harness + ext-authz is admitted by the
+  per-instance ALLOWs above. Closes the path to keycloak / postgres /
+  redis / ui / controller / nfs-provisioner.
+- **Agent-namespace egress waypoint** (chart-rendered Gateway
+  `<release>-agent-egress-waypoint` + AuthorizationPolicy
+  `<release>-agent-egress-waypoint-allow`, ADR-042): a per-namespace
+  Istio waypoint pod that ztunnel routes outbound from agent-ns
+  workloads through. Attached AuthorizationPolicy admits only
+  `sa/*-gateway` principals — gateway pods (long-lived + fork)
+  retain unrestricted external egress; agent pods bypassing
+  `HTTPS_PROXY` and dialing the open internet directly are denied
+  at the waypoint. Closes the data-exfiltration / C2 path that
+  NetworkPolicy cannot gate in ambient mode.
+- **api-server pod-level DENY** (ADR-041, chart-rendered): rejects
+  harness port from non-waypoint principals and ext-authz port from
+  non-agent-ns sources; survives namespace baseline ALLOW (DENY beats
+  ALLOW in Istio's evaluation order).
+
+**NetworkPolicies — perimeter defense-in-depth:**
+
+- Two namespace-wide NPs in the agent namespace (chart-rendered):
+  `<release>-agent-egress` (selector `role=agent`) and
+  `<release>-gateway-egress` (selector `role=gateway`). Both permit
+  DNS to `kube-system` and the mesh entrance at
+  `istio-system:15008`; the gateway one additionally permits external
+  internet via `ipBlock 0.0.0.0/0` with `clusterCidrs` excepted. They
+  are the failsafe if istio-cni's redirect doesn't apply (CNI plugin
+  bug, init-container failure, ambient label flip, privileged escape).
+  They do **not** encode per-destination intra-cluster gating —
+  ambient redirect rewrites every mesh-bound packet's destination to
+  ztunnel before NetworkPolicy filters see it, so per-destination
+  rules would not fire.
 
 The agent pod has no service account token
 (`automountServiceAccountToken: false`), and there is no co-located
@@ -260,14 +306,12 @@ caller identification all flow through the same SPIFFE primitive:
   per-instance SA from the agent namespace (ext-authz), closing the
   direct pod-IP bypass.
 
-NetworkPolicy retracts to coarse perimeter only — cluster-edge ingress
-and a per-pair *agent egress* policy (`<id>-agent-egress`, controller-
-rendered alongside the gateway-admission AuthorizationPolicy) that
-locks the agent pod's L3/L4 egress to its paired gateway plus DNS and
-ambient HBONE. The pair-pinning here is structural defence-in-depth on
-top of mesh AuthorizationPolicy: the AuthorizationPolicy on each
-gateway pod still cryptographically denies traffic from a non-matching
-SA, but the NetworkPolicy is what keeps the agent process from
-side-stepping `HTTPS_PROXY` and reaching external hosts that the mesh
-doesn't see. The fine-grained pair-key *ingress* policies from
-ADR-038 are gone — Istio AuthorizationPolicy owns that boundary now.
+NetworkPolicy is perimeter only (ADR-042). Two egress policies
+permit DNS to `kube-system` and the mesh entrance at
+`istio-system:15008`; the gateway policy adds external internet via
+`ipBlock 0.0.0.0/0` with `clusterCidrs` excepted. These rules fire on
+non-mesh paths — failsafe if istio-cni's redirect doesn't apply. They
+do not encode per-destination intra-cluster gating: in ambient mode
+every mesh-bound packet's destination is rewritten to ztunnel before
+NetworkPolicy filters evaluate. Per-destination access lives entirely
+in AuthorizationPolicy.

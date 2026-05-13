@@ -1,0 +1,32 @@
+{{- /*
+AuthorizationPolicy on the agent-ns egress waypoint.
+
+`targetRefs` attaches the policy to the waypoint Gateway. Any ALLOW
+attached to a workload switches it to default-deny for non-matching
+sources, so the waypoint refuses every outbound that doesn't satisfy
+the rules below.
+
+The SPIFFE wildcard `sa/*-gateway` matches gateway pod SAs for both
+long-lived pairs (`<id>-gateway`) and forks (`<forkName>-gateway`)
+under ADR-042's per-pair split. Agent pod SAs (`<id>`, `<forkName>`)
+don't match — agent processes bypassing HTTPS_PROXY and dialing the
+open internet directly are denied at the waypoint.
+*/}}
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ include "platform.fullname" . }}-agent-egress-waypoint-allow
+  namespace: {{ .Values.agentNamespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ include "platform.fullname" . }}-agent-egress-waypoint
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "{{ .Values.istio.trustDomain }}/ns/{{ .Values.agentNamespace }}/sa/*-gateway"

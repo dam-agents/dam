@@ -160,12 +160,38 @@ func (c *Config) HarnessHost() string {
 	return fmt.Sprintf("%s-apiserver-harness.%s.svc.cluster.local", c.ReleaseName, c.ReleaseNamespace)
 }
 
-// PrincipalFor returns the SPIFFE principal string for `instanceID`,
-// matching how istiod stamps workload certs (`<td>/ns/<ns>/sa/<sa>`).
-// Used to render the `from.source.principals` field on the per-instance
-// AuthorizationPolicies.
-func (c *Config) PrincipalFor(instanceID string) string {
-	return fmt.Sprintf("%s/ns/%s/sa/%s", c.IstioTrustDomain, c.Namespace, instanceID)
+// Per pair we run two ServiceAccounts: the agent pod uses
+// `<instanceID>` (the bare instance name, preserved from ADR-041's
+// original "one SA per pair" model); the gateway pod uses
+// `<instanceID>-gateway`. The split makes the agent's SPIFFE
+// principal distinct from the gateway's so destination AuthorizationPolicies
+// can admit one without admitting the other — strict enforcement of
+// "agent only calls gateway" requires this. See ADR-042.
+
+// AgentServiceAccountName returns the SA name for the agent pod of
+// `instanceID`. Long-lived pairs and forks use the instance / fork
+// name directly.
+func (c *Config) AgentServiceAccountName(instanceID string) string {
+	return instanceID
+}
+
+// GatewayServiceAccountName returns the SA name for the gateway pod of
+// `instanceID`. Distinct from the agent SA by the `-gateway` suffix.
+func (c *Config) GatewayServiceAccountName(instanceID string) string {
+	return instanceID + "-gateway"
+}
+
+// PrincipalForAgent returns the SPIFFE principal of the agent pod's
+// ServiceAccount, matching how istiod stamps workload certs
+// (`<td>/ns/<ns>/sa/<sa>`).
+func (c *Config) PrincipalForAgent(instanceID string) string {
+	return fmt.Sprintf("%s/ns/%s/sa/%s", c.IstioTrustDomain, c.Namespace, c.AgentServiceAccountName(instanceID))
+}
+
+// PrincipalForGateway returns the SPIFFE principal of the gateway pod's
+// ServiceAccount.
+func (c *Config) PrincipalForGateway(instanceID string) string {
+	return fmt.Sprintf("%s/ns/%s/sa/%s", c.IstioTrustDomain, c.Namespace, c.GatewayServiceAccountName(instanceID))
 }
 
 func envOrDefault(key, def string) string {

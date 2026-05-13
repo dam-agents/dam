@@ -121,13 +121,9 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 		return r.setError(ctx, name, fmt.Sprintf("applying ext-authz authz policy: %v", err))
 	}
 
-	// ADR-041: per-pair agent egress NetworkPolicy. AuthorizationPolicy on
-	// the gateway only gates ingress; without an egress NP the agent
-	// process can bypass HTTPS_PROXY and dial external hosts directly,
-	// escaping Envoy's credential and HITL gates.
-	if err := r.applyAgentEgressNetworkPolicy(ctx, BuildAgentEgressNetworkPolicy(name, r.config, cm)); err != nil {
-		return r.setError(ctx, name, err.Error())
-	}
+	// ADR-042: agent egress NP is chart-rendered (one namespace-wide
+	// `<release>-agent-egress` NP, selector `role=agent`). Per-pair
+	// rendering was theatre since rules are identical for every pair.
 
 	hibernated := instanceSpec.DesiredState == "hibernated"
 

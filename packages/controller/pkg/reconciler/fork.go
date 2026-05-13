@@ -139,12 +139,9 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying fork ext-authz authz policy: %v", err))
 	}
 
-	// ADR-041: per-pair agent egress NetworkPolicy (same rationale as the
-	// long-lived shape — kernel-level perimeter so the agent process
-	// cannot bypass HTTPS_PROXY).
-	if err := r.applyAgentEgressNetworkPolicy(ctx, BuildAgentEgressNetworkPolicy(forkName, r.config, cm)); err != nil {
-		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, err.Error())
-	}
+	// ADR-042: agent egress NP is chart-rendered, namespace-wide, applies
+	// to all `role=agent` pods including this fork's agent. No per-fork
+	// rendering needed.
 
 	// ADR-038: paired gateway pod for the fork. Render the gateway-side
 	// resources first so HTTPS_PROXY's target exists by the time the
@@ -222,12 +219,24 @@ func (r *ForkReconciler) deleteReleaseNsForkResources(ctx context.Context, forkN
 	}
 }
 
-// ensureForkServiceAccount renders the per-fork ServiceAccount and applies
-// it idempotently. Mirrors InstanceReconciler.ensureServiceAccount (same
-// SA shape — `automountServiceAccountToken: false`, owner-refed to the
-// fork ConfigMap, label-drift heal).
+// ensureForkServiceAccount renders the per-fork agent + gateway
+// ServiceAccounts and applies them idempotently. Mirrors
+// InstanceReconciler.ensureServiceAccount (split-SA shape from
+// ADR-042: `<forkName>` for the agent pod, `<forkName>-gateway` for
+// the gateway pod).
 func (r *ForkReconciler) ensureForkServiceAccount(ctx context.Context, forkName string, ownerCM *corev1.ConfigMap) error {
-	sa := BuildServiceAccount(forkName, r.config, ownerCM)
+	agentSA := BuildServiceAccount(r.config.AgentServiceAccountName(forkName), forkName, r.config, ownerCM)
+	if err := r.applyForkServiceAccount(ctx, agentSA); err != nil {
+		return fmt.Errorf("applying fork agent serviceaccount: %w", err)
+	}
+	gatewaySA := BuildServiceAccount(r.config.GatewayServiceAccountName(forkName), forkName, r.config, ownerCM)
+	if err := r.applyForkServiceAccount(ctx, gatewaySA); err != nil {
+		return fmt.Errorf("applying fork gateway serviceaccount: %w", err)
+	}
+	return nil
+}
+
+func (r *ForkReconciler) applyForkServiceAccount(ctx context.Context, sa *corev1.ServiceAccount) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		existing, err := r.client.CoreV1().ServiceAccounts(sa.Namespace).Get(ctx, sa.Name, metav1.GetOptions{})
 		if errors.IsNotFound(err) {

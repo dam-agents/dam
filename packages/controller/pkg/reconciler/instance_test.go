@@ -131,19 +131,16 @@ func TestReconcile_CreateResources(t *testing.T) {
 	_, err = client.CoreV1().Services("default").Get(ctx, "platform-extauthz-my-instance", metav1.GetOptions{})
 	require.NoError(t, err, "per-instance ext-authz Service must be created")
 
-	// ADR-041: per-pair agent egress NetworkPolicy. AuthorizationPolicy
-	// only gates ingress; this closes the symmetric egress hole at the
-	// kernel layer so an agent can't bypass HTTPS_PROXY.
-	np, err := client.NetworkingV1().NetworkPolicies("test-agents").Get(ctx, "my-instance-agent-egress", metav1.GetOptions{})
-	require.NoError(t, err, "per-pair agent egress NetworkPolicy must be created")
-	assert.Equal(t, "my-instance", np.Spec.PodSelector.MatchLabels["agent-platform.ai/pair"])
-	assert.Equal(t, "agent", np.Spec.PodSelector.MatchLabels["agent-platform.ai/role"])
+	// ADR-042: agent + gateway egress NPs are chart-rendered (namespace-wide,
+	// `role=agent` / `role=gateway` selectors). Not visible to this
+	// fake-client check.
 
-	// Pod specs use the per-instance SA (ADR-041)
+	// ADR-042: agent + gateway run as distinct SAs so destination
+	// AuthorizationPolicies can admit one without the other.
 	assert.Equal(t, "my-instance", ss.Spec.Template.Spec.ServiceAccountName,
-		"agent pod must run as the per-instance SA so SPIFFE peer principal == URL :id")
-	assert.Equal(t, "my-instance", gws.Spec.Template.Spec.ServiceAccountName,
-		"gateway pod must run as the per-instance SA")
+		"agent pod runs as `<id>` — SPIFFE peer principal == URL :id")
+	assert.Equal(t, "my-instance-gateway", gws.Spec.Template.Spec.ServiceAccountName,
+		"gateway pod runs as `<id>-gateway` — admitted at harness + ext-authz; agent SA isn't")
 
 	// Status written
 	updated, _ := client.CoreV1().ConfigMaps("test-agents").Get(ctx, "my-instance", metav1.GetOptions{})

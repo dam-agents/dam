@@ -11,4 +11,10 @@ metadata:
     # the gateway / ext-authz / harness Services enforces per-instance
     # SPIFFE identity.
     istio.io/dataplane-mode: ambient
+    # ADR-042: route every workload's outbound through the egress
+    # waypoint (`agent-ns-egress-waypoint.yaml`). The waypoint's
+    # AuthorizationPolicy admits only `<id>-gateway` SAs, so a
+    # compromised agent cannot bypass HTTPS_PROXY to reach the open
+    # internet directly via ztunnel.
+    istio.io/use-waypoint: {{ include "platform.fullname" . }}-agent-egress-waypoint
 {{- end }}

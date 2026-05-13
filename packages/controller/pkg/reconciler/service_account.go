@@ -12,29 +12,33 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 )
 
-// ADR-041: per-instance ServiceAccount in the agent namespace, name == instance ID.
+// Per pair (ADR-041 + ADR-042) we run **two** ServiceAccounts in the
+// agent namespace: agent SA (`<instanceID>`) and gateway SA
+// (`<instanceID>-gateway`). The split gives the gateway a distinct
+// SPIFFE principal so destination AuthorizationPolicies can admit
+// "the gateway" without admitting "the agent" — strict enforcement of
+// "agent only calls gateway."
 //
-// Both pods of the long-lived pair (agent-runtime + gateway) mount this SA.
-// Fork pairs (ADR-027) get their **own** per-fork SA — distinct from the
-// parent's — rendered by the same `BuildServiceAccount` helper with the
-// fork name as `instanceName`. The fork's narrower harness surface is
-// enforced by per-fork AuthorizationPolicies (see authorization_policy.go).
-// K8s GC reaps each SA on instance/fork delete via the owner reference to
-// the matching ConfigMap.
+// Fork pairs (ADR-027) follow the same split: `<forkName>` for the
+// fork agent, `<forkName>-gateway` for the fork gateway.
 //
-// `automountServiceAccountToken: false` is preserved: Istio workload identity
-// does not depend on SA-token mounts, and we keep the agent + gateway pods
-// credential-free at the K8s API surface.
+// `automountServiceAccountToken: false` is preserved on both: Istio
+// workload identity does not depend on SA-token mounts, and we keep
+// the agent + gateway pods credential-free at the K8s API surface.
+// K8s GC reaps each SA on instance/fork delete via the owner reference
+// to the matching ConfigMap.
 
-// BuildServiceAccount renders the per-instance ServiceAccount for `instanceName`.
-func BuildServiceAccount(instanceName string, cfg *config.Config, ownerCM *corev1.ConfigMap) *corev1.ServiceAccount {
+// BuildServiceAccount renders a ServiceAccount with the given `name` in
+// the agent namespace, owner-refed to `ownerCM`. Used for both agent
+// (`<id>`) and gateway (`<id>-gateway`) SAs.
+func BuildServiceAccount(name, instanceLabel string, cfg *config.Config, ownerCM *corev1.ConfigMap) *corev1.ServiceAccount {
 	falseVal := false
 	return &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      instanceName,
+			Name:      name,
 			Namespace: cfg.Namespace,
 			Labels: map[string]string{
-				LabelInstance:                  instanceName,
+				LabelInstance:                  instanceLabel,
 				"agent-platform.ai/managed-by": "platform",
 			},
 			OwnerReferences: []metav1.OwnerReference{
@@ -97,12 +101,17 @@ func hasOwnerRef(existing []metav1.OwnerReference, want metav1.OwnerReference) b
 	return false
 }
 
-// ensureSA is the convenience wrapper used by Reconcile. Returns a wrapped
-// error that names the operation for callers that surface it via setError.
+// ensureServiceAccount is the convenience wrapper used by Reconcile. Renders
+// both the agent SA (`<instanceName>`) and the gateway SA
+// (`<instanceName>-gateway`).
 func (r *InstanceReconciler) ensureServiceAccount(ctx context.Context, instanceName string, ownerCM *corev1.ConfigMap) error {
-	sa := BuildServiceAccount(instanceName, r.config, ownerCM)
-	if err := r.applyServiceAccount(ctx, sa); err != nil {
-		return fmt.Errorf("applying serviceaccount: %w", err)
+	agentSA := BuildServiceAccount(r.config.AgentServiceAccountName(instanceName), instanceName, r.config, ownerCM)
+	if err := r.applyServiceAccount(ctx, agentSA); err != nil {
+		return fmt.Errorf("applying agent serviceaccount: %w", err)
+	}
+	gatewaySA := BuildServiceAccount(r.config.GatewayServiceAccountName(instanceName), instanceName, r.config, ownerCM)
+	if err := r.applyServiceAccount(ctx, gatewaySA); err != nil {
+		return fmt.Errorf("applying gateway serviceaccount: %w", err)
 	}
 	return nil
 }

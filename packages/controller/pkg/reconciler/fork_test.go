@@ -96,6 +96,10 @@ func TestForkReconcile_CreatesJob(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "fork-1", job.Labels["agent-platform.ai/fork-id"])
 
+	// ADR-042: agent + gateway egress NPs are chart-rendered (namespace-wide,
+	// selector-based). Fork agents pick them up automatically via the
+	// `role=agent` label.
+
 	status := readStatus(t, client, "fork-1")
 	require.NotNil(t, status)
 	assert.Equal(t, types.ForkPhasePending, status.Phase)

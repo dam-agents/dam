@@ -1,0 +1,51 @@
+{{- /*
+Ingress AuthorizationPolicy on agent pods (selector `role=agent`).
+
+The gateway-side AuthorizationPolicy admits only the matching SA into
+each gateway pod, but until this policy lands there is no equivalent
+gate on agent pods — a compromised gateway (or any other in-mesh peer
+that knows the pod IP) could ambient-HBONE into another instance's
+agent pod and POST directly to its ACP WebSocket (port 8080),
+bypassing the api-server relay (ADR-007).
+
+Two callers legitimately dial agent pod :8080:
+  - api-server  — ACP WebSocket relay (acp-client.ts)
+  - controller  — idle status probe   (idlechecker.go)
+
+Both run in the release namespace under deterministic SA names. Any
+ALLOW policy on a selector switches that workload to default-deny
+for non-matching principals, so this single policy closes the gap for
+every agent pod (long-lived pair and fork alike — fork agents carry
+the same `role=agent` label).
+
+The companion gateway-egress NetworkPolicy (gateway-egress-netpol.yaml)
+closes the L3/L4 direct-pod-IP path; this policy closes the mesh-
+HBONE path that NetworkPolicy can't see in ambient mode.
+*/}}
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ include "platform.fullname" . }}-agent-pod-allow
+  namespace: {{ .Values.agentNamespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    agent-platform.ai/role: agent
+spec:
+  selector:
+    matchLabels:
+      agent-platform.ai/role: agent
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "{{ .Values.istio.trustDomain }}/ns/{{ .Release.Namespace }}/sa/{{ include "platform.apiserver.serviceAccountName" . }}"
+              - "{{ .Values.istio.trustDomain }}/ns/{{ .Release.Namespace }}/sa/{{ include "platform.controller.serviceAccountName" . }}"
+      to:
+        # ACP WebSocket port only. Without this clause the ALLOW would
+        # admit api-server + controller to *every* port on agent pods —
+        # ports we might add later (metrics, probes on non-standard
+        # ports) shouldn't inherit the implicit access.
+        - operation:
+            ports:
+              - "8080"

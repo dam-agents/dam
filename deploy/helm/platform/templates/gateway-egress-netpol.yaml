@@ -1,0 +1,64 @@
+{{- /*
+Gateway pod egress NetworkPolicy.
+
+Per ADR-042, NetworkPolicy is a defense-in-depth perimeter only;
+intra-cluster destination access control lives in Istio
+AuthorizationPolicy. In ambient mode istio-cni rewrites every
+mesh-bound packet's destination to local ztunnel before this filter
+runs, so per-destination-pod rules don't fire — the only role this
+NP can honestly serve is shaping non-mesh paths.
+
+The gateway's distinguishing property versus the agent is that it
+needs the open internet (it injects credentials into upstream API
+calls). Rules:
+
+  - DNS to kube-system (TCP/UDP 53).
+  - Ambient HBONE entrance to istio-system (15008) — every mesh-bound
+    packet lands here after istio-cni redirect; destination is then
+    gated by AuthorizationPolicy on the inner workload.
+  - External internet via `ipBlock 0.0.0.0/0` with `clusterCidrs`
+    excepted. The `except` list bounds direct pod-IP dialing if
+    istio-cni redirect doesn't apply (non-ambient destinations,
+    privileged escape), so non-mesh egress is shaped to "external
+    internet, not cluster pods."
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "platform.fullname" . }}-gateway-egress
+  namespace: {{ .Values.agentNamespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    agent-platform.ai/role: gateway
+spec:
+  podSelector:
+    matchLabels:
+      agent-platform.ai/role: gateway
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+      ports:
+        - protocol: TCP
+          port: 15008
+    {{- with .Values.clusterCidrs }}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              {{- range . }}
+              - {{ . | quote }}
+              {{- end }}
+    {{- end }}

@@ -14,29 +14,30 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 )
 
-// ADR-041: per-instance Istio AuthorizationPolicies. The controller writes
-// three per instance:
+// ADR-041 + ADR-042: per-instance Istio AuthorizationPolicies. The
+// controller writes three per instance:
 //
-//   1. `<id>-gateway-allow`        — admission to the gateway Service (CONNECT
-//                                    proxy port, agent namespace). ALLOW
-//                                    principal `<td>/ns/<ns>/sa/<id>`.
-//   2. `<id>-harness-allow`        — admission via the api-server's waypoint
-//                                    Gateway to path `/api/instances/<id>/*`.
-//   3. `<id>-extauthz-allow`       — admission to the per-instance ext-authz
-//                                    Service. ALLOW principal — same SA.
+//   1. `<id>-gateway-allow`  — admission to the gateway pod (CONNECT proxy
+//                              port, agent namespace). ALLOWs the **agent
+//                              SA principal** (`<td>/ns/<ns>/sa/<id>`) —
+//                              the agent dials the gateway.
+//   2. `<id>-harness-allow`  — admission via the api-server's waypoint
+//                              Gateway to path `/api/instances/<id>/*`.
+//                              ALLOWs the **gateway SA principal**
+//                              (`<td>/ns/<ns>/sa/<id>-gateway`) only —
+//                              the agent must route through the gateway
+//                              to reach harness.
+//   3. `<id>-extauthz-allow` — admission to the per-instance ext-authz
+//                              Service. ALLOWs the gateway SA principal
+//                              only.
 //
-// All three pin the principal to the instance's SA. App handlers can treat
-// URL `:id` (harness) or gRPC `:authority` (ext-authz) as already
-// authenticated by the time the request reaches them.
-//
-// Forks (ADR-027) get their **own** per-fork SA — distinct from the parent —
-// paired with two release-namespace policies that scope the fork narrowly
-// to the parent's surface: `BuildForkHarnessAuthorizationPolicy` admits the
-// fork SA only to `/api/instances/<parent>/mcp`, and
-// `BuildForkExtAuthzAuthorizationPolicy` admits it to the parent's
-// per-instance ext-authz Service. The fork's gateway-admission policy
-// uses `BuildGatewayAuthorizationPolicy(forkName, forkName, ...)` —
-// "self-talk only" within the fork pair, same shape as long-lived pairs.
+// Forks (ADR-027) follow the same split — `<forkName>` for the fork
+// agent SA, `<forkName>-gateway` for the fork gateway SA. Per-fork
+// release-namespace policies (`BuildForkHarnessAuthorizationPolicy`,
+// `BuildForkExtAuthzAuthorizationPolicy`) admit the fork gateway SA to
+// a narrow surface scoped to the parent. The fork's gateway-admission
+// policy admits the fork agent SA — agent → gateway is the only
+// pair-internal hop.
 
 const (
 	istioGroup    = "security.istio.io"
@@ -103,17 +104,14 @@ func ownerRefAsMap(r *metav1.OwnerReference) map[string]interface{} {
 }
 
 // BuildGatewayAuthorizationPolicy admits traffic to the per-instance gateway
-// Service from the matching SA principal only. Selector matches gateway pods
-// of this pair (so the policy doesn't accidentally apply to anything else
-// with the same Service name in the same ns).
+// pod from the paired **agent** SA principal only. Selector matches gateway
+// pods of this pair.
 //
 // `pairKey` is the pair identifier (instance name for long-lived pairs,
-// fork name for fork pairs). `principalInstanceID` is the instance ID
-// whose SA is allowed — for both long-lived and fork pairs this equals
-// `pairKey` since each pair runs as the SA named after its own pairKey
-// ("self-talk only"). The two-parameter shape is preserved so callers
-// can still admit a *different* SA on a pair Service if a future use
-// case ever needs it.
+// fork name for fork pairs). `principalInstanceID` names the agent SA
+// admitted — equal to `pairKey` for both shapes (agent and gateway of
+// the same pair have related SA names, and the agent dials its own
+// gateway).
 func BuildGatewayAuthorizationPolicy(pairKey, principalInstanceID string, cfg *config.Config, ownerCM *corev1.ConfigMap) *unstructured.Unstructured {
 	spec := map[string]interface{}{
 		"selector": map[string]interface{}{
@@ -128,7 +126,7 @@ func BuildGatewayAuthorizationPolicy(pairKey, principalInstanceID string, cfg *c
 				"from": []interface{}{
 					map[string]interface{}{
 						"source": map[string]interface{}{
-							"principals": []interface{}{cfg.PrincipalFor(principalInstanceID)},
+							"principals": []interface{}{cfg.PrincipalForAgent(principalInstanceID)},
 						},
 					},
 				},
@@ -145,9 +143,9 @@ func BuildGatewayAuthorizationPolicy(pairKey, principalInstanceID string, cfg *c
 }
 
 // BuildHarnessAuthorizationPolicy admits traffic via the api-server's
-// waypoint Gateway to path `/api/instances/<id>/*` from the matching SA
-// principal only. Lives in the *release* namespace alongside the waypoint
-// Gateway it targets.
+// waypoint Gateway to path `/api/instances/<id>/*` from the instance's
+// **gateway** SA principal only — the agent must route through the
+// gateway to reach harness (ADR-042).
 //
 // `principalInstanceID` is the instance ID; this is also the URL `:id`
 // the policy enforces.
@@ -166,7 +164,7 @@ func BuildHarnessAuthorizationPolicy(principalInstanceID string, cfg *config.Con
 				"from": []interface{}{
 					map[string]interface{}{
 						"source": map[string]interface{}{
-							"principals": []interface{}{cfg.PrincipalFor(principalInstanceID)},
+							"principals": []interface{}{cfg.PrincipalForGateway(principalInstanceID)},
 						},
 					},
 				},
@@ -212,7 +210,7 @@ func BuildForkHarnessAuthorizationPolicy(forkName, parentInstanceID string, cfg 
 				"from": []interface{}{
 					map[string]interface{}{
 						"source": map[string]interface{}{
-							"principals": []interface{}{cfg.PrincipalFor(forkName)},
+							"principals": []interface{}{cfg.PrincipalForGateway(forkName)},
 						},
 					},
 				},
@@ -257,7 +255,7 @@ func BuildForkExtAuthzAuthorizationPolicy(forkName, parentInstanceID string, cfg
 				"from": []interface{}{
 					map[string]interface{}{
 						"source": map[string]interface{}{
-							"principals": []interface{}{cfg.PrincipalFor(forkName)},
+							"principals": []interface{}{cfg.PrincipalForGateway(forkName)},
 						},
 					},
 				},
@@ -274,9 +272,10 @@ func BuildForkExtAuthzAuthorizationPolicy(forkName, parentInstanceID string, cfg
 }
 
 // BuildExtAuthzAuthorizationPolicy admits traffic to the per-instance
-// ext-authz Service from the matching SA principal only. Lives in the
-// release namespace alongside the per-instance ext-authz Service it
-// targets.
+// ext-authz Service from the instance's **gateway** SA principal only
+// (ADR-042) — the agent must route through the gateway to reach
+// ext-authz. Lives in the release namespace alongside the per-instance
+// ext-authz Service it targets.
 func BuildExtAuthzAuthorizationPolicy(instanceName string, cfg *config.Config, ownerCM *corev1.ConfigMap) *unstructured.Unstructured {
 	spec := map[string]interface{}{
 		"targetRefs": []interface{}{
@@ -292,7 +291,7 @@ func BuildExtAuthzAuthorizationPolicy(instanceName string, cfg *config.Config, o
 				"from": []interface{}{
 					map[string]interface{}{
 						"source": map[string]interface{}{
-							"principals": []interface{}{cfg.PrincipalFor(instanceName)},
+							"principals": []interface{}{cfg.PrincipalForGateway(instanceName)},
 						},
 					},
 				},

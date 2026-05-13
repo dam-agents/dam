@@ -85,11 +85,14 @@ func BuildGatewayStatefulSet(instanceName string, hibernated bool, cfg *config.C
 					Annotations: annotations,
 				},
 				Spec: corev1.PodSpec{
-					// ADR-041: gateway pod runs as the per-instance SA so
-					// its SPIFFE workload identity matches the agent half
-					// of the pair (same SA on both pods). The gateway-side
-					// AuthorizationPolicy ALLOWs only this principal.
-					ServiceAccountName:            instanceName,
+					// ADR-042: gateway pod runs as a **distinct** SA from
+					// the agent (the agent uses `<id>`, the gateway uses
+					// `<id>-gateway`). Destination AuthorizationPolicies
+					// at the harness waypoint + per-instance ext-authz
+					// Service ALLOW only the gateway SA principal — the
+					// agent can't bypass and reach those endpoints with
+					// its own identity.
+					ServiceAccountName:            cfg.GatewayServiceAccountName(instanceName),
 					TerminationGracePeriodSeconds: &cfg.TerminationGracePeriod,
 					AutomountServiceAccountToken:  &falseVal,
 					Containers:                    containers,
@@ -163,13 +166,11 @@ func BuildForkGatewayPod(forkName, parentInstanceID string, cfg *config.Config, 
 			},
 		},
 		Spec: corev1.PodSpec{
-			// ADR-041 + ADR-027: fork gateway pod runs as the per-fork SA
-			// (its own identity, NOT the parent's). The per-fork
-			// gateway-admission AuthorizationPolicy ALLOWs only this SA
-			// (both pods of the fork pair share it), and per-fork
-			// harness + ext-authz policies admit it to a narrow surface
-			// scoped to the parent.
-			ServiceAccountName:            forkName,
+			// ADR-042: fork gateway pod runs as the fork's gateway SA
+			// (`<forkName>-gateway`), distinct from the fork agent SA
+			// (`<forkName>`). Per-fork harness + ext-authz policies admit
+			// the gateway SA only.
+			ServiceAccountName:            cfg.GatewayServiceAccountName(forkName),
 			RestartPolicy:                 corev1.RestartPolicyAlways,
 			TerminationGracePeriodSeconds: &cfg.TerminationGracePeriod,
 			AutomountServiceAccountToken:  &falseVal,

@@ -66,7 +66,8 @@ func TestPrincipalFor_SPIFFEShape(t *testing.T) {
 	})
 	cfg, err := LoadFromEnv()
 	require.NoError(t, err)
-	assert.Equal(t, "td.local/ns/agents/sa/inst-x", cfg.PrincipalFor("inst-x"))
+	assert.Equal(t, "td.local/ns/agents/sa/inst-x", cfg.PrincipalForAgent("inst-x"))
+	assert.Equal(t, "td.local/ns/agents/sa/inst-x-gateway", cfg.PrincipalForGateway("inst-x"))
 }
 
 func TestLoadFromEnv_AgentStorageClass(t *testing.T) {
