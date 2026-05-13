@@ -10,6 +10,7 @@ add it to the include list in `platform.validate`.
 
 {{- define "platform.validate" -}}
 {{- include "platform.validate.anyuidRequiresKata" . -}}
+{{- include "platform.validate.anyuidRequiresAgentNamespace" . -}}
 {{- end -}}
 
 {{/*
@@ -27,6 +28,20 @@ OCI runtime, which defeats the sandbox boundary the platform relies on.
 {{- end -}}
 {{- if not (hasPrefix "kata" $rc) -}}
 {{- fail (printf "openshift.scc.anyuid.enabled=true requires controller.agent.base.runtimeClassName to be a kata runtime (got %q). Granting anyuid without kata isolation puts agents at UID 0 on the host's default OCI runtime." $rc) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+The anyuid RoleBinding is namespaced to `agentNamespace` and grants
+SCC access via the `system:serviceaccounts:<agentNamespace>` group.
+Both are meaningless if `agentNamespace` is empty: the binding lands
+without a namespace, and the group ref matches no SA. Refuse to render.
+*/}}
+{{- define "platform.validate.anyuidRequiresAgentNamespace" -}}
+{{- if and .Values.openshift .Values.openshift.scc .Values.openshift.scc.anyuid .Values.openshift.scc.anyuid.enabled -}}
+{{- if not (.Values.agentNamespace | default "" | trim) -}}
+{{- fail "openshift.scc.anyuid.enabled=true requires agentNamespace to be set. The RoleBinding is namespace-scoped and grants SCC access via the system:serviceaccounts:<agentNamespace> group; an empty value makes both meaningless." -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
