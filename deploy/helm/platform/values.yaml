@@ -97,18 +97,12 @@ createAgentNamespace: true
 # -- OpenShift-specific knobs. No-op on vanilla Kubernetes.
 openshift:
   scc:
-    # Bind `system:openshift:scc:anyuid` to every ServiceAccount in
-    # `agentNamespace` so agent / gateway pods may run as UID 0 (required
-    # for kata-containers workloads that need root inside the sandbox).
-    # Default restricted-v2 admission strips runAsUser=0; flip this on
-    # when running on OpenShift with kata runtime.
-    #
-    # Requires `controller.agent.base.runtimeClassName` to be a kata
-    # runtime (e.g. "kata", "kata-nvidia-gpu"). The chart's validator
-    # refuses to render otherwise — granting anyuid without kata
-    # isolation puts agents at UID 0 on the host's default OCI runtime,
-    # which defeats the sandbox boundary.
-    anyuid:
+    # Bind `system:openshift:scc:nonroot-v2` to ServiceAccounts in `agentNamespace`
+    # so agent pods run as image USER (65532) instead of the namespace-range UID
+    # that restricted-v2 would assign. Required on OpenShift when the agent PVC's
+    # StorageClass initializes the share root with a hardcoded UID — common on
+    # managed NFS (IBM Cloud File Storage for VPC, etc.); pair with SC `uid: "65532"`.
+    nonroot:
       enabled: false
 
 # -- Shared local PostgreSQL instance
@@ -448,8 +442,16 @@ controller:
       # Relaxing them gives the agent container privileges that bypass the
       # paired-pod credential split (ADR-038) and the L7 ext_authz gate
       # (ADR-035). Agent ConfigMaps cannot set these — chart-only by design.
-      podSecurityContext: {}
+      # UID 65532 matches the `USER` directive in packages/*/Dockerfile.
+      podSecurityContext:
+        runAsUser: 65532
+        runAsGroup: 65532
+        runAsNonRoot: true
       containerSecurityContext:
+        runAsUser: 65532
+        runAsGroup: 65532
+        runAsNonRoot: true
+        allowPrivilegeEscalation: false
         capabilities:
           drop: ["ALL"]
       # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
