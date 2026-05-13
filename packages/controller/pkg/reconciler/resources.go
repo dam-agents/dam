@@ -100,7 +100,7 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 	// identity in this model; mesh-keyed AuthorizationPolicy on the gateway
 	// pod is gone (NP is the gate). The paired gateway pod remains a mesh
 	// participant — its SPIFFE principal still gates gateway → harness and
-	// gateway → ext-authz hops (ADR-041 §"Mesh identity").
+	// gateway → ext-authz hops (ADR-041).
 	podLabels := map[string]string{}
 	for k, v := range labels {
 		podLabels[k] = v
