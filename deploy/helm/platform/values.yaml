@@ -550,7 +550,17 @@ agentTemplates:
     image:
       repository: quay.io/dam-agents/bob
       tag: ""
+    # Bob recommends ≥4 GB RAM (8 GB nicer); storage only holds the home
+    # dir + workspace (the bundle lives in the image), so the agent default
+    # of 2 Gi is plenty.
     storageSize: "2Gi"
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
 
 # -- Platform-wide skill sources (shared catalog visible to all users).
 # Rendered into the api-server pod as SKILL_SOURCES_SEED. The same
