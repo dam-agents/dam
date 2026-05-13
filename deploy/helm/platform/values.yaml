@@ -557,7 +557,7 @@ agentTemplates:
       - $HOME/.claude/skills/
 
   - name: bob
-    enabled: false
+    enabled: true
     description: "Bob shell agent"
     image:
       repository: quay.io/dam-agents/bob
