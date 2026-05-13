@@ -14,29 +14,29 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 )
 
-// ADR-041: per-instance Istio AuthorizationPolicies. The controller writes
-// three per instance:
+// Per-instance Istio AuthorizationPolicies. The controller writes two per
+// instance, both in the release namespace:
 //
-//   1. `<id>-gateway-allow`        — admission to the gateway Service (CONNECT
-//                                    proxy port, agent namespace). ALLOW
-//                                    principal `<td>/ns/<ns>/sa/<id>`.
-//   2. `<id>-harness-allow`        — admission via the api-server's waypoint
+//   1. `<id>-harness-allow`        — admission via the api-server's waypoint
 //                                    Gateway to path `/api/instances/<id>/*`.
-//   3. `<id>-extauthz-allow`       — admission to the per-instance ext-authz
+//   2. `<id>-extauthz-allow`       — admission to the per-instance ext-authz
 //                                    Service. ALLOW principal — same SA.
 //
-// All three pin the principal to the instance's SA. App handlers can treat
-// URL `:id` (harness) or gRPC `:authority` (ext-authz) as already
-// authenticated by the time the request reaches them.
+// Both pin the principal to the instance's SA — but the principal here is
+// the *gateway pod*'s SPIFFE identity. The agent pod is not a mesh
+// participant (no SPIFFE), so all in-cluster identity work happens on the
+// gateway → api-server hops. App handlers can treat URL `:id` (harness) or
+// gRPC `:authority` (ext-authz) as already authenticated by the time the
+// request reaches them. The agent → gateway hop is gated by the per-pair
+// `<id>-agent-egress` NetworkPolicy at the kernel layer, not by mesh AuthZ
+// — see network_policy.go.
 //
 // Forks (ADR-027) get their **own** per-fork SA — distinct from the parent —
 // paired with two release-namespace policies that scope the fork narrowly
 // to the parent's surface: `BuildForkHarnessAuthorizationPolicy` admits the
 // fork SA only to `/api/instances/<parent>/mcp`, and
 // `BuildForkExtAuthzAuthorizationPolicy` admits it to the parent's
-// per-instance ext-authz Service. The fork's gateway-admission policy
-// uses `BuildGatewayAuthorizationPolicy(forkName, forkName, ...)` —
-// "self-talk only" within the fork pair, same shape as long-lived pairs.
+// per-instance ext-authz Service.
 
 const (
 	istioGroup    = "security.istio.io"
@@ -100,48 +100,6 @@ func ownerRefAsMap(r *metav1.OwnerReference) map[string]interface{} {
 		m["blockOwnerDeletion"] = *r.BlockOwnerDeletion
 	}
 	return m
-}
-
-// BuildGatewayAuthorizationPolicy admits traffic to the per-instance gateway
-// Service from the matching SA principal only. Selector matches gateway pods
-// of this pair (so the policy doesn't accidentally apply to anything else
-// with the same Service name in the same ns).
-//
-// `pairKey` is the pair identifier (instance name for long-lived pairs,
-// fork name for fork pairs). `principalInstanceID` is the instance ID
-// whose SA is allowed — for both long-lived and fork pairs this equals
-// `pairKey` since each pair runs as the SA named after its own pairKey
-// ("self-talk only"). The two-parameter shape is preserved so callers
-// can still admit a *different* SA on a pair Service if a future use
-// case ever needs it.
-func BuildGatewayAuthorizationPolicy(pairKey, principalInstanceID string, cfg *config.Config, ownerCM *corev1.ConfigMap) *unstructured.Unstructured {
-	spec := map[string]interface{}{
-		"selector": map[string]interface{}{
-			"matchLabels": map[string]interface{}{
-				LabelPair: pairKey,
-				LabelRole: RoleGateway,
-			},
-		},
-		"action": "ALLOW",
-		"rules": []interface{}{
-			map[string]interface{}{
-				"from": []interface{}{
-					map[string]interface{}{
-						"source": map[string]interface{}{
-							"principals": []interface{}{cfg.PrincipalFor(principalInstanceID)},
-						},
-					},
-				},
-			},
-		},
-	}
-	labels := map[string]string{
-		LabelInstance:                  principalInstanceID,
-		LabelPair:                      pairKey,
-		LabelRole:                      RoleGateway,
-		"agent-platform.ai/managed-by": "platform-controller",
-	}
-	return authzPolicy(pairKey+"-gateway-allow", cfg.Namespace, ownerCM, labels, spec)
 }
 
 // BuildHarnessAuthorizationPolicy admits traffic via the api-server's

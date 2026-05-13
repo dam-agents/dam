@@ -98,6 +98,16 @@ func TestBuildAgentStatefulSet_Running(t *testing.T) {
 	assert.Equal(t, "my-instance", ss.Spec.Template.Labels["agent-platform.ai/instance"])
 	assert.Equal(t, "my-instance", ss.Spec.Template.Labels["agent-platform.ai/pair"])
 	assert.Equal(t, "agent", ss.Spec.Template.Labels["agent-platform.ai/role"])
+	// Agent pod opts out of ambient mesh — load-bearing for the per-pair
+	// agent-egress NetworkPolicy: with ambient, istio-cni rewrites every
+	// outbound to ztunnel:15008 before the NP filter sees the destination,
+	// so per-destination rules can't gate effectively.
+	assert.Equal(t, "none", ss.Spec.Template.Labels["istio.io/dataplane-mode"],
+		"agent pod must carry istio.io/dataplane-mode=none so NetworkPolicy is the egress boundary")
+	// The StatefulSet's own selector must NOT include the dataplane-mode
+	// label — otherwise removing it later would orphan existing pods.
+	assert.NotContains(t, ss.Spec.Selector.MatchLabels, "istio.io/dataplane-mode",
+		"selector must remain minimal so ambient enrolment can be flipped without selector churn")
 
 	require.Len(t, ss.Spec.Template.Spec.Containers, 1, "agent only — gateway runs in its own paired pod (ADR-038)")
 	c := ss.Spec.Template.Spec.Containers[0]

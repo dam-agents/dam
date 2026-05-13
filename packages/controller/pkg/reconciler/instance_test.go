@@ -128,34 +128,35 @@ func TestReconcile_CreateResources(t *testing.T) {
 	require.NoError(t, err, "gateway Service must be created so HTTPS_PROXY DNS resolves")
 	assert.Equal(t, corev1.ClusterIPNone, gwSvc.Spec.ClusterIP)
 
-	// ADR-041: pair-key NetworkPolicies are gone — pair isolation is now
-	// enforced by per-instance Istio AuthorizationPolicies. Coverage for
-	// the new resources lives in service_account_test.go (per-instance SA)
-	// and authorization_policy_test.go.
-
-	// Per-instance ServiceAccount (ADR-041)
+	// Per-instance ServiceAccount — kept off-pod via
+	// automountServiceAccountToken: false. The agent pod has no SPIFFE
+	// identity (ambient opt-out), but the SA still scopes Secret access
+	// at the controller level.
 	sa, err := client.CoreV1().ServiceAccounts("test-agents").Get(ctx, "my-instance", metav1.GetOptions{})
 	require.NoError(t, err, "per-instance ServiceAccount must be created")
 	require.NotNil(t, sa.AutomountServiceAccountToken)
 	assert.False(t, *sa.AutomountServiceAccountToken)
 
-	// Per-instance ext-authz Service in the release namespace (ADR-041)
+	// Per-instance ext-authz Service in the release namespace.
 	_, err = client.CoreV1().Services("default").Get(ctx, "platform-extauthz-my-instance", metav1.GetOptions{})
 	require.NoError(t, err, "per-instance ext-authz Service must be created")
 
-	// ADR-041: per-pair agent egress NetworkPolicy. AuthorizationPolicy
-	// only gates ingress; this closes the symmetric egress hole at the
-	// kernel layer so an agent can't bypass HTTPS_PROXY.
+	// Per-pair agent egress NetworkPolicy — the sole gate on the agent →
+	// paired gateway hop. Agent has no ambient enrolment, so NP sees real
+	// destination IPs and denies anything that isn't DNS or the paired
+	// gateway pod on the Envoy port.
 	np, err := client.NetworkingV1().NetworkPolicies("test-agents").Get(ctx, "my-instance-agent-egress", metav1.GetOptions{})
 	require.NoError(t, err, "per-pair agent egress NetworkPolicy must be created")
 	assert.Equal(t, "my-instance", np.Spec.PodSelector.MatchLabels["agent-platform.ai/pair"])
 	assert.Equal(t, "agent", np.Spec.PodSelector.MatchLabels["agent-platform.ai/role"])
 
-	// Pod specs use the per-instance SA (ADR-041)
+	// Pod specs use the per-instance SA. On the gateway, this materialises
+	// as a SPIFFE workload identity used by the harness + ext-authz
+	// AuthorizationPolicies.
 	assert.Equal(t, "my-instance", ss.Spec.Template.Spec.ServiceAccountName,
-		"agent pod must run as the per-instance SA so SPIFFE peer principal == URL :id")
+		"agent pod must run as the per-instance SA")
 	assert.Equal(t, "my-instance", gws.Spec.Template.Spec.ServiceAccountName,
-		"gateway pod must run as the per-instance SA")
+		"gateway pod must run as the per-instance SA (its SPIFFE principal gates harness + ext-authz)")
 
 	// Status written
 	updated, _ := client.CoreV1().ConfigMaps("test-agents").Get(ctx, "my-instance", metav1.GetOptions{})

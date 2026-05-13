@@ -1,33 +1,34 @@
 {{- /*
-ADR-041 migration. Two pre-upgrade clean-ups, both no-ops on a fresh
-install:
+Pre-upgrade clean-ups, all no-ops on a fresh install:
 
-1. Delete stale pair-key NetworkPolicies. The old controller wrote
-   `<id>-egress` / `<id>-gateway-egress` policies in the agent
-   namespace, owner-refed to the instance ConfigMap. ADR-041 retires
-   that mechanism and removes the controller's `networkpolicies`
-   write RBAC, so the new controller cannot delete the leftovers
-   itself. Once the agent namespace flips to ambient, ztunnel
-   encapsulates pod-to-pod traffic on HBONE :15008 — but the stale
-   NPs only admit the application port (10000, 8080), blocking
-   ambient connectivity for every existing instance until it's
-   recreated.
+1. Delete pre-ADR-041 pair-key NetworkPolicies. The old controller wrote
+   `<id>-egress` / `<id>-gateway-egress` policies in the agent namespace
+   without the `agent-platform.ai/managed-by=platform-controller` label.
+   Once the agent namespace flips to ambient, ztunnel encapsulates
+   pod-to-pod traffic on HBONE :15008 — but those stale NPs only admit
+   the application port (10000, 8080), blocking ambient connectivity for
+   every existing instance until it's recreated. The selector is
+   `agent-platform.ai/pair` AND `!agent-platform.ai/managed-by` so the
+   current-shape `<id>-agent-egress` NPs (which carry both labels) are
+   left untouched.
 
-2. Delete in-flight fork ConfigMaps. Pre-upgrade fork pods carry
-   `serviceAccountName == parentInstanceID`. The new
-   `BuildGatewayAuthorizationPolicy(forkName, forkName, ...)` admits
-   only the per-fork SA principal, so any running fork pair fails
-   gateway self-talk after upgrade until the fork is deleted +
-   recreated. Forks are short-lived per-turn Jobs (TTL 60s after
-   completion) so the operational impact is minimal — losing any
-   in-flight turn is acceptable for an upgrade. Owner-refed children
-   (Job + Pod + Service + Envoy bootstrap CM + leaf cert) cascade-
-   delete via the fork ConfigMap.
+2. Delete stale `<id>-gateway-allow` AuthorizationPolicies. Earlier
+   versions wrote one per pair admitting the agent SPIFFE principal at
+   the gateway pod. The agent no longer participates in the mesh (it
+   opts out at the pod level), so this ALLOW now denies legitimate
+   agent → gateway traffic — and the controller no longer writes or
+   GCs it. We sweep them here on upgrade and let the reconciler
+   converge the rest. Selector pins to the controller's labels for
+   precision (managed-by + role=gateway).
 
-`agent-platform.ai/pair` (NPs) and `agent-platform.ai/type=agent-fork`
-(fork CMs) are precise selectors — both labels are stamped by the
-old/current controller and are not used elsewhere. Removable in a
-future minor once every supported deployment has crossed ADR-041.
+3. Delete in-flight fork ConfigMaps. Pre-upgrade fork pods carry
+   `serviceAccountName == parentInstanceID`. Newer fork code uses a
+   per-fork SA distinct from the parent's, so any running fork pair
+   fails its mesh-gated harness/ext-authz hops after upgrade until the
+   fork is deleted and recreated. Forks are short-lived per-turn Jobs
+   (TTL 60s after completion) so the operational impact is minimal.
+   Owner-refed children (Job + Pod + Service + Envoy bootstrap CM +
+   leaf cert) cascade-delete via the fork ConfigMap.
 */ -}}
 {{- $jobName := printf "%s-migrate-stale-netpols" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
 apiVersion: v1
@@ -56,6 +57,9 @@ metadata:
 rules:
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
+    verbs: ["list", "delete"]
+  - apiGroups: ["security.istio.io"]
+    resources: ["authorizationpolicies"]
     verbs: ["list", "delete"]
   - apiGroups: [""]
     resources: ["configmaps"]
@@ -114,24 +118,37 @@ spec:
               set -eo pipefail
               ns={{ .Values.agentNamespace | quote }}
 
-              # 1. Stale pair-key NetworkPolicies. The label
-              #    `agent-platform.ai/pair` was stamped by the old
-              #    controller on every per-instance NetworkPolicy and is
-              #    not used elsewhere, so this selector is precise.
-              np_count=$(kubectl -n "$ns" get networkpolicy -l agent-platform.ai/pair -o name 2>/dev/null | wc -l | tr -d ' ')
-              echo "ADR-041 migration: deleting $np_count stale pair-key NetworkPolicy(s) in $ns"
+              # 1. Pre-ADR-041 pair-key NetworkPolicies. Restricted to NPs
+              #    that lack `agent-platform.ai/managed-by` — current-shape
+              #    `<id>-agent-egress` carries both `pair` and `managed-by`,
+              #    so this selector leaves them alone.
+              np_count=$(kubectl -n "$ns" get networkpolicy -l 'agent-platform.ai/pair,!agent-platform.ai/managed-by' -o name 2>/dev/null | wc -l | tr -d ' ')
+              echo "migration: deleting $np_count pre-ADR-041 NetworkPolicy(s) in $ns"
               if [ "$np_count" != "0" ]; then
-                kubectl -n "$ns" delete networkpolicy -l agent-platform.ai/pair --ignore-not-found
+                kubectl -n "$ns" delete networkpolicy -l 'agent-platform.ai/pair,!agent-platform.ai/managed-by' --ignore-not-found
               fi
 
-              # 2. In-flight fork ConfigMaps. Pre-upgrade fork pods carry
-              #    serviceAccountName == parentInstanceID; the new
-              #    gateway-allow policy admits only the fork SA principal,
-              #    so running forks fail self-talk after upgrade. Deleting
-              #    the fork ConfigMap cascade-removes Job + Pod + Service +
-              #    Envoy bootstrap CM + leaf cert via owner-ref.
+              # 2. Stale `<id>-gateway-allow` AuthorizationPolicies. The
+              #    controller stopped writing these when the agent stopped
+              #    participating in the mesh — but they're still in-cluster
+              #    on upgrade and will deny the agent → gateway hop they
+              #    used to admit (the agent has no SPIFFE now). Selector
+              #    pins to managed-by + role=gateway for precision.
+              ap_count=$(kubectl -n "$ns" get authorizationpolicy -l 'agent-platform.ai/managed-by=platform-controller,agent-platform.ai/role=gateway' -o name 2>/dev/null | wc -l | tr -d ' ')
+              echo "migration: deleting $ap_count stale gateway-allow AuthorizationPolicy(s) in $ns"
+              if [ "$ap_count" != "0" ]; then
+                kubectl -n "$ns" delete authorizationpolicy -l 'agent-platform.ai/managed-by=platform-controller,agent-platform.ai/role=gateway' --ignore-not-found
+              fi
+
+              # 3. In-flight fork ConfigMaps. Pre-current-shape fork pods
+              #    carry serviceAccountName == parentInstanceID; per-fork
+              #    AuthorizationPolicies admit only the fork SA principal,
+              #    so running forks fail their mesh-gated harness/ext-authz
+              #    hops after upgrade. Deleting the fork ConfigMap cascade-
+              #    removes Job + Pod + Service + Envoy bootstrap CM + leaf
+              #    cert via owner-ref.
               fork_count=$(kubectl -n "$ns" get configmap -l agent-platform.ai/type=agent-fork -o name 2>/dev/null | wc -l | tr -d ' ')
-              echo "ADR-041 migration: deleting $fork_count in-flight fork ConfigMap(s) in $ns"
+              echo "migration: deleting $fork_count in-flight fork ConfigMap(s) in $ns"
               if [ "$fork_count" != "0" ]; then
                 kubectl -n "$ns" delete configmap -l agent-platform.ai/type=agent-fork --ignore-not-found
               fi

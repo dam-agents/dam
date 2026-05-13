@@ -108,12 +108,11 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 		return r.setError(ctx, name, fmt.Sprintf("applying ext-authz service: %v", err))
 	}
 
-	// ADR-041: three per-instance AuthorizationPolicies — gateway admission
-	// (agent ns), harness path-prefix at the waypoint (release ns),
-	// ext-authz Service principal (release ns).
-	if err := r.applyAuthorizationPolicy(ctx, BuildGatewayAuthorizationPolicy(name, name, r.config, cm)); err != nil {
-		return r.setError(ctx, name, fmt.Sprintf("applying gateway authz policy: %v", err))
-	}
+	// Two per-instance AuthorizationPolicies in the release namespace —
+	// harness path-prefix at the waypoint, ext-authz Service principal.
+	// Both gate the *gateway pod*'s SPIFFE identity (the only pod of the
+	// pair that's a mesh participant). The agent → gateway hop is gated
+	// by the agent-egress NetworkPolicy below, not by mesh AuthZ.
 	if err := r.applyAuthorizationPolicy(ctx, BuildHarnessAuthorizationPolicy(name, r.config, cm)); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying harness authz policy: %v", err))
 	}
@@ -121,10 +120,11 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 		return r.setError(ctx, name, fmt.Sprintf("applying ext-authz authz policy: %v", err))
 	}
 
-	// ADR-041: per-pair agent egress NetworkPolicy. AuthorizationPolicy on
-	// the gateway only gates ingress; without an egress NP the agent
-	// process can bypass HTTPS_PROXY and dial external hosts directly,
-	// escaping Envoy's credential and HITL gates.
+	// Per-pair agent egress NetworkPolicy. Agent pods opt out of ambient
+	// mesh, so kernel NP is the only thing gating agent egress; it admits
+	// DNS and the paired gateway pod's Envoy port, nothing else. The
+	// gateway's Envoy ext_authz filter (ADR-035) gates which destinations
+	// the agent's HTTPS_PROXY traffic reaches past the gateway.
 	if err := r.applyAgentEgressNetworkPolicy(ctx, BuildAgentEgressNetworkPolicy(name, r.config, cm)); err != nil {
 		return r.setError(ctx, name, err.Error())
 	}
@@ -212,14 +212,13 @@ func (r *InstanceReconciler) ensureAgentOwnerReference(ctx context.Context, inst
 func (r *InstanceReconciler) Delete(ctx context.Context, name string) {
 	// Owner references in the agent namespace cascade-delete agent +
 	// gateway StatefulSets, the agent + gateway Services, the per-instance
-	// ServiceAccount, the gateway-admission AuthorizationPolicy, the
-	// Envoy bootstrap ConfigMap, and the cert-manager Certificate / leaf
-	// Secret.
+	// ServiceAccount, the per-pair agent egress NetworkPolicy, the Envoy
+	// bootstrap ConfigMap, and the cert-manager Certificate / leaf Secret.
 	//
-	// ADR-041 release-namespace resources (per-instance ext-authz
-	// Service, harness + ext-authz AuthorizationPolicies) cannot use a
-	// cross-namespace ownerRef — K8s assumes same-namespace ownerRefs and
-	// the GC controller reaps them as orphans. Clean up explicitly.
+	// Release-namespace resources (per-instance ext-authz Service, harness
+	// + ext-authz AuthorizationPolicies) cannot use a cross-namespace
+	// ownerRef — K8s assumes same-namespace ownerRefs and the GC controller
+	// reaps them as orphans. Clean up explicitly.
 	r.deleteReleaseNsInstanceResources(ctx, name)
 
 	// PVCs created via VolumeClaimTemplates on the agent StatefulSet are

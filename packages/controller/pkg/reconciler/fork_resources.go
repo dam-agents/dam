@@ -76,6 +76,15 @@ func BuildForkAgentJob(
 		LabelPair: forkName,
 		LabelRole: RoleAgent,
 	}
+	// Fork agent opts out of ambient mesh, mirroring the long-lived agent
+	// shape. NetworkPolicy at the kernel is the boundary; the fork gateway
+	// pod remains a mesh participant for SPIFFE-keyed harness + ext-authz
+	// admission via the per-fork AuthorizationPolicies (ADR-041, ADR-027).
+	podLabels := map[string]string{}
+	for k, v := range labels {
+		podLabels[k] = v
+	}
+	podLabels["istio.io/dataplane-mode"] = "none"
 
 	caCertPath := "/etc/platform/ca/ca.crt"
 
@@ -252,18 +261,18 @@ func BuildForkAgentJob(
 	ttl := int32(60)
 	backoff := int32(0)
 
-	podMeta := metav1.ObjectMeta{Labels: labels}
+	podMeta := metav1.ObjectMeta{Labels: podLabels}
 	applyAgentBaseMeta(&podMeta, base)
 
 	podSpec := corev1.PodSpec{
-		// ADR-041 + ADR-027: fork agent runs as the per-fork SA
-		// (its own identity, NOT the parent's). The per-fork
-		// harness AuthorizationPolicy admits this SA only to
-		// `/api/instances/<parent>/mcp` — narrower than the
-		// parent's surface, so a compromised fork (i.e. a
-		// compromised replier) cannot reach pod-files SSE,
-		// `/internal/trigger`, or any other parent-scoped
-		// harness endpoint.
+		// Fork agent opts out of ambient (no SPIFFE on the agent
+		// half). ADR-027: the per-fork SA still scopes credential
+		// reads at the controller level — fork's gateway pod mounts
+		// the replier's Secrets, never the parent's. Harness identity
+		// flows through the fork *gateway*'s SPIFFE principal
+		// (gateway is still in mesh), not the agent's; the per-fork
+		// harness AuthorizationPolicy admits the fork SA only to
+		// `/api/instances/<parent>/mcp`.
 		ServiceAccountName:            forkName,
 		RestartPolicy:                 corev1.RestartPolicyNever,
 		TerminationGracePeriodSeconds: &base.TerminationGracePeriod,

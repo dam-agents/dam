@@ -9,10 +9,11 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 )
 
-// ADR-041: per-pair agent egress NetworkPolicy closes the kernel-level
-// perimeter that mesh AuthorizationPolicy can't (AuthorizationPolicy is
-// destination-side ingress; without an egress NP the agent process can
-// bypass HTTPS_PROXY and dial external hosts directly).
+// Agent pod opts out of ambient mesh, so kernel NetworkPolicy is the sole
+// gate on agent egress. The policy admits exactly DNS + paired gateway
+// pod on the Envoy proxy port — nothing else. HBONE port 15008 is
+// deliberately denied: the agent has no ztunnel and admitting 15008 would
+// give it a route to anything in the mesh.
 func TestBuildAgentEgressNetworkPolicy_LongLivedPair(t *testing.T) {
 	np := BuildAgentEgressNetworkPolicy("my-instance", testConfig, testOwnerCM)
 
@@ -23,16 +24,14 @@ func TestBuildAgentEgressNetworkPolicy_LongLivedPair(t *testing.T) {
 
 	// Selector pins to THIS pair's agent pod — the gateway pod's egress
 	// stays unrestricted (it dials external upstreams for credential
-	// injection).
+	// injection, gated by ext_authz inside its own Envoy).
 	assert.Equal(t, "my-instance", np.Spec.PodSelector.MatchLabels[LabelPair])
 	assert.Equal(t, RoleAgent, np.Spec.PodSelector.MatchLabels[LabelRole])
 
-	// Egress only — ingress is governed by mesh AuthorizationPolicy on
-	// other workloads.
 	require.Len(t, np.Spec.PolicyTypes, 1)
 	assert.Equal(t, networkingv1.PolicyTypeEgress, np.Spec.PolicyTypes[0])
 
-	require.Len(t, np.Spec.Egress, 3, "DNS + paired gateway + istio-system HBONE")
+	require.Len(t, np.Spec.Egress, 2, "DNS + paired gateway, nothing else")
 
 	// DNS to kube-system (resolving the gateway Service hostname).
 	dnsRule := np.Spec.Egress[0]
@@ -47,31 +46,16 @@ func TestBuildAgentEgressNetworkPolicy_LongLivedPair(t *testing.T) {
 	}
 	assert.True(t, protocols[corev1.ProtocolUDP] && protocols[corev1.ProtocolTCP])
 
-	// Paired gateway pod — per-pair selector pins reachability; mesh
-	// AuthorizationPolicy on the gateway side cryptographically enforces
-	// the same boundary on top.
+	// Paired gateway pod — Envoy proxy port only.
 	gwRule := np.Spec.Egress[1]
 	require.Len(t, gwRule.To, 1)
 	require.NotNil(t, gwRule.To[0].PodSelector)
 	assert.Equal(t, "my-instance", gwRule.To[0].PodSelector.MatchLabels[LabelPair])
 	assert.Equal(t, RoleGateway, gwRule.To[0].PodSelector.MatchLabels[LabelRole])
-	// Envoy proxy port + HBONE 15008 (ambient redirect lands here when
-	// istio-cni rewrites the destination port).
-	ports := map[int32]bool{}
-	for _, p := range gwRule.Ports {
-		ports[p.Port.IntVal] = true
-	}
-	assert.True(t, ports[int32(testConfig.EnvoyPort)], "must allow Envoy proxy port")
-	assert.True(t, ports[15008], "must allow HBONE — see migrate-stale-netpols.yaml for the prior incident this guards against")
-
-	// istio-system HBONE — covers the path where istio-cni redirects
-	// outbound to ztunnel before NetworkPolicy filter sees it.
-	hboneRule := np.Spec.Egress[2]
-	require.Len(t, hboneRule.To, 1)
-	require.NotNil(t, hboneRule.To[0].NamespaceSelector)
-	assert.Equal(t, "istio-system", hboneRule.To[0].NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"])
-	require.Len(t, hboneRule.Ports, 1)
-	assert.Equal(t, int32(15008), hboneRule.Ports[0].Port.IntVal)
+	require.Len(t, gwRule.Ports, 1, "Envoy proxy port only — HBONE 15008 must NOT be admitted")
+	assert.Equal(t, int32(testConfig.EnvoyPort), gwRule.Ports[0].Port.IntVal)
+	require.NotNil(t, gwRule.Ports[0].Protocol)
+	assert.Equal(t, corev1.ProtocolTCP, *gwRule.Ports[0].Protocol)
 }
 
 // Fork pair: same shape, keyed on the fork name. ADR-027's fork-pair
@@ -92,6 +76,19 @@ func TestBuildAgentEgressNetworkPolicy_Fork(t *testing.T) {
 	require.NotNil(t, gwRule.To[0].PodSelector)
 	assert.Equal(t, "fork-abc", gwRule.To[0].PodSelector.MatchLabels[LabelPair],
 		"fork agent NP must scope to the FORK's gateway, not the parent's")
+}
+
+// HBONE port 15008 must NOT appear anywhere in the agent egress policy.
+// The agent has no ztunnel and never speaks HBONE; admitting 15008 here
+// would let the agent reach any in-mesh destination via ztunnel.
+func TestBuildAgentEgressNetworkPolicy_NoHBONE(t *testing.T) {
+	np := BuildAgentEgressNetworkPolicy("my-instance", testConfig, testOwnerCM)
+	for i, rule := range np.Spec.Egress {
+		for _, port := range rule.Ports {
+			assert.NotEqual(t, int32(15008), port.Port.IntVal,
+				"egress rule %d must not admit HBONE 15008", i)
+		}
+	}
 }
 
 // Label-managed-by lets operators bulk-list controller-managed NPs and

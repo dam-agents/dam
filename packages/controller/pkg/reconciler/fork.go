@@ -121,17 +121,12 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, err.Error())
 	}
 
-	// ADR-041: gateway admission — both pods of the fork pair share the
-	// fork SA so this is "self-talk only" (same shape as long-lived pairs).
-	if err := r.applyAuthorizationPolicy(ctx, BuildGatewayAuthorizationPolicy(forkName, forkName, r.config, cm)); err != nil {
-		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying fork gateway authz policy: %v", err))
-	}
-
-	// ADR-041 + ADR-027: per-fork harness policy admits the fork SA only
-	// to `/api/instances/<parent>/mcp` (not the parent's full surface),
-	// and the per-fork ext-authz policy admits the fork SA to the
-	// parent's per-instance ext-authz Service so the parent owner's
-	// HITL rules continue to gate the fork's egress.
+	// ADR-027: per-fork harness policy admits the fork SA only to
+	// `/api/instances/<parent>/mcp` (not the parent's full surface), and
+	// the per-fork ext-authz policy admits the fork SA to the parent's
+	// per-instance ext-authz Service so the parent owner's HITL rules
+	// continue to gate the fork's egress. Both gate the fork *gateway*'s
+	// SPIFFE identity — the fork agent itself is not a mesh participant.
 	if err := r.applyAuthorizationPolicy(ctx, BuildForkHarnessAuthorizationPolicy(forkName, forkSpec.Instance, r.config, cm)); err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying fork harness authz policy: %v", err))
 	}
@@ -139,9 +134,9 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying fork ext-authz authz policy: %v", err))
 	}
 
-	// ADR-041: per-pair agent egress NetworkPolicy (same rationale as the
-	// long-lived shape — kernel-level perimeter so the agent process
-	// cannot bypass HTTPS_PROXY).
+	// Per-pair agent egress NetworkPolicy — same shape and rationale as
+	// the long-lived pair: kernel-level boundary gating the agent → fork
+	// gateway hop, agent has no ambient enrolment.
 	if err := r.applyAgentEgressNetworkPolicy(ctx, BuildAgentEgressNetworkPolicy(forkName, r.config, cm)); err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, err.Error())
 	}
@@ -195,9 +190,9 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 }
 
 func (r *ForkReconciler) Delete(ctx context.Context, name string) {
-	// Agent-namespace resources (ServiceAccount, gateway-allow policy,
-	// gateway Pod, agent Job, gateway Service, Envoy bootstrap CM, leaf
-	// Cert) are owner-refed to the fork ConfigMap and reaped by K8s GC.
+	// Agent-namespace resources (ServiceAccount, gateway Pod, agent Job,
+	// gateway Service, agent-egress NetworkPolicy, Envoy bootstrap CM,
+	// leaf Cert) are owner-refed to the fork ConfigMap and reaped by K8s GC.
 	//
 	// Release-namespace per-fork policies (harness-allow, ext-authz-allow)
 	// cannot use a cross-namespace ownerRef — same trap as the per-instance

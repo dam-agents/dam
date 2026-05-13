@@ -15,33 +15,30 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 )
 
-// Per-pair agent egress NetworkPolicy (ADR-041 "namespace-level egress
-// allowlist" specialised to a single pair).
+// Per-pair agent egress NetworkPolicy.
 //
-// AuthorizationPolicy on the gateway side already pins ingress to the
-// matching SA principal cryptographically — but it is a destination-side
-// gate. Without an egress restriction on the agent pod, the agent process
-// can bypass HTTPS_PROXY and dial external services directly, escaping
-// the Envoy MITM, credential-injection, and ext-authz HITL gates.
-// `kernel-level NetworkPolicy` is what closes that loop: it is identity-
-// blind but enforces at the L3/L4 perimeter regardless of what the agent
-// process does at L7.
+// The agent pod opts out of ambient mesh (`istio.io/dataplane-mode: none`),
+// so no ztunnel iptables redirect intercepts its outbound traffic. Real
+// destination IP/port hit the kernel NetworkPolicy filter, and the agent
+// pod's only admitted intra-cluster destination is its paired gateway pod.
+// All egress that matters — external upstreams, harness, ext-authz — is
+// proxied through the gateway, gated by Envoy's ext_authz filter (ADR-035).
 //
 // Allowed egress:
 //   - DNS to kube-system (TCP/UDP 53) — needed for resolving the gateway
 //     Service hostname.
 //   - The paired gateway pod (`pair=<id>, role=gateway`) on the Envoy
-//     proxy port and HBONE 15008. Per-pair selector pins reachability
-//     to *this* agent's gateway; mesh AuthorizationPolicy still enforces
-//     it cryptographically.
-//   - istio-system on HBONE 15008 — covers ambient-mesh routing where
-//     istio-cni redirects pod egress to ztunnel before NetworkPolicy
-//     enforcement. Without this, in-mesh traffic appears blocked even
-//     though the destination is admitted at the AuthorizationPolicy
-//     layer. (Mirror of the rationale in `migrate-stale-netpols.yaml`.)
+//     proxy port only. The per-pair selector pins reachability to *this*
+//     agent's gateway; the gateway pod itself is the only structural
+//     gate (NP is identity-blind, but L3/L4-pinned to one pod set).
 //
-// Everything else (external internet, other in-cluster Services) is
-// denied at the kernel layer.
+// HBONE port 15008 is deliberately NOT admitted. The agent has no ztunnel
+// and never speaks HBONE; opening 15008 here would just hand the agent a
+// bypass to anything in the mesh.
+//
+// Everything else (external internet, other in-cluster Services like
+// Postgres / Redis / Keycloak, the harness and ext-authz Services
+// directly) is denied at the kernel layer.
 
 // BuildAgentEgressNetworkPolicy renders the per-pair egress NetworkPolicy
 // for the agent pod of `pairKey`. Long-lived pairs use the instance name
@@ -50,7 +47,6 @@ import (
 // unrestricted (it dials external upstreams for credential injection).
 func BuildAgentEgressNetworkPolicy(pairKey string, cfg *config.Config, ownerCM *corev1.ConfigMap) *networkingv1.NetworkPolicy {
 	envoyPort := intstr.FromInt(cfg.EnvoyPort)
-	hbonePort := intstr.FromInt(15008)
 	dnsPort := intstr.FromInt(53)
 	tcp := corev1.ProtocolTCP
 	udp := corev1.ProtocolUDP
@@ -106,17 +102,6 @@ func BuildAgentEgressNetworkPolicy(pairKey string, cfg *config.Config, ownerCM *
 					}},
 					Ports: []networkingv1.NetworkPolicyPort{
 						{Protocol: &tcp, Port: &envoyPort},
-						{Protocol: &tcp, Port: &hbonePort},
-					},
-				},
-				{
-					To: []networkingv1.NetworkPolicyPeer{{
-						NamespaceSelector: &metav1.LabelSelector{
-							MatchLabels: map[string]string{"kubernetes.io/metadata.name": "istio-system"},
-						},
-					}},
-					Ports: []networkingv1.NetworkPolicyPort{
-						{Protocol: &tcp, Port: &hbonePort},
 					},
 				},
 			},

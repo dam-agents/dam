@@ -89,6 +89,24 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 		LabelPair:     name,
 		LabelRole:     RoleAgent,
 	}
+	// Agent pods are deliberately NOT mesh participants. In ambient mode,
+	// istio-cni iptables rewrites every outbound to ztunnel:15008 before
+	// the kernel NetworkPolicy filter sees the real destination, so a
+	// destination-pinned NP cannot enforce "agent → paired gateway only" —
+	// it admits any HBONE-bound packet, i.e. any in-mesh destination.
+	// Opting the agent out at the pod level removes the ztunnel redirect;
+	// the per-pair `<id>-agent-egress` NetworkPolicy then sees real
+	// destination IPs and gates them at L3/L4. The agent has no SPIFFE
+	// identity in this model; mesh-keyed AuthorizationPolicy on the gateway
+	// pod is gone (NP is the gate). The paired gateway pod remains a mesh
+	// participant — its SPIFFE principal still gates gateway → harness and
+	// gateway → ext-authz hops (ADR-041 §"Mesh identity").
+	podLabels := map[string]string{}
+	for k, v := range labels {
+		podLabels[k] = v
+	}
+	podLabels["istio.io/dataplane-mode"] = "none"
+
 	caCertPath := "/etc/platform/ca/ca.crt"
 
 	proxyAddr := agentProxyAddr(name, cfg)
@@ -331,16 +349,18 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 	shareProcessNS := &falseVal
 
 	podMeta := metav1.ObjectMeta{
-		Labels:      labels,
+		Labels:      podLabels,
 		Annotations: podAnnotations,
 	}
 	applyAgentBaseMeta(&podMeta, base)
 
 	podSpec := corev1.PodSpec{
-		// ADR-041: per-instance SA gives the pod its SPIFFE
-		// workload identity (`<td>/ns/<ns>/sa/<id>`).
-		// AutomountServiceAccountToken stays false — Istio
-		// identity is independent of SA-token mounts.
+		// Agent pod opts out of ambient mesh
+		// (`istio.io/dataplane-mode: none` pod label above); it has no
+		// SPIFFE workload identity. The per-instance SA still scopes
+		// Secret access at the controller level —
+		// `automountServiceAccountToken: false` keeps the SA token
+		// off-pod (ADR-033 threat model).
 		ServiceAccountName:            name,
 		TerminationGracePeriodSeconds: &base.TerminationGracePeriod,
 		ImagePullSecrets:              pullSecrets,

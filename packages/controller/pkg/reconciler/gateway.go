@@ -65,10 +65,14 @@ func BuildGatewayStatefulSet(instanceName string, hibernated bool, cfg *config.C
 	}
 
 	podSpec := corev1.PodSpec{
-		// ADR-041: gateway pod runs as the per-instance SA so
-		// its SPIFFE workload identity matches the agent half
-		// of the pair (same SA on both pods). The gateway-side
-		// AuthorizationPolicy ALLOWs only this principal.
+		// Gateway pod runs as the per-instance SA so that its SPIFFE
+		// workload identity is `<td>/ns/<ns>/sa/<id>`. The agent half
+		// of the pair has no SPIFFE (it opts out of ambient — see
+		// resources.go), so the SA is effectively "the gateway's
+		// identity"; the harness + ext-authz AuthorizationPolicies
+		// admit this principal at the api-server end of the gateway →
+		// api-server hops. The agent → gateway hop is gated at the
+		// kernel by the per-pair NetworkPolicy.
 		ServiceAccountName:            instanceName,
 		TerminationGracePeriodSeconds: &gracePeriod,
 		AutomountServiceAccountToken:  &falseVal,
@@ -178,12 +182,13 @@ func BuildForkGatewayPod(forkName, parentInstanceID string, cfg *config.Config, 
 			},
 		},
 		Spec: corev1.PodSpec{
-			// ADR-041 + ADR-027: fork gateway pod runs as the per-fork SA
-			// (its own identity, NOT the parent's). The per-fork
-			// gateway-admission AuthorizationPolicy ALLOWs only this SA
-			// (both pods of the fork pair share it), and per-fork
-			// harness + ext-authz policies admit it to a narrow surface
-			// scoped to the parent.
+			// ADR-027: fork gateway pod runs as the per-fork SA (its own
+			// identity, NOT the parent's). The fork *agent* opts out of
+			// ambient (no SPIFFE on that pod), so this gateway SA is the
+			// SPIFFE principal both per-fork harness and per-fork
+			// ext-authz AuthorizationPolicies admit — narrowly scoped to
+			// the parent's surface (`/api/instances/<parent>/mcp` + the
+			// parent's per-instance ext-authz Service).
 			ServiceAccountName:            forkName,
 			RestartPolicy:                 corev1.RestartPolicyAlways,
 			TerminationGracePeriodSeconds: &gracePeriod,

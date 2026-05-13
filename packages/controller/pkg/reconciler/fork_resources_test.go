@@ -47,6 +47,10 @@ func TestBuildForkAgentJob_BasicShape(t *testing.T) {
 	assert.Equal(t, "my-instance", job.Labels["agent-platform.ai/instance"])
 	assert.Equal(t, "fork-abc", job.Labels["agent-platform.ai/pair"])
 	assert.Equal(t, "agent", job.Labels["agent-platform.ai/role"])
+	// Fork agent pod opts out of ambient — same rationale as the long-lived
+	// agent (kernel NP is the egress boundary).
+	assert.Equal(t, "none", job.Spec.Template.Labels["istio.io/dataplane-mode"],
+		"fork agent pod must carry istio.io/dataplane-mode=none")
 
 	require.Len(t, job.OwnerReferences, 1)
 	assert.Equal(t, "fork-uid-123", string(job.OwnerReferences[0].UID))
