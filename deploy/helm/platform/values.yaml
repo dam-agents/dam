@@ -97,17 +97,36 @@ createAgentNamespace: true
 # -- OpenShift-specific knobs. No-op on vanilla Kubernetes.
 openshift:
   scc:
-    # Bind `system:openshift:scc:anyuid` to every ServiceAccount in
-    # `agentNamespace` so agent / gateway pods may run as UID 0 (required
-    # for kata-containers workloads that need root inside the sandbox).
-    # Default restricted-v2 admission strips runAsUser=0; flip this on
-    # when running on OpenShift with kata runtime.
+    # Create a custom SCC (`<release>-platform-agent-kata`) equivalent
+    # to stock `anyuid` plus the single capability `DAC_OVERRIDE`, and
+    # bind it to every ServiceAccount in `agentNamespace`. Required when
+    # running agents under kata-containers on OpenShift:
+    #
+    #   * Default `restricted-v2` admission forces a namespace-range UID
+    #     and refuses cap additions, blocking root in the kata guest.
+    #   * Stock `anyuid` permits root but explicitly forbids cap adds
+    #     (`allowedCapabilities: null`), which breaks any deployment
+    #     whose agent home PVC is NFS-backed with `root_squash` enforced
+    #     server-side — root writes get translated to UID 99 (`nobody`)
+    #     on the share, files persist as 99-owned, and subsequent kata-
+    #     guest writes EACCES because UID 0 with `drop: ALL` lacks
+    #     `CAP_DAC_OVERRIDE` to bypass the DAC check.
+    #
+    # The custom SCC adds back exactly that one capability — no host
+    # paths, no host network, no SYS_ADMIN, no NET_*, no SETUID.
+    # Containment remains the kata VM boundary. See templates/agent-scc.yaml
+    # for the full SCC manifest and reasoning.
     #
     # Requires `controller.agent.base.runtimeClassName` to be a kata
     # runtime (e.g. "kata", "kata-nvidia-gpu"). The chart's validator
-    # refuses to render otherwise — granting anyuid without kata
-    # isolation puts agents at UID 0 on the host's default OCI runtime,
-    # which defeats the sandbox boundary.
+    # refuses to render otherwise — granting the SCC without kata
+    # isolation puts agents at UID 0 with DAC_OVERRIDE on the host's
+    # default OCI runtime, which defeats the sandbox boundary.
+    #
+    # Operators flipping this on must also override
+    # `controller.agent.base.containerSecurityContext` to set
+    # `runAsUser: 0` and `add: ["DAC_OVERRIDE"]` — the chart-default
+    # security context stays locked-down on purpose.
     anyuid:
       enabled: false
 

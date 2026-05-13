@@ -1,30 +1,104 @@
 {{- if .Values.openshift.scc.anyuid.enabled }}
 {{/*
-OpenShift SCC binding for the agent namespace.
+OpenShift SCC for agent pods on this chart.
 
-Default OpenShift admission (`restricted-v2`) forces a random UID and
-strips `runAsUser: 0`, which breaks harnesses that need root inside the
-kata-containers sandbox. Binding `system:openshift:scc:anyuid` to the
-`system:serviceaccounts:<agentNamespace>` group lets every per-instance
-ServiceAccount the controller creates (see ADR-041) pick its own UID,
-including 0. Scope is intentionally one namespace — no cluster-wide
-escalation.
+Stock OpenShift admission (`restricted-v2`) forces a random UID from
+the namespace range and refuses any cap additions, which breaks
+harnesses that need root inside the kata-containers sandbox. Stock
+`anyuid` permits any UID but explicitly forbids cap additions
+(`allowedCapabilities: null`), which is fine until you hit an NFS-
+backed home PVC: if the underlying NFS server enforces `root_squash`
+(IBM Cloud File Storage for VPC does, and the knob is not customer-
+configurable), every root write is translated to UID 99 (`nobody`)
+on the share. Files persist as 99-owned, and the kata-guest kernel
+then EACCES's subsequent writes because UID 0 with `drop: ["ALL"]`
+has no `CAP_DAC_OVERRIDE` to bypass DAC.
 
-`anyuid` does not grant capabilities, host paths, or privileged mode;
-it only loosens the UID constraint. Under kata, "root" is guest-VM root,
-not host root.
+This SCC is the minimal escalation that resolves the EACCES while
+keeping the security posture we already accepted (root + kata):
+identical to `anyuid` for UID / privilege / volume / SELinux rules,
+plus `DAC_OVERRIDE` as the single allowed capability addition. The
+NFS server still squashes — that's outside our control — but the
+kata-guest DAC check is now bypassable for the agent, so the
+in-guest open/write succeeds and lands on the share as UID 99.
+
+Containment remains the kata VM boundary. `DAC_OVERRIDE` grants
+"ignore file-permission checks inside the guest filesystem view"
+and nothing else: no `SYS_ADMIN`, no `NET_*`, no `SETUID`, no
+module load. The cluster-wide blast radius of this manifest is
+exactly the one ServiceAccount group bound below.
+
+`priority: 9` is one below stock `anyuid` (10), so OpenShift's
+SCC picker does not pre-empt anyuid for pods that don't need
+the cap — the binding below is what actually grants its use.
+*/}}
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: {{ include "platform.fullname" . }}-agent-kata
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+  annotations:
+    kubernetes.io/description: |
+      Equivalent to the stock `anyuid` SCC plus the single capability
+      `DAC_OVERRIDE`. Intended for kata-isolated agent pods whose home
+      PVC is NFS-backed with root_squash enforced server-side. Created
+      and bound by the {{ .Chart.Name }} chart; manage via Helm.
+allowHostDirVolumePlugin: false
+allowHostIPC: false
+allowHostNetwork: false
+allowHostPID: false
+allowHostPorts: false
+allowPrivilegeEscalation: true
+allowedCapabilities:
+  - DAC_OVERRIDE
+defaultAddCapabilities: null
+fsGroup:
+  type: RunAsAny
+priority: 9
+readOnlyRootFilesystem: false
+requiredDropCapabilities:
+  - MKNOD
+runAsUser:
+  type: RunAsAny
+seLinuxContext:
+  type: MustRunAs
+seccompProfiles:
+  - "*"
+supplementalGroups:
+  type: RunAsAny
+volumes:
+  - configMap
+  - csi
+  - downwardAPI
+  - emptyDir
+  - ephemeral
+  - persistentVolumeClaim
+  - projected
+  - secret
+---
+{{/*
+Bind the SCC to every ServiceAccount in `agentNamespace`. The
+controller (ADR-041) creates per-instance and per-fork SAs in
+that namespace; binding via the group makes every one of them
+automatically eligible. Scope is namespace-local, no cluster-
+wide privilege.
+
+OpenShift auto-generates the `system:openshift:scc:<name>`
+ClusterRole when the SCC is created — same mechanism that
+gives stock `system:openshift:scc:anyuid` for free.
 */}}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: {{ include "platform.fullname" . }}-agent-anyuid
+  name: {{ include "platform.fullname" . }}-agent-kata-scc
   namespace: {{ .Values.agentNamespace }}
   labels:
     {{- include "platform.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: system:openshift:scc:anyuid
+  name: system:openshift:scc:{{ include "platform.fullname" . }}-agent-kata
 subjects:
   - kind: Group
     apiGroup: rbac.authorization.k8s.io
