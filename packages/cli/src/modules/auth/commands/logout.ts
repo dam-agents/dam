@@ -26,7 +26,7 @@ export function buildLogoutCommand(deps: LogoutCommandDeps): Command {
             process.stderr.write(`error: ${resolved.error.reason}\n`);
           } else {
             process.stderr.write(
-              `error: no server configured; pass --server <url> or run "dam config set server <url>"\n`,
+              "error: no server configured; pass `--server <url>` or run `dam config set server <url>`\n",
             );
           }
           process.exit(EXIT_AUTH_INVALID_INPUT);

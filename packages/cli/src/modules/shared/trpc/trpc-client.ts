@@ -1,25 +1,26 @@
 import { createTRPCClient, httpBatchLink, type TRPCClient } from "@trpc/client";
 import type { AppRouter } from "api-server-api";
 import type { Result } from "../../../result.js";
-import type { AuthRequiredError } from "../domain/errors.js";
+import type { AuthRequiredError } from "../../instances/domain/errors.js";
 
 /**
  * Builds a typed `@trpc/client` against the api-server's `AppRouter`.
  *
- * The adapter takes the Active Host URL and a token-supplier closure at
- * construction. Bridging the auth module's `TokenProvider` is the caller's
- * job — the instances module deliberately has no compile-time dependency
- * on the auth module's discriminant; the closure shape is the contract.
+ * Module-agnostic: every CLI module (instances, templates, …) consumes
+ * the same `AppRouter`, so the client itself has no module-level shape.
+ * Bridging the auth module's `TokenProvider` is the caller's job — the
+ * closure shape is the contract; the shared client has no compile-time
+ * dependency on the auth module's discriminant.
  *
  * Auth failures must NOT cause a spurious HTTP round-trip with a missing
  * or stale token. `@trpc/client`'s `headers` callback is the synchronous
  * pipeline pre-request; throwing here aborts the call before the wire.
- * The service layer catches `AuthRequiredAtTransportError` and converts
- * back to a typed `Result`. The class is exported solely so the service
- * can recognise it via `instanceof`; nothing else uses it.
+ * Service layers catch `AuthRequiredAtTransportError` and convert back
+ * to a typed `Result`. The class is exported solely so services can
+ * recognise it via `instanceof`; nothing else uses it.
  */
 
-export type InstancesTrpcClient = TRPCClient<AppRouter>;
+export type TrpcClient = TRPCClient<AppRouter>;
 
 export interface TrpcClientDeps {
   /** Active Host URL, no trailing slash required — e.g.
@@ -37,10 +38,8 @@ export interface TrpcClientDeps {
 
 /**
  * Internal sentinel used to smuggle an `auth-required` failure out of
- * `@trpc/client`'s synchronous header pipeline. The service layer
- * catches it via `instanceof` and re-raises as a typed `Result.err`.
- *
- * Not exported through `index.ts` — it is a transport-layer detail.
+ * `@trpc/client`'s synchronous header pipeline. Service layers catch it
+ * via `instanceof` and re-raise as a typed `Result.err`.
  */
 export class AuthRequiredAtTransportError extends Error {
   readonly kind = "auth-required" as const;
@@ -50,7 +49,7 @@ export class AuthRequiredAtTransportError extends Error {
   }
 }
 
-export function createInstancesTrpcClient(deps: TrpcClientDeps): InstancesTrpcClient {
+export function createTrpcClient(deps: TrpcClientDeps): TrpcClient {
   const url = `${deps.host.replace(/\/+$/, "")}/api/trpc`;
   return createTRPCClient<AppRouter>({
     links: [

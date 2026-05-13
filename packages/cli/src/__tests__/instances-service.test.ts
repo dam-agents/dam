@@ -2,21 +2,21 @@ import { describe, it, expect, vi } from "vitest";
 import { createInstancesService } from "../modules/instances/services/instances-service.js";
 import {
   AuthRequiredAtTransportError,
-  type InstancesTrpcClient,
-} from "../modules/instances/infrastructure/trpc-client.js";
+  type TrpcClient,
+} from "../modules/shared/trpc/trpc-client.js";
 
 /** Build a stub trpc client that supplies `query` methods for the two
  *  routes the service consumes. */
 function makeTrpc(opts: {
   list?: () => unknown;
   get?: (input: { id: string }) => unknown;
-}): InstancesTrpcClient {
+}): TrpcClient {
   return {
     instances: {
       list: { query: vi.fn(async () => opts.list?.() ?? []) },
       get: { query: vi.fn(async (input: { id: string }) => opts.get?.(input) ?? null) },
     },
-  } as unknown as InstancesTrpcClient;
+  } as unknown as TrpcClient;
 }
 
 /** Construct a value that quacks like a `TRPCClientError` for the

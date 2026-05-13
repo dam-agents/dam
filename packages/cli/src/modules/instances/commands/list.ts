@@ -7,6 +7,11 @@ import type {
   TransportError,
 } from "../domain/errors.js";
 import {
+  describeConfigError,
+  formatTransportError,
+  printCompatResolveError,
+} from "./errors.js";
+import {
   EXIT_INSTANCES_BELOW_FLOOR,
   EXIT_INSTANCES_RUNTIME_FAILURE,
   EXIT_INSTANCES_SUCCESS,
@@ -62,10 +67,11 @@ export function buildListCommand(deps: ListCommandDeps): Command {
         process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
       }
 
-      const svc = deps.createInstancesService(cfg.value.server);
+      const host = cfg.value.server;
+      const svc = deps.createInstancesService(host);
       const result = await svc.list();
       if (!result.ok) {
-        printServiceError(result.error);
+        printServiceError(result.error, host);
         process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
       }
 
@@ -80,6 +86,9 @@ export function buildListCommand(deps: ListCommandDeps): Command {
         // Matches `kubectl get pods` / `gh pr list` conventions: stderr
         // note, empty stdout, exit 0.
         process.stderr.write("No instances.\n");
+        process.stderr.write(
+          "hint: create one with `dam instances create <name> --template <id>`\n",
+        );
         process.exit(EXIT_INSTANCES_SUCCESS);
       }
 
@@ -92,8 +101,8 @@ export function buildListCommand(deps: ListCommandDeps): Command {
 function renderTable(instances: readonly Instance[]): string {
   const sorted = [...instances].sort((a, b) => a.name.localeCompare(b.name));
   const rows = [
-    ["NAME", "ID", "AGENT", "STATE"],
-    ...sorted.map((i) => [i.name, i.id, i.agentId, i.state]),
+    ["NAME", "ID", "TEMPLATE", "STATE"],
+    ...sorted.map((i) => [i.name, i.id, i.templateId ?? "<custom>", i.state]),
   ];
   const widths = rows[0]!.map((_, col) =>
     Math.max(...rows.map((r) => r[col]!.length)),
@@ -106,39 +115,11 @@ function renderTable(instances: readonly Instance[]): string {
     .join("\n") + "\n";
 }
 
-function describeConfigError(e: { kind: string; reason?: string }): string {
-  if (e.kind === "malformed-config") return e.reason ?? "config is malformed";
-  return "no server configured";
-}
-
-function printCompatResolveError(
-  e: { kind: string; reason?: string; code?: string; message?: string },
-  serverEnvVar: string,
-): void {
-  switch (e.kind) {
-    case "missing-config":
-      process.stderr.write(
-        `error: no server configured; run "dam config set server <url>" or set ${serverEnvVar}\n`,
-      );
-      return;
-    case "malformed-config":
-      process.stderr.write(`error: ${e.reason ?? "config malformed"}\n`);
-      return;
-    case "probe-error":
-      process.stderr.write(`error: cannot reach server: ${e.message ?? e.code ?? "unknown"}\n`);
-      return;
-    default:
-      process.stderr.write(`error: ${e.kind}\n`);
-  }
-}
-
-function printServiceError(error: TransportError | AuthRequiredError): void {
+function printServiceError(error: TransportError | AuthRequiredError, host: string): void {
   if (error.kind === "auth-required") {
-    process.stderr.write(
-      `error: not authenticated: ${error.reason}\n` +
-        `       run "dam auth login" first\n`,
-    );
+    process.stderr.write(`error: not authenticated: ${error.reason}\n`);
+    process.stderr.write("hint: run `dam auth login` first\n");
     return;
   }
-  process.stderr.write(`error: cannot reach server: ${error.reason}\n`);
+  process.stderr.write(`error: ${formatTransportError(error.reason, host)}\n`);
 }

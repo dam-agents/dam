@@ -26,7 +26,8 @@ export function buildStatusCommand(deps: StatusCommandDeps): Command {
 
       const report = result.value;
       if (report.entries.length === 0) {
-        process.stdout.write("No hosts configured. Run 'dam auth login' to authenticate.\n");
+        process.stderr.write("No hosts configured.\n");
+        process.stderr.write("hint: run `dam auth login` to authenticate\n");
         process.exit(report.activeHostValid ? EXIT_AUTH_SUCCESS : EXIT_AUTH_STATUS_NO_VALID);
       }
 

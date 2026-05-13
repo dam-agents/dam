@@ -36,7 +36,7 @@ export function buildLoginCommand(deps: LoginCommandDeps): Command {
             process.stderr.write(`error: ${resolved.error.reason}\n`);
           } else {
             process.stderr.write(
-              `error: no server configured; pass --server <url> or run "dam config set server <url>"\n`,
+              "error: no server configured; pass `--server <url>` or run `dam config set server <url>`\n",
             );
           }
           process.exit(EXIT_AUTH_INVALID_INPUT);
@@ -135,7 +135,7 @@ function printLoginError(e: LoginError): void {
       return;
     case "requires-force":
       process.stderr.write(
-        `error: already logged in; pass --force to re-authorize without a prompt (non-TTY)\n`,
+        "error: already logged in; pass `--force` to re-authorize without a prompt (non-TTY)\n",
       );
       return;
     case "aborted":
@@ -172,7 +172,7 @@ function printLoginError(e: LoginError): void {
           return;
         case "expired-token":
           process.stderr.write(
-            `error: device code expired before authorization completed; run 'dam auth login' again\n`,
+            "error: device code expired before authorization completed; run `dam auth login` again\n",
           );
           return;
         case "unexpected-response":

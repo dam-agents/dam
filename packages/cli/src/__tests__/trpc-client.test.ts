@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   AuthRequiredAtTransportError,
-  createInstancesTrpcClient,
-} from "../modules/instances/infrastructure/trpc-client.js";
+  createTrpcClient,
+} from "../modules/shared/trpc/trpc-client.js";
 import { err, ok, type Result } from "../result.js";
 import type { AuthRequiredError } from "../modules/instances/domain/errors.js";
 
@@ -26,14 +26,14 @@ function mockFetch(captured: Request[]): typeof fetch {
   }) as unknown as typeof fetch;
 }
 
-describe("instances trpc-client adapter", () => {
+describe("shared trpc-client adapter", () => {
   it("attaches the bearer header from getToken() on each request", async () => {
     const captured: Request[] = [];
     const fetchSpy = vi.fn(mockFetch(captured));
     const getToken = vi.fn<() => Promise<Result<string, AuthRequiredError>>>(
       async () => ok("AT-1"),
     );
-    const trpc = createInstancesTrpcClientWithFetch(getToken, fetchSpy);
+    const trpc = createTrpcClientWithFetch(getToken, fetchSpy);
 
     await trpc.instances.list.query();
 
@@ -48,7 +48,7 @@ describe("instances trpc-client adapter", () => {
     const getToken = vi.fn<() => Promise<Result<string, AuthRequiredError>>>(
       async () => err({ kind: "auth-required" as const, reason: "not logged in" }),
     );
-    const trpc = createInstancesTrpcClientWithFetch(getToken, fetchSpy);
+    const trpc = createTrpcClientWithFetch(getToken, fetchSpy);
 
     let caught: unknown;
     try {
@@ -66,9 +66,9 @@ describe("instances trpc-client adapter", () => {
   });
 });
 
-function createInstancesTrpcClientWithFetch(
+function createTrpcClientWithFetch(
   getToken: () => Promise<Result<string, AuthRequiredError>>,
   fetchFn: typeof fetch,
 ) {
-  return createInstancesTrpcClient({ host: HOST, getToken, fetch: fetchFn });
+  return createTrpcClient({ host: HOST, getToken, fetch: fetchFn });
 }

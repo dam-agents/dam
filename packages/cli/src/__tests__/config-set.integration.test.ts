@@ -78,7 +78,7 @@ describe("dam config set (integration)", () => {
     );
 
     expect(r.exitCode).not.toBe(0);
-    expect(r.stderr).toContain("invalid value for server");
+    expect(r.stderr).toContain("invalid value for `server`");
     expect(r.stderr).toContain("not-a-url");
 
     // File must not exist (no partial writes on validation failure).
@@ -107,7 +107,7 @@ describe("dam config set (integration)", () => {
     );
 
     expect(r.exitCode).not.toBe(0);
-    expect(r.stderr).toContain("unknown config key 'unknown-key'");
+    expect(r.stderr).toContain("unknown config key `unknown-key`");
     expect(r.stderr).toContain("server");
   });
 

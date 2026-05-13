@@ -158,6 +158,8 @@ describe("dam instances get (integration)", () => {
       id: "inst-42",
       name: "prod",
       agentId: "claude-code",
+      templateId: "claude-code",
+      image: "registry.example.com/claude-code:latest",
       description: "My prod environment",
       allowedUserEmails: ["alice@example.com", "bob@example.com"],
     });
@@ -174,12 +176,13 @@ describe("dam instances get (integration)", () => {
       });
 
       expect(r.exitCode, `stderr: ${r.stderr}`).toBe(0);
-      expect(r.stdout).toContain("NAME:        prod");
-      expect(r.stdout).toContain("ID:          inst-42");
-      expect(r.stdout).toContain("AGENT:       claude-code");
-      expect(r.stdout).toContain("STATE:       running");
-      expect(r.stdout).toContain("DESCRIPTION: My prod environment");
-      expect(r.stdout).toContain("ALLOWED:     alice@example.com, bob@example.com");
+      expect(r.stdout).toMatch(/^NAME:\s+prod$/m);
+      expect(r.stdout).toMatch(/^ID:\s+inst-42$/m);
+      expect(r.stdout).toMatch(/^TEMPLATE:\s+claude-code$/m);
+      expect(r.stdout).toMatch(/^IMAGE:\s+registry\.example\.com\/claude-code:latest$/m);
+      expect(r.stdout).toMatch(/^STATE:\s+running$/m);
+      expect(r.stdout).toMatch(/^DESCRIPTION:\s+My prod environment$/m);
+      expect(r.stdout).toMatch(/^ALLOWED:\s+alice@example\.com, bob@example\.com$/m);
     } finally {
       await fixture.close();
     }
@@ -203,8 +206,8 @@ describe("dam instances get (integration)", () => {
       });
 
       expect(r.exitCode, `stderr: ${r.stderr}`).toBe(0);
-      expect(r.stdout).toContain("NAME:        staging");
-      expect(r.stdout).toContain("ID:          inst-77");
+      expect(r.stdout).toMatch(/^NAME:\s+staging$/m);
+      expect(r.stdout).toMatch(/^ID:\s+inst-77$/m);
     } finally {
       await fixture.close();
     }
@@ -224,7 +227,7 @@ describe("dam instances get (integration)", () => {
       });
 
       expect(r.exitCode).toBe(5);
-      expect(r.stderr).toContain("no instance with id 'inst-nope'");
+      expect(r.stderr).toContain("no instance with id `inst-nope`");
     } finally {
       await fixture.close();
     }
@@ -244,7 +247,7 @@ describe("dam instances get (integration)", () => {
       });
 
       expect(r.exitCode).toBe(5);
-      expect(r.stderr).toContain("no instance named 'prod'");
+      expect(r.stderr).toContain('no instance named "prod"');
     } finally {
       await fixture.close();
     }
@@ -268,11 +271,11 @@ describe("dam instances get (integration)", () => {
       });
 
       expect(r.exitCode).toBe(5);
-      expect(r.stderr).toContain("multiple instances named 'prod'");
+      expect(r.stderr).toContain('multiple instances named "prod"');
       expect(r.stderr).toContain("inst-A");
       expect(r.stderr).toContain("inst-B");
       expect(r.stderr).not.toContain("inst-C");
-      expect(r.stderr).toContain("specify by id instead.");
+      expect(r.stderr).toContain("hint: specify by id instead");
     } finally {
       await fixture.close();
     }

@@ -192,7 +192,7 @@ describe("dam instances list (integration)", () => {
 
       expect(r.exitCode, `stderr: ${r.stderr}\nstdout: ${r.stdout}`).toBe(0);
       const lines = r.stdout.trimEnd().split("\n");
-      expect(lines[0]).toMatch(/^NAME\s+ID\s+AGENT\s+STATE$/);
+      expect(lines[0]).toMatch(/^NAME\s+ID\s+TEMPLATE\s+STATE$/);
       // Alphabetical sort: prod < staging < test-x
       expect(lines[1]).toContain("prod");
       expect(lines[2]).toContain("staging");

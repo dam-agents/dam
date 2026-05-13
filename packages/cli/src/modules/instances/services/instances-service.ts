@@ -3,8 +3,8 @@ import { err, ok, type Result } from "../../../result.js";
 import type { AuthRequiredError, TransportError } from "../domain/errors.js";
 import {
   AuthRequiredAtTransportError,
-  type InstancesTrpcClient,
-} from "../infrastructure/trpc-client.js";
+  type TrpcClient,
+} from "../../shared/trpc/trpc-client.js";
 
 /**
  * Thin port over the api-server's `instances.{list,get}` tRPC routes.
@@ -30,7 +30,7 @@ export interface InstancesService {
 }
 
 export interface InstancesServiceDeps {
-  trpc: InstancesTrpcClient;
+  trpc: TrpcClient;
 }
 
 export function createInstancesService(deps: InstancesServiceDeps): InstancesService {

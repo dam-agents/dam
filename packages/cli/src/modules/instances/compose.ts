@@ -3,7 +3,7 @@ import type { TokenProvider } from "../auth/index.js";
 import type { CompatService, ConfigService } from "../cli/index.js";
 import { buildGetCommand } from "./commands/get.js";
 import { buildListCommand } from "./commands/list.js";
-import { createInstancesTrpcClient } from "./infrastructure/trpc-client.js";
+import { createTrpcClient } from "../shared/trpc/trpc-client.js";
 import {
   createInstancesService,
   type InstancesService,
@@ -42,7 +42,7 @@ export interface InstancesModule {
 
 export function composeInstancesModule(opts: InstancesModuleOptions): InstancesModule {
   const createService = (host: string): InstancesService => {
-    const trpc = createInstancesTrpcClient({
+    const trpc = createTrpcClient({
       host,
       getToken: async () => {
         const result = await opts.tokenProvider.getValidAccessToken(host);

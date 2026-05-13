@@ -8,6 +8,11 @@ import {
   type ResolveError,
 } from "../services/instance-resolver.js";
 import {
+  describeConfigError,
+  formatTransportError,
+  printCompatResolveError,
+} from "./errors.js";
+import {
   EXIT_INSTANCES_BELOW_FLOOR,
   EXIT_INSTANCES_RUNTIME_FAILURE,
   EXIT_INSTANCES_SUCCESS,
@@ -24,7 +29,7 @@ export interface GetCommandDeps {
 export function buildGetCommand(deps: GetCommandDeps): Command {
   return new Command("get")
     .description("Show one Instance's details, addressed by name or ID")
-    .argument("<ref>", "Instance Ref — name or ID (`inst-...`)")
+    .argument("<ref>", "Instance Ref — name or 'inst-…' ID")
     .option("--server <url>", "override the configured server URL for this call")
     .option("--json", "emit raw JSON instead of the default vertical layout")
     .action(async (ref: string, opts: { server?: string; json?: boolean }) => {
@@ -58,11 +63,12 @@ export function buildGetCommand(deps: GetCommandDeps): Command {
         process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
       }
 
-      const svc = deps.createInstancesService(cfg.value.server);
+      const host = cfg.value.server;
+      const svc = deps.createInstancesService(host);
       const resolver = createInstanceResolver({ instancesService: svc });
       const result = await resolver.resolve(ref);
       if (!result.ok) {
-        printResolveError(result.error);
+        printResolveError(result.error, host);
         process.exit(exitCodeFor(result.error));
       }
 
@@ -76,22 +82,25 @@ export function buildGetCommand(deps: GetCommandDeps): Command {
     });
 }
 
-/** Vertical key:value layout. `ERROR:` appended only when state === "error". */
+/** Vertical key:value layout with dynamic column alignment.
+ *  `ERROR:` appended only when state === "error". */
 function renderInstance(instance: Instance): string {
-  const lines: string[] = [];
-  lines.push(`NAME:        ${instance.name}`);
-  lines.push(`ID:          ${instance.id}`);
-  lines.push(`AGENT:       ${instance.agentId}`);
-  lines.push(`STATE:       ${instance.state}`);
-  if (instance.description) lines.push(`DESCRIPTION: ${instance.description}`);
-  lines.push(`CHANNELS:    ${renderChannels(instance.channels)}`);
-  lines.push(
-    `ALLOWED:     ${instance.allowedUserEmails.length === 0 ? "<none>" : instance.allowedUserEmails.join(", ")}`,
-  );
-  if (instance.state === "error" && instance.error) {
-    lines.push(`ERROR:       ${instance.error}`);
-  }
-  return lines.join("\n") + "\n";
+  const entries: [string, string][] = [
+    ["NAME", instance.name],
+    ["ID", instance.id],
+    ["TEMPLATE", instance.templateId ?? "<custom>"],
+    ["IMAGE", instance.image],
+    ["STATE", instance.state],
+  ];
+  if (instance.description) entries.push(["DESCRIPTION", instance.description]);
+  entries.push(["CHANNELS", renderChannels(instance.channels)]);
+  entries.push([
+    "ALLOWED",
+    instance.allowedUserEmails.length === 0 ? "<none>" : instance.allowedUserEmails.join(", "),
+  ]);
+  if (instance.state === "error" && instance.error) entries.push(["ERROR", instance.error]);
+  const pad = Math.max(...entries.map(([k]) => k.length)) + 2;
+  return entries.map(([k, v]) => `${k}:${" ".repeat(pad - k.length)}${v}`).join("\n") + "\n";
 }
 
 function renderChannels(channels: readonly ChannelConfig[]): string {
@@ -111,57 +120,29 @@ function exitCodeFor(error: ResolveError): number {
   return EXIT_INSTANCES_RUNTIME_FAILURE;
 }
 
-function printResolveError(error: ResolveError): void {
+function printResolveError(error: ResolveError, host: string): void {
   switch (error.kind) {
     case "not-found":
       if (error.via === "id") {
-        process.stderr.write(`error: no instance with id '${error.ref}'\n`);
+        process.stderr.write(`error: no instance with id \`${error.ref}\`\n`);
       } else {
-        process.stderr.write(`error: no instance named '${error.ref}'\n`);
+        process.stderr.write(`error: no instance named "${error.ref}"\n`);
       }
       return;
     case "ambiguous": {
-      process.stderr.write(`error: multiple instances named '${error.ref}':\n`);
+      process.stderr.write(`error: multiple instances named "${error.ref}":\n`);
       for (const m of error.matches) {
-        process.stderr.write(`  ${m.id}\n`);
+        process.stderr.write(`  - \`${m.id}\`\n`);
       }
-      process.stderr.write("specify by id instead.\n");
+      process.stderr.write("hint: specify by id instead\n");
       return;
     }
     case "auth-required":
-      process.stderr.write(
-        `error: not authenticated: ${error.reason}\n` +
-          `       run "dam auth login" first\n`,
-      );
+      process.stderr.write(`error: not authenticated: ${error.reason}\n`);
+      process.stderr.write("hint: run `dam auth login` first\n");
       return;
     case "transport":
-      process.stderr.write(`error: cannot reach server: ${error.reason}\n`);
+      process.stderr.write(`error: ${formatTransportError(error.reason, host)}\n`);
       return;
-  }
-}
-
-function describeConfigError(e: { kind: string; reason?: string }): string {
-  if (e.kind === "malformed-config") return e.reason ?? "config is malformed";
-  return "no server configured";
-}
-
-function printCompatResolveError(
-  e: { kind: string; reason?: string; code?: string; message?: string },
-  serverEnvVar: string,
-): void {
-  switch (e.kind) {
-    case "missing-config":
-      process.stderr.write(
-        `error: no server configured; run "dam config set server <url>" or set ${serverEnvVar}\n`,
-      );
-      return;
-    case "malformed-config":
-      process.stderr.write(`error: ${e.reason ?? "config malformed"}\n`);
-      return;
-    case "probe-error":
-      process.stderr.write(`error: cannot reach server: ${e.message ?? e.code ?? "unknown"}\n`);
-      return;
-    default:
-      process.stderr.write(`error: ${e.kind}\n`);
   }
 }

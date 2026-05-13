@@ -47,22 +47,22 @@ function printError(e: DomainError): void {
   switch (e.kind) {
     case "invalid-key":
       process.stderr.write(
-        `error: unknown config key '${e.input}'; valid keys: ${e.validKeys.join(", ")}\n`,
+        `error: unknown config key \`${e.input}\`; valid keys: ${e.validKeys.join(", ")}\n`,
       );
       return;
     case "invalid-value":
       process.stderr.write(
-        `error: invalid value for ${e.key}: ${e.reason} (got ${JSON.stringify(e.input)})\n`,
+        `error: invalid value for \`${e.key}\`: ${e.reason} (got ${JSON.stringify(e.input)})\n`,
       );
       return;
     case "malformed-config":
       process.stderr.write(`error: ${e.reason}\n`);
       return;
     case "file-write":
-      process.stderr.write(`error: cannot write ${e.path}: ${e.reason}\n`);
+      process.stderr.write(`error: cannot write \`${e.path}\`: ${e.reason}\n`);
       return;
     case "missing-config":
-      process.stderr.write(`error: required config '${e.key}' is not set\n`);
+      process.stderr.write(`error: required config \`${e.key}\` is not set\n`);
       return;
   }
 }

@@ -60,7 +60,11 @@ export function composeCliModule(opts: CliModuleOptions = {}): CliModule {
 
   const commands: Command[] = [
     buildConfigSetCommand({ service: configService, configPath }),
-    buildPingCommand({ service: compatService, serverEnvVar: SERVER_ENV_VAR }),
+    buildPingCommand({
+      service: compatService,
+      configService,
+      serverEnvVar: SERVER_ENV_VAR,
+    }),
     buildVersionCommand({ service: compatService, localCliVersion: cliVersion }),
   ];
 
