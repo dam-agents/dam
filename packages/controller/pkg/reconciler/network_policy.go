@@ -25,15 +25,16 @@ import (
 // proxied through the gateway, gated by Envoy's ext_authz filter (ADR-035).
 //
 // Allowed egress:
-//   - DNS (TCP/UDP 53) to any peer. The rule is port-only — no
-//     namespace selector — because cluster DNS lives in different
-//     namespaces across distributions (`kube-system` on upstream k8s,
-//     `openshift-dns` on OpenShift, others elsewhere) and pinning to a
-//     namespace label silently drops every lookup on the wrong distro.
-//     The security delta over namespace-pinned DNS is negligible: the
-//     agent can only generate DNS-shaped traffic on port 53, and the
-//     destination is a kube-proxy-translated IP whose backing pod's
-//     namespace is incidental.
+//   - DNS to `kube-system` on UDP/TCP 53. CoreDNS / kube-dns pods on
+//     upstream Kubernetes listen on 53 directly, so the kernel sees
+//     53 as the destination port after kube-proxy translation.
+//   - DNS to `openshift-dns` on UDP/TCP 5353. OpenShift's `dns-default`
+//     pods listen on 5353; the cluster DNS Service (172.30.0.10:53)
+//     targets pod port 5353, and NetworkPolicy evaluates pod-IP and
+//     pod-port after kube-proxy translation, not the Service port.
+//     Pinning to 53 here would silently drop every lookup on
+//     OpenShift. Both rules are admitted; a given cluster runs DNS in
+//     only one of these namespaces, so the unused rule is harmless.
 //   - The paired gateway pod (`pair=<id>, role=gateway`) on the Envoy
 //     proxy port only. The per-pair selector pins reachability to *this*
 //     agent's gateway; the gateway pod itself is the only structural
@@ -54,7 +55,8 @@ import (
 // unrestricted (it dials external upstreams for credential injection).
 func BuildAgentEgressNetworkPolicy(pairKey string, cfg *config.Config, ownerCM *corev1.ConfigMap) *networkingv1.NetworkPolicy {
 	envoyPort := intstr.FromInt(cfg.EnvoyPort)
-	dnsPort := intstr.FromInt(53)
+	corednsPort := intstr.FromInt(53)
+	openshiftDNSPort := intstr.FromInt(5353)
 	tcp := corev1.ProtocolTCP
 	udp := corev1.ProtocolUDP
 
@@ -82,13 +84,31 @@ func BuildAgentEgressNetworkPolicy(pairKey string, cfg *config.Config, ownerCM *
 			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeEgress},
 			Egress: []networkingv1.NetworkPolicyEgressRule{
 				{
-					// Port-only DNS: no `To` peer. Cluster DNS lives in
-					// `kube-system` on upstream k8s and `openshift-dns`
-					// on OpenShift; pinning a namespace silently breaks
-					// the other distro.
+					// Upstream Kubernetes: CoreDNS / kube-dns in
+					// `kube-system` listening on pod port 53.
+					To: []networkingv1.NetworkPolicyPeer{{
+						NamespaceSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{"kubernetes.io/metadata.name": "kube-system"},
+						},
+					}},
 					Ports: []networkingv1.NetworkPolicyPort{
-						{Protocol: &udp, Port: &dnsPort},
-						{Protocol: &tcp, Port: &dnsPort},
+						{Protocol: &udp, Port: &corednsPort},
+						{Protocol: &tcp, Port: &corednsPort},
+					},
+				},
+				{
+					// OpenShift: `dns-default` pods in `openshift-dns`
+					// listen on pod port 5353. NetworkPolicy filters on
+					// pod port after kube-proxy translation, so the
+					// upstream rule (53) does not match here.
+					To: []networkingv1.NetworkPolicyPeer{{
+						NamespaceSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{"kubernetes.io/metadata.name": "openshift-dns"},
+						},
+					}},
+					Ports: []networkingv1.NetworkPolicyPort{
+						{Protocol: &udp, Port: &openshiftDNSPort},
+						{Protocol: &tcp, Port: &openshiftDNSPort},
 					},
 				},
 				{

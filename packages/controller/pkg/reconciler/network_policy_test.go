@@ -31,26 +31,27 @@ func TestBuildAgentEgressNetworkPolicy_LongLivedPair(t *testing.T) {
 	require.Len(t, np.Spec.PolicyTypes, 1)
 	assert.Equal(t, networkingv1.PolicyTypeEgress, np.Spec.PolicyTypes[0])
 
-	require.Len(t, np.Spec.Egress, 2, "DNS + paired gateway, nothing else")
+	require.Len(t, np.Spec.Egress, 3, "kube-system DNS + openshift-dns DNS + paired gateway, nothing else")
 
-	// DNS is admitted port-only (no `To` peer). Cluster DNS lives in
-	// `kube-system` on upstream k8s and `openshift-dns` on OpenShift;
-	// pinning a namespace silently breaks the other distro. The security
-	// delta is negligible — the agent can only generate DNS-shaped
-	// traffic on 53.
-	dnsRule := np.Spec.Egress[0]
-	assert.Empty(t, dnsRule.To,
-		"DNS rule must be port-only; pinning a namespace breaks portability across k8s distributions")
-	assert.Len(t, dnsRule.Ports, 2, "both UDP/53 and TCP/53 — modern resolvers fall through to TCP")
-	protocols := map[corev1.Protocol]bool{}
-	for _, p := range dnsRule.Ports {
-		protocols[*p.Protocol] = true
-		assert.Equal(t, int32(53), p.Port.IntVal)
-	}
-	assert.True(t, protocols[corev1.ProtocolUDP] && protocols[corev1.ProtocolTCP])
+	// Upstream Kubernetes: CoreDNS / kube-dns in `kube-system` listening
+	// on pod port 53.
+	corednsRule := np.Spec.Egress[0]
+	require.Len(t, corednsRule.To, 1)
+	require.NotNil(t, corednsRule.To[0].NamespaceSelector)
+	assert.Equal(t, "kube-system", corednsRule.To[0].NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"])
+	assertDNSPorts(t, corednsRule.Ports, 53)
+
+	// OpenShift: dns-default in `openshift-dns` listening on pod port
+	// 5353. NetworkPolicy filters on pod port after kube-proxy
+	// translation, so the upstream rule (53) does not match here.
+	openshiftRule := np.Spec.Egress[1]
+	require.Len(t, openshiftRule.To, 1)
+	require.NotNil(t, openshiftRule.To[0].NamespaceSelector)
+	assert.Equal(t, "openshift-dns", openshiftRule.To[0].NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"])
+	assertDNSPorts(t, openshiftRule.Ports, 5353)
 
 	// Paired gateway pod — Envoy proxy port only.
-	gwRule := np.Spec.Egress[1]
+	gwRule := np.Spec.Egress[2]
 	require.Len(t, gwRule.To, 1)
 	require.NotNil(t, gwRule.To[0].PodSelector)
 	assert.Equal(t, "my-instance", gwRule.To[0].PodSelector.MatchLabels[LabelPair])
@@ -75,7 +76,7 @@ func TestBuildAgentEgressNetworkPolicy_Fork(t *testing.T) {
 	// The gateway-pod egress rule must reference the FORK's gateway, not
 	// the parent's — otherwise the fork agent could reach the parent's
 	// gateway and inject under the parent owner's credentials.
-	gwRule := np.Spec.Egress[1]
+	gwRule := np.Spec.Egress[2]
 	require.NotNil(t, gwRule.To[0].PodSelector)
 	assert.Equal(t, "fork-abc", gwRule.To[0].PodSelector.MatchLabels[LabelPair],
 		"fork agent NP must scope to the FORK's gateway, not the parent's")
@@ -100,4 +101,15 @@ func TestBuildAgentEgressNetworkPolicy_ManagedByLabel(t *testing.T) {
 	np := BuildAgentEgressNetworkPolicy("my-instance", testConfig, testOwnerCM)
 	assert.Equal(t, "platform-controller", np.Labels["agent-platform.ai/managed-by"])
 	assert.Equal(t, "my-instance", np.Labels[LabelInstance])
+}
+
+func assertDNSPorts(t *testing.T, ports []networkingv1.NetworkPolicyPort, expected int32) {
+	t.Helper()
+	require.Len(t, ports, 2, "both UDP and TCP on the resolver's pod port — modern resolvers fall through to TCP")
+	protocols := map[corev1.Protocol]bool{}
+	for _, p := range ports {
+		protocols[*p.Protocol] = true
+		assert.Equal(t, expected, p.Port.IntVal)
+	}
+	assert.True(t, protocols[corev1.ProtocolUDP] && protocols[corev1.ProtocolTCP])
 }

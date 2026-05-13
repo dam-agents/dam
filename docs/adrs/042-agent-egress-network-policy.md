@@ -41,13 +41,16 @@ job it was designed for.
   `istio.io/dataplane-mode: none` removes the ztunnel redirect. The agent
   has no SPIFFE workload identity; its outbound packets show the real
   destination to NetworkPolicy.
-- **Per-pair `<id>-agent-egress` NetworkPolicy.** Two egress rules:
-  DNS on TCP/UDP 53 (port-only, no namespace selector — cluster DNS
-  lives in `kube-system` on upstream k8s and `openshift-dns` on
-  OpenShift, and the agent can only generate DNS-shaped traffic on
-  53 regardless of which pod backs the resolver Service), and the
-  paired gateway pod (`pair=<id>, role=gateway`) on the Envoy proxy
-  port. HBONE 15008 is not admitted; the agent never speaks it.
+- **Per-pair `<id>-agent-egress` NetworkPolicy.** Three egress rules:
+  DNS to `kube-system` on UDP/TCP 53 (CoreDNS / kube-dns on upstream
+  Kubernetes listens on pod port 53), DNS to `openshift-dns` on
+  UDP/TCP 5353 (OpenShift's `dns-default` pods listen on 5353 and the
+  cluster DNS Service does 53→5353 translation — NetworkPolicy
+  evaluates pod port after kube-proxy translation, so 53 silently
+  drops every lookup on OpenShift), and the paired gateway pod
+  (`pair=<id>, role=gateway`) on the Envoy proxy port. A cluster runs
+  cluster DNS in only one of those namespaces; the unused rule is
+  harmless. HBONE 15008 is not admitted; the agent never speaks it.
 - **Gateway pod stays in ambient.** Its SPIFFE principal continues to
   gate the gateway → harness and gateway → ext-authz hops via the
   existing per-instance harness-allow and ext-authz-allow
@@ -106,10 +109,11 @@ instead of the rule model.
   not yet converged. The agent's egress shape does not depend on any
   of them.
 - DNS tunneling via CoreDNS's upstream forwarder remains a residual,
-  low-bandwidth exfil channel. The NetworkPolicy must admit DNS on
-  port 53; CoreDNS (and OpenShift's dns-default) forwards non-cluster
-  queries upstream by default. Closing this requires per-pod DNS
-  policy or a DNS-aware egress filter, neither in scope here.
+  low-bandwidth exfil channel. The NetworkPolicy must admit DNS to
+  the cluster resolver namespace; CoreDNS (and OpenShift's
+  `dns-default`) forwards non-cluster queries upstream by default.
+  Closing this requires per-pod DNS policy or a DNS-aware egress
+  filter, neither in scope here.
 - The gateway pod must accept inbound traffic from a non-mesh source
   on its Envoy port. Ambient ztunnel-on-inbound passes through
   plaintext on non-HBONE ports when no ALLOW AuthorizationPolicy is
