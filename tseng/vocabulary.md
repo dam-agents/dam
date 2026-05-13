@@ -109,8 +109,8 @@ Pod-side operation that lands a user-supplied snapshot of local project context 
 | Term | Definition |
 |------|-----------|
 | Bundle | A `tar` (gzip optional) carrying the files to land; the on-the-wire contract between clients (UI, future CLI) and agent-runtime |
-| Staging Dir | A `.import-staging-*` directory on the PVC into which the bundle is extracted before merge; reclaimed by the boot sweeper if its mtime exceeds 1h |
-| Merge | The per-file recursive walk that lands the staging tree into `<homeDir>/work`: directory-vs-directory recurses; everything else is an atomic `rename` where the bundle entry wins on conflict and unrelated existing files survive |
+| Staging Dir | A `.import-staging-*` directory on the PVC into which the bundle is extracted before finalize; reclaimed by the boot sweeper if its mtime exceeds 1h |
+| Finalize | The per-top-level `rm`+`rename` loop that lands the staging tree into `<homeDir>/work`. Top-level entries are atomic units — a top-level folder in the bundle replaces the whole same-named folder in `work/`. Destination entries whose names don't appear in the bundle are left untouched |
 
 ## Platform CLI (bounded context)
 

@@ -80,23 +80,29 @@ async function readFile(path: string): Promise<string | null> {
 }
 
 describe("import (e2e)", () => {
-  it("lands the bundle under <agenthome>/work and merges with existing files", async () => {
+  it("lands the bundle under <agenthome>/work with top-level replace semantics", async () => {
     const first = await postImport(await buildBundle({
       "CLAUDE.md": "# project context\n",
-      ".claude/settings.json": "{}\n",
+      ".claude/old.json": "{\"old\": true}\n",
+      ".claude/keep.json": "{\"keep\": true}\n",
       "keep-me.txt": "original\n",
     }));
     expect(first.status, first.body).toBe(200);
-    expect((JSON.parse(first.body) as { filesWritten: number }).filesWritten).toBe(3);
+    expect((JSON.parse(first.body) as { filesWritten: number }).filesWritten).toBe(4);
 
     expect(await readFile("work/CLAUDE.md")).toContain("project context");
     expect(await readFile("work/keep-me.txt")).toContain("original");
+    expect(await readFile("work/.claude/old.json")).toContain("old");
+    expect(await readFile("work/.claude/keep.json")).toContain("keep");
 
-    // Second import: overlaps on CLAUDE.md, leaves keep-me.txt alone, adds a
-    // new file. Verifies the merge semantics (bundle wins on conflict;
-    // unrelated existing files survive).
+    // Second import: overlaps on CLAUDE.md (top-level file) and .claude/
+    // (top-level folder), leaves keep-me.txt alone, adds new-file.md.
+    // Verifies: conflicting top-level entries are replaced wholesale;
+    // the existing `.claude/old.json` and `.claude/keep.json` are gone
+    // because the bundle's `.claude/` replaces the directory atomically.
     const second = await postImport(await buildBundle({
       "CLAUDE.md": "# updated context\n",
+      ".claude/new.json": "{\"new\": true}\n",
       "new-file.md": "fresh\n",
     }));
     expect(second.status, second.body).toBe(200);
@@ -104,5 +110,8 @@ describe("import (e2e)", () => {
     expect(await readFile("work/CLAUDE.md")).toContain("updated context");
     expect(await readFile("work/keep-me.txt")).toContain("original");
     expect(await readFile("work/new-file.md")).toContain("fresh");
+    expect(await readFile("work/.claude/new.json")).toContain("new");
+    expect(await readFile("work/.claude/old.json")).toBeNull();
+    expect(await readFile("work/.claude/keep.json")).toBeNull();
   }, 180_000);
 });

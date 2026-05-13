@@ -1,4 +1,4 @@
-import { lstat, mkdir, readdir, rename, rm } from "node:fs/promises";
+import { mkdir, readdir, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 export type FinalizeResult = {
@@ -6,43 +6,35 @@ export type FinalizeResult = {
 };
 
 /**
- * Recursively merge the contents of `stagingDir` into `destDir`.
+ * Land the contents of `stagingDir` into `destDir` by replacing each
+ * top-level entry of the bundle wholesale.
  *
- * For each entry: if both sides are directories, recurse; otherwise the
- * staging entry replaces whatever is at the destination path via POSIX
- * `rename` (atomic for the individual file/dir). Unrelated existing
- * entries in `destDir` are left alone. Symlinks at the destination are
- * never followed — `rename` replaces the link itself.
+ * Semantics, per top-level entry of `stagingDir`:
+ *  - If the destination has no entry by that name → `rename` it in.
+ *  - If the destination has an entry by that name → `rm -rf` the
+ *    destination entry, then `rename` the staging entry in.
  *
- * Staging is on the same PVC as the destination, so cross-device fallback
- * isn't needed. Per-file atomicity is the only atomicity claim; the bundle
- * as a whole is not transactional.
+ * Destination entries whose names don't appear in the bundle are left
+ * untouched. Folders are atomic units: importing `dirA/` replaces the
+ * whole `dirA/`, not its individual files. Staging is on the same PVC
+ * as `destDir`, so cross-device fallback isn't needed.
+ *
+ * Atomicity is scoped to the individual top-level entry. The whole
+ * bundle is not transactional; a crash mid-loop leaves earlier entries
+ * landed and later entries un-landed. A re-import converges because the
+ * operation is idempotent in destination terms.
  */
 export async function finalize(stagingDir: string, destDir: string): Promise<FinalizeResult> {
   await mkdir(destDir, { recursive: true });
   const topLevel = await readdir(stagingDir);
-  await mergeWalk(stagingDir, destDir);
-  return { topLevelPaths: topLevel };
-}
-
-async function mergeWalk(src: string, dst: string): Promise<void> {
-  await mkdir(dst, { recursive: true });
-  for (const name of await readdir(src)) {
-    const srcPath = join(src, name);
-    const dstPath = join(dst, name);
-    // lstat at the destination: a pre-existing symlink must not be
-    // followed — recursing into a symlink target would write outside
-    // destDir. The src tree is already symlink-free (extract.ts rejects
-    // symlink entries).
-    const srcStat = await lstat(srcPath);
-    let dstStat: Awaited<ReturnType<typeof lstat>> | null = null;
-    try { dstStat = await lstat(dstPath); } catch { /* missing — fine */ }
-
-    if (srcStat.isDirectory() && (!dstStat || dstStat.isDirectory())) {
-      await mergeWalk(srcPath, dstPath);
-      continue;
-    }
-    if (dstStat) await rm(dstPath, { recursive: true, force: true });
+  for (const name of topLevel) {
+    const srcPath = join(stagingDir, name);
+    const dstPath = join(destDir, name);
+    // rm-then-rename per top-level entry. The crash window between the
+    // two ops is bounded to this single entry — earlier entries already
+    // landed, later entries still in staging on retry.
+    await rm(dstPath, { recursive: true, force: true });
     await rename(srcPath, dstPath);
   }
+  return { topLevelPaths: topLevel };
 }
