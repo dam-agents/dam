@@ -56,59 +56,78 @@ defense-in-depth perimeter.**
 - NetworkPolicy must not encode per-destination intra-cluster gating.
   Pod-selector rules for ambient destinations are removed.
 
-**Source-side egress control via Waypoint.** Destination-side
-AuthorizationPolicy gates traffic to workloads with SPIFFE identity;
-external destinations have none, so ztunnel forwards them by default.
-Without a gate, a compromised agent process could bypass `HTTPS_PROXY`
-and reach the open internet directly through ztunnel — NetworkPolicy
-cannot help because istio-cni redirects outbound to ztunnel before
-the NP filter evaluates.
+**Agent pods opt out of ambient mesh.** The agent process runs
+untrusted code; its only legitimate destination is its paired
+gateway. Keeping the agent in ambient means istio-cni redirects
+outbound to ztunnel before NetworkPolicy evaluates, so NP can't gate
+per-destination — and the egress-waypoint pattern that would gate
+at the mesh layer turned out to be brittle in current Istio (label
+semantics on `istio.io/use-waypoint` differ from documentation, and
+`waypoint-for: none` interacts badly with Service binding).
 
-The Istio-native answer is an **egress Waypoint**: a Gateway resource
-(`gatewayClassName: istio-waypoint`) Istio synthesises into a
-namespace-scoped pod that ztunnel routes outbound through. The waypoint
-is a workload with a SPIFFE identity, so an AuthorizationPolicy with
-`targetRefs` pointing at it gates traffic by **source** principal.
+Opting the agent out of ambient (`istio.io/dataplane-mode: none` at
+the pod template) makes the kernel the only path. The agent has no
+SPIFFE identity, no ztunnel redirect, no mesh participation. Its
+outbound is gated by a per-pair NetworkPolicy that admits exactly
+DNS to `kube-system` and the paired gateway pod on the Envoy proxy
+port. Nothing else — not other agents, not other pair's gateway,
+not release-ns workloads, not external IPs. The kernel can't be
+spoofed: the agent pod has the source IP that it has.
 
-For the agent namespace, the waypoint AuthorizationPolicy ALLOWs only
-gateway pod SAs (SPIFFE wildcard `sa/*-gateway`, covering both
-long-lived `<id>-gateway` and fork `<forkName>-gateway`). Agent pod
-SAs (`<id>`, `<forkName>`) don't match — outbound from agents fails
-at the waypoint regardless of destination. The gateway itself routes
-through the waypoint, passes the policy, and reaches its actual
-destination (mesh peer or external).
+The gateway pod stays in ambient. The pod is platform-controlled
+(rendered Envoy + rendered config); its outbound destinations are
+gated by:
 
-`istio.io/waypoint-for: none` on the waypoint keeps it egress-only —
-it does not intercept ingress to services in the namespace (per-instance
-policies on gateway and agent pods continue to handle ingress).
+- Mesh AuthorizationPolicy on the destination side
+  (`<id>-harness-allow` admits gateway SA at the api-server waypoint;
+  `<id>-extauthz-allow` admits gateway SA at the per-instance
+  ext-authz Service; `release-ns-baseline` blocks anything else in
+  release-ns).
+- ext_authz on the gateway's Envoy itself: every credentialed and
+  SNI-miss request hits the api-server's ext-authz handler, which
+  matches against the instance's configured egress rules or falls
+  through to a HITL approval (denying when host info is missing).
+
+That's the destination-side gate that the abandoned waypoint
+approach was trying to add — and it was already there. The agent's
+inability to reach anything but the gateway means the gateway is
+necessarily the chokepoint for everything downstream.
 
 **Per-pair ServiceAccount split (supersedes [ADR-041](041-istio-ambient-mesh.md)
 § Per-instance SA).** Each pair runs as **two** ServiceAccounts:
 
-- Agent SA = `<id>` (long-lived) / `<forkName>` (fork).
+- Agent SA = `<id>` (long-lived) / `<forkName>` (fork) — used as the
+  pod's K8s service account, but the agent is non-ambient so this
+  SA has no SPIFFE identity in the mesh.
 - Gateway SA = `<id>-gateway` (long-lived) / `<forkName>-gateway`
-  (fork).
+  (fork) — the only SA with a mesh principal.
 
-The agent's SPIFFE principal is distinct from the gateway's, so
-destination AuthorizationPolicies can admit one without admitting the
-other. Per-instance policies (the three from ADR-041) rebind their
-principals accordingly:
+Per-instance AuthorizationPolicies (the two surviving from ADR-041
+after the agent ↔ gateway hop moved to NetworkPolicy):
 
-- *Gateway admission* (agent ns) — ALLOWs only the agent SA
-  principal. The agent dials its paired gateway; nothing else needs
-  to.
 - *Harness path-prefix at the waypoint* (release ns) — ALLOWs only
-  the gateway SA principal. The agent's SPIFFE identity is not
-  admitted, so all harness traffic must route through the gateway by
-  construction.
+  the gateway SA principal to `/api/instances/<id>/*`. The agent has
+  no mesh principal at all; even if it could somehow reach the
+  waypoint, it couldn't be admitted. All harness traffic must route
+  through the gateway by construction.
 - *Per-instance ext-authz Service* (release ns) — ALLOWs only the
   gateway SA principal. Same construction; ext-authz Check calls
   originate from the gateway's Envoy filter.
 
 Fork variants admit the fork gateway SA at the parent's harness MCP
-path and the parent's ext-authz Service (replacing the prior
-fork-SA-only admission, which couldn't distinguish fork agent from
-fork gateway).
+path and the parent's ext-authz Service.
+
+The agent ↔ gateway hop is gated by **per-pair NetworkPolicies**
+(not mesh AuthorizationPolicy, because the agent has no SPIFFE
+identity to match):
+
+- `<id>-agent-egress` on the agent pod — allows DNS to `kube-system`
+  and the paired gateway pod (`pair=<id>, role=gateway`) on the
+  Envoy proxy port.
+- `<id>-gateway-ingress` on the gateway pod — allows the paired
+  agent pod (`pair=<id>, role=agent`) on the Envoy proxy port.
+
+Symmetric pair-pinning at the kernel level. Both controller-rendered.
 
 ## Alternatives Considered
 
@@ -140,59 +159,57 @@ cluster-wide rules.
 - **NetworkPolicy reviews are perimeter reviews.** Rules either gate
   non-mesh paths or they don't fire; the question "does this rule
   fire?" goes away.
-- **"Agent only calls gateway" holds by construction.** With the
-  per-pair SA split, the agent's SPIFFE principal is admitted at
-  exactly one destination — its paired gateway. The agent process
-  bypassing `HTTPS_PROXY` and attempting to dial harness, ext-authz,
-  or any other in-mesh destination directly is denied at the mesh
-  layer regardless of pod label or path.
-- **External egress restricted to gateway pods.** The agent-ns egress
-  waypoint admits only gateway SAs. Agents dialing arbitrary external
-  hosts (data exfiltration, C2 polling) fail at the waypoint — even
-  if they bypass `HTTPS_PROXY`. The gateway pod retains unrestricted
-  external egress and remains the sole credentialed exit path. The
-  same mechanism generalises to other namespaces (one waypoint +
-  policy per namespace) but is applied only to the agent namespace
-  in this ADR; release-namespace egress restrictions are a follow-on
-  decision (api-server legitimately needs external egress for OAuth +
-  messenger integrations, which complicates the policy enumeration).
-- **One chart-rendered AuthorizationPolicy per namespace plus
-  per-workload policies.** Cluster shape: `<release>-release-ns-baseline`
-  covers release-ns; `<release>-agent-pod-allow` covers agent pods in
-  the agent namespace; per-instance and per-fork policies continue to
-  be controller-rendered as in ADR-041.
-- **Waypoint pod availability is on the agent-egress critical path.**
-  All agent-ns outbound routes through the namespace's egress waypoint
-  pod. If the waypoint pod is unavailable (initial deploy, OOMKill,
-  eviction, node restart) every agent + gateway outbound fails until
-  the waypoint is back. Istio synthesises the waypoint Deployment with
-  default replicas: operators running production-scale should size
-  replicas / PDB / resources appropriately; a single-replica waypoint
-  is acceptable for dev but a SPOF for the platform's outbound path.
-- **SA-split rolling upgrade has a transient denial window.** The
-  controller reconciles per-instance AuthorizationPolicies (harness +
-  ext-authz now admitting `<id>-gateway`) and the gateway StatefulSet
-  pod template (now running as `<id>-gateway` SA) in the same loop,
-  but the rollout is not atomic. During the gap between policy apply
-  and pod restart, the old gateway pod (still running as `<id>`) is
-  denied at harness + ext-authz. Agents see in-flight requests fail
-  until the new pod is Ready. Acceptable for in-place upgrades;
-  zero-downtime migration would require admitting both old and new
-  SA principals temporarily before tightening.
-- **Initial install / namespace label change disrupts running
-  instances.** `istio.io/use-waypoint` on the namespace is applied
-  atomically with the Gateway resource and AuthorizationPolicy, but
-  the waypoint pod takes time to come up. Any running instance's
-  outbound (gateway → upstream API) fails between when ztunnel
-  starts routing through the waypoint name and when the waypoint pod
-  is Ready. First install on a fresh cluster: no impact. In-place
-  chart upgrade with running instances: brief outbound outage. Plan
-  upgrades during low-traffic windows or hibernate instances first.
+- **"Agent only calls gateway" holds by construction.** The agent
+  pod's kernel-level egress admits exactly two destinations: DNS in
+  `kube-system` and its paired gateway pod. Nothing else — no other
+  agent, no release-ns workload, no external IP. NetworkPolicy is
+  identity-blind but enforces at L3/L4 with no redirect layer to
+  obscure the destination.
+- **Agent has no mesh participation.** No SPIFFE identity, no
+  ztunnel routing, no mesh AuthorizationPolicy on its ingress or
+  egress. Inbound from api-server / controller is gated by a
+  chart-rendered `<release>-agent-pod-ingress` NetworkPolicy (allow
+  api-server + controller pods on port 8080).
+- **Where the gateway dials is gated by ext_authz.** Every credentialed
+  and SNI-miss egress through the gateway's Envoy hits the api-server's
+  ext-authz handler, which matches against the instance's egress
+  rules or falls through to HITL approval (denying when host info is
+  missing). This is the existing ADR-035 gate — the abandoned
+  waypoint approach was duplicating work ext_authz already does.
+- **Waypoint approach rejected.** An earlier draft of this ADR
+  deployed an egress Waypoint with an AuthorizationPolicy gating
+  per-source-SA. In practice `istio.io/use-waypoint` on a namespace
+  caused Service-binding errors (the waypoint's `waypoint-for: none`
+  conflicts with destination-side Service routing), and even removing
+  the labels left ztunnel in a state where the agent's outbound was
+  TCP-refused with no path to the gateway. Reverted in favour of
+  opt-out-of-ambient + NetworkPolicy.
+- **Chart shape.** Chart-rendered AuthorizationPolicies:
+  `<release>-release-ns-baseline` (default-deny release-ns),
+  `<release>-apiserver-pod-deny` (pod-level DENY on api-server's
+  harness + ext-authz ports). Chart-rendered NetworkPolicies:
+  `<release>-agent-pod-ingress` (api-server + controller → agent
+  port 8080), `<release>-gateway-egress` (gateway perimeter:
+  DNS + mesh entrance + ipBlock with `clusterCidrs` excepted).
+  Controller-rendered per-pair: `<id>-harness-allow`,
+  `<id>-extauthz-allow`, `<id>-agent-egress` (NP),
+  `<id>-gateway-ingress` (NP), per-instance ext-authz Service.
+- **SA-split rolling upgrade has a transient denial window.** When
+  AuthorizationPolicies for harness/ext-authz rebind from `<id>` to
+  `<id>-gateway` and the gateway StatefulSet pod template adopts the
+  new SA, the rollout isn't atomic. During the gap between policy
+  apply and pod restart, an old gateway pod still running as `<id>`
+  is denied at harness + ext-authz. Acceptable for in-place
+  upgrades; zero-downtime migration would require admitting both
+  old and new SA principals temporarily before tightening.
 - **IPv6 dual-stack clusters need explicit `clusterCidrs` coverage.**
   Default `clusterCidrs` includes RFC4193 ULA (`fc00::/7`) and
   RFC4291 link-local (`fe80::/10`) to cover dual-stack clusters, but
   operators on clusters using globally-routable IPv6 prefixes for
-  pods must extend the list with their pod + service CIDRs.
+  pods must extend the list with their pod + service CIDRs. The
+  gateway-egress NP renders IPv4 and IPv6 `ipBlock` peers
+  separately (Kubernetes NP requires `except` to be a strict subset
+  of `cidr`, so mixing families breaks validation).
 
 ## Related ADRs
 

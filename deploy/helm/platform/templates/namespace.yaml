@@ -6,15 +6,12 @@ metadata:
   labels:
     {{- include "platform.labels" . | nindent 4 }}
     agent-platform.ai/managed-by: platform
-    # ADR-041: opt the agent namespace into Istio ambient. ztunnel
-    # transparently mTLSes pod-to-pod traffic; AuthorizationPolicy on
-    # the gateway / ext-authz / harness Services enforces per-instance
-    # SPIFFE identity.
+    # ADR-041: opt the agent namespace into Istio ambient. Gateway pods
+    # and fork pods are mesh peers. Per ADR-042, **agent** pods opt
+    # back out at the pod level (`istio.io/dataplane-mode: none` on the
+    # pod template) so their egress is gated by kernel-level
+    # NetworkPolicy rather than mesh routing — the agent's only
+    # legitimate destination is its paired gateway, which NP can
+    # enforce structurally without ambient's complications.
     istio.io/dataplane-mode: ambient
-    # ADR-042: route every workload's outbound through the egress
-    # waypoint (`agent-ns-egress-waypoint.yaml`). The waypoint's
-    # AuthorizationPolicy admits only `<id>-gateway` SAs, so a
-    # compromised agent cannot bypass HTTPS_PROXY to reach the open
-    # internet directly via ztunnel.
-    istio.io/use-waypoint: {{ include "platform.fullname" . }}-agent-egress-waypoint
 {{- end }}

@@ -15,29 +15,27 @@ import (
 )
 
 // ADR-041 + ADR-042: per-instance Istio AuthorizationPolicies. The
-// controller writes three per instance:
+// controller writes two per instance (the agent ↔ gateway hop is
+// gated by NetworkPolicy at the kernel because the agent is
+// non-ambient — see network_policy.go):
 //
-//   1. `<id>-gateway-allow`  — admission to the gateway pod (CONNECT proxy
-//                              port, agent namespace). ALLOWs the **agent
-//                              SA principal** (`<td>/ns/<ns>/sa/<id>`) —
-//                              the agent dials the gateway.
-//   2. `<id>-harness-allow`  — admission via the api-server's waypoint
+//   1. `<id>-harness-allow`  — admission via the api-server's waypoint
 //                              Gateway to path `/api/instances/<id>/*`.
 //                              ALLOWs the **gateway SA principal**
 //                              (`<td>/ns/<ns>/sa/<id>-gateway`) only —
-//                              the agent must route through the gateway
-//                              to reach harness.
-//   3. `<id>-extauthz-allow` — admission to the per-instance ext-authz
+//                              the agent has no SPIFFE identity, must
+//                              route through the gateway to reach
+//                              harness.
+//   2. `<id>-extauthz-allow` — admission to the per-instance ext-authz
 //                              Service. ALLOWs the gateway SA principal
 //                              only.
 //
 // Forks (ADR-027) follow the same split — `<forkName>` for the fork
-// agent SA, `<forkName>-gateway` for the fork gateway SA. Per-fork
-// release-namespace policies (`BuildForkHarnessAuthorizationPolicy`,
-// `BuildForkExtAuthzAuthorizationPolicy`) admit the fork gateway SA to
-// a narrow surface scoped to the parent. The fork's gateway-admission
-// policy admits the fork agent SA — agent → gateway is the only
-// pair-internal hop.
+// agent SA (no mesh use), `<forkName>-gateway` for the fork gateway SA
+// (mesh principal). Per-fork release-namespace policies
+// (`BuildForkHarnessAuthorizationPolicy`,
+// `BuildForkExtAuthzAuthorizationPolicy`) admit the fork gateway SA
+// to a narrow surface scoped to the parent.
 
 const (
 	istioGroup    = "security.istio.io"
@@ -101,45 +99,6 @@ func ownerRefAsMap(r *metav1.OwnerReference) map[string]interface{} {
 		m["blockOwnerDeletion"] = *r.BlockOwnerDeletion
 	}
 	return m
-}
-
-// BuildGatewayAuthorizationPolicy admits traffic to the per-instance gateway
-// pod from the paired **agent** SA principal only. Selector matches gateway
-// pods of this pair.
-//
-// `pairKey` is the pair identifier (instance name for long-lived pairs,
-// fork name for fork pairs). `principalInstanceID` names the agent SA
-// admitted — equal to `pairKey` for both shapes (agent and gateway of
-// the same pair have related SA names, and the agent dials its own
-// gateway).
-func BuildGatewayAuthorizationPolicy(pairKey, principalInstanceID string, cfg *config.Config, ownerCM *corev1.ConfigMap) *unstructured.Unstructured {
-	spec := map[string]interface{}{
-		"selector": map[string]interface{}{
-			"matchLabels": map[string]interface{}{
-				LabelPair: pairKey,
-				LabelRole: RoleGateway,
-			},
-		},
-		"action": "ALLOW",
-		"rules": []interface{}{
-			map[string]interface{}{
-				"from": []interface{}{
-					map[string]interface{}{
-						"source": map[string]interface{}{
-							"principals": []interface{}{cfg.PrincipalForAgent(principalInstanceID)},
-						},
-					},
-				},
-			},
-		},
-	}
-	labels := map[string]string{
-		LabelInstance:                  principalInstanceID,
-		LabelPair:                      pairKey,
-		LabelRole:                      RoleGateway,
-		"agent-platform.ai/managed-by": "platform-controller",
-	}
-	return authzPolicy(pairKey+"-gateway-allow", cfg.Namespace, ownerCM, labels, spec)
 }
 
 // BuildHarnessAuthorizationPolicy admits traffic via the api-server's

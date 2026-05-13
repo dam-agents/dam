@@ -1,0 +1,50 @@
+{{- /*
+Ingress NetworkPolicy on agent pods.
+
+The agent pod opts out of ambient mesh (ADR-042) — its boundary is
+kernel NetworkPolicy, not mesh AuthorizationPolicy. This policy gates
+who can reach the agent pod on its ACP WebSocket port:
+
+  - api-server pod (release ns)  — ACP relay
+  - controller pod (release ns)  — idle status probe
+
+Sources in the agent namespace itself (other agents, gateway pods,
+the test-probe SA) are not admitted — no cross-instance lateral
+reach to another agent's ACP. The agent's outbound is locked to
+its paired gateway by the controller-rendered `<id>-agent-egress`
+NP; this policy is the symmetric inbound side, chart-rendered
+once (selector applies to every `role=agent` pod long-lived + fork).
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "platform.fullname" . }}-agent-pod-ingress
+  namespace: {{ .Values.agentNamespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    agent-platform.ai/role: agent
+spec:
+  podSelector:
+    matchLabels:
+      agent-platform.ai/role: agent
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace | quote }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: apiserver
+              app.kubernetes.io/instance: {{ .Release.Name | quote }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace | quote }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: controller
+              app.kubernetes.io/instance: {{ .Release.Name | quote }}
+      ports:
+        - protocol: TCP
+          port: 8080

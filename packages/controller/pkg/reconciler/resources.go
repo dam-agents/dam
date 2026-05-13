@@ -67,6 +67,14 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 		LabelInstance: name,
 		LabelPair:     name,
 		LabelRole:     RoleAgent,
+		// ADR-042: agent opts out of ambient mesh at the pod level.
+		// The namespace is ambient (gateway + fork pods participate);
+		// agents do not. Their boundary is kernel NetworkPolicy, which
+		// can enforce "egress only to paired gateway" structurally —
+		// ambient redirect to ztunnel would obscure the destination and
+		// re-introduce the lateral-movement surface the waypoint
+		// approach failed to gate cleanly.
+		"istio.io/dataplane-mode": "none",
 	}
 	caCertPath := "/etc/platform/ca/ca.crt"
 

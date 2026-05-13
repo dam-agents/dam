@@ -121,17 +121,11 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, err.Error())
 	}
 
-	// ADR-041: gateway admission — both pods of the fork pair share the
-	// fork SA so this is "self-talk only" (same shape as long-lived pairs).
-	if err := r.applyAuthorizationPolicy(ctx, BuildGatewayAuthorizationPolicy(forkName, forkName, r.config, cm)); err != nil {
-		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying fork gateway authz policy: %v", err))
-	}
-
-	// ADR-041 + ADR-027: per-fork harness policy admits the fork SA only
-	// to `/api/instances/<parent>/mcp` (not the parent's full surface),
-	// and the per-fork ext-authz policy admits the fork SA to the
-	// parent's per-instance ext-authz Service so the parent owner's
-	// HITL rules continue to gate the fork's egress.
+	// ADR-042: per-fork harness + ext-authz AuthorizationPolicies admit
+	// the fork's gateway SA only — fork agent has no SPIFFE identity
+	// (non-ambient pod), so its hop to the fork's gateway is NP-gated
+	// (below). The fork gateway then forwards to harness / ext-authz as
+	// a mesh peer under its own SA principal.
 	if err := r.applyAuthorizationPolicy(ctx, BuildForkHarnessAuthorizationPolicy(forkName, forkSpec.Instance, r.config, cm)); err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying fork harness authz policy: %v", err))
 	}
@@ -139,9 +133,13 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying fork ext-authz authz policy: %v", err))
 	}
 
-	// ADR-042: agent egress NP is chart-rendered, namespace-wide, applies
-	// to all `role=agent` pods including this fork's agent. No per-fork
-	// rendering needed.
+	// ADR-042: per-fork agent ↔ gateway NetworkPolicies.
+	if err := r.applyAgentEgressNetworkPolicy(ctx, BuildAgentEgressNetworkPolicy(forkName, r.config, cm)); err != nil {
+		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, err.Error())
+	}
+	if err := r.applyGatewayIngressNetworkPolicy(ctx, BuildGatewayIngressNetworkPolicy(forkName, r.config, cm)); err != nil {
+		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, err.Error())
+	}
 
 	// ADR-038: paired gateway pod for the fork. Render the gateway-side
 	// resources first so HTTPS_PROXY's target exists by the time the

@@ -92,19 +92,14 @@ NetworkPolicy is defense-in-depth perimeter only.
 
 - **Per-instance pair admission** (ADR-041 + ADR-042, controller-rendered):
   agent and gateway run under distinct SAs (`<id>` and `<id>-gateway`).
-  `<id>-gateway-allow` admits the **agent** SA at the gateway pod;
-  `<id>-harness-allow` admits only the **gateway** SA to
-  `/api/instances/<id>/*` at the api-server waypoint;
-  `<id>-extauthz-allow` admits only the **gateway** SA at the
-  per-instance ext-authz Service. The agent's SPIFFE principal is
-  admitted at exactly one place: its paired gateway. All harness +
-  ext-authz traffic must route through the gateway by construction.
-- **Agent pods** (chart-rendered, `<release>-agent-pod-allow`,
-  selector `role=agent`): admits only the api-server and controller SA
-  principals on port 8080. Closes the path where an agent driving its
-  gateway as a confused deputy could mesh-HBONE another instance's
-  agent pod and POST directly to its ACP WebSocket, bypassing the
-  api-server relay ([ADR-007](../adrs/007-acp-relay.md)).
+  The agent opts out of ambient mesh — its SA has no SPIFFE identity
+  — so the agent ↔ gateway hop is gated by NetworkPolicy
+  (`<id>-agent-egress` + `<id>-gateway-ingress`, pair-pinned). The
+  gateway stays in mesh: `<id>-harness-allow` admits only the
+  **gateway** SA to `/api/instances/<id>/*` at the api-server
+  waypoint, `<id>-extauthz-allow` admits only the **gateway** SA at
+  the per-instance ext-authz Service. All harness + ext-authz traffic
+  must route through the gateway by construction.
 - **Release-namespace baseline** (chart-rendered,
   `<release>-release-ns-baseline`, no selector): default-denies every
   release-ns workload, allowing intra-namespace traffic and ingress to
@@ -113,35 +108,40 @@ NetworkPolicy is defense-in-depth perimeter only.
   namespace; agent-ns reach to harness + ext-authz is admitted by the
   per-instance ALLOWs above. Closes the path to keycloak / postgres /
   redis / ui / controller / nfs-provisioner.
-- **Agent-namespace egress waypoint** (chart-rendered Gateway
-  `<release>-agent-egress-waypoint` + AuthorizationPolicy
-  `<release>-agent-egress-waypoint-allow`, ADR-042): a per-namespace
-  Istio waypoint pod that ztunnel routes outbound from agent-ns
-  workloads through. Attached AuthorizationPolicy admits only
-  `sa/*-gateway` principals — gateway pods (long-lived + fork)
-  retain unrestricted external egress; agent pods bypassing
-  `HTTPS_PROXY` and dialing the open internet directly are denied
-  at the waypoint. Closes the data-exfiltration / C2 path that
-  NetworkPolicy cannot gate in ambient mode.
 - **api-server pod-level DENY** (ADR-041, chart-rendered): rejects
   harness port from non-waypoint principals and ext-authz port from
   non-agent-ns sources; survives namespace baseline ALLOW (DENY beats
   ALLOW in Istio's evaluation order).
 
-**NetworkPolicies — perimeter defense-in-depth:**
+(Where the gateway dials externally is gated by **ext_authz on the
+gateway's Envoy itself**, not by the mesh. Every credentialed and
+SNI-miss egress hits the api-server's ext-authz handler, which
+matches against the instance's egress rules or falls through to
+HITL approval. ADR-035.)
 
-- Two namespace-wide NPs in the agent namespace (chart-rendered):
-  `<release>-agent-egress` (selector `role=agent`) and
-  `<release>-gateway-egress` (selector `role=gateway`). Both permit
-  DNS to `kube-system` and the mesh entrance at
-  `istio-system:15008`; the gateway one additionally permits external
-  internet via `ipBlock 0.0.0.0/0` with `clusterCidrs` excepted. They
-  are the failsafe if istio-cni's redirect doesn't apply (CNI plugin
-  bug, init-container failure, ambient label flip, privileged escape).
-  They do **not** encode per-destination intra-cluster gating —
-  ambient redirect rewrites every mesh-bound packet's destination to
-  ztunnel before NetworkPolicy filters see it, so per-destination
-  rules would not fire.
+**NetworkPolicies:**
+
+- **`<id>-agent-egress`** (controller-rendered, per pair, selector
+  `pair=<id>, role=agent`): admits DNS to `kube-system` and the
+  paired gateway pod on the Envoy proxy port. **This is the agent's
+  only boundary** — the agent is non-ambient by pod label, so
+  istio-cni doesn't redirect its egress to ztunnel, and the kernel
+  filter sees the actual destination.
+- **`<id>-gateway-ingress`** (controller-rendered, per pair, selector
+  `pair=<id>, role=gateway`): admits the paired agent pod on the
+  Envoy proxy port. Symmetric inbound side; mesh AuthorizationPolicy
+  can't gate the agent → gateway hop because the agent has no
+  SPIFFE identity.
+- **`<release>-agent-pod-ingress`** (chart-rendered, selector
+  `role=agent`): admits the api-server and controller pods on the
+  agent's ACP port (8080). Replaces the mesh AuthorizationPolicy
+  for agent ingress since the agent is non-ambient.
+- **`<release>-gateway-egress`** (chart-rendered, selector
+  `role=gateway`): perimeter for the gateway — DNS + mesh entrance
+  at `istio-system:15008` + external internet via `ipBlock 0.0.0.0/0`
+  with `clusterCidrs` excepted (IPv4 + IPv6). The gateway IS in
+  ambient mesh, so this NP is the failsafe if istio-cni's redirect
+  doesn't apply.
 
 The agent pod has no service account token
 (`automountServiceAccountToken: false`), and there is no co-located

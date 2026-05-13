@@ -55,6 +55,9 @@ func BuildForkAgentJob(
 		// never the parent's gateway.
 		LabelPair: forkName,
 		LabelRole: RoleAgent,
+		// ADR-042: fork agent opts out of ambient mesh (same as
+		// long-lived agents). NetworkPolicy is the boundary.
+		"istio.io/dataplane-mode": "none",
 	}
 
 	caCertPath := "/etc/platform/ca/ca.crt"

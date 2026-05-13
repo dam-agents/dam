@@ -108,12 +108,11 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 		return r.setError(ctx, name, fmt.Sprintf("applying ext-authz service: %v", err))
 	}
 
-	// ADR-041: three per-instance AuthorizationPolicies — gateway admission
-	// (agent ns), harness path-prefix at the waypoint (release ns),
-	// ext-authz Service principal (release ns).
-	if err := r.applyAuthorizationPolicy(ctx, BuildGatewayAuthorizationPolicy(name, name, r.config, cm)); err != nil {
-		return r.setError(ctx, name, fmt.Sprintf("applying gateway authz policy: %v", err))
-	}
+	// ADR-042: two per-instance AuthorizationPolicies — harness path-prefix
+	// at the waypoint and per-instance ext-authz Service. Both admit the
+	// gateway SA principal only. The agent ↔ gateway hop is gated by
+	// NetworkPolicy (below) since the agent is non-ambient and has no
+	// SPIFFE identity for mesh AuthZ to match.
 	if err := r.applyAuthorizationPolicy(ctx, BuildHarnessAuthorizationPolicy(name, r.config, cm)); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying harness authz policy: %v", err))
 	}
@@ -121,9 +120,16 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 		return r.setError(ctx, name, fmt.Sprintf("applying ext-authz authz policy: %v", err))
 	}
 
-	// ADR-042: agent egress NP is chart-rendered (one namespace-wide
-	// `<release>-agent-egress` NP, selector `role=agent`). Per-pair
-	// rendering was theatre since rules are identical for every pair.
+	// ADR-042: per-pair agent ↔ gateway NetworkPolicies. Agent egress
+	// allows only DNS + paired gateway pod (no mesh entrance — agent
+	// opts out of ambient at the pod level). Gateway ingress on the
+	// proxy port allows only the paired agent pod.
+	if err := r.applyAgentEgressNetworkPolicy(ctx, BuildAgentEgressNetworkPolicy(name, r.config, cm)); err != nil {
+		return r.setError(ctx, name, err.Error())
+	}
+	if err := r.applyGatewayIngressNetworkPolicy(ctx, BuildGatewayIngressNetworkPolicy(name, r.config, cm)); err != nil {
+		return r.setError(ctx, name, err.Error())
+	}
 
 	hibernated := instanceSpec.DesiredState == "hibernated"
 

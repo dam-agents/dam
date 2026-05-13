@@ -47,6 +47,12 @@ rules:
   - apiGroups: ["security.istio.io"]
     resources: ["authorizationpolicies"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # ADR-042: per-pair agent ↔ gateway NetworkPolicies. The agent pod
+  # is non-ambient; NetworkPolicy is the only boundary keeping its
+  # egress scoped to the paired gateway.
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["apps"]
     resources: ["statefulsets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]

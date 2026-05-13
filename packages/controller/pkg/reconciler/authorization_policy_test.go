@@ -7,52 +7,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// ADR-042: gateway-admission policy admits only the paired AGENT SA
-// principal (the agent dials its own gateway).
-func TestBuildGatewayAuthorizationPolicy_LongLivedPair(t *testing.T) {
-	p := BuildGatewayAuthorizationPolicy("my-instance", "my-instance", testConfig, testOwnerCM)
-
-	assert.Equal(t, "my-instance-gateway-allow", p.GetName())
-	assert.Equal(t, testConfig.Namespace, p.GetNamespace())
-
-	spec, _ := p.Object["spec"].(map[string]interface{})
-	require.NotNil(t, spec)
-	assert.Equal(t, "ALLOW", spec["action"])
-
-	selector, _ := spec["selector"].(map[string]interface{})
-	matchLabels, _ := selector["matchLabels"].(map[string]interface{})
-	assert.Equal(t, "my-instance", matchLabels[LabelPair])
-	assert.Equal(t, RoleGateway, matchLabels[LabelRole])
-
-	rules, _ := spec["rules"].([]interface{})
-	require.Len(t, rules, 1)
-	rule0, _ := rules[0].(map[string]interface{})
-	from, _ := rule0["from"].([]interface{})
-	source, _ := from[0].(map[string]interface{})["source"].(map[string]interface{})
-	principals, _ := source["principals"].([]interface{})
-	require.Len(t, principals, 1)
-	assert.Equal(t, testConfig.PrincipalForAgent("my-instance"), principals[0],
-		"gateway-admission admits the agent SA (the only legitimate dialer of the gateway)")
-}
-
-// ADR-042: fork variant — gateway-admission admits the fork's AGENT SA
-// principal (the fork agent dials its own fork gateway).
-func TestBuildGatewayAuthorizationPolicy_ForkUsesForkPrincipal(t *testing.T) {
-	p := BuildGatewayAuthorizationPolicy("fork-abc", "fork-abc", testConfig, testOwnerCM)
-	spec, _ := p.Object["spec"].(map[string]interface{})
-
-	selector, _ := spec["selector"].(map[string]interface{})
-	matchLabels, _ := selector["matchLabels"].(map[string]interface{})
-	assert.Equal(t, "fork-abc", matchLabels[LabelPair], "selector targets the fork's pair")
-
-	rules, _ := spec["rules"].([]interface{})
-	rule0, _ := rules[0].(map[string]interface{})
-	from, _ := rule0["from"].([]interface{})
-	source, _ := from[0].(map[string]interface{})["source"].(map[string]interface{})
-	principals, _ := source["principals"].([]interface{})
-	assert.Equal(t, testConfig.PrincipalForAgent("fork-abc"), principals[0],
-		"fork gateway admits the fork's agent SA, not the parent's")
-}
+// ADR-042: the agent ↔ gateway hop is gated by NetworkPolicy (see
+// network_policy_test.go), not mesh AuthorizationPolicy — the agent
+// is non-ambient and has no SPIFFE principal for mesh AuthZ to match.
+// Only the gateway's outbound destinations (harness, ext-authz) are
+// gated by mesh AuthorizationPolicy.
 
 // ADR-041 + ADR-027: per-fork harness policy admits the fork SA only to
 // `/api/instances/<parent>/mcp` — NOT the parent's full
