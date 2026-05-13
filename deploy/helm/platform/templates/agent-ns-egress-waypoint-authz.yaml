@@ -11,6 +11,15 @@ long-lived pairs (`<id>-gateway`) and forks (`<forkName>-gateway`)
 under ADR-042's per-pair split. Agent pod SAs (`<id>`, `<forkName>`)
 don't match — agent processes bypassing HTTPS_PROXY and dialing the
 open internet directly are denied at the waypoint.
+
+Destination filtering is intentionally NOT done here. The gateway's
+Envoy runs an ext_authz filter on every credentialed and SNI-miss
+egress (ADR-035); the api-server's ext-authz handler either matches
+the destination against the instance's configured egress rules or
+falls through to a HITL approval (denying when host info is missing).
+That gates *where* gateway pods can dial; this waypoint policy only
+gates *which workloads* are allowed to use the gateway-egress path
+at all.
 */}}
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
