@@ -182,11 +182,12 @@ On the wire:
    NetworkPolicy) terminates the CONNECT and routes the inner stream
    into an internal listener that reads SNI.
 3. Per-host filter chains terminate TLS with the leaf cert, run the
-   credential injector to add the configured `Authorization` header, then
-   forward to a per-credential `STRICT_DNS` cluster pinned to the
-   credential's host (explicit upstream SNI + SAN-bound TLS validation).
-   The agent's inner `Host` header has no influence on the upstream
-   destination — the route-confusion exfiltration path from
+   credential injector(s) to add the configured header(s) (or rewrite
+   `?<param>=<value>` into the URL — see below), then forward to a
+   per-chain `STRICT_DNS` cluster pinned to the host (explicit upstream
+   SNI + SAN-bound TLS validation). The agent's inner `Host` header has
+   no influence on the upstream destination — the route-confusion
+   exfiltration path from
    [ADR-033 §Threat Model](../adrs/033-envoy-credential-gateway.md#threat-model)
    is structurally closed. Allow-only chains (path-rule promoted, no
    credential) keep using the dynamic forward proxy — they have no
@@ -197,6 +198,18 @@ On the wire:
 Hosts the api-server has issued a credential for surface as L7 chains (SNI
 match, header injection); hosts with no credential surface as L4
 passthrough chains.
+
+**Multiple injection steps per host.** A single host can carry more than
+one credential — either two different credentials (e.g. an API key and a
+tenant ID on distinct headers) or the same credential injected into both
+a header and a URL query parameter (e.g. Bob shell's `/key/info?key=…`
+endpoint). The controller groups Secrets by `hostPattern` into one L7
+chain with an ordered list of `credential_injector` filters; each step
+must use a unique header name, and steps marked with `queryParamName`
+get a follow-up Lua filter that moves the (bare, percent-encoded) value
+into the named URL query parameter and strips the carrier header so it
+never reaches the upstream. See
+[ADR-033 §Credential injection](../adrs/033-envoy-credential-gateway.md#credential-injection).
 
 ## HITL ext_authz
 
