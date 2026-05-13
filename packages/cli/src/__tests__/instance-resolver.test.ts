@@ -29,6 +29,8 @@ function makeService(stub: {
   return {
     list: vi.fn(async () => stub.list?.() ?? ok([])),
     get: vi.fn(async (id: string) => stub.get?.(id) ?? ok(null)),
+    deleteAgent: vi.fn(async () => ok(undefined)),
+    restart: vi.fn(async () => ok(undefined)),
   };
 }
 

@@ -1,0 +1,192 @@
+import { Command } from "commander";
+import type { Instance } from "api-server-api";
+import type { CompatService, ConfigService } from "../../cli/index.js";
+import type { InstancesService } from "../services/instances-service.js";
+import { createInstanceResolver } from "../services/instance-resolver.js";
+import { waitForRunning } from "../services/wait-for-state.js";
+import {
+  describeConfigError,
+  exitCodeForResolveError,
+  formatTransportError,
+  printCompatResolveError,
+  printResolveError,
+} from "./errors.js";
+import {
+  EXIT_INSTANCES_BELOW_FLOOR,
+  EXIT_INSTANCES_INVALID_INPUT,
+  EXIT_INSTANCES_RUNTIME_FAILURE,
+  EXIT_INSTANCES_SUCCESS,
+  EXIT_INSTANCE_NOT_RESOLVED,
+} from "./exit-codes.js";
+
+const DEFAULT_TIMEOUT_SECONDS = 120;
+/** Grace period before the first poll. Without this, the first poll can
+ *  observe stale `currentState === "running"` from the pod we just told
+ *  the controller to delete. Locked at 2 s in spec §4.6. */
+const RESTART_GRACE_SECONDS = 2;
+
+export interface RestartCommandDeps {
+  compatService: CompatService;
+  configService: ConfigService;
+  createInstancesService: (host: string) => InstancesService;
+  serverEnvVar: string;
+}
+
+interface CliOpts {
+  server?: string;
+  wait?: boolean;
+  timeout?: string;
+  json?: boolean;
+}
+
+export function buildRestartCommand(deps: RestartCommandDeps): Command {
+  return new Command("restart")
+    .description("Restart an Instance (recreates the pod; persistent volumes survive)")
+    .argument("<ref>", "Instance Ref — name or 'inst-…' ID")
+    .option("--server <url>", "override the configured server URL for this call")
+    .option("--wait", "poll until state == `running` (or terminal error)")
+    .option(
+      "--timeout <seconds>",
+      `--wait timeout in seconds (default ${DEFAULT_TIMEOUT_SECONDS})`,
+    )
+    .option("--json", "emit raw Instance JSON")
+    .addHelpText(
+      "after",
+      "\nExamples:\n  dam instances restart my-agent\n  dam instances restart my-agent --wait\n",
+    )
+    .action(async (ref: string, opts: CliOpts) => {
+      await runRestart(ref, opts, deps);
+    });
+}
+
+async function runRestart(ref: string, opts: CliOpts, deps: RestartCommandDeps): Promise<void> {
+  const flag = opts.server ? { server: opts.server } : undefined;
+
+  const timeoutSeconds = parseTimeout(opts.timeout);
+  if (timeoutSeconds === null) {
+    process.stderr.write(
+      `error: invalid \`--timeout\` value \`${opts.timeout}\`; expected positive integer\n`,
+    );
+    process.exit(EXIT_INSTANCES_INVALID_INPUT);
+  }
+
+  const compat = await deps.compatService.check({ flag });
+  if (!compat.ok) {
+    printCompatResolveError(compat.error, deps.serverEnvVar);
+    process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+  }
+  const verdict = compat.value;
+  if (verdict.kind === "below-floor") {
+    process.stderr.write(
+      `error: CLI ${verdict.localCli} is below the server's minimum required version ${verdict.serverMinClient}; upgrade and retry\n`,
+    );
+    process.exit(EXIT_INSTANCES_BELOW_FLOOR);
+  }
+  if (verdict.kind === "behind-current") {
+    process.stderr.write(
+      `warning: CLI ${verdict.localCli} is behind server ${verdict.serverVersion}; consider upgrading\n`,
+    );
+  }
+
+  const cfg = await deps.configService.getResolved({ flag });
+  if (!cfg.ok) {
+    process.stderr.write(`error: ${describeConfigError(cfg.error)}\n`);
+    process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+  }
+  const host = cfg.value.server;
+
+  const svc = deps.createInstancesService(host);
+  const resolver = createInstanceResolver({ instancesService: svc });
+  const resolved = await resolver.resolve(ref);
+  if (!resolved.ok) {
+    printResolveError(resolved.error, host);
+    process.exit(exitCodeForResolveError(resolved.error));
+  }
+  const instance = resolved.value;
+
+  const restartResult = await svc.restart(instance.id);
+  if (!restartResult.ok) {
+    if (restartResult.error.kind === "not-found") {
+      // Race: the instance vanished between resolve and restart.
+      process.stderr.write(`error: no instance with id \`${instance.id}\`\n`);
+      process.exit(EXIT_INSTANCE_NOT_RESOLVED);
+    }
+    if (restartResult.error.kind === "auth-required") {
+      process.stderr.write(`error: not authenticated: ${restartResult.error.reason}\n`);
+      process.stderr.write("hint: run `dam auth login` first\n");
+      process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+    }
+    process.stderr.write(`error: ${formatTransportError(restartResult.error.reason, host)}\n`);
+    process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+  }
+
+  let settledState: Instance["state"] | undefined;
+  if (opts.wait) {
+    let firstStateSeen = false;
+    const waitResult = await waitForRunning(svc, instance.id, {
+      timeoutSeconds,
+      graceSeconds: RESTART_GRACE_SECONDS,
+      onStateChange: (state) => {
+        if (opts.json) return;
+        if (!firstStateSeen) {
+          process.stderr.write(`Waiting for "${instance.name}"… state: ${state}\n`);
+          firstStateSeen = true;
+        } else {
+          process.stderr.write(`state: ${state}\n`);
+        }
+      },
+    });
+
+    switch (waitResult.kind) {
+      case "ready":
+        settledState = waitResult.instance.state;
+        break;
+      case "error":
+        if (opts.json) {
+          process.stdout.write(`${JSON.stringify(waitResult.instance)}\n`);
+        } else {
+          const reason = waitResult.instance.error ?? "unknown";
+          process.stderr.write(
+            `error: instance "${instance.name}" entered error state: ${reason}\n`,
+          );
+        }
+        process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+        return;
+      case "timeout":
+        if (opts.json) {
+          const refreshed = await svc.get(instance.id);
+          if (refreshed.ok && refreshed.value !== null) {
+            process.stdout.write(`${JSON.stringify(refreshed.value)}\n`);
+          }
+        } else {
+          process.stderr.write(
+            `error: timed out waiting for "${instance.name}" to reach running (current: ${waitResult.lastState})\n`,
+          );
+        }
+        process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+        return;
+      case "transport":
+        process.stderr.write(`error: ${formatTransportError(waitResult.reason, host)}\n`);
+        process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+        return;
+    }
+  }
+
+  if (opts.json) {
+    const refreshed = await svc.get(instance.id);
+    if (refreshed.ok && refreshed.value !== null) {
+      process.stdout.write(`${JSON.stringify(refreshed.value)}\n`);
+    }
+  } else {
+    const tail = settledState ? ` State: ${settledState}.` : "";
+    process.stdout.write(`✓ Restarted instance "${instance.name}" (${instance.id}).${tail}\n`);
+  }
+  process.exit(EXIT_INSTANCES_SUCCESS);
+}
+
+function parseTimeout(raw: string | undefined): number | null {
+  if (raw === undefined) return DEFAULT_TIMEOUT_SECONDS;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
+}

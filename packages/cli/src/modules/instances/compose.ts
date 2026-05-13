@@ -5,8 +5,10 @@ import type { TemplatesService } from "../templates/index.js";
 import { createTrpcClient, type TrpcClient } from "../shared/trpc/trpc-client.js";
 import type { Result } from "../../result.js";
 import { buildCreateCommand } from "./commands/create.js";
+import { buildDeleteCommand } from "./commands/delete.js";
 import { buildGetCommand } from "./commands/get.js";
 import { buildListCommand } from "./commands/list.js";
+import { buildRestartCommand } from "./commands/restart.js";
 import {
   createInstancesService,
   type InstancesService,
@@ -99,6 +101,22 @@ export function composeInstancesModule(opts: InstancesModuleOptions): InstancesM
       createInstancesService: createService,
       createTemplatesService: opts.templatesService,
       createTrpcClient: buildTrpc,
+      serverEnvVar: opts.serverEnvVar,
+    }),
+  );
+  parent.addCommand(
+    buildDeleteCommand({
+      compatService: opts.compatService,
+      configService: opts.configService,
+      createInstancesService: createService,
+      serverEnvVar: opts.serverEnvVar,
+    }),
+  );
+  parent.addCommand(
+    buildRestartCommand({
+      compatService: opts.compatService,
+      configService: opts.configService,
+      createInstancesService: createService,
       serverEnvVar: opts.serverEnvVar,
     }),
   );

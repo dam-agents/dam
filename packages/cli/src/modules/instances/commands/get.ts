@@ -3,20 +3,17 @@ import type { ChannelConfig, Instance } from "api-server-api";
 import { ChannelType } from "api-server-api";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { InstancesService } from "../services/instances-service.js";
-import {
-  createInstanceResolver,
-  type ResolveError,
-} from "../services/instance-resolver.js";
+import { createInstanceResolver } from "../services/instance-resolver.js";
 import {
   describeConfigError,
-  formatTransportError,
+  exitCodeForResolveError,
   printCompatResolveError,
+  printResolveError,
 } from "./errors.js";
 import {
   EXIT_INSTANCES_BELOW_FLOOR,
   EXIT_INSTANCES_RUNTIME_FAILURE,
   EXIT_INSTANCES_SUCCESS,
-  EXIT_INSTANCE_NOT_RESOLVED,
 } from "./exit-codes.js";
 
 export interface GetCommandDeps {
@@ -73,7 +70,7 @@ export function buildGetCommand(deps: GetCommandDeps): Command {
       const result = await resolver.resolve(ref);
       if (!result.ok) {
         printResolveError(result.error, host);
-        process.exit(exitCodeFor(result.error));
+        process.exit(exitCodeForResolveError(result.error));
       }
 
       if (opts.json) {
@@ -117,36 +114,3 @@ function renderChannels(channels: readonly ChannelConfig[]): string {
     .join(", ");
 }
 
-function exitCodeFor(error: ResolveError): number {
-  if (error.kind === "not-found" || error.kind === "ambiguous") {
-    return EXIT_INSTANCE_NOT_RESOLVED;
-  }
-  return EXIT_INSTANCES_RUNTIME_FAILURE;
-}
-
-function printResolveError(error: ResolveError, host: string): void {
-  switch (error.kind) {
-    case "not-found":
-      if (error.via === "id") {
-        process.stderr.write(`error: no instance with id \`${error.ref}\`\n`);
-      } else {
-        process.stderr.write(`error: no instance named "${error.ref}"\n`);
-      }
-      return;
-    case "ambiguous": {
-      process.stderr.write(`error: multiple instances named "${error.ref}":\n`);
-      for (const m of error.matches) {
-        process.stderr.write(`  - \`${m.id}\`\n`);
-      }
-      process.stderr.write("hint: specify by id instead\n");
-      return;
-    }
-    case "auth-required":
-      process.stderr.write(`error: not authenticated: ${error.reason}\n`);
-      process.stderr.write("hint: run `dam auth login` first\n");
-      return;
-    case "transport":
-      process.stderr.write(`error: ${formatTransportError(error.reason, host)}\n`);
-      return;
-  }
-}

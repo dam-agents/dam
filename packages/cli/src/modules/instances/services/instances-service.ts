@@ -1,6 +1,10 @@
 import type { Instance } from "api-server-api";
 import { err, ok, type Result } from "../../../result.js";
-import type { AuthRequiredError, TransportError } from "../domain/errors.js";
+import type {
+  AuthRequiredError,
+  NotFoundError,
+  TransportError,
+} from "../domain/errors.js";
 import {
   AuthRequiredAtTransportError,
   type TrpcClient,
@@ -27,6 +31,13 @@ import {
 export interface InstancesService {
   list(): Promise<Result<readonly Instance[], TransportError | AuthRequiredError>>;
   get(id: string): Promise<Result<Instance | null, TransportError | AuthRequiredError>>;
+  /** Cascade-delete an Agent. The K8s OwnerReferences clean up the
+   *  derived instance and its PVCs. Mirrors the web UI's "delete agent"
+   *  flow exactly; the CLI never calls `instances.delete` directly so
+   *  it can't strand an orphan agent. */
+  deleteAgent(agentId: string): Promise<Result<void, TransportError | AuthRequiredError | NotFoundError>>;
+  /** Restart an Instance (deletes pod-0; PVCs survive). */
+  restart(id: string): Promise<Result<void, TransportError | AuthRequiredError | NotFoundError>>;
 }
 
 export interface InstancesServiceDeps {
@@ -73,6 +84,30 @@ export function createInstancesService(deps: InstancesServiceDeps): InstancesSer
         return ok(value as Instance);
       } catch (e) {
         if (hasTrpcCode(e, "NOT_FOUND")) return ok(null);
+        return classify(e);
+      }
+    },
+
+    async deleteAgent(agentId) {
+      try {
+        await deps.trpc.agents.delete.mutate({ id: agentId });
+        return ok(undefined);
+      } catch (e) {
+        if (hasTrpcCode(e, "NOT_FOUND")) {
+          return err({ kind: "not-found", ref: agentId, via: "id" });
+        }
+        return classify(e);
+      }
+    },
+
+    async restart(id) {
+      try {
+        await deps.trpc.instances.restart.mutate({ id });
+        return ok(undefined);
+      } catch (e) {
+        if (hasTrpcCode(e, "NOT_FOUND")) {
+          return err({ kind: "not-found", ref: id, via: "id" });
+        }
         return classify(e);
       }
     },
