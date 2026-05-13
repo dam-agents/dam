@@ -28,9 +28,9 @@ export interface CreateAgentInput {
   appConnectionIds?: string[];
   egressPreset?: EgressPreset;
   /** Optional local-context import. Files are bundled and uploaded as a
-   *  tar.gz to the new instance's /home/agent in mode=replace after the
-   *  instance is created. Failures here surface as a toast but do not
-   *  roll back the agent — the user can retry from the files panel. */
+   *  tar to the new instance's `<agenthome>/work` after the instance is
+   *  created. Failures here surface as a toast but do not roll back the
+   *  agent — the user can retry from the files panel. */
   importEntries?: BundleEntry[];
   /** Pre-built tar / tar.gz / tgz to upload verbatim. Mutually exclusive
    *  with `importEntries`; if both are present, the raw bundle wins. */
@@ -79,7 +79,7 @@ export function useCreateAgent() {
 
       if (preparedBundle) {
         try {
-          await importRawBundle({ instanceId: instance.id, bundle: preparedBundle.blob, mode: "replace" });
+          await importRawBundle({ instanceId: instance.id, bundle: preparedBundle.blob });
           emitToast({ kind: "success", message: `Imported ${preparedBundle.label} into ${input.name}` });
         } catch (err) {
           emitToast({

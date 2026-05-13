@@ -41,6 +41,7 @@ const filesService = createFilesService(homeDir);
 const skillsService = composeSkills();
 const importHandlers = createImportHandlers(
   homeDir,
+  workDir,
   (msg) => process.stderr.write(`[import] ${msg}\n`),
 );
 
@@ -215,11 +216,6 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (req.method === "POST" && req.url === "/api/import-preflight") {
-    void importHandlers.handleImportPreflight(req, res);
-    return;
-  }
-
   if (req.url?.startsWith("/api/trpc")) {
     req.url = req.url.replace("/api/trpc", "");
     Object.entries(CORS).forEach(([k, v]) => res.setHeader(k, v));
@@ -283,13 +279,21 @@ try {
 }
 
 // Node defaults `requestTimeout` to 5 minutes. The import route holds a
-// request open through extract+finalize of a multi-GB tar — easily
-// >5 min on slower uploads. Disable the per-request timeout; the import
-// handler installs its own inactivity (30s) + wall-clock (30min)
-// deadlines, so a stuck connection still gets aborted. Keep
-// `headersTimeout` (60s) so a misbehaving client can't slow-loris the
-// header line indefinitely on other routes (/api/status, /api/trpc,
-// /healthz).
+// request open through extract+finalize of a multi-GB tar — easily over
+// the default on slow uploads. `server.requestTimeout` is an absolute
+// timer set at request start (not socket-idle) so there's no public Node
+// API to scope it per-handler; disable it server-wide instead.
+//
+// What's lost: the body-read timeout on every other route. What still
+// protects them:
+//   - `headersTimeout = 60s` bounds the headers phase on every route.
+//   - Non-import routes have hard body caps (TRPC_MAX_BODY_SIZE = 32 MB),
+//     so a slow body ties up a TCP connection but can't grow memory.
+//   - This server is reachable only from the api-server pod
+//     (NetworkPolicy), so the slow-body actor would have to be the
+//     trusted api-server itself.
+// The import handler installs its own inactivity (30s) + wall-clock
+// (30min) deadlines, so stuck imports still get aborted.
 server.requestTimeout = 0;
 server.headersTimeout = 60_000;
 

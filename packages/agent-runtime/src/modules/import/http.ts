@@ -6,8 +6,7 @@ import busboy from "busboy";
 import { STAGING_PREFIX } from "./constants.js";
 import type { ImportDomainError } from "./errors.js";
 import { extractBundle } from "./extract.js";
-import { finalize, type FinalizeMode } from "./finalize.js";
-import { preflight, preflightInputSchema } from "./preflight.js";
+import { finalize } from "./finalize.js";
 
 /**
  * Inactivity timeout: if no bytes flow on the upload socket for this
@@ -27,11 +26,7 @@ const UPLOAD_DEADLINE_MS = 30 * 60_000;
 
 function statusForDomainError(error: ImportDomainError): number {
   switch (error.kind) {
-    case "PrefixEscape":
-    case "NonTopLevelPath":
-      return 400;
     case "InvalidEntry":
-    case "ReservedSegment":
     case "TarParseError":
       return 422;
   }
@@ -41,22 +36,19 @@ function messageForDomainError(error: ImportDomainError): string {
   switch (error.kind) {
     case "InvalidEntry":
       return `refusing entry (${error.reason}): ${error.path}`;
-    case "ReservedSegment":
-      return `refusing reserved path segment ${JSON.stringify(error.segment)}: ${error.path}`;
-    case "PrefixEscape":
-      return `prefix ${JSON.stringify(error.prefix)} escapes destination`;
-    case "NonTopLevelPath":
-      return `refusing non-top-level preflight path: ${error.path}`;
     case "TarParseError":
       return `tar parse error: ${error.detail}`;
   }
 }
 
-export function createImportHandlers(homeDir: string, log: (msg: string) => void) {
+export function createImportHandlers(
+  homeDir: string,
+  workDir: string,
+  log: (msg: string) => void,
+) {
   // Single-flight: agent-runtime serves one instance, so concurrent imports
-  // mean two simultaneous tarballs racing the same /home/agent — `replace`
-  // mode in particular interleaves into a non-deterministic mix. Reject the
-  // second one outright with 409. The api-server proxy surfaces the body.
+  // mean two simultaneous tarballs racing the same work dir. Reject the
+  // second one outright with 409; the api-server proxy surfaces the body.
   let activeImport: Promise<void> | null = null;
 
   async function handleImport(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
@@ -76,12 +68,11 @@ export function createImportHandlers(homeDir: string, log: (msg: string) => void
 
     let resolveActive: () => void = () => {};
     activeImport = new Promise<void>((r) => { resolveActive = r; });
-    // Belt-and-suspenders: the `close` handler's `finally` is the primary
-    // path that resets activeImport. The timeout path destroys the socket,
-    // which may or may not emit `close` on busboy depending on Node's
-    // autoDestroy behavior — `clearActive()` is invoked from every exit
-    // path (success, fail, timeout, deadline) so a stuck activeImport
-    // can't survive.
+    // The `close` handler's `finally` is the primary path that resets
+    // activeImport. Timeout/deadline paths destroy the socket, which may
+    // or may not emit `close` on busboy depending on Node's autoDestroy
+    // behavior — `clearActive()` is invoked from every exit path so a
+    // stuck activeImport can't survive.
     let activeImportCleared = false;
     const clearActive = () => {
       if (activeImportCleared) return;
@@ -90,8 +81,6 @@ export function createImportHandlers(homeDir: string, log: (msg: string) => void
       activeImport = null;
     };
 
-    let mode: FinalizeMode | undefined;
-    let prefix = "";
     let staging: string | undefined;
     let extractPromise: Promise<Awaited<ReturnType<typeof extractBundle>>> | undefined;
     let sawFile = false;
@@ -131,33 +120,17 @@ export function createImportHandlers(homeDir: string, log: (msg: string) => void
 
     const bb = busboy({ headers: req.headers });
 
-    bb.on("field", (name: string, value: string) => {
-      if (name === "mode") {
-        if (value === "replace" || value === "merge") mode = value;
-        log(`field mode=${value}`);
-      } else if (name === "prefix") {
-        prefix = value;
-        log(`field prefix=${value}`);
-      }
-    });
-
     bb.on("file", (_name: string, fileStream: NodeJS.ReadableStream) => {
       if (sawFile) {
         // Multiple file parts would race a second `mkdtemp` and clobber
-        // `staging`, leaving the first staging dir leaked and the close
-        // handler awaiting the wrong promise. Refuse outright. Drain the
-        // stream to let busboy proceed to `close` so `fail` is the only
-        // response we write.
+        // `staging`, leaking the first dir. Refuse outright; drain the
+        // stream so busboy proceeds to `close`.
         fileStream.resume();
         void fail(400, "multiple file parts");
         return;
       }
       sawFile = true;
       log(`file part received — extracting`);
-      // mkdtemp is async — start the extract pipeline as soon as we have
-      // the staging dir. busboy emits 'file' synchronously when the file
-      // part begins; busboy's file stream is paused-mode so bytes don't
-      // flow until we attach a consumer.
       extractPromise = (async () => {
         staging = await mkdtemp(join(homeDir, STAGING_PREFIX));
         log(`staging dir created: ${staging}`);
@@ -174,18 +147,14 @@ export function createImportHandlers(homeDir: string, log: (msg: string) => void
       clearTimeout(deadlineTimer);
       try {
         if (finished) return;
-        if (!mode) return fail(400, "missing field: mode");
         if (!extractPromise) return fail(400, "missing field: bundle");
         const extractResult = await extractPromise;
         if (!extractResult.ok) {
           return fail(statusForDomainError(extractResult.error), messageForDomainError(extractResult.error));
         }
         if (!staging) return fail(500, "internal: staging dir not initialized");
-        log(`finalize start (mode=${mode} prefix=${prefix})`);
-        const finalizeResult = await finalize(staging, homeDir, prefix, mode);
-        if (!finalizeResult.ok) {
-          return fail(statusForDomainError(finalizeResult.error), messageForDomainError(finalizeResult.error));
-        }
+        log(`finalize start (dest=${workDir})`);
+        await finalize(staging, workDir);
         await rm(staging, { recursive: true, force: true }).catch(() => {});
         // A timeout/deadline firing between extract-complete and here
         // would have flipped `finished` and already sent a 408 — in that
@@ -197,7 +166,7 @@ export function createImportHandlers(homeDir: string, log: (msg: string) => void
         }
         finished = true;
         const { filesWritten, bytes } = extractResult.value;
-        log(`import ok mode=${mode} prefix=${prefix} files=${filesWritten} bytes=${bytes} durationMs=${Date.now() - startedAt}`);
+        log(`import ok files=${filesWritten} bytes=${bytes} durationMs=${Date.now() - startedAt}`);
         try {
           res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({
             filesWritten, bytes, durationMs: Date.now() - startedAt,
@@ -216,29 +185,5 @@ export function createImportHandlers(homeDir: string, log: (msg: string) => void
     req.pipe(bb);
   }
 
-  async function handleImportPreflight(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-    const chunks: Buffer[] = [];
-    for await (const chunk of req) chunks.push(chunk as Buffer);
-    let body: unknown;
-    try {
-      body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-    } catch {
-      res.writeHead(400, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "bad json" }));
-      return;
-    }
-    const parsed = preflightInputSchema.safeParse(body);
-    if (!parsed.success) {
-      res.writeHead(400, { "Content-Type": "application/json" }).end(JSON.stringify({ error: parsed.error.message }));
-      return;
-    }
-    const result = await preflight(parsed.data.paths, homeDir, parsed.data.prefix ?? "");
-    if (!result.ok) {
-      res.writeHead(statusForDomainError(result.error), { "Content-Type": "application/json" })
-        .end(JSON.stringify({ error: messageForDomainError(result.error) }));
-      return;
-    }
-    res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify(result.value));
-  }
-
-  return { handleImport, handleImportPreflight };
+  return { handleImport };
 }

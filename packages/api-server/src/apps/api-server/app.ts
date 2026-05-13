@@ -244,17 +244,14 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
 
   // File import — bundle is a tar (or tar.gz) inside multipart/form-data;
   // we wake the pod via the reachability primitive and stream the body
-  // straight to agent-runtime, which extracts it under /home/agent. See
-  // docs/adrs/DRAFT-file-import.md.
+  // straight to agent-runtime, which extracts it under `<homeDir>/work`.
+  // See docs/adrs/DRAFT-file-import.md.
   //
   // The proxy uses node:http directly (NOT undici fetch). undici buffers
   // arbitrary-sized request bodies in memory even with `duplex: "half"`,
   // which OOMs the api-server pod on multi-GB uploads. node:http with a
   // raw stream pipe respects backpressure end-to-end so memory stays
   // flat regardless of body size.
-  //
-  // Bundle (`/import`) and preflight (`/import-preflight`) share this
-  // plumbing — only the size cap differs.
   const PROXY_RESPONSE_HEADER_ALLOWLIST = new Set(["content-type", "content-length"]);
   // RFC 7230 §6.1 hop-by-hop headers + auth — never forwarded upstream.
   // `transfer-encoding: chunked` alongside `content-length` from a buggy
@@ -267,38 +264,34 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     "te", "trailer", "transfer-encoding", "upgrade", "expect",
   ]);
   type ImportCtx = Context<{ Variables: { user: UserIdentity } }>;
-  async function proxyImport(c: ImportCtx, upstreamPath: string, opts: { enforceSizeCap: boolean }) {
+  async function proxyImport(c: ImportCtx) {
     const user = c.get("user");
     const instanceId = c.req.param("id")!;
     if (!await verifyOwner(instanceId, user.sub)) {
       return c.json({ error: "not found" }, 404);
     }
-    if (opts.enforceSizeCap) {
-      // Hard byte ceiling at the proxy boundary. Requires Content-Length so
-      // a chunked-encoding client can't slip past the cap. The agent-runtime
-      // also has an inactivity + wall-clock deadline; together they bound
-      // stuck and unbounded streams. The Content-Length header is
-      // client-supplied — we additionally enforce the cap with a streaming
-      // byte counter below, so a client lying with `Content-Length: 1`
-      // can't trickle bytes past us.
-      const lengthHeader = c.req.header("content-length");
-      if (!lengthHeader) {
-        return c.json({ error: "Content-Length required for import upload" }, 411);
-      }
-      const length = Number.parseInt(lengthHeader, 10);
-      if (!Number.isFinite(length) || length < 0) {
-        return c.json({ error: "invalid Content-Length" }, 400);
-      }
-      if (length > config.maxImportBundleBytes) {
-        return c.json({ error: `bundle exceeds maximum size of ${config.maxImportBundleBytes} bytes` }, 413);
-      }
+    // Hard byte ceiling at the proxy boundary. Requires Content-Length so
+    // a chunked-encoding client can't slip past the cap; we additionally
+    // enforce the cap with a streaming byte counter below, so a client
+    // lying with `Content-Length: 1` can't trickle bytes past us.
+    const lengthHeader = c.req.header("content-length");
+    if (!lengthHeader) {
+      return c.json({ error: "Content-Length required for import upload" }, 411);
+    }
+    const length = Number.parseInt(lengthHeader, 10);
+    if (!Number.isFinite(length) || length < 0) {
+      return c.json({ error: "invalid Content-Length" }, 400);
+    }
+    if (length > config.maxImportBundleBytes) {
+      return c.json({ error: `bundle exceeds maximum size of ${config.maxImportBundleBytes} bytes` }, 413);
     }
     try {
       await instancesRepo.ensureReady(instanceId);
     } catch (err) {
-      return c.json({ error: `instance unreachable: ${(err as Error).message}` }, 502);
+      process.stderr.write(`[import-proxy] ensureReady failed for ${instanceId}: ${(err as Error).message}\n`);
+      return c.json({ error: "instance unreachable" }, 502);
     }
-    const upstreamUrl = new URL(`http://${podBaseUrl(instanceId, config.namespace)}${upstreamPath}`);
+    const upstreamUrl = new URL(`http://${podBaseUrl(instanceId, config.namespace)}/api/import`);
     const outHeaders: Record<string, string> = {};
     c.req.raw.headers.forEach((v, k) => {
       if (PROXY_HOP_BY_HOP_HEADERS.has(k.toLowerCase())) return;
@@ -357,33 +350,27 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         return;
       }
       const source = Readable.fromWeb(incomingBody as unknown as Parameters<typeof Readable.fromWeb>[0]);
-      const sink: NodeJS.WritableStream = opts.enforceSizeCap
-        ? (() => {
-            let seen = 0;
-            const cap = config.maxImportBundleBytes;
-            const counter = new Transform({
-              transform(chunk: Buffer, _enc, cb) {
-                seen += chunk.length;
-                if (seen > cap) {
-                  cb(new Error(`bundle exceeds cap ${cap}B`));
-                  return;
-                }
-                cb(null, chunk);
-              },
-            });
-            counter.on("error", () => {
-              try { upstreamReq.destroy(); } catch {}
-              resolveOnce(c.json({ error: `bundle exceeds maximum size of ${cap} bytes` }, 413));
-            });
-            counter.pipe(upstreamReq);
-            return counter;
-          })()
-        : upstreamReq;
-      source.on("error", () => { try { upstreamReq.destroy(); } catch {} }).pipe(sink);
+      let seen = 0;
+      const cap = config.maxImportBundleBytes;
+      const counter = new Transform({
+        transform(chunk: Buffer, _enc, cb) {
+          seen += chunk.length;
+          if (seen > cap) {
+            cb(new Error(`bundle exceeds cap ${cap}B`));
+            return;
+          }
+          cb(null, chunk);
+        },
+      });
+      counter.on("error", () => {
+        try { upstreamReq.destroy(); } catch {}
+        resolveOnce(c.json({ error: `bundle exceeds maximum size of ${cap} bytes` }, 413));
+      });
+      counter.pipe(upstreamReq);
+      source.on("error", () => { try { upstreamReq.destroy(); } catch {} }).pipe(counter);
     });
   }
-  app.post("/api/instances/:id/import", (c) => proxyImport(c, "/api/import", { enforceSizeCap: true }));
-  app.post("/api/instances/:id/import-preflight", (c) => proxyImport(c, "/api/import-preflight", { enforceSizeCap: false }));
+  app.post("/api/instances/:id/import", (c) => proxyImport(c));
 
   app.all("/api/trpc/*", (c) => {
     const user = c.get("user");
@@ -474,13 +461,20 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   // Node defaults `requestTimeout` to 5 minutes — that hard-caps the
   // file-import proxy roundtrip, because we hold the request open until
   // the agent-runtime finishes extracting + finalizing the bundle, and
-  // a multi-GB tar can take well over 5 minutes end-to-end. Disable
-  // `requestTimeout` cluster-wide; agent-runtime enforces its own
-  // inactivity + wall-clock deadlines on the import path, so we don't
-  // lose runaway-connection protection. Keep `headersTimeout` set
-  // (60s) — there's no legitimate reason any client needs longer to
-  // finish sending headers, and disabling it would expose every route
-  // on the api-server to slow-loris-style request-line dribbling.
+  // a multi-GB tar can take well over 5 minutes end-to-end.
+  // `server.requestTimeout` is an absolute timer set at request start
+  // (not socket-idle), so there's no public Node API to scope it
+  // per-handler; disable it server-wide instead.
+  //
+  // What's lost: the body-read timeout on every other route. What still
+  // protects them:
+  //   - `headersTimeout = 60s` bounds the headers phase on every route.
+  //   - tRPC and other non-import routes have hard body caps, so a slow
+  //     body ties up a TCP connection but can't grow memory.
+  //   - This pod sits behind Traefik, which has its own ingress timeouts.
+  // The agent-runtime applies its own inactivity (30s) + wall-clock
+  // (30min) deadlines on the import path, so stuck imports still abort.
+  //
   // @hono/node-server's ServerType is the union of http/https/http2
   // server types; cast to access the timeout fields directly.
   const nodeServer = server as unknown as {

@@ -4,25 +4,17 @@ export type BundleEntry = { path: string; file: File };
 
 /**
  * Path segments dropped before upload — for ergonomics, not safety.
- * Two kinds:
- *   - Build/cache dirs whose contents are OS- or arch-specific and
- *     regenerate inside the pod (your mac's compiled `sharp` won't
- *     load on Linux; `npm install` will rebuild it correctly).
- *   - Platform-reserved paths the server will reject anyway — filtered
- *     here so the user doesn't see a confusing 422 for those files.
+ * Build/cache dirs whose contents are OS- or arch-specific and regenerate
+ * inside the pod (your mac's compiled `sharp` won't load on Linux;
+ * `npm install` will rebuild it correctly), plus cosmetic noise.
  *
  * `.git/` is deliberately NOT in this set: bringing repo history is
  * legitimate context. Size is the user's call.
  */
 const EXCLUDE_FROM_IMPORT = new Set([
-  // arch/OS-specific or regenerable — wastes the upload, can break runtime
   "node_modules",
   ".venv",
   "__pycache__",
-  // server-reserved (mirrors RESERVED_SEGMENTS in extract.ts)
-  ".triggers",
-  ".initialized",
-  // cosmetic noise
   ".DS_Store",
 ]);
 
@@ -98,13 +90,6 @@ function readAll(reader: FileSystemDirectoryReader): Promise<FileSystemEntry[]> 
   });
 }
 
-/** Compute the unique top-level path segments from a list of entries. */
-export function topLevelOf(entries: BundleEntry[]): string[] {
-  const set = new Set<string>();
-  for (const e of entries) set.add(e.path.split("/")[0]);
-  return [...set];
-}
-
 /**
  * USTAR's `name` field is 100 bytes, plus a 155-byte `prefix` field that
  * concatenates as `prefix + "/" + name`. Real-world trees (`.git/objects`,
@@ -114,8 +99,6 @@ export function topLevelOf(entries: BundleEntry[]): string[] {
  */
 const MAX_TAR_NAME_BYTES = 100;
 const MAX_TAR_PREFIX_BYTES = 155;
-// Hoisted: TextEncoder is stateless; allocating one per `writeStr` call
-// adds up across deep trees with thousands of header writes.
 const TAR_ENCODER = new TextEncoder();
 
 type UstarPath = { name: string; prefix: string };
@@ -126,9 +109,6 @@ function splitUstarPath(path: string, enc: TextEncoder): UstarPath | null {
   if (enc.encode(path).byteLength <= MAX_TAR_NAME_BYTES) {
     return { name: path, prefix: "" };
   }
-  // Walk slash positions right-to-left to find the rightmost split where
-  // `name` (after the slash) fits 100 bytes; reject if the prefix part
-  // (before the slash) exceeds 155 bytes.
   let slash = path.lastIndexOf("/");
   while (slash > 0) {
     const namePart = path.slice(slash + 1);
@@ -146,24 +126,13 @@ function splitUstarPath(path: string, enc: TextEncoder): UstarPath | null {
 
 /**
  * Build a raw (uncompressed) USTAR tar Blob from the entries. We
- * deliberately don't gzip in the browser:
- *
- *  1. Most pain inputs are already-compressed binary (MKV, MP4, .git
- *     pack files) where gzip barely shrinks anything.
- *  2. `CompressionStream` piped into `new Response(stream).blob()`
- *     forces the browser to materialize the whole compressed output
- *     into a Blob before the upload starts. For multi-GB inputs that
- *     hits the origin storage quota and the underlying stream gets
- *     aborted mid-write, leaving a truncated body that the server
- *     extracts as a partial tar with no EOF blocks — the parser then
- *     hangs waiting for more bytes.
- *
- * The resulting Blob references each `File` lazily (Blob's constructor
- * accepts Blobs as parts), so the fetch upload reads from disk as the
- * stream is consumed. No memory or disk materialization here. The
- * `tar` package on the server auto-detects gzip vs raw input, so the
- * extract side needs no change. The upload size ceiling is the
- * server's `maxImportBundleBytes` cap.
+ * deliberately don't gzip in the browser: most pain inputs are already
+ * compressed (MKV, MP4, .git pack files), and `CompressionStream` piped
+ * into `new Response(stream).blob()` materializes the whole compressed
+ * output as a Blob before upload — for multi-GB inputs that hits origin
+ * storage quota and truncates the body. The Blob references each `File`
+ * lazily, so the fetch upload reads from disk as the stream is consumed.
+ * The `tar` package on the server auto-detects gzip vs raw input.
  */
 export async function buildBundle(entries: BundleEntry[]): Promise<Blob> {
   const splits: UstarPath[] = entries.map((ent) => {
@@ -175,10 +144,6 @@ export async function buildBundle(entries: BundleEntry[]): Promise<Blob> {
   });
 
   const tarParts: BlobPart[] = [];
-  // Casts to ArrayBuffer: TS's strict `ArrayBufferLike` includes
-  // `SharedArrayBuffer`, which `BlobPart` doesn't accept. Our buffers
-  // come from `new Uint8Array(n)` — all regular ArrayBuffers; the cast
-  // narrows the type without changing runtime behavior.
   for (let i = 0; i < entries.length; i++) {
     const ent = entries[i];
     tarParts.push(tarHeader(splits[i], ent.file.size).buffer as ArrayBuffer);
@@ -186,35 +151,24 @@ export async function buildBundle(entries: BundleEntry[]): Promise<Blob> {
     const pad = (512 - (ent.file.size % 512)) % 512;
     if (pad) tarParts.push(new Uint8Array(pad).buffer as ArrayBuffer);
   }
-  // Two zero blocks to mark end-of-archive.
   tarParts.push(new Uint8Array(1024).buffer as ArrayBuffer);
   return new Blob(tarParts, { type: "application/x-tar" });
 }
 
 function tarHeader(path: UstarPath, size: number): Uint8Array {
   const buf = new Uint8Array(512);
-  // name (100)
   writeStr(buf, 0, path.name, 100);
-  // mode "0000666\0"
   writeOct(buf, 100, 0o666, 8);
-  // uid, gid
   writeOct(buf, 108, 0, 8);
   writeOct(buf, 116, 0, 8);
-  // size (12)
   writeOct(buf, 124, size, 12);
-  // mtime
   writeOct(buf, 136, Math.floor(Date.now() / 1000), 12);
-  // chksum placeholder = 8 spaces
   for (let i = 148; i < 156; i++) buf[i] = 0x20;
-  // typeflag '0' = regular file
   buf[156] = 0x30;
-  // ustar magic + version
   writeStr(buf, 257, "ustar", 6);
   buf[263] = 0x30;
   buf[264] = 0x30;
-  // prefix (155) at offset 345 — concatenated as prefix + "/" + name on read
   if (path.prefix.length > 0) writeStr(buf, 345, path.prefix, 155);
-  // checksum
   let sum = 0;
   for (let i = 0; i < 512; i++) sum += buf[i];
   writeOct(buf, 148, sum, 7);
@@ -236,8 +190,6 @@ function writeOct(buf: Uint8Array, off: number, n: number, len: number) {
 export type ImportBundleArgs = {
   instanceId: string;
   entries: BundleEntry[];
-  mode: "replace" | "merge";
-  prefix?: string;
 };
 
 export type ImportBundleResult = {
@@ -249,13 +201,9 @@ export type ImportBundleResult = {
 async function postBundle(
   instanceId: string,
   bundle: Blob,
-  mode: "replace" | "merge",
-  prefix: string | undefined,
   filename: string,
 ): Promise<ImportBundleResult> {
   const form = new FormData();
-  form.set("mode", mode);
-  if (prefix) form.set("prefix", prefix);
   form.set("bundle", bundle, filename);
   const res = await authFetch(`/api/instances/${encodeURIComponent(instanceId)}/import`, {
     method: "POST",
@@ -271,11 +219,9 @@ async function postBundle(
 export async function importBundle({
   instanceId,
   entries,
-  mode,
-  prefix,
 }: ImportBundleArgs): Promise<ImportBundleResult> {
   const bundle = await buildBundle(entries);
-  return postBundle(instanceId, bundle, mode, prefix, "bundle.tar");
+  return postBundle(instanceId, bundle, "bundle.tar");
 }
 
 /**
@@ -287,18 +233,14 @@ export async function importBundle({
 export type ImportRawBundleArgs = {
   instanceId: string;
   bundle: Blob | File;
-  mode: "replace" | "merge";
-  prefix?: string;
 };
 
 export async function importRawBundle({
   instanceId,
   bundle,
-  mode,
-  prefix,
 }: ImportRawBundleArgs): Promise<ImportBundleResult> {
   const filename = bundle instanceof File ? bundle.name : "bundle.tar.gz";
-  return postBundle(instanceId, bundle, mode, prefix, filename);
+  return postBundle(instanceId, bundle, filename);
 }
 
 /**
@@ -309,22 +251,4 @@ export async function importRawBundle({
 export function isTarballName(name: string): boolean {
   const lower = name.toLowerCase();
   return lower.endsWith(".tar") || lower.endsWith(".tar.gz") || lower.endsWith(".tgz");
-}
-
-export async function importPreflight(
-  instanceId: string,
-  paths: string[],
-  prefix?: string,
-): Promise<string[]> {
-  const res = await authFetch(`/api/instances/${encodeURIComponent(instanceId)}/import-preflight`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ paths, prefix }),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText);
-    throw new Error(text || res.statusText);
-  }
-  const body = (await res.json()) as { conflicts: string[] };
-  return body.conflicts;
 }

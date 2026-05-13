@@ -9,7 +9,6 @@ import { type FileEntryKind, useFileMutations } from "../hooks/use-file-mutation
 import { FileRow } from "./file-row.js";
 import { FileRowMenu,type FileRowMenuAction } from "./file-row-menu.js";
 import { FileViewer } from "./file-viewer.js";
-import { ImportConflictModal } from "./import-conflict-modal.js";
 import { InlineNameRow } from "./inline-name-row.js";
 
 interface PendingNew {
@@ -61,7 +60,7 @@ export function FilesPanel({ onOpenFile }: { onOpenFile: (path: string) => void 
 
   const {
     fileTree, createEntry, renameEntry, deleteEntry, uploadFiles,
-    uploadBundle, pendingImportConflicts, resolveImportConflict,
+    uploadBundle,
   } = useFileMutations(selectedInstance);
   const { data: openFile, error: openFileError } = useFileContentQuery(selectedInstance, openFilePath);
 
@@ -218,7 +217,6 @@ export function FilesPanel({ onOpenFile }: { onOpenFile: (path: string) => void 
         // means the drop happened on empty panel space → upload to root.
         const items = e.dataTransfer.items;
         if (items && hasDirectoryItem(items)) {
-          // Async: capture the items list snapshot via webkitGetAsEntry now.
           void (async () => {
             const entries = await walkDataTransfer(items);
             void uploadBundle(entries);
@@ -249,7 +247,6 @@ export function FilesPanel({ onOpenFile }: { onOpenFile: (path: string) => void 
         directory=""
         className="hidden"
         onChange={(e) => {
-          const target = folderPickerTargetDirRef.current;
           folderPickerTargetDirRef.current = "";
           const files = e.target.files;
           if (files && files.length > 0) {
@@ -257,7 +254,7 @@ export function FilesPanel({ onOpenFile }: { onOpenFile: (path: string) => void 
               path: (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name,
               file: f,
             }));
-            void uploadBundle(entries, target);
+            void uploadBundle(entries);
           }
           e.target.value = "";
         }}
@@ -358,12 +355,6 @@ export function FilesPanel({ onOpenFile }: { onOpenFile: (path: string) => void 
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-accent-light/80 border-2 border-dashed border-accent rounded">
           <div className="text-[12px] font-semibold text-accent">Drop files to upload to /home/agent</div>
         </div>
-      )}
-      {pendingImportConflicts && (
-        <ImportConflictModal
-          conflicts={pendingImportConflicts.conflicts}
-          onChoose={resolveImportConflict}
-        />
       )}
     </div>
   );

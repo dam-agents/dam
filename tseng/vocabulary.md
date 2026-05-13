@@ -104,15 +104,13 @@ Pod-side operational view of skills. Distinct from the api-server's Skills conte
 
 ## Import (bounded context)
 
-Pod-side operation that lands a user-supplied snapshot of local project context into the agent's `/home/agent`. Owned by agent-runtime; orchestrated by api-server. See [ADR-DRAFT-file-import](../docs/adrs/DRAFT-file-import.md).
+Pod-side operation that lands a user-supplied snapshot of local project context into the agent's `<homeDir>/work`. Owned by agent-runtime; orchestrated by api-server. See [ADR-DRAFT-file-import](../docs/adrs/DRAFT-file-import.md).
 
 | Term | Definition |
 |------|-----------|
-| Bundle | A `tar.gz` carrying the files to land; the on-the-wire contract between clients (UI, future CLI) and agent-runtime |
-| Staging Dir | A `.import-staging-*` directory on the PVC into which the bundle is extracted before swap; reclaimed by the boot sweeper if its mtime exceeds 1h |
-| Finalize Mode | Either `replace` (per-top-level `rm`+`rename`) or `merge` (per-file `rename`, leaves untouched paths alone) |
-| Preflight | A separate JSON call that reports which top-level paths from the client's bundle already exist under `/home/agent + prefix`, driving the Replace/Merge/Cancel UX without uploading |
-| Reserved Segment | A platform-owned path segment the bundle must not target (`.triggers`, `.initialized`); rejected at extract time |
+| Bundle | A `tar` (gzip optional) carrying the files to land; the on-the-wire contract between clients (UI, future CLI) and agent-runtime |
+| Staging Dir | A `.import-staging-*` directory on the PVC into which the bundle is extracted before merge; reclaimed by the boot sweeper if its mtime exceeds 1h |
+| Merge | The per-file recursive walk that lands the staging tree into `<homeDir>/work`: directory-vs-directory recurses; everything else is an atomic `rename` where the bundle entry wins on conflict and unrelated existing files survive |
 
 ## Platform CLI (bounded context)
 

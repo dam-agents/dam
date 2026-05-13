@@ -116,13 +116,15 @@ export function AddAgentDialog({
     );
   };
 
-  // Pass-through only when the user picks/drops exactly one tarball and
-  // nothing else is selected yet. Otherwise the tarball is bundled with
-  // everything else as a regular file.
+  // Pass-through only when the user picks/drops exactly one tarball at
+  // the root and nothing else is selected yet. The `!includes("/")` guard
+  // keeps a folder containing exactly one .tar.gz from silently dropping
+  // the folder wrapper.
   const handleIncoming = (incoming: BundleEntry[]) => {
     if (
       incoming.length === 1
       && isTarballName(incoming[0].path)
+      && !incoming[0].path.includes("/")
       && importEntries.length === 0
       && !importRawBundle
     ) {

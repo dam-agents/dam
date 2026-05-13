@@ -1,61 +1,28 @@
 import { lstat, mkdir, readdir, rename, rm } from "node:fs/promises";
-import { join, resolve } from "node:path";
-import { err, ok, type Result } from "agent-runtime-api";
-
-import type { ImportDomainError } from "./errors.js";
-
-export type FinalizeMode = "replace" | "merge";
+import { join } from "node:path";
 
 export type FinalizeResult = {
   topLevelPaths: string[];
 };
 
 /**
- * Move the contents of `stagingDir` into `destDir + prefix` per `mode`.
+ * Recursively merge the contents of `stagingDir` into `destDir`.
  *
- * - "replace": for each top-level entry of `stagingDir`, interleave
- *   `rm -rf` + `rename` per entry so a crash mid-loop loses at most one
- *   top-level path rather than wiping the whole set ahead of any renames.
- * - "merge": move every file from staging onto dest, overwriting
- *   same-path files. Existing-only paths are left alone. Directory
- *   collisions are merged recursively; symlinks at the destination are
- *   never followed — they're treated as leaf targets to overwrite.
+ * For each entry: if both sides are directories, recurse; otherwise the
+ * staging entry replaces whatever is at the destination path via POSIX
+ * `rename` (atomic for the individual file/dir). Unrelated existing
+ * entries in `destDir` are left alone. Symlinks at the destination are
+ * never followed — `rename` replaces the link itself.
  *
- * Both modes refuse to operate outside `destDir`.
+ * Staging is on the same PVC as the destination, so cross-device fallback
+ * isn't needed. Per-file atomicity is the only atomicity claim; the bundle
+ * as a whole is not transactional.
  */
-export async function finalize(
-  stagingDir: string,
-  destDir: string,
-  prefix: string,
-  mode: FinalizeMode,
-): Promise<Result<FinalizeResult, ImportDomainError>> {
-  const destRoot = resolve(destDir);
-  const target = resolve(destRoot, prefix);
-  if (target !== destRoot && !target.startsWith(destRoot + "/")) {
-    return err({ kind: "PrefixEscape", prefix });
-  }
-  await mkdir(target, { recursive: true });
-
+export async function finalize(stagingDir: string, destDir: string): Promise<FinalizeResult> {
+  await mkdir(destDir, { recursive: true });
   const topLevel = await readdir(stagingDir);
-
-  if (mode === "replace") {
-    // Per-entry interleave: rm-then-rename one entry at a time so the
-    // crash window is a single entry, not the entire top-level set.
-    // True atomicity would need renameat2(RENAME_EXCHANGE) — a Linux
-    // syscall that atomically swaps two paths — which Node doesn't
-    // expose. There is still a tiny window per entry between `rm` and
-    // `rename` where both the old and the new copy are absent; a crash
-    // there loses that one entry. See ADR-DRAFT-file-import
-    // "Consequences" §"Atomicity, scoped".
-    for (const name of topLevel) {
-      await rm(join(target, name), { recursive: true, force: true });
-      await rename(join(stagingDir, name), join(target, name));
-    }
-    return ok({ topLevelPaths: topLevel });
-  }
-
-  await mergeWalk(stagingDir, target);
-  return ok({ topLevelPaths: topLevel });
+  await mergeWalk(stagingDir, destDir);
+  return { topLevelPaths: topLevel };
 }
 
 async function mergeWalk(src: string, dst: string): Promise<void> {
@@ -63,11 +30,10 @@ async function mergeWalk(src: string, dst: string): Promise<void> {
   for (const name of await readdir(src)) {
     const srcPath = join(src, name);
     const dstPath = join(dst, name);
-    // lstat (not stat) at the destination: a pre-existing symlink in dest
-    // must not be followed — recursing into a symlink target would write
-    // files outside `destDir`. The src tree is already symlink-free
-    // (extract.ts rejects symlink entries), so source-side lstat-vs-stat
-    // doesn't matter; we lstat both for consistency.
+    // lstat at the destination: a pre-existing symlink must not be
+    // followed — recursing into a symlink target would write outside
+    // destDir. The src tree is already symlink-free (extract.ts rejects
+    // symlink entries).
     const srcStat = await lstat(srcPath);
     let dstStat: Awaited<ReturnType<typeof lstat>> | null = null;
     try { dstStat = await lstat(dstPath); } catch { /* missing — fine */ }
@@ -76,11 +42,6 @@ async function mergeWalk(src: string, dst: string): Promise<void> {
       await mergeWalk(srcPath, dstPath);
       continue;
     }
-    // Any other case (src is a file, OR dst is a symlink / regular file
-    // colliding with a src dir) → atomic rename overwrites whatever's
-    // there. POSIX rename replaces a symlink by name, not by following
-    // it. Staging is on the same PVC as dest so cross-device fallback
-    // isn't needed.
     if (dstStat) await rm(dstPath, { recursive: true, force: true });
     await rename(srcPath, dstPath);
   }
