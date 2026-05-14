@@ -16,4 +16,4 @@ Do not introduce alternative frameworks, bundlers, or runtimes (no Next.js, Webp
 
 ## Deployment
 
-The app ships as a static bundle to GitHub Pages via GitHub Actions. Use the `/deploy` skill to wire this up the first time.
+The app ships as a static Vite build to GitHub Pages. Set up a GitHub Actions workflow that builds the app and deploys it on every push to `main`.
