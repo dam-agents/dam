@@ -152,11 +152,21 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 	if err := r.applyPod(ctx, gatewayPod); err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying gateway pod: %v", err))
 	}
-	if err := r.applyService(ctx, gatewaySvc); err != nil {
-		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying gateway service: %v", err))
+	// Apply gateway Service + migrate any legacy headless, capture
+	// ClusterIP synchronously (see instance.go).
+	liveGatewaySvc, err := ensureGatewayService(ctx, r.client, gatewaySvc, "fork", forkName)
+	if err != nil {
+		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("ensuring gateway service: %v", err))
+	}
+	gatewayIP := liveGatewaySvc.Spec.ClusterIP
+
+	needsGatewayIP := r.config.AgentBase.DisableDNS ||
+		(r.config.AgentBase.IptablesInit != nil && r.config.AgentBase.IptablesInit.Enabled)
+	if needsGatewayIP && (gatewayIP == "" || gatewayIP == corev1.ClusterIPNone) {
+		return fmt.Errorf("fork %s: gateway Service ClusterIP not yet assigned, requeuing", forkName)
 	}
 
-	desired := BuildForkAgentJob(forkName, forkSpec, instanceSpec, agentSpec, r.config, cm, credentialSecrets)
+	desired := BuildForkAgentJob(forkName, forkSpec, instanceSpec, agentSpec, r.config, cm, credentialSecrets, gatewayIP)
 
 	if err := r.applyForkJob(ctx, desired); err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying job: %v", err))

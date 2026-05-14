@@ -123,10 +123,11 @@ func TestReconcile_CreateResources(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, corev1.ClusterIPNone, svc.Spec.ClusterIP)
 
-	// Gateway Service
+	// Gateway Service — ClusterIP-typed (not headless) so hostAliases /
+	// iptables allow-list have a stable IP to pin.
 	gwSvc, err := client.CoreV1().Services("test-agents").Get(ctx, "my-instance-gateway", metav1.GetOptions{})
 	require.NoError(t, err, "gateway Service must be created so HTTPS_PROXY DNS resolves")
-	assert.Equal(t, corev1.ClusterIPNone, gwSvc.Spec.ClusterIP)
+	assert.NotEqual(t, corev1.ClusterIPNone, gwSvc.Spec.ClusterIP, "gateway Service must not be headless")
 
 	// Per-instance ServiceAccount — kept off-pod via
 	// automountServiceAccountToken: false. The agent pod has no SPIFFE

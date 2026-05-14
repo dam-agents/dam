@@ -97,13 +97,16 @@ createAgentNamespace: true
 # -- OpenShift-specific knobs. No-op on vanilla Kubernetes.
 openshift:
   scc:
-    # Bind `system:openshift:scc:nonroot-v2` to ServiceAccounts in `agentNamespace`
-    # so agent pods run as image USER (65532) instead of the namespace-range UID
-    # that restricted-v2 would assign. Required on OpenShift when the agent PVC's
-    # StorageClass initializes the share root with a hardcoded UID — common on
-    # managed NFS (IBM Cloud File Storage for VPC, etc.); pair with SC `uid: "65532"`.
-    nonroot:
-      enabled: false
+    # Custom `anyuid-cap-net` SCC for agent pods on OpenShift. Modeled on
+    # the built-in `anyuid` SCC (lets agent pods run as image USER 65532
+    # rather than the namespace-range UID), plus allows NET_ADMIN +
+    # NET_RAW so the `iptablesInit` privileged init container can run.
+    # Renders a cluster-scoped SCC + RoleBinding to all SAs in
+    # `agentNamespace`. Default ON — required for `iptablesInit`, harmless
+    # otherwise (OpenShift admission still prefers more restrictive SCCs
+    # when the pod doesn't request the extra capabilities).
+    anyuidCapNet:
+      enabled: true
 
 # -- Shared local PostgreSQL instance
 # Set enabled: false when using external/cloud DBs for all services.
@@ -464,6 +467,24 @@ controller:
         allowPrivilegeEscalation: false
         capabilities:
           drop: ["ALL"]
+
+      # -- Drop the cluster-DNS allow rules from the per-pair agent egress
+      # NetworkPolicy (closes threat T9, DNS exfil). The controller injects
+      # a hostAliases entry for the gateway Service so HTTPS_PROXY still
+      # resolves.
+      disableDns: true
+
+      # -- Kernel-level egress allow-list applied via a privileged init
+      # container (NET_ADMIN/NET_RAW). Locks OUTPUT to loopback +
+      # ESTABLISHED + the paired gateway IP:port. Defense-in-depth on top
+      # of the NetworkPolicy.
+      # NOTE: needs a custom SCC on OpenShift (default SCCs don't grant
+      # NET_ADMIN/NET_RAW + runAsUser=0).
+      iptablesInit:
+        enabled: true
+        # Must contain an `iptables` binary and a shell. PoC default is
+        # netshoot; replace with a locked-down image for production.
+        image: docker.io/nicolaka/netshoot:v0.13
       # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     templateDefaults:

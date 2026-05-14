@@ -1,0 +1,143 @@
+package reconciler
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"time"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+
+	"github.com/kagenti/platform/packages/controller/pkg/config"
+)
+
+const iptablesInitContainerName = "egress-lockdown"
+
+// buildIptablesInitContainer renders the privileged init container that
+// pins the agent pod's OUTPUT chain to "loopback + ESTABLISHED + paired
+// gateway only". Returns nil when the feature is off, the image is unset,
+// or the gateway IP isn't known yet (reconciler is expected to fail-closed
+// first; this is belt-and-braces).
+func buildIptablesInitContainer(cfg *config.Config, gatewayClusterIP string) *corev1.Container {
+	cfgInit := cfg.AgentBase.IptablesInit
+	if cfgInit == nil || !cfgInit.Enabled || cfgInit.Image == "" || gatewayClusterIP == "" {
+		return nil
+	}
+
+	// Probe both nft and legacy variants — same image may run on either
+	// backend depending on the host kernel.
+	script := `set -eu
+if [ -z "${GATEWAY_IP:-}" ]; then echo "egress-lockdown: GATEWAY_IP not set" >&2; exit 1; fi
+ENVOY_PORT="${ENVOY_PORT:-10000}"
+IPT=""
+if command -v iptables-nft >/dev/null 2>&1; then IPT=iptables-nft
+elif command -v iptables-legacy >/dev/null 2>&1; then IPT=iptables-legacy
+elif command -v iptables >/dev/null 2>&1; then IPT=iptables
+else echo "egress-lockdown: no iptables binary" >&2; exit 1; fi
+echo "egress-lockdown: using $IPT; gateway=$GATEWAY_IP:$ENVOY_PORT"
+$IPT -A OUTPUT -o lo -j ACCEPT
+$IPT -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+$IPT -A OUTPUT -d "$GATEWAY_IP" -p tcp --dport "$ENVOY_PORT" -j ACCEPT
+$IPT -A OUTPUT -j DROP
+echo "egress-lockdown: gateway-only egress applied"
+`
+
+	// Root + NET_ADMIN/NET_RAW needed to manipulate netfilter; both are
+	// scoped to this init container, which exits before the agent runtime
+	// container starts. Container-level overrides cancel the pod-level
+	// runAsNonRoot floor.
+	runAsRoot := int64(0)
+	notNonRoot := false
+	allowPrivEsc := true
+	return &corev1.Container{
+		Name:    iptablesInitContainerName,
+		Image:   cfgInit.Image,
+		Command: []string{"sh", "-c", script},
+		Env: []corev1.EnvVar{
+			{Name: "GATEWAY_IP", Value: gatewayClusterIP},
+			{Name: "ENVOY_PORT", Value: fmt.Sprintf("%d", cfg.EnvoyPort)},
+		},
+		SecurityContext: &corev1.SecurityContext{
+			RunAsUser:                &runAsRoot,
+			RunAsNonRoot:             &notNonRoot,
+			AllowPrivilegeEscalation: &allowPrivEsc,
+			Capabilities: &corev1.Capabilities{
+				Drop: []corev1.Capability{"ALL"},
+				Add:  []corev1.Capability{"NET_ADMIN", "NET_RAW"},
+			},
+		},
+	}
+}
+
+// buildGatewayHostAlias points `<pairKey>-gateway` at `ip` so HTTPS_PROXY
+// resolves without DNS.
+func buildGatewayHostAlias(pairKey, ip string) corev1.HostAlias {
+	return corev1.HostAlias{IP: ip, Hostnames: []string{GatewayName(pairKey)}}
+}
+
+// ensureGatewayService applies the paired gateway Service and returns the
+// live object (with assigned ClusterIP) in one call — avoids the
+// reconcile-N/N+1 race where a follow-up Get may not see the just-assigned
+// IP. Handles the legacy headless → ClusterIP migration: `.spec.clusterIP`
+// is immutable, so the old object must be deleted before recreating.
+func ensureGatewayService(ctx context.Context, client kubernetes.Interface, desired *corev1.Service, kind, name string) (*corev1.Service, error) {
+	cli := client.CoreV1().Services(desired.Namespace)
+
+	existing, err := cli.Get(ctx, desired.Name, metav1.GetOptions{})
+	switch {
+	case errors.IsNotFound(err):
+		// fall through to Create
+	case err != nil:
+		return nil, fmt.Errorf("getting gateway Service: %w", err)
+	case existing.Spec.ClusterIP != corev1.ClusterIPNone:
+		return existing, nil
+	default:
+		slog.Info("migrating legacy headless gateway Service to ClusterIP",
+			"service", desired.Name, kind, name)
+		if err := cli.Delete(ctx, desired.Name, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
+			return nil, fmt.Errorf("deleting legacy headless Service: %w", err)
+		}
+		if err := waitForServiceDeleted(ctx, cli, desired.Name, 10*time.Second); err != nil {
+			return nil, fmt.Errorf("waiting for legacy Service to delete: %w", err)
+		}
+	}
+
+	created, err := cli.Create(ctx, desired, metav1.CreateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("creating gateway Service: %w", err)
+	}
+	return created, nil
+}
+
+// waitForServiceDeleted polls until Get returns NotFound or the timeout
+// expires — bridges the async window between Delete returning and the
+// object actually disappearing.
+func waitForServiceDeleted(ctx context.Context, cli corev1ServiceClient, serviceName string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		_, err := cli.Get(ctx, serviceName, metav1.GetOptions{})
+		if errors.IsNotFound(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timeout after %s", timeout)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
+
+// corev1ServiceClient narrows the typed Services interface to just what
+// waitForServiceDeleted needs, so we don't pull in the typed client package.
+type corev1ServiceClient interface {
+	Get(ctx context.Context, name string, opts metav1.GetOptions) (*corev1.Service, error)
+}

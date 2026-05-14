@@ -103,6 +103,29 @@ func TestBuildAgentEgressNetworkPolicy_ManagedByLabel(t *testing.T) {
 	assert.Equal(t, "my-instance", np.Labels[LabelInstance])
 }
 
+// PoC `disableDns`: when set, the per-pair agent egress NP must NOT admit
+// DNS — closing threat-model T9 (DNS exfil via CoreDNS's upstream
+// forwarder). Only the paired-gateway rule remains.
+func TestBuildAgentEgressNetworkPolicy_DisableDNS(t *testing.T) {
+	cfg := *testConfig
+	cfg.AgentBase.DisableDNS = true
+	np := BuildAgentEgressNetworkPolicy("my-instance", &cfg, testOwnerCM)
+
+	require.Len(t, np.Spec.Egress, 1, "disableDns must collapse the policy to gateway-only")
+	gw := np.Spec.Egress[0]
+	require.NotNil(t, gw.To[0].PodSelector)
+	assert.Equal(t, "my-instance", gw.To[0].PodSelector.MatchLabels[LabelPair])
+	assert.Equal(t, RoleGateway, gw.To[0].PodSelector.MatchLabels[LabelRole])
+
+	// Explicit: no DNS port lurking anywhere.
+	for _, rule := range np.Spec.Egress {
+		for _, p := range rule.Ports {
+			assert.NotEqual(t, int32(53), p.Port.IntVal, "DNS port 53 must not appear when DNS is disabled")
+			assert.NotEqual(t, int32(5353), p.Port.IntVal, "DNS port 5353 must not appear when DNS is disabled")
+		}
+	}
+}
+
 func assertDNSPorts(t *testing.T, ports []networkingv1.NetworkPolicyPort, expected int32) {
 	t.Helper()
 	require.Len(t, ports, 2, "both UDP and TCP on the resolver's pod port — modern resolvers fall through to TCP")

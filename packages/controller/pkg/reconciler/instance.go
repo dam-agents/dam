@@ -139,9 +139,6 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 	gatewaySS := BuildGatewayStatefulSet(name, hibernated, r.config, cm, credentialSecrets)
 	gatewaySvc := BuildGatewayService(name, r.config, cm)
 
-	agentSS := BuildAgentStatefulSet(name, instanceSpec, agentSpec, r.config, cm, credentialSecrets)
-	agentSvc := BuildAgentService(name, r.config, cm)
-
 	if err := r.applyStatefulSet(ctx, gatewaySS); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying gateway statefulset: %v", err))
 	}
@@ -159,9 +156,24 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 		slog.Warn("force-rolling stuck gateway pod failed; rollout may be deadlocked",
 			"namespace", gatewaySS.Namespace, "statefulset", gatewaySS.Name, "error", err)
 	}
-	if err := r.applyService(ctx, gatewaySvc); err != nil {
-		return r.setError(ctx, name, fmt.Sprintf("applying gateway service: %v", err))
+	// Apply gateway Service + migrate any legacy headless instance, return
+	// the live object so we capture the assigned ClusterIP synchronously.
+	liveGatewaySvc, err := ensureGatewayService(ctx, r.client, gatewaySvc, "instance", name)
+	if err != nil {
+		return r.setError(ctx, name, fmt.Sprintf("ensuring gateway service: %v", err))
 	}
+	gatewayIP := liveGatewaySvc.Spec.ClusterIP
+
+	// Fail-closed requeue when the gateway IP is needed but not yet
+	// usable — don't roll a half-configured pod.
+	needsGatewayIP := r.config.AgentBase.DisableDNS ||
+		(r.config.AgentBase.IptablesInit != nil && r.config.AgentBase.IptablesInit.Enabled)
+	if needsGatewayIP && (gatewayIP == "" || gatewayIP == corev1.ClusterIPNone) {
+		return fmt.Errorf("instance %s: gateway Service ClusterIP not yet assigned, requeuing", name)
+	}
+
+	agentSS := BuildAgentStatefulSet(name, instanceSpec, agentSpec, r.config, cm, credentialSecrets, gatewayIP)
+	agentSvc := BuildAgentService(name, r.config, cm)
 	if err := r.applyStatefulSet(ctx, agentSS); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying agent statefulset: %v", err))
 	}

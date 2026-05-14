@@ -57,7 +57,12 @@ func agentProxyAddr(instanceName string, cfg *config.Config) string {
 // `credentialSecrets` is consulted only for the GH_TOKEN-availability signal
 // surfaced as an env var and pod annotation; no Secret material is mounted
 // into the agent pod.
-func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec *types.AgentSpec, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret) *appsv1.StatefulSet {
+//
+// `gatewayClusterIP` is injected into `hostAliases` when `DisableDNS` is on,
+// so `HTTPS_PROXY=http://<pair>-gateway:<port>` resolves without DNS. Empty
+// when the controller doesn't have the IP yet — caller is expected to
+// fail-closed in that case.
+func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec *types.AgentSpec, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret, gatewayClusterIP string) *appsv1.StatefulSet {
 	base := cfg.AgentBase
 	defaults := cfg.AgentTemplateDefaults
 
@@ -257,6 +262,11 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 		initScript = defaults.Init
 	}
 	var initContainers []corev1.Container
+	// Egress-lockdown runs before the user init so the allow-list is in
+	// place by the time anything dials the network.
+	if ic := buildIptablesInitContainer(cfg, gatewayClusterIP); ic != nil {
+		initContainers = append(initContainers, *ic)
+	}
 	if initScript != "" {
 		initContainers = append(initContainers, corev1.Container{
 			Name:            "init",
@@ -354,6 +364,11 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 	}
 	applyAgentBaseMeta(&podMeta, base)
 
+	var hostAliases []corev1.HostAlias
+	if base.DisableDNS && gatewayClusterIP != "" {
+		hostAliases = append(hostAliases, buildGatewayHostAlias(name, gatewayClusterIP))
+	}
+
 	podSpec := corev1.PodSpec{
 		// Agent pod opts out of ambient mesh
 		// (`istio.io/dataplane-mode: none` pod label above); it has no
@@ -370,6 +385,7 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 		ShareProcessNamespace:         shareProcessNS,
 		Containers:                    containers,
 		Volumes:                       volumes,
+		HostAliases:                   hostAliases,
 	}
 	applyAgentBaseScheduling(&podSpec, base)
 

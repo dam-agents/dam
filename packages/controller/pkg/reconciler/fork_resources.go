@@ -40,6 +40,7 @@ func BuildForkAgentJob(
 	cfg *config.Config,
 	ownerCM *corev1.ConfigMap,
 	credentialSecrets []corev1.Secret,
+	gatewayClusterIP string,
 ) *batchv1.Job {
 	base := cfg.AgentBase
 	defaults := cfg.AgentTemplateDefaults
@@ -194,6 +195,9 @@ func BuildForkAgentJob(
 		initScript = defaults.Init
 	}
 	var initContainers []corev1.Container
+	if ic := buildIptablesInitContainer(cfg, gatewayClusterIP); ic != nil {
+		initContainers = append(initContainers, *ic)
+	}
 	if initScript != "" {
 		initContainers = append(initContainers, corev1.Container{
 			Name:            "init",
@@ -264,6 +268,11 @@ func BuildForkAgentJob(
 	podMeta := metav1.ObjectMeta{Labels: podLabels}
 	applyAgentBaseMeta(&podMeta, base)
 
+	var hostAliases []corev1.HostAlias
+	if base.DisableDNS && gatewayClusterIP != "" {
+		hostAliases = append(hostAliases, buildGatewayHostAlias(forkName, gatewayClusterIP))
+	}
+
 	podSpec := corev1.PodSpec{
 		// Fork agent opts out of ambient (no SPIFFE on the agent
 		// half). ADR-027: the per-fork SA still scopes credential
@@ -283,6 +292,7 @@ func BuildForkAgentJob(
 		ShareProcessNamespace:         shareProcessNS,
 		Containers:                    containers,
 		Volumes:                       volumes,
+		HostAliases:                   hostAliases,
 	}
 	applyAgentBaseScheduling(&podSpec, base)
 

@@ -9,19 +9,18 @@ add it to the include list in `platform.validate`.
 */}}
 
 {{- define "platform.validate" -}}
-{{- include "platform.validate.nonrootRequiresAgentNamespace" . -}}
+{{- include "platform.validate.anyuidCapNetRequiresAgentNamespace" . -}}
 {{- end -}}
 
 {{/*
-The nonroot-v2 RoleBinding is namespaced to `agentNamespace` and grants
-SCC access via the `system:serviceaccounts:<agentNamespace>` group.
-Both are meaningless if `agentNamespace` is empty: the binding lands
-without a namespace, and the group ref matches no SA. Refuse to render.
+The anyuid-cap-net RoleBinding is namespaced to `agentNamespace` and
+grants SCC access via the `system:serviceaccounts:<agentNamespace>`
+group. Both are meaningless if `agentNamespace` is empty.
 */}}
-{{- define "platform.validate.nonrootRequiresAgentNamespace" -}}
-{{- if and .Values.openshift .Values.openshift.scc .Values.openshift.scc.nonroot .Values.openshift.scc.nonroot.enabled -}}
+{{- define "platform.validate.anyuidCapNetRequiresAgentNamespace" -}}
+{{- if and .Values.openshift .Values.openshift.scc .Values.openshift.scc.anyuidCapNet .Values.openshift.scc.anyuidCapNet.enabled -}}
 {{- if not (.Values.agentNamespace | default "" | trim) -}}
-{{- fail "openshift.scc.nonroot.enabled=true requires agentNamespace to be set. The RoleBinding is namespace-scoped and grants SCC access via the system:serviceaccounts:<agentNamespace> group; an empty value makes both meaningless." -}}
+{{- fail "openshift.scc.anyuidCapNet.enabled=true requires agentNamespace to be set. The RoleBinding is namespace-scoped and grants SCC access via the system:serviceaccounts:<agentNamespace> group; an empty value makes both meaningless." -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

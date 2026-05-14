@@ -7,7 +7,7 @@ run = "helm lint ."
 
 ["helm:check:render"]
 dir = "{{config_root}}/deploy/helm/platform"
-run = "helm template platform . | kubeconform -strict -summary -skip Certificate,Issuer,ClusterIssuer,AuthorizationPolicy,Gateway"
+run = "helm template platform . | kubeconform -strict -summary -skip Certificate,Issuer,ClusterIssuer,AuthorizationPolicy,Gateway,SecurityContextConstraints"
 
 ["helm:setup"]
 alias = "helm:build"

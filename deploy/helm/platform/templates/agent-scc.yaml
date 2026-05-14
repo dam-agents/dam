@@ -1,20 +1,63 @@
-{{- if .Values.openshift.scc.nonroot.enabled }}
+{{- if .Values.openshift.scc.anyuidCapNet.enabled }}
 {{/*
-Bind nonroot-v2 to every ServiceAccount in agentNamespace so agent pods
-run as image USER (65532) rather than the namespace-range UID that
-restricted-v2 would assign. See values.yaml for the full motivation.
+Custom `anyuid-cap-net` SCC for agent pods on OpenShift. Modeled on the
+built-in `anyuid` SCC (runAsUser: RunAsAny so the image USER 65532 is
+honored), plus allowed NET_ADMIN/NET_RAW for the `iptablesInit`
+privileged init container.
+
+OpenShift's SCC admission still prefers more restrictive SCCs the SA can
+use, so this only kicks in for pods that actually request the extra
+capabilities — agent pods without `iptablesInit` continue to land on
+restricted-v2.
 */}}
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: {{ include "platform.fullname" . }}-anyuid-cap-net
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+allowHostDirVolumePlugin: false
+allowHostIPC: false
+allowHostNetwork: false
+allowHostPID: false
+allowHostPorts: false
+allowPrivilegeEscalation: true
+allowPrivilegedContainer: false
+allowedCapabilities:
+  - NET_ADMIN
+  - NET_RAW
+defaultAddCapabilities: null
+fsGroup:
+  type: RunAsAny
+priority: null
+readOnlyRootFilesystem: false
+requiredDropCapabilities:
+  - MKNOD
+runAsUser:
+  type: RunAsAny
+seLinuxContext:
+  type: MustRunAs
+supplementalGroups:
+  type: RunAsAny
+volumes:
+  - configMap
+  - downwardAPI
+  - emptyDir
+  - persistentVolumeClaim
+  - projected
+  - secret
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: {{ include "platform.fullname" . }}-agent-nonroot
+  name: {{ include "platform.fullname" . }}-agent-anyuid-cap-net
   namespace: {{ .Values.agentNamespace }}
   labels:
     {{- include "platform.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: system:openshift:scc:nonroot-v2
+  name: system:openshift:scc:{{ include "platform.fullname" . }}-anyuid-cap-net
 subjects:
   - kind: Group
     apiGroup: rbac.authorization.k8s.io

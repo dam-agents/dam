@@ -120,9 +120,11 @@ func BuildGatewayStatefulSet(instanceName string, hibernated bool, cfg *config.C
 
 func ptrIntOrString(v intstr.IntOrString) *intstr.IntOrString { return &v }
 
-// BuildGatewayService is the headless Service the agent reaches via
-// `HTTPS_PROXY`. Service-form is stable across gateway pod restarts; pod-DNS
-// would tie the agent's env to a StatefulSet ordinal (ADR-038).
+// BuildGatewayService is the ClusterIP Service the agent reaches via
+// `HTTPS_PROXY`. The auto-assigned virtual IP is stable across pod
+// restarts — pinned into the agent pod's hostAliases (under `disableDns`)
+// and the iptables init container's allow-list. Was previously headless;
+// `Service.Spec.ClusterIP == "None"` isn't usable in hostAliases.
 func BuildGatewayService(instanceName string, cfg *config.Config, ownerCM *corev1.ConfigMap) *corev1.Service {
 	gatewayName := GatewayName(instanceName)
 	envoyPort := portInt32(cfg.EnvoyPort)
@@ -137,8 +139,8 @@ func BuildGatewayService(instanceName string, cfg *config.Config, ownerCM *corev
 			},
 		},
 		Spec: corev1.ServiceSpec{
-			ClusterIP: corev1.ClusterIPNone,
-			Selector:  selector,
+			// ClusterIP omitted → apiserver auto-assigns a stable IP.
+			Selector: selector,
 			Ports: []corev1.ServicePort{{
 				Name:       "proxy",
 				Port:       envoyPort,
@@ -199,8 +201,7 @@ func BuildForkGatewayPod(forkName, parentInstanceID string, cfg *config.Config, 
 	}
 }
 
-// BuildForkGatewayService gives the fork's agent Job a stable DNS name to
-// point HTTPS_PROXY at, mirroring the long-lived shape.
+// BuildForkGatewayService mirrors BuildGatewayService for the fork pair.
 func BuildForkGatewayService(forkName string, cfg *config.Config, ownerCM *corev1.ConfigMap) *corev1.Service {
 	gatewayName := GatewayName(forkName)
 	envoyPort := portInt32(cfg.EnvoyPort)
@@ -215,8 +216,8 @@ func BuildForkGatewayService(forkName string, cfg *config.Config, ownerCM *corev
 			},
 		},
 		Spec: corev1.ServiceSpec{
-			ClusterIP: corev1.ClusterIPNone,
-			Selector:  selector,
+			// ClusterIP omitted → apiserver auto-assigns a stable IP.
+			Selector: selector,
 			Ports: []corev1.ServicePort{{
 				Name:       "proxy",
 				Port:       envoyPort,
