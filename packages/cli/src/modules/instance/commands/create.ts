@@ -131,7 +131,12 @@ async function runCreate(name: string, opts: CliOpts, deps: CreateCommandDeps): 
     }
     process.exit(EXIT_INSTANCE_INVALID_INPUT);
   }
-  const env = envResult.value;
+  const env = envResult.value.vars;
+  for (const dup of envResult.value.duplicates) {
+    process.stderr.write(
+      `warning: \`--env ${dup}=…\` was provided multiple times; using the last value\n`,
+    );
+  }
 
   const timeoutSeconds = parseTimeout(opts.timeout);
   if (timeoutSeconds === null) {
@@ -353,7 +358,10 @@ function isAuthSentinelError(e: unknown): boolean {
   let cursor: unknown = e;
   let depth = 0;
   while (cursor && depth < 8) {
-    if (typeof cursor === "object" && cursor !== null) {
+    // `cursor &&` above already excludes null/undefined; the truthy
+    // gate suffices because primitives have no `.name` property worth
+    // matching anyway.
+    if (typeof cursor === "object") {
       const name = (cursor as { name?: unknown }).name;
       if (name === "AuthRequiredAtTransportError") return true;
     }
