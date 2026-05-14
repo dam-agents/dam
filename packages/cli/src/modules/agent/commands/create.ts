@@ -1,6 +1,6 @@
 import { cancel, intro, isCancel, log, note, outro, password, select, spinner, text } from "@clack/prompts";
 import { Command } from "commander";
-import type { Instance } from "api-server-api";
+import { PROVIDERS, type Instance } from "api-server-api";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { InstanceService } from "../../instance/index.js";
 import { validateInstanceName } from "../../instance/commands/create-helpers.js";
@@ -300,18 +300,13 @@ async function addNewProvider(trpc: TrpcClient): Promise<ProviderSelection> {
     });
     if (isCancel(type)) cancelAndExit();
 
-    const name = await text({
-      message: "Name",
-      placeholder: placeholderFor(type),
-      validate(v) {
-        if (!v || v.trim() === "") return "Required";
-        return undefined;
-      },
-    });
-    if (isCancel(name)) cancelAndExit();
+    // Match the web UI's provider cards: auto-name the secret with the
+    // preset's displayName ("Anthropic", "IBM LiteLLM ETE Proxy", "OpenAI")
+    // instead of asking the user. Lets the user paste a key and move on.
+    const name = PROVIDERS[type].displayName;
 
     const apiKey = await password({
-      message: "API key",
+      message: `${PROVIDERS[type].displayName} API key`,
       validate(v) {
         if (!v || v.trim() === "") return "Required";
         return undefined;
@@ -344,14 +339,6 @@ async function withRetry<T>(
   }
   // Unreachable — loop either returns or throws on the last attempt.
   throw new Error("withRetry: exhausted attempts");
-}
-
-function placeholderFor(type: ProviderType): string {
-  switch (type) {
-    case "anthropic": return "my-anthropic-key";
-    case "ibm-litellm": return "my-ibm-litellm-key";
-    case "openai": return "my-openai-key";
-  }
 }
 
 function errorReason(e: unknown): string {
