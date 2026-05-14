@@ -48,10 +48,11 @@ echo "egress-lockdown: gateway-only egress applied"
 	// Root + NET_ADMIN/NET_RAW needed to manipulate netfilter; both are
 	// scoped to this init container, which exits before the agent runtime
 	// container starts. Container-level overrides cancel the pod-level
-	// runAsNonRoot floor.
+	// runAsNonRoot floor. allowPrivilegeEscalation stays false — iptables
+	// doesn't need to gain caps at exec, and false sets no_new_privs=1.
 	runAsRoot := int64(0)
 	notNonRoot := false
-	allowPrivEsc := true
+	noPrivEsc := false
 	return &corev1.Container{
 		Name:    iptablesInitContainerName,
 		Image:   cfgInit.Image,
@@ -63,7 +64,7 @@ echo "egress-lockdown: gateway-only egress applied"
 		SecurityContext: &corev1.SecurityContext{
 			RunAsUser:                &runAsRoot,
 			RunAsNonRoot:             &notNonRoot,
-			AllowPrivilegeEscalation: &allowPrivEsc,
+			AllowPrivilegeEscalation: &noPrivEsc,
 			Capabilities: &corev1.Capabilities{
 				Drop: []corev1.Capability{"ALL"},
 				Add:  []corev1.Capability{"NET_ADMIN", "NET_RAW"},
