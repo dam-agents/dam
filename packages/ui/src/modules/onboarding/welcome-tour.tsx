@@ -1,15 +1,13 @@
 import {
+  ArrowRight,
+  Checkmark as Check,
+  Close as X,
   Cloud,
   EventSchedule,
   Group,
   Security,
 } from "@carbon/icons-react";
-import {
-  ArrowRight,
-  Checkmark as Check,
-  Close as X,
-} from "@carbon/icons-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -66,8 +64,17 @@ export function WelcomeTour() {
   const hasProvider = secrets.some((s) => s.type === "anthropic");
   const hasAgent = agents.length > 0;
   const hasConnection = connections.length > 0;
-  const shouldShow =
-    ready && !dismissed && (!hasProvider || !hasAgent || !hasConnection);
+  const allDone = hasProvider && hasAgent && hasConnection;
+
+  // Track whether the user has actually been on the journey this session.
+  // Returning users who already have everything set up should NOT see an
+  // "All set" celebration — only users who watched the steps tick off do.
+  const [everSeenIncomplete, setEverSeenIncomplete] = useState(false);
+  useEffect(() => {
+    if (ready && !allDone) setEverSeenIncomplete(true);
+  }, [ready, allDone]);
+
+  const shouldShow = ready && !dismissed && (!allDone || everSeenIncomplete);
 
   const dismiss = () => {
     if (PERSIST_DISMISS) localStorage.setItem(DISMISS_KEY, "true");
@@ -129,7 +136,7 @@ export function WelcomeTour() {
       hasProvider={hasProvider}
       hasAgent={hasAgent}
       hasConnection={hasConnection}
-      onNavigate={(v) => setView(v)}
+      allDone={allDone}
       onDismiss={dismiss}
     />
   );
@@ -139,17 +146,19 @@ interface SetupChecklistProps {
   hasProvider: boolean;
   hasAgent: boolean;
   hasConnection: boolean;
-  onNavigate: (view: View) => void;
+  allDone: boolean;
   onDismiss: () => void;
 }
 
-function SetupChecklist({
+export function SetupChecklist({
   hasProvider,
   hasAgent,
   hasConnection,
-  onNavigate,
+  allDone,
   onDismiss,
 }: SetupChecklistProps) {
+  const view = useStore((s) => s.view);
+  const setView = useStore((s) => s.setView);
   const items: {
     key: string;
     label: string;
@@ -185,12 +194,21 @@ function SetupChecklist({
   return (
     <div className="fixed z-[150] bottom-[calc(64px+env(safe-area-inset-bottom))] left-4 right-4 md:left-auto md:right-6 md:bottom-6 md:w-[380px] rounded-xl border bg-popover text-popover-foreground shadow-xl overflow-hidden">
       <div className="flex items-start justify-between gap-3 px-4 pt-3 pb-2 border-b">
-        <div className="min-w-0">
-          <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-            Get started
-          </div>
-          <div className="text-sm font-semibold">
-            {doneCount} of {totalCount} complete
+        <div className="min-w-0 flex items-start gap-2">
+          {allDone ? (
+            <span className="text-[18px] leading-none mt-[1px] shrink-0" aria-hidden>
+              🎉
+            </span>
+          ) : null}
+          <div className="min-w-0">
+            <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+              {allDone ? "All set" : "Get started"}
+            </div>
+            <div className="text-sm font-semibold">
+              {allDone
+                ? "Nice work — you're ready to go"
+                : `${doneCount} of ${totalCount} complete`}
+            </div>
           </div>
         </div>
         <Button
@@ -204,12 +222,17 @@ function SetupChecklist({
         </Button>
       </div>
       <ul className="p-1.5">
-        {items.map((item, idx) => (
+        {items.map((item, idx) => {
+          const active = view === item.view;
+          return (
           <li key={item.key}>
             <button
               type="button"
-              onClick={() => onNavigate(item.view)}
-              className="w-full flex items-center gap-3 p-2 rounded-lg text-left hover:bg-accent active:bg-accent focus-visible:bg-accent focus-visible:outline-none transition-colors"
+              onClick={() => setView(item.view)}
+              className={cn(
+                "w-full flex items-center gap-3 p-2 rounded-lg text-left hover:bg-muted active:bg-muted focus-visible:bg-muted focus-visible:outline-none transition-colors",
+                active && "bg-muted",
+              )}
             >
               <span
                 className={cn(
@@ -241,8 +264,16 @@ function SetupChecklist({
               <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
             </button>
           </li>
-        ))}
+          );
+        })}
       </ul>
+      {allDone && (
+        <div className="px-3 pb-3 pt-1 border-t">
+          <Button onClick={onDismiss} className="w-full">
+            Got it
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

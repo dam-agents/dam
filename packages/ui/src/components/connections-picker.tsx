@@ -1,5 +1,4 @@
 import {
-  AiLaunch as Sparkles,
   Globe,
   Information as Info,
   Password as KeyRound,
@@ -12,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 
 import { OAuthAppIcon } from "../modules/connections/components/oauth-app-icon.js";
+import { AnthropicIcon } from "../modules/settings/components/brand-icons.js";
 import type { SecretView } from "../types.js";
 import {
   APP_OAUTH_SECRET_PREFIX,
@@ -128,8 +128,9 @@ export function ConnectionsPicker({
                 key={s.id}
                 checked={selSecrets.has(s.id)}
                 onToggle={() => onToggleSecret(s.id)}
-                icon={<Sparkles size={14} className="text-warning" />}
+                icon={<AnthropicIcon className="w-3.5 h-3.5 text-[#D97757]" />}
                 label={s.name}
+                tone="muted"
               />
             ))}
           </Section>
@@ -224,17 +225,23 @@ function ItemRow({
   icon,
   label,
   trailing,
+  tone = "primary",
 }: {
   checked: boolean;
   onToggle: () => void;
   icon: React.ReactNode;
   label: string;
   trailing?: React.ReactNode;
+  /** "primary" tints the selected row with the brand accent (the default
+   *  for MCP/Apps), "muted" uses the neutral nav-style background. */
+  tone?: "primary" | "muted";
 }) {
+  const checkedBg =
+    tone === "muted" ? "border-border bg-muted" : "border-primary bg-primary/10";
   return (
     <label
       className={`flex items-center gap-3 rounded-lg border bg-background px-4 py-3 cursor-pointer transition-colors hover:border-primary ${
-        checked ? "border-primary bg-primary/10" : "border-border"
+        checked ? checkedBg : "border-border"
       }`}
     >
       <Checkbox checked={checked} onCheckedChange={onToggle} />
