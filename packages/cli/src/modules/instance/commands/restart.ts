@@ -120,7 +120,10 @@ async function runRestart(ref: string, opts: CliOpts, deps: RestartCommandDeps):
     process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
   }
 
-  let settledState: Instance["state"] | undefined;
+  // `finalInstance` carries the post-restart snapshot through to the
+  // output stage. On `--wait`, the ready branch already produced one —
+  // reusing it avoids a second `svc.get()` round-trip.
+  let finalInstance: Instance | undefined;
   if (opts.wait) {
     let firstStateSeen = false;
     const waitResult = await waitForRunning(svc, instance.id, {
@@ -139,7 +142,7 @@ async function runRestart(ref: string, opts: CliOpts, deps: RestartCommandDeps):
 
     switch (waitResult.kind) {
       case "ready":
-        settledState = waitResult.instance.state;
+        finalInstance = waitResult.instance;
         break;
       case "error":
         if (opts.json) {
@@ -154,10 +157,11 @@ async function runRestart(ref: string, opts: CliOpts, deps: RestartCommandDeps):
         return;
       case "timeout":
         if (opts.json) {
-          const refreshed = await svc.get(instance.id);
-          if (refreshed.ok && refreshed.value !== null) {
-            process.stdout.write(`${JSON.stringify(refreshed.value)}\n`);
-          }
+          // Best-effort refresh so the JSON payload reflects the latest
+          // state. If the refresh fails, fall back to the pre-restart
+          // snapshot — scripts always get a valid Instance, never empty
+          // stdout.
+          process.stdout.write(`${JSON.stringify(await fetchOrFallback(svc, instance))}\n`);
         } else {
           process.stderr.write(
             `error: timed out waiting for "${instance.name}" to reach running (current: ${waitResult.lastState})\n`,
@@ -173,15 +177,29 @@ async function runRestart(ref: string, opts: CliOpts, deps: RestartCommandDeps):
   }
 
   if (opts.json) {
-    const refreshed = await svc.get(instance.id);
-    if (refreshed.ok && refreshed.value !== null) {
-      process.stdout.write(`${JSON.stringify(refreshed.value)}\n`);
-    }
+    // Non-wait path needs a refresh to surface the post-restart state.
+    // Wait+ready already populated `finalInstance` above.
+    const payload = finalInstance ?? (await fetchOrFallback(svc, instance));
+    process.stdout.write(`${JSON.stringify(payload)}\n`);
   } else {
-    const tail = settledState ? ` State: ${settledState}.` : "";
+    const tail = finalInstance ? ` State: ${finalInstance.state}.` : "";
     process.stdout.write(`✓ Restarted instance "${instance.name}" (${instance.id}).${tail}\n`);
   }
   process.exit(EXIT_INSTANCE_SUCCESS);
+}
+
+/** Fetch the latest Instance state; on failure, warn to stderr and
+ *  return the caller-supplied snapshot so scripted callers always get a
+ *  valid Instance JSON. The restart action already succeeded server-side
+ *  — a refresh failure is a JSON-staleness concern, not a command-level
+ *  failure. */
+async function fetchOrFallback(svc: InstanceService, fallback: Instance): Promise<Instance> {
+  const refreshed = await svc.get(fallback.id);
+  if (refreshed.ok && refreshed.value !== null) return refreshed.value;
+  process.stderr.write(
+    `warning: could not refresh instance "${fallback.name}" after restart; emitting last-known state\n`,
+  );
+  return fallback;
 }
 
 function parseTimeout(raw: string | undefined): number | null {
