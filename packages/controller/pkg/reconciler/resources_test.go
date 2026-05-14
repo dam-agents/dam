@@ -366,6 +366,14 @@ func TestBuildEnvoyBootstrapConfigMap(t *testing.T) {
 	assert.NotContains(t, yaml, "127.0.0.1", "gateway listener must not bind loopback under the paired-pod model")
 	assert.Contains(t, yaml, "api.example.com", "filter chain must match by SNI on the host")
 	assert.Contains(t, yaml, "/etc/envoy/credentials/cred-platform-cred-aaa/sds.yaml")
+	// path_config_source must declare `watched_directory` pointing at the
+	// Secret-volume mount root — otherwise Envoy never observes the kubelet
+	// symlink swap that delivers a rotated token. Regression for the
+	// refresh-but-stale-injection bug (gateways kept serving the pre-refresh
+	// access token).
+	assert.Contains(t, yaml, "watched_directory:")
+	assert.Contains(t, yaml, "path: /etc/envoy/credentials/cred-platform-cred-aaa",
+		"watched_directory must point at the Secret-volume mount root for kubelet's symlink swap to be detected")
 	assert.Contains(t, yaml, "internal_listener", "must declare an internal listener")
 	assert.Contains(t, yaml, "envoy.bootstrap.internal_listener", "must enable the internal_listener bootstrap extension")
 	assert.Contains(t, yaml, "tls_inspector", "internal listener must inspect SNI")

@@ -613,6 +613,16 @@ static_resources:
                             sds_config:
                               path_config_source:
                                 path: {{ $.CredentialsRoot }}/{{ $cred.VolumeName }}/{{ $.CredentialFile }}
+                                # Watch the Secret-volume mount root, not the
+                                # sds.yaml path. Kubelet rotates the ..data
+                                # symlink inside the mount when a Secret
+                                # changes; the leaf symlink at the mount root
+                                # never gets renamed, so Envoy's default
+                                # path-only inotify never fires and a refreshed
+                                # access token never reaches the in-memory SDS
+                                # resource. See envoy PathConfigSource docs.
+                                watched_directory:
+                                  path: {{ $.CredentialsRoot }}/{{ $cred.VolumeName }}
                           header: "{{ $cred.HeaderName }}"
 {{- if $cred.QueryParamName }}
                   # Query-param injection. credential_injector wrote the
