@@ -58,6 +58,8 @@ export type {
   ProviderPresetType,
   SecretView,
   CreateSecretInput,
+  CreateGithubPatInput,
+  CreateGithubPatOutput,
   UpdateSecretInput,
   AgentAccess,
   SecretsService,

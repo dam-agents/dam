@@ -59,6 +59,15 @@ export const secretsRouter = t.router({
     )
     .mutation(({ ctx, input }) => ctx.secrets.create(input)),
 
+  createGithubPat: t.procedure
+    .input(
+      z.object({
+        name: z.string().min(1).max(100),
+        token: z.string().min(1),
+      }),
+    )
+    .mutation(({ ctx, input }) => ctx.secrets.createGithubPat(input)),
+
   update: t.procedure.input(updateSecretInputSchema).mutation(({ ctx, input }) => ctx.secrets.update(input)),
 
   delete: t.procedure
