@@ -18,6 +18,7 @@ import {
   type AgentAccess,
 } from "api-server-api";
 import type {
+  AuthMode,
   K8sSecretsPort,
   K8sStoredSecret,
 } from "./../infrastructure/k8s-secrets-port.js";
@@ -56,6 +57,30 @@ function registryExtraInjections(
 function twinDisplayName(primaryName: string, injection: InjectionConfig): string {
   const tag = injection.queryParamName ? `?${injection.queryParamName}` : injection.headerName;
   return `${primaryName} (${tag})`;
+}
+
+/**
+ * Anthropic-only: if the new value's prefix indicates a different auth
+ * mode than the secret currently has, return the registry's env
+ * mappings for the new mode plus the new mode key. `update` uses this
+ * to re-bake injection + env when a CLI replace path swaps key formats.
+ * Returns `null` when no rotation is needed (non-Anthropic secret,
+ * same mode, or secret not found — the K8sPort will surface NOT_FOUND
+ * downstream).
+ */
+async function anthropicModeRotationFor(
+  k8sPort: K8sSecretsPort,
+  id: string,
+  newValue: string,
+): Promise<{ authMode: AuthMode; envMappings: EnvMapping[] } | null> {
+  const secrets = await k8sPort.listSecrets();
+  const existing = secrets.find((s) => s.id === id);
+  if (!existing || existing.type !== "anthropic") return null;
+  const newAuthMode: AuthMode = newValue.startsWith("sk-ant-oat") ? "oauth" : "api-key";
+  if (newAuthMode === existing.authMode) return null;
+  const mode = PROVIDERS.anthropic.modes.find((m) => m.key === newAuthMode);
+  if (!mode) return null;
+  return { authMode: newAuthMode, envMappings: [...mode.defaultEnvMappings] };
 }
 
 // `secrets-rev` hashes only what affects the agent pod's env. hostPattern,
@@ -304,13 +329,37 @@ export function createSecretsService(deps: {
     },
 
     async update({ id, ...patch }: UpdateSecretInput) {
+      // Anthropic value swaps re-discriminate the auth mode from the new
+      // value's prefix and rewrite envMappings + injectionConfig to match.
+      // Without this, replacing an API key (stored as
+      // `x-api-key: {value}`, env `ANTHROPIC_API_KEY`) with an OAuth
+      // token (needs `Authorization: Bearer {value}`, env
+      // `CLAUDE_CODE_OAUTH_TOKEN`) leaves the injection metadata stuck
+      // at the old mode — Anthropic receives `x-api-key: sk-ant-oat…`
+      // and rejects with "Invalid API key". The same prefix rule lives
+      // in `create` above; this just teaches `update` to redo it when
+      // the caller didn't supply envMappings explicitly (the web UI's
+      // Anthropic Edit form does, the CLI's replace path does not).
+      const rotation =
+        patch.value !== undefined && patch.envMappings === undefined
+          ? await anthropicModeRotationFor(deps.k8sPort, id, patch.value)
+          : null;
       const result = await deps.k8sPort.updateSecret(id, {
         ...(patch.name !== undefined ? { name: patch.name } : {}),
         ...(patch.value !== undefined ? { value: patch.value } : {}),
         ...(patch.hostPattern !== undefined ? { hostPattern: patch.hostPattern } : {}),
         ...(patch.pathPattern !== undefined ? { pathPattern: patch.pathPattern } : {}),
-        ...(patch.injectionConfig !== undefined ? { injectionConfig: patch.injectionConfig } : {}),
-        ...(patch.envMappings !== undefined ? { envMappings: patch.envMappings } : {}),
+        ...(patch.injectionConfig !== undefined
+          ? { injectionConfig: patch.injectionConfig }
+          : rotation
+            ? { injectionConfig: null }
+            : {}),
+        ...(patch.envMappings !== undefined
+          ? { envMappings: patch.envMappings }
+          : rotation
+            ? { envMappings: rotation.envMappings }
+            : {}),
+        ...(rotation ? { authMode: rotation.authMode } : {}),
       });
       // ADR-040 fanout. Host edits → re-sync egress_rules per granted
       // agent (hot, no roll). envMappings edits → bump secrets-rev so the
