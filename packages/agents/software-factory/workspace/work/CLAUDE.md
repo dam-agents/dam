@@ -29,4 +29,8 @@ Understand [Development Guidelines](./DEVELOPMENT_GUIDELINES.md) first.
 
 Look at the Github whether PRD exists. If not start /grill-me session to understand product requiremnets. Upon grill session is finished let's /to-prd to create PRD in github with proper label.
 
-Once PRD is specified initiate /to-issues (those can be already existing too, so check that too!). Your work ends here as all the engineering work will happen in heartbeats.
+Once PRD is specified initiate /to-issues (those can be already existing too, so check that too!). 
+
+Having the tickets and PRD specified, your next goal is to setup heartbeat. You can easily achieve that via `mcp__platform-outbound__create_schedule` just make sure you setup Heartbeat schedule that is awaking the agent every minute to do the heartbeat.
+
+Your work ends here as all the engineering work will happen in heartbeats.
