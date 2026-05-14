@@ -131,10 +131,13 @@ async function runCreate(opts: CliOpts, deps: CreateAgentCommandDeps): Promise<v
   const trpc = deps.createTrpcClient(host);
   const provider = await pickProvider(trpc);
 
-  // --- Steps 4 + 5 + 6: agents.create → setAgentAccess → instances.create ---
-  // Granting the provider secret *before* `instances.create` is what
-  // makes this a single pod boot. Reversing the order would force a
-  // rolling restart once the grant lands.
+  // --- Steps 4 + 5 + 6: agents.create → instances.create → setAgentAccess ---
+  // Grants live as `granted-secret-ids` annotations on the *instance*
+  // ConfigMap, not the agent. setAgentAccess before any instance exists
+  // is a silent no-op, so the order has to be: agent → instance → grant.
+  // Mirrors `useCreateAgent` in packages/ui/src/modules/agents/api/mutations.ts.
+  // The grant lands after pod boot and the controller rolls the pod
+  // once to pick it up.
   const spin = spinner();
   spin.start("Creating agent...");
 
@@ -148,24 +151,30 @@ async function runCreate(opts: CliOpts, deps: CreateAgentCommandDeps): Promise<v
     process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
   }
 
-  spin.message("Granting provider access...");
-  try {
-    await trpc.secrets.setAgentAccess.mutate({
-      agentId,
-      secretIds: [provider.secretId],
-    });
-  } catch (e) {
-    spin.stop("Failed to grant provider access");
-    process.stderr.write(`error: ${errorReason(e)}\n`);
-    process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
-  }
-
   spin.message("Creating instance...");
   let instance: Instance;
   try {
     instance = await trpc.instances.create.mutate({ name, agentId });
   } catch (e) {
     spin.stop("Failed to create instance");
+    process.stderr.write(`error: ${errorReason(e)}\n`);
+    process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
+  }
+
+  spin.message("Granting provider access...");
+  try {
+    // Retry — the just-created instance ConfigMap may not yet be visible
+    // to the api-server's listConfigMaps when setAgentAccess fires; without
+    // the retry the patch silently targets zero ConfigMaps and the grant
+    // is lost. Matches the web UI's 5× / 2s wait.
+    await withRetry(() =>
+      trpc.secrets.setAgentAccess.mutate({
+        agentId,
+        secretIds: [provider.secretId],
+      }),
+    );
+  } catch (e) {
+    spin.stop("Failed to grant provider access");
     process.stderr.write(`error: ${errorReason(e)}\n`);
     process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
   }
@@ -318,6 +327,23 @@ async function addNewProvider(trpc: TrpcClient): Promise<ProviderSelection> {
       // Fall through to next loop iteration.
     }
   }
+}
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxAttempts = 5,
+  delayMs = 2000,
+): Promise<T> {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (attempt === maxAttempts - 1) throw e;
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  // Unreachable — loop either returns or throws on the last attempt.
+  throw new Error("withRetry: exhausted attempts");
 }
 
 function placeholderFor(type: ProviderType): string {
