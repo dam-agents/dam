@@ -4,6 +4,7 @@ import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { TemplateService } from "../../template/index.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
 import type { InstanceService } from "../services/instance-service.js";
+import { fetchOrFallback } from "../services/fetch-or-fallback.js";
 import { waitForRunning } from "../services/wait-for-state.js";
 import {
   describeConfigError,
@@ -265,10 +266,13 @@ async function runCreate(name: string, opts: CliOpts, deps: CreateCommandDeps): 
         return;
       case "timeout":
         if (opts.json) {
-          const refreshed = await svc.get(instance.id);
-          if (refreshed.ok && refreshed.value !== null) {
-            process.stdout.write(`${JSON.stringify(refreshed.value)}\n`);
-          }
+          // The Instance was created server-side; only the wait
+          // timed out. Refresh for the latest state, but fall back to
+          // the post-create snapshot if the refresh fails so scripts
+          // never see empty stdout.
+          process.stdout.write(
+            `${JSON.stringify(await fetchOrFallback(svc, instance, "after wait timeout"))}\n`,
+          );
         } else {
           process.stderr.write(
             `error: timed out waiting for "${name}" to reach running (current: ${waitResult.lastState})\n`,

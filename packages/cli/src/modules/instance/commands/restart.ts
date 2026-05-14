@@ -3,6 +3,7 @@ import type { Instance } from "api-server-api";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { InstanceService } from "../services/instance-service.js";
 import { createInstanceResolver } from "../services/instance-resolver.js";
+import { fetchOrFallback } from "../services/fetch-or-fallback.js";
 import { waitForRunning } from "../services/wait-for-state.js";
 import {
   describeConfigError,
@@ -161,7 +162,9 @@ async function runRestart(ref: string, opts: CliOpts, deps: RestartCommandDeps):
           // state. If the refresh fails, fall back to the pre-restart
           // snapshot — scripts always get a valid Instance, never empty
           // stdout.
-          process.stdout.write(`${JSON.stringify(await fetchOrFallback(svc, instance))}\n`);
+          process.stdout.write(
+            `${JSON.stringify(await fetchOrFallback(svc, instance, "after restart"))}\n`,
+          );
         } else {
           process.stderr.write(
             `error: timed out waiting for "${instance.name}" to reach running (current: ${waitResult.lastState})\n`,
@@ -179,27 +182,13 @@ async function runRestart(ref: string, opts: CliOpts, deps: RestartCommandDeps):
   if (opts.json) {
     // Non-wait path needs a refresh to surface the post-restart state.
     // Wait+ready already populated `finalInstance` above.
-    const payload = finalInstance ?? (await fetchOrFallback(svc, instance));
+    const payload = finalInstance ?? (await fetchOrFallback(svc, instance, "after restart"));
     process.stdout.write(`${JSON.stringify(payload)}\n`);
   } else {
     const tail = finalInstance ? ` State: ${finalInstance.state}.` : "";
     process.stdout.write(`✓ Restarted instance "${instance.name}" (${instance.id}).${tail}\n`);
   }
   process.exit(EXIT_INSTANCE_SUCCESS);
-}
-
-/** Fetch the latest Instance state; on failure, warn to stderr and
- *  return the caller-supplied snapshot so scripted callers always get a
- *  valid Instance JSON. The restart action already succeeded server-side
- *  — a refresh failure is a JSON-staleness concern, not a command-level
- *  failure. */
-async function fetchOrFallback(svc: InstanceService, fallback: Instance): Promise<Instance> {
-  const refreshed = await svc.get(fallback.id);
-  if (refreshed.ok && refreshed.value !== null) return refreshed.value;
-  process.stderr.write(
-    `warning: could not refresh instance "${fallback.name}" after restart; emitting last-known state\n`,
-  );
-  return fallback;
 }
 
 function parseTimeout(raw: string | undefined): number | null {
