@@ -350,6 +350,41 @@ describe("oauth-refresh-service", () => {
     expect(decode(after, "raw_access_token")).toBe("old");
   });
 
+  it("marks expired on GitHub-specific `error=bad_refresh_token` (HTTP 200, form-encoded)", async () => {
+    // GitHub's OAuth endpoint never uses the RFC `invalid_grant` code; a
+    // permanently-dead refresh token comes back as `bad_refresh_token` with
+    // HTTP 200. Treat as hard failure or we'll churn in backoff while the
+    // user's UI shows "Expired" with no way to recover but reconnect.
+    const { client, store } = fakeClient();
+    const port = createK8sConnectionsPort(client, "owner-1");
+
+    const NOW_MS = 1_700_000_000_000;
+    await port.upsertConnection({
+      connection: "github",
+      tokens: { accessToken: "old", refreshToken: "ref-burned", expiresAt: NOW_MS / 1000 + 30 },
+      metadata: SAMPLE_METADATA,
+    });
+
+    const fetchImpl = vi.fn(async () =>
+      new Response(
+        "error=bad_refresh_token&error_description=The+refresh+token+passed+is+incorrect+or+expired.",
+        { status: 200, headers: { "Content-Type": "application/x-www-form-urlencoded" } },
+      ),
+    ) as unknown as typeof fetch;
+
+    const svc = createOAuthRefreshService({
+      k8sClient: client,
+      fetchImpl,
+      now: () => NOW_MS,
+      log: () => {},
+    });
+    await svc.tick();
+
+    const after = store.get(connectionSecretName("owner-1", "github"))!;
+    expect(after.metadata!.annotations!["agent-platform.ai/connection-status"]).toBe("expired");
+    expect(decode(after, "raw_access_token")).toBe("old");
+  });
+
   it("preserves the existing refresh token when the response omits one (provider doesn't rotate)", async () => {
     const { client, store } = fakeClient();
     const port = createK8sConnectionsPort(client, "owner-1");

@@ -58,10 +58,17 @@ interface TokenEndpointSuccess {
 }
 
 const HARD_FAILURE_ERRORS = new Set([
+  // RFC 6749 § 5.2 — standard error codes returned by spec-compliant providers.
   "invalid_grant",
   "invalid_client",
   "unauthorized_client",
   "unsupported_grant_type",
+  // GitHub-specific codes: GitHub's OAuth endpoint never uses the RFC names,
+  // it returns these instead. Without them we'd churn in transient backoff on
+  // a permanently-dead refresh token until the access token expired and the
+  // UI flipped the connection to "Expired" via the `expiresAt < now` path.
+  "bad_refresh_token",
+  "incorrect_client_credentials",
 ]);
 
 /**
