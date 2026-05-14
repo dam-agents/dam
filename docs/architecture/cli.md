@@ -5,11 +5,11 @@ Last verified: 2026-05-14
 ## Motivated by
 
 - [ADR-039 — Platform CLI foundation](../adrs/039-cli-foundation.md) — TypeScript Node package distributed via npm; reuses the api-server tRPC contract; flat config under XDG-standard locations; server-advertised compatibility floor.
-- [ADR-037 — Remote terminal](../adrs/037-remote-terminal.md) — predecessor; established the "terminal" session mode the CLI complements with `dam shell` (a future verb).
+- [ADR-037 — Remote terminal](../adrs/037-remote-terminal.md) — predecessor; established the "terminal" session mode the CLI complements with `dam chat` (a future verb).
 
 ## Overview
 
-The `dam` CLI is a TypeScript Node package that users install on their own machine and point at a configured Platform deployment. It never runs inside the cluster. The current surface: `dam --version`, `dam --help` (built-in flags); `dam config set`; `dam ping`; `dam version`; the `dam auth` group (`login`, `logout`, `status`); the `dam instance` group (`list`, `get`, `create`, `delete`, `restart`); and `dam template list`. Command groups are singular to align with `gh`, `git`, and `docker` conventions. Future verbs — `dam shell`, `dam import` — slot into their own modules and consume the Token Provider seam from `auth` plus the Instance Resolver seam from `instance`.
+The `dam` CLI is a TypeScript Node package that users install on their own machine and point at a configured Platform deployment. It never runs inside the cluster. The current surface: `dam --version`, `dam --help` (built-in flags); `dam config set`; `dam ping`; `dam version`; the `dam auth` group (`login`, `logout`, `status`); the `dam instance` group (`list`, `get`, `create`, `delete`, `restart`); the `dam agent` group (`create`); and `dam template list`. Command groups are singular to align with `gh`, `git`, and `docker` conventions. Future verbs — `dam chat`, `dam import` — slot into their own modules and consume the Token Provider seam from `auth` plus the Instance Resolver seam from `instance`.
 
 The CLI shares types directly with the api-server via a shared contract package, so server-side type changes reach the CLI without codegen or manual mirroring. tRPC routes are reached through `@trpc/client` typed against the contract's `AppRouter`; the auth probes (`/api/auth/config`, OIDC discovery) stay as raw `fetch` because they are not tRPC.
 
@@ -82,3 +82,18 @@ The CLI presents Instances as single, atomic entities. The server-side Agent ↔
 - **`--wait`** on `create` and `restart` polls `instances.get` every 2 seconds and settles on `state === "running"` (success) or `state === "error"` (terminal). `restart --wait` sleeps 2 seconds before the first poll so the controller has time to observe the pod deletion — otherwise the first poll might see stale `running` state from the doomed pod. Default timeout is 120 seconds; on timeout the instance is left as-is (no rollback) and the command exits non-zero. Under `--json`, every exit path emits a valid `Instance` payload on stdout: the success branch reuses the snapshot the wait loop already observed, and the timeout / non-wait branches refresh via `instances.get` with a fallback to the post-mutation snapshot if the refresh fails, so scripted callers never see empty stdout.
 
 `dam template list` exposes the agent templates the operator has installed on the active host (the `claude-code`, `pi-agent`, etc. ConfigMaps the controller reads at boot). Templates are read-only from the CLI's perspective; operators add or remove them via Helm.
+
+## Interactive agent setup
+
+`dam agent create` is the interactive complement to `dam instance create`. It walks the user through name → template → model provider → optional GitHub PAT in a single TTY-bound flow and ends with the same agent + instance + grants that the web UI's "Add agent" dialog produces. The scripted entry point is unchanged — `dam instance create <name> --template <id>` stays the path for shell scripts and CI, and `dam agent create` refuses to run when stdin is not a TTY (pointing the caller back at `instance create`).
+
+Each step lines up with one server-side mutation, in the same order the web UI's `useCreateAgent` runs them:
+
+1. **Model provider** — singleton per type (Anthropic, IBM LiteLLM, OpenAI), matching the web UI's provider cards. The picker lists existing provider Secrets and offers "Add new..."; the add-new sub-flow auto-names the Secret with `PROVIDERS[type].displayName` and routes through `secrets.create`. If a Secret of the chosen type already exists, the flow offers to replace its value (`secrets.update`) instead of duplicating.
+2. **GitHub PAT** *(optional)* — a single PAT is two `generic` Secrets (see [security-and-credentials.md](security-and-credentials.md#credential-storage)); the picker groups them client-side and hides orphans. New PATs go through `secrets.createGithubPat`, which creates both halves atomically server-side.
+3. **`agents.create` → `instances.create` → `secrets.setAgentAccess`** — grants are persisted as `granted-secret-ids` annotations on the *instance* ConfigMap, so the grant call has to come after `instances.create`. `setAgentAccess` runs inside a 5× / 2s retry to bridge the K8s-API visibility race for the just-created ConfigMap. The controller rolls the pod once when the grant lands; one rolling restart per agent is the cost.
+4. **Wait for `running`** — same 120 s timeout the `instance --wait` path uses. Timeout is success (the instance exists, the pod is slow); pod-failure state and Ctrl+C during the wait exit non-zero without rolling back.
+
+Anything created during the run (new provider Secret, new GitHub PAT pair, the agent) is tracked in a small ledger; a failure in any of the post-prompt mutations triggers one cleanup pass — `agents.delete` cascade-tears-down the instance and its grants, then any new Secrets are deleted by id. Picked-existing and replace-existing paths stay out of the ledger: the replace path overwrote the value in place, and the old value is unrecoverable. Anything the cleanup itself can't delete surfaces as an orphan summary so the user knows what to remove manually.
+
+The post-success hint points at `dam chat <name>` (the chat verb is a future module). Interrupting at any prompt before the mutation chain exits cleanly with no orphans; interrupting during the wait leaves the agent in place with the same delete-hint, on the basis that the user chose to interrupt and the agent's existence is their call from there.

@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-05-13
+Last verified: 2026-05-14
 
 ## Motivated by
 
@@ -157,6 +157,17 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
   tokens before expiry; the agent never sees the refresh token.
 - **User-supplied secrets** (Anthropic API keys, generic API tokens) —
   the secrets module writes them with the same labels and annotations.
+- **GitHub personal access tokens** — one PAT is *two* `generic` Secrets
+  that share a display name. The `api.github.com` half stores the raw
+  PAT, injects `Authorization: Bearer {value}`, and projects `GH_TOKEN`
+  into the agent pod's env for the `gh` CLI. The `github.com` half
+  stores `base64("x-access-token:" + PAT)` and injects
+  `Authorization: Basic {value}` for `git clone` over HTTPS. Both
+  halves are written atomically via `secrets.createGithubPat` (the
+  mutation owns the base64 wrapping so callers send `{name, token}`
+  only and a partial-create rolls back the api half if the git half
+  fails). Picker UIs group the pair client-side by display name and
+  hide orphans (one host missing).
 
 The Secret carries the SDS YAML Envoy reads via its `path_config_source`.
 Only the gateway pod mounts the Secret; the agent pod does not. See
