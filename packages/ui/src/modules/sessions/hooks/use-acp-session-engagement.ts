@@ -1,5 +1,6 @@
 import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
 import type { McpServer } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
+import { SessionMode, SessionType, type SessionView } from "api-server-api";
 import { useCallback, useRef } from "react";
 
 import { queryClient } from "../../../query-client.js";
@@ -69,11 +70,21 @@ export function useAcpSessionEngagement(
       setSessionId(s.sessionId);
       engagedSessionIdRef.current = s.sessionId;
       addLog("session", { sessionId: s.sessionId });
-      // Refetch the sidebar — the relay writes the row on the first
-      // session/prompt that follows. The refetch round-trip is slower
-      // than the relay's local DB write, so the row is committed by
-      // the time list() reads.
-      queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
+      // Optimistic insert so the sidebar shows the row immediately. Relay
+      // writes the DB row on first prompt; the next refetch reconciles.
+      const stub: SessionView = {
+        sessionId: s.sessionId,
+        instanceId: selectedInstance,
+        type: SessionType.Regular,
+        mode: SessionMode.Chat,
+        createdAt: new Date().toISOString(),
+        scheduleId: null,
+        title: null,
+        updatedAt: null,
+      };
+      const prepend = (prev: SessionView[] | undefined) => (prev ? [stub, ...prev] : [stub]);
+      queryClient.setQueryData<SessionView[]>(acpSessionsKeys.list(selectedInstance, false), prepend);
+      queryClient.setQueryData<SessionView[]>(acpSessionsKeys.list(selectedInstance, true), prepend);
       await applySavedPreferences(conn, s.sessionId, s);
     }
   }, [selectedInstance, selectedMcpServers, captureSessionConfig, applySavedPreferences, setSessionId, addLog]);

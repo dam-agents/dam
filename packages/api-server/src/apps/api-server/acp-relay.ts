@@ -178,7 +178,8 @@ export function createAcpRelay(
       // Sids returned by `session/new` whose row hasn't been written yet.
       const sidsAwaitingFirstPrompt = new Set<string>();
       // Sid → outcome of its first persistence write; concurrent prompts share it.
-      const persistencePromises = new Map<string, Promise<boolean>>();
+      type PersistOutcome = { ok: true } | { ok: false; error: unknown };
+      const persistencePromises = new Map<string, Promise<PersistOutcome>>();
 
       function trackClientFrame(data: unknown): void {
         const parsed = tryParse(data);
@@ -237,24 +238,27 @@ export function createAcpRelay(
             // Persist the DB row on first session/prompt; hold the frame until it lands.
             if (isRequest(parsed) && parsed.method === "session/prompt") {
               const sid = extractRequestSessionId(parsed);
-              if (sid && (sidsAwaitingFirstPrompt.has(sid) || persistencePromises.has(sid))) {
-                if (sidsAwaitingFirstPrompt.has(sid)) {
-                  sidsAwaitingFirstPrompt.delete(sid);
-                  persistencePromises.set(
-                    sid,
-                    persistSession(sid, instanceId).then(() => true).catch(() => false),
-                  );
-                }
-                const promise = persistencePromises.get(sid)!;
+              if (sid && sidsAwaitingFirstPrompt.has(sid)) {
+                sidsAwaitingFirstPrompt.delete(sid);
+                persistencePromises.set(
+                  sid,
+                  persistSession(sid, instanceId)
+                    .then(() => ({ ok: true as const }))
+                    .catch((e: unknown) => ({ ok: false as const, error: e })),
+                );
+              }
+              const promise = sid ? persistencePromises.get(sid) : undefined;
+              if (promise) {
                 const requestId = parsed.id;
-                promise.then((ok) => {
-                  if (ok) {
+                promise.then((r) => {
+                  if (r.ok) {
                     if (upstream.readyState === WebSocket.OPEN) upstream.send(data, { binary: false });
                   } else if (client.readyState === WebSocket.OPEN) {
+                    const detail = r.error instanceof Error ? r.error.message : String(r.error);
                     client.send(JSON.stringify({
                       jsonrpc: "2.0",
                       id: requestId,
-                      error: { code: -32000, message: "failed to persist session" },
+                      error: { code: -32000, message: `failed to persist session: ${detail}` },
                     }));
                   }
                 });

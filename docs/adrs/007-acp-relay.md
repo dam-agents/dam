@@ -18,6 +18,8 @@ The API Server connects to agent pods via stable headless Service DNS (`{instanc
 
 When the target instance is hibernated, the API Server auto-wakes it: patches `spec.yaml` with `desiredState: running`, waits for the Pod to reach Ready, then connects and relays normally. The UI also exposes a manual wake endpoint (`POST /api/v1/instances/:id/wake`).
 
+The relay also owns session-row persistence: a session is written to the DB on its first prompt, never on creation alone. Any ACP-speaking client gets this for free; sessions that are never prompted leave no orphan rows.
+
 ## Alternatives Considered
 
 **Direct UI-to-pod connections.** Simpler, lower latency. Rejected: breaks the network isolation model. The UI would need to be able to reach every agent pod, and NetworkPolicy couldn't distinguish UI traffic from other inbound connections. Also doesn't work with wake-on-connect since the pod doesn't exist yet.
@@ -31,3 +33,4 @@ When the target instance is hibernated, the API Server auto-wakes it: patches `s
 - Wake-on-connect works transparently — the UI doesn't need to know whether a pod is running
 - Added latency from the extra WebSocket hop
 - API Server failure disconnects all active sessions
+- Session persistence has a single, authoritative write path; UIs and external clients share it

@@ -16,9 +16,8 @@ export function createSessionsService(deps: {
   return {
     async list(instanceId: string, includeChannel?: boolean) {
       if (!await deps.isOwnedInstance(instanceId)) return [];
-      // Persistence is driven by the api-server relay on first session/prompt
-      // (option B). The list path is purely a reader — never write rows here,
-      // or any ACP-discovered probe/draft session leaks into the sidebar.
+      // Reader only — the relay writes rows on first session/prompt. Writing
+      // here would surface ACP-discovered probe sessions as orphan rows.
       const acp = createAcpClient({
         namespace: deps.namespace,
         instanceName: instanceId,

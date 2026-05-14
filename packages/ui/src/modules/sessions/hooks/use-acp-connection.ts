@@ -136,9 +136,7 @@ export function useAcpConnection(opts: UseAcpConnectionOptions): UseAcpConnectio
       // addEventListener (not onclose=) so we don't clobber the handler that
       // closes the ACP ReadableStream controller inside openConnection.
       ws.addEventListener("close", () => {
-        // If a newer WS has taken over (e.g., resetConnection followed by
-        // ensureLive while this socket was still CLOSING), this handler
-        // would otherwise clobber its state. Skip in that case.
+        // Skip if a newer WS has taken over (resetConnection→ensureLive race).
         if (connectionRef.current?.ws !== ws) return;
         connectionRef.current = null;
         clearEngagement();
