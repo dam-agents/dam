@@ -16,12 +16,12 @@ export function createSessionsService(deps: {
   return {
     async list(instanceId: string, includeChannel?: boolean) {
       if (!await deps.isOwnedInstance(instanceId)) return [];
+      // Persistence is driven by the api-server relay on first session/prompt
+      // (option B). The list path is purely a reader — never write rows here,
+      // or any ACP-discovered probe/draft session leaks into the sidebar.
       const acp = createAcpClient({
         namespace: deps.namespace,
         instanceName: instanceId,
-        // ACP-discovered sessions are always chat-mode by definition (the
-        // ACP session lifecycle doesn't apply to terminal-mode PTYs).
-        onSessionCreated: (sid) => deps.upsert(sid, instanceId, SessionMode.Chat, SessionType.Regular),
       });
 
       const [dbRows, acpSessions] = await Promise.all([

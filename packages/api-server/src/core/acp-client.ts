@@ -118,7 +118,7 @@ async function withAcpConnection<T>(
 export function createAcpClient(opts: {
   namespace: string;
   instanceName: string;
-  onSessionCreated: (sessionId: string) => Promise<void>;
+  onSessionCreated?: (sessionId: string) => Promise<void>;
 }): AcpClient {
   return createAcpClientForUrl({
     url: `ws://${podBaseUrl(opts.instanceName, opts.namespace)}/api/acp`,
@@ -128,7 +128,7 @@ export function createAcpClient(opts: {
 
 export function createForkAcpClient(opts: {
   podIP: string;
-  onSessionCreated: (sessionId: string) => Promise<void>;
+  onSessionCreated?: (sessionId: string) => Promise<void>;
 }): AcpClient {
   return createAcpClientForUrl({
     url: `ws://${opts.podIP}:8080/api/acp`,
@@ -138,7 +138,7 @@ export function createForkAcpClient(opts: {
 
 function createAcpClientForUrl(opts: {
   url: string;
-  onSessionCreated: (sessionId: string) => Promise<void>;
+  onSessionCreated?: (sessionId: string) => Promise<void>;
 }): AcpClient {
   const { url } = opts;
 
@@ -207,7 +207,7 @@ function createAcpClientForUrl(opts: {
         } else {
           const s = await connection.newSession({ cwd: ".", mcpServers: [] });
           sessionId = s.sessionId;
-          await opts.onSessionCreated(sessionId);
+          await opts.onSessionCreated?.(sessionId);
         }
         await connection.prompt({ sessionId, prompt: [{ type: "text", text: prompt }] });
       });
@@ -234,7 +234,7 @@ function createAcpClientForUrl(opts: {
         } else {
           const s = await connection.newSession({ cwd: ".", mcpServers });
           sessionId = s.sessionId;
-          await opts.onSessionCreated(sessionId);
+          await opts.onSessionCreated?.(sessionId);
         }
 
         const r = await connection.prompt({

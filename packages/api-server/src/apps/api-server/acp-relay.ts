@@ -49,6 +49,24 @@ function isResponse(msg: unknown): msg is JsonRpcResponse {
   return (typeof m.id === "number" || typeof m.id === "string") && (m.result !== undefined || m.error !== undefined);
 }
 
+function isRequest(msg: unknown): msg is JsonRpcRequest {
+  if (typeof msg !== "object" || msg === null) return false;
+  const m = msg as JsonRpcRequest;
+  return typeof m.method === "string" && (typeof m.id === "number" || typeof m.id === "string");
+}
+
+function extractResultSessionId(msg: JsonRpcResponse): string | null {
+  const r = msg.result;
+  if (!r || typeof r !== "object") return null;
+  const sid = (r as { sessionId?: unknown }).sessionId;
+  return typeof sid === "string" ? sid : null;
+}
+
+function extractRequestSessionId(req: JsonRpcRequest): string | null {
+  const sid = req.params?.sessionId;
+  return typeof sid === "string" ? sid : null;
+}
+
 const lastActivityTimestamps = new Map<string, number>();
 
 function sanitizeCloseCode(code: number): number {
@@ -83,11 +101,17 @@ export interface InstanceIdentityLookup {
   resolve(instanceId: string): Promise<{ ownerSub: string; agentId: string } | null>;
 }
 
+/** Persists a session row on first creation. Idempotent on conflict — repeated
+ *  calls for the same sid no-op. Injected by the composition root so the relay
+ *  doesn't reach into the sessions module directly. */
+export type PersistSession = (sessionId: string, instanceId: string) => Promise<void>;
+
 export function createAcpRelay(
   namespace: string,
   repo: InstancesRepository,
   approvals: ApprovalsRelayService,
   identityLookup: InstanceIdentityLookup,
+  persistSession: PersistSession,
 ) {
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
 
@@ -149,8 +173,23 @@ export function createAcpRelay(
 
       repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "true").catch(() => {});
 
+      // jsonrpc id → method for in-flight client requests we care about.
+      const pendingMethodById = new Map<number | string, string>();
+      // Sids returned by `session/new` whose row hasn't been written yet.
+      const sidsAwaitingFirstPrompt = new Set<string>();
+      // Sid → outcome of its first persistence write; concurrent prompts share it.
+      const persistencePromises = new Map<string, Promise<boolean>>();
+
+      function trackClientFrame(data: unknown): void {
+        const parsed = tryParse(data);
+        if (isRequest(parsed) && parsed.method === "session/new") {
+          pendingMethodById.set(parsed.id, parsed.method);
+        }
+      }
+
       const pending: { data: Buffer | ArrayBuffer | Buffer[]; isBinary: boolean }[] = [];
       client.on("message", (data, isBinary) => {
+        if (!isBinary) trackClientFrame(data);
         pending.push({ data: data as Buffer, isBinary });
       });
 
@@ -178,32 +217,74 @@ export function createAcpRelay(
 
           client.removeAllListeners("message");
           client.on("message", (data, isBinary) => {
-            if (upstream.readyState === WebSocket.OPEN) {
-              upstream.send(data, { binary: isBinary });
+            if (upstream.readyState !== WebSocket.OPEN) return;
 
-              if (!isBinary) {
-                const parsed = tryParse(data);
-                if (isResponse(parsed)) mirrorPermissionResponse(parsed);
-              }
+            if (shouldUpdateActivity(instanceId)) {
+              repo.patchAnnotation(
+                instanceId,
+                LAST_ACTIVITY_KEY, new Date().toISOString(),
+              ).catch(() => {});
+            }
 
-              if (shouldUpdateActivity(instanceId)) {
-                repo.patchAnnotation(
-                  instanceId,
-                  LAST_ACTIVITY_KEY, new Date().toISOString(),
-                ).catch(() => {});
+            if (isBinary) {
+              upstream.send(data, { binary: true });
+              return;
+            }
+
+            trackClientFrame(data);
+            const parsed = tryParse(data);
+
+            // Persist the DB row on first session/prompt; hold the frame until it lands.
+            if (isRequest(parsed) && parsed.method === "session/prompt") {
+              const sid = extractRequestSessionId(parsed);
+              if (sid && (sidsAwaitingFirstPrompt.has(sid) || persistencePromises.has(sid))) {
+                if (sidsAwaitingFirstPrompt.has(sid)) {
+                  sidsAwaitingFirstPrompt.delete(sid);
+                  persistencePromises.set(
+                    sid,
+                    persistSession(sid, instanceId).then(() => true).catch(() => false),
+                  );
+                }
+                const promise = persistencePromises.get(sid)!;
+                const requestId = parsed.id;
+                promise.then((ok) => {
+                  if (ok) {
+                    if (upstream.readyState === WebSocket.OPEN) upstream.send(data, { binary: false });
+                  } else if (client.readyState === WebSocket.OPEN) {
+                    client.send(JSON.stringify({
+                      jsonrpc: "2.0",
+                      id: requestId,
+                      error: { code: -32000, message: "failed to persist session" },
+                    }));
+                  }
+                });
+                return;
               }
             }
+
+            upstream.send(data, { binary: false });
+            if (isResponse(parsed)) mirrorPermissionResponse(parsed);
           });
 
           upstream.on("message", (data, isBinary) => {
-            if (client.readyState === WebSocket.OPEN) {
-              client.send(data, { binary: isBinary });
+            if (client.readyState !== WebSocket.OPEN) return;
 
-              if (!isBinary) {
-                const parsed = tryParse(data);
-                if (isPermissionRequest(parsed)) mirrorPermissionRequest(parsed);
-              }
+            if (isBinary) {
+              client.send(data, { binary: true });
+              return;
             }
+
+            const parsed = tryParse(data);
+
+            // Queue the sid for persistence on its first session/prompt.
+            if (isResponse(parsed) && pendingMethodById.get(parsed.id) === "session/new") {
+              pendingMethodById.delete(parsed.id);
+              const sid = parsed.result !== undefined ? extractResultSessionId(parsed) : null;
+              if (sid) sidsAwaitingFirstPrompt.add(sid);
+            }
+
+            client.send(data, { binary: false });
+            if (isPermissionRequest(parsed)) mirrorPermissionRequest(parsed);
           });
 
           upstream.on("close", (code, reason) => {

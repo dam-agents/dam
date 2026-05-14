@@ -18,6 +18,8 @@ import { composeAgentsModule } from "../../modules/agents/index.js";
 import { composeTemplatesModule } from "../../modules/templates/index.js";
 import { composeSchedulesModule } from "../../modules/schedules/index.js";
 import { composeSessionsModule } from "../../modules/sessions/index.js";
+import { upsertSession } from "../../modules/sessions/infrastructure/sessions-repository.js";
+import { SessionMode, SessionType } from "api-server-api";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
 import { createSlackOAuthRoutes } from "../../modules/channels/infrastructure/slack-oauth.js";
 import { createTelegramOAuthRoutes } from "../../modules/channels/infrastructure/telegram-oauth.js";
@@ -446,11 +448,13 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     });
   });
 
+  const persistAcpSession = upsertSession(db);
   const acpRelay = createAcpRelay(
     config.namespace,
     instancesRepo,
     approvalsRelay,
     { resolve: (id) => instancesRepo.resolveIdentity(id).then((r) => r ? { ownerSub: r.owner, agentId: r.agentId } : null) },
+    (sessionId, instanceId) => persistAcpSession(sessionId, instanceId, SessionMode.Chat, SessionType.Regular),
   );
 
   const terminalRelay = createTerminalRelay(config.namespace, instancesRepo);
