@@ -82,9 +82,10 @@ export function useAcpSessionEngagement(
         title: null,
         updatedAt: null,
       };
-      const prepend = (prev: SessionView[] | undefined) => (prev ? [stub, ...prev] : [stub]);
-      queryClient.setQueryData<SessionView[]>(acpSessionsKeys.list(selectedInstance, false), prepend);
-      queryClient.setQueryData<SessionView[]>(acpSessionsKeys.list(selectedInstance, true), prepend);
+      queryClient.setQueriesData<SessionView[]>(
+        { queryKey: acpSessionsKeys.instanceLists(selectedInstance) },
+        (prev) => [stub, ...(prev ?? [])],
+      );
       await applySavedPreferences(conn, s.sessionId, s);
     }
   }, [selectedInstance, selectedMcpServers, captureSessionConfig, applySavedPreferences, setSessionId, addLog]);

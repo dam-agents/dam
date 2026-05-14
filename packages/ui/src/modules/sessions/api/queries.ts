@@ -4,8 +4,10 @@ import { api } from "../../../api.js";
 
 export const acpSessionsKeys = {
   all: ["acp-sessions"] as const,
+  instanceLists: (instanceId: string | null) =>
+    [...acpSessionsKeys.all, instanceId] as const,
   list: (instanceId: string | null, includeChannel: boolean) =>
-    [...acpSessionsKeys.all, instanceId, { includeChannel }] as const,
+    [...acpSessionsKeys.instanceLists(instanceId), { includeChannel }] as const,
 };
 
 /**
