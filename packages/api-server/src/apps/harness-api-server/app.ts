@@ -96,14 +96,18 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       const acp = createAcpClient({
         namespace: config.namespace,
         instanceName: body.instanceId,
-        onSessionCreated: (sid: string) => sessions.create(sid, body.instanceId, SessionMode.Chat, sessionType as any, body.schedule),
       });
 
-      return acp.triggerSession({
-        prompt: body.task,
-        resumeSessionId,
-        mcpServers: body.mcpServers,
-      });
+      return acp.triggerSession(
+        resumeSessionId
+          ? { prompt: body.task, mcpServers: body.mcpServers, resumeSessionId }
+          : {
+              prompt: body.task,
+              mcpServers: body.mcpServers,
+              onSessionCreated: (sid) =>
+                sessions.create(sid, body.instanceId, SessionMode.Chat, sessionType as any, body.schedule),
+            },
+      );
     },
   });
 

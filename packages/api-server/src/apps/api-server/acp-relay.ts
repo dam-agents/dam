@@ -258,7 +258,7 @@ export function createAcpRelay(
                     client.send(JSON.stringify({
                       jsonrpc: "2.0",
                       id: requestId,
-                      error: { code: -32000, message: `failed to persist session: ${detail}` },
+                      error: { code: -32000, message: `failed to persist session` },
                     }));
                   }
                 });

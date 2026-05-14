@@ -114,11 +114,9 @@ export function createSlackWorker(
 
     try {
       await instances().ensureReady(instanceName);
-      const acp = createAcpClient({
-        namespace,
-        instanceName,
-        onSessionCreated: (sid) => persistSession(sid, instanceName, SessionType.ChannelSlack, ctx.threadTs),
-      });
+      const acp = createAcpClient({ namespace, instanceName });
+      const onSessionCreated = (sid: string) =>
+        persistSession(sid, instanceName, SessionType.ChannelSlack, ctx.threadTs);
 
       let response: string;
       const existing = await threadSessions.find(instanceName, ctx.threadTs);
@@ -129,11 +127,11 @@ export function createSlackWorker(
           await threadSessions.touch(existing.sessionId);
         } catch {
           const prompt = await buildThreadPrompt(app, ctx);
-          response = await acp.sendPrompt(prompt);
+          response = await acp.sendPrompt(prompt, { onSessionCreated });
         }
       } else {
         const prompt = await buildThreadPrompt(app, ctx);
-        response = await acp.sendPrompt(prompt);
+        response = await acp.sendPrompt(prompt, { onSessionCreated });
       }
 
       await postAssistantMessage(ctx.channel, ctx.threadTs, instanceName, response);
@@ -266,14 +264,13 @@ export function createSlackWorker(
     await match(outcome)
       .with({ type: EventType.ForkReady }, async (event) => {
         try {
-          const acp = createForkAcpClient({
-            podIP: event.podIP,
-            onSessionCreated: (sid) =>
-              persistSession(sid, ctx.instanceName, SessionType.ChannelSlack, ctx.threadTs),
-          });
+          const acp = createForkAcpClient({ podIP: event.podIP });
           const response = ctx.existingSessionId
             ? await acp.sendPrompt(ctx.prompt, { resumeSessionId: ctx.existingSessionId })
-            : await acp.sendPrompt(ctx.prompt);
+            : await acp.sendPrompt(ctx.prompt, {
+                onSessionCreated: (sid) =>
+                  persistSession(sid, ctx.instanceName, SessionType.ChannelSlack, ctx.threadTs),
+              });
           if (ctx.existingSessionId) await threadSessions.touch(ctx.existingSessionId);
           await postAssistantMessage(ctx.channel, ctx.threadTs, ctx.instanceName, response);
         } catch (err) {
