@@ -1,13 +1,6 @@
 ARG BASE_IMAGE=platform-base
 FROM ${BASE_IMAGE}
 
-# SECURITY NOTE — autonomy posture
-# Bob runs with `--yolo` and the shim auto-accepts every
-# `session/request_permission`, so no UI confirmation chips. Trust
-# boundary is the Envoy egress sidecar (ADR-033/038): no SA token,
-# no Secret mounts, every outbound req goes through ext_authz.
-# To re-enable per-tool confirmation, patch the shim's pickAllowOption()
-# upstream — don't do it locally.
 
 USER root
 

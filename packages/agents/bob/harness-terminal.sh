@@ -1,6 +1,6 @@
 #!/bin/sh
-# Mirror the shim's spawn shape (`--yolo --auth-method api-key`) so
-# the TUI uses the same auth path as chat. No --experimental-acp.
+# TUI is interactive — auto_edit lets Bob prompt the user for risky tools
+# in the terminal itself (yolo would auto-approve everything, no prompts).
 #
 # BOBSHELL_NO_RELAUNCH=true: bob re-execs itself with stdio:"inherit"
 # at startup, which breaks the TTY chain in node-pty (relaunched
@@ -21,4 +21,4 @@ set --
 [ -n "$BOB_TEAM_ID" ]     && set -- "$@" --team-id     "$BOB_TEAM_ID"
 [ -n "$BOB_MAX_COINS" ]   && set -- "$@" --max-coins   "$BOB_MAX_COINS"
 [ -n "$BOB_CHAT_MODE" ]   && set -- "$@" --chat-mode   "$BOB_CHAT_MODE"
-exec /opt/node24/bin/node /usr/local/lib/node_modules/bobshell/bundle/bob.js --yolo --auth-method api-key "$@"
+exec /opt/node24/bin/node /usr/local/lib/node_modules/bobshell/bundle/bob.js --approval-mode=auto_edit --auth-method api-key "$@"

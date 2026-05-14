@@ -64,10 +64,26 @@
 import { spawn } from "node:child_process";
 import { promises as fsp } from "node:fs";
 import { dirname } from "node:path";
+import readline from "node:readline";
 
 const TRACE = process.env.BOB_SHIM_TRACE === "1";
 const thinkToolCallIds = new Set();
 let lastThoughtText = "";
+
+// Shim-faked ACP setSessionMode: `<mode>X</mode>` prepended per prompt.
+const AVAILABLE_MODES = [
+  { id: "ask", name: "Ask" },
+  { id: "code", name: "Code" },
+  { id: "plan", name: "Plan" },
+  { id: "advanced", name: "Advanced" },
+];
+let currentModeId = (() => {
+  const env = process.env.BOB_CHAT_MODE;
+  if (env && AVAILABLE_MODES.some((m) => m.id === env)) return env;
+  return "ask";
+})();
+const pendingNewSessionIds = new Set();
+let pendingModeSwitch = null;
 
 // agent_message_chunk state machine. Bob wraps reasoning in <thinking>…
 // </thinking>; the actual user-facing text is whatever lives outside the
@@ -96,7 +112,73 @@ const bob = spawn("bob", ["--experimental-acp", "--yolo", "--auth-method", "api-
   env: process.env,
 });
 
-process.stdin.pipe(bob.stdin);
+const clientStdin = readline.createInterface({ input: process.stdin });
+clientStdin.on("line", (line) => {
+  if (TRACE) process.stderr.write(`[client→shim] ${line}\n`);
+  handleClientLine(line);
+});
+clientStdin.on("close", () => {
+  try { bob.stdin.end(); } catch {}
+});
+
+function forwardToBob(line) {
+  if (!bob.stdin.writable) return;
+  bob.stdin.write(line + "\n");
+}
+
+function handleClientLine(line) {
+  let f;
+  try { f = JSON.parse(line); } catch { return forwardToBob(line); }
+
+  const isClientRequest = f.id !== undefined && typeof f.method === "string";
+
+  if (isClientRequest && f.method === "session/new") {
+    pendingNewSessionIds.add(f.id);
+    return forwardToBob(line);
+  }
+
+  if (isClientRequest && f.method === "session/set_mode") {
+    const modeId = typeof f.params?.modeId === "string" ? f.params.modeId : null;
+    const sessionId = f.params?.sessionId;
+    if (modeId && modeId !== currentModeId && AVAILABLE_MODES.some((m) => m.id === modeId)) {
+      currentModeId = modeId;
+      pendingModeSwitch = modeId;
+      if (sessionId) {
+        emitToClient({
+          jsonrpc: "2.0",
+          method: "session/update",
+          params: {
+            sessionId,
+            update: { sessionUpdate: "current_mode_update", currentModeId: modeId },
+          },
+        });
+      }
+    }
+    emitToClient({ jsonrpc: "2.0", id: f.id, result: null });
+    return;
+  }
+
+  // One-shot mode switch: prepend an instruction to the next prompt asking
+  // the LLM to call the switch-mode tool. Bob's system prompt teaches the
+  // exact XML form, so the LLM should comply, after which Bob's bundle
+  // updates its internal mode for subsequent turns.
+  if (isClientRequest && f.method === "session/prompt" && pendingModeSwitch) {
+    try {
+      const prompt = f.params?.prompt;
+      if (Array.isArray(prompt)) {
+        const firstText = prompt.find((p) => p?.type === "text" && typeof p?.text === "string");
+        if (firstText) {
+          const instruction = `[System: switch to ${pendingModeSwitch} mode now using the switch-mode tool, then continue.]\n\n`;
+          firstText.text = instruction + firstText.text;
+          pendingModeSwitch = null;
+          return forwardToBob(JSON.stringify(f));
+        }
+      }
+    } catch { /* fall through */ }
+  }
+
+  forwardToBob(line);
+}
 
 function sendToBob(frame) {
   if (!bob.stdin.writable) return;
@@ -318,11 +400,7 @@ function handleLine(line) {
   const isAgentRequest = f.id !== undefined && typeof f.method === "string";
 
   if (isAgentRequest && f.method === "session/request_permission") {
-    const sid = f.params?.sessionId;
-    // Surface the embedded toolCall so platform UI shows a chip. Don't synthesize
-    // a completed update — bob emits its own tool_call_update once the op
-    // actually finishes, which keeps the chip honest on failures.
-    emitToolCallOpen(sid, f.params?.toolCall);
+    emitToolCallOpen(f.params?.sessionId, f.params?.toolCall);
     const optionId = pickAllowOption(f.params?.options);
     sendToBob({
       jsonrpc: "2.0",
@@ -342,6 +420,25 @@ function handleLine(line) {
   // Reset streaming state at turn boundary (session/prompt reply).
   if (f.id !== undefined && f.result?.stopReason) {
     flushMessageStateAtTurnEnd();
+    return passthrough(line);
+  }
+
+  if (f.id !== undefined && pendingNewSessionIds.has(f.id)) {
+    pendingNewSessionIds.delete(f.id);
+    if (f.result) {
+      const patched = {
+        ...f,
+        result: {
+          ...f.result,
+          modes: {
+            availableModes: AVAILABLE_MODES.map((m) => ({ ...m })),
+            currentModeId,
+          },
+        },
+      };
+      process.stdout.write(JSON.stringify(patched) + "\n");
+      return;
+    }
     return passthrough(line);
   }
 

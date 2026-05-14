@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 
 import type { ProviderPresetType, SecretView } from "../../../types.js";
 import { AnthropicCard } from "./anthropic/card.js";
+import { BobCard } from "./bob/card.js";
 import { IbmLitellmCard } from "./ibm-litellm/card.js";
 import { OpenAICard } from "./openai/card.js";
 
@@ -15,4 +16,5 @@ export const PROVIDER_CARDS = {
   anthropic: AnthropicCard,
   "ibm-litellm": IbmLitellmCard,
   openai: OpenAICard,
+  bob: BobCard,
 } satisfies Record<ProviderPresetType, ComponentType<{ secret?: SecretView }>>;

@@ -48,6 +48,7 @@ This directory contains ADRs for the Platform project.
 | [041](041-istio-ambient-mesh.md)              | Istio ambient mesh — SPIFFE identity for every internal hop | @pilartomas |
 | [042](042-agent-egress-network-policy.md)     | Agent egress is gated by NetworkPolicy; the agent is not a mesh participant | @pilartomas |
 | [043](043-agent-pod-config-layers.md)         | Three-layer agent pod configuration — base / templateDefaults / templates | @jezekra1 |
+| [044](044-provider-twin-secrets.md)           | Provider twin secrets — multiple injection points per credential | @xjacka |
 
 ## Drafts
 

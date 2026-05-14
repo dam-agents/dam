@@ -176,6 +176,7 @@ export function mcpHostnameFromSecretName(name: string): string {
 }
 
 export type {
+  BobModelPins,
   EgressPreset,
   EnvMapping,
   EnvVar,
@@ -187,6 +188,9 @@ export type {
   SecretType,
 } from "api-server-api";
 export {
+  BOB_CHAT_MODES,
+  bobEnvMappings,
+  bobPinsFromEnvMappings,
   DEFAULT_ENV_PLACEHOLDER,
   DEFAULT_INJECTION_CONFIG,
   IBM_LITELLM_DEFAULT_MODEL_PINS,

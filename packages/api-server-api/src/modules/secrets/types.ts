@@ -1,4 +1,4 @@
-export type SecretType = "anthropic" | "ibm-litellm" | "openai" | "generic";
+export type SecretType = "anthropic" | "ibm-litellm" | "openai" | "bob" | "generic";
 
 /**
  * SecretTypes that have a {@link PROVIDERS} registry entry — the providers
@@ -7,7 +7,7 @@ export type SecretType = "anthropic" | "ibm-litellm" | "openai" | "generic";
  * AND adding a {@link PROVIDERS} entry; TypeScript will fail if either
  * half is missing.
  */
-export type ProviderPresetType = "anthropic" | "ibm-litellm" | "openai";
+export type ProviderPresetType = "anthropic" | "ibm-litellm" | "openai" | "bob";
 
 /**
  * Declares a pod env var to inject into every agent instance that has access
@@ -140,6 +140,56 @@ export function ibmLitellmPinsFromEnvMappings(
   };
 }
 
+export interface BobModelPins {
+  model?: string;
+  instanceId?: string;
+  teamId?: string;
+  maxCoins?: string;
+  chatMode?: string;
+}
+
+// api.us-east must stay uncredentialed (401 on a real token) — that
+// host is in trustedHosts, not here.
+const BOB_HOST = "prod.ibm-bob-staging.cloud.ibm.com";
+const BOB_PLACEHOLDER = "sk-placeholder";
+
+export function bobEnvMappings(pins: BobModelPins = {}): EnvMapping[] {
+  const out: EnvMapping[] = [
+    { envName: "BOBSHELL_API_KEY", placeholder: BOB_PLACEHOLDER },
+  ];
+  const push = (envName: string, value?: string) => {
+    const trimmed = value?.trim();
+    if (trimmed) out.push({ envName, placeholder: trimmed });
+  };
+  push("BOB_SHELL_MODEL", pins.model);
+  push("BOB_INSTANCE_ID", pins.instanceId);
+  push("BOB_TEAM_ID", pins.teamId);
+  push("BOB_MAX_COINS", pins.maxCoins);
+  push("BOB_CHAT_MODE", pins.chatMode);
+  return out;
+}
+
+export function bobPinsFromEnvMappings(
+  envMappings: readonly EnvMapping[] | undefined,
+): BobModelPins {
+  const lookup = (name: string) =>
+    envMappings?.find((m) => m.envName === name)?.placeholder;
+  const pins: BobModelPins = {};
+  const model = lookup("BOB_SHELL_MODEL");
+  const instanceId = lookup("BOB_INSTANCE_ID");
+  const teamId = lookup("BOB_TEAM_ID");
+  const maxCoins = lookup("BOB_MAX_COINS");
+  const chatMode = lookup("BOB_CHAT_MODE");
+  if (model) pins.model = model;
+  if (instanceId) pins.instanceId = instanceId;
+  if (teamId) pins.teamId = teamId;
+  if (maxCoins) pins.maxCoins = maxCoins;
+  if (chatMode) pins.chatMode = chatMode;
+  return pins;
+}
+
+export const BOB_CHAT_MODES = ["plan", "code", "advanced", "ask"] as const;
+
 /**
  * One auth mode of a provider preset. Most presets have exactly one mode
  * (a Bearer API key); Anthropic has two (oauth + api-key) which differ in
@@ -158,6 +208,8 @@ export interface ProviderPresetMode {
   /** Override the default `Authorization: Bearer {value}` injection.
    *  Set for Anthropic api-key mode (`x-api-key`); omit elsewhere. */
   injection?: InjectionConfig;
+  /** Twin K8s Secret per entry; lifecycle cascaded by service. See ADR-044. */
+  extraInjections?: readonly InjectionConfig[];
 }
 
 /**
@@ -230,6 +282,19 @@ export const PROVIDERS = {
         defaultEnvMappings: [
           { envName: "OPENAI_API_KEY", placeholder: DEFAULT_ENV_PLACEHOLDER },
         ],
+      },
+    ],
+  },
+  bob: {
+    id: "bob",
+    displayName: "Bob Shell",
+    hostPattern: BOB_HOST,
+    modes: [
+      {
+        key: "api-key",
+        label: "API Key",
+        defaultEnvMappings: bobEnvMappings(),
+        extraInjections: [{ headerName: "X-Bobshell-Internal", queryParamName: "key" }],
       },
     ],
   },

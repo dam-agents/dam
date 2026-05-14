@@ -5,7 +5,7 @@ import { ENV_NAME_RE, QUERY_PARAM_RE } from "./types.js";
 // file so UI code can import these without dragging in @trpc/server
 // transitively via router.ts.
 
-export const secretTypeSchema = z.enum(["anthropic", "ibm-litellm", "openai", "generic"]);
+export const secretTypeSchema = z.enum(["anthropic", "ibm-litellm", "openai", "bob", "generic"]);
 
 export const envMappingSchema = z.object({
   envName: z

@@ -4,6 +4,7 @@ import {
   isProviderPresetType,
   PROVIDERS,
   type EnvMapping,
+  type InjectionConfig,
   type SecretsService,
   type CreateSecretInput,
   type UpdateSecretInput,
@@ -33,6 +34,23 @@ function registryEnvMappings(type: SecretType, authMode?: string): EnvMapping[] 
     ? preset.modes.find((m) => m.key === authMode)
     : preset.modes[0];
   return mode?.defaultEnvMappings;
+}
+
+function registryExtraInjections(
+  type: SecretType,
+  authMode?: string,
+): readonly InjectionConfig[] {
+  if (type === "generic") return [];
+  const preset = PROVIDERS[type];
+  const mode = authMode
+    ? preset.modes.find((m) => m.key === authMode)
+    : preset.modes[0];
+  return mode?.extraInjections ?? [];
+}
+
+function twinDisplayName(primaryName: string, injection: InjectionConfig): string {
+  const tag = injection.queryParamName ? `?${injection.queryParamName}` : injection.headerName;
+  return `${primaryName} (${tag})`;
 }
 
 // `secrets-rev` hashes only what affects the agent pod's env. hostPattern,
@@ -128,7 +146,7 @@ export function createSecretsService(deps: {
   return {
     async list() {
       const secrets = await deps.k8sPort.listSecrets();
-      return secrets.map(toSecretView);
+      return secrets.filter((s) => !s.primarySecretId).map(toSecretView);
     },
 
     async create(input: CreateSecretInput) {
@@ -165,6 +183,42 @@ export function createSecretsService(deps: {
         ...(authMode ? { authMode } : {}),
         ...(envMappings?.length ? { envMappings } : {}),
       });
+      const createdTwinIds: string[] = [];
+      try {
+        for (const inj of registryExtraInjections(input.type, authMode)) {
+          const twinId = randomUUID();
+          await deps.k8sPort.createSecret({
+            id: twinId,
+            name: twinDisplayName(input.name, inj),
+            type: input.type,
+            value: input.value,
+            hostPattern,
+            injectionConfig: inj,
+            primarySecretId: id,
+          });
+          createdTwinIds.push(twinId);
+        }
+      } catch (err) {
+        for (const twinId of createdTwinIds) {
+          try {
+            await deps.k8sPort.deleteSecret(twinId);
+          } catch (cleanupErr) {
+            console.warn(
+              `secrets-service: orphan twin K8s Secret ${twinId} (primary ${id}, type ${input.type}) — manual cleanup required:`,
+              cleanupErr instanceof Error ? cleanupErr.message : cleanupErr,
+            );
+          }
+        }
+        try {
+          await deps.k8sPort.deleteSecret(id);
+        } catch (cleanupErr) {
+          console.warn(
+            `secrets-service: orphan primary K8s Secret ${id} (type ${input.type}) — manual cleanup required:`,
+            cleanupErr instanceof Error ? cleanupErr.message : cleanupErr,
+          );
+        }
+        throw err;
+      }
       const view: SecretView = {
         id,
         name: input.name,
@@ -198,8 +252,21 @@ export function createSecretsService(deps: {
       // save was lost instead of a silent success and a closed dialog.
       if (!result) throw new TRPCError({ code: "NOT_FOUND" });
       const { before, after } = result;
+
+      const valueChanged = patch.value !== undefined;
       const hostChanged = hostOrPathChanged(before, after);
       const envChanged = envMappingsChanged(before, after);
+      if (valueChanged || hostChanged) {
+        const allSecretsForTwins = await deps.k8sPort.listSecrets();
+        const twins = allSecretsForTwins.filter((s) => s.primarySecretId === id);
+        for (const twin of twins) {
+          await deps.k8sPort.updateSecret(twin.id, {
+            ...(valueChanged ? { value: patch.value } : {}),
+            ...(hostChanged ? { hostPattern: after.hostPattern } : {}),
+          });
+        }
+      }
+
       if (!hostChanged && !envChanged) return;
       if (!deps.connectionRules || !deps.ownerSub) return;
 
@@ -233,12 +300,22 @@ export function createSecretsService(deps: {
     },
 
     async delete(id) {
+      // Twins first; primary last on success so retry-after-failure is clean.
+      const allSecrets = await deps.k8sPort.listSecrets();
+      const twinIds = allSecrets
+        .filter((s) => s.primarySecretId === id)
+        .map((s) => s.id);
+      for (const twinId of twinIds) {
+        await deps.k8sPort.deleteSecret(twinId);
+      }
       await deps.k8sPort.deleteSecret(id);
     },
 
     async getAgentAccess(agentId: string) {
       const grants = await deps.grants.get(agentId);
-      return { secretIds: grants.grantedSecretIds };
+      const allSecrets = await deps.k8sPort.listSecrets();
+      const twinIds = new Set(allSecrets.filter((s) => s.primarySecretId).map((s) => s.id));
+      return { secretIds: grants.grantedSecretIds.filter((id) => !twinIds.has(id)) };
     },
 
     async listGrantedAgents(secretId: string) {
@@ -250,20 +327,28 @@ export function createSecretsService(deps: {
     },
 
     async setAgentAccess(agentId: string, access: AgentAccess) {
-      await deps.grants.setSecretGrants(agentId, access.secretIds);
+      const allSecrets = await deps.k8sPort.listSecrets();
+      const twinIds = new Set(allSecrets.filter((s) => s.primarySecretId).map((s) => s.id));
+      const twinsByPrimary = new Map<string, string[]>();
+      for (const s of allSecrets) {
+        if (!s.primarySecretId) continue;
+        const list = twinsByPrimary.get(s.primarySecretId) ?? [];
+        list.push(s.id);
+        twinsByPrimary.set(s.primarySecretId, list);
+      }
+      const primaries = access.secretIds.filter((id) => !twinIds.has(id));
+      const expanded = [
+        ...primaries,
+        ...primaries.flatMap((id) => twinsByPrimary.get(id) ?? []),
+      ];
+      await deps.grants.setSecretGrants(agentId, expanded);
 
-      // Sync `connection:<id>` egress rules against the new grant list.
-      // Always-selective: empty list = no rules.
       if (deps.connectionRules && deps.ownerSub) {
-        const allSecrets = await deps.k8sPort.listSecrets();
-        // ownedSourceIds = every owner secret id, granted or not — scopes
-        // the sync's revoke pass to this module's rows so app-connection
-        // rules (sharing the `connection:<id>` prefix) stay untouched.
         const ownedSourceIds = new Set(allSecrets.map((s) => s.id));
         await deps.connectionRules.syncForAgent({
           agentId,
           decidedBy: deps.ownerSub,
-          grants: buildHostGrantsMap(allSecrets, access.secretIds),
+          grants: buildHostGrantsMap(allSecrets, expanded),
           ownedSourceIds,
         });
       }

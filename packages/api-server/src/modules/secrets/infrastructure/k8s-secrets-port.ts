@@ -21,6 +21,8 @@ const ANN_AUTH_MODE = "agent-platform.ai/auth-mode";
 const ANN_VALUE_FORMAT = "agent-platform.ai/injection-value-format";
 const ANN_QUERY_PARAM = "agent-platform.ai/injection-query-param";
 const ANN_ENV_MAPPINGS = "agent-platform.ai/env-mappings";
+// Twin → primary link. Set on extraInjections-derived secrets.
+const ANN_PRIMARY_ID = "agent-platform.ai/primary-secret-id";
 
 export type AuthMode = "api-key" | "oauth";
 
@@ -118,6 +120,7 @@ export interface K8sStoredSecret {
   createdAt: string;
   authMode?: AuthMode;
   envMappings?: EnvMapping[];
+  primarySecretId?: string;
 }
 
 export interface K8sSecretsPort {
@@ -132,6 +135,7 @@ export interface K8sSecretsPort {
     injectionConfig?: InjectionConfig;
     authMode?: AuthMode;
     envMappings?: EnvMapping[];
+    primarySecretId?: string;
   }): Promise<void>;
   /**
    * Apply the patch and return the before/after view so the service layer
@@ -217,6 +221,7 @@ function parseStoredSecret(s: k8s.V1Secret): K8sStoredSecret | null {
       /* malformed annotation — controller falls back to legacy switch */
     }
   }
+  if (ann[ANN_PRIMARY_ID]) stored.primarySecretId = ann[ANN_PRIMARY_ID];
   return stored;
 }
 
@@ -231,7 +236,7 @@ export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSe
         .filter((s): s is K8sStoredSecret => s !== null);
     },
 
-    async createSecret({ id, name, type, value, hostPattern, pathPattern, injectionConfig, authMode, envMappings }) {
+    async createSecret({ id, name, type, value, hostPattern, pathPattern, injectionConfig, authMode, envMappings, primarySecretId }) {
       const secretType = isProviderPresetType(type as SecretType) ? type : "generic";
       const { headerName, valueFormat } = resolveInjection(secretType, authMode, injectionConfig);
       const annotations: Record<string, string> = {
@@ -253,6 +258,7 @@ export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSe
       if (injectionConfig?.queryParamName) {
         annotations[ANN_QUERY_PARAM] = injectionConfig.queryParamName;
       }
+      if (primarySecretId) annotations[ANN_PRIMARY_ID] = primarySecretId;
 
       const body: k8s.V1Secret = {
         metadata: {

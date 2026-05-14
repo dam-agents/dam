@@ -64,6 +64,7 @@ export type {
   EnvMapping,
   InjectionConfig,
   IbmLitellmModelPins,
+  BobModelPins,
 } from "./modules/secrets/types.js";
 export {
   DEFAULT_ENV_PLACEHOLDER,
@@ -77,6 +78,9 @@ export {
   IBM_LITELLM_DEFAULT_MODEL_PINS,
   ibmLitellmEnvMappings,
   ibmLitellmPinsFromEnvMappings,
+  bobEnvMappings,
+  bobPinsFromEnvMappings,
+  BOB_CHAT_MODES,
 } from "./modules/secrets/types.js";
 export { updateSecretInputSchema } from "./modules/secrets/schemas.js";
 

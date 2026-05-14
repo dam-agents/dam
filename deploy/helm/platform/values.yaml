@@ -363,6 +363,8 @@ apiServer:
     # Mise (toolchain manager)
     - mise.jdx.dev
     - cdn.mise.run
+    # Bob Shell (IBM)
+    - api.us-east.bob.ibm.com
 
   # -- Optional platform-wide defaults for OAuth app credentials. When a field
   # is set the connect form for the matching app collapses the corresponding

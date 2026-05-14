@@ -30,14 +30,27 @@ interface SyncCall {
 
 function makePort(initial: K8sStoredSecret[]) {
   const store = new Map(initial.map((s) => [s.id, s]));
-  const created: { id: string; envMappings?: EnvMapping[] }[] = [];
+  const created: {
+    id: string;
+    name: string;
+    envMappings?: EnvMapping[];
+    primarySecretId?: string;
+    injectionConfig?: K8sStoredSecret["injectionConfig"];
+  }[] = [];
   const updated: { id: string; patch: Record<string, unknown> }[] = [];
+  const deleted: string[] = [];
   const port: K8sSecretsPort = {
     async listSecrets() {
       return Array.from(store.values());
     },
     async createSecret(input) {
-      created.push({ id: input.id, envMappings: input.envMappings });
+      created.push({
+        id: input.id,
+        name: input.name,
+        envMappings: input.envMappings,
+        primarySecretId: input.primarySecretId,
+        injectionConfig: input.injectionConfig,
+      });
       store.set(input.id, {
         id: input.id,
         name: input.name,
@@ -47,6 +60,7 @@ function makePort(initial: K8sStoredSecret[]) {
         ...(input.envMappings ? { envMappings: input.envMappings } : {}),
         ...(input.injectionConfig ? { injectionConfig: input.injectionConfig } : {}),
         ...(input.authMode ? { authMode: input.authMode } : {}),
+        ...(input.primarySecretId ? { primarySecretId: input.primarySecretId } : {}),
         createdAt: new Date().toISOString(),
       });
     },
@@ -70,19 +84,23 @@ function makePort(initial: K8sStoredSecret[]) {
       return { before, after };
     },
     async deleteSecret(id) {
+      deleted.push(id);
       store.delete(id);
     },
   };
-  return { port, store, created, updated };
+  return { port, store, created, updated, deleted };
 }
 
 function makeGrants(initial: GrantedAgentSummary[] = []) {
   const bumps: { cmName: string; hash: string }[] = [];
+  const secretGrantCalls: { agentId: string; secretIds: readonly string[] }[] = [];
   const port: AgentGrantsPort = {
     async get(): Promise<AgentGrants> {
       return { grantedSecretIds: [], grantedConnectionIds: [] };
     },
-    async setSecretGrants() {},
+    async setSecretGrants(agentId, secretIds) {
+      secretGrantCalls.push({ agentId, secretIds });
+    },
     async setConnectionGrants() {},
     async listAgentsGrantedSecret() {
       return initial;
@@ -91,7 +109,7 @@ function makeGrants(initial: GrantedAgentSummary[] = []) {
       bumps.push({ cmName, hash });
     },
   };
-  return { port, bumps };
+  return { port, bumps, secretGrantCalls };
 }
 
 function makeSyncRecorder() {
@@ -415,5 +433,220 @@ describe("secrets-service.listGrantedAgents (ADR-040)", () => {
       ownerSub: "owner-1",
     });
     expect(await svc.listGrantedAgents("secret-x")).toEqual([]);
+  });
+});
+
+describe("secrets-service — extraInjections (twin secrets, e.g. Bob)", () => {
+  it("create() mints a twin per extraInjections entry, linked via primarySecretId", async () => {
+    const { port, created, store } = makePort([]);
+    const { port: grants } = makeGrants();
+    const svc = createSecretsService({
+      k8sPort: port,
+      grants,
+      ownerSub: "owner-1",
+    });
+    const view = await svc.create({
+      type: "bob",
+      name: "Bob Shell",
+      value: "sk-bob-foo",
+    });
+    // Two K8s Secrets created: the primary + one twin from Bob's
+    // `extraInjections` registry entry.
+    expect(created).toHaveLength(2);
+    const [primary, twin] = created;
+    expect(primary!.id).toBe(view.id);
+    expect(primary!.primarySecretId).toBeUndefined();
+    expect(twin!.primarySecretId).toBe(view.id);
+    expect(twin!.injectionConfig?.queryParamName).toBe("key");
+    expect(twin!.injectionConfig?.headerName).toBe("X-Bobshell-Internal");
+    // The twin has no env mappings — credentials only, env is the primary's job.
+    expect(twin!.envMappings).toBeUndefined();
+    // K8s store carries the link annotation so subsequent reads can find twins.
+    const twinStored = store.get(twin!.id);
+    expect(twinStored?.primarySecretId).toBe(view.id);
+  });
+
+  it("list() hides twins from the user-facing view", async () => {
+    const { port } = makePort([]);
+    const { port: grants } = makeGrants();
+    const svc = createSecretsService({
+      k8sPort: port,
+      grants,
+      ownerSub: "owner-1",
+    });
+    await svc.create({ type: "bob", name: "Bob Shell", value: "sk-bob-foo" });
+    const view = await svc.list();
+    expect(view).toHaveLength(1);
+    expect(view[0]!.type).toBe("bob");
+  });
+
+  it("update({ value }) cascades the new value onto every twin", async () => {
+    const { port, updated } = makePort([]);
+    const { port: grants } = makeGrants();
+    const svc = createSecretsService({
+      k8sPort: port,
+      grants,
+      ownerSub: "owner-1",
+    });
+    const view = await svc.create({ type: "bob", name: "Bob Shell", value: "sk-bob-foo" });
+    await svc.update({ id: view.id, value: "sk-bob-rotated" });
+    // Primary + twin both got the new value.
+    const valueUpdates = updated.filter((u) => u.patch.value === "sk-bob-rotated");
+    expect(valueUpdates).toHaveLength(2);
+    expect(valueUpdates.map((u) => u.id).sort()).toEqual(
+      [view.id, ...valueUpdates.filter((u) => u.id !== view.id).map((u) => u.id)].sort(),
+    );
+  });
+
+  it("update({ hostPattern }) cascades onto twins; envMappings does NOT", async () => {
+    const { port, updated } = makePort([]);
+    const { port: grants } = makeGrants();
+    const svc = createSecretsService({
+      k8sPort: port,
+      grants,
+      ownerSub: "owner-1",
+    });
+    const view = await svc.create({ type: "bob", name: "Bob Shell", value: "sk-bob-foo" });
+    const hostBefore = updated.length;
+    await svc.update({
+      id: view.id,
+      hostPattern: "alt.bob.ibm.com",
+      envMappings: [{ envName: "BOBSHELL_API_KEY", placeholder: "ph" }, { envName: "BOB_SHELL_MODEL", placeholder: "premium-shell" }],
+    });
+    const cascaded = updated.slice(hostBefore);
+    // Primary update + twin host cascade. The twin must NOT receive
+    // envMappings — twins have none by design.
+    const twinUpdates = cascaded.filter((u) => u.id !== view.id);
+    expect(twinUpdates).toHaveLength(1);
+    expect(twinUpdates[0]!.patch.envMappings).toBeUndefined();
+    expect(twinUpdates[0]!.patch.hostPattern).toBe("alt.bob.ibm.com");
+  });
+
+  it("delete() removes twins before the primary", async () => {
+    const { port, deleted } = makePort([]);
+    const { port: grants } = makeGrants();
+    const svc = createSecretsService({
+      k8sPort: port,
+      grants,
+      ownerSub: "owner-1",
+    });
+    const view = await svc.create({ type: "bob", name: "Bob Shell", value: "sk-bob-foo" });
+    await svc.delete(view.id);
+    // Two deletes; primary is last so we don't leave dangling twins on failure.
+    expect(deleted).toHaveLength(2);
+    expect(deleted[deleted.length - 1]).toBe(view.id);
+  });
+
+  it("setAgentAccess expands primary IDs to include their twins in the K8s grant", async () => {
+    const { port } = makePort([]);
+    const { port: grants, secretGrantCalls } = makeGrants();
+    const svc = createSecretsService({
+      k8sPort: port,
+      grants,
+      ownerSub: "owner-1",
+    });
+    const view = await svc.create({ type: "bob", name: "Bob Shell", value: "sk-bob-foo" });
+    await svc.setAgentAccess("agent-a", { secretIds: [view.id] });
+    expect(secretGrantCalls).toHaveLength(1);
+    const persistedIds = secretGrantCalls[0]!.secretIds;
+    expect(persistedIds).toContain(view.id);
+    // Twin IDs come along for the ride so the controller mounts both.
+    expect(persistedIds.length).toBe(2);
+  });
+
+  it("getAgentAccess hides twin IDs from the user view", async () => {
+    const { port } = makePort([]);
+    const svc = createSecretsService({
+      k8sPort: port,
+      grants: {
+        async get() {
+          return { grantedSecretIds: [], grantedConnectionIds: [] };
+        },
+        async setSecretGrants() {},
+        async setConnectionGrants() {},
+        async listAgentsGrantedSecret() {
+          return [];
+        },
+        async bumpSecretsRev() {},
+      },
+      ownerSub: "owner-1",
+    });
+    const view = await svc.create({ type: "bob", name: "Bob Shell", value: "sk-bob-foo" });
+    // Stub `grants.get` to return the expanded list (primary + twin).
+    const allSecrets = await port.listSecrets();
+    const twinId = allSecrets.find((s) => s.primarySecretId === view.id)!.id;
+    const svc2 = createSecretsService({
+      k8sPort: port,
+      grants: {
+        async get() {
+          return {
+            grantedSecretIds: [view.id, twinId],
+            grantedConnectionIds: [],
+          };
+        },
+        async setSecretGrants() {},
+        async setConnectionGrants() {},
+        async listAgentsGrantedSecret() {
+          return [];
+        },
+        async bumpSecretsRev() {},
+      },
+      ownerSub: "owner-1",
+    });
+    const access = await svc2.getAgentAccess("agent-a");
+    expect(access.secretIds).toEqual([view.id]);
+  });
+
+  it("setAgentAccess with empty list revokes both primary and twin grants", async () => {
+    const { port } = makePort([]);
+    const { port: grants, secretGrantCalls } = makeGrants();
+    const svc = createSecretsService({
+      k8sPort: port,
+      grants,
+      ownerSub: "owner-1",
+    });
+    await svc.create({ type: "bob", name: "Bob Shell", value: "sk-bob-foo" });
+    await svc.setAgentAccess("agent-a", { secretIds: [] });
+    expect(secretGrantCalls).toHaveLength(1);
+    expect(secretGrantCalls[0]!.secretIds).toEqual([]);
+  });
+
+  it("setAgentAccess silently drops twin IDs passed in the input", async () => {
+    const { port } = makePort([]);
+    const { port: grants, secretGrantCalls } = makeGrants();
+    const svc = createSecretsService({
+      k8sPort: port,
+      grants,
+      ownerSub: "owner-1",
+    });
+    const view = await svc.create({ type: "bob", name: "Bob Shell", value: "sk-bob-foo" });
+    const all = await port.listSecrets();
+    const twinId = all.find((s) => s.primarySecretId === view.id)!.id;
+    // Caller passes a twin ID by mistake → must be filtered out, so a lone
+    // twin can't be granted without its primary.
+    await svc.setAgentAccess("agent-a", { secretIds: [twinId] });
+    expect(secretGrantCalls[0]!.secretIds).toEqual([]);
+  });
+
+  it("create() rolls the primary back if a twin write fails", async () => {
+    const { port, store } = makePort([]);
+    // Wrap createSecret so any twin (one with primarySecretId set) throws —
+    // the primary succeeds, the twin fails, and the cleanup pass must
+    // leave the store empty.
+    const originalCreate = port.createSecret;
+    port.createSecret = async (input) => {
+      if (input.primarySecretId) throw new Error("twin write boom");
+      await originalCreate.call(port, input);
+    };
+    const { port: grants } = makeGrants();
+    const svc = createSecretsService({
+      k8sPort: port,
+      grants,
+      ownerSub: "owner-1",
+    });
+    await expect(
+      svc.create({ type: "bob", name: "Bob Shell", value: "sk-bob-foo" }),
+    ).rejects.toThrow("twin write boom");
+    expect(store.size).toBe(0);
   });
 });
