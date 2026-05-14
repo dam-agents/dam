@@ -2,8 +2,10 @@ import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js"
 import type { McpServer } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import { useCallback, useRef } from "react";
 
+import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import type { SessionConfigPayload } from "../../acp/types.js";
+import { acpSessionsKeys } from "../api/queries.js";
 
 /**
  * Owns the "engage a live ACP connection with the active session" decision.
@@ -67,6 +69,11 @@ export function useAcpSessionEngagement(
       setSessionId(s.sessionId);
       engagedSessionIdRef.current = s.sessionId;
       addLog("session", { sessionId: s.sessionId });
+      // Refetch the sidebar — the relay writes the row on the first
+      // session/prompt that follows. The refetch round-trip is slower
+      // than the relay's local DB write, so the row is committed by
+      // the time list() reads.
+      queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
       await applySavedPreferences(conn, s.sessionId, s);
     }
   }, [selectedInstance, selectedMcpServers, captureSessionConfig, applySavedPreferences, setSessionId, addLog]);
