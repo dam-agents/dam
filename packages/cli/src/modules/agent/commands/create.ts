@@ -17,6 +17,7 @@ import {
 import { waitForRunning } from "../../instance/services/wait-for-state.js";
 import type { TemplateService } from "../../template/index.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
+import { groupGithubPats, type GithubPatPair } from "../lib/group-github-pats.js";
 
 const WAIT_TIMEOUT_SECONDS = 120;
 
@@ -131,7 +132,10 @@ async function runCreate(opts: CliOpts, deps: CreateAgentCommandDeps): Promise<v
   const trpc = deps.createTrpcClient(host);
   const provider = await pickProvider(trpc);
 
-  // --- Steps 4 + 5 + 6: agents.create → instances.create → setAgentAccess ---
+  // --- Step 4: optional GitHub PAT ----------------------------------
+  const githubPat = await pickGithubPat(trpc);
+
+  // --- Steps 5 + 6 + 7: agents.create → instances.create → setAgentAccess ---
   // Grants live as `granted-secret-ids` annotations on the *instance*
   // ConfigMap, not the agent. setAgentAccess before any instance exists
   // is a silent no-op, so the order has to be: agent → instance → grant.
@@ -167,10 +171,12 @@ async function runCreate(opts: CliOpts, deps: CreateAgentCommandDeps): Promise<v
     // to the api-server's listConfigMaps when setAgentAccess fires; without
     // the retry the patch silently targets zero ConfigMaps and the grant
     // is lost. Matches the web UI's 5× / 2s wait.
+    const grantedIds = [provider.secretId];
+    if (githubPat) grantedIds.push(githubPat.apiSecretId, githubPat.gitSecretId);
     await withRetry(() =>
       trpc.secrets.setAgentAccess.mutate({
         agentId,
-        secretIds: [provider.secretId],
+        secretIds: grantedIds,
       }),
     );
   } catch (e) {
@@ -191,17 +197,18 @@ async function runCreate(opts: CliOpts, deps: CreateAgentCommandDeps): Promise<v
   });
 
   switch (waitResult.kind) {
-    case "ready":
+    case "ready": {
       spin.stop("Instance running");
-      outro(
-        [
-          `✓ Agent created: ${name}`,
-          `✓ Provider: ${provider.name} (${provider.type})`,
-          `→ Next: dam chat ${name}`,
-        ].join("\n"),
-      );
+      const lines = [
+        `✓ Agent created: ${name}`,
+        `✓ Provider: ${provider.name} (${provider.type})`,
+        ...(githubPat ? [`✓ GitHub: ${githubPat.name}`] : []),
+        `→ Next: dam chat ${name}`,
+      ];
+      outro(lines.join("\n"));
       process.exit(EXIT_INSTANCE_SUCCESS);
       return;
+    }
     case "error":
       spin.stop(`Instance entered error state: ${waitResult.instance.error ?? "unknown"}`);
       note(`dam instance get ${name}`, "Inspect");
@@ -362,6 +369,91 @@ async function addOrReplaceProvider(
       return { secretId: created.id, name: created.name, type };
     } catch (e) {
       log.error(`Failed to create secret: ${errorReason(e)}`);
+      // Fall through to next loop iteration.
+    }
+  }
+}
+
+/**
+ * Optional GitHub PAT step. Returns `null` if the user skipped.
+ *
+ * A PAT lives server-side as two `generic` secrets sharing a `name` —
+ * one for `api.github.com` (Bearer / `gh` CLI / `GH_TOKEN` env), one
+ * for `github.com` (Basic / `git clone`). `groupGithubPats` filters
+ * `secrets.list()` down to fully-paired entries, hiding orphans the
+ * user can't actually grant.
+ */
+async function pickGithubPat(trpc: TrpcClient): Promise<GithubPatPair | null> {
+  let list;
+  try {
+    list = await trpc.secrets.list.query();
+  } catch (e) {
+    cancel(`failed to list secrets: ${errorReason(e)}`);
+    process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
+  }
+  const pairs = groupGithubPats(list);
+
+  if (pairs.length === 0) {
+    log.info("No GitHub PAT configured yet.");
+    const add = await confirm({ message: "Add one?", initialValue: false });
+    if (isCancel(add)) cancelAndExit();
+    if (!add) return null;
+    return addNewGithubPat(trpc);
+  }
+
+  const NEW = "__new__";
+  const SKIP = "__skip__";
+  const picked = await select<string>({
+    message: "GitHub PAT",
+    options: [
+      ...pairs.map((p) => ({ value: p.name, label: p.name })),
+      { value: NEW, label: "Add new..." },
+      { value: SKIP, label: "Skip" },
+    ],
+  });
+  if (isCancel(picked)) cancelAndExit();
+  if (picked === SKIP) return null;
+  if (picked === NEW) return addNewGithubPat(trpc);
+
+  const found = pairs.find((p) => p.name === picked);
+  if (!found) {
+    cancel("internal: picked PAT not in list");
+    process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
+  }
+  return found;
+}
+
+async function addNewGithubPat(trpc: TrpcClient): Promise<GithubPatPair> {
+  // Loop on `secrets.createGithubPat` failure (F1 from the spec).
+  while (true) {
+    const name = await text({
+      message: "Name",
+      placeholder: "my-github",
+      validate(v) {
+        if (!v || v.trim() === "") return "Required";
+        return undefined;
+      },
+    });
+    if (isCancel(name)) cancelAndExit();
+
+    const token = await password({
+      message: "Personal access token",
+      validate(v) {
+        if (!v || v.trim() === "") return "Required";
+        return undefined;
+      },
+    });
+    if (isCancel(token)) cancelAndExit();
+
+    try {
+      const created = await trpc.secrets.createGithubPat.mutate({ name, token });
+      return {
+        name: created.name,
+        apiSecretId: created.apiSecretId,
+        gitSecretId: created.gitSecretId,
+      };
+    } catch (e) {
+      log.error(`Failed to create GitHub PAT: ${errorReason(e)}`);
       // Fall through to next loop iteration.
     }
   }
