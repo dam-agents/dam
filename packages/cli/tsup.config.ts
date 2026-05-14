@@ -24,6 +24,7 @@ export default defineConfig({
     "commander",
     "open",
     "smol-toml",
+    "ws",
     "zod",
   ],
   // CJS deps (commander) use dynamic `require()` of node builtins; ESM

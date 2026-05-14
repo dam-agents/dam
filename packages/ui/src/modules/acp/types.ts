@@ -19,7 +19,8 @@ import type {
 export type AcpUpdate =
   | SessionUpdate
   | { sessionUpdate: "platform_turn_ended"; sessionId?: string }
-  | { sessionUpdate: "platform_clipped_replay" };
+  | { sessionUpdate: "platform_clipped_replay" }
+  | { sessionUpdate: "platform_session_mode_changed"; sessionId?: string; mode: string };
 
 export type UpdateHandler = (update: AcpUpdate) => void;
 

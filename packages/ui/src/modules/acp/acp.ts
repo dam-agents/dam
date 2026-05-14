@@ -115,6 +115,10 @@ export async function openConnection(
         if (method === "platform/turnEnded") {
           const sessionId = typeof params?.sessionId === "string" ? params.sessionId : undefined;
           onUpdate({ sessionUpdate: "platform_turn_ended", sessionId });
+        } else if (method === "platform/sessionModeChanged") {
+          const sessionId = typeof params?.sessionId === "string" ? params.sessionId : undefined;
+          const mode = typeof params?.mode === "string" ? params.mode : "chat";
+          onUpdate({ sessionUpdate: "platform_session_mode_changed", sessionId, mode });
         }
       },
     }),

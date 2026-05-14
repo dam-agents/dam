@@ -49,6 +49,7 @@ export interface AcpRuntime {
    */
   attach(channel: ClientChannel): void;
   status(): AcpRuntimeStatus;
+  resetSession(sessionId: string): void;
   shutdown(): void;
 }
 
@@ -993,6 +994,21 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         queuedPromptCount: queued,
         agentAlive: agent !== null && !agentExited,
       };
+    },
+
+    resetSession(sessionId) {
+      if (agent && !agentExited && sessionCloseSupported) {
+        agent.send({
+          jsonrpc: "2.0",
+          id: nextOutboundId++,
+          method: "session/close",
+          params: { sessionId },
+        });
+      }
+      // Always clear client-side state even if the agent didn't accept the close.
+      sessionLogs.delete(sessionId);
+      for (const cursors of channelCursors.values()) cursors.delete(sessionId);
+      deps.log?.(`reset session ${sessionId}`);
     },
 
     shutdown() {

@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import { composeAuthModule } from "./modules/auth/compose.js";
+import { composeChatModule } from "./modules/chat/compose.js";
 import { composeCliModule } from "./modules/cli/compose.js";
 import { composeInstanceModule } from "./modules/instance/compose.js";
 import { composeTemplateModule } from "./modules/template/compose.js";
@@ -49,6 +50,14 @@ export function compose(opts: ComposeOptions = {}): Command {
     templateService: template.exports.createService,
   });
 
+  const chat = composeChatModule({
+    compatService: cli.services.compatService,
+    configService: cli.services.configService,
+    tokenProvider: auth.exports.tokenProvider,
+    createInstanceService: instance.exports.createService,
+    serverEnvVar: "DAM_SERVER",
+  });
+
   const program = new Command();
   program
     .name("dam")
@@ -59,6 +68,7 @@ export function compose(opts: ComposeOptions = {}): Command {
   for (const command of auth.commands) program.addCommand(command);
   for (const command of template.commands) program.addCommand(command);
   for (const command of instance.commands) program.addCommand(command);
+  for (const command of chat.commands) program.addCommand(command);
 
   return program;
 }

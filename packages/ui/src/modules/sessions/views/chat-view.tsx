@@ -50,6 +50,8 @@ export function ChatView() {
   const setMobileScreen = useStore((s) => s.setMobileScreen);
   const showMobilePanel = useStore((s) => s.showMobilePanel);
   const setShowMobilePanel = useStore((s) => s.setShowMobilePanel);
+  const terminalPaused = useStore((s) => s.terminalPaused);
+  const setTerminalPaused = useStore((s) => s.setTerminalPaused);
 
   const [leftW, setLeftW] = useState(() => Number(localStorage.getItem("platform-left-w")) || 220);
   const [rightW, setRightW] = useState(() => Number(localStorage.getItem("platform-right-w")) || 340);
@@ -151,17 +153,24 @@ export function ChatView() {
     )) return;
 
     if (busy) stopAgent();
-    if (sessionId) {
-      await api.sessions.setMode.mutate({ sessionId, instanceId: selectedInstance, mode: target });
-      queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
-    }
-    if (target === SessionMode.Terminal) terminalFreshRef.current = true;
+    if (target === SessionMode.Terminal) { terminalFreshRef.current = true; setTerminalPaused(false); }
+    const previousMode = sessionMode;
     setSessionMode(target);
+    if (sessionId) {
+      try {
+        await api.sessions.setMode.mutate({ sessionId, instanceId: selectedInstance, mode: target });
+        queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
+      } catch {
+        setSessionMode(previousMode);
+        useStore.getState().showToast({ kind: "error", message: "Failed to switch session mode" });
+        return;
+      }
+    }
     if (target === SessionMode.Chat) {
       if (sessionId) resumeSession(sessionId, { expectNotFound: sessionMode === SessionMode.Terminal });
       requestAnimationFrame(() => textareaRef.current?.focus());
     }
-  }, [selectedInstance, sessionMode, sessionId, messages.length, showConfirm, busy, stopAgent, setSessionMode, resumeSession, setSessionId]);
+  }, [selectedInstance, sessionMode, sessionId, messages.length, showConfirm, busy, stopAgent, setSessionMode, resumeSession, setSessionId, setTerminalPaused]);
 
   const handleBack = useCallback(() => {
     if (isMobile() && mobileScreen === "chat") {
@@ -270,7 +279,7 @@ export function ChatView() {
 
         {/* Content: Terminal or Chat */}
         {sessionMode === SessionMode.Terminal && selectedInstance && sessionId ? (
-          <Terminal key={sessionId} instanceId={selectedInstance} sessionId={sessionId} fresh={terminalFreshRef.current} onConnected={() => { terminalFreshRef.current = false; }} />
+          <Terminal key={sessionId} instanceId={selectedInstance} sessionId={sessionId} fresh={terminalFreshRef.current} autoConnect={!terminalPaused} onConnected={() => { terminalFreshRef.current = false; setTerminalPaused(false); }} />
         ) : (<>
         <div className="relative flex flex-1 flex-col min-h-0">
         <div ref={messagesRef} className="flex-1 overflow-y-auto">

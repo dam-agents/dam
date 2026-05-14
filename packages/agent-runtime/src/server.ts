@@ -216,6 +216,13 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  const sessionResetMatch = req.method === "POST" && req.url?.match(/^\/api\/sessions\/([^/]+)\/reset$/);
+  if (sessionResetMatch) {
+    acpRuntime.resetSession(decodeURIComponent(sessionResetMatch[1]!));
+    res.writeHead(204, CORS).end();
+    return;
+  }
+
   if (req.url?.startsWith("/api/trpc")) {
     req.url = req.url.replace("/api/trpc", "");
     Object.entries(CORS).forEach(([k, v]) => res.setHeader(k, v));

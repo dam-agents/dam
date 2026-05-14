@@ -10,13 +10,15 @@ import { getAccessToken } from "../../../auth.js";
 
 type ConnectionState = "connecting" | "live" | "disconnected" | "exited";
 
-export function Terminal({ instanceId, sessionId, fresh, onConnected }: { instanceId: string; sessionId: string; fresh?: boolean; onConnected?: () => void }) {
+export function Terminal({ instanceId, sessionId, fresh, onConnected, autoConnect = true }: { instanceId: string; sessionId: string; fresh?: boolean; onConnected?: () => void; autoConnect?: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
-  const [state, setState] = useState<ConnectionState>("connecting");
+  const [state, setState] = useState<ConnectionState>(autoConnect ? "connecting" : "disconnected");
   const [exitCode, setExitCode] = useState<number | null>(null);
   const [reconnectKey, setReconnectKey] = useState(0);
+  const connectEnabled = useRef(autoConnect);
   const handleReconnect = useCallback(() => {
+    connectEnabled.current = true;
     setState("connecting");
     setReconnectKey((k) => k + 1);
   }, []);
@@ -53,6 +55,8 @@ export function Terminal({ instanceId, sessionId, fresh, onConnected }: { instan
       await new Promise<void>((r) => requestAnimationFrame(() => r()));
       if (cancelled) return;
       fitAddon.fit();
+
+      if (!connectEnabled.current) return;
 
       const token = await getAccessToken();
       if (cancelled) return;

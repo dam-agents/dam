@@ -14,6 +14,7 @@ export type {
   InstanceResolver,
   ResolveError,
 } from "./services/instance-resolver.js";
+export { createInstanceResolver } from "./services/instance-resolver.js";
 export type {
   TransportError,
   AuthRequiredError,

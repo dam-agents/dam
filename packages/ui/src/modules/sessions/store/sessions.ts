@@ -25,9 +25,11 @@ export interface SessionsSlice {
   includeChannelSessions: boolean;
   queuedMessage: string | null;
   busy: boolean;
+  terminalPaused: boolean;
 
   setSessionId: (id: string | null) => void;
   setSessionMode: (mode: SessionMode | null) => void;
+  setTerminalPaused: (paused: boolean) => void;
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
   setSessionError: (e: SessionError | null) => void;
   setIncludeChannelSessions: (v: boolean) => void;
@@ -62,9 +64,11 @@ export const createSessionsSlice: StateCreator<
   includeChannelSessions: false,
   queuedMessage: null,
   busy: false,
+  terminalPaused: false,
 
   setSessionId: (id) => set({ sessionId: id }),
   setSessionMode: (mode) => set({ sessionMode: mode }),
+  setTerminalPaused: (paused) => set({ terminalPaused: paused }),
   setMessages: (updater) =>
     set((s) => ({
       messages: typeof updater === "function" ? updater(s.messages) : updater,
@@ -80,6 +84,7 @@ export const createSessionsSlice: StateCreator<
       sessionMode: null,
       messages: [],
       sessionError: null,
+      terminalPaused: false,
       openFilePath: null,
       log: [],
       sessionModes: null,

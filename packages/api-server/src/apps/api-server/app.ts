@@ -47,6 +47,7 @@ import {
   type ApprovalsRelayService,
   type WrapperFrameSender,
 } from "./../../modules/approvals/compose.js";
+import { injectChannelOf } from "./../../modules/approvals/infrastructure/acp-frames.js";
 import {
   composeEgressRulesModule,
   createConnectionRulesSyncAdapter,
@@ -387,6 +388,18 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     const { schedules, isOwnedSchedule } = composeSchedulesModule(api, config.namespace, user.sub);
     const { sessions } = composeSessionsModule({
       db, namespace: config.namespace, isOwnedInstance, isOwnedSchedule,
+      closeTerminalSession: terminalRelay.closeSession,
+      resetAcpSession: (instanceId, sessionId) => {
+        fetch(`http://${podBaseUrl(instanceId, config.namespace)}/api/sessions/${encodeURIComponent(sessionId)}/reset`, { method: "POST" }).catch(() => {});
+      },
+      notifyModeChange: (instanceId, sessionId, mode) => {
+        const frame = JSON.stringify({
+          jsonrpc: "2.0",
+          method: "platform/sessionModeChanged",
+          params: { sessionId, mode },
+        });
+        redisBus.publish(injectChannelOf(instanceId), frame).catch(() => {});
+      },
     });
     const skills = composeSkillsModule(api, config.namespace, user.sub, db, seedSources, config.brand.name);
     const grants = createAgentGrantsPort(k8sClient, user.sub);
