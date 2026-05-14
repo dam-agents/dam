@@ -55,13 +55,6 @@ function isRequest(msg: unknown): msg is JsonRpcRequest {
   return typeof m.method === "string" && (typeof m.id === "number" || typeof m.id === "string");
 }
 
-function extractResultSessionId(msg: JsonRpcResponse): string | null {
-  const r = msg.result;
-  if (!r || typeof r !== "object") return null;
-  const sid = (r as { sessionId?: unknown }).sessionId;
-  return typeof sid === "string" ? sid : null;
-}
-
 function extractRequestSessionId(req: JsonRpcRequest): string | null {
   const sid = req.params?.sessionId;
   return typeof sid === "string" ? sid : null;
@@ -173,24 +166,8 @@ export function createAcpRelay(
 
       repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "true").catch(() => {});
 
-      // jsonrpc id → method for in-flight client requests we care about.
-      const pendingMethodById = new Map<number | string, string>();
-      // Sids returned by `session/new` whose row hasn't been written yet.
-      const sidsAwaitingFirstPrompt = new Set<string>();
-      // Sid → outcome of its first persistence write; concurrent prompts share it.
-      type PersistOutcome = { ok: true } | { ok: false; error: unknown };
-      const persistencePromises = new Map<string, Promise<PersistOutcome>>();
-
-      function trackClientFrame(data: unknown): void {
-        const parsed = tryParse(data);
-        if (isRequest(parsed) && parsed.method === "session/new") {
-          pendingMethodById.set(parsed.id, parsed.method);
-        }
-      }
-
       const pending: { data: Buffer | ArrayBuffer | Buffer[]; isBinary: boolean }[] = [];
       client.on("message", (data, isBinary) => {
-        if (!isBinary) trackClientFrame(data);
         pending.push({ data: data as Buffer, isBinary });
       });
 
@@ -232,36 +209,37 @@ export function createAcpRelay(
               return;
             }
 
-            trackClientFrame(data);
             const parsed = tryParse(data);
 
-            // Persist the DB row on first session/prompt; hold the frame until it lands.
+            // Persist on every session/prompt — upsertSession is idempotent on
+            // conflict, so subsequent prompts on the same sid are PG no-ops.
+            // Holding the frame until commit keeps DB row + agent state atomic
+            // and makes the persist robust across WS reconnects.
             if (isRequest(parsed) && parsed.method === "session/prompt") {
               const sid = extractRequestSessionId(parsed);
-              if (sid && sidsAwaitingFirstPrompt.has(sid)) {
-                sidsAwaitingFirstPrompt.delete(sid);
-                persistencePromises.set(
-                  sid,
-                  persistSession(sid, instanceId)
-                    .then(() => ({ ok: true as const }))
-                    .catch((e: unknown) => ({ ok: false as const, error: e })),
-                );
-              }
-              const promise = sid ? persistencePromises.get(sid) : undefined;
-              if (promise) {
+              if (sid) {
                 const requestId = parsed.id;
-                promise.then((r) => {
-                  if (r.ok) {
-                    if (upstream.readyState === WebSocket.OPEN) upstream.send(data, { binary: false });
-                  } else if (client.readyState === WebSocket.OPEN) {
-                    const detail = r.error instanceof Error ? r.error.message : String(r.error);
+                persistSession(sid, instanceId).then(
+                  () => {
+                    if (upstream.readyState === WebSocket.OPEN) {
+                      upstream.send(data, { binary: false });
+                    } else if (client.readyState === WebSocket.OPEN) {
+                      client.send(JSON.stringify({
+                        jsonrpc: "2.0",
+                        id: requestId,
+                        error: { code: -32000, message: "upstream closed before prompt could be forwarded" },
+                      }));
+                    }
+                  },
+                  (e: unknown) => {
+                    if (client.readyState !== WebSocket.OPEN) return;
                     client.send(JSON.stringify({
                       jsonrpc: "2.0",
                       id: requestId,
                       error: { code: -32000, message: `failed to persist session` },
                     }));
-                  }
-                });
+                  },
+                );
                 return;
               }
             }
@@ -279,14 +257,6 @@ export function createAcpRelay(
             }
 
             const parsed = tryParse(data);
-
-            // Queue the sid for persistence on its first session/prompt.
-            if (isResponse(parsed) && pendingMethodById.get(parsed.id) === "session/new") {
-              pendingMethodById.delete(parsed.id);
-              const sid = parsed.result !== undefined ? extractResultSessionId(parsed) : null;
-              if (sid) sidsAwaitingFirstPrompt.add(sid);
-            }
-
             client.send(data, { binary: false });
             if (isPermissionRequest(parsed)) mirrorPermissionRequest(parsed);
           });
