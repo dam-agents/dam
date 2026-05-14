@@ -97,16 +97,16 @@ createAgentNamespace: true
 # -- OpenShift-specific knobs. No-op on vanilla Kubernetes.
 openshift:
   scc:
-    # Custom `anyuid-cap-net` SCC for agent pods on OpenShift. Modeled on
-    # the built-in `anyuid` SCC (lets agent pods run as image USER 65532
-    # rather than the namespace-range UID), plus allows NET_ADMIN +
-    # NET_RAW so the `iptablesInit` privileged init container can run.
+    # Custom `nonroot-cap-net` SCC for agent pods on OpenShift. Modeled on
+    # the built-in `nonroot-v2` SCC (MustRunAsNonRoot, drop ALL caps,
+    # runtime/default seccomp), with NET_ADMIN + NET_RAW added to
+    # allowedCapabilities so the `iptablesInit` init container can run.
     # Renders a cluster-scoped SCC + RoleBinding to all SAs in
     # `agentNamespace`. Default ON — required for `iptablesInit`, harmless
     # otherwise (OpenShift admission still prefers more restrictive SCCs
     # when the pod doesn't request the extra capabilities).
-    anyuidCapNet:
-      enabled: false
+    nonrootCapNet:
+      enabled: true
 
 # -- Shared local PostgreSQL instance
 # Set enabled: false when using external/cloud DBs for all services.

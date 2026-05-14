@@ -20,10 +20,12 @@ const iptablesInitContainerName = "egress-lockdown"
 // "loopback + ESTABLISHED + paired gateway only". Returns nil when the
 // feature is off, the image is unset, or the gateway IP isn't known yet.
 //
-// Targets the SIG Release `registry.k8s.io/build-image/distroless-iptables` image,
-// which ships `/bin/sh` (dash) and the iptables-wrapper that auto-
-// selects nft vs legacy. Both `/usr/sbin/iptables` and the wrapper are
-// in $PATH on that image, so the script stays minimal.
+// Targets the SIG Release `registry.k8s.io/build-image/distroless-iptables`
+// image. We invoke `iptables-nft` directly rather than the wrapped
+// `iptables` entrypoint — the wrapper auto-detects nft vs legacy by
+// writing symlinks at runtime, which the container's
+// `readOnlyRootFilesystem: true` blocks. Every kernel K8s supports
+// (≥4.18) ships nftables, so the direct call is portable.
 func buildIptablesInitContainer(cfg *config.Config, gatewayClusterIP string) *corev1.Container {
 	cfgInit := cfg.AgentBase.IptablesInit
 	if cfgInit == nil || !cfgInit.Enabled || cfgInit.Image == "" || gatewayClusterIP == "" {
@@ -32,17 +34,21 @@ func buildIptablesInitContainer(cfg *config.Config, gatewayClusterIP string) *co
 
 	script := `set -eu
 echo "egress-lockdown: gateway=$GATEWAY_IP:$ENVOY_PORT"
-iptables -A OUTPUT -o lo -j ACCEPT
-iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-iptables -A OUTPUT -d "$GATEWAY_IP" -p tcp --dport "$ENVOY_PORT" -j ACCEPT
-iptables -A OUTPUT -j DROP
+iptables-nft -A OUTPUT -o lo -j ACCEPT
+iptables-nft -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+iptables-nft -A OUTPUT -d "$GATEWAY_IP" -p tcp --dport "$ENVOY_PORT" -j ACCEPT
+iptables-nft -A OUTPUT -j DROP
 echo "egress-lockdown: gateway-only egress applied"
 `
 
-	// Root + NET_ADMIN/NET_RAW for netfilter ops; everything else dropped.
-	// The runtime agent container is unaffected — these caps live only on
-	// this short-lived init container.
-	runAsRoot := int64(0)
+	// NET_ADMIN/NET_RAW for the netfilter ops. Container runs as the
+	// pod-level non-root UID (65532): containerd plumbs Capabilities.Add
+	// into the ambient capability set, so iptables-nft acquires those
+	// caps through exec without needing root or file caps. Everything
+	// else dropped; readOnlyRootFilesystem prevents any write to the
+	// container fs (the wrapper at /usr/sbin/iptables wouldn't work
+	// under readOnlyRootFilesystem anyway, hence the direct
+	// iptables-nft call above).
 	return &corev1.Container{
 		Name:    iptablesInitContainerName,
 		Image:   cfgInit.Image,
@@ -52,8 +58,6 @@ echo "egress-lockdown: gateway-only egress applied"
 			{Name: "ENVOY_PORT", Value: fmt.Sprintf("%d", cfg.EnvoyPort)},
 		},
 		SecurityContext: &corev1.SecurityContext{
-			RunAsUser:                &runAsRoot,
-			RunAsNonRoot:             ptrBool(false),
 			AllowPrivilegeEscalation: ptrBool(false),
 			ReadOnlyRootFilesystem:   ptrBool(true),
 			Capabilities: &corev1.Capabilities{

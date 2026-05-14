@@ -36,7 +36,7 @@ func TestBuildIptablesInitContainer_NoGatewayIPReturnsNil(t *testing.T) {
 	assert.Nil(t, buildIptablesInitContainer(&cfg, ""), "no gateway IP yet — re-attach on next reconcile")
 }
 
-func TestBuildIptablesInitContainer_HasCapsAndRunsAsRoot(t *testing.T) {
+func TestBuildIptablesInitContainer_NonRootWithAmbientCaps(t *testing.T) {
 	cfg := *testConfig
 	cfg.AgentBase.IptablesInit = &config.AgentIptablesInit{Enabled: true, Image: "registry.k8s.io/build-image/distroless-iptables:v0.9.2"}
 
@@ -45,10 +45,10 @@ func TestBuildIptablesInitContainer_HasCapsAndRunsAsRoot(t *testing.T) {
 	assert.Equal(t, "egress-lockdown", ic.Name)
 	assert.Equal(t, "registry.k8s.io/build-image/distroless-iptables:v0.9.2", ic.Image)
 	require.NotNil(t, ic.SecurityContext)
-	require.NotNil(t, ic.SecurityContext.RunAsUser)
-	assert.Equal(t, int64(0), *ic.SecurityContext.RunAsUser, "iptables needs root inside the init container's namespaces")
-	require.NotNil(t, ic.SecurityContext.RunAsNonRoot)
-	assert.False(t, *ic.SecurityContext.RunAsNonRoot, "must override the pod-level runAsNonRoot floor")
+	// Container inherits the pod-level non-root UID; NET_ADMIN/NET_RAW
+	// flow in via the ambient capability set. No explicit root needed.
+	assert.Nil(t, ic.SecurityContext.RunAsUser, "init container must inherit non-root pod UID, not override to root")
+	assert.Nil(t, ic.SecurityContext.RunAsNonRoot, "must not override the pod-level runAsNonRoot=true")
 	require.NotNil(t, ic.SecurityContext.Capabilities)
 	caps := ic.SecurityContext.Capabilities
 	assert.Contains(t, caps.Add, corev1.Capability("NET_ADMIN"), "NET_ADMIN required for iptables manipulation")
