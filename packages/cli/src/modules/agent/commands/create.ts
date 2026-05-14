@@ -188,7 +188,7 @@ async function runCreate(opts: CliOpts, deps: CreateAgentCommandDeps): Promise<v
         [
           `✓ Agent created: ${name}`,
           `✓ Provider: ${provider.name} (${provider.type})`,
-          `→ Next: dam shell ${name}`,
+          `→ Next: dam chat ${name}`,
         ].join("\n"),
       );
       process.exit(EXIT_INSTANCE_SUCCESS);
@@ -219,7 +219,7 @@ function cancelAndExit(): never {
   process.exit(0);
 }
 
-type ProviderType = "anthropic" | "ibm-litellm";
+type ProviderType = "anthropic" | "ibm-litellm" | "openai";
 
 interface ProviderSelection {
   secretId: string;
@@ -246,7 +246,7 @@ async function pickProvider(trpc: TrpcClient): Promise<ProviderSelection> {
   }
   const existing = list.filter(
     (s): s is typeof s & { type: ProviderType } =>
-      s.type === "anthropic" || s.type === "ibm-litellm",
+      s.type === "anthropic" || s.type === "ibm-litellm" || s.type === "openai",
   );
 
   if (existing.length === 0) {
@@ -286,13 +286,14 @@ async function addNewProvider(trpc: TrpcClient): Promise<ProviderSelection> {
       options: [
         { value: "anthropic", label: "Anthropic" },
         { value: "ibm-litellm", label: "IBM LiteLLM" },
+        { value: "openai", label: "OpenAI" },
       ],
     });
     if (isCancel(type)) cancelAndExit();
 
     const name = await text({
       message: "Name",
-      placeholder: type === "anthropic" ? "my-anthropic-key" : "my-ibm-litellm-key",
+      placeholder: placeholderFor(type),
       validate(v) {
         if (!v || v.trim() === "") return "Required";
         return undefined;
@@ -316,6 +317,14 @@ async function addNewProvider(trpc: TrpcClient): Promise<ProviderSelection> {
       log.error(`Failed to create secret: ${errorReason(e)}`);
       // Fall through to next loop iteration.
     }
+  }
+}
+
+function placeholderFor(type: ProviderType): string {
+  switch (type) {
+    case "anthropic": return "my-anthropic-key";
+    case "ibm-litellm": return "my-ibm-litellm-key";
+    case "openai": return "my-openai-key";
   }
 }
 
