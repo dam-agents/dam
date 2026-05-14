@@ -1,4 +1,4 @@
-import { cancel, intro, isCancel, log, note, outro, password, select, spinner, text } from "@clack/prompts";
+import { cancel, confirm, intro, isCancel, log, note, outro, password, select, spinner, text } from "@clack/prompts";
 import { Command } from "commander";
 import { PROVIDERS, type Instance } from "api-server-api";
 import type { CompatService, ConfigService } from "../../cli/index.js";
@@ -236,13 +236,18 @@ interface ProviderSelection {
   type: ProviderType;
 }
 
+type ExistingProvider = { id: string; name: string; type: ProviderType };
+
 /**
- * Provider step. Lists existing Anthropic / IBM LiteLLM secrets so the
- * user can grant one (or add a new one inline). The server's `PROVIDERS`
- * preset fills in host / header / env defaults — the CLI only sends
- * `{ type, name, value }` to `secrets.create`.
+ * Provider step. Lists existing Anthropic / IBM LiteLLM / OpenAI secrets
+ * so the user can grant one (or add a new one inline). The server's
+ * `PROVIDERS` preset fills in host / header / env defaults — the CLI
+ * only sends `{ type, name, value }` to `secrets.create`.
  *
- * OpenAI is in the schema but deliberately not offered here (spec).
+ * Singleton-per-type — when the user picks "Add new..." for a type that
+ * already exists, the sub-flow offers to replace its API key instead of
+ * creating a duplicate. Matches the web UI's provider cards.
+ *
  * Anthropic is API-key only — the OAuth flow stays in the web UI.
  */
 async function pickProvider(trpc: TrpcClient): Promise<ProviderSelection> {
@@ -253,14 +258,16 @@ async function pickProvider(trpc: TrpcClient): Promise<ProviderSelection> {
     cancel(`failed to list secrets: ${errorReason(e)}`);
     process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
   }
-  const existing = list.filter(
-    (s): s is typeof s & { type: ProviderType } =>
-      s.type === "anthropic" || s.type === "ibm-litellm" || s.type === "openai",
-  );
+  const existing: ExistingProvider[] = list
+    .filter(
+      (s): s is typeof s & { type: ProviderType } =>
+        s.type === "anthropic" || s.type === "ibm-litellm" || s.type === "openai",
+    )
+    .map((s) => ({ id: s.id, name: s.name, type: s.type }));
 
   if (existing.length === 0) {
     log.info("No model providers configured yet — let's add one.");
-    return addNewProvider(trpc);
+    return addOrReplaceProvider(trpc, existing);
   }
 
   const NEW = "__new__";
@@ -273,7 +280,7 @@ async function pickProvider(trpc: TrpcClient): Promise<ProviderSelection> {
   });
   if (isCancel(picked)) cancelAndExit();
 
-  if (picked === NEW) return addNewProvider(trpc);
+  if (picked === NEW) return addOrReplaceProvider(trpc, existing);
 
   const found = existing.find((s) => s.id === picked);
   if (!found) {
@@ -285,10 +292,13 @@ async function pickProvider(trpc: TrpcClient): Promise<ProviderSelection> {
   return { secretId: found.id, name: found.name, type: found.type };
 }
 
-async function addNewProvider(trpc: TrpcClient): Promise<ProviderSelection> {
-  // Re-prompt on `secrets.create` failure (F1 from the spec). Loops the
-  // whole sub-flow rather than trying to preserve previously-entered
-  // fields — three prompts is short enough that re-typing isn't painful.
+async function addOrReplaceProvider(
+  trpc: TrpcClient,
+  existing: readonly ExistingProvider[],
+): Promise<ProviderSelection> {
+  // Loops on server-side create/update failures (F1 from the spec) —
+  // re-types the type prompt rather than preserving prior input; three
+  // prompts is short enough that re-typing isn't painful.
   while (true) {
     const type = await select<ProviderType>({
       message: "Provider type",
@@ -299,6 +309,39 @@ async function addNewProvider(trpc: TrpcClient): Promise<ProviderSelection> {
       ],
     });
     if (isCancel(type)) cancelAndExit();
+
+    const existingOfType = existing.find((s) => s.type === type);
+
+    if (existingOfType) {
+      // Singleton-per-type. Default to NOT replacing — overwriting a
+      // working key is the destructive option; the user has to opt in.
+      const replace = await confirm({
+        message: `A ${PROVIDERS[type].displayName} key already exists. Replace its API key?`,
+        initialValue: false,
+      });
+      if (isCancel(replace)) cancelAndExit();
+
+      if (!replace) {
+        return { secretId: existingOfType.id, name: existingOfType.name, type };
+      }
+
+      const apiKey = await password({
+        message: `New ${PROVIDERS[type].displayName} API key`,
+        validate(v) {
+          if (!v || v.trim() === "") return "Required";
+          return undefined;
+        },
+      });
+      if (isCancel(apiKey)) cancelAndExit();
+
+      try {
+        await trpc.secrets.update.mutate({ id: existingOfType.id, value: apiKey });
+        return { secretId: existingOfType.id, name: existingOfType.name, type };
+      } catch (e) {
+        log.error(`Failed to replace API key: ${errorReason(e)}`);
+        continue;
+      }
+    }
 
     // Match the web UI's provider cards: auto-name the secret with the
     // preset's displayName ("Anthropic", "IBM LiteLLM ETE Proxy", "OpenAI")
