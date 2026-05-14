@@ -482,9 +482,11 @@ controller:
       # NET_ADMIN/NET_RAW + runAsUser=0).
       iptablesInit:
         enabled: true
-        # Must contain an `iptables` binary and a shell. PoC default is
-        # netshoot; replace with a locked-down image for production.
-        image: docker.io/nicolaka/netshoot:v0.13
+        # SIG Release distroless-iptables — the same image kube-proxy
+        # uses. Ships /bin/sh (dash) + iptables-wrapper (auto-selects
+        # nft/legacy). Signed, scanned, no package manager, minimal
+        # userland. Pin to a specific version.
+        image: registry.k8s.io/distroless-iptables:v0.9.1
       # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     templateDefaults:

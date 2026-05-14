@@ -16,45 +16,37 @@ import (
 
 const iptablesInitContainerName = "egress-lockdown"
 
-// buildIptablesInitContainer renders the privileged init container that
-// pins the agent pod's OUTPUT chain to "loopback + ESTABLISHED + paired
-// gateway only". Returns nil when the feature is off, the image is unset,
-// or the gateway IP isn't known yet (reconciler is expected to fail-closed
-// first; this is belt-and-braces).
+// buildIptablesInitContainer pins the agent pod's OUTPUT chain to
+// "loopback + ESTABLISHED + paired gateway only". Returns nil when the
+// feature is off, the image is unset, or the gateway IP isn't known yet.
+//
+// Targets the SIG Release `registry.k8s.io/distroless-iptables` image,
+// which ships `/bin/sh` (dash) and the iptables-wrapper that auto-
+// selects nft vs legacy. Both `/usr/sbin/iptables` and the wrapper are
+// in $PATH on that image, so the script stays minimal.
 func buildIptablesInitContainer(cfg *config.Config, gatewayClusterIP string) *corev1.Container {
 	cfgInit := cfg.AgentBase.IptablesInit
 	if cfgInit == nil || !cfgInit.Enabled || cfgInit.Image == "" || gatewayClusterIP == "" {
 		return nil
 	}
 
-	// Probe both nft and legacy variants — same image may run on either
-	// backend depending on the host kernel.
 	script := `set -eu
-if [ -z "${GATEWAY_IP:-}" ]; then echo "egress-lockdown: GATEWAY_IP not set" >&2; exit 1; fi
-ENVOY_PORT="${ENVOY_PORT:-10000}"
-IPT=""
-if command -v iptables-nft >/dev/null 2>&1; then IPT=iptables-nft
-elif command -v iptables-legacy >/dev/null 2>&1; then IPT=iptables-legacy
-elif command -v iptables >/dev/null 2>&1; then IPT=iptables
-else echo "egress-lockdown: no iptables binary" >&2; exit 1; fi
-echo "egress-lockdown: using $IPT; gateway=$GATEWAY_IP:$ENVOY_PORT"
-$IPT -A OUTPUT -o lo -j ACCEPT
-$IPT -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-$IPT -A OUTPUT -d "$GATEWAY_IP" -p tcp --dport "$ENVOY_PORT" -j ACCEPT
-$IPT -A OUTPUT -j DROP
+echo "egress-lockdown: gateway=$GATEWAY_IP:$ENVOY_PORT"
+iptables -A OUTPUT -o lo -j ACCEPT
+iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+iptables -A OUTPUT -d "$GATEWAY_IP" -p tcp --dport "$ENVOY_PORT" -j ACCEPT
+iptables -A OUTPUT -j DROP
 echo "egress-lockdown: gateway-only egress applied"
 `
 
-	// Root + NET_ADMIN/NET_RAW needed to manipulate netfilter; both are
-	// scoped to this init container, which exits before the agent runtime
-	// container starts. Container-level overrides cancel the pod-level
-	// runAsNonRoot floor. allowPrivilegeEscalation stays false — iptables
-	// doesn't need to gain caps at exec, and false sets no_new_privs=1.
+	// Root + NET_ADMIN/NET_RAW for netfilter ops; everything else dropped.
+	// The runtime agent container is unaffected — these caps live only on
+	// this short-lived init container.
 	runAsRoot := int64(0)
 	return &corev1.Container{
 		Name:    iptablesInitContainerName,
 		Image:   cfgInit.Image,
-		Command: []string{"sh", "-c", script},
+		Command: []string{"/bin/sh", "-c", script},
 		Env: []corev1.EnvVar{
 			{Name: "GATEWAY_IP", Value: gatewayClusterIP},
 			{Name: "ENVOY_PORT", Value: fmt.Sprintf("%d", cfg.EnvoyPort)},
@@ -63,6 +55,7 @@ echo "egress-lockdown: gateway-only egress applied"
 			RunAsUser:                &runAsRoot,
 			RunAsNonRoot:             ptrBool(false),
 			AllowPrivilegeEscalation: ptrBool(false),
+			ReadOnlyRootFilesystem:   ptrBool(true),
 			Capabilities: &corev1.Capabilities{
 				Drop: []corev1.Capability{"ALL"},
 				Add:  []corev1.Capability{"NET_ADMIN", "NET_RAW"},
