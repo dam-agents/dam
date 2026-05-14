@@ -5,16 +5,26 @@ import {
   type TrpcClient,
 } from "../modules/shared/trpc/trpc-client.js";
 
-/** Build a stub trpc client that supplies `query` methods for the two
- *  routes the service consumes. */
+/** Build a stub trpc client that supplies `query` / `mutate` methods
+ *  for the routes the service consumes. */
 function makeTrpc(opts: {
   list?: () => unknown;
   get?: (input: { id: string }) => unknown;
+  instancesDelete?: (input: { id: string }) => unknown;
+  agentsDelete?: (input: { id: string }) => unknown;
 }): TrpcClient {
   return {
     instances: {
       list: { query: vi.fn(async () => opts.list?.() ?? []) },
       get: { query: vi.fn(async (input: { id: string }) => opts.get?.(input) ?? null) },
+      delete: {
+        mutate: vi.fn(async (input: { id: string }) => opts.instancesDelete?.(input)),
+      },
+    },
+    agents: {
+      delete: {
+        mutate: vi.fn(async (input: { id: string }) => opts.agentsDelete?.(input)),
+      },
     },
   } as unknown as TrpcClient;
 }
@@ -58,6 +68,26 @@ describe("instance-service", () => {
     expect(result).toEqual({
       ok: false,
       error: { kind: "auth-required", reason: "not logged in to host X" },
+    });
+  });
+
+  it("deleteInstance routes through instances.delete and maps NOT_FOUND to a typed not-found error", async () => {
+    // Used by `dam instance delete` for orphan instances (templateId
+    // === null) where the cascade via `agents.delete` would silently
+    // no-op and leave the Instance ConfigMap behind.
+    const svc = createInstanceService({
+      trpc: makeTrpc({
+        instancesDelete: () => {
+          throw trpcError("NOT_FOUND", "no such instance");
+        },
+      }),
+    });
+
+    const result = await svc.deleteInstance("inst-gone");
+
+    expect(result).toEqual({
+      ok: false,
+      error: { kind: "not-found", ref: "inst-gone", via: "id" },
     });
   });
 

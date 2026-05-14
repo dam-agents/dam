@@ -103,12 +103,23 @@ async function runDelete(ref: string, opts: CliOpts, deps: DeleteCommandDeps): P
     }
   }
 
-  const result = await svc.deleteAgent(instance.agentId);
+  // The normal path goes through `agents.delete`, which cascades to the
+  // Instance ConfigMap via K8s OwnerReferences. When the Agent is already
+  // gone (`templateId === null` in the projection — see the
+  // orphan-agent-reference warning emitted by the api-server's
+  // `instances.list`), that cascade can't fire, so we delete the Instance
+  // ConfigMap directly. Without this fork, an orphan would silently
+  // no-op on `agents.delete` and the CLI would print success while the
+  // Instance ConfigMap and its PVCs survived.
+  const orphan = instance.templateId === null;
+  const result = orphan
+    ? await svc.deleteInstance(instance.id)
+    : await svc.deleteAgent(instance.agentId);
   let alreadyGone = false;
   if (!result.ok) {
     if (result.error.kind === "not-found") {
-      // Race: the agent vanished between resolve and delete. The
-      // user's intent is satisfied, but surface that the action was
+      // Race: the agent/instance vanished between resolve and delete.
+      // The user's intent is satisfied, but surface that the action was
       // a no-op so callers can audit cascade cleanup separately.
       alreadyGone = true;
     } else if (result.error.kind === "auth-required") {
@@ -128,11 +139,16 @@ async function runDelete(ref: string, opts: CliOpts, deps: DeleteCommandDeps): P
         id: instance.id,
         name: instance.name,
         alreadyGone,
+        orphan,
       })}\n`,
     );
   } else if (alreadyGone) {
     process.stdout.write(
       `✓ Deleted instance "${instance.name}" (was already gone).\n`,
+    );
+  } else if (orphan) {
+    process.stdout.write(
+      `✓ Deleted orphaned instance "${instance.name}" (no backing agent).\n`,
     );
   } else {
     process.stdout.write(`✓ Deleted instance "${instance.name}".\n`);
