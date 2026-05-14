@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import type { InstancesService } from "../services/instances-service.js";
+import type { InstanceService } from "../services/instance-service.js";
 import { createInstanceResolver } from "../services/instance-resolver.js";
 import {
   describeConfigError,
@@ -11,16 +11,16 @@ import {
 } from "./errors.js";
 import { confirm } from "./prompt.js";
 import {
-  EXIT_INSTANCES_BELOW_FLOOR,
-  EXIT_INSTANCES_INVALID_INPUT,
-  EXIT_INSTANCES_RUNTIME_FAILURE,
-  EXIT_INSTANCES_SUCCESS,
+  EXIT_INSTANCE_BELOW_FLOOR,
+  EXIT_INSTANCE_INVALID_INPUT,
+  EXIT_INSTANCE_RUNTIME_FAILURE,
+  EXIT_INSTANCE_SUCCESS,
 } from "./exit-codes.js";
 
 export interface DeleteCommandDeps {
   compatService: CompatService;
   configService: ConfigService;
-  createInstancesService: (host: string) => InstancesService;
+  createInstanceService: (host: string) => InstanceService;
   serverEnvVar: string;
 }
 
@@ -39,7 +39,7 @@ export function buildDeleteCommand(deps: DeleteCommandDeps): Command {
     .option("--json", "emit { deleted, id, name } or { cancelled: true } as JSON")
     .addHelpText(
       "after",
-      "\nExamples:\n  dam instances delete my-agent\n  dam instances delete inst-abc123 --yes\n",
+      "\nExamples:\n  dam instance delete my-agent\n  dam instance delete inst-abc123 --yes\n",
     )
     .action(async (ref: string, opts: CliOpts) => {
       await runDelete(ref, opts, deps);
@@ -52,14 +52,14 @@ async function runDelete(ref: string, opts: CliOpts, deps: DeleteCommandDeps): P
   const compat = await deps.compatService.check({ flag });
   if (!compat.ok) {
     printCompatResolveError(compat.error, deps.serverEnvVar);
-    process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+    process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
   }
   const verdict = compat.value;
   if (verdict.kind === "below-floor") {
     process.stderr.write(
       `error: CLI ${verdict.localCli} is below the server's minimum required version ${verdict.serverMinClient}; upgrade and retry\n`,
     );
-    process.exit(EXIT_INSTANCES_BELOW_FLOOR);
+    process.exit(EXIT_INSTANCE_BELOW_FLOOR);
   }
   if (verdict.kind === "behind-current") {
     process.stderr.write(
@@ -70,12 +70,12 @@ async function runDelete(ref: string, opts: CliOpts, deps: DeleteCommandDeps): P
   const cfg = await deps.configService.getResolved({ flag });
   if (!cfg.ok) {
     process.stderr.write(`error: ${describeConfigError(cfg.error)}\n`);
-    process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+    process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
   }
   const host = cfg.value.server;
 
-  const svc = deps.createInstancesService(host);
-  const resolver = createInstanceResolver({ instancesService: svc });
+  const svc = deps.createInstanceService(host);
+  const resolver = createInstanceResolver({ instanceService: svc });
   const resolved = await resolver.resolve(ref);
   if (!resolved.ok) {
     printResolveError(resolved.error, host);
@@ -88,7 +88,7 @@ async function runDelete(ref: string, opts: CliOpts, deps: DeleteCommandDeps): P
       process.stderr.write(
         "error: delete requires confirmation; pass `--yes` or run interactively\n",
       );
-      process.exit(EXIT_INSTANCES_INVALID_INPUT);
+      process.exit(EXIT_INSTANCE_INVALID_INPUT);
     }
     const proceed = await confirm(
       `Delete instance "${instance.name}"? This destroys all persistent data and cannot be undone.`,
@@ -99,7 +99,7 @@ async function runDelete(ref: string, opts: CliOpts, deps: DeleteCommandDeps): P
       } else {
         process.stdout.write("Cancelled.\n");
       }
-      process.exit(EXIT_INSTANCES_SUCCESS);
+      process.exit(EXIT_INSTANCE_SUCCESS);
     }
   }
 
@@ -111,10 +111,10 @@ async function runDelete(ref: string, opts: CliOpts, deps: DeleteCommandDeps): P
     } else if (result.error.kind === "auth-required") {
       process.stderr.write(`error: not authenticated: ${result.error.reason}\n`);
       process.stderr.write("hint: run `dam auth login` first\n");
-      process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+      process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
     } else {
       process.stderr.write(`error: ${formatTransportError(result.error.reason, host)}\n`);
-      process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+      process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
     }
   }
 
@@ -125,6 +125,5 @@ async function runDelete(ref: string, opts: CliOpts, deps: DeleteCommandDeps): P
   } else {
     process.stdout.write(`✓ Deleted instance "${instance.name}".\n`);
   }
-  process.exit(EXIT_INSTANCES_SUCCESS);
+  process.exit(EXIT_INSTANCE_SUCCESS);
 }
-

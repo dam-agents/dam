@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   parseEnvFlag,
   validateInstanceName,
-} from "../modules/instances/commands/create-helpers.js";
+} from "../modules/instance/commands/create-helpers.js";
 
 describe("parseEnvFlag", () => {
   it("parses KEY=VAL into a single EnvVar", () => {

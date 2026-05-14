@@ -1,5 +1,5 @@
 /**
- * Shared stderr formatting for `instances` command actions.
+ * Shared stderr formatting for `instance` command actions.
  *
  * Three families of error all flow through the same pre-flight skeleton
  * (compat probe → config resolve → service call), so the message helpers
@@ -11,7 +11,7 @@
 
 import type { ResolveError } from "../services/instance-resolver.js";
 import {
-  EXIT_INSTANCES_RUNTIME_FAILURE,
+  EXIT_INSTANCE_RUNTIME_FAILURE,
   EXIT_INSTANCE_NOT_RESOLVED,
 } from "./exit-codes.js";
 
@@ -54,7 +54,7 @@ export function exitCodeForResolveError(error: ResolveError): number {
   if (error.kind === "not-found" || error.kind === "ambiguous") {
     return EXIT_INSTANCE_NOT_RESOLVED;
   }
-  return EXIT_INSTANCES_RUNTIME_FAILURE;
+  return EXIT_INSTANCE_RUNTIME_FAILURE;
 }
 
 /** Standard stderr renderer for an `InstanceResolver` failure. Shares

@@ -4,7 +4,7 @@ import { err, ok, type Result } from "../../../result.js";
 import type {
   AuthRequiredError,
   TransportError,
-} from "../../instances/domain/errors.js";
+} from "../../instance/domain/errors.js";
 
 /**
  * Port over the api-server's `templates.list` route.
@@ -21,15 +21,15 @@ export interface Template {
   description?: string;
 }
 
-export interface TemplatesService {
+export interface TemplateService {
   list(): Promise<Result<readonly Template[], TransportError | AuthRequiredError>>;
 }
 
-export interface TemplatesServiceDeps {
+export interface TemplateServiceDeps {
   trpc: TrpcClient;
 }
 
-export function createTemplatesService(deps: TemplatesServiceDeps): TemplatesService {
+export function createTemplateService(deps: TemplateServiceDeps): TemplateService {
   return {
     async list() {
       try {

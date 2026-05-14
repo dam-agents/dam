@@ -1,5 +1,5 @@
 import type { Instance } from "api-server-api";
-import type { InstancesService } from "./instances-service.js";
+import type { InstanceService } from "./instance-service.js";
 
 /**
  * Polls `instances.get(id)` at a fixed 2 s cadence until the instance is
@@ -32,7 +32,7 @@ export type WaitResult =
 const POLL_INTERVAL_MS = 2000;
 
 export async function waitForRunning(
-  svc: InstancesService,
+  svc: InstanceService,
   id: string,
   opts: WaitOptions,
 ): Promise<WaitResult> {

@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import type { Instance } from "api-server-api";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import type { InstancesService } from "../services/instances-service.js";
+import type { InstanceService } from "../services/instance-service.js";
 import type {
   AuthRequiredError,
   TransportError,
@@ -12,9 +12,9 @@ import {
   printCompatResolveError,
 } from "./errors.js";
 import {
-  EXIT_INSTANCES_BELOW_FLOOR,
-  EXIT_INSTANCES_RUNTIME_FAILURE,
-  EXIT_INSTANCES_SUCCESS,
+  EXIT_INSTANCE_BELOW_FLOOR,
+  EXIT_INSTANCE_RUNTIME_FAILURE,
+  EXIT_INSTANCE_SUCCESS,
 } from "./exit-codes.js";
 
 export interface ListCommandDeps {
@@ -22,7 +22,7 @@ export interface ListCommandDeps {
   configService: ConfigService;
   /** Per-host factory — produced by the module's compose. Called once
    *  per command invocation against the resolved Active Host. */
-  createInstancesService: (host: string) => InstancesService;
+  createInstanceService: (host: string) => InstanceService;
   /** Env var name for the server URL — surfaced in the
    *  `no server configured` hint. */
   serverEnvVar: string;
@@ -35,7 +35,7 @@ export function buildListCommand(deps: ListCommandDeps): Command {
     .option("--json", "emit raw JSON instead of the default table")
     .addHelpText(
       "after",
-      "\nExamples:\n  dam instances list\n  dam instances list --json\n",
+      "\nExamples:\n  dam instance list\n  dam instance list --json\n",
     )
     .action(async (opts: { server?: string; json?: boolean }) => {
       const flag = opts.server ? { server: opts.server } : undefined;
@@ -47,14 +47,14 @@ export function buildListCommand(deps: ListCommandDeps): Command {
       const compat = await deps.compatService.check({ flag });
       if (!compat.ok) {
         printCompatResolveError(compat.error, deps.serverEnvVar);
-        process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+        process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
       }
       const verdict = compat.value;
       if (verdict.kind === "below-floor") {
         process.stderr.write(
           `error: CLI ${verdict.localCli} is below the server's minimum required version ${verdict.serverMinClient}; upgrade and retry\n`,
         );
-        process.exit(EXIT_INSTANCES_BELOW_FLOOR);
+        process.exit(EXIT_INSTANCE_BELOW_FLOOR);
       }
       if (verdict.kind === "behind-current") {
         process.stderr.write(
@@ -68,22 +68,22 @@ export function buildListCommand(deps: ListCommandDeps): Command {
       const cfg = await deps.configService.getResolved({ flag });
       if (!cfg.ok) {
         process.stderr.write(`error: ${describeConfigError(cfg.error)}\n`);
-        process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+        process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
       }
 
       const host = cfg.value.server;
-      const svc = deps.createInstancesService(host);
+      const svc = deps.createInstanceService(host);
       const result = await svc.list();
       if (!result.ok) {
         printServiceError(result.error, host);
-        process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+        process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
       }
 
       if (opts.json) {
         // Always emit `[]` on empty regardless of TTY — scripts consume
         // this unconditionally.
         process.stdout.write(`${JSON.stringify(result.value)}\n`);
-        process.exit(EXIT_INSTANCES_SUCCESS);
+        process.exit(EXIT_INSTANCE_SUCCESS);
       }
 
       if (result.value.length === 0) {
@@ -91,13 +91,13 @@ export function buildListCommand(deps: ListCommandDeps): Command {
         // note, empty stdout, exit 0.
         process.stderr.write("No instances.\n");
         process.stderr.write(
-          "hint: create one with `dam instances create <name> --template <id>`\n",
+          "hint: create one with `dam instance create <name> --template <id>`\n",
         );
-        process.exit(EXIT_INSTANCES_SUCCESS);
+        process.exit(EXIT_INSTANCE_SUCCESS);
       }
 
       process.stdout.write(renderTable(result.value));
-      process.exit(EXIT_INSTANCES_SUCCESS);
+      process.exit(EXIT_INSTANCE_SUCCESS);
     });
 }
 

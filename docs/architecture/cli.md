@@ -1,16 +1,16 @@
 # CLI
 
-Last verified: 2026-05-13
+Last verified: 2026-05-14
 
 ## Motivated by
 
 - [ADR-039 — Platform CLI foundation](../adrs/039-cli-foundation.md) — TypeScript Node package distributed via npm; reuses the api-server tRPC contract; flat config under XDG-standard locations; server-advertised compatibility floor.
 - [ADR-037 — Remote terminal](../adrs/037-remote-terminal.md) — predecessor; established the "terminal" session mode the CLI complements with `dam shell` (a future verb).
-- [#188 — `dam instances create` and template discovery](https://github.com/dam-agents/dam/issues/188) — added the create/delete/restart lifecycle verbs and `templates list`, closing the loop on the "install CLI → set up agent → use agent" demo story.
+- [#188 — `dam instance create` and template discovery](https://github.com/dam-agents/dam/issues/188) — added the create/delete/restart lifecycle verbs and `template list`, closing the loop on the "install CLI → set up agent → use agent" demo story.
 
 ## Overview
 
-The `dam` CLI is a TypeScript Node package that users install on their own machine and point at a configured Platform deployment. It never runs inside the cluster. The current surface: `dam --version`, `dam --help` (built-in flags), `dam config set`, `dam ping`, `dam version`, the `dam auth login` / `dam auth logout` / `dam auth status` verbs added by [#80](https://github.com/dam-agents/dam/issues/80), `dam instances list` / `dam instances get` added by [#81](https://github.com/dam-agents/dam/issues/81), and `dam instances create` / `dam instances delete` / `dam instances restart` / `dam templates list` added by [#188](https://github.com/dam-agents/dam/issues/188). Future verbs — `dam shell`, `dam import` — slot into their own modules and consume the Token Provider seam from `auth` plus the Instance Resolver seam from `instances`.
+The `dam` CLI is a TypeScript Node package that users install on their own machine and point at a configured Platform deployment. It never runs inside the cluster. The current surface: `dam --version`, `dam --help` (built-in flags), `dam config set`, `dam ping`, `dam version`, the `dam auth login` / `dam auth logout` / `dam auth status` verbs added by [#80](https://github.com/dam-agents/dam/issues/80), `dam instance list` / `dam instance get` added by [#81](https://github.com/dam-agents/dam/issues/81), and `dam instance create` / `dam instance delete` / `dam instance restart` / `dam template list` added by [#188](https://github.com/dam-agents/dam/issues/188). Command groups are singular to align with `gh`, `git`, and `docker` conventions. Future verbs — `dam shell`, `dam import` — slot into their own modules and consume the Token Provider seam from `auth` plus the Instance Resolver seam from `instance`.
 
 The CLI shares types directly with the api-server via a shared contract package, so server-side type changes reach the CLI without codegen or manual mirroring. tRPC routes are reached through `@trpc/client` typed against the contract's `AppRouter`; the auth probes (`/api/auth/config`, OIDC discovery) stay as raw `fetch` because they are not tRPC.
 
@@ -63,23 +63,23 @@ For headless / CI use, set `DAM_TOKEN=<bearer>` — the CLI uses it verbatim and
 
 ## Instance addressing
 
-The `instances` module gives users a human-friendly path to address an Instance and exports the seam every future Instance-targeted verb consumes.
+The `instance` module gives users a human-friendly path to address an Instance and exports the seam every future Instance-targeted verb consumes.
 
 - **Instance Ref** — what the user types. Either an Instance ID (anything starting with the Reserved ID Prefix `inst-`) or an Instance name. The split is syntactic; no probe disambiguates them.
 - **Resolver policy** — `inst-…` is looked up via `instances.get`; anything else is matched by exact, case-sensitive name against `instances.list`. Zero matches → `not-found`; one → ok; two or more → `ambiguous`. No normalization. No retries. One round-trip per resolution in both branches.
 - **Reserved ID Prefix** — the controller mints Instance IDs via `generateK8sName("inst")`. The api-server rejects Instance names beginning with `inst-` at create-time (zod refinement → BAD_REQUEST), eliminating the only ambiguous case.
 - **Uniqueness** — `(owner, name)` is unique. Enforced at create-time as a list-then-check (TRPCError CONFLICT). The race window is accepted for CLI traffic; pre-existing duplicates fall through to the resolver's `ambiguous` path.
-- **Resolver surface** — `InstanceResolver` is exported from the `instances` module's `index.ts`. Downstream verbs (`dam shell`, …) import it from there and ask the module's compose for an `InstancesService` bound to the resolved Active Host.
+- **Resolver surface** — `InstanceResolver` is exported from the `instance` module's `index.ts`. Downstream verbs (`dam shell`, …) import it from there and ask the module's compose for an `InstanceService` bound to the resolved Active Host.
 - **`EXIT_INSTANCE_NOT_RESOLVED = 5`** — single exit code shared by `not-found` and `ambiguous`; wrapper scripts don't need to branch on "did you mean a different one" vs "no such instance".
 - **`--json` parity** — both `list` and `get` emit raw `Instance` / `Instance[]` from the contract. Empty list is `[]`, never `null`.
 
 ## Instance lifecycle
 
-The CLI presents Instances as single, atomic entities. The server-side Agent ↔ Instance 1:N split (an Agent is a template-bound desired spec; an Instance is a running pod derived from one) is intentionally hidden — `dam instances create` orchestrates the agent and the instance as a pair, and `dam instances delete` cascades through the Agent so the same OwnerReferences the web UI relies on clean up the instance and its PVCs.
+The CLI presents Instances as single, atomic entities. The server-side Agent ↔ Instance 1:N split (an Agent is a template-bound desired spec; an Instance is a running pod derived from one) is intentionally hidden — `dam instance create` orchestrates the agent and the instance as a pair, and `dam instance delete` cascades through the Agent so the same OwnerReferences the web UI relies on clean up the instance and its PVCs.
 
 - **Create** issues `agents.create` followed by `instances.create` as a single user-facing action. Env vars and description attach to the **agent** (matching UI behavior, so subsequent UI edits land where the user expects). If `instances.create` fails with a typed `TRPCError`, the CLI attempts a single 10-second rollback of the agent so partial failures don't leak orphans; untyped failures (network, `INTERNAL_SERVER_ERROR`) leave the agent and surface a hint pointing at the orphan, because the instance may have been created and silently rolling back would destroy real state.
 - **Delete** calls `agents.delete(agentId)`. The Kubernetes garbage collector cascades through to the Instance ConfigMap and any owned PVCs. The legacy `instances.delete` server route is not used by the CLI; it exists for the 1:N case the UI may reactivate. Delete confirms by default; `--yes` bypasses the prompt and is required on non-TTY stdin.
 - **Restart** calls `instances.restart(id)`, which deletes pod-0 of the StatefulSet. The controller recreates the pod with the current spec; persistent volumes (the home mount and any template-declared `persist: true` mounts) survive.
 - **`--wait`** on `create` and `restart` polls `instances.get` every 2 seconds and settles on `state === "running"` (success) or `state === "error"` (terminal). `restart --wait` sleeps 2 seconds before the first poll so the controller has time to observe the pod deletion — otherwise the first poll might see stale `running` state from the doomed pod. Default timeout is 120 seconds; on timeout the instance is left as-is (no rollback) and the command exits non-zero.
 
-`dam templates list` exposes the agent templates the operator has installed on the active host (the `claude-code`, `pi-agent`, etc. ConfigMaps the controller reads at boot). Templates are read-only from the CLI's perspective; operators add or remove them via Helm.
+`dam template list` exposes the agent templates the operator has installed on the active host (the `claude-code`, `pi-agent`, etc. ConfigMaps the controller reads at boot). Templates are read-only from the CLI's perspective; operators add or remove them via Helm.

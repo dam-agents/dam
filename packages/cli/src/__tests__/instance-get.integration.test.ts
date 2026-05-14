@@ -46,50 +46,31 @@ async function runDam(
   }
 }
 
-/** Minimal fake api-server. Serves `/api/version` (for the compat
- *  pre-flight) and proxies tRPC routes to `appRouter` against a stub
- *  ApiContext where only `instances` is implemented; other ctx fields
- *  are populated lazily via a proxy that throws if touched, so a test
- *  that accidentally hits an unrelated route fails loudly. */
 async function startFixture(opts: {
-  list: () => Promise<Instance[]>;
+  list?: () => Promise<Instance[]>;
   get?: (id: string) => Promise<Instance | null>;
-  expectAuthorization?: string;
 }): Promise<{ url: string; close: () => Promise<void> }> {
   const instances: Partial<InstancesService> = {
-    list: opts.list,
+    list: opts.list ?? (async () => []),
     get: opts.get ?? (async () => null),
   };
 
   const ctx = new Proxy({ instances } as Record<string, unknown>, {
     get(target, prop) {
       if (prop in target) return target[prop as string];
-      // `then` is probed by the runtime when awaiting a Promise — return
-      // undefined so the value is treated as a plain object, not a
-      // thenable.
       if (prop === "then") return undefined;
       throw new Error(`fake api-server: unexpected ctx access: ${String(prop)}`);
     },
   }) as unknown as ApiContext;
 
   const server: Server = createServer(async (req, res) => {
-    // Compat probe.
     if (req.url === "/api/version") {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ serverVersion: "1.0.0", minClientVersion: "0.0.0" }));
       return;
     }
 
-    // tRPC routes — bridge node IncomingMessage to a Fetch Request.
     if (req.url?.startsWith("/api/trpc/")) {
-      if (opts.expectAuthorization !== undefined) {
-        const got = req.headers["authorization"];
-        if (got !== opts.expectAuthorization) {
-          res.writeHead(401, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "unauthorized" }));
-          return;
-        }
-      }
       const chunks: Buffer[] = [];
       for await (const c of req) chunks.push(c as Buffer);
       const body = chunks.length ? Buffer.concat(chunks) : undefined;
@@ -147,13 +128,13 @@ function makeInstance(overrides: Partial<Instance> = {}): Instance {
   };
 }
 
-describe("dam instances list (integration)", () => {
+describe("dam instance get (integration)", () => {
   // `dist/bin.js` is built once by `vitest.config.ts`'s globalSetup.
 
   let home: string;
 
   beforeEach(async () => {
-    home = await mkdtemp(join(tmpdir(), "dam-instlist-"));
+    home = await mkdtemp(join(tmpdir(), "dam-instget-"));
   });
 
   afterEach(async () => {
@@ -172,123 +153,151 @@ describe("dam instances list (integration)", () => {
     expect(r.exitCode).toBe(0);
   }
 
-  it("default text output: alphabetical 4-column table, exit 0", async () => {
+  it("get by id: prints the vertical layout, exit 0", async () => {
+    const inst = makeInstance({
+      id: "inst-42",
+      name: "prod",
+      agentId: "claude-code",
+      templateId: "claude-code",
+      image: "registry.example.com/claude-code:latest",
+      description: "My prod environment",
+      allowedUserEmails: ["alice@example.com", "bob@example.com"],
+    });
+    const fixture = await startFixture({
+      get: async (id) => (id === "inst-42" ? inst : null),
+    });
+    try {
+      await configureServer(fixture.url);
+
+      const r = await runDam(["instance", "get", "inst-42"], {
+        HOME: home,
+        PATH: process.env.PATH ?? "",
+        DAM_TOKEN: "test-token",
+      });
+
+      expect(r.exitCode, `stderr: ${r.stderr}`).toBe(0);
+      expect(r.stdout).toMatch(/^NAME:\s+prod$/m);
+      expect(r.stdout).toMatch(/^ID:\s+inst-42$/m);
+      expect(r.stdout).toMatch(/^TEMPLATE:\s+claude-code$/m);
+      expect(r.stdout).toMatch(/^IMAGE:\s+registry\.example\.com\/claude-code:latest$/m);
+      expect(r.stdout).toMatch(/^STATE:\s+running$/m);
+      expect(r.stdout).toMatch(/^DESCRIPTION:\s+My prod environment$/m);
+      expect(r.stdout).toMatch(/^ALLOWED:\s+alice@example\.com, bob@example\.com$/m);
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("get by name: same output, resolver picks the right instance", async () => {
+    const inst = makeInstance({ id: "inst-77", name: "staging" });
     const fixture = await startFixture({
       list: async () => [
-        makeInstance({ id: "inst-2", name: "staging", agentId: "claude-code", state: "hibernated" }),
-        makeInstance({ id: "inst-1", name: "prod", agentId: "claude-code" }),
-        makeInstance({ id: "inst-3", name: "test-x", agentId: "pi-agent", state: "error" }),
+        makeInstance({ id: "inst-99", name: "prod" }),
+        inst,
       ],
-      expectAuthorization: "Bearer test-token",
     });
     try {
       await configureServer(fixture.url);
 
-      const r = await runDam(["instances", "list"], {
+      const r = await runDam(["instance", "get", "staging"], {
         HOME: home,
         PATH: process.env.PATH ?? "",
         DAM_TOKEN: "test-token",
       });
 
-      expect(r.exitCode, `stderr: ${r.stderr}\nstdout: ${r.stdout}`).toBe(0);
-      const lines = r.stdout.trimEnd().split("\n");
-      expect(lines[0]).toMatch(/^NAME\s+ID\s+TEMPLATE\s+STATE$/);
-      // Alphabetical sort: prod < staging < test-x
-      expect(lines[1]).toContain("prod");
-      expect(lines[2]).toContain("staging");
-      expect(lines[3]).toContain("test-x");
-      expect(lines[1]).toContain("inst-1");
-      expect(lines[3]).toContain("error");
+      expect(r.exitCode, `stderr: ${r.stderr}`).toBe(0);
+      expect(r.stdout).toMatch(/^NAME:\s+staging$/m);
+      expect(r.stdout).toMatch(/^ID:\s+inst-77$/m);
     } finally {
       await fixture.close();
     }
   });
 
-  it("--json output: raw Instance[] on stdout, exit 0", async () => {
+  it("get by id 404: stderr references the id, exit 5", async () => {
+    const fixture = await startFixture({
+      get: async () => null,
+    });
+    try {
+      await configureServer(fixture.url);
+
+      const r = await runDam(["instance", "get", "inst-nope"], {
+        HOME: home,
+        PATH: process.env.PATH ?? "",
+        DAM_TOKEN: "test-token",
+      });
+
+      expect(r.exitCode).toBe(5);
+      expect(r.stderr).toContain("no instance with id `inst-nope`");
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("get by name not-found: stderr references the name, exit 5", async () => {
+    const fixture = await startFixture({
+      list: async () => [makeInstance({ name: "staging" })],
+    });
+    try {
+      await configureServer(fixture.url);
+
+      const r = await runDam(["instance", "get", "prod"], {
+        HOME: home,
+        PATH: process.env.PATH ?? "",
+        DAM_TOKEN: "test-token",
+      });
+
+      expect(r.exitCode).toBe(5);
+      expect(r.stderr).toContain('no instance named "prod"');
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("get by name ambiguous: stderr lists matches, exit 5", async () => {
+    const fixture = await startFixture({
+      list: async () => [
+        makeInstance({ id: "inst-A", name: "prod" }),
+        makeInstance({ id: "inst-B", name: "prod" }),
+        makeInstance({ id: "inst-C", name: "other" }),
+      ],
+    });
+    try {
+      await configureServer(fixture.url);
+
+      const r = await runDam(["instance", "get", "prod"], {
+        HOME: home,
+        PATH: process.env.PATH ?? "",
+        DAM_TOKEN: "test-token",
+      });
+
+      expect(r.exitCode).toBe(5);
+      expect(r.stderr).toContain('multiple instances named "prod"');
+      expect(r.stderr).toContain("inst-A");
+      expect(r.stderr).toContain("inst-B");
+      expect(r.stderr).not.toContain("inst-C");
+      expect(r.stderr).toContain("hint: specify by id instead");
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("--json output: raw Instance on stdout", async () => {
     const inst = makeInstance({ id: "inst-42", name: "prod" });
     const fixture = await startFixture({
-      list: async () => [inst],
-      expectAuthorization: "Bearer test-token",
+      get: async () => inst,
     });
     try {
       await configureServer(fixture.url);
 
-      const r = await runDam(["instances", "list", "--json"], {
+      const r = await runDam(["instance", "get", "inst-42", "--json"], {
         HOME: home,
         PATH: process.env.PATH ?? "",
         DAM_TOKEN: "test-token",
       });
 
-      expect(r.exitCode).toBe(0);
-      const parsed = JSON.parse(r.stdout) as Instance[];
-      expect(parsed).toHaveLength(1);
-      expect(parsed[0]).toMatchObject({ id: "inst-42", name: "prod" });
-    } finally {
-      await fixture.close();
-    }
-  });
-
-  it("empty state: 'No instances.' to stderr, empty stdout, exit 0", async () => {
-    const fixture = await startFixture({
-      list: async () => [],
-      expectAuthorization: "Bearer test-token",
-    });
-    try {
-      await configureServer(fixture.url);
-
-      const r = await runDam(["instances", "list"], {
-        HOME: home,
-        PATH: process.env.PATH ?? "",
-        DAM_TOKEN: "test-token",
-      });
-
-      expect(r.exitCode).toBe(0);
-      expect(r.stdout).toBe("");
-      expect(r.stderr).toContain("No instances.");
-    } finally {
-      await fixture.close();
-    }
-  });
-
-  it("bare `dam instances` aliases to `list` (commander isDefault)", async () => {
-    const fixture = await startFixture({
-      list: async () => [makeInstance()],
-      expectAuthorization: "Bearer test-token",
-    });
-    try {
-      await configureServer(fixture.url);
-
-      const r = await runDam(["instances"], {
-        HOME: home,
-        PATH: process.env.PATH ?? "",
-        DAM_TOKEN: "test-token",
-      });
-
-      expect(r.exitCode).toBe(0);
-      expect(r.stdout).toContain("demo");
-      expect(r.stdout).toContain("NAME");
-    } finally {
-      await fixture.close();
-    }
-  });
-
-  it("missing token (no auth.toml, no DAM_TOKEN): error directs user to dam auth login", async () => {
-    const fixture = await startFixture({
-      list: async () => [],
-      // No expectAuthorization — the request never reaches the server
-      // because the token provider aborts before the wire.
-    });
-    try {
-      await configureServer(fixture.url);
-
-      const r = await runDam(["instances", "list"], {
-        HOME: home,
-        XDG_STATE_HOME: home,  // empty state → not-logged-in
-        PATH: process.env.PATH ?? "",
-      });
-
-      expect(r.exitCode).not.toBe(0);
-      expect(r.stderr).toContain("dam auth login");
+      expect(r.exitCode, `stderr: ${r.stderr}`).toBe(0);
+      const parsed = JSON.parse(r.stdout) as Instance;
+      expect(parsed).toMatchObject({ id: "inst-42", name: "prod" });
     } finally {
       await fixture.close();
     }

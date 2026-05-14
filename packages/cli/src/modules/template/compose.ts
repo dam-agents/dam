@@ -4,26 +4,26 @@ import type { CompatService, ConfigService } from "../cli/index.js";
 import { createTrpcClient } from "../shared/trpc/trpc-client.js";
 import { buildListCommand } from "./commands/list.js";
 import {
-  createTemplatesService,
-  type TemplatesService,
-} from "./services/templates-service.js";
+  createTemplateService,
+  type TemplateService,
+} from "./services/template-service.js";
 
-export interface TemplatesModuleOptions {
+export interface TemplateModuleOptions {
   tokenProvider: TokenProvider;
   configService: ConfigService;
   compatService: CompatService;
   serverEnvVar: string;
 }
 
-export interface TemplatesModule {
+export interface TemplateModule {
   commands: ReadonlyArray<Command>;
   exports: {
-    createService: (host: string) => TemplatesService;
+    createService: (host: string) => TemplateService;
   };
 }
 
-export function composeTemplatesModule(opts: TemplatesModuleOptions): TemplatesModule {
-  const createService = (host: string): TemplatesService => {
+export function composeTemplateModule(opts: TemplateModuleOptions): TemplateModule {
+  const createService = (host: string): TemplateService => {
     const trpc = createTrpcClient({
       host,
       getToken: async () => {
@@ -36,17 +36,17 @@ export function composeTemplatesModule(opts: TemplatesModuleOptions): TemplatesM
         throw new Error(classified.reason);
       },
     });
-    return createTemplatesService({ trpc });
+    return createTemplateService({ trpc });
   };
 
-  const parent = new Command("templates").description(
+  const parent = new Command("template").description(
     "Discover agent templates on the active host",
   );
   parent.addCommand(
     buildListCommand({
       compatService: opts.compatService,
       configService: opts.configService,
-      createTemplatesService: createService,
+      createTemplateService: createService,
       serverEnvVar: opts.serverEnvVar,
     }),
     { isDefault: true },

@@ -4,7 +4,7 @@ import {
   createTrpcClient,
 } from "../modules/shared/trpc/trpc-client.js";
 import { err, ok, type Result } from "../result.js";
-import type { AuthRequiredError } from "../modules/instances/domain/errors.js";
+import type { AuthRequiredError } from "../modules/instance/domain/errors.js";
 
 const HOST = "http://api-server.localhost:4444";
 

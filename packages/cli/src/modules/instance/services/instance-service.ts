@@ -28,7 +28,7 @@ import {
  * the resolver and the two commands a single seam.
  */
 
-export interface InstancesService {
+export interface InstanceService {
   list(): Promise<Result<readonly Instance[], TransportError | AuthRequiredError>>;
   get(id: string): Promise<Result<Instance | null, TransportError | AuthRequiredError>>;
   /** Cascade-delete an Agent. The K8s OwnerReferences clean up the
@@ -40,11 +40,11 @@ export interface InstancesService {
   restart(id: string): Promise<Result<void, TransportError | AuthRequiredError | NotFoundError>>;
 }
 
-export interface InstancesServiceDeps {
+export interface InstanceServiceDeps {
   trpc: TrpcClient;
 }
 
-export function createInstancesService(deps: InstancesServiceDeps): InstancesService {
+export function createInstanceService(deps: InstanceServiceDeps): InstanceService {
   function classify(
     e: unknown,
   ): Result<never, TransportError | AuthRequiredError> {

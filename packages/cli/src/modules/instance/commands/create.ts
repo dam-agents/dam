@@ -1,9 +1,9 @@
 import { Command } from "commander";
 import type { Instance } from "api-server-api";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import type { TemplatesService } from "../../templates/index.js";
+import type { TemplateService } from "../../template/index.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
-import type { InstancesService } from "../services/instances-service.js";
+import type { InstanceService } from "../services/instance-service.js";
 import { waitForRunning } from "../services/wait-for-state.js";
 import {
   describeConfigError,
@@ -12,10 +12,10 @@ import {
 } from "./errors.js";
 import { parseEnvFlag, validateInstanceName } from "./create-helpers.js";
 import {
-  EXIT_INSTANCES_BELOW_FLOOR,
-  EXIT_INSTANCES_INVALID_INPUT,
-  EXIT_INSTANCES_RUNTIME_FAILURE,
-  EXIT_INSTANCES_SUCCESS,
+  EXIT_INSTANCE_BELOW_FLOOR,
+  EXIT_INSTANCE_INVALID_INPUT,
+  EXIT_INSTANCE_RUNTIME_FAILURE,
+  EXIT_INSTANCE_SUCCESS,
 } from "./exit-codes.js";
 
 const DEFAULT_TIMEOUT_SECONDS = 120;
@@ -33,8 +33,8 @@ const ROLLBACK_CODES = new Set([
 export interface CreateCommandDeps {
   compatService: CompatService;
   configService: ConfigService;
-  createInstancesService: (host: string) => InstancesService;
-  createTemplatesService: (host: string) => TemplatesService;
+  createInstanceService: (host: string) => InstanceService;
+  createTemplateService: (host: string) => TemplateService;
   /** Raw trpc client factory — the create command issues
    *  `agents.create` + `instances.create` directly because the rollback
    *  policy is too command-shaped to live in the service layer. */
@@ -57,7 +57,7 @@ export function buildCreateCommand(deps: CreateCommandDeps): Command {
     .description("Create a new Instance from a template on the active host")
     .argument("<name>", "Instance name (1+ chars, must not start with `inst-`)")
     .option("--server <url>", "override the configured server URL for this call")
-    .option("--template <id>", "template id (required; see `dam templates list`)")
+    .option("--template <id>", "template id (required; see `dam template list`)")
     .option("--description <text>", "free-form description")
     .option(
       "--env <KEY=VAL>",
@@ -76,9 +76,9 @@ export function buildCreateCommand(deps: CreateCommandDeps): Command {
       [
         "",
         "Examples:",
-        "  dam instances create my-agent --template claude-code",
-        "  dam instances create my-agent --template claude-code --wait",
-        "  dam instances create my-agent --template pi-agent --env OPENAI_API_KEY=sk-… --description \"Coding helper\"",
+        "  dam instance create my-agent --template claude-code",
+        "  dam instance create my-agent --template claude-code --wait",
+        "  dam instance create my-agent --template pi-agent --env OPENAI_API_KEY=sk-… --description \"Coding helper\"",
         "",
       ].join("\n"),
     )
@@ -100,14 +100,14 @@ async function runCreate(name: string, opts: CliOpts, deps: CreateCommandDeps): 
     } else {
       process.stderr.write("error: instance name cannot be empty\n");
     }
-    process.exit(EXIT_INSTANCES_INVALID_INPUT);
+    process.exit(EXIT_INSTANCE_INVALID_INPUT);
   }
 
   if (!opts.template) {
     process.stderr.write(
-      "error: `--template` is required; run `dam templates list` to see options\n",
+      "error: `--template` is required; run `dam template list` to see options\n",
     );
-    process.exit(EXIT_INSTANCES_INVALID_INPUT);
+    process.exit(EXIT_INSTANCE_INVALID_INPUT);
   }
   const template = opts.template;
 
@@ -122,7 +122,7 @@ async function runCreate(name: string, opts: CliOpts, deps: CreateCommandDeps): 
         `error: invalid env var name \`${envResult.error.key}\`; must match [A-Z_][A-Z0-9_]*\n`,
       );
     }
-    process.exit(EXIT_INSTANCES_INVALID_INPUT);
+    process.exit(EXIT_INSTANCE_INVALID_INPUT);
   }
   const env = envResult.value;
 
@@ -131,21 +131,21 @@ async function runCreate(name: string, opts: CliOpts, deps: CreateCommandDeps): 
     process.stderr.write(
       `error: invalid \`--timeout\` value \`${opts.timeout}\`; expected positive integer\n`,
     );
-    process.exit(EXIT_INSTANCES_INVALID_INPUT);
+    process.exit(EXIT_INSTANCE_INVALID_INPUT);
   }
 
   // --- Compat pre-flight ----------------------------------------------
   const compat = await deps.compatService.check({ flag });
   if (!compat.ok) {
     printCompatResolveError(compat.error, deps.serverEnvVar);
-    process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+    process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
   }
   const verdict = compat.value;
   if (verdict.kind === "below-floor") {
     process.stderr.write(
       `error: CLI ${verdict.localCli} is below the server's minimum required version ${verdict.serverMinClient}; upgrade and retry\n`,
     );
-    process.exit(EXIT_INSTANCES_BELOW_FLOOR);
+    process.exit(EXIT_INSTANCE_BELOW_FLOOR);
   }
   if (verdict.kind === "behind-current") {
     process.stderr.write(
@@ -156,13 +156,13 @@ async function runCreate(name: string, opts: CliOpts, deps: CreateCommandDeps): 
   const cfg = await deps.configService.getResolved({ flag });
   if (!cfg.ok) {
     process.stderr.write(`error: ${describeConfigError(cfg.error)}\n`);
-    process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+    process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
   }
   const host = cfg.value.server;
 
   // --- Step 1: template pre-validation --------------------------------
-  const templatesSvc = deps.createTemplatesService(host);
-  const tmplResult = await templatesSvc.list();
+  const templateSvc = deps.createTemplateService(host);
+  const tmplResult = await templateSvc.list();
   if (!tmplResult.ok) {
     if (tmplResult.error.kind === "auth-required") {
       process.stderr.write(`error: not authenticated: ${tmplResult.error.reason}\n`);
@@ -170,7 +170,7 @@ async function runCreate(name: string, opts: CliOpts, deps: CreateCommandDeps): 
     } else {
       process.stderr.write(`error: ${formatTransportError(tmplResult.error.reason, host)}\n`);
     }
-    process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+    process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
   }
   const match = tmplResult.value.find((t) => t.id === template);
   if (!match) {
@@ -178,7 +178,7 @@ async function runCreate(name: string, opts: CliOpts, deps: CreateCommandDeps): 
     process.stderr.write(
       `error: unknown template \`${template}\`; available: ${available || "(none)"}\n`,
     );
-    process.exit(EXIT_INSTANCES_INVALID_INPUT);
+    process.exit(EXIT_INSTANCE_INVALID_INPUT);
   }
 
   // --- Steps 2 + 3: agents.create then instances.create ---------------
@@ -197,15 +197,15 @@ async function runCreate(name: string, opts: CliOpts, deps: CreateCommandDeps): 
       process.stderr.write(
         `error: template \`${template}\` was deleted while creating; retry\n`,
       );
-      process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+      process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
     }
     if (isAuthSentinelError(e)) {
       process.stderr.write(`error: not authenticated: ${errorReason(e)}\n`);
       process.stderr.write("hint: run `dam auth login` first\n");
-      process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+      process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
     }
     process.stderr.write(`error: failed to create agent: ${errorReason(e)}\n`);
-    process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+    process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
   }
 
   let instance: Instance;
@@ -213,13 +213,13 @@ async function runCreate(name: string, opts: CliOpts, deps: CreateCommandDeps): 
     instance = await trpc.instances.create.mutate({ name, agentId });
   } catch (e) {
     await tryRollbackAgent(trpc, agentId, e);
-    process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+    process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
   }
 
   // --- Step 4: optional --wait ----------------------------------------
   let finalInstance = instance;
   if (opts.wait) {
-    const svc = deps.createInstancesService(host);
+    const svc = deps.createInstanceService(host);
     let firstStateSeen = false;
     const waitResult = await waitForRunning(svc, instance.id, {
       timeoutSeconds,
@@ -249,7 +249,7 @@ async function runCreate(name: string, opts: CliOpts, deps: CreateCommandDeps): 
             `error: instance "${name}" (${waitResult.instance.id}) entered error state: ${reason}\n`,
           );
         }
-        process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+        process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
         return;
       case "timeout":
         if (opts.json) {
@@ -262,11 +262,11 @@ async function runCreate(name: string, opts: CliOpts, deps: CreateCommandDeps): 
             `error: timed out waiting for "${name}" to reach running (current: ${waitResult.lastState})\n`,
           );
         }
-        process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+        process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
         return;
       case "transport":
         process.stderr.write(`error: ${formatTransportError(waitResult.reason, host)}\n`);
-        process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+        process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
         return;
     }
   }
@@ -279,7 +279,7 @@ async function runCreate(name: string, opts: CliOpts, deps: CreateCommandDeps): 
       `✓ Created instance "${finalInstance.name}" (${finalInstance.id}). State: ${finalInstance.state}.\n`,
     );
   }
-  process.exit(EXIT_INSTANCES_SUCCESS);
+  process.exit(EXIT_INSTANCE_SUCCESS);
 }
 
 function parseTimeout(raw: string | undefined): number | null {

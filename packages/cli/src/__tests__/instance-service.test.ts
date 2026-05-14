@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { createInstancesService } from "../modules/instances/services/instances-service.js";
+import { createInstanceService } from "../modules/instance/services/instance-service.js";
 import {
   AuthRequiredAtTransportError,
   type TrpcClient,
@@ -27,7 +27,7 @@ function trpcError(code: string, message: string): Error & { data: { code: strin
   return e;
 }
 
-describe("instances-service", () => {
+describe("instance-service", () => {
   // The integration tests cover the OK paths end-to-end through a real
   // `appRouter`. The unit tests focus on the two non-trivial pieces of
   // the classifier: auth-required propagation across the trpc-client's
@@ -45,7 +45,7 @@ describe("instances-service", () => {
     (wrapped as Error & { cause: unknown }).cause = new AuthRequiredAtTransportError(
       "not logged in to host X",
     );
-    const svc = createInstancesService({
+    const svc = createInstanceService({
       trpc: makeTrpc({
         list: () => {
           throw wrapped;
@@ -66,7 +66,7 @@ describe("instances-service", () => {
     // a normal "no instance with this ID" signal, not an error. If this
     // mapping breaks, the resolver loses the ability to distinguish
     // not-found from a real transport failure.
-    const svc = createInstancesService({
+    const svc = createInstanceService({
       trpc: makeTrpc({
         get: () => {
           throw trpcError("NOT_FOUND", "no such instance");

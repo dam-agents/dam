@@ -1,5 +1,5 @@
 /**
- * Initial discriminated-error seed for the `instances` module. The
+ * Initial discriminated-error seed for the `instance` module. The
  * resolver in issue 3 extends this with `NotFoundError` and
  * `AmbiguousError`; for now the surface covers the transport- and
  * auth-side failures the `list` / `get` ports can produce.
@@ -55,7 +55,7 @@ export interface AmbiguousError {
   matches: readonly { id: string; name: string }[];
 }
 
-export type InstancesDomainError =
+export type InstanceDomainError =
   | TransportError
   | AuthRequiredError
   | NotFoundError

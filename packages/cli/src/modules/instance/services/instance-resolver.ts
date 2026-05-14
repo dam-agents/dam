@@ -6,7 +6,7 @@ import type {
   NotFoundError,
   TransportError,
 } from "../domain/errors.js";
-import type { InstancesService } from "./instances-service.js";
+import type { InstanceService } from "./instance-service.js";
 
 /**
  * The Reserved ID Prefix. Anything starting with it is treated as an
@@ -37,20 +37,20 @@ export interface InstanceResolver {
 }
 
 export interface InstanceResolverDeps {
-  instancesService: InstancesService;
+  instanceService: InstanceService;
 }
 
 export function createInstanceResolver(deps: InstanceResolverDeps): InstanceResolver {
   return {
     async resolve(ref) {
       if (ref.startsWith(INSTANCE_ID_PREFIX)) {
-        const got = await deps.instancesService.get(ref);
+        const got = await deps.instanceService.get(ref);
         if (!got.ok) return got;
         if (got.value === null) return err({ kind: "not-found", ref, via: "id" });
         return ok(got.value);
       }
 
-      const listed = await deps.instancesService.list();
+      const listed = await deps.instanceService.list();
       if (!listed.ok) return listed;
       const matches = listed.value.filter((i) => i.name === ref);
       if (matches.length === 0) return err({ kind: "not-found", ref, via: "name" });

@@ -1,12 +1,12 @@
 import { createTRPCClient, httpBatchLink, type TRPCClient } from "@trpc/client";
 import type { AppRouter } from "api-server-api";
 import type { Result } from "../../../result.js";
-import type { AuthRequiredError } from "../../instances/domain/errors.js";
+import type { AuthRequiredError } from "../../instance/domain/errors.js";
 
 /**
  * Builds a typed `@trpc/client` against the api-server's `AppRouter`.
  *
- * Module-agnostic: every CLI module (instances, templates, …) consumes
+ * Module-agnostic: every CLI module (instance, template, …) consumes
  * the same `AppRouter`, so the client itself has no module-level shape.
  * Bridging the auth module's `TokenProvider` is the caller's job — the
  * closure shape is the contract; the shared client has no compile-time

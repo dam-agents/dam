@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import type { Instance } from "api-server-api";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import type { InstancesService } from "../services/instances-service.js";
+import type { InstanceService } from "../services/instance-service.js";
 import { createInstanceResolver } from "../services/instance-resolver.js";
 import { waitForRunning } from "../services/wait-for-state.js";
 import {
@@ -12,10 +12,10 @@ import {
   printResolveError,
 } from "./errors.js";
 import {
-  EXIT_INSTANCES_BELOW_FLOOR,
-  EXIT_INSTANCES_INVALID_INPUT,
-  EXIT_INSTANCES_RUNTIME_FAILURE,
-  EXIT_INSTANCES_SUCCESS,
+  EXIT_INSTANCE_BELOW_FLOOR,
+  EXIT_INSTANCE_INVALID_INPUT,
+  EXIT_INSTANCE_RUNTIME_FAILURE,
+  EXIT_INSTANCE_SUCCESS,
   EXIT_INSTANCE_NOT_RESOLVED,
 } from "./exit-codes.js";
 
@@ -28,7 +28,7 @@ const RESTART_GRACE_SECONDS = 2;
 export interface RestartCommandDeps {
   compatService: CompatService;
   configService: ConfigService;
-  createInstancesService: (host: string) => InstancesService;
+  createInstanceService: (host: string) => InstanceService;
   serverEnvVar: string;
 }
 
@@ -52,7 +52,7 @@ export function buildRestartCommand(deps: RestartCommandDeps): Command {
     .option("--json", "emit raw Instance JSON")
     .addHelpText(
       "after",
-      "\nExamples:\n  dam instances restart my-agent\n  dam instances restart my-agent --wait\n",
+      "\nExamples:\n  dam instance restart my-agent\n  dam instance restart my-agent --wait\n",
     )
     .action(async (ref: string, opts: CliOpts) => {
       await runRestart(ref, opts, deps);
@@ -67,20 +67,20 @@ async function runRestart(ref: string, opts: CliOpts, deps: RestartCommandDeps):
     process.stderr.write(
       `error: invalid \`--timeout\` value \`${opts.timeout}\`; expected positive integer\n`,
     );
-    process.exit(EXIT_INSTANCES_INVALID_INPUT);
+    process.exit(EXIT_INSTANCE_INVALID_INPUT);
   }
 
   const compat = await deps.compatService.check({ flag });
   if (!compat.ok) {
     printCompatResolveError(compat.error, deps.serverEnvVar);
-    process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+    process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
   }
   const verdict = compat.value;
   if (verdict.kind === "below-floor") {
     process.stderr.write(
       `error: CLI ${verdict.localCli} is below the server's minimum required version ${verdict.serverMinClient}; upgrade and retry\n`,
     );
-    process.exit(EXIT_INSTANCES_BELOW_FLOOR);
+    process.exit(EXIT_INSTANCE_BELOW_FLOOR);
   }
   if (verdict.kind === "behind-current") {
     process.stderr.write(
@@ -91,12 +91,12 @@ async function runRestart(ref: string, opts: CliOpts, deps: RestartCommandDeps):
   const cfg = await deps.configService.getResolved({ flag });
   if (!cfg.ok) {
     process.stderr.write(`error: ${describeConfigError(cfg.error)}\n`);
-    process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+    process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
   }
   const host = cfg.value.server;
 
-  const svc = deps.createInstancesService(host);
-  const resolver = createInstanceResolver({ instancesService: svc });
+  const svc = deps.createInstanceService(host);
+  const resolver = createInstanceResolver({ instanceService: svc });
   const resolved = await resolver.resolve(ref);
   if (!resolved.ok) {
     printResolveError(resolved.error, host);
@@ -114,10 +114,10 @@ async function runRestart(ref: string, opts: CliOpts, deps: RestartCommandDeps):
     if (restartResult.error.kind === "auth-required") {
       process.stderr.write(`error: not authenticated: ${restartResult.error.reason}\n`);
       process.stderr.write("hint: run `dam auth login` first\n");
-      process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+      process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
     }
     process.stderr.write(`error: ${formatTransportError(restartResult.error.reason, host)}\n`);
-    process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+    process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
   }
 
   let settledState: Instance["state"] | undefined;
@@ -150,7 +150,7 @@ async function runRestart(ref: string, opts: CliOpts, deps: RestartCommandDeps):
             `error: instance "${instance.name}" entered error state: ${reason}\n`,
           );
         }
-        process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+        process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
         return;
       case "timeout":
         if (opts.json) {
@@ -163,11 +163,11 @@ async function runRestart(ref: string, opts: CliOpts, deps: RestartCommandDeps):
             `error: timed out waiting for "${instance.name}" to reach running (current: ${waitResult.lastState})\n`,
           );
         }
-        process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+        process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
         return;
       case "transport":
         process.stderr.write(`error: ${formatTransportError(waitResult.reason, host)}\n`);
-        process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
+        process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
         return;
     }
   }
@@ -181,7 +181,7 @@ async function runRestart(ref: string, opts: CliOpts, deps: RestartCommandDeps):
     const tail = settledState ? ` State: ${settledState}.` : "";
     process.stdout.write(`✓ Restarted instance "${instance.name}" (${instance.id}).${tail}\n`);
   }
-  process.exit(EXIT_INSTANCES_SUCCESS);
+  process.exit(EXIT_INSTANCE_SUCCESS);
 }
 
 function parseTimeout(raw: string | undefined): number | null {

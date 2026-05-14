@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import type { TokenProvider } from "../auth/index.js";
 import type { CompatService, ConfigService } from "../cli/index.js";
-import type { TemplatesService } from "../templates/index.js";
+import type { TemplateService } from "../template/index.js";
 import { createTrpcClient, type TrpcClient } from "../shared/trpc/trpc-client.js";
 import type { Result } from "../../result.js";
 import { buildCreateCommand } from "./commands/create.js";
@@ -10,13 +10,13 @@ import { buildGetCommand } from "./commands/get.js";
 import { buildListCommand } from "./commands/list.js";
 import { buildRestartCommand } from "./commands/restart.js";
 import {
-  createInstancesService,
-  type InstancesService,
-} from "./services/instances-service.js";
+  createInstanceService,
+  type InstanceService,
+} from "./services/instance-service.js";
 import type { AuthRequiredError } from "./domain/errors.js";
 
 /**
- * Composition options for the `instances` module.
+ * Composition options for the `instance` module.
  *
  * The `host` (Active Host URL) is **not** taken at module-compose time:
  * the program's `compose()` runs before commander parses flags, so the
@@ -27,31 +27,31 @@ import type { AuthRequiredError } from "./domain/errors.js";
  * `config.toml`). `tokenProvider`, `configService`, `compatService` are
  * injected by the package-level compose and held by closure.
  */
-export interface InstancesModuleOptions {
+export interface InstanceModuleOptions {
   tokenProvider: TokenProvider;
   configService: ConfigService;
   compatService: CompatService;
   /** Env var name for the server URL — surfaced in the
    *  `no server configured` hints in command actions. */
   serverEnvVar: string;
-  /** Per-host factory for the templates service. The `create` verb uses
+  /** Per-host factory for the template service. The `create` verb uses
    *  it to pre-validate `--template` before issuing `agents.create`. */
-  templatesService: (host: string) => TemplatesService;
+  templateService: (host: string) => TemplateService;
 }
 
-export interface InstancesModule {
+export interface InstanceModule {
   commands: ReadonlyArray<Command>;
   exports: {
-    /** Build an `InstancesService` bound to the resolved Active Host.
+    /** Build an `InstanceService` bound to the resolved Active Host.
      *  Exposed so future verbs (`dam shell`, #86) can reuse it without
      *  re-implementing the bearer-supplier wiring. */
-    createService: (host: string) => InstancesService;
+    createService: (host: string) => InstanceService;
   };
 }
 
-export function composeInstancesModule(opts: InstancesModuleOptions): InstancesModule {
+export function composeInstanceModule(opts: InstanceModuleOptions): InstanceModule {
   // Single source of truth for the bearer-supplier closure. Both the
-  // typed `InstancesService` and the raw trpc client used by the
+  // typed `InstanceService` and the raw trpc client used by the
   // orchestration verbs (`create`, Phase 4 `delete` / `restart`) reuse
   // it so retries and refreshes stay consistent.
   function getTokenFor(host: string): () => Promise<Result<string, AuthRequiredError>> {
@@ -69,19 +69,19 @@ export function composeInstancesModule(opts: InstancesModuleOptions): InstancesM
   const buildTrpc = (host: string): TrpcClient =>
     createTrpcClient({ host, getToken: getTokenFor(host) });
 
-  const createService = (host: string): InstancesService =>
-    createInstancesService({ trpc: buildTrpc(host) });
+  const createService = (host: string): InstanceService =>
+    createInstanceService({ trpc: buildTrpc(host) });
 
-  // `dam instances` — parent group. Bare `dam instances` aliases to
+  // `dam instance` — parent group. Bare `dam instance` aliases to
   // `list` via commander's `isDefault: true` on the subcommand.
-  const parent = new Command("instances").description(
+  const parent = new Command("instance").description(
     "Address Instances by name or ID",
   );
   parent.addCommand(
     buildListCommand({
       compatService: opts.compatService,
       configService: opts.configService,
-      createInstancesService: createService,
+      createInstanceService: createService,
       serverEnvVar: opts.serverEnvVar,
     }),
     { isDefault: true },
@@ -90,7 +90,7 @@ export function composeInstancesModule(opts: InstancesModuleOptions): InstancesM
     buildGetCommand({
       compatService: opts.compatService,
       configService: opts.configService,
-      createInstancesService: createService,
+      createInstanceService: createService,
       serverEnvVar: opts.serverEnvVar,
     }),
   );
@@ -98,8 +98,8 @@ export function composeInstancesModule(opts: InstancesModuleOptions): InstancesM
     buildCreateCommand({
       compatService: opts.compatService,
       configService: opts.configService,
-      createInstancesService: createService,
-      createTemplatesService: opts.templatesService,
+      createInstanceService: createService,
+      createTemplateService: opts.templateService,
       createTrpcClient: buildTrpc,
       serverEnvVar: opts.serverEnvVar,
     }),
@@ -108,7 +108,7 @@ export function composeInstancesModule(opts: InstancesModuleOptions): InstancesM
     buildDeleteCommand({
       compatService: opts.compatService,
       configService: opts.configService,
-      createInstancesService: createService,
+      createInstanceService: createService,
       serverEnvVar: opts.serverEnvVar,
     }),
   );
@@ -116,7 +116,7 @@ export function composeInstancesModule(opts: InstancesModuleOptions): InstancesM
     buildRestartCommand({
       compatService: opts.compatService,
       configService: opts.configService,
-      createInstancesService: createService,
+      createInstanceService: createService,
       serverEnvVar: opts.serverEnvVar,
     }),
   );

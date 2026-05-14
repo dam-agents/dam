@@ -3,17 +3,17 @@ import type { CompatService, ConfigService } from "../../cli/index.js";
 import type {
   AuthRequiredError,
   TransportError,
-} from "../../instances/domain/errors.js";
+} from "../../instance/domain/errors.js";
 import {
   describeConfigError,
   formatTransportError,
   printCompatResolveError,
-} from "../../instances/commands/errors.js";
-import type { Template, TemplatesService } from "../services/templates-service.js";
+} from "../../instance/commands/errors.js";
+import type { Template, TemplateService } from "../services/template-service.js";
 import {
-  EXIT_TEMPLATES_BELOW_FLOOR,
-  EXIT_TEMPLATES_RUNTIME_FAILURE,
-  EXIT_TEMPLATES_SUCCESS,
+  EXIT_TEMPLATE_BELOW_FLOOR,
+  EXIT_TEMPLATE_RUNTIME_FAILURE,
+  EXIT_TEMPLATE_SUCCESS,
 } from "./exit-codes.js";
 
 const DESCRIPTION_MAX = 60;
@@ -22,7 +22,7 @@ export interface ListCommandDeps {
   compatService: CompatService;
   configService: ConfigService;
   /** Per-host factory — produced by the module's compose. */
-  createTemplatesService: (host: string) => TemplatesService;
+  createTemplateService: (host: string) => TemplateService;
   /** Env var name for the server URL — surfaced in the
    *  `no server configured` hint. */
   serverEnvVar: string;
@@ -35,7 +35,7 @@ export function buildListCommand(deps: ListCommandDeps): Command {
     .option("--json", "emit raw JSON instead of the default table")
     .addHelpText(
       "after",
-      "\nExamples:\n  dam templates list\n  dam templates list --json | jq '.[].id'\n",
+      "\nExamples:\n  dam template list\n  dam template list --json | jq '.[].id'\n",
     )
     .action(async (opts: { server?: string; json?: boolean }) => {
       const flag = opts.server ? { server: opts.server } : undefined;
@@ -43,14 +43,14 @@ export function buildListCommand(deps: ListCommandDeps): Command {
       const compat = await deps.compatService.check({ flag });
       if (!compat.ok) {
         printCompatResolveError(compat.error, deps.serverEnvVar);
-        process.exit(EXIT_TEMPLATES_RUNTIME_FAILURE);
+        process.exit(EXIT_TEMPLATE_RUNTIME_FAILURE);
       }
       const verdict = compat.value;
       if (verdict.kind === "below-floor") {
         process.stderr.write(
           `error: CLI ${verdict.localCli} is below the server's minimum required version ${verdict.serverMinClient}; upgrade and retry\n`,
         );
-        process.exit(EXIT_TEMPLATES_BELOW_FLOOR);
+        process.exit(EXIT_TEMPLATE_BELOW_FLOOR);
       }
       if (verdict.kind === "behind-current") {
         process.stderr.write(
@@ -61,30 +61,30 @@ export function buildListCommand(deps: ListCommandDeps): Command {
       const cfg = await deps.configService.getResolved({ flag });
       if (!cfg.ok) {
         process.stderr.write(`error: ${describeConfigError(cfg.error)}\n`);
-        process.exit(EXIT_TEMPLATES_RUNTIME_FAILURE);
+        process.exit(EXIT_TEMPLATE_RUNTIME_FAILURE);
       }
 
       const host = cfg.value.server;
-      const svc = deps.createTemplatesService(host);
+      const svc = deps.createTemplateService(host);
       const result = await svc.list();
       if (!result.ok) {
         printServiceError(result.error, host);
-        process.exit(EXIT_TEMPLATES_RUNTIME_FAILURE);
+        process.exit(EXIT_TEMPLATE_RUNTIME_FAILURE);
       }
 
       if (opts.json) {
         process.stdout.write(`${JSON.stringify(result.value)}\n`);
-        process.exit(EXIT_TEMPLATES_SUCCESS);
+        process.exit(EXIT_TEMPLATE_SUCCESS);
       }
 
       if (result.value.length === 0) {
         process.stderr.write("No templates.\n");
         process.stderr.write("hint: ask your operator to add one to the cluster\n");
-        process.exit(EXIT_TEMPLATES_SUCCESS);
+        process.exit(EXIT_TEMPLATE_SUCCESS);
       }
 
       process.stdout.write(renderTable(result.value));
-      process.exit(EXIT_TEMPLATES_SUCCESS);
+      process.exit(EXIT_TEMPLATE_SUCCESS);
     });
 }
 
