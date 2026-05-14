@@ -1,14 +1,16 @@
 {{- if .Values.openshift.scc.anyuidCapNet.enabled }}
 {{/*
-Custom `anyuid-cap-net` SCC for agent pods on OpenShift. Mirrors the
-built-in `anyuid` SCC (runAsUser: RunAsAny so the image USER 65532 is
-honored) but adds NET_ADMIN + NET_RAW to allowedCapabilities for the
-`iptablesInit` privileged init container.
+Custom `anyuid-cap-net` SCC for agent pods on OpenShift. The base is
+`restricted-v2` (drop ALL, no priv escalation, runtime/default seccomp),
+relaxed only where the `iptablesInit` init container actually needs it:
+
+  - runAsUser: RunAsAny (init runs as UID 0; agent runs as 65532)
+  - fsGroup:   RunAsAny (avoid coupling to namespace fsGroup ranges)
+  - allowedCapabilities: NET_ADMIN + NET_RAW (opt-in via container caps.add)
 
 Priority intentionally `null` (= 0): admission prefers more restrictive
 SCCs the SA already has access to (restricted-v2 default), and only
 falls through to this one for pods that actually request NET_ADMIN.
-Upstream `anyuid` ships priority 10 — we deliberately differ.
 */}}
 apiVersion: security.openshift.io/v1
 kind: SecurityContextConstraints
@@ -29,14 +31,17 @@ allowedCapabilities:
 defaultAddCapabilities: null
 fsGroup:
   type: RunAsAny
+groups: []
 priority: null
 readOnlyRootFilesystem: false
 requiredDropCapabilities:
-  - MKNOD
+  - ALL
 runAsUser:
   type: RunAsAny
 seLinuxContext:
   type: MustRunAs
+seccompProfiles:
+  - runtime/default
 supplementalGroups:
   type: RunAsAny
 users: []

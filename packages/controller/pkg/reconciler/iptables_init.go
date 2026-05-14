@@ -51,8 +51,6 @@ echo "egress-lockdown: gateway-only egress applied"
 	// runAsNonRoot floor. allowPrivilegeEscalation stays false — iptables
 	// doesn't need to gain caps at exec, and false sets no_new_privs=1.
 	runAsRoot := int64(0)
-	notNonRoot := false
-	noPrivEsc := false
 	return &corev1.Container{
 		Name:    iptablesInitContainerName,
 		Image:   cfgInit.Image,
@@ -63,8 +61,8 @@ echo "egress-lockdown: gateway-only egress applied"
 		},
 		SecurityContext: &corev1.SecurityContext{
 			RunAsUser:                &runAsRoot,
-			RunAsNonRoot:             &notNonRoot,
-			AllowPrivilegeEscalation: &noPrivEsc,
+			RunAsNonRoot:             ptrBool(false),
+			AllowPrivilegeEscalation: ptrBool(false),
 			Capabilities: &corev1.Capabilities{
 				Drop: []corev1.Capability{"ALL"},
 				Add:  []corev1.Capability{"NET_ADMIN", "NET_RAW"},
