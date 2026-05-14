@@ -1,4 +1,4 @@
-import { cancel, intro, isCancel, note, outro, select, spinner, text } from "@clack/prompts";
+import { cancel, intro, isCancel, log, note, outro, password, select, spinner, text } from "@clack/prompts";
 import { Command } from "commander";
 import type { Instance } from "api-server-api";
 import type { CompatService, ConfigService } from "../../cli/index.js";
@@ -127,8 +127,14 @@ async function runCreate(opts: CliOpts, deps: CreateAgentCommandDeps): Promise<v
   });
   if (isCancel(templateId)) return cancelAndExit();
 
-  // --- Steps 3 + 4: agents.create then instances.create --------------
+  // --- Step 3: model provider ---------------------------------------
   const trpc = deps.createTrpcClient(host);
+  const provider = await pickProvider(trpc);
+
+  // --- Steps 4 + 5 + 6: agents.create → setAgentAccess → instances.create ---
+  // Granting the provider secret *before* `instances.create` is what
+  // makes this a single pod boot. Reversing the order would force a
+  // rolling restart once the grant lands.
   const spin = spinner();
   spin.start("Creating agent...");
 
@@ -138,6 +144,18 @@ async function runCreate(opts: CliOpts, deps: CreateAgentCommandDeps): Promise<v
     agentId = agent.id;
   } catch (e) {
     spin.stop("Failed to create agent");
+    process.stderr.write(`error: ${errorReason(e)}\n`);
+    process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
+  }
+
+  spin.message("Granting provider access...");
+  try {
+    await trpc.secrets.setAgentAccess.mutate({
+      agentId,
+      secretIds: [provider.secretId],
+    });
+  } catch (e) {
+    spin.stop("Failed to grant provider access");
     process.stderr.write(`error: ${errorReason(e)}\n`);
     process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
   }
@@ -166,7 +184,13 @@ async function runCreate(opts: CliOpts, deps: CreateAgentCommandDeps): Promise<v
   switch (waitResult.kind) {
     case "ready":
       spin.stop("Instance running");
-      outro(`✓ Agent created: ${name}\n→ Next: dam shell ${name}`);
+      outro(
+        [
+          `✓ Agent created: ${name}`,
+          `✓ Provider: ${provider.name} (${provider.type})`,
+          `→ Next: dam shell ${name}`,
+        ].join("\n"),
+      );
       process.exit(EXIT_INSTANCE_SUCCESS);
       return;
     case "error":
@@ -190,9 +214,109 @@ async function runCreate(opts: CliOpts, deps: CreateAgentCommandDeps): Promise<v
   }
 }
 
-function cancelAndExit(): void {
+function cancelAndExit(): never {
   cancel("Cancelled");
   process.exit(0);
+}
+
+type ProviderType = "anthropic" | "ibm-litellm";
+
+interface ProviderSelection {
+  secretId: string;
+  name: string;
+  type: ProviderType;
+}
+
+/**
+ * Provider step. Lists existing Anthropic / IBM LiteLLM secrets so the
+ * user can grant one (or add a new one inline). The server's `PROVIDERS`
+ * preset fills in host / header / env defaults — the CLI only sends
+ * `{ type, name, value }` to `secrets.create`.
+ *
+ * OpenAI is in the schema but deliberately not offered here (spec).
+ * Anthropic is API-key only — the OAuth flow stays in the web UI.
+ */
+async function pickProvider(trpc: TrpcClient): Promise<ProviderSelection> {
+  let list;
+  try {
+    list = await trpc.secrets.list.query();
+  } catch (e) {
+    cancel(`failed to list secrets: ${errorReason(e)}`);
+    process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
+  }
+  const existing = list.filter(
+    (s): s is typeof s & { type: ProviderType } =>
+      s.type === "anthropic" || s.type === "ibm-litellm",
+  );
+
+  if (existing.length === 0) {
+    log.info("No model providers configured yet — let's add one.");
+    return addNewProvider(trpc);
+  }
+
+  const NEW = "__new__";
+  const picked = await select<string>({
+    message: "Model provider",
+    options: [
+      ...existing.map((s) => ({ value: s.id, label: `${s.name} (${s.type})` })),
+      { value: NEW, label: "Add new..." },
+    ],
+  });
+  if (isCancel(picked)) cancelAndExit();
+
+  if (picked === NEW) return addNewProvider(trpc);
+
+  const found = existing.find((s) => s.id === picked);
+  if (!found) {
+    // Defensive — `picked` was sourced from `existing`. If we ever hit
+    // this it means the picker handed us something unexpected.
+    cancel("internal: picked provider not in list");
+    process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
+  }
+  return { secretId: found.id, name: found.name, type: found.type };
+}
+
+async function addNewProvider(trpc: TrpcClient): Promise<ProviderSelection> {
+  // Re-prompt on `secrets.create` failure (F1 from the spec). Loops the
+  // whole sub-flow rather than trying to preserve previously-entered
+  // fields — three prompts is short enough that re-typing isn't painful.
+  while (true) {
+    const type = await select<ProviderType>({
+      message: "Provider type",
+      options: [
+        { value: "anthropic", label: "Anthropic" },
+        { value: "ibm-litellm", label: "IBM LiteLLM" },
+      ],
+    });
+    if (isCancel(type)) cancelAndExit();
+
+    const name = await text({
+      message: "Name",
+      placeholder: type === "anthropic" ? "my-anthropic-key" : "my-ibm-litellm-key",
+      validate(v) {
+        if (!v || v.trim() === "") return "Required";
+        return undefined;
+      },
+    });
+    if (isCancel(name)) cancelAndExit();
+
+    const apiKey = await password({
+      message: "API key",
+      validate(v) {
+        if (!v || v.trim() === "") return "Required";
+        return undefined;
+      },
+    });
+    if (isCancel(apiKey)) cancelAndExit();
+
+    try {
+      const created = await trpc.secrets.create.mutate({ type, name, value: apiKey });
+      return { secretId: created.id, name: created.name, type };
+    } catch (e) {
+      log.error(`Failed to create secret: ${errorReason(e)}`);
+      // Fall through to next loop iteration.
+    }
+  }
 }
 
 function errorReason(e: unknown): string {
