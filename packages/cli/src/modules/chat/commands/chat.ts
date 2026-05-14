@@ -24,13 +24,12 @@ export function buildChatCommand(deps: { chatService: ChatService; serverEnvVar:
       }
 
       const { bridge, sessionId } = result.value;
-      const hint = `\x1b[32mdam chat ${instanceRef} --resume ${sessionId}\x1b[0m`;
-      if (bridge.kind === "exited") {
-        process.stderr.write(`\x1b[2J\x1b[H\x1b[33mSession ended\x1b[0m \x1b[2mProcess exited with code ${bridge.code}\x1b[0m\n\nResume this session with: ${hint}\n`);
-        process.exit(bridge.code);
-      }
-      process.stderr.write(`\x1b[2J\x1b[H\x1b[33mDisconnected\x1b[0m \x1b[2m${bridge.reason}\x1b[0m\n\nResume this session with: ${hint}\n`);
-      process.exit(1);
+      const resume = `\x1b[32mdam chat ${instanceRef} --resume ${sessionId}\x1b[0m`;
+      const status = bridge.kind === "exited"
+        ? `\x1b[33mSession ended\x1b[0m \x1b[2mProcess exited with code ${bridge.code}\x1b[0m`
+        : `\x1b[33mDisconnected\x1b[0m \x1b[2m${bridge.reason}\x1b[0m`;
+      process.stderr.write(`\x1b[2J\x1b[H${status}\n\nResume this session with: ${resume}\n`);
+      process.exit(bridge.kind === "exited" ? bridge.code : 1);
     });
 }
 
