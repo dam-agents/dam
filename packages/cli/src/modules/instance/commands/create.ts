@@ -21,6 +21,11 @@ import {
 const DEFAULT_TIMEOUT_SECONDS = 120;
 const ROLLBACK_TIMEOUT_MS = 10_000;
 
+// Codes where the server definitively rejected `instances.create` (the
+// instance was never created), so the orphan agent is safe to delete.
+// Codes outside this set (INTERNAL_SERVER_ERROR, network errors) are
+// ambiguous — the instance may have been created — and the rollback
+// path leaves the agent in place with a hint.
 const ROLLBACK_CODES = new Set([
   "CONFLICT",
   "BAD_REQUEST",
@@ -28,6 +33,8 @@ const ROLLBACK_CODES = new Set([
   "UNAUTHORIZED",
   "FORBIDDEN",
   "PRECONDITION_FAILED",
+  "UNIMPLEMENTED",
+  "RESOURCE_EXHAUSTED",
 ]);
 
 export interface CreateCommandDeps {
