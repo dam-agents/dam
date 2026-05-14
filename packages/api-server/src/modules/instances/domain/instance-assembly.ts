@@ -36,7 +36,7 @@ export function assembleInstance(
     name: infra.name,
     agentId: infra.agentId,
     templateId: agent?.templateId ?? null,
-    image: agent?.spec.image ?? "",
+    image: agent?.spec?.image ?? "",
     description: infra.description,
     state: computeState(infra),
     error: infra.currentState === "error" ? infra.error : undefined,

@@ -41,7 +41,11 @@ export async function waitForRunning(
   }
   const deadline = Date.now() + opts.timeoutSeconds * 1000;
   let lastState: Instance["state"] | undefined;
-  while (Date.now() < deadline) {
+  // Poll-then-check-deadline so a state transition that lands during the
+  // final sleep is still observed: the previous shape (`while (now < deadline)`)
+  // would exit after the last sleep without one more poll, reporting timeout
+  // for an instance that actually reached `running` in the last 2s window.
+  while (true) {
     const result = await svc.get(id);
     if (!result.ok) return { kind: "transport", reason: result.error.reason };
     if (result.value === null) return { kind: "transport", reason: "instance disappeared during wait" };
@@ -52,9 +56,9 @@ export async function waitForRunning(
     }
     if (inst.state === "running") return { kind: "ready", instance: inst };
     if (inst.state === "error") return { kind: "error", instance: inst };
+    if (Date.now() >= deadline) return { kind: "timeout", lastState: inst.state };
     await sleep(POLL_INTERVAL_MS);
   }
-  return { kind: "timeout", lastState: lastState ?? "starting" };
 }
 
 function sleep(ms: number): Promise<void> {
