@@ -1,10 +1,15 @@
-{{- if .Values.openshift.scc.nonrootCapNet.enabled }}
+{{- if .Values.openshift.scc.anyuidCapNet.enabled }}
 {{/*
-Custom `nonroot-cap-net` SCC for agent pods on OpenShift. Mirrors the
-built-in `nonroot-v2` SCC (MustRunAsNonRoot, drop ALL caps, no priv
-escalation, runtime/default seccomp); only relaxation is adding
-NET_ADMIN + NET_RAW to allowedCapabilities so the `iptablesInit` init
-container can run unprivileged via ambient caps.
+Custom `anyuid-cap-net` SCC for agent pods on OpenShift. Tightens
+anyuid as far as it goes while admitting the `iptablesInit` init
+container: requires drop ALL caps, no priv escalation, runtime/default
+seccomp (all from restricted-v2). The two real relaxations are:
+
+  - runAsUser: RunAsAny — the iptablesInit init container needs root
+    because containerd doesn't promote capabilities.add into the
+    ambient set, so non-root processes can't exercise NET_ADMIN.
+  - allowedCapabilities: NET_ADMIN + NET_RAW — opt-in via container
+    caps.add (only the init container actually requests them).
 
 Priority intentionally `null` (= 0): admission prefers more restrictive
 SCCs the SA already has access to (restricted-v2 default), and only
@@ -13,7 +18,7 @@ falls through to this one for pods that actually request NET_ADMIN.
 apiVersion: security.openshift.io/v1
 kind: SecurityContextConstraints
 metadata:
-  name: {{ include "platform.fullname" . }}-nonroot-cap-net
+  name: {{ include "platform.fullname" . }}-anyuid-cap-net
   labels:
     {{- include "platform.labels" . | nindent 4 }}
 allowHostDirVolumePlugin: false
@@ -35,7 +40,7 @@ readOnlyRootFilesystem: false
 requiredDropCapabilities:
   - ALL
 runAsUser:
-  type: MustRunAsNonRoot
+  type: RunAsAny
 seLinuxContext:
   type: MustRunAs
 seccompProfiles:
@@ -56,14 +61,14 @@ volumes:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: {{ include "platform.fullname" . }}-agent-nonroot-cap-net
+  name: {{ include "platform.fullname" . }}-agent-anyuid-cap-net
   namespace: {{ .Values.agentNamespace }}
   labels:
     {{- include "platform.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: system:openshift:scc:{{ include "platform.fullname" . }}-nonroot-cap-net
+  name: system:openshift:scc:{{ include "platform.fullname" . }}-anyuid-cap-net
 subjects:
   - kind: Group
     apiGroup: rbac.authorization.k8s.io

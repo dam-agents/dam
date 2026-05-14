@@ -41,14 +41,14 @@ iptables-nft -A OUTPUT -j DROP
 echo "egress-lockdown: gateway-only egress applied"
 `
 
-	// NET_ADMIN/NET_RAW for the netfilter ops. Container runs as the
-	// pod-level non-root UID (65532): containerd plumbs Capabilities.Add
-	// into the ambient capability set, so iptables-nft acquires those
-	// caps through exec without needing root or file caps. Everything
-	// else dropped; readOnlyRootFilesystem prevents any write to the
-	// container fs (the wrapper at /usr/sbin/iptables wouldn't work
-	// under readOnlyRootFilesystem anyway, hence the direct
-	// iptables-nft call above).
+	// Needs root + NET_ADMIN/NET_RAW for the netfilter ops. K8s/containerd
+	// don't promote capabilities.add into the ambient set, so a non-root
+	// process can't actually USE the granted caps at exec time (Effective
+	// is cleared). Container-scoped runAsUser: 0 + runAsNonRoot: false
+	// override the pod-level non-root floor; the runtime agent container
+	// stays unprivileged (these caps live only on this short-lived init
+	// container).
+	runAsRoot := int64(0)
 	return &corev1.Container{
 		Name:    iptablesInitContainerName,
 		Image:   cfgInit.Image,
@@ -58,6 +58,8 @@ echo "egress-lockdown: gateway-only egress applied"
 			{Name: "ENVOY_PORT", Value: fmt.Sprintf("%d", cfg.EnvoyPort)},
 		},
 		SecurityContext: &corev1.SecurityContext{
+			RunAsUser:                &runAsRoot,
+			RunAsNonRoot:             ptrBool(false),
 			AllowPrivilegeEscalation: ptrBool(false),
 			ReadOnlyRootFilesystem:   ptrBool(true),
 			Capabilities: &corev1.Capabilities{
