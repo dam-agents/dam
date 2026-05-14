@@ -25,6 +25,7 @@ import {
   type OAuthAppDescriptor,
   type OAuthAppRegistry,
 } from "../../modules/connections/infrastructure/oauth-apps.js";
+import { discoverMcpAuth } from "../../modules/connections/infrastructure/mcp-discovery.js";
 
 // ---------------------------------------------------------------------------
 // Routes
@@ -319,29 +320,25 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
   });
 
   /**
-   * Kicks off an MCP OAuth flow: discovers the AS metadata at the MCP
-   * server's origin, registers a public client via DCR, then hands off to
-   * the engine for the PKCE auth-code dance.
+   * Kicks off an MCP OAuth flow. Discovery follows the MCP 2025-06-18
+   * authorization spec: fetch the resource's RFC 9728 protected-resource
+   * metadata to learn the authorization server, then RFC 8414 AS metadata
+   * to learn the endpoints. Falls back to treating the MCP origin as the
+   * AS for older servers. Then DCR (RFC 7591) and hand off to the engine
+   * for the PKCE auth-code dance.
    */
   oauth.post("/api/oauth/start", async (c) => {
     const user = c.get("user");
     const jwt = getUserJwt(c);
     const body = await c.req.json<{ mcpServerUrl: string }>();
     const mcpUrl = new URL(body.mcpServerUrl);
-    const origin = mcpUrl.origin;
     const hostPattern = mcpUrl.hostname;
 
-    const metaRes = await fetch(`${origin}/.well-known/oauth-authorization-server`);
-    if (!metaRes.ok) {
+    const meta = await discoverMcpAuth(mcpUrl);
+    if (!meta) {
       return c.json({ error: "MCP server does not support OAuth discovery" }, 400);
     }
-    const meta = (await metaRes.json()) as {
-      authorization_endpoint: string;
-      token_endpoint: string;
-      registration_endpoint?: string;
-    };
-
-    if (!meta.registration_endpoint) {
+    if (!meta.registrationEndpoint) {
       return c.json(
         { error: "MCP server does not support dynamic client registration" },
         400,
@@ -349,7 +346,7 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
     }
 
     const redirectUri = `${uiBaseUrl}/api/oauth/callback`;
-    const regRes = await fetch(meta.registration_endpoint, {
+    const regRes = await fetch(meta.registrationEndpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -372,10 +369,11 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
     const { authUrl, state } = engine.start({
       provider: {
         id: `mcp:${hostPattern}`,
-        authorizationUrl: meta.authorization_endpoint,
-        tokenEndpoint: meta.token_endpoint,
+        authorizationUrl: meta.authorizationEndpoint,
+        tokenEndpoint: meta.tokenEndpoint,
         clientId: regData.client_id,
         ...(regData.client_secret ? { clientSecret: regData.client_secret } : {}),
+        ...(meta.scopes && meta.scopes.length > 0 ? { scopes: meta.scopes } : {}),
       },
       flow: { connectionKey: hostPattern, hostPattern },
       redirectUri,
