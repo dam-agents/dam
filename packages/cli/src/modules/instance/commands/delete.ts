@@ -104,10 +104,13 @@ async function runDelete(ref: string, opts: CliOpts, deps: DeleteCommandDeps): P
   }
 
   const result = await svc.deleteAgent(instance.agentId);
+  let alreadyGone = false;
   if (!result.ok) {
     if (result.error.kind === "not-found") {
       // Race: the agent vanished between resolve and delete. The
-      // user's intent is satisfied — surface a success.
+      // user's intent is satisfied, but surface that the action was
+      // a no-op so callers can audit cascade cleanup separately.
+      alreadyGone = true;
     } else if (result.error.kind === "auth-required") {
       process.stderr.write(`error: not authenticated: ${result.error.reason}\n`);
       process.stderr.write("hint: run `dam auth login` first\n");
@@ -120,7 +123,16 @@ async function runDelete(ref: string, opts: CliOpts, deps: DeleteCommandDeps): P
 
   if (opts.json) {
     process.stdout.write(
-      `${JSON.stringify({ deleted: true, id: instance.id, name: instance.name })}\n`,
+      `${JSON.stringify({
+        deleted: true,
+        id: instance.id,
+        name: instance.name,
+        alreadyGone,
+      })}\n`,
+    );
+  } else if (alreadyGone) {
+    process.stdout.write(
+      `✓ Deleted instance "${instance.name}" (was already gone).\n`,
     );
   } else {
     process.stdout.write(`✓ Deleted instance "${instance.name}".\n`);
