@@ -68,20 +68,20 @@ async function runCreate(opts: CliOpts, deps: CreateAgentCommandDeps): Promise<v
   }
   const verdict = compat.value;
   if (verdict.kind === "below-floor") {
-    process.stderr.write(
-      `error: CLI ${verdict.localCli} is below the server's minimum required version ${verdict.serverMinClient}; upgrade and retry\n`,
+    cancel(
+      `CLI ${verdict.localCli} is below the server's minimum required version ${verdict.serverMinClient}; upgrade and retry`,
     );
     process.exit(EXIT_INSTANCE_BELOW_FLOOR);
   }
   if (verdict.kind === "behind-current") {
-    process.stderr.write(
-      `warning: CLI ${verdict.localCli} is behind server ${verdict.serverVersion}; consider upgrading\n`,
+    log.warn(
+      `CLI ${verdict.localCli} is behind server ${verdict.serverVersion}; consider upgrading`,
     );
   }
 
   const cfg = await deps.configService.getResolved({ flag });
   if (!cfg.ok) {
-    process.stderr.write(`error: ${describeConfigError(cfg.error)}\n`);
+    cancel(describeConfigError(cfg.error));
     process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
   }
   const host = cfg.value.server;
@@ -106,8 +106,7 @@ async function runCreate(opts: CliOpts, deps: CreateAgentCommandDeps): Promise<v
   const tmplResult = await templateSvc.list();
   if (!tmplResult.ok) {
     if (tmplResult.error.kind === "auth-required") {
-      cancel(`not authenticated: ${tmplResult.error.reason}`);
-      process.stderr.write("hint: run `dam auth login` first\n");
+      cancel(`not authenticated: ${tmplResult.error.reason}\nhint: run \`dam auth login\` first`);
     } else {
       cancel(formatTransportError(tmplResult.error.reason, host));
     }
@@ -135,6 +134,18 @@ async function runCreate(opts: CliOpts, deps: CreateAgentCommandDeps): Promise<v
   // --- Step 4: optional GitHub PAT ----------------------------------
   const githubPat = await pickGithubPat(trpc);
 
+  // --- Rollback bookkeeping ------------------------------------------
+  // Anything created during *this* run goes here so a downstream
+  // mutation failure can clean it up. Existing secrets that the user
+  // picked or replaced stay out: a replace-existing path overwrote the
+  // value in place and the old value isn't recoverable, so rollback
+  // would be destructive.
+  const cleanup: Cleanup = { newSecretIds: [], agentId: null };
+  if (provider.createdNew) cleanup.newSecretIds.push(provider.secretId);
+  if (githubPat?.createdNew) {
+    cleanup.newSecretIds.push(githubPat.apiSecretId, githubPat.gitSecretId);
+  }
+
   // --- Steps 5 + 6 + 7: agents.create → instances.create → setAgentAccess ---
   // Grants live as `granted-secret-ids` annotations on the *instance*
   // ConfigMap, not the agent. setAgentAccess before any instance exists
@@ -145,28 +156,15 @@ async function runCreate(opts: CliOpts, deps: CreateAgentCommandDeps): Promise<v
   const spin = spinner();
   spin.start("Creating agent...");
 
-  let agentId: string;
-  try {
-    const agent = await trpc.agents.create.mutate({ name, templateId });
-    agentId = agent.id;
-  } catch (e) {
-    spin.stop("Failed to create agent");
-    process.stderr.write(`error: ${errorReason(e)}\n`);
-    process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
-  }
-
-  spin.message("Creating instance...");
   let instance: Instance;
   try {
-    instance = await trpc.instances.create.mutate({ name, agentId });
-  } catch (e) {
-    spin.stop("Failed to create instance");
-    process.stderr.write(`error: ${errorReason(e)}\n`);
-    process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
-  }
+    const agent = await trpc.agents.create.mutate({ name, templateId });
+    cleanup.agentId = agent.id;
 
-  spin.message("Granting provider access...");
-  try {
+    spin.message("Creating instance...");
+    instance = await trpc.instances.create.mutate({ name, agentId: agent.id });
+
+    spin.message("Granting provider access...");
     // Retry — the just-created instance ConfigMap may not yet be visible
     // to the api-server's listConfigMaps when setAgentAccess fires; without
     // the retry the patch silently targets zero ConfigMaps and the grant
@@ -175,26 +173,46 @@ async function runCreate(opts: CliOpts, deps: CreateAgentCommandDeps): Promise<v
     if (githubPat) grantedIds.push(githubPat.apiSecretId, githubPat.gitSecretId);
     await withRetry(() =>
       trpc.secrets.setAgentAccess.mutate({
-        agentId,
+        agentId: agent.id,
         secretIds: grantedIds,
       }),
     );
   } catch (e) {
-    spin.stop("Failed to grant provider access");
-    process.stderr.write(`error: ${errorReason(e)}\n`);
+    spin.stop("Setup failed");
+    await rollback(trpc, cleanup, errorReason(e));
     process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
   }
 
-  // --- Step 5: wait for running --------------------------------------
+  // --- Step 8: wait for running --------------------------------------
+  // Past this point we have a real agent + instance + grants on the
+  // server. Failures from here on do NOT trigger rollback — the user
+  // can inspect/clean up via `dam instance get` / `dam instance delete`.
   spin.message(`Waiting for instance to start (state: ${instance.state})...`);
   const svc = deps.createInstanceService(host);
-  const waitResult = await waitForRunning(svc, instance.id, {
-    timeoutSeconds: WAIT_TIMEOUT_SECONDS,
-    graceSeconds: 0,
-    onStateChange: (state) => {
-      spin.message(`Waiting for instance to start (state: ${state})...`);
-    },
-  });
+
+  // SIGINT during the wait: stop the spinner, point at the live agent,
+  // exit non-zero. Don't rollback — the user chose to interrupt; the
+  // agent's existence is their call from here. The handler runs once;
+  // we remove it on natural wait completion to restore default behavior.
+  const onSigint = () => {
+    spin.stop("Cancelled");
+    log.warn(`Agent ${name} already exists; delete with \`dam instance delete ${name}\` if not needed.`);
+    process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
+  };
+  process.once("SIGINT", onSigint);
+
+  let waitResult;
+  try {
+    waitResult = await waitForRunning(svc, instance.id, {
+      timeoutSeconds: WAIT_TIMEOUT_SECONDS,
+      graceSeconds: 0,
+      onStateChange: (state) => {
+        spin.message(`Waiting for instance to start (state: ${state})...`);
+      },
+    });
+  } finally {
+    process.removeListener("SIGINT", onSigint);
+  }
 
   switch (waitResult.kind) {
     case "ready": {
@@ -235,12 +253,72 @@ function cancelAndExit(): never {
   process.exit(0);
 }
 
+interface Cleanup {
+  /** Secret IDs created during this run (S1 + both halves of S2). */
+  newSecretIds: string[];
+  /** Set once agents.create has returned an id. Cascade-deletes the
+   *  instance and its grants via the K8s OwnerReference chain when
+   *  passed to agents.delete. */
+  agentId: string | null;
+}
+
+/**
+ * Reverse anything we created in this run after a downstream mutation
+ * blew up. Deletes the agent first (cascade tears down the instance
+ * via OwnerReferences), then any new secrets. Whatever fails to delete
+ * gets surfaced as an orphan summary so the user knows what to clean
+ * up manually.
+ *
+ * One pass — we don't retry rollback. If the api-server is down, the
+ * orphan list is the best we can do.
+ */
+async function rollback(
+  trpc: TrpcClient,
+  cleanup: Cleanup,
+  originalError: string,
+): Promise<void> {
+  let orphanAgent: string | null = null;
+  const orphanSecrets: string[] = [];
+
+  if (cleanup.agentId) {
+    try {
+      await trpc.agents.delete.mutate({ id: cleanup.agentId });
+    } catch {
+      orphanAgent = cleanup.agentId;
+    }
+  }
+  for (const id of cleanup.newSecretIds) {
+    try {
+      await trpc.secrets.delete.mutate({ id });
+    } catch {
+      orphanSecrets.push(id);
+    }
+  }
+
+  log.error(`Failed to create agent: ${originalError}`);
+  if (orphanAgent || orphanSecrets.length > 0) {
+    const lines = ["Cleanup partially failed. Manual cleanup needed:"];
+    if (orphanAgent) {
+      lines.push(`  Agent: ${orphanAgent} (delete via web UI or \`dam instance delete\`)`);
+    }
+    if (orphanSecrets.length > 0) {
+      lines.push(`  Secrets: ${orphanSecrets.join(", ")} (delete via web UI's secrets page)`);
+    }
+    log.error(lines.join("\n"));
+  }
+}
+
 type ProviderType = "anthropic" | "ibm-litellm" | "openai";
 
 interface ProviderSelection {
   secretId: string;
   name: string;
   type: ProviderType;
+  /** True when this run created the secret (eligible for rollback if a
+   *  later mutation fails). False for picked-existing and for replace-
+   *  existing — in the latter the secret was overwritten in place, but
+   *  the old value isn't recoverable so rollback would be destructive. */
+  createdNew: boolean;
 }
 
 type ExistingProvider = { id: string; name: string; type: ProviderType };
@@ -296,7 +374,7 @@ async function pickProvider(trpc: TrpcClient): Promise<ProviderSelection> {
     cancel("internal: picked provider not in list");
     process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
   }
-  return { secretId: found.id, name: found.name, type: found.type };
+  return { secretId: found.id, name: found.name, type: found.type, createdNew: false };
 }
 
 async function addOrReplaceProvider(
@@ -329,7 +407,7 @@ async function addOrReplaceProvider(
       if (isCancel(replace)) cancelAndExit();
 
       if (!replace) {
-        return { secretId: existingOfType.id, name: existingOfType.name, type };
+        return { secretId: existingOfType.id, name: existingOfType.name, type, createdNew: false };
       }
 
       const apiKey = await password({
@@ -343,7 +421,7 @@ async function addOrReplaceProvider(
 
       try {
         await trpc.secrets.update.mutate({ id: existingOfType.id, value: apiKey });
-        return { secretId: existingOfType.id, name: existingOfType.name, type };
+        return { secretId: existingOfType.id, name: existingOfType.name, type, createdNew: false };
       } catch (e) {
         log.error(`Failed to replace API key: ${errorReason(e)}`);
         continue;
@@ -366,12 +444,17 @@ async function addOrReplaceProvider(
 
     try {
       const created = await trpc.secrets.create.mutate({ type, name, value: apiKey });
-      return { secretId: created.id, name: created.name, type };
+      return { secretId: created.id, name: created.name, type, createdNew: true };
     } catch (e) {
       log.error(`Failed to create secret: ${errorReason(e)}`);
       // Fall through to next loop iteration.
     }
   }
+}
+
+interface GithubSelection extends GithubPatPair {
+  /** True only when both halves were created during this run. */
+  createdNew: boolean;
 }
 
 /**
@@ -383,7 +466,7 @@ async function addOrReplaceProvider(
  * `secrets.list()` down to fully-paired entries, hiding orphans the
  * user can't actually grant.
  */
-async function pickGithubPat(trpc: TrpcClient): Promise<GithubPatPair | null> {
+async function pickGithubPat(trpc: TrpcClient): Promise<GithubSelection | null> {
   let list;
   try {
     list = await trpc.secrets.list.query();
@@ -420,7 +503,7 @@ async function pickGithubPat(trpc: TrpcClient): Promise<GithubPatPair | null> {
     cancel("internal: picked PAT not in list");
     process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
   }
-  return found;
+  return { ...found, createdNew: false };
 }
 
 // Default display name baked into new PATs — mirrors the providers
@@ -428,7 +511,7 @@ async function pickGithubPat(trpc: TrpcClient): Promise<GithubPatPair | null> {
 // move on. Renaming for multi-account setups stays in the web UI.
 const DEFAULT_GITHUB_PAT_NAME = "GitHub";
 
-async function addNewGithubPat(trpc: TrpcClient): Promise<GithubPatPair> {
+async function addNewGithubPat(trpc: TrpcClient): Promise<GithubSelection> {
   // Loop on `secrets.createGithubPat` failure (F1 from the spec).
   while (true) {
     const token = await password({
@@ -449,6 +532,7 @@ async function addNewGithubPat(trpc: TrpcClient): Promise<GithubPatPair> {
         name: created.name,
         apiSecretId: created.apiSecretId,
         gitSecretId: created.gitSecretId,
+        createdNew: true,
       };
     } catch (e) {
       log.error(`Failed to create GitHub PAT: ${errorReason(e)}`);
