@@ -12,7 +12,7 @@ export function composeSessionsModule(deps: {
   isOwnedInstance: (instanceId: string) => Promise<boolean>;
   isOwnedSchedule: (scheduleId: string) => Promise<boolean>;
   closeTerminalSession?: (sessionId: string) => void;
-  resetAcpSession?: (instanceId: string, sessionId: string) => void;
+  resetAcpSession?: (instanceId: string, sessionId: string) => Promise<void>;
   notifyModeChange?: (instanceId: string, sessionId: string, mode: string) => void;
 }): {
   sessions: SessionsApiService;

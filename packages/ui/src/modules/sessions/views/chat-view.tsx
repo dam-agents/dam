@@ -167,7 +167,7 @@ export function ChatView() {
       }
     }
     if (target === SessionMode.Chat) {
-      if (sessionId) resumeSession(sessionId, { expectNotFound: sessionMode === SessionMode.Terminal });
+      if (sessionId) resumeSession(sessionId);
       requestAnimationFrame(() => textareaRef.current?.focus());
     }
   }, [selectedInstance, sessionMode, sessionId, messages.length, showConfirm, busy, stopAgent, setSessionMode, resumeSession, setSessionId, setTerminalPaused]);

@@ -13,7 +13,9 @@ export interface TerminalRelay {
   closeSession(sessionId: string): void;
 }
 
-export function createTerminalRelay(namespace: string, repo: InstancesRepository): TerminalRelay {
+export function createTerminalRelay(namespace: string, repo: InstancesRepository, deps?: {
+  getSessionMode?: (sessionId: string) => Promise<string | null>;
+}): TerminalRelay {
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
   const lastActivity = new Map<string, number>();
   const activeClients = new Map<string, WebSocket>();
@@ -28,10 +30,19 @@ export function createTerminalRelay(namespace: string, repo: InstancesRepository
     activeClients.delete(sessionId);
   }
 
-  function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer, instanceId: string) {
+  async function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer, instanceId: string) {
     const url = new URL(req.url!, `http://${req.headers.host}`);
     const sessionId = url.searchParams.get("sessionId") ?? "default";
     const reset = url.searchParams.get("reset") === "1";
+
+    if (deps?.getSessionMode) {
+      const mode = await deps.getSessionMode(sessionId).catch(() => null);
+      if (mode && mode !== "terminal") {
+        socket.write("HTTP/1.1 409 Conflict\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+    }
 
     wss.handleUpgrade(req, socket, head, (client) => {
       client.on("error", () => { try { client.terminate(); } catch {} });

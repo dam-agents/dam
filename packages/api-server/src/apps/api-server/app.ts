@@ -27,6 +27,7 @@ import {
 } from "../../modules/channels/infrastructure/telegram-threads-repository.js";
 import { createAcpRelay } from "./acp-relay.js";
 import { createTerminalRelay } from "./terminal-relay.js";
+import { getSessionMode } from "../../modules/sessions/infrastructure/sessions-repository.js";
 import { createOAuthRoutes } from "./oauth.js";
 import { mountBrandIconRoutes } from "./brand-icon.js";
 import { createOAuthAppRegistry } from "../../modules/connections/infrastructure/oauth-apps.js";
@@ -389,9 +390,8 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     const { sessions } = composeSessionsModule({
       db, namespace: config.namespace, isOwnedInstance, isOwnedSchedule,
       closeTerminalSession: terminalRelay.closeSession,
-      resetAcpSession: (instanceId, sessionId) => {
-        fetch(`http://${podBaseUrl(instanceId, config.namespace)}/api/sessions/${encodeURIComponent(sessionId)}/reset`, { method: "POST" }).catch(() => {});
-      },
+      resetAcpSession: (instanceId, sessionId) =>
+        fetch(`http://${podBaseUrl(instanceId, config.namespace)}/api/sessions/${encodeURIComponent(sessionId)}/reset`, { method: "POST" }).catch(() => {}),
       notifyModeChange: (instanceId, sessionId, mode) => {
         const frame = JSON.stringify({
           jsonrpc: "2.0",
@@ -466,7 +466,9 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     { resolve: (id) => instancesRepo.resolveIdentity(id).then((r) => r ? { ownerSub: r.owner, agentId: r.agentId } : null) },
   );
 
-  const terminalRelay = createTerminalRelay(config.namespace, instancesRepo);
+  const terminalRelay = createTerminalRelay(config.namespace, instancesRepo, {
+    getSessionMode: getSessionMode(db),
+  });
 
   const server = serve({ fetch: app.fetch, port: config.port }, () => {
     process.stderr.write(`api-server listening on http://localhost:${config.port}\n`);

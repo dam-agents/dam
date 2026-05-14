@@ -117,6 +117,14 @@ export function useAcpSession(
       const fresh = await loadHistory(sid);
       if (useStore.getState().sessionId !== sid) return;
       setMessages(fresh);
+
+      try {
+        const sessions = await api.sessions.list.query({ instanceId: selectedInstance, includeChannel: false });
+        const match = sessions.find((s) => s.sessionId === sid);
+        if (match?.mode && match.mode !== useStore.getState().sessionMode) {
+          useStore.getState().setSessionMode(match.mode);
+        }
+      } catch {}
     } catch (e) {
       if (useStore.getState().sessionId !== sid) return;
       const kind = classifyResumeError(e);
@@ -141,7 +149,7 @@ export function useAcpSession(
     s.setSessionMode(update.mode as SessionMode);
     if (!wasExternal) return;
     if (update.mode === "terminal") s.setTerminalPaused(true);
-    if (update.mode === "chat") resumeSession(update.sessionId, { expectNotFound: true });
+    if (update.mode === "chat") resumeSession(update.sessionId);
   };
 
   const { sendPrompt, stopAgent } = useAcpPrompt(
