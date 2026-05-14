@@ -481,7 +481,7 @@ async function pickGithubPat(trpc: TrpcClient): Promise<GithubSelection | null> 
     const add = await confirm({ message: "Add one?", initialValue: true });
     if (isCancel(add)) cancelAndExit();
     if (!add) return null;
-    return addNewGithubPat(trpc);
+    return addOrReplaceGithubPat(trpc, pairs);
   }
 
   const NEW = "__new__";
@@ -496,7 +496,7 @@ async function pickGithubPat(trpc: TrpcClient): Promise<GithubSelection | null> 
   });
   if (isCancel(picked)) cancelAndExit();
   if (picked === SKIP) return null;
-  if (picked === NEW) return addNewGithubPat(trpc);
+  if (picked === NEW) return addOrReplaceGithubPat(trpc, pairs);
 
   const found = pairs.find((p) => p.name === picked);
   if (!found) {
@@ -511,9 +511,52 @@ async function pickGithubPat(trpc: TrpcClient): Promise<GithubSelection | null> 
 // move on. Renaming for multi-account setups stays in the web UI.
 const DEFAULT_GITHUB_PAT_NAME = "GitHub";
 
-async function addNewGithubPat(trpc: TrpcClient): Promise<GithubSelection> {
-  // Loop on `secrets.createGithubPat` failure (F1 from the spec).
+async function addOrReplaceGithubPat(
+  trpc: TrpcClient,
+  existing: readonly GithubPatPair[],
+): Promise<GithubSelection> {
+  // Singleton-by-default-name: if a PAT named DEFAULT_GITHUB_PAT_NAME
+  // already exists, offer to replace its token (mirrors the providers'
+  // replace-existing flow). Default to NOT replacing — overwriting a
+  // working token is the destructive option.
+  const collide = existing.find((p) => p.name === DEFAULT_GITHUB_PAT_NAME);
+
+  // Loop on `secrets.createGithubPat` / `secrets.updateGithubPat`
+  // failure (F1 from the spec).
   while (true) {
+    if (collide) {
+      const replace = await confirm({
+        message: `A GitHub PAT named "${DEFAULT_GITHUB_PAT_NAME}" already exists. Replace its token?`,
+        initialValue: false,
+      });
+      if (isCancel(replace)) cancelAndExit();
+
+      if (!replace) {
+        return { ...collide, createdNew: false };
+      }
+
+      const token = await password({
+        message: "New GitHub personal access token",
+        validate(v) {
+          if (!v || v.trim() === "") return "Required";
+          return undefined;
+        },
+      });
+      if (isCancel(token)) cancelAndExit();
+
+      try {
+        await trpc.secrets.updateGithubPat.mutate({
+          apiSecretId: collide.apiSecretId,
+          gitSecretId: collide.gitSecretId,
+          token,
+        });
+        return { ...collide, createdNew: false };
+      } catch (e) {
+        log.error(`Failed to replace GitHub PAT: ${errorReason(e)}`);
+        continue;
+      }
+    }
+
     const token = await password({
       message: "GitHub personal access token",
       validate(v) {

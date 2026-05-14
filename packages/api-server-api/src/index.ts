@@ -60,6 +60,8 @@ export type {
   CreateSecretInput,
   CreateGithubPatInput,
   CreateGithubPatOutput,
+  UpdateGithubPatInput,
+  UpdateGithubPatOutput,
   UpdateSecretInput,
   AgentAccess,
   SecretsService,

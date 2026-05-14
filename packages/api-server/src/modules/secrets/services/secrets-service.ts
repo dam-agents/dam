@@ -10,6 +10,8 @@ import {
   type InjectionConfig,
   type SecretsService,
   type CreateSecretInput,
+  type UpdateGithubPatInput,
+  type UpdateGithubPatOutput,
   type UpdateSecretInput,
   type SecretType,
   type SecretView,
@@ -273,6 +275,32 @@ export function createSecretsService(deps: {
         apiSecretId: apiSecret.id,
         gitSecretId: gitSecret.id,
       };
+    },
+
+    async updateGithubPat(input: UpdateGithubPatInput): Promise<UpdateGithubPatOutput> {
+      // Re-wrap the github.com half server-side so callers send `{token}`
+      // only — same shape symmetry as createGithubPat.
+      //
+      // Value-only update: envMappings / hostPattern / injectionConfig
+      // stay the same, so neither the `secrets-rev` rolling-restart
+      // signal nor the connection-rules sync fires. The gateway pod's
+      // Envoy picks up the new value via SDS without a pod restart.
+      //
+      // Partial-failure note: if the github.com update throws, the
+      // api.github.com half already holds the new token while the
+      // github.com half still holds the prior wrapped value. The raw
+      // prior value isn't recoverable from the SDS file (the format
+      // template is baked into it), so we don't attempt to restore —
+      // surface the original error and let the caller retry. In
+      // practice this leaves `gh` working with the new token and
+      // `git clone` working with the old; a retry of `updateGithubPat`
+      // converges both halves.
+      const basicValue = Buffer.from(`x-access-token:${input.token}`).toString("base64");
+      const apiResult = await deps.k8sPort.updateSecret(input.apiSecretId, { value: input.token });
+      if (!apiResult) throw new TRPCError({ code: "NOT_FOUND", message: "api.github.com secret not found" });
+      const gitResult = await deps.k8sPort.updateSecret(input.gitSecretId, { value: basicValue });
+      if (!gitResult) throw new TRPCError({ code: "NOT_FOUND", message: "github.com secret not found" });
+      return { apiSecretId: input.apiSecretId, gitSecretId: input.gitSecretId };
     },
 
     async update({ id, ...patch }: UpdateSecretInput) {
