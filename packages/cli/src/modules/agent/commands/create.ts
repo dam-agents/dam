@@ -395,7 +395,7 @@ async function pickGithubPat(trpc: TrpcClient): Promise<GithubPatPair | null> {
 
   if (pairs.length === 0) {
     log.info("No GitHub PAT configured yet.");
-    const add = await confirm({ message: "Add one?", initialValue: false });
+    const add = await confirm({ message: "Add one?", initialValue: true });
     if (isCancel(add)) cancelAndExit();
     if (!add) return null;
     return addNewGithubPat(trpc);
@@ -423,21 +423,16 @@ async function pickGithubPat(trpc: TrpcClient): Promise<GithubPatPair | null> {
   return found;
 }
 
+// Default display name baked into new PATs — mirrors the providers
+// pattern of using a fixed label so the user can paste a token and
+// move on. Renaming for multi-account setups stays in the web UI.
+const DEFAULT_GITHUB_PAT_NAME = "GitHub";
+
 async function addNewGithubPat(trpc: TrpcClient): Promise<GithubPatPair> {
   // Loop on `secrets.createGithubPat` failure (F1 from the spec).
   while (true) {
-    const name = await text({
-      message: "Name",
-      placeholder: "my-github",
-      validate(v) {
-        if (!v || v.trim() === "") return "Required";
-        return undefined;
-      },
-    });
-    if (isCancel(name)) cancelAndExit();
-
     const token = await password({
-      message: "Personal access token",
+      message: "GitHub personal access token",
       validate(v) {
         if (!v || v.trim() === "") return "Required";
         return undefined;
@@ -446,7 +441,10 @@ async function addNewGithubPat(trpc: TrpcClient): Promise<GithubPatPair> {
     if (isCancel(token)) cancelAndExit();
 
     try {
-      const created = await trpc.secrets.createGithubPat.mutate({ name, token });
+      const created = await trpc.secrets.createGithubPat.mutate({
+        name: DEFAULT_GITHUB_PAT_NAME,
+        token,
+      });
       return {
         name: created.name,
         apiSecretId: created.apiSecretId,
