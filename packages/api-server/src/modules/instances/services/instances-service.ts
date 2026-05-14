@@ -88,9 +88,21 @@ export function createInstancesService(deps: {
       return infraInstances.map((infra) => {
         const subs = allowedUsersMap.get(infra.id) ?? [];
         const emails = subs.map((s) => subEmailMap.get(s) ?? s);
+        const agent = agentById.get(infra.agentId) ?? null;
+        // A null agent means the controller still has the Instance
+        // ConfigMap but the Agent ConfigMap is gone. The projection
+        // degrades to `templateId: null, image: ""` — surface a log
+        // so operators can spot the orphaned reference instead of
+        // chasing the empty `IMAGE` column in the UI.
+        if (agent === null) {
+          console.warn(
+            "[instances] orphan-agent-reference",
+            JSON.stringify({ instanceId: infra.id, agentId: infra.agentId }),
+          );
+        }
         return assembleInstance(
           infra,
-          agentById.get(infra.agentId) ?? null,
+          agent,
           channelMap.get(infra.id) ?? [],
           emails,
         );
