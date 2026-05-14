@@ -32,13 +32,20 @@ func buildIptablesInitContainer(cfg *config.Config, gatewayClusterIP string) *co
 		return nil
 	}
 
+	// IPv6: loopback only, then DROP. The gateway Service is IPv4 (no
+	// dual-stack ClusterIP), so there's no IPv6 ACCEPT for it. Without
+	// this, an agent could exfil over IPv6 if the node has v6
+	// connectivity — our IPv4 rules wouldn't see those packets at all.
 	script := `set -eu
 echo "egress-lockdown: gateway=$GATEWAY_IP:$ENVOY_PORT"
 iptables-nft -A OUTPUT -o lo -j ACCEPT
 iptables-nft -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 iptables-nft -A OUTPUT -d "$GATEWAY_IP" -p tcp --dport "$ENVOY_PORT" -j ACCEPT
 iptables-nft -A OUTPUT -j DROP
-echo "egress-lockdown: gateway-only egress applied"
+ip6tables-nft -A OUTPUT -o lo -j ACCEPT
+ip6tables-nft -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+ip6tables-nft -A OUTPUT -j DROP
+echo "egress-lockdown: gateway-only IPv4 + IPv6 drop applied"
 `
 
 	// Needs root + NET_ADMIN/NET_RAW for the netfilter ops. K8s/containerd

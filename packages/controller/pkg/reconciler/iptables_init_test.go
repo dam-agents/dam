@@ -81,11 +81,17 @@ func TestBuildIptablesInitContainer_AllowListScript(t *testing.T) {
 	require.GreaterOrEqual(t, len(ic.Command), 3)
 	script := ic.Command[2]
 
-	assert.Contains(t, script, "-A OUTPUT -o lo -j ACCEPT", "loopback must be admitted (in-pod localhost)")
-	assert.Contains(t, script, "--ctstate ESTABLISHED,RELATED -j ACCEPT", "return traffic must match conntrack")
-	assert.Contains(t, script, `-d "$GATEWAY_IP" -p tcp --dport "$ENVOY_PORT" -j ACCEPT`,
+	assert.Contains(t, script, "iptables-nft -A OUTPUT -o lo -j ACCEPT", "loopback must be admitted (in-pod localhost)")
+	assert.Contains(t, script, "iptables-nft -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT", "return traffic must match conntrack")
+	assert.Contains(t, script, `iptables-nft -A OUTPUT -d "$GATEWAY_IP" -p tcp --dport "$ENVOY_PORT" -j ACCEPT`,
 		"single ACCEPT rule pinned to the gateway IP+Envoy port")
-	assert.Contains(t, script, "-A OUTPUT -j DROP", "terminal catch-all DROP")
+	assert.Contains(t, script, "iptables-nft -A OUTPUT -j DROP", "terminal catch-all DROP")
+
+	// IPv6 must be locked down too — gateway is IPv4-only so v6 gets
+	// loopback + ESTABLISHED + DROP, no gateway ACCEPT.
+	assert.Contains(t, script, "ip6tables-nft -A OUTPUT -o lo -j ACCEPT", "IPv6 loopback must be admitted")
+	assert.Contains(t, script, "ip6tables-nft -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT")
+	assert.Contains(t, script, "ip6tables-nft -A OUTPUT -j DROP", "IPv6 terminal catch-all DROP")
 }
 
 // PoC: with `iptablesInit.enabled: true` the egress-lockdown init container
