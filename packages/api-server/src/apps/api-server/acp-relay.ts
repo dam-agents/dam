@@ -35,24 +35,22 @@ function tryParse(data: unknown): unknown {
   }
 }
 
+function isRequest(msg: unknown): msg is JsonRpcRequest {
+  if (typeof msg !== "object" || msg === null) return false;
+  const m = msg as Partial<JsonRpcRequest>;
+  return m.id !== undefined && typeof m.method === "string";
+}
+
 function isPermissionRequest(msg: unknown): msg is JsonRpcRequest {
-  return (
-    typeof msg === "object" && msg !== null &&
-    (msg as JsonRpcRequest).method === "session/request_permission" &&
-    typeof (msg as JsonRpcRequest).id !== "undefined"
-  );
+  return isRequest(msg) && msg.method === "session/request_permission";
 }
 
 function isResponse(msg: unknown): msg is JsonRpcResponse {
   if (typeof msg !== "object" || msg === null) return false;
-  const m = msg as JsonRpcResponse;
-  return (typeof m.id === "number" || typeof m.id === "string") && (m.result !== undefined || m.error !== undefined);
-}
-
-function isRequest(msg: unknown): msg is JsonRpcRequest {
-  if (typeof msg !== "object" || msg === null) return false;
-  const m = msg as JsonRpcRequest;
-  return typeof m.method === "string" && (typeof m.id === "number" || typeof m.id === "string");
+  const m = msg as Partial<JsonRpcResponse> & Partial<JsonRpcRequest>;
+  if (m.id === undefined) return false;
+  if (m.method !== undefined) return false;
+  return m.result !== undefined || m.error !== undefined;
 }
 
 function extractRequestSessionId(req: JsonRpcRequest): string | null {
