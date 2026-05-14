@@ -32,18 +32,18 @@ func TestBuildIptablesInitContainer_EmptyImageReturnsNil(t *testing.T) {
 // the meantime.
 func TestBuildIptablesInitContainer_NoGatewayIPReturnsNil(t *testing.T) {
 	cfg := *testConfig
-	cfg.AgentBase.IptablesInit = &config.AgentIptablesInit{Enabled: true, Image: "registry.k8s.io/distroless-iptables:v0.9.1"}
+	cfg.AgentBase.IptablesInit = &config.AgentIptablesInit{Enabled: true, Image: "registry.k8s.io/build-image/distroless-iptables:v0.9.2"}
 	assert.Nil(t, buildIptablesInitContainer(&cfg, ""), "no gateway IP yet — re-attach on next reconcile")
 }
 
 func TestBuildIptablesInitContainer_HasCapsAndRunsAsRoot(t *testing.T) {
 	cfg := *testConfig
-	cfg.AgentBase.IptablesInit = &config.AgentIptablesInit{Enabled: true, Image: "registry.k8s.io/distroless-iptables:v0.9.1"}
+	cfg.AgentBase.IptablesInit = &config.AgentIptablesInit{Enabled: true, Image: "registry.k8s.io/build-image/distroless-iptables:v0.9.2"}
 
 	ic := buildIptablesInitContainer(&cfg, "10.96.42.42")
 	require.NotNil(t, ic)
 	assert.Equal(t, "egress-lockdown", ic.Name)
-	assert.Equal(t, "registry.k8s.io/distroless-iptables:v0.9.1", ic.Image)
+	assert.Equal(t, "registry.k8s.io/build-image/distroless-iptables:v0.9.2", ic.Image)
 	require.NotNil(t, ic.SecurityContext)
 	require.NotNil(t, ic.SecurityContext.RunAsUser)
 	assert.Equal(t, int64(0), *ic.SecurityContext.RunAsUser, "iptables needs root inside the init container's namespaces")
@@ -72,7 +72,7 @@ func TestBuildIptablesInitContainer_HasCapsAndRunsAsRoot(t *testing.T) {
 // else" destinations DROPped by the catch-all.
 func TestBuildIptablesInitContainer_AllowListScript(t *testing.T) {
 	cfg := *testConfig
-	cfg.AgentBase.IptablesInit = &config.AgentIptablesInit{Enabled: true, Image: "registry.k8s.io/distroless-iptables:v0.9.1"}
+	cfg.AgentBase.IptablesInit = &config.AgentIptablesInit{Enabled: true, Image: "registry.k8s.io/build-image/distroless-iptables:v0.9.2"}
 	ic := buildIptablesInitContainer(&cfg, "10.96.42.42")
 	require.NotNil(t, ic)
 	require.GreaterOrEqual(t, len(ic.Command), 3)
@@ -90,7 +90,7 @@ func TestBuildIptablesInitContainer_AllowListScript(t *testing.T) {
 // runs (so the allow-list is in place when the user init starts).
 func TestBuildAgentStatefulSet_IptablesInitRunsFirst(t *testing.T) {
 	cfg := *testConfig
-	cfg.AgentBase.IptablesInit = &config.AgentIptablesInit{Enabled: true, Image: "registry.k8s.io/distroless-iptables:v0.9.1"}
+	cfg.AgentBase.IptablesInit = &config.AgentIptablesInit{Enabled: true, Image: "registry.k8s.io/build-image/distroless-iptables:v0.9.2"}
 	instance := &types.InstanceSpec{DesiredState: "running"}
 	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, &cfg, testOwnerCM, nil, "10.96.42.42")
 
@@ -114,7 +114,7 @@ func TestBuildAgentStatefulSet_IptablesInitRunsFirst(t *testing.T) {
 // with only the user init, and the next reconcile re-attaches lockdown.
 func TestBuildAgentStatefulSet_IptablesInitSkippedWithoutGatewayIP(t *testing.T) {
 	cfg := *testConfig
-	cfg.AgentBase.IptablesInit = &config.AgentIptablesInit{Enabled: true, Image: "registry.k8s.io/distroless-iptables:v0.9.1"}
+	cfg.AgentBase.IptablesInit = &config.AgentIptablesInit{Enabled: true, Image: "registry.k8s.io/build-image/distroless-iptables:v0.9.2"}
 	instance := &types.InstanceSpec{DesiredState: "running"}
 	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, &cfg, testOwnerCM, nil, "")
 

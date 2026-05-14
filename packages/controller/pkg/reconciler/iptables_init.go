@@ -20,7 +20,7 @@ const iptablesInitContainerName = "egress-lockdown"
 // "loopback + ESTABLISHED + paired gateway only". Returns nil when the
 // feature is off, the image is unset, or the gateway IP isn't known yet.
 //
-// Targets the SIG Release `registry.k8s.io/distroless-iptables` image,
+// Targets the SIG Release `registry.k8s.io/build-image/distroless-iptables` image,
 // which ships `/bin/sh` (dash) and the iptables-wrapper that auto-
 // selects nft vs legacy. Both `/usr/sbin/iptables` and the wrapper are
 // in $PATH on that image, so the script stays minimal.

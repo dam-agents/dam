@@ -106,7 +106,7 @@ openshift:
     # otherwise (OpenShift admission still prefers more restrictive SCCs
     # when the pod doesn't request the extra capabilities).
     anyuidCapNet:
-      enabled: true
+      enabled: false
 
 # -- Shared local PostgreSQL instance
 # Set enabled: false when using external/cloud DBs for all services.
@@ -486,7 +486,7 @@ controller:
         # uses. Ships /bin/sh (dash) + iptables-wrapper (auto-selects
         # nft/legacy). Signed, scanned, no package manager, minimal
         # userland. Pin to a specific version.
-        image: registry.k8s.io/distroless-iptables:v0.9.1
+        image: registry.k8s.io/build-image/distroless-iptables:v0.9.2
       # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     templateDefaults:
