@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
 import { AuthRequiredAtTransportError } from "../../shared/trpc/trpc-client.js";
 import { err, ok, type Result } from "../../../result.js";
@@ -21,6 +22,15 @@ export interface Template {
   description?: string;
 }
 
+const TemplateSchema: z.ZodType<Template> = z.object({
+  id: z.string(),
+  name: z.string(),
+  image: z.string(),
+  description: z.string().optional(),
+});
+
+const TemplateListSchema = z.array(TemplateSchema);
+
 export interface TemplateService {
   list(): Promise<Result<readonly Template[], TransportError | AuthRequiredError>>;
 }
@@ -34,7 +44,18 @@ export function createTemplateService(deps: TemplateServiceDeps): TemplateServic
     async list() {
       try {
         const value = await deps.trpc.templates.list.query();
-        return ok(value as readonly Template[]);
+        // Validate the wire shape at the boundary. The contract type
+        // already guarantees it at compile time, but a server schema
+        // drift would otherwise propagate as a confusing TypeError
+        // later in the render path.
+        const parsed = TemplateListSchema.safeParse(value);
+        if (!parsed.success) {
+          return err({
+            kind: "transport",
+            reason: `unexpected templates response: ${parsed.error.message}`,
+          });
+        }
+        return ok(parsed.data);
       } catch (e) {
         const sentinel = findAuthSentinel(e);
         if (sentinel) return err({ kind: "auth-required", reason: sentinel.message });
