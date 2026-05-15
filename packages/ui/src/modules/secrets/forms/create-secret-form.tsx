@@ -1,9 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+import { QUERY_PARAM_RE } from "api-server-api";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
-
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 
 import {
   allEnvMappingsValid,
@@ -15,6 +13,7 @@ import { FormField } from "../../../components/form-field.js";
 import { Modal } from "../../../components/modal.js";
 import { DEFAULT_INJECTION_CONFIG } from "../../../types.js";
 import { useCreateSecret } from "../api/mutations.js";
+import { validateEnvMappingsSize } from "../utils/env-mappings-size.js";
 
 const envMappingSchema = z.object({
   envName: z.string(),
@@ -28,12 +27,23 @@ const createSecretSchema = z.object({
   pathPattern: z.string().trim(),
   headerName: z.string().trim(),
   valueFormat: z.string().trim(),
+  queryParamName: z
+    .string()
+    .trim()
+    .refine(
+      (v) => v.length === 0 || QUERY_PARAM_RE.test(v),
+      "Use only A-Z a-z 0-9 . _ ~ -",
+    ),
   envMappings: z
     .array(envMappingSchema)
     .refine(allEnvMappingsValid, "All mappings need an env name and a placeholder"),
 });
 
 type CreateSecretValues = z.infer<typeof createSecretSchema>;
+
+const INPUT_CLASS =
+  "w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)]";
+const MONO_INPUT_CLASS = `${INPUT_CLASS} font-mono`;
 
 interface Props {
   onCancel: () => void;
@@ -44,7 +54,7 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
   const createSecret = useCreateSecret();
   const saving = createSecret.isPending;
 
-  const { register, handleSubmit, control, formState } = useForm<CreateSecretValues>({
+  const { register, handleSubmit, control, formState, setError, clearErrors } = useForm<CreateSecretValues>({
     resolver: zodResolver(createSecretSchema),
     mode: "onChange",
     defaultValues: {
@@ -54,6 +64,7 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
       pathPattern: "",
       headerName: "",
       valueFormat: "",
+      queryParamName: "",
       envMappings: [],
     },
   });
@@ -66,11 +77,19 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
     const pathPattern = values.pathPattern.trim();
     const headerName = values.headerName.trim();
     const valueFormat = values.valueFormat.trim();
+    const queryParamName = values.queryParamName.trim();
     const mappings = sanitizeEnvMappings(values.envMappings);
-    // Send injectionConfig if EITHER field was filled. When only the value
-    // format is customised (e.g. `Basic {value}`), default the header to
-    // `Authorization` so the user's chosen format isn't silently discarded.
-    const hasInjectionInput = headerName.length > 0 || valueFormat.length > 0;
+    const sizeCheck = validateEnvMappingsSize(mappings);
+    if (!sizeCheck.ok) {
+      setError("envMappings", {
+        type: "manual",
+        message: `Env mappings exceed allowed size (${sizeCheck.bytes} bytes; limit ${sizeCheck.limit}). Reduce or split across secrets.`,
+      });
+      return;
+    }
+    clearErrors("envMappings");
+    const hasInjectionInput =
+      headerName.length > 0 || valueFormat.length > 0 || queryParamName.length > 0;
     createSecret.mutate(
       {
         type: "generic",
@@ -82,6 +101,7 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
           injectionConfig: {
             headerName: headerName || DEFAULT_INJECTION_CONFIG.headerName,
             ...(valueFormat.length > 0 && { valueFormat }),
+            ...(queryParamName.length > 0 && { queryParamName }),
           },
         }),
         ...(mappings.length > 0 && { envMappings: mappings }),
@@ -93,9 +113,9 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
   return (
     <Modal widthClass="w-[480px]">
       <form onSubmit={onSubmit} className="contents">
-        <div className="px-7 pt-7 pb-4 border-b border-border">
-          <h2 className="text-[20px] font-bold text-foreground">Add Secret</h2>
-          <p className="text-[13px] text-foreground/80 leading-relaxed mt-1">
+        <div className="px-7 pt-7 pb-4 border-b-2 border-border-light">
+          <h2 className="text-[20px] font-bold text-text">Add Secret</h2>
+          <p className="text-[13px] text-text-secondary leading-relaxed mt-1">
             Injects a bearer token into outgoing HTTP requests whose host
             matches the pattern below.
           </p>
@@ -107,7 +127,8 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
             hint="A label so you can identify this secret later."
             error={errors.name?.message}
           >
-            <Input
+            <input
+              className={INPUT_CLASS}
               placeholder="e.g. Linear Token"
               autoFocus
               {...register("name")}
@@ -125,7 +146,8 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
             }
             error={errors.value?.message}
           >
-            <Input
+            <input
+              className={INPUT_CLASS}
               type="password"
               placeholder="The secret value to inject"
               {...register("value")}
@@ -142,8 +164,8 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
             }
             error={errors.hostPattern?.message}
           >
-            <Input
-              className="font-mono"
+            <input
+              className={MONO_INPUT_CLASS}
               placeholder="e.g. api.linear.app"
               {...register("hostPattern")}
             />
@@ -153,8 +175,8 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
             label="Path Pattern (optional)"
             hint="Restrict injection to URL paths matching this pattern. Leave blank to match every path on the host."
           >
-            <Input
-              className="font-mono"
+            <input
+              className={MONO_INPUT_CLASS}
               placeholder="e.g. /v1/*"
               {...register("pathPattern")}
             />
@@ -169,8 +191,8 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
               </>
             }
           >
-            <Input
-              className="font-mono"
+            <input
+              className={MONO_INPUT_CLASS}
               placeholder={DEFAULT_INJECTION_CONFIG.headerName}
               {...register("headerName")}
             />
@@ -186,18 +208,46 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
               </>
             }
           >
-            <Input
-              className="font-mono"
+            <input
+              className={MONO_INPUT_CLASS}
               placeholder={DEFAULT_INJECTION_CONFIG.valueFormat}
               {...register("valueFormat")}
             />
           </FormField>
 
+          <FormField
+            label="URL Query Parameter (optional)"
+            hint={
+              <>
+                For APIs that read the credential from the URL (e.g.{" "}
+                <span className="font-mono">?key=&lt;value&gt;</span>). When set,
+                the bare value is moved into this query parameter and the
+                header is stripped before the request leaves the sidecar — so
+                <span className="font-mono"> Value Format</span> doesn't apply
+                here. Need <em>both</em> a header and a URL injection on the
+                same endpoint? Create two Secrets with the same host pattern —
+                one header-only, one with this field set.{" "}
+                <strong className="text-warning">
+                  Credentials in query strings are routinely logged by web
+                  servers, CDNs, and load balancers — prefer header injection
+                  unless the upstream API requires this.
+                </strong>
+              </>
+            }
+            error={errors.queryParamName?.message}
+          >
+            <input
+              className={MONO_INPUT_CLASS}
+              placeholder="e.g. key"
+              {...register("queryParamName")}
+            />
+          </FormField>
+
           <div className="flex flex-col gap-2">
-            <span className="text-[11px] font-bold text-foreground/80 uppercase tracking-[0.03em]">
+            <span className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
               Pod Env Vars (optional)
             </span>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-[11px] text-text-muted">
               Inject env vars into every agent instance granted this secret.
               The placeholder (typically{" "}
               <span className="font-mono">dummy-placeholder</span>) is swapped
@@ -218,20 +268,21 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
           </div>
         </div>
 
-        <div className="px-7 py-4 border-t border-border flex justify-end gap-3">
-          <Button
+        <div className="px-7 py-4 border-t-2 border-border-light flex justify-end gap-3">
+          <button
             type="button"
-            variant="outline"
+            className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
             onClick={onCancel}
           >
             Cancel
-          </Button>
-          <Button
+          </button>
+          <button
             type="submit"
+            className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent"
             disabled={!canSave}
           >
             {saving ? "..." : "Add Secret"}
-          </Button>
+          </button>
         </div>
       </form>
     </Modal>

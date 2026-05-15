@@ -70,6 +70,13 @@ export function upsertSession(db: Db) {
   };
 }
 
+export function getSessionMode(db: Db) {
+  return async (sessionId: string): Promise<string | null> => {
+    const rows = await db.select({ mode: sessions.mode }).from(sessions).where(eq(sessions.sessionId, sessionId)).limit(1);
+    return rows[0]?.mode ?? null;
+  };
+}
+
 export function setSessionMode(db: Db) {
   return async (sessionId: string, instanceId: string, mode: SessionMode) => {
     await db

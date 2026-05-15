@@ -9,7 +9,6 @@ import (
 	cmv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -99,7 +98,7 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 			"fork", forkName, "foreignSub", forkSpec.ForeignSub)
 	}
 
-	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(forkName, r.config, cm, credentialSecrets)
+	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(forkName, forkSpec.Instance, r.config, cm, credentialSecrets)
 	if err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("rendering envoy bootstrap: %v", err))
 	}
@@ -112,28 +111,62 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 		}
 	}
 
+	// ADR-041: per-fork ServiceAccount in the agent namespace. Forks get
+	// their OWN identity (not the parent's) so a compromised fork cannot
+	// reach the parent's full `/api/instances/<parent>/*` surface — only
+	// the narrow paths the per-fork harness AuthorizationPolicy below
+	// admits. Owner-refed to the fork ConfigMap (same namespace), so
+	// K8s GC reaps it on fork-cm delete.
+	if err := r.ensureForkServiceAccount(ctx, forkName, cm); err != nil {
+		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, err.Error())
+	}
+
+	// ADR-027: per-fork harness policy admits the fork SA only to
+	// `/api/instances/<parent>/mcp` (not the parent's full surface), and
+	// the per-fork ext-authz policy admits the fork SA to the parent's
+	// per-instance ext-authz Service so the parent owner's HITL rules
+	// continue to gate the fork's egress. Both gate the fork *gateway*'s
+	// SPIFFE identity — the fork agent itself is not a mesh participant.
+	if err := r.applyAuthorizationPolicy(ctx, BuildForkHarnessAuthorizationPolicy(forkName, forkSpec.Instance, r.config, cm)); err != nil {
+		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying fork harness authz policy: %v", err))
+	}
+	if err := r.applyAuthorizationPolicy(ctx, BuildForkExtAuthzAuthorizationPolicy(forkName, forkSpec.Instance, r.config, cm)); err != nil {
+		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying fork ext-authz authz policy: %v", err))
+	}
+
+	// Per-pair agent egress NetworkPolicy — same shape and rationale as
+	// the long-lived pair: kernel-level boundary gating the agent → fork
+	// gateway hop, agent has no ambient enrolment.
+	if err := r.applyAgentEgressNetworkPolicy(ctx, BuildAgentEgressNetworkPolicy(forkName, r.config, cm)); err != nil {
+		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, err.Error())
+	}
+
 	// ADR-038: paired gateway pod for the fork. Render the gateway-side
 	// resources first so HTTPS_PROXY's target exists by the time the
-	// agent Job's pod starts dialing it.
+	// agent Job's pod starts dialing it. ADR-041: pair-key NetworkPolicy
+	// is gone — pair isolation is now enforced by the AuthorizationPolicy
+	// above.
 	gatewayPod := BuildForkGatewayPod(forkName, forkSpec.Instance, r.config, cm, credentialSecrets)
 	gatewaySvc := BuildForkGatewayService(forkName, r.config, cm)
-	gatewayNP := BuildForkGatewayNetworkPolicy(forkName, r.config, cm)
-	agentNP := BuildForkAgentNetworkPolicy(forkName, r.config, cm)
 
 	if err := r.applyPod(ctx, gatewayPod); err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying gateway pod: %v", err))
 	}
-	if err := r.applyService(ctx, gatewaySvc); err != nil {
-		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying gateway service: %v", err))
+	// Apply gateway Service + migrate any legacy headless, capture
+	// ClusterIP synchronously (see instance.go).
+	liveGatewaySvc, err := ensureGatewayService(ctx, r.client, gatewaySvc, "fork", forkName)
+	if err != nil {
+		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("ensuring gateway service: %v", err))
 	}
-	if err := r.applyNetworkPolicy(ctx, gatewayNP); err != nil {
-		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying gateway networkpolicy: %v", err))
-	}
-	if err := r.applyNetworkPolicy(ctx, agentNP); err != nil {
-		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying agent networkpolicy: %v", err))
+	gatewayIP := liveGatewaySvc.Spec.ClusterIP
+
+	needsGatewayIP := r.config.AgentBase.DisableDNS ||
+		(r.config.AgentBase.IptablesInit != nil && r.config.AgentBase.IptablesInit.Enabled)
+	if needsGatewayIP && (gatewayIP == "" || gatewayIP == corev1.ClusterIPNone) {
+		return fmt.Errorf("fork %s: gateway Service ClusterIP not yet assigned, requeuing", forkName)
 	}
 
-	desired := BuildForkAgentJob(forkName, forkSpec, instanceSpec, agentSpec, r.config, cm, credentialSecrets)
+	desired := BuildForkAgentJob(forkName, forkSpec, instanceSpec, agentSpec, r.config, cm, credentialSecrets, gatewayIP)
 
 	if err := r.applyForkJob(ctx, desired); err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying job: %v", err))
@@ -166,8 +199,75 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 	return nil
 }
 
-func (r *ForkReconciler) Delete(_ context.Context, name string) {
-	slog.Info("fork configmap deleted; job is GC'd via owner reference", "fork", name)
+func (r *ForkReconciler) Delete(ctx context.Context, name string) {
+	// Agent-namespace resources (ServiceAccount, gateway Pod, agent Job,
+	// gateway Service, agent-egress NetworkPolicy, Envoy bootstrap CM,
+	// leaf Cert) are owner-refed to the fork ConfigMap and reaped by K8s GC.
+	//
+	// Release-namespace per-fork policies (harness-allow, ext-authz-allow)
+	// cannot use a cross-namespace ownerRef — same trap as the per-instance
+	// resources in InstanceReconciler.Delete. Clean them up explicitly.
+	r.deleteReleaseNsForkResources(ctx, name)
+	slog.Info("fork configmap deleted", "fork", name)
+}
+
+// deleteReleaseNsForkResources removes the per-fork harness + ext-authz
+// AuthorizationPolicies the fork reconciler renders in the release
+// namespace. Errors are logged but not returned — fork deletion is
+// best-effort.
+func (r *ForkReconciler) deleteReleaseNsForkResources(ctx context.Context, forkName string) {
+	if r.dynamic == nil {
+		return
+	}
+	for _, name := range []string{forkName + "-harness-allow", forkName + "-extauthz-allow"} {
+		if err := r.dynamic.Resource(authzPolicyGVR).Namespace(r.config.ReleaseNamespace).
+			Delete(ctx, name, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
+			slog.Warn("deleting per-fork AuthorizationPolicy", "policy", name, "fork", forkName, "error", err)
+		}
+	}
+}
+
+// ensureForkServiceAccount renders the per-fork ServiceAccount and applies
+// it idempotently. Mirrors InstanceReconciler.ensureServiceAccount (same
+// SA shape — `automountServiceAccountToken: false`, owner-refed to the
+// fork ConfigMap, label-drift heal).
+func (r *ForkReconciler) ensureForkServiceAccount(ctx context.Context, forkName string, ownerCM *corev1.ConfigMap) error {
+	sa := BuildServiceAccount(forkName, r.config, ownerCM)
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		existing, err := r.client.CoreV1().ServiceAccounts(sa.Namespace).Get(ctx, sa.Name, metav1.GetOptions{})
+		if errors.IsNotFound(err) {
+			_, err = r.client.CoreV1().ServiceAccounts(sa.Namespace).Create(ctx, sa, metav1.CreateOptions{})
+			return err
+		}
+		if err != nil {
+			return err
+		}
+		// Reconcile fields we own; preserve everything else.
+		changed := false
+		if existing.Labels == nil {
+			existing.Labels = map[string]string{}
+		}
+		for k, v := range sa.Labels {
+			if existing.Labels[k] != v {
+				existing.Labels[k] = v
+				changed = true
+			}
+		}
+		if !hasOwnerRef(existing.OwnerReferences, sa.OwnerReferences[0]) {
+			existing.OwnerReferences = append(existing.OwnerReferences, sa.OwnerReferences[0])
+			changed = true
+		}
+		if existing.AutomountServiceAccountToken == nil ||
+			*existing.AutomountServiceAccountToken != *sa.AutomountServiceAccountToken {
+			existing.AutomountServiceAccountToken = sa.AutomountServiceAccountToken
+			changed = true
+		}
+		if !changed {
+			return nil
+		}
+		_, err = r.client.CoreV1().ServiceAccounts(sa.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
+		return err
+	})
 }
 
 func (r *ForkReconciler) setForkFailed(ctx context.Context, name, reason, detail string) error {
@@ -211,24 +311,6 @@ func (r *ForkReconciler) applyService(ctx context.Context, desired *corev1.Servi
 		return err
 	}
 	return err
-}
-
-// applyNetworkPolicy mirrors `InstanceReconciler.applyNetworkPolicy` for
-// fork-scoped policies (per-fork agent and gateway pair).
-func (r *ForkReconciler) applyNetworkPolicy(ctx context.Context, desired *networkingv1.NetworkPolicy) error {
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		existing, err := r.client.NetworkingV1().NetworkPolicies(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
-		if errors.IsNotFound(err) {
-			_, err = r.client.NetworkingV1().NetworkPolicies(desired.Namespace).Create(ctx, desired, metav1.CreateOptions{})
-			return err
-		}
-		if err != nil {
-			return err
-		}
-		existing.Spec = desired.Spec
-		_, err = r.client.NetworkingV1().NetworkPolicies(desired.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
-		return err
-	})
 }
 
 func (r *ForkReconciler) findForkPod(ctx context.Context, forkName string) (*corev1.Pod, error) {
@@ -306,6 +388,28 @@ func (r *ForkReconciler) applyConfigMap(ctx context.Context, desired *corev1.Con
 		existing.OwnerReferences = desired.OwnerReferences
 		existing.Labels = desired.Labels
 		_, err = r.client.CoreV1().ConfigMaps(desired.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
+		return err
+	})
+}
+
+// applyAuthorizationPolicy mirrors `InstanceReconciler.applyAuthorizationPolicy`
+// for fork-scoped policies (per-fork gateway admission, ADR-041).
+func (r *ForkReconciler) applyAuthorizationPolicy(ctx context.Context, desired *unstructured.Unstructured) error {
+	if r.dynamic == nil {
+		return fmt.Errorf("dynamic client not configured (AuthorizationPolicy cannot be applied)")
+	}
+	cli := r.dynamic.Resource(authzPolicyGVR).Namespace(desired.GetNamespace())
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		existing, err := cli.Get(ctx, desired.GetName(), metav1.GetOptions{})
+		if errors.IsNotFound(err) {
+			_, err = cli.Create(ctx, desired, metav1.CreateOptions{})
+			return err
+		}
+		if err != nil {
+			return err
+		}
+		desired.SetResourceVersion(existing.GetResourceVersion())
+		_, err = cli.Update(ctx, desired, metav1.UpdateOptions{})
 		return err
 	})
 }

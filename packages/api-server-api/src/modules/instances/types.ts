@@ -23,6 +23,10 @@ export interface Instance {
   id: string;
   name: string;
   agentId: string;
+  /** Agent's template id, or null if the agent was created from a raw image. */
+  templateId: string | null;
+  /** Container image the instance runs. Always populated. */
+  image: string;
   description?: string;
   state: InstanceState;
   error?: string;

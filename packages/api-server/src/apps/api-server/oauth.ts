@@ -25,6 +25,7 @@ import {
   type OAuthAppDescriptor,
   type OAuthAppRegistry,
 } from "../../modules/connections/infrastructure/oauth-apps.js";
+import { discoverMcpAuth } from "../../modules/connections/infrastructure/mcp-discovery.js";
 
 // ---------------------------------------------------------------------------
 // Routes
@@ -95,11 +96,11 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
     // host-rewritten callback (see `localhostCallbackAlias`).
     //
     // Descriptors with `credentialFamily` set get their credential inputs
-    // marked `optional: true` when the user already has a sibling connection
-    // in the same family. The connect form hides those inputs behind an
-    // "override" toggle; on submit, empty fields fall through to the stored
-    // family creds (see the merge step in POST /api/oauth/apps/:id/connect),
-    // and filled fields override them.
+    // marked `overridable: true` when the user already has a sibling
+    // connection in the same family. The connect form hides those inputs
+    // behind an "override" toggle; on submit, empty fields fall through
+    // to the stored family creds (see the merge step in POST
+    // /api/oauth/apps/:id/connect), and filled fields override them.
     const user = c.get("user");
     const familyCreds = await readFamilyCreds(k8sConnectionsFor(user.sub));
     return c.json(
@@ -108,7 +109,7 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
         const inputs = inheritFamily
           ? d.inputs.map((i) =>
               i.name === "clientId" || i.name === "clientSecret"
-                ? { ...i, optional: true }
+                ? { ...i, overridable: true }
                 : i,
             )
           : d.inputs;
@@ -199,6 +200,10 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
             hostPattern: conn.hostPattern,
             connectedAt: conn.connectedAt ?? "",
             expired,
+            // Surfaces the GitHub App slug when the connection's credentials
+            // belong to a GitHub App — drives the "Install on GitHub" /
+            // "Manage installation" affordance in the UI.
+            ...(conn.appSlug ? { appSlug: conn.appSlug } : {}),
           };
         })
         .filter((x): x is NonNullable<typeof x> => x !== null);
@@ -315,29 +320,25 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
   });
 
   /**
-   * Kicks off an MCP OAuth flow: discovers the AS metadata at the MCP
-   * server's origin, registers a public client via DCR, then hands off to
-   * the engine for the PKCE auth-code dance.
+   * Kicks off an MCP OAuth flow. Discovery follows the MCP 2025-06-18
+   * authorization spec: fetch the resource's RFC 9728 protected-resource
+   * metadata to learn the authorization server, then RFC 8414 AS metadata
+   * to learn the endpoints. Falls back to treating the MCP origin as the
+   * AS for older servers. Then DCR (RFC 7591) and hand off to the engine
+   * for the PKCE auth-code dance.
    */
   oauth.post("/api/oauth/start", async (c) => {
     const user = c.get("user");
     const jwt = getUserJwt(c);
     const body = await c.req.json<{ mcpServerUrl: string }>();
     const mcpUrl = new URL(body.mcpServerUrl);
-    const origin = mcpUrl.origin;
     const hostPattern = mcpUrl.hostname;
 
-    const metaRes = await fetch(`${origin}/.well-known/oauth-authorization-server`);
-    if (!metaRes.ok) {
+    const meta = await discoverMcpAuth(mcpUrl);
+    if (!meta) {
       return c.json({ error: "MCP server does not support OAuth discovery" }, 400);
     }
-    const meta = (await metaRes.json()) as {
-      authorization_endpoint: string;
-      token_endpoint: string;
-      registration_endpoint?: string;
-    };
-
-    if (!meta.registration_endpoint) {
+    if (!meta.registrationEndpoint) {
       return c.json(
         { error: "MCP server does not support dynamic client registration" },
         400,
@@ -345,7 +346,7 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
     }
 
     const redirectUri = `${uiBaseUrl}/api/oauth/callback`;
-    const regRes = await fetch(meta.registration_endpoint, {
+    const regRes = await fetch(meta.registrationEndpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -368,10 +369,11 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
     const { authUrl, state } = engine.start({
       provider: {
         id: `mcp:${hostPattern}`,
-        authorizationUrl: meta.authorization_endpoint,
-        tokenEndpoint: meta.token_endpoint,
+        authorizationUrl: meta.authorizationEndpoint,
+        tokenEndpoint: meta.tokenEndpoint,
         clientId: regData.client_id,
         ...(regData.client_secret ? { clientSecret: regData.client_secret } : {}),
+        ...(meta.scopes && meta.scopes.length > 0 ? { scopes: meta.scopes } : {}),
       },
       flow: { connectionKey: hostPattern, hostPattern },
       redirectUri,
@@ -428,6 +430,7 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
       ...(pending.provider.scopes && pending.provider.scopes.length > 0
         ? { scopes: pending.provider.scopes.join(" ") }
         : {}),
+      ...(pending.flow.appSlug ? { appSlug: pending.flow.appSlug } : {}),
     };
     try {
       await k8sConnectionsFor(pending.userSub).upsertConnection({
@@ -444,10 +447,18 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
       return c.redirect(`${uiBaseUrl}?oauth=error&message=${encodeURIComponent(msg)}`);
     }
 
-    const successQuery = isMcp
-      ? `oauth=success&host=${pending.flow.hostPattern}`
-      : `oauth=success&app=${encodeURIComponent(pending.flow.connectionKey)}`;
-    return c.redirect(`${uiBaseUrl}?${successQuery}`);
+    // Always return the user to the platform UI after OAuth, even for
+    // GitHub App connections that still need an install step. The UI then
+    // reads the just-stored connection (which carries `appSlug` for
+    // GitHub Apps) and surfaces an in-platform Install prompt — keeps the
+    // user in our context, avoids stranding them on GitHub's install page
+    // when the app is already installed, and removes the open-redirect
+    // surface the previous server-side install bounce required.
+    const successParams = new URLSearchParams();
+    successParams.set("oauth", "success");
+    if (isMcp) successParams.set("host", pending.flow.hostPattern);
+    else successParams.set("app", pending.flow.connectionKey);
+    return c.redirect(`${uiBaseUrl}?${successParams.toString()}`);
   });
 
   return oauth;

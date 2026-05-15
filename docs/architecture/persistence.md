@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-05-06
+Last verified: 2026-05-12
 
 ## Motivated by
 
@@ -61,7 +61,7 @@ flowchart LR
 
 Postgres carries application state the api-server owns end-to-end — anything that has to be queryable when no agent pod is running, plus any domain resource the controller does not reconcile.
 
-- **session metadata** ([ADR-017](../adrs/017-db-backed-sessions.md)) — Platform enriches each ACP session with metadata the protocol does not carry: a source-type discriminator (UI-initiated vs. channel-initiated vs. schedule-driven), the owning instance, the linked schedule when applicable, and creation time. The DB is the source of truth for these enrichments; the agent runtime owns the conversation itself. The sessions list reads enrichments straight from the DB and overlays live ACP data (title, last update) only when the pod is running.
+- **session metadata** ([ADR-017](../adrs/017-db-backed-sessions.md)) — Platform enriches each ACP session with metadata the protocol does not carry: a source-type discriminator (UI-initiated vs. channel-initiated vs. schedule-driven), the owning instance, the linked schedule when applicable, and creation time. The DB is the source of truth for these enrichments; the agent runtime owns the conversation itself. The sessions list reads enrichments straight from the DB and overlays live ACP data (title, last update) only when the pod is running. A row is written when the session is first prompted — chat sessions by the ACP relay, channel and schedule sessions by their respective adapters — so sessions created but never used leave no metadata behind.
 - **channel routing** — bindings between external chat surfaces and the instance/session they map to. Owned by [channels](channels.md).
 - **identity and auth** — links between channel-side identities and platform users, plus the auth allow-list. Owned by [security-and-credentials](security-and-credentials.md).
 - **skills catalog** — connected sources, per-instance install records, and publish history. Owned by [skills](skills.md).
@@ -97,6 +97,7 @@ The default Claude Code template persists the workspace and `$HOME`. Together th
 - the **workspace** itself — git checkouts, tool caches (`node_modules`, `.venv`, mise), and any artifacts the agent has produced.
 - **`$HOME`** — agent memory, skills, MCP server caches, and the harness's on-disk session store. The session store is the cold-start source for `session/load` after a pod restart.
 - **`.triggers/`** — pending trigger payloads. The controller delivers each payload via `kubectl exec` into the *running* pod, which writes the file onto its mounted PVC; the controller itself never mounts the volume. The pod must therefore be awake before delivery, and the schedule loop wakes it first if it is hibernated (see [agent-lifecycle](agent-lifecycle.md)).
+- **`.import-staging-*/`** — transient extraction directories used by the bundled file-import path before entries are merged into `<homeDir>/work`. Orphaned staging dirs from crashed imports are reclaimed by an agent-runtime boot sweeper; see [platform-topology](platform-topology.md).
 
 PVCs survive hibernation — when a StatefulSet scales to zero replicas, the volume detaches but is retained. The controller explicitly deletes PVCs on instance deletion (the standard StatefulSet behavior is to retain them to prevent data loss; Platform opts back into reclamation because instance deletion is intentional).
 

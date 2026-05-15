@@ -9,12 +9,33 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	dynfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 )
+
+// authzPolicyListGVR is the schema.GroupVersionResource for List dispatch
+// in the dynamic fake client. The fake registry needs a List kind for
+// every Resource it might watch; otherwise Update/Get returns NotFound
+// even for objects we just Created via the fake.
+var authzPolicyListGVR = schema.GroupVersionResource{Group: "security.istio.io", Version: "v1", Resource: "authorizationpolicies"}
+
+// newFakeDynamic returns a dynamic fake that knows about the
+// AuthorizationPolicy CRD shape the controller writes (ADR-041). Tests
+// that exercise Reconcile() rely on this so the per-instance policies
+// can be Created/Updated through the fake.
+func newFakeDynamic() *dynfake.FakeDynamicClient {
+	scheme := runtime.NewScheme()
+	gvrToListKind := map[schema.GroupVersionResource]string{
+		authzPolicyListGVR: "AuthorizationPolicyList",
+	}
+	return dynfake.NewSimpleDynamicClientWithCustomListKinds(scheme, gvrToListKind)
+}
 
 func setupReconciler(t *testing.T, agents map[string]*corev1.ConfigMap, objects ...runtime.Object) (*InstanceReconciler, *fake.Clientset) {
 	t.Helper()
@@ -26,9 +47,23 @@ func setupReconciler(t *testing.T, agents map[string]*corev1.ConfigMap, objects 
 		HarnessServerPort: 4001,
 		EnvoyImage:        "envoyproxy/envoy:distroless-v1.37.2",
 		EnvoyPort:         10000,
+		IstioTrustDomain:  "cluster.local",
+		IstioWaypointName: "apiserver-waypoint",
+		AgentBase: config.AgentBase{
+			AccessMode:             "ReadWriteMany",
+			TerminationGracePeriod: 5,
+			ContainerSecurityContext: &corev1.SecurityContext{
+				Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+			},
+		},
+		AgentTemplateDefaults: config.AgentTemplateDefaults{
+			AgentHome:       "/home/agent",
+			ImagePullPolicy: "IfNotPresent",
+			StorageSize:     "10Gi",
+		},
 	}
 	getter := &fakeGetter{cms: agents}
-	r := NewInstanceReconciler(client, cfg, NewAgentResolver(getter))
+	r := NewInstanceReconciler(client, cfg, NewAgentResolver(getter)).WithDynamicClient(newFakeDynamic())
 	return r, client
 }
 
@@ -88,16 +123,41 @@ func TestReconcile_CreateResources(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, corev1.ClusterIPNone, svc.Spec.ClusterIP)
 
-	// Gateway Service
+	// Gateway Service — ClusterIP-typed (not headless) so hostAliases /
+	// iptables allow-list have a stable IP to pin.
 	gwSvc, err := client.CoreV1().Services("test-agents").Get(ctx, "my-instance-gateway", metav1.GetOptions{})
 	require.NoError(t, err, "gateway Service must be created so HTTPS_PROXY DNS resolves")
-	assert.Equal(t, corev1.ClusterIPNone, gwSvc.Spec.ClusterIP)
+	assert.NotEqual(t, corev1.ClusterIPNone, gwSvc.Spec.ClusterIP, "gateway Service must not be headless")
 
-	// Both NetworkPolicies created
-	_, err = client.NetworkingV1().NetworkPolicies("test-agents").Get(ctx, "my-instance-egress", metav1.GetOptions{})
-	require.NoError(t, err)
-	_, err = client.NetworkingV1().NetworkPolicies("test-agents").Get(ctx, "my-instance-gateway-egress", metav1.GetOptions{})
-	require.NoError(t, err, "gateway NetworkPolicy must be created")
+	// Per-instance ServiceAccount — kept off-pod via
+	// automountServiceAccountToken: false. The agent pod has no SPIFFE
+	// identity (ambient opt-out), but the SA still scopes Secret access
+	// at the controller level.
+	sa, err := client.CoreV1().ServiceAccounts("test-agents").Get(ctx, "my-instance", metav1.GetOptions{})
+	require.NoError(t, err, "per-instance ServiceAccount must be created")
+	require.NotNil(t, sa.AutomountServiceAccountToken)
+	assert.False(t, *sa.AutomountServiceAccountToken)
+
+	// Per-instance ext-authz Service in the release namespace.
+	_, err = client.CoreV1().Services("default").Get(ctx, "platform-extauthz-my-instance", metav1.GetOptions{})
+	require.NoError(t, err, "per-instance ext-authz Service must be created")
+
+	// Per-pair agent egress NetworkPolicy — the sole gate on the agent →
+	// paired gateway hop. Agent has no ambient enrolment, so NP sees real
+	// destination IPs and denies anything that isn't DNS or the paired
+	// gateway pod on the Envoy port.
+	np, err := client.NetworkingV1().NetworkPolicies("test-agents").Get(ctx, "my-instance-agent-egress", metav1.GetOptions{})
+	require.NoError(t, err, "per-pair agent egress NetworkPolicy must be created")
+	assert.Equal(t, "my-instance", np.Spec.PodSelector.MatchLabels["agent-platform.ai/pair"])
+	assert.Equal(t, "agent", np.Spec.PodSelector.MatchLabels["agent-platform.ai/role"])
+
+	// Pod specs use the per-instance SA. On the gateway, this materialises
+	// as a SPIFFE workload identity used by the harness + ext-authz
+	// AuthorizationPolicies.
+	assert.Equal(t, "my-instance", ss.Spec.Template.Spec.ServiceAccountName,
+		"agent pod must run as the per-instance SA")
+	assert.Equal(t, "my-instance", gws.Spec.Template.Spec.ServiceAccountName,
+		"gateway pod must run as the per-instance SA (its SPIFFE principal gates harness + ext-authz)")
 
 	// Status written
 	updated, _ := client.CoreV1().ConfigMaps("test-agents").Get(ctx, "my-instance", metav1.GetOptions{})
@@ -141,6 +201,139 @@ func TestReconcile_UpdateReplicas(t *testing.T) {
 
 	ss, _ := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "my-instance", metav1.GetOptions{})
 	assert.Equal(t, int32(1), *ss.Spec.Replicas)
+}
+
+func TestForceRollStuckPod_DeletesNotReadyPodAtOldRev(t *testing.T) {
+	// The deadlock case: SS template has been updated to rev-2 but the
+	// pod is still at rev-1, NotReady (CrashLoopBackOff). Without help,
+	// the SS controller refuses to evict a NotReady pod, leaving the
+	// rollout stuck. forceRollStuckPod must delete the pod so the SS
+	// can recreate it at the new revision.
+	ss := &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-instance-gateway", Namespace: "test-agents", UID: "ss-uid"},
+		Spec: appsv1.StatefulSetSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"agent-platform.ai/role": "gateway", "agent-platform.ai/pair": "my-instance"}},
+		},
+		Status: appsv1.StatefulSetStatus{
+			CurrentRevision: "rev-1",
+			UpdateRevision:  "rev-2",
+		},
+	}
+	stalePod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-instance-gateway-0",
+			Namespace: "test-agents",
+			Labels: map[string]string{
+				"agent-platform.ai/role":   "gateway",
+				"agent-platform.ai/pair":   "my-instance",
+				"controller-revision-hash": "rev-1",
+			},
+		},
+		Status: corev1.PodStatus{
+			Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionFalse}},
+		},
+	}
+	r, client := setupReconciler(t, nil, ss, stalePod)
+
+	require.NoError(t, r.forceRollStuckPod(context.Background(), "test-agents", "my-instance-gateway"))
+
+	_, err := client.CoreV1().Pods("test-agents").Get(context.Background(), "my-instance-gateway-0", metav1.GetOptions{})
+	assert.True(t, errors.IsNotFound(err), "stale NotReady pod at old rev should be deleted; got err=%v", err)
+}
+
+func TestForceRollStuckPod_LeavesReadyOldRevPodAlone(t *testing.T) {
+	// On clusters where MaxUnavailableStatefulSet IS enabled, the SS
+	// controller can roll past Ready old-rev pods normally. Don't
+	// pre-empt that — only intervene when the pod is NotReady.
+	ss := &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-instance-gateway", Namespace: "test-agents"},
+		Spec: appsv1.StatefulSetSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"agent-platform.ai/role": "gateway"}},
+		},
+		Status: appsv1.StatefulSetStatus{
+			CurrentRevision: "rev-1",
+			UpdateRevision:  "rev-2",
+		},
+	}
+	healthyPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-instance-gateway-0",
+			Namespace: "test-agents",
+			Labels: map[string]string{
+				"agent-platform.ai/role":   "gateway",
+				"controller-revision-hash": "rev-1",
+			},
+		},
+		Status: corev1.PodStatus{
+			Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}},
+		},
+	}
+	r, client := setupReconciler(t, nil, ss, healthyPod)
+
+	require.NoError(t, r.forceRollStuckPod(context.Background(), "test-agents", "my-instance-gateway"))
+
+	_, err := client.CoreV1().Pods("test-agents").Get(context.Background(), "my-instance-gateway-0", metav1.GetOptions{})
+	assert.NoError(t, err, "Ready old-rev pod must not be deleted — let normal rolling-update handle it")
+}
+
+func TestForceRollStuckPod_NoopWhenRevisionsMatch(t *testing.T) {
+	// No pending update → no rollout to unstick. Even if a pod is NotReady
+	// (e.g. transient liveness flap), don't churn it; only deadlocks
+	// caused by stale revisions are our concern.
+	ss := &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-instance-gateway", Namespace: "test-agents"},
+		Spec: appsv1.StatefulSetSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"agent-platform.ai/role": "gateway"}},
+		},
+		Status: appsv1.StatefulSetStatus{
+			CurrentRevision: "rev-1",
+			UpdateRevision:  "rev-1",
+		},
+	}
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-instance-gateway-0",
+			Namespace: "test-agents",
+			Labels:    map[string]string{"agent-platform.ai/role": "gateway", "controller-revision-hash": "rev-1"},
+		},
+		Status: corev1.PodStatus{
+			Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionFalse}},
+		},
+	}
+	r, client := setupReconciler(t, nil, ss, pod)
+
+	require.NoError(t, r.forceRollStuckPod(context.Background(), "test-agents", "my-instance-gateway"))
+
+	_, err := client.CoreV1().Pods("test-agents").Get(context.Background(), "my-instance-gateway-0", metav1.GetOptions{})
+	assert.NoError(t, err, "no-op required when SS revisions match")
+}
+
+func TestReconcile_PatchesGatewayUpdateStrategyOnExistingStatefulSet(t *testing.T) {
+	// applyStatefulSet must propagate UpdateStrategy to existing StatefulSets,
+	// not just newly-created ones. Without this, updating the controller
+	// to set maxUnavailable: 1 on the gateway only takes effect for
+	// fresh installs — already-running pairs keep the default rolling
+	// strategy and stay stuck behind CrashLoop pods on rev transitions.
+	cm := instanceCM("running")
+	// An existing gateway StatefulSet at the default (empty) update
+	// strategy, simulating a pre-fix install.
+	existingGateway := &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-instance-gateway", Namespace: "test-agents"},
+		Spec:       appsv1.StatefulSetSpec{Replicas: int32Ptr(1)},
+	}
+	r, client := setupReconciler(t,
+		map[string]*corev1.ConfigMap{"claude-code": agentCM()},
+		cm, existingGateway,
+	)
+
+	err := r.Reconcile(context.Background(), cm)
+	require.NoError(t, err)
+
+	got, err := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "my-instance-gateway", metav1.GetOptions{})
+	require.NoError(t, err)
+	require.NotNil(t, got.Spec.UpdateStrategy.RollingUpdate, "rolling update strategy must be patched onto existing StatefulSets")
+	require.NotNil(t, got.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable)
+	assert.Equal(t, "1", got.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable.String())
 }
 
 func TestReconcile_AgentNotFound(t *testing.T) {

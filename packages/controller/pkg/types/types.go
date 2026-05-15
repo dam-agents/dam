@@ -10,6 +10,7 @@ import (
 	"github.com/teambition/rrule-go"
 	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/api/resource"
+	sigsyaml "sigs.k8s.io/yaml"
 )
 
 var quietHoursTimeRE = regexp.MustCompile(`^([01][0-9]|2[0-3]):[0-5][0-9]$`)
@@ -18,24 +19,40 @@ const SpecVersion = "agent-platform.ai/v1"
 
 // --- Agent ---
 
+// AgentSpec is the parsed agent template ConfigMap (spec.yaml). It carries
+// the fields a template can declare, plus the optional Layer B overrides
+// (ImagePullPolicy, StorageSize, Resources) that fall back to chart-wide
+// `controller.agent.templateDefaults.*` when empty.
+//
+// Security context and scheduling/metadata are chart-only — they live on
+// `config.AgentBase` and cannot be set here by design.
 type AgentSpec struct {
-	Version         string                      `yaml:"version"`
-	Name            string                      `yaml:"name,omitempty"`
-	Image           string                      `yaml:"image"`
-	Description     string                      `yaml:"description,omitempty"`
-	Mounts          []Mount                     `yaml:"mounts,omitempty"`
-	Init            string                      `yaml:"init,omitempty"`
-	Env             []EnvVar                    `yaml:"env,omitempty"`
-	Resources       ResourceSpec                `yaml:"resources,omitempty"`
-	SecurityContext *SecurityContext             `yaml:"securityContext,omitempty"`
+	Version     string       `yaml:"version" json:"version"`
+	Name        string       `yaml:"name,omitempty" json:"name,omitempty"`
+	Image       string       `yaml:"image" json:"image"`
+	Description string       `yaml:"description,omitempty" json:"description,omitempty"`
+	Init        string       `yaml:"init,omitempty" json:"init,omitempty"`
+	SkillPaths  []string     `yaml:"skillPaths,omitempty" json:"skillPaths,omitempty"`
+	Mounts      []Mount      `yaml:"mounts,omitempty" json:"mounts,omitempty"`
+	Env         []EnvVar     `yaml:"env,omitempty" json:"env,omitempty"`
+	Resources   ResourceSpec `yaml:"resources,omitempty" json:"resources,omitempty"`
+
+	// Layer B overrides for chart-wide AgentTemplateDefaults. Empty = inherit.
+	ImagePullPolicy string `yaml:"imagePullPolicy,omitempty" json:"imagePullPolicy,omitempty"`
+	StorageSize     string `yaml:"storageSize,omitempty" json:"storageSize,omitempty"`
+	// AgentHome is the HOME inside the agent container. The chart writes
+	// this into spec.yaml from the template's `agentHome` (with chart-wide
+	// fallback), so any `$HOME` literals in Mounts / SkillPaths are already
+	// resolved by the time the controller sees them.
+	AgentHome string `yaml:"agentHome,omitempty" json:"agentHome,omitempty"`
 }
 
 type Mount struct {
 	Path    string `yaml:"path"`
 	Persist bool   `yaml:"persist"`
 	// Size is an optional K8s resource Quantity (e.g. "2Gi") for a persisted
-	// mount's PVC. When empty the controller defaults to 10Gi to match the
-	// pre-issue-#244 behavior. Ignored when Persist is false.
+	// mount's PVC. Empty = falls back to AgentSpec.StorageSize, then to
+	// AgentTemplateDefaults.StorageSize. Ignored when Persist is false.
 	Size string `yaml:"size,omitempty"`
 }
 
@@ -47,11 +64,6 @@ type EnvVar struct {
 type ResourceSpec struct {
 	Requests map[string]string `yaml:"requests,omitempty"`
 	Limits   map[string]string `yaml:"limits,omitempty"`
-}
-
-type SecurityContext struct {
-	RunAsNonRoot           *bool `yaml:"runAsNonRoot,omitempty"`
-	ReadOnlyRootFilesystem *bool `yaml:"readOnlyRootFilesystem,omitempty"`
 }
 
 // --- MCP Server ---
@@ -161,8 +173,12 @@ const (
 // --- Parsing + Validation ---
 
 func ParseAgentSpec(data string) (*AgentSpec, error) {
+	// sigs.k8s.io/yaml routes through JSON unmarshaling so JSON-tagged
+	// fields parse cleanly even when only json tags are present. AgentSpec
+	// fields match by case-insensitive Go field name, which is
+	// behaviorally identical to the yaml.v3 unmarshal we used before.
 	var spec AgentSpec
-	if err := yaml.Unmarshal([]byte(data), &spec); err != nil {
+	if err := sigsyaml.Unmarshal([]byte(data), &spec); err != nil {
 		return nil, fmt.Errorf("parsing agent spec: %w", err)
 	}
 	if err := validateVersion(spec.Version); err != nil {

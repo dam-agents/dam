@@ -106,6 +106,24 @@ const sessionUpdate = (sessionId = SID) =>
 const agentPromptResponse = (outboundId: number) =>
   JSON.stringify({ jsonrpc: "2.0", id: outboundId, result: { stopReason: "end_turn" } });
 
+const initializeRequest = (id: number) =>
+  JSON.stringify({ jsonrpc: "2.0", id, method: "initialize", params: { protocolVersion: 1 } });
+
+const initializeResponse = (
+  outboundId: number,
+  sessionCapabilities: object | undefined,
+) =>
+  JSON.stringify({
+    jsonrpc: "2.0",
+    id: outboundId,
+    result: {
+      protocolVersion: 1,
+      agentCapabilities: sessionCapabilities === undefined
+        ? {}
+        : { sessionCapabilities },
+    },
+  });
+
 function outboundId(sentFrame: unknown): number {
   return (sentFrame as { id: number }).id;
 }
@@ -722,6 +740,72 @@ describe("createAcpRuntime", () => {
     const sessOut = outboundId(fa.sent[0]);
     fa.pushLine(newSessionResponse(sessOut));
     // Session is idle (no prompt in flight). Viewer leaves → reap.
+    c.remoteClose();
+
+    const closeFrames = fa.sent.filter((f: any) => f.method === "session/close");
+    expect(closeFrames).toHaveLength(1);
+    expect((closeFrames[0] as any).params).toEqual({ sessionId: SID });
+  });
+
+  it("does not send session/close when the agent didn't advertise the capability", () => {
+    // pi-acp scenario: the harness implements ACP but doesn't support
+    // `session/close`. The runtime must respect the absence of
+    // `agentCapabilities.sessionCapabilities.close` from the initialize
+    // response and skip the reap call — sending it would error / kill the
+    // agent. The local log stays around so a future session/resume can serve
+    // from cache without forcing a cold rebuild the agent can't satisfy.
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+
+    // Client initializes; agent advertises *no* `close` capability.
+    c.pushMessage(initializeRequest(0));
+    const initOut = outboundId(fa.sent[0]);
+    fa.pushLine(initializeResponse(initOut, { fork: {}, list: {}, resume: {} }));
+
+    c.pushMessage(newSessionRequest(1));
+    const sessOut = outboundId(fa.sent[1]);
+    fa.pushLine(newSessionResponse(sessOut));
+    c.remoteClose();
+
+    expect(fa.sent.filter((f: any) => f.method === "session/close")).toHaveLength(0);
+  });
+
+  it("does not send session/close when the agent's initialize omits sessionCapabilities entirely", () => {
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+
+    c.pushMessage(initializeRequest(0));
+    const initOut = outboundId(fa.sent[0]);
+    fa.pushLine(initializeResponse(initOut, undefined));
+
+    c.pushMessage(newSessionRequest(1));
+    const sessOut = outboundId(fa.sent[1]);
+    fa.pushLine(newSessionResponse(sessOut));
+    c.remoteClose();
+
+    expect(fa.sent.filter((f: any) => f.method === "session/close")).toHaveLength(0);
+  });
+
+  it("does send session/close when the agent advertises sessionCapabilities.close", () => {
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+
+    c.pushMessage(initializeRequest(0));
+    const initOut = outboundId(fa.sent[0]);
+    fa.pushLine(initializeResponse(initOut, { close: {} }));
+
+    c.pushMessage(newSessionRequest(1));
+    const sessOut = outboundId(fa.sent[1]);
+    fa.pushLine(newSessionResponse(sessOut));
     c.remoteClose();
 
     const closeFrames = fa.sent.filter((f: any) => f.method === "session/close");

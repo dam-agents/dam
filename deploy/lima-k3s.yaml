@@ -8,7 +8,14 @@ images:
     arch: x86_64
 
 cpus: 4
-memory: 4GiB
+# Istio ambient (istiod + istio-cni + ztunnel + waypoint Deployment) adds
+# ~1 GiB of pod requests on top of the existing platform stack. On 4 GiB the
+# k3s scheduler hit FailedScheduling: Insufficient memory for new agent pods.
+#
+# Bumping `memory:` here does not resize an existing VM. Devs upgrading
+# from a 4 GiB VM must reprovision:
+#   mise run cluster:delete && mise run cluster:install
+memory: 8GiB
 disk: 100GiB
 
 containerd:

@@ -35,18 +35,27 @@ function tryParse(data: unknown): unknown {
   }
 }
 
+function isRequest(msg: unknown): msg is JsonRpcRequest {
+  if (typeof msg !== "object" || msg === null) return false;
+  const m = msg as Partial<JsonRpcRequest>;
+  return m.id !== undefined && typeof m.method === "string";
+}
+
 function isPermissionRequest(msg: unknown): msg is JsonRpcRequest {
-  return (
-    typeof msg === "object" && msg !== null &&
-    (msg as JsonRpcRequest).method === "session/request_permission" &&
-    typeof (msg as JsonRpcRequest).id !== "undefined"
-  );
+  return isRequest(msg) && msg.method === "session/request_permission";
 }
 
 function isResponse(msg: unknown): msg is JsonRpcResponse {
   if (typeof msg !== "object" || msg === null) return false;
-  const m = msg as JsonRpcResponse;
-  return (typeof m.id === "number" || typeof m.id === "string") && (m.result !== undefined || m.error !== undefined);
+  const m = msg as Partial<JsonRpcResponse> & Partial<JsonRpcRequest>;
+  if (m.id === undefined) return false;
+  if (m.method !== undefined) return false;
+  return m.result !== undefined || m.error !== undefined;
+}
+
+function extractRequestSessionId(req: JsonRpcRequest): string | null {
+  const sid = req.params?.sessionId;
+  return typeof sid === "string" ? sid : null;
 }
 
 const lastActivityTimestamps = new Map<string, number>();
@@ -83,11 +92,17 @@ export interface InstanceIdentityLookup {
   resolve(instanceId: string): Promise<{ ownerSub: string; agentId: string } | null>;
 }
 
+/** Persists a session row on first creation. Idempotent on conflict — repeated
+ *  calls for the same sid no-op. Injected by the composition root so the relay
+ *  doesn't reach into the sessions module directly. */
+export type PersistSession = (sessionId: string, instanceId: string) => Promise<void>;
+
 export function createAcpRelay(
   namespace: string,
   repo: InstancesRepository,
   approvals: ApprovalsRelayService,
   identityLookup: InstanceIdentityLookup,
+  persistSession: PersistSession,
 ) {
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
 
@@ -178,32 +193,70 @@ export function createAcpRelay(
 
           client.removeAllListeners("message");
           client.on("message", (data, isBinary) => {
-            if (upstream.readyState === WebSocket.OPEN) {
-              upstream.send(data, { binary: isBinary });
+            if (upstream.readyState !== WebSocket.OPEN) return;
 
-              if (!isBinary) {
-                const parsed = tryParse(data);
-                if (isResponse(parsed)) mirrorPermissionResponse(parsed);
-              }
+            if (shouldUpdateActivity(instanceId)) {
+              repo.patchAnnotation(
+                instanceId,
+                LAST_ACTIVITY_KEY, new Date().toISOString(),
+              ).catch(() => {});
+            }
 
-              if (shouldUpdateActivity(instanceId)) {
-                repo.patchAnnotation(
-                  instanceId,
-                  LAST_ACTIVITY_KEY, new Date().toISOString(),
-                ).catch(() => {});
+            if (isBinary) {
+              upstream.send(data, { binary: true });
+              return;
+            }
+
+            const parsed = tryParse(data);
+
+            // Persist on every session/prompt — upsertSession is idempotent on
+            // conflict, so subsequent prompts on the same sid are PG no-ops.
+            // Holding the frame until commit keeps DB row + agent state atomic
+            // and makes the persist robust across WS reconnects.
+            if (isRequest(parsed) && parsed.method === "session/prompt") {
+              const sid = extractRequestSessionId(parsed);
+              if (sid) {
+                const requestId = parsed.id;
+                persistSession(sid, instanceId).then(
+                  () => {
+                    if (upstream.readyState === WebSocket.OPEN) {
+                      upstream.send(data, { binary: false });
+                    } else if (client.readyState === WebSocket.OPEN) {
+                      client.send(JSON.stringify({
+                        jsonrpc: "2.0",
+                        id: requestId,
+                        error: { code: -32000, message: "upstream closed before prompt could be forwarded" },
+                      }));
+                    }
+                  },
+                  (e: unknown) => {
+                    if (client.readyState !== WebSocket.OPEN) return;
+                    client.send(JSON.stringify({
+                      jsonrpc: "2.0",
+                      id: requestId,
+                      error: { code: -32000, message: `failed to persist session` },
+                    }));
+                  },
+                );
+                return;
               }
             }
+
+            upstream.send(data, { binary: false });
+            if (isResponse(parsed)) mirrorPermissionResponse(parsed);
           });
 
           upstream.on("message", (data, isBinary) => {
-            if (client.readyState === WebSocket.OPEN) {
-              client.send(data, { binary: isBinary });
+            if (client.readyState !== WebSocket.OPEN) return;
 
-              if (!isBinary) {
-                const parsed = tryParse(data);
-                if (isPermissionRequest(parsed)) mirrorPermissionRequest(parsed);
-              }
+            if (isBinary) {
+              client.send(data, { binary: true });
+              return;
             }
+
+            const parsed = tryParse(data);
+            client.send(data, { binary: false });
+            if (isPermissionRequest(parsed)) mirrorPermissionRequest(parsed);
           });
 
           upstream.on("close", (code, reason) => {

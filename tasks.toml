@@ -6,20 +6,11 @@ depends = ["*:setup"]
 ["check"]
 depends = ["*:check"]
 
-["lint:check"]
-dir = "{{config_root}}"
-run = "pnpm exec eslint ."
-
 ["fix"]
 depends = ["*:fix"]
 
-["lint:fix"]
-dir = "{{config_root}}"
-run = "pnpm exec eslint --fix ."
-
 ["test"]
-depends = ["*:test", "*:test:unit"]
-
+depends = ["*:test"]
 
 # -- Git hooks --
 
@@ -81,3 +72,52 @@ chmod +x .git/hooks/commit-msg
 
 echo "Git hooks installed."
 '''
+
+# -- Common --
+
+["common:check"]
+depends = ["common:check:*"]
+
+["common:check:lockfile-age"]
+description = "Verify no lockfile dependency is newer than 7 days"
+dir = "{{config_root}}"
+sources = ["pnpm-lock.yaml"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+DAYS=${MINIMUM_RELEASE_AGE_DAYS:-7}
+if date -u -d "-1 days" +%Y >/dev/null 2>&1; then
+  export CUTOFF=$(date -u -d "-$DAYS days" +%Y-%m-%dT%H:%M:%SZ)
+else
+  export CUTOFF=$(date -u -v-"${DAYS}"d +%Y-%m-%dT%H:%M:%SZ)
+fi
+export LOCKFILE_ENTRIES=$(mktemp); trap 'rm -f "$LOCKFILE_ENTRIES"' EXIT
+yq '.packages | keys | .[]' pnpm-lock.yaml | sed 's/\(.*\)@/\1\t/' > "$LOCKFILE_ENTRIES"
+check_pkg() {
+  export PKG_NAME="$1" PKG_VERSIONS=$(awk -F'\t' -v n="$1" '$1==n{printf(c++?",":"[")"\""$2"\""}END{print"]"}' "$LOCKFILE_ENTRIES")
+  curl -sf --max-time 10 -H 'Accept: application/json' \
+    "https://registry.npmjs.org/$1" | \
+  yq -p json -r '.time as $t | (strenv(PKG_VERSIONS) | fromjson | .[]) as $ver |
+    $t[$ver] | select(. != null and . > strenv(CUTOFF)) | "  " + strenv(PKG_NAME) + "@" + $ver + "  " + .' || true
+}
+export -f check_pkg
+bash -c 'type check_pkg' >/dev/null 2>&1 || { echo "FAIL: export -f unsupported"; exit 1; }
+HITS=$(cut -f1 "$LOCKFILE_ENTRIES" | sort -u | xargs -P30 -I{} bash -c 'check_pkg "{}"')
+if [[ -n "$HITS" ]]; then
+  echo ""; echo "$HITS" | sort -rk2
+  printf '\nFAIL: packages published <%sd ago (cutoff %s). Wait or pin older.\n' "$DAYS" "$CUTOFF"
+  exit 1
+fi
+echo "OK: $(wc -l < "$LOCKFILE_ENTRIES") lockfile entries all older than ${DAYS}d"
+'''
+
+["common:check:lint"]
+dir = "{{config_root}}"
+run = "pnpm exec eslint ."
+
+["common:fix"]
+depends = ["common:fix:*"]
+
+["common:fix:lint"]
+dir = "{{config_root}}"
+run = "pnpm exec eslint --fix ."

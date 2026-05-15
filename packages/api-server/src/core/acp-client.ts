@@ -42,14 +42,23 @@ export interface TriggerSessionResult {
   stopReason?: string;
 }
 
+/** How a call binds to its session: resume an existing one, or create a new
+ *  one and persist it via the callback. Mutually exclusive by construction. */
+type SessionAttach =
+  | { resumeSessionId: string }
+  | { onSessionCreated: (sessionId: string) => Promise<void> };
+
+export type SendPromptOpts = SessionAttach;
+
+export type TriggerSessionOpts =
+  & { prompt: string; mcpServers?: unknown[] }
+  & SessionAttach;
+
+
 export interface AcpClient {
   listSessions(): Promise<AcpSessionInfo[]>;
-  sendPrompt(prompt: string, opts?: { resumeSessionId?: string }): Promise<string>;
-  triggerSession(opts: {
-    prompt: string;
-    resumeSessionId?: string;
-    mcpServers?: unknown[];
-  }): Promise<TriggerSessionResult>;
+  sendPrompt(prompt: string, opts: SendPromptOpts): Promise<string>;
+  triggerSession(opts: TriggerSessionOpts): Promise<TriggerSessionResult>;
 }
 
 async function withAcpConnection<T>(
@@ -118,30 +127,17 @@ async function withAcpConnection<T>(
 export function createAcpClient(opts: {
   namespace: string;
   instanceName: string;
-  onSessionCreated: (sessionId: string) => Promise<void>;
 }): AcpClient {
-  return createAcpClientForUrl({
-    url: `ws://${podBaseUrl(opts.instanceName, opts.namespace)}/api/acp`,
-    onSessionCreated: opts.onSessionCreated,
-  });
+  return createAcpClientForUrl(`ws://${podBaseUrl(opts.instanceName, opts.namespace)}/api/acp`);
 }
 
 export function createForkAcpClient(opts: {
   podIP: string;
-  onSessionCreated: (sessionId: string) => Promise<void>;
 }): AcpClient {
-  return createAcpClientForUrl({
-    url: `ws://${opts.podIP}:8080/api/acp`,
-    onSessionCreated: opts.onSessionCreated,
-  });
+  return createAcpClientForUrl(`ws://${opts.podIP}:8080/api/acp`);
 }
 
-function createAcpClientForUrl(opts: {
-  url: string;
-  onSessionCreated: (sessionId: string) => Promise<void>;
-}): AcpClient {
-  const { url } = opts;
-
+function createAcpClientForUrl(url: string): AcpClient {
   return {
     async listSessions(): Promise<AcpSessionInfo[]> {
       let stream: Stream;
@@ -180,7 +176,7 @@ function createAcpClientForUrl(opts: {
       }
     },
 
-    async sendPrompt(prompt: string, sendOpts?: { resumeSessionId?: string }): Promise<string> {
+    async sendPrompt(prompt: string, sendOpts: SendPromptOpts): Promise<string> {
       const responseChunks: string[] = [];
 
       await withAcpConnection(url, "platform-acp", {
@@ -191,7 +187,7 @@ function createAcpClientForUrl(opts: {
         },
       }, async (connection) => {
         let sessionId: string;
-        if (sendOpts?.resumeSessionId) {
+        if ("resumeSessionId" in sendOpts) {
           // loadSession (not unstable_resumeSession) survives the agent-runtime's
           // idle reap — the runtime replays history from its log or cold-bootstraps
           // the session in the agent subprocess.
@@ -207,7 +203,7 @@ function createAcpClientForUrl(opts: {
         } else {
           const s = await connection.newSession({ cwd: ".", mcpServers: [] });
           sessionId = s.sessionId;
-          await opts.onSessionCreated(sessionId);
+          await sendOpts.onSessionCreated(sessionId);
         }
         await connection.prompt({ sessionId, prompt: [{ type: "text", text: prompt }] });
       });
@@ -215,16 +211,12 @@ function createAcpClientForUrl(opts: {
       return responseChunks.join("");
     },
 
-    async triggerSession(triggerOpts: {
-      prompt: string;
-      resumeSessionId?: string;
-      mcpServers?: unknown[];
-    }): Promise<TriggerSessionResult> {
+    async triggerSession(triggerOpts: TriggerSessionOpts): Promise<TriggerSessionResult> {
       return withAcpConnection(url, "platform-trigger", {}, async (connection) => {
         let sessionId: string;
         const mcpServers = (triggerOpts.mcpServers ?? []) as any[];
 
-        if (triggerOpts.resumeSessionId) {
+        if ("resumeSessionId" in triggerOpts) {
           await connection.unstable_resumeSession({
             sessionId: triggerOpts.resumeSessionId,
             cwd: ".",
@@ -234,7 +226,7 @@ function createAcpClientForUrl(opts: {
         } else {
           const s = await connection.newSession({ cwd: ".", mcpServers });
           sessionId = s.sessionId;
-          await opts.onSessionCreated(sessionId);
+          await triggerOpts.onSessionCreated(sessionId);
         }
 
         const r = await connection.prompt({

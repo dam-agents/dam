@@ -16,8 +16,10 @@ import (
 
 func idleCheckerCfg(timeout time.Duration) *config.Config {
 	return &config.Config{
-		Namespace:   "test-agents",
-		IdleTimeout: timeout,
+		Namespace: "test-agents",
+		AgentBase: config.AgentBase{
+			IdleTimeout: config.Duration(timeout),
+		},
 	}
 }
 

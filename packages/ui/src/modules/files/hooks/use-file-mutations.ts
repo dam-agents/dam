@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 
 import { useStore } from "../../../store.js";
+import { type BundleEntry, importBundle } from "../api/import-bundle.js";
 import {
   MAX_UPLOAD_BYTES,
   useFileCreateMutation,
@@ -172,5 +173,22 @@ export function useFileMutations(instanceId: string | null) {
     }
   }, [uploadMutation, showConfirm, showToast]);
 
-  return { fileTree, createEntry, renameEntry, deleteEntry, uploadFiles };
+  const uploadBundle = useCallback(async (entries: BundleEntry[]) => {
+    if (!instanceId || entries.length === 0) return;
+    try {
+      await importBundle({ instanceId, entries });
+      showToast({ kind: "success", message: `Imported ${entries.length} file${entries.length === 1 ? "" : "s"}` });
+    } catch (err) {
+      showToast({ kind: "error", message: errorMessage(err, "Import failed") });
+    }
+  }, [instanceId, showToast]);
+
+  return {
+    fileTree,
+    createEntry,
+    renameEntry,
+    deleteEntry,
+    uploadFiles,
+    uploadBundle,
+  };
 }

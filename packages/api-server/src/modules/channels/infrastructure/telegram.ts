@@ -113,11 +113,7 @@ export function createTelegramWorker(
 
     try {
       await instances().ensureReady(instanceName);
-      const acp = createAcpClient({
-        namespace,
-        instanceName,
-        onSessionCreated: (sid) => persistSession(sid, instanceName, SessionType.ChannelTelegram, thread.id),
-      });
+      const acp = createAcpClient({ namespace, instanceName });
 
       const existing = await threadSessions.find(instanceName, thread.id);
       if (existing) {
@@ -129,7 +125,9 @@ export function createTelegramWorker(
           process.stderr.write(`[telegram:${instanceName}] resume failed, starting fresh: ${err}\n`);
         }
       }
-      await acp.sendPrompt(freshPrompt);
+      await acp.sendPrompt(freshPrompt, {
+        onSessionCreated: (sid) => persistSession(sid, instanceName, SessionType.ChannelTelegram, thread.id),
+      });
     } catch (err) {
       process.stderr.write(`[telegram:${instanceName}] ACP error: ${err}\n`);
     }

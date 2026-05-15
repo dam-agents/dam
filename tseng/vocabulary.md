@@ -102,6 +102,16 @@ Pod-side operational view of skills. Distinct from the api-server's Skills conte
 | Secret Assignment | The linkage between a Secret and an Agent that makes the secret available to that agent's egress; stored as the `agent-platform.ai/secret-mode` + `agent-platform.ai/granted-secret-ids` annotations on the agent's instance ConfigMap |
 | Provider | The external service a secret authenticates against (e.g., Anthropic); for typed secrets the provider determines default routing rules |
 
+## Import (bounded context)
+
+Pod-side operation that lands a user-supplied snapshot of local project context into the agent's `<homeDir>/work`. Owned by agent-runtime; orchestrated by api-server. See [ADR-044](../docs/adrs/044-file-import.md).
+
+| Term | Definition |
+|------|-----------|
+| Bundle | A `tar` (gzip optional) carrying the files to land; the on-the-wire contract between clients (UI, future CLI) and agent-runtime |
+| Staging Dir | A `.import-staging-*` directory on the PVC into which the bundle is extracted before finalize; reclaimed by the boot sweeper if its mtime exceeds 1h |
+| Finalize | The per-top-level `rm`+`rename` loop that lands the staging tree into `<homeDir>/work`. Top-level entries are atomic units — a top-level folder in the bundle replaces the whole same-named folder in `work/`. Destination entries whose names don't appear in the bundle are left untouched |
+
 ## Platform CLI (bounded context)
 
 | Term | Definition |
@@ -111,3 +121,11 @@ Pod-side operational view of skills. Distinct from the api-server's Skills conte
 | Config Source | One of the three inputs the Config is resolved from: command-line flag, environment variable, or config file |
 | Server URL | The Platform deployment the CLI is configured to talk to |
 | Compat Verdict | The result of comparing the local CLI's version against the server's reported `minClientVersion` and current version: `Ok`, `BehindMinClient` (hard-refuse), or `BehindCurrent` (soft-warn) |
+| Active Host | The Server URL the CLI sends commands to by default — resolved from `--server` flag, env var, or `config.toml` in that order. Also the key into the Auth Store for the credential a given invocation should use |
+| Host Auth | The per-Host credential record persisted by `dam auth login` — issuer, username, sub, the rotated access/refresh tokens, and the access token's expiry instant |
+| Auth Store | The machine-managed credential file at `$XDG_STATE_HOME/dam/auth.toml` (mode 0600, atomic writes) holding Host Auth entries keyed by Host URL — distinct from Config, which is user-editable |
+| Token Provider | The single cross-module application service every authenticated CLI verb calls to obtain a valid bearer for a Host — owns `DAM_TOKEN` precedence, proactive refresh within 60s of expiry, and the `invalid_grant` → clear-creds policy |
+| CLI Client | The Platform CLI's public OAuth client registered in Keycloak (`platform-cli` by default, advertised as `cliClientId` on `/api/auth/config`); device-grant only, no client secret, no redirect URIs |
+| Instance Ref | The user-supplied string that addresses an Instance from the CLI — either an Instance ID (anything starting with the Reserved ID Prefix) or an Instance name, disambiguated syntactically |
+| Instance Resolver | The cross-module application service every Instance-targeted CLI verb consumes to convert an Instance Ref into the owner's Instance; exact case-sensitive name match; returns a typed not-found / ambiguous / transport / auth-required error |
+| Reserved ID Prefix | `inst-` — the prefix the controller mints onto every Instance ID; the CLI uses it as the ID-vs-name syntactic split signal and the api-server forbids Instance names that begin with it at create-time |

@@ -100,12 +100,13 @@ async function processTrigger(
     const mcpServers = [...trigger.mcpServers];
     if (config.PLATFORM_MCP_URL) {
       // No Authorization header: harness traffic flows through the paired
-      // gateway pod's Envoy, which stamps the trusted `x-platform-instance`
-      // header the api-server identifies the caller from.
+      // gateway pod's Envoy and on through the Istio mesh, which conveys
+      // the gateway pod's SPIFFE peer principal to the waypoint. The
+      // waypoint enforces principal == URL `:id` (ADR-041).
       mcpServers.push({ type: "http", name: "platform-outbound", url: config.PLATFORM_MCP_URL, headers: [] });
     }
 
-    const result = await postTrigger(options.apiServerUrl, {
+    const result = await postTrigger(options.apiServerUrl, options.instanceId, {
       instanceId: options.instanceId,
       schedule: trigger.schedule,
       task: trigger.task,
@@ -121,15 +122,16 @@ async function processTrigger(
   }
 }
 
-/** POST to the API server's /internal/trigger endpoint. fetch routes via
- *  HTTP_PROXY because NODE_USE_ENV_PROXY=1 is set on agent pods, so the
- *  request flows through the paired gateway pod's Envoy and picks up the
- *  trusted `x-platform-instance` header on the way through. */
+/** POST to the API server's per-instance trigger endpoint. ADR-041: the
+ *  endpoint moved under `/api/instances/:id/internal/trigger` so it falls
+ *  under the same waypoint AuthorizationPolicy as MCP and pod-files —
+ *  identity is enforced by Istio (principal == URL `:id`), not a header. */
 async function postTrigger(
   apiServerUrl: string,
+  instanceId: string,
   body: object,
 ): Promise<{ sessionId: string; stopReason?: string }> {
-  const url = new URL("/internal/trigger", apiServerUrl);
+  const url = new URL(`/api/instances/${encodeURIComponent(instanceId)}/internal/trigger`, apiServerUrl);
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -137,7 +139,7 @@ async function postTrigger(
   });
   const data = await res.text();
   if (!res.ok) {
-    throw new Error(`POST /internal/trigger failed: ${res.status} ${data}`);
+    throw new Error(`POST trigger failed: ${res.status} ${data}`);
   }
   try {
     return JSON.parse(data);

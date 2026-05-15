@@ -70,6 +70,31 @@ data:
           "directAccessGrantsEnabled": false,
           "serviceAccountsEnabled": true,
           "protocol": "openid-connect"
+        },
+        {
+          "clientId": {{ .Values.keycloak.cliClientId | quote }},
+          "enabled": true,
+          "publicClient": true,
+          "standardFlowEnabled": false,
+          "directAccessGrantsEnabled": false,
+          "serviceAccountsEnabled": false,
+          "protocol": "openid-connect",
+          "attributes": {
+            "oauth2.device.authorization.grant.enabled": "true"
+          },
+          "protocolMappers": [
+            {
+              "name": "platform-api-audience",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper",
+              "consentRequired": false,
+              "config": {
+                "included.custom.audience": {{ .Values.keycloak.apiAudience | quote }},
+                "id.token.claim": "false",
+                "access.token.claim": "true"
+              }
+            }
+          ]
         }
       ],
       {{- if .Values.keycloak.requiredRole }}

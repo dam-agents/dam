@@ -32,9 +32,10 @@ resources:
   limits:
     cpu: "1"
     memory: "2Gi"
-securityContext:
-  runAsNonRoot: true
-  readOnlyRootFilesystem: false
+imagePullPolicy: Always
+storageSize: "5Gi"
+skillPaths:
+  - $HOME/.claude/skills/
 `
 
 func TestParseAgentSpec(t *testing.T) {
@@ -52,8 +53,25 @@ func TestParseAgentSpec(t *testing.T) {
 	assert.Equal(t, "ACP_PORT", spec.Env[0].Name)
 	assert.Equal(t, "250m", spec.Resources.Requests["cpu"])
 	assert.Equal(t, "2Gi", spec.Resources.Limits["memory"])
-	assert.True(t, *spec.SecurityContext.RunAsNonRoot)
-	assert.False(t, *spec.SecurityContext.ReadOnlyRootFilesystem)
+	// Layer B overrides for AgentTemplateDefaults.
+	assert.Equal(t, "Always", spec.ImagePullPolicy)
+	assert.Equal(t, "5Gi", spec.StorageSize)
+	assert.Equal(t, []string{"$HOME/.claude/skills/"}, spec.SkillPaths)
+}
+
+// Minimal agent ConfigMap: image only. The controller fills the rest from
+// chart-wide AgentTemplateDefaults at reconcile time. Used for the bare-image
+// agent path the api-server creates.
+func TestParseAgentSpec_BareImage(t *testing.T) {
+	spec, err := ParseAgentSpec(`version: agent-platform.ai/v1
+image: foo
+`)
+	require.NoError(t, err)
+	assert.Equal(t, "foo", spec.Image)
+	assert.Empty(t, spec.Mounts)
+	assert.Empty(t, spec.Env)
+	assert.Empty(t, spec.ImagePullPolicy)
+	assert.Empty(t, spec.StorageSize)
 }
 
 func TestParseAgentSpec_MissingVersion(t *testing.T) {

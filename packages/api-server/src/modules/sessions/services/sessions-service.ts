@@ -12,16 +12,18 @@ export function createSessionsService(deps: {
   isOwnedSchedule: (scheduleId: string) => Promise<boolean>;
   deactivateByScheduleId: (scheduleId: string) => Promise<void>;
   namespace: string;
+  closeTerminalSession?: (sessionId: string) => void;
+  resetAcpSession?: (instanceId: string, sessionId: string) => Promise<void>;
+  notifyModeChange?: (instanceId: string, sessionId: string, mode: SessionMode) => void;
 }): SessionsApiService {
   return {
     async list(instanceId: string, includeChannel?: boolean) {
       if (!await deps.isOwnedInstance(instanceId)) return [];
+      // Reader only — the relay writes rows on first session/prompt. Writing
+      // here would surface ACP-discovered probe sessions as orphan rows.
       const acp = createAcpClient({
         namespace: deps.namespace,
         instanceName: instanceId,
-        // ACP-discovered sessions are always chat-mode by definition (the
-        // ACP session lifecycle doesn't apply to terminal-mode PTYs).
-        onSessionCreated: (sid) => deps.upsert(sid, instanceId, SessionMode.Chat, SessionType.Regular),
       });
 
       const [dbRows, acpSessions] = await Promise.all([
@@ -64,6 +66,11 @@ export function createSessionsService(deps: {
     async setMode(sessionId: string, instanceId: string, mode: SessionMode) {
       if (!await deps.isOwnedInstance(instanceId)) return;
       await deps.setMode(sessionId, instanceId, mode);
+      if (mode !== SessionMode.Terminal) {
+        deps.closeTerminalSession?.(sessionId);
+        await deps.resetAcpSession?.(instanceId, sessionId);
+      }
+      deps.notifyModeChange?.(instanceId, sessionId, mode);
     },
 
     async delete(sessionId: string, instanceId: string) {

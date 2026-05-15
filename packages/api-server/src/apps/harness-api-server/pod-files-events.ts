@@ -3,7 +3,7 @@ import { streamSSE } from "hono/streaming";
 import type { PodFilesBus } from "../../modules/pod-files/bus.js";
 import type { FileSpec } from "../../modules/pod-files/types.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
-import { verifyInstanceFromHeader } from "./instance-auth.js";
+import { resolveInstance } from "./instance-auth.js";
 
 export interface PodFilesEventsDeps {
   k8s: K8sClient;
@@ -14,15 +14,18 @@ export interface PodFilesEventsDeps {
 
 /**
  * Mount the SSE channel that the agent-pod sidecar holds open.
- * Auth: trusted `x-platform-instance` header from the paired gateway's
- * Envoy (see instance-auth.ts). Topics: keyed by agent name because
- * connection grants are agent-scoped — every running instance of the same
- * agent sees the same set of granted connections, so they share one topic.
+ *
+ * ADR-041: Auth is the per-instance Istio AuthorizationPolicy at the
+ * waypoint — principal == URL `:id`. This handler resolves the instance
+ * label-set (agentId, owner) by name. Topics are keyed by agent name
+ * because connection grants are agent-scoped: every running instance of
+ * the same agent sees the same set of granted connections, so they
+ * share one topic.
  */
 export function mountPodFilesEventsRoute(app: Hono, deps: PodFilesEventsDeps) {
   app.get("/api/instances/:id/pod-files/events", async (c) => {
     const instanceId = c.req.param("id")!;
-    const identity = await verifyInstanceFromHeader(deps.k8s, c, instanceId);
+    const identity = await resolveInstance(deps.k8s, instanceId);
     if (!identity) return c.json({ error: "not found" }, 404);
 
     const { agentId, owner } = identity;

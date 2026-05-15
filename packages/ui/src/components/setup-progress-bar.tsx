@@ -15,7 +15,7 @@ import { useAgents } from "../modules/agents/api/queries.js";
 import { useAppConnections, useMcpConnections } from "../modules/connections/api/queries.js";
 import { useSecrets } from "../modules/secrets/api/queries.js";
 import { useStore } from "../store.js";
-import { isCustomSecret } from "../types.js";
+import { isCustomSecret, isProviderPresetType } from "../types.js";
 
 export function SetupProgressBar() {
   const view = useStore((s) => s.view);
@@ -38,7 +38,7 @@ export function SetupProgressBar() {
 
   if (!shouldRender) return null;
 
-  const hasProvider = secrets.some((s) => s.type === "anthropic");
+  const hasProvider = secrets.some((s) => isProviderPresetType(s.type));
   const hasConnections =
     appConnections.some((c) => c.status === "connected") ||
     mcpConnections.some((c) => !c.expired) ||

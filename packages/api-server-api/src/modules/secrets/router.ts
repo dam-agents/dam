@@ -1,50 +1,18 @@
 import { z } from "zod";
 import { t } from "../../trpc.js";
-import { ANTHROPIC_API_KEY_ENV_MAPPING, ENV_NAME_RE } from "./types.js";
+import {
+  envMappingsSchema,
+  injectionConfigSchema,
+  secretTypeSchema,
+  updateSecretInputSchema,
+} from "./schemas.js";
+import { isProviderPresetType } from "./types.js";
 
-const secretTypeSchema = z.enum(["anthropic", "generic"]);
-
-const envMappingSchema = z.object({
-  envName: z
-    .string()
-    .min(1)
-    .max(255)
-    .regex(ENV_NAME_RE, "envName must match [A-Z_][A-Z0-9_]*"),
-  placeholder: z.string().min(1).max(1000),
-});
-
-const envMappingsSchema = z.array(envMappingSchema).max(32);
-
-const injectionConfigSchema = z.object({
-  headerName: z.string().min(1).max(255),
-  valueFormat: z.string().max(1000).optional(),
-});
-
-export const updateSecretInputSchema = z
-  .object({
-    id: z.string().min(1),
-    name: z.string().min(1).max(100).optional(),
-    value: z.string().min(1).optional(),
-    hostPattern: z.string().min(1).max(253).optional(),
-    pathPattern: z.string().max(1000).nullable().optional(),
-    injectionConfig: injectionConfigSchema.nullable().optional(),
-    envMappings: envMappingsSchema.optional(),
-  })
-  .superRefine((d, ctx) => {
-    // The raw token is stored only inside the SDS file's `inline_string`
-    // pre-baked with the current `valueFormat`. Changing `injectionConfig`
-    // alone would leave that file out of sync with the new format, so we
-    // require callers to re-supply `value` and re-bake atomically. `null`
-    // (clear-to-defaults) counts as a change too — defaults aren't always
-    // identical to what was stored.
-    if (d.injectionConfig !== undefined && d.value === undefined) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "value is required when changing injectionConfig",
-        path: ["value"],
-      });
-    }
-  });
+// Re-export so existing barrel consumers (`api-server-api`'s index.ts +
+// the api-server's tests) keep working. UI code that imports
+// `updateSecretInputSchema` should prefer the schemas.ts path so the
+// UI bundle doesn't pull in @trpc/server through this file.
+export { updateSecretInputSchema };
 
 function messageForStatus(status: number): string {
   if (status === 401) return "Invalid credential.";
@@ -70,12 +38,12 @@ export const secretsRouter = t.router({
           envMappings: envMappingsSchema.optional(),
         })
         .superRefine((d, ctx) => {
-          if (d.type === "anthropic") {
+          if (isProviderPresetType(d.type)) {
             for (const field of ["hostPattern", "pathPattern", "injectionConfig"] as const) {
               if (d[field] != null) {
                 ctx.addIssue({
                   code: z.ZodIssueCode.custom,
-                  message: `${field} cannot be set for anthropic secrets`,
+                  message: `${field} cannot be set for ${d.type} secrets`,
                   path: [field],
                 });
               }
@@ -90,6 +58,25 @@ export const secretsRouter = t.router({
         }),
     )
     .mutation(({ ctx, input }) => ctx.secrets.create(input)),
+
+  createGithubPat: t.procedure
+    .input(
+      z.object({
+        name: z.string().min(1).max(100),
+        token: z.string().min(1),
+      }),
+    )
+    .mutation(({ ctx, input }) => ctx.secrets.createGithubPat(input)),
+
+  updateGithubPat: t.procedure
+    .input(
+      z.object({
+        apiSecretId: z.string().min(1),
+        gitSecretId: z.string().min(1),
+        token: z.string().min(1),
+      }),
+    )
+    .mutation(({ ctx, input }) => ctx.secrets.updateGithubPat(input)),
 
   update: t.procedure.input(updateSecretInputSchema).mutation(({ ctx, input }) => ctx.secrets.update(input)),
 
@@ -110,7 +97,7 @@ export const secretsRouter = t.router({
     )
     .mutation(async ({ input }) => {
       const headers: Record<string, string> = { "anthropic-version": "2023-06-01" };
-      if (input.envName === ANTHROPIC_API_KEY_ENV_MAPPING.envName) {
+      if (input.envName === "ANTHROPIC_API_KEY") {
         headers["x-api-key"] = input.value;
       } else {
         headers["Authorization"] = `Bearer ${input.value}`;
@@ -144,4 +131,8 @@ export const secretsRouter = t.router({
         secretIds: input.secretIds,
       }),
     ),
+
+  listGrantedAgents: t.procedure
+    .input(z.object({ id: z.string().min(1) }))
+    .query(({ ctx, input }) => ctx.secrets.listGrantedAgents(input.id)),
 });

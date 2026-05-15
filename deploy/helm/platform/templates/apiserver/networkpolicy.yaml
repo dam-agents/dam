@@ -1,30 +1,29 @@
 {{- if .Values.apiServer.networkPolicy.enabled }}
 {{- /*
-  Ingress restriction for the api-server pod.
+  ADR-041: pruned to a coarse perimeter only.
 
-  The `harness` and `ext-authz` ports expose APIs intended exclusively for
-  agent + fork pods (MCP triggers, ext_authz Check). Without this policy,
-  any pod in the cluster can reach them by Service DNS:
-    - `ext_authz` Check: spoof `x-platform-instance` and flood
-      `pending_approvals` for someone else's owner, or probe rules.
-    - `harness` /api: invoke MCP tools with a forged Authorization header.
-  The HTTP port (UI / tRPC) stays open — it goes through the ingress
-  controller which is a different trust scope and is auth-protected at
-  the application layer.
+  Per-instance / per-pair admission moved entirely to mesh AuthorizationPolicy
+  (the controller renders per-instance policies; chart renders the pod-level
+  DENY in auth-policy-pod-deny.yaml). NetworkPolicy in ambient mode is
+  identity-blind and sees mesh-to-mesh traffic only as HBONE 15008, so
+  fine-grained gating here would be either trivially permissive or trivially
+  broken. Coarse perimeter remains useful: it bounds blast radius if the
+  mesh control plane fails and keeps non-mesh traffic out.
 
-  Policy shape:
-    - `http` is allowed from anywhere (UI, ingress controller, in-cluster).
-    - `harness` + `ext-authz` are allowed only from gateway pods
-      (`agent-platform.ai/role=gateway`) in the configured `agentNamespace`.
-      The api-server identifies the calling instance from the trusted
-      `x-platform-instance` header that gateway-pod Envoy injects on harness
-      traffic; admitting only gateway pods (and not the agent half of the
-      pair) ensures the agent cannot bypass Envoy to forge that header.
-
-  K8s NetworkPolicy semantics: each ingress rule is OR-ed. A rule with no
-  `from` allows from anywhere; a rule with `from` restricts to that source.
-  So a request matching the http rule is allowed even if it doesn't match
-  the agent-only rule, and vice versa.
+  Shape:
+    - http (4000) from anywhere — UI, ingress controller, in-cluster.
+      Application-layer auth (Keycloak JWT) is the gate.
+    - harness (4001) from the release namespace only — the waypoint Pod
+      synthesised by Istio lives here. The cryptographic per-instance
+      check is the per-instance AuthorizationPolicy on the harness path,
+      not netpol.
+    - ext-authz (4002) from the agent namespace only — per-instance
+      Services route from gateway pods here. The cryptographic per-
+      instance check is the per-instance AuthorizationPolicy on each
+      per-instance Service.
+    - HBONE (15008) listed alongside each app port so the kernel-level
+      netpol sees the right thing for ambient-routed traffic (Istio
+      iptables redirect happens in NAT/MANGLE before FILTER).
 */}}
 {{- $appName := printf "%s-apiserver" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
 apiVersion: networking.k8s.io/v1
@@ -43,28 +42,34 @@ spec:
   policyTypes:
     - Ingress
   ingress:
-    # http: open. UI, mobile, ingress controller, anything in-cluster.
-    # Application-layer auth (Keycloak JWT) is the gate here.
+    # Public HTTP (tRPC). UI, mobile, ingress controller, anything in-cluster.
     - ports:
         - protocol: TCP
           port: {{ .Values.apiServer.port }}
 
-    # harness + ext-authz: gateway pods only. Both long-lived pair gateways
-    # and per-fork gateways carry `agent-platform.ai/role=gateway`; matching
-    # on the role label admits both shapes without enumerating fork-ids.
-    # The agent half of each pair is deliberately NOT admitted here — it
-    # must traverse its paired gateway's Envoy, which stamps the trusted
-    # `x-platform-instance` header.
+    # Harness — only from release namespace (where the istio waypoint Pod
+    # lives). The waypoint enforces the per-instance principal-to-`:id`
+    # check; this rule just keeps the port off-limits to other namespaces.
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: {{ .Values.agentNamespace | quote }}
-          podSelector:
-            matchLabels:
-              agent-platform.ai/role: gateway
+              kubernetes.io/metadata.name: {{ .Release.Namespace | quote }}
       ports:
         - protocol: TCP
           port: {{ .Values.apiServer.harnessServerPort }}
         - protocol: TCP
+          port: 15008  # HBONE — required for any mesh-to-mesh hop
+
+    # ext-authz — only from the agent namespace (where gateway pods dial
+    # per-instance ext-authz Services). The per-instance AuthorizationPolicy
+    # ensures only the matching instance's SA can reach its own Service.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.agentNamespace | quote }}
+      ports:
+        - protocol: TCP
           port: {{ .Values.apiServer.extAuthzPort }}
+        - protocol: TCP
+          port: 15008
 {{- end }}

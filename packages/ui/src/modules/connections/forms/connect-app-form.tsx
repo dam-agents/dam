@@ -1,25 +1,20 @@
-import {
-  Checkmark as Check,
-  Copy,
-  Launch as ExternalLink,
-} from "@carbon/icons-react";
+import { Check, Copy, ExternalLink } from "lucide-react";
 import { useRef, useState } from "react";
-
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 
 import { Modal } from "../../../components/modal.js";
 import { useStore } from "../../../store.js";
 import { discoverOAuthEndpoints, type OAuthAppDescriptor } from "../api/fetchers.js";
 import { useStartAppOAuth } from "../api/mutations.js";
 
+const INPUT_CLASS =
+  "w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted";
+
 function discoveryHelperText(
   discovery: { state: "idle" | "loading" | "ok" | "miss"; source?: string },
   appName: string,
 ) {
   if (discovery.state === "loading") {
-    return <span className="text-[12px] text-muted-foreground">Looking up issuer metadata…</span>;
+    return <span className="text-[12px] text-text-muted">Looking up issuer metadata…</span>;
   }
   if (discovery.state === "ok") {
     return (
@@ -31,7 +26,7 @@ function discoveryHelperText(
   }
   if (discovery.state === "miss") {
     return (
-      <span className="text-[12px] text-muted-foreground">
+      <span className="text-[12px] text-text-muted">
         No issuer metadata found — fill in the {appName} URLs manually below.
       </span>
     );
@@ -50,22 +45,21 @@ function CallbackUrlField({ url }: { url: string }) {
   };
   return (
     <div className="flex flex-col gap-1.5">
-      <Label className="text-[13px] font-semibold text-foreground">Callback URL</Label>
+      <label className="text-[13px] font-semibold text-text">Callback URL</label>
       <div className="flex items-center gap-2">
-        <code className="flex-1 h-10 rounded-md border border-input bg-background px-4 flex items-center text-[13px] font-mono text-foreground/80 truncate">
+        <code className="flex-1 h-10 rounded-lg border-2 border-border-light bg-bg px-4 flex items-center text-[13px] font-mono text-text-secondary truncate">
           {url}
         </code>
-        <Button
+        <button
           type="button"
-          variant="outline"
-          size="icon"
           onClick={copy}
+          className="btn-brutal h-10 w-10 rounded-lg border-2 border-border bg-surface flex items-center justify-center text-text-secondary hover:text-accent hover:border-accent shadow-brutal-sm"
           title="Copy callback URL"
         >
           {copied ? <Check size={14} className="text-success" /> : <Copy size={14} />}
-        </Button>
+        </button>
       </div>
-      <span className="text-[12px] text-muted-foreground">
+      <span className="text-[12px] text-text-muted">
         Paste this exact URL into your OAuth app's Authorization callback / redirect URI field.
       </span>
     </div>
@@ -79,9 +73,9 @@ interface Props {
 
 export function ConnectAppForm({ app, onCancel }: Props) {
   const [values, setValues] = useState<Record<string, string>>({});
-  // Override toggle — when `credentialsInherited`, optional inputs (e.g.
-  // clientId/clientSecret for a sibling Google connection) stay hidden
-  // until the user explicitly opts in to provide alternates.
+  // Override toggle — when `credentialsInherited`, overridable inputs
+  // (e.g. clientId/clientSecret for a sibling Google connection) stay
+  // hidden until the user explicitly opts in to provide alternates.
   const [showOverride, setShowOverride] = useState(false);
   // Discovery state — `host` carries the value we last discovered against,
   // so re-blurring on the same host doesn't refetch. `error` is shown
@@ -95,12 +89,21 @@ export function ConnectAppForm({ app, onCancel }: Props) {
   const startAppOAuth = useStartAppOAuth();
   const lastDiscoveredHost = useRef<string | null>(null);
 
-  // Inputs the user actually sees and must fill: required ones plus any
-  // optional ones the override panel is showing.
-  const visibleInputs = app.inputs.filter((f) => !f.optional || showOverride);
+  // Inputs the user actually sees. `overridable` fields are covered by a
+  // stored fallback (family creds, admin defaults) and hide behind the
+  // override panel; `optional` fields have no fallback and stay visible
+  // always.
+  const visibleInputs = app.inputs.filter((f) => !f.overridable || showOverride);
   const allFilled = app.inputs
-    .filter((field) => !field.optional)
+    .filter((field) => !field.overridable && !field.optional)
     .every((field) => (values[field.name] ?? "").trim().length > 0);
+
+  // True when an admin has wired a platform-wide default for every required
+  // input (GitHub OAuth client + secret, optionally a GitHub App slug). We
+  // hide the "register your own OAuth app" guidance and the callback-URL
+  // copier in this case — the user just clicks Connect, unless they decide
+  // to substitute their own app via the override toggle.
+  const usingDefaultApp = app.defaultsApplied && !showOverride;
 
   const setField = (name: string, value: string) =>
     setValues((prev) => ({ ...prev, [name]: value }));
@@ -139,17 +142,28 @@ export function ConnectAppForm({ app, onCancel }: Props) {
 
   const submit = () => {
     if (!allFilled) return;
-    // Drop optional fields unless the override panel is open AND the user
-    // typed something into them. Without the `showOverride` gate, values
-    // typed into an override panel that the user later closed would
-    // silently leak through to the backend; gating ties "submit override"
-    // to "override is currently visible." Empty values fall through to
-    // the backend's family-credential merge, which fills them from a
-    // sibling connection.
+    // Drop:
+    //  - `overridable` fields unless the override panel is open AND the
+    //    user typed something — gating "submit override" to "override is
+    //    currently visible" prevents stale typed values from leaking after
+    //    the user closes the panel; the backend's family-creds /
+    //    admin-defaults merge fills the field from its fallback when we
+    //    don't send one.
+    //  - `optional` fields when empty — there's no fallback to merge, but
+    //    sending an empty string would override an admin default with ""
+    //    and silently disable the feature (e.g. an admin-configured
+    //    GitHub App slug stripped because the form submitted appSlug="").
+    //    Forwarded when non-empty so user input still wins over the
+    //    default.
     const input = Object.fromEntries(
       app.inputs
         .map((field) => [field.name, (values[field.name] ?? "").trim()] as const)
-        .filter(([, v], i) => !app.inputs[i]!.optional || (showOverride && v.length > 0)),
+        .filter(([, v], i) => {
+          const f = app.inputs[i]!;
+          if (f.optional) return v.length > 0;
+          if (f.overridable) return showOverride && v.length > 0;
+          return true;
+        }),
     );
     startAppOAuth.mutate(
       { appId: app.id, input },
@@ -177,33 +191,47 @@ export function ConnectAppForm({ app, onCancel }: Props) {
          and the inner area scroll when content overflows; the footer below
          stays pinned. */}
       <div className="min-h-0 flex-1 overflow-y-auto flex flex-col gap-5 p-5 md:p-7">
-        <h2 className="text-[20px] font-bold text-foreground">Connect {app.displayName}</h2>
-        <p className="text-[13px] text-foreground/80">{app.description}</p>
-        {app.registrationUrl && (
+        <h2 className="text-[20px] font-bold text-text">Connect {app.displayName}</h2>
+        <p className="text-[13px] text-text-secondary">{app.description}</p>
+        {app.registrationUrl && !usingDefaultApp && (
           <a
             href={app.registrationUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-[13px] text-primary hover:underline inline-flex items-center gap-1.5"
+            className="text-[13px] text-accent hover:underline inline-flex items-center gap-1.5"
           >
             Register an OAuth app first <ExternalLink size={13} />
           </a>
         )}
-        <CallbackUrlField url={app.callbackUrl} />
-        {app.credentialsInherited && (
-          <div className="rounded-lg border border-success/30 bg-success/5 px-4 py-3 text-[12px] text-foreground/80">
+        {!usingDefaultApp && <CallbackUrlField url={app.callbackUrl} />}
+        {app.defaultsApplied && (
+          <div className="rounded-lg border-2 border-success/30 bg-success/5 px-4 py-3 text-[12px] text-text-secondary">
+            <div>
+              Connecting to the platform's pre-configured {app.displayName}{" "}
+              app — no setup required.
+            </div>
+            <button
+              type="button"
+              className="mt-1.5 text-[12px] font-semibold text-accent hover:underline"
+              onClick={() => setShowOverride((v) => !v)}
+            >
+              {showOverride ? "Use the platform's app instead" : "Use a different app"}
+            </button>
+          </div>
+        )}
+        {app.credentialsInherited && !app.defaultsApplied && (
+          <div className="rounded-lg border-2 border-success/30 bg-success/5 px-4 py-3 text-[12px] text-text-secondary">
             <div>
               Reusing the Client ID and secret from another connected app in
               this family — no need to re-enter them.
             </div>
-            <Button
+            <button
               type="button"
-              variant="link"
-              className="mt-1.5 h-auto p-0 text-[12px] font-semibold"
+              className="mt-1.5 text-[12px] font-semibold text-accent hover:underline"
               onClick={() => setShowOverride((v) => !v)}
             >
               {showOverride ? "Use stored credentials instead" : "Use different credentials"}
-            </Button>
+            </button>
           </div>
         )}
         {visibleInputs.map((field) => {
@@ -214,9 +242,10 @@ export function ConnectAppForm({ app, onCancel }: Props) {
               : null;
           return (
             <div key={field.name} className="flex flex-col gap-1.5">
-              <Label className="text-[13px] font-semibold text-foreground">{field.label}</Label>
-              <Input
+              <label className="text-[13px] font-semibold text-text">{field.label}</label>
+              <input
                 type={field.secret ? "password" : "text"}
+                className={INPUT_CLASS}
                 value={values[field.name] ?? ""}
                 onChange={(e) => setField(field.name, e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && allFilled && submit()}
@@ -233,7 +262,7 @@ export function ConnectAppForm({ app, onCancel }: Props) {
                 autoFocus={field === visibleInputs[0]}
               />
               {helperOverride ?? (field.helper && (
-                <span className="text-[12px] text-muted-foreground">{field.helper}</span>
+                <span className="text-[12px] text-text-muted">{field.helper}</span>
               ))}
             </div>
           );
@@ -241,21 +270,22 @@ export function ConnectAppForm({ app, onCancel }: Props) {
       </div>
       {/* Footer is pinned outside the scroll region so Connect/Cancel are
          always reachable, even on short viewports / long descriptors. */}
-      <div className="flex justify-end gap-3 p-5 md:p-7 border-t border-border">
-        <Button
+      <div className="flex justify-end gap-3 p-5 md:p-7 border-t-2 border-border-light">
+        <button
           type="button"
-          variant="outline"
+          className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
           onClick={onCancel}
         >
           Cancel
-        </Button>
-        <Button
+        </button>
+        <button
           type="button"
+          className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent"
           onClick={submit}
           disabled={!allFilled || startAppOAuth.isPending}
         >
           {startAppOAuth.isPending ? "..." : "Connect"}
-        </Button>
+        </button>
       </div>
     </Modal>
   );

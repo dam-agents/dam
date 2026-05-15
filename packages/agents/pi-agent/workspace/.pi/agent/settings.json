@@ -1,7 +1,5 @@
 {
   "quietStartup": true,
-  "defaultProvider": "openai",
-  "defaultModel": "gpt-5.4-mini",
   "defaultThinkingModel": "medium",
   "packages": [
     "npm:@zhafron/pi-memory"

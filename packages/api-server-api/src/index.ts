@@ -10,7 +10,6 @@ export type {
   TemplatesService,
   Mount,
   Resources,
-  SecurityContext,
   SkillSourceSeed,
 } from "./modules/templates/types.js";
 
@@ -54,23 +53,40 @@ export type {
 
 export type {
   SecretType,
+  ProviderPreset,
+  ProviderPresetMode,
+  ProviderPresetType,
   SecretView,
   CreateSecretInput,
+  CreateGithubPatInput,
+  CreateGithubPatOutput,
+  UpdateGithubPatInput,
+  UpdateGithubPatOutput,
   UpdateSecretInput,
   AgentAccess,
   SecretsService,
   EnvMapping,
   InjectionConfig,
+  IbmLitellmModelPins,
+  BobModelPins,
 } from "./modules/secrets/types.js";
 export {
   DEFAULT_ENV_PLACEHOLDER,
   DEFAULT_INJECTION_CONFIG,
   ENV_NAME_RE,
   isValidEnvName,
-  ANTHROPIC_OAUTH_ENV_MAPPING,
-  ANTHROPIC_API_KEY_ENV_MAPPING,
+  PROVIDERS,
+  PROVIDER_PRESET_TYPES,
+  QUERY_PARAM_RE,
+  isProviderPresetType,
+  IBM_LITELLM_DEFAULT_MODEL_PINS,
+  ibmLitellmEnvMappings,
+  ibmLitellmPinsFromEnvMappings,
+  bobEnvMappings,
+  bobPinsFromEnvMappings,
+  BOB_CHAT_MODES,
 } from "./modules/secrets/types.js";
-export { updateSecretInputSchema } from "./modules/secrets/router.js";
+export { updateSecretInputSchema } from "./modules/secrets/schemas.js";
 
 export type { ChannelsService } from "./modules/channels/types.js";
 

@@ -4,7 +4,6 @@ import {
   composeInstancesModule,
   createInstancesRepository,
   createKeycloakUserDirectory,
-  createPodIpResolver,
   startK8sCleanupSaga,
   startChannelCleanupSaga,
   deleteChannelsByInstance,
@@ -36,6 +35,7 @@ import { createOAuthRefreshService } from "./modules/connections/services/oauth-
 import { createPodFilesBus } from "./modules/pod-files/bus.js";
 import { createPodFilesPublisher } from "./modules/pod-files/publisher.js";
 import { buildPodFilesRegistry } from "./modules/pod-files/registry.js";
+import { createGrantedConnectionsAdapter } from "./modules/pod-files/adapters/granted-connections.js";
 import {
   composeForksModule,
   startOnForeignReplySaga,
@@ -200,13 +200,11 @@ const podFilesRegistry = buildPodFilesRegistry({
   // Agent HOME from the helm chart. Must agree with the controller's mount
   // path; both read the same chart value.
   agentHome: config.agentHome,
-  /**
-   * Per-agent connection grants are not modelled in the K8s-Secret world:
-   * every owner-Secret is visible to every owner-instance via the
-   * controller's selector, so producers see no per-agent slice. Returning
-   * empty is a no-op for downstream registries.
-   */
-  fetchAgentGrantedConnections: async () => [],
+  // Resolves an agent's granted connection records against live K8s state
+  // (instance CM annotations for grants, owner-scoped connection Secrets
+  // for the records). Two API calls per snapshot — fine for the SSE-connect
+  // and grant-change cadence.
+  fetchAgentGrantedConnections: createGrantedConnectionsAdapter(k8sClient),
 });
 const podFilesPublisher = createPodFilesPublisher({
   bus: podFilesBus,
@@ -305,19 +303,11 @@ const { server: harnessApiServer } = startHarnessApiServerApp({
   seedSources,
 });
 
-// Source-IP-derived identity for the ext_authz handler. NetworkPolicy
-// (deploy/helm/platform/templates/apiserver/networkpolicy.yaml) blocks
-// non-agent pods at the kernel; this cache turns a verified peer IP into
-// the pod's instance label so a compromised agent bypassing its sidecar
-// still can't impersonate a sibling. Refresh cadence is generous —
-// agent pods come and go at human cadence, the on-miss refresh covers
-// the cold-start path.
-const podIpResolver = createPodIpResolver({
-  k8s: createAgentsK8sClient(api, config.namespace),
-  refreshIntervalMs: 10_000,
-});
-await podIpResolver.start();
-
+// ADR-041: instance identity for ext-authz now flows from the per-instance
+// ext-authz Service the gateway pod's Envoy was configured to dial,
+// cryptographically pinned by the AuthorizationPolicy on each per-instance
+// Service. The pod-IP resolver and `x-platform-instance` header are gone.
+//
 // Single gRPC ext_authz server serves both Envoy filters: HTTP filter on
 // TLS-terminated chains (L7 — sees method/path) and the network filter on
 // the catch-all chain (L4 — SNI only). Same Check RPC, same gate service;
@@ -326,7 +316,7 @@ const { server: extAuthzGrpcServer } = await startExtAuthzGrpcApp({
   port: config.extAuthzPort,
   holdSeconds: config.approvalHoldSeconds,
   gate: extAuthzGate,
-  podIpResolver,
+  releaseName: config.releaseName,
 });
 
 listChannelsByOwner(db, "")().then((channelsByInstance) => {
@@ -343,7 +333,6 @@ async function shutdown() {
   await oauthRefreshService.stop();
   await deliverySweeper.stop();
   await agentArtifactsSweeper.stop();
-  await podIpResolver.stop();
   await channelManager.stopAll();
   await redisBus.close();
   await sql.end();

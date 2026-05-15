@@ -1,23 +1,15 @@
-import {
-  Checkmark as Check,
-  Close as X,
-  Copy,
-} from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Check, Copy, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
-
 import { useTestAnthropic } from "../../../secrets/api/mutations.js";
+import { CardIcon } from "../shared/card-icon.js";
+import { IconButton } from "../shared/icon-button.js";
 import {
   anthropicCredentialSchema,
   type AnthropicCredentialValues,
-} from "../../forms/anthropic-credential-schema.js";
-import { CardIcon } from "./card-icon.js";
+} from "./credential-schema.js";
 import { type Mode, MODE_KEYS, MODES, stripWhitespace } from "./modes.js";
 
 export function AnthropicForm({
@@ -25,15 +17,11 @@ export function AnthropicForm({
   initialMode,
   onSave,
   onCancel,
-  embedded = false,
 }: {
   variant: "wizard" | "edit";
   initialMode: Mode;
   onSave: (input: { mode: Mode; value: string }) => Promise<void>;
   onCancel?: () => void;
-  /** When true, renders the form bare (no Card wrapper, no padding). Use
-   *  inside already-bordered surfaces like the welcome wizard. */
-  embedded?: boolean;
 }) {
   const { register, handleSubmit, control, watch, getValues, trigger, formState } =
     useForm<AnthropicCredentialValues>({
@@ -89,29 +77,29 @@ export function AnthropicForm({
     }
   };
 
-  const body = (
-    <>
+  return (
+    <form
+      onSubmit={onSubmit}
+      className={`rounded-xl border-2 p-5 anim-in flex flex-col gap-4 ${
+        isEdit
+          ? "border-accent bg-accent-light shadow-brutal-accent"
+          : "border-warning bg-warning-light shadow-brutal"
+      }`}
+    >
       <div className="flex items-center gap-3">
-        <CardIcon variant="accent" />
+        <CardIcon variant={isEdit ? "accent" : "warning"} />
         <div className="flex-1 min-w-0">
-          <div className="text-[15px] font-bold text-foreground">Anthropic</div>
-          <div className="text-[12px] text-muted-foreground">
+          <div className="text-[15px] font-bold text-text">Anthropic</div>
+          <div className="text-[12px] text-text-muted">
             {isEdit
               ? "Pick mode and paste a new credential to replace the existing one."
               : "Required for Claude Code agents. Pick the mode that matches your credential."}
           </div>
         </div>
         {onCancel && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={onCancel}
-            title="Cancel"
-          >
+          <IconButton onClick={onCancel} title="Cancel" hoverTone="neutral">
             <X size={13} />
-          </Button>
+          </IconButton>
         )}
       </div>
 
@@ -124,7 +112,8 @@ export function AnthropicForm({
       {mode === "oauth" && <QuickSetupHint />}
 
       <div className="flex gap-3">
-        <Input
+        <input
+          className="w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted"
           type="password"
           autoComplete="off"
           data-1p-ignore
@@ -133,25 +122,28 @@ export function AnthropicForm({
           placeholder={MODES[mode].placeholder}
           {...register("value")}
         />
-        <Button
+        <button
           type="button"
-          variant="outline"
+          className="btn-brutal h-10 rounded-lg border-2 border-border bg-surface px-4 text-[13px] font-semibold text-text-secondary hover:text-accent hover:border-accent disabled:opacity-40 shrink-0 shadow-brutal-sm"
           onClick={test}
           disabled={submitDisabled}
           title="Verify the credential with Anthropic"
-          className="shrink-0"
         >
           {testing ? "..." : "Test"}
-        </Button>
-        <Button type="submit" disabled={submitDisabled} className="shrink-0">
+        </button>
+        <button
+          type="submit"
+          className="btn-brutal h-10 rounded-lg border-2 border-accent-hover bg-accent px-6 text-[13px] font-semibold text-white disabled:opacity-40 shrink-0 shadow-brutal-accent"
+          disabled={submitDisabled}
+        >
           {isSubmitting ? "..." : isEdit ? "Replace" : "Save"}
-        </Button>
+        </button>
       </div>
 
       {/* Mismatch errors live on the value field; "Required" is suppressed
           until the user actually types so the form doesn't yell on first paint. */}
       {errors.value && value.length > 0 && errors.value.message !== "Required" && (
-        <div className="text-[12px] font-medium text-destructive">{errors.value.message}</div>
+        <div className="text-[12px] font-medium text-danger">{errors.value.message}</div>
       )}
       {!errors.value && testResult?.ok && (
         <div className="text-[12px] font-medium text-success flex items-center gap-1.5">
@@ -159,25 +151,9 @@ export function AnthropicForm({
         </div>
       )}
       {!errors.value && testResult && !testResult.ok && (
-        <div className="text-[12px] font-medium text-destructive">{testResult.message}</div>
+        <div className="text-[12px] font-medium text-danger">{testResult.message}</div>
       )}
-    </>
-  );
-
-  if (embedded) {
-    return (
-      <form onSubmit={onSubmit} className="anim-in flex flex-col gap-4">
-        {body}
-      </form>
-    );
-  }
-
-  return (
-    <Card className="anim-in">
-      <form onSubmit={onSubmit} className="flex flex-col gap-4 p-5">
-        {body}
-      </form>
-    </Card>
+    </form>
   );
 }
 
@@ -189,14 +165,14 @@ function QuickSetupHint() {
     setTimeout(() => setCopied(false), 2000);
   };
   return (
-    <div className="text-[13px] text-foreground/80">
+    <div className="text-[13px] text-text-secondary">
       Run{" "}
       <span className="inline-flex items-center gap-1.5 align-middle">
-        <code className="font-mono font-semibold text-primary">claude setup-token</code>
+        <code className="font-mono font-semibold text-accent">claude setup-token</code>
         <button
           type="button"
           onClick={copy}
-          className="h-5 w-5 rounded inline-flex items-center justify-center text-muted-foreground hover:text-primary"
+          className="h-5 w-5 rounded inline-flex items-center justify-center text-text-muted hover:text-accent"
           title="Copy command"
         >
           {copied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
@@ -209,7 +185,7 @@ function QuickSetupHint() {
 
 function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {
   return (
-    <div className="flex items-center gap-1 border-b-2 border-border">
+    <div className="flex items-center gap-1 border-b-2 border-border-light">
       {MODE_KEYS.map((m) => {
         const active = mode === m;
         return (
@@ -217,12 +193,11 @@ function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => voi
             key={m}
             type="button"
             onClick={() => onChange(m)}
-            className={cn(
-              "h-10 px-4 text-[13px] font-semibold border-b-2 -mb-[2px] transition-colors",
+            className={`h-10 px-4 text-[13px] font-semibold border-b-2 -mb-[2px] transition-colors ${
               active
-                ? "text-primary border-primary"
-                : "text-muted-foreground border-transparent hover:text-foreground",
-            )}
+                ? "text-accent border-accent"
+                : "text-text-muted border-transparent hover:text-text"
+            }`}
           >
             {MODES[m].label}
           </button>

@@ -11,14 +11,16 @@ describe("auth: public endpoints", () => {
     expect(await res.json()).toEqual({ status: "ok" });
   });
 
-  it("/api/auth/config returns issuer and clientId without token", async () => {
+  it("/api/auth/config returns issuer, clientId and cliClientId without token", async () => {
     const res = await fetch(`${API_BASE}/api/auth/config`);
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data).toHaveProperty("issuer");
     expect(data).toHaveProperty("clientId");
+    expect(data).toHaveProperty("cliClientId");
     expect(data.issuer).toContain("/realms/platform");
     expect(data.clientId).toBe("platform-ui");
+    expect(data.cliClientId).toBe("platform-cli");
   });
 });
 

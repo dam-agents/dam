@@ -9,7 +9,7 @@ per-turn user impersonation) mount the same /home/agent volume as the
 main pod concurrently.
 
 Production deployments on managed K8s should leave this disabled and
-point `controller.agentStorageClass` at the cloud-native RWX class
+point `controller.agent.base.storageClass` at the cloud-native RWX class
 (EFS / Filestore / Azure Files).
 */}}
 {{- if .Values.nfsProvisioner.enabled }}

@@ -57,17 +57,56 @@ interface TokenEndpointSuccess {
   token_type?: string;
 }
 
-interface TokenEndpointError {
-  error: string;
-  error_description?: string;
-}
-
 const HARD_FAILURE_ERRORS = new Set([
+  // RFC 6749 § 5.2 — standard error codes returned by spec-compliant providers.
   "invalid_grant",
   "invalid_client",
   "unauthorized_client",
   "unsupported_grant_type",
+  // GitHub-specific codes: GitHub's OAuth endpoint never uses the RFC names,
+  // it returns these instead. Without them we'd churn in transient backoff on
+  // a permanently-dead refresh token until the access token expired and the
+  // UI flipped the connection to "Expired" via the `expiresAt < now` path.
+  "bad_refresh_token",
+  "incorrect_client_credentials",
 ]);
+
+/**
+ * OAuth 2.1 token-endpoint bodies are JSON in the spec, but GitHub's endpoint
+ * defaults to `application/x-www-form-urlencoded` unless the request carries
+ * `Accept: application/json`. Try JSON first, then form-encoded — whichever
+ * yields an object. Returns an empty object on total failure; callers treat
+ * missing fields as transient.
+ */
+function parseTokenEndpointBody(
+  body: string,
+  contentType: string | null,
+): Record<string, unknown> {
+  const ct = contentType ?? "";
+  if (ct.includes("application/json")) {
+    try {
+      return JSON.parse(body) as Record<string, unknown>;
+    } catch {
+      // Provider lied about content-type — fall through.
+    }
+  }
+  // Form-encoded fallback. `URLSearchParams` accepts the body even if the
+  // content-type was JSON; if the body wasn't form-encoded either, we end up
+  // with an empty params object.
+  if (body.length > 0 && !body.startsWith("{")) {
+    const parsed = new URLSearchParams(body);
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of parsed) {
+      out[k] = k === "expires_in" ? Number(v) : v;
+    }
+    if (Object.keys(out).length > 0) return out;
+  }
+  try {
+    return JSON.parse(body) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
 
 export function createOAuthRefreshService(deps: {
   k8sClient: K8sClient;
@@ -169,12 +208,41 @@ export function createOAuthRefreshService(deps: {
 
     const res = await fetchImpl(metadata.tokenUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      // GitHub's token endpoint returns `application/x-www-form-urlencoded`
+      // unless explicitly asked for JSON. Without `Accept`, the success-path
+      // JSON.parse below would throw and we'd churn in backoff until the
+      // access token's `expiresAt` slid past now and the UI flipped the
+      // connection to "Expired". The body parser still tolerates a
+      // form-encoded reply defensively for providers that ignore Accept.
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
       body: params,
     });
 
-    if (res.ok) {
-      const data = (await res.json()) as TokenEndpointSuccess;
+    const bodyText = await res.text();
+    const parsed = parseTokenEndpointBody(bodyText, res.headers.get("content-type"));
+
+    // GitHub returns HTTP 200 with `{error: …}` (or `error=…` form-encoded)
+    // when the refresh token is bad. Treat as a hard failure regardless of
+    // status code so the connection lands in `expired` and prompts re-auth
+    // instead of churning in backoff.
+    const errCode = typeof parsed.error === "string" ? parsed.error : null;
+    if (errCode != null && HARD_FAILURE_ERRORS.has(errCode)) {
+      log("warn", "hard refresh failure; marking expired", {
+        owner: item.owner,
+        connection: item.connection,
+        error: errCode,
+        status: res.status,
+      });
+      await markConnectionExpired(deps.k8sClient, item.name);
+      clearBackoff(item.name);
+      return;
+    }
+
+    if (res.ok && typeof parsed.access_token === "string" && parsed.access_token.length > 0) {
+      const data = parsed as TokenEndpointSuccess;
       const expiresAt = data.expires_in
         ? Math.floor(now() / 1000) + data.expires_in
         : undefined;
@@ -197,29 +265,6 @@ export function createOAuthRefreshService(deps: {
         connection: item.connection,
         expiresAt,
       });
-      return;
-    }
-
-    // Treat the body as an OAuth error response. Some providers send JSON,
-    // some send form-encoded — we only inspect JSON; anything else is just
-    // logged as transient.
-    const bodyText = await res.text();
-    let errCode: string | null = null;
-    try {
-      const err = JSON.parse(bodyText) as TokenEndpointError;
-      if (typeof err.error === "string") errCode = err.error;
-    } catch {
-      // Not JSON; fall through to transient.
-    }
-
-    if (errCode != null && HARD_FAILURE_ERRORS.has(errCode)) {
-      log("warn", "hard refresh failure; marking expired", {
-        owner: item.owner,
-        connection: item.connection,
-        error: errCode,
-      });
-      await markConnectionExpired(deps.k8sClient, item.name);
-      clearBackoff(item.name);
       return;
     }
 

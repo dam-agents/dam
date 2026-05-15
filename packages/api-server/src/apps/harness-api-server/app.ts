@@ -76,7 +76,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       }
       const { readSpec: readTemplateSpec } = composeTemplatesModule(api, config.namespace);
       const { agents } = composeAgentsModule({
-        api, namespace: config.namespace, owner, agentHome: config.agentHome, readTemplateSpec,
+        api, namespace: config.namespace, owner, readTemplateSpec,
       });
       const { isOwnedInstance } = composeInstancesModule({
         api, namespace: config.namespace, owner, db, userDirectory, channelSecretStore,
@@ -96,14 +96,18 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       const acp = createAcpClient({
         namespace: config.namespace,
         instanceName: body.instanceId,
-        onSessionCreated: (sid: string) => sessions.create(sid, body.instanceId, SessionMode.Chat, sessionType as any, body.schedule),
       });
 
-      return acp.triggerSession({
-        prompt: body.task,
-        resumeSessionId,
-        mcpServers: body.mcpServers,
-      });
+      return acp.triggerSession(
+        resumeSessionId
+          ? { prompt: body.task, mcpServers: body.mcpServers, resumeSessionId }
+          : {
+              prompt: body.task,
+              mcpServers: body.mcpServers,
+              onSessionCreated: (sid) =>
+                sessions.create(sid, body.instanceId, SessionMode.Chat, sessionType as any, body.schedule),
+            },
+      );
     },
   });
 

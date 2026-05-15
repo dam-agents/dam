@@ -8,17 +8,53 @@ import { LAST_ACTIVITY_KEY, ACTIVE_SESSION_KEY } from "../../modules/agents/infr
 const ACTIVITY_DEBOUNCE_MS = 30_000;
 const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;
 
-export function createTerminalRelay(namespace: string, repo: InstancesRepository) {
+export interface TerminalRelay {
+  handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer, instanceId: string): void;
+  closeSession(sessionId: string): void;
+}
+
+export function createTerminalRelay(namespace: string, repo: InstancesRepository, deps?: {
+  getSessionMode?: (sessionId: string) => Promise<string | null>;
+}): TerminalRelay {
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
   const lastActivity = new Map<string, number>();
+  const activeClients = new Map<string, WebSocket>();
 
-  function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer, instanceId: string) {
+  function closeSession(sessionId: string) {
+    const ws = activeClients.get(sessionId);
+    if (!ws) { activeClients.delete(sessionId); return; }
+    if (ws.readyState === WebSocket.CONNECTING) ws.terminate();
+    else if (ws.readyState === WebSocket.OPEN) {
+      try { ws.close(1000, "session mode changed"); } catch { ws.terminate(); }
+    }
+    activeClients.delete(sessionId);
+  }
+
+  async function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer, instanceId: string) {
     const url = new URL(req.url!, `http://${req.headers.host}`);
     const sessionId = url.searchParams.get("sessionId") ?? "default";
     const reset = url.searchParams.get("reset") === "1";
 
+    if (deps?.getSessionMode) {
+      const mode = await deps.getSessionMode(sessionId).catch(() => null);
+      if (mode && mode !== "terminal") {
+        socket.write("HTTP/1.1 409 Conflict\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+    }
+
     wss.handleUpgrade(req, socket, head, (client) => {
       client.on("error", () => { try { client.terminate(); } catch {} });
+
+      const prev = activeClients.get(sessionId);
+      if (prev) {
+        if (prev.readyState === WebSocket.CONNECTING) prev.terminate();
+        else if (prev.readyState === WebSocket.OPEN) {
+          try { prev.close(1000, "superseded"); } catch { prev.terminate(); }
+        }
+      }
+      activeClients.set(sessionId, client);
 
       const pending: { data: Buffer; isBinary: boolean }[] = [];
       let pendingBytes = 0;
@@ -78,6 +114,7 @@ export function createTerminalRelay(namespace: string, repo: InstancesRepository
           });
 
           client.on("close", () => {
+            if (activeClients.get(sessionId) === client) activeClients.delete(sessionId);
             repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "").catch(() => {});
             if (upstream.readyState === WebSocket.OPEN) upstream.close();
           });
@@ -89,5 +126,5 @@ export function createTerminalRelay(namespace: string, repo: InstancesRepository
     });
   }
 
-  return { handleUpgrade };
+  return { handleUpgrade, closeSession };
 }

@@ -1,9 +1,12 @@
 import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
 import type { McpServer } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
+import { SessionMode, SessionType, type SessionView } from "api-server-api";
 import { useCallback, useRef } from "react";
 
+import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import type { SessionConfigPayload } from "../../acp/types.js";
+import { acpSessionsKeys } from "../api/queries.js";
 
 /**
  * Owns the "engage a live ACP connection with the active session" decision.
@@ -12,6 +15,10 @@ import type { SessionConfigPayload } from "../../acp/types.js";
  *     reattaches the live channel (returning the SDK's snapshot of the
  *     session config so we can hydrate the popover).
  *   - If not → `newSession` creates one and commits the id to the store.
+ *
+ * Persistence to the platform DB is driven server-side by the api-server
+ * relay on first `session/prompt` (option B). The UI never writes session
+ * rows itself.
  *
  * Either way, the response is forwarded to `captureSessionConfig` (cache +
  * localStorage) and `applySavedPreferences` (replays the user's per-instance
@@ -63,6 +70,22 @@ export function useAcpSessionEngagement(
       setSessionId(s.sessionId);
       engagedSessionIdRef.current = s.sessionId;
       addLog("session", { sessionId: s.sessionId });
+      // Optimistic insert so the sidebar shows the row immediately. Relay
+      // writes the DB row on first prompt; the next refetch reconciles.
+      const stub: SessionView = {
+        sessionId: s.sessionId,
+        instanceId: selectedInstance,
+        type: SessionType.Regular,
+        mode: SessionMode.Chat,
+        createdAt: new Date().toISOString(),
+        scheduleId: null,
+        title: null,
+        updatedAt: null,
+      };
+      queryClient.setQueriesData<SessionView[]>(
+        { queryKey: acpSessionsKeys.instanceLists(selectedInstance) },
+        (prev) => [stub, ...(prev ?? [])],
+      );
       await applySavedPreferences(conn, s.sessionId, s);
     }
   }, [selectedInstance, selectedMcpServers, captureSessionConfig, applySavedPreferences, setSessionId, addLog]);

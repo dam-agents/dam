@@ -18,38 +18,78 @@ controller:
     repository: platform-controller
     tag: latest
     pullPolicy: Never
-  agentImagePullPolicy: Never
-  agentStorageClass: platform-rwx
+  agent:
+    base:
+      storageClass: platform-rwx
+    templateDefaults:
+      imagePullPolicy: Never
 
 nfsProvisioner:
   enabled: true
 
-defaultTemplate:
-  image:
-    repository: platform-claude-code
-    tag: latest
-    pullPolicy: Never
+# Helm replaces lists wholesale — this `agentTemplates` array fully
+# overrides the one in values.yaml. Every field that the chart sets on
+# bundled templates must be repeated here, plus the locally-built image.
+# All four templates are enabled by default for local dev.
+agentTemplates:
+  - name: claude-code
+    enabled: true
+    description: "Default Claude Code agent"
+    image:
+      repository: platform-claude-code
+      tag: latest
+    storageSize: "5Gi"
+    skillPaths:
+      - $HOME/.claude/skills/
 
-googleWorkspaceTemplate:
-  enabled: true
-  image:
-    repository: platform-google-workspace-agent
-    tag: latest
-    pullPolicy: Never
+  - name: google-workspace
+    enabled: true
+    description: "Google Workspace agent with Drive and Gmail via gws CLI"
+    image:
+      repository: quay.io/dam-agents/google-workspace-agent
+      tag: latest
+    storageSize: "2Gi"
+    skillPaths:
+      - $HOME/.claude/skills/
 
-piAgentTemplate:
-  enabled: true
-  image:
-    repository: platform-pi-agent
-    tag: latest
-    pullPolicy: Never
+  - name: pi-agent
+    enabled: true
+    description: "Pi coding agent with multi-LLM support"
+    image:
+      repository: quay.io/dam-agents/pi-agent
+      tag: latest
+    storageSize: "2Gi"
+    skillPaths:
+      - $HOME/.pi/agent/skills/
 
-codeGuardianTemplate:
-  enabled: true
-  image:
-    repository: platform-code-guardian
-    tag: latest
-    pullPolicy: Never
+  - name: code-guardian
+    enabled: true
+    description: "PR code review agent (gh + Claude Code)"
+    image:
+      repository: quay.io/dam-agents/code-guardian
+      tag: latest
+    storageSize: "10Gi"             # larger — clones real repos
+    skillPaths:
+      - $HOME/.claude/skills/
+    # Empty repo = the agent detects via `gh repo view`.
+    env:
+      - name: GITHUB_REPO
+        value: ""
+
+  - name: bob
+    enabled: true
+    description: "Bob shell agent"
+    image:
+      repository: platform-bob
+      tag: latest
+    storageSize: "2Gi"
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
 
 # Local dev convenience: route requests with any Host header (including
 # IP literals like 127.0.0.1) to the app, so the cluster is reachable
@@ -64,8 +104,6 @@ keycloak:
     username: dev
     password: dev
   extraRedirectUris:
-    - "http://127.0.0.1:4444/*"
-    - "http://localhost:4444/*"
+    - "*"
   extraWebOrigins:
-    - "http://127.0.0.1:4444"
-    - "http://localhost:4444"
+    - "*"

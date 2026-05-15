@@ -5,7 +5,7 @@ import {
   mountPodFilesEventsRoute,
   type PodFilesEventsDeps,
 } from "./pod-files-events.js";
-import { verifyInstanceFromHeader } from "./instance-auth.js";
+import { resolveInstance } from "./instance-auth.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 
@@ -33,20 +33,22 @@ export function createHarnessRouter(deps: {
 }) {
   const app = new Hono();
 
-  app.post("/internal/trigger", async (c) => {
+  // ADR-041: trigger endpoint moved under /api/instances/:id/* so it falls
+  // under the same per-instance AuthorizationPolicy as MCP and pod-files.
+  // The waypoint enforces principal == URL :id; the body's `instanceId`
+  // field is preserved for compatibility but ignored — the URL is the
+  // source of truth.
+  app.post("/api/instances/:id/internal/trigger", async (c) => {
+    const instanceId = c.req.param("id")!;
     const body = await c.req.json<TriggerRequest>();
-    if (!body.instanceId || !body.schedule || !body.task) {
-      return c.json({ error: "instanceId, schedule, task required" }, 400);
+    if (!body.schedule || !body.task) {
+      return c.json({ error: "schedule, task required" }, 400);
     }
-    // The body's `instanceId` must match the trusted header that the
-    // gateway pod's Envoy stamps; without this an instance could fire
-    // triggers for someone else's instance even though it can only have
-    // the header for its own pair.
-    const verified = await verifyInstanceFromHeader(deps.k8s, c, body.instanceId);
+    const verified = await resolveInstance(deps.k8s, instanceId);
     if (!verified) {
       return c.json({ error: "not found" }, 404);
     }
-    const result = await deps.handleTrigger(body);
+    const result = await deps.handleTrigger({ ...body, instanceId });
     return c.json(result);
   });
 

@@ -84,6 +84,22 @@ describe("resolveInjection", () => {
       valueFormat: "Bearer {value}",
     });
   });
+
+  it("query-param injection still resolves the default Bearer valueFormat", () => {
+    // The valueFormat default doesn't depend on queryParamName — the
+    // controller's per-route Lua filter is what actually moves the
+    // (bare-stored, see sdsInlineString) value into the URL. Confirm
+    // resolveInjection doesn't accidentally branch on it.
+    expect(
+      resolveInjection("generic", undefined, {
+        headerName: "X-Bob-Internal",
+        queryParamName: "key",
+      }),
+    ).toEqual({
+      headerName: "X-Bob-Internal",
+      valueFormat: "Bearer {value}",
+    });
+  });
 });
 
 describe("injectionFileContent", () => {
@@ -99,15 +115,15 @@ describe("injectionFileContent", () => {
 });
 
 describe("sdsYamlContent", () => {
-  it("emits an SDS DiscoveryResponse with the formatted credential as inline_string", () => {
-    const yaml = sdsYamlContent("abc", "Bearer {value}");
+  it("emits an SDS DiscoveryResponse with the supplied string as inline_string", () => {
+    const yaml = sdsYamlContent("Bearer abc");
     expect(yaml).toContain('"@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret');
     expect(yaml).toContain("name: credential");
     expect(yaml).toContain("generic_secret:");
     expect(yaml).toContain('inline_string: "Bearer abc"');
   });
   it("JSON-encodes the inline_string so quotes/newlines are safe in YAML", () => {
-    const yaml = sdsYamlContent('weird"\nvalue', "{value}");
+    const yaml = sdsYamlContent('weird"\nvalue');
     expect(yaml).toContain('inline_string: "weird\\"\\nvalue"');
   });
 });
@@ -263,6 +279,126 @@ describe("createK8sSecretsPort.listSecrets — envMappings", () => {
   });
 });
 
+describe("createK8sSecretsPort — queryParamName injection", () => {
+  it("persists queryParamName as an annotation on create", async () => {
+    const { client, created } = fakeClient();
+    const port = createK8sSecretsPort(client, "owner-1");
+
+    await port.createSecret({
+      id: "bob",
+      name: "Bob API key",
+      type: "generic",
+      value: "sk-real-key",
+      hostPattern: "prod.ibm-bob-staging.cloud.ibm.com",
+      injectionConfig: {
+        headerName: "X-Bobshell-Credential",
+        valueFormat: "{value}",
+        queryParamName: "key",
+      },
+    });
+
+    const ann = created[0]!.metadata?.annotations ?? {};
+    expect(ann["agent-platform.ai/injection-query-param"]).toBe("key");
+    expect(ann["agent-platform.ai/injection-header-name"]).toBe("X-Bobshell-Credential");
+  });
+
+  it("round-trips queryParamName through listSecrets", async () => {
+    const { client } = fakeClient();
+    const port = createK8sSecretsPort(client, "owner-1");
+
+    await port.createSecret({
+      id: "bob",
+      name: "Bob",
+      type: "generic",
+      value: "sk-x",
+      hostPattern: "prod.ibm-bob-staging.cloud.ibm.com",
+      injectionConfig: {
+        headerName: "X-Bobshell-Credential",
+        valueFormat: "{value}",
+        queryParamName: "key",
+      },
+    });
+
+    const found = (await port.listSecrets()).find((s) => s.id === "bob");
+    expect(found?.injectionConfig).toEqual({
+      headerName: "X-Bobshell-Credential",
+      valueFormat: "{value}",
+      queryParamName: "key",
+    });
+  });
+
+  it("omits ANN_VALUE_FORMAT for query-only secrets when valueFormat is not explicit", async () => {
+    // For query-injection the Lua filter ignores valueFormat (SDS holds
+    // the bare value), so stamping the resolved default `Bearer {value}`
+    // would mislead anyone reading the raw K8s Secret.
+    const { client, created } = fakeClient();
+    const port = createK8sSecretsPort(client, "owner-1");
+
+    await port.createSecret({
+      id: "bob",
+      name: "Bob",
+      type: "generic",
+      value: "sk-x",
+      hostPattern: "prod.ibm-bob-staging.cloud.ibm.com",
+      injectionConfig: {
+        headerName: "X-Bobshell-Credential",
+        queryParamName: "key",
+      },
+    });
+
+    const ann = created[0]!.metadata?.annotations ?? {};
+    expect(ann["agent-platform.ai/injection-query-param"]).toBe("key");
+    expect(ann["agent-platform.ai/injection-value-format"]).toBeUndefined();
+  });
+
+  it("keeps ANN_VALUE_FORMAT for query-only secrets when valueFormat is explicit", async () => {
+    const { client, created } = fakeClient();
+    const port = createK8sSecretsPort(client, "owner-1");
+
+    await port.createSecret({
+      id: "bob",
+      name: "Bob",
+      type: "generic",
+      value: "sk-x",
+      hostPattern: "prod.ibm-bob-staging.cloud.ibm.com",
+      injectionConfig: {
+        headerName: "X-Bobshell-Credential",
+        valueFormat: "Custom {value}",
+        queryParamName: "key",
+      },
+    });
+
+    const ann = created[0]!.metadata?.annotations ?? {};
+    expect(ann["agent-platform.ai/injection-value-format"]).toBe("Custom {value}");
+  });
+
+  it("drops the annotation when injectionConfig is reset to null", async () => {
+    const { client, replaced } = fakeClient();
+    const port = createK8sSecretsPort(client, "owner-1");
+
+    await port.createSecret({
+      id: "bob",
+      name: "Bob",
+      type: "generic",
+      value: "sk-x",
+      hostPattern: "prod.ibm-bob-staging.cloud.ibm.com",
+      injectionConfig: {
+        headerName: "X-Bobshell-Credential",
+        valueFormat: "{value}",
+        queryParamName: "key",
+      },
+    });
+
+    await port.updateSecret("bob", {
+      value: "sk-y",
+      injectionConfig: null,
+    });
+
+    const ann = replaced[0]!.body.metadata?.annotations ?? {};
+    expect(ann["agent-platform.ai/injection-query-param"]).toBeUndefined();
+  });
+});
+
 describe("createK8sSecretsPort.updateSecret", () => {
   it("re-bakes the file content when value changes, preserving stored authMode", async () => {
     const { client, replaced } = fakeClient();
@@ -337,6 +473,41 @@ describe("createK8sSecretsPort.updateSecret", () => {
     await port.updateSecret("upd3", { name: "New Name" });
 
     expect(replaced[0]!.body.metadata?.annotations?.["agent-platform.ai/display-name"]).toBe("New Name");
+  });
+
+  it("returns before/after stored views so callers can diff render-affecting fields", async () => {
+    // ADR-040 fanout decides which side-effects to run by diffing before
+    // and after. The port surfaces both so the service avoids a redundant
+    // read.
+    const { client } = fakeClient();
+    const port = createK8sSecretsPort(client, "owner-1");
+
+    await port.createSecret({
+      id: "diff1",
+      name: "Secret",
+      type: "generic",
+      value: "tok",
+      hostPattern: "api.old.example",
+      envMappings: [{ envName: "OLD", placeholder: "ph" }],
+    });
+
+    const result = await port.updateSecret("diff1", {
+      hostPattern: "api.new.example",
+      envMappings: [{ envName: "NEW", placeholder: "ph2" }],
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.before.hostPattern).toBe("api.old.example");
+    expect(result!.after.hostPattern).toBe("api.new.example");
+    expect(result!.before.envMappings).toEqual([{ envName: "OLD", placeholder: "ph" }]);
+    expect(result!.after.envMappings).toEqual([{ envName: "NEW", placeholder: "ph2" }]);
+  });
+
+  it("returns null when the secret is not found", async () => {
+    const { client } = fakeClient();
+    const port = createK8sSecretsPort(client, "owner-1");
+    const result = await port.updateSecret("missing", { name: "Whatever" });
+    expect(result).toBeNull();
   });
 
   it("re-bakes the SDS file with the new format when value+injectionConfig are patched together", async () => {

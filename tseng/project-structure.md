@@ -7,6 +7,7 @@
 <!-- package: api-server | role: server | runtime: hono | path: packages/api-server | package_name: api-server -->
 <!-- package: agent-runtime | role: server | runtime: standalone | path: packages/agent-runtime | package_name: agent-runtime -->
 <!-- package: ui | role: client | path: packages/ui | package_name: platform-ui -->
+<!-- package: cli | role: client | path: packages/cli | package_name: cli -->
 <!-- package: platform-base | role: other | path: packages/platform-base | package_name: platform-base -->
 <!-- package: claude-code | role: other | path: packages/agents/claude-code | package_name: claude-code -->
 <!-- package: google-workspace | role: other | path: packages/agents/google-workspace | package_name: google-workspace -->

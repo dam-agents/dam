@@ -1,16 +1,9 @@
-import {
-  Close as X,
-  Edit as Pencil,
-} from "@carbon/icons-react";
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-
-import type { SecretView } from "../../../../types.js";
-import { CardIcon } from "./card-icon.js";
+import { PROVIDERS, type SecretView } from "../../../../types.js";
+import { ProviderConnectedShell } from "../shared/provider-connected-shell.js";
 import { AnthropicForm } from "./form.js";
-import { detectMode, type Mode,MODES } from "./modes.js";
+import { detectMode, type Mode, MODES } from "./modes.js";
 
 export function AnthropicConnected({
   secret,
@@ -39,36 +32,11 @@ export function AnthropicConnected({
   }
 
   return (
-    <Card className="anim-in p-5">
-      <div className="flex items-center gap-4">
-        <CardIcon variant="accent" />
-        <div className="flex-1 min-w-0">
-          <div className="text-[15px] font-bold text-foreground mb-0.5">Anthropic</div>
-          <div className="text-[12px] text-muted-foreground">
-            Set up with {MODES[currentMode].label}
-          </div>
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7"
-          onClick={() => setEditing(true)}
-          title="Edit"
-        >
-          <Pencil size={13} />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 hover:text-destructive"
-          onClick={onRemove}
-          title="Remove"
-        >
-          <X size={13} />
-        </Button>
-      </div>
-    </Card>
+    <ProviderConnectedShell
+      title={PROVIDERS.anthropic.displayName}
+      subtitle={`Set up with ${MODES[currentMode].label}`}
+      onEdit={() => setEditing(true)}
+      onRemove={onRemove}
+    />
   );
 }

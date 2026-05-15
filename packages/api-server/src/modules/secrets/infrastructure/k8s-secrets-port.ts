@@ -7,7 +7,7 @@
  * newly-created secrets land in K8s for the sidecar to discover.
  */
 import type * as k8s from "@kubernetes/client-node";
-import type { EnvMapping, InjectionConfig } from "api-server-api";
+import { isProviderPresetType, PROVIDERS, type EnvMapping, type InjectionConfig, type SecretType } from "api-server-api";
 
 import type { K8sClient } from "../../agents/infrastructure/k8s.js";
 
@@ -19,14 +19,18 @@ const ANN_PATH_PATTERN = "agent-platform.ai/path-pattern";
 const ANN_HEADER_NAME = "agent-platform.ai/injection-header-name";
 const ANN_AUTH_MODE = "agent-platform.ai/auth-mode";
 const ANN_VALUE_FORMAT = "agent-platform.ai/injection-value-format";
+const ANN_QUERY_PARAM = "agent-platform.ai/injection-query-param";
 const ANN_ENV_MAPPINGS = "agent-platform.ai/env-mappings";
+// Twin → primary link. Set on extraInjections-derived secrets.
+const ANN_PRIMARY_ID = "agent-platform.ai/primary-secret-id";
 
 export type AuthMode = "api-key" | "oauth";
 
 /**
- * Resolves the header name + value-format template for a secret. Anthropic
- * gets a fixed shape per authMode; generic respects the user-supplied
- * `InjectionConfig` (with the `Authorization: Bearer {value}` default).
+ * Resolves the header name + value-format template for a secret. Provider
+ * presets read their injection config from the {@link PROVIDERS} registry
+ * (per mode); generic respects the user-supplied `InjectionConfig` and
+ * falls back to `Authorization: Bearer {value}`.
  *
  * On the wire, Envoy's generic credential source loads the file under the
  * configured header verbatim — there is no upstream prefix template (see
@@ -38,11 +42,18 @@ export function resolveInjection(
   authMode: AuthMode | undefined,
   injectionConfig: InjectionConfig | undefined,
 ): { headerName: string; valueFormat: string } {
-  if (type === "anthropic") {
-    if (authMode === "api-key") {
-      return { headerName: "x-api-key", valueFormat: "{value}" };
+  if (isProviderPresetType(type as SecretType)) {
+    const preset = PROVIDERS[type as Exclude<SecretType, "generic">];
+    const mode = authMode
+      ? preset.modes.find((m) => m.key === authMode)
+      : preset.modes[0];
+    if (mode?.injection) {
+      return {
+        headerName: mode.injection.headerName,
+        valueFormat: mode.injection.valueFormat ?? "{value}",
+      };
     }
-    return { headerName: "Authorization", valueFormat: "Bearer {value}" };
+    // Fall through to default Bearer for presets without an explicit override.
   }
   return {
     headerName: injectionConfig?.headerName ?? "Authorization",
@@ -55,28 +66,48 @@ export function injectionFileContent(value: string, valueFormat: string): string
 }
 
 /**
- * SDS DiscoveryResponse YAML consumed by the Envoy sidecar's
- * `path_config_source` (see packages/controller/pkg/reconciler/envoy.go —
- * `envoyCredentialSDSName = "credential"` / `envoyCredentialKeySDS = "sds.yaml"`).
+ * Build the SDS DiscoveryResponse YAML for a credential. The `inline_string`
+ * Envoy reads is provided as-is — see {@link sdsInlineString} for what each
+ * injection mode bakes in.
  *
- * Envoy's `generic` injected_credentials source reads the inline_string
- * verbatim and writes it as the value of the configured header — there is no
- * upstream prefix template (envoyproxy/envoy#37001) — so the value-format
- * substitution is baked in here.
- *
- * The string is JSON-encoded for safe embedding in YAML (JSON is valid YAML).
+ * Path: packages/controller/pkg/reconciler/envoy.go reads this file as the
+ * `generic` injected_credentials source.
  */
-export function sdsYamlContent(value: string, valueFormat: string): string {
-  const inline = injectionFileContent(value, valueFormat);
+export function sdsYamlContent(inlineString: string): string {
   return [
     "resources:",
     '- "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret',
     "  name: credential",
     "  generic_secret:",
     "    secret:",
-    `      inline_string: ${JSON.stringify(inline)}`,
+    `      inline_string: ${JSON.stringify(inlineString)}`,
     "",
   ].join("\n");
+}
+
+/**
+ * Compose the SDS inline_string for a secret. Two modes:
+ *
+ *   - Header-only injection (no `queryParamName`): bake `valueFormat` here
+ *     and store the formatted result (e.g. `Bearer sk-…`). Envoy's generic
+ *     credential source has no upstream prefix template (envoyproxy/envoy#37001),
+ *     so the value-format substitution has to happen before it lands in
+ *     the file.
+ *
+ *   - Query-param injection (`queryParamName` set): store the bare raw
+ *     value. The controller's per-route Lua filter moves the value into
+ *     the URL query parameter (and strips the header), so a `Bearer `
+ *     prefix would leak into the URL as `?key=Bearer%20…` and the upstream
+ *     would reject it. To inject the same credential into both a header
+ *     AND a URL parameter on the same endpoint, create two Secrets with
+ *     the same host pattern — one header-only, one with queryParamName.
+ */
+export function sdsInlineString(
+  value: string,
+  valueFormat: string,
+  queryParamName: string | undefined,
+): string {
+  return queryParamName ? value : injectionFileContent(value, valueFormat);
 }
 
 export interface K8sStoredSecret {
@@ -89,6 +120,7 @@ export interface K8sStoredSecret {
   createdAt: string;
   authMode?: AuthMode;
   envMappings?: EnvMapping[];
+  primarySecretId?: string;
 }
 
 export interface K8sSecretsPort {
@@ -103,7 +135,13 @@ export interface K8sSecretsPort {
     injectionConfig?: InjectionConfig;
     authMode?: AuthMode;
     envMappings?: EnvMapping[];
+    primarySecretId?: string;
   }): Promise<void>;
+  /**
+   * Apply the patch and return the before/after view so the service layer
+   * can diff render-affecting fields without a redundant read. Returns
+   * `null` when the secret doesn't exist (e.g. concurrent delete).
+   */
   updateSecret(
     id: string,
     input: {
@@ -115,7 +153,7 @@ export interface K8sSecretsPort {
       authMode?: AuthMode;
       envMappings?: EnvMapping[];
     },
-  ): Promise<void>;
+  ): Promise<{ before: K8sStoredSecret; after: K8sStoredSecret } | null>;
   deleteSecret(id: string): Promise<void>;
 }
 
@@ -139,6 +177,54 @@ function k8sSecretName(id: string): string {
   return `${K8S_NAME_PREFIX}${id}`;
 }
 
+/** Parse a V1Secret into the domain shape. Used by both `listSecrets` and the
+ *  before/after read in `updateSecret`. */
+function parseStoredSecret(s: k8s.V1Secret): K8sStoredSecret | null {
+  if (!s.metadata?.name?.startsWith(K8S_NAME_PREFIX)) return null;
+  const ann = s.metadata.annotations ?? {};
+  const labels = s.metadata.labels ?? {};
+  const id = s.metadata.name.slice(K8S_NAME_PREFIX.length);
+  const headerName = ann[ANN_HEADER_NAME];
+  const valueFormat = ann[ANN_VALUE_FORMAT];
+  const queryParamName = ann[ANN_QUERY_PARAM] || undefined;
+  // Query-only secrets may legitimately have no ANN_VALUE_FORMAT — the
+  // Lua filter doesn't apply it and the api-server doesn't stamp the
+  // default. Header-only / dual secrets still require valueFormat for
+  // injectionConfig to be returned.
+  let injectionConfig: InjectionConfig | undefined;
+  if (headerName) {
+    if (valueFormat) {
+      injectionConfig = queryParamName
+        ? { headerName, valueFormat, queryParamName }
+        : { headerName, valueFormat };
+    } else if (queryParamName) {
+      injectionConfig = { headerName, queryParamName };
+    }
+  }
+  const authMode = ann[ANN_AUTH_MODE] as AuthMode | undefined;
+  const stored: K8sStoredSecret = {
+    id,
+    name: ann["agent-platform.ai/display-name"] ?? id,
+    type: labels[LABEL_SECRET_TYPE] ?? "generic",
+    hostPattern: ann[ANN_HOST_PATTERN] ?? "",
+    createdAt: s.metadata.creationTimestamp
+      ? new Date(s.metadata.creationTimestamp).toISOString()
+      : new Date().toISOString(),
+  };
+  if (ann[ANN_PATH_PATTERN]) stored.pathPattern = ann[ANN_PATH_PATTERN];
+  if (injectionConfig) stored.injectionConfig = injectionConfig;
+  if (authMode) stored.authMode = authMode;
+  if (ann[ANN_ENV_MAPPINGS]) {
+    try {
+      stored.envMappings = JSON.parse(ann[ANN_ENV_MAPPINGS]);
+    } catch {
+      /* malformed annotation — controller falls back to legacy switch */
+    }
+  }
+  if (ann[ANN_PRIMARY_ID]) stored.primarySecretId = ann[ANN_PRIMARY_ID];
+  return stored;
+}
+
 export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSecretsPort {
   return {
     async listSecrets() {
@@ -146,47 +232,33 @@ export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSe
         `${LABEL_OWNER}=${ownerSub},${LABEL_MANAGED_BY}=api-server`,
       );
       return list
-        .filter((s) => s.metadata?.name?.startsWith(K8S_NAME_PREFIX))
-        .map((s) => {
-          const ann = s.metadata?.annotations ?? {};
-          const labels = s.metadata?.labels ?? {};
-          const id = s.metadata!.name!.slice(K8S_NAME_PREFIX.length);
-          const headerName = ann[ANN_HEADER_NAME];
-          const valueFormat = ann[ANN_VALUE_FORMAT];
-          const injectionConfig: InjectionConfig | undefined =
-            headerName && valueFormat ? { headerName, valueFormat } : undefined;
-          const authMode = ann[ANN_AUTH_MODE] as AuthMode | undefined;
-          const stored: K8sStoredSecret = {
-            id,
-            name: ann["agent-platform.ai/display-name"] ?? id,
-            type: labels[LABEL_SECRET_TYPE] ?? "generic",
-            hostPattern: ann[ANN_HOST_PATTERN] ?? "",
-            createdAt: s.metadata?.creationTimestamp
-              ? new Date(s.metadata.creationTimestamp).toISOString()
-              : new Date().toISOString(),
-          };
-          if (ann[ANN_PATH_PATTERN]) stored.pathPattern = ann[ANN_PATH_PATTERN];
-          if (injectionConfig) stored.injectionConfig = injectionConfig;
-          if (authMode) stored.authMode = authMode;
-          if (ann[ANN_ENV_MAPPINGS]) {
-            try { stored.envMappings = JSON.parse(ann[ANN_ENV_MAPPINGS]); } catch { /* ignore malformed */ }
-          }
-          return stored;
-        });
+        .map(parseStoredSecret)
+        .filter((s): s is K8sStoredSecret => s !== null);
     },
 
-    async createSecret({ id, name, type, value, hostPattern, pathPattern, injectionConfig, authMode, envMappings }) {
-      const secretType = type === "anthropic" ? "anthropic" : "generic";
+    async createSecret({ id, name, type, value, hostPattern, pathPattern, injectionConfig, authMode, envMappings, primarySecretId }) {
+      const secretType = isProviderPresetType(type as SecretType) ? type : "generic";
       const { headerName, valueFormat } = resolveInjection(secretType, authMode, injectionConfig);
       const annotations: Record<string, string> = {
         [ANN_HOST_PATTERN]: hostPattern,
         [ANN_HEADER_NAME]: headerName,
-        [ANN_VALUE_FORMAT]: valueFormat,
         "agent-platform.ai/display-name": name,
       };
+      // Skip ANN_VALUE_FORMAT for query-only secrets where the user didn't
+      // explicitly supply a valueFormat — the Lua filter ignores it (SDS
+      // holds the bare value), and stamping the default `Bearer {value}`
+      // would mislead anyone reading the raw Secret. Always stamp it for
+      // header-only secrets, since the SDS file content is baked from it.
+      if (injectionConfig?.valueFormat !== undefined || !injectionConfig?.queryParamName) {
+        annotations[ANN_VALUE_FORMAT] = valueFormat;
+      }
       if (pathPattern) annotations[ANN_PATH_PATTERN] = pathPattern;
       if (authMode) annotations[ANN_AUTH_MODE] = authMode;
       if (envMappings?.length) annotations[ANN_ENV_MAPPINGS] = JSON.stringify(envMappings);
+      if (injectionConfig?.queryParamName) {
+        annotations[ANN_QUERY_PARAM] = injectionConfig.queryParamName;
+      }
+      if (primarySecretId) annotations[ANN_PRIMARY_ID] = primarySecretId;
 
       const body: k8s.V1Secret = {
         metadata: {
@@ -199,14 +271,20 @@ export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSe
           annotations,
         },
         type: "Opaque",
-        stringData: { "sds.yaml": sdsYamlContent(value, valueFormat) },
+        stringData: {
+          "sds.yaml": sdsYamlContent(
+            sdsInlineString(value, valueFormat, injectionConfig?.queryParamName),
+          ),
+        },
       };
       await client.createSecret(body);
     },
 
     async updateSecret(id, patch) {
       const existing = await client.getSecret(k8sSecretName(id));
-      if (!existing) return;
+      if (!existing) return null;
+      const before = parseStoredSecret(existing);
+      if (!before) return null;
 
       const annotations = { ...(existing.metadata?.annotations ?? {}) };
       const labels = existing.metadata?.labels ?? {};
@@ -227,26 +305,54 @@ export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSe
       // `value`, so we re-bake the SDS file in that branch below — there is
       // no need to recover the prior value from the existing inline_string.
       const newAuthMode: AuthMode | undefined = patch.authMode ?? (annotations[ANN_AUTH_MODE] as AuthMode | undefined);
+      // Recover the existing InjectionConfig from annotations to seed
+      // resolveInjection when the caller didn't supply a fresh one.
+      // Query-only secrets may have no ANN_VALUE_FORMAT (we skip
+      // stamping the default for them); accept that shape.
+      let existingInjection: InjectionConfig | undefined;
+      if (annotations[ANN_HEADER_NAME]) {
+        const h = annotations[ANN_HEADER_NAME]!;
+        const v = annotations[ANN_VALUE_FORMAT];
+        const q = annotations[ANN_QUERY_PARAM];
+        if (v) {
+          existingInjection = q ? { headerName: h, valueFormat: v, queryParamName: q } : { headerName: h, valueFormat: v };
+        } else if (q) {
+          existingInjection = { headerName: h, queryParamName: q };
+        }
+      }
       const newInjection: InjectionConfig | undefined =
         patch.injectionConfig === null ? undefined :
-        patch.injectionConfig ?? (annotations[ANN_HEADER_NAME] && annotations[ANN_VALUE_FORMAT]
-          ? { headerName: annotations[ANN_HEADER_NAME]!, valueFormat: annotations[ANN_VALUE_FORMAT]! }
-          : undefined);
+        patch.injectionConfig ?? existingInjection;
 
       const { headerName, valueFormat } = resolveInjection(secretType, newAuthMode, newInjection);
       annotations[ANN_HEADER_NAME] = headerName;
-      annotations[ANN_VALUE_FORMAT] = valueFormat;
+      // Mirror createSecret: skip stamping ANN_VALUE_FORMAT for query-only
+      // secrets where the user didn't explicitly supply a valueFormat.
+      if (newInjection?.valueFormat !== undefined || !newInjection?.queryParamName) {
+        annotations[ANN_VALUE_FORMAT] = valueFormat;
+      } else {
+        delete annotations[ANN_VALUE_FORMAT];
+      }
       if (newAuthMode) annotations[ANN_AUTH_MODE] = newAuthMode;
+      if (newInjection?.queryParamName) annotations[ANN_QUERY_PARAM] = newInjection.queryParamName;
+      else delete annotations[ANN_QUERY_PARAM];
 
       const body: k8s.V1Secret = {
         ...existing,
         metadata: { ...existing.metadata, annotations },
       };
       if (patch.value !== undefined) {
-        body.stringData = { ...(body.stringData ?? {}), "sds.yaml": sdsYamlContent(patch.value, valueFormat) };
+        body.stringData = {
+          ...(body.stringData ?? {}),
+          "sds.yaml": sdsYamlContent(
+            sdsInlineString(patch.value, valueFormat, newInjection?.queryParamName),
+          ),
+        };
         body.data = undefined;
       }
-      await client.replaceSecret(k8sSecretName(id), body);
+      const replaced = await client.replaceSecret(k8sSecretName(id), body);
+      const after = parseStoredSecret(replaced) ?? before;
+      return { before, after };
     },
 
     async deleteSecret(id) {

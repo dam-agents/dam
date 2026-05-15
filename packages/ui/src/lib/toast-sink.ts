@@ -4,7 +4,13 @@ export interface Toast {
   id: string;
   kind: ToastKind;
   message: string;
+  /** Primary affirmative action — opens a flow, navigates, etc. Clicking
+   *  also dismisses the toast. */
   action?: { label: string; onClick: () => void };
+  /** Secondary action rendered alongside `action`, typically a Cancel-shaped
+   *  affordance. `onClick` is optional — by default the secondary just
+   *  dismisses the toast. When set, both buttons replace the floating X. */
+  secondaryAction?: { label: string; onClick?: () => void };
   /** ms until auto-dismiss. Omit/0 → sticky. */
   ttl?: number;
 }

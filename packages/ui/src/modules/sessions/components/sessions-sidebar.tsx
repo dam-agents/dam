@@ -1,18 +1,12 @@
-import {
-  Add as Plus,
-  ArrowLeft,
-  TrashCan as Trash2,
-} from "@carbon/icons-react";
-import { SessionMode, SessionType } from "api-server-api";
-import { useCallback, useEffect, useRef, useState } from "react";
-
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import type { SessionMode } from "api-server-api";
+import { ArrowLeft, Plus, RefreshCw } from "lucide-react";
+import { useCallback } from "react";
 
 import { useStore } from "../../../store.js";
 import { InstanceApprovalsTray } from "../../approvals/components/instance-approvals-tray.js";
 import { useInstancesList } from "../../instances/api/queries.js";
 import { useAcpSessions } from "../api/queries.js";
+import { SessionRow } from "./session-row.js";
 
 export function SessionsSidebar({
   onResumeSession,
@@ -32,7 +26,7 @@ export function SessionsSidebar({
 
   const instances = useInstancesList();
   const instanceRunState = instances.find((i) => i.id === selectedInstance)?.state;
-  const { data: sessions = [], isFetching } = useAcpSessions(
+  const { data: sessions = [], isFetching, refetch } = useAcpSessions(
     selectedInstance,
     includeChannel,
     { enabled: instanceRunState === "running" },
@@ -51,38 +45,45 @@ export function SessionsSidebar({
 
   return (
     <>
-      <div className="flex items-center justify-between px-4 h-11 border-b border-border shrink-0 relative">
+      <div className="flex items-center justify-between px-4 h-11 border-b border-border-light shrink-0 relative">
         {/* Mobile: back to agents */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="md:hidden h-6 w-6 text-muted-foreground hover:text-primary mr-2"
+        <button
+          className="md:hidden h-6 w-6 rounded-md flex items-center justify-center text-text-muted hover:text-accent transition-colors mr-2"
           onClick={goBack}
         >
           <ArrowLeft size={14} />
-        </Button>
-        <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.05em]">
+        </button>
+        <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">
           Sessions
         </span>
+        <button
+          className={`ml-auto h-6 w-6 rounded-md border border-border-light flex items-center justify-center text-text-muted hover:text-accent hover:border-accent transition-colors`}
+          onClick={() => refetch()}
+        >
+          <span className={loading ? "anim-spin" : ""}>
+            <RefreshCw size={11} />
+          </span>
+        </button>
         {loading && (
-          <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-primary/20 overflow-hidden">
-            <div className="h-full w-1/3 bg-primary rounded-full anim-slide" />
+          <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-accent/20 overflow-hidden">
+            <div className="h-full w-1/3 bg-accent rounded-full anim-slide" />
           </div>
         )}
       </div>
-      <div className="px-4 py-2 border-b border-border">
-        <label className="flex items-center gap-2 cursor-pointer text-[11px] text-muted-foreground">
-          <Checkbox
+      <div className="px-4 py-2 border-b border-border-light">
+        <label className="flex items-center gap-2 cursor-pointer text-[11px] text-text-muted">
+          <input
+            type="checkbox"
             checked={includeChannel}
-            onCheckedChange={(v) => setIncludeChannel(!!v)}
-            className="h-3 w-3"
+            onChange={(e) => setIncludeChannel(e.target.checked)}
+            className="accent-accent w-3 h-3"
           />
           Show channel sessions
         </label>
       </div>
       <div className="flex-1 overflow-y-auto">
         {!loading && sessions.length === 0 && (
-          <p className="px-4 py-5 text-[12px] text-muted-foreground">
+          <p className="px-4 py-5 text-[12px] text-text-muted">
             No sessions yet
           </p>
         )}
@@ -98,156 +99,15 @@ export function SessionsSidebar({
         ))}
       </div>
       <InstanceApprovalsTray instanceId={selectedInstance} />
-      <div className="px-3 py-3 border-t border-border shrink-0">
-        <Button
-          variant="outline"
-          className="w-full h-9 text-[12px] font-semibold text-foreground/80 hover:text-primary hover:border-primary gap-1.5"
+      <div className="px-3 py-3 border-t border-border-light shrink-0">
+        <button
+          className="w-full h-9 rounded-md border border-border-light text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center justify-center gap-1.5 transition-colors"
           onClick={onNewSession}
         >
           <Plus size={13} /> New Session
-        </Button>
+        </button>
       </div>
     </>
   );
 }
 
-const LONG_PRESS_MS = 400;
-
-function SessionRow({
-  session: s,
-  active,
-  hasPending,
-  onResume,
-  onDelete,
-}: {
-  session: {
-    sessionId: string;
-    title?: string | null;
-    type: string;
-    mode?: SessionMode;
-    createdAt: string;
-    updatedAt?: string | null;
-  };
-  active: boolean;
-  hasPending: boolean;
-  onResume: () => void;
-  onDelete: () => void;
-}) {
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const didLongPress = useRef(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  const startPress = useCallback(() => {
-    didLongPress.current = false;
-    timerRef.current = setTimeout(() => {
-      didLongPress.current = true;
-      setMenuOpen(true);
-    }, LONG_PRESS_MS);
-  }, []);
-
-  const endPress = useCallback(() => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-  }, []);
-
-  const handleClick = useCallback(() => {
-    if (didLongPress.current) {
-      didLongPress.current = false;
-      return;
-    }
-    if (menuOpen) {
-      setMenuOpen(false);
-      return;
-    }
-    onResume();
-  }, [onResume, menuOpen]);
-
-  // Close menu on outside tap
-  useEffect(() => {
-    if (!menuOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node))
-        setMenuOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [menuOpen]);
-
-  return (
-    <div
-      className={`group relative flex items-center gap-1 px-4 py-3 cursor-pointer border-b border-border transition-colors hover:bg-primary/10 select-none ${active ? "bg-primary/10 border-l-[3px] border-l-primary" : ""}`}
-      onClick={handleClick}
-      onTouchStart={startPress}
-      onTouchEnd={endPress}
-      onTouchCancel={endPress}
-      onContextMenu={(e) => {
-        e.preventDefault();
-        setMenuOpen(true);
-      }}
-    >
-      <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-        <div className="flex items-center gap-1.5">
-          {hasPending && (
-            <span
-              className="w-2 h-2 rounded-full bg-warning anim-pulse shrink-0"
-              title="Pending permission request"
-            />
-          )}
-          <span
-            className={`text-[13px] truncate ${active ? "text-primary font-bold" : "text-foreground font-medium"}`}
-          >
-            {s.title || s.sessionId.slice(0, 12)}
-          </span>
-          {s.mode === SessionMode.Terminal && (
-            <span className="text-[9px] font-bold uppercase tracking-wider text-primary bg-primary/10 rounded px-1 py-0.5 shrink-0">
-              terminal
-            </span>
-          )}
-          {(s.type === SessionType.ChannelSlack || s.type === SessionType.ChannelTelegram) && (
-            <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground bg-border rounded px-1 py-0.5 shrink-0">
-              {s.type === SessionType.ChannelSlack ? "slack" : "telegram"}
-            </span>
-          )}
-        </div>
-        <span className="text-[11px] text-muted-foreground">
-          {new Date(s.updatedAt ?? s.createdAt).toLocaleString()}
-        </span>
-      </div>
-      {/* Desktop: hover-visible delete button */}
-      <Button
-        variant="ghost"
-        size="icon"
-        className="shrink-0 h-6 w-6 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive transition-all"
-        onClick={(e) => {
-          e.stopPropagation();
-          onDelete();
-        }}
-        title="Delete session"
-      >
-        <Trash2 size={12} />
-      </Button>
-      {/* Context menu — long press (mobile) or right-click */}
-      {menuOpen && (
-        <div
-          ref={menuRef}
-          className="absolute right-3 top-2 z-30 rounded-lg border-2 border-input bg-card py-1 anim-scale-in shadow-sm"
-        >
-          <Button
-            variant="ghost"
-            className="flex items-center gap-2 w-full justify-start rounded-none h-auto px-4 py-2 text-[13px] text-destructive hover:bg-destructive/10 hover:text-destructive"
-            onClick={(e) => {
-              e.stopPropagation();
-              setMenuOpen(false);
-              onDelete();
-            }}
-          >
-            <Trash2 size={13} /> Delete session
-          </Button>
-        </div>
-      )}
-    </div>
-  );
-}

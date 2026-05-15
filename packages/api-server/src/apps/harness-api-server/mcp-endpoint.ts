@@ -10,7 +10,7 @@ import { ChannelType, type SchedulesService, type SkillsService } from "api-serv
 import type { ChannelManager, ChannelAttachment } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
-import { verifyInstanceFromHeader } from "./instance-auth.js";
+import { resolveInstance } from "./instance-auth.js";
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
 
@@ -356,7 +356,9 @@ export interface MountMcpDeps {
 export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
   app.all("/api/instances/:id/mcp", async (c) => {
     const instanceId = c.req.param("id")!;
-    const verified = await verifyInstanceFromHeader(deps.k8s, c, instanceId);
+    // ADR-041: principal == URL :id is enforced at the waypoint; this
+    // resolve is just a label lookup for owner / agentId.
+    const verified = await resolveInstance(deps.k8s, instanceId);
     if (!verified) {
       return c.json({ error: "not found" }, 404);
     }

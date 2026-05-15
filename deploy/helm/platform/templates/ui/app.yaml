@@ -99,6 +99,7 @@ spec:
           volumeMounts:
             - name: nginx-config
               mountPath: /etc/nginx/conf.d
+          {{- if .Values.probes.enabled }}
           readinessProbe:
             httpGet:
               path: /
@@ -111,6 +112,7 @@ spec:
               port: http
             initialDelaySeconds: 5
             periodSeconds: 30
+          {{- end }}
           resources:
             {{- toYaml .Values.ui.resources | nindent 12 }}
       volumes:

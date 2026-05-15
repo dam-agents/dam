@@ -3,7 +3,6 @@ package reconciler
 import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
@@ -14,6 +13,17 @@ import (
 // pod the paired agent can reach for TCP 80/443. Credential Secrets, the
 // leaf TLS Secret, and the Envoy bootstrap ConfigMap mount here only —
 // the agent pod has no path to Secret material.
+//
+// Gateway pods are platform-managed: they do NOT inherit operator-facing
+// agent config (controller.agent.*). Scheduling, metadata, and lifecycle
+// are controller-internal — same category as `envoyImage`/`envoyPort`,
+// which are platform-managed Envoy bootstrap concerns. The pair is paired
+// at the Service-DNS level, so co-scheduling agent and gateway on the same
+// node isn't a requirement.
+
+// gatewayTerminationGracePeriod is Envoy's drain window. Hardcoded — Envoy's
+// default drain is ~5s and there's nothing else in the pod that needs longer.
+const gatewayTerminationGracePeriod int64 = 5
 
 // GatewayName returns the per-pair gateway pod / Service name.
 func GatewayName(pairKey string) string {
@@ -43,6 +53,7 @@ func BuildGatewayStatefulSet(instanceName string, hibernated bool, cfg *config.C
 	containers := []corev1.Container{envoyContainer(cfg, credentialSecrets)}
 
 	falseVal := false
+	gracePeriod := gatewayTerminationGracePeriod
 
 	annotations := map[string]string{
 		// Roll trigger (ADR-035): hash of the Secret set driving the Envoy
@@ -51,6 +62,22 @@ func BuildGatewayStatefulSet(instanceName string, hibernated bool, cfg *config.C
 		// the gateway StatefulSet rolls so Envoy picks up the new chain set
 		// + leaf cert.
 		"agent-platform.ai/envoy-secrets-rev": envoySecretsRev(credentialSecrets),
+	}
+
+	podSpec := corev1.PodSpec{
+		// Gateway pod runs as the per-instance SA so that its SPIFFE
+		// workload identity is `<td>/ns/<ns>/sa/<id>`. The agent half
+		// of the pair has no SPIFFE (it opts out of ambient — see
+		// resources.go), so the SA is effectively "the gateway's
+		// identity"; the harness + ext-authz AuthorizationPolicies
+		// admit this principal at the api-server end of the gateway →
+		// api-server hops. The agent → gateway hop is gated at the
+		// kernel by the per-pair NetworkPolicy.
+		ServiceAccountName:            instanceName,
+		TerminationGracePeriodSeconds: &gracePeriod,
+		AutomountServiceAccountToken:  &falseVal,
+		Containers:                    containers,
+		Volumes:                       volumes,
 	}
 
 	return &appsv1.StatefulSet{
@@ -66,25 +93,38 @@ func BuildGatewayStatefulSet(instanceName string, hibernated bool, cfg *config.C
 			Replicas:    &replicas,
 			ServiceName: gatewayName,
 			Selector:    &metav1.LabelSelector{MatchLabels: labels},
+			// Single-replica pair (ADR-038): there is no "graceful rolling"
+			// to preserve. Default StatefulSet rollouts wait for the existing
+			// pod to be Ready before replacing it, which deadlocks if the
+			// pod is in CrashLoopBackOff (e.g. when the bootstrap CM was
+			// updated to reference TLS chains while pod-0 still has the
+			// rev-without-leaf-TLS-volume mounts). maxUnavailable: 1 lets
+			// K8s evict the broken pod immediately so the new template can
+			// roll out instead of getting stuck behind a NotReady pod.
+			UpdateStrategy: appsv1.StatefulSetUpdateStrategy{
+				Type: appsv1.RollingUpdateStatefulSetStrategyType,
+				RollingUpdate: &appsv1.RollingUpdateStatefulSetStrategy{
+					MaxUnavailable: ptrIntOrString(intstr.FromInt(1)),
+				},
+			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels:      labels,
 					Annotations: annotations,
 				},
-				Spec: corev1.PodSpec{
-					TerminationGracePeriodSeconds: &cfg.TerminationGracePeriod,
-					AutomountServiceAccountToken:  &falseVal,
-					Containers:                    containers,
-					Volumes:                       volumes,
-				},
+				Spec: podSpec,
 			},
 		},
 	}
 }
 
-// BuildGatewayService is the headless Service the agent reaches via
-// `HTTPS_PROXY`. Service-form is stable across gateway pod restarts; pod-DNS
-// would tie the agent's env to a StatefulSet ordinal (ADR-038).
+func ptrIntOrString(v intstr.IntOrString) *intstr.IntOrString { return &v }
+
+// BuildGatewayService is the ClusterIP Service the agent reaches via
+// `HTTPS_PROXY`. The auto-assigned virtual IP is stable across pod
+// restarts — pinned into the agent pod's hostAliases (under `disableDns`)
+// and the iptables init container's allow-list. Was previously headless;
+// `Service.Spec.ClusterIP == "None"` isn't usable in hostAliases.
 func BuildGatewayService(instanceName string, cfg *config.Config, ownerCM *corev1.ConfigMap) *corev1.Service {
 	gatewayName := GatewayName(instanceName)
 	envoyPort := portInt32(cfg.EnvoyPort)
@@ -99,105 +139,12 @@ func BuildGatewayService(instanceName string, cfg *config.Config, ownerCM *corev
 			},
 		},
 		Spec: corev1.ServiceSpec{
-			ClusterIP: corev1.ClusterIPNone,
-			Selector:  selector,
+			// ClusterIP omitted → apiserver auto-assigns a stable IP.
+			Selector: selector,
 			Ports: []corev1.ServicePort{{
 				Name:       "proxy",
 				Port:       envoyPort,
 				TargetPort: intstr.FromInt32(envoyPort),
-			}},
-		},
-	}
-}
-
-// BuildGatewayNetworkPolicy admits ingress only from the paired agent pod
-// (exact-match on pair + role) and egress to upstream services + the
-// api-server's ext_authz endpoint + DNS.
-//
-// `pairKey` is the pair identifier — long-lived instances use the instance
-// name; forks use the fork name.
-func BuildGatewayNetworkPolicy(pairKey string, cfg *config.Config, ownerCM *corev1.ConfigMap) *networkingv1.NetworkPolicy {
-	tcp := corev1.ProtocolTCP
-	udp := corev1.ProtocolUDP
-	envoyPort := intstr.FromInt32(portInt32(cfg.EnvoyPort))
-	extAuthzPort := intstr.FromInt32(portInt32(cfg.ExtAuthzPort))
-	harnessPort := intstr.FromInt32(portInt32(cfg.HarnessServerPort))
-	httpsPort := intstr.FromInt32(443)
-	httpPort := intstr.FromInt32(80)
-	dnsPort := intstr.FromInt32(53)
-	dnsTargetPort := intstr.FromInt32(5353)
-
-	egress := []networkingv1.NetworkPolicyEgressRule{
-		{
-			// Envoy reaches arbitrary upstreams. ADR-033 §Decision keeps
-			// the first-cut allowlist permissive (no DNS allowlist in v1).
-			Ports: []networkingv1.NetworkPolicyPort{
-				{Protocol: &tcp, Port: &httpsPort},
-				{Protocol: &tcp, Port: &httpPort},
-			},
-		},
-		{
-			// API server: HITL ext_authz gate (ADR-035) on the gRPC port and
-			// harness API (MCP, pod-files SSE, /internal/trigger) on the HTTP
-			// port. Both run on the apiserver pod; Envoy stamps a trusted
-			// `x-platform-instance` header on harness traffic and the
-			// agent has no path here that bypasses Envoy.
-			To: []networkingv1.NetworkPolicyPeer{{
-				PodSelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{"app.kubernetes.io/component": "apiserver"},
-				},
-				NamespaceSelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{"kubernetes.io/metadata.name": cfg.ReleaseNamespace},
-				},
-			}},
-			Ports: []networkingv1.NetworkPolicyPort{
-				{Protocol: &tcp, Port: &extAuthzPort},
-				{Protocol: &tcp, Port: &harnessPort},
-			},
-		},
-		{
-			Ports: []networkingv1.NetworkPolicyPort{
-				{Protocol: &tcp, Port: &dnsPort},
-				{Protocol: &udp, Port: &dnsPort},
-				{Protocol: &tcp, Port: &dnsTargetPort},
-				{Protocol: &udp, Port: &dnsTargetPort},
-			},
-		},
-	}
-
-	return &networkingv1.NetworkPolicy{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      GatewayName(pairKey) + "-egress",
-			Namespace: cfg.Namespace,
-			Labels:    map[string]string{LabelPair: pairKey, LabelRole: RoleGateway},
-			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
-			},
-		},
-		Spec: networkingv1.NetworkPolicySpec{
-			PodSelector: metav1.LabelSelector{
-				MatchLabels: map[string]string{LabelPair: pairKey, LabelRole: RoleGateway},
-			},
-			PolicyTypes: []networkingv1.PolicyType{
-				networkingv1.PolicyTypeEgress,
-				networkingv1.PolicyTypeIngress,
-			},
-			Egress: egress,
-			// Ingress only from the paired agent pod. Wildcard or
-			// instance-only selectors would let other pairs' agents dial
-			// in (ADR-038 §Threat Model).
-			Ingress: []networkingv1.NetworkPolicyIngressRule{{
-				From: []networkingv1.NetworkPolicyPeer{{
-					PodSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							LabelPair: pairKey,
-							LabelRole: RoleAgent,
-						},
-					},
-				}},
-				Ports: []networkingv1.NetworkPolicyPort{{
-					Protocol: &tcp, Port: &envoyPort,
-				}},
 			}},
 		},
 	}
@@ -225,6 +172,7 @@ func BuildForkGatewayPod(forkName, parentInstanceID string, cfg *config.Config, 
 	containers := []corev1.Container{envoyContainer(cfg, credentialSecrets)}
 
 	falseVal := false
+	gracePeriod := gatewayTerminationGracePeriod
 
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -236,8 +184,16 @@ func BuildForkGatewayPod(forkName, parentInstanceID string, cfg *config.Config, 
 			},
 		},
 		Spec: corev1.PodSpec{
+			// ADR-027: fork gateway pod runs as the per-fork SA (its own
+			// identity, NOT the parent's). The fork *agent* opts out of
+			// ambient (no SPIFFE on that pod), so this gateway SA is the
+			// SPIFFE principal both per-fork harness and per-fork
+			// ext-authz AuthorizationPolicies admit — narrowly scoped to
+			// the parent's surface (`/api/instances/<parent>/mcp` + the
+			// parent's per-instance ext-authz Service).
+			ServiceAccountName:            forkName,
 			RestartPolicy:                 corev1.RestartPolicyAlways,
-			TerminationGracePeriodSeconds: &cfg.TerminationGracePeriod,
+			TerminationGracePeriodSeconds: &gracePeriod,
 			AutomountServiceAccountToken:  &falseVal,
 			Containers:                    containers,
 			Volumes:                       volumes,
@@ -245,8 +201,7 @@ func BuildForkGatewayPod(forkName, parentInstanceID string, cfg *config.Config, 
 	}
 }
 
-// BuildForkGatewayService gives the fork's agent Job a stable DNS name to
-// point HTTPS_PROXY at, mirroring the long-lived shape.
+// BuildForkGatewayService mirrors BuildGatewayService for the fork pair.
 func BuildForkGatewayService(forkName string, cfg *config.Config, ownerCM *corev1.ConfigMap) *corev1.Service {
 	gatewayName := GatewayName(forkName)
 	envoyPort := portInt32(cfg.EnvoyPort)
@@ -261,8 +216,8 @@ func BuildForkGatewayService(forkName string, cfg *config.Config, ownerCM *corev
 			},
 		},
 		Spec: corev1.ServiceSpec{
-			ClusterIP: corev1.ClusterIPNone,
-			Selector:  selector,
+			// ClusterIP omitted → apiserver auto-assigns a stable IP.
+			Selector: selector,
 			Ports: []corev1.ServicePort{{
 				Name:       "proxy",
 				Port:       envoyPort,
@@ -272,16 +227,3 @@ func BuildForkGatewayService(forkName string, cfg *config.Config, ownerCM *corev
 	}
 }
 
-// BuildForkAgentNetworkPolicy mirrors BuildAgentNetworkPolicy but scopes the
-// pair key to the fork's name (each fork has its own paired gateway). Today
-// fork pods get no NetworkPolicy at all — this closes the bypass for forks
-// alongside the long-lived case (ADR-038).
-func BuildForkAgentNetworkPolicy(forkName string, cfg *config.Config, ownerCM *corev1.ConfigMap) *networkingv1.NetworkPolicy {
-	return BuildAgentNetworkPolicy(forkName, cfg, ownerCM)
-}
-
-// BuildForkGatewayNetworkPolicy mirrors BuildGatewayNetworkPolicy for the
-// fork's gateway pod.
-func BuildForkGatewayNetworkPolicy(forkName string, cfg *config.Config, ownerCM *corev1.ConfigMap) *networkingv1.NetworkPolicy {
-	return BuildGatewayNetworkPolicy(forkName, cfg, ownerCM)
-}

@@ -1,6 +1,26 @@
 packages:
   - "packages/*"
   - "packages/agents/pi-agent/workspace/.pi/agent/extensions/*"
+minimumReleaseAge: 10080 # 7 days (in minutes)
+trustPolicy: no-downgrade
+trustPolicyExclude:
+  # rollup@2.80.0 is pinned by transitive deps still on the v2 line while
+  # the rest of the tree is on v4.60.1. pnpm's `no-downgrade` policy flags
+  # it because v2 predates the trust signals (OIDC provenance, trusted
+  # publisher) added to v4. Same upstream (rollup team), no open security
+  # advisories at the time of exclusion; only a publisher-side signal
+  # regression. Transitive-only, not a direct dep.
+  - 'rollup@2.80.0'
+  # semver@6.3.1 is the legacy semver-v6 line pulled in by transitive deps
+  # that haven't moved to v7 yet. Same upstream as semver@7.7.4 in the
+  # tree (npm core team), no open advisories at the time of exclusion;
+  # `no-downgrade` flagged it for the same publisher-side trust delta as
+  # rollup@2.80.0. Transitive-only.
+  - 'semver@6.3.1'
+  # chokidar dropped OIDC provenance for 4.0.2/4.0.3 (Dec 2024) — same
+  # maintainer (paulmillr), GitHub tag matches, restored in 5.0.0 via
+  # `trustedPublisher: github`. Benign publisher-side workflow change.
+  - 'chokidar@4.0.3'
 allowBuilds:
   # grpc-tools downloads the protoc binary in a postinstall step; needed
   # by `mise run api-server:gen:proto` (ts-proto codegen for ext_authz).

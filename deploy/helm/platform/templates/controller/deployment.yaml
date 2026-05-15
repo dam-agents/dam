@@ -30,53 +30,61 @@ spec:
           env:
             - name: PLATFORM_RELEASE_NAME
               value: {{ include "platform.fullname" . }}
+            # Value of `app.kubernetes.io/instance` on chart-rendered apiserver
+            # pods — i.e. the literal Helm `.Release.Name`. Used by the
+            # controller to populate the selector on per-instance ext-authz
+            # Services so they actually resolve to apiserver pods even when
+            # release name and `platform.fullname` diverge.
+            - name: PLATFORM_INSTANCE_LABEL
+              value: {{ .Release.Name | quote }}
             - name: PLATFORM_AGENT_NAMESPACE
               value: {{ .Values.agentNamespace }}
             - name: PLATFORM_RELEASE_NAMESPACE
               value: {{ .Release.Namespace }}
-            - name: AGENT_IMAGE_PULL_POLICY
-              value: {{ .Values.controller.agentImagePullPolicy | default "IfNotPresent" }}
-            {{- with .Values.controller.agentImagePullSecrets }}
-            - name: AGENT_IMAGE_PULL_SECRETS
-              value: {{ include "platform.nameList" . }}
-            {{- end }}
-            {{- with .Values.controller.agentStorageClass }}
-            - name: AGENT_STORAGE_CLASS
-              value: {{ . | quote }}
-            {{- end }}
-            {{- with .Values.controller.agentAccessMode }}
-            - name: AGENT_ACCESS_MODE
-              value: {{ . | quote }}
-            {{- end }}
-            {{- with .Values.controller.agentStorageSize }}
-            - name: AGENT_STORAGE_SIZE
-              value: {{ . | quote }}
-            {{- end }}
-            {{- with .Values.controller.agentPodAnnotations }}
-            - name: AGENT_POD_ANNOTATIONS
-              value: {{ toJson . | quote }}
-            {{- end }}
-            - name: PLATFORM_API_SERVER_HOST
-              value: "{{ include "platform.fullname" . }}-apiserver.{{ .Release.Namespace }}.svc.cluster.local"
+            # Three layers shape controller-rendered pods. Each ships as its
+            # own JSON env var; the controller fails loudly on unknown fields
+            # so values.yaml typos surface at startup.
+            #   - AGENT_BASE: chart-only platform policy (security, scheduling,
+            #     cluster details). Never overridable by an agent ConfigMap.
+            #   - AGENT_TEMPLATE_DEFAULTS: chart-wide fallbacks for fields a
+            #     template can override (template wins when set).
+            - name: AGENT_BASE
+              value: {{ .Values.controller.agent.base | toJson | quote }}
+            # `$HOME` literals in mount paths / skillPaths are substituted at
+            # chart render time using templateDefaults.agentHome, so the
+            # controller and api-server only ever see absolute paths.
+            - name: AGENT_TEMPLATE_DEFAULTS
+              value: {{ .Values.controller.agent.templateDefaults | toJson | replace "$HOME" .Values.controller.agent.templateDefaults.agentHome | quote }}
+            # ADR-041: harness traffic routes through the waypoint-fronted
+            # `-apiserver-harness` Service. The bare apiserver Service no
+            # longer carries the harness port.
             - name: PLATFORM_HARNESS_SERVER_URL
-              value: "http://{{ include "platform.fullname" . }}-apiserver.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.apiServer.harnessServerPort }}"
+              value: "http://{{ include "platform.fullname" . }}-apiserver-harness.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.apiServer.harnessServerPort }}"
             - name: PLATFORM_HARNESS_SERVER_PORT
               value: {{ .Values.apiServer.harnessServerPort | quote }}
-            - name: PLATFORM_IDLE_TIMEOUT
-              value: {{ .Values.controller.idleTimeout | default "1h" | quote }}
-            - name: PLATFORM_TERMINATION_GRACE_PERIOD
-              value: {{ .Values.controller.terminationGracePeriod | default 5 | quote }}
+            # ADR-041: SPIFFE trust domain — used to render the principal
+            # string in the per-instance AuthorizationPolicies the
+            # controller writes alongside each instance.
+            - name: PLATFORM_ISTIO_TRUST_DOMAIN
+              value: {{ .Values.istio.trustDomain | quote }}
+            - name: PLATFORM_ISTIO_WAYPOINT_NAME
+              value: {{ .Values.istio.waypointName | quote }}
+            - name: PLATFORM_RELEASE_DOMAIN
+              value: "svc.cluster.local"
             - name: ENVOY_IMAGE
               value: {{ .Values.controller.envoyImage | default "envoyproxy/envoy:distroless-v1.37.2" | quote }}
             - name: ENVOY_PORT
               value: {{ .Values.controller.envoyPort | default 10000 | quote }}
             - name: AGENT_HOME
-              value: {{ .Values.agentHome | quote }}
-            - name: EXT_AUTHZ_HOST
-              # FQDN: agent pods live in a different namespace (`agents`) from
-              # the apiserver Service (`{{ .Release.Namespace }}`), so the
-              # bare service name doesn't resolve in the agent's DNS scope.
-              value: {{ printf "%s-apiserver.%s.svc.cluster.local" (include "platform.fullname" .) .Release.Namespace | quote }}
+              value: {{ .Values.controller.agent.templateDefaults.agentHome | quote }}
+            # ADR-041: ext-authz uses per-instance Services rendered by the
+            # controller (one Service per instance, AuthorizationPolicy-gated
+            # to the instance's own SA principal). The host is computed at
+            # render time as `<release>-extauthz-<id>.<release-ns>.svc.cluster.local`
+            # from PLATFORM_RELEASE_NAME + PLATFORM_RELEASE_NAMESPACE; no
+            # static EXT_AUTHZ_HOST is needed.
+            - name: AGENT_PROBES_ENABLED
+              value: {{ .Values.probes.enabled | quote }}
             - name: EXT_AUTHZ_PORT
               value: {{ .Values.apiServer.extAuthzPort | quote }}
             - name: EXT_AUTHZ_HOLD_SECONDS

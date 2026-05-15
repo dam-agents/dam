@@ -5,7 +5,6 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -58,7 +57,33 @@ func agentProxyAddr(instanceName string, cfg *config.Config) string {
 // `credentialSecrets` is consulted only for the GH_TOKEN-availability signal
 // surfaced as an env var and pod annotation; no Secret material is mounted
 // into the agent pod.
-func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec *types.AgentSpec, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret) *appsv1.StatefulSet {
+//
+// `gatewayClusterIP` is injected into `hostAliases` when `DisableDNS` is on,
+// so `HTTPS_PROXY=http://<pair>-gateway:<port>` resolves without DNS. Empty
+// when the controller doesn't have the IP yet — caller is expected to
+// fail-closed in that case.
+func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec *types.AgentSpec, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret, gatewayClusterIP string) *appsv1.StatefulSet {
+	base := cfg.AgentBase
+	defaults := cfg.AgentTemplateDefaults
+
+	// Layer B fallbacks — template wins when set, else chart-wide default.
+	pullPolicy := agentSpec.ImagePullPolicy
+	if pullPolicy == "" {
+		pullPolicy = defaults.ImagePullPolicy
+	}
+	agentHome := agentSpec.AgentHome
+	if agentHome == "" {
+		agentHome = defaults.AgentHome
+	}
+	specMounts := agentSpec.Mounts
+	if len(specMounts) == 0 {
+		specMounts = configMountsToTypes(defaults.Mounts)
+	}
+	specEnv := agentSpec.Env
+	if len(specEnv) == 0 {
+		specEnv = configEnvToTypes(defaults.Env)
+	}
+
 	replicas := int32(1)
 	if instance.DesiredState == "hibernated" {
 		replicas = 0
@@ -69,20 +94,40 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 		LabelPair:     name,
 		LabelRole:     RoleAgent,
 	}
+	// Agent pods are deliberately NOT mesh participants. In ambient mode,
+	// istio-cni iptables rewrites every outbound to ztunnel:15008 before
+	// the kernel NetworkPolicy filter sees the real destination, so a
+	// destination-pinned NP cannot enforce "agent → paired gateway only" —
+	// it admits any HBONE-bound packet, i.e. any in-mesh destination.
+	// Opting the agent out at the pod level removes the ztunnel redirect;
+	// the per-pair `<id>-agent-egress` NetworkPolicy then sees real
+	// destination IPs and gates them at L3/L4. The agent has no SPIFFE
+	// identity in this model; mesh-keyed AuthorizationPolicy on the gateway
+	// pod is gone (NP is the gate). The paired gateway pod remains a mesh
+	// participant — its SPIFFE principal still gates gateway → harness and
+	// gateway → ext-authz hops (ADR-041).
+	podLabels := map[string]string{}
+	for k, v := range labels {
+		podLabels[k] = v
+	}
+	podLabels["istio.io/dataplane-mode"] = "none"
+
 	caCertPath := "/etc/platform/ca/ca.crt"
 
 	proxyAddr := agentProxyAddr(name, cfg)
 
 	// The agent container holds zero platform credentials. Inbound calls to
-	// agent-runtime's tRPC are gated at the kernel by the pod's
-	// NetworkPolicy (ingress admitted only from the api-server pod);
-	// outbound calls cross the paired gateway pod for credential injection.
+	// agent-runtime's tRPC are gated by the api-server's mesh
+	// AuthorizationPolicies; ALL outbound calls — external hosts AND the
+	// harness API — cross the paired gateway pod.
 	//
-	// Harness API traffic ALSO crosses the paired gateway: there is no
-	// NO_PROXY carve-out for the api-server. Envoy on the gateway pod
-	// injects an `x-platform-instance` header that the api-server trusts
-	// for caller identity (the agent pod has no direct egress path to the
-	// harness port, so it cannot forge the header by bypassing Envoy).
+	// ADR-041: identity for harness traffic comes from the gateway pod's
+	// SPIFFE principal (gateway runs as the per-instance SA). When the
+	// gateway's Envoy forwards to the harness Service, ztunnel encapsulates
+	// the connection with the gateway's principal, and the waypoint
+	// enforces principal == URL `:id`. The Envoy bootstrap routes
+	// harness traffic without ext_authz HITL gating and without
+	// credential-header injection.
 	env := []corev1.EnvVar{
 		{Name: "HTTPS_PROXY", Value: proxyAddr},
 		{Name: "HTTP_PROXY", Value: proxyAddr},
@@ -95,7 +140,7 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 		{Name: "GIT_HTTP_PROXY_AUTHMETHOD", Value: "basic"},
 		{Name: "ADK_INSTANCE_ID", Value: name},
 		{Name: "API_SERVER_URL", Value: cfg.APIServerURL()},
-		{Name: "HOME", Value: cfg.AgentHome},
+		{Name: "HOME", Value: agentHome},
 		{Name: "PLATFORM_MCP_URL", Value: fmt.Sprintf("%s/api/instances/%s/mcp", cfg.HarnessServerURL, name)},
 		// agent-runtime opens this SSE stream and materializes pod-files
 		// (gh hosts.yml today; more producers later) directly under HOME.
@@ -109,7 +154,7 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 	// "is this env set?" check; Envoy in the paired gateway overwrites the
 	// header on the wire.
 	env = append(env, credentialEnvVars(credentialSecrets)...)
-	for _, e := range agentSpec.Env {
+	for _, e := range specEnv {
 		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
 	}
 	for _, e := range instance.Env {
@@ -131,33 +176,30 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 	var volumeMounts []corev1.VolumeMount
 	var pvcs []corev1.PersistentVolumeClaim
 
-	for _, m := range agentSpec.Mounts {
+	for _, m := range specMounts {
 		volName := types.SanitizeMountName(m.Path)
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name: volName, MountPath: m.Path,
 		})
 		if m.Persist {
+			// Size precedence: per-mount > AgentSpec.StorageSize > chart default.
+			// All three sources are validated upstream (Config.Validate at startup
+			// for the chart default, ParseAgentSpec for the spec.yaml values).
 			storageSize := m.Size
 			if storageSize == "" {
-				storageSize = cfg.AgentStorageSize
+				storageSize = agentSpec.StorageSize
 			}
 			if storageSize == "" {
-				storageSize = "10Gi"
-			}
-			accessMode := corev1.ReadWriteMany
-			if cfg.AgentAccessMode == "ReadWriteOnce" {
-				accessMode = corev1.ReadWriteOnce
+				storageSize = defaults.StorageSize
 			}
 			pvcSpec := corev1.PersistentVolumeClaimSpec{
-				AccessModes: []corev1.PersistentVolumeAccessMode{accessMode},
+				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.PersistentVolumeAccessMode(base.AccessMode)},
 				Resources: corev1.VolumeResourceRequirements{
-					Requests: corev1.ResourceList{
-						corev1.ResourceStorage: resource.MustParse(storageSize),
-					},
+					Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse(storageSize)},
 				},
 			}
-			if cfg.AgentStorageClass != "" {
-				sc := cfg.AgentStorageClass
+			if base.StorageClass != "" {
+				sc := base.StorageClass
 				pvcSpec.StorageClassName = &sc
 			}
 			pvcs = append(pvcs, corev1.PersistentVolumeClaim{
@@ -202,7 +244,7 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 		Name: "ca-cert", MountPath: "/etc/platform/ca", ReadOnly: true,
 	})
 
-	// Resources
+	// Resources: template wins when set, else chart-wide default.
 	resourceReqs := corev1.ResourceRequirements{}
 	if agentSpec.Resources.Requests != nil {
 		resourceReqs.Requests = toResourceList(agentSpec.Resources.Requests)
@@ -210,31 +252,36 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 	if agentSpec.Resources.Limits != nil {
 		resourceReqs.Limits = toResourceList(agentSpec.Resources.Limits)
 	}
+	if resourceReqs.Requests == nil && resourceReqs.Limits == nil && defaults.Resources != nil {
+		resourceReqs = *defaults.Resources
+	}
 
-	// Init containers: optional user-defined init only.
+	// Init container: template wins, else chart-wide default.
+	initScript := agentSpec.Init
+	if initScript == "" {
+		initScript = defaults.Init
+	}
 	var initContainers []corev1.Container
-	if agentSpec.Init != "" {
+	// Egress-lockdown runs before the user init so the allow-list is in
+	// place by the time anything dials the network.
+	if ic := buildIptablesInitContainer(cfg, gatewayClusterIP); ic != nil {
+		initContainers = append(initContainers, *ic)
+	}
+	if initScript != "" {
 		initContainers = append(initContainers, corev1.Container{
 			Name:            "init",
 			Image:           agentSpec.Image,
-			ImagePullPolicy: corev1.PullPolicy(cfg.AgentImagePullPolicy),
-			Command:         []string{"sh", "-c", agentSpec.Init},
+			ImagePullPolicy: corev1.PullPolicy(pullPolicy),
+			Command:         []string{"sh", "-c", initScript},
+			Env:             []corev1.EnvVar{{Name: "HOME", Value: agentHome}},
 			VolumeMounts:    volumeMounts,
 		})
 	}
 
-	// Image pull secrets
+	// Image pull secrets — chart-only.
 	var pullSecrets []corev1.LocalObjectReference
-	for _, name := range cfg.AgentImagePullSecrets {
-		pullSecrets = append(pullSecrets, corev1.LocalObjectReference{Name: name})
-	}
-
-	// Pod security context
-	var podSec *corev1.PodSecurityContext
-	if agentSpec.SecurityContext != nil {
-		podSec = &corev1.PodSecurityContext{
-			RunAsNonRoot: agentSpec.SecurityContext.RunAsNonRoot,
-		}
+	for _, n := range base.ImagePullSecrets {
+		pullSecrets = append(pullSecrets, corev1.LocalObjectReference{Name: n})
 	}
 
 	// GH_TOKEN signal. Surface whether a GitHub credential is wired up so
@@ -246,46 +293,61 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 	}
 	env = append(env, corev1.EnvVar{Name: "PLATFORM_GH_TOKEN_AVAILABLE", Value: ghAvail})
 
-	containers := []corev1.Container{{
-		Name:            "agent",
-		Image:           agentSpec.Image,
-		ImagePullPolicy: corev1.PullPolicy(cfg.AgentImagePullPolicy),
-		Ports: []corev1.ContainerPort{{
-			Name: "acp", ContainerPort: 8080,
-		}},
-		Env:     env,
-		EnvFrom: envFrom,
-		// Fast (1s) during startup so wake-up is detected quickly, slow
-		// (10s) afterwards so we're not probing every agent pod every
-		// second forever. FailureThreshold=120 → ~2 min of startup
-		// runway, enough for a cold pull of a large agent image.
-		StartupProbe: &corev1.Probe{
+	// Fast (1s) during startup so wake-up is detected quickly, slow
+	// (10s) afterwards so we're not probing every agent pod every
+	// second forever. FailureThreshold=120 → ~2 min of startup
+	// runway, enough for a cold pull of a large agent image.
+	var startupProbe, readinessProbe, livenessProbe *corev1.Probe
+	if cfg.AgentProbesEnabled {
+		startupProbe = &corev1.Probe{
 			ProbeHandler:     corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
 			PeriodSeconds:    1,
 			FailureThreshold: 120,
-		},
-		ReadinessProbe: &corev1.Probe{
+		}
+		readinessProbe = &corev1.Probe{
 			ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
 			PeriodSeconds: 10,
-		},
-		LivenessProbe: &corev1.Probe{
+		}
+		livenessProbe = &corev1.Probe{
 			ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
 			PeriodSeconds: 10,
-		},
-		SecurityContext: &corev1.SecurityContext{
-			Capabilities: &corev1.Capabilities{
-				Drop: []corev1.Capability{"ALL"},
-			},
-		},
-		Resources:    resourceReqs,
-		VolumeMounts: volumeMounts,
+		}
+	}
+
+	// Probes — chart-level Probes overrides (base.Probes) replace the
+	// matching default per-field when the master switch is on.
+	if base.Probes != nil {
+		if base.Probes.Startup != nil && startupProbe != nil {
+			startupProbe = base.Probes.Startup
+		}
+		if base.Probes.Readiness != nil && readinessProbe != nil {
+			readinessProbe = base.Probes.Readiness
+		}
+		if base.Probes.Liveness != nil && livenessProbe != nil {
+			livenessProbe = base.Probes.Liveness
+		}
+	}
+
+	containers := []corev1.Container{{
+		Name:            "agent",
+		Image:           agentSpec.Image,
+		ImagePullPolicy: corev1.PullPolicy(pullPolicy),
+		Ports: []corev1.ContainerPort{{
+			Name: "acp", ContainerPort: 8080,
+		}},
+		Env:             env,
+		EnvFrom:         envFrom,
+		StartupProbe:    startupProbe,
+		ReadinessProbe:  readinessProbe,
+		LivenessProbe:   livenessProbe,
+		SecurityContext: base.ContainerSecurityContext,
+		Resources:       resourceReqs,
+		VolumeMounts:    volumeMounts,
 	}}
 
-	podAnnotations := map[string]string{}
-	for k, v := range cfg.AgentPodAnnotations {
-		podAnnotations[k] = v
+	podAnnotations := map[string]string{
+		"agent-platform.ai/gh-token-available": ghAvail,
 	}
-	podAnnotations["agent-platform.ai/gh-token-available"] = ghAvail
 
 	// ADR-033 Threat Model: agent must have no SA token (Secret-read RBAC
 	// would otherwise bypass the per-pod credential boundary). With the
@@ -295,6 +357,37 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 	falseVal := false
 	automountSAToken := &falseVal
 	shareProcessNS := &falseVal
+
+	podMeta := metav1.ObjectMeta{
+		Labels:      podLabels,
+		Annotations: podAnnotations,
+	}
+	applyAgentBaseMeta(&podMeta, base)
+
+	var hostAliases []corev1.HostAlias
+	if base.DisableDNS && gatewayClusterIP != "" {
+		hostAliases = append(hostAliases, buildGatewayHostAlias(name, gatewayClusterIP))
+	}
+
+	podSpec := corev1.PodSpec{
+		// Agent pod opts out of ambient mesh
+		// (`istio.io/dataplane-mode: none` pod label above); it has no
+		// SPIFFE workload identity. The per-instance SA still scopes
+		// Secret access at the controller level —
+		// `automountServiceAccountToken: false` keeps the SA token
+		// off-pod (ADR-033 threat model).
+		ServiceAccountName:            name,
+		TerminationGracePeriodSeconds: &base.TerminationGracePeriod,
+		ImagePullSecrets:              pullSecrets,
+		SecurityContext:               base.PodSecurityContext,
+		InitContainers:                initContainers,
+		AutomountServiceAccountToken:  automountSAToken,
+		ShareProcessNamespace:         shareProcessNS,
+		Containers:                    containers,
+		Volumes:                       volumes,
+		HostAliases:                   hostAliases,
+	}
+	applyAgentBaseScheduling(&podSpec, base)
 
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -311,20 +404,8 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 			Selector:             &metav1.LabelSelector{MatchLabels: labels},
 			VolumeClaimTemplates: pvcs,
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels:      labels,
-					Annotations: podAnnotations,
-				},
-				Spec: corev1.PodSpec{
-					TerminationGracePeriodSeconds: &cfg.TerminationGracePeriod,
-					ImagePullSecrets:              pullSecrets,
-					SecurityContext:               podSec,
-					InitContainers:                initContainers,
-					AutomountServiceAccountToken:  automountSAToken,
-					ShareProcessNamespace:         shareProcessNS,
-					Containers:                    containers,
-					Volumes:                       volumes,
-				},
+				ObjectMeta: podMeta,
+				Spec:       podSpec,
 			},
 		},
 	}
@@ -349,94 +430,6 @@ func BuildAgentService(name string, cfg *config.Config, ownerCM *corev1.ConfigMa
 			Selector:  selector,
 			Ports: []corev1.ServicePort{{
 				Name: "acp", Port: 8080, TargetPort: intstr.FromString("acp"),
-			}},
-		},
-	}
-}
-
-// BuildAgentNetworkPolicy is the cluster-enforced half of the credential
-// boundary on the agent side (ADR-038): no path to TCP 80/443 anywhere except
-// the paired gateway pod, plus the api-server harness port and DNS.
-//
-// `pairKey` is the pair identifier — the long-lived instance name for
-// long-lived agent pairs, the fork name for fork pairs. Both halves of the
-// pair carry `agent-platform.ai/pair=<pairKey>`.
-func BuildAgentNetworkPolicy(pairKey string, cfg *config.Config, ownerCM *corev1.ConfigMap) *networkingv1.NetworkPolicy {
-	tcp := corev1.ProtocolTCP
-	udp := corev1.ProtocolUDP
-	acpPort := intstr.FromInt32(8080)
-	envoyPort := intstr.FromInt32(portInt32(cfg.EnvoyPort))
-	dnsPort := intstr.FromInt32(53)
-	dnsTargetPort := intstr.FromInt32(5353)
-
-	egress := []networkingv1.NetworkPolicyEgressRule{
-		{
-			// Paired gateway pod only — exact-match on pair + role.
-			// Loosening to a wildcard would let one pair's agent dial
-			// another's gateway, defeating the boundary (ADR-038 §Threat Model).
-			//
-			// All TCP egress — including harness API calls to the api-server —
-			// flows through this single gateway hop. Envoy on the gateway pod
-			// stamps the trusted `x-platform-instance` header on harness
-			// traffic; without a direct path here the agent cannot bypass
-			// Envoy to forge identity.
-			To: []networkingv1.NetworkPolicyPeer{{
-				PodSelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{
-						LabelPair: pairKey,
-						LabelRole: RoleGateway,
-					},
-				},
-			}},
-			Ports: []networkingv1.NetworkPolicyPort{
-				{Protocol: &tcp, Port: &envoyPort},
-			},
-		},
-		{
-			// DNS — service port (53) and CoreDNS-on-OpenShift target port (5353).
-			Ports: []networkingv1.NetworkPolicyPort{
-				{Protocol: &tcp, Port: &dnsPort},
-				{Protocol: &udp, Port: &dnsPort},
-				{Protocol: &tcp, Port: &dnsTargetPort},
-				{Protocol: &udp, Port: &dnsTargetPort},
-			},
-		},
-	}
-
-	return &networkingv1.NetworkPolicy{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      pairKey + "-egress",
-			Namespace: cfg.Namespace,
-			Labels:    map[string]string{LabelPair: pairKey, LabelRole: RoleAgent},
-			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
-			},
-		},
-		Spec: networkingv1.NetworkPolicySpec{
-			PodSelector: metav1.LabelSelector{
-				MatchLabels: map[string]string{LabelPair: pairKey, LabelRole: RoleAgent},
-			},
-			PolicyTypes: []networkingv1.PolicyType{
-				networkingv1.PolicyTypeEgress,
-				networkingv1.PolicyTypeIngress,
-			},
-			Egress: egress,
-			// Ingress is the only authentication boundary on this hop: the
-			// api-server pod is the sole authorized caller of agent-runtime's
-			// ACP/tRPC port. The api-server has already verified the user
-			// JWT and instance ownership before forwarding.
-			Ingress: []networkingv1.NetworkPolicyIngressRule{{
-				From: []networkingv1.NetworkPolicyPeer{{
-					PodSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{"app.kubernetes.io/component": "apiserver"},
-					},
-					NamespaceSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{"kubernetes.io/metadata.name": cfg.ReleaseNamespace},
-					},
-				}},
-				Ports: []networkingv1.NetworkPolicyPort{{
-					Protocol: &tcp, Port: &acpPort,
-				}},
 			}},
 		},
 	}

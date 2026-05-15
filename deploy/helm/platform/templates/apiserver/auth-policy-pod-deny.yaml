@@ -1,0 +1,75 @@
+{{- /*
+ADR-041: pod-level DENY ringfencing the api-server pod.
+
+The waypoint AuthorizationPolicies (rendered per-instance by the
+controller) only apply to traffic ROUTED THROUGH the waypoint Service.
+Without this rule, an in-mesh pod could dial the api-server pod IP
+directly on :15008 and reach the harness handler, bypassing the
+waypoint and the per-instance principal-to-`:id` check. Same hazard
+for ext-authz: a release-namespace pod (controller, ui, postgres)
+sharing the namespace with the api-server is structurally in a
+position to dial the harness or ext-authz port directly unless we
+deny it.
+
+Per-port DENY:
+  - Harness port: deny anything that isn't the waypoint principal.
+    Istio names the waypoint SA after the Gateway resource, so the
+    principal is `<td>/ns/<release-ns>/sa/<waypoint-name>`.
+  - ext-authz port: deny anything that isn't sourced in the agent
+    namespace. Per-instance AuthorizationPolicies on per-instance
+    ext-authz Services gate further by SA principal.
+  - Public HTTP port (Keycloak-JWT-gated): no DENY rule. Traffic from
+    Traefik (kube-system) and any other peer is allowed; application-
+    layer auth is the gate. Adding an ns-based DENY here would block
+    the ingress controller, which is non-mesh and lives outside both
+    `{ agentNamespace, releaseNamespace }`.
+
+Istio AuthorizationPolicy semantics: DENY rules are OR-ed; a rule
+matches when ALL of its `from` AND `to` match. With action=DENY, no
+rule matching means traffic is allowed (other ALLOW policies — the
+controller-rendered per-instance ones — still gate further). DENY
+beats any ALLOW when both match.
+
+Non-mesh sources (e.g. Traefik in `kube-system`) bypass Istio
+AuthorizationPolicy entirely; cluster-edge ingress is gated by the
+NetworkPolicy / Ingress instead.
+*/ -}}
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ include "platform.fullname" . }}-apiserver-pod-deny
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: apiserver
+spec:
+  # Pod-level selector — applies to traffic terminating directly at the
+  # api-server pod (i.e. NOT via the waypoint, which has its own SA).
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: apiserver
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  action: DENY
+  rules:
+    # Harness port: only the waypoint principal is admitted. Agent-ns
+    # pod-IP bypass attempts, other release-ns peers, and out-of-mesh
+    # sources are all denied.
+    - to:
+        - operation:
+            ports:
+              - {{ .Values.apiServer.harnessServerPort | quote }}
+      from:
+        - source:
+            notPrincipals:
+              - "{{ .Values.istio.trustDomain }}/ns/{{ .Release.Namespace }}/sa/{{ .Values.istio.waypointName }}"
+    # ext-authz port: only sources in the agent namespace are admitted.
+    # Per-instance AuthorizationPolicies on per-instance ext-authz
+    # Services pin the SA principal to the matching instance.
+    - to:
+        - operation:
+            ports:
+              - {{ .Values.apiServer.extAuthzPort | quote }}
+      from:
+        - source:
+            notNamespaces:
+              - {{ .Values.agentNamespace | quote }}

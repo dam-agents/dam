@@ -9,9 +9,9 @@ export interface StreamOptions {
  * stream or the connection errors. Resolves on clean end; rejects on
  * status != 200 or transport error. The connection goes through the
  * paired gateway pod's Envoy (HTTP_PROXY honored via undici because
- * NODE_USE_ENV_PROXY=1 is set on the agent pod), and Envoy stamps the
- * trusted `x-platform-instance` header that the api-server identifies
- * the caller from. No client-side auth header is sent.
+ * NODE_USE_ENV_PROXY=1 is set on the agent pod), then via the Istio
+ * waypoint to the api-server. The waypoint enforces principal == URL
+ * `:id` (ADR-041). No client-side auth header is sent.
  */
 export async function streamOnce(opts: StreamOptions): Promise<void> {
   const res = await fetch(opts.url, {

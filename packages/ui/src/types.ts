@@ -1,4 +1,5 @@
-import type { EnvMapping, EnvVar, InjectionConfig } from "api-server-api";
+import type { EnvMapping, EnvVar, InjectionConfig, SecretType } from "api-server-api";
+import { isProviderPresetType } from "api-server-api";
 
 export type Role = "user" | "assistant";
 
@@ -143,7 +144,10 @@ export interface Schedule {
   status: { lastRun?: string; nextRun?: string; lastResult?: string } | null;
 }
 
-export type SecretType = "anthropic" | "generic";
+// `SecretType` is re-exported from `api-server-api` near the bottom of
+// this file alongside the rest of the secrets shared types — keeping
+// one source of truth so a new provider added to the api-server-api
+// union can't be silently missed here.
 
 /** Prefix used for MCP OAuth secrets stored as K8s credential Secrets. */
 export const MCP_SECRET_PREFIX = "__mcp:";
@@ -152,14 +156,14 @@ export const MCP_SECRET_PREFIX = "__mcp:";
 export const APP_OAUTH_SECRET_PREFIX = "__oauth:";
 
 export function isMcpSecret(s: { name: string; type: SecretType }): boolean {
-  return s.type !== "anthropic" && s.name.startsWith(MCP_SECRET_PREFIX);
+  return !isProviderPresetType(s.type) && s.name.startsWith(MCP_SECRET_PREFIX);
 }
 
-/** User-visible "Secrets" — excludes the Anthropic key and platform-internal
- *  mirrors (MCP OAuth blobs and app-OAuth token mirrors). */
+/** User-visible "Secrets" — excludes provider presets (Anthropic, IBM LiteLLM)
+ *  and platform-internal mirrors (MCP OAuth blobs and app-OAuth token mirrors). */
 export function isCustomSecret(s: { name: string; type: SecretType }): boolean {
   return (
-    s.type !== "anthropic" &&
+    !isProviderPresetType(s.type) &&
     !s.name.startsWith(MCP_SECRET_PREFIX) &&
     !s.name.startsWith(APP_OAUTH_SECRET_PREFIX)
   );
@@ -171,13 +175,31 @@ export function mcpHostnameFromSecretName(name: string): string {
     : name;
 }
 
-export type { EgressPreset,EnvMapping, EnvVar, InjectionConfig } from "api-server-api";
+export type {
+  BobModelPins,
+  EgressPreset,
+  EnvMapping,
+  EnvVar,
+  IbmLitellmModelPins,
+  InjectionConfig,
+  ProviderPreset,
+  ProviderPresetMode,
+  ProviderPresetType,
+  SecretType,
+} from "api-server-api";
 export {
-  ANTHROPIC_API_KEY_ENV_MAPPING,
-  ANTHROPIC_OAUTH_ENV_MAPPING,
+  BOB_CHAT_MODES,
+  bobEnvMappings,
+  bobPinsFromEnvMappings,
   DEFAULT_ENV_PLACEHOLDER,
   DEFAULT_INJECTION_CONFIG,
+  IBM_LITELLM_DEFAULT_MODEL_PINS,
+  ibmLitellmEnvMappings,
+  ibmLitellmPinsFromEnvMappings,
+  isProviderPresetType,
   isValidEnvName,
+  PROVIDER_PRESET_TYPES,
+  PROVIDERS,
 } from "api-server-api";
 
 export interface SecretView {

@@ -1,24 +1,27 @@
 import "@xterm/xterm/css/xterm.css";
 
-import {
-  Misuse as XCircle,
-  Renew as Loader2,
-  Terminal as TerminalIcon,
-} from "@carbon/icons-react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { decodeFrame, encodeDataFrame, encodeResize, OP_EXIT, OP_INPUT, OP_OUTPUT } from "api-server-api";
-import { useEffect, useRef, useState } from "react";
+import { Loader2, TerminalIcon, XCircle } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getAccessToken } from "../../../auth.js";
 
 type ConnectionState = "connecting" | "live" | "disconnected" | "exited";
 
-export function Terminal({ instanceId, sessionId, fresh, onConnected }: { instanceId: string; sessionId: string; fresh?: boolean; onConnected?: () => void }) {
+export function Terminal({ instanceId, sessionId, fresh, onConnected, autoConnect = true }: { instanceId: string; sessionId: string; fresh?: boolean; onConnected?: () => void; autoConnect?: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
-  const [state, setState] = useState<ConnectionState>("connecting");
+  const [state, setState] = useState<ConnectionState>(autoConnect ? "connecting" : "disconnected");
   const [exitCode, setExitCode] = useState<number | null>(null);
+  const [reconnectKey, setReconnectKey] = useState(0);
+  const connectEnabled = useRef(autoConnect);
+  const handleReconnect = useCallback(() => {
+    connectEnabled.current = true;
+    setState("connecting");
+    setReconnectKey((k) => k + 1);
+  }, []);
 
   // After React commits "live" the connecting overlay unmounts; refocus then.
   useEffect(() => {
@@ -52,6 +55,8 @@ export function Terminal({ instanceId, sessionId, fresh, onConnected }: { instan
       await new Promise<void>((r) => requestAnimationFrame(() => r()));
       if (cancelled) return;
       fitAddon.fit();
+
+      if (!connectEnabled.current) return;
 
       const token = await getAccessToken();
       if (cancelled) return;
@@ -104,33 +109,38 @@ export function Terminal({ instanceId, sessionId, fresh, onConnected }: { instan
       termRef.current = null;
       container.innerHTML = "";
     };
-    // `fresh` and `onConnected` are intentionally captured once at mount —
-    // re-running the effect when `fresh` flips post-connect would tear down
-    // and recreate the WS, undoing the kill-and-respawn we just did.
+    // `fresh` and `onConnected` are intentionally captured once at mount.
+    // `reconnectKey` triggers a full teardown+reconnect cycle.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [instanceId, sessionId]);
+  }, [instanceId, sessionId, reconnectKey]);
 
   return (
     <div className="flex flex-1 flex-col min-h-0 relative">
       {state === "connecting" && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-          <div className="flex items-center gap-3 text-[14px] text-muted-foreground">
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-bg/80 backdrop-blur-sm">
+          <div className="flex items-center gap-3 text-[14px] text-text-muted">
             <Loader2 size={18} className="animate-spin" />
             Connecting terminal...
           </div>
         </div>
       )}
       {state === "disconnected" && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-bg/80 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-3 text-center">
-            <XCircle size={24} className="text-destructive" />
-            <p className="text-[14px] text-foreground/80">Terminal disconnected</p>
+            <XCircle size={24} className="text-danger" />
+            <p className="text-[14px] text-text-secondary">Session disconnected</p>
+            <button
+              className="rounded-md border border-border-light bg-surface-raised px-4 py-2 text-[13px] text-text-primary hover:bg-surface-hover transition-colors"
+              onClick={handleReconnect}
+            >
+              Reconnect
+            </button>
           </div>
         </div>
       )}
       {state === "exited" && (
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
-          <div className="flex items-center gap-2 rounded-full border border-border bg-muted px-4 py-2 text-[12px] text-muted-foreground shadow-md">
+          <div className="flex items-center gap-2 rounded-full border border-border-light bg-surface-raised px-4 py-2 text-[12px] text-text-muted shadow-md">
             <TerminalIcon size={14} />
             Process exited with code {exitCode}
           </div>

@@ -1,0 +1,42 @@
+{{- /*
+ADR-041: Istio ambient is a HARD prerequisite of this chart. There is no
+`enabled: false` toggle — an unauthenticated harness port is not a
+supported configuration. This template never renders a resource; its
+only job is to fail `helm install` early with an actionable message if
+Istio (or its prerequisites) is missing.
+
+`lookup` returns nil when running `helm template` (no API server in
+context), so this validator only triggers on real installs/upgrades —
+chart linting and offline rendering are unaffected.
+*/ -}}
+
+{{- if .Capabilities.APIVersions.Has "v1/Namespace" }}
+
+{{- /* Gateway API CRDs (waypoint Gateway resource needs them) */ -}}
+{{- if not (.Capabilities.APIVersions.Has "gateway.networking.k8s.io/v1/Gateway") }}
+{{- fail "ADR-041: Gateway API CRDs are missing. Install the standard channel from kubernetes-sigs/gateway-api before installing this chart. `mise run cluster:install` provisions them automatically." }}
+{{- end }}
+
+{{- /* Istio AuthorizationPolicy CRD */ -}}
+{{- if not (.Capabilities.APIVersions.Has "security.istio.io/v1/AuthorizationPolicy") }}
+{{- fail "ADR-041: Istio AuthorizationPolicy CRD is missing. Install Istio (base + istiod + cni + ztunnel, ambient profile) in `istio-system` before installing this chart. `mise run cluster:install` provisions Istio automatically." }}
+{{- end }}
+
+{{- /* ztunnel DaemonSet — proves the ambient data plane is actually present */ -}}
+{{- $ztunnel := lookup "apps/v1" "DaemonSet" "istio-system" "ztunnel" }}
+{{- if not $ztunnel }}
+{{- fail "ADR-041: ztunnel DaemonSet not found in namespace `istio-system`. Install Istio with the ambient profile before installing this chart." }}
+{{- end }}
+
+{{- /* Release namespace must be ambient — the api-server pod and the
+       waypoint Pod (synthesised in this namespace) need to be mesh
+       peers for HBONE termination to work. */ -}}
+{{- $relNs := lookup "v1" "Namespace" "" .Release.Namespace }}
+{{- if $relNs }}
+{{- $mode := index ($relNs.metadata.labels | default dict) "istio.io/dataplane-mode" }}
+{{- if ne $mode "ambient" }}
+{{- fail (printf "ADR-041: release namespace `%s` must carry label `istio.io/dataplane-mode=ambient`. Run: kubectl label namespace %s istio.io/dataplane-mode=ambient --overwrite" .Release.Namespace .Release.Namespace) }}
+{{- end }}
+{{- end }}
+
+{{- end }}

@@ -1,4 +1,5 @@
 import type {
+  Agent,
   Instance,
   InstanceState,
   ChannelConfig,
@@ -26,6 +27,7 @@ export function computeState(infra: InfraInstance): InstanceState {
 
 export function assembleInstance(
   infra: InfraInstance,
+  agent: Pick<Agent, "templateId" | "spec"> | null,
   channels: ChannelConfig[],
   allowedUserEmails: string[] = [],
 ): Instance {
@@ -33,6 +35,8 @@ export function assembleInstance(
     id: infra.id,
     name: infra.name,
     agentId: infra.agentId,
+    templateId: agent?.templateId ?? null,
+    image: agent?.spec?.image ?? "",
     description: infra.description,
     state: computeState(infra),
     error: infra.currentState === "error" ? infra.error : undefined,

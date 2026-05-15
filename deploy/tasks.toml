@@ -60,7 +60,7 @@ dir = "{{config_root}}"
 run = 'docker build -f packages/ui/Dockerfile -t platform-ui:latest .'
 
 ["image:agent"]
-description = "Build agent Docker images (platform-base + claude-code + google-workspace + pi-agent + code-guardian)"
+description = "Build agent Docker images (platform-base + claude-code + google-workspace + pi-agent + code-guardian + bob)"
 dir = "{{config_root}}"
 run = '''
 #!/usr/bin/env bash
@@ -70,6 +70,7 @@ docker build -t platform-claude-code:latest packages/agents/claude-code
 docker build -t platform-google-workspace-agent:latest packages/agents/google-workspace
 docker build -t platform-pi-agent:latest packages/agents/pi-agent
 docker build -t platform-code-guardian:latest packages/agents/code-guardian
+docker build -t platform-bob:latest packages/agents/bob
 '''
 
 # -- Cluster lifecycle (k3s via lima) --
@@ -194,10 +195,64 @@ else
   echo "cert-manager already installed"
 fi
 
+# 2b. Install Istio ambient + Gateway-API CRDs (required by ADR-041).
+# Pinned: Gateway API v1.2.0 stable channel (introduced Gateway/HTTPRoute v1
+# and the gatewayClassName: istio-waypoint shape). Istio 1.29.x is the
+# floor for ambient L7 with locked-down waypoint HCM.
+GATEWAY_API_VERSION="v1.2.0"
+ISTIO_VERSION="1.29.1"
+
+if ! kubectl --kubeconfig="$KUBECONFIG" get crd gateways.gateway.networking.k8s.io >/dev/null 2>&1; then
+  echo "Installing Gateway API CRDs ($GATEWAY_API_VERSION)..."
+  kubectl --kubeconfig="$KUBECONFIG" apply -f "https://github.com/kubernetes-sigs/gateway-api/releases/download/$GATEWAY_API_VERSION/standard-install.yaml"
+else
+  echo "Gateway API CRDs already installed"
+fi
+
+echo "Ensuring Istio ambient mesh ($ISTIO_VERSION)..."
+helm repo add istio https://istio-release.storage.googleapis.com/charts >/dev/null 2>&1 || true
+helm repo update istio >/dev/null
+
+# Install-only path. Avoids helm upgrade conflicts with istiod, which
+# patches `istiod-default-validator` ValidatingWebhookConfiguration's
+# `failurePolicy` after start; a subsequent `helm upgrade istio-base`
+# fails server-side apply because pilot-discovery owns that field.
+# This task is the dev install loop, not the prod upgrade path; in-place
+# Istio upgrades are an out-of-band operation when needed.
+istio_install_if_missing() {
+  local release="$1" chart="$2"
+  shift 2
+  if helm --kubeconfig="$KUBECONFIG" -n istio-system status "$release" >/dev/null 2>&1; then
+    echo "  $release already installed, skipping"
+    return 0
+  fi
+  helm --kubeconfig="$KUBECONFIG" install "$release" "$chart" \
+    -n istio-system --version "$ISTIO_VERSION" --create-namespace --wait "$@"
+}
+
+istio_install_if_missing istio-base istio/base
+istio_install_if_missing istiod istio/istiod --set profile=ambient
+# k3s places CNI dirs at non-upstream paths (/var/lib/rancher/k3s/...).
+# Without these overrides istio-cni-node loops "no networks found in
+# /host/etc/cni/net.d" and ambient redirection never engages.
+istio_install_if_missing istio-cni istio/cni \
+  --set profile=ambient \
+  --set cni.cniBinDir=/var/lib/rancher/k3s/data/cni \
+  --set cni.cniConfDir=/var/lib/rancher/k3s/agent/etc/cni/net.d
+istio_install_if_missing ztunnel istio/ztunnel
+kubectl --kubeconfig="$KUBECONFIG" -n istio-system rollout status ds/ztunnel --timeout=120s
+kubectl --kubeconfig="$KUBECONFIG" -n istio-system rollout status ds/istio-cni-node --timeout=120s
+
+# Release namespace must be ambient so the api-server pod and the
+# Istio-synthesised waypoint Pod participate in mesh mTLS. The helm
+# install below targets the `default` namespace; label it now (the
+# chart's validate-istio.yaml asserts this label is present).
+kubectl --kubeconfig="$KUBECONFIG" label namespace default istio.io/dataplane-mode=ambient --overwrite
+
 # 3. Load images into k3s (built by depends: image:*)
 echo "Loading images into k3s..."
 tar="/tmp/platform-images.tar"
-docker save -o "$tar" platform-controller:latest platform-api-server:latest platform-ui:latest platform-claude-code:latest platform-google-workspace-agent:latest platform-pi-agent:latest platform-code-guardian:latest
+docker save -o "$tar" platform-controller:latest platform-api-server:latest platform-ui:latest platform-claude-code:latest platform-google-workspace-agent:latest platform-pi-agent:latest platform-code-guardian:latest platform-bob:latest
 if [ -n "${IS_SANDBOX:-}" ]; then
   docker image prune --all --force >/dev/null 2>&1 || true
   sudo k3s ctr images import "$tar"
@@ -224,8 +279,8 @@ fi
 if [ "$ROOT_FSTYPE" = "btrfs" ]; then
   echo "Detected btrfs root — bypassing nfs-ganesha (broken on btrfs), using RWO local-path."
   HELM_EXTRA_ARGS+=(
-    --set controller.agentStorageClass=local-path
-    --set controller.agentAccessMode=ReadWriteOnce
+    --set controller.agent.base.storageClass=local-path
+    --set controller.agent.base.accessMode=ReadWriteOnce
     --set nfsProvisioner.enabled=false
   )
 fi
@@ -303,11 +358,11 @@ echo "Restarting apiserver pod..."
 kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-apiserver
 kubectl --kubeconfig="$KUBECONFIG" rollout status deployment platform-apiserver --timeout=60s
 
-# Drop image layers no longer pinned by a running container (issue #244).
+PRUNE_DANGLING='sudo k3s crictl images 2>/dev/null | sed -nE "s/^<none>[[:space:]]+<none>[[:space:]]+([^[:space:]]+).*/\\1/p" | xargs -r sudo k3s crictl rmi >/dev/null 2>&1 || true'
 if [ -n "${IS_SANDBOX:-}" ]; then
-  sudo k3s crictl rmi --prune >/dev/null 2>&1 || true
+  bash -c "$PRUNE_DANGLING"
 else
-  limactl shell "$LIMA_INSTANCE" sudo k3s crictl rmi --prune >/dev/null 2>&1 || true
+  limactl shell "$LIMA_INSTANCE" bash -c "$PRUNE_DANGLING"
 fi
 
 echo "Done."
@@ -340,10 +395,11 @@ echo "Restarting UI pod..."
 kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-ui
 kubectl --kubeconfig="$KUBECONFIG" rollout status deployment platform-ui --timeout=60s
 
+PRUNE_DANGLING='sudo k3s crictl images 2>/dev/null | sed -nE "s/^<none>[[:space:]]+<none>[[:space:]]+([^[:space:]]+).*/\\1/p" | xargs -r sudo k3s crictl rmi >/dev/null 2>&1 || true'
 if [ -n "${IS_SANDBOX:-}" ]; then
-  sudo k3s crictl rmi --prune >/dev/null 2>&1 || true
+  bash -c "$PRUNE_DANGLING"
 else
-  limactl shell "$LIMA_INSTANCE" sudo k3s crictl rmi --prune >/dev/null 2>&1 || true
+  limactl shell "$LIMA_INSTANCE" bash -c "$PRUNE_DANGLING"
 fi
 
 echo "Done."
@@ -359,7 +415,7 @@ set -eo pipefail
 
 echo "Loading into k3s..."
 tar="/tmp/platform-agent-images.tar"
-docker save platform-claude-code:latest platform-google-workspace-agent:latest platform-pi-agent:latest platform-code-guardian:latest -o "$tar"
+docker save platform-claude-code:latest platform-google-workspace-agent:latest platform-pi-agent:latest platform-code-guardian:latest platform-bob:latest -o "$tar"
 
 if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
@@ -441,9 +497,28 @@ if [ -n "${IS_SANDBOX:-}" ]; then
 else
   KUBECONFIG="$HOME/.lima/platform-k3s/copied-from-guest/kubeconfig.yaml"
 fi
+KCTL=(kubectl --kubeconfig="$KUBECONFIG")
+
+# Drain RWX-mounting workloads BEFORE helm uninstall. The chart ships the NFS
+# provisioner that backs `platform-rwx`; once helm uninstall removes it, any
+# pod still mounting one of its PVCs hangs in Terminating (kubelet can't
+# unmount from the dead NFS server) and blocks namespace deletion forever.
+if "${KCTL[@]}" get ns platform-agents >/dev/null 2>&1; then
+  echo "Draining platform-agents while NFS provisioner is still alive..."
+  "${KCTL[@]}" -n platform-agents delete sts --all --wait=true --timeout=60s 2>/dev/null || true
+  "${KCTL[@]}" -n platform-agents wait --for=delete pod --all --timeout=60s 2>/dev/null || true
+  "${KCTL[@]}" -n platform-agents delete pvc --all --wait=true --timeout=60s 2>/dev/null || true
+  "${KCTL[@]}" delete ns platform-agents --ignore-not-found --wait=true --timeout=60s 2>/dev/null || true
+fi
+
 helm --kubeconfig="$KUBECONFIG" uninstall platform || true
-kubectl --kubeconfig="$KUBECONFIG" delete pvc --all 2>/dev/null || true
-kubectl --kubeconfig="$KUBECONFIG" delete ns platform-agents --ignore-not-found 2>/dev/null || true
+
+# Clean up StatefulSet-managed PVCs in the release namespace (postgres, redis,
+# nfs-provisioner export). These aren't owned by the helm release, so helm
+# leaves them behind. Delete them AFTER helm uninstall — pods are gone now,
+# so pvc-protection finalizers clear immediately.
+"${KCTL[@]}" delete pvc --all --ignore-not-found 2>/dev/null || true
+
 echo "Platform uninstalled and cleaned up. Use 'mise run cluster:delete' to remove the entire cluster."
 '''
 

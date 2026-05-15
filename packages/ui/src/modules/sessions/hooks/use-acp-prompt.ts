@@ -1,8 +1,6 @@
 import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
-import { SessionMode } from "api-server-api";
-import { useCallback, useRef } from "react";
+import { useCallback } from "react";
 
-import { api } from "../../../api.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import type { Attachment, Message } from "../../../types.js";
@@ -20,17 +18,16 @@ interface LiveConnection {
  *
  *   - `sendPrompt(text, attachments)` writes optimistic user + assistant
  *     bubbles into the projection, ensures a live connection (which the
- *     orchestrator hands in), forwards the prompt over ACP, registers the
- *     session with the platform DB on first successful turn, and finalizes
- *     the assistant bubble.
+ *     orchestrator hands in), forwards the prompt over ACP, and finalizes
+ *     the assistant bubble. Session persistence to the platform DB happens
+ *     eagerly inside the engagement hook, so a refresh mid-turn still
+ *     leaves the session in the sidebar.
  *
  *   - `stopAgent()` finalizes every streaming bubble locally so the UI
  *     reacts even if `cancel` hangs, then calls SDK cancel best-effort.
  *
- * The `persistedSessionsRef` dedup is local to this hook — only sendPrompt
- * reads it. `connectionRef` and `engagedSessionIdRef` come from the
- * orchestrator's connection layer; they will move into useAcpConnection
- * in a later step.
+ * `connectionRef` and `engagedSessionIdRef` come from the orchestrator's
+ * connection layer; they will move into useAcpConnection in a later step.
  */
 export function useAcpPrompt(
   selectedInstance: string | null,
@@ -44,12 +41,6 @@ export function useAcpPrompt(
 } {
   const setMessages = useStore((s) => s.setMessages);
   const addLog = useStore((s) => s.addLog);
-  const showToast = useStore((s) => s.showToast);
-
-  // Sessions already upserted to the platform DB. Lazy upsert (only after
-  // the first successful prompt) prevents empty rows in the sidebar when
-  // the user opens the app and closes it without sending anything.
-  const persistedSessionsRef = useRef<Set<string>>(new Set());
 
   const sendPrompt = useCallback(async (text: string, attachments?: Attachment[]) => {
     if ((!text && (!attachments || attachments.length === 0)) || !selectedInstance) return;
@@ -86,22 +77,6 @@ export function useAcpPrompt(
       const r = await conn.prompt({ sessionId: sid, prompt: promptBlocks });
       addLog("done", { stopReason: r.stopReason });
 
-      // Persist to the platform DB lazily, only once the session has real
-      // content. Await the create before invalidating the session-list
-      // query — otherwise the refetch races the server's DB write, sees no
-      // row for this session, and the user has to hit Refresh for it to
-      // appear.
-      if (!persistedSessionsRef.current.has(sid)) {
-        persistedSessionsRef.current.add(sid);
-        try {
-          await api.sessions.create.mutate({ sessionId: sid, instanceId: selectedInstance, mode: SessionMode.Chat });
-        } catch (err) {
-          showToast({
-            kind: "warning",
-            message: `Session won't appear in the list: ${err instanceof Error ? err.message : "sync failed"}`,
-          });
-        }
-      }
       // Belt-and-braces: if platform_turn_ended somehow didn't fire (server
       // variant without our extension), force-close our bubble anyway.
       setMessages((p) => p.map((m) => m.id === aId ? { ...m, streaming: false, queued: false } : m));
@@ -117,7 +92,7 @@ export function useAcpPrompt(
       queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
       textareaRef.current?.focus();
     }
-  }, [selectedInstance, ensureConnection, engagedSessionIdRef, addLog, setMessages, showToast, textareaRef]);
+  }, [selectedInstance, ensureConnection, engagedSessionIdRef, addLog, setMessages, textareaRef]);
 
   const stopAgent = useCallback(async () => {
     const conn = connectionRef.current?.connection;

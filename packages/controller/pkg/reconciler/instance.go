@@ -7,7 +7,6 @@ import (
 	cmv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -80,7 +79,7 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 			"instance", name, "owner", owner)
 	}
 
-	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(name, r.config, cm, credentialSecrets)
+	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(name, name, r.config, cm, credentialSecrets)
 	if err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("rendering envoy bootstrap: %v", err))
 	}
@@ -93,36 +92,93 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 		}
 	}
 
+	// ADR-041: per-instance SA must exist before the agent + gateway pods
+	// start (kubelet rejects pod scheduling on a missing SA, and Istio
+	// stamps the SPIFFE workload cert from it).
+	if err := r.ensureServiceAccount(ctx, name, cm); err != nil {
+		return r.setError(ctx, name, err.Error())
+	}
+
+	// ADR-041: per-instance ext-authz Service in the release namespace —
+	// the gateway pod's Envoy bootstrap dials this Service for HITL
+	// approvals, and the per-instance AuthorizationPolicy below pins it
+	// to the matching SA principal.
+	extAuthzSvc := BuildExtAuthzService(name, r.config, cm)
+	if err := r.applyExtAuthzService(ctx, extAuthzSvc); err != nil {
+		return r.setError(ctx, name, fmt.Sprintf("applying ext-authz service: %v", err))
+	}
+
+	// Two per-instance AuthorizationPolicies in the release namespace —
+	// harness path-prefix at the waypoint, ext-authz Service principal.
+	// Both gate the *gateway pod*'s SPIFFE identity (the only pod of the
+	// pair that's a mesh participant). The agent → gateway hop is gated
+	// by the agent-egress NetworkPolicy below, not by mesh AuthZ.
+	if err := r.applyAuthorizationPolicy(ctx, BuildHarnessAuthorizationPolicy(name, r.config, cm)); err != nil {
+		return r.setError(ctx, name, fmt.Sprintf("applying harness authz policy: %v", err))
+	}
+	if err := r.applyAuthorizationPolicy(ctx, BuildExtAuthzAuthorizationPolicy(name, r.config, cm)); err != nil {
+		return r.setError(ctx, name, fmt.Sprintf("applying ext-authz authz policy: %v", err))
+	}
+
+	// Per-pair agent egress NetworkPolicy. Agent pods opt out of ambient
+	// mesh, so kernel NP is the only thing gating agent egress; it admits
+	// DNS and the paired gateway pod's Envoy port, nothing else. The
+	// gateway's Envoy ext_authz filter (ADR-035) gates which destinations
+	// the agent's HTTPS_PROXY traffic reaches past the gateway.
+	if err := r.applyAgentEgressNetworkPolicy(ctx, BuildAgentEgressNetworkPolicy(name, r.config, cm)); err != nil {
+		return r.setError(ctx, name, err.Error())
+	}
+
 	hibernated := instanceSpec.DesiredState == "hibernated"
 
 	// ADR-038: paired pods, rendered as a unit. Render the gateway first
 	// so the agent's HTTPS_PROXY target exists by the time the agent pod
-	// starts dialing it.
+	// starts dialing it. ADR-041: pair-key NetworkPolicies are gone —
+	// pair isolation is now enforced by the per-instance AuthorizationPolicy
+	// on the gateway Service (mesh-level, cryptographic).
 	gatewaySS := BuildGatewayStatefulSet(name, hibernated, r.config, cm, credentialSecrets)
 	gatewaySvc := BuildGatewayService(name, r.config, cm)
-	gatewayNP := BuildGatewayNetworkPolicy(name, r.config, cm)
-
-	agentSS := BuildAgentStatefulSet(name, instanceSpec, agentSpec, r.config, cm, credentialSecrets)
-	agentSvc := BuildAgentService(name, r.config, cm)
-	agentNP := BuildAgentNetworkPolicy(name, r.config, cm)
 
 	if err := r.applyStatefulSet(ctx, gatewaySS); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying gateway statefulset: %v", err))
 	}
-	if err := r.applyService(ctx, gatewaySvc); err != nil {
-		return r.setError(ctx, name, fmt.Sprintf("applying gateway service: %v", err))
+	// The gateway pair is single-replica and may legitimately CrashLoop on a
+	// stale revision (e.g. when grants land after agent creation: rev-1 has
+	// no leaf TLS volume but kubelet refreshes the bootstrap CM in place,
+	// so the live pod ends up reading rev-2 config against rev-1 volumes).
+	// Default StatefulSet rolling-update semantics refuse to evict a
+	// NotReady pod, deadlocking the rollout. The MaxUnavailableStatefulSet
+	// gate fixes this upstream but isn't always enabled (k3s ≤ 1.35
+	// disables it by default), so we do the eviction ourselves: delete any
+	// gateway pod stuck on the old revision so the StatefulSet recreates
+	// it at updateRevision.
+	if err := r.forceRollStuckPod(ctx, gatewaySS.Namespace, gatewaySS.Name); err != nil {
+		slog.Warn("force-rolling stuck gateway pod failed; rollout may be deadlocked",
+			"namespace", gatewaySS.Namespace, "statefulset", gatewaySS.Name, "error", err)
 	}
-	if err := r.applyNetworkPolicy(ctx, gatewayNP); err != nil {
-		return r.setError(ctx, name, fmt.Sprintf("applying gateway networkpolicy: %v", err))
+	// Apply gateway Service + migrate any legacy headless instance, return
+	// the live object so we capture the assigned ClusterIP synchronously.
+	liveGatewaySvc, err := ensureGatewayService(ctx, r.client, gatewaySvc, "instance", name)
+	if err != nil {
+		return r.setError(ctx, name, fmt.Sprintf("ensuring gateway service: %v", err))
 	}
+	gatewayIP := liveGatewaySvc.Spec.ClusterIP
+
+	// Fail-closed requeue when the gateway IP is needed but not yet
+	// usable — don't roll a half-configured pod.
+	needsGatewayIP := r.config.AgentBase.DisableDNS ||
+		(r.config.AgentBase.IptablesInit != nil && r.config.AgentBase.IptablesInit.Enabled)
+	if needsGatewayIP && (gatewayIP == "" || gatewayIP == corev1.ClusterIPNone) {
+		return fmt.Errorf("instance %s: gateway Service ClusterIP not yet assigned, requeuing", name)
+	}
+
+	agentSS := BuildAgentStatefulSet(name, instanceSpec, agentSpec, r.config, cm, credentialSecrets, gatewayIP)
+	agentSvc := BuildAgentService(name, r.config, cm)
 	if err := r.applyStatefulSet(ctx, agentSS); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying agent statefulset: %v", err))
 	}
 	if err := r.applyService(ctx, agentSvc); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying agent service: %v", err))
-	}
-	if err := r.applyNetworkPolicy(ctx, agentNP); err != nil {
-		return r.setError(ctx, name, fmt.Sprintf("applying agent networkpolicy: %v", err))
 	}
 
 	state := instanceSpec.DesiredState
@@ -166,14 +222,41 @@ func (r *InstanceReconciler) ensureAgentOwnerReference(ctx context.Context, inst
 }
 
 func (r *InstanceReconciler) Delete(ctx context.Context, name string) {
-	// Owner references handle cascade deletion of both StatefulSets
-	// (agent + gateway), both Services, both NetworkPolicies, the Envoy
+	// Owner references in the agent namespace cascade-delete agent +
+	// gateway StatefulSets, the agent + gateway Services, the per-instance
+	// ServiceAccount, the per-pair agent egress NetworkPolicy, the Envoy
 	// bootstrap ConfigMap, and the cert-manager Certificate / leaf Secret.
 	//
+	// Release-namespace resources (per-instance ext-authz Service, harness
+	// + ext-authz AuthorizationPolicies) cannot use a cross-namespace
+	// ownerRef — K8s assumes same-namespace ownerRefs and the GC controller
+	// reaps them as orphans. Clean up explicitly.
+	r.deleteReleaseNsInstanceResources(ctx, name)
+
 	// PVCs created via VolumeClaimTemplates on the agent StatefulSet are
-	// intentionally NOT deleted by Kubernetes (to prevent data loss).
-	// We clean them up explicitly on instance removal.
+	// intentionally NOT cascade-deleted by K8s (to prevent data loss).
+	// We clean them up explicitly here.
 	r.deletePVCs(ctx, name)
+}
+
+// deleteReleaseNsInstanceResources deletes the release-namespace resources
+// the controller renders for this instance: the per-instance ext-authz
+// Service and the two AuthorizationPolicies (harness + ext-authz). Errors
+// are logged but not returned — instance deletion best-effort proceeds.
+func (r *InstanceReconciler) deleteReleaseNsInstanceResources(ctx context.Context, instanceName string) {
+	svcName := r.config.ExtAuthzServiceName(instanceName)
+	if err := r.client.CoreV1().Services(r.config.ReleaseNamespace).Delete(ctx, svcName, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
+		slog.Warn("deleting per-instance ext-authz Service", "service", svcName, "instance", instanceName, "error", err)
+	}
+	if r.dynamic == nil {
+		return
+	}
+	for _, name := range []string{instanceName + "-harness-allow", instanceName + "-extauthz-allow"} {
+		if err := r.dynamic.Resource(authzPolicyGVR).Namespace(r.config.ReleaseNamespace).
+			Delete(ctx, name, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
+			slog.Warn("deleting per-instance AuthorizationPolicy", "policy", name, "instance", instanceName, "error", err)
+		}
+	}
 }
 
 func (r *InstanceReconciler) deletePVCs(ctx context.Context, instanceName string) {
@@ -249,9 +332,67 @@ func (r *InstanceReconciler) applyStatefulSet(ctx context.Context, desired *apps
 		}
 		existing.Spec.Replicas = desired.Spec.Replicas
 		existing.Spec.Template = desired.Spec.Template
+		// UpdateStrategy is also patched so changes to RollingUpdate
+		// semantics (e.g. setting maxUnavailable: 1 to unstick rollouts
+		// past CrashLoop pods on the gateway StatefulSet) reach already-
+		// installed StatefulSets — without this, the strategy diff is
+		// silently dropped on every Update call.
+		existing.Spec.UpdateStrategy = desired.Spec.UpdateStrategy
 		_, err = r.client.AppsV1().StatefulSets(desired.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
 		return err
 	})
+}
+
+// forceRollStuckPod evicts any pod owned by the named StatefulSet that's
+// stuck on the old revision while the StatefulSet has a newer
+// updateRevision pending. Only acts when the existing pod is NotReady — a
+// healthy old-revision pod is left alone so normal rolling-update
+// semantics still apply on clusters where the MaxUnavailableStatefulSet
+// feature gate is enabled.
+//
+// Best-effort: returns the first error encountered but does not roll
+// back. The caller logs the error; the next reconcile will retry.
+func (r *InstanceReconciler) forceRollStuckPod(ctx context.Context, namespace, statefulSetName string) error {
+	ss, err := r.client.AppsV1().StatefulSets(namespace).Get(ctx, statefulSetName, metav1.GetOptions{})
+	if errors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("getting statefulset: %w", err)
+	}
+	if ss.Status.UpdateRevision == "" || ss.Status.UpdateRevision == ss.Status.CurrentRevision {
+		return nil
+	}
+	// Selector restricts to pods this SS actually manages; combined with
+	// the controller-revision-hash label that pins to the OLD revision,
+	// we never touch a pod that's already on the new spec.
+	sel, err := metav1.LabelSelectorAsSelector(ss.Spec.Selector)
+	if err != nil {
+		return fmt.Errorf("building selector: %w", err)
+	}
+	pods, err := r.client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: sel.String()})
+	if err != nil {
+		return fmt.Errorf("listing pods: %w", err)
+	}
+	for _, p := range pods.Items {
+		if p.Labels["controller-revision-hash"] != ss.Status.CurrentRevision {
+			continue
+		}
+		if isPodReady(p) {
+			continue
+		}
+		if p.DeletionTimestamp != nil {
+			// Already being deleted by something else; let it complete.
+			continue
+		}
+		slog.Info("force-rolling stuck StatefulSet pod past CrashLoop deadlock",
+			"namespace", namespace, "statefulset", statefulSetName, "pod", p.Name,
+			"oldRev", ss.Status.CurrentRevision, "newRev", ss.Status.UpdateRevision)
+		if err := r.client.CoreV1().Pods(namespace).Delete(ctx, p.Name, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
+			return fmt.Errorf("deleting stuck pod %s: %w", p.Name, err)
+		}
+	}
+	return nil
 }
 
 func (r *InstanceReconciler) applyService(ctx context.Context, desired *corev1.Service) error {
@@ -261,23 +402,6 @@ func (r *InstanceReconciler) applyService(ctx context.Context, desired *corev1.S
 		return err
 	}
 	return err
-}
-
-func (r *InstanceReconciler) applyNetworkPolicy(ctx context.Context, desired *networkingv1.NetworkPolicy) error {
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		existing, err := r.client.NetworkingV1().NetworkPolicies(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
-		if errors.IsNotFound(err) {
-			_, err = r.client.NetworkingV1().NetworkPolicies(desired.Namespace).Create(ctx, desired, metav1.CreateOptions{})
-			return err
-		}
-		if err != nil {
-			return err
-		}
-		// Update in place so flag toggles propagate to live policy.
-		existing.Spec = desired.Spec
-		_, err = r.client.NetworkingV1().NetworkPolicies(desired.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
-		return err
-	})
 }
 
 var certificateGVR = schema.GroupVersionResource{

@@ -1,7 +1,40 @@
 import { z } from "zod/v4";
+import pkg from "../package.json" with { type: "json" };
+import { isValidAppSlug } from "./modules/connections/infrastructure/oauth-apps.js";
+
+// Admin-default GitHub App slugs come from Helm values
+// (`apiServer.oauthAppDefaults.{github,githubEnterprise}.appSlug`). Treat
+// empty string as unset so operators can leave the value blank in
+// values.yaml; reject anything else that GitHub itself wouldn't accept,
+// so a typo crashes the api-server pod at startup with a clear error
+// rather than surfacing as a 400 the next time someone tries to connect.
+const adminAppSlugSchema = z
+  .string()
+  .nullable()
+  .default(null)
+  .transform((v) => (v == null || v === "" ? null : v))
+  .refine(
+    (v) => v == null || isValidAppSlug(v),
+    {
+      message:
+        "Admin-default GitHub App slug must be 1–39 lowercase letters, digits, and single hyphens — no leading, trailing, or consecutive hyphens.",
+    },
+  );
 
 const configSchema = z.object({
+  /** Build-time semver from this package's package.json — not env-driven.
+   *  Bundled into `dist/index.js` by tsup at build time; in dev (tsx) it
+   *  resolves at module import. Surfaced on `GET /api/version`. */
+  serverVersion: z.string().min(1),
   namespace: z.string().default("platform-agents"),
+  /** Helm release name. ADR-041: required at startup — used to parse
+   *  instance ID out of the per-instance ext-authz Service hostname
+   *  (`<release>-extauthz-<id>`) the gateway pod's Envoy was configured
+   *  to dial. A wrong/missing value produces an `expectedPrefix` that
+   *  fails to match any real Service hostname, so every credentialed
+   *  request would fail closed with no obvious cause — fail-fast at
+   *  startup is the diagnosable shape. */
+  releaseName: z.string().min(1, "PLATFORM_RELEASE_NAME must be set"),
   port: z.coerce.number().default(4000),
   harnessServerPort: z.coerce.number().default(4001),
   /** gRPC ext_authz listener — serves both Envoy's HTTP filter (L7,
@@ -18,6 +51,10 @@ const configSchema = z.object({
   keycloakExternalUrl: z.url().default("http://keycloak.localhost:4444"),
   keycloakRealm: z.string().default("platform"),
   keycloakClientId: z.string().default("platform-ui"),
+  /** Public Keycloak client id used by the `dam` CLI's Device Authorization
+   *  Grant (RFC 8628). Surfaced to the CLI via `GET /api/auth/config` as
+   *  `cliClientId`; never used by the api-server itself. */
+  keycloakCliClientId: z.string().default("platform-cli"),
   keycloakApiAudience: z.string().default("platform-api"),
   keycloakApiClientId: z.string().default("platform-api"),
   keycloakApiClientSecret: z.string().default(""),
@@ -34,9 +71,13 @@ const configSchema = z.object({
   // serve every user on a deployment.
   defaultGithubClientId: z.string().nullable().default(null),
   defaultGithubClientSecret: z.string().nullable().default(null),
+  // GitHub App slug — only set when the platform-default app is a GitHub
+  // App (not an OAuth App). Drives the post-authorization install prompt.
+  defaultGithubAppSlug: adminAppSlugSchema,
   defaultGithubEnterpriseHost: z.string().nullable().default(null),
   defaultGithubEnterpriseClientId: z.string().nullable().default(null),
   defaultGithubEnterpriseClientSecret: z.string().nullable().default(null),
+  defaultGithubEnterpriseAppSlug: adminAppSlugSchema,
   redisUrl: z.string().nullable().default(null),
   /** Optional Redis AUTH password. The chart provisions a generated
    *  per-release password and binds it via secretKeyRef; standalone dev
@@ -45,10 +86,22 @@ const configSchema = z.object({
   /** Default hold window for ext_authz HITL (seconds). Helm-configurable;
    *  matches `pending_approvals.expires_at` and the synchronous-hold deadline. */
   approvalHoldSeconds: z.coerce.number().int().positive().default(1800),
+  /** Minimum CLI version this server accepts. Optional — when unset, no
+   *  floor is advertised and every CLI is accepted (a soft-warn fires on
+   *  the CLI side when the local CLI is behind the current server). */
+  minClientCliVersion: z.string().optional(),
   /** Path to a newline-delimited file of hosts seeded by the `trusted` egress
    *  preset (ADR-035). Mounted from a Helm-managed ConfigMap.
    *  Empty/missing file → preset is empty (still selectable, just seeds nothing). */
   trustedHostsPath: z.string().default(""),
+  /** Hard ceiling for file-import bundle uploads, in bytes. Enforced at the
+   *  api-server proxy boundary before any byte reaches agent-runtime, so a
+   *  misbehaving client can't fill the PVC. Default 5 GiB — generous enough
+   *  to carry a real `.git/` directory while still under the 10 GiB
+   *  controller-default agent PVC. Admins on tighter PVCs (the bundled
+   *  `claude-code` template ships with a 5 GiB `homeMountSize`) should
+   *  lower this via `MAX_IMPORT_BUNDLE_BYTES`. */
+  maxImportBundleBytes: z.coerce.number().int().positive().default(5 * 1024 * 1024 * 1024),
   /** Brand presented to end users — display name, slash-command identifier,
    *  and theme accent colors. Surfaced to the UI via `GET /api/brand` and
    *  used internally for OAuth client_name, Slack slash command, skill
@@ -76,7 +129,9 @@ export type Config = z.infer<typeof configSchema>;
 
 export function loadConfig(): Config {
   return configSchema.parse({
+    serverVersion: pkg.version,
     namespace: process.env.NAMESPACE,
+    releaseName: process.env.PLATFORM_RELEASE_NAME,
     port: process.env.PORT,
     harnessServerPort: process.env.MCP_PORT,
     extAuthzPort: process.env.EXT_AUTHZ_PORT,
@@ -91,6 +146,7 @@ export function loadConfig(): Config {
     keycloakExternalUrl: process.env.KEYCLOAK_EXTERNAL_URL,
     keycloakRealm: process.env.KEYCLOAK_REALM,
     keycloakClientId: process.env.KEYCLOAK_CLIENT_ID,
+    keycloakCliClientId: process.env.KEYCLOAK_CLI_CLIENT_ID,
     keycloakApiAudience: process.env.KEYCLOAK_API_AUDIENCE,
     keycloakApiClientId: process.env.KEYCLOAK_API_CLIENT_ID,
     keycloakApiClientSecret: process.env.KEYCLOAK_API_CLIENT_SECRET,
@@ -99,13 +155,17 @@ export function loadConfig(): Config {
     skillSourcesSeed: process.env.SKILL_SOURCES_SEED,
     defaultGithubClientId: process.env.PLATFORM_DEFAULT_GITHUB_CLIENT_ID,
     defaultGithubClientSecret: process.env.PLATFORM_DEFAULT_GITHUB_CLIENT_SECRET,
+    defaultGithubAppSlug: process.env.PLATFORM_DEFAULT_GITHUB_APP_SLUG,
     defaultGithubEnterpriseHost: process.env.PLATFORM_DEFAULT_GHE_HOST,
     defaultGithubEnterpriseClientId: process.env.PLATFORM_DEFAULT_GHE_CLIENT_ID,
     defaultGithubEnterpriseClientSecret: process.env.PLATFORM_DEFAULT_GHE_CLIENT_SECRET,
+    defaultGithubEnterpriseAppSlug: process.env.PLATFORM_DEFAULT_GHE_APP_SLUG,
     redisUrl: process.env.REDIS_URL,
     redisPassword: process.env.REDIS_PASSWORD,
     approvalHoldSeconds: process.env.APPROVAL_HOLD_SECONDS,
+    minClientCliVersion: process.env.MIN_CLIENT_CLI_VERSION,
     trustedHostsPath: process.env.TRUSTED_HOSTS_PATH,
+    maxImportBundleBytes: process.env.MAX_IMPORT_BUNDLE_BYTES,
     brand: {
       name: process.env.BRAND_NAME,
       short: process.env.BRAND_SHORT,

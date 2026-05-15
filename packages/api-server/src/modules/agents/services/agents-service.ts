@@ -7,6 +7,7 @@ import {
   type EnvVar,
   type TemplateSpec,
 } from "api-server-api";
+import { TRPCError } from "@trpc/server";
 import type { AgentsRepository } from "../infrastructure/agents-repository.js";
 import { assembleSpecFromTemplate, assembleSpecFromImage } from "../domain/spec-assembly.js";
 
@@ -44,7 +45,6 @@ function preserveProtectedEnvs(current: EnvVar[], incoming: EnvVar[]): EnvVar[] 
 export function createAgentsService(deps: {
   repo: AgentsRepository;
   owner: string;
-  agentHome: string;
   readTemplateSpec: (id: string) => Promise<{ spec: TemplateSpec; isOwned: boolean } | null>;
   /** Seeds egress_rules at create time. Optional so the system-instances
    *  composition (which never creates agents) can omit it. */
@@ -64,17 +64,21 @@ export function createAgentsService(deps: {
       let templateId: string | undefined;
       if (input.templateId) {
         const tmpl = await deps.readTemplateSpec(input.templateId);
-        if (!tmpl || tmpl.isOwned) throw new Error(`Template "${input.templateId}" not found`);
+        if (!tmpl || tmpl.isOwned) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: `template "${input.templateId}" not found`,
+          });
+        }
         spec = assembleSpecFromTemplate(input.name, tmpl.spec, {
           description: input.description,
         });
         templateId = input.templateId;
       } else {
-        spec = assembleSpecFromImage(
-          input.name,
-          { image: input.image, description: input.description },
-          deps.agentHome,
-        );
+        spec = assembleSpecFromImage(input.name, {
+          image: input.image,
+          description: input.description,
+        });
       }
       // Append caller-supplied extras (e.g. envMappings from granted app
       // connections). `preserveProtectedEnvs` ensures PORT is always sourced

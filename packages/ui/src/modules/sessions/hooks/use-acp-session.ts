@@ -1,10 +1,12 @@
 import type { McpServer } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
-import { useCallback, useEffect, useState } from "react";
+import type { SessionMode } from "api-server-api";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "../../../api.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import { hasStreamingAssistant } from "../../acp/session-projection.js";
+import type { AcpUpdate } from "../../acp/types.js";
 import { classifyResumeError, extractErrorMessage } from "../../acp/utils.js";
 import { useInstancesList } from "../../instances/api/queries.js";
 import { acpSessionsKeys } from "../api/queries.js";
@@ -27,20 +29,12 @@ export function useAcpSession(
   selectedMcpServers: McpServer[],
   textareaRef: React.RefObject<HTMLTextAreaElement | null>,
 ) {
-  const instances = useInstancesList();
   const sessionId = useStore((s) => s.sessionId);
   const messages = useStore((s) => s.messages);
   const setSessionId = useStore((s) => s.setSessionId);
   const setMessages = useStore((s) => s.setMessages);
   const setBusy = useStore((s) => s.setBusy);
   const [loadingSession, setLoadingSession] = useState(false);
-  // resetSession clears the cached config alongside the engagement; the
-  // engagement + capture paths use the config-cache hook.
-  const setSessionModes = useStore((s) => s.setSessionModes);
-  const setSessionModels = useStore((s) => s.setSessionModels);
-  const setSessionConfigOptions = useStore((s) => s.setSessionConfigOptions);
-  const setMobileScreen = useStore((s) => s.setMobileScreen);
-  const setSessionError = useStore((s) => s.setSessionError);
 
   // Derive busy from the projection instead of explicit setBusy calls in
   // sendPrompt / resume / disconnect paths. The projection owns streaming
@@ -48,7 +42,8 @@ export function useAcpSession(
   const busy = hasStreamingAssistant(messages);
   useEffect(() => { setBusy(busy); }, [busy, setBusy]);
 
-  const instanceRunState = instances.find(i => i.id === selectedInstance)?.state;
+  const instanceRunState = useInstancesList().find(i => i.id === selectedInstance)?.state;
+  const modeChangeRef = useRef<((u: AcpUpdate) => void) | null>(null);
 
   const { captureSessionConfig, handleConfigUpdate, applySavedPreferences } =
     useAcpConfigCache(selectedInstance, sessionId, instanceRunState);
@@ -67,7 +62,16 @@ export function useAcpSession(
     applySavedPreferences,
   );
 
-  const makeUpdateHandler = useAcpUpdateHandler(handleConfigUpdate);
+  const handleUpdate = useCallback((update: AcpUpdate) => {
+    if (update.sessionUpdate === "platform_session_mode_changed") {
+      modeChangeRef.current?.(update);
+      queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
+      return;
+    }
+    handleConfigUpdate(update);
+  }, [handleConfigUpdate]);
+
+  const makeUpdateHandler = useAcpUpdateHandler(handleUpdate);
 
   const { ensureLive, connectionRef, reset: resetConnection } = useAcpConnection({
     selectedInstance,
@@ -85,21 +89,20 @@ export function useAcpSession(
 
   // Wake hibernated instance on entry.
   useEffect(() => {
-    if (!selectedInstance) return;
-    const inst = instances.find(({ id }) => id === selectedInstance);
-    if (inst?.state === "hibernated") {
+    if (selectedInstance && instanceRunState === "hibernated") {
       api.instances.wake.mutate({ id: selectedInstance }).catch(() => {});
     }
-  }, [selectedInstance, instances]);
+  }, [selectedInstance, instanceRunState]);
 
   const resetSession = useCallback(() => {
     resetConnection();
     setSessionId(null);
     setMessages([]);
-    setSessionModes(null);
-    setSessionModels(null);
-    setSessionConfigOptions([]);
-  }, [resetConnection, setSessionId, setMessages, setSessionModes, setSessionModels, setSessionConfigOptions]);
+    const s = useStore.getState();
+    s.setSessionModes(null);
+    s.setSessionModels(null);
+    s.setSessionConfigOptions([]);
+  }, [resetConnection, setSessionId, setMessages]);
 
   const resumeSession = useCallback(async (sid: string, opts?: { expectNotFound?: boolean }) => {
     if (!selectedInstance) return;
@@ -107,14 +110,21 @@ export function useAcpSession(
     resetConnection();
     setLoadingSession(true);
     setMessages([]);
-    setSessionError(null);
+    useStore.getState().setSessionError(null);
     setSessionId(sid);
-    setMobileScreen("chat");
 
     try {
       const fresh = await loadHistory(sid);
       if (useStore.getState().sessionId !== sid) return;
       setMessages(fresh);
+
+      try {
+        const sessions = await api.sessions.list.query({ instanceId: selectedInstance, includeChannel: false });
+        const match = sessions.find((s) => s.sessionId === sid);
+        if (match?.mode && match.mode !== useStore.getState().sessionMode) {
+          useStore.getState().setSessionMode(match.mode);
+        }
+      } catch {}
     } catch (e) {
       if (useStore.getState().sessionId !== sid) return;
       const kind = classifyResumeError(e);
@@ -125,15 +135,22 @@ export function useAcpSession(
         resetSession();
         return;
       }
-      setSessionError({
-        sessionId: sid,
-        message: extractErrorMessage(e),
-        kind,
-      });
+      useStore.getState().setSessionError({ sessionId: sid, message: extractErrorMessage(e), kind });
     } finally {
       if (useStore.getState().sessionId === sid) setLoadingSession(false);
     }
-  }, [selectedInstance, loadHistory, resetConnection, resetSession, setMessages, setSessionError, setSessionId, setMobileScreen]);
+  }, [selectedInstance, loadHistory, resetConnection, resetSession, setMessages, setSessionId]);
+
+  modeChangeRef.current = (update) => {
+    if (update.sessionUpdate !== "platform_session_mode_changed") return;
+    const s = useStore.getState();
+    if (!update.sessionId || update.sessionId !== s.sessionId) return;
+    const wasExternal = s.sessionMode !== update.mode;
+    s.setSessionMode(update.mode as SessionMode);
+    if (!wasExternal) return;
+    if (update.mode === "terminal") s.setTerminalPaused(true);
+    if (update.mode === "chat") resumeSession(update.sessionId);
+  };
 
   const { sendPrompt, stopAgent } = useAcpPrompt(
     selectedInstance,

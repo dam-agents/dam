@@ -19,7 +19,7 @@ Three kinds of source show up in the Skills panel:
 - **Platform** (blue) — seeded by the cluster admin; read-only.
 - **Agent** (purple) — declared by this instance's agent template; read-only.
 
-Seed Platform sources via `skills.skillSources`, or per-template sources via `<templateKey>.skillSources` — same shape either way:
+Seed Platform sources via `skills.skillSources`, or per-template sources via `agentTemplates[i].skillSources` — same shape either way:
 
 ```yaml
 skills:
@@ -27,10 +27,11 @@ skills:
     - name: "Anthropic Skills"
       gitUrl: "https://github.com/anthropics/skills"
 
-googleWorkspaceTemplate:
-  skillSources:
-    - name: "Google Workspace Skills"
-      gitUrl: "https://github.com/anthropics/google-workspace-skills"
+agentTemplates:
+  - name: google-workspace
+    skillSources:
+      - name: "Google Workspace Skills"
+        gitUrl: "https://github.com/anthropics/google-workspace-skills"
 ```
 
 Users can also author skills in the Files panel and publish them upstream as pull requests via the Publish button on standalone skill rows. Publishing requires a connected GitHub account.

@@ -1,0 +1,7 @@
+{{/*
+Single entry point for chart-level validation. Validators are defined
+in `_validators.tpl`; they either no-op or call `fail` to abort the
+`helm install / upgrade / template` invocation before any manifest is
+applied. This file intentionally renders to nothing.
+*/}}
+{{- include "platform.validate" . -}}

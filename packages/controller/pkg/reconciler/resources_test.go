@@ -13,15 +13,33 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
+// testConfig mirrors what the Helm chart writes into AGENT_BASE and
+// AGENT_TEMPLATE_DEFAULTS (see values.yaml `controller.agent`). The
+// controller has no Go-side defaults for these — the chart is the sole
+// source of truth — so tests must set them explicitly to match production.
 var testConfig = &config.Config{
 	Namespace:         "test-agents",
 	ReleaseNamespace:  "default",
 	ReleaseName:       "platform",
 	HarnessServerPort: 4001,
 	ExtAuthzPort:      4002,
-	AgentHome:         "/home/agent",
 	EnvoyImage:        "envoyproxy/envoy:distroless-v1.37.2",
 	EnvoyPort:         10000,
+	IstioTrustDomain:  "cluster.local",
+	IstioWaypointName: "apiserver-waypoint",
+	AgentBase: config.AgentBase{
+		AccessMode:             "ReadWriteMany",
+		TerminationGracePeriod: 5,
+		ContainerSecurityContext: &corev1.SecurityContext{
+			Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+		},
+	},
+	AgentTemplateDefaults: config.AgentTemplateDefaults{
+		AgentHome:       "/home/agent",
+		ImagePullPolicy: "IfNotPresent",
+		StorageSize:     "10Gi",
+	},
+	AgentProbesEnabled: true,
 }
 
 var testAgent = &types.AgentSpec{
@@ -35,10 +53,6 @@ var testAgent = &types.AgentSpec{
 	Resources: types.ResourceSpec{
 		Requests: map[string]string{"cpu": "250m", "memory": "512Mi"},
 		Limits:   map[string]string{"cpu": "1", "memory": "2Gi"},
-	},
-	SecurityContext: &types.SecurityContext{
-		RunAsNonRoot:           boolPtr(true),
-		ReadOnlyRootFilesystem: boolPtr(false),
 	},
 }
 
@@ -71,7 +85,7 @@ func TestBuildAgentStatefulSet_Running(t *testing.T) {
 		Env:          []types.EnvVar{{Name: "GITHUB_ORG", Value: "alpha"}},
 		SecretRef:    "my-secrets",
 	}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil)
+	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil, "")
 
 	require.NotNil(t, ss)
 	assert.Equal(t, "my-instance", ss.Name)
@@ -84,6 +98,16 @@ func TestBuildAgentStatefulSet_Running(t *testing.T) {
 	assert.Equal(t, "my-instance", ss.Spec.Template.Labels["agent-platform.ai/instance"])
 	assert.Equal(t, "my-instance", ss.Spec.Template.Labels["agent-platform.ai/pair"])
 	assert.Equal(t, "agent", ss.Spec.Template.Labels["agent-platform.ai/role"])
+	// Agent pod opts out of ambient mesh — load-bearing for the per-pair
+	// agent-egress NetworkPolicy: with ambient, istio-cni rewrites every
+	// outbound to ztunnel:15008 before the NP filter sees the destination,
+	// so per-destination rules can't gate effectively.
+	assert.Equal(t, "none", ss.Spec.Template.Labels["istio.io/dataplane-mode"],
+		"agent pod must carry istio.io/dataplane-mode=none so NetworkPolicy is the egress boundary")
+	// The StatefulSet's own selector must NOT include the dataplane-mode
+	// label — otherwise removing it later would orphan existing pods.
+	assert.NotContains(t, ss.Spec.Selector.MatchLabels, "istio.io/dataplane-mode",
+		"selector must remain minimal so ambient enrolment can be flipped without selector churn")
 
 	require.Len(t, ss.Spec.Template.Spec.Containers, 1, "agent only — gateway runs in its own paired pod (ADR-038)")
 	c := ss.Spec.Template.Spec.Containers[0]
@@ -116,18 +140,33 @@ func TestBuildAgentStatefulSet_Running(t *testing.T) {
 	assert.Equal(t, resource.MustParse("250m"), *c.Resources.Requests.Cpu())
 	assert.Equal(t, resource.MustParse("2Gi"), *c.Resources.Limits.Memory())
 
-	assert.True(t, *ss.Spec.Template.Spec.SecurityContext.RunAsNonRoot)
+	// Security context is chart-only — applied from AgentBase.ContainerSecurityContext.
+	require.NotNil(t, c.SecurityContext)
+	require.NotNil(t, c.SecurityContext.Capabilities)
+	assert.Equal(t, []corev1.Capability{"ALL"}, c.SecurityContext.Capabilities.Drop)
+}
+
+func TestBuildAgentStatefulSet_ProbesDisabled(t *testing.T) {
+	cfg := *testConfig
+	cfg.AgentProbesEnabled = false
+	instance := &types.InstanceSpec{DesiredState: "running"}
+	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, &cfg, testOwnerCM, nil, "")
+
+	c := ss.Spec.Template.Spec.Containers[0]
+	assert.Nil(t, c.StartupProbe)
+	assert.Nil(t, c.ReadinessProbe)
+	assert.Nil(t, c.LivenessProbe)
 }
 
 func TestBuildAgentStatefulSet_Hibernated(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "hibernated"}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil)
+	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil, "")
 	assert.Equal(t, int32(0), *ss.Spec.Replicas)
 }
 
 func TestBuildAgentStatefulSet_InitContainer(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil)
+	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil, "")
 	require.Len(t, ss.Spec.Template.Spec.InitContainers, 1, "only the user-defined init runs")
 	ic := ss.Spec.Template.Spec.InitContainers[0]
 	assert.Equal(t, "init", ic.Name)
@@ -139,19 +178,19 @@ func TestBuildAgentStatefulSet_NoUserInitWhenEmpty(t *testing.T) {
 	agent := *testAgent
 	agent.Init = ""
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, &agent, testConfig, testOwnerCM, nil)
+	ss := BuildAgentStatefulSet("my-instance", instance, &agent, testConfig, testOwnerCM, nil, "")
 	assert.Empty(t, ss.Spec.Template.Spec.InitContainers)
 }
 
 func TestBuildAgentStatefulSet_Volumes(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil)
+	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil, "")
 
 	require.Len(t, ss.Spec.VolumeClaimTemplates, 1)
 	pvc := ss.Spec.VolumeClaimTemplates[0]
 	assert.Equal(t, "home-agent", pvc.Name)
 	assert.Equal(t, []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany}, pvc.Spec.AccessModes)
-	assert.Nil(t, pvc.Spec.StorageClassName, "unset AgentStorageClass → PVC gets cluster-default class")
+	assert.Nil(t, pvc.Spec.StorageClassName, "unset StorageClass → PVC gets cluster-default class")
 
 	volMap := make(map[string]corev1.Volume)
 	for _, v := range ss.Spec.Template.Spec.Volumes {
@@ -180,7 +219,7 @@ func TestBuildAgentStatefulSet_PVCSize(t *testing.T) {
 		},
 	}
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, &agent, testConfig, testOwnerCM, nil)
+	ss := BuildAgentStatefulSet("my-instance", instance, &agent, testConfig, testOwnerCM, nil, "")
 
 	require.Len(t, ss.Spec.VolumeClaimTemplates, 2)
 	byName := map[string]corev1.PersistentVolumeClaim{}
@@ -195,9 +234,9 @@ func TestBuildAgentStatefulSet_PVCSize(t *testing.T) {
 
 func TestBuildAgentStatefulSet_AgentStorageClass(t *testing.T) {
 	cfg := *testConfig
-	cfg.AgentStorageClass = "platform-rwx"
+	cfg.AgentBase.StorageClass = "platform-rwx"
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, &cfg, testOwnerCM, nil)
+	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, &cfg, testOwnerCM, nil, "")
 
 	require.Len(t, ss.Spec.VolumeClaimTemplates, 1)
 	pvc := ss.Spec.VolumeClaimTemplates[0]
@@ -209,7 +248,7 @@ func TestBuildAgentStatefulSet_PodFilesEventsURL(t *testing.T) {
 	cfg := *testConfig
 	cfg.HarnessServerURL = "http://platform-apiserver.default.svc:4001"
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, &cfg, testOwnerCM, nil)
+	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, &cfg, testOwnerCM, nil, "")
 
 	envMap := envToMap(ss.Spec.Template.Spec.Containers[0].Env)
 	assert.Equal(t,
@@ -219,7 +258,7 @@ func TestBuildAgentStatefulSet_PodFilesEventsURL(t *testing.T) {
 
 func TestBuildAgentStatefulSet_NoSecretRef(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil)
+	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil, "")
 	assert.Empty(t, ss.Spec.Template.Spec.Containers[0].EnvFrom)
 }
 
@@ -229,7 +268,7 @@ func TestBuildAgentStatefulSet_NoCredentialMountsOnAgent(t *testing.T) {
 	// no Envoy bootstrap CM, no leaf private key.
 	secrets := []corev1.Secret{credSecret("platform-cred-aaa", "api.example.com")}
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, secrets)
+	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, secrets, "")
 
 	require.Len(t, ss.Spec.Template.Spec.Containers, 1, "no sidecar — gateway is its own pod")
 
@@ -271,64 +310,9 @@ func TestBuildAgentService(t *testing.T) {
 	require.Len(t, svc.OwnerReferences, 1)
 }
 
-// --- Agent NetworkPolicy tests ---
-
-func TestBuildAgentNetworkPolicy(t *testing.T) {
-	np := BuildAgentNetworkPolicy("my-instance", testConfig, testOwnerCM)
-	assert.Equal(t, "my-instance-egress", np.Name)
-	assert.Equal(t, "test-agents", np.Namespace)
-	assert.Equal(t, "my-instance", np.Spec.PodSelector.MatchLabels["agent-platform.ai/pair"])
-	assert.Equal(t, "agent", np.Spec.PodSelector.MatchLabels["agent-platform.ai/role"])
-	require.Len(t, np.OwnerReferences, 1)
-
-	// ADR-038: egress is paired gateway + DNS. The agent must have no path
-	// to 80/443 anywhere (that bypass is the point of the split) and no
-	// direct path to the harness port either — harness traffic must
-	// traverse the gateway's Envoy so the trusted x-platform-instance
-	// header is stamped on the way through.
-	require.Len(t, np.Spec.Egress, 2)
-
-	// 1: paired gateway pod only
-	gatewayEgress := np.Spec.Egress[0]
-	require.Len(t, gatewayEgress.To, 1)
-	assert.Equal(t, "my-instance", gatewayEgress.To[0].PodSelector.MatchLabels["agent-platform.ai/pair"])
-	assert.Equal(t, "gateway", gatewayEgress.To[0].PodSelector.MatchLabels["agent-platform.ai/role"])
-	require.Len(t, gatewayEgress.Ports, 1)
-	assert.Equal(t, int32(10000), gatewayEgress.Ports[0].Port.IntVal)
-
-	// 2: DNS
-	dns := np.Spec.Egress[1]
-	assert.Empty(t, dns.To)
-
-	// No direct egress to the harness port: every harness call must go
-	// through the gateway's Envoy or the trusted-header trust model breaks.
-	for _, rule := range np.Spec.Egress {
-		for _, p := range rule.Ports {
-			assert.NotEqual(t, int32(testConfig.HarnessServerPort), p.Port.IntVal,
-				"agent NetworkPolicy must not admit direct egress to the harness port")
-		}
-	}
-
-	// Agent must NOT be allowed to dial 80/443 anywhere — that's the bypass.
-	for _, rule := range np.Spec.Egress {
-		if len(rule.To) == 0 {
-			for _, p := range rule.Ports {
-				assert.NotEqual(t, int32(443), p.Port.IntVal,
-					"agent NetworkPolicy must not admit open 443 egress (ADR-038)")
-				assert.NotEqual(t, int32(80), p.Port.IntVal,
-					"agent NetworkPolicy must not admit open 80 egress (ADR-038)")
-			}
-		}
-	}
-
-	// Ingress: ACP port admitted only from the api-server pod.
-	require.Len(t, np.Spec.Ingress, 1)
-	require.Len(t, np.Spec.Ingress[0].From, 1)
-	assert.Equal(t, "apiserver",
-		np.Spec.Ingress[0].From[0].PodSelector.MatchLabels["app.kubernetes.io/component"])
-	require.NotNil(t, np.Spec.Ingress[0].From[0].NamespaceSelector)
-	assert.Equal(t, int32(8080), np.Spec.Ingress[0].Ports[0].Port.IntVal)
-}
+// ADR-041: per-instance pair-key NetworkPolicy is gone (mesh
+// AuthorizationPolicy handles pair isolation cryptographically). The
+// previous TestBuildAgentNetworkPolicy is no longer applicable.
 
 func envToMap(envs []corev1.EnvVar) map[string]string {
 	m := make(map[string]string)
@@ -342,7 +326,7 @@ func envToMap(envs []corev1.EnvVar) map[string]string {
 
 func TestBuildAgentStatefulSet_GHTokenSignal_NoCredential(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil)
+	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil, "")
 
 	envMap := envToMap(ss.Spec.Template.Spec.Containers[0].Env)
 	assert.Equal(t, "false", envMap["PLATFORM_GH_TOKEN_AVAILABLE"])
@@ -352,7 +336,7 @@ func TestBuildAgentStatefulSet_GHTokenSignal_NoCredential(t *testing.T) {
 func TestBuildAgentStatefulSet_GHTokenSignal_WithCredential(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running"}
 	secrets := []corev1.Secret{credSecret("platform-cred-gh", "api.github.com")}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, secrets)
+	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, secrets, "")
 
 	envMap := envToMap(ss.Spec.Template.Spec.Containers[0].Env)
 	assert.Equal(t, "true", envMap["PLATFORM_GH_TOKEN_AVAILABLE"])
@@ -361,7 +345,7 @@ func TestBuildAgentStatefulSet_GHTokenSignal_WithCredential(t *testing.T) {
 
 func TestBuildAgentStatefulSet_PodHardening(t *testing.T) {
 	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil)
+	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil, "")
 	require.NotNil(t, ss.Spec.Template.Spec.AutomountServiceAccountToken)
 	assert.False(t, *ss.Spec.Template.Spec.AutomountServiceAccountToken)
 	require.NotNil(t, ss.Spec.Template.Spec.ShareProcessNamespace)
@@ -372,7 +356,7 @@ func TestBuildAgentStatefulSet_PodHardening(t *testing.T) {
 
 func TestBuildEnvoyBootstrapConfigMap(t *testing.T) {
 	secrets := []corev1.Secret{credSecret("platform-cred-aaa", "api.example.com")}
-	cm, err := BuildEnvoyBootstrapConfigMap("my-instance", testConfig, testOwnerCM, secrets)
+	cm, err := BuildEnvoyBootstrapConfigMap("my-instance", "my-instance", testConfig, testOwnerCM, secrets)
 	require.NoError(t, err)
 	assert.Equal(t, "my-instance-envoy-bootstrap", cm.Name)
 	assert.Equal(t, "test-agents", cm.Namespace)
@@ -382,6 +366,14 @@ func TestBuildEnvoyBootstrapConfigMap(t *testing.T) {
 	assert.NotContains(t, yaml, "127.0.0.1", "gateway listener must not bind loopback under the paired-pod model")
 	assert.Contains(t, yaml, "api.example.com", "filter chain must match by SNI on the host")
 	assert.Contains(t, yaml, "/etc/envoy/credentials/cred-platform-cred-aaa/sds.yaml")
+	// path_config_source must declare `watched_directory` pointing at the
+	// Secret-volume mount root — otherwise Envoy never observes the kubelet
+	// symlink swap that delivers a rotated token. Regression for the
+	// refresh-but-stale-injection bug (gateways kept serving the pre-refresh
+	// access token).
+	assert.Contains(t, yaml, "watched_directory:")
+	assert.Contains(t, yaml, "path: /etc/envoy/credentials/cred-platform-cred-aaa",
+		"watched_directory must point at the Secret-volume mount root for kubelet's symlink swap to be detected")
 	assert.Contains(t, yaml, "internal_listener", "must declare an internal listener")
 	assert.Contains(t, yaml, "envoy.bootstrap.internal_listener", "must enable the internal_listener bootstrap extension")
 	assert.Contains(t, yaml, "tls_inspector", "internal listener must inspect SNI")
