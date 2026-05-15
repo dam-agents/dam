@@ -1,5 +1,4 @@
 import { openAsBlob } from "node:fs";
-import { createInterface } from "node:readline/promises";
 import { Command } from "commander";
 import type { TokenProvider } from "../../auth/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
@@ -13,12 +12,12 @@ import {
   printCompatResolveError,
   printResolveError,
 } from "../../instance/commands/errors.js";
+import { confirm } from "../../shared/prompt.js";
 import { createBearerSupplier } from "../../shared/trpc/bearer-supplier.js";
 import {
   type BundleBuilder,
   EXCLUDE_FROM_IMPORT,
   type PackedBundle,
-  type ResolvedArg,
   resolveArgs,
 } from "../infrastructure/bundle-builder.js";
 import {
@@ -52,7 +51,10 @@ export function buildImportCommand(deps: ImportCommandDeps): Command {
     .argument("<path...>", "one or more local files or directories")
     .option("--server <url>", "override the configured server URL for this call")
     .option("-y, --yes", "skip the TTY confirm prompt (required on non-TTY)")
-    .option("--json", "emit the server's JSON response instead of the human one-liner");
+    .option(
+      "--json",
+      "emit the server's JSON response (or `{ cancelled: true }` on cancel) instead of the human one-liner",
+    );
 
   cmd.addHelpText(
     "after",
@@ -123,9 +125,21 @@ export function buildImportCommand(deps: ImportCommandDeps): Command {
           );
           process.exit(EXIT_IMPORT_INVALID_INPUT);
         }
-        const okToProceed = await confirmInTty(instance.name, instance.id, args);
+        process.stderr.write(`About to import into '${instance.name}' (${instance.id}):\n`);
+        for (const a of args) {
+          process.stderr.write(`  ${a.input}\n`);
+        }
+        process.stderr.write(
+          "This replaces each entry under 'work/' on the instance if present.\n",
+        );
+        // Longer timeout than `confirm`'s default — users may scan a long path list.
+        const okToProceed = await confirm("Continue?", { timeoutMs: 120_000 });
         if (!okToProceed) {
-          process.stderr.write("cancelled.\n");
+          if (opts.json) {
+            process.stdout.write(`${JSON.stringify({ cancelled: true })}\n`);
+          } else {
+            process.stdout.write("Cancelled.\n");
+          }
           process.exit(EXIT_IMPORT_SUCCESS);
         }
       }
@@ -156,27 +170,6 @@ export function buildImportCommand(deps: ImportCommandDeps): Command {
   );
 
   return cmd;
-}
-
-async function confirmInTty(
-  instanceName: string,
-  instanceId: string,
-  args: readonly ResolvedArg[],
-): Promise<boolean> {
-  const rl = createInterface({ input: process.stdin, output: process.stderr });
-  try {
-    process.stderr.write(`About to import into '${instanceName}' (${instanceId}):\n`);
-    for (const a of args) {
-      process.stderr.write(`  ${a.input}\n`);
-    }
-    process.stderr.write(
-      "This replaces each entry under 'work/' on the instance if present.\n",
-    );
-    const answer = (await rl.question("Continue? [y/N] ")).trim().toLowerCase();
-    return answer === "y" || answer === "yes";
-  } finally {
-    rl.close();
-  }
 }
 
 async function uploadAndReport(args: {

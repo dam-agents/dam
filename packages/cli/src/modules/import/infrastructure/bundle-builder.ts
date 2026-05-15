@@ -1,4 +1,4 @@
-import { createReadStream, createWriteStream } from "node:fs";
+import { createReadStream, createWriteStream, rmSync } from "node:fs";
 import { lstat, mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve as resolvePath } from "node:path";
@@ -6,6 +6,7 @@ import { pipeline } from "node:stream/promises";
 import { createGzip } from "node:zlib";
 import { pack as tarPack } from "tar-stream";
 import { err, ok, type Result } from "../../../result.js";
+import { EXIT_IMPORT_SIGINT } from "../commands/exit-codes.js";
 
 /** Mirror of packages/ui/src/modules/files/api/import-bundle.ts EXCLUDE_FROM_IMPORT. */
 export const EXCLUDE_FROM_IMPORT = new Set([
@@ -95,7 +96,22 @@ export function createBundleBuilder(): BundleBuilder {
     async pack(args) {
       const tmpDir = await mkdtemp(join(tmpdir(), "dam-import-"));
       const tmpPath = join(tmpDir, "bundle.tar.gz");
-      const cleanup = () => rm(tmpDir, { recursive: true, force: true });
+
+      // SIGINT terminates before `finally` runs; sync best-effort rm until cleanup() unhooks it.
+      const onSigint = () => {
+        try {
+          rmSync(tmpDir, { recursive: true, force: true });
+        } catch {
+          // best effort — process is exiting
+        }
+        process.exit(EXIT_IMPORT_SIGINT);
+      };
+      process.once("SIGINT", onSigint);
+
+      const cleanup = async (): Promise<void> => {
+        process.removeListener("SIGINT", onSigint);
+        await rm(tmpDir, { recursive: true, force: true });
+      };
 
       try {
         await writeBundle(args, tmpPath);

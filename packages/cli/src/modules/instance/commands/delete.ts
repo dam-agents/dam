@@ -9,7 +9,7 @@ import {
   printCompatResolveError,
   printResolveError,
 } from "./errors.js";
-import { confirm } from "./prompt.js";
+import { confirm } from "../../shared/prompt.js";
 import {
   EXIT_INSTANCE_BELOW_FLOOR,
   EXIT_INSTANCE_INVALID_INPUT,
