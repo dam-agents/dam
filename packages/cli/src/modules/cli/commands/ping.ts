@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { SERVER_ENV_VAR } from "../domain/config.js";
 import type {
   MalformedConfigError,
   MissingConfigError,
@@ -16,9 +17,6 @@ export interface PingCommandDeps {
   /** Used to resolve the Active Host up-front so probe failures can carry
    *  it in the user-facing message. */
   configService: ConfigService;
-  /** Env var name for the server URL — surfaced verbatim in the
-   *  `no server configured` setup hint. */
-  serverEnvVar: string;
 }
 
 export function buildPingCommand(deps: PingCommandDeps): Command {
@@ -36,7 +34,7 @@ export function buildPingCommand(deps: PingCommandDeps): Command {
       // wire; they don't have a host anyway.
       const cfg = await deps.configService.getResolved({ flag });
       if (!cfg.ok) {
-        printResolveError(cfg.error, "", deps.serverEnvVar);
+        printResolveError(cfg.error, "");
         process.exit(EXIT_RUNTIME_FAILURE);
       }
       const host = cfg.value.server;
@@ -44,7 +42,7 @@ export function buildPingCommand(deps: PingCommandDeps): Command {
       const result = await deps.service.check({ flag });
 
       if (!result.ok) {
-        printResolveError(result.error, host, deps.serverEnvVar);
+        printResolveError(result.error, host);
         process.exit(EXIT_RUNTIME_FAILURE);
       }
 
@@ -71,12 +69,11 @@ export function buildPingCommand(deps: PingCommandDeps): Command {
 function printResolveError(
   e: MissingConfigError | MalformedConfigError | ProbeError,
   host: string,
-  serverEnvVar: string,
 ): void {
   switch (e.kind) {
     case "missing-config":
       process.stderr.write(
-        `error: no server configured; run \`dam config set server <url>\` or set \`${serverEnvVar}\`\n`,
+        `error: no server configured; run \`dam config set server <url>\` or set \`${SERVER_ENV_VAR}\`\n`,
       );
       return;
     case "malformed-config":

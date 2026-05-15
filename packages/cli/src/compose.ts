@@ -42,13 +42,11 @@ export function compose(opts: ComposeOptions = {}): Command {
     tokenProvider: auth.exports.tokenProvider,
     configService: cli.services.configService,
     compatService: cli.services.compatService,
-    serverEnvVar: "DAM_SERVER",
   });
   const instance = composeInstanceModule({
     tokenProvider: auth.exports.tokenProvider,
     configService: cli.services.configService,
     compatService: cli.services.compatService,
-    serverEnvVar: "DAM_SERVER",
     templateService: template.exports.createService,
   });
   const agent = composeAgentModule({
@@ -65,7 +63,6 @@ export function compose(opts: ComposeOptions = {}): Command {
     configService: cli.services.configService,
     tokenProvider: auth.exports.tokenProvider,
     createInstanceService: instance.exports.createService,
-    serverEnvVar: "DAM_SERVER",
   });
 
   const importModule = composeImportModule({

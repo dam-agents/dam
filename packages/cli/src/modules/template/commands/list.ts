@@ -9,6 +9,7 @@ import {
   formatTransportError,
   printCompatResolveError,
 } from "../../instance/commands/errors.js";
+import { renderTable } from "../../shared/render-table.js";
 import type { Template, TemplateService } from "../services/template-service.js";
 import {
   EXIT_TEMPLATE_BELOW_FLOOR,
@@ -23,9 +24,6 @@ export interface ListCommandDeps {
   configService: ConfigService;
   /** Per-host factory — produced by the module's compose. */
   createTemplateService: (host: string) => TemplateService;
-  /** Env var name for the server URL — surfaced in the
-   *  `no server configured` hint. */
-  serverEnvVar: string;
 }
 
 export function buildListCommand(deps: ListCommandDeps): Command {
@@ -42,7 +40,7 @@ export function buildListCommand(deps: ListCommandDeps): Command {
 
       const compat = await deps.compatService.check({ flag });
       if (!compat.ok) {
-        printCompatResolveError(compat.error, deps.serverEnvVar);
+        printCompatResolveError(compat.error);
         process.exit(EXIT_TEMPLATE_RUNTIME_FAILURE);
       }
       const verdict = compat.value;
@@ -83,26 +81,14 @@ export function buildListCommand(deps: ListCommandDeps): Command {
         process.exit(EXIT_TEMPLATE_SUCCESS);
       }
 
-      process.stdout.write(renderTable(result.value));
+      const sorted = [...result.value].sort((a, b) => a.name.localeCompare(b.name));
+      const rows = [
+        ["NAME", "ID", "DESCRIPTION"],
+        ...sorted.map((t) => [t.name, t.id, truncate(t.description ?? "", DESCRIPTION_MAX)]),
+      ];
+      process.stdout.write(renderTable(rows));
       process.exit(EXIT_TEMPLATE_SUCCESS);
     });
-}
-
-function renderTable(templates: readonly Template[]): string {
-  const sorted = [...templates].sort((a, b) => a.name.localeCompare(b.name));
-  const rows = [
-    ["NAME", "ID", "DESCRIPTION"],
-    ...sorted.map((t) => [t.name, t.id, truncate(t.description ?? "", DESCRIPTION_MAX)]),
-  ];
-  const widths = rows[0]!.map((_, col) =>
-    Math.max(...rows.map((r) => r[col]!.length)),
-  );
-  const pad = (s: string, w: number) => s + " ".repeat(w - s.length);
-  return rows
-    .map((row) =>
-      row.map((cell, col) => (col === row.length - 1 ? cell : pad(cell, widths[col]!))).join("   "),
-    )
-    .join("\n") + "\n";
 }
 
 function truncate(s: string, n: number): string {

@@ -18,3 +18,4 @@ export type {
   ProbeError,
 } from "./domain/errors.js";
 export type { Config, ConfigKey } from "./domain/config.js";
+export { SERVER_ENV_VAR } from "./domain/config.js";

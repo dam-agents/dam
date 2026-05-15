@@ -32,8 +32,6 @@ export interface CliModule {
   cliVersion: string;
 }
 
-const SERVER_ENV_VAR = "DAM_SERVER";
-
 /**
  * Wires the cli module — config-set, ping, version — and exposes the
  * services other modules (e.g. `auth`) consume across the
@@ -49,7 +47,6 @@ export function composeCliModule(opts: CliModuleOptions = {}): CliModule {
   const configService = createConfigService({
     store,
     envReader,
-    envVars: { server: SERVER_ENV_VAR },
   });
 
   const compatService = createCompatService({
@@ -63,7 +60,6 @@ export function composeCliModule(opts: CliModuleOptions = {}): CliModule {
     buildPingCommand({
       service: compatService,
       configService,
-      serverEnvVar: SERVER_ENV_VAR,
     }),
     buildVersionCommand({ service: compatService, localCliVersion: cliVersion }),
   ];

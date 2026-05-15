@@ -21,7 +21,6 @@ export interface DeleteCommandDeps {
   compatService: CompatService;
   configService: ConfigService;
   createInstanceService: (host: string) => InstanceService;
-  serverEnvVar: string;
 }
 
 interface CliOpts {
@@ -51,7 +50,7 @@ async function runDelete(ref: string, opts: CliOpts, deps: DeleteCommandDeps): P
 
   const compat = await deps.compatService.check({ flag });
   if (!compat.ok) {
-    printCompatResolveError(compat.error, deps.serverEnvVar);
+    printCompatResolveError(compat.error);
     process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
   }
   const verdict = compat.value;

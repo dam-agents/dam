@@ -9,6 +9,7 @@
  * already implied by the helpers (so messages start lowercase).
  */
 
+import { SERVER_ENV_VAR } from "../../cli/index.js";
 import type { ResolveError } from "../services/instance-resolver.js";
 import {
   EXIT_INSTANCE_RUNTIME_FAILURE,
@@ -22,12 +23,11 @@ export function describeConfigError(e: { kind: string; reason?: string }): strin
 
 export function printCompatResolveError(
   e: { kind: string; reason?: string; code?: string; message?: string },
-  serverEnvVar: string,
 ): void {
   switch (e.kind) {
     case "missing-config":
       process.stderr.write(
-        `error: no server configured; run \`dam config set server <url>\` or set \`${serverEnvVar}\`\n`,
+        `error: no server configured; run \`dam config set server <url>\` or set \`${SERVER_ENV_VAR}\`\n`,
       );
       return;
     case "malformed-config":

@@ -1,4 +1,5 @@
-import { SessionMode, SessionType, type SessionsApiService, type SessionView } from "api-server-api";
+import { randomUUID } from "node:crypto";
+import { SessionMode, SessionType, type SessionResolution, type SessionsApiService, type SessionView, type TerminalStrategy } from "api-server-api";
 import { createAcpClient, type AcpSessionInfo } from "../../../core/acp-client.js";
 
 export function createSessionsService(deps: {
@@ -16,7 +17,7 @@ export function createSessionsService(deps: {
   resetAcpSession?: (instanceId: string, sessionId: string) => Promise<void>;
   notifyModeChange?: (instanceId: string, sessionId: string, mode: SessionMode) => void;
 }): SessionsApiService {
-  return {
+  const service: SessionsApiService = {
     async list(instanceId: string, includeChannel?: boolean) {
       if (!await deps.isOwnedInstance(instanceId)) return [];
       // Reader only — the relay writes rows on first session/prompt. Writing
@@ -109,5 +110,40 @@ export function createSessionsService(deps: {
       if (!await deps.isOwnedSchedule(scheduleId)) return;
       await deps.deactivateByScheduleId(scheduleId);
     },
+
+    async resolveTerminal(instanceId: string, strategy: TerminalStrategy, opts?: { reset?: boolean; force?: boolean }): Promise<SessionResolution> {
+      if (!await deps.isOwnedInstance(instanceId)) return { kind: "session-not-found", sessionId: "" };
+
+      function terminalPath(sid: string) {
+        return `/api/instances/${encodeURIComponent(instanceId)}/terminal?sessionId=${encodeURIComponent(sid)}${opts?.reset ? "&reset=1" : ""}`;
+      }
+
+      if (strategy.kind === "new") {
+        const sessionId = randomUUID();
+        await deps.upsert(sessionId, instanceId, SessionMode.Terminal);
+        return { kind: "ready", sessionId, terminalPath: terminalPath(sessionId) };
+      }
+
+      const rows = await deps.listByInstance(instanceId);
+      const sessions = rows.filter((r) => r.type === SessionType.Regular);
+
+      if (strategy.kind === "continue") {
+        const terminals = sessions.filter((s) => s.mode === SessionMode.Terminal);
+        if (terminals.length === 0) return { kind: "no-terminal-session" };
+        if (terminals.length > 1) return { kind: "multiple-terminal-sessions", sessionIds: terminals.map((s) => s.sessionId) };
+        return { kind: "ready", sessionId: terminals[0]!.sessionId, terminalPath: terminalPath(terminals[0]!.sessionId) };
+      }
+
+      const target = sessions.find((s) => s.sessionId === strategy.sessionId);
+      if (!target) return { kind: "session-not-found", sessionId: strategy.sessionId };
+
+      if (target.mode === SessionMode.Chat) {
+        if (!opts?.force) return { kind: "confirm-mode-switch", sessionId: target.sessionId, currentMode: SessionMode.Chat };
+        await service.setMode(target.sessionId, instanceId, SessionMode.Terminal);
+      }
+
+      return { kind: "ready", sessionId: target.sessionId, terminalPath: terminalPath(target.sessionId) };
+    },
   };
+  return service;
 }

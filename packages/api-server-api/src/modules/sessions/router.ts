@@ -50,4 +50,17 @@ export const sessionsRouter = t.router({
   resetByScheduleId: t.procedure
     .input(z.object({ scheduleId: z.string().min(1) }))
     .mutation(({ ctx, input }) => ctx.sessions.resetByScheduleId(input.scheduleId)),
+
+  resolveTerminal: t.procedure
+    .input(z.object({
+      instanceId: z.string().min(1),
+      strategy: z.discriminatedUnion("kind", [
+        z.object({ kind: z.literal("new") }),
+        z.object({ kind: z.literal("continue") }),
+        z.object({ kind: z.literal("resume"), sessionId: z.string().min(1) }),
+      ]),
+      reset: z.boolean().optional(),
+      force: z.boolean().optional(),
+    }))
+    .mutation(({ ctx, input }) => ctx.sessions.resolveTerminal(input.instanceId, input.strategy, { reset: input.reset, force: input.force })),
 });

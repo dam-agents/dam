@@ -13,7 +13,6 @@ export interface TemplateModuleOptions {
   tokenProvider: TokenProvider;
   configService: ConfigService;
   compatService: CompatService;
-  serverEnvVar: string;
 }
 
 export interface TemplateModule {
@@ -40,7 +39,6 @@ export function composeTemplateModule(opts: TemplateModuleOptions): TemplateModu
       compatService: opts.compatService,
       configService: opts.configService,
       createTemplateService: createService,
-      serverEnvVar: opts.serverEnvVar,
     }),
     { isDefault: true },
   );

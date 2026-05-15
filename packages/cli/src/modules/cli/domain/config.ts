@@ -6,6 +6,8 @@ import type {
   MissingConfigError,
 } from "./errors.js";
 
+export const SERVER_ENV_VAR = "DAM_SERVER";
+
 export const configSchema = z.object({
   server: z.url({
     protocol: /^https?$/,

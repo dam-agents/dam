@@ -47,7 +47,6 @@ export interface CreateCommandDeps {
    *  `agents.create` + `instances.create` directly because the rollback
    *  policy is too command-shaped to live in the service layer. */
   createTrpcClient: (host: string) => TrpcClient;
-  serverEnvVar: string;
 }
 
 interface CliOpts {
@@ -150,7 +149,7 @@ async function runCreate(name: string, opts: CliOpts, deps: CreateCommandDeps): 
   // --- Compat pre-flight ----------------------------------------------
   const compat = await deps.compatService.check({ flag });
   if (!compat.ok) {
-    printCompatResolveError(compat.error, deps.serverEnvVar);
+    printCompatResolveError(compat.error);
     process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
   }
   const verdict = compat.value;

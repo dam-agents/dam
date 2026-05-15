@@ -1,7 +1,10 @@
 import { Command } from "commander";
-import type { ChatError, ChatService, SessionStrategy } from "../services/chat-service.js";
+import { SERVER_ENV_VAR } from "../../cli/index.js";
+import type { ChatError } from "../domain/errors.js";
+import type { SessionStrategy } from "../domain/session-resolution.js";
+import type { ChatService } from "../services/chat-service.js";
 
-export function buildChatCommand(deps: { chatService: ChatService; serverEnvVar: string }): Command {
+export function buildChatCommand(deps: { chatService: ChatService }): Command {
   return new Command("chat")
     .description("Connect your terminal to an agent's interactive TUI")
     .argument("<instance>", "instance name or ID")
@@ -19,7 +22,7 @@ export function buildChatCommand(deps: { chatService: ChatService; serverEnvVar:
       });
 
       if (!result.ok) {
-        printError(result.error, deps.serverEnvVar);
+        printError(result.error);
         process.exit(exitCodeFor(result.error));
       }
 
@@ -43,10 +46,10 @@ export function exitCodeFor(e: ChatError): number {
   }
 }
 
-export function printError(e: ChatError, serverEnvVar: string): void {
+export function printError(e: ChatError): void {
   const w = (msg: string) => process.stderr.write(`error: ${msg}\n`);
   switch (e.kind) {
-    case "no-server": w(`no server configured; run "dam config set server <url>" or set ${serverEnvVar}`); return;
+    case "no-server": w(`no server configured; run "dam config set server <url>" or set ${SERVER_ENV_VAR}`); return;
     case "malformed-config": w(e.reason); return;
     case "below-floor": w(`CLI ${e.localCli} is below the server's minimum required version ${e.serverMinClient}; upgrade and retry`); return;
     case "not-found": w(e.via === "id" ? `no instance with id '${e.ref}'` : `no instance named '${e.ref}'`); return;

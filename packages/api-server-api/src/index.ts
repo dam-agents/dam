@@ -100,6 +100,8 @@ export type {
 export { SessionType, SessionMode } from "./modules/sessions/types.js";
 export type {
   SessionView,
+  SessionResolution,
+  TerminalStrategy,
   SessionsService as SessionsApiService,
 } from "./modules/sessions/types.js";
 

@@ -12,14 +12,19 @@ export type BridgeResult =
   | { kind: "exited"; code: number }
   | { kind: "disconnected"; reason: string };
 
-export function connectTerminalBridge({ wsUrl, stdin, stdout }: {
-  wsUrl: string;
+export function connectTerminalBridge({ host, token, terminalPath, stdin, stdout }: {
+  host: string;
+  token: string;
+  terminalPath: string;
   stdin: NodeJS.ReadStream & { setRawMode?(mode: boolean): void };
   stdout: NodeJS.WriteStream;
 }): Promise<BridgeResult> {
   return new Promise<BridgeResult>((resolve) => {
     let settled = false;
-    const ws = new WebSocket(wsUrl);
+    const proto = host.startsWith("https://") ? "wss:" : "ws:";
+    const base = host.replace(/^https?:\/\//, "");
+    const sep = terminalPath.includes("?") ? "&" : "?";
+    const ws = new WebSocket(`${proto}//${base}${terminalPath}${sep}token=${encodeURIComponent(token)}`, { headers: { Authorization: `Bearer ${token}` } });
 
     const onData = (chunk: Buffer) => { if (ws.readyState === WebSocket.OPEN) ws.send(encodeDataFrame(OP_INPUT, new Uint8Array(chunk))); };
     const onResize = () => { if (ws.readyState === WebSocket.OPEN) ws.send(encodeResize(stdout.columns, stdout.rows)); };

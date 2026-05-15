@@ -6,6 +6,7 @@ import type {
   AuthRequiredError,
   TransportError,
 } from "../domain/errors.js";
+import { renderTable } from "../../shared/render-table.js";
 import {
   describeConfigError,
   formatTransportError,
@@ -23,9 +24,6 @@ export interface ListCommandDeps {
   /** Per-host factory — produced by the module's compose. Called once
    *  per command invocation against the resolved Active Host. */
   createInstanceService: (host: string) => InstanceService;
-  /** Env var name for the server URL — surfaced in the
-   *  `no server configured` hint. */
-  serverEnvVar: string;
 }
 
 export function buildListCommand(deps: ListCommandDeps): Command {
@@ -46,7 +44,7 @@ export function buildListCommand(deps: ListCommandDeps): Command {
       // exit code is consistent across commands that share this gate.
       const compat = await deps.compatService.check({ flag });
       if (!compat.ok) {
-        printCompatResolveError(compat.error, deps.serverEnvVar);
+        printCompatResolveError(compat.error);
         process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
       }
       const verdict = compat.value;
@@ -96,27 +94,14 @@ export function buildListCommand(deps: ListCommandDeps): Command {
         process.exit(EXIT_INSTANCE_SUCCESS);
       }
 
-      process.stdout.write(renderTable(result.value));
+      const sorted = [...result.value].sort((a, b) => a.name.localeCompare(b.name));
+      const rows = [
+        ["NAME", "ID", "TEMPLATE", "STATE"],
+        ...sorted.map((i) => [i.name, i.id, i.templateId ?? "<custom>", i.state]),
+      ];
+      process.stdout.write(renderTable(rows));
       process.exit(EXIT_INSTANCE_SUCCESS);
     });
-}
-
-/** Default human format: 4 columns, alphabetical by name, no truncation. */
-function renderTable(instances: readonly Instance[]): string {
-  const sorted = [...instances].sort((a, b) => a.name.localeCompare(b.name));
-  const rows = [
-    ["NAME", "ID", "TEMPLATE", "STATE"],
-    ...sorted.map((i) => [i.name, i.id, i.templateId ?? "<custom>", i.state]),
-  ];
-  const widths = rows[0]!.map((_, col) =>
-    Math.max(...rows.map((r) => r[col]!.length)),
-  );
-  const pad = (s: string, w: number) => s + " ".repeat(w - s.length);
-  return rows
-    .map((row) =>
-      row.map((cell, col) => (col === row.length - 1 ? cell : pad(cell, widths[col]!))).join("   "),
-    )
-    .join("\n") + "\n";
 }
 
 function printServiceError(error: TransportError | AuthRequiredError, host: string): void {

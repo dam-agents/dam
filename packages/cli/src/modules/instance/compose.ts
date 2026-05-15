@@ -30,9 +30,6 @@ export interface InstanceModuleOptions {
   tokenProvider: TokenProvider;
   configService: ConfigService;
   compatService: CompatService;
-  /** Env var name for the server URL — surfaced in the
-   *  `no server configured` hints in command actions. */
-  serverEnvVar: string;
   /** Per-host factory for the template service. The `create` verb uses
    *  it to pre-validate `--template` before issuing `agents.create`. */
   templateService: (host: string) => TemplateService;
@@ -69,7 +66,6 @@ export function composeInstanceModule(opts: InstanceModuleOptions): InstanceModu
       compatService: opts.compatService,
       configService: opts.configService,
       createInstanceService: createService,
-      serverEnvVar: opts.serverEnvVar,
     }),
     { isDefault: true },
   );
@@ -78,7 +74,6 @@ export function composeInstanceModule(opts: InstanceModuleOptions): InstanceModu
       compatService: opts.compatService,
       configService: opts.configService,
       createInstanceService: createService,
-      serverEnvVar: opts.serverEnvVar,
     }),
   );
   parent.addCommand(
@@ -88,7 +83,6 @@ export function composeInstanceModule(opts: InstanceModuleOptions): InstanceModu
       createInstanceService: createService,
       createTemplateService: opts.templateService,
       createTrpcClient: buildTrpc,
-      serverEnvVar: opts.serverEnvVar,
     }),
   );
   parent.addCommand(
@@ -96,7 +90,6 @@ export function composeInstanceModule(opts: InstanceModuleOptions): InstanceModu
       compatService: opts.compatService,
       configService: opts.configService,
       createInstanceService: createService,
-      serverEnvVar: opts.serverEnvVar,
     }),
   );
   parent.addCommand(
@@ -104,7 +97,6 @@ export function composeInstanceModule(opts: InstanceModuleOptions): InstanceModu
       compatService: opts.compatService,
       configService: opts.configService,
       createInstanceService: createService,
-      serverEnvVar: opts.serverEnvVar,
     }),
   );
 
