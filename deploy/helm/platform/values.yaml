@@ -493,8 +493,9 @@ controller:
       npGateInit:
         enabled: false
         # busybox provides nc + sh in one image. K8s SIG distroless
-        # variants don't bundle nc. Digest-pinned; rotate manually.
-        image: docker.io/library/busybox:1.37@sha256:18ac7a6883a86416ade8178063c26deff577cd831445f5c5ac5c7a931cb60983
+        # variants don't bundle nc. Digest pins the multi-arch manifest
+        # list — resolves to amd64/arm64/etc at pull time. Rotate manually.
+        image: docker.io/library/busybox:1.37@sha256:1487d0af5f52b4ba31c7e465126ee2123fe3f2305d638e7827681e7cf6c83d5e
         # Hard deadline before the init container fails the pod. OVN-K
         # typically converges in well under a second; 30s is generous
         # for cold node churn / controller restart scenarios.
