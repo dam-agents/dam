@@ -58,6 +58,27 @@ volumes:
   - projected
   - secret
 ---
+{{/*
+Grant `use` on the custom SCC. OpenShift auto-generates
+`system:openshift:scc:<name>` ClusterRoles only for built-in SCCs
+(restricted-v2, nonroot-v2, anyuid, …); for custom SCCs no ClusterRole
+is created, so we render one ourselves. SCC is cluster-scoped, so the
+rule must live in a ClusterRole (Role can only reference namespaced
+resources). The RoleBinding below stays namespace-scoped so the grant
+is limited to `agentNamespace`.
+*/}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "platform.fullname" . }}-anyuid-cap-net-use
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["security.openshift.io"]
+    resources: ["securitycontextconstraints"]
+    resourceNames: ["{{ include "platform.fullname" . }}-anyuid-cap-net"]
+    verbs: ["use"]
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
@@ -68,7 +89,7 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: {{ include "platform.fullname" . }}-anyuid-cap-net
+  name: {{ include "platform.fullname" . }}-anyuid-cap-net-use
 subjects:
   - kind: Group
     apiGroup: rbac.authorization.k8s.io
