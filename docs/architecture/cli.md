@@ -99,7 +99,7 @@ Each step lines up with one server-side mutation, in the same order the web UI's
 Anything created during the run (new provider Secret, new GitHub PAT pair, the agent) is tracked in a small ledger; a failure in any of the post-prompt mutations triggers one cleanup pass — `agents.delete` cascade-tears-down the instance and its grants, then any new Secrets are deleted by id. Picked-existing and replace-existing paths stay out of the ledger: the replace path overwrote the value in place, and the old value is unrecoverable. Anything the cleanup itself can't delete surfaces as an orphan summary so the user knows what to remove manually.
 
 The post-success hint points at `dam chat <name>` (the chat verb is a future module). Interrupting at any prompt before the mutation chain exits cleanly with no orphans; interrupting during the wait leaves the agent in place with the same delete-hint, on the basis that the user chose to interrupt and the agent's existence is their call from there.
-=======
+
 ## Import
 
 `dam import <instance-ref> <path...>` uploads one or more local files or folders into an Instance. The verb consumes the Token Provider seam from `auth`, the `createInstanceResolver` factory from the `instance` module's `index.ts`, and the same `CompatService` / `ConfigService` gates every networked verb uses.
@@ -109,4 +109,3 @@ The post-success hint points at `dam chat <name>` (the chat verb is a future mod
 - **Bundle** — a single gzipped tar built from the supplied paths with [`tar-stream`](https://www.npmjs.com/package/tar-stream) and spooled to a tmpfile. Sent as a `FormData` `Blob` via Node's `openAsBlob` so undici computes `Content-Length` correctly (the server requires it). Symlinks anywhere in the imported tree are skipped (not followed). Excluded basenames at every level: `node_modules`, `.venv`, `__pycache__`, `.DS_Store` — same set the UI uses; rendered into `dam import --help` from the single source of truth.
 - **Top-level replace is destructive** at each named path. The CLI shows a TTY confirm prompt before any upload; `--yes` skips. Non-TTY without `--yes` refuses (exit 2). Cancelled-by-user prints `cancelled.` to stderr, exit 0.
 - **No service layer** — the verb has a single POST with status-based classification, so the action handler classifies inline (`switch (res.status)`) rather than introducing a port the way `instance` does for tRPC.
->>>>>>> 41b2c4f (feature(cli): import cmd)
