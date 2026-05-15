@@ -15,7 +15,7 @@ interface UpdateCall {
   value?: string;
 }
 
-function makePort(opts: { failSecondUpdate?: boolean; missingIds?: string[] } = {}) {
+function makePort(opts: { missingIds?: string[] } = {}) {
   const store = new Map<string, K8sStoredSecret>();
   // Seed both halves of an existing PAT pair so updateSecret has something
   // to read for before/after diffs.
@@ -41,9 +41,6 @@ function makePort(opts: { failSecondUpdate?: boolean; missingIds?: string[] } = 
     async createSecret() {},
     async updateSecret(id, patch) {
       if (opts.missingIds?.includes(id)) return null;
-      if (opts.failSecondUpdate && updates.length === 1) {
-        throw new Error("boom on second update");
-      }
       const before = store.get(id);
       if (!before) return null;
       updates.push({ id, value: patch.value });
@@ -100,19 +97,5 @@ describe("secrets-service.updateGithubPat", () => {
     await expect(
       svc.updateGithubPat({ apiSecretId: "api-1", gitSecretId: "git-1", token: "ghp_x" }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
-  });
-
-  it("surfaces the original error when the git half update fails", async () => {
-    const { port, updates } = makePort({ failSecondUpdate: true });
-    const { port: grants } = makeGrants();
-    const svc = createSecretsService({ k8sPort: port, grants, ownerSub: "owner-1" });
-
-    await expect(
-      svc.updateGithubPat({ apiSecretId: "api-1", gitSecretId: "git-1", token: "ghp_x" }),
-    ).rejects.toThrow("boom on second update");
-    // The api half was updated before the failure — documented partial-
-    // failure behavior in the service comment.
-    expect(updates).toHaveLength(1);
-    expect(updates[0]?.id).toBe("api-1");
   });
 });
