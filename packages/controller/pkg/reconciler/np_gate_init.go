@@ -23,11 +23,17 @@ const npGateInitContainerName = "np-gate"
 // This gate is the alternative: probe an outside-the-allow-list
 // destination until it's DROPped, then exit so the agent can start.
 //
-// Probe shape: TCP-connect to a canary IP (default 1.1.1.1:443) with a
-// short timeout. While the connect succeeds, NP isn't in force yet — wait
-// and retry. Once the connect fails (timeout/RST), NP is enforcing the
-// deny. Also confirm the paired gateway IS reachable — guards against
-// "everything denied" false positives on clusters with broken outbound.
+// Probe shape: TCP-connect to a canary destination with a short timeout.
+// While the connect succeeds, NP isn't in force yet — wait and retry.
+// Once the connect fails (timeout/RST), NP is enforcing the deny. Also
+// confirm the paired gateway IS reachable — guards against "everything
+// denied" false positives on clusters with broken outbound.
+//
+// Default canary: the kube-apiserver Service IP, auto-injected into
+// every pod by kubelet as KUBERNETES_SERVICE_HOST / KUBERNETES_SERVICE_PORT.
+// Always reachable in-cluster when NP is permissive, always denied by
+// our agent egress NP (gateway-only), no external uptime dependency.
+// Operators can override via `npGateInit.deniedHost` / `.deniedPort`.
 //
 // Fail-closed: timeout → exit 1 → pod stays in Init:CrashLoopBackOff. The
 // agent main container never starts. Operationally noisy; security-wise
@@ -42,24 +48,24 @@ func buildNPGateInitContainer(cfg *config.Config, gatewayClusterIP string) *core
 		return nil
 	}
 
-	deniedHost := cfgGate.DeniedHost
-	if deniedHost == "" {
-		deniedHost = "1.1.1.1"
-	}
-	deniedPort := cfgGate.DeniedPort
-	if deniedPort == 0 {
-		deniedPort = 443
-	}
 	timeoutSeconds := cfgGate.TimeoutSeconds
 	if timeoutSeconds == 0 {
 		timeoutSeconds = 30
 	}
 
+	// DENIED_HOST / DENIED_PORT default to the kubelet-injected
+	// KUBERNETES_SERVICE_HOST / KUBERNETES_SERVICE_PORT when operator
+	// doesn't override. The shell parameter expansion `${X:-fallback}`
+	// resolves at script start, so the env vars set by kubelet are
+	// honored without us having to plumb them through here.
+	//
 	// `nc -w 2 -z` returns 0 when the TCP connect succeeds, non-zero on
 	// timeout/refused/drop. We invert the denied-host check (success on
 	// non-zero) and combine with the positive gateway check (success on
 	// zero) — both must hold for the gate to release.
 	script := `set -u
+DENIED_HOST="${DENIED_HOST:-${KUBERNETES_SERVICE_HOST}}"
+DENIED_PORT="${DENIED_PORT:-${KUBERNETES_SERVICE_PORT}}"
 deadline=$(($(date +%s) + ${TIMEOUT_SECONDS}))
 echo "np-gate: probing denied=${DENIED_HOST}:${DENIED_PORT} allowed=${GATEWAY_IP}:${ENVOY_PORT}, deadline=${TIMEOUT_SECONDS}s"
 while [ "$(date +%s)" -lt "${deadline}" ]; do
@@ -75,17 +81,27 @@ echo "np-gate: FATAL — NetworkPolicy did not converge within ${TIMEOUT_SECONDS
 exit 1
 `
 
+	env := []corev1.EnvVar{
+		{Name: "GATEWAY_IP", Value: gatewayClusterIP},
+		{Name: "ENVOY_PORT", Value: fmt.Sprintf("%d", cfg.EnvoyPort)},
+		{Name: "TIMEOUT_SECONDS", Value: fmt.Sprintf("%d", timeoutSeconds)},
+	}
+	// Only inject DENIED_HOST/DENIED_PORT when the operator overrides
+	// the kube-apiserver default. Leaving them unset lets kubelet's
+	// auto-injected KUBERNETES_SERVICE_HOST/PORT flow through the
+	// `${X:-fallback}` expansion in the script.
+	if cfgGate.DeniedHost != "" {
+		env = append(env, corev1.EnvVar{Name: "DENIED_HOST", Value: cfgGate.DeniedHost})
+	}
+	if cfgGate.DeniedPort != 0 {
+		env = append(env, corev1.EnvVar{Name: "DENIED_PORT", Value: fmt.Sprintf("%d", cfgGate.DeniedPort)})
+	}
+
 	return &corev1.Container{
 		Name:    npGateInitContainerName,
 		Image:   cfgGate.Image,
 		Command: []string{"/bin/sh", "-c", script},
-		Env: []corev1.EnvVar{
-			{Name: "GATEWAY_IP", Value: gatewayClusterIP},
-			{Name: "ENVOY_PORT", Value: fmt.Sprintf("%d", cfg.EnvoyPort)},
-			{Name: "DENIED_HOST", Value: deniedHost},
-			{Name: "DENIED_PORT", Value: fmt.Sprintf("%d", deniedPort)},
-			{Name: "TIMEOUT_SECONDS", Value: fmt.Sprintf("%d", timeoutSeconds)},
-		},
+		Env:     env,
 		SecurityContext: &corev1.SecurityContext{
 			RunAsNonRoot:             ptrBool(true),
 			AllowPrivilegeEscalation: ptrBool(false),

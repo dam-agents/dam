@@ -508,20 +508,24 @@ controller:
       # the OVN-K async-programming race for runtimes where `iptablesInit`
       # can't run (Kata/CoCo, where the guest kernel lacks netfilter).
       # No privileged caps required — pure userspace TCP probes.
-      #
-      # Typical config: enable when iptablesInit is disabled (Kata/CoCo).
-      # Both can run simultaneously without conflict — the iptables init
-      # closes the race kernel-side, the NP-gate verifies the cluster
-      # layer also converged.
       npGateInit:
         enabled: false
-        image: docker.io/library/busybox:1.36
+        # busybox provides both `nc` and `sh` in one minimal image. K8s
+        # SIG distroless variants don't bundle nc, so this is the
+        # smallest reasonable footprint. Digest-pinned to neutralize the
+        # mutable-tag supply-chain surface; rotate manually when newer
+        # busybox releases land.
+        image: docker.io/library/busybox:1.36@sha256:543181ecb2c3e8c807bf086deb688ebe61b65e84335eb487260ee5fd37ee30b2
         # Canary destination the probe expects to be DROPped by the NP.
-        # 1.1.1.1:443 is widely reachable when egress is open AND will
-        # certainly be denied by an egress NP that only admits the
-        # paired gateway. Picks 8.8.8.8 if Cloudflare is blocked.
-        deniedHost: 1.1.1.1
-        deniedPort: 443
+        # Defaults (empty) to the kubelet-injected
+        # KUBERNETES_SERVICE_HOST:KUBERNETES_SERVICE_PORT — the
+        # kube-apiserver Service IP, always reachable in-cluster when NP
+        # is permissive, always denied by the agent egress NP
+        # (gateway-only), no external uptime dependency. Override with
+        # an explicit host:port only if you have a cluster-specific
+        # canary you trust more.
+        deniedHost: ""
+        deniedPort: 0
         # Hard deadline before the init container fails the pod. OVN-K
         # typically converges in well under a second; 30s is generous
         # for cold node churn / controller restart scenarios.

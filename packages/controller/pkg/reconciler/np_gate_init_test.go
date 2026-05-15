@@ -52,12 +52,12 @@ func TestBuildNPGateInitContainer_NoCapsUnprivileged(t *testing.T) {
 	assert.Empty(t, ic.SecurityContext.Capabilities.Add, "no capabilities — pure TCP probe")
 }
 
-func TestBuildNPGateInitContainer_ProbeShape(t *testing.T) {
+func TestBuildNPGateInitContainer_ProbeShapeWithOverride(t *testing.T) {
 	cfg := *testConfig
 	cfg.AgentBase.NPGateInit = &config.AgentNPGateInit{
 		Enabled:        true,
 		Image:          "busybox:1.36",
-		DeniedHost:     "1.1.1.1",
+		DeniedHost:     "10.0.0.1",
 		DeniedPort:     443,
 		TimeoutSeconds: 30,
 	}
@@ -73,19 +73,29 @@ func TestBuildNPGateInitContainer_ProbeShape(t *testing.T) {
 	assert.Contains(t, script, `nc -w 2 -z "${GATEWAY_IP}" "${ENVOY_PORT}"`, "positive probe against the paired gateway")
 	assert.Contains(t, script, "exit 1", "fail-closed on timeout — NP didn't converge")
 	assert.Contains(t, script, "exit 0", "release the workload when both probes match expectation")
+	// Shell fallback to kubelet env vars when operator doesn't override.
+	assert.Contains(t, script, `DENIED_HOST="${DENIED_HOST:-${KUBERNETES_SERVICE_HOST}}"`,
+		"DENIED_HOST falls back to KUBERNETES_SERVICE_HOST")
+	assert.Contains(t, script, `DENIED_PORT="${DENIED_PORT:-${KUBERNETES_SERVICE_PORT}}"`,
+		"DENIED_PORT falls back to KUBERNETES_SERVICE_PORT")
 
 	envMap := map[string]string{}
 	for _, e := range ic.Env {
 		envMap[e.Name] = e.Value
 	}
 	assert.Equal(t, "10.96.42.42", envMap["GATEWAY_IP"])
-	assert.Equal(t, "1.1.1.1", envMap["DENIED_HOST"])
+	assert.Equal(t, "10.0.0.1", envMap["DENIED_HOST"], "operator override sets the env var")
 	assert.Equal(t, "443", envMap["DENIED_PORT"])
 	assert.Equal(t, "30", envMap["TIMEOUT_SECONDS"])
 	assert.NotEmpty(t, envMap["ENVOY_PORT"])
 }
 
-func TestBuildNPGateInitContainer_Defaults(t *testing.T) {
+// Default config (no operator override) must NOT set DENIED_HOST /
+// DENIED_PORT env vars — that lets kubelet's auto-injected
+// KUBERNETES_SERVICE_HOST / KUBERNETES_SERVICE_PORT flow through the
+// shell fallback. Setting empty-valued env vars would mask kubelet's
+// values, so the absence is load-bearing.
+func TestBuildNPGateInitContainer_DefaultsUseKubeAPIServer(t *testing.T) {
 	cfg := *testConfig
 	cfg.AgentBase.NPGateInit = &config.AgentNPGateInit{Enabled: true, Image: "busybox:1.36"}
 
@@ -95,8 +105,9 @@ func TestBuildNPGateInitContainer_Defaults(t *testing.T) {
 	for _, e := range ic.Env {
 		envMap[e.Name] = e.Value
 	}
-	// Defaults fill in when chart doesn't override.
-	assert.Equal(t, "1.1.1.1", envMap["DENIED_HOST"])
-	assert.Equal(t, "443", envMap["DENIED_PORT"])
+	_, hostSet := envMap["DENIED_HOST"]
+	_, portSet := envMap["DENIED_PORT"]
+	assert.False(t, hostSet, "DENIED_HOST must be unset so kubelet's KUBERNETES_SERVICE_HOST flows through")
+	assert.False(t, portSet, "DENIED_PORT must be unset so kubelet's KUBERNETES_SERVICE_PORT flows through")
 	assert.Equal(t, "30", envMap["TIMEOUT_SECONDS"])
 }
