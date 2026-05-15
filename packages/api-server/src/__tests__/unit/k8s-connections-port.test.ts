@@ -3,11 +3,14 @@ import type * as k8s from "@kubernetes/client-node";
 
 import {
   connectionSecretName,
+  CONNECTION_SCHEMA_VERSION,
   createK8sConnectionsPort,
   listAllConnectionWorkItems,
   markConnectionExpired,
   readConnectionForRefresh,
+  sdsFileKeyForHost,
   writeRefreshedTokens,
+  type ConnectionMetadata,
 } from "../../modules/connections/infrastructure/k8s-connections-port.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 
@@ -64,15 +67,30 @@ function fakeClient() {
   return { client, store };
 }
 
-const SAMPLE_METADATA = {
-  hostPattern: "mcp.example.com",
-  headerName: "Authorization",
-  valueFormat: "Bearer {value}",
+// Simplest legal ConnectionMetadata — single host, default scheme.
+const SAMPLE_METADATA: ConnectionMetadata = {
+  hosts: [{ host: "mcp.example.com" }],
   tokenUrl: "https://mcp.example.com/oauth/token",
   clientId: "client-123",
   clientSecret: "client-secret",
-  grantType: "authorization_code" as const,
+  grantType: "authorization_code",
 };
+
+function decode(secret: k8s.V1Secret, key: string): string {
+  return Buffer.from(secret.data![key]!, "base64").toString();
+}
+
+// Issue #219: the file key must agree byte-for-byte with the controller's
+// `sdsFileKeyForHost`. The Go side has a mirroring test pinning these.
+describe("sdsFileKeyForHost", () => {
+  it.each([
+    ["api.github.com", "host-01892413.sds.yaml"],
+    ["github.com", "host-c2208abd.sds.yaml"],
+    ["raw.githubusercontent.com", "host-3cf88e0a.sds.yaml"],
+  ])("sdsFileKeyForHost(%s) === %s", (host, expected) => {
+    expect(sdsFileKeyForHost(host)).toBe(expected);
+  });
+});
 
 describe("connectionSecretName", () => {
   it("hashes both owner and connection so the name fits RFC 1123", () => {
@@ -93,8 +111,8 @@ describe("connectionSecretName", () => {
   });
 });
 
-describe("K8sConnectionsPort.upsertConnection", () => {
-  it("writes labels, annotations, and the SDS-formatted access token", async () => {
+describe("K8sConnectionsPort.upsertConnection — single-host", () => {
+  it("writes one SDS file under host-<sha>.sds.yaml and the structured hosts annotation", async () => {
     const { client, store } = fakeClient();
     const port = createK8sConnectionsPort(client, "owner-1");
 
@@ -107,29 +125,25 @@ describe("K8sConnectionsPort.upsertConnection", () => {
     const name = connectionSecretName("owner-1", "mcp.example.com");
     const secret = store.get(name);
     expect(secret).toBeDefined();
-    expect(secret!.metadata?.labels?.["agent-platform.ai/owner"]).toBe("owner-1");
-    expect(secret!.metadata?.labels?.["agent-platform.ai/managed-by"]).toBe("api-server");
-    expect(secret!.metadata?.labels?.["agent-platform.ai/secret-type"]).toBe("connection");
+    const ann = secret!.metadata!.annotations!;
     expect(secret!.metadata?.labels?.["agent-platform.ai/connection"]).toBe(
       "mcp.example.com",
     );
-    expect(secret!.metadata?.annotations?.["agent-platform.ai/host-pattern"]).toBe(
-      "mcp.example.com",
-    );
-    expect(secret!.metadata?.annotations?.["agent-platform.ai/expires-at"]).toBe("9999");
-    expect(secret!.metadata?.annotations?.["agent-platform.ai/grant-type"]).toBe(
-      "authorization_code",
-    );
-    expect(secret!.metadata?.annotations?.["agent-platform.ai/connection-status"]).toBe(
-      "active",
-    );
-    // The access token reaches the sidecar via sds.yaml — header prefix baked in.
-    const sds = Buffer.from(secret!.data!["sds.yaml"]!, "base64").toString();
-    expect(sds).toContain('inline_string: "Bearer tok-1"');
-    // The refresh-loop reads the raw token + refresh token + client id directly.
-    expect(Buffer.from(secret!.data!["raw_access_token"]!, "base64").toString()).toBe("tok-1");
-    expect(Buffer.from(secret!.data!["refresh_token"]!, "base64").toString()).toBe("ref-1");
-    expect(Buffer.from(secret!.data!["client_id"]!, "base64").toString()).toBe("client-123");
+    // Schema version pinned — future bumps drive migrations.
+    expect(ann["agent-platform.ai/schema-version"]).toBe(CONNECTION_SCHEMA_VERSION);
+    expect(ann["agent-platform.ai/host-patterns"]).toBe("mcp.example.com");
+    expect(JSON.parse(ann["agent-platform.ai/injection-hosts"]!)).toEqual([
+      { host: "mcp.example.com" },
+    ]);
+    expect(ann["agent-platform.ai/expires-at"]).toBe("9999");
+    expect(ann["agent-platform.ai/connection-status"]).toBe("active");
+    // Per-host SDS file, no generic `sds.yaml`.
+    const fileKey = sdsFileKeyForHost("mcp.example.com");
+    expect(decode(secret!, fileKey)).toContain('inline_string: "Bearer tok-1"');
+    expect(decode(secret!, "raw_access_token")).toBe("tok-1");
+    expect(decode(secret!, "refresh_token")).toBe("ref-1");
+    expect(decode(secret!, "client_id")).toBe("client-123");
+    expect(secret!.data!["sds.yaml"]).toBeUndefined();
   });
 
   it("preserves connectedAt across upserts (so re-auth doesn't reset the timestamp)", async () => {
@@ -152,6 +166,166 @@ describe("K8sConnectionsPort.upsertConnection", () => {
     });
     expect(store.get(name)!.metadata!.annotations!["agent-platform.ai/connected-at"]).toBe(firstConnectedAt);
   });
+
+  it("rejects metadata with an empty hosts list (caller bug)", async () => {
+    const { client } = fakeClient();
+    const port = createK8sConnectionsPort(client, "owner-1");
+    await expect(
+      port.upsertConnection({
+        connection: "broken",
+        tokens: { accessToken: "t" },
+        metadata: { ...SAMPLE_METADATA, hosts: [] },
+      }),
+    ).rejects.toThrow(/hosts is empty/);
+  });
+});
+
+// Issue #219: one OAuth token, three hosts, three auth schemes. These
+// pin both the K8s Secret shape and the refresh-loop interactions.
+describe("K8sConnectionsPort — multi-host (issue #219)", () => {
+  const GITHUB_METADATA: ConnectionMetadata = {
+    hosts: [
+      { host: "api.github.com" },
+      {
+        host: "github.com",
+        valueFormat: "Basic {value}",
+        encoding: "basic-x-access-token",
+      },
+      { host: "raw.githubusercontent.com" },
+    ],
+    tokenUrl: "https://github.com/login/oauth/access_token",
+    clientId: "github-client",
+    clientSecret: "github-secret",
+    grantType: "authorization_code",
+  };
+
+  it("writes one SDS file per host inside the same Secret", async () => {
+    const { client, store } = fakeClient();
+    const port = createK8sConnectionsPort(client, "owner-1");
+
+    await port.upsertConnection({
+      connection: "github",
+      tokens: { accessToken: "tok-1", refreshToken: "ref-1", expiresAt: 1000 },
+      metadata: GITHUB_METADATA,
+    });
+
+    const name = connectionSecretName("owner-1", "github");
+    const secret = store.get(name)!;
+    // One Secret, one mount, three chains.
+    expect(Array.from(store.values())).toHaveLength(1);
+    expect(secret.metadata?.annotations?.["agent-platform.ai/host-patterns"]).toBe(
+      "api.github.com,github.com,raw.githubusercontent.com",
+    );
+    const parsed = JSON.parse(
+      secret.metadata!.annotations!["agent-platform.ai/injection-hosts"]!,
+    );
+    expect(parsed).toEqual(GITHUB_METADATA.hosts);
+
+    const apiSds = decode(secret, sdsFileKeyForHost("api.github.com"));
+    expect(apiSds).toContain('inline_string: "Bearer tok-1"');
+
+    // github.com: HTTP Basic, username `x-access-token`. Makes `git clone` work.
+    const wwwSds = decode(secret, sdsFileKeyForHost("github.com"));
+    const expectedB64 = Buffer.from("x-access-token:tok-1", "utf8").toString("base64");
+    expect(wwwSds).toContain(`inline_string: "Basic ${expectedB64}"`);
+
+    const rawSds = decode(secret, sdsFileKeyForHost("raw.githubusercontent.com"));
+    expect(rawSds).toContain('inline_string: "Bearer tok-1"');
+  });
+
+  it("getConnection round-trips the full hosts list (no information loss)", async () => {
+    const { client } = fakeClient();
+    const port = createK8sConnectionsPort(client, "owner-1");
+
+    await port.upsertConnection({
+      connection: "github",
+      tokens: { accessToken: "tok", refreshToken: "ref", expiresAt: 12345 },
+      metadata: GITHUB_METADATA,
+    });
+
+    const got = await port.getConnection("github");
+    expect(got).not.toBeNull();
+    expect(got!.metadata.hosts).toEqual(GITHUB_METADATA.hosts);
+    expect(got!.tokens.accessToken).toBe("tok");
+    expect(got!.tokens.refreshToken).toBe("ref");
+    expect(got!.metadata.clientId).toBe("github-client");
+    expect(got!.metadata.clientSecret).toBe("github-secret");
+  });
+
+  it("listConnections surfaces the host list (no twins, no descriptor lookup needed)", async () => {
+    const { client } = fakeClient();
+    const port = createK8sConnectionsPort(client, "owner-1");
+
+    await port.upsertConnection({
+      connection: "github",
+      tokens: { accessToken: "tok-1" },
+      metadata: GITHUB_METADATA,
+    });
+
+    const list = await port.listConnections();
+    expect(list).toHaveLength(1);
+    expect(list[0]!.connection).toBe("github");
+    expect(list[0]!.hosts).toEqual([
+      "api.github.com",
+      "github.com",
+      "raw.githubusercontent.com",
+    ]);
+  });
+
+  it("re-upsert with fewer hosts removes stale SDS files (no leftovers)", async () => {
+    const { client, store } = fakeClient();
+    const port = createK8sConnectionsPort(client, "owner-1");
+
+    await port.upsertConnection({
+      connection: "github",
+      tokens: { accessToken: "tok-1" },
+      metadata: GITHUB_METADATA,
+    });
+    const name = connectionSecretName("owner-1", "github");
+    expect(store.get(name)!.data![sdsFileKeyForHost("github.com")]).toBeDefined();
+
+    // Reconnect with one host — dropped hosts' SDS files must go.
+    await port.upsertConnection({
+      connection: "github",
+      tokens: { accessToken: "tok-1" },
+      metadata: { ...GITHUB_METADATA, hosts: [{ host: "api.github.com" }] },
+    });
+    const after = store.get(name)!;
+    expect(after.data![sdsFileKeyForHost("api.github.com")]).toBeDefined();
+    expect(after.data![sdsFileKeyForHost("github.com")]).toBeUndefined();
+    expect(after.data![sdsFileKeyForHost("raw.githubusercontent.com")]).toBeUndefined();
+  });
+
+  it("writeRefreshedTokens re-renders every host's SDS file from the new token", async () => {
+    const { client, store } = fakeClient();
+    const port = createK8sConnectionsPort(client, "owner-1");
+
+    await port.upsertConnection({
+      connection: "github",
+      tokens: { accessToken: "old", refreshToken: "ref-old", expiresAt: 100 },
+      metadata: GITHUB_METADATA,
+    });
+    const name = connectionSecretName("owner-1", "github");
+    const loaded = await readConnectionForRefresh(client, name);
+    expect(loaded).not.toBeNull();
+
+    await writeRefreshedTokens(
+      client,
+      name,
+      { accessToken: "rotated", refreshToken: "ref-new", expiresAt: 200 },
+      loaded!.record.metadata,
+    );
+
+    const after = store.get(name)!;
+    const apiSds = decode(after, sdsFileKeyForHost("api.github.com"));
+    expect(apiSds).toContain('inline_string: "Bearer rotated"');
+    const wwwSds = decode(after, sdsFileKeyForHost("github.com"));
+    const expectedB64 = Buffer.from("x-access-token:rotated", "utf8").toString("base64");
+    expect(wwwSds).toContain(`inline_string: "Basic ${expectedB64}"`);
+    const rawSds = decode(after, sdsFileKeyForHost("raw.githubusercontent.com"));
+    expect(rawSds).toContain('inline_string: "Bearer rotated"');
+    expect(decode(after, "refresh_token")).toBe("ref-new");
+  });
 });
 
 describe("K8sConnectionsPort.listConnections", () => {
@@ -163,12 +337,12 @@ describe("K8sConnectionsPort.listConnections", () => {
     await a.upsertConnection({
       connection: "x.example.com",
       tokens: { accessToken: "t", expiresAt: 100 },
-      metadata: { ...SAMPLE_METADATA, hostPattern: "x.example.com" },
+      metadata: { ...SAMPLE_METADATA, hosts: [{ host: "x.example.com" }] },
     });
     await b.upsertConnection({
       connection: "y.example.com",
       tokens: { accessToken: "t", expiresAt: 200 },
-      metadata: { ...SAMPLE_METADATA, hostPattern: "y.example.com" },
+      metadata: { ...SAMPLE_METADATA, hosts: [{ host: "y.example.com" }] },
     });
 
     const aList = await a.listConnections();
@@ -214,6 +388,7 @@ describe("K8sConnectionsPort.getConnection", () => {
     expect(got!.metadata.clientId).toBe("client-123");
     expect(got!.metadata.clientSecret).toBe("client-secret");
     expect(got!.metadata.grantType).toBe("authorization_code");
+    expect(got!.metadata.hosts).toEqual([{ host: "mcp.example.com" }]);
     expect(got!.status).toBe("active");
   });
 
@@ -225,7 +400,7 @@ describe("K8sConnectionsPort.getConnection", () => {
     await a.upsertConnection({
       connection: "shared.example.com",
       tokens: { accessToken: "t" },
-      metadata: { ...SAMPLE_METADATA, hostPattern: "shared.example.com" },
+      metadata: { ...SAMPLE_METADATA, hosts: [{ host: "shared.example.com" }] },
     });
     expect(await b.getConnection("shared.example.com")).toBeNull();
   });
@@ -240,12 +415,12 @@ describe("listAllConnectionWorkItems / writeRefreshedTokens / markConnectionExpi
     await a.upsertConnection({
       connection: "x.example.com",
       tokens: { accessToken: "t", refreshToken: "r", expiresAt: 100 },
-      metadata: { ...SAMPLE_METADATA, hostPattern: "x.example.com" },
+      metadata: { ...SAMPLE_METADATA, hosts: [{ host: "x.example.com" }] },
     });
     await b.upsertConnection({
       connection: "y.example.com",
       tokens: { accessToken: "t", refreshToken: "r", expiresAt: 200 },
-      metadata: { ...SAMPLE_METADATA, hostPattern: "y.example.com" },
+      metadata: { ...SAMPLE_METADATA, hosts: [{ host: "y.example.com" }] },
     });
 
     const items = await listAllConnectionWorkItems(client);
@@ -277,7 +452,7 @@ describe("listAllConnectionWorkItems / writeRefreshedTokens / markConnectionExpi
     expect(after!.tokens.accessToken).toBe("new");
     expect(after!.tokens.refreshToken).toBe("ref-new");
     expect(after!.tokens.expiresAt).toBe(200);
-    expect(after!.metadata.hostPattern).toBe("mcp.example.com");
+    expect(after!.metadata.hosts).toEqual([{ host: "mcp.example.com" }]);
     expect(after!.status).toBe("active");
   });
 

@@ -216,7 +216,7 @@ func BuildForkAgentJob(
 
 	// GH_TOKEN signal — mirrors the long-lived shape.
 	ghAvail := "false"
-	if hasGitHubCredential(credentialSecrets) {
+	if hasGHTokenEnv(credentialSecrets) {
 		ghAvail = "true"
 	}
 	env = append(env, corev1.EnvVar{Name: "PLATFORM_GH_TOKEN_AVAILABLE", Value: ghAvail})

@@ -93,7 +93,7 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("listing replier credential secrets: %v", err))
 	}
 
-	if !hasGitHubCredential(credentialSecrets) {
+	if !hasGHTokenEnv(credentialSecrets) {
 		slog.Warn("fork: replier has no GitHub credential Secret; gh/octokit calls will be unauthenticated",
 			"fork", forkName, "foreignSub", forkSpec.ForeignSub)
 	}

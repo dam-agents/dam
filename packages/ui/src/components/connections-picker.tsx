@@ -14,16 +14,16 @@ import { HoverTooltip } from "./hover-tooltip.js";
 
 /**
  * One row in the picker's "OAuth Apps" subsection. Joins the
- * api-server-managed app connection (host, displayName, expiry, appId for
- * the brand icon) with the K8s credential Secret's id (the grant target —
- * agents see the token via the Envoy sidecar's `Authorization: Bearer`
- * injection on `hostPattern`).
+ * api-server-managed app connection (hosts, displayName, expiry, appId
+ * for the brand icon) with the K8s credential Secret's id (the grant
+ * target — agents see the token via Envoy injection on every host).
  */
 export interface OAuthAppEntry {
   secretId: string;
   appId: string;
   displayName: string;
-  hostPattern: string;
+  /** Non-empty; rendered comma-joined under the displayName. */
+  hosts: string[];
   expired: boolean;
 }
 
@@ -330,7 +330,7 @@ function OAuthAppItemRow({
       </span>
       <div className="flex-1 min-w-0">
         <div className="text-[13px] font-medium text-text truncate">{entry.displayName}</div>
-        <div className="text-[11px] font-mono text-text-muted truncate">{entry.hostPattern}</div>
+        <div className="text-[11px] font-mono text-text-muted truncate">{entry.hosts.join(", ")}</div>
       </div>
       {entry.expired && (
         <span className="text-[11px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 shrink-0 bg-danger-light text-danger border-danger">

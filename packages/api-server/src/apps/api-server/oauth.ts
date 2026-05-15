@@ -189,7 +189,7 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
           const displayName =
             conn.displayName ??
             (app.id === "github-enterprise"
-              ? `${app.displayName} (${conn.hostPattern})`
+              ? `${app.displayName} (${conn.hosts[0] ?? ""})`
               : app.displayName);
           const connectionId =
             app.cardinality === "single" ? app.id : conn.connection;
@@ -197,7 +197,7 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
             appId: app.id,
             connectionId,
             displayName,
-            hostPattern: conn.hostPattern,
+            hosts: conn.hosts,
             connectedAt: conn.connectedAt ?? "",
             expired,
             // Surfaces the GitHub App slug when the connection's credentials
@@ -375,7 +375,7 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
         ...(regData.client_secret ? { clientSecret: regData.client_secret } : {}),
         ...(meta.scopes && meta.scopes.length > 0 ? { scopes: meta.scopes } : {}),
       },
-      flow: { connectionKey: hostPattern, hostPattern },
+      flow: { connectionKey: hostPattern, hosts: [{ host: hostPattern }] },
       redirectUri,
       userJwt: jwt,
       userSub: user.sub,
@@ -418,9 +418,9 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
     const isMcp = pending.provider.id.startsWith("mcp:");
 
     const metadata: ConnectionMetadata = {
-      hostPattern: pending.flow.hostPattern,
-      headerName: "Authorization",
-      valueFormat: "Bearer {value}",
+      // Authoritative for both injection and egress. GitHub declares
+      // three (issue #219); other apps one each.
+      hosts: pending.flow.hosts,
       tokenUrl: pending.provider.tokenEndpoint,
       authorizationUrl: pending.provider.authorizationUrl,
       clientId: pending.provider.clientId,
@@ -431,6 +431,11 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
         ? { scopes: pending.provider.scopes.join(" ") }
         : {}),
       ...(pending.flow.appSlug ? { appSlug: pending.flow.appSlug } : {}),
+      // Declarative env-var declarations (`GH_TOKEN`, `GH_HOST`, …)
+      // sourced from the descriptor's `flow.envMappings`. The controller
+      // materialises these as agent pod env vars; without this the
+      // controller falls back to host-specific hardcodes.
+      ...(pending.flow.envMappings?.length ? { envMappings: pending.flow.envMappings } : {}),
     };
     try {
       await k8sConnectionsFor(pending.userSub).upsertConnection({
@@ -456,7 +461,7 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
     // surface the previous server-side install bounce required.
     const successParams = new URLSearchParams();
     successParams.set("oauth", "success");
-    if (isMcp) successParams.set("host", pending.flow.hostPattern);
+    if (isMcp) successParams.set("host", pending.flow.hosts[0]!.host);
     else successParams.set("app", pending.flow.connectionKey);
     return c.redirect(`${uiBaseUrl}?${successParams.toString()}`);
   });

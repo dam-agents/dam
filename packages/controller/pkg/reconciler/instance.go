@@ -74,7 +74,7 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 		return r.setError(ctx, name, fmt.Sprintf("listing credential secrets: %v", err))
 	}
 
-	if !hasGitHubCredential(credentialSecrets) {
+	if !hasGHTokenEnv(credentialSecrets) {
 		slog.Warn("no GitHub credential Secret attached — gh/octokit calls will be unauthenticated",
 			"instance", name, "owner", owner)
 	}

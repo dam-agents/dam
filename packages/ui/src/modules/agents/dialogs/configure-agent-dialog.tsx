@@ -151,7 +151,7 @@ export function ConfigureAgentDialog({
         secretId: mirror.id,
         appId: conn.appId,
         displayName: conn.displayName,
-        hostPattern: conn.hostPattern,
+        hosts: conn.hosts,
         expired: conn.expired,
       }];
     });

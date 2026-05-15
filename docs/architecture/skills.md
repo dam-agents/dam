@@ -1,6 +1,6 @@
 # Skills
 
-Last verified: 2026-05-06
+Last verified: 2026-05-15
 
 ## Motivated by
 
@@ -133,7 +133,10 @@ Boot-time wiring runs `gh auth setup-git` once before the tRPC server starts, so
 Agent-runtime never holds a real GitHub token. The paired gateway pod performs the swap:
 
 1. The agent pod's `HTTPS_PROXY` is `http://<instance>-gateway:<envoy-port>` — the per-instance gateway Service DNS ([ADR-038](../adrs/038-paired-gateway-pod.md)). The agent pod's NetworkPolicy admits no other route to TCP 80/443, so credential injection is enforced by the cluster, not by the agent honoring an env var. `SSL_CERT_FILE` points at the cluster-issued MITM CA so TLS termination on the gateway succeeds ([security-and-credentials](security-and-credentials.md)).
-2. Envoy's host-specific filter chain for `api.github.com` injects `Authorization: Bearer <user's GitHub OAuth token>` from a K8s Secret mounted only on the gateway pod (labelled `platform.ai/owner=<sub>` and `platform.ai/connection=github` or similar), then re-originates upstream TLS to the real host.
+2. Envoy renders **three** host-specific filter chains for one GitHub OAuth Secret ([issue #219](https://github.com/dam-agents/dam/issues/219)). One Secret, three chains, three auth shapes; the Secret carries a per-host SDS file (`host-<sha8>.sds.yaml`) for each chain to read:
+   - `api.github.com` — `Authorization: Bearer <token>` (REST/GraphQL API).
+   - `github.com` — `Authorization: Basic base64("x-access-token:<token>")` (the HTTP Basic shape `git` over HTTPS expects, so private `git clone` / `git fetch` / `git push` work with no credential helper).
+   - `raw.githubusercontent.com` — `Authorization: Bearer <token>` (private raw-file fetches).
 3. agent-runtime makes its API calls without authenticating — Envoy supplies the credential.
 
 If the user has not connected GitHub, no Secret exists and the request leaves authenticated only when the agent has supplied its own token. The agent runtime exposes `PLATFORM_GH_TOKEN_AVAILABLE=true|false` so wrapper scripts can short-circuit instead of making a 401-eliciting request first.

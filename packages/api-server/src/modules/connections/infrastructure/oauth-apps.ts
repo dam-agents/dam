@@ -26,6 +26,7 @@ import { z } from "zod";
 
 import { DEFAULT_ENV_PLACEHOLDER, type EnvMapping } from "api-server-api";
 
+import type { ConnectionHostInjection } from "../domain/host-injection.js";
 import {
   type OAuthFlowMetadata,
   type OAuthFlowProvider,
@@ -167,17 +168,12 @@ export interface OAuthAppDescriptor {
    */
   credentialFamily?: string;
   /**
-   * API egress allowlist this descriptor opens when granted to an agent.
-   * Each rule is `{host, pathPattern?}`; multiple rules can target the
-   * same host as long as their path patterns differ (e.g. Drive at
-   * `www.googleapis.com/drive/*` and Calendar at `/calendar/*`).
-   *
-   * Static descriptors declare these here; dynamic-host apps (GHE,
-   * Generic) leave it undefined — the connections-service falls back to
-   * the connection's stored `hostPattern`/`pathPattern` metadata at
-   * grant time, since that's where the user-supplied host lives.
+   * Hosts the OAuth token injects on. Single source of truth for both
+   * credential injection and the egress allowlist. Dynamic-host apps
+   * (GHE/Generic/MCP) leave this undefined and `build()` synthesizes it
+   * from user input.
    */
-  egressHosts?: readonly { host: string; pathPattern?: string }[];
+  hosts?: readonly ConnectionHostInjection[];
 }
 
 export interface BuiltOAuthApp {
@@ -209,32 +205,25 @@ const GOOGLE_BASELINE_SCOPES = ["openid", "email", "profile"];
 interface GoogleServiceDef {
   displayName: string;
   description: string;
-  /** API host the service routes to (used for Envoy SNI / cred injection). */
-  hostPattern: string;
-  /** Service-specific scopes; baseline OIDC scopes are added automatically. */
+  /** Service-specific scopes; baseline OIDC scopes added automatically. */
   scopes: string[];
   /**
-   * Egress allowlist rules opened when this service is granted to an
-   * agent. Mirrors onecli's host_rules table — each rule is the canonical
-   * Google API host plus, for services that share `www.googleapis.com`,
-   * a path-prefix discriminator. Drive's `/drive/` and `/upload/drive/`
-   * coexist with Calendar's `/calendar/` because the path is part of the
-   * rule key.
+   * Hosts the credential injects on AND the egress allowlist. Mirrors
+   * onecli's host_rules table — see `OAuthAppDescriptor.hosts`.
    */
-  egressHosts: readonly { host: string; pathPattern?: string }[];
+  hosts: readonly ConnectionHostInjection[];
 }
 
 const GOOGLE_SERVICES: Record<GoogleServiceId, GoogleServiceDef> = {
   gmail: {
     displayName: "Gmail",
     description: "Read, compose, and send emails via Gmail.",
-    hostPattern: "gmail.googleapis.com",
     scopes: [
       "https://www.googleapis.com/auth/gmail.readonly",
       "https://www.googleapis.com/auth/gmail.modify",
       "https://www.googleapis.com/auth/gmail.send",
     ],
-    egressHosts: [
+    hosts: [
       { host: "gmail.googleapis.com" },
       { host: "www.googleapis.com", pathPattern: "/gmail/*" },
     ],
@@ -242,53 +231,47 @@ const GOOGLE_SERVICES: Record<GoogleServiceId, GoogleServiceDef> = {
   "google-admin": {
     displayName: "Google Admin",
     description: "Manage users, groups, and devices in Google Workspace.",
-    hostPattern: "admin.googleapis.com",
     scopes: ["https://www.googleapis.com/auth/admin.directory.user"],
-    egressHosts: [{ host: "admin.googleapis.com" }],
+    hosts: [{ host: "admin.googleapis.com" }],
   },
   "google-analytics": {
     displayName: "Google Analytics",
     description: "Access report data and run analytics queries.",
-    hostPattern: "analyticsdata.googleapis.com",
     scopes: ["https://www.googleapis.com/auth/analytics"],
-    egressHosts: [{ host: "analyticsdata.googleapis.com" }],
+    hosts: [{ host: "analyticsdata.googleapis.com" }],
   },
   "google-calendar": {
     displayName: "Google Calendar",
     description: "Read, create, and manage calendar events.",
-    hostPattern: "calendar.googleapis.com",
     scopes: [
       "https://www.googleapis.com/auth/calendar.readonly",
       "https://www.googleapis.com/auth/calendar.events",
     ],
-    egressHosts: [{ host: "www.googleapis.com", pathPattern: "/calendar/*" }],
+    hosts: [{ host: "www.googleapis.com", pathPattern: "/calendar/*" }],
   },
   "google-classroom": {
     displayName: "Google Classroom",
     description: "Manage classes, rosters, and invitations.",
-    hostPattern: "classroom.googleapis.com",
     scopes: ["https://www.googleapis.com/auth/classroom.courses"],
-    egressHosts: [{ host: "classroom.googleapis.com" }],
+    hosts: [{ host: "classroom.googleapis.com" }],
   },
   "google-docs": {
     displayName: "Google Docs",
     description: "Read, create, and edit Google Docs documents.",
-    hostPattern: "docs.googleapis.com",
     scopes: [
       "https://www.googleapis.com/auth/drive.readonly",
       "https://www.googleapis.com/auth/drive.file",
     ],
-    egressHosts: [{ host: "docs.googleapis.com" }],
+    hosts: [{ host: "docs.googleapis.com" }],
   },
   "google-drive": {
     displayName: "Google Drive",
     description: "Read, create, and manage files and folders.",
-    hostPattern: "www.googleapis.com",
     scopes: [
       "https://www.googleapis.com/auth/drive.readonly",
       "https://www.googleapis.com/auth/drive.file",
     ],
-    egressHosts: [
+    hosts: [
       { host: "www.googleapis.com", pathPattern: "/drive/*" },
       { host: "www.googleapis.com", pathPattern: "/upload/drive/*" },
     ],
@@ -296,80 +279,71 @@ const GOOGLE_SERVICES: Record<GoogleServiceId, GoogleServiceDef> = {
   "google-forms": {
     displayName: "Google Forms",
     description: "Read, create, and edit forms and responses.",
-    hostPattern: "forms.googleapis.com",
     scopes: ["https://www.googleapis.com/auth/forms.body"],
-    egressHosts: [{ host: "forms.googleapis.com" }],
+    hosts: [{ host: "forms.googleapis.com" }],
   },
   "google-health": {
     displayName: "Google Health",
     description:
       "Access activity, sleep, and health metrics from Fitbit and connected devices.",
-    hostPattern: "health.googleapis.com",
     scopes: [
       "https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly",
       "https://www.googleapis.com/auth/googlehealth.sleep.readonly",
       "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly",
     ],
-    egressHosts: [{ host: "health.googleapis.com" }],
+    hosts: [{ host: "health.googleapis.com" }],
   },
   "google-meet": {
     displayName: "Google Meet",
     description: "Create and manage meetings.",
-    hostPattern: "meet.googleapis.com",
     scopes: ["https://www.googleapis.com/auth/meetings.space.created"],
-    egressHosts: [{ host: "meet.googleapis.com" }],
+    hosts: [{ host: "meet.googleapis.com" }],
   },
   "google-photos": {
     displayName: "Google Photos",
     description: "Manage photos, videos, and albums.",
-    hostPattern: "photoslibrary.googleapis.com",
     scopes: ["https://www.googleapis.com/auth/photoslibrary"],
-    egressHosts: [{ host: "photoslibrary.googleapis.com" }],
+    hosts: [{ host: "photoslibrary.googleapis.com" }],
   },
   "google-search-console": {
     displayName: "Google Search Console",
     description: "View search traffic data and manage site presence.",
-    hostPattern: "searchconsole.googleapis.com",
     scopes: ["https://www.googleapis.com/auth/webmasters"],
-    egressHosts: [{ host: "searchconsole.googleapis.com" }],
+    hosts: [{ host: "searchconsole.googleapis.com" }],
   },
   "google-sheets": {
     displayName: "Google Sheets",
     description: "Read, create, and edit spreadsheets.",
-    hostPattern: "sheets.googleapis.com",
     scopes: [
       "https://www.googleapis.com/auth/drive.readonly",
       "https://www.googleapis.com/auth/drive.file",
     ],
-    egressHosts: [{ host: "sheets.googleapis.com" }],
+    hosts: [{ host: "sheets.googleapis.com" }],
   },
   "google-slides": {
     displayName: "Google Slides",
     description: "Read, create, and edit presentations.",
-    hostPattern: "slides.googleapis.com",
     scopes: [
       "https://www.googleapis.com/auth/drive.readonly",
       "https://www.googleapis.com/auth/drive.file",
     ],
-    egressHosts: [{ host: "slides.googleapis.com" }],
+    hosts: [{ host: "slides.googleapis.com" }],
   },
   "google-tasks": {
     displayName: "Google Tasks",
     description: "Manage task lists and tasks.",
-    hostPattern: "tasks.googleapis.com",
     scopes: ["https://www.googleapis.com/auth/tasks"],
-    egressHosts: [{ host: "tasks.googleapis.com" }],
+    hosts: [{ host: "tasks.googleapis.com" }],
   },
   youtube: {
     displayName: "YouTube",
     description: "Manage playlists, videos, and channel content on YouTube.",
-    hostPattern: "youtube.googleapis.com",
     scopes: [
       "https://www.googleapis.com/auth/youtube.readonly",
       "https://www.googleapis.com/auth/youtube",
       "https://www.googleapis.com/auth/youtube.force-ssl",
     ],
-    egressHosts: [
+    hosts: [
       { host: "youtube.googleapis.com" },
       { host: "www.googleapis.com", pathPattern: "/youtube/*" },
     ],
@@ -397,7 +371,7 @@ function googleService(id: GoogleServiceId): OAuthAppDescriptor {
       { name: "clientSecret", label: "Client secret", secret: true, placeholder: "GOCSPX-…" },
     ],
     credentialFamily: "google",
-    egressHosts: def.egressHosts,
+    hosts: def.hosts,
   };
 }
 
@@ -434,7 +408,16 @@ const DESCRIPTORS: Record<OAuthAppId, OAuthAppDescriptor> = {
         optional: true,
       },
     ],
-    egressHosts: [{ host: "api.github.com" }, { host: "github.com" }],
+    // Issue #219: api (Bearer), www (HTTP Basic for `git clone`), raw (Bearer).
+    hosts: [
+      { host: "api.github.com" },
+      {
+        host: "github.com",
+        valueFormat: "Basic {value}",
+        encoding: "basic-x-access-token",
+      },
+      { host: "raw.githubusercontent.com" },
+    ],
   },
   "github-enterprise": {
     id: "github-enterprise",
@@ -481,7 +464,7 @@ const DESCRIPTORS: Record<OAuthAppId, OAuthAppDescriptor> = {
     // since 2024) but accepts `127.0.0.1`. Reaching the api-server via the
     // catch-all ingress rule on the platform's local-dev cluster.
     localhostCallbackAlias: "127.0.0.1",
-    egressHosts: [{ host: "api.spotify.com" }],
+    hosts: [{ host: "api.spotify.com" }],
   },
   ...googleServiceDescriptors(),
   generic: {
@@ -729,7 +712,7 @@ function buildGithub(input: GithubInput): BuiltOAuthApp {
     },
     flow: {
       connectionKey: "github",
-      hostPattern: "api.github.com",
+      hosts: DESCRIPTORS.github.hosts!,
       displayName: "GitHub",
       envMappings: [GH_TOKEN_ENV_MAPPING],
       ...(input.appSlug ? { appSlug: input.appSlug } : {}),
@@ -751,11 +734,10 @@ function buildGhe(input: GheInput): BuiltOAuthApp {
       tokenEndpointAcceptJson: true,
     },
     flow: {
-      // Single GHE per user for now — connecting a different GHE host
-      // replaces the previous one. Multi-host GHE (key on host hash) is a
-      // follow-up.
+      // Single GHE per user — reconnecting replaces. Multi-host (mirroring
+      // github.com's three-host setup) is out of scope for #219.
       connectionKey: "github-enterprise",
-      hostPattern: host,
+      hosts: [{ host }],
       displayName: `GitHub Enterprise (${host})`,
       // GH_HOST is a literal config value (the user's enterprise host), not a
       // sentinel — `gh` CLI uses it to direct API calls to the right server.
@@ -782,7 +764,7 @@ function buildSpotify(input: SpotifyInput): BuiltOAuthApp {
     },
     flow: {
       connectionKey: "spotify",
-      hostPattern: "api.spotify.com",
+      hosts: DESCRIPTORS.spotify.hosts!,
       displayName: "Spotify",
     },
     connectionDisplayName: "Spotify",
@@ -808,7 +790,7 @@ function buildGoogleService(id: GoogleServiceId, input: GoogleInput): BuiltOAuth
     },
     flow: {
       connectionKey: id,
-      hostPattern: def.hostPattern,
+      hosts: def.hosts,
       displayName: def.displayName,
     },
     connectionDisplayName: def.displayName,
@@ -843,7 +825,7 @@ function buildGeneric(input: GenericInput): BuiltOAuthApp {
     },
     flow: {
       connectionKey: genericConnectionKey(input.hostPattern),
-      hostPattern: input.hostPattern,
+      hosts: [{ host: input.hostPattern }],
       displayName: input.displayName,
     },
     connectionDisplayName: input.displayName,

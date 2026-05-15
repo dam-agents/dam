@@ -12,6 +12,8 @@
  */
 import crypto from "node:crypto";
 
+import type { ConnectionHostInjection } from "../domain/host-injection.js";
+
 export interface OAuthFlowProvider {
   /**
    * Stable provider id, primarily used in logs/diagnostics. Storage keying
@@ -38,8 +40,12 @@ export interface OAuthFlowProvider {
 export interface OAuthFlowMetadata {
   /** Storage key under which the resulting tokens land. */
   connectionKey: string;
-  /** Host pattern for downstream credential-injection routing. */
-  hostPattern: string;
+  /**
+   * Hosts this connection injects on. Non-empty; first entry is the
+   * identity host. The controller fans this into one filter chain per
+   * entry. See `ConnectionHostInjection`.
+   */
+  hosts: readonly ConnectionHostInjection[];
   /**
    * Human-readable label saved on the resulting K8s Secret. The static apps
    * derive this from the descriptor; the Generic app passes the user's

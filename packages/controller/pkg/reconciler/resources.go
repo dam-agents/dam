@@ -288,7 +288,7 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 	// wrapper scripts and operators can detect missing auth without making
 	// a 401-eliciting request first.
 	ghAvail := "false"
-	if hasGitHubCredential(credentialSecrets) {
+	if hasGHTokenEnv(credentialSecrets) {
 		ghAvail = "true"
 	}
 	env = append(env, corev1.EnvVar{Name: "PLATFORM_GH_TOKEN_AVAILABLE", Value: ghAvail})

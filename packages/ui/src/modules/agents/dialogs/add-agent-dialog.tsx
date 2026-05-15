@@ -204,7 +204,7 @@ export function AddAgentDialog({
         secretId: mirror.id,
         appId: conn.appId,
         displayName: conn.displayName,
-        hostPattern: conn.hostPattern,
+        hosts: conn.hosts,
         expired: conn.expired,
       }];
     });

@@ -34,7 +34,7 @@ export function OAuthAppRow({ app, connection, animationDelayMs, onReconnect }: 
 
   const detail = expired
     ? "Expired — reconnect to refresh access"
-    : `Connected ${new Date(connection.connectedAt).toLocaleDateString()} · ${connection.hostPattern}`;
+    : `Connected ${new Date(connection.connectedAt).toLocaleDateString()} · ${connection.hosts.join(", ")}`;
 
   const installUrl = appInstallUrl(connection);
 

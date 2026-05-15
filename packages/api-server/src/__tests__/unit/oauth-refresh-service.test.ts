@@ -59,9 +59,7 @@ function fakeClient() {
 }
 
 const SAMPLE_METADATA = {
-  hostPattern: "mcp.example.com",
-  headerName: "Authorization",
-  valueFormat: "Bearer {value}",
+  hosts: [{ host: "mcp.example.com" }],
   tokenUrl: "https://mcp.example.com/oauth/token",
   clientId: "client-123",
   grantType: "authorization_code" as const,
@@ -152,7 +150,7 @@ describe("oauth-refresh-service", () => {
     await port.upsertConnection({
       connection: "svc.example.com",
       tokens: { accessToken: "tok", refreshToken: "ref", expiresAt: NOW_MS / 1000 + 30 },
-      metadata: { ...SAMPLE_METADATA, grantType: "client_credentials", hostPattern: "svc.example.com" },
+      metadata: { ...SAMPLE_METADATA, grantType: "client_credentials", hosts: [{ host: "svc.example.com" }] },
     });
 
     const fetchImpl = vi.fn() as unknown as typeof fetch;
@@ -414,5 +412,69 @@ describe("oauth-refresh-service", () => {
     const after = store.get(connectionSecretName("owner-1", "mcp.example.com"))!;
     expect(decode(after, "refresh_token")).toBe("ref-keep");
     expect(decode(after, "raw_access_token")).toBe("new");
+  });
+
+  // Issue #219: refresh re-renders every host's SDS file in one write.
+  it("re-renders every host's SDS file on refresh (multi-host connection)", async () => {
+    const { client, store } = fakeClient();
+    const port = createK8sConnectionsPort(client, "owner-1");
+
+    const NOW_MS = 1_700_000_000_000;
+    await port.upsertConnection({
+      connection: "github",
+      tokens: { accessToken: "old", refreshToken: "ref-old", expiresAt: NOW_MS / 1000 + 60 },
+      metadata: {
+        hosts: [
+          { host: "api.github.com" },
+          {
+            host: "github.com",
+            valueFormat: "Basic {value}",
+            encoding: "basic-x-access-token",
+          },
+          { host: "raw.githubusercontent.com" },
+        ],
+        tokenUrl: "https://github.com/login/oauth/access_token",
+        clientId: "github-client",
+        clientSecret: "github-secret",
+        grantType: "authorization_code",
+      },
+    });
+
+    const fetchImpl = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          access_token: "rotated",
+          refresh_token: "ref-new",
+          expires_in: 3600,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    ) as unknown as typeof fetch;
+
+    const svc = createOAuthRefreshService({
+      k8sClient: client,
+      fetchImpl,
+      now: () => NOW_MS,
+      log: () => {},
+    });
+    await svc.tick();
+
+    // Single endpoint call — one Secret per connection.
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+
+    const { sdsFileKeyForHost } = await import(
+      "../../modules/connections/infrastructure/k8s-connections-port.js"
+    );
+    const secret = store.get(connectionSecretName("owner-1", "github"))!;
+    expect(decode(secret, sdsFileKeyForHost("api.github.com"))).toContain(
+      'inline_string: "Bearer rotated"',
+    );
+    const expectedB64 = Buffer.from("x-access-token:rotated", "utf8").toString("base64");
+    expect(decode(secret, sdsFileKeyForHost("github.com"))).toContain(
+      `inline_string: "Basic ${expectedB64}"`,
+    );
+    expect(decode(secret, sdsFileKeyForHost("raw.githubusercontent.com"))).toContain(
+      'inline_string: "Bearer rotated"',
+    );
   });
 });

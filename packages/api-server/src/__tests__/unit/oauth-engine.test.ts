@@ -18,7 +18,7 @@ const PROVIDER: OAuthFlowProvider = {
 
 const FLOW: OAuthFlowMetadata = {
   connectionKey: "github",
-  hostPattern: "api.github.com",
+  hosts: [{ host: "api.github.com" }],
 };
 
 describe("oauth-engine.start", () => {

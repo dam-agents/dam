@@ -101,7 +101,10 @@ const oauthAppConnectionSchema = z.object({
   /** Identifier used by DELETE /api/oauth/apps/connections/:id. */
   connectionId: z.string(),
   displayName: z.string(),
-  hostPattern: z.string(),
+  /** Hosts the OAuth token injects on. First is the identity host
+   *  (the API endpoint for static descriptors). For github this is the
+   *  three-host list from #219. */
+  hosts: z.array(z.string()).min(1),
   connectedAt: z.string(),
   expired: z.boolean(),
   /** GitHub App slug — only set when the connection's credentials belong

@@ -48,48 +48,20 @@ export function createConnectionsService(deps: {
    * idempotently. (See 034-pod-files-push.)
    */
   podFiles?: PodFilesPublisher;
-  /**
-   * OAuth app registry. Connection egress hosts come from two sources:
-   *   - Static descriptors (`descriptor.egressHosts`) for github, spotify,
-   *     and the Google services — co-located with the descriptor itself.
-   *   - The connection's stored `(hostPattern, pathPattern)` metadata for
-   *     dynamic-host apps (Generic OAuth, GitHub Enterprise) where the
-   *     host is a user-supplied input at connect time.
-   * Replaces the previous helm-mounted provider→hosts map (ADR-035).
-   */
+  /** OAuth app registry. Used at grant time to resolve a connection to its
+   *  static-descriptor host list without a K8s read. Dynamic-host apps
+   *  (Generic, GHE) fall through to `getConnection`. */
   apps?: OAuthAppRegistry;
   /** Egress-rules adapter the composition root supplies. */
   connectionRules?: ConnectionRulesSyncPort;
 }): ConnectionsService {
-  // Resolve a connection's egress host rules. Static descriptors declare
-  // `egressHosts`; dynamic-host apps (Generic, GHE) leave it undefined and
-  // we fall back to the connection's stored hostPattern/pathPattern.
-  function rulesFor(
-    summary: { connection: string; hostPattern: string },
-    record: { metadata?: { hostPattern: string; pathPattern?: string } } | null,
-  ): { host: string; pathPattern?: string }[] {
-    const descriptor = deps.apps?.list().find((a) => matchesAppConnection(a, summary.connection));
-    if (descriptor?.egressHosts && descriptor.egressHosts.length > 0) {
-      return descriptor.egressHosts.map((r) => ({ ...r }));
-    }
-    const host = record?.metadata?.hostPattern ?? summary.hostPattern;
-    if (!host) return [];
-    const pathPattern = record?.metadata?.pathPattern;
-    return [pathPattern ? { host, pathPattern } : { host }];
-  }
-
   return {
     async list() {
       const connections = await deps.port.listConnections();
-      // UI preview takes hostnames only — the path-pattern detail lives on
-      // the rendered egress rules, not the connection summary. Pull from
-      // descriptor.egressHosts where available; for dynamic-host apps the
-      // summary already carries the host that user supplied at connect
-      // time, so no extra K8s round-trip is needed.
+      // Hosts authoritative on the stored connection; no descriptor lookup.
       return connections.map<AppConnectionView>((c) => {
         const provider = c.connection;
-        const rules = rulesFor(c, null);
-        const hostnames = Array.from(new Set(rules.map((r) => r.host)));
+        const hostnames = Array.from(new Set(c.hosts));
         return {
           id: c.connection,
           provider,
@@ -111,32 +83,36 @@ export function createConnectionsService(deps: {
       await deps.grants.setConnectionGrants(agentId, deduped);
 
       if (deps.connectionRules && deps.owner) {
-        // Sync `connection:<id>` egress rules per granted provider's API
-        // host rules (ADR-035). Resolution order per connection:
-        //   1. `descriptor.egressHosts` — static apps (github, spotify,
-        //      Google services) declare their canonical hosts.
-        //   2. The connection's stored `(hostPattern, pathPattern)` —
-        //      dynamic-host apps (Generic, GHE) where the host is user
-        //      input. Pulled via `getConnection` which loads the full
-        //      record (one round-trip per granted dynamic-host conn).
-        const all = await deps.port.listConnections();
+        // Egress rules per granted connection (ADR-035). Two paths:
+        //   1. Static descriptor (github, spotify, Google) — host list is
+        //      a property of the API, declared in code. Read from
+        //      `descriptor.hosts` in memory; no K8s round-trip.
+        //   2. Dynamic descriptor (Generic, GHE) — host is user input at
+        //      connect time. Read from the connection's stored
+        //      `metadata.hosts` via `getConnection`.
         const grants = new Map<string, { hosts: readonly { host: string; pathPattern?: string }[] }>();
-        for (const c of all) {
-          if (!deduped.includes(c.connection)) continue;
+        const all = await deps.port.listConnections();
+        for (const summary of all) {
+          if (!deduped.includes(summary.connection)) continue;
           const descriptor = deps.apps
             ?.list()
-            .find((a) => matchesAppConnection(a, c.connection));
-          let hosts = descriptor?.egressHosts
-            ? descriptor.egressHosts.map((r) => ({ ...r }))
+            .find((a) => matchesAppConnection(a, summary.connection));
+          let hosts: { host: string; pathPattern?: string }[] = descriptor?.hosts
+            ? descriptor.hosts.map((h) => ({
+                host: h.host,
+                ...(h.pathPattern ? { pathPattern: h.pathPattern } : {}),
+              }))
             : [];
           if (hosts.length === 0) {
-            // Dynamic-host fallback — read the connection's user-supplied
-            // host from K8s metadata.
-            const record = await deps.port.getConnection(c.connection);
-            hosts = rulesFor(c, record);
+            const record = await deps.port.getConnection(summary.connection);
+            if (!record) continue;
+            hosts = record.metadata.hosts.map((h) => ({
+              host: h.host,
+              ...(h.pathPattern ? { pathPattern: h.pathPattern } : {}),
+            }));
           }
           if (hosts.length === 0) continue;
-          grants.set(c.connection, { hosts });
+          grants.set(summary.connection, { hosts });
         }
         // ownedSourceIds = every connection id the user owns. Lets the
         // sync revoke this module's rows without touching secret-derived
