@@ -15,11 +15,13 @@ const npGateInitContainerName = "np-gate"
 // verifiably enforced — used on runtimes where the in-pod iptables init
 // can't run (Kata/CoCo guest kernels without netfilter).
 //
-// Probes a canary destination expected to be denied AND the paired
-// gateway expected to be reachable; only releases when both hold.
-// Defaults to the kube-apiserver Service IP (KUBERNETES_SERVICE_HOST /
-// KUBERNETES_SERVICE_PORT auto-injected by kubelet) — operators can
-// override via `npGateInit.deniedHost` / `.deniedPort`.
+// Probes the kube-apiserver Service (kubelet-injected
+// KUBERNETES_SERVICE_HOST / KUBERNETES_SERVICE_PORT) expecting the NP
+// to DROP it, and the paired gateway expecting it to be reachable;
+// only releases when both hold. Hard-coded to the kube-apiserver
+// because it's the only target that's always actively listening AND
+// always silently DROPped by the agent egress NP — other choices
+// admit TCP-RST false positives that `nc -z` can't distinguish.
 //
 // Fail-closed: timeout → exit 1 → pod stays in Init:CrashLoopBackOff.
 //
@@ -37,25 +39,21 @@ func buildNPGateInitContainer(cfg *config.Config, gatewayClusterIP string) *core
 		timeoutSeconds = 30
 	}
 
-	// DENIED_HOST / DENIED_PORT default to the kubelet-injected
-	// KUBERNETES_SERVICE_HOST / KUBERNETES_SERVICE_PORT — shell
-	// parameter expansion `${X:-fallback}` honors the kubelet values
-	// unless the operator overrode them in env below.
+	// KUBERNETES_SERVICE_HOST / KUBERNETES_SERVICE_PORT are auto-injected
+	// by kubelet into every pod — no plumbing needed here.
 	script := `set -u
-DENIED_HOST="${DENIED_HOST:-${KUBERNETES_SERVICE_HOST}}"
-DENIED_PORT="${DENIED_PORT:-${KUBERNETES_SERVICE_PORT}}"
 deadline=$(($(date +%s) + ${TIMEOUT_SECONDS}))
-echo "np-gate: probing denied=${DENIED_HOST}:${DENIED_PORT} allowed=${GATEWAY_IP}:${ENVOY_PORT}, deadline=${TIMEOUT_SECONDS}s"
+echo "np-gate: probing denied=${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT} allowed=${GATEWAY_IP}:${ENVOY_PORT}, deadline=${TIMEOUT_SECONDS}s"
 while [ "$(date +%s)" -lt "${deadline}" ]; do
-    if ! nc -w 2 -z "${DENIED_HOST}" "${DENIED_PORT}" 2>/dev/null; then
+    if ! nc -w 2 -z "${KUBERNETES_SERVICE_HOST}" "${KUBERNETES_SERVICE_PORT}" 2>/dev/null; then
         if nc -w 2 -z "${GATEWAY_IP}" "${ENVOY_PORT}" 2>/dev/null; then
-            echo "np-gate: NetworkPolicy enforced (denied ${DENIED_HOST}:${DENIED_PORT} blocked, gateway ${GATEWAY_IP}:${ENVOY_PORT} reachable)"
+            echo "np-gate: NetworkPolicy enforced (denied ${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT} blocked, gateway ${GATEWAY_IP}:${ENVOY_PORT} reachable)"
             exit 0
         fi
     fi
     sleep 0.3
 done
-echo "np-gate: FATAL — NetworkPolicy did not converge within ${TIMEOUT_SECONDS}s (denied=${DENIED_HOST}:${DENIED_PORT} allowed=${GATEWAY_IP}:${ENVOY_PORT})" >&2
+echo "np-gate: FATAL — NetworkPolicy did not converge within ${TIMEOUT_SECONDS}s (denied=${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT} allowed=${GATEWAY_IP}:${ENVOY_PORT})" >&2
 exit 1
 `
 
@@ -63,14 +61,6 @@ exit 1
 		{Name: "GATEWAY_IP", Value: gatewayClusterIP},
 		{Name: "ENVOY_PORT", Value: fmt.Sprintf("%d", cfg.EnvoyPort)},
 		{Name: "TIMEOUT_SECONDS", Value: fmt.Sprintf("%d", timeoutSeconds)},
-	}
-	// Only inject when overridden — empty values would mask kubelet's
-	// KUBERNETES_SERVICE_HOST/PORT injection.
-	if cfgGate.DeniedHost != "" {
-		env = append(env, corev1.EnvVar{Name: "DENIED_HOST", Value: cfgGate.DeniedHost})
-	}
-	if cfgGate.DeniedPort != 0 {
-		env = append(env, corev1.EnvVar{Name: "DENIED_PORT", Value: fmt.Sprintf("%d", cfgGate.DeniedPort)})
 	}
 
 	return &corev1.Container{

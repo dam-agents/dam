@@ -94,10 +94,6 @@ type AgentIptablesInit struct {
 type AgentNPGateInit struct {
 	Enabled bool   `json:"enabled,omitempty"`
 	Image   string `json:"image,omitempty"`
-	// Canary destination the probe expects to be DROPped. Empty defaults
-	// to kubelet's KUBERNETES_SERVICE_HOST / KUBERNETES_SERVICE_PORT.
-	DeniedHost string `json:"deniedHost,omitempty"`
-	DeniedPort int    `json:"deniedPort,omitempty"`
 	// Bound on probe convergence; fail-closed on timeout.
 	TimeoutSeconds int `json:"timeoutSeconds,omitempty"`
 }

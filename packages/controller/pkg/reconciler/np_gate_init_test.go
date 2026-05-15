@@ -51,13 +51,11 @@ func TestBuildNPGateInitContainer_NoCapsUnprivileged(t *testing.T) {
 	assert.Empty(t, ic.SecurityContext.Capabilities.Add, "no capabilities — pure TCP probe")
 }
 
-func TestBuildNPGateInitContainer_ProbeShapeWithOverride(t *testing.T) {
+func TestBuildNPGateInitContainer_ProbeShape(t *testing.T) {
 	cfg := *testConfig
 	cfg.AgentBase.NPGateInit = &config.AgentNPGateInit{
 		Enabled:        true,
 		Image:          "busybox:1.36",
-		DeniedHost:     "10.0.0.1",
-		DeniedPort:     443,
 		TimeoutSeconds: 30,
 	}
 
@@ -66,45 +64,24 @@ func TestBuildNPGateInitContainer_ProbeShapeWithOverride(t *testing.T) {
 	require.GreaterOrEqual(t, len(ic.Command), 3)
 	script := ic.Command[2]
 
-	// Probe shape: nc against denied host expected to FAIL, against
-	// gateway expected to SUCCEED. Both must hold before exit 0.
-	assert.Contains(t, script, `nc -w 2 -z "${DENIED_HOST}" "${DENIED_PORT}"`, "TCP probe against canary denied destination")
+	// Probe shape: nc against kube-apiserver (must FAIL — NP denies),
+	// and against gateway (must SUCCEED). Both must hold before exit 0.
+	assert.Contains(t, script, `nc -w 2 -z "${KUBERNETES_SERVICE_HOST}" "${KUBERNETES_SERVICE_PORT}"`,
+		"negative probe against kube-apiserver (kubelet-injected env)")
 	assert.Contains(t, script, `nc -w 2 -z "${GATEWAY_IP}" "${ENVOY_PORT}"`, "positive probe against the paired gateway")
 	assert.Contains(t, script, "exit 1", "fail-closed on timeout — NP didn't converge")
 	assert.Contains(t, script, "exit 0", "release the workload when both probes match expectation")
-	// Shell fallback to kubelet env vars when operator doesn't override.
-	assert.Contains(t, script, `DENIED_HOST="${DENIED_HOST:-${KUBERNETES_SERVICE_HOST}}"`,
-		"DENIED_HOST falls back to KUBERNETES_SERVICE_HOST")
-	assert.Contains(t, script, `DENIED_PORT="${DENIED_PORT:-${KUBERNETES_SERVICE_PORT}}"`,
-		"DENIED_PORT falls back to KUBERNETES_SERVICE_PORT")
 
 	envMap := map[string]string{}
 	for _, e := range ic.Env {
 		envMap[e.Name] = e.Value
 	}
 	assert.Equal(t, "10.96.42.42", envMap["GATEWAY_IP"])
-	assert.Equal(t, "10.0.0.1", envMap["DENIED_HOST"], "operator override sets the env var")
-	assert.Equal(t, "443", envMap["DENIED_PORT"])
 	assert.Equal(t, "30", envMap["TIMEOUT_SECONDS"])
 	assert.NotEmpty(t, envMap["ENVOY_PORT"])
-}
-
-// Default config must NOT set DENIED_HOST / DENIED_PORT — empty env
-// vars would mask kubelet's KUBERNETES_SERVICE_HOST/PORT injection,
-// which the shell fallback relies on. Absence is load-bearing.
-func TestBuildNPGateInitContainer_DefaultsUseKubeAPIServer(t *testing.T) {
-	cfg := *testConfig
-	cfg.AgentBase.NPGateInit = &config.AgentNPGateInit{Enabled: true, Image: "busybox:1.36"}
-
-	ic := buildNPGateInitContainer(&cfg, "10.96.42.42")
-	require.NotNil(t, ic)
-	envMap := map[string]string{}
-	for _, e := range ic.Env {
-		envMap[e.Name] = e.Value
-	}
-	_, hostSet := envMap["DENIED_HOST"]
-	_, portSet := envMap["DENIED_PORT"]
-	assert.False(t, hostSet, "DENIED_HOST must be unset so kubelet's KUBERNETES_SERVICE_HOST flows through")
-	assert.False(t, portSet, "DENIED_PORT must be unset so kubelet's KUBERNETES_SERVICE_PORT flows through")
-	assert.Equal(t, "30", envMap["TIMEOUT_SECONDS"])
+	// kube-apiserver isn't plumbed via our env block — kubelet does it.
+	_, kubeHostSet := envMap["KUBERNETES_SERVICE_HOST"]
+	_, kubePortSet := envMap["KUBERNETES_SERVICE_PORT"]
+	assert.False(t, kubeHostSet, "KUBERNETES_SERVICE_HOST comes from kubelet, not the controller")
+	assert.False(t, kubePortSet, "KUBERNETES_SERVICE_PORT comes from kubelet, not the controller")
 }
