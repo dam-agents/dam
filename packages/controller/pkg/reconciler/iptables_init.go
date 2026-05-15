@@ -21,11 +21,16 @@ const iptablesInitContainerName = "egress-lockdown"
 // feature is off, the image is unset, or the gateway IP isn't known yet.
 //
 // Targets the SIG Release `registry.k8s.io/build-image/distroless-iptables`
-// image. We invoke `iptables-nft` directly rather than the wrapped
-// `iptables` entrypoint — the wrapper auto-detects nft vs legacy by
-// writing symlinks at runtime, which the container's
-// `readOnlyRootFilesystem: true` blocks. Every kernel K8s supports
-// (≥4.18) ships nftables, so the direct call is portable.
+// image, which ships both `iptables-nft` and `iptables-legacy`. We
+// invoke the backend binary directly rather than the wrapped `iptables`
+// entrypoint — the wrapper auto-detects nft vs legacy by writing
+// symlinks at runtime, which the container's `readOnlyRootFilesystem:
+// true` blocks. The script probes nft first and falls back to legacy:
+// Kata Containers guest kernels (used by OpenShift Sandboxed Containers
+// and others) commonly ship `CONFIG_IP_NF_IPTABLES_LEGACY=y` but not
+// `CONFIG_NF_TABLES`, so `iptables-nft` fails with
+// "Failed to initialize nft: Protocol not supported" while
+// `iptables-legacy` works against the same kernel.
 func buildIptablesInitContainer(cfg *config.Config, gatewayClusterIP string) *corev1.Container {
 	cfgInit := cfg.AgentBase.IptablesInit
 	if cfgInit == nil || !cfgInit.Enabled || cfgInit.Image == "" || gatewayClusterIP == "" {
@@ -36,15 +41,33 @@ func buildIptablesInitContainer(cfg *config.Config, gatewayClusterIP string) *co
 	// dual-stack ClusterIP), so there's no IPv6 ACCEPT for it. Without
 	// this, an agent could exfil over IPv6 if the node has v6
 	// connectivity — our IPv4 rules wouldn't see those packets at all.
+	//
+	// Probe by listing the default OUTPUT chain — if the backend's
+	// netlink subsystem isn't compiled into the running kernel, the list
+	// itself errors out before any rule application. Fail-closed when
+	// both backends are unusable: defense-in-depth is the whole point of
+	// this container, so the pod must not silently fall back to
+	// NetworkPolicy-only.
 	script := `set -eu
 echo "egress-lockdown: gateway=$GATEWAY_IP:$ENVOY_PORT"
-iptables-nft -A OUTPUT -o lo -j ACCEPT
-iptables-nft -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-iptables-nft -A OUTPUT -d "$GATEWAY_IP" -p tcp --dport "$ENVOY_PORT" -j ACCEPT
-iptables-nft -A OUTPUT -j DROP
-ip6tables-nft -A OUTPUT -o lo -j ACCEPT
-ip6tables-nft -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-ip6tables-nft -A OUTPUT -j DROP
+if iptables-nft -nL OUTPUT >/dev/null 2>&1; then
+    IPT=iptables-nft
+    IP6T=ip6tables-nft
+elif iptables-legacy -nL OUTPUT >/dev/null 2>&1; then
+    IPT=iptables-legacy
+    IP6T=ip6tables-legacy
+else
+    echo "egress-lockdown: FATAL — neither iptables-nft nor iptables-legacy works against this kernel (CONFIG_NF_TABLES and CONFIG_IP_NF_IPTABLES both absent?)" >&2
+    exit 1
+fi
+echo "egress-lockdown: backend=$IPT"
+"$IPT" -A OUTPUT -o lo -j ACCEPT
+"$IPT" -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+"$IPT" -A OUTPUT -d "$GATEWAY_IP" -p tcp --dport "$ENVOY_PORT" -j ACCEPT
+"$IPT" -A OUTPUT -j DROP
+"$IP6T" -A OUTPUT -o lo -j ACCEPT
+"$IP6T" -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+"$IP6T" -A OUTPUT -j DROP
 echo "egress-lockdown: gateway-only IPv4 + IPv6 drop applied"
 `
 
