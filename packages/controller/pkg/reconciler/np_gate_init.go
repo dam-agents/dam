@@ -12,36 +12,20 @@ const npGateInitContainerName = "np-gate"
 
 // buildNPGateInitContainer renders an unprivileged init container that
 // blocks the agent's main container until the egress NetworkPolicy is
-// verifiably enforced.
+// verifiably enforced — used on runtimes where the in-pod iptables init
+// can't run (Kata/CoCo guest kernels without netfilter).
 //
-// Threat: OVN-K programs NetworkPolicy ACLs asynchronously after the pod's
-// netns is set up. There's a small window (typically ms, occasionally
-// longer under churn) where the pod can egress before its NPs are in
-// force. The iptables init container closes this race deterministically
-// by setting rules inside the pod — but on Kata/CoCo guest kernels that
-// lack netfilter modules (see PR #234), the iptables path is unavailable.
-// This gate is the alternative: probe an outside-the-allow-list
-// destination until it's DROPped, then exit so the agent can start.
+// Probes a canary destination expected to be denied AND the paired
+// gateway expected to be reachable; only releases when both hold.
+// Defaults to the kube-apiserver Service IP (KUBERNETES_SERVICE_HOST /
+// KUBERNETES_SERVICE_PORT auto-injected by kubelet) — operators can
+// override via `npGateInit.deniedHost` / `.deniedPort`.
 //
-// Probe shape: TCP-connect to a canary destination with a short timeout.
-// While the connect succeeds, NP isn't in force yet — wait and retry.
-// Once the connect fails (timeout/RST), NP is enforcing the deny. Also
-// confirm the paired gateway IS reachable — guards against "everything
-// denied" false positives on clusters with broken outbound.
+// Fail-closed: timeout → exit 1 → pod stays in Init:CrashLoopBackOff.
 //
-// Default canary: the kube-apiserver Service IP, auto-injected into
-// every pod by kubelet as KUBERNETES_SERVICE_HOST / KUBERNETES_SERVICE_PORT.
-// Always reachable in-cluster when NP is permissive, always denied by
-// our agent egress NP (gateway-only), no external uptime dependency.
-// Operators can override via `npGateInit.deniedHost` / `.deniedPort`.
-//
-// Fail-closed: timeout → exit 1 → pod stays in Init:CrashLoopBackOff. The
-// agent main container never starts. Operationally noisy; security-wise
-// the only correct behavior.
-//
-// Returns nil when the feature is off, the image is unset, or the
-// gateway IP is unknown — caller is expected to either skip this init or
-// requeue the reconcile (see needsGatewayIP gating in instance.go/fork.go).
+// Returns nil when the feature is off or inputs aren't ready. The
+// instance and fork reconcilers requeue until the gateway ClusterIP is
+// assigned, so this never sees an empty IP at steady state.
 func buildNPGateInitContainer(cfg *config.Config, gatewayClusterIP string) *corev1.Container {
 	cfgGate := cfg.AgentBase.NPGateInit
 	if cfgGate == nil || !cfgGate.Enabled || cfgGate.Image == "" || gatewayClusterIP == "" {
@@ -54,15 +38,9 @@ func buildNPGateInitContainer(cfg *config.Config, gatewayClusterIP string) *core
 	}
 
 	// DENIED_HOST / DENIED_PORT default to the kubelet-injected
-	// KUBERNETES_SERVICE_HOST / KUBERNETES_SERVICE_PORT when operator
-	// doesn't override. The shell parameter expansion `${X:-fallback}`
-	// resolves at script start, so the env vars set by kubelet are
-	// honored without us having to plumb them through here.
-	//
-	// `nc -w 2 -z` returns 0 when the TCP connect succeeds, non-zero on
-	// timeout/refused/drop. We invert the denied-host check (success on
-	// non-zero) and combine with the positive gateway check (success on
-	// zero) — both must hold for the gate to release.
+	// KUBERNETES_SERVICE_HOST / KUBERNETES_SERVICE_PORT — shell
+	// parameter expansion `${X:-fallback}` honors the kubelet values
+	// unless the operator overrode them in env below.
 	script := `set -u
 DENIED_HOST="${DENIED_HOST:-${KUBERNETES_SERVICE_HOST}}"
 DENIED_PORT="${DENIED_PORT:-${KUBERNETES_SERVICE_PORT}}"
@@ -86,10 +64,8 @@ exit 1
 		{Name: "ENVOY_PORT", Value: fmt.Sprintf("%d", cfg.EnvoyPort)},
 		{Name: "TIMEOUT_SECONDS", Value: fmt.Sprintf("%d", timeoutSeconds)},
 	}
-	// Only inject DENIED_HOST/DENIED_PORT when the operator overrides
-	// the kube-apiserver default. Leaving them unset lets kubelet's
-	// auto-injected KUBERNETES_SERVICE_HOST/PORT flow through the
-	// `${X:-fallback}` expansion in the script.
+	// Only inject when overridden — empty values would mask kubelet's
+	// KUBERNETES_SERVICE_HOST/PORT injection.
 	if cfgGate.DeniedHost != "" {
 		env = append(env, corev1.EnvVar{Name: "DENIED_HOST", Value: cfgGate.DeniedHost})
 	}

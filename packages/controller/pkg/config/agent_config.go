@@ -80,12 +80,9 @@ type AgentBase struct {
 	// defense-in-depth on top of the NetworkPolicy).
 	IptablesInit *AgentIptablesInit `json:"iptablesInit,omitempty"`
 
-	// NPGateInit configures an unprivileged init container that blocks the
-	// agent's main container until the egress NetworkPolicy is verifiably
-	// enforced. Probes a known-denied destination (loop until DROPped) and
-	// the paired gateway (must be reachable) before exiting. Closes the
-	// OVN-K async-programming race for runtimes where IptablesInit can't
-	// run (Kata/CoCo guests lack netfilter modules — see PR #234).
+	// NPGateInit configures an unprivileged init container that gates the
+	// agent's main container on egress NetworkPolicy being verifiably
+	// enforced. Used where IptablesInit can't run.
 	NPGateInit *AgentNPGateInit `json:"npGateInit,omitempty"`
 }
 
@@ -97,13 +94,11 @@ type AgentIptablesInit struct {
 type AgentNPGateInit struct {
 	Enabled bool   `json:"enabled,omitempty"`
 	Image   string `json:"image,omitempty"`
-	// DeniedHost / DeniedPort is the canary destination the probe expects
-	// to be DROPped by the NetworkPolicy. Defaults to 1.1.1.1:443.
+	// Canary destination the probe expects to be DROPped. Empty defaults
+	// to kubelet's KUBERNETES_SERVICE_HOST / KUBERNETES_SERVICE_PORT.
 	DeniedHost string `json:"deniedHost,omitempty"`
 	DeniedPort int    `json:"deniedPort,omitempty"`
-	// TimeoutSeconds bounds how long the probe will wait for NP to converge.
-	// On timeout the init container fail-closes (exit 1 → pod stays in
-	// Init:CrashLoopBackOff, never starts the agent).
+	// Bound on probe convergence; fail-closed on timeout.
 	TimeoutSeconds int `json:"timeoutSeconds,omitempty"`
 }
 

@@ -9,13 +9,10 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 )
 
-// Agent pod opts out of ambient mesh, so kernel NetworkPolicy is the
-// gate on agent egress. The policy admits exactly the paired gateway
-// pod on the Envoy proxy port — nothing else, no DNS. HTTPS_PROXY is
-// IP-direct so DNS is unnecessary; the namespace-scope deny-all baseline
-// (chart-rendered) handles default-deny. HBONE port 15008 is
-// deliberately denied: the agent has no ztunnel and admitting 15008
-// would give it a route to anything in the mesh.
+// Per-pair NP admits exactly the paired gateway on the Envoy port —
+// nothing else, no DNS, no HBONE. Combined with the chart-rendered
+// namespace deny-all baseline, this is the only allow rule for the
+// agent.
 func TestBuildAgentEgressNetworkPolicy_LongLivedPair(t *testing.T) {
 	np := BuildAgentEgressNetworkPolicy("my-instance", testConfig, testOwnerCM)
 
@@ -24,9 +21,8 @@ func TestBuildAgentEgressNetworkPolicy_LongLivedPair(t *testing.T) {
 	require.Len(t, np.OwnerReferences, 1)
 	assert.Equal(t, "my-instance", np.OwnerReferences[0].Name)
 
-	// Selector pins to THIS pair's agent pod — the gateway pod's egress
-	// stays unrestricted (it dials external upstreams for credential
-	// injection, gated by ext_authz inside its own Envoy).
+	// Selector pins to this pair's agent pod — gateway pod is
+	// unaffected (ADR-035 gates its egress at L7 ext_authz).
 	assert.Equal(t, "my-instance", np.Spec.PodSelector.MatchLabels[LabelPair])
 	assert.Equal(t, RoleAgent, np.Spec.PodSelector.MatchLabels[LabelRole])
 
@@ -47,10 +43,7 @@ func TestBuildAgentEgressNetworkPolicy_LongLivedPair(t *testing.T) {
 	assert.Equal(t, corev1.ProtocolTCP, *gwRule.Ports[0].Protocol)
 }
 
-// Fork pair: same shape, keyed on the fork name. ADR-027's fork-pair
-// isolation property only holds because the agent NP scopes the agent's
-// egress to its OWN gateway — without this, a compromised fork agent
-// could dial the parent's gateway directly.
+// Fork pair: same shape, keyed on the fork name (ADR-027 isolation).
 func TestBuildAgentEgressNetworkPolicy_Fork(t *testing.T) {
 	np := BuildAgentEgressNetworkPolicy("fork-abc", testConfig, testForkOwnerCM)
 
@@ -58,17 +51,14 @@ func TestBuildAgentEgressNetworkPolicy_Fork(t *testing.T) {
 	assert.Equal(t, "fork-abc", np.Spec.PodSelector.MatchLabels[LabelPair])
 	assert.Equal(t, RoleAgent, np.Spec.PodSelector.MatchLabels[LabelRole])
 
-	// The gateway-pod egress rule must reference the FORK's gateway, not
-	// the parent's — otherwise the fork agent could reach the parent's
-	// gateway and inject under the parent owner's credentials.
+	// Gateway peer must scope to the fork's own gateway (ADR-027).
 	gwRule := np.Spec.Egress[0]
 	require.NotNil(t, gwRule.To[0].PodSelector)
 	assert.Equal(t, "fork-abc", gwRule.To[0].PodSelector.MatchLabels[LabelPair],
-		"fork agent NP must scope to the FORK's gateway, not the parent's")
+		"fork agent NP must scope to the fork's own gateway")
 }
 
-// DNS deny is now structural: no DNS ports appear anywhere because
-// HTTPS_PROXY is IP-direct and the agent has no other reason to resolve.
+// DNS deny is structural — proxy is IP-direct.
 func TestBuildAgentEgressNetworkPolicy_NoDNS(t *testing.T) {
 	np := BuildAgentEgressNetworkPolicy("my-instance", testConfig, testOwnerCM)
 	for _, rule := range np.Spec.Egress {
@@ -79,9 +69,7 @@ func TestBuildAgentEgressNetworkPolicy_NoDNS(t *testing.T) {
 	}
 }
 
-// HBONE port 15008 must NOT appear anywhere in the agent egress policy.
-// The agent has no ztunnel and never speaks HBONE; admitting 15008 here
-// would let the agent reach any in-mesh destination via ztunnel.
+// HBONE port 15008 must NOT appear in the agent egress policy.
 func TestBuildAgentEgressNetworkPolicy_NoHBONE(t *testing.T) {
 	np := BuildAgentEgressNetworkPolicy("my-instance", testConfig, testOwnerCM)
 	for i, rule := range np.Spec.Egress {

@@ -1,23 +1,9 @@
 {{- /*
-Namespace-scoped deny-all egress NetworkPolicy for agent pods.
-
-The per-pair `<id>-agent-egress` NetworkPolicies layer ALLOW rules on top
-of this baseline (NetworkPolicies combine additively when they select the
-same pod). The result: an agent pod has no egress unless a per-pair NP
-explicitly admits a destination — fail-closed by default.
-
-This matters because OVN-K programs per-pair NPs after observing the
-pod's labels — there's an async window between "pod has interface" and
-"specific allow rules in OVS flow tables." Without this baseline, that
-window is wide-open egress. With it, the window is no-egress. Combined
-with the in-pod NP-gate init container the agent never starts running
-until enforcement is verified.
-
-Why role-scoped (not empty podSelector): the paired gateway pod needs
-broad outbound (arbitrary external hosts for credential injection per
-ADR-035). Catching the gateway in a deny-all would force a parallel
-"allow everything sensible" gateway NP that's operationally equivalent
-to no NP. Scoping the deny to `role: agent` is the cleaner expression.
+Namespace-scoped deny-all egress baseline for agent pods. Per-pair
+NetworkPolicies (controller-rendered) layer allow rules on top — agent
+pods have no egress unless a per-pair NP admits the destination.
+Role-scoped to `agent` so the paired gateway pod (which needs broad
+outbound for credential injection per ADR-035) is untouched.
 */}}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

@@ -25,9 +25,8 @@ func TestBuildNPGateInitContainer_EmptyImageReturnsNil(t *testing.T) {
 	assert.Nil(t, buildNPGateInitContainer(&cfg, "10.96.42.42"), "missing image must not crash; chart enforces non-empty")
 }
 
-// Without a gateway ClusterIP the positive-probe target is unknown — the
-// init can't tell "NP applied" from "everything broken." Skip until the
-// next reconcile picks up the assigned IP (caller's needsGatewayIP gate).
+// Without a gateway ClusterIP the positive-probe target is unknown.
+// Skip — the reconciler requeues until the IP is assigned.
 func TestBuildNPGateInitContainer_NoGatewayIPReturnsNil(t *testing.T) {
 	cfg := *testConfig
 	cfg.AgentBase.NPGateInit = &config.AgentNPGateInit{Enabled: true, Image: "busybox:1.36"}
@@ -90,11 +89,9 @@ func TestBuildNPGateInitContainer_ProbeShapeWithOverride(t *testing.T) {
 	assert.NotEmpty(t, envMap["ENVOY_PORT"])
 }
 
-// Default config (no operator override) must NOT set DENIED_HOST /
-// DENIED_PORT env vars — that lets kubelet's auto-injected
-// KUBERNETES_SERVICE_HOST / KUBERNETES_SERVICE_PORT flow through the
-// shell fallback. Setting empty-valued env vars would mask kubelet's
-// values, so the absence is load-bearing.
+// Default config must NOT set DENIED_HOST / DENIED_PORT — empty env
+// vars would mask kubelet's KUBERNETES_SERVICE_HOST/PORT injection,
+// which the shell fallback relies on. Absence is load-bearing.
 func TestBuildNPGateInitContainer_DefaultsUseKubeAPIServer(t *testing.T) {
 	cfg := *testConfig
 	cfg.AgentBase.NPGateInit = &config.AgentNPGateInit{Enabled: true, Image: "busybox:1.36"}

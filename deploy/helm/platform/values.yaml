@@ -472,57 +472,33 @@ controller:
           drop: ["ALL"]
 
       # ━━━ EGRESS LOCKDOWN — pick ONE mode ━━━
-      # The agent's egress is structurally pinned to its paired gateway:
-      # HTTPS_PROXY is set to the gateway ClusterIP literal (no DNS), the
-      # per-pair NetworkPolicy admits only that destination, and the
-      # chart-rendered `agent-egress-deny-all` NP denies everything by
-      # default. The race-closing layer below picks the mechanism that
-      # gates main-container startup on enforcement being in force.
+      # Two mutually-exclusive layers (the chart validates). Both ride
+      # on top of HTTPS_PROXY (IP-direct), the per-pair NetworkPolicy,
+      # and the namespace deny-all baseline.
       #
-      # Two modes:
+      #   - iptablesInit: privileged init container, plain OCI runtime.
+      #     Requires netfilter modules in the guest.
       #
-      #   - iptablesInit (no-sandbox / plain OCI runtime): privileged init
-      #     container programs in-pod iptables rules. Closes the race
-      #     deterministically at the kernel layer. Needs netfilter modules
-      #     in the guest, which Kata/CoCo guest kernels strip.
-      #
-      #   - npGateInit (OpenShift + Kata / CoCo): unprivileged init
-      #     container probes a known-denied destination until the cluster
-      #     NetworkPolicy is verifiably enforcing the deny, then releases
-      #     the agent. Pure userspace TCP probe; no caps needed; works
-      #     against any guest kernel.
-      #
-      # Enable exactly one — they're mutually exclusive in practice.
+      #   - npGateInit: unprivileged init container, works on guests
+      #     without netfilter (Kata/CoCo on OpenShift Sandboxed Containers).
       iptablesInit:
         enabled: true
-        # SIG Release distroless-iptables — the same image kube-proxy
-        # uses. Ships /bin/sh (dash) + iptables-wrapper (auto-selects
-        # nft/legacy). Signed, scanned, no package manager, minimal
-        # userland. Pin to a specific version.
+        # SIG Release distroless-iptables — same image kube-proxy uses.
+        # Ships sh + iptables-wrapper; pinned by tag.
         image: registry.k8s.io/build-image/distroless-iptables:v0.9.2
 
       # -- Userspace init container that blocks the agent's main
       # container until the egress NetworkPolicy is verifiably enforced.
-      # Probes a known-denied destination (must time out) AND the paired
-      # gateway (must be reachable); only releases when both hold. Closes
-      # the OVN-K async-programming race for runtimes where `iptablesInit`
-      # can't run (Kata/CoCo, where the guest kernel lacks netfilter).
-      # No privileged caps required — pure userspace TCP probes.
+      # Pure userspace TCP probe; no caps; works against any guest kernel.
       npGateInit:
         enabled: false
-        # busybox provides both `nc` and `sh` in one minimal image. K8s
-        # SIG distroless variants don't bundle nc, so this is the
-        # smallest reasonable footprint. Digest-pinned to neutralize the
-        # mutable-tag supply-chain surface; rotate manually when newer
-        # busybox releases land.
+        # busybox provides nc + sh in one image. K8s SIG distroless
+        # variants don't bundle nc. Digest-pinned; rotate manually.
         image: docker.io/library/busybox:1.37@sha256:18ac7a6883a86416ade8178063c26deff577cd831445f5c5ac5c7a931cb60983
-        # Canary destination the probe expects to be DROPped by the NP.
-        # Defaults (empty) to the kubelet-injected
-        # KUBERNETES_SERVICE_HOST:KUBERNETES_SERVICE_PORT — the
-        # kube-apiserver Service IP, always reachable in-cluster when NP
-        # is permissive, always denied by the agent egress NP
-        # (gateway-only), no external uptime dependency. Override with
-        # an explicit host:port only if you have a cluster-specific
+        # Canary destination expected to be DROPped by the NP. Empty
+        # defaults to kubelet's KUBERNETES_SERVICE_HOST:PORT
+        # (kube-apiserver), which is always reachable when NP is
+        # permissive and always denied otherwise. Override only for a
         # canary you trust more.
         deniedHost: ""
         deniedPort: 0

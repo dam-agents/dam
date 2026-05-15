@@ -27,18 +27,13 @@ group. Both are meaningless if `agentNamespace` is empty.
 {{- end -}}
 
 {{/*
-`iptablesInit` and `npGateInit` are the two egress-lockdown modes —
-exactly one belongs on a given pod. iptablesInit programs in-pod
-kernel rules (needs netfilter modules in the guest); npGateInit
-verifies the cluster NetworkPolicy is enforced before releasing the
-workload (works on guests without netfilter, e.g. Kata/CoCo).
-Running both at once isn't wrong per se but it almost always means
-the operator misunderstood the model. Fail loudly so the choice is
-explicit.
+iptablesInit and npGateInit are the two egress-lockdown modes —
+exactly one belongs on a given pod. See values.yaml for the two-mode
+comment.
 */}}
 {{- define "platform.validate.egressLockdownModeExclusive" -}}
 {{- $base := .Values.controller.agent.base -}}
 {{- if and $base.iptablesInit $base.iptablesInit.enabled $base.npGateInit $base.npGateInit.enabled -}}
-{{- fail "controller.agent.base.iptablesInit.enabled and npGateInit.enabled are mutually exclusive. iptablesInit programs in-pod kernel rules (plain OCI runtime); npGateInit verifies NetworkPolicy is enforced before releasing the workload (Kata/CoCo where the guest kernel lacks netfilter). Enable exactly one — see values.yaml for the two-mode comment." -}}
+{{- fail "controller.agent.base.iptablesInit.enabled and npGateInit.enabled are mutually exclusive — enable exactly one. See values.yaml for the two-mode comment." -}}
 {{- end -}}
 {{- end -}}

@@ -44,11 +44,9 @@ const (
 	RoleGateway   = "gateway"
 )
 
-// agentProxyAddr is the agent's HTTPS_PROXY value: the paired gateway's
-// ClusterIP literal. IP-direct so the proxy URL has zero DNS dependency
-// — the egress NetworkPolicy denies port 53 outright. Callers gate pod
-// render on `gatewayClusterIP != ""` (see needsGatewayIP in
-// instance.go / fork.go), so this never sees an empty IP in practice.
+// agentProxyAddr is the agent's HTTPS_PROXY value — IP-direct, no DNS.
+// The instance/fork reconcilers requeue until the gateway ClusterIP is
+// assigned, so this never sees an empty IP at steady state.
 func agentProxyAddr(cfg *config.Config, gatewayClusterIP string) string {
 	return fmt.Sprintf("http://%s:%d", gatewayClusterIP, cfg.EnvoyPort)
 }
@@ -61,10 +59,9 @@ func agentProxyAddr(cfg *config.Config, gatewayClusterIP string) string {
 // surfaced as an env var and pod annotation; no Secret material is mounted
 // into the agent pod.
 //
-// `gatewayClusterIP` is the paired gateway Service's assigned ClusterIP.
-// HTTPS_PROXY is set to `http://<ip>:<port>` so there's no DNS dependency
-// — the egress NetworkPolicy denies port 53. The caller (instance.go /
-// fork.go) requeues when the IP isn't yet assigned.
+// `gatewayClusterIP` is the paired gateway Service's assigned ClusterIP,
+// used directly as the HTTPS_PROXY target. The caller requeues when
+// it's not yet assigned.
 func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec *types.AgentSpec, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret, gatewayClusterIP string) *appsv1.StatefulSet {
 	base := cfg.AgentBase
 	defaults := cfg.AgentTemplateDefaults

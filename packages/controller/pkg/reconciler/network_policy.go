@@ -15,33 +15,17 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 )
 
-// Per-pair agent egress NetworkPolicy.
-//
-// The agent pod opts out of ambient mesh (`istio.io/dataplane-mode: none`),
-// so no ztunnel iptables redirect intercepts its outbound traffic. Real
-// destination IP/port hit the kernel NetworkPolicy filter, and the agent
-// pod's only admitted destination is its paired gateway pod. All egress
-// that matters — external upstreams, harness, ext-authz — is proxied
-// through the gateway, gated by Envoy's ext_authz filter (ADR-035).
-//
-// DNS is deliberately NOT admitted (threat T9, DNS exfil). HTTPS_PROXY is
-// set to the gateway's ClusterIP literal so no DNS lookups happen
-// in-pod. HBONE port 15008 is also NOT admitted — the agent has no
-// ztunnel and never speaks HBONE; opening 15008 here would just hand the
-// agent a bypass to anything in the mesh.
-//
-// Combined with the namespace-scope `agent-egress-deny-all` baseline NP
-// (chart-rendered), the agent pod's egress is "paired gateway only"
-// fail-closed: the baseline denies everything, this per-pair NP allows
-// only the gateway. Both layers together close the OVN-K async-
-// programming race — see np_gate_init.go for the in-pod readiness probe
-// that gates main-container startup on policy convergence.
+// Per-pair agent egress NetworkPolicy. Agent opts out of ambient mesh
+// (`istio.io/dataplane-mode: none`) so NetworkPolicy sees real
+// destinations, not ztunnel-redirected ones. Combined with the
+// chart-rendered namespace-scope deny-all baseline, the agent's only
+// admitted destination is its paired gateway. All other egress —
+// external, harness, ext-authz — flows through the gateway (ADR-035).
 
-// BuildAgentEgressNetworkPolicy renders the per-pair egress NetworkPolicy
-// for the agent pod of `pairKey`. Long-lived pairs use the instance name
-// as `pairKey`; forks use the fork name. The selector pins to the pair's
-// agent pod specifically — the paired gateway pod's egress stays
-// unrestricted (it dials external upstreams for credential injection).
+// BuildAgentEgressNetworkPolicy renders the per-pair egress NP for the
+// agent pod of `pairKey`. Long-lived pairs use the instance name;
+// forks use the fork name. Selector pins to the pair's agent pod —
+// the paired gateway pod's egress stays unrestricted.
 func BuildAgentEgressNetworkPolicy(pairKey string, cfg *config.Config, ownerCM *corev1.ConfigMap) *networkingv1.NetworkPolicy {
 	envoyPort := intstr.FromInt(cfg.EnvoyPort)
 	tcp := corev1.ProtocolTCP
