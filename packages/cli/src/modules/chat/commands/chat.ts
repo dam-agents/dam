@@ -1,8 +1,7 @@
+import type { TerminalStrategy } from "api-server-api";
 import { Command } from "commander";
 import { SERVER_ENV_VAR } from "../../cli/index.js";
-import type { ChatError } from "../domain/errors.js";
-import type { SessionStrategy } from "../domain/session-resolution.js";
-import type { ChatService } from "../services/chat-service.js";
+import type { ChatError, ChatService } from "../services/chat-service.js";
 
 export function buildChatCommand(deps: { chatService: ChatService }): Command {
   return new Command("chat")
@@ -13,7 +12,7 @@ export function buildChatCommand(deps: { chatService: ChatService }): Command {
     .option("-r, --resume <session-id>", "resume a specific session by ID")
     .option("--reset", "kill existing PTY and start a fresh terminal")
     .action(async (instanceRef: string, opts: { server?: string; continue?: boolean; resume?: string; reset?: boolean }) => {
-      const strategy: SessionStrategy = opts.resume
+      const strategy: TerminalStrategy = opts.resume
         ? { kind: "resume", sessionId: opts.resume }
         : opts.continue ? { kind: "continue" } : { kind: "new" };
 

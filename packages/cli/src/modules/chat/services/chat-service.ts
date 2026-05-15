@@ -1,17 +1,25 @@
-import type { SessionView } from "api-server-api";
+import type { SessionView, TerminalStrategy } from "api-server-api";
 import { err, ok, type Result } from "../../../result.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { TokenProvider } from "../../auth/index.js";
-import { createInstanceResolver, type InstanceService } from "../../instance/index.js";
-import type { ChatError } from "../domain/errors.js";
-import type { SessionStrategy } from "../domain/session-resolution.js";
+import { createInstanceResolver, type InstanceService, type ResolveError } from "../../instance/index.js";
 import type { SessionsPort } from "./sessions-service.js";
 import { connectTerminalBridge, type BridgeResult } from "../infrastructure/terminal-bridge.js";
 
-export type { SessionStrategy } from "../domain/session-resolution.js";
+export type ChatError =
+  | ResolveError
+  | { kind: "no-server" }
+  | { kind: "malformed-config"; reason: string }
+  | { kind: "below-floor"; localCli: string; serverMinClient: string }
+  | { kind: "not-a-tty" }
+  | { kind: "session-failed"; reason: string }
+  | { kind: "mode-switch-declined" }
+  | { kind: "no-terminal-session" }
+  | { kind: "multiple-terminal-sessions"; sessionIds: string[] }
+  | { kind: "session-not-found"; sessionId: string };
 
 export interface ChatService {
-  run(input: { instanceRef: string; serverFlag?: string; strategy: SessionStrategy; reset?: boolean }):
+  run(input: { instanceRef: string; serverFlag?: string; strategy: TerminalStrategy; reset?: boolean }):
     Promise<Result<{ bridge: BridgeResult; sessionId: string }, ChatError>>;
   listSessions(input: { instanceRef: string; serverFlag?: string }):
     Promise<Result<readonly SessionView[], ChatError>>;

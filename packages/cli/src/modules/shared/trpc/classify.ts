@@ -1,0 +1,12 @@
+import { err, type Result } from "../../../result.js";
+import type { AuthRequiredError, TransportError } from "../../instance/domain/errors.js";
+import { AuthRequiredAtTransportError } from "./trpc-client.js";
+
+export function classifyTrpcError(e: unknown): Result<never, TransportError | AuthRequiredError> {
+  let cursor: unknown = e;
+  for (let depth = 0; cursor && depth < 8; depth++) {
+    if (cursor instanceof AuthRequiredAtTransportError) return err({ kind: "auth-required", reason: cursor.message });
+    cursor = (cursor as { cause?: unknown }).cause;
+  }
+  return err({ kind: "transport", reason: e instanceof Error ? e.message : typeof e === "string" ? e : "unknown transport failure" });
+}
