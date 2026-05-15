@@ -5,14 +5,14 @@ Last verified: 2026-05-15
 ## Motivated by
 
 - [ADR-039 — Platform CLI foundation](../adrs/039-cli-foundation.md) — TypeScript Node package distributed via npm; reuses the api-server tRPC contract; flat config under XDG-standard locations; server-advertised compatibility floor.
-- [ADR-037 — Remote terminal](../adrs/037-remote-terminal.md) — predecessor; established the "terminal" session mode the CLI complements with `dam chat` (a future verb).
+- [ADR-037 — Remote terminal](../adrs/037-remote-terminal.md) — established the "terminal" session mode; `dam chat` connects the local terminal to it.
 - [#73 — Import local project context into agent workspace](https://github.com/dam-agents/dam/issues/73) — the `dam import` verb that uploads local files and folders into an Instance.
 
 ## Overview
 
-The `dam` CLI is a TypeScript Node package that users install on their own machine and point at a configured Platform deployment. It never runs inside the cluster. The current surface: `dam --version`, `dam --help` (built-in flags); `dam config set`; `dam ping`; `dam version`; the `dam auth` group (`login`, `logout`, `status`); the `dam instance` group (`list`, `get`, `create`, `delete`, `restart`); the `dam agent` group (`create`); `dam template list`; and `dam import`. Command groups are singular to align with `gh`, `git`, and `docker` conventions. The remaining future verb — `dam chat` — slots into its own module and consumes the Token Provider seam from `auth` plus the Instance Resolver seam from `instance`.
+The `dam` CLI is a TypeScript Node package that users install on their own machine and point at a configured Platform deployment. It never runs inside the cluster. The current surface: `dam --version`, `dam --help` (built-in flags); `dam config set`; `dam ping`; `dam version`; the `dam auth` group (`login`, `logout`, `status`); the `dam instance` group (`list`, `get`, `create`, `delete`, `restart`); the `dam agent` group (`create`); `dam chat`; `dam session list`; `dam template list`; and `dam import`. Command groups are singular to align with `gh`, `git`, and `docker` conventions.
 
-The CLI shares types directly with the api-server via a shared contract package, so server-side type changes reach the CLI without codegen or manual mirroring. tRPC routes are reached through `@trpc/client` typed against the contract's `AppRouter`; the auth probes (`/api/auth/config`, OIDC discovery) stay as raw `fetch` because they are not tRPC.
+The CLI shares types directly with the api-server via a shared contract package, so server-side type changes reach the CLI without codegen or manual mirroring. Most routes are reached through plain HTTP calls against the api-server's tRPC endpoints; the `dam chat` verb additionally opens a WebSocket to the terminal relay for the interactive PTY session. The auth probes (`/api/auth/config`, OIDC discovery) stay as raw `fetch` because they are not tRPC.
 
 ## Trust boundary
 
@@ -98,6 +98,26 @@ Each step lines up with one server-side mutation, in the same order the web UI's
 Anything created during the run (new provider Secret, new GitHub PAT pair, the agent) is tracked in a small ledger; a failure in any of the post-prompt mutations triggers one cleanup pass — `agents.delete` cascade-tears-down the instance and its grants, then any new Secrets are deleted by id. Picked-existing and replace-existing paths stay out of the ledger: the replace path overwrote the value in place, and the old value is unrecoverable. Anything the cleanup itself can't delete surfaces as an orphan summary so the user knows what to remove manually.
 
 The post-success hint points at `dam chat <name>` (the chat verb is a future module). Interrupting at any prompt before the mutation chain exits cleanly with no orphans; interrupting during the wait leaves the agent in place with the same delete-hint, on the basis that the user chose to interrupt and the agent's existence is their call from there.
+
+## Terminal attach
+
+`dam chat <instance>` connects the user's local terminal to a running instance's interactive TUI over a WebSocket, using the same binary terminal frame protocol ([ADR-037](../adrs/037-remote-terminal.md)) that the UI's terminal mode uses. The command requires an interactive TTY (stdin must be a TTY; piped input is rejected) and puts stdin into raw mode for the duration of the session so keystrokes — including Ctrl+C — pass through to the remote harness rather than being intercepted locally.
+
+Three session strategies:
+
+- **New** (default) — creates a new terminal-mode session via the sessions API, then connects.
+- **Continue** (`--continue`) — finds the most recent terminal-mode session for the instance. Errors if zero or more than one terminal session exists.
+- **Resume** (`--resume <session-id>`) — targets a specific session by ID. If the target session is in chat mode, the CLI prompts the user to confirm a mode switch to terminal before proceeding; declining exits cleanly.
+
+Strategy resolution happens server-side: the CLI calls a single `sessions.resolveTerminal` tRPC mutation with the strategy and receives back either a ready result (session ID + relative WebSocket path) or a decision prompt (`confirm-mode-switch`, `no-terminal-session`, etc.). This keeps the CLI a thin orchestrator — it never lists sessions to decide which one to connect to, and the URL construction for the terminal relay lives entirely in the api-server.
+
+The `--reset` flag can combine with any strategy — it tells the api-server's terminal relay to kill the existing PTY and spawn a fresh one, which also triggers `resetSession` on the agent-runtime to close the agent-side ACP session and clear its log.
+
+On disconnect, the CLI prints the session ID and a ready-to-paste `dam chat --resume` command so the user can reattach.
+
+`dam session list <instance>` lists all sessions for an instance, showing session ID, mode, type, and creation time. The `--json` flag emits raw JSON for scripted consumption.
+
+The chat module uses the same tRPC client infrastructure as the rest of the CLI (`@trpc/client` with `httpBatchLink` and bearer auth), composing a per-host `SessionsPort` for session CRUD and terminal resolution. The terminal bridge owns the raw TTY ↔ WebSocket lifecycle — it receives a server-provided `terminalPath` and constructs the full WebSocket URL locally, sending the auth token via an `Authorization: Bearer` header. Both are injected through the module's compose root alongside the shared Token Provider and Instance Resolver seams.
 
 ## Import
 

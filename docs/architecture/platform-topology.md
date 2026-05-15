@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-05-12
+Last verified: 2026-05-15
 
 ## Motivated by
 
@@ -63,6 +63,8 @@ The api-server proxies all ACP traffic to agent pods; clients never dial pods di
 
 The public port also accepts streamed bundled file imports per instance and proxies them to the target agent-runtime without buffering — ownership-checked and size-capped at the proxy boundary.
 
+When a session's mode changes (chat → terminal or vice versa), the api-server closes the active terminal WebSocket for the affected session, resets the agent-runtime's ACP session state, and publishes a `platform/sessionModeChanged` notification via Redis pub/sub on the instance's inject channel. Every connected ACP client receives the notification, allowing cross-tab (and cross-client, including the CLI) mode synchronization without polling.
+
 ### agent-runtime
 
 The per-instance pod that runs the ACP WebSocket server and spawns the underlying agent binary via the harness-script contract ([ADR-023](../adrs/023-harness-agnostic-base-image.md), [ADR-037](../adrs/037-remote-terminal.md)). Its responsibilities are:
@@ -89,8 +91,10 @@ A React + Vite single-page app served by the api-server. It uses tRPC over HTTP 
 | Edge | Protocol | Purpose |
 |------|----------|---------|
 | ui → api-server (`<rel>-apiserver`) | tRPC over HTTP | CRUD on templates, instances, schedules, sessions |
-| ui → api-server | WebSocket (ACP, JSON-RPC 2.0) | Live chat session, permission prompts, streaming output |
+| ui → api-server | WebSocket (ACP, JSON-RPC 2.0) | Live chat session, permission prompts, streaming output; also carries `platform/sessionModeChanged` notifications for cross-client mode sync |
 | ui → api-server | WebSocket (binary terminal frames) | Live terminal session — input / output / resize / exit, see [ADR-037](../adrs/037-remote-terminal.md) |
+| cli → api-server | tRPC over HTTP | Session CRUD + `resolveTerminal`, instance resolution, auth (same tRPC surface the UI uses) |
+| cli → api-server | WebSocket (binary terminal frames) | `dam chat` terminal attach — same frame protocol as the UI terminal path; server-provided `terminalPath` from `resolveTerminal` |
 | api-server → agent-runtime | WebSocket (ACP, JSON-RPC 2.0) | Chat-mode relay target — one hop, no fan-out |
 | api-server → agent-runtime | WebSocket (binary terminal frames) | Terminal-mode relay target — one hop, single client per session |
 | api-server → agent-runtime | HTTP (tRPC proxy) | In-pod file operations surfaced to the UI |
