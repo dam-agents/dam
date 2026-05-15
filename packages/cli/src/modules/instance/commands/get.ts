@@ -4,64 +4,35 @@ import { ChannelType } from "api-server-api";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { InstanceService } from "../services/instance-service.js";
 import { createInstanceResolver } from "../services/instance-resolver.js";
-import {
-  describeConfigError,
-  exitCodeForResolveError,
-  printCompatResolveError,
-  printResolveError,
-} from "./errors.js";
-import {
-  EXIT_INSTANCE_BELOW_FLOOR,
-  EXIT_INSTANCE_RUNTIME_FAILURE,
-  EXIT_INSTANCE_SUCCESS,
-} from "./exit-codes.js";
+import { describeConfigError, exitCodeForResolveError, printCompatResolveError, printResolveError } from "./errors.js";
+import { EXIT_INSTANCE_BELOW_FLOOR, EXIT_INSTANCE_RUNTIME_FAILURE, EXIT_INSTANCE_SUCCESS } from "./exit-codes.js";
 
-export interface GetCommandDeps {
+export function buildGetCommand(deps: {
   compatService: CompatService;
   configService: ConfigService;
   createInstanceService: (host: string) => InstanceService;
-}
-
-export function buildGetCommand(deps: GetCommandDeps): Command {
+}): Command {
   return new Command("get")
     .description("Show one Instance's details, addressed by name or ID")
     .argument("<ref>", "Instance Ref — name or 'inst-…' ID")
     .option("--server <url>", "override the configured server URL for this call")
     .option("--json", "emit raw JSON instead of the default vertical layout")
-    .addHelpText(
-      "after",
-      "\nExamples:\n  dam instance get my-agent\n  dam instance get inst-abc123 --json\n",
-    )
+    .addHelpText("after", "\nExamples:\n  dam instance get my-agent\n  dam instance get inst-abc123 --json\n")
     .action(async (ref: string, opts: { server?: string; json?: boolean }) => {
       const flag = opts.server ? { server: opts.server } : undefined;
 
-      // Compat pre-flight — same gate `ping` and `auth login` use.
-      // Matches `ping`: all compat-resolve failures (missing-config,
-      // malformed-config, probe-error) exit as runtime failure so the
-      // exit code is consistent across commands that share this gate.
       const compat = await deps.compatService.check({ flag });
-      if (!compat.ok) {
-        printCompatResolveError(compat.error);
-        process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
-      }
-      const verdict = compat.value;
-      if (verdict.kind === "below-floor") {
-        process.stderr.write(
-          `error: CLI ${verdict.localCli} is below the server's minimum required version ${verdict.serverMinClient}; upgrade and retry\n`,
-        );
+      if (!compat.ok) { printCompatResolveError(compat.error); process.exit(EXIT_INSTANCE_RUNTIME_FAILURE); }
+      if (compat.value.kind === "below-floor") {
+        process.stderr.write(`error: CLI ${compat.value.localCli} is below the server's minimum required version ${compat.value.serverMinClient}; upgrade and retry\n`);
         process.exit(EXIT_INSTANCE_BELOW_FLOOR);
       }
-      if (verdict.kind === "behind-current") {
-        process.stderr.write(
-          `warning: CLI ${verdict.localCli} is behind server ${verdict.serverVersion}; consider upgrading\n`,
-        );
+      if (compat.value.kind === "behind-current") {
+        process.stderr.write(`warning: CLI ${compat.value.localCli} is behind server ${compat.value.serverVersion}; consider upgrading\n`);
       }
 
       const cfg = await deps.configService.getResolved({ flag });
-      if (!cfg.ok) {
-        process.stderr.write(`error: ${describeConfigError(cfg.error)}\n`);
-        process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
-      }
+      if (!cfg.ok) { process.stderr.write(`error: ${describeConfigError(cfg.error)}\n`); process.exit(EXIT_INSTANCE_RUNTIME_FAILURE); }
 
       const host = cfg.value.server;
       const svc = deps.createInstanceService(host);
@@ -82,8 +53,6 @@ export function buildGetCommand(deps: GetCommandDeps): Command {
     });
 }
 
-/** Vertical key:value layout with dynamic column alignment.
- *  `ERROR:` appended only when state === "error". */
 function renderInstance(instance: Instance): string {
   const entries: [string, string][] = [
     ["NAME", instance.name],

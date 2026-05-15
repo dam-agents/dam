@@ -1,33 +1,16 @@
 import type { Config, ConfigKey } from "../domain/config.js";
 import { resolveConfig, SERVER_ENV_VAR, validateValue } from "../domain/config.js";
-import type {
-  FileWriteError,
-  InvalidValueError,
-  MalformedConfigError,
-  MissingConfigError,
-} from "../domain/errors.js";
+import type { FileWriteError, InvalidValueError, MalformedConfigError, MissingConfigError } from "../domain/errors.js";
 import type { Result } from "../../../result.js";
 import type { ConfigStore } from "../infrastructure/config-store.js";
 import type { EnvReader } from "../infrastructure/env-reader.js";
 
 export interface ConfigService {
-  getResolved(opts: {
-    flag?: Partial<Config>;
-  }): Promise<Result<Config, MissingConfigError | MalformedConfigError>>;
-  set(
-    key: ConfigKey,
-    rawValue: string,
-  ): Promise<
-    Result<void, InvalidValueError | MalformedConfigError | FileWriteError>
-  >;
+  getResolved(opts: { flag?: Partial<Config> }): Promise<Result<Config, MissingConfigError | MalformedConfigError>>;
+  set(key: ConfigKey, rawValue: string): Promise<Result<void, InvalidValueError | MalformedConfigError | FileWriteError>>;
 }
 
-export interface ConfigServiceDeps {
-  store: ConfigStore;
-  envReader: EnvReader;
-}
-
-export function createConfigService(deps: ConfigServiceDeps): ConfigService {
+export function createConfigService(deps: { store: ConfigStore; envReader: EnvReader }): ConfigService {
   const { store, envReader } = deps;
 
   function readEnv(): Partial<Config> {

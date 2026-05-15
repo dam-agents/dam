@@ -9,99 +9,31 @@ import { buildDeleteCommand } from "./commands/delete.js";
 import { buildGetCommand } from "./commands/get.js";
 import { buildListCommand } from "./commands/list.js";
 import { buildRestartCommand } from "./commands/restart.js";
-import {
-  createInstanceService,
-  type InstanceService,
-} from "./services/instance-service.js";
-
-/**
- * Composition options for the `instance` module.
- *
- * The `host` (Active Host URL) is **not** taken at module-compose time:
- * the program's `compose()` runs before commander parses flags, so the
- * `--server` override is only known once a command's action fires. The
- * module instead exposes a factory `createService(host)` that command
- * actions call after resolving the host via `configService.getResolved`
- * with the same precedence the auth verbs use (`--server` → env →
- * `config.toml`). `tokenProvider`, `configService`, `compatService` are
- * injected by the package-level compose and held by closure.
- */
-export interface InstanceModuleOptions {
-  tokenProvider: TokenProvider;
-  configService: ConfigService;
-  compatService: CompatService;
-  /** Per-host factory for the template service. The `create` verb uses
-   *  it to pre-validate `--template` before issuing `agents.create`. */
-  templateService: (host: string) => TemplateService;
-}
+import { createInstanceService, type InstanceService } from "./services/instance-service.js";
 
 export interface InstanceModule {
   commands: ReadonlyArray<Command>;
-  exports: {
-    /** Build an `InstanceService` bound to the resolved Active Host.
-     *  Exposed so future verbs (`dam shell`, #86) can reuse it without
-     *  re-implementing the bearer-supplier wiring. */
-    createService: (host: string) => InstanceService;
-  };
+  exports: { createService: (host: string) => InstanceService };
 }
 
-export function composeInstanceModule(opts: InstanceModuleOptions): InstanceModule {
-  // Single source of truth for the bearer-supplier closure. Both the
-  // typed `InstanceService` and the raw trpc client used by the
-  // orchestration verbs (`create`, Phase 4 `delete` / `restart`) reuse
-  // it so retries and refreshes stay consistent.
+export function composeInstanceModule(opts: {
+  tokenProvider: TokenProvider;
+  configService: ConfigService;
+  compatService: CompatService;
+  templateService: (host: string) => TemplateService;
+}): InstanceModule {
   const buildTrpc = (host: string): TrpcClient =>
     createTrpcClient({ host, getToken: createBearerSupplier(opts.tokenProvider, host) });
-
   const createService = (host: string): InstanceService =>
     createInstanceService({ trpc: buildTrpc(host) });
+  const shared = { compatService: opts.compatService, configService: opts.configService, createInstanceService: createService };
 
-  // `dam instance` — parent group. Bare `dam instance` aliases to
-  // `list` via commander's `isDefault: true` on the subcommand.
-  const parent = new Command("instance").description(
-    "Address Instances by name or ID",
-  );
-  parent.addCommand(
-    buildListCommand({
-      compatService: opts.compatService,
-      configService: opts.configService,
-      createInstanceService: createService,
-    }),
-    { isDefault: true },
-  );
-  parent.addCommand(
-    buildGetCommand({
-      compatService: opts.compatService,
-      configService: opts.configService,
-      createInstanceService: createService,
-    }),
-  );
-  parent.addCommand(
-    buildCreateCommand({
-      compatService: opts.compatService,
-      configService: opts.configService,
-      createInstanceService: createService,
-      createTemplateService: opts.templateService,
-      createTrpcClient: buildTrpc,
-    }),
-  );
-  parent.addCommand(
-    buildDeleteCommand({
-      compatService: opts.compatService,
-      configService: opts.configService,
-      createInstanceService: createService,
-    }),
-  );
-  parent.addCommand(
-    buildRestartCommand({
-      compatService: opts.compatService,
-      configService: opts.configService,
-      createInstanceService: createService,
-    }),
-  );
+  const parent = new Command("instance").description("Address Instances by name or ID");
+  parent.addCommand(buildListCommand(shared), { isDefault: true });
+  parent.addCommand(buildGetCommand(shared));
+  parent.addCommand(buildCreateCommand({ ...shared, createTemplateService: opts.templateService, createTrpcClient: buildTrpc }));
+  parent.addCommand(buildDeleteCommand(shared));
+  parent.addCommand(buildRestartCommand(shared));
 
-  return {
-    commands: [parent],
-    exports: { createService },
-  };
+  return { commands: [parent], exports: { createService } };
 }

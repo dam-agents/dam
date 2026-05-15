@@ -2,64 +2,30 @@ import { Command } from "commander";
 import type { Instance } from "api-server-api";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { TemplateService } from "../../template/index.js";
-import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
+import { AuthRequiredAtTransportError, type TrpcClient } from "../../shared/trpc/trpc-client.js";
 import type { InstanceService } from "../services/instance-service.js";
 import { fetchOrFallback } from "../services/fetch-or-fallback.js";
 import { waitForRunning } from "../services/wait-for-state.js";
-import {
-  describeConfigError,
-  formatTransportError,
-  printCompatResolveError,
-} from "./errors.js";
+import { describeConfigError, formatTransportError, printCompatResolveError, printServiceError } from "./errors.js";
 import { parseEnvFlag, validateInstanceName } from "./create-helpers.js";
-import {
-  EXIT_INSTANCE_BELOW_FLOOR,
-  EXIT_INSTANCE_INVALID_INPUT,
-  EXIT_INSTANCE_RUNTIME_FAILURE,
-  EXIT_INSTANCE_SUCCESS,
-} from "./exit-codes.js";
+import { EXIT_INSTANCE_BELOW_FLOOR, EXIT_INSTANCE_INVALID_INPUT, EXIT_INSTANCE_RUNTIME_FAILURE, EXIT_INSTANCE_SUCCESS } from "./exit-codes.js";
 
 const DEFAULT_TIMEOUT_SECONDS = 120;
 const ROLLBACK_TIMEOUT_MS = 10_000;
 
-// Codes where the server definitively rejected `instances.create` (the
-// instance was never created), so the orphan agent is safe to delete.
-// Codes outside this set (INTERNAL_SERVER_ERROR, network errors) are
-// ambiguous — the instance may have been created — and the rollback
-// path leaves the agent in place with a hint.
+// Definitive server rejections — safe to roll back the orphan agent.
 const ROLLBACK_CODES = new Set([
-  "CONFLICT",
-  "BAD_REQUEST",
-  "NOT_FOUND",
-  "UNAUTHORIZED",
-  "FORBIDDEN",
-  "PRECONDITION_FAILED",
-  "UNIMPLEMENTED",
-  "RESOURCE_EXHAUSTED",
+  "CONFLICT", "BAD_REQUEST", "NOT_FOUND", "UNAUTHORIZED",
+  "FORBIDDEN", "PRECONDITION_FAILED", "UNIMPLEMENTED", "RESOURCE_EXHAUSTED",
 ]);
 
-export interface CreateCommandDeps {
+export function buildCreateCommand(deps: {
   compatService: CompatService;
   configService: ConfigService;
   createInstanceService: (host: string) => InstanceService;
   createTemplateService: (host: string) => TemplateService;
-  /** Raw trpc client factory — the create command issues
-   *  `agents.create` + `instances.create` directly because the rollback
-   *  policy is too command-shaped to live in the service layer. */
   createTrpcClient: (host: string) => TrpcClient;
-}
-
-interface CliOpts {
-  server?: string;
-  template?: string;
-  description?: string;
-  env?: string[];
-  wait?: boolean;
-  timeout?: string;
-  json?: boolean;
-}
-
-export function buildCreateCommand(deps: CreateCommandDeps): Command {
+}): Command {
   return new Command("create")
     .description("Create a new Instance from a template on the active host")
     .argument("<name>", "Instance name (1+ chars, must not start with `inst-`)")
@@ -89,15 +55,16 @@ export function buildCreateCommand(deps: CreateCommandDeps): Command {
         "",
       ].join("\n"),
     )
-    .action(async (name: string, opts: CliOpts) => {
+    .action(async (name: string, opts: { server?: string; template?: string; description?: string; env?: string[]; wait?: boolean; timeout?: string; json?: boolean }) => {
       await runCreate(name, opts, deps);
     });
 }
 
-async function runCreate(name: string, opts: CliOpts, deps: CreateCommandDeps): Promise<void> {
+type CreateDeps = Parameters<typeof buildCreateCommand>[0];
+
+async function runCreate(name: string, opts: { server?: string; template?: string; description?: string; env?: string[]; wait?: boolean; timeout?: string; json?: boolean }, deps: CreateDeps): Promise<void> {
   const flag = opts.server ? { server: opts.server } : undefined;
 
-  // --- Local validation (no RPC) --------------------------------------
   const nameCheck = validateInstanceName(name);
   if (!nameCheck.ok) {
     if (nameCheck.error === "reserved-prefix") {
@@ -146,54 +113,28 @@ async function runCreate(name: string, opts: CliOpts, deps: CreateCommandDeps): 
     process.exit(EXIT_INSTANCE_INVALID_INPUT);
   }
 
-  // --- Compat pre-flight ----------------------------------------------
   const compat = await deps.compatService.check({ flag });
-  if (!compat.ok) {
-    printCompatResolveError(compat.error);
-    process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
-  }
-  const verdict = compat.value;
-  if (verdict.kind === "below-floor") {
-    process.stderr.write(
-      `error: CLI ${verdict.localCli} is below the server's minimum required version ${verdict.serverMinClient}; upgrade and retry\n`,
-    );
+  if (!compat.ok) { printCompatResolveError(compat.error); process.exit(EXIT_INSTANCE_RUNTIME_FAILURE); }
+  if (compat.value.kind === "below-floor") {
+    process.stderr.write(`error: CLI ${compat.value.localCli} is below the server's minimum required version ${compat.value.serverMinClient}; upgrade and retry\n`);
     process.exit(EXIT_INSTANCE_BELOW_FLOOR);
   }
-  if (verdict.kind === "behind-current") {
-    process.stderr.write(
-      `warning: CLI ${verdict.localCli} is behind server ${verdict.serverVersion}; consider upgrading\n`,
-    );
+  if (compat.value.kind === "behind-current") {
+    process.stderr.write(`warning: CLI ${compat.value.localCli} is behind server ${compat.value.serverVersion}; consider upgrading\n`);
   }
 
   const cfg = await deps.configService.getResolved({ flag });
-  if (!cfg.ok) {
-    process.stderr.write(`error: ${describeConfigError(cfg.error)}\n`);
-    process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
-  }
+  if (!cfg.ok) { process.stderr.write(`error: ${describeConfigError(cfg.error)}\n`); process.exit(EXIT_INSTANCE_RUNTIME_FAILURE); }
   const host = cfg.value.server;
 
-  // --- Step 1: template pre-validation --------------------------------
-  const templateSvc = deps.createTemplateService(host);
-  const tmplResult = await templateSvc.list();
-  if (!tmplResult.ok) {
-    if (tmplResult.error.kind === "auth-required") {
-      process.stderr.write(`error: not authenticated: ${tmplResult.error.reason}\n`);
-      process.stderr.write("hint: run `dam auth login` first\n");
-    } else {
-      process.stderr.write(`error: ${formatTransportError(tmplResult.error.reason, host)}\n`);
-    }
-    process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
-  }
+  const tmplResult = await deps.createTemplateService(host).list();
+  if (!tmplResult.ok) { printServiceError(tmplResult.error, host); process.exit(EXIT_INSTANCE_RUNTIME_FAILURE); }
   const match = tmplResult.value.find((t) => t.id === template);
   if (!match) {
-    const available = tmplResult.value.map((t) => t.id).join(", ");
-    process.stderr.write(
-      `error: unknown template \`${template}\`; available: ${available || "(none)"}\n`,
-    );
+    process.stderr.write(`error: unknown template \`${template}\`; available: ${tmplResult.value.map((t) => t.id).join(", ") || "(none)"}\n`);
     process.exit(EXIT_INSTANCE_INVALID_INPUT);
   }
 
-  // --- Steps 2 + 3: agents.create then instances.create ---------------
   const trpc = deps.createTrpcClient(host);
   let agentId: string;
   try {
@@ -211,9 +152,8 @@ async function runCreate(name: string, opts: CliOpts, deps: CreateCommandDeps): 
       );
       process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
     }
-    if (isAuthSentinelError(e)) {
-      process.stderr.write(`error: not authenticated: ${errorReason(e)}\n`);
-      process.stderr.write("hint: run `dam auth login` first\n");
+    if (hasAuthSentinel(e)) {
+      process.stderr.write(`error: not authenticated: ${errorReason(e)}\nhint: run \`dam auth login\` first\n`);
       process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
     }
     process.stderr.write(`error: failed to create agent: ${errorReason(e)}\n`);
@@ -228,7 +168,6 @@ async function runCreate(name: string, opts: CliOpts, deps: CreateCommandDeps): 
     process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
   }
 
-  // --- Step 4: optional --wait ----------------------------------------
   let finalInstance = instance;
   if (opts.wait) {
     const svc = deps.createInstanceService(host);
@@ -265,10 +204,6 @@ async function runCreate(name: string, opts: CliOpts, deps: CreateCommandDeps): 
         return;
       case "timeout":
         if (opts.json) {
-          // The Instance was created server-side; only the wait
-          // timed out. Refresh for the latest state, but fall back to
-          // the post-create snapshot if the refresh fails so scripts
-          // never see empty stdout.
           process.stdout.write(
             `${JSON.stringify(await fetchOrFallback(svc, instance, "after wait timeout"))}\n`,
           );
@@ -286,7 +221,6 @@ async function runCreate(name: string, opts: CliOpts, deps: CreateCommandDeps): 
     }
   }
 
-  // --- Output ---------------------------------------------------------
   if (opts.json) {
     process.stdout.write(`${JSON.stringify(finalInstance)}\n`);
   } else {
@@ -304,45 +238,27 @@ function parseTimeout(raw: string | undefined): number | null {
   return n;
 }
 
-async function tryRollbackAgent(
-  trpc: TrpcClient,
-  agentId: string,
-  originalError: unknown,
-): Promise<void> {
+async function tryRollbackAgent(trpc: TrpcClient, agentId: string, originalError: unknown): Promise<void> {
   const code = trpcCode(originalError);
   if (!code || !ROLLBACK_CODES.has(code)) {
-    // Ambiguous outcome (INTERNAL_SERVER_ERROR, network) — the instance
-    // may or may not have been created server-side. Don't roll back; the
-    // user can inspect via the UI.
-    process.stderr.write(`error: failed to create instance: ${errorReason(originalError)}\n`);
-    process.stderr.write(`hint: agent \`${agentId}\` may be orphaned; check via the web UI\n`);
+    process.stderr.write(`error: failed to create instance: ${errorReason(originalError)}\nhint: agent \`${agentId}\` may be orphaned; check via the web UI\n`);
     return;
   }
   try {
     await Promise.race([
       trpc.agents.delete.mutate({ id: agentId }),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("rollback timeout")), ROLLBACK_TIMEOUT_MS),
-      ),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("rollback timeout")), ROLLBACK_TIMEOUT_MS)),
     ]);
-    const msg = trpcMessage(originalError) ?? errorReason(originalError);
-    process.stderr.write(`error: ${msg}\n`);
+    process.stderr.write(`error: ${trpcMessage(originalError) ?? errorReason(originalError)}\n`);
   } catch (rollbackErr) {
-    process.stderr.write(`error: ${errorReason(originalError)}\n`);
-    process.stderr.write(
-      `error: also failed to clean up agent \`${agentId}\`: ${errorReason(rollbackErr)}\n`,
-    );
-    process.stderr.write("hint: delete the orphan agent via the web UI\n");
+    process.stderr.write(`error: ${errorReason(originalError)}\nerror: also failed to clean up agent \`${agentId}\`: ${errorReason(rollbackErr)}\nhint: delete the orphan agent via the web UI\n`);
   }
 }
 
-function hasTrpcCode(e: unknown, code: string): boolean {
-  return trpcCode(e) === code;
-}
+function hasTrpcCode(e: unknown, code: string): boolean { return trpcCode(e) === code; }
 
 function trpcCode(e: unknown): string | undefined {
-  if (typeof e !== "object" || e === null) return undefined;
-  return (e as { data?: { code?: string } }).data?.code;
+  return typeof e === "object" && e !== null ? (e as { data?: { code?: string } }).data?.code : undefined;
 }
 
 function trpcMessage(e: unknown): string | undefined {
@@ -352,24 +268,14 @@ function trpcMessage(e: unknown): string | undefined {
 }
 
 function errorReason(e: unknown): string {
-  if (e instanceof Error) return e.message;
-  if (typeof e === "string") return e;
-  return "unknown failure";
+  return e instanceof Error ? e.message : typeof e === "string" ? e : "unknown failure";
 }
 
-function isAuthSentinelError(e: unknown): boolean {
+function hasAuthSentinel(e: unknown): boolean {
   let cursor: unknown = e;
-  let depth = 0;
-  while (cursor && depth < 8) {
-    // `cursor &&` above already excludes null/undefined; the truthy
-    // gate suffices because primitives have no `.name` property worth
-    // matching anyway.
-    if (typeof cursor === "object") {
-      const name = (cursor as { name?: unknown }).name;
-      if (name === "AuthRequiredAtTransportError") return true;
-    }
+  for (let depth = 0; cursor && depth < 8; depth++) {
+    if (cursor instanceof AuthRequiredAtTransportError) return true;
     cursor = (cursor as { cause?: unknown }).cause;
-    depth++;
   }
   return false;
 }

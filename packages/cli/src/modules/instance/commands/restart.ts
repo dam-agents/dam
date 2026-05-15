@@ -5,41 +5,18 @@ import type { InstanceService } from "../services/instance-service.js";
 import { createInstanceResolver } from "../services/instance-resolver.js";
 import { fetchOrFallback } from "../services/fetch-or-fallback.js";
 import { waitForRunning } from "../services/wait-for-state.js";
-import {
-  describeConfigError,
-  exitCodeForResolveError,
-  formatTransportError,
-  printCompatResolveError,
-  printResolveError,
-} from "./errors.js";
-import {
-  EXIT_INSTANCE_BELOW_FLOOR,
-  EXIT_INSTANCE_INVALID_INPUT,
-  EXIT_INSTANCE_RUNTIME_FAILURE,
-  EXIT_INSTANCE_SUCCESS,
-  EXIT_INSTANCE_NOT_RESOLVED,
-} from "./exit-codes.js";
+import { describeConfigError, exitCodeForResolveError, formatTransportError, printCompatResolveError, printResolveError, printServiceError } from "./errors.js";
+import { EXIT_INSTANCE_BELOW_FLOOR, EXIT_INSTANCE_INVALID_INPUT, EXIT_INSTANCE_RUNTIME_FAILURE, EXIT_INSTANCE_SUCCESS, EXIT_INSTANCE_NOT_RESOLVED } from "./exit-codes.js";
 
 const DEFAULT_TIMEOUT_SECONDS = 120;
-/** Grace period before the first poll. Without this, the first poll can
- *  observe stale `currentState === "running"` from the pod we just told
- *  the controller to delete. Locked at 2 s in spec §4.6. */
+// Grace before first poll so the controller observes pod deletion before we see stale "running".
 const RESTART_GRACE_SECONDS = 2;
 
-export interface RestartCommandDeps {
+export function buildRestartCommand(deps: {
   compatService: CompatService;
   configService: ConfigService;
   createInstanceService: (host: string) => InstanceService;
-}
-
-interface CliOpts {
-  server?: string;
-  wait?: boolean;
-  timeout?: string;
-  json?: boolean;
-}
-
-export function buildRestartCommand(deps: RestartCommandDeps): Command {
+}): Command {
   return new Command("restart")
     .description("Restart an Instance (recreates the pod; persistent volumes survive)")
     .argument("<ref>", "Instance Ref — name or 'inst-…' ID")
@@ -54,45 +31,34 @@ export function buildRestartCommand(deps: RestartCommandDeps): Command {
       "after",
       "\nExamples:\n  dam instance restart my-agent\n  dam instance restart my-agent --wait\n",
     )
-    .action(async (ref: string, opts: CliOpts) => {
+    .action(async (ref: string, opts: { server?: string; wait?: boolean; timeout?: string; json?: boolean }) => {
       await runRestart(ref, opts, deps);
     });
 }
 
-async function runRestart(ref: string, opts: CliOpts, deps: RestartCommandDeps): Promise<void> {
+type RestartDeps = Parameters<typeof buildRestartCommand>[0];
+
+async function runRestart(ref: string, opts: { server?: string; wait?: boolean; timeout?: string; json?: boolean }, deps: RestartDeps): Promise<void> {
   const flag = opts.server ? { server: opts.server } : undefined;
 
   const timeoutSeconds = parseTimeout(opts.timeout);
   if (timeoutSeconds === null) {
-    process.stderr.write(
-      `error: invalid \`--timeout\` value \`${opts.timeout}\`; expected positive integer\n`,
-    );
+    process.stderr.write(`error: invalid \`--timeout\` value \`${opts.timeout}\`; expected positive integer\n`);
     process.exit(EXIT_INSTANCE_INVALID_INPUT);
   }
 
   const compat = await deps.compatService.check({ flag });
-  if (!compat.ok) {
-    printCompatResolveError(compat.error);
-    process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
-  }
-  const verdict = compat.value;
-  if (verdict.kind === "below-floor") {
-    process.stderr.write(
-      `error: CLI ${verdict.localCli} is below the server's minimum required version ${verdict.serverMinClient}; upgrade and retry\n`,
-    );
+  if (!compat.ok) { printCompatResolveError(compat.error); process.exit(EXIT_INSTANCE_RUNTIME_FAILURE); }
+  if (compat.value.kind === "below-floor") {
+    process.stderr.write(`error: CLI ${compat.value.localCli} is below the server's minimum required version ${compat.value.serverMinClient}; upgrade and retry\n`);
     process.exit(EXIT_INSTANCE_BELOW_FLOOR);
   }
-  if (verdict.kind === "behind-current") {
-    process.stderr.write(
-      `warning: CLI ${verdict.localCli} is behind server ${verdict.serverVersion}; consider upgrading\n`,
-    );
+  if (compat.value.kind === "behind-current") {
+    process.stderr.write(`warning: CLI ${compat.value.localCli} is behind server ${compat.value.serverVersion}; consider upgrading\n`);
   }
 
   const cfg = await deps.configService.getResolved({ flag });
-  if (!cfg.ok) {
-    process.stderr.write(`error: ${describeConfigError(cfg.error)}\n`);
-    process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
-  }
+  if (!cfg.ok) { process.stderr.write(`error: ${describeConfigError(cfg.error)}\n`); process.exit(EXIT_INSTANCE_RUNTIME_FAILURE); }
   const host = cfg.value.server;
 
   const svc = deps.createInstanceService(host);
@@ -107,22 +73,13 @@ async function runRestart(ref: string, opts: CliOpts, deps: RestartCommandDeps):
   const restartResult = await svc.restart(instance.id);
   if (!restartResult.ok) {
     if (restartResult.error.kind === "not-found") {
-      // Race: the instance vanished between resolve and restart.
       process.stderr.write(`error: no instance with id \`${instance.id}\`\n`);
       process.exit(EXIT_INSTANCE_NOT_RESOLVED);
     }
-    if (restartResult.error.kind === "auth-required") {
-      process.stderr.write(`error: not authenticated: ${restartResult.error.reason}\n`);
-      process.stderr.write("hint: run `dam auth login` first\n");
-      process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
-    }
-    process.stderr.write(`error: ${formatTransportError(restartResult.error.reason, host)}\n`);
+    printServiceError(restartResult.error, host);
     process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
   }
 
-  // `finalInstance` carries the post-restart snapshot through to the
-  // output stage. On `--wait`, the ready branch already produced one —
-  // reusing it avoids a second `svc.get()` round-trip.
   let finalInstance: Instance | undefined;
   if (opts.wait) {
     let firstStateSeen = false;
@@ -157,10 +114,6 @@ async function runRestart(ref: string, opts: CliOpts, deps: RestartCommandDeps):
         return;
       case "timeout":
         if (opts.json) {
-          // Best-effort refresh so the JSON payload reflects the latest
-          // state. If the refresh fails, fall back to the pre-restart
-          // snapshot — scripts always get a valid Instance, never empty
-          // stdout.
           process.stdout.write(
             `${JSON.stringify(await fetchOrFallback(svc, instance, "after restart"))}\n`,
           );
@@ -179,8 +132,6 @@ async function runRestart(ref: string, opts: CliOpts, deps: RestartCommandDeps):
   }
 
   if (opts.json) {
-    // Non-wait path needs a refresh to surface the post-restart state.
-    // Wait+ready already populated `finalInstance` above.
     const payload = finalInstance ?? (await fetchOrFallback(svc, instance, "after restart"));
     process.stdout.write(`${JSON.stringify(payload)}\n`);
   } else {

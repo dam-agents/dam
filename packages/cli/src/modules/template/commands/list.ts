@@ -1,105 +1,58 @@
 import { Command } from "commander";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import type {
-  AuthRequiredError,
-  TransportError,
-} from "../../instance/domain/errors.js";
-import {
-  describeConfigError,
-  formatTransportError,
-  printCompatResolveError,
-} from "../../instance/commands/errors.js";
+import { describeConfigError, printCompatResolveError, printServiceError } from "../../instance/commands/errors.js";
 import { renderTable } from "../../shared/render-table.js";
-import type { Template, TemplateService } from "../services/template-service.js";
-import {
-  EXIT_TEMPLATE_BELOW_FLOOR,
-  EXIT_TEMPLATE_RUNTIME_FAILURE,
-  EXIT_TEMPLATE_SUCCESS,
-} from "./exit-codes.js";
+import type { TemplateService } from "../services/template-service.js";
+import { EXIT_TEMPLATE_BELOW_FLOOR, EXIT_TEMPLATE_RUNTIME_FAILURE, EXIT_TEMPLATE_SUCCESS } from "./exit-codes.js";
 
 const DESCRIPTION_MAX = 60;
 
-export interface ListCommandDeps {
+export function buildListCommand(deps: {
   compatService: CompatService;
   configService: ConfigService;
-  /** Per-host factory — produced by the module's compose. */
   createTemplateService: (host: string) => TemplateService;
-}
-
-export function buildListCommand(deps: ListCommandDeps): Command {
+}): Command {
   return new Command("list")
     .description("List agent templates available on the active host")
     .option("--server <url>", "override the configured server URL for this call")
     .option("--json", "emit raw JSON instead of the default table")
-    .addHelpText(
-      "after",
-      "\nExamples:\n  dam template list\n  dam template list --json | jq '.[].id'\n",
-    )
+    .addHelpText("after", "\nExamples:\n  dam template list\n  dam template list --json | jq '.[].id'\n")
     .action(async (opts: { server?: string; json?: boolean }) => {
       const flag = opts.server ? { server: opts.server } : undefined;
 
       const compat = await deps.compatService.check({ flag });
-      if (!compat.ok) {
-        printCompatResolveError(compat.error);
-        process.exit(EXIT_TEMPLATE_RUNTIME_FAILURE);
-      }
-      const verdict = compat.value;
-      if (verdict.kind === "below-floor") {
-        process.stderr.write(
-          `error: CLI ${verdict.localCli} is below the server's minimum required version ${verdict.serverMinClient}; upgrade and retry\n`,
-        );
+      if (!compat.ok) { printCompatResolveError(compat.error); process.exit(EXIT_TEMPLATE_RUNTIME_FAILURE); }
+      if (compat.value.kind === "below-floor") {
+        process.stderr.write(`error: CLI ${compat.value.localCli} is below the server's minimum required version ${compat.value.serverMinClient}; upgrade and retry\n`);
         process.exit(EXIT_TEMPLATE_BELOW_FLOOR);
       }
-      if (verdict.kind === "behind-current") {
-        process.stderr.write(
-          `warning: CLI ${verdict.localCli} is behind server ${verdict.serverVersion}; consider upgrading\n`,
-        );
+      if (compat.value.kind === "behind-current") {
+        process.stderr.write(`warning: CLI ${compat.value.localCli} is behind server ${compat.value.serverVersion}; consider upgrading\n`);
       }
 
       const cfg = await deps.configService.getResolved({ flag });
-      if (!cfg.ok) {
-        process.stderr.write(`error: ${describeConfigError(cfg.error)}\n`);
-        process.exit(EXIT_TEMPLATE_RUNTIME_FAILURE);
-      }
+      if (!cfg.ok) { process.stderr.write(`error: ${describeConfigError(cfg.error)}\n`); process.exit(EXIT_TEMPLATE_RUNTIME_FAILURE); }
 
       const host = cfg.value.server;
-      const svc = deps.createTemplateService(host);
-      const result = await svc.list();
-      if (!result.ok) {
-        printServiceError(result.error, host);
-        process.exit(EXIT_TEMPLATE_RUNTIME_FAILURE);
-      }
+      const result = await deps.createTemplateService(host).list();
+      if (!result.ok) { printServiceError(result.error, host); process.exit(EXIT_TEMPLATE_RUNTIME_FAILURE); }
 
-      if (opts.json) {
-        process.stdout.write(`${JSON.stringify(result.value)}\n`);
-        process.exit(EXIT_TEMPLATE_SUCCESS);
-      }
+      if (opts.json) { process.stdout.write(`${JSON.stringify(result.value)}\n`); process.exit(EXIT_TEMPLATE_SUCCESS); }
 
       if (result.value.length === 0) {
-        process.stderr.write("No templates.\n");
-        process.stderr.write("hint: ask your operator to add one to the cluster\n");
+        process.stderr.write("No templates.\nhint: ask your operator to add one to the cluster\n");
         process.exit(EXIT_TEMPLATE_SUCCESS);
       }
 
       const sorted = [...result.value].sort((a, b) => a.name.localeCompare(b.name));
-      const rows = [
+      process.stdout.write(renderTable([
         ["NAME", "ID", "DESCRIPTION"],
         ...sorted.map((t) => [t.name, t.id, truncate(t.description ?? "", DESCRIPTION_MAX)]),
-      ];
-      process.stdout.write(renderTable(rows));
+      ]));
       process.exit(EXIT_TEMPLATE_SUCCESS);
     });
 }
 
 function truncate(s: string, n: number): string {
   return s.length <= n ? s : `${s.slice(0, n - 1)}…`;
-}
-
-function printServiceError(error: TransportError | AuthRequiredError, host: string): void {
-  if (error.kind === "auth-required") {
-    process.stderr.write(`error: not authenticated: ${error.reason}\n`);
-    process.stderr.write("hint: run `dam auth login` first\n");
-    return;
-  }
-  process.stderr.write(`error: ${formatTransportError(error.reason, host)}\n`);
 }
