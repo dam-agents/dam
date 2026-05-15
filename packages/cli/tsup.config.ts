@@ -25,6 +25,7 @@ export default defineConfig({
     "commander",
     "open",
     "smol-toml",
+    "tar-stream",
     "ws",
     "zod",
   ],

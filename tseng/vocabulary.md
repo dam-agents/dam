@@ -104,7 +104,7 @@ Pod-side operational view of skills. Distinct from the api-server's Skills conte
 
 ## Import (bounded context)
 
-Pod-side operation that lands a user-supplied snapshot of local project context into the agent's `<homeDir>/work`. Owned by agent-runtime; orchestrated by api-server. See [ADR-DRAFT-file-import](../docs/adrs/DRAFT-file-import.md).
+Pod-side operation that lands a user-supplied snapshot of local project context into the agent's `<homeDir>/work`. Owned by agent-runtime; orchestrated by api-server. See [ADR-DRAFT-file-import](../docs/adrs/044-file-import.md).
 
 | Term | Definition |
 |------|-----------|

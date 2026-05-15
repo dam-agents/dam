@@ -249,7 +249,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   // File import — bundle is a tar (or tar.gz) inside multipart/form-data;
   // we wake the pod via the reachability primitive and stream the body
   // straight to agent-runtime, which lands it under `<homeDir>/work`
-  // with top-level replace semantics. See docs/adrs/DRAFT-file-import.md.
+  // with top-level replace semantics. See docs/adrs/044-file-import.md.
   //
   // The proxy uses node:http directly (NOT undici fetch). undici buffers
   // arbitrary-sized request bodies in memory even with `duplex: "half"`,
