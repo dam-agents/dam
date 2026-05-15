@@ -5,6 +5,10 @@ import { buildGetCommand } from "./commands/get.js";
 import { buildListCommand } from "./commands/list.js";
 import { createInstancesTrpcClient } from "./infrastructure/trpc-client.js";
 import {
+  createInstanceResolver,
+  type InstanceResolver,
+} from "./services/instance-resolver.js";
+import {
   createInstancesService,
   type InstancesService,
 } from "./services/instances-service.js";
@@ -37,6 +41,10 @@ export interface InstancesModule {
      *  Exposed so future verbs (`dam shell`, #86) can reuse it without
      *  re-implementing the bearer-supplier wiring. */
     createService: (host: string) => InstancesService;
+    /** Build an `InstanceResolver` bound to the resolved Active Host.
+     *  Exposed so downstream modules (`dam import`, #73) can resolve refs
+     *  without crossing into the instances module's deep paths. */
+    createResolver: (host: string) => InstanceResolver;
   };
 }
 
@@ -84,9 +92,12 @@ export function composeInstancesModule(opts: InstancesModuleOptions): InstancesM
     }),
   );
 
+  const createResolver = (host: string): InstanceResolver =>
+    createInstanceResolver({ instancesService: createService(host) });
+
   return {
     commands: [parent],
-    exports: { createService },
+    exports: { createService, createResolver },
   };
 }
 

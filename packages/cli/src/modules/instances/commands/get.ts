@@ -1,12 +1,15 @@
 import { Command } from "commander";
 import type { ChannelConfig, Instance } from "api-server-api";
 import { ChannelType } from "api-server-api";
+import {
+  describeConfigError,
+  isInstanceNotResolved,
+  printCompatResolveError,
+  printResolveError,
+} from "../../../error-printers.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { InstancesService } from "../services/instances-service.js";
-import {
-  createInstanceResolver,
-  type ResolveError,
-} from "../services/instance-resolver.js";
+import { createInstanceResolver } from "../services/instance-resolver.js";
 import {
   EXIT_INSTANCES_BELOW_FLOOR,
   EXIT_INSTANCES_RUNTIME_FAILURE,
@@ -63,7 +66,11 @@ export function buildGetCommand(deps: GetCommandDeps): Command {
       const result = await resolver.resolve(ref);
       if (!result.ok) {
         printResolveError(result.error);
-        process.exit(exitCodeFor(result.error));
+        process.exit(
+          isInstanceNotResolved(result.error)
+            ? EXIT_INSTANCE_NOT_RESOLVED
+            : EXIT_INSTANCES_RUNTIME_FAILURE,
+        );
       }
 
       if (opts.json) {
@@ -104,64 +111,3 @@ function renderChannels(channels: readonly ChannelConfig[]): string {
     .join(", ");
 }
 
-function exitCodeFor(error: ResolveError): number {
-  if (error.kind === "not-found" || error.kind === "ambiguous") {
-    return EXIT_INSTANCE_NOT_RESOLVED;
-  }
-  return EXIT_INSTANCES_RUNTIME_FAILURE;
-}
-
-function printResolveError(error: ResolveError): void {
-  switch (error.kind) {
-    case "not-found":
-      if (error.via === "id") {
-        process.stderr.write(`error: no instance with id '${error.ref}'\n`);
-      } else {
-        process.stderr.write(`error: no instance named '${error.ref}'\n`);
-      }
-      return;
-    case "ambiguous": {
-      process.stderr.write(`error: multiple instances named '${error.ref}':\n`);
-      for (const m of error.matches) {
-        process.stderr.write(`  ${m.id}\n`);
-      }
-      process.stderr.write("specify by id instead.\n");
-      return;
-    }
-    case "auth-required":
-      process.stderr.write(
-        `error: not authenticated: ${error.reason}\n` +
-          `       run "dam auth login" first\n`,
-      );
-      return;
-    case "transport":
-      process.stderr.write(`error: cannot reach server: ${error.reason}\n`);
-      return;
-  }
-}
-
-function describeConfigError(e: { kind: string; reason?: string }): string {
-  if (e.kind === "malformed-config") return e.reason ?? "config is malformed";
-  return "no server configured";
-}
-
-function printCompatResolveError(
-  e: { kind: string; reason?: string; code?: string; message?: string },
-  serverEnvVar: string,
-): void {
-  switch (e.kind) {
-    case "missing-config":
-      process.stderr.write(
-        `error: no server configured; run "dam config set server <url>" or set ${serverEnvVar}\n`,
-      );
-      return;
-    case "malformed-config":
-      process.stderr.write(`error: ${e.reason ?? "config malformed"}\n`);
-      return;
-    case "probe-error":
-      process.stderr.write(`error: cannot reach server: ${e.message ?? e.code ?? "unknown"}\n`);
-      return;
-    default:
-      process.stderr.write(`error: ${e.kind}\n`);
-  }
-}

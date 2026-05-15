@@ -1,15 +1,16 @@
 # CLI
 
-Last verified: 2026-05-12
+Last verified: 2026-05-14
 
 ## Motivated by
 
 - [ADR-039 — Platform CLI foundation](../adrs/039-cli-foundation.md) — TypeScript Node package distributed via npm; reuses the api-server tRPC contract; flat config under XDG-standard locations; server-advertised compatibility floor.
 - [ADR-037 — Remote terminal](../adrs/037-remote-terminal.md) — predecessor; established the "terminal" session mode the CLI complements with `dam shell` (a future verb).
+- [#73 — Import local project context into agent workspace](https://github.com/dam-agents/dam/issues/73) — the `dam import` verb that uploads local files and folders into an Instance.
 
 ## Overview
 
-The `dam` CLI is a TypeScript Node package that users install on their own machine and point at a configured Platform deployment. It never runs inside the cluster. The current surface: `dam --version`, `dam --help` (built-in flags), `dam config set`, `dam ping`, `dam version`, the `dam auth login` / `dam auth logout` / `dam auth status` verbs added by [#80](https://github.com/dam-agents/dam/issues/80), and `dam instances list` / `dam instances get` added by [#81](https://github.com/dam-agents/dam/issues/81). Future verbs — `dam shell`, `dam import` — slot into their own modules and consume the Token Provider seam from `auth` plus the Instance Resolver seam from `instances`.
+The `dam` CLI is a TypeScript Node package that users install on their own machine and point at a configured Platform deployment. It never runs inside the cluster. The current surface: `dam --version`, `dam --help` (built-in flags), `dam config set`, `dam ping`, `dam version`, the `dam auth login` / `dam auth logout` / `dam auth status` verbs added by [#80](https://github.com/dam-agents/dam/issues/80), `dam instances list` / `dam instances get` added by [#81](https://github.com/dam-agents/dam/issues/81), and `dam import` added by [#73](https://github.com/dam-agents/dam/issues/73). The remaining future verb — `dam shell` — slots into its own module and consumes the Token Provider seam from `auth` plus the Instance Resolver seam from `instances`.
 
 The CLI shares types directly with the api-server via a shared contract package, so server-side type changes reach the CLI without codegen or manual mirroring. tRPC routes are reached through `@trpc/client` typed against the contract's `AppRouter`; the auth probes (`/api/auth/config`, OIDC discovery) stay as raw `fetch` because they are not tRPC.
 
@@ -68,6 +69,16 @@ The `instances` module gives users a human-friendly path to address an Instance 
 - **Resolver policy** — `inst-…` is looked up via `instances.get`; anything else is matched by exact, case-sensitive name against `instances.list`. Zero matches → `not-found`; one → ok; two or more → `ambiguous`. No normalization. No retries. One round-trip per resolution in both branches.
 - **Reserved ID Prefix** — the controller mints Instance IDs via `generateK8sName("inst")`. The api-server rejects Instance names beginning with `inst-` at create-time (zod refinement → BAD_REQUEST), eliminating the only ambiguous case.
 - **Uniqueness** — `(owner, name)` is unique. Enforced at create-time as a list-then-check (TRPCError CONFLICT). The race window is accepted for CLI traffic; pre-existing duplicates fall through to the resolver's `ambiguous` path.
-- **Resolver surface** — `InstanceResolver` is exported from the `instances` module's `index.ts`. Downstream verbs (`dam shell`, …) import it from there and ask the module's compose for an `InstancesService` bound to the resolved Active Host.
+- **Resolver surface** — `InstanceResolver` is exported as a type from the `instances` module's `index.ts`. Downstream verbs (`dam import`, `dam shell`, …) import the type from there and ask the module's compose for a `createResolver(host)` factory bound to the resolved Active Host.
 - **`EXIT_INSTANCE_NOT_RESOLVED = 5`** — single exit code shared by `not-found` and `ambiguous`; wrapper scripts don't need to branch on "did you mean a different one" vs "no such instance".
 - **`--json` parity** — both `list` and `get` emit raw `Instance` / `Instance[]` from the contract. Empty list is `[]`, never `null`.
+
+## Import
+
+`dam import <instance-ref> <path...>` uploads one or more local files or folders into an Instance. The verb consumes the Token Provider seam from `auth`, the resolver factory exported by the `instances` module's compose, and the same `CompatService` / `ConfigService` gates every networked verb uses.
+
+- **Wire shape** — POST `<server>/api/instances/<id>/import`, multipart/form-data with one part `bundle: application/gzip`. Bearer auth. Same contract the UI's [`importBundle`](../../packages/ui/src/modules/files/api/import-bundle.ts) targets; the server-side design rationale lives in [ADR-044](../adrs/044-file-import.md).
+- **Each path argument becomes one top-level entry** under `work/` on the Instance, named by its `basename(path)`. `dam import foo CLAUDE.md .claude src` lands at `work/CLAUDE.md`, `work/.claude/`, `work/src/`. The on-pod `finalize` ([packages/agent-runtime/src/modules/import/finalize.ts](../../packages/agent-runtime/src/modules/import/finalize.ts)) replaces each top-level entry atomically; other entries under `work/` are untouched.
+- **Bundle** — a single gzipped tar built from the supplied paths with [`tar-stream`](https://www.npmjs.com/package/tar-stream) and spooled to a tmpfile. Sent as a `FormData` `Blob` via Node's `openAsBlob` so undici computes `Content-Length` correctly (the server requires it). Symlinks anywhere in the imported tree are skipped (not followed). Excluded basenames at every level: `node_modules`, `.venv`, `__pycache__`, `.DS_Store` — same set the UI uses; rendered into `dam import --help` from the single source of truth.
+- **Top-level replace is destructive** at each named path. The CLI shows a TTY confirm prompt before any upload; `--yes` skips. Non-TTY without `--yes` refuses (exit 2). Cancelled-by-user prints `cancelled.` to stderr, exit 0.
+- **No service layer** — the verb has a single POST with status-based classification, so the action handler classifies inline (`switch (res.status)`) rather than introducing a port the way `instances` does for tRPC.

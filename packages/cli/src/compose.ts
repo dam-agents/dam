@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { composeAuthModule } from "./modules/auth/compose.js";
 import { composeCliModule } from "./modules/cli/compose.js";
+import { composeImportModule } from "./modules/import/compose.js";
 import { composeInstancesModule } from "./modules/instances/compose.js";
 
 export interface ComposeOptions {
@@ -40,6 +41,14 @@ export function compose(opts: ComposeOptions = {}): Command {
     compatService: cli.services.compatService,
     serverEnvVar: "DAM_SERVER",
   });
+  // The import module consumes the instances module's resolver factory.
+  const importModule = composeImportModule({
+    tokenProvider: auth.exports.tokenProvider,
+    configService: cli.services.configService,
+    compatService: cli.services.compatService,
+    createInstanceResolver: instances.exports.createResolver,
+    serverEnvVar: "DAM_SERVER",
+  });
 
   const program = new Command();
   program
@@ -50,6 +59,7 @@ export function compose(opts: ComposeOptions = {}): Command {
   for (const command of cli.commands) program.addCommand(command);
   for (const command of auth.commands) program.addCommand(command);
   for (const command of instances.commands) program.addCommand(command);
+  for (const command of importModule.commands) program.addCommand(command);
 
   return program;
 }

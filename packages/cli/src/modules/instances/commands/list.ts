@@ -1,11 +1,12 @@
 import { Command } from "commander";
 import type { Instance } from "api-server-api";
+import {
+  describeConfigError,
+  printCompatResolveError,
+  printResolveError,
+} from "../../../error-printers.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { InstancesService } from "../services/instances-service.js";
-import type {
-  AuthRequiredError,
-  TransportError,
-} from "../domain/errors.js";
 import {
   EXIT_INSTANCES_BELOW_FLOOR,
   EXIT_INSTANCES_RUNTIME_FAILURE,
@@ -65,7 +66,7 @@ export function buildListCommand(deps: ListCommandDeps): Command {
       const svc = deps.createInstancesService(cfg.value.server);
       const result = await svc.list();
       if (!result.ok) {
-        printServiceError(result.error);
+        printResolveError(result.error);
         process.exit(EXIT_INSTANCES_RUNTIME_FAILURE);
       }
 
@@ -106,39 +107,3 @@ function renderTable(instances: readonly Instance[]): string {
     .join("\n") + "\n";
 }
 
-function describeConfigError(e: { kind: string; reason?: string }): string {
-  if (e.kind === "malformed-config") return e.reason ?? "config is malformed";
-  return "no server configured";
-}
-
-function printCompatResolveError(
-  e: { kind: string; reason?: string; code?: string; message?: string },
-  serverEnvVar: string,
-): void {
-  switch (e.kind) {
-    case "missing-config":
-      process.stderr.write(
-        `error: no server configured; run "dam config set server <url>" or set ${serverEnvVar}\n`,
-      );
-      return;
-    case "malformed-config":
-      process.stderr.write(`error: ${e.reason ?? "config malformed"}\n`);
-      return;
-    case "probe-error":
-      process.stderr.write(`error: cannot reach server: ${e.message ?? e.code ?? "unknown"}\n`);
-      return;
-    default:
-      process.stderr.write(`error: ${e.kind}\n`);
-  }
-}
-
-function printServiceError(error: TransportError | AuthRequiredError): void {
-  if (error.kind === "auth-required") {
-    process.stderr.write(
-      `error: not authenticated: ${error.reason}\n` +
-        `       run "dam auth login" first\n`,
-    );
-    return;
-  }
-  process.stderr.write(`error: cannot reach server: ${error.reason}\n`);
-}

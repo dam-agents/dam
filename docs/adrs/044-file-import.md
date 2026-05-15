@@ -1,7 +1,7 @@
-# ADR-DRAFT: File import — bundled, top-level replace into the work dir
+# ADR-044: File import — bundled, top-level replace into the work dir
 
 **Date:** 2026-05-13
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** @janjeliga
 
 ## Context
