@@ -471,18 +471,28 @@ controller:
         capabilities:
           drop: ["ALL"]
 
-      # -- Drop the cluster-DNS allow rules from the per-pair agent egress
-      # NetworkPolicy (closes threat T9, DNS exfil). The controller injects
-      # a hostAliases entry for the gateway Service so HTTPS_PROXY still
-      # resolves.
-      disableDns: true
-
-      # -- Kernel-level egress allow-list applied via a privileged init
-      # container (NET_ADMIN/NET_RAW). Locks OUTPUT to loopback +
-      # ESTABLISHED + the paired gateway IP:port. Defense-in-depth on top
-      # of the NetworkPolicy.
-      # NOTE: needs a custom SCC on OpenShift (default SCCs don't grant
-      # NET_ADMIN/NET_RAW + runAsUser=0).
+      # ━━━ EGRESS LOCKDOWN — pick ONE mode ━━━
+      # The agent's egress is structurally pinned to its paired gateway:
+      # HTTPS_PROXY is set to the gateway ClusterIP literal (no DNS), the
+      # per-pair NetworkPolicy admits only that destination, and the
+      # chart-rendered `agent-egress-deny-all` NP denies everything by
+      # default. The race-closing layer below picks the mechanism that
+      # gates main-container startup on enforcement being in force.
+      #
+      # Two modes:
+      #
+      #   - iptablesInit (no-sandbox / plain OCI runtime): privileged init
+      #     container programs in-pod iptables rules. Closes the race
+      #     deterministically at the kernel layer. Needs netfilter modules
+      #     in the guest, which Kata/CoCo guest kernels strip.
+      #
+      #   - npGateInit (OpenShift + Kata / CoCo): unprivileged init
+      #     container probes a known-denied destination until the cluster
+      #     NetworkPolicy is verifiably enforcing the deny, then releases
+      #     the agent. Pure userspace TCP probe; no caps needed; works
+      #     against any guest kernel.
+      #
+      # Enable exactly one — they're mutually exclusive in practice.
       iptablesInit:
         enabled: true
         # SIG Release distroless-iptables — the same image kube-proxy
@@ -490,6 +500,32 @@ controller:
         # nft/legacy). Signed, scanned, no package manager, minimal
         # userland. Pin to a specific version.
         image: registry.k8s.io/build-image/distroless-iptables:v0.9.2
+
+      # -- Userspace init container that blocks the agent's main
+      # container until the egress NetworkPolicy is verifiably enforced.
+      # Probes a known-denied destination (must time out) AND the paired
+      # gateway (must be reachable); only releases when both hold. Closes
+      # the OVN-K async-programming race for runtimes where `iptablesInit`
+      # can't run (Kata/CoCo, where the guest kernel lacks netfilter).
+      # No privileged caps required — pure userspace TCP probes.
+      #
+      # Typical config: enable when iptablesInit is disabled (Kata/CoCo).
+      # Both can run simultaneously without conflict — the iptables init
+      # closes the race kernel-side, the NP-gate verifies the cluster
+      # layer also converged.
+      npGateInit:
+        enabled: false
+        image: docker.io/library/busybox:1.36
+        # Canary destination the probe expects to be DROPped by the NP.
+        # 1.1.1.1:443 is widely reachable when egress is open AND will
+        # certainly be denied by an egress NP that only admits the
+        # paired gateway. Picks 8.8.8.8 if Cloudflare is blocked.
+        deniedHost: 1.1.1.1
+        deniedPort: 443
+        # Hard deadline before the init container fails the pod. OVN-K
+        # typically converges in well under a second; 30s is generous
+        # for cold node churn / controller restart scenarios.
+        timeoutSeconds: 30
       # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     templateDefaults:

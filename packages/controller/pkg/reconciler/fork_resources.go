@@ -89,8 +89,11 @@ func BuildForkAgentJob(
 
 	caCertPath := "/etc/platform/ca/ca.crt"
 
-	// Paired gateway Service DNS — stable across the fork lifetime.
-	proxyAddr := fmt.Sprintf("http://%s:%d", GatewayName(forkName), cfg.EnvoyPort)
+	// Paired gateway's ClusterIP literal — IP-direct so HTTPS_PROXY has
+	// zero DNS dependency. The fork reconciler requeues until the gateway
+	// Service has been assigned a ClusterIP (see fork.go), so the IP is
+	// always known by the time we get here.
+	proxyAddr := fmt.Sprintf("http://%s:%d", gatewayClusterIP, cfg.EnvoyPort)
 
 	env := []corev1.EnvVar{
 		{Name: "HTTPS_PROXY", Value: proxyAddr},
@@ -198,6 +201,9 @@ func BuildForkAgentJob(
 	if ic := buildIptablesInitContainer(cfg, gatewayClusterIP); ic != nil {
 		initContainers = append(initContainers, *ic)
 	}
+	if ic := buildNPGateInitContainer(cfg, gatewayClusterIP); ic != nil {
+		initContainers = append(initContainers, *ic)
+	}
 	if initScript != "" {
 		initContainers = append(initContainers, corev1.Container{
 			Name:            "init",
@@ -268,11 +274,6 @@ func BuildForkAgentJob(
 	podMeta := metav1.ObjectMeta{Labels: podLabels}
 	applyAgentBaseMeta(&podMeta, base)
 
-	var hostAliases []corev1.HostAlias
-	if base.DisableDNS && gatewayClusterIP != "" {
-		hostAliases = append(hostAliases, buildGatewayHostAlias(forkName, gatewayClusterIP))
-	}
-
 	podSpec := corev1.PodSpec{
 		// Fork agent opts out of ambient (no SPIFFE on the agent
 		// half). ADR-027: the per-fork SA still scopes credential
@@ -292,7 +293,6 @@ func BuildForkAgentJob(
 		ShareProcessNamespace:         shareProcessNS,
 		Containers:                    containers,
 		Volumes:                       volumes,
-		HostAliases:                   hostAliases,
 	}
 	applyAgentBaseScheduling(&podSpec, base)
 

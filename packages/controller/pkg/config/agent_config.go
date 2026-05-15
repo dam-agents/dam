@@ -75,21 +75,36 @@ type AgentBase struct {
 	PodSecurityContext       *corev1.PodSecurityContext `json:"podSecurityContext,omitempty"`
 	ContainerSecurityContext *corev1.SecurityContext    `json:"containerSecurityContext,omitempty"`
 
-	// DisableDNS drops the cluster-DNS allow rules from the agent egress
-	// NetworkPolicy (closes threat T9). The controller injects a
-	// hostAliases entry for the paired gateway so HTTPS_PROXY still
-	// resolves.
-	DisableDNS bool `json:"disableDns,omitempty"`
-
 	// IptablesInit configures the privileged init container that pins the
 	// agent pod's OUTPUT chain to the paired gateway (kernel-level
 	// defense-in-depth on top of the NetworkPolicy).
 	IptablesInit *AgentIptablesInit `json:"iptablesInit,omitempty"`
+
+	// NPGateInit configures an unprivileged init container that blocks the
+	// agent's main container until the egress NetworkPolicy is verifiably
+	// enforced. Probes a known-denied destination (loop until DROPped) and
+	// the paired gateway (must be reachable) before exiting. Closes the
+	// OVN-K async-programming race for runtimes where IptablesInit can't
+	// run (Kata/CoCo guests lack netfilter modules — see PR #234).
+	NPGateInit *AgentNPGateInit `json:"npGateInit,omitempty"`
 }
 
 type AgentIptablesInit struct {
 	Enabled bool   `json:"enabled,omitempty"`
 	Image   string `json:"image,omitempty"`
+}
+
+type AgentNPGateInit struct {
+	Enabled bool   `json:"enabled,omitempty"`
+	Image   string `json:"image,omitempty"`
+	// DeniedHost / DeniedPort is the canary destination the probe expects
+	// to be DROPped by the NetworkPolicy. Defaults to 1.1.1.1:443.
+	DeniedHost string `json:"deniedHost,omitempty"`
+	DeniedPort int    `json:"deniedPort,omitempty"`
+	// TimeoutSeconds bounds how long the probe will wait for NP to converge.
+	// On timeout the init container fail-closes (exit 1 → pod stays in
+	// Init:CrashLoopBackOff, never starts the agent).
+	TimeoutSeconds int `json:"timeoutSeconds,omitempty"`
 }
 
 // AgentProbes — sub-field nil means "use the controller's built-in probe

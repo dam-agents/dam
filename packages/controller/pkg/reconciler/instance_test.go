@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 )
@@ -40,6 +41,17 @@ func newFakeDynamic() *dynfake.FakeDynamicClient {
 func setupReconciler(t *testing.T, agents map[string]*corev1.ConfigMap, objects ...runtime.Object) (*InstanceReconciler, *fake.Clientset) {
 	t.Helper()
 	client := fake.NewSimpleClientset(objects...)
+	// The fake clientset doesn't simulate kube-apiserver's ClusterIP
+	// assignment, but the reconciler now requires it on every path
+	// (HTTPS_PROXY is IP-direct). Reactor stamps a stable IP onto any
+	// ClusterIP-typed Service at Create so reconcile can proceed.
+	client.PrependReactor("create", "services", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		svc := action.(k8stesting.CreateAction).GetObject().(*corev1.Service)
+		if svc.Spec.ClusterIP == "" {
+			svc.Spec.ClusterIP = "10.96.42.42"
+		}
+		return false, svc, nil
+	})
 	cfg := &config.Config{
 		Namespace:         "test-agents",
 		ReleaseNamespace:  "default",
@@ -109,9 +121,10 @@ func TestReconcile_CreateResources(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int32(1), *ss.Spec.Replicas)
 
-	// Proxy URL targets the paired gateway Service (ADR-038).
+	// Proxy URL is the paired gateway's ClusterIP literal — IP-direct so
+	// the egress NP can deny DNS entirely (ADR-038).
 	envMap := envToMap(ss.Spec.Template.Spec.Containers[0].Env)
-	assert.Equal(t, "http://my-instance-gateway:10000", envMap["HTTPS_PROXY"])
+	assert.Equal(t, "http://10.96.42.42:10000", envMap["HTTPS_PROXY"])
 
 	// Gateway StatefulSet — also replicas=1
 	gws, err := client.AppsV1().StatefulSets("test-agents").Get(ctx, "my-instance-gateway", metav1.GetOptions{})

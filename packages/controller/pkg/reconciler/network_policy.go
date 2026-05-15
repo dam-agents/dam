@@ -20,84 +20,33 @@ import (
 // The agent pod opts out of ambient mesh (`istio.io/dataplane-mode: none`),
 // so no ztunnel iptables redirect intercepts its outbound traffic. Real
 // destination IP/port hit the kernel NetworkPolicy filter, and the agent
-// pod's only admitted intra-cluster destination is its paired gateway pod.
-// All egress that matters — external upstreams, harness, ext-authz — is
-// proxied through the gateway, gated by Envoy's ext_authz filter (ADR-035).
+// pod's only admitted destination is its paired gateway pod. All egress
+// that matters — external upstreams, harness, ext-authz — is proxied
+// through the gateway, gated by Envoy's ext_authz filter (ADR-035).
 //
-// Allowed egress:
-//   - DNS to `kube-system` on UDP/TCP 53. CoreDNS / kube-dns pods on
-//     upstream Kubernetes listen on 53 directly, so the kernel sees
-//     53 as the destination port after kube-proxy translation.
-//   - DNS to `openshift-dns` on UDP/TCP 5353. OpenShift's `dns-default`
-//     pods listen on 5353; the cluster DNS Service (172.30.0.10:53)
-//     targets pod port 5353, and NetworkPolicy evaluates pod-IP and
-//     pod-port after kube-proxy translation, not the Service port.
-//     Pinning to 53 here would silently drop every lookup on
-//     OpenShift. Both rules are admitted; a given cluster runs DNS in
-//     only one of these namespaces, so the unused rule is harmless.
-//   - The paired gateway pod (`pair=<id>, role=gateway`) on the Envoy
-//     proxy port only. The per-pair selector pins reachability to *this*
-//     agent's gateway; the gateway pod itself is the only structural
-//     gate (NP is identity-blind, but L3/L4-pinned to one pod set).
+// DNS is deliberately NOT admitted (threat T9, DNS exfil). HTTPS_PROXY is
+// set to the gateway's ClusterIP literal so no DNS lookups happen
+// in-pod. HBONE port 15008 is also NOT admitted — the agent has no
+// ztunnel and never speaks HBONE; opening 15008 here would just hand the
+// agent a bypass to anything in the mesh.
 //
-// HBONE port 15008 is deliberately NOT admitted. The agent has no ztunnel
-// and never speaks HBONE; opening 15008 here would just hand the agent a
-// bypass to anything in the mesh.
-//
-// Everything else (external internet, other in-cluster Services like
-// Postgres / Redis / Keycloak, the harness and ext-authz Services
-// directly) is denied at the kernel layer.
+// Combined with the namespace-scope `agent-egress-deny-all` baseline NP
+// (chart-rendered), the agent pod's egress is "paired gateway only"
+// fail-closed: the baseline denies everything, this per-pair NP allows
+// only the gateway. Both layers together close the OVN-K async-
+// programming race — see np_gate_init.go for the in-pod readiness probe
+// that gates main-container startup on policy convergence.
 
 // BuildAgentEgressNetworkPolicy renders the per-pair egress NetworkPolicy
 // for the agent pod of `pairKey`. Long-lived pairs use the instance name
 // as `pairKey`; forks use the fork name. The selector pins to the pair's
 // agent pod specifically — the paired gateway pod's egress stays
 // unrestricted (it dials external upstreams for credential injection).
-//
-// When `cfg.AgentBase.DisableDNS` is set, the cluster-DNS rules are
-// dropped (threat T9). hostAliases on the pod (resources.go) lets
-// HTTPS_PROXY still resolve the gateway.
 func BuildAgentEgressNetworkPolicy(pairKey string, cfg *config.Config, ownerCM *corev1.ConfigMap) *networkingv1.NetworkPolicy {
 	envoyPort := intstr.FromInt(cfg.EnvoyPort)
-	corednsPort := intstr.FromInt(53)
-	openshiftDNSPort := intstr.FromInt(5353)
 	tcp := corev1.ProtocolTCP
-	udp := corev1.ProtocolUDP
 
-	egress := []networkingv1.NetworkPolicyEgressRule{}
-	if !cfg.AgentBase.DisableDNS {
-		egress = append(egress,
-			networkingv1.NetworkPolicyEgressRule{
-				// Upstream Kubernetes: CoreDNS / kube-dns in
-				// `kube-system` listening on pod port 53.
-				To: []networkingv1.NetworkPolicyPeer{{
-					NamespaceSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{"kubernetes.io/metadata.name": "kube-system"},
-					},
-				}},
-				Ports: []networkingv1.NetworkPolicyPort{
-					{Protocol: &udp, Port: &corednsPort},
-					{Protocol: &tcp, Port: &corednsPort},
-				},
-			},
-			networkingv1.NetworkPolicyEgressRule{
-				// OpenShift: `dns-default` pods in `openshift-dns`
-				// listen on pod port 5353. NetworkPolicy filters on
-				// pod port after kube-proxy translation, so the
-				// upstream rule (53) does not match here.
-				To: []networkingv1.NetworkPolicyPeer{{
-					NamespaceSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{"kubernetes.io/metadata.name": "openshift-dns"},
-					},
-				}},
-				Ports: []networkingv1.NetworkPolicyPort{
-					{Protocol: &udp, Port: &openshiftDNSPort},
-					{Protocol: &tcp, Port: &openshiftDNSPort},
-				},
-			},
-		)
-	}
-	egress = append(egress, networkingv1.NetworkPolicyEgressRule{
+	egress := []networkingv1.NetworkPolicyEgressRule{{
 		// Bare PodSelector with no NamespaceSelector implicitly
 		// scopes to the policy's own namespace — correct today
 		// since agent + gateway pods of a pair share
@@ -115,7 +64,7 @@ func BuildAgentEgressNetworkPolicy(pairKey string, cfg *config.Config, ownerCM *
 		Ports: []networkingv1.NetworkPolicyPort{
 			{Protocol: &tcp, Port: &envoyPort},
 		},
-	})
+	}}
 
 	return &networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{

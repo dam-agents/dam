@@ -164,11 +164,10 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 	}
 	gatewayIP := liveGatewaySvc.Spec.ClusterIP
 
-	// Fail-closed requeue when the gateway IP is needed but not yet
-	// usable — don't roll a half-configured pod.
-	needsGatewayIP := r.config.AgentBase.DisableDNS ||
-		(r.config.AgentBase.IptablesInit != nil && r.config.AgentBase.IptablesInit.Enabled)
-	if needsGatewayIP && (gatewayIP == "" || gatewayIP == corev1.ClusterIPNone) {
+	// Fail-closed requeue when the gateway IP isn't yet usable —
+	// HTTPS_PROXY is IP-direct and both iptables/np-gate init containers
+	// need the IP, so we never render a half-configured pod.
+	if gatewayIP == "" || gatewayIP == corev1.ClusterIPNone {
 		return fmt.Errorf("instance %s: gateway Service ClusterIP not yet assigned, requeuing", name)
 	}
 

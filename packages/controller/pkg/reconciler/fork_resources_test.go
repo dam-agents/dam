@@ -81,15 +81,16 @@ func TestBuildForkAgentJob_LifecycleGuarantees(t *testing.T) {
 }
 
 func TestBuildForkAgentJob_ForkMetadataEnv(t *testing.T) {
-	job := BuildForkAgentJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, nil, "")
+	job := BuildForkAgentJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, nil, "10.96.42.42")
 	c := job.Spec.Template.Spec.Containers[0]
 
 	env := envMap(c.Env)
 	assert.Equal(t, "fork-abc", env["PLATFORM_FORK_ID"])
 	assert.Equal(t, "kc|user-42", env["PLATFORM_FOREIGN_SUB"])
 	assert.Equal(t, "my-instance", env["ADK_INSTANCE_ID"])
-	// HTTPS_PROXY targets the fork's OWN gateway — not the parent's.
-	assert.Equal(t, "http://fork-abc-gateway:10000", env["HTTPS_PROXY"])
+	// HTTPS_PROXY is IP-direct — the fork's OWN gateway ClusterIP, not
+	// the parent's. The fork reconciler passes its own gateway IP.
+	assert.Equal(t, "http://10.96.42.42:10000", env["HTTPS_PROXY"])
 }
 
 func TestBuildForkAgentJob_MountsInstancePVC_NotVolumeClaimTemplate(t *testing.T) {
@@ -138,15 +139,15 @@ func TestBuildForkAgentJob_NoSidecar(t *testing.T) {
 	// ADR-038: agent and gateway are paired pods, not co-located. Fork
 	// agents have only one container.
 	secrets := []corev1.Secret{credSecret("platform-cred-replier-x", "api.example.com")}
-	job := BuildForkAgentJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, secrets, "")
+	job := BuildForkAgentJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, secrets, "10.96.42.42")
 
 	require.Len(t, job.Spec.Template.Spec.Containers, 1, "fork agent has no sidecar")
 	agent := job.Spec.Template.Spec.Containers[0]
 	assert.Equal(t, "agent", agent.Name)
 
 	envM := envMap(agent.Env)
-	assert.Equal(t, "http://fork-abc-gateway:10000", envM["HTTP_PROXY"])
-	assert.Equal(t, "http://fork-abc-gateway:10000", envM["HTTPS_PROXY"])
+	assert.Equal(t, "http://10.96.42.42:10000", envM["HTTP_PROXY"])
+	assert.Equal(t, "http://10.96.42.42:10000", envM["HTTPS_PROXY"])
 
 	require.NotNil(t, job.Spec.Template.Spec.AutomountServiceAccountToken)
 	assert.False(t, *job.Spec.Template.Spec.AutomountServiceAccountToken)
