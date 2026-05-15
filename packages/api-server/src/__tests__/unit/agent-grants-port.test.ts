@@ -150,6 +150,15 @@ describe("createAgentGrantsPort.setSecretGrants", () => {
     await port.setSecretGrants("agent-1", ["aaa"]);
     expect(patches.map((p) => p.name).sort()).toEqual(["inst-1", "inst-2"]);
   });
+
+  it("throws when no instance ConfigMaps exist (race indicator — caller retries)", async () => {
+    const { client, patches } = fakeClient([]);
+    const port = createAgentGrantsPort(client, "owner-1");
+    await expect(port.setSecretGrants("agent-1", ["aaa"])).rejects.toThrow(
+      /no instance ConfigMaps/,
+    );
+    expect(patches).toEqual([]);
+  });
 });
 
 describe("createAgentGrantsPort.setConnectionGrants", () => {
@@ -166,6 +175,15 @@ describe("createAgentGrantsPort.setConnectionGrants", () => {
     expect(patches.at(-1)!.body).toEqual({
       metadata: { annotations: { [ANN_GRANTED_CONNECTION_IDS]: "github,slack" } },
     });
+  });
+
+  it("throws when no instance ConfigMaps exist (race indicator — caller retries)", async () => {
+    const { client, patches } = fakeClient([]);
+    const port = createAgentGrantsPort(client, "owner-1");
+    await expect(port.setConnectionGrants("agent-1", ["github"])).rejects.toThrow(
+      /no instance ConfigMaps/,
+    );
+    expect(patches).toEqual([]);
   });
 });
 

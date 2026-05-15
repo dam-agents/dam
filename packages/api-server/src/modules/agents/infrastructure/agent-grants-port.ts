@@ -109,6 +109,16 @@ export function createAgentGrantsPort(client: K8sClient, ownerSub: string): Agen
 
     async setSecretGrants(agentId, ids) {
       const cms = await listInstancesForAgent(agentId);
+      // setAgentAccess is only meaningful for agents that already have an
+      // instance — grants live on the instance ConfigMap. An empty list
+      // here means the caller raced ahead of the controller's CM create;
+      // surface it as an error so callers can retry instead of silently
+      // dropping the grant.
+      if (cms.length === 0) {
+        throw new Error(
+          `setSecretGrants: no instance ConfigMaps for agent ${agentId} (race with instance creation? retry)`,
+        );
+      }
       // Always-selective: write the literal (possibly empty) value.
       const annotations = { [ANN_GRANTED_SECRET_IDS]: ids.join(",") };
       await Promise.all(
@@ -118,6 +128,11 @@ export function createAgentGrantsPort(client: K8sClient, ownerSub: string): Agen
 
     async setConnectionGrants(agentId, ids) {
       const cms = await listInstancesForAgent(agentId);
+      if (cms.length === 0) {
+        throw new Error(
+          `setConnectionGrants: no instance ConfigMaps for agent ${agentId} (race with instance creation? retry)`,
+        );
+      }
       const annotations = { [ANN_GRANTED_CONNECTION_IDS]: ids.join(",") };
       await Promise.all(
         cms.map((cm) => patchAnnotations(cm.metadata!.name!, annotations)),
