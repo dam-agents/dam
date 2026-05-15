@@ -515,7 +515,7 @@ controller:
         # smallest reasonable footprint. Digest-pinned to neutralize the
         # mutable-tag supply-chain surface; rotate manually when newer
         # busybox releases land.
-        image: docker.io/library/busybox:1.36@sha256:543181ecb2c3e8c807bf086deb688ebe61b65e84335eb487260ee5fd37ee30b2
+        image: docker.io/library/busybox:1.37@sha256:18ac7a6883a86416ade8178063c26deff577cd831445f5c5ac5c7a931cb60983
         # Canary destination the probe expects to be DROPped by the NP.
         # Defaults (empty) to the kubelet-injected
         # KUBERNETES_SERVICE_HOST:KUBERNETES_SERVICE_PORT — the
