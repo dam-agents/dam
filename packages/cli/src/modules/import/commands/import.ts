@@ -1,7 +1,7 @@
 import { openAsBlob } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { Command } from "commander";
-import type { TokenProvider, TokenProviderError } from "../../auth/index.js";
+import type { TokenProvider } from "../../auth/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
   createInstanceResolver,
@@ -13,6 +13,7 @@ import {
   printCompatResolveError,
   printResolveError,
 } from "../../instance/commands/errors.js";
+import { createBearerSupplier } from "../../shared/trpc/bearer-supplier.js";
 import {
   type BundleBuilder,
   EXCLUDE_FROM_IMPORT,
@@ -185,9 +186,20 @@ async function uploadAndReport(args: {
   tokenProvider: TokenProvider;
   json: boolean;
 }): Promise<number> {
-  const tok = await args.tokenProvider.getValidAccessToken(args.host);
-  if (!tok.ok) {
-    printTokenProviderError(tok.error);
+  // Reuse the shared bearer-classifier from the tRPC bridge so the
+  // not-logged-in / session-expired routing stays in one place.
+  const bearer = createBearerSupplier(args.tokenProvider, args.host);
+  let token: string;
+  try {
+    const result = await bearer();
+    if (!result.ok) {
+      process.stderr.write(`error: not authenticated: ${result.error.reason}\n`);
+      process.stderr.write("hint: run `dam auth login` first\n");
+      return EXIT_IMPORT_RUNTIME_FAILURE;
+    }
+    token = result.value;
+  } catch (e) {
+    process.stderr.write(`error: ${(e as Error).message}\n`);
     return EXIT_IMPORT_RUNTIME_FAILURE;
   }
 
@@ -201,7 +213,7 @@ async function uploadAndReport(args: {
       `${args.host}/api/instances/${encodeURIComponent(args.instanceId)}/import`,
       {
         method: "POST",
-        headers: { Authorization: `Bearer ${tok.value}` },
+        headers: { Authorization: `Bearer ${token}` },
         body: form,
       },
     );
@@ -282,28 +294,3 @@ function formatBytes(n: number): string {
   return `${i === 0 ? value.toString() : value.toFixed(1)} ${units[i]}`;
 }
 
-function printTokenProviderError(e: TokenProviderError): void {
-  switch (e.kind) {
-    case "not-logged-in":
-      process.stderr.write(
-        `error: not authenticated: not logged in for ${e.host}\n` +
-          `       run "dam auth login" first\n`,
-      );
-      return;
-    case "session-expired":
-      process.stderr.write(
-        `error: not authenticated: session expired for ${e.host}\n` +
-          `       run "dam auth login" first\n`,
-      );
-      return;
-    case "refresh-failed":
-    case "refresh-transient":
-      process.stderr.write(`error: ${e.reason}\n`);
-      return;
-    case "auth-store-read":
-    case "auth-store-write":
-    case "malformed-auth-store":
-      process.stderr.write(`error: ${e.reason}\n`);
-      return;
-  }
-}
