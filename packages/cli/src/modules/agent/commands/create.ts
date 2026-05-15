@@ -21,6 +21,88 @@ import { groupGithubPats, type GithubPatPair } from "../lib/group-github-pats.js
 
 const WAIT_TIMEOUT_SECONDS = 120;
 
+// TRPCError codes where the server definitively rejected a mutation — the
+// resource was never created, so rolling back what we created in this run
+// is safe. Codes outside this set (INTERNAL_SERVER_ERROR, transport) are
+// ambiguous: the mutation may have succeeded server-side, and a rollback
+// delete would destroy real state. Mirrors `dam instance create`'s
+// ROLLBACK_CODES.
+const ROLLBACK_CODES: ReadonlySet<string> = new Set([
+  "CONFLICT",
+  "BAD_REQUEST",
+  "NOT_FOUND",
+  "UNAUTHORIZED",
+  "FORBIDDEN",
+  "PRECONDITION_FAILED",
+  "UNIMPLEMENTED",
+  "RESOURCE_EXHAUSTED",
+]);
+
+interface Cleanup {
+  /** Secret IDs created during this run (provider + both halves of any
+   *  new GitHub PAT pair). */
+  newSecretIds: string[];
+  /** Set once `agents.create` has returned an id. Cascade-deletes the
+   *  instance and its grants via the K8s OwnerReference chain when
+   *  passed to `agents.delete`. */
+  agentId: string | null;
+}
+
+function trpcCode(e: unknown): string | undefined {
+  if (typeof e !== "object" || e === null) return undefined;
+  return (e as { data?: { code?: string } }).data?.code;
+}
+
+function classifyFailure(e: unknown): "rollback" | "ambiguous" {
+  const code = trpcCode(e);
+  return code !== undefined && ROLLBACK_CODES.has(code) ? "rollback" : "ambiguous";
+}
+
+/**
+ * Best-effort tear-down of everything in the ledger. Agent first (cascade
+ * tears down the instance via OwnerReferences), then any new secrets.
+ * Whatever fails to delete is returned as orphan info so the caller can
+ * surface it. One pass — if the api-server is down, the orphan list is
+ * the best we can do.
+ */
+async function deleteCreated(
+  trpc: TrpcClient,
+  cleanup: Cleanup,
+): Promise<{ orphanAgent: string | null; orphanSecrets: string[] }> {
+  let orphanAgent: string | null = null;
+  const orphanSecrets: string[] = [];
+  if (cleanup.agentId) {
+    try {
+      await trpc.agents.delete.mutate({ id: cleanup.agentId });
+    } catch {
+      orphanAgent = cleanup.agentId;
+    }
+  }
+  for (const id of cleanup.newSecretIds) {
+    try {
+      await trpc.secrets.delete.mutate({ id });
+    } catch {
+      orphanSecrets.push(id);
+    }
+  }
+  return { orphanAgent, orphanSecrets };
+}
+
+function formatOrphans(
+  orphanAgent: string | null,
+  orphanSecrets: readonly string[],
+): string | null {
+  if (!orphanAgent && orphanSecrets.length === 0) return null;
+  const lines = ["Cleanup partially failed. Manual cleanup needed:"];
+  if (orphanAgent) {
+    lines.push(`  Agent: ${orphanAgent} (delete via web UI or \`dam instance delete\`)`);
+  }
+  if (orphanSecrets.length > 0) {
+    lines.push(`  Secrets: ${orphanSecrets.join(", ")} (delete via web UI's secrets page)`);
+  }
+  return lines.join("\n");
+}
+
 /**
  * Deps for `dam agent create`. Mirrors `dam instance create`'s shape so
  * the orchestration verbs added in issues 004–006 can drop in without
@@ -127,32 +209,30 @@ async function runCreate(opts: CliOpts, deps: CreateAgentCommandDeps): Promise<v
   });
   if (isCancel(templateId)) return cancelAndExit();
 
-  // --- Step 3: model provider ---------------------------------------
+  // --- Rollback bookkeeping ------------------------------------------
+  // Anything created during *this* run goes here so a cancel between
+  // prompts (Critical #1) or a downstream mutation failure can clean it
+  // up. Pickers push into this ledger immediately on successful create
+  // so the entry is in place by the time control returns. Existing
+  // secrets that the user picked or replaced stay out: a replace-
+  // existing path overwrote the value in place and the old value isn't
+  // recoverable, so rollback would be destructive.
   const trpc = deps.createTrpcClient(host);
-  const provider = await pickProvider(trpc);
+  const cleanup: Cleanup = { newSecretIds: [], agentId: null };
+
+  // --- Step 3: model provider ---------------------------------------
+  const provider = await pickProvider(trpc, cleanup);
 
   // --- Step 4: optional GitHub PAT ----------------------------------
-  const githubPat = await pickGithubPat(trpc);
+  const githubPat = await pickGithubPat(trpc, cleanup);
 
-  // --- Rollback bookkeeping ------------------------------------------
-  // Anything created during *this* run goes here so a downstream
-  // mutation failure can clean it up. Existing secrets that the user
-  // picked or replaced stay out: a replace-existing path overwrote the
-  // value in place and the old value isn't recoverable, so rollback
-  // would be destructive.
-  const cleanup: Cleanup = { newSecretIds: [], agentId: null };
-  if (provider.createdNew) cleanup.newSecretIds.push(provider.secretId);
-  if (githubPat?.createdNew) {
-    cleanup.newSecretIds.push(githubPat.apiSecretId, githubPat.gitSecretId);
-  }
-
-  // --- Steps 5 + 6 + 7: agents.create → instances.create → setAgentAccess ---
-  // Grants live as `granted-secret-ids` annotations on the *instance*
-  // ConfigMap, not the agent. setAgentAccess before any instance exists
-  // is a silent no-op, so the order has to be: agent → instance → grant.
-  // Mirrors `useCreateAgent` in packages/ui/src/modules/agents/api/mutations.ts.
-  // The grant lands after pod boot and the controller rolls the pod
-  // once to pick it up.
+  // --- Steps 5 + 6: agents.create → instances.create -----------------
+  // Two-stage failure handling: stage 1 (agent + instance) discriminates
+  // by TRPCError code. Definitive rejections (ROLLBACK_CODES) mean the
+  // resource was never created, so deleting what *we* created is safe;
+  // ambiguous codes (INTERNAL_SERVER_ERROR, network) may leave real
+  // state behind, so we don't auto-delete — we surface a hint and let
+  // the user inspect. Mirrors `dam instance create`'s policy.
   const spin = spinner();
   spin.start("Creating agent...");
 
@@ -163,23 +243,36 @@ async function runCreate(opts: CliOpts, deps: CreateAgentCommandDeps): Promise<v
 
     spin.message("Creating instance...");
     instance = await trpc.instances.create.mutate({ name, agentId: agent.id });
+  } catch (e) {
+    spin.stop("Setup failed");
+    await handleStage1Failure(trpc, cleanup, e);
+    process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
+  }
 
-    spin.message("Granting provider access...");
-    // Retry — the just-created instance ConfigMap may not yet be visible
-    // to the api-server's listConfigMaps when setAgentAccess fires; without
-    // the retry the patch silently targets zero ConfigMaps and the grant
-    // is lost. Matches the web UI's 5× / 2s wait.
-    const grantedIds = [provider.secretId];
-    if (githubPat) grantedIds.push(githubPat.apiSecretId, githubPat.gitSecretId);
+  // --- Step 7: setAgentAccess ---------------------------------------
+  // Past this point we have a real agent + instance on the server.
+  // Stage 2 (granting provider access) NEVER rolls back — the agent
+  // and instance are user state and may have value even without a
+  // grant. The retry bridges the K8s-API visibility race for the just-
+  // created instance ConfigMap (matches the web UI's 5×/2s wait); if
+  // it exhausts, we surface a hint pointing the user at the UI.
+  spin.message("Granting provider access...");
+  const grantedIds = [provider.secretId];
+  if (githubPat) grantedIds.push(githubPat.apiSecretId, githubPat.gitSecretId);
+  try {
     await withRetry(() =>
       trpc.secrets.setAgentAccess.mutate({
-        agentId: agent.id,
+        agentId: cleanup.agentId!,
         secretIds: grantedIds,
       }),
     );
   } catch (e) {
-    spin.stop("Setup failed");
-    await rollback(trpc, cleanup, errorReason(e));
+    spin.stop("Grant failed");
+    log.error(`Failed to grant provider access: ${errorReason(e)}`);
+    log.warn(
+      `Agent ${name} was created but the credential grant did not land. ` +
+        `Configure access via the web UI, or run \`dam instance delete ${name}\` to start over.`,
+    );
     process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
   }
 
@@ -253,58 +346,74 @@ function cancelAndExit(): never {
   process.exit(0);
 }
 
-interface Cleanup {
-  /** Secret IDs created during this run (S1 + both halves of S2). */
-  newSecretIds: string[];
-  /** Set once agents.create has returned an id. Cascade-deletes the
-   *  instance and its grants via the K8s OwnerReference chain when
-   *  passed to agents.delete. */
-  agentId: string | null;
+/**
+ * Cancel path for prompts that run after a picker has already created a
+ * new secret. Best-effort cleanup of anything tracked in the ledger
+ * before exiting — without this a user who hits Ctrl+C between provider
+ * and GitHub steps would leak the just-created provider secret.
+ *
+ * Exits 0 (cancel is a user action, not an error).
+ */
+async function cancelAndCleanup(
+  trpc: TrpcClient,
+  cleanup: Cleanup,
+): Promise<never> {
+  cancel("Cancelled");
+  await flushCleanup(trpc, cleanup);
+  process.exit(0);
 }
 
 /**
- * Reverse anything we created in this run after a downstream mutation
- * blew up. Deletes the agent first (cascade tears down the instance
- * via OwnerReferences), then any new secrets. Whatever fails to delete
- * gets surfaced as an orphan summary so the user knows what to clean
- * up manually.
- *
- * One pass — we don't retry rollback. If the api-server is down, the
- * orphan list is the best we can do.
+ * Best-effort tear-down of everything in the ledger, surfacing whatever
+ * we couldn't delete as a warning. Shared by the cancel-path
+ * (`cancelAndCleanup`) and the stage-1 rollback path (`handleStage1Failure`
+ * on a definitive TRPCError).
  */
-async function rollback(
+async function flushCleanup(trpc: TrpcClient, cleanup: Cleanup): Promise<void> {
+  if (cleanup.agentId === null && cleanup.newSecretIds.length === 0) return;
+  const { orphanAgent, orphanSecrets } = await deleteCreated(trpc, cleanup);
+  const summary = formatOrphans(orphanAgent, orphanSecrets);
+  if (summary) log.warn(summary);
+}
+
+/**
+ * Stage 1 (agents.create + instances.create) failure handler.
+ *
+ * Discriminates by TRPCError code via `classifyFailure`: definitive
+ * codes mean the server rejected the mutation outright and any resource
+ * we created is safe to tear down. Ambiguous codes (INTERNAL_SERVER_ERROR,
+ * transport) may mean the mutation actually succeeded server-side, so
+ * we keep our hands off real state and surface what we know about — the
+ * user inspects via the web UI.
+ *
+ * Mirrors `tryRollbackAgent` in `dam instance create`'s flow; extended
+ * here to also list any new secrets we created during the picker steps.
+ */
+async function handleStage1Failure(
   trpc: TrpcClient,
   cleanup: Cleanup,
-  originalError: string,
+  originalError: unknown,
 ): Promise<void> {
-  let orphanAgent: string | null = null;
-  const orphanSecrets: string[] = [];
-
-  if (cleanup.agentId) {
-    try {
-      await trpc.agents.delete.mutate({ id: cleanup.agentId });
-    } catch {
-      orphanAgent = cleanup.agentId;
-    }
-  }
-  for (const id of cleanup.newSecretIds) {
-    try {
-      await trpc.secrets.delete.mutate({ id });
-    } catch {
-      orphanSecrets.push(id);
-    }
+  const reason = errorReason(originalError);
+  if (classifyFailure(originalError) === "rollback") {
+    await flushCleanup(trpc, cleanup);
+    log.error(`Failed to create agent: ${reason}`);
+    return;
   }
 
-  log.error(`Failed to create agent: ${originalError}`);
-  if (orphanAgent || orphanSecrets.length > 0) {
-    const lines = ["Cleanup partially failed. Manual cleanup needed:"];
-    if (orphanAgent) {
-      lines.push(`  Agent: ${orphanAgent} (delete via web UI or \`dam instance delete\`)`);
-    }
-    if (orphanSecrets.length > 0) {
-      lines.push(`  Secrets: ${orphanSecrets.join(", ")} (delete via web UI's secrets page)`);
-    }
-    log.error(lines.join("\n"));
+  // Ambiguous outcome — agent and/or instance may or may not have been
+  // created server-side. Don't delete anything; just tell the user what
+  // we tried to create so they can investigate.
+  log.error(`Failed to create agent: ${reason}`);
+  const lines: string[] = [];
+  if (cleanup.agentId) lines.push(`  Agent: ${cleanup.agentId}`);
+  if (cleanup.newSecretIds.length > 0) {
+    lines.push(`  Secrets: ${cleanup.newSecretIds.join(", ")}`);
+  }
+  if (lines.length > 0) {
+    log.warn(
+      ["These may have been created server-side; check via the web UI:", ...lines].join("\n"),
+    );
   }
 }
 
@@ -335,12 +444,16 @@ type ExistingProvider = { id: string; name: string; type: ProviderType };
  *
  * Anthropic is API-key only — the OAuth flow stays in the web UI.
  */
-async function pickProvider(trpc: TrpcClient): Promise<ProviderSelection> {
+async function pickProvider(
+  trpc: TrpcClient,
+  cleanup: Cleanup,
+): Promise<ProviderSelection> {
   let list;
   try {
     list = await trpc.secrets.list.query();
   } catch (e) {
     cancel(`failed to list secrets: ${errorReason(e)}`);
+    await flushCleanup(trpc, cleanup);
     process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
   }
   const existing: ExistingProvider[] = list
@@ -352,7 +465,7 @@ async function pickProvider(trpc: TrpcClient): Promise<ProviderSelection> {
 
   if (existing.length === 0) {
     log.info("No model providers configured yet — let's add one.");
-    return addOrReplaceProvider(trpc, existing);
+    return addOrReplaceProvider(trpc, cleanup, existing);
   }
 
   const NEW = "__new__";
@@ -363,15 +476,16 @@ async function pickProvider(trpc: TrpcClient): Promise<ProviderSelection> {
       { value: NEW, label: "Add new..." },
     ],
   });
-  if (isCancel(picked)) cancelAndExit();
+  if (isCancel(picked)) return cancelAndCleanup(trpc, cleanup);
 
-  if (picked === NEW) return addOrReplaceProvider(trpc, existing);
+  if (picked === NEW) return addOrReplaceProvider(trpc, cleanup, existing);
 
   const found = existing.find((s) => s.id === picked);
   if (!found) {
     // Defensive — `picked` was sourced from `existing`. If we ever hit
     // this it means the picker handed us something unexpected.
     cancel("internal: picked provider not in list");
+    await flushCleanup(trpc, cleanup);
     process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
   }
   return { secretId: found.id, name: found.name, type: found.type, createdNew: false };
@@ -379,6 +493,7 @@ async function pickProvider(trpc: TrpcClient): Promise<ProviderSelection> {
 
 async function addOrReplaceProvider(
   trpc: TrpcClient,
+  cleanup: Cleanup,
   existing: readonly ExistingProvider[],
 ): Promise<ProviderSelection> {
   // Loops on server-side create/update failures (F1 from the spec) —
@@ -393,7 +508,7 @@ async function addOrReplaceProvider(
         { value: "openai", label: "OpenAI" },
       ],
     });
-    if (isCancel(type)) cancelAndExit();
+    if (isCancel(type)) return cancelAndCleanup(trpc, cleanup);
 
     const existingOfType = existing.find((s) => s.type === type);
 
@@ -404,7 +519,7 @@ async function addOrReplaceProvider(
         message: `A ${PROVIDERS[type].displayName} key already exists. Replace its API key?`,
         initialValue: false,
       });
-      if (isCancel(replace)) cancelAndExit();
+      if (isCancel(replace)) return cancelAndCleanup(trpc, cleanup);
 
       if (!replace) {
         return { secretId: existingOfType.id, name: existingOfType.name, type, createdNew: false };
@@ -417,7 +532,7 @@ async function addOrReplaceProvider(
           return undefined;
         },
       });
-      if (isCancel(apiKey)) cancelAndExit();
+      if (isCancel(apiKey)) return cancelAndCleanup(trpc, cleanup);
 
       try {
         await trpc.secrets.update.mutate({ id: existingOfType.id, value: apiKey });
@@ -440,10 +555,13 @@ async function addOrReplaceProvider(
         return undefined;
       },
     });
-    if (isCancel(apiKey)) cancelAndExit();
+    if (isCancel(apiKey)) return cancelAndCleanup(trpc, cleanup);
 
     try {
       const created = await trpc.secrets.create.mutate({ type, name, value: apiKey });
+      // Track immediately so any cancel/throw between here and runCreate
+      // reaching the rollback ledger doesn't orphan the new secret.
+      cleanup.newSecretIds.push(created.id);
       return { secretId: created.id, name: created.name, type, createdNew: true };
     } catch (e) {
       log.error(`Failed to create secret: ${errorReason(e)}`);
@@ -466,12 +584,16 @@ interface GithubSelection extends GithubPatPair {
  * `secrets.list()` down to fully-paired entries, hiding orphans the
  * user can't actually grant.
  */
-async function pickGithubPat(trpc: TrpcClient): Promise<GithubSelection | null> {
+async function pickGithubPat(
+  trpc: TrpcClient,
+  cleanup: Cleanup,
+): Promise<GithubSelection | null> {
   let list;
   try {
     list = await trpc.secrets.list.query();
   } catch (e) {
     cancel(`failed to list secrets: ${errorReason(e)}`);
+    await flushCleanup(trpc, cleanup);
     process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
   }
   const pairs = groupGithubPats(list);
@@ -479,9 +601,9 @@ async function pickGithubPat(trpc: TrpcClient): Promise<GithubSelection | null> 
   if (pairs.length === 0) {
     log.info("No GitHub PAT configured yet.");
     const add = await confirm({ message: "Add one?", initialValue: true });
-    if (isCancel(add)) cancelAndExit();
+    if (isCancel(add)) return cancelAndCleanup(trpc, cleanup);
     if (!add) return null;
-    return addOrReplaceGithubPat(trpc, pairs);
+    return addOrReplaceGithubPat(trpc, cleanup, pairs);
   }
 
   const NEW = "__new__";
@@ -494,13 +616,14 @@ async function pickGithubPat(trpc: TrpcClient): Promise<GithubSelection | null> 
       { value: SKIP, label: "Skip" },
     ],
   });
-  if (isCancel(picked)) cancelAndExit();
+  if (isCancel(picked)) return cancelAndCleanup(trpc, cleanup);
   if (picked === SKIP) return null;
-  if (picked === NEW) return addOrReplaceGithubPat(trpc, pairs);
+  if (picked === NEW) return addOrReplaceGithubPat(trpc, cleanup, pairs);
 
   const found = pairs.find((p) => p.name === picked);
   if (!found) {
     cancel("internal: picked PAT not in list");
+    await flushCleanup(trpc, cleanup);
     process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
   }
   return { ...found, createdNew: false };
@@ -513,6 +636,7 @@ const DEFAULT_GITHUB_PAT_NAME = "GitHub";
 
 async function addOrReplaceGithubPat(
   trpc: TrpcClient,
+  cleanup: Cleanup,
   existing: readonly GithubPatPair[],
 ): Promise<GithubSelection> {
   // Singleton-by-default-name: if a PAT named DEFAULT_GITHUB_PAT_NAME
@@ -529,7 +653,7 @@ async function addOrReplaceGithubPat(
         message: `A GitHub PAT named "${DEFAULT_GITHUB_PAT_NAME}" already exists. Replace its token?`,
         initialValue: false,
       });
-      if (isCancel(replace)) cancelAndExit();
+      if (isCancel(replace)) return cancelAndCleanup(trpc, cleanup);
 
       if (!replace) {
         return { ...collide, createdNew: false };
@@ -542,7 +666,7 @@ async function addOrReplaceGithubPat(
           return undefined;
         },
       });
-      if (isCancel(token)) cancelAndExit();
+      if (isCancel(token)) return cancelAndCleanup(trpc, cleanup);
 
       try {
         await trpc.secrets.updateGithubPat.mutate({
@@ -564,13 +688,16 @@ async function addOrReplaceGithubPat(
         return undefined;
       },
     });
-    if (isCancel(token)) cancelAndExit();
+    if (isCancel(token)) return cancelAndCleanup(trpc, cleanup);
 
     try {
       const created = await trpc.secrets.createGithubPat.mutate({
         name: DEFAULT_GITHUB_PAT_NAME,
         token,
       });
+      // Track immediately so any cancel/throw between here and runCreate
+      // reaching the rollback ledger doesn't orphan the new pair.
+      cleanup.newSecretIds.push(created.apiSecretId, created.gitSecretId);
       return {
         name: created.name,
         apiSecretId: created.apiSecretId,
