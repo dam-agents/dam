@@ -53,8 +53,6 @@ export function WelcomeTour() {
   const { data: secrets = [], isSuccess: secretsLoaded } = useSecrets();
   const { data: connections = [], isSuccess: connectionsLoaded } =
     useAppConnections();
-  const setView = useStore((s) => s.setView);
-
   const [welcomeSeen, setWelcomeSeen] = useState(false);
   const [dismissed, setDismissed] = useState(
     () => PERSIST_DISMISS && localStorage.getItem(DISMISS_KEY) === "true",
