@@ -31,12 +31,18 @@ issues the workload cert independently.
 
 - **Network.** Multiple layers restrict where the agent can talk. At
 the kernel, a Kubernetes NetworkPolicy locks the agent pod's L3/L4
-egress to a narrow allow-list — DNS, the Istio ambient data path, and
-the single sibling gateway pod it is paired with. At the mesh, Istio
-AuthorizationPolicies key on the per-instance ServiceAccount: peer-pod
-admission is gated at L4, and the harness path on the api-server is
-gated at L7. And every egress request through the sibling pod runs
-through an ext-authz check at the api-server before being forwarded.
+egress to a single destination — the sibling gateway pod it is paired
+with. DNS is removed from the allow-list entirely; the controller
+injects a hostAliases entry so `HTTPS_PROXY` resolves the gateway
+Service without a name lookup, closing the cluster-DNS exfil channel.
+A privileged init container writes a matching iptables OUTPUT
+allow-list inside the pod's network namespace, defense-in-depth in
+case CNI NetworkPolicy enforcement ever fails open. At the mesh,
+Istio AuthorizationPolicies key on the per-instance ServiceAccount:
+peer-pod admission is gated at L4, and the harness path on the
+api-server is gated at L7. And every egress request through the
+sibling pod runs through an ext-authz check at the api-server before
+being forwarded.
 
 - **Credentials.** Real upstream tokens never reach the agent. They
 live in Kubernetes Secrets mounted into a sibling gateway pod. For hosts
@@ -120,7 +126,8 @@ before the request leaves the cluster.
 | Agent steals an upstream token | Credentials live only in the gateway pod; Envoy injects them on the wire and the agent sees no real token |
 | Agent escalates via its ServiceAccount token | `automountServiceAccountToken: false` on both pods — istiod issues the workload cert without a mounted SA-token |
 | Agent reaches a peer instance's gateway | Per-instance AuthorizationPolicy denies traffic from any non-matching ServiceAccount |
-| Agent bypasses the proxy to call external hosts directly | Per-pair agent-egress NetworkPolicy restricts L3/L4 egress to DNS, the paired gateway, and the ambient mesh |
+| Agent bypasses the proxy to call external hosts directly | Per-pair agent-egress NetworkPolicy admits only the paired gateway pod; a kernel iptables OUTPUT allow-list inside the pod enforces the same shape independently |
+| Agent exfiltrates data through cluster DNS | The agent has no DNS egress at all; the controller injects a hostAliases entry so `HTTPS_PROXY` resolves the gateway Service without a lookup |
 | Route-confusion exfil through the gateway | Per-host Envoy filter chains pinned to each credential's host, with SAN-bound upstream TLS validation |
 | Direct pod-IP bypass of the api-server | Pod-level DENY AuthorizationPolicy admits only the waypoint's SA (harness) or a per-instance SA (ext-authz) |
 
