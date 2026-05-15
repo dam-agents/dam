@@ -135,7 +135,7 @@ async function runCreate(opts: CliOpts, deps: CreateAgentCommandDeps): Promise<v
     process.stderr.write(
       "error: dam agent create requires an interactive terminal; use `dam instance create` for scripted setup\n",
     );
-    process.exit(1);
+    process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
   }
 
   intro("dam agent create");
@@ -258,6 +258,11 @@ async function runCreate(opts: CliOpts, deps: CreateAgentCommandDeps): Promise<v
   // it exhausts, we surface a hint pointing the user at the UI.
   spin.message("Granting provider access...");
   const grantedIds = [provider.secretId];
+  // PAT halves grant individually — the Bob preset (PR #225) routes its
+  // twins through `primarySecretId` expansion server-side, but PATs lack
+  // that field and stay paired only by shared `name`. If PATs ever migrate
+  // to the twin-secret model, drop the second push: passing `apiSecretId`
+  // alone will expand to both.
   if (githubPat) grantedIds.push(githubPat.apiSecretId, githubPat.gitSecretId);
   try {
     await withRetry(() =>
@@ -720,6 +725,11 @@ async function withRetry<T>(
     try {
       return await fn();
     } catch (e) {
+      // Definitive rejections (the server made up its mind) — retrying
+      // burns ~8s behind a spinner for no chance of success. The
+      // visibility-race that motivates the retry surfaces as
+      // INTERNAL_SERVER_ERROR / transport failure, not these codes.
+      if (classifyFailure(e) === "rollback") throw e;
       if (attempt === maxAttempts - 1) throw e;
       await new Promise((r) => setTimeout(r, delayMs));
     }
