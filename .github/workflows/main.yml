@@ -224,10 +224,10 @@ jobs:
       - uses: azure/setup-helm@v4
       - name: Log in to Quay OCI
         run: echo "${{ secrets.QUAY_PASSWORD }}" | helm registry login quay.io --username ${{ secrets.QUAY_USERNAME }} --password-stdin
-      - name: Package Helm chart (SHA-pinned)
-        run: helm package deploy/helm/platform --version 0.0.0-${{ github.sha }} --app-version ${{ github.sha }}
-      - name: Push SHA-pinned chart
-        run: helm push platform-0.0.0-${{ github.sha }}.tgz oci://quay.io/dam-agents/charts
+      - name: Package Helm chart (build-pinned)
+        run: helm package deploy/helm/platform --version 0.0.0-main.${{ github.run_number }} --app-version ${{ github.sha }}
+      - name: Push build-pinned chart
+        run: helm push platform-0.0.0-main.${{ github.run_number }}.tgz oci://quay.io/dam-agents/charts
       - name: Package Helm chart (main floating tag)
         run: helm package deploy/helm/platform --version 0.0.0-main --app-version ${{ github.sha }}
       - name: Push main-floating chart
