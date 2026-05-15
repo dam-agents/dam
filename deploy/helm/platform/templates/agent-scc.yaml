@@ -68,7 +68,7 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: system:openshift:scc:{{ include "platform.fullname" . }}-anyuid-cap-net
+  name: {{ include "platform.fullname" . }}-anyuid-cap-net
 subjects:
   - kind: Group
     apiGroup: rbac.authorization.k8s.io
