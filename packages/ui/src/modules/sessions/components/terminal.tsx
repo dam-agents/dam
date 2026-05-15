@@ -23,6 +23,15 @@ export function Terminal({ instanceId, sessionId, fresh, onConnected, autoConnec
     setReconnectKey((k) => k + 1);
   }, []);
 
+  useEffect(() => {
+    const wasDisabled = !connectEnabled.current;
+    connectEnabled.current = autoConnect;
+    if (autoConnect && wasDisabled) {
+      setState("connecting");
+      setReconnectKey((k) => k + 1);
+    }
+  }, [autoConnect]);
+
   // After React commits "live" the connecting overlay unmounts; refocus then.
   useEffect(() => {
     if (state === "live") requestAnimationFrame(() => termRef.current?.focus());

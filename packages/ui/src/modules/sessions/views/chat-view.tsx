@@ -153,18 +153,25 @@ export function ChatView() {
     )) return;
 
     if (busy) stopAgent();
-    if (target === SessionMode.Terminal) { terminalFreshRef.current = true; setTerminalPaused(false); }
-    const previousMode = sessionMode;
-    setSessionMode(target);
+    if (target === SessionMode.Terminal) {
+      terminalFreshRef.current = true;
+      setTerminalPaused(true);
+      setSessionMode(target);
+    }
     if (sessionId) {
+      if (target !== SessionMode.Terminal) setSessionMode(target);
       try {
         await api.sessions.setMode.mutate({ sessionId, instanceId: selectedInstance, mode: target });
         queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
       } catch {
-        setSessionMode(previousMode);
+        setSessionMode(sessionMode);
+        if (target === SessionMode.Terminal) setTerminalPaused(false);
         useStore.getState().showToast({ kind: "error", message: "Failed to switch session mode" });
         return;
       }
+      if (target === SessionMode.Terminal) setTerminalPaused(false);
+    } else {
+      setSessionMode(target);
     }
     if (target === SessionMode.Chat) {
       if (sessionId) resumeSession(sessionId);
