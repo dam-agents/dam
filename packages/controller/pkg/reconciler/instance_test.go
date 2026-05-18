@@ -499,3 +499,68 @@ func TestReconcileOrphanPVCs(t *testing.T) {
 }
 
 func int32Ptr(i int32) *int32 { return &i }
+
+// Issue: when an instance is deleted, the cert-manager-produced envoy leaf
+// TLS Secret must be cascade-deleted. cert-manager doesn't set an
+// OwnerReference on that Secret by default, so the controller patches one
+// pointing back at the instance ConfigMap.
+
+func TestEnsureLeafSecretOwnerReference_AddsOwnerRef(t *testing.T) {
+	instance := instanceCM("running")
+	// Seed the cluster with a Secret as if cert-manager had already produced
+	// it but without an OwnerReference (default cert-manager behaviour).
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-instance-envoy-tls",
+			Namespace: "test-agents",
+		},
+		Type: corev1.SecretTypeTLS,
+	}
+	r, client := setupReconciler(t,
+		map[string]*corev1.ConfigMap{"claude-code": agentCM()},
+		instance, secret,
+	)
+
+	require.NoError(t, r.ensureLeafSecretOwnerReference(context.Background(), "my-instance", instance))
+
+	got, err := client.CoreV1().Secrets("test-agents").Get(context.Background(), "my-instance-envoy-tls", metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Len(t, got.OwnerReferences, 1)
+	assert.Equal(t, instance.UID, got.OwnerReferences[0].UID)
+	assert.Equal(t, "ConfigMap", got.OwnerReferences[0].Kind)
+	assert.Equal(t, instance.Name, got.OwnerReferences[0].Name)
+}
+
+func TestEnsureLeafSecretOwnerReference_Idempotent(t *testing.T) {
+	instance := instanceCM("running")
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-instance-envoy-tls",
+			Namespace: "test-agents",
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: "v1", Kind: "ConfigMap", Name: instance.Name, UID: instance.UID,
+			}},
+		},
+	}
+	r, client := setupReconciler(t,
+		map[string]*corev1.ConfigMap{"claude-code": agentCM()},
+		instance, secret,
+	)
+
+	require.NoError(t, r.ensureLeafSecretOwnerReference(context.Background(), "my-instance", instance))
+
+	got, err := client.CoreV1().Secrets("test-agents").Get(context.Background(), "my-instance-envoy-tls", metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Len(t, got.OwnerReferences, 1, "must not duplicate the owner ref across reconciles")
+}
+
+func TestEnsureLeafSecretOwnerReference_NoSecretYetIsNoop(t *testing.T) {
+	// First reconcile arrives before cert-manager has issued the Secret —
+	// must not error; the next reconcile will patch the owner ref.
+	instance := instanceCM("running")
+	r, _ := setupReconciler(t,
+		map[string]*corev1.ConfigMap{"claude-code": agentCM()},
+		instance,
+	)
+	assert.NoError(t, r.ensureLeafSecretOwnerReference(context.Background(), "my-instance", instance))
+}

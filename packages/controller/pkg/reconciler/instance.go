@@ -90,6 +90,16 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap
 		if err := r.applyCertificate(ctx, cert); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("applying envoy leaf certificate: %v", err))
 		}
+		// cert-manager's default mode does not set an OwnerReference on the
+		// Secret it produces from a Certificate (the global flag
+		// --enable-certificate-owner-ref controls that and we don't require
+		// it), so deleting the Certificate alone leaves the Secret behind.
+		// Patch the produced Secret with an OwnerReference back to the
+		// instance ConfigMap so K8s GC cascade-deletes it with the instance.
+		if err := r.ensureLeafSecretOwnerReference(ctx, name, cm); err != nil {
+			slog.Warn("setting owner ref on envoy leaf TLS Secret; will retry on next reconcile",
+				"instance", name, "error", err)
+		}
 	}
 
 	// ADR-041: per-instance SA must exist before the agent + gateway pods
@@ -215,6 +225,37 @@ func (r *InstanceReconciler) ensureAgentOwnerReference(ctx context.Context, inst
 		}
 		current.OwnerReferences = append(current.OwnerReferences, desired)
 		_, err = r.client.CoreV1().ConfigMaps(r.config.Namespace).Update(ctx, current, metav1.UpdateOptions{})
+		return err
+	})
+}
+
+// ensureLeafSecretOwnerReference adds a non-controller OwnerReference from
+// the cert-manager-produced envoy leaf TLS Secret to the instance CM, so
+// that deleting the instance cascade-deletes the Secret. Returns nil if
+// the Secret does not exist yet (cert-manager has not finished issuing —
+// the next reconcile will retry).
+func (r *InstanceReconciler) ensureLeafSecretOwnerReference(ctx context.Context, instanceName string, instanceCM *corev1.ConfigMap) error {
+	secretName := EnvoyLeafSecretName(instanceName)
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		sec, err := r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, secretName, metav1.GetOptions{})
+		if errors.IsNotFound(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		for _, ref := range sec.OwnerReferences {
+			if ref.UID == instanceCM.UID {
+				return nil
+			}
+		}
+		sec.OwnerReferences = append(sec.OwnerReferences, metav1.OwnerReference{
+			APIVersion: "v1",
+			Kind:       "ConfigMap",
+			Name:       instanceCM.Name,
+			UID:        instanceCM.UID,
+		})
+		_, err = r.client.CoreV1().Secrets(r.config.Namespace).Update(ctx, sec, metav1.UpdateOptions{})
 		return err
 	})
 }
