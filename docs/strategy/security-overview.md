@@ -20,19 +20,15 @@ flowchart LR
   L1 ~~~ L2 ~~~ L3 ~~~ L4
 ```
 
-- **Identity.** Identity in Platform is not about keeping the agent
-penned in — that job belongs to the network layer below. It's about
-*authorizing the calls that the gateway pod makes back into the
-platform on the agent's behalf*: the api-server's harness path that
-the agent's LLM uses, and the per-instance `ext-authz` service that
-approves every outgoing request. When the gateway pod knocks on those
-doors, it has to prove who it is. Istio's identity service (`istiod`)
-hands the gateway a SPIFFE workload certificate — an unforgeable ID
-card tied to the pod's Kubernetes ServiceAccount. The api-server
-endpoints carry AuthorizationPolicies that only admit the matching
-instance's gateway, so one instance can never call another's harness
-or ext-authz. The agent pod itself has no SPIFFE identity at all — it
-is deliberately kept out of the mesh.
+- **Identity.** Identity authorizes the calls the gateway pod makes
+back into the platform on the agent's behalf — the api-server's
+harness path that the agent's LLM uses, and the per-instance
+`ext-authz` service that approves every outgoing request. Istio's
+identity service (`istiod`) hands the gateway a SPIFFE workload
+certificate, an unforgeable ID card tied to the pod's Kubernetes
+ServiceAccount. AuthorizationPolicies on those api-server endpoints
+only admit the matching instance's gateway, so one instance can never
+call another's harness or ext-authz.
 
 - **Boundary.** The agent runs in its own container — a sealed room
 with its own filesystem and its own kernel namespaces, sharing nothing
