@@ -18,7 +18,7 @@ Start with [../architecture/index.md](../architecture/index.md). For full review
 
 ## Output
 
-Only findings about alignment with the architecture docs. This is not a general code review. Do not raise concerns that are not backed by a rule in the docs.
+Report only findings about alignment with the architecture docs, not general code review concerns. Do not raise concerns that are not backed by a rule in the docs.
 
 For each finding: the rule, the location, one-line evidence, and the architecture file it came from.
 
