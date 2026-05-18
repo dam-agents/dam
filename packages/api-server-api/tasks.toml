@@ -1,0 +1,33 @@
+["api-server-api:check"]
+depends = ["api-server-api:check:*"]
+
+["api-server-api:check:tsc"]
+dir = "{{config_root}}/packages/api-server-api"
+depends = ["common:setup:pnpm"]
+run = "pnpm exec tsc --noEmit"
+sources = ["src/**/*.ts", "tsconfig.json", "../../tsconfig.base.json"]
+
+["api-server-api:check:lint"]
+dir = "{{config_root}}/packages/api-server-api"
+depends = ["common:setup:pnpm"]
+run = "pnpm exec eslint ."
+sources = ["src/**/*.ts", "eslint.config.js", "../../eslint.config.base.js"]
+
+["api-server-api:check:format"]
+dir = "{{config_root}}/packages/api-server-api"
+depends = ["common:setup:pnpm"]
+run = "pnpm exec prettier --check 'src/**/*.ts'"
+sources = ["src/**/*.ts", "../../.prettierrc"]
+
+["api-server-api:fix"]
+depends = ["api-server-api:fix:*"]
+
+["api-server-api:fix:lint"]
+dir = "{{config_root}}/packages/api-server-api"
+depends = ["common:setup:pnpm"]
+run = "pnpm exec eslint --fix ."
+
+["api-server-api:fix:format"]
+dir = "{{config_root}}/packages/api-server-api"
+depends = ["common:setup:pnpm"]
+run = "pnpm exec prettier --write 'src/**/*.ts'"
