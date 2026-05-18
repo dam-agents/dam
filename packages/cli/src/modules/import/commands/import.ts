@@ -7,13 +7,11 @@ import {
   type InstanceService,
 } from "../../instance/index.js";
 import {
-  describeConfigError,
   exitCodeForResolveError,
-  printCompatResolveError,
   printResolveError,
 } from "../../instance/commands/errors.js";
+import { resolveActiveHost } from "../../shared/preflight.js";
 import { confirm } from "../../shared/prompt.js";
-import { createBearerSupplier } from "../../shared/trpc/bearer-supplier.js";
 import {
   type BundleBuilder,
   EXCLUDE_FROM_IMPORT,
@@ -75,31 +73,13 @@ export function buildImportCommand(deps: ImportCommandDeps): Command {
     ) => {
       const flag = opts.server ? { server: opts.server } : undefined;
 
-      // Compat pre-flight — same gate every networked verb uses.
-      const compat = await deps.compatService.check({ flag });
-      if (!compat.ok) {
-        printCompatResolveError(compat.error, deps.serverEnvVar);
-        process.exit(EXIT_IMPORT_RUNTIME_FAILURE);
-      }
-      const verdict = compat.value;
-      if (verdict.kind === "below-floor") {
-        process.stderr.write(
-          `error: CLI ${verdict.localCli} is below the server's minimum required version ${verdict.serverMinClient}; upgrade and retry\n`,
-        );
-        process.exit(EXIT_IMPORT_BELOW_FLOOR);
-      }
-      if (verdict.kind === "behind-current") {
-        process.stderr.write(
-          `warning: CLI ${verdict.localCli} is behind server ${verdict.serverVersion}; consider upgrading\n`,
-        );
-      }
-
-      const cfg = await deps.configService.getResolved({ flag });
-      if (!cfg.ok) {
-        process.stderr.write(`error: ${describeConfigError(cfg.error)}\n`);
-        process.exit(EXIT_IMPORT_RUNTIME_FAILURE);
-      }
-      const host = cfg.value.server;
+      const host = await resolveActiveHost(deps, {
+        flag,
+        exitCodes: {
+          runtimeFailure: EXIT_IMPORT_RUNTIME_FAILURE,
+          belowFloor: EXIT_IMPORT_BELOW_FLOOR,
+        },
+      });
 
       // Validate args early — cheap, surfaces user typos before the round-trip.
       const resolved = await resolveArgs(paths);
@@ -179,22 +159,19 @@ async function uploadAndReport(args: {
   tokenProvider: TokenProvider;
   json: boolean;
 }): Promise<number> {
-  // Reuse the shared bearer-classifier from the tRPC bridge so the
-  // not-logged-in / session-expired routing stays in one place.
-  const bearer = createBearerSupplier(args.tokenProvider, args.host);
-  let token: string;
-  try {
-    const result = await bearer();
-    if (!result.ok) {
-      process.stderr.write(`error: not authenticated: ${result.error.reason}\n`);
+  const tokenResult = await args.tokenProvider.getValidAccessToken(args.host);
+  if (!tokenResult.ok) {
+    const e = tokenResult.error;
+    if (e.kind === "not-logged-in" || e.kind === "session-expired") {
+      const reason = e.kind === "not-logged-in" ? `not logged in to ${e.host}` : `session expired for ${e.host}`;
+      process.stderr.write(`error: not authenticated: ${reason}\n`);
       process.stderr.write("hint: run `dam auth login` first\n");
-      return EXIT_IMPORT_RUNTIME_FAILURE;
+    } else {
+      process.stderr.write(`error: ${e.reason}\n`);
     }
-    token = result.value;
-  } catch (e) {
-    process.stderr.write(`error: ${(e as Error).message}\n`);
     return EXIT_IMPORT_RUNTIME_FAILURE;
   }
+  const token = tokenResult.value;
 
   const blob = await openAsBlob(args.packed.tmpPath, { type: "application/gzip" });
   const form = new FormData();

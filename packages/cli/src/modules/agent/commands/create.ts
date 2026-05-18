@@ -5,10 +5,9 @@ import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { InstanceService } from "../../instance/index.js";
 import { validateInstanceName } from "../../instance/commands/create-helpers.js";
 import {
-  describeConfigError,
   formatTransportError,
-  printCompatResolveError,
 } from "../../instance/commands/errors.js";
+import { resolveActiveHost } from "../../shared/preflight.js";
 import {
   EXIT_INSTANCE_BELOW_FLOOR,
   EXIT_INSTANCE_RUNTIME_FAILURE,
@@ -142,31 +141,13 @@ async function runCreate(opts: CliOpts, deps: CreateAgentCommandDeps): Promise<v
 
   const flag = opts.server ? { server: opts.server } : undefined;
 
-  // --- Compat pre-flight ----------------------------------------------
-  const compat = await deps.compatService.check({ flag });
-  if (!compat.ok) {
-    printCompatResolveError(compat.error, deps.serverEnvVar);
-    process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
-  }
-  const verdict = compat.value;
-  if (verdict.kind === "below-floor") {
-    cancel(
-      `CLI ${verdict.localCli} is below the server's minimum required version ${verdict.serverMinClient}; upgrade and retry`,
-    );
-    process.exit(EXIT_INSTANCE_BELOW_FLOOR);
-  }
-  if (verdict.kind === "behind-current") {
-    log.warn(
-      `CLI ${verdict.localCli} is behind server ${verdict.serverVersion}; consider upgrading`,
-    );
-  }
-
-  const cfg = await deps.configService.getResolved({ flag });
-  if (!cfg.ok) {
-    cancel(describeConfigError(cfg.error));
-    process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
-  }
-  const host = cfg.value.server;
+  const host = await resolveActiveHost(deps, {
+    flag,
+    exitCodes: {
+      runtimeFailure: EXIT_INSTANCE_RUNTIME_FAILURE,
+      belowFloor: EXIT_INSTANCE_BELOW_FLOOR,
+    },
+  });
 
   // --- Step 1: name --------------------------------------------------
   const name = await text({
