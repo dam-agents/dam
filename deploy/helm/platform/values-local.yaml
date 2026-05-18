@@ -46,7 +46,7 @@ agentTemplates:
     enabled: true
     description: "Google Workspace agent with Drive and Gmail via gws CLI"
     image:
-      repository: platform-google-workspace
+      repository: platform-google-workspace-agent
       tag: latest
     storageSize: "2Gi"
     skillPaths:
