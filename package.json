@@ -16,6 +16,13 @@
     "docker:google-workspace:build": "pnpm docker:platform-base:build && docker build -t platform-google-workspace-agent packages/agents/google-workspace",
     "docker:google-workspace:start": "docker rm -f platform-google-workspace-agent 2>/dev/null; docker run --name platform-google-workspace-agent -p 3001:8080 platform-google-workspace-agent"
   },
+  "pnpm": {
+    "overrides": {
+      "@anthropic-ai/sdk@<0.91.1": "0.91.1",
+      "esbuild@<0.25.0": "0.25.12",
+      "serialize-javascript@<7.0.5": "7.0.5"
+    }
+  },
   "devDependencies": {
     "eslint": "^10.2.0",
     "eslint-plugin-react-hooks": "^7.0.1",
