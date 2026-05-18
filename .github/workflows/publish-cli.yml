@@ -3,10 +3,6 @@ name: Publish CLI
 on:
   push:
     tags: ["cli-v*"]
-  pull_request:
-    paths:
-      - "packages/cli/**"
-      - ".github/workflows/publish-cli.yml"
   workflow_dispatch:
 
 concurrency:
