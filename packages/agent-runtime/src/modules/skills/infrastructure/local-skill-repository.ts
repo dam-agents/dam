@@ -142,26 +142,31 @@ async function read(
   let total = 0;
 
   for (const abs of absFiles) {
-    const stat = await fs.stat(abs);
-    if (stat.size > MAX_FILE_BYTES) {
-      return err({
-        kind: "PayloadTooLarge",
-        detail: `${path.relative(root, abs)} is ${stat.size} bytes (max ${MAX_FILE_BYTES})`,
-      });
-    }
-    total += stat.size;
-    if (total > MAX_SKILL_BYTES) {
-      return err({
-        kind: "PayloadTooLarge",
-        detail: `skill exceeds ${MAX_SKILL_BYTES} bytes total`,
-      });
-    }
-    const buf = await fs.readFile(abs);
-    const relPath = path.relative(root, abs);
-    if (hasNullBytes(buf)) {
-      out.push({ relPath, content: buf.toString("base64"), base64: true });
-    } else {
-      out.push({ relPath, content: buf.toString("utf8") });
+    const fh = await fs.open(abs, "r");
+    try {
+      const stat = await fh.stat();
+      if (stat.size > MAX_FILE_BYTES) {
+        return err({
+          kind: "PayloadTooLarge",
+          detail: `${path.relative(root, abs)} is ${stat.size} bytes (max ${MAX_FILE_BYTES})`,
+        });
+      }
+      total += stat.size;
+      if (total > MAX_SKILL_BYTES) {
+        return err({
+          kind: "PayloadTooLarge",
+          detail: `skill exceeds ${MAX_SKILL_BYTES} bytes total`,
+        });
+      }
+      const buf = await fh.readFile();
+      const relPath = path.relative(root, abs);
+      if (hasNullBytes(buf)) {
+        out.push({ relPath, content: buf.toString("base64"), base64: true });
+      } else {
+        out.push({ relPath, content: buf.toString("utf8") });
+      }
+    } finally {
+      await fh.close();
     }
   }
 

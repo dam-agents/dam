@@ -2,7 +2,7 @@ import http from "node:http";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import headlessPkg from "@xterm/headless";
 const { Terminal: HeadlessTerminal } = headlessPkg;
 import serializePkg from "@xterm/addon-serialize";
@@ -304,11 +304,9 @@ server.on("upgrade", (req, socket, head) => {
 if (config.PLATFORM_MCP_URL) {
   const mcpPath = join(workDir, ".mcp.json");
   let mcpConfig: Record<string, unknown> = {};
-  if (existsSync(mcpPath)) {
-    try {
-      mcpConfig = JSON.parse(readFileSync(mcpPath, "utf8"));
-    } catch {}
-  }
+  try {
+    mcpConfig = JSON.parse(readFileSync(mcpPath, "utf8"));
+  } catch {}
   const mcpServers = (mcpConfig.mcpServers ?? {}) as Record<string, unknown>;
   // No Authorization header: the api-server's harness port identifies the
   // caller by source IP (NetworkPolicy admits only agent pods, podIpResolver

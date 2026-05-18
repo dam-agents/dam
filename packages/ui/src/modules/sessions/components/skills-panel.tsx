@@ -88,7 +88,7 @@ function skillSourceUrl(
   compareFrom?: string,
 ): string {
   const base = source.replace(/\.git$/, "").replace(/\/$/, "");
-  const isGitLike = /(github|gitlab)\.com|bitbucket\.org/.test(base);
+  const isGitLike = /\b(github|gitlab)\.com\b|\bbitbucket\.org\b/.test(base);
   if (!isGitLike) return base;
   if (compareFrom) {
     return `${base}/compare/${compareFrom}...${version}`;

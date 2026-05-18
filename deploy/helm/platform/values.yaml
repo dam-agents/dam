@@ -116,7 +116,7 @@ postgres:
   image: registry.access.redhat.com/hi/postgresql:18
   user: platform
   # password is auto-generated if not set
-  password: ""
+  password: null
   storage: 5Gi
   storageClass: ""
   resources:
@@ -158,7 +158,7 @@ keycloak:
   admin:
     user: admin
     # password is auto-generated if not set
-    password: ""
+    password: null
 
   # -- Realm and OIDC client configuration
   realm: platform
@@ -187,15 +187,15 @@ keycloak:
   # Local dev and e2e tests (via values-local.yaml) enable it.
   testUser:
     enabled: false
-    username: ""
-    password: ""
+    username: null
+    password: null
 
   # -- Database connection (empty host = use shared local postgres)
   db:
     host: ""
     port: 5432
     user: platform
-    password: ""
+    password: null
     database: keycloak
 
   resources:
@@ -399,7 +399,7 @@ apiServer:
     host: ""
     port: 5432
     user: platform
-    password: ""
+    password: null
     database: platform
   resources:
     requests:
