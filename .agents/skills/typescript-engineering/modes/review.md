@@ -14,7 +14,7 @@ For diff and PR scope, the baseline is the unchanged code. Only flag violations 
 
 ## Load Order (Lazy)
 
-Start with [../architecture/index.md](../architecture/index.md). For full reviews, load every linked file. For diff or PR reviews, load the files that cover the layers and concerns the diff touches. Pull more when a finding hints at a rule from a file not yet loaded.
+Start with [../architecture/index.md](../architecture/index.md). For full reviews, load every linked file. For diff or PR reviews, load the files that cover the layers and concerns the diff touches. Load additional files from `../architecture/` when a finding hints at a rule from a file not yet loaded.
 
 ## Output
 
