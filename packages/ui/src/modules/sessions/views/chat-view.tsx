@@ -1,6 +1,6 @@
 import { SessionMode } from "api-server-api";
 import { AlertCircle, ArrowDown, ArrowLeft, FileText as FileIcon, MessageSquare,RefreshCw,Settings2, TerminalSquare,Trash2 } from "lucide-react";
-import { useCallback,useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "../../../api.js";
 import { Markdown } from "../../../components/markdown.js";
