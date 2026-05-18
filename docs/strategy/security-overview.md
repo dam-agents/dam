@@ -20,14 +20,19 @@ flowchart LR
   L1 ~~~ L2 ~~~ L3 ~~~ L4
 ```
 
-- **Identity.** Every workload gets a unique ID card — technically a
-SPIFFE workload certificate, issued by Istio's identity service
-(`istiod`) when the pod joins the mesh. When the agent (or anything
-acting on its behalf) calls another service in the cluster, a guard at
-the destination checks the ID before letting the call through. The
-guard cares about *who* is calling, not which IP or port they came
-from. An agent from a different instance can find the address, but its
-call gets turned away at the door.
+- **Identity.** Identity in Platform is not about keeping the agent
+penned in — that job belongs to the network layer below. It's about
+*authorizing the calls that the gateway pod makes back into the
+platform on the agent's behalf*: the api-server's harness path that
+the agent's LLM uses, and the per-instance `ext-authz` service that
+approves every outgoing request. When the gateway pod knocks on those
+doors, it has to prove who it is. Istio's identity service (`istiod`)
+hands the gateway a SPIFFE workload certificate — an unforgeable ID
+card tied to the pod's Kubernetes ServiceAccount. The api-server
+endpoints carry AuthorizationPolicies that only admit the matching
+instance's gateway, so one instance can never call another's harness
+or ext-authz. The agent pod itself has no SPIFFE identity at all — it
+is deliberately kept out of the mesh.
 
 - **Boundary.** The agent runs in its own container — a sealed room
 with its own filesystem and its own kernel namespaces, sharing nothing
@@ -42,19 +47,18 @@ disk.
 - **Network.** Several locks restrict where the agent can talk. At the
 kernel — the part of the OS that decides which network packets are
 allowed out — a Kubernetes NetworkPolicy lets the agent's pod reach
-exactly one place: the sibling **gateway pod** we paired it with.
-Nothing else. No peer pods, no internet directly, and no DNS — the
-controller injects a hostAliases entry into the pod so `HTTPS_PROXY`
-can resolve the gateway's name without ever doing a DNS lookup, which
-closes a sneaky exfil channel where the agent could smuggle data out
-in DNS queries. As a backup of the same lock, a privileged init
-container writes a matching `iptables` rule inside the pod; if
-NetworkPolicy enforcement ever broke, this second layer would still
-hold. At the mesh layer, Istio AuthorizationPolicies key on each
-instance's ServiceAccount — peer instances are denied at the network
-level, and the harness path on the api-server is gated the same way.
-And every outgoing request through the gateway pod runs through an
-extra `ext-authz` check at the api-server before being forwarded.
+exactly one place: the sibling **gateway pod** we paired it with. The
+rule pins to that specific pod by label (`pair=<id>, role=gateway`),
+so even other instances' gateways are out of reach. No peer pods, no
+internet directly, and no DNS — the controller injects a hostAliases
+entry into the pod so `HTTPS_PROXY` can resolve the gateway's name
+without ever doing a DNS lookup, which closes a sneaky exfil channel
+where the agent could smuggle data out in DNS queries. As a backup of
+the same lock, a privileged init container writes a matching
+`iptables` rule inside the pod; if NetworkPolicy enforcement ever
+broke, this second layer would still hold. Every outgoing request the
+gateway pod then forwards on the agent's behalf runs through an
+`ext-authz` check at the api-server before leaving the cluster.
 
 - **Credentials.** Real upstream passwords (API keys, OAuth tokens)
 never reach the agent. They live in Kubernetes Secrets that only the
@@ -143,7 +147,8 @@ and answers one of three things:
 |---|---|
 | Agent steals an upstream token | Tokens live only in the gateway pod; Envoy injects them on the wire and the agent never sees a real one |
 | Agent escalates via its ServiceAccount token | `automountServiceAccountToken: false` on both pods — `istiod` issues the SPIFFE workload cert without a mounted SA-token |
-| Agent reaches a peer instance's gateway | Per-instance AuthorizationPolicy denies traffic from any non-matching ServiceAccount |
+| Agent reaches a peer instance's gateway | Per-pair NetworkPolicy pins admission to the paired gateway pod by label; no other instance's gateway is reachable from the agent at the kernel |
+| Gateway calls a peer instance's harness or `ext-authz` | AuthorizationPolicies on each api-server endpoint only admit the matching instance's gateway SPIFFE principal |
 | Agent bypasses the proxy to call external hosts directly | Per-pair agent-egress NetworkPolicy admits only the paired gateway pod; a kernel `iptables` rule inside the pod enforces the same shape independently |
 | Agent exfiltrates data through cluster DNS | The agent has no DNS egress at all; the controller injects a hostAliases entry so `HTTPS_PROXY` resolves the gateway Service without a lookup |
 | Route-confusion exfil through the gateway | Per-host Envoy filter chains pinned to each credential's host, with SAN-bound upstream TLS validation |
