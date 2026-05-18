@@ -37,6 +37,7 @@ export function IbmLitellmConnected({
 
   return (
     <ProviderConnectedShell
+      provider="ibm-litellm"
       title={PROVIDERS["ibm-litellm"].displayName}
       subtitle={
         <>

@@ -37,6 +37,7 @@ export function BobConnected({
 
   return (
     <ProviderConnectedShell
+      provider="bob"
       title={PROVIDERS.bob.displayName}
       subtitle={
         currentPins.model ? (

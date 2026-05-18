@@ -7,7 +7,7 @@ import {
   Group,
   Security,
 } from "@carbon/icons-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -25,6 +25,7 @@ import { useAgents } from "../agents/api/queries.js";
 import { useAppConnections } from "../connections/api/queries.js";
 import type { View } from "../platform/lib/routes.js";
 import { useSecrets } from "../secrets/api/queries.js";
+import { setOnboardingActive } from "./onboarding-state.js";
 
 const DISMISS_KEY = "platform-welcome-tour-dismissed";
 // Mock mode: designer iterating → reset on reload.
@@ -41,19 +42,24 @@ const FEATURES: {
 ];
 
 /**
- * First-run onboarding. A welcome modal introduces the product, then a
- * persistent checklist card replaces it and walks the user through the
- * remaining setup steps. Same component on desktop and mobile — the card
- * docks bottom-right on wide viewports and stretches full-width at the
- * bottom on narrow ones. Hides entirely once the user has both a provider
- * and at least one agent.
+ * First-run onboarding. Shows a welcome modal once, and on "Get started"
+ * flips on the {@link setOnboardingActive} flag and routes the user to
+ * /providers. The {@link OnboardingCoach} banner mounted on each setup
+ * page handles the rest of the flow — there's no persistent checklist
+ * card. Hides entirely once the user has a provider, an agent, and a
+ * connection (so the modal never reappears for returning users with the
+ * stack already set up).
+ *
+ * The {@link SetupChecklist} export is kept around for the dev-only
+ * AllSetPreview toggle and as a quick reference if we ever want to A/B
+ * the two flows again.
  */
 export function WelcomeTour() {
+  const setView = useStore((s) => s.setView);
   const { data: agents = [], isSuccess: agentsLoaded } = useAgents();
   const { data: secrets = [], isSuccess: secretsLoaded } = useSecrets();
   const { data: connections = [], isSuccess: connectionsLoaded } =
     useAppConnections();
-  const [welcomeSeen, setWelcomeSeen] = useState(false);
   const [dismissed, setDismissed] = useState(
     () => PERSIST_DISMISS && localStorage.getItem(DISMISS_KEY) === "true",
   );
@@ -64,79 +70,66 @@ export function WelcomeTour() {
   const hasConnection = connections.length > 0;
   const allDone = hasProvider && hasAgent && hasConnection;
 
-  // Track whether the user has actually been on the journey this session.
-  // Returning users who already have everything set up should NOT see an
-  // "All set" celebration — only users who watched the steps tick off do.
-  const [everSeenIncomplete, setEverSeenIncomplete] = useState(false);
-  useEffect(() => {
-    if (ready && !allDone) setEverSeenIncomplete(true);
-  }, [ready, allDone]);
-
-  const shouldShow = ready && !dismissed && (!allDone || everSeenIncomplete);
+  // Only ever show the modal to users who haven't completed setup yet.
+  const shouldShow = ready && !dismissed && !allDone;
 
   const dismiss = () => {
     if (PERSIST_DISMISS) localStorage.setItem(DISMISS_KEY, "true");
     setDismissed(true);
   };
 
+  const handleGetStarted = () => {
+    setOnboardingActive(true);
+    dismiss();
+    setView("providers");
+  };
+
   if (!shouldShow) return null;
 
-  if (!welcomeSeen) {
-    return (
-      <Dialog open onOpenChange={(open) => !open && dismiss()}>
-        <DialogContent className="max-w-2xl p-0 gap-0 overflow-hidden">
-          {/* Hero band — tinted gradient, small eyebrow, big title */}
-          <div className="relative px-8 pt-8 pb-7 bg-gradient-to-br from-primary/8 via-primary/3 to-transparent border-b">
-            <span className="inline-block text-[10px] font-bold uppercase tracking-[0.12em] text-primary/80 mb-3">
-              Deploy Agents Massively
-            </span>
-            <DialogHeader className="space-y-3 items-start text-left">
-              <DialogTitle className="text-3xl font-semibold tracking-tight leading-[1.1]">
-                Welcome to DAM
-              </DialogTitle>
-              <DialogDescription className="text-[15px] leading-relaxed max-w-lg">
-                Run agent harnesses like Claude Code headless in the cloud, on
-                a schedule, connected to your tools — without exposing your
-                tokens.
-              </DialogDescription>
-            </DialogHeader>
-          </div>
-
-          {/* Features — 2×2 grid with subtle surface tint */}
-          <div className="px-8 py-6">
-            <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground mb-4">
-              Why DAM?
-            </div>
-            <ul className="grid sm:grid-cols-2 gap-x-5 gap-y-5">
-              {FEATURES.map((f) => (
-                <li key={f.text} className="flex gap-4 items-start">
-                  <span className="h-12 w-12 rounded-xl bg-info-light text-info flex items-center justify-center shrink-0">
-                    <f.icon className="h-6 w-6" />
-                  </span>
-                  <span className="text-[13.5px] leading-snug pt-2.5">{f.text}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <DialogFooter className="gap-2 sm:gap-2 px-8 pb-8 pt-2">
-            <Button onClick={() => setWelcomeSeen(true)}>
-              Get started <ArrowRight />
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    );
-  }
-
   return (
-    <SetupChecklist
-      hasProvider={hasProvider}
-      hasAgent={hasAgent}
-      hasConnection={hasConnection}
-      allDone={allDone}
-      onDismiss={dismiss}
-    />
+    <Dialog open onOpenChange={(open) => !open && dismiss()}>
+      <DialogContent className="max-w-2xl p-0 gap-0 overflow-hidden">
+        {/* Hero band — tinted gradient, small eyebrow, big title */}
+        <div className="relative px-8 pt-8 pb-7 bg-gradient-to-br from-primary/8 via-primary/3 to-transparent border-b">
+          <span className="inline-block text-[10px] font-bold uppercase tracking-[0.12em] text-primary/80 mb-3">
+            Deploy Agents Massively
+          </span>
+          <DialogHeader className="space-y-3 items-start text-left">
+            <DialogTitle className="text-3xl font-semibold tracking-tight leading-[1.1]">
+              Welcome to DAM
+            </DialogTitle>
+            <DialogDescription className="text-[15px] leading-relaxed max-w-lg">
+              Run agent harnesses like Claude Code headless in the cloud, on
+              a schedule, connected to your tools — without exposing your
+              tokens.
+            </DialogDescription>
+          </DialogHeader>
+        </div>
+
+        {/* Features — 2×2 grid with subtle surface tint */}
+        <div className="px-8 py-6">
+          <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground mb-4">
+            Why DAM?
+          </div>
+          <ul className="grid sm:grid-cols-2 gap-x-5 gap-y-5">
+            {FEATURES.map((f) => (
+              <li key={f.text} className="flex gap-4 items-start">
+                <span className="h-12 w-12 rounded-xl bg-info-light text-info flex items-center justify-center shrink-0">
+                  <f.icon className="h-6 w-6" />
+                </span>
+                <span className="text-[13.5px] leading-snug pt-2.5">{f.text}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <DialogFooter className="gap-2 sm:gap-2 px-8 pb-8 pt-2">
+          <Button onClick={handleGetStarted}>
+            Get started <ArrowRight />
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

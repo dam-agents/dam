@@ -1,20 +1,27 @@
 import { Check, Copy, ExternalLink } from "lucide-react";
 import { useRef, useState } from "react";
 
-import { Modal } from "../../../components/modal.js";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+
 import { useStore } from "../../../store.js";
 import { discoverOAuthEndpoints, type OAuthAppDescriptor } from "../api/fetchers.js";
 import { useStartAppOAuth } from "../api/mutations.js";
-
-const INPUT_CLASS =
-  "w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted";
 
 function discoveryHelperText(
   discovery: { state: "idle" | "loading" | "ok" | "miss"; source?: string },
   appName: string,
 ) {
   if (discovery.state === "loading") {
-    return <span className="text-[12px] text-text-muted">Looking up issuer metadata…</span>;
+    return <span className="text-[12px] text-muted-foreground">Looking up issuer metadata…</span>;
   }
   if (discovery.state === "ok") {
     return (
@@ -26,7 +33,7 @@ function discoveryHelperText(
   }
   if (discovery.state === "miss") {
     return (
-      <span className="text-[12px] text-text-muted">
+      <span className="text-[12px] text-muted-foreground">
         No issuer metadata found — fill in the {appName} URLs manually below.
       </span>
     );
@@ -45,21 +52,22 @@ function CallbackUrlField({ url }: { url: string }) {
   };
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="text-[13px] font-semibold text-text">Callback URL</label>
+      <label className="text-[13px] font-semibold text-foreground">Callback URL</label>
       <div className="flex items-center gap-2">
-        <code className="flex-1 h-10 rounded-lg border-2 border-border-light bg-bg px-4 flex items-center text-[13px] font-mono text-text-secondary truncate">
+        <code className="flex-1 h-10 rounded-md border border-input bg-background px-4 flex items-center text-[13px] font-mono text-foreground/80 truncate">
           {url}
         </code>
-        <button
+        <Button
           type="button"
+          variant="outline"
+          size="icon"
           onClick={copy}
-          className="btn-brutal h-10 w-10 rounded-lg border-2 border-border bg-surface flex items-center justify-center text-text-secondary hover:text-accent hover:border-accent shadow-brutal-sm"
           title="Copy callback URL"
         >
           {copied ? <Check size={14} className="text-success" /> : <Copy size={14} />}
-        </button>
+        </Button>
       </div>
-      <span className="text-[12px] text-text-muted">
+      <span className="text-[12px] text-muted-foreground">
         Paste this exact URL into your OAuth app's Authorization callback / redirect URI field.
       </span>
     </div>
@@ -69,9 +77,13 @@ function CallbackUrlField({ url }: { url: string }) {
 interface Props {
   app: OAuthAppDescriptor;
   onCancel: () => void;
+  /** Optional handler for returning to a parent picker (the connection
+   *  chooser). When provided, a "Back" button is rendered alongside the
+   *  primary Connect action. */
+  onBack?: () => void;
 }
 
-export function ConnectAppForm({ app, onCancel }: Props) {
+export function ConnectAppForm({ app, onCancel, onBack }: Props) {
   const [values, setValues] = useState<Record<string, string>>({});
   // Override toggle — when `credentialsInherited`, overridable inputs
   // (e.g. clientId/clientSecret for a sibling Google connection) stay
@@ -186,107 +198,106 @@ export function ConnectAppForm({ app, onCancel }: Props) {
   };
 
   return (
-    <Modal widthClass="w-[480px]">
-      {/* Scrollable body — `min-h-0 flex-1` lets the modal cap at max-h-[85vh]
-         and the inner area scroll when content overflows; the footer below
-         stays pinned. */}
-      <div className="min-h-0 flex-1 overflow-y-auto flex flex-col gap-5 p-5 md:p-7">
-        <h2 className="text-[20px] font-bold text-text">Connect {app.displayName}</h2>
-        <p className="text-[13px] text-text-secondary">{app.description}</p>
-        {app.registrationUrl && !usingDefaultApp && (
-          <a
-            href={app.registrationUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-[13px] text-accent hover:underline inline-flex items-center gap-1.5"
+    <Dialog open onOpenChange={(o) => !o && onCancel()}>
+      <DialogContent className="max-w-lg max-h-[85vh] flex flex-col gap-4">
+        <DialogHeader className="shrink-0">
+          <DialogTitle>Connect {app.displayName}</DialogTitle>
+          <DialogDescription>{app.description}</DialogDescription>
+        </DialogHeader>
+
+        {/* Scrollable body — capped via the parent's max-h-[85vh] so the
+            footer below stays pinned even when content overflows. */}
+        <div className="flex-1 min-h-0 overflow-y-auto -mx-1 px-1 flex flex-col gap-5">
+          {app.registrationUrl && !usingDefaultApp && (
+            <a
+              href={app.registrationUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[13px] text-primary hover:underline inline-flex items-center gap-1.5"
+            >
+              Register an OAuth app first <ExternalLink size={13} />
+            </a>
+          )}
+          {!usingDefaultApp && <CallbackUrlField url={app.callbackUrl} />}
+          {app.defaultsApplied && (
+            <div className="rounded-lg border border-success/30 bg-success/5 px-4 py-3 text-[12px] text-foreground/80">
+              <div>
+                Connecting to the platform's pre-configured {app.displayName}{" "}
+                app — no setup required.
+              </div>
+              <button
+                type="button"
+                className="mt-1.5 text-[12px] font-semibold text-primary hover:underline"
+                onClick={() => setShowOverride((v) => !v)}
+              >
+                {showOverride ? "Use the platform's app instead" : "Use a different app"}
+              </button>
+            </div>
+          )}
+          {app.credentialsInherited && !app.defaultsApplied && (
+            <div className="rounded-lg border border-success/30 bg-success/5 px-4 py-3 text-[12px] text-foreground/80">
+              <div>
+                Reusing the Client ID and secret from another connected app in
+                this family — no need to re-enter them.
+              </div>
+              <button
+                type="button"
+                className="mt-1.5 text-[12px] font-semibold text-primary hover:underline"
+                onClick={() => setShowOverride((v) => !v)}
+              >
+                {showOverride ? "Use stored credentials instead" : "Use different credentials"}
+              </button>
+            </div>
+          )}
+          {visibleInputs.map((field) => {
+            const isDiscoveryHostField = app.discoverFromHostField === field.name;
+            const helperOverride =
+              isDiscoveryHostField && discovery.host === (values[field.name] ?? "").trim()
+                ? discoveryHelperText(discovery, app.displayName)
+                : null;
+            return (
+              <div key={field.name} className="flex flex-col gap-1.5">
+                <label className="text-[13px] font-semibold text-foreground">{field.label}</label>
+                <Input
+                  type={field.secret ? "password" : "text"}
+                  value={values[field.name] ?? ""}
+                  onChange={(e) => setField(field.name, e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && allFilled && submit()}
+                  onBlur={
+                    isDiscoveryHostField
+                      ? () => {
+                          const v = (values[field.name] ?? "").trim();
+                          if (v) void runDiscovery(v);
+                        }
+                      : undefined
+                  }
+                  placeholder={field.placeholder ?? ""}
+                  autoComplete="off"
+                  autoFocus={field === visibleInputs[0]}
+                />
+                {helperOverride ?? (field.helper && (
+                  <span className="text-[12px] text-muted-foreground">{field.helper}</span>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+
+        <DialogFooter className="shrink-0">
+          {onBack && (
+            <Button type="button" variant="outline" onClick={onBack}>
+              ← Back
+            </Button>
+          )}
+          <Button
+            type="button"
+            onClick={submit}
+            disabled={!allFilled || startAppOAuth.isPending}
           >
-            Register an OAuth app first <ExternalLink size={13} />
-          </a>
-        )}
-        {!usingDefaultApp && <CallbackUrlField url={app.callbackUrl} />}
-        {app.defaultsApplied && (
-          <div className="rounded-lg border-2 border-success/30 bg-success/5 px-4 py-3 text-[12px] text-text-secondary">
-            <div>
-              Connecting to the platform's pre-configured {app.displayName}{" "}
-              app — no setup required.
-            </div>
-            <button
-              type="button"
-              className="mt-1.5 text-[12px] font-semibold text-accent hover:underline"
-              onClick={() => setShowOverride((v) => !v)}
-            >
-              {showOverride ? "Use the platform's app instead" : "Use a different app"}
-            </button>
-          </div>
-        )}
-        {app.credentialsInherited && !app.defaultsApplied && (
-          <div className="rounded-lg border-2 border-success/30 bg-success/5 px-4 py-3 text-[12px] text-text-secondary">
-            <div>
-              Reusing the Client ID and secret from another connected app in
-              this family — no need to re-enter them.
-            </div>
-            <button
-              type="button"
-              className="mt-1.5 text-[12px] font-semibold text-accent hover:underline"
-              onClick={() => setShowOverride((v) => !v)}
-            >
-              {showOverride ? "Use stored credentials instead" : "Use different credentials"}
-            </button>
-          </div>
-        )}
-        {visibleInputs.map((field) => {
-          const isDiscoveryHostField = app.discoverFromHostField === field.name;
-          const helperOverride =
-            isDiscoveryHostField && discovery.host === (values[field.name] ?? "").trim()
-              ? discoveryHelperText(discovery, app.displayName)
-              : null;
-          return (
-            <div key={field.name} className="flex flex-col gap-1.5">
-              <label className="text-[13px] font-semibold text-text">{field.label}</label>
-              <input
-                type={field.secret ? "password" : "text"}
-                className={INPUT_CLASS}
-                value={values[field.name] ?? ""}
-                onChange={(e) => setField(field.name, e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && allFilled && submit()}
-                onBlur={
-                  isDiscoveryHostField
-                    ? () => {
-                        const v = (values[field.name] ?? "").trim();
-                        if (v) void runDiscovery(v);
-                      }
-                    : undefined
-                }
-                placeholder={field.placeholder ?? ""}
-                autoComplete="off"
-                autoFocus={field === visibleInputs[0]}
-              />
-              {helperOverride ?? (field.helper && (
-                <span className="text-[12px] text-text-muted">{field.helper}</span>
-              ))}
-            </div>
-          );
-        })}
-      </div>
-      {/* Footer is pinned outside the scroll region so Connect/Cancel are
-         always reachable, even on short viewports / long descriptors. */}
-      <div className="flex justify-end gap-3 p-5 md:p-7 border-t-2 border-border-light">
-        <button
-          type="button"
-          className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
-          onClick={onCancel}
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent"
-          onClick={submit}
-          disabled={!allFilled || startAppOAuth.isPending}
-        >
-          {startAppOAuth.isPending ? "..." : "Connect"}
-        </button>
-      </div>
-    </Modal>
+            {startAppOAuth.isPending ? "..." : "Connect"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

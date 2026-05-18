@@ -33,6 +33,7 @@ export function AnthropicConnected({
 
   return (
     <ProviderConnectedShell
+      provider="anthropic"
       title={PROVIDERS.anthropic.displayName}
       subtitle={`Set up with ${MODES[currentMode].label}`}
       onEdit={() => setEditing(true)}

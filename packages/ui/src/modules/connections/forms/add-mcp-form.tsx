@@ -1,18 +1,29 @@
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 
-import { Modal } from "../../../components/modal.js";
 import { useStore } from "../../../store.js";
 import { useStartMcpOAuth } from "../api/mutations.js";
 
 interface Props {
   initialUrl?: string;
   onCancel: () => void;
+  /** Optional handler for returning to a parent picker (the connection
+   *  chooser). When provided, a "Back" button is rendered alongside the
+   *  Cancel/Connect actions. */
+  onBack?: () => void;
 }
 
-export function AddMcpForm({ initialUrl = "", onCancel }: Props) {
+export function AddMcpForm({ initialUrl = "", onCancel, onBack }: Props) {
   const [url, setUrl] = useState(initialUrl);
   const showToast = useStore((s) => s.showToast);
   const startMcpOAuth = useStartMcpOAuth();
@@ -35,12 +46,15 @@ export function AddMcpForm({ initialUrl = "", onCancel }: Props) {
   };
 
   return (
-    <Modal widthClass="w-[480px]">
-      <div className="flex flex-col gap-5 p-5 md:p-7">
-        <h2 className="text-[20px] font-bold text-foreground">Connect MCP Server</h2>
-        <p className="text-[13px] text-foreground/80">
-          Enter the URL of a remote MCP server to connect via OAuth.
-        </p>
+    <Dialog open onOpenChange={(o) => !o && onCancel()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Connect MCP Server</DialogTitle>
+          <DialogDescription>
+            Enter the URL of a remote MCP server to connect via OAuth.
+          </DialogDescription>
+        </DialogHeader>
+
         <Input
           value={url}
           onChange={(e) => setUrl(e.target.value)}
@@ -48,14 +62,13 @@ export function AddMcpForm({ initialUrl = "", onCancel }: Props) {
           placeholder="https://example.com/mcp"
           autoFocus
         />
-        <div className="flex justify-end gap-3">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onCancel}
-          >
-            Cancel
-          </Button>
+
+        <DialogFooter>
+          {onBack && (
+            <Button type="button" variant="outline" onClick={onBack}>
+              ← Back
+            </Button>
+          )}
           <Button
             type="button"
             onClick={submit}
@@ -63,8 +76,8 @@ export function AddMcpForm({ initialUrl = "", onCancel }: Props) {
           >
             {startMcpOAuth.isPending ? "..." : "Connect"}
           </Button>
-        </div>
-      </div>
-    </Modal>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

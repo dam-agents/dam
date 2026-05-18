@@ -1,7 +1,29 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { File as FileIcon, Folder as FolderIcon, FolderUp, Sparkles, Upload, X } from "lucide-react";
+import { File as FileIcon, Folder as FolderIcon, FolderUp, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
+
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 
 import {
   ConnectionsPicker,
@@ -10,19 +32,23 @@ import {
 import { FormField } from "../../../components/form-field.js";
 import { HoverTooltip } from "../../../components/hover-tooltip.js";
 import type { EgressPreset, EnvVar, TemplateView } from "../../../types.js";
-import { APP_OAUTH_SECRET_PREFIX, isProviderPresetType } from "../../../types.js";
+import {
+  APP_OAUTH_SECRET_PREFIX,
+  isProviderPresetType,
+  PROVIDER_PRESET_TYPES,
+  type ProviderPresetType,
+  PROVIDERS,
+} from "../../../types.js";
 import {
   useAppConnections,
   useOAuthAppConnections,
 } from "../../connections/api/queries.js";
 import { type BundleEntry, filterImportEntries, isTarballName, walkDataTransfer } from "../../files/api/import-bundle.js";
 import { useSecrets } from "../../secrets/api/queries.js";
+import { PROVIDER_CARDS } from "../../settings/components/provider-cards.js";
 import { addAgentSchema, type AddAgentValues } from "../forms/add-agent-schema.js";
 
 type Step = "pick" | "configure";
-
-const INPUT_CLASS =
-  "w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted";
 
 export function AddAgentDialog({
   templates,
@@ -254,109 +280,185 @@ export function AddAgentDialog({
   });
 
   const providerSecrets = secrets.filter((s) => isProviderPresetType(s.type));
+  const configuredProviderTypes = useMemo(
+    () =>
+      new Set(
+        providerSecrets.map((s) => s.type as ProviderPresetType),
+      ),
+    // Identity reuse — the Set rebuilds only when the provider list itself changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [providerSecrets.map((s) => s.id).join("|")],
+  );
+
+  // Inline provider setup — when there's no provider yet, the form's top
+  // section shows a dropdown to pick one. Picking a preset shows its card
+  // form right below; after save, the secret list refetches and
+  // `pickedProvider` self-clears via the effect below.
+  const [pickedProvider, setPickedProvider] = useState<ProviderPresetType | null>(null);
+
+  useEffect(() => {
+    if (pickedProvider && configuredProviderTypes.has(pickedProvider)) {
+      setPickedProvider(null);
+    }
+  }, [pickedProvider, configuredProviderTypes]);
+
+  // Which configured provider secret is "the primary" for this agent?
+  // Read off selSecrets so the form stays the source of truth — the
+  // auto-baselining effect above seeds the first provider when there's
+  // exactly one configured.
+  const selSecretsArr = watch("selSecrets");
+  const selectedProviderSecretId =
+    providerSecrets.find((p) => selSecretsArr.includes(p.id))?.id ?? null;
+  const setSelectedProviderSecret = (secretId: string) => {
+    const otherProviderIds = providerSecrets.map((p) => p.id).filter((id) => id !== secretId);
+    const next = selSecretsArr.filter((id) => !otherProviderIds.includes(id));
+    if (!next.includes(secretId)) next.push(secretId);
+    setValue("selSecrets", next.sort(), { shouldDirty: true, shouldValidate: true });
+  };
+
+  // Gate the template/custom-image pick on having a provider in hand —
+  // either previously configured (and selected) or just-saved through the
+  // inline chooser.
+  const hasProviderReady = providerSecrets.length > 0 && selectedProviderSecretId != null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[4px] anim-in">
-      <div className="w-[520px] max-w-[calc(100vw-2rem)] max-h-[85vh] overflow-y-auto rounded-xl border-2 border-border bg-surface p-5 md:p-7 flex flex-col gap-5 anim-scale-in shadow-brutal">
-        {step === "pick" ? (
-          <>
-            <h2 className="text-[20px] font-bold text-text">Add Agent</h2>
+    <Dialog open onOpenChange={(o) => !o && onCancel()}>
+      <DialogContent className="max-w-[560px] max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Add Agent</DialogTitle>
+          <DialogDescription>
+            Pick the provider this agent will use, then choose a template
+            or supply a custom image.
+          </DialogDescription>
+        </DialogHeader>
 
-            {templates.length > 0 && (
-              <div className="flex flex-col gap-2">
-                <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">
-                  From Template
-                </span>
-                {templates.map((tmpl) => (
-                  <button
-                    key={tmpl.id}
-                    onClick={() => pickTemplate(tmpl)}
-                    className="flex flex-col gap-1 rounded-lg border-2 border-border-light bg-bg px-4 py-3 text-left transition-colors hover:border-accent hover:bg-accent-light min-w-0"
-                  >
-                    <div className="text-[14px] font-semibold text-text truncate w-full">{tmpl.name}</div>
-                    {tmpl.description && <div className="text-[12px] text-text-muted truncate w-full">{tmpl.description}</div>}
-                  </button>
-                ))}
-              </div>
-            )}
+        {/* No outer <form> here — the provider setup card renders its own
+            <form>, and nested forms in HTML get flattened (a submit on the
+            inner form bubbles up and submits the outer one, dismissing the
+            agent dialog). The configure-step fields below get their own
+            <form> so submission stays scoped. */}
 
-            <div className="flex flex-col gap-2">
-              <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">
-                Custom Image
-              </span>
-              <div className="flex gap-2">
-                <input
-                  className={INPUT_CLASS}
-                  value={customImage}
-                  onChange={(e) => setCustomImage(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && pickCustom()}
-                  placeholder="ghcr.io/org/agent:latest"
-                />
-                <button
-                  type="button"
-                  className="btn-brutal h-10 rounded-lg border-2 border-accent-hover bg-accent px-4 text-[13px] font-bold text-white disabled:opacity-40 shrink-0 shadow-brutal-accent"
-                  onClick={pickCustom}
-                  disabled={!customImage.trim()}
-                >
-                  Use
-                </button>
-              </div>
-            </div>
+        {/* Provider — always at the top. Required before template/image
+            pick: an agent without a provider can't reach a model. When
+            the user already has providers configured, this is a dropdown
+            to select which one this agent should use; otherwise it
+            renders the chooser inline so they can set one up here. */}
+        <ProviderPickerSection
+            providerSecrets={providerSecrets}
+            configuredTypes={configuredProviderTypes}
+            picked={pickedProvider}
+            onPick={setPickedProvider}
+            selectedProviderSecretId={selectedProviderSecretId}
+            onSelectProviderSecret={setSelectedProviderSecret}
+          />
 
-            <div className="flex justify-end pt-1">
-              <button
-                type="button"
-                className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
-                onClick={onCancel}
-              >
-                Cancel
-              </button>
-            </div>
-          </>
-        ) : (
-          <form onSubmit={submitForm} className="contents">
-            <div>
-              <h2 className="text-[20px] font-bold text-text">Configure Agent</h2>
-              <p className="text-[12px] text-text-muted mt-1">
-                {selectedTemplate ? (
-                  <>
-                    Template:{" "}
+          {/* Image — same slot in both states. Renders the picker when
+              nothing's been chosen yet; collapses to a single read-only
+              row once the user picks, with a "Change" button to revisit
+              the picker without rearranging anything else. */}
+          {step === "pick" ? (
+            hasProviderReady ? (
+              <>
+                {templates.length > 0 && (
+                  <FormField label="Template">
+                    <Select
+                      value=""
+                      onValueChange={(id) => {
+                        const tmpl = templates.find((t) => t.id === id);
+                        if (tmpl) pickTemplate(tmpl);
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Pick a template…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {templates.map((tmpl) => (
+                          <SelectItem key={tmpl.id} value={tmpl.id}>
+                            <span className="flex flex-col">
+                              <span className="text-[14px] font-medium">{tmpl.name}</span>
+                              {tmpl.description && (
+                                <span className="text-[12px] text-muted-foreground">{tmpl.description}</span>
+                              )}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </FormField>
+                )}
+
+                <FormField label="Or use a custom image">
+                  <div className="flex gap-2">
+                    <Input
+                      value={customImage}
+                      onChange={(e) => setCustomImage(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          pickCustom();
+                        }
+                      }}
+                      placeholder="ghcr.io/org/agent:latest"
+                    />
+                    <Button
+                      type="button"
+                      onClick={pickCustom}
+                      disabled={!customImage.trim()}
+                      className="shrink-0"
+                    >
+                      Use
+                    </Button>
+                  </div>
+                </FormField>
+              </>
+            ) : (
+              <p className="text-[12px] text-muted-foreground">
+                Add a provider above to continue.
+              </p>
+            )
+          ) : (
+            <FormField label="Image">
+              <div className="flex items-center gap-2 rounded-lg border bg-background px-4 py-2.5">
+                <span className="text-[13px] text-foreground flex-1 min-w-0 truncate">
+                  {selectedTemplate ? (
                     <HoverTooltip
                       placement="right"
                       trigger={
-                        <span className="font-semibold text-text-secondary border-b border-dotted border-text-muted cursor-help">
+                        <span className="font-semibold border-b border-dotted border-muted-foreground cursor-help">
                           {selectedTemplate.name}
                         </span>
                       }
                     >
                       <span className="font-mono">{selectedTemplate.image}</span>
                     </HoverTooltip>
-                  </>
-                ) : (
-                  <>
-                    Image:{" "}
-                    <span className="font-mono text-text-secondary break-all">
-                      {customImage}
-                    </span>
-                  </>
-                )}
-              </p>
-            </div>
+                  ) : (
+                    <span className="font-mono break-all">{customImage}</span>
+                  )}
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setStep("pick")}
+                >
+                  Change
+                </Button>
+              </div>
+            </FormField>
+          )}
 
+          {/* Configuration fields appear below once an image is chosen.
+              The fields above stay put — only this block grows in. The
+              <form> wrapper is scoped to just these fields so a save in
+              the provider's setup form (rendered above this block) doesn't
+              bubble up and submit the agent. */}
+          {step === "configure" && (
+            <form onSubmit={submitForm} className="contents">
             <FormField label="Name" error={errors.name?.message}>
-              <input
-                className={INPUT_CLASS}
-                placeholder="my-agent"
-                autoFocus
-                {...register("name")}
-              />
+              <Input placeholder="my-agent" autoFocus {...register("name")} />
             </FormField>
             <FormField label="Description">
-              <input
-                className={INPUT_CLASS}
-                placeholder="Optional"
-                {...register("description")}
-              />
+              <Input placeholder="Optional" {...register("description")} />
             </FormField>
 
             <FormField label="Import local context (optional)">
@@ -423,70 +525,72 @@ export function AddAgentDialog({
                     })();
                   }
                 }}
-                className={`rounded-lg border-2 border-dashed px-4 py-6 transition-colors flex flex-col items-center gap-3 text-center ${
+                className={cn(
+                  "rounded-lg border border-dashed px-4 py-6 transition-colors flex flex-col items-center gap-3 text-center",
                   dropActive
-                    ? "border-accent bg-accent-light"
-                    : "border-border hover:border-border-light bg-bg/50"
-                }`}
+                    ? "border-primary bg-primary/5"
+                    : "border-border hover:border-foreground/30",
+                )}
               >
                 {importRawBundle ? (
                   <>
-                    <FileIcon size={24} className="text-text-muted" />
-                    <div className="text-[13px] text-text">
+                    <FileIcon size={24} className="text-muted-foreground" />
+                    <div className="text-[13px] text-foreground">
                       <code className="font-mono">{importRawBundle.name}</code>
                     </div>
                   </>
                 ) : importEntries.length > 0 ? (
                   <>
-                    <Upload size={24} className="text-text-muted" />
-                    <div className="text-[13px] text-text">
+                    <Upload size={24} className="text-muted-foreground" />
+                    <div className="text-[13px] text-foreground">
                       <span className="font-semibold">{importEntries.length + importDropped}</span> file{importEntries.length + importDropped === 1 ? "" : "s"} selected ·{" "}
-                      <span className="text-text-secondary">{importEntries.length} to import</span>
+                      <span className="text-foreground/80">{importEntries.length} to import</span>
                       {importDropped > 0 && (
                         <>
                           {" "}·{" "}
-                          <span className="text-text-muted">{importDropped} filtered (<code className="font-mono">node_modules</code>, <code className="font-mono">.venv</code>, etc.)</span>
+                          <span className="text-muted-foreground">{importDropped} filtered (<code className="font-mono">node_modules</code>, <code className="font-mono">.venv</code>, etc.)</span>
                         </>
                       )}
                     </div>
                   </>
                 ) : (
                   <>
-                    <Upload size={28} className="text-text-muted" />
-                    <div className="text-[13px] text-text">
-                      Drop a folder or files here
-                    </div>
-                    <div className="text-[11px] text-text-muted">
+                    <Upload size={28} className="text-muted-foreground" />
+                    <div className="text-[13px] text-foreground">Drop a folder or files here</div>
+                    <div className="text-[11px] text-muted-foreground">
                       <code className="font-mono">.tar.gz</code> bundles pass through verbatim
                     </div>
                   </>
                 )}
                 <div className="flex items-center gap-2 flex-wrap justify-center">
-                  <button
+                  <Button
                     type="button"
+                    variant="outline"
+                    size="sm"
                     onClick={() => importFolderInputRef.current?.click()}
-                    className="btn-brutal h-9 rounded-lg border-2 border-border bg-bg px-3 text-[13px] font-semibold text-text shadow-brutal-sm flex items-center gap-1.5"
                   >
                     <FolderUp size={14} /> Choose folder
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
+                    variant="outline"
+                    size="sm"
                     onClick={() => importFileInputRef.current?.click()}
-                    className="btn-brutal h-9 rounded-lg border-2 border-border bg-bg px-3 text-[13px] font-semibold text-text shadow-brutal-sm flex items-center gap-1.5"
                   >
                     <FileIcon size={14} /> Choose files
-                  </button>
+                  </Button>
                   {(importRawBundle || importEntries.length > 0) && (
-                    <button
+                    <Button
                       type="button"
+                      variant="link"
+                      size="sm"
                       onClick={() => { setImportEntries([]); setImportRawBundle(null); setImportDropped(0); }}
-                      className="text-[12px] text-text-muted hover:text-text underline"
                     >
                       Clear
-                    </button>
+                    </Button>
                   )}
                 </div>
-                <div className="text-[11px] text-text-muted italic">
+                <div className="text-[11px] text-muted-foreground italic">
                   Tip: drag-and-drop supports a mix of folders and files in one go.
                 </div>
               </div>
@@ -495,21 +599,21 @@ export function AddAgentDialog({
                   {importGroups.map((g) => (
                     <span
                       key={g.name}
-                      className="inline-flex items-center gap-1.5 rounded-md border-2 border-border-light bg-bg px-2 py-1 text-[12px] text-text max-w-full"
+                      className="inline-flex items-center gap-1.5 rounded-md border bg-background px-2 py-1 text-[12px] text-foreground max-w-full"
                     >
                       {g.isFolder ? (
-                        <FolderIcon size={12} className="text-text-muted shrink-0" />
+                        <FolderIcon size={12} className="text-muted-foreground shrink-0" />
                       ) : (
-                        <FileIcon size={12} className="text-text-muted shrink-0" />
+                        <FileIcon size={12} className="text-muted-foreground shrink-0" />
                       )}
                       <span className="font-mono truncate" title={g.name}>{g.name}</span>
                       {g.isFolder && (
-                        <span className="text-text-muted shrink-0">({g.count})</span>
+                        <span className="text-muted-foreground shrink-0">({g.count})</span>
                       )}
                       <button
                         type="button"
                         onClick={() => removeGroup(g.name)}
-                        className="text-text-muted hover:text-text shrink-0"
+                        className="text-muted-foreground hover:text-foreground shrink-0"
                         aria-label={`Remove ${g.name}`}
                       >
                         <X size={12} />
@@ -520,22 +624,6 @@ export function AddAgentDialog({
               )}
             </FormField>
 
-            {!loadSecrets && providerSecrets.length === 0 && (
-              <div className="rounded-lg border-2 border-warning bg-warning-light px-4 py-3 flex items-center gap-3">
-                <Sparkles size={16} className="text-warning shrink-0" />
-                <p className="text-[12px] text-text-secondary">
-                  No provider configured, so this agent won't be able to reach an
-                  AI model.{" "}
-                  <button
-                    type="button"
-                    className="text-accent font-semibold hover:underline"
-                    onClick={onGoToProviders}
-                  >
-                    Set one up
-                  </button>
-                </p>
-              </div>
-            )}
 
             <ConnectionsPicker
               loading={loadSecrets}
@@ -550,73 +638,168 @@ export function AddAgentDialog({
             />
 
             <fieldset className="flex flex-col gap-2">
-              <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">
+              <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.05em]">
                 Network access
               </span>
-              <p className="text-[12px] text-text-muted">
+              <p className="text-[12px] text-muted-foreground">
                 Initial set of hosts the agent can reach. Anything not covered
                 surfaces in the inbox; you can change this later from the
                 agent's Network access tab.
               </p>
-              <div className="flex flex-col gap-1.5">
-                <label className="flex items-start gap-2 cursor-pointer rounded-lg border-2 border-border-light bg-bg px-4 py-2.5">
-                  <input
-                    type="radio"
-                    value="trusted"
-                    className="mt-0.5 w-4 h-4 accent-[var(--color-accent)]"
-                    {...register("egressPreset")}
-                  />
+              <RadioGroup
+                value={watch("egressPreset")}
+                onValueChange={(v) =>
+                  setValue("egressPreset", v as EgressPreset, {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  })
+                }
+                className="flex flex-col gap-1.5"
+              >
+                <Label
+                  htmlFor="egress-trusted"
+                  className="flex items-start gap-2 cursor-pointer rounded-lg border bg-background px-4 py-2.5"
+                >
+                  <RadioGroupItem value="trusted" id="egress-trusted" className="mt-0.5" />
                   <span className="flex flex-col gap-0.5">
-                    <span className="text-[13px] font-semibold text-text">Trusted defaults (recommended)</span>
-                    <span className="text-[12px] text-text-muted">npm, PyPI, GitHub, package mirrors, Anthropic</span>
+                    <span className="text-[13px] font-semibold text-foreground">Trusted defaults (recommended)</span>
+                    <span className="text-[12px] text-muted-foreground">npm, PyPI, GitHub, package mirrors, Anthropic</span>
                   </span>
-                </label>
-                <label className="flex items-start gap-2 cursor-pointer rounded-lg border-2 border-border-light bg-bg px-4 py-2.5">
-                  <input
-                    type="radio"
-                    value="none"
-                    className="mt-0.5 w-4 h-4 accent-[var(--color-accent)]"
-                    {...register("egressPreset")}
-                  />
+                </Label>
+                <Label
+                  htmlFor="egress-none"
+                  className="flex items-start gap-2 cursor-pointer rounded-lg border bg-background px-4 py-2.5"
+                >
+                  <RadioGroupItem value="none" id="egress-none" className="mt-0.5" />
                   <span className="flex flex-col gap-0.5">
-                    <span className="text-[13px] font-semibold text-text">Strict default-deny</span>
-                    <span className="text-[12px] text-text-muted">Every host hits the inbox until you approve</span>
+                    <span className="text-[13px] font-semibold text-foreground">Strict default-deny</span>
+                    <span className="text-[12px] text-muted-foreground">Every host hits the inbox until you approve</span>
                   </span>
-                </label>
-                <label className="flex items-start gap-2 cursor-pointer rounded-lg border-2 border-warning/40 bg-bg px-4 py-2.5">
-                  <input
-                    type="radio"
-                    value="all"
-                    className="mt-0.5 w-4 h-4 accent-[var(--color-accent)]"
-                    {...register("egressPreset")}
-                  />
+                </Label>
+                <Label
+                  htmlFor="egress-all"
+                  className="flex items-start gap-2 cursor-pointer rounded-lg border border-warning/40 bg-background px-4 py-2.5"
+                >
+                  <RadioGroupItem value="all" id="egress-all" className="mt-0.5" />
                   <span className="flex flex-col gap-0.5">
-                    <span className="text-[13px] font-semibold text-text">Allow everything</span>
-                    <span className="text-[12px] text-text-muted">Development escape hatch — no inbox prompts</span>
+                    <span className="text-[13px] font-semibold text-foreground">Allow everything</span>
+                    <span className="text-[12px] text-muted-foreground">Development escape hatch — no inbox prompts</span>
                   </span>
-                </label>
-              </div>
+                </Label>
+              </RadioGroup>
             </fieldset>
 
-            <div className="flex items-center justify-end gap-3 pt-1">
-              <button
-                type="button"
-                className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
-                onClick={() => setStep("pick")}
-              >
-                Back
-              </button>
-              <button
-                type="submit"
-                className={`btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent ${!isValid ? "opacity-40" : ""}`}
-                disabled={isSubmitting}
-              >
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={onCancel}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isSubmitting || !isValid}>
                 Create Agent
-              </button>
+              </Button>
+            </DialogFooter>
+            </form>
+          )}
+
+          {step !== "configure" && (
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={onCancel}>
+                Cancel
+              </Button>
+            </DialogFooter>
+          )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ProviderPickerSection({
+  providerSecrets,
+  configuredTypes,
+  picked,
+  onPick,
+  selectedProviderSecretId,
+  onSelectProviderSecret,
+}: {
+  providerSecrets: { id: string; name: string; type: string }[];
+  configuredTypes: Set<ProviderPresetType>;
+  picked: ProviderPresetType | null;
+  onPick: (type: ProviderPresetType | null) => void;
+  selectedProviderSecretId: string | null;
+  onSelectProviderSecret: (secretId: string) => void;
+}) {
+  // Configured providers — pick which one this agent should use.
+  if (providerSecrets.length > 0) {
+    return (
+      <FormField label="Provider">
+        <Select
+          value={selectedProviderSecretId ?? ""}
+          onValueChange={onSelectProviderSecret}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Pick a provider…" />
+          </SelectTrigger>
+          <SelectContent>
+            {providerSecrets.map((s) => {
+              const meta =
+                s.type in PROVIDERS
+                  ? PROVIDERS[s.type as ProviderPresetType]
+                  : null;
+              return (
+                <SelectItem key={s.id} value={s.id}>
+                  {meta?.displayName ?? s.name}
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
+      </FormField>
+    );
+  }
+
+  // No providers yet — let the user pick a preset and set one up inline.
+  const PickedCard = picked ? PROVIDER_CARDS[picked] : null;
+  const available = PROVIDER_PRESET_TYPES.filter((t) => !configuredTypes.has(t));
+
+  return (
+    <FormField label="Provider">
+      <div className="flex flex-col gap-3">
+        <Select
+          value={picked ?? ""}
+          onValueChange={(v) => onPick(v as ProviderPresetType)}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Set up a provider…" />
+          </SelectTrigger>
+          <SelectContent>
+            {available.map((id) => (
+              <SelectItem key={id} value={id}>
+                {PROVIDERS[id].displayName}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {PickedCard && (
+          <Card className="bg-primary/5 p-4 flex flex-col gap-3 anim-in">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-bold uppercase tracking-[0.05em] text-primary">
+                Adding {PROVIDERS[picked!].displayName}
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={() => onPick(null)}
+                aria-label="Cancel adding provider"
+              >
+                <X size={14} />
+              </Button>
             </div>
-          </form>
+            <PickedCard secret={undefined} />
+          </Card>
         )}
       </div>
-    </div>
+    </FormField>
   );
 }

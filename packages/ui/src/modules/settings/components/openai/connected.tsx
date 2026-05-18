@@ -32,6 +32,7 @@ export function OpenAIConnected({
 
   return (
     <ProviderConnectedShell
+      provider="openai"
       title={PROVIDERS.openai.displayName}
       subtitle="API key configured."
       onEdit={() => setEditing(true)}
