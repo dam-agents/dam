@@ -2,7 +2,10 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { EventType, emit } from "../../events.js";
 import { startOnForeignReplySaga } from "../../modules/forks/sagas/on-foreign-reply.js";
 import { startOnSlackTurnRelayedSaga } from "../../modules/forks/sagas/on-slack-turn-relayed.js";
-import type { ForksService, OpenForkInput } from "../../modules/forks/services/forks-service.js";
+import type {
+  ForksService,
+  OpenForkInput,
+} from "../../modules/forks/services/forks-service.js";
 
 function makeService(): {
   service: ForksService;

@@ -72,7 +72,11 @@ describe("secrets-service.updateGithubPat", () => {
   it("updates both halves with token + base64-wrapped basic auth", async () => {
     const { port, updates } = makePort();
     const { port: grants } = makeGrants();
-    const svc = createSecretsService({ k8sPort: port, grants, ownerSub: "owner-1" });
+    const svc = createSecretsService({
+      k8sPort: port,
+      grants,
+      ownerSub: "owner-1",
+    });
 
     const result = await svc.updateGithubPat({
       apiSecretId: "api-1",
@@ -92,10 +96,18 @@ describe("secrets-service.updateGithubPat", () => {
   it("throws NOT_FOUND when the api half doesn't exist", async () => {
     const { port } = makePort({ missingIds: ["api-1"] });
     const { port: grants } = makeGrants();
-    const svc = createSecretsService({ k8sPort: port, grants, ownerSub: "owner-1" });
+    const svc = createSecretsService({
+      k8sPort: port,
+      grants,
+      ownerSub: "owner-1",
+    });
 
     await expect(
-      svc.updateGithubPat({ apiSecretId: "api-1", gitSecretId: "git-1", token: "ghp_x" }),
+      svc.updateGithubPat({
+        apiSecretId: "api-1",
+        gitSecretId: "git-1",
+        token: "ghp_x",
+      }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 });

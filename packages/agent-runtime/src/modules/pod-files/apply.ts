@@ -1,5 +1,13 @@
 import { dirname } from "node:path";
-import { mkdirSync, chmodSync, writeFileSync, renameSync, readFileSync, existsSync, unlinkSync } from "node:fs";
+import {
+  mkdirSync,
+  chmodSync,
+  writeFileSync,
+  renameSync,
+  readFileSync,
+  existsSync,
+  unlinkSync,
+} from "node:fs";
 import { resolve } from "node:path";
 import type { FileSpec } from "api-server-api";
 import { mergeYAMLFillIfMissing } from "./merge.js";
@@ -51,7 +59,9 @@ export function applyFile(file: FileSpec, agentHome: string): void {
   try {
     renameSync(tmp, target);
   } catch (err) {
-    try { unlinkSync(tmp); } catch {}
+    try {
+      unlinkSync(tmp);
+    } catch {}
     throw err;
   }
 }

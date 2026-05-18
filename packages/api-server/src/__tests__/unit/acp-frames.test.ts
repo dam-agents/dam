@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { buildExtAuthzSynthFrame, syntheticSessionId } from "../../modules/approvals/infrastructure/acp-frames.js";
+import {
+  buildExtAuthzSynthFrame,
+  syntheticSessionId,
+} from "../../modules/approvals/infrastructure/acp-frames.js";
 
 describe("buildExtAuthzSynthFrame", () => {
   // Regression guard: a missing JSON-RPC `id` flips the frame to a notification

@@ -153,7 +153,10 @@ function shortHash(input: string, len = 16): string {
   return crypto.createHash("sha1").update(input).digest("hex").slice(0, len);
 }
 
-export function connectionSecretName(owner: string, connection: string): string {
+export function connectionSecretName(
+  owner: string,
+  connection: string,
+): string {
   return `${NAME_PREFIX}${shortHash(owner)}-${shortHash(connection)}`;
 }
 
@@ -181,7 +184,8 @@ function buildAnnotations(
     [ANN_CONNECTION_STATUS]: status,
     [ANN_CONNECTED_AT]: connectedAt,
   };
-  if (metadata.authorizationUrl) ann[ANN_AUTHORIZATION_URL] = metadata.authorizationUrl;
+  if (metadata.authorizationUrl)
+    ann[ANN_AUTHORIZATION_URL] = metadata.authorizationUrl;
   if (metadata.displayName) ann[ANN_DISPLAY_NAME] = metadata.displayName;
   if (metadata.scopes) ann[ANN_SCOPES] = metadata.scopes;
   if (metadata.appSlug) ann[ANN_APP_SLUG] = metadata.appSlug;
@@ -232,7 +236,11 @@ function parseHosts(raw: string | undefined): ConnectionHostInjection[] | null {
     // whole connection.
     const out: ConnectionHostInjection[] = [];
     for (const entry of parsed) {
-      if (entry && typeof entry === "object" && typeof (entry as { host?: unknown }).host === "string") {
+      if (
+        entry &&
+        typeof entry === "object" &&
+        typeof (entry as { host?: unknown }).host === "string"
+      ) {
         out.push(entry as ConnectionHostInjection);
       }
     }
@@ -289,14 +297,16 @@ function readRecord(secret: k8s.V1Secret): ConnectionRecord | null {
         ? "client_credentials"
         : "authorization_code",
   };
-  if (ann[ANN_AUTHORIZATION_URL]) metadata.authorizationUrl = ann[ANN_AUTHORIZATION_URL];
+  if (ann[ANN_AUTHORIZATION_URL])
+    metadata.authorizationUrl = ann[ANN_AUTHORIZATION_URL];
   if (summary.displayName) metadata.displayName = summary.displayName;
   if (ann[ANN_SCOPES]) metadata.scopes = ann[ANN_SCOPES];
   if (summary.appSlug) metadata.appSlug = summary.appSlug;
   if (ann[ANN_ENV_MAPPINGS]) {
     try {
       const parsed = JSON.parse(ann[ANN_ENV_MAPPINGS]) as EnvMapping[];
-      if (Array.isArray(parsed) && parsed.length > 0) metadata.envMappings = parsed;
+      if (Array.isArray(parsed) && parsed.length > 0)
+        metadata.envMappings = parsed;
     } catch {
       // Bad annotation — skip; the controller is the authoritative reader.
     }
@@ -492,4 +502,3 @@ export async function markConnectionExpired(
     metadata: { ...existing.metadata, annotations: ann },
   });
 }
-

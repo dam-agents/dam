@@ -48,16 +48,18 @@ function toView(row: EgressRuleRow): EgressRuleView {
   };
 }
 
-export function createEgressRulesService(deps: CreateEgressRulesServiceDeps): EgressRulesService {
+export function createEgressRulesService(
+  deps: CreateEgressRulesServiceDeps,
+): EgressRulesService {
   return {
     async listForAgent(agentId) {
-      if (!await deps.isAgentOwnedBy(agentId, deps.ownerSub)) return [];
+      if (!(await deps.isAgentOwnedBy(agentId, deps.ownerSub))) return [];
       const rows = await deps.repo.listForAgent(agentId);
       return rows.map(toView);
     },
 
     async currentPreset(agentId) {
-      if (!await deps.isAgentOwnedBy(agentId, deps.ownerSub)) return "none";
+      if (!(await deps.isAgentOwnedBy(agentId, deps.ownerSub))) return "none";
       return deps.repo.getPresetForAgent(agentId);
     },
 
@@ -66,7 +68,7 @@ export function createEgressRulesService(deps: CreateEgressRulesServiceDeps): Eg
     },
 
     async create(input: CreateEgressRuleInput) {
-      if (!await deps.isAgentOwnedBy(input.agentId, deps.ownerSub)) {
+      if (!(await deps.isAgentOwnedBy(input.agentId, deps.ownerSub))) {
         throw new Error("agent not found");
       }
       const row = await deps.repo.insert({
@@ -83,7 +85,10 @@ export function createEgressRulesService(deps: CreateEgressRulesServiceDeps): Eg
       // method/path. The allow-only Secret is the controller's signal to
       // extend the cert SAN list and render an MITM chain. Idempotent: if
       // a credentialed Secret already exists for the host, this no-ops.
-      if (needsL7Promotion(input.method, input.pathPattern) && deps.allowOnlySecrets) {
+      if (
+        needsL7Promotion(input.method, input.pathPattern) &&
+        deps.allowOnlySecrets
+      ) {
         await deps.allowOnlySecrets.ensure(deps.ownerSub, input.host);
       }
       return toView(row);
@@ -91,7 +96,7 @@ export function createEgressRulesService(deps: CreateEgressRulesServiceDeps): Eg
 
     async update(input: UpdateEgressRuleInput) {
       const rule = await deps.repo.getById(input.id);
-      if (!rule || !await deps.isAgentOwnedBy(rule.agentId, deps.ownerSub)) {
+      if (!rule || !(await deps.isAgentOwnedBy(rule.agentId, deps.ownerSub))) {
         throw new Error("egress rule not found");
       }
       const updated = await deps.repo.updatePromoteToManual({
@@ -105,7 +110,10 @@ export function createEgressRulesService(deps: CreateEgressRulesServiceDeps): Eg
       // The user may have just narrowed `(host, *, *)` to `(host, GET, /v1/x)`,
       // which promotes the host to L7 if it wasn't already. Same idempotent
       // ensure as create.
-      if (needsL7Promotion(input.method, input.pathPattern) && deps.allowOnlySecrets) {
+      if (
+        needsL7Promotion(input.method, input.pathPattern) &&
+        deps.allowOnlySecrets
+      ) {
         await deps.allowOnlySecrets.ensure(deps.ownerSub, updated.host);
       }
       return toView(updated);
@@ -113,12 +121,13 @@ export function createEgressRulesService(deps: CreateEgressRulesServiceDeps): Eg
 
     async revoke(id) {
       const rule = await deps.repo.getById(id);
-      if (!rule || !await deps.isAgentOwnedBy(rule.agentId, deps.ownerSub)) return;
+      if (!rule || !(await deps.isAgentOwnedBy(rule.agentId, deps.ownerSub)))
+        return;
       await deps.repo.revoke(id);
     },
 
     async applyPreset(agentId: string, preset: EgressPreset) {
-      if (!await deps.isAgentOwnedBy(agentId, deps.ownerSub)) {
+      if (!(await deps.isAgentOwnedBy(agentId, deps.ownerSub))) {
         throw new Error("agent not found");
       }
       if (!deps.presetSeeder) return;

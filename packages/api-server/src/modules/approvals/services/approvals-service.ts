@@ -78,7 +78,9 @@ async function loadOwned(
   return row;
 }
 
-export function createApprovalsService(deps: CreateApprovalsServiceDeps): ApprovalsService {
+export function createApprovalsService(
+  deps: CreateApprovalsServiceDeps,
+): ApprovalsService {
   return {
     async listForOwner(opts) {
       const rows = await deps.repo.listPendingForOwner(deps.ownerSub, opts);
@@ -86,7 +88,7 @@ export function createApprovalsService(deps: CreateApprovalsServiceDeps): Approv
     },
 
     async listForInstance(instanceId, opts) {
-      if (!await deps.isInstanceOwnedBy(instanceId, deps.ownerSub)) return [];
+      if (!(await deps.isInstanceOwnedBy(instanceId, deps.ownerSub))) return [];
       const rows = await deps.repo.listPendingForInstance(instanceId, opts);
       // Defense-in-depth: filter to caller's own rows even though instance
       // ownership already implies it.

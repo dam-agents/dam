@@ -20,8 +20,9 @@ interface UpdateCall {
   value?: string;
 }
 
-const ANTHROPIC_OAUTH_MAPPING = PROVIDERS.anthropic.modes.find((m) => m.key === "oauth")!
-  .defaultEnvMappings;
+const ANTHROPIC_OAUTH_MAPPING = PROVIDERS.anthropic.modes.find(
+  (m) => m.key === "oauth",
+)!.defaultEnvMappings;
 
 function makePort(existing: K8sStoredSecret) {
   const store = new Map([[existing.id, existing]]);
@@ -38,7 +39,9 @@ function makePort(existing: K8sStoredSecret) {
       const after: K8sStoredSecret = {
         ...before,
         ...(patch.authMode !== undefined ? { authMode: patch.authMode } : {}),
-        ...(patch.envMappings !== undefined ? { envMappings: patch.envMappings } : {}),
+        ...(patch.envMappings !== undefined
+          ? { envMappings: patch.envMappings }
+          : {}),
       };
       store.set(id, after);
       return { before, after };
@@ -78,7 +81,11 @@ describe("secrets-service.update — Anthropic auth-mode rotation", () => {
   it("api-key → oauth: rewrites env, clears injection config, flips auth-mode", async () => {
     const { port, updates } = makePort(anthropicSecret("api-key"));
     const { port: grants } = makeGrants();
-    const svc = createSecretsService({ k8sPort: port, grants, ownerSub: "owner-1" });
+    const svc = createSecretsService({
+      k8sPort: port,
+      grants,
+      ownerSub: "owner-1",
+    });
 
     await svc.update({ id: "secret-1", value: "sk-ant-oat01-newtoken" });
 
@@ -95,7 +102,11 @@ describe("secrets-service.update — Anthropic auth-mode rotation", () => {
   it("no-op when the new value's prefix matches the existing mode", async () => {
     const { port, updates } = makePort(anthropicSecret("api-key"));
     const { port: grants } = makeGrants();
-    const svc = createSecretsService({ k8sPort: port, grants, ownerSub: "owner-1" });
+    const svc = createSecretsService({
+      k8sPort: port,
+      grants,
+      ownerSub: "owner-1",
+    });
 
     await svc.update({ id: "secret-1", value: "sk-ant-api03-anothernewkey" });
 
@@ -115,7 +126,11 @@ describe("secrets-service.update — Anthropic auth-mode rotation", () => {
     };
     const { port, updates } = makePort(ibm);
     const { port: grants } = makeGrants();
-    const svc = createSecretsService({ k8sPort: port, grants, ownerSub: "owner-1" });
+    const svc = createSecretsService({
+      k8sPort: port,
+      grants,
+      ownerSub: "owner-1",
+    });
 
     await svc.update({ id: "secret-2", value: "sk-litellm-new" });
 
@@ -127,9 +142,15 @@ describe("secrets-service.update — Anthropic auth-mode rotation", () => {
   it("caller-supplied envMappings wins over the rotation", async () => {
     const { port, updates } = makePort(anthropicSecret("api-key"));
     const { port: grants } = makeGrants();
-    const svc = createSecretsService({ k8sPort: port, grants, ownerSub: "owner-1" });
+    const svc = createSecretsService({
+      k8sPort: port,
+      grants,
+      ownerSub: "owner-1",
+    });
 
-    const explicit: EnvMapping[] = [{ envName: "CUSTOM_VAR", placeholder: "x" }];
+    const explicit: EnvMapping[] = [
+      { envName: "CUSTOM_VAR", placeholder: "x" },
+    ];
     await svc.update({
       id: "secret-1",
       value: "sk-ant-oat01-newtoken",

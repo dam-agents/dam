@@ -1,6 +1,13 @@
 import { dirname, join, resolve } from "node:path";
 import { readdirSync } from "node:fs";
-import { mkdir, readFile, rename, rm, stat as statAsync, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  readFile,
+  rename,
+  rm,
+  stat as statAsync,
+  writeFile,
+} from "node:fs/promises";
 import { fileTypeFromFile } from "file-type";
 import type {
   FileReadResult,
@@ -11,7 +18,15 @@ import type {
 } from "agent-runtime-api";
 import { err, ok } from "agent-runtime-api";
 
-const EXCLUDE = new Set([".git", ".npm", ".triggers", ".claude.json", ".initialized", "node_modules", ".DS_Store"]);
+const EXCLUDE = new Set([
+  ".git",
+  ".npm",
+  ".triggers",
+  ".claude.json",
+  ".initialized",
+  "node_modules",
+  ".DS_Store",
+]);
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
@@ -63,7 +78,10 @@ function isWritablePath(rel: string): boolean {
   return true;
 }
 
-const forbidden = (reason: string): FilesDomainError => ({ kind: "Forbidden", reason });
+const forbidden = (reason: string): FilesDomainError => ({
+  kind: "Forbidden",
+  reason,
+});
 
 export function createFilesService(workingDir: string): FilesService {
   const toAbs = (rel: string): string | null => safePath(workingDir, rel);
@@ -74,7 +92,9 @@ export function createFilesService(workingDir: string): FilesService {
 
   return {
     buildTree: () => buildTree(workingDir),
-    readFileSafe: async (rel): Promise<Result<FileReadResult, FilesDomainError>> => {
+    readFileSafe: async (
+      rel,
+    ): Promise<Result<FileReadResult, FilesDomainError>> => {
       if (!rel) return err({ kind: "NotFound", path: rel });
       const abs = toAbs(rel);
       if (!abs) return err({ kind: "NotFound", path: rel });
@@ -88,29 +108,50 @@ export function createFilesService(workingDir: string): FilesService {
         const buf = await readFile(abs);
         const mtimeMs = s.mtimeMs;
         if (type) {
-          return ok({ path: rel, content: buf.toString("base64"), binary: true, mimeType: type.mime, mtimeMs });
+          return ok({
+            path: rel,
+            content: buf.toString("base64"),
+            binary: true,
+            mimeType: type.mime,
+            mtimeMs,
+          });
         }
         // file-type only detects known binary formats. Fall back to null-byte check
         // to catch unknown binary formats (raw .bin dumps, proprietary formats, etc.)
         if (hasNullBytes(buf)) {
-          return ok({ path: rel, content: buf.toString("base64"), binary: true, mimeType: "application/octet-stream", mtimeMs });
+          return ok({
+            path: rel,
+            content: buf.toString("base64"),
+            binary: true,
+            mimeType: "application/octet-stream",
+            mtimeMs,
+          });
         }
         const content = buf.toString("utf8");
         const lower = rel.toLowerCase();
-        const mimeType =
-          lower.endsWith(".svg") ? "image/svg+xml" :
-          lower.endsWith(".json") || lower.endsWith(".jsonl") ? "application/json" :
-          lower.endsWith(".csv") ? "text/csv" :
-          lower.endsWith(".html") || lower.endsWith(".htm") ? "text/html" :
-          lower.endsWith(".md") || lower.endsWith(".mdx") ? "text/markdown" :
-          lower.endsWith(".xml") ? "application/xml" :
-          "text/plain";
+        const mimeType = lower.endsWith(".svg")
+          ? "image/svg+xml"
+          : lower.endsWith(".json") || lower.endsWith(".jsonl")
+            ? "application/json"
+            : lower.endsWith(".csv")
+              ? "text/csv"
+              : lower.endsWith(".html") || lower.endsWith(".htm")
+                ? "text/html"
+                : lower.endsWith(".md") || lower.endsWith(".mdx")
+                  ? "text/markdown"
+                  : lower.endsWith(".xml")
+                    ? "application/xml"
+                    : "text/plain";
         return ok({ path: rel, content, mimeType, mtimeMs });
       } catch {
         return err({ kind: "NotFound", path: rel });
       }
     },
-    writeFileSafe: async (rel, content, expectedMtimeMs): Promise<Result<FileWriteOk, FilesDomainError>> => {
+    writeFileSafe: async (
+      rel,
+      content,
+      expectedMtimeMs,
+    ): Promise<Result<FileWriteOk, FilesDomainError>> => {
       const abs = toWritableAbs(rel);
       if (!abs) return err(forbidden("forbidden path"));
       if (expectedMtimeMs !== undefined) {
@@ -130,7 +171,10 @@ export function createFilesService(workingDir: string): FilesService {
       const s = await statAsync(abs);
       return ok({ mtimeMs: s.mtimeMs });
     },
-    createFileSafe: async (rel, content): Promise<Result<FileWriteOk, FilesDomainError>> => {
+    createFileSafe: async (
+      rel,
+      content,
+    ): Promise<Result<FileWriteOk, FilesDomainError>> => {
       const abs = toWritableAbs(rel);
       if (!abs) return err(forbidden("forbidden path"));
       await mkdir(dirname(abs), { recursive: true });
@@ -160,7 +204,11 @@ export function createFilesService(workingDir: string): FilesService {
       await mkdir(abs, { recursive: true });
       return ok({ ok: true });
     },
-    renameSafe: async (from, to, overwrite): Promise<Result<{ ok: true }, FilesDomainError>> => {
+    renameSafe: async (
+      from,
+      to,
+      overwrite,
+    ): Promise<Result<{ ok: true }, FilesDomainError>> => {
       const fromAbs = toWritableAbs(from);
       const toAbs2 = toWritableAbs(to);
       if (!fromAbs || !toAbs2) return err(forbidden("forbidden path"));
@@ -176,18 +224,27 @@ export function createFilesService(workingDir: string): FilesService {
       await rename(fromAbs, toAbs2);
       return ok({ ok: true });
     },
-    deleteSafe: async (rel): Promise<Result<{ ok: true }, FilesDomainError>> => {
+    deleteSafe: async (
+      rel,
+    ): Promise<Result<{ ok: true }, FilesDomainError>> => {
       const abs = toWritableAbs(rel);
       if (!abs) return err(forbidden("forbidden path"));
       await rm(abs, { recursive: true, force: false });
       return ok({ ok: true });
     },
-    uploadFileSafe: async (rel, base64, overwrite): Promise<Result<FileWriteOk, FilesDomainError>> => {
+    uploadFileSafe: async (
+      rel,
+      base64,
+      overwrite,
+    ): Promise<Result<FileWriteOk, FilesDomainError>> => {
       const abs = toWritableAbs(rel);
       if (!abs) return err(forbidden("forbidden path"));
       const buf = Buffer.from(base64, "base64");
       if (buf.length > MAX_FILE_SIZE) {
-        return err({ kind: "PayloadTooLarge", detail: `file ${buf.length} bytes (max ${MAX_FILE_SIZE})` });
+        return err({
+          kind: "PayloadTooLarge",
+          detail: `file ${buf.length} bytes (max ${MAX_FILE_SIZE})`,
+        });
       }
       if (!overwrite) {
         try {

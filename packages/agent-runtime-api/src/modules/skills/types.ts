@@ -89,13 +89,31 @@ export type SkillsDomainError =
   | { kind: "SkillNotFoundInSource"; source: string; name: string }
   | { kind: "PayloadTooLarge"; detail: string }
   | { kind: "SourceFetchFailed"; source: string; detail: string }
-  | { kind: "UpstreamGitHubError"; method: string; path: string; status: number; body: GitHubErrorBody };
+  | {
+      kind: "UpstreamGitHubError";
+      method: string;
+      path: string;
+      status: number;
+      body: GitHubErrorBody;
+    };
 
 export interface SkillsService {
-  install: (input: InstallSkillInput) => Promise<Result<InstallSkillResult, SkillsDomainError>>;
-  uninstall: (input: UninstallSkillInput) => Promise<Result<void, SkillsDomainError>>;
-  listLocal: (input: ListLocalSkillsInput) => Promise<Result<LocalSkill[], SkillsDomainError>>;
-  readLocal: (input: ReadLocalSkillInput) => Promise<Result<ReadLocalSkillResult, SkillsDomainError>>;
-  scan: (input: ScanSkillSourceInput) => Promise<Result<ScannedSkill[], SkillsDomainError>>;
-  publish: (input: PublishSkillInput) => Promise<Result<PublishSkillResult, SkillsDomainError>>;
+  install: (
+    input: InstallSkillInput,
+  ) => Promise<Result<InstallSkillResult, SkillsDomainError>>;
+  uninstall: (
+    input: UninstallSkillInput,
+  ) => Promise<Result<void, SkillsDomainError>>;
+  listLocal: (
+    input: ListLocalSkillsInput,
+  ) => Promise<Result<LocalSkill[], SkillsDomainError>>;
+  readLocal: (
+    input: ReadLocalSkillInput,
+  ) => Promise<Result<ReadLocalSkillResult, SkillsDomainError>>;
+  scan: (
+    input: ScanSkillSourceInput,
+  ) => Promise<Result<ScannedSkill[], SkillsDomainError>>;
+  publish: (
+    input: PublishSkillInput,
+  ) => Promise<Result<PublishSkillResult, SkillsDomainError>>;
 }

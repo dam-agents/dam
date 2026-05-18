@@ -5,7 +5,9 @@ interface UpstreamCause {
   upstream?: { status: number; body: unknown };
 }
 
-function extractUpstream(cause: unknown): UpstreamCause["upstream"] | undefined {
+function extractUpstream(
+  cause: unknown,
+): UpstreamCause["upstream"] | undefined {
   if (cause && typeof cause === "object" && "upstream" in cause) {
     const u = (cause as UpstreamCause).upstream;
     if (u && typeof u === "object" && typeof u.status === "number") return u;

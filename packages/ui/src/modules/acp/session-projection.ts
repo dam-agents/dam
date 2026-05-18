@@ -5,7 +5,12 @@ import type {
   ToolCallUpdate,
 } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 
-import type { Message, MessagePart, ToolChip, ToolContent } from "../../types.js";
+import type {
+  Message,
+  MessagePart,
+  ToolChip,
+  ToolContent,
+} from "../../types.js";
 import type { AcpUpdate } from "./types.js";
 
 /**
@@ -34,10 +39,16 @@ function stripUserTags(raw: string): string {
   return raw.replace(/<[a-z-]+>[\s\S]*?<\/[a-z-]+>/g, "").trim();
 }
 
-function mapToolContent(content: ToolCallContent[] | undefined | null): ToolContent[] | undefined {
+function mapToolContent(
+  content: ToolCallContent[] | undefined | null,
+): ToolContent[] | undefined {
   return content
     ?.map<ToolContent>((c) => {
-      if (c.type === "content") return { type: c.type, text: c.content.type === "text" ? c.content.text : "" };
+      if (c.type === "content")
+        return {
+          type: c.type,
+          text: c.content.type === "text" ? c.content.text : "",
+        };
       return { type: c.type, text: "" };
     })
     .filter((c) => c.text);
@@ -55,7 +66,8 @@ function mapToolContent(content: ToolCallContent[] | undefined | null): ToolCont
  */
 function parseUserText(text: string): MessagePart[] {
   const parts: MessagePart[] = [];
-  const regex = /<context\s+ref="file:\/\/\/([^"]+)">[\s\S]*?<\/context>|\[@([^\]]+)\]\(file:\/\/\/([^)]+)\)/g;
+  const regex =
+    /<context\s+ref="file:\/\/\/([^"]+)">[\s\S]*?<\/context>|\[@([^\]]+)\]\(file:\/\/\/([^)]+)\)/g;
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = regex.exec(text)) !== null) {
@@ -103,13 +115,16 @@ export function applyUpdate(messages: Message[], update: AcpUpdate): Message[] {
 }
 
 function appendNotice(messages: Message[], text: string): Message[] {
-  return [...messages, {
-    id: crypto.randomUUID(),
-    role: "assistant",
-    parts: [{ kind: "text", text }],
-    streaming: false,
-    notice: true,
-  }];
+  return [
+    ...messages,
+    {
+      id: crypto.randomUUID(),
+      role: "assistant",
+      parts: [{ kind: "text", text }],
+      streaming: false,
+      notice: true,
+    },
+  ];
 }
 
 /**
@@ -120,7 +135,9 @@ function appendNotice(messages: Message[], text: string): Message[] {
  */
 export function finalizeAllStreaming(messages: Message[]): Message[] {
   return messages.map((m) =>
-    m.role === "assistant" && m.streaming ? { ...m, streaming: false, queued: false } : m,
+    m.role === "assistant" && m.streaming
+      ? { ...m, streaming: false, queued: false }
+      : m,
   );
 }
 
@@ -140,21 +157,31 @@ function handleUserChunk(messages: Message[], u: ContentChunk): Message[] {
   }
 
   if (u.content.type === "image") {
-    const part: MessagePart = { kind: "image", data: u.content.data, mimeType: u.content.mimeType };
+    const part: MessagePart = {
+      kind: "image",
+      data: u.content.data,
+      mimeType: u.content.mimeType,
+    };
     return appendOrExtendUser(closed, mid, [part]);
   }
 
   return closed;
 }
 
-function handleAgentChunk(messages: Message[], u: ContentChunk, kind: "text" | "thought"): Message[] {
+function handleAgentChunk(
+  messages: Message[],
+  u: ContentChunk,
+  kind: "text" | "thought",
+): Message[] {
   if (u.content.type === "text") {
     const txt = u.content.text;
     if (!txt) return messages;
     return appendToActive(messages, [{ kind, text: txt }]);
   }
   if (u.content.type === "image") {
-    return appendToActive(messages, [{ kind: "image", data: u.content.data, mimeType: u.content.mimeType }]);
+    return appendToActive(messages, [
+      { kind: "image", data: u.content.data, mimeType: u.content.mimeType },
+    ]);
   }
   return messages;
 }
@@ -172,28 +199,54 @@ function handleToolCall(messages: Message[], u: ToolCall): Message[] {
   return appendToActive(messages, [chip]);
 }
 
-function handleToolCallUpdate(messages: Message[], u: ToolCallUpdate): Message[] {
+function handleToolCallUpdate(
+  messages: Message[],
+  u: ToolCallUpdate,
+): Message[] {
   const existingIdx = findToolIdx(messages, u.toolCallId);
   if (existingIdx === null) return messages;
   return patchToolChip(messages, existingIdx, u);
 }
 
-function findToolIdx(messages: Message[], toolCallId: string | undefined): number | null {
+function findToolIdx(
+  messages: Message[],
+  toolCallId: string | undefined,
+): number | null {
   if (!toolCallId) return null;
   for (let i = 0; i < messages.length; i++) {
-    if (messages[i].parts.some((p) => p.kind === "tool" && p.toolCallId === toolCallId)) return i;
+    if (
+      messages[i].parts.some(
+        (p) => p.kind === "tool" && p.toolCallId === toolCallId,
+      )
+    )
+      return i;
   }
   return null;
 }
 
-function patchToolChip(messages: Message[], idx: number, u: ToolCall | ToolCallUpdate): Message[] {
+function patchToolChip(
+  messages: Message[],
+  idx: number,
+  u: ToolCall | ToolCallUpdate,
+): Message[] {
   const content = mapToolContent(u.content);
-  return messages.map((m, i) => i !== idx ? m : {
-    ...m,
-    parts: m.parts.map((p) => p.kind === "tool" && p.toolCallId === u.toolCallId
-      ? { ...p, status: u.status ?? p.status, title: u.title ?? p.title, content: content?.length ? content : p.content }
-      : p),
-  });
+  return messages.map((m, i) =>
+    i !== idx
+      ? m
+      : {
+          ...m,
+          parts: m.parts.map((p) =>
+            p.kind === "tool" && p.toolCallId === u.toolCallId
+              ? {
+                  ...p,
+                  status: u.status ?? p.status,
+                  title: u.title ?? p.title,
+                  content: content?.length ? content : p.content,
+                }
+              : p,
+          ),
+        },
+  );
 }
 
 interface ActiveTarget {
@@ -214,16 +267,21 @@ function findActiveAssistant(messages: Message[]): ActiveTarget | null {
   // assistant is still streaming.
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i];
-    if (m.role === "assistant" && m.streaming && !m.queued) return { idx: i, promote: false };
+    if (m.role === "assistant" && m.streaming && !m.queued)
+      return { idx: i, promote: false };
   }
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i];
-    if (m.role === "assistant" && m.streaming && m.queued) return { idx: i, promote: true };
+    if (m.role === "assistant" && m.streaming && m.queued)
+      return { idx: i, promote: true };
   }
   return null;
 }
 
-function appendToActive(messages: Message[], newParts: MessagePart[]): Message[] {
+function appendToActive(
+  messages: Message[],
+  newParts: MessagePart[],
+): Message[] {
   const target = findActiveAssistant(messages);
   if (target === null) {
     const newMsg: Message = {
@@ -245,7 +303,10 @@ function appendToActive(messages: Message[], newParts: MessagePart[]): Message[]
   });
 }
 
-function mergeParts(existing: MessagePart[], incoming: MessagePart[]): MessagePart[] {
+function mergeParts(
+  existing: MessagePart[],
+  incoming: MessagePart[],
+): MessagePart[] {
   const merged = [...existing];
   for (const p of incoming) {
     const last = merged[merged.length - 1];
@@ -264,19 +325,30 @@ function closeActiveAssistant(messages: Message[]): Message[] {
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i];
     if (m.role === "assistant" && m.streaming && !m.queued) {
-      return messages.map((x, j) => j === i ? { ...x, streaming: false } : x);
+      return messages.map((x, j) => (j === i ? { ...x, streaming: false } : x));
     }
   }
   return messages;
 }
 
-function appendOrExtendUser(messages: Message[], mid: string | null, parts: MessagePart[]): Message[] {
+function appendOrExtendUser(
+  messages: Message[],
+  mid: string | null,
+  parts: MessagePart[],
+): Message[] {
   if (mid) {
     const idx = messages.findIndex((m) => m.id === mid);
     if (idx !== -1) {
-      return messages.map((m, i) => i !== idx ? m : { ...m, parts: mergeParts(m.parts, parts) });
+      return messages.map((m, i) =>
+        i !== idx ? m : { ...m, parts: mergeParts(m.parts, parts) },
+      );
     }
   }
-  const newMsg: Message = { id: mid ?? crypto.randomUUID(), role: "user", parts, streaming: false };
+  const newMsg: Message = {
+    id: mid ?? crypto.randomUUID(),
+    role: "user",
+    parts,
+    streaming: false,
+  };
   return [...messages, newMsg];
 }

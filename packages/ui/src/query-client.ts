@@ -1,4 +1,9 @@
-import { type Query, QueryCache, QueryClient, type QueryKey } from "@tanstack/react-query";
+import {
+  type Query,
+  QueryCache,
+  QueryClient,
+  type QueryKey,
+} from "@tanstack/react-query";
 
 import { emitToast } from "./lib/toast-sink.js";
 
@@ -45,7 +50,8 @@ export const queryClient = new QueryClient({
       },
       onError: (error, _vars, _ctx, mutation) => {
         const title = mutation.meta?.errorToast;
-        const detail = error instanceof Error && error.message ? error.message : "";
+        const detail =
+          error instanceof Error && error.message ? error.message : "";
         const message =
           title && detail
             ? `${title}: ${detail}`

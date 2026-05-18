@@ -2,7 +2,10 @@ import type { Template, TemplateSpec } from "api-server-api";
 import yaml from "js-yaml";
 import type { K8sClient } from "../../agents/infrastructure/k8s.js";
 import {
-  LABEL_TYPE, TYPE_TEMPLATE, LABEL_OWNER, SPEC_KEY,
+  LABEL_TYPE,
+  TYPE_TEMPLATE,
+  LABEL_OWNER,
+  SPEC_KEY,
 } from "../../agents/infrastructure/labels.js";
 import { hasType } from "../../agents/infrastructure/configmap-mappers.js";
 import { parseTemplate } from "./configmap-mappers.js";
@@ -10,7 +13,9 @@ import { parseTemplate } from "./configmap-mappers.js";
 export interface TemplatesRepository {
   list(): Promise<Template[]>;
   get(id: string): Promise<Template | null>;
-  readSpec(id: string): Promise<{ spec: TemplateSpec; isOwned: boolean } | null>;
+  readSpec(
+    id: string,
+  ): Promise<{ spec: TemplateSpec; isOwned: boolean } | null>;
 }
 
 export function createTemplatesRepository(k8s: K8sClient): TemplatesRepository {

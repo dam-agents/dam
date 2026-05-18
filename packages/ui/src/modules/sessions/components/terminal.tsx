@@ -2,7 +2,14 @@ import "@xterm/xterm/css/xterm.css";
 
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as XTerm } from "@xterm/xterm";
-import { decodeFrame, encodeDataFrame, encodeResize, OP_EXIT, OP_INPUT, OP_OUTPUT } from "api-server-api";
+import {
+  decodeFrame,
+  encodeDataFrame,
+  encodeResize,
+  OP_EXIT,
+  OP_INPUT,
+  OP_OUTPUT,
+} from "api-server-api";
 import { Loader2, TerminalIcon, XCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -10,10 +17,24 @@ import { getAccessToken } from "../../../auth.js";
 
 type ConnectionState = "connecting" | "live" | "disconnected" | "exited";
 
-export function Terminal({ instanceId, sessionId, fresh, onConnected, autoConnect = true }: { instanceId: string; sessionId: string; fresh?: boolean; onConnected?: () => void; autoConnect?: boolean }) {
+export function Terminal({
+  instanceId,
+  sessionId,
+  fresh,
+  onConnected,
+  autoConnect = true,
+}: {
+  instanceId: string;
+  sessionId: string;
+  fresh?: boolean;
+  onConnected?: () => void;
+  autoConnect?: boolean;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
-  const [state, setState] = useState<ConnectionState>(autoConnect ? "connecting" : "disconnected");
+  const [state, setState] = useState<ConnectionState>(
+    autoConnect ? "connecting" : "disconnected",
+  );
   const [exitCode, setExitCode] = useState<number | null>(null);
   const [reconnectKey, setReconnectKey] = useState(0);
   const connectEnabled = useRef(autoConnect);
@@ -51,7 +72,12 @@ export function Terminal({ instanceId, sessionId, fresh, onConnected, autoConnec
         cursorBlink: true,
         fontSize: 14,
         fontFamily: "'JetBrains Mono', 'Fira Code', ui-monospace, monospace",
-        theme: { background: "#0c0a09", foreground: "#e7e5e4", cursor: "#e7e5e4", selectionBackground: "#44403c" },
+        theme: {
+          background: "#0c0a09",
+          foreground: "#e7e5e4",
+          cursor: "#e7e5e4",
+          selectionBackground: "#44403c",
+        },
         scrollback: 1000,
       });
       term.open(container);
@@ -70,7 +96,9 @@ export function Terminal({ instanceId, sessionId, fresh, onConnected, autoConnec
       const token = await getAccessToken();
       if (cancelled) return;
 
-      ws = new WebSocket(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/api/instances/${instanceId}/terminal?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(sessionId)}${fresh ? "&reset=1" : ""}`);
+      ws = new WebSocket(
+        `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/api/instances/${instanceId}/terminal?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(sessionId)}${fresh ? "&reset=1" : ""}`,
+      );
       ws.binaryType = "arraybuffer";
 
       ws.onopen = () => {
@@ -83,8 +111,13 @@ export function Terminal({ instanceId, sessionId, fresh, onConnected, autoConnec
 
       ws.onmessage = (e: MessageEvent<ArrayBuffer>) => {
         let frame;
-        try { frame = decodeFrame(new Uint8Array(e.data)); } catch { return; }
-        if (frame.op === OP_OUTPUT) term?.write(new TextDecoder().decode(frame.data));
+        try {
+          frame = decodeFrame(new Uint8Array(e.data));
+        } catch {
+          return;
+        }
+        if (frame.op === OP_OUTPUT)
+          term?.write(new TextDecoder().decode(frame.data));
         else if (frame.op === OP_EXIT) {
           setExitCode(frame.code);
           setState("exited");
@@ -94,13 +127,17 @@ export function Terminal({ instanceId, sessionId, fresh, onConnected, autoConnec
       ws.onclose = () => {
         if (!cancelled) setState((s) => (s === "exited" ? s : "disconnected"));
       };
-      ws.onerror = () => { if (!cancelled) setState("disconnected"); };
+      ws.onerror = () => {
+        if (!cancelled) setState("disconnected");
+      };
 
       term.onData((data) => {
-        if (ws?.readyState === WebSocket.OPEN) ws.send(encodeDataFrame(OP_INPUT, data));
+        if (ws?.readyState === WebSocket.OPEN)
+          ws.send(encodeDataFrame(OP_INPUT, data));
       });
       term.onResize(({ cols, rows }) => {
-        if (ws?.readyState === WebSocket.OPEN) ws.send(encodeResize(cols, rows).buffer);
+        if (ws?.readyState === WebSocket.OPEN)
+          ws.send(encodeResize(cols, rows).buffer);
       });
 
       ro = new ResizeObserver(() => fitAddon.fit());
@@ -137,7 +174,9 @@ export function Terminal({ instanceId, sessionId, fresh, onConnected, autoConnec
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-bg/80 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-3 text-center">
             <XCircle size={24} className="text-danger" />
-            <p className="text-[14px] text-text-secondary">Session disconnected</p>
+            <p className="text-[14px] text-text-secondary">
+              Session disconnected
+            </p>
             <button
               className="rounded-md border border-border-light bg-surface-raised px-4 py-2 text-[13px] text-text-primary hover:bg-surface-hover transition-colors"
               onClick={handleReconnect}

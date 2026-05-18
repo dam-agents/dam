@@ -13,14 +13,24 @@ export function createWebSocketChannel(ws: WebSocket): ClientChannel {
   const pingInterval = setInterval(() => {
     if (ws.readyState !== WebSocket.OPEN) return;
     if (!alive) {
-      try { ws.terminate(); } catch { /* already gone */ }
+      try {
+        ws.terminate();
+      } catch {
+        /* already gone */
+      }
       return;
     }
     alive = false;
-    try { ws.ping(); } catch { /* send buffer full or already closing */ }
+    try {
+      ws.ping();
+    } catch {
+      /* send buffer full or already closing */
+    }
   }, HEARTBEAT_INTERVAL_MS);
 
-  ws.on("pong", () => { alive = true; });
+  ws.on("pong", () => {
+    alive = true;
+  });
   ws.on("close", () => clearInterval(pingInterval));
 
   return {

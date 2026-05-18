@@ -108,8 +108,9 @@ export function nextFlowStep(input: FlowInput): FlowStep {
       return {
         action: "fail",
         reason: "unexpected-response",
-        message: input.response.error_description
-          ?? `unrecognized OAuth error: ${input.response.error}`,
+        message:
+          input.response.error_description ??
+          `unrecognized OAuth error: ${input.response.error}`,
       };
   }
 }

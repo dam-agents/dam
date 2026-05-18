@@ -310,7 +310,11 @@ async function tryRollbackAgent(
 }
 
 function errorReason(e: unknown): string {
-  return e instanceof Error ? e.message : typeof e === "string" ? e : "unknown failure";
+  return e instanceof Error
+    ? e.message
+    : typeof e === "string"
+      ? e
+      : "unknown failure";
 }
 
 function trpcMessage(e: unknown): string | undefined {

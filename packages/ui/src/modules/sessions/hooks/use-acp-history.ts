@@ -8,7 +8,10 @@ import { useCallback } from "react";
 import { useStore } from "../../../store.js";
 import type { Message } from "../../../types.js";
 import { openConnection } from "../../acp/acp.js";
-import { applyUpdate, finalizeAllStreaming } from "../../acp/session-projection.js";
+import {
+  applyUpdate,
+  finalizeAllStreaming,
+} from "../../acp/session-projection.js";
 import type { AcpUpdate, SessionConfigPayload } from "../../acp/types.js";
 import { getSavedPreferences } from "../components/session-config-popover.js";
 
@@ -42,42 +45,60 @@ export function useAcpHistory(
   const setSessionModes = useStore((s) => s.setSessionModes);
   const setSessionModels = useStore((s) => s.setSessionModels);
 
-  const loadHistory = useCallback(async (sid: string): Promise<Message[]> => {
-    if (!selectedInstance) return [];
+  const loadHistory = useCallback(
+    async (sid: string): Promise<Message[]> => {
+      if (!selectedInstance) return [];
 
-    let replayed: Message[] = [];
-    let ws: WebSocket | null = null;
-    try {
-      const conn = await openConnection(selectedInstance, (update) => {
-        handleConfigUpdate(update);
-        replayed = applyUpdate(replayed, update);
-      });
-      ws = conn.ws;
-      await conn.connection.initialize({
-        protocolVersion: PROTOCOL_VERSION,
-        clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
-      });
-      const resp: LoadSessionResponse = await conn.connection.loadSession({
-        sessionId: sid,
-        cwd: ".",
-        mcpServers: selectedMcpServers,
-      });
-      captureSessionConfig(resp);
+      let replayed: Message[] = [];
+      let ws: WebSocket | null = null;
+      try {
+        const conn = await openConnection(selectedInstance, (update) => {
+          handleConfigUpdate(update);
+          replayed = applyUpdate(replayed, update);
+        });
+        ws = conn.ws;
+        await conn.connection.initialize({
+          protocolVersion: PROTOCOL_VERSION,
+          clientCapabilities: {
+            fs: { readTextFile: true, writeTextFile: true },
+          },
+        });
+        const resp: LoadSessionResponse = await conn.connection.loadSession({
+          sessionId: sid,
+          cwd: ".",
+          mcpServers: selectedMcpServers,
+        });
+        captureSessionConfig(resp);
 
-      // Optimistic prefs nudge — real ACP `set*` calls fire when the
-      // orchestrator opens the live channel via applySavedPreferences.
-      const prefs = getSavedPreferences(selectedInstance);
-      if (prefs.model && resp.models?.availableModels?.some((m) => m.modelId === prefs.model)) {
-        setSessionModels({ ...resp.models, currentModelId: prefs.model });
+        // Optimistic prefs nudge — real ACP `set*` calls fire when the
+        // orchestrator opens the live channel via applySavedPreferences.
+        const prefs = getSavedPreferences(selectedInstance);
+        if (
+          prefs.model &&
+          resp.models?.availableModels?.some((m) => m.modelId === prefs.model)
+        ) {
+          setSessionModels({ ...resp.models, currentModelId: prefs.model });
+        }
+        if (
+          prefs.mode &&
+          resp.modes?.availableModes?.some((m) => m.id === prefs.mode)
+        ) {
+          setSessionModes({ ...resp.modes, currentModeId: prefs.mode });
+        }
+      } finally {
+        ws?.close();
       }
-      if (prefs.mode && resp.modes?.availableModes?.some((m) => m.id === prefs.mode)) {
-        setSessionModes({ ...resp.modes, currentModeId: prefs.mode });
-      }
-    } finally {
-      ws?.close();
-    }
-    return finalizeAllStreaming(replayed);
-  }, [selectedInstance, selectedMcpServers, captureSessionConfig, handleConfigUpdate, setSessionModes, setSessionModels]);
+      return finalizeAllStreaming(replayed);
+    },
+    [
+      selectedInstance,
+      selectedMcpServers,
+      captureSessionConfig,
+      handleConfigUpdate,
+      setSessionModes,
+      setSessionModels,
+    ],
+  );
 
   return { loadHistory };
 }

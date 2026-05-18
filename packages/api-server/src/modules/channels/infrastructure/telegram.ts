@@ -1,10 +1,24 @@
 import { Chat, type Thread, type StateAdapter } from "chat";
-import { createTelegramAdapter, type TelegramAdapter } from "@chat-adapter/telegram";
-import { ChannelType, SessionType, type InstancesService } from "api-server-api";
-import type { StoredChannelConfig, StoredTelegramChannel } from "../stored-channel.js";
+import {
+  createTelegramAdapter,
+  type TelegramAdapter,
+} from "@chat-adapter/telegram";
+import {
+  ChannelType,
+  SessionType,
+  type InstancesService,
+} from "api-server-api";
+import type {
+  StoredChannelConfig,
+  StoredTelegramChannel,
+} from "../stored-channel.js";
 import type { PostMessageOptions } from "../services/channel-manager.js";
 import { createAcpClient } from "../../../core/acp-client.js";
-import { buildAuthorizeUrl, generatePkce, type KeycloakOAuthConfig } from "./identity-oauth.js";
+import {
+  buildAuthorizeUrl,
+  generatePkce,
+  type KeycloakOAuthConfig,
+} from "./identity-oauth.js";
 
 export interface TelegramOAuthPending {
   instanceName: string;
@@ -16,7 +30,11 @@ export interface TelegramOAuthPending {
 
 export interface TelegramThreadsRepo {
   isAuthorized: (instanceId: string, threadId: string) => Promise<boolean>;
-  authorize: (instanceId: string, threadId: string, authorizedBy: string) => Promise<void>;
+  authorize: (
+    instanceId: string,
+    threadId: string,
+    authorizedBy: string,
+  ) => Promise<void>;
   list: (instanceId: string) => Promise<string[]>;
   revoke: (instanceId: string, threadId: string) => Promise<void>;
 }
@@ -32,7 +50,11 @@ export interface TelegramWorker {
   stop(instanceName: string): Promise<void>;
   stopAll(): Promise<void>;
   listConversations(instanceName: string): Promise<ChannelConversation[]>;
-  postMessage(instanceName: string, text: string, options?: PostMessageOptions): Promise<{ ok: true } | { error: string }>;
+  postMessage(
+    instanceName: string,
+    text: string,
+    options?: PostMessageOptions,
+  ): Promise<{ ok: true } | { error: string }>;
 }
 
 interface InstanceBot {
@@ -49,19 +71,32 @@ async function isTelegramChatAdmin(
   const url = `https://api.telegram.org/bot${botToken}/getChatMember?chat_id=${encodeURIComponent(chatId)}&user_id=${encodeURIComponent(userId)}`;
   const res = await fetch(url);
   if (!res.ok) return false;
-  const data = (await res.json()) as { ok: boolean; result?: { status: string } };
+  const data = (await res.json()) as {
+    ok: boolean;
+    result?: { status: string };
+  };
   if (!data.ok || !data.result) return false;
-  return data.result.status === "creator" || data.result.status === "administrator";
+  return (
+    data.result.status === "creator" || data.result.status === "administrator"
+  );
 }
 
-async function fetchTelegramChatTitle(botToken: string, chatId: string): Promise<string> {
+async function fetchTelegramChatTitle(
+  botToken: string,
+  chatId: string,
+): Promise<string> {
   const url = `https://api.telegram.org/bot${botToken}/getChat?chat_id=${encodeURIComponent(chatId)}`;
   try {
     const res = await fetch(url);
     if (!res.ok) return chatId;
     const data = (await res.json()) as {
       ok: boolean;
-      result?: { title?: string; first_name?: string; last_name?: string; username?: string };
+      result?: {
+        title?: string;
+        first_name?: string;
+        last_name?: string;
+        username?: string;
+      };
     };
     const r = data.result;
     if (!data.ok || !r) return chatId;
@@ -79,12 +114,20 @@ export function createTelegramWorker(
   namespace: string,
   state: StateAdapter,
   instances: () => InstancesService,
-  persistSession: (sessionId: string, instanceId: string, type: SessionType, threadId?: string) => Promise<void>,
+  persistSession: (
+    sessionId: string,
+    instanceId: string,
+    type: SessionType,
+    threadId?: string,
+  ) => Promise<void>,
   threads: TelegramThreadsRepo,
   oauthConfig: KeycloakOAuthConfig,
   pendingOAuthFlows: Map<string, TelegramOAuthPending>,
   threadSessions: {
-    find: (instanceId: string, threadId: string) => Promise<{ sessionId: string } | null>;
+    find: (
+      instanceId: string,
+      threadId: string,
+    ) => Promise<{ sessionId: string } | null>;
     touch: (sessionId: string) => Promise<void>;
   },
 ): TelegramWorker {
@@ -122,18 +165,29 @@ export function createTelegramWorker(
           await threadSessions.touch(existing.sessionId);
           return;
         } catch (err) {
-          process.stderr.write(`[telegram:${instanceName}] resume failed, starting fresh: ${err}\n`);
+          process.stderr.write(
+            `[telegram:${instanceName}] resume failed, starting fresh: ${err}\n`,
+          );
         }
       }
       await acp.sendPrompt(freshPrompt, {
-        onSessionCreated: (sid) => persistSession(sid, instanceName, SessionType.ChannelTelegram, thread.id),
+        onSessionCreated: (sid) =>
+          persistSession(
+            sid,
+            instanceName,
+            SessionType.ChannelTelegram,
+            thread.id,
+          ),
       });
     } catch (err) {
       process.stderr.write(`[telegram:${instanceName}] ACP error: ${err}\n`);
     }
   }
 
-  async function buildBot(instanceName: string, botToken: string): Promise<InstanceBot> {
+  async function buildBot(
+    instanceName: string,
+    botToken: string,
+  ): Promise<InstanceBot> {
     const adapter = createTelegramAdapter({ botToken, mode: "polling" });
 
     const chat = new Chat({
@@ -145,16 +199,25 @@ export function createTelegramWorker(
     async function handleLogin(thread: Thread, telegramUserId: string) {
       if (!thread.isDM) {
         const { chatId } = adapter.decodeThreadId(thread.id);
-        const isAdmin = await isTelegramChatAdmin(botToken, chatId, telegramUserId);
+        const isAdmin = await isTelegramChatAdmin(
+          botToken,
+          chatId,
+          telegramUserId,
+        );
         if (!isAdmin) {
           await thread.post("Only group admins can /login.");
           return;
         }
       }
 
-      const alreadyAuthorized = await threads.isAuthorized(instanceName, thread.id);
+      const alreadyAuthorized = await threads.isAuthorized(
+        instanceName,
+        thread.id,
+      );
       if (alreadyAuthorized) {
-        await thread.post("This conversation is already authorized. Send /logout to revoke.");
+        await thread.post(
+          "This conversation is already authorized. Send /logout to revoke.",
+        );
         return;
       }
 
@@ -167,13 +230,19 @@ export function createTelegramWorker(
         createdAt: Date.now(),
       });
       const url = buildAuthorizeUrl(oauthConfig, oauthState, codeChallenge);
-      await thread.post(`Open this link to authorize this conversation (instance owner only):\n${url}`);
+      await thread.post(
+        `Open this link to authorize this conversation (instance owner only):\n${url}`,
+      );
     }
 
     async function handleLogout(thread: Thread, telegramUserId: string) {
       if (!thread.isDM) {
         const { chatId } = adapter.decodeThreadId(thread.id);
-        const isAdmin = await isTelegramChatAdmin(botToken, chatId, telegramUserId);
+        const isAdmin = await isTelegramChatAdmin(
+          botToken,
+          chatId,
+          telegramUserId,
+        );
         if (!isAdmin) {
           await thread.post("Only group admins can /logout.");
           return;
@@ -186,22 +255,40 @@ export function createTelegramWorker(
         return;
       }
       await threads.revoke(instanceName, thread.id);
-      await thread.post("Conversation revoked. Send /login to authorize again.");
+      await thread.post(
+        "Conversation revoked. Send /login to authorize again.",
+      );
     }
 
     async function handleMessage(
       thread: Thread,
-      message: { text: string; author: { userId: string; userName: string; fullName: string; isMe: boolean } },
+      message: {
+        text: string;
+        author: {
+          userId: string;
+          userName: string;
+          fullName: string;
+          isMe: boolean;
+        };
+      },
       subscribe: boolean,
     ) {
       if (message.author.isMe) return;
       const text = message.text.trim();
 
-      if (text === "/login" || text.startsWith("/login ") || text.startsWith("/login@")) {
+      if (
+        text === "/login" ||
+        text.startsWith("/login ") ||
+        text.startsWith("/login@")
+      ) {
         await handleLogin(thread, message.author.userId);
         return;
       }
-      if (text === "/logout" || text.startsWith("/logout ") || text.startsWith("/logout@")) {
+      if (
+        text === "/logout" ||
+        text.startsWith("/logout ") ||
+        text.startsWith("/logout@")
+      ) {
         await handleLogout(thread, message.author.userId);
         return;
       }
@@ -211,7 +298,9 @@ export function createTelegramWorker(
         // Only prompt for /login in DMs. Staying silent in groups avoids
         // spamming unauthorized group chats that the bot happens to be in.
         if (thread.isDM) {
-          await thread.post("This conversation isn't authorized. An admin needs to send /login.");
+          await thread.post(
+            "This conversation isn't authorized. An admin needs to send /login.",
+          );
         }
         return;
       }
@@ -220,13 +309,19 @@ export function createTelegramWorker(
     }
 
     // DMs: subscribe so the bot receives every follow-up from this user.
-    chat.onDirectMessage((thread, message) => handleMessage(thread, message, true));
+    chat.onDirectMessage((thread, message) =>
+      handleMessage(thread, message, true),
+    );
     // Groups: on first @-mention, subscribe so the agent can see the full
     // conversation as context. The agent — not the worker — decides whether
     // to actually respond (via the send_channel_message MCP tool).
-    chat.onNewMention((thread, message) => handleMessage(thread, message, true));
+    chat.onNewMention((thread, message) =>
+      handleMessage(thread, message, true),
+    );
     // Follow-ups in any subscribed thread (DM or group).
-    chat.onSubscribedMessage((thread, message) => handleMessage(thread, message, false));
+    chat.onSubscribedMessage((thread, message) =>
+      handleMessage(thread, message, false),
+    );
 
     await chat.initialize();
     await adapter.startPolling();
@@ -260,7 +355,9 @@ export function createTelegramWorker(
         bots.set(instanceName, bot);
         process.stderr.write(`[telegram] started bot for ${instanceName}\n`);
       } catch (err) {
-        process.stderr.write(`[telegram] failed to start ${instanceName}: ${err instanceof Error ? err.message : String(err)}\n`);
+        process.stderr.write(
+          `[telegram] failed to start ${instanceName}: ${err instanceof Error ? err.message : String(err)}\n`,
+        );
       }
     },
 
@@ -273,7 +370,9 @@ export function createTelegramWorker(
       await Promise.all(names.map(stopInternal));
       // Disconnect the shared state adapter exactly once, at process shutdown.
       try {
-        await (state as unknown as { disconnect?: () => Promise<void> }).disconnect?.();
+        await (
+          state as unknown as { disconnect?: () => Promise<void> }
+        ).disconnect?.();
       } catch {}
     },
 
@@ -281,14 +380,20 @@ export function createTelegramWorker(
       const bot = bots.get(instanceName);
       if (!bot) return [];
       const threadIds = await threads.list(instanceName);
-      return Promise.all(threadIds.map(async (threadId) => {
-        const { chatId } = bot.adapter.decodeThreadId(threadId);
-        const title = await fetchTelegramChatTitle(bot.botToken, chatId);
-        return { id: threadId, title };
-      }));
+      return Promise.all(
+        threadIds.map(async (threadId) => {
+          const { chatId } = bot.adapter.decodeThreadId(threadId);
+          const title = await fetchTelegramChatTitle(bot.botToken, chatId);
+          return { id: threadId, title };
+        }),
+      );
     },
 
-    async postMessage(instanceName: string, text: string, options?: PostMessageOptions) {
+    async postMessage(
+      instanceName: string,
+      text: string,
+      options?: PostMessageOptions,
+    ) {
       const bot = bots.get(instanceName);
       if (!bot) return { error: "telegram bot not running for this instance" };
 
@@ -296,16 +401,23 @@ export function createTelegramWorker(
       const payload = attachment
         ? {
             markdown: text,
-            files: [{
-              data: attachment.data,
-              filename: attachment.filename,
-              ...(attachment.mimeType ? { mimeType: attachment.mimeType } : {}),
-            }],
+            files: [
+              {
+                data: attachment.data,
+                filename: attachment.filename,
+                ...(attachment.mimeType
+                  ? { mimeType: attachment.mimeType }
+                  : {}),
+              },
+            ],
           }
         : text;
 
       if (conversationId) {
-        const authorized = await threads.isAuthorized(instanceName, conversationId);
+        const authorized = await threads.isAuthorized(
+          instanceName,
+          conversationId,
+        );
         if (!authorized) return { error: "conversation is not authorized" };
         try {
           await bot.adapter.postMessage(conversationId, payload);
@@ -316,7 +428,11 @@ export function createTelegramWorker(
       }
 
       const thread = lastThread.get(instanceName);
-      if (!thread) return { error: "no active Telegram thread; pass conversationId from list_channel_conversations" };
+      if (!thread)
+        return {
+          error:
+            "no active Telegram thread; pass conversationId from list_channel_conversations",
+        };
       try {
         await thread.post(payload);
         return { ok: true as const };

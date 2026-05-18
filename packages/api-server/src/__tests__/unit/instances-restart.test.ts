@@ -3,7 +3,10 @@ import type * as k8s from "@kubernetes/client-node";
 import { createInstancesRepository } from "../../modules/instances/infrastructure/instances-repository.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import {
-  LABEL_TYPE, LABEL_OWNER, TYPE_INSTANCE, SPEC_KEY,
+  LABEL_TYPE,
+  LABEL_OWNER,
+  TYPE_INSTANCE,
+  SPEC_KEY,
 } from "../../modules/agents/infrastructure/labels.js";
 
 function instanceCM(id: string, owner: string): k8s.V1ConfigMap {

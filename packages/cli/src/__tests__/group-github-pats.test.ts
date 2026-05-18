@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { groupGithubPats, type SecretLike } from "../modules/agent/lib/group-github-pats.js";
+import {
+  groupGithubPats,
+  type SecretLike,
+} from "../modules/agent/lib/group-github-pats.js";
 
-function s(id: string, name: string, hostPattern: string, type = "generic"): SecretLike {
+function s(
+  id: string,
+  name: string,
+  hostPattern: string,
+  type = "generic",
+): SecretLike {
   return { id, name, type, hostPattern };
 }
 
@@ -11,11 +19,15 @@ describe("groupGithubPats", () => {
       s("api-1", "alice", "api.github.com"),
       s("git-1", "alice", "github.com"),
     ]);
-    expect(pairs).toEqual([{ name: "alice", apiSecretId: "api-1", gitSecretId: "git-1" }]);
+    expect(pairs).toEqual([
+      { name: "alice", apiSecretId: "api-1", gitSecretId: "git-1" },
+    ]);
   });
 
   it("drops orphan with only api.github.com half", () => {
-    expect(groupGithubPats([s("api-1", "alice", "api.github.com")])).toEqual([]);
+    expect(groupGithubPats([s("api-1", "alice", "api.github.com")])).toEqual(
+      [],
+    );
   });
 
   it("ignores non-GitHub secrets and keeps only complete pairs", () => {
@@ -25,6 +37,8 @@ describe("groupGithubPats", () => {
       s("git-1", "alice", "github.com"),
       s("api-2", "orphan", "api.github.com"),
     ]);
-    expect(pairs).toEqual([{ name: "alice", apiSecretId: "api-1", gitSecretId: "git-1" }]);
+    expect(pairs).toEqual([
+      { name: "alice", apiSecretId: "api-1", gitSecretId: "git-1" },
+    ]);
   });
 });

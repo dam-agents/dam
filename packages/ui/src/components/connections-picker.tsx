@@ -39,7 +39,9 @@ export function ConnectionsHeader() {
           />
         }
       >
-        Pick the providers, MCP servers, secrets, and apps this agent can use. Credentials are injected at request time, so the agent never sees the raw secret values.
+        Pick the providers, MCP servers, secrets, and apps this agent can use.
+        Credentials are injected at request time, so the agent never sees the
+        raw secret values.
       </HoverTooltip>
     </span>
   );
@@ -93,22 +95,25 @@ export function ConnectionsPicker({
       {loading && (
         <span className="text-[12px] text-text-muted">Loading...</span>
       )}
-      {!loading && secrets.length === 0 && apps.length === 0 && staleAppIds.length === 0 && (
-        <span className="text-[12px] text-text-muted">
-          No connections yet.
-          {onGoToProviders && (
-            <>
-              {" "}
-              <button
-                className="text-accent font-semibold hover:underline"
-                onClick={onGoToProviders}
-              >
-                Add one
-              </button>
-            </>
-          )}
-        </span>
-      )}
+      {!loading &&
+        secrets.length === 0 &&
+        apps.length === 0 &&
+        staleAppIds.length === 0 && (
+          <span className="text-[12px] text-text-muted">
+            No connections yet.
+            {onGoToProviders && (
+              <>
+                {" "}
+                <button
+                  className="text-accent font-semibold hover:underline"
+                  onClick={onGoToProviders}
+                >
+                  Add one
+                </button>
+              </>
+            )}
+          </span>
+        )}
 
       <div className="flex flex-col gap-4">
         {providerSecrets.length > 0 && (
@@ -124,9 +129,10 @@ export function ConnectionsPicker({
             ))}
             {providerSecrets.filter((s) => selSecrets.has(s.id)).length > 1 && (
               <div className="text-[11px] text-warning font-medium px-1 pt-1">
-                Granting more than one Anthropic-family provider to a single agent
-                produces undefined behavior — only one set of <code className="font-mono">ANTHROPIC_*</code>{" "}
-                env vars actually wins at runtime.
+                Granting more than one Anthropic-family provider to a single
+                agent produces undefined behavior — only one set of{" "}
+                <code className="font-mono">ANTHROPIC_*</code> env vars actually
+                wins at runtime.
               </div>
             )}
           </Section>
@@ -159,7 +165,9 @@ export function ConnectionsPicker({
           </Section>
         )}
 
-        {(apps.length > 0 || staleAppIds.length > 0 || oauthApps.length > 0) && (
+        {(apps.length > 0 ||
+          staleAppIds.length > 0 ||
+          oauthApps.length > 0) && (
           <Section title="Apps">
             {oauthApps.map((entry) => (
               <OAuthAppItemRow
@@ -258,7 +266,9 @@ function SecretItemRow({
 }) {
   const headerName = secret.injectionConfig?.headerName;
   const customHeader =
-    headerName && headerName.toLowerCase() !== "authorization" ? headerName : null;
+    headerName && headerName.toLowerCase() !== "authorization"
+      ? headerName
+      : null;
   const envNames = secret.envMappings?.map((m) => m.envName) ?? [];
   return (
     <label
@@ -329,8 +339,12 @@ function OAuthAppItemRow({
         <OAuthAppIcon appId={entry.appId} alt={entry.displayName} size={14} />
       </span>
       <div className="flex-1 min-w-0">
-        <div className="text-[13px] font-medium text-text truncate">{entry.displayName}</div>
-        <div className="text-[11px] font-mono text-text-muted truncate">{entry.hosts.join(", ")}</div>
+        <div className="text-[13px] font-medium text-text truncate">
+          {entry.displayName}
+        </div>
+        <div className="text-[11px] font-mono text-text-muted truncate">
+          {entry.hosts.join(", ")}
+        </div>
       </div>
       {entry.expired && (
         <span className="text-[11px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 shrink-0 bg-danger-light text-danger border-danger">
@@ -370,7 +384,9 @@ function AppItemRow({
       />
       <KeyRound size={14} className="text-text-secondary shrink-0 mt-0.5" />
       <div className="flex-1 min-w-0">
-        <div className="text-[13px] font-medium text-text truncate">{label}</div>
+        <div className="text-[13px] font-medium text-text truncate">
+          {label}
+        </div>
         {identity && (
           <div className="text-[11px] font-mono text-text-muted truncate">
             {identity}

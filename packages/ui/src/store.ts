@@ -44,16 +44,15 @@ export type {
 } from "./modules/sessions/store/permissions.js";
 export type { SessionError } from "./modules/sessions/store/sessions.js";
 
-export type PlatformStore =
-  & DialogSlice
-  & ThemeSlice
-  & NavigationSlice
-  & ToastSlice
-  & InstancesSlice
-  & SessionsSlice
-  & SessionConfigSlice
-  & FilesSlice
-  & PermissionsSlice;
+export type PlatformStore = DialogSlice &
+  ThemeSlice &
+  NavigationSlice &
+  ToastSlice &
+  InstancesSlice &
+  SessionsSlice &
+  SessionConfigSlice &
+  FilesSlice &
+  PermissionsSlice;
 
 export const useStore = create<PlatformStore>()((...a) => ({
   ...createDialogSlice(...a),

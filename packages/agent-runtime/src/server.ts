@@ -13,8 +13,12 @@ import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { appRouter } from "agent-runtime-api/router";
 import type { AgentRuntimeContext } from "agent-runtime-api";
 import {
-  OP_INPUT, OP_OUTPUT, OP_RESIZE,
-  decodeFrame, encodeDataFrame, encodeExit,
+  OP_INPUT,
+  OP_OUTPUT,
+  OP_RESIZE,
+  decodeFrame,
+  encodeDataFrame,
+  encodeExit,
 } from "api-server-api";
 import { createFilesService } from "./modules/files.js";
 import { createImportHandlers, sweepStaging } from "./modules/import/index.js";
@@ -39,10 +43,8 @@ const workDir = config.PLATFORM_DEV
 // lifetime of the process; createContext just hands them out per-request.
 const filesService = createFilesService(homeDir);
 const skillsService = composeSkills();
-const importHandlers = createImportHandlers(
-  homeDir,
-  workDir,
-  (msg) => process.stderr.write(`[import] ${msg}\n`),
+const importHandlers = createImportHandlers(homeDir, workDir, (msg) =>
+  process.stderr.write(`[import] ${msg}\n`),
 );
 
 const CORS = {
@@ -87,19 +89,26 @@ interface PtySlot {
 }
 
 const ptySlots = new Map<string, PtySlot>();
-const ptyLog = (sid: string, msg: string) => process.stderr.write(`[pty] [${sid}] ${msg}\n`);
+const ptyLog = (sid: string, msg: string) =>
+  process.stderr.write(`[pty] [${sid}] ${msg}\n`);
 
 function killPtySlot(sessionId: string): void {
   const slot = ptySlots.get(sessionId);
   if (!slot) return;
   if (slot.graceTimer) clearTimeout(slot.graceTimer);
-  try { slot.pty?.kill(); } catch {}
+  try {
+    slot.pty?.kill();
+  } catch {}
   slot.headless.dispose();
   ptySlots.delete(sessionId);
   ptyLog(sessionId, "killed");
 }
 
-function attachPty(sessionId: string, ws: WsWebSocket, opts: { reset: boolean }): void {
+function attachPty(
+  sessionId: string,
+  ws: WsWebSocket,
+  opts: { reset: boolean },
+): void {
   if (opts.reset) killPtySlot(sessionId);
   let initialized = false;
   ws.binaryType = "nodebuffer";
@@ -118,7 +127,11 @@ function attachPty(sessionId: string, ws: WsWebSocket, opts: { reset: boolean })
 
   ws.on("message", (raw: Buffer) => {
     let frame;
-    try { frame = decodeFrame(raw); } catch { return; }
+    try {
+      frame = decodeFrame(raw);
+    } catch {
+      return;
+    }
 
     if (!initialized) {
       if (frame.op !== OP_RESIZE) {
@@ -131,36 +144,63 @@ function attachPty(sessionId: string, ws: WsWebSocket, opts: { reset: boolean })
       const existing = ptySlots.get(sessionId);
       if (existing) {
         if (existing.graceTimer) clearTimeout(existing.graceTimer);
-        if (existing.client && existing.client !== ws && existing.client.readyState === 1) {
+        if (
+          existing.client &&
+          existing.client !== ws &&
+          existing.client.readyState === 1
+        ) {
           existing.client.close(1000, "replaced by new connection");
         }
         existing.client = ws;
         existing.headless.resize(cols, rows);
         existing.pty?.resize(cols, rows);
         const serialized = existing.serialize.serialize();
-        if (serialized.length > 0) ws.send(encodeDataFrame(OP_OUTPUT, serialized));
+        if (serialized.length > 0)
+          ws.send(encodeDataFrame(OP_OUTPUT, serialized));
         return;
       }
 
-      const headless = new HeadlessTerminal({ cols, rows, scrollback: 1000, allowProposedApi: true });
+      const headless = new HeadlessTerminal({
+        cols,
+        rows,
+        scrollback: 1000,
+        allowProposedApi: true,
+      });
       const serialize = new SerializeAddon();
       headless.loadAddon(serialize);
       const pty = nodePty.spawn("/usr/local/bin/harness-terminal", [], {
-        name: "xterm-256color", cols, rows, cwd: workDir,
+        name: "xterm-256color",
+        cols,
+        rows,
+        cwd: workDir,
         env: {
-          ...Object.fromEntries(
-            Object.entries(process.env).filter(([k, v]) => v !== undefined && !k.startsWith("npm_config_") && !k.startsWith("npm_lifecycle_")),
-          ) as Record<string, string>,
-          TERM: "xterm-256color", COLORTERM: "truecolor", HARNESS_SESSION_ID: sessionId,
+          ...(Object.fromEntries(
+            Object.entries(process.env).filter(
+              ([k, v]) =>
+                v !== undefined &&
+                !k.startsWith("npm_config_") &&
+                !k.startsWith("npm_lifecycle_"),
+            ),
+          ) as Record<string, string>),
+          TERM: "xterm-256color",
+          COLORTERM: "truecolor",
+          HARNESS_SESSION_ID: sessionId,
         },
       });
-      const slot: PtySlot = { pty, headless, serialize, client: ws, graceTimer: null };
+      const slot: PtySlot = {
+        pty,
+        headless,
+        serialize,
+        client: ws,
+        graceTimer: null,
+      };
       ptySlots.set(sessionId, slot);
       ptyLog(sessionId, `spawned PTY (${cols}x${rows})`);
 
       pty.onData((data) => {
         slot.headless.write(data);
-        if (slot.client?.readyState === 1) slot.client.send(encodeDataFrame(OP_OUTPUT, data));
+        if (slot.client?.readyState === 1)
+          slot.client.send(encodeDataFrame(OP_OUTPUT, data));
       });
       pty.onExit(({ exitCode }) => {
         ptyLog(sessionId, `exited ${exitCode}`);
@@ -207,7 +247,9 @@ const server = http.createServer((req, res) => {
       activeTriggers: triggerWatcher?.activeCount() ?? 0,
       terminalActive: ptySlots.size > 0,
     };
-    res.writeHead(200, { "Content-Type": "application/json", ...CORS }).end(JSON.stringify(status));
+    res
+      .writeHead(200, { "Content-Type": "application/json", ...CORS })
+      .end(JSON.stringify(status));
     return;
   }
 
@@ -216,7 +258,9 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  const sessionResetMatch = req.method === "POST" && req.url?.match(/^\/api\/sessions\/([^/]+)\/reset$/);
+  const sessionResetMatch =
+    req.method === "POST" &&
+    req.url?.match(/^\/api\/sessions\/([^/]+)\/reset$/);
   if (sessionResetMatch) {
     acpRuntime.resetSession(decodeURIComponent(sessionResetMatch[1]!));
     res.writeHead(204, CORS).end();
@@ -243,11 +287,15 @@ acpWss.on("connection", (ws) => {
 server.on("upgrade", (req, socket, head) => {
   const url = new URL(req.url!, `http://${req.headers.host}`);
   if (url.pathname === "/api/acp") {
-    acpWss.handleUpgrade(req, socket, head, (ws) => acpWss.emit("connection", ws, req));
+    acpWss.handleUpgrade(req, socket, head, (ws) =>
+      acpWss.emit("connection", ws, req),
+    );
   } else if (url.pathname === "/api/terminal") {
     const sessionId = url.searchParams.get("sessionId") ?? "default";
     const reset = url.searchParams.get("reset") === "1";
-    termWss.handleUpgrade(req, socket, head, (ws) => attachPty(sessionId, ws, { reset }));
+    termWss.handleUpgrade(req, socket, head, (ws) =>
+      attachPty(sessionId, ws, { reset }),
+    );
   } else {
     socket.destroy();
   }
@@ -257,13 +305,18 @@ if (config.PLATFORM_MCP_URL) {
   const mcpPath = join(workDir, ".mcp.json");
   let mcpConfig: Record<string, unknown> = {};
   if (existsSync(mcpPath)) {
-    try { mcpConfig = JSON.parse(readFileSync(mcpPath, "utf8")); } catch {}
+    try {
+      mcpConfig = JSON.parse(readFileSync(mcpPath, "utf8"));
+    } catch {}
   }
   const mcpServers = (mcpConfig.mcpServers ?? {}) as Record<string, unknown>;
   // No Authorization header: the api-server's harness port identifies the
   // caller by source IP (NetworkPolicy admits only agent pods, podIpResolver
   // maps IP → instance label). See ADR-035.
-  mcpServers["platform-outbound"] = { type: "http", url: config.PLATFORM_MCP_URL };
+  mcpServers["platform-outbound"] = {
+    type: "http",
+    url: config.PLATFORM_MCP_URL,
+  };
   mcpConfig.mcpServers = mcpServers;
   writeFileSync(mcpPath, JSON.stringify(mcpConfig, null, 2));
   process.stderr.write(`[mcp] Wrote platform-outbound to ${mcpPath}\n`);
@@ -282,7 +335,9 @@ try {
     );
   }
 } catch (e) {
-  process.stderr.write(`[git] failed to configure credential helper: ${(e as Error).message}\n`);
+  process.stderr.write(
+    `[git] failed to configure credential helper: ${(e as Error).message}\n`,
+  );
 }
 
 // Node defaults `requestTimeout` to 5 minutes. The import route holds a
@@ -307,12 +362,15 @@ server.headersTimeout = 60_000;
 server.listen(config.PORT, () => {
   process.stderr.write(`Platform on http://localhost:${config.PORT}\n`);
 
-  void sweepStaging(homeDir, (msg) => process.stderr.write(`[import] ${msg}\n`));
+  void sweepStaging(homeDir, (msg) =>
+    process.stderr.write(`[import] ${msg}\n`),
+  );
 
   triggerWatcher = startTriggerWatcher({
     triggersDir: config.TRIGGERS_DIR,
     apiServerUrl: config.API_SERVER_URL,
-    instanceId: process.env.ADK_INSTANCE_ID ?? process.env.HOSTNAME ?? "unknown",
+    instanceId:
+      process.env.ADK_INSTANCE_ID ?? process.env.HOSTNAME ?? "unknown",
   });
 
   // Pod-files sync: opt-in via env. The reconciler sets the URL on instance

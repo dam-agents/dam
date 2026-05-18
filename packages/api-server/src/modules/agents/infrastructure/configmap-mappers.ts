@@ -6,7 +6,12 @@
 import type * as k8s from "@kubernetes/client-node";
 import yaml from "js-yaml";
 import crypto from "node:crypto";
-import { LABEL_TYPE, LABEL_OWNER, SPEC_KEY, LAST_ACTIVITY_KEY } from "./labels.js";
+import {
+  LABEL_TYPE,
+  LABEL_OWNER,
+  SPEC_KEY,
+  LAST_ACTIVITY_KEY,
+} from "./labels.js";
 
 export function generateK8sName(prefix: string): string {
   return `${prefix}-${crypto.randomBytes(4).toString("hex")}`;

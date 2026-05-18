@@ -31,14 +31,17 @@ function makeInfra(overrides: Partial<InfraInstance> = {}): InfraInstance {
 }
 
 function makeRepo(initial: InfraInstance[] = []): InstancesRepository {
-  const created = vi.fn(async (agentId: string, spec: Record<string, unknown>, owner: string) => ({
-    id: "inst-new",
-    name: (spec.name as string) ?? "new",
-    agentId,
-    desiredState: "running",
-    podReady: false,
-    _owner: owner,
-  } as InfraInstance));
+  const created = vi.fn(
+    async (agentId: string, spec: Record<string, unknown>, owner: string) =>
+      ({
+        id: "inst-new",
+        name: (spec.name as string) ?? "new",
+        agentId,
+        desiredState: "running",
+        podReady: false,
+        _owner: owner,
+      }) as InfraInstance,
+  );
   return {
     list: vi.fn(async () => initial),
     get: vi.fn(),

@@ -6,8 +6,15 @@ import { createTRPCClient, httpBatchLink, TRPCClientError } from "@trpc/client";
 import type { AppRouter } from "agent-runtime-api";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { ChannelType, type SchedulesService, type SkillsService } from "api-server-api";
-import type { ChannelManager, ChannelAttachment } from "./../../modules/channels/services/channel-manager.js";
+import {
+  ChannelType,
+  type SchedulesService,
+  type SkillsService,
+} from "api-server-api";
+import type {
+  ChannelManager,
+  ChannelAttachment,
+} from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
 import { resolveInstance } from "./instance-auth.js";
@@ -96,7 +103,10 @@ export interface McpSessionDeps {
   agentHome: string;
 }
 
-export function createMcpSession(instanceId: string, deps: McpSessionDeps): McpSession {
+export function createMcpSession(
+  instanceId: string,
+  deps: McpSessionDeps,
+): McpSession {
   const { agentHome, schedules } = deps;
   const server = new McpServer({
     name: `platform-${instanceId}`,
@@ -104,7 +114,11 @@ export function createMcpSession(instanceId: string, deps: McpSessionDeps): McpS
   });
 
   const runtimeClient = createTRPCClient<AppRouter>({
-    links: [httpBatchLink({ url: `http://${podBaseUrl(instanceId, deps.k8s.namespace)}/api/trpc` })],
+    links: [
+      httpBatchLink({
+        url: `http://${podBaseUrl(instanceId, deps.k8s.namespace)}/api/trpc`,
+      }),
+    ],
   });
 
   server.tool(
@@ -112,7 +126,10 @@ export function createMcpSession(instanceId: string, deps: McpSessionDeps): McpS
     "Describe a channel on this agent instance. Returns { chats: [{ id, title }] } listing authorized chats (DMs/threads/rooms). Use the id as chatId in send_channel_message.",
     { channel: z.enum([ChannelType.Slack, ChannelType.Telegram]) },
     async ({ channel }) => {
-      const chats = await deps.channelManager.listConversations(instanceId, channel);
+      const chats = await deps.channelManager.listConversations(
+        instanceId,
+        channel,
+      );
       return textResult(JSON.stringify({ chats }));
     },
   );
@@ -124,12 +141,27 @@ export function createMcpSession(instanceId: string, deps: McpSessionDeps): McpS
       channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
       text: z.string(),
       chatId: z.string().optional(),
-      attachment: z.object({
-        path: z.string().min(1).describe(`Absolute path under ${agentHome} or workspace-relative (e.g. report.md).`),
-        filename: z.string().optional().describe("Name shown in the channel; defaults to the basename of path."),
-        mimeType: z.string().optional().describe("Override the runtime-detected MIME type."),
-        title: z.string().optional(),
-      }).optional(),
+      attachment: z
+        .object({
+          path: z
+            .string()
+            .min(1)
+            .describe(
+              `Absolute path under ${agentHome} or workspace-relative (e.g. report.md).`,
+            ),
+          filename: z
+            .string()
+            .optional()
+            .describe(
+              "Name shown in the channel; defaults to the basename of path.",
+            ),
+          mimeType: z
+            .string()
+            .optional()
+            .describe("Override the runtime-detected MIME type."),
+          title: z.string().optional(),
+        })
+        .optional(),
     },
     async ({ channel, text, chatId, attachment }) => {
       let resolved: ChannelAttachment | undefined;
@@ -139,13 +171,16 @@ export function createMcpSession(instanceId: string, deps: McpSessionDeps): McpS
         try {
           file = await runtimeClient.files.read.query({ path: resolvedPath });
         } catch (err) {
-          const msg = err instanceof TRPCClientError && err.data?.code === "NOT_FOUND"
-            ? `attachment not found: ${attachment.path} (resolved to ${resolvedPath})`
-            : `failed to read attachment ${attachment.path}: ${err instanceof Error ? err.message : String(err)}`;
+          const msg =
+            err instanceof TRPCClientError && err.data?.code === "NOT_FOUND"
+              ? `attachment not found: ${attachment.path} (resolved to ${resolvedPath})`
+              : `failed to read attachment ${attachment.path}: ${err instanceof Error ? err.message : String(err)}`;
           return errorResult(msg);
         }
         if (file.content === undefined) {
-          return errorResult(`attachment ${attachment.path} is too large or unreadable (runtime returned no content)`);
+          return errorResult(
+            `attachment ${attachment.path} is too large or unreadable (runtime returned no content)`,
+          );
         }
         const data = file.binary
           ? Buffer.from(file.content, "base64")
@@ -153,14 +188,21 @@ export function createMcpSession(instanceId: string, deps: McpSessionDeps): McpS
         resolved = {
           filename: attachment.filename ?? basename(attachment.path),
           data,
-          ...(attachment.mimeType ?? file.mimeType ? { mimeType: attachment.mimeType ?? file.mimeType } : {}),
+          ...((attachment.mimeType ?? file.mimeType)
+            ? { mimeType: attachment.mimeType ?? file.mimeType }
+            : {}),
           ...(attachment.title ? { title: attachment.title } : {}),
         };
       }
-      const result = await deps.channelManager.postMessage(instanceId, channel, text, {
-        ...(chatId ? { conversationId: chatId } : {}),
-        ...(resolved ? { attachment: resolved } : {}),
-      });
+      const result = await deps.channelManager.postMessage(
+        instanceId,
+        channel,
+        text,
+        {
+          ...(chatId ? { conversationId: chatId } : {}),
+          ...(resolved ? { attachment: resolved } : {}),
+        },
+      );
       if ("error" in result) return errorResult(result.error);
       return textResult("Message sent");
     },
@@ -222,7 +264,8 @@ export function createMcpSession(instanceId: string, deps: McpSessionDeps): McpS
       textTool(
         "Failed to uninstall skill",
         () => deps.skills.uninstallSkill({ instanceId, source, name }),
-        (remaining) => `Uninstalled ${name}. Instance now has ${remaining.length} skill(s).`,
+        (remaining) =>
+          `Uninstalled ${name}. Instance now has ${remaining.length} skill(s).`,
       ),
   );
 
@@ -238,7 +281,8 @@ export function createMcpSession(instanceId: string, deps: McpSessionDeps): McpS
     ({ sourceId, name, title, body }) =>
       textTool(
         "Failed to publish skill",
-        () => deps.skills.publishSkill({ instanceId, sourceId, name, title, body }),
+        () =>
+          deps.skills.publishSkill({ instanceId, sourceId, name, title, body }),
         (result) => `Published ${name}. PR: ${result.prUrl}`,
       ),
   );
@@ -255,7 +299,9 @@ export function createMcpSession(instanceId: string, deps: McpSessionDeps): McpS
     async () => {
       const list = await schedules.list(instanceId);
       return {
-        content: [{ type: "text" as const, text: JSON.stringify(list, null, 2) }],
+        content: [
+          { type: "text" as const, text: JSON.stringify(list, null, 2) },
+        ],
       };
     },
   );
@@ -264,23 +310,62 @@ export function createMcpSession(instanceId: string, deps: McpSessionDeps): McpS
     "create_schedule",
     "Register a PERSISTENT cron schedule on this agent instance. The schedule runs on the platform Kubernetes controller, survives Claude process restarts, shows up in the host UI, and fires the given prompt as a new trigger. PREFER THIS over any in-process / session-only / built-in CronCreate tool whenever the user asks to schedule recurring work on this agent — those in-process schedules die when Claude exits and are invisible to the human operator.",
     {
-      name: z.string().min(1).describe("Human-readable name shown in the host UI"),
-      cron: z.string().min(1).describe("Standard 5-field cron expression, e.g. '0 9 * * *' for 9am daily"),
-      task: z.string().min(1).describe("Prompt the agent will receive when the schedule fires"),
-      sessionMode: z.enum(["continuous", "fresh"]).optional().describe("continuous = resume prior session each tick; fresh = new session per run (default)"),
+      name: z
+        .string()
+        .min(1)
+        .describe("Human-readable name shown in the host UI"),
+      cron: z
+        .string()
+        .min(1)
+        .describe(
+          "Standard 5-field cron expression, e.g. '0 9 * * *' for 9am daily",
+        ),
+      task: z
+        .string()
+        .min(1)
+        .describe("Prompt the agent will receive when the schedule fires"),
+      sessionMode: z
+        .enum(["continuous", "fresh"])
+        .optional()
+        .describe(
+          "continuous = resume prior session each tick; fresh = new session per run (default)",
+        ),
     },
     async ({ name, cron, task, sessionMode }) => {
       try {
         const sched = await schedules.createCron({
-          name, instanceId, cron, task, sessionMode,
+          name,
+          instanceId,
+          cron,
+          task,
+          sessionMode,
           createdBy: "agent",
         });
         return {
-          content: [{ type: "text" as const, text: JSON.stringify({ id: sched.id, name: sched.name, cron, enabled: sched.spec.enabled }, null, 2) }],
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                {
+                  id: sched.id,
+                  name: sched.name,
+                  cron,
+                  enabled: sched.spec.enabled,
+                },
+                null,
+                2,
+              ),
+            },
+          ],
         };
       } catch (err) {
         return {
-          content: [{ type: "text" as const, text: err instanceof Error ? err.message : String(err) }],
+          content: [
+            {
+              type: "text" as const,
+              text: err instanceof Error ? err.message : String(err),
+            },
+          ],
           isError: true,
         };
       }
@@ -295,19 +380,35 @@ export function createMcpSession(instanceId: string, deps: McpSessionDeps): McpS
       const existing = await schedules.get(id);
       if (!existing || existing.instanceId !== instanceId) {
         return {
-          content: [{ type: "text" as const, text: `schedule ${id} not found on this instance` }],
+          content: [
+            {
+              type: "text" as const,
+              text: `schedule ${id} not found on this instance`,
+            },
+          ],
           isError: true,
         };
       }
       const updated = await schedules.toggle(id);
       if (!updated) {
         return {
-          content: [{ type: "text" as const, text: `schedule ${id} not found` }],
+          content: [
+            { type: "text" as const, text: `schedule ${id} not found` },
+          ],
           isError: true,
         };
       }
       return {
-        content: [{ type: "text" as const, text: JSON.stringify({ id: updated.id, enabled: updated.spec.enabled }, null, 2) }],
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(
+              { id: updated.id, enabled: updated.spec.enabled },
+              null,
+              2,
+            ),
+          },
+        ],
       };
     },
   );
@@ -320,7 +421,12 @@ export function createMcpSession(instanceId: string, deps: McpSessionDeps): McpS
       const existing = await schedules.get(id);
       if (!existing || existing.instanceId !== instanceId) {
         return {
-          content: [{ type: "text" as const, text: `schedule ${id} not found on this instance` }],
+          content: [
+            {
+              type: "text" as const,
+              text: `schedule ${id} not found on this instance`,
+            },
+          ],
           isError: true,
         };
       }
@@ -341,7 +447,12 @@ export function createMcpSession(instanceId: string, deps: McpSessionDeps): McpS
     },
   });
 
-  const session: McpSession = { transport, server, instanceId, lastActivity: Date.now() };
+  const session: McpSession = {
+    transport,
+    server,
+    instanceId,
+    lastActivity: Date.now(),
+  };
   return session;
 }
 

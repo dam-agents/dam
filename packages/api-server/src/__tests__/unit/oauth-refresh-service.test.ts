@@ -78,20 +78,25 @@ describe("oauth-refresh-service", () => {
     // expires in 60 seconds — inside the default 5-min skew window.
     await port.upsertConnection({
       connection: "mcp.example.com",
-      tokens: { accessToken: "old", refreshToken: "ref-old", expiresAt: NOW_MS / 1000 + 60 },
+      tokens: {
+        accessToken: "old",
+        refreshToken: "ref-old",
+        expiresAt: NOW_MS / 1000 + 60,
+      },
       metadata: SAMPLE_METADATA,
     });
 
-    const fetchImpl = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          access_token: "new-access",
-          refresh_token: "new-ref",
-          expires_in: 3600,
-          token_type: "Bearer",
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            access_token: "new-access",
+            refresh_token: "new-ref",
+            expires_in: 3600,
+            token_type: "Bearer",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
     ) as unknown as typeof fetch;
 
     const svc = createOAuthRefreshService({
@@ -103,17 +108,22 @@ describe("oauth-refresh-service", () => {
     await svc.tick();
 
     expect(fetchImpl).toHaveBeenCalledTimes(1);
-    const [url, init] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    const [url, init] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock
+      .calls[0];
     expect(url).toBe(SAMPLE_METADATA.tokenUrl);
     const body = (init as RequestInit).body as URLSearchParams;
     expect(body.get("grant_type")).toBe("refresh_token");
     expect(body.get("refresh_token")).toBe("ref-old");
     expect(body.get("client_id")).toBe("client-123");
 
-    const after = store.get(connectionSecretName("owner-1", "mcp.example.com"))!;
+    const after = store.get(
+      connectionSecretName("owner-1", "mcp.example.com"),
+    )!;
     expect(decode(after, "raw_access_token")).toBe("new-access");
     expect(decode(after, "refresh_token")).toBe("new-ref");
-    expect(after.metadata!.annotations!["agent-platform.ai/connection-status"]).toBe("active");
+    expect(
+      after.metadata!.annotations!["agent-platform.ai/connection-status"],
+    ).toBe("active");
     // expiresAt == now + 3600s
     expect(after.metadata!.annotations!["agent-platform.ai/expires-at"]).toBe(
       String(Math.floor(NOW_MS / 1000) + 3600),
@@ -127,7 +137,11 @@ describe("oauth-refresh-service", () => {
     const NOW_MS = 1_700_000_000_000;
     await port.upsertConnection({
       connection: "mcp.example.com",
-      tokens: { accessToken: "tok", refreshToken: "ref", expiresAt: NOW_MS / 1000 + 7200 },
+      tokens: {
+        accessToken: "tok",
+        refreshToken: "ref",
+        expiresAt: NOW_MS / 1000 + 7200,
+      },
       metadata: SAMPLE_METADATA,
     });
 
@@ -149,8 +163,16 @@ describe("oauth-refresh-service", () => {
     const NOW_MS = 1_700_000_000_000;
     await port.upsertConnection({
       connection: "svc.example.com",
-      tokens: { accessToken: "tok", refreshToken: "ref", expiresAt: NOW_MS / 1000 + 30 },
-      metadata: { ...SAMPLE_METADATA, grantType: "client_credentials", hosts: [{ host: "svc.example.com" }] },
+      tokens: {
+        accessToken: "tok",
+        refreshToken: "ref",
+        expiresAt: NOW_MS / 1000 + 30,
+      },
+      metadata: {
+        ...SAMPLE_METADATA,
+        grantType: "client_credentials",
+        hosts: [{ host: "svc.example.com" }],
+      },
     });
 
     const fetchImpl = vi.fn() as unknown as typeof fetch;
@@ -171,15 +193,23 @@ describe("oauth-refresh-service", () => {
     const NOW_MS = 1_700_000_000_000;
     await port.upsertConnection({
       connection: "mcp.example.com",
-      tokens: { accessToken: "old", refreshToken: "ref-old", expiresAt: NOW_MS / 1000 + 30 },
+      tokens: {
+        accessToken: "old",
+        refreshToken: "ref-old",
+        expiresAt: NOW_MS / 1000 + 30,
+      },
       metadata: SAMPLE_METADATA,
     });
 
-    const fetchImpl = vi.fn(async () =>
-      new Response(
-        JSON.stringify({ error: "invalid_grant", error_description: "token revoked" }),
-        { status: 400, headers: { "Content-Type": "application/json" } },
-      ),
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            error: "invalid_grant",
+            error_description: "token revoked",
+          }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        ),
     ) as unknown as typeof fetch;
 
     const svc = createOAuthRefreshService({
@@ -190,8 +220,12 @@ describe("oauth-refresh-service", () => {
     });
     await svc.tick();
 
-    const after = store.get(connectionSecretName("owner-1", "mcp.example.com"))!;
-    expect(after.metadata!.annotations!["agent-platform.ai/connection-status"]).toBe("expired");
+    const after = store.get(
+      connectionSecretName("owner-1", "mcp.example.com"),
+    )!;
+    expect(
+      after.metadata!.annotations!["agent-platform.ai/connection-status"],
+    ).toBe("expired");
     // Original token is unchanged — only the status flipped.
     expect(decode(after, "raw_access_token")).toBe("old");
   });
@@ -203,7 +237,11 @@ describe("oauth-refresh-service", () => {
     let nowMs = 1_700_000_000_000;
     await port.upsertConnection({
       connection: "mcp.example.com",
-      tokens: { accessToken: "old", refreshToken: "ref-old", expiresAt: nowMs / 1000 + 30 },
+      tokens: {
+        accessToken: "old",
+        refreshToken: "ref-old",
+        expiresAt: nowMs / 1000 + 30,
+      },
       metadata: SAMPLE_METADATA,
     });
 
@@ -245,13 +283,19 @@ describe("oauth-refresh-service", () => {
     const NOW_MS = 1_700_000_000_000;
     await port.upsertConnection({
       connection: "mcp.example.com",
-      tokens: { accessToken: "tok", refreshToken: "ref", expiresAt: NOW_MS / 1000 + 30 },
+      tokens: {
+        accessToken: "tok",
+        refreshToken: "ref",
+        expiresAt: NOW_MS / 1000 + 30,
+      },
       metadata: SAMPLE_METADATA,
     });
-    const { markConnectionExpired } = await import(
-      "../../modules/connections/infrastructure/k8s-connections-port.js"
+    const { markConnectionExpired } =
+      await import("../../modules/connections/infrastructure/k8s-connections-port.js");
+    await markConnectionExpired(
+      client,
+      connectionSecretName("owner-1", "mcp.example.com"),
     );
-    await markConnectionExpired(client, connectionSecretName("owner-1", "mcp.example.com"));
 
     const fetchImpl = vi.fn() as unknown as typeof fetch;
     const svc = createOAuthRefreshService({
@@ -276,7 +320,11 @@ describe("oauth-refresh-service", () => {
     const NOW_MS = 1_700_000_000_000;
     await port.upsertConnection({
       connection: "github",
-      tokens: { accessToken: "old", refreshToken: "ref-old", expiresAt: NOW_MS / 1000 + 60 },
+      tokens: {
+        accessToken: "old",
+        refreshToken: "ref-old",
+        expiresAt: NOW_MS / 1000 + 60,
+      },
       metadata: {
         ...SAMPLE_METADATA,
         tokenUrl: "https://github.com/login/oauth/access_token",
@@ -285,11 +333,15 @@ describe("oauth-refresh-service", () => {
       },
     });
 
-    const fetchImpl = vi.fn(async () =>
-      new Response(
-        "access_token=new-access&refresh_token=new-ref&expires_in=28800&token_type=bearer&scope=repo",
-        { status: 200, headers: { "Content-Type": "application/x-www-form-urlencoded" } },
-      ),
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          "access_token=new-access&refresh_token=new-ref&expires_in=28800&token_type=bearer&scope=repo",
+          {
+            status: 200,
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          },
+        ),
     ) as unknown as typeof fetch;
 
     const svc = createOAuthRefreshService({
@@ -301,14 +353,17 @@ describe("oauth-refresh-service", () => {
     await svc.tick();
 
     expect(fetchImpl).toHaveBeenCalledTimes(1);
-    const [, init] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    const [, init] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock
+      .calls[0];
     const headers = (init as RequestInit).headers as Record<string, string>;
     expect(headers["Accept"]).toBe("application/json");
 
     const after = store.get(connectionSecretName("owner-1", "github"))!;
     expect(decode(after, "raw_access_token")).toBe("new-access");
     expect(decode(after, "refresh_token")).toBe("new-ref");
-    expect(after.metadata!.annotations!["agent-platform.ai/connection-status"]).toBe("active");
+    expect(
+      after.metadata!.annotations!["agent-platform.ai/connection-status"],
+    ).toBe("active");
     expect(after.metadata!.annotations!["agent-platform.ai/expires-at"]).toBe(
       String(Math.floor(NOW_MS / 1000) + 28800),
     );
@@ -324,15 +379,23 @@ describe("oauth-refresh-service", () => {
     const NOW_MS = 1_700_000_000_000;
     await port.upsertConnection({
       connection: "github",
-      tokens: { accessToken: "old", refreshToken: "ref-revoked", expiresAt: NOW_MS / 1000 + 30 },
+      tokens: {
+        accessToken: "old",
+        refreshToken: "ref-revoked",
+        expiresAt: NOW_MS / 1000 + 30,
+      },
       metadata: SAMPLE_METADATA,
     });
 
-    const fetchImpl = vi.fn(async () =>
-      new Response(
-        "error=invalid_grant&error_description=The+refresh+token+is+invalid",
-        { status: 200, headers: { "Content-Type": "application/x-www-form-urlencoded" } },
-      ),
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          "error=invalid_grant&error_description=The+refresh+token+is+invalid",
+          {
+            status: 200,
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          },
+        ),
     ) as unknown as typeof fetch;
 
     const svc = createOAuthRefreshService({
@@ -344,7 +407,9 @@ describe("oauth-refresh-service", () => {
     await svc.tick();
 
     const after = store.get(connectionSecretName("owner-1", "github"))!;
-    expect(after.metadata!.annotations!["agent-platform.ai/connection-status"]).toBe("expired");
+    expect(
+      after.metadata!.annotations!["agent-platform.ai/connection-status"],
+    ).toBe("expired");
     expect(decode(after, "raw_access_token")).toBe("old");
   });
 
@@ -359,15 +424,23 @@ describe("oauth-refresh-service", () => {
     const NOW_MS = 1_700_000_000_000;
     await port.upsertConnection({
       connection: "github",
-      tokens: { accessToken: "old", refreshToken: "ref-burned", expiresAt: NOW_MS / 1000 + 30 },
+      tokens: {
+        accessToken: "old",
+        refreshToken: "ref-burned",
+        expiresAt: NOW_MS / 1000 + 30,
+      },
       metadata: SAMPLE_METADATA,
     });
 
-    const fetchImpl = vi.fn(async () =>
-      new Response(
-        "error=bad_refresh_token&error_description=The+refresh+token+passed+is+incorrect+or+expired.",
-        { status: 200, headers: { "Content-Type": "application/x-www-form-urlencoded" } },
-      ),
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          "error=bad_refresh_token&error_description=The+refresh+token+passed+is+incorrect+or+expired.",
+          {
+            status: 200,
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          },
+        ),
     ) as unknown as typeof fetch;
 
     const svc = createOAuthRefreshService({
@@ -379,7 +452,9 @@ describe("oauth-refresh-service", () => {
     await svc.tick();
 
     const after = store.get(connectionSecretName("owner-1", "github"))!;
-    expect(after.metadata!.annotations!["agent-platform.ai/connection-status"]).toBe("expired");
+    expect(
+      after.metadata!.annotations!["agent-platform.ai/connection-status"],
+    ).toBe("expired");
     expect(decode(after, "raw_access_token")).toBe("old");
   });
 
@@ -390,15 +465,20 @@ describe("oauth-refresh-service", () => {
     const NOW_MS = 1_700_000_000_000;
     await port.upsertConnection({
       connection: "mcp.example.com",
-      tokens: { accessToken: "old", refreshToken: "ref-keep", expiresAt: NOW_MS / 1000 + 30 },
+      tokens: {
+        accessToken: "old",
+        refreshToken: "ref-keep",
+        expiresAt: NOW_MS / 1000 + 30,
+      },
       metadata: SAMPLE_METADATA,
     });
 
-    const fetchImpl = vi.fn(async () =>
-      new Response(
-        JSON.stringify({ access_token: "new", expires_in: 3600 }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ access_token: "new", expires_in: 3600 }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
     ) as unknown as typeof fetch;
 
     const svc = createOAuthRefreshService({
@@ -409,7 +489,9 @@ describe("oauth-refresh-service", () => {
     });
     await svc.tick();
 
-    const after = store.get(connectionSecretName("owner-1", "mcp.example.com"))!;
+    const after = store.get(
+      connectionSecretName("owner-1", "mcp.example.com"),
+    )!;
     expect(decode(after, "refresh_token")).toBe("ref-keep");
     expect(decode(after, "raw_access_token")).toBe("new");
   });
@@ -422,7 +504,11 @@ describe("oauth-refresh-service", () => {
     const NOW_MS = 1_700_000_000_000;
     await port.upsertConnection({
       connection: "github",
-      tokens: { accessToken: "old", refreshToken: "ref-old", expiresAt: NOW_MS / 1000 + 60 },
+      tokens: {
+        accessToken: "old",
+        refreshToken: "ref-old",
+        expiresAt: NOW_MS / 1000 + 60,
+      },
       metadata: {
         hosts: [
           { host: "api.github.com" },
@@ -440,15 +526,16 @@ describe("oauth-refresh-service", () => {
       },
     });
 
-    const fetchImpl = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          access_token: "rotated",
-          refresh_token: "ref-new",
-          expires_in: 3600,
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            access_token: "rotated",
+            refresh_token: "ref-new",
+            expires_in: 3600,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
     ) as unknown as typeof fetch;
 
     const svc = createOAuthRefreshService({
@@ -462,19 +549,20 @@ describe("oauth-refresh-service", () => {
     // Single endpoint call — one Secret per connection.
     expect(fetchImpl).toHaveBeenCalledTimes(1);
 
-    const { sdsFileKeyForHost } = await import(
-      "../../modules/connections/infrastructure/k8s-connections-port.js"
-    );
+    const { sdsFileKeyForHost } =
+      await import("../../modules/connections/infrastructure/k8s-connections-port.js");
     const secret = store.get(connectionSecretName("owner-1", "github"))!;
     expect(decode(secret, sdsFileKeyForHost("api.github.com"))).toContain(
       'inline_string: "Bearer rotated"',
     );
-    const expectedB64 = Buffer.from("x-access-token:rotated", "utf8").toString("base64");
+    const expectedB64 = Buffer.from("x-access-token:rotated", "utf8").toString(
+      "base64",
+    );
     expect(decode(secret, sdsFileKeyForHost("github.com"))).toContain(
       `inline_string: "Basic ${expectedB64}"`,
     );
-    expect(decode(secret, sdsFileKeyForHost("raw.githubusercontent.com"))).toContain(
-      'inline_string: "Bearer rotated"',
-    );
+    expect(
+      decode(secret, sdsFileKeyForHost("raw.githubusercontent.com")),
+    ).toContain('inline_string: "Bearer rotated"');
   });
 });

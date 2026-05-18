@@ -23,10 +23,17 @@ export interface RedisBusOptions {
   password?: string;
 }
 
-export function createRedisBus(url: string, options: RedisBusOptions = {}): RedisBus {
+export function createRedisBus(
+  url: string,
+  options: RedisBusOptions = {},
+): RedisBus {
   // Two connections because a connection in subscribe mode can only execute
   // SUBSCRIBE / UNSUBSCRIBE / PING / QUIT.
-  const opts = { lazyConnect: false, maxRetriesPerRequest: null, password: options.password };
+  const opts = {
+    lazyConnect: false,
+    maxRetriesPerRequest: null,
+    password: options.password,
+  };
   const publisher: RedisClient = new Redis(url, opts);
   const subscriber: RedisClient = new Redis(url, opts);
 
@@ -36,7 +43,11 @@ export function createRedisBus(url: string, options: RedisBusOptions = {}): Redi
     const set = listeners.get(channel);
     if (!set) return;
     for (const fn of set) {
-      try { fn(payload); } catch { /* listener errors must not affect siblings or the dispatcher */ }
+      try {
+        fn(payload);
+      } catch {
+        /* listener errors must not affect siblings or the dispatcher */
+      }
     }
   });
 
@@ -46,7 +57,10 @@ export function createRedisBus(url: string, options: RedisBusOptions = {}): Redi
         await publisher.publish(channel, payload);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.warn("[redis-bus] publish-failed", JSON.stringify({ channel, error: msg }));
+        console.warn(
+          "[redis-bus] publish-failed",
+          JSON.stringify({ channel, error: msg }),
+        );
       }
     },
 
@@ -57,7 +71,10 @@ export function createRedisBus(url: string, options: RedisBusOptions = {}): Redi
         listeners.set(channel, set);
         void subscriber.subscribe(channel).catch((err) => {
           const msg = err instanceof Error ? err.message : String(err);
-          console.warn("[redis-bus] subscribe-failed", JSON.stringify({ channel, error: msg }));
+          console.warn(
+            "[redis-bus] subscribe-failed",
+            JSON.stringify({ channel, error: msg }),
+          );
         });
       }
       set.add(listener);

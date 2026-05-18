@@ -39,7 +39,8 @@ export const ACTIVE_SESSION_KEY = "agent-platform.ai/active-session";
 // list, and new instance ConfigMaps initialize the annotations explicitly
 // so the explicit-empty vs. legacy-absent distinction is moot.
 export const ANN_GRANTED_SECRET_IDS = "agent-platform.ai/granted-secret-ids";
-export const ANN_GRANTED_CONNECTION_IDS = "agent-platform.ai/granted-connection-ids";
+export const ANN_GRANTED_CONNECTION_IDS =
+  "agent-platform.ai/granted-connection-ids";
 
 // Render-affecting hash of the agent's currently-granted secrets (ADR-040).
 // The api-server bumps this on the instance ConfigMap whenever a granted

@@ -37,7 +37,10 @@ import {
   useUpdateAgent,
 } from "../api/mutations.js";
 import { useAgentAccess, useAgentConnections } from "../api/queries.js";
-import { EnvTab, type InheritedEnv } from "../components/configure-agent/env-tab.js";
+import {
+  EnvTab,
+  type InheritedEnv,
+} from "../components/configure-agent/env-tab.js";
 import { TabButton } from "../components/configure-agent/tab-button.js";
 import {
   configureAgentSchema,
@@ -81,20 +84,30 @@ export function ConfigureAgentDialog({
   // the rest of the form; closing discards. Tracked outside RHF since
   // none of these correspond to schema fields.
   const [stagedPreset, setStagedPreset] = useState<EgressPreset | null>(null);
-  const [pendingDeletes, setPendingDeletes] = useState<ReadonlySet<string>>(() => new Set());
+  const [pendingDeletes, setPendingDeletes] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const [pendingAdds, setPendingAdds] = useState<readonly PendingAdd[]>([]);
 
-  const { register, control, handleSubmit, watch, getValues, setValue, reset, formState } =
-    useForm<ConfigureAgentValues>({
-      resolver: zodResolver(configureAgentSchema),
-      mode: "onChange",
-      defaultValues: {
-        name: agent.name,
-        assigned: [],
-        assignedAppIds: [],
-        envVars: userInitialEnv,
-      },
-    });
+  const {
+    register,
+    control,
+    handleSubmit,
+    watch,
+    getValues,
+    setValue,
+    reset,
+    formState,
+  } = useForm<ConfigureAgentValues>({
+    resolver: zodResolver(configureAgentSchema),
+    mode: "onChange",
+    defaultValues: {
+      name: agent.name,
+      assigned: [],
+      assignedAppIds: [],
+      envVars: userInitialEnv,
+    },
+  });
   const { errors, isDirty, dirtyFields, isSubmitting } = formState;
   const saving = isSubmitting;
 
@@ -111,7 +124,13 @@ export function ConfigureAgentDialog({
       assignedAppIds: [...connectionsQuery.data.connectionIds].sort(),
       envVars: userInitialEnv,
     });
-  }, [accessQuery.data, connectionsQuery.data, userInitialEnv, agent.name, reset]);
+  }, [
+    accessQuery.data,
+    connectionsQuery.data,
+    userInitialEnv,
+    agent.name,
+    reset,
+  ]);
   const ready = baselinedRef.current;
 
   // ADR-040: grant toggles no longer mutate `envVars`. The controller merges
@@ -145,22 +164,30 @@ export function ConfigureAgentDialog({
   const oauthAppEntries = useMemo<OAuthAppEntry[]>(() => {
     const secretByName = new Map(secrets.map((s) => [s.name, s]));
     return oauthAppConnections.flatMap((conn) => {
-      const mirror = secretByName.get(`${APP_OAUTH_SECRET_PREFIX}${conn.connectionId}`);
+      const mirror = secretByName.get(
+        `${APP_OAUTH_SECRET_PREFIX}${conn.connectionId}`,
+      );
       if (!mirror) return [];
-      return [{
-        secretId: mirror.id,
-        appId: conn.appId,
-        displayName: conn.displayName,
-        hosts: conn.hosts,
-        expired: conn.expired,
-      }];
+      return [
+        {
+          secretId: mirror.id,
+          appId: conn.appId,
+          displayName: conn.displayName,
+          hosts: conn.hosts,
+          expired: conn.expired,
+        },
+      ];
     });
   }, [oauthAppConnections, secrets]);
 
   const inheritedEnvs = useMemo<InheritedEnv[]>(() => {
     const items: InheritedEnv[] = (agent.env ?? [])
       .filter((e) => isProtectedAgentEnvName(e.name))
-      .map((e) => ({ name: e.name, value: e.value, source: "system" as const }));
+      .map((e) => ({
+        name: e.name,
+        value: e.value,
+        source: "system" as const,
+      }));
 
     for (const s of secrets.filter((s) => assignedSet.has(s.id))) {
       for (const m of s.envMappings ?? []) {
@@ -222,7 +249,14 @@ export function ConfigureAgentDialog({
       }
     }
     return out;
-  }, [assigned, assignedAppIds, baselineSecretIds, baselineAppIds, secrets, apps]);
+  }, [
+    assigned,
+    assignedAppIds,
+    baselineSecretIds,
+    baselineAppIds,
+    secrets,
+    apps,
+  ]);
   const pendingConnectionRevokes = useMemo(() => {
     const next = new Set<string>();
     for (const id of baselineSecretIds) if (!assignedSet.has(id)) next.add(id);
@@ -245,12 +279,16 @@ export function ConfigureAgentDialog({
   const togglePendingDelete = (id: string) => {
     setPendingDeletes((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
   const appendPendingAdd = (draft: Omit<PendingAdd, "tempId">) => {
-    setPendingAdds((prev) => [...prev, { ...draft, tempId: crypto.randomUUID() }]);
+    setPendingAdds((prev) => [
+      ...prev,
+      { ...draft, tempId: crypto.randomUUID() },
+    ]);
   };
   const removePendingAdd = (tempId: string) => {
     setPendingAdds((prev) => prev.filter((a) => a.tempId !== tempId));
@@ -268,11 +306,14 @@ export function ConfigureAgentDialog({
           secretIds: values.assigned,
         });
       }
-      const wantsAgentUpdate = Boolean(dirtyFields.envVars) || Boolean(dirtyFields.name);
+      const wantsAgentUpdate =
+        Boolean(dirtyFields.envVars) || Boolean(dirtyFields.name);
       if (wantsAgentUpdate) {
         await updateAgent.mutateAsync({
           id: agentId,
-          ...(dirtyFields.envVars ? { env: sanitizeEnvVars(values.envVars) } : {}),
+          ...(dirtyFields.envVars
+            ? { env: sanitizeEnvVars(values.envVars) }
+            : {}),
           ...(dirtyFields.name ? { name: values.name.trim() } : {}),
         });
       }
@@ -298,8 +339,8 @@ export function ConfigureAgentDialog({
         .filter((a) => a.method !== "*" || a.pathPattern !== "*")
         .map((a) => a.host);
       if (
-        restartingHosts.length > 0
-        && !window.confirm(
+        restartingHosts.length > 0 &&
+        !window.confirm(
           `Saving will restart the agent (~5–15s) so Envoy can MITM ${restartingHosts.length === 1 ? `"${restartingHosts[0]}"` : `${restartingHosts.length} hosts`} for path-level enforcement. Continue?`,
         )
       ) {
@@ -343,7 +384,8 @@ export function ConfigureAgentDialog({
   );
   const effectivePreset = stagedPreset ?? currentPreset;
   const effectivePresetIsAll = effectivePreset === "all";
-  const wildcardHostInScope = stagedHasWildcardAdd || savedWildcardActive || effectivePresetIsAll;
+  const wildcardHostInScope =
+    stagedHasWildcardAdd || savedWildcardActive || effectivePresetIsAll;
 
   return (
     <Modal widthClass="w-[640px]">
@@ -402,7 +444,9 @@ export function ConfigureAgentDialog({
             <TabButton
               active={tab === "egress"}
               label="Network access"
-              count={egressRules.length - pendingDeletes.size + pendingAdds.length}
+              count={
+                egressRules.length - pendingDeletes.size + pendingAdds.length
+              }
               onClick={() => setTab("egress")}
             />
           )}
@@ -463,7 +507,8 @@ export function ConfigureAgentDialog({
               title="A wildcard host '*' rule is in scope. Any unmatched egress is allowed."
             >
               <span aria-hidden="true">⚠</span>
-              Allow everything is on — narrow with deny rules or remove the wildcard.
+              Allow everything is on — narrow with deny rules or remove the
+              wildcard.
             </span>
           )}
           <button

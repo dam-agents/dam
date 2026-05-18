@@ -52,15 +52,24 @@ export interface InstallSkillResult {
 }
 
 export interface AgentRuntimeSkillsClient {
-  install(instanceId: string, body: InstallSkillCall): Promise<InstallSkillResult>;
+  install(
+    instanceId: string,
+    body: InstallSkillCall,
+  ): Promise<InstallSkillResult>;
   uninstall(instanceId: string, body: UninstallSkillCall): Promise<void>;
   listLocal(instanceId: string, skillPaths: string[]): Promise<LocalSkill[]>;
-  publish(instanceId: string, body: PublishSkillCall): Promise<PublishSkillResult>;
+  publish(
+    instanceId: string,
+    body: PublishSkillCall,
+  ): Promise<PublishSkillResult>;
   scan(instanceId: string, source: string): Promise<Skill[]>;
 }
 
 export class AgentRuntimeUpstreamError extends Error {
-  constructor(message: string, public readonly upstream: UpstreamGatewayError) {
+  constructor(
+    message: string,
+    public readonly upstream: UpstreamGatewayError,
+  ) {
     super(message);
     this.name = "AgentRuntimeUpstreamError";
   }
@@ -94,7 +103,10 @@ function isUpstreamGatewayError(value: unknown): value is UpstreamGatewayError {
  * AgentRuntimeUpstreamError so callers can extract the CTA URL. Other tRPC
  * errors propagate as plain Error.
  */
-async function runWithUpstreamMapping<T>(label: string, fn: () => Promise<T>): Promise<T> {
+async function runWithUpstreamMapping<T>(
+  label: string,
+  fn: () => Promise<T>,
+): Promise<T> {
   try {
     return await fn();
   } catch (e) {
@@ -110,20 +122,31 @@ async function runWithUpstreamMapping<T>(label: string, fn: () => Promise<T>): P
   }
 }
 
-export function createAgentRuntimeSkillsClient(namespace: string): AgentRuntimeSkillsClient {
+export function createAgentRuntimeSkillsClient(
+  namespace: string,
+): AgentRuntimeSkillsClient {
   return {
     install: (instanceId, body) =>
-      runWithUpstreamMapping(`agent-runtime install ${instanceId}`, async () => {
-        return makeClient(instanceId, namespace).skills.install.mutate(body);
-      }),
+      runWithUpstreamMapping(
+        `agent-runtime install ${instanceId}`,
+        async () => {
+          return makeClient(instanceId, namespace).skills.install.mutate(body);
+        },
+      ),
     uninstall: (instanceId, body) =>
-      runWithUpstreamMapping(`agent-runtime uninstall ${instanceId}`, async () => {
-        await makeClient(instanceId, namespace).skills.uninstall.mutate(body);
-      }),
+      runWithUpstreamMapping(
+        `agent-runtime uninstall ${instanceId}`,
+        async () => {
+          await makeClient(instanceId, namespace).skills.uninstall.mutate(body);
+        },
+      ),
     listLocal: async (instanceId, skillPaths) => {
       const { skills } = await runWithUpstreamMapping(
         `agent-runtime listLocal ${instanceId}`,
-        () => makeClient(instanceId, namespace).skills.listLocal.query({ skillPaths }),
+        () =>
+          makeClient(instanceId, namespace).skills.listLocal.query({
+            skillPaths,
+          }),
       );
       return skills;
     },

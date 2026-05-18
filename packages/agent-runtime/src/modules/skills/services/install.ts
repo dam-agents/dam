@@ -27,7 +27,12 @@ export async function runInstall(
   input: InstallSkillInput,
 ): Promise<Result<InstallSkillResult, SkillsDomainError>> {
   return deps.repo.withTempDir("platform-skill-", async (tmp) => {
-    const fetched = await fetchSourceAtVersion(deps, input.source, input.version, tmp);
+    const fetched = await fetchSourceAtVersion(
+      deps,
+      input.source,
+      input.version,
+      tmp,
+    );
     if (!fetched.ok) return fetched;
 
     const srcDirRes = await deps.repo.resolveSkillDirInClone(tmp, name);
@@ -37,7 +42,11 @@ export async function runInstall(
       return err({ kind: "SkillNotFoundInSource", source: input.source, name });
     }
 
-    const { contentHash } = await deps.repo.writeFromDir(name, skillPaths, srcDirRes.value);
+    const { contentHash } = await deps.repo.writeFromDir(
+      name,
+      skillPaths,
+      srcDirRes.value,
+    );
     return ok({ contentHash });
   });
 }
@@ -53,8 +62,14 @@ async function fetchSourceAtVersion(
     // Anonymous-first; on 404 retry with the sentinel so the api-server's
     // upstream-error mapping can surface the structured `app_not_connected`
     // / `access_restricted` CTA body.
-    let bytes = await deps.github.fetchTarball(host, version, { withAuth: false });
-    if (!bytes.ok && bytes.error.kind === "UpstreamGitHubError" && bytes.error.status === 404) {
+    let bytes = await deps.github.fetchTarball(host, version, {
+      withAuth: false,
+    });
+    if (
+      !bytes.ok &&
+      bytes.error.kind === "UpstreamGitHubError" &&
+      bytes.error.status === 404
+    ) {
       bytes = await deps.github.fetchTarball(host, version, { withAuth: true });
     }
     if (!bytes.ok) return bytes;

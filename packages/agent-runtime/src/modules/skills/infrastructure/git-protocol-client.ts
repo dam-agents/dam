@@ -34,17 +34,37 @@ export function createGitProtocolClient(): GitProtocolClient {
   return {
     async cloneShallow(url, dest, depth = 50) {
       try {
-        await runProc("git", ["clone", "--quiet", "--no-local", "--depth", String(depth), url, dest]);
+        await runProc("git", [
+          "clone",
+          "--quiet",
+          "--no-local",
+          "--depth",
+          String(depth),
+          url,
+          dest,
+        ]);
         return ok(undefined);
       } catch (e) {
-        return err({ kind: "SourceFetchFailed", source: url, detail: (e as Error).message });
+        return err({
+          kind: "SourceFetchFailed",
+          source: url,
+          detail: (e as Error).message,
+        });
       }
     },
     async fetchAtSha(url, sha, dest) {
       try {
         await runProc("git", ["init", "--quiet", dest]);
         await runProc("git", ["-C", dest, "remote", "add", "origin", url]);
-        await runProc("git", ["-C", dest, "fetch", "--depth", "1", "origin", sha]);
+        await runProc("git", [
+          "-C",
+          dest,
+          "fetch",
+          "--depth",
+          "1",
+          "origin",
+          sha,
+        ]);
         await runProc("git", ["-C", dest, "checkout", "--quiet", "FETCH_HEAD"]);
         return ok(undefined);
       } catch {
@@ -57,15 +77,31 @@ export function createGitProtocolClient(): GitProtocolClient {
         await runProc("git", ["-C", dest, "checkout", "--quiet", sha]);
         return ok(undefined);
       } catch (e) {
-        return err({ kind: "SourceFetchFailed", source: url, detail: (e as Error).message });
+        return err({
+          kind: "SourceFetchFailed",
+          source: url,
+          detail: (e as Error).message,
+        });
       }
     },
     async lastTouchingSha(repoDir, relPath) {
       try {
-        const out = await runCapture("git", ["-C", repoDir, "log", "-1", "--format=%H", "--", relPath]);
+        const out = await runCapture("git", [
+          "-C",
+          repoDir,
+          "log",
+          "-1",
+          "--format=%H",
+          "--",
+          relPath,
+        ]);
         return ok(out.trim());
       } catch (e) {
-        return err({ kind: "SourceFetchFailed", source: repoDir, detail: (e as Error).message });
+        return err({
+          kind: "SourceFetchFailed",
+          source: repoDir,
+          detail: (e as Error).message,
+        });
       }
     },
   };
@@ -77,7 +113,11 @@ async function runProc(cmd: string, args: string[]): Promise<void> {
     const stderrChunks: Buffer[] = [];
     const timer = setTimeout(() => {
       proc.kill("SIGKILL");
-      reject(new Error(`${cmd} ${args.join(" ")} timed out after ${COMMAND_TIMEOUT_MS}ms`));
+      reject(
+        new Error(
+          `${cmd} ${args.join(" ")} timed out after ${COMMAND_TIMEOUT_MS}ms`,
+        ),
+      );
     }, COMMAND_TIMEOUT_MS);
     proc.stderr?.on("data", (c: Buffer) => stderrChunks.push(c));
     proc.on("error", (e) => {
@@ -91,7 +131,11 @@ async function runProc(cmd: string, args: string[]): Promise<void> {
         return;
       }
       const stderr = Buffer.concat(stderrChunks).toString("utf8").trim();
-      reject(new Error(`${cmd} ${args.join(" ")} exited ${code}${stderr ? `: ${stderr}` : ""}`));
+      reject(
+        new Error(
+          `${cmd} ${args.join(" ")} exited ${code}${stderr ? `: ${stderr}` : ""}`,
+        ),
+      );
     });
   });
 }
@@ -103,7 +147,11 @@ async function runCapture(cmd: string, args: string[]): Promise<string> {
     const stderrChunks: Buffer[] = [];
     const timer = setTimeout(() => {
       proc.kill("SIGKILL");
-      reject(new Error(`${cmd} ${args.join(" ")} timed out after ${COMMAND_TIMEOUT_MS}ms`));
+      reject(
+        new Error(
+          `${cmd} ${args.join(" ")} timed out after ${COMMAND_TIMEOUT_MS}ms`,
+        ),
+      );
     }, COMMAND_TIMEOUT_MS);
     proc.stdout?.on("data", (c: Buffer) => stdoutChunks.push(c));
     proc.stderr?.on("data", (c: Buffer) => stderrChunks.push(c));
@@ -118,7 +166,11 @@ async function runCapture(cmd: string, args: string[]): Promise<string> {
         return;
       }
       const stderr = Buffer.concat(stderrChunks).toString("utf8").trim();
-      reject(new Error(`${cmd} ${args.join(" ")} exited ${code}${stderr ? `: ${stderr}` : ""}`));
+      reject(
+        new Error(
+          `${cmd} ${args.join(" ")} exited ${code}${stderr ? `: ${stderr}` : ""}`,
+        ),
+      );
     });
   });
 }

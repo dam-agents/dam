@@ -3,7 +3,10 @@ import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
 import type { InstancesRepository } from "../../modules/instances/infrastructure/instances-repository.js";
-import { LAST_ACTIVITY_KEY, ACTIVE_SESSION_KEY } from "../../modules/agents/infrastructure/labels.js";
+import {
+  LAST_ACTIVITY_KEY,
+  ACTIVE_SESSION_KEY,
+} from "../../modules/agents/infrastructure/labels.js";
 import type { ApprovalsRelayService } from "../../modules/approvals/compose.js";
 import { acpNativeRowId } from "../../modules/approvals/domain/ids.js";
 
@@ -29,7 +32,9 @@ interface JsonRpcResponse {
 
 function tryParse(data: unknown): unknown {
   try {
-    return JSON.parse(typeof data === "string" ? data : (data as Buffer).toString("utf-8"));
+    return JSON.parse(
+      typeof data === "string" ? data : (data as Buffer).toString("utf-8"),
+    );
   } catch {
     return null;
   }
@@ -61,7 +66,15 @@ function extractRequestSessionId(req: JsonRpcRequest): string | null {
 const lastActivityTimestamps = new Map<string, number>();
 
 function sanitizeCloseCode(code: number): number {
-  if (code === 1000 || (code >= 1001 && code <= 1014 && code !== 1004 && code !== 1005 && code !== 1006)) return code;
+  if (
+    code === 1000 ||
+    (code >= 1001 &&
+      code <= 1014 &&
+      code !== 1004 &&
+      code !== 1005 &&
+      code !== 1006)
+  )
+    return code;
   if (code >= 3000 && code <= 4999) return code;
   return 1011;
 }
@@ -89,13 +102,18 @@ function connectUpstream(url: string): Promise<WebSocket> {
  *  composition root so the relay doesn't reach into the agents module's
  *  infrastructure for this lookup. */
 export interface InstanceIdentityLookup {
-  resolve(instanceId: string): Promise<{ ownerSub: string; agentId: string } | null>;
+  resolve(
+    instanceId: string,
+  ): Promise<{ ownerSub: string; agentId: string } | null>;
 }
 
 /** Persists a session row on first creation. Idempotent on conflict — repeated
  *  calls for the same sid no-op. Injected by the composition root so the relay
  *  doesn't reach into the sessions module directly. */
-export type PersistSession = (sessionId: string, instanceId: string) => Promise<void>;
+export type PersistSession = (
+  sessionId: string,
+  instanceId: string,
+) => Promise<void>;
 
 export function createAcpRelay(
   namespace: string,
@@ -114,7 +132,9 @@ export function createAcpRelay(
   ) {
     wss.handleUpgrade(req, socket, head, (client) => {
       client.on("error", () => {
-        try { client.terminate(); } catch {}
+        try {
+          client.terminate();
+        } catch {}
       });
 
       // Resolve identity once per upgrade. The instance's owner/agent
@@ -127,9 +147,12 @@ export function createAcpRelay(
       // Subscribe the inject channel for synth ext_authz frames bound for
       // this UI client. Unrelated to ACP-native delivery — that path is
       // outbox-driven and lives entirely in the approvals service.
-      const unsubInjects = approvals.subscribeFrameInjects(instanceId, (frame) => {
-        if (client.readyState === WebSocket.OPEN) client.send(frame);
-      });
+      const unsubInjects = approvals.subscribeFrameInjects(
+        instanceId,
+        (frame) => {
+          if (client.readyState === WebSocket.OPEN) client.send(frame);
+        },
+      );
       client.once("close", () => unsubInjects());
 
       function mirrorPermissionRequest(msg: JsonRpcRequest): void {
@@ -139,18 +162,25 @@ export function createAcpRelay(
         const toolName = (tc.title as string | undefined) ?? "tool call";
         const options = (msg.params.options ?? []).map((o) => ({
           optionId: o.optionId,
-          kind: o.kind as "allow_once" | "allow_always" | "reject_once" | "reject_always" | undefined,
+          kind: o.kind as
+            | "allow_once"
+            | "allow_always"
+            | "reject_once"
+            | "reject_always"
+            | undefined,
         }));
-        approvals.recordAcpNativePending({
-          instanceId,
-          sessionId,
-          rpcId: msg.id,
-          agentId: identity.agentId,
-          ownerSub: identity.ownerSub,
-          toolName,
-          args: tc.rawInput,
-          options,
-        }).catch(() => {});
+        approvals
+          .recordAcpNativePending({
+            instanceId,
+            sessionId,
+            rpcId: msg.id,
+            agentId: identity.agentId,
+            ownerSub: identity.ownerSub,
+            toolName,
+            args: tc.rawInput,
+            options,
+          })
+          .catch(() => {});
       }
 
       function mirrorPermissionResponse(msg: JsonRpcResponse): void {
@@ -162,16 +192,22 @@ export function createAcpRelay(
         approvals.resolveAcpNativeFromInSession(rowId).catch(() => {});
       }
 
-      repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "true").catch(() => {});
+      repo
+        .patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "true")
+        .catch(() => {});
 
-      const pending: { data: Buffer | ArrayBuffer | Buffer[]; isBinary: boolean }[] = [];
+      const pending: {
+        data: Buffer | ArrayBuffer | Buffer[];
+        isBinary: boolean;
+      }[] = [];
       client.on("message", (data, isBinary) => {
         pending.push({ data: data as Buffer, isBinary });
       });
 
       const upstreamUrl = `ws://${podBaseUrl(instanceId, namespace)}/api/acp`;
 
-      identityLookup.resolve(instanceId)
+      identityLookup
+        .resolve(instanceId)
         .then((resolved) => {
           if (!resolved) {
             client.close(1011, "instance not found");
@@ -182,7 +218,9 @@ export function createAcpRelay(
         .then(() => repo.ensureReady(instanceId))
         .then(() => connectUpstream(upstreamUrl))
         .then((upstream) => {
-          repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "true").catch(() => {});
+          repo
+            .patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "true")
+            .catch(() => {});
 
           for (const msg of pending) {
             if (upstream.readyState === WebSocket.OPEN) {
@@ -196,10 +234,13 @@ export function createAcpRelay(
             if (upstream.readyState !== WebSocket.OPEN) return;
 
             if (shouldUpdateActivity(instanceId)) {
-              repo.patchAnnotation(
-                instanceId,
-                LAST_ACTIVITY_KEY, new Date().toISOString(),
-              ).catch(() => {});
+              repo
+                .patchAnnotation(
+                  instanceId,
+                  LAST_ACTIVITY_KEY,
+                  new Date().toISOString(),
+                )
+                .catch(() => {});
             }
 
             if (isBinary) {
@@ -222,20 +263,31 @@ export function createAcpRelay(
                     if (upstream.readyState === WebSocket.OPEN) {
                       upstream.send(data, { binary: false });
                     } else if (client.readyState === WebSocket.OPEN) {
-                      client.send(JSON.stringify({
-                        jsonrpc: "2.0",
-                        id: requestId,
-                        error: { code: -32000, message: "upstream closed before prompt could be forwarded" },
-                      }));
+                      client.send(
+                        JSON.stringify({
+                          jsonrpc: "2.0",
+                          id: requestId,
+                          error: {
+                            code: -32000,
+                            message:
+                              "upstream closed before prompt could be forwarded",
+                          },
+                        }),
+                      );
                     }
                   },
                   (e: unknown) => {
                     if (client.readyState !== WebSocket.OPEN) return;
-                    client.send(JSON.stringify({
-                      jsonrpc: "2.0",
-                      id: requestId,
-                      error: { code: -32000, message: `failed to persist session` },
-                    }));
+                    client.send(
+                      JSON.stringify({
+                        jsonrpc: "2.0",
+                        id: requestId,
+                        error: {
+                          code: -32000,
+                          message: `failed to persist session`,
+                        },
+                      }),
+                    );
                   },
                 );
                 return;
@@ -262,7 +314,10 @@ export function createAcpRelay(
           upstream.on("close", (code, reason) => {
             if (client.readyState === WebSocket.OPEN) {
               try {
-                client.close(sanitizeCloseCode(code), reason.toString() || "upstream closed");
+                client.close(
+                  sanitizeCloseCode(code),
+                  reason.toString() || "upstream closed",
+                );
               } catch {
                 client.terminate();
               }
@@ -280,7 +335,9 @@ export function createAcpRelay(
           });
 
           client.on("close", () => {
-            repo.patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "").catch(() => {});
+            repo
+              .patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "")
+              .catch(() => {});
             // Inbox-driven verdicts no longer need this upstream — delivery
             // happens out-of-band via WrapperFrameSender on the click-handling
             // replica (or via the periodic sweep). Closing here is safe.

@@ -21,6 +21,7 @@ const channelOf = (id: string) => `approval:${id}`;
 export function createRedisApprovalsBus(bus: RedisBus): ApprovalsBus {
   return {
     notifyResolved: (id) => bus.publish(channelOf(id), ""),
-    subscribe: (id, listener) => bus.subscribe(channelOf(id), () => listener(id)),
+    subscribe: (id, listener) =>
+      bus.subscribe(channelOf(id), () => listener(id)),
   };
 }

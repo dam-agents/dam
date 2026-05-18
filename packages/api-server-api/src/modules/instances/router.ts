@@ -19,25 +19,33 @@ export const instancesRouter = t.router({
     }),
 
   create: t.procedure
-    .input(z.object({
-      name: z.string().min(1).refine((n) => !n.startsWith("inst-"), {
-        message: "instance name cannot start with 'inst-' (reserved for IDs)",
+    .input(
+      z.object({
+        name: z
+          .string()
+          .min(1)
+          .refine((n) => !n.startsWith("inst-"), {
+            message:
+              "instance name cannot start with 'inst-' (reserved for IDs)",
+          }),
+        agentId: z.string().min(1),
+        env: z.array(envVarSchema).optional(),
+        secretRef: z.string().optional(),
+        description: z.string().optional(),
+        allowedUserEmails: z.array(z.email()).optional(),
       }),
-      agentId: z.string().min(1),
-      env: z.array(envVarSchema).optional(),
-      secretRef: z.string().optional(),
-      description: z.string().optional(),
-      allowedUserEmails: z.array(z.email()).optional(),
-    }))
+    )
     .mutation(async ({ ctx, input }) => ctx.instances.create(input)),
 
   update: t.procedure
-    .input(z.object({
-      id: z.string().min(1),
-      env: z.array(envVarSchema).optional(),
-      secretRef: z.string().optional(),
-      allowedUserEmails: z.array(z.email()).optional(),
-    }))
+    .input(
+      z.object({
+        id: z.string().min(1),
+        env: z.array(envVarSchema).optional(),
+        secretRef: z.string().optional(),
+        allowedUserEmails: z.array(z.email()).optional(),
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
       const inst = await ctx.instances.update(input);
       if (!inst) throw new TRPCError({ code: "NOT_FOUND" });
@@ -64,19 +72,31 @@ export const instancesRouter = t.router({
     }),
 
   connectSlack: t.procedure
-    .input(z.object({
-      id: z.string().min(1),
-      slackChannelId: z.string().min(1),
-    }))
+    .input(
+      z.object({
+        id: z.string().min(1),
+        slackChannelId: z.string().min(1),
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
-      if (!ctx.channels.available.slack) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Slack app token not configured" });
-      const res = await ctx.instances.connectSlack(input.id, input.slackChannelId);
+      if (!ctx.channels.available.slack)
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Slack app token not configured",
+        });
+      const res = await ctx.instances.connectSlack(
+        input.id,
+        input.slackChannelId,
+      );
       if (res.ok) return res.value;
       switch (res.error.type) {
         case "InstanceNotFound":
           throw new TRPCError({ code: "NOT_FOUND" });
         case "ChannelAlreadyBound":
-          throw new TRPCError({ code: "CONFLICT", message: "Slack channel already bound" });
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Slack channel already bound",
+          });
       }
     }),
 
@@ -89,13 +109,22 @@ export const instancesRouter = t.router({
     }),
 
   connectTelegram: t.procedure
-    .input(z.object({
-      id: z.string().min(1),
-      botToken: z.string().min(1),
-    }))
+    .input(
+      z.object({
+        id: z.string().min(1),
+        botToken: z.string().min(1),
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
-      if (!ctx.channels.available.telegram) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Telegram channel not enabled" });
-      const inst = await ctx.instances.connectTelegram(input.id, input.botToken);
+      if (!ctx.channels.available.telegram)
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Telegram channel not enabled",
+        });
+      const inst = await ctx.instances.connectTelegram(
+        input.id,
+        input.botToken,
+      );
       if (!inst) throw new TRPCError({ code: "NOT_FOUND" });
       return inst;
     }),

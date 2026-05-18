@@ -39,11 +39,25 @@ export type SessionResolution =
 
 export interface SessionsService {
   list(instanceId: string, includeChannel?: boolean): Promise<SessionView[]>;
-  create(sessionId: string, instanceId: string, mode: SessionMode, type?: SessionType, scheduleId?: string): Promise<void>;
-  setMode(sessionId: string, instanceId: string, mode: SessionMode): Promise<void>;
+  create(
+    sessionId: string,
+    instanceId: string,
+    mode: SessionMode,
+    type?: SessionType,
+    scheduleId?: string,
+  ): Promise<void>;
+  setMode(
+    sessionId: string,
+    instanceId: string,
+    mode: SessionMode,
+  ): Promise<void>;
   delete(sessionId: string, instanceId: string): Promise<void>;
   listByScheduleId(scheduleId: string): Promise<SessionView[]>;
   findByScheduleId(scheduleId: string): Promise<SessionView | null>;
   resetByScheduleId(scheduleId: string): Promise<void>;
-  resolveTerminal(instanceId: string, strategy: TerminalStrategy, opts?: { reset?: boolean; force?: boolean }): Promise<SessionResolution>;
+  resolveTerminal(
+    instanceId: string,
+    strategy: TerminalStrategy,
+    opts?: { reset?: boolean; force?: boolean },
+  ): Promise<SessionResolution>;
 }

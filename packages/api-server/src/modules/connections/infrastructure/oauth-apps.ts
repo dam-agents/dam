@@ -350,7 +350,8 @@ const GOOGLE_SERVICES: Record<GoogleServiceId, GoogleServiceDef> = {
   },
 };
 
-const GOOGLE_REGISTRATION_URL = "https://console.cloud.google.com/apis/credentials";
+const GOOGLE_REGISTRATION_URL =
+  "https://console.cloud.google.com/apis/credentials";
 
 function googleService(id: GoogleServiceId): OAuthAppDescriptor {
   const def = GOOGLE_SERVICES[id];
@@ -366,16 +367,25 @@ function googleService(id: GoogleServiceId): OAuthAppDescriptor {
         name: "clientId",
         label: "Client ID",
         placeholder: "123…apps.googleusercontent.com",
-        helper: "From the OAuth client you created in the Google Cloud Console.",
+        helper:
+          "From the OAuth client you created in the Google Cloud Console.",
       },
-      { name: "clientSecret", label: "Client secret", secret: true, placeholder: "GOCSPX-…" },
+      {
+        name: "clientSecret",
+        label: "Client secret",
+        secret: true,
+        placeholder: "GOCSPX-…",
+      },
     ],
     credentialFamily: "google",
     hosts: def.hosts,
   };
 }
 
-function googleServiceDescriptors(): Record<GoogleServiceId, OAuthAppDescriptor> {
+function googleServiceDescriptors(): Record<
+  GoogleServiceId,
+  OAuthAppDescriptor
+> {
   const ids = Object.keys(GOOGLE_SERVICES) as GoogleServiceId[];
   return Object.fromEntries(ids.map((id) => [id, googleService(id)])) as Record<
     GoogleServiceId,
@@ -387,7 +397,8 @@ const DESCRIPTORS: Record<OAuthAppId, OAuthAppDescriptor> = {
   github: {
     id: "github",
     displayName: "GitHub",
-    description: "Connect github.com so agents can call the GitHub API on your behalf.",
+    description:
+      "Connect github.com so agents can call the GitHub API on your behalf.",
     cardinality: "single",
     connectionKey: "github",
     registrationUrl: "https://github.com/settings/applications/new",
@@ -422,7 +433,8 @@ const DESCRIPTORS: Record<OAuthAppId, OAuthAppDescriptor> = {
   "github-enterprise": {
     id: "github-enterprise",
     displayName: "GitHub Enterprise",
-    description: "Connect a GitHub Enterprise host so agents can call its API on your behalf.",
+    description:
+      "Connect a GitHub Enterprise host so agents can call its API on your behalf.",
     cardinality: "single",
     connectionKey: "github-enterprise",
     inputs: [
@@ -456,7 +468,8 @@ const DESCRIPTORS: Record<OAuthAppId, OAuthAppDescriptor> = {
       {
         name: "clientId",
         label: "Client ID",
-        helper: "From the app you registered in the Spotify developer dashboard.",
+        helper:
+          "From the app you registered in the Spotify developer dashboard.",
       },
       { name: "clientSecret", label: "Client secret", secret: true },
     ],
@@ -771,7 +784,10 @@ function buildSpotify(input: SpotifyInput): BuiltOAuthApp {
   };
 }
 
-function buildGoogleService(id: GoogleServiceId, input: GoogleInput): BuiltOAuthApp {
+function buildGoogleService(
+  id: GoogleServiceId,
+  input: GoogleInput,
+): BuiltOAuthApp {
   const def = GOOGLE_SERVICES[id];
   return {
     provider: {
@@ -801,7 +817,11 @@ function genericConnectionKey(hostPattern: string): string {
   // Connection key derived from hostPattern so reconnecting the same host
   // updates the existing K8s Secret in place. Different hosts → different
   // keys → independent connections.
-  const hash = crypto.createHash("sha1").update(hostPattern).digest("hex").slice(0, 16);
+  const hash = crypto
+    .createHash("sha1")
+    .update(hostPattern)
+    .digest("hex")
+    .slice(0, 16);
   return `generic-${hash}`;
 }
 
@@ -907,10 +927,13 @@ export function createOAuthAppRegistry(
    */
   function withDefaults(id: OAuthAppId, rawInput: unknown): unknown {
     const base = defaultsObject(DESCRIPTORS[id], defaults);
-    const user = (rawInput && typeof rawInput === "object" ? rawInput : {}) as Record<string, unknown>;
+    const user = (
+      rawInput && typeof rawInput === "object" ? rawInput : {}
+    ) as Record<string, unknown>;
     const merged: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(base)) if (v != null) merged[k] = v;
-    for (const [k, v] of Object.entries(user)) if (v !== undefined) merged[k] = v;
+    for (const [k, v] of Object.entries(user))
+      if (v !== undefined) merged[k] = v;
     return merged;
   }
 
@@ -920,11 +943,17 @@ export function createOAuthAppRegistry(
     build: (id, rawInput) => {
       const merged = withDefaults(id, rawInput);
       if (id === "github") return buildGithub(githubInputSchema.parse(merged));
-      if (id === "github-enterprise") return buildGhe(gheInputSchema.parse(merged));
-      if (id === "spotify") return buildSpotify(spotifyInputSchema.parse(merged));
-      if (id === "generic") return buildGeneric(genericInputSchema.parse(merged));
+      if (id === "github-enterprise")
+        return buildGhe(gheInputSchema.parse(merged));
+      if (id === "spotify")
+        return buildSpotify(spotifyInputSchema.parse(merged));
+      if (id === "generic")
+        return buildGeneric(genericInputSchema.parse(merged));
       if (id in GOOGLE_SERVICES) {
-        return buildGoogleService(id as GoogleServiceId, googleInputSchema.parse(merged));
+        return buildGoogleService(
+          id as GoogleServiceId,
+          googleInputSchema.parse(merged),
+        );
       }
       throw new Error(`unknown app id: ${id as string}`);
     },

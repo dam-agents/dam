@@ -18,7 +18,10 @@ export interface ConnectionRulesSyncPort {
   syncForAgent(input: {
     agentId: string;
     decidedBy: string;
-    grants: Map<string, { hosts: readonly { host: string; pathPattern?: string }[] }>;
+    grants: Map<
+      string,
+      { hosts: readonly { host: string; pathPattern?: string }[] }
+    >;
     /** Connection IDs the caller owns; rules from sibling modules stay
      *  untouched. See `ConnectionRulesSync` for full semantics. */
     ownedSourceIds: ReadonlySet<string>;
@@ -90,19 +93,23 @@ export function createConnectionsService(deps: {
         //   2. Dynamic descriptor (Generic, GHE) — host is user input at
         //      connect time. Read from the connection's stored
         //      `metadata.hosts` via `getConnection`.
-        const grants = new Map<string, { hosts: readonly { host: string; pathPattern?: string }[] }>();
+        const grants = new Map<
+          string,
+          { hosts: readonly { host: string; pathPattern?: string }[] }
+        >();
         const all = await deps.port.listConnections();
         for (const summary of all) {
           if (!deduped.includes(summary.connection)) continue;
           const descriptor = deps.apps
             ?.list()
             .find((a) => matchesAppConnection(a, summary.connection));
-          let hosts: { host: string; pathPattern?: string }[] = descriptor?.hosts
-            ? descriptor.hosts.map((h) => ({
-                host: h.host,
-                ...(h.pathPattern ? { pathPattern: h.pathPattern } : {}),
-              }))
-            : [];
+          let hosts: { host: string; pathPattern?: string }[] =
+            descriptor?.hosts
+              ? descriptor.hosts.map((h) => ({
+                  host: h.host,
+                  ...(h.pathPattern ? { pathPattern: h.pathPattern } : {}),
+                }))
+              : [];
           if (hosts.length === 0) {
             const record = await deps.port.getConnection(summary.connection);
             if (!record) continue;
@@ -126,7 +133,11 @@ export function createConnectionsService(deps: {
         });
       }
       if (deps.podFiles && deps.owner) {
-        await deps.podFiles.publishForOwner(deps.owner, agentId, "app-connections");
+        await deps.podFiles.publishForOwner(
+          deps.owner,
+          agentId,
+          "app-connections",
+        );
       }
     },
   };

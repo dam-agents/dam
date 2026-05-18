@@ -17,7 +17,8 @@ describe("startSkillsCleanupSaga", () => {
   });
 
   it("does not bring the saga down when cleanup throws", async () => {
-    const cleanup = vi.fn()
+    const cleanup = vi
+      .fn()
       .mockRejectedValueOnce(new Error("boom"))
       .mockResolvedValue(undefined);
     const sub = startSkillsCleanupSaga(cleanup);

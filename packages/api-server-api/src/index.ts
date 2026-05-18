@@ -115,9 +115,7 @@ export {
   encodeExit,
   decodeFrame,
 } from "./modules/terminal/protocol.js";
-export type {
-  TerminalFrame,
-} from "./modules/terminal/protocol.js";
+export type { TerminalFrame } from "./modules/terminal/protocol.js";
 
 export {
   FileFragmentSchema,

@@ -46,7 +46,10 @@ interface QuietWindow {
  * i.e. one day of minute-granularity occurrences). Uses rule.all with
  * early-exit instead of a rule.after loop, which is O(N²) in rrule.js.
  */
-export function validateHasVisibleOccurrence(rruleExpr: string, windows: QuietWindow[]): void {
+export function validateHasVisibleOccurrence(
+  rruleExpr: string,
+  windows: QuietWindow[],
+): void {
   const enabled = windows.filter((w) => w.enabled);
   if (enabled.length === 0) return;
   const rule = RRule.fromString(rruleExpr);
@@ -60,7 +63,9 @@ export function validateHasVisibleOccurrence(rruleExpr: string, windows: QuietWi
     return true;
   });
   if (!visible) {
-    throw new Error("quiet hours cover every scheduled occurrence — this schedule would never fire");
+    throw new Error(
+      "quiet hours cover every scheduled occurrence — this schedule would never fire",
+    );
   }
 }
 

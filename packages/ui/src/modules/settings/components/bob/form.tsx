@@ -28,7 +28,10 @@ const bobCredentialSchema = z
     }
     // maxCoins is a numeric budget cap; reject anything that isn't a positive
     // integer when set. Empty is fine (Bob omits the flag).
-    if (data.maxCoins.trim() !== "" && !/^[1-9]\d*$/.test(data.maxCoins.trim())) {
+    if (
+      data.maxCoins.trim() !== "" &&
+      !/^[1-9]\d*$/.test(data.maxCoins.trim())
+    ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["maxCoins"],
@@ -36,7 +39,10 @@ const bobCredentialSchema = z
       });
     }
     const cm = data.chatMode.trim();
-    if (cm !== "" && !BOB_CHAT_MODES.includes(cm as (typeof BOB_CHAT_MODES)[number])) {
+    if (
+      cm !== "" &&
+      !BOB_CHAT_MODES.includes(cm as (typeof BOB_CHAT_MODES)[number])
+    ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["chatMode"],
@@ -75,7 +81,9 @@ export function BobForm({
   // Open the advanced disclosure by default in edit mode when any pin is set —
   // otherwise the user has to hunt for the model field they came to change.
   const hasAnyPin = Object.values(pins).some((v) => v && v.trim() !== "");
-  const [advancedOpen, setAdvancedOpen] = useState(variant === "edit" && hasAnyPin);
+  const [advancedOpen, setAdvancedOpen] = useState(
+    variant === "edit" && hasAnyPin,
+  );
 
   const isEdit = variant === "edit";
   const submitDisabled = isSubmitting || !isValid;
@@ -140,9 +148,13 @@ export function BobForm({
         </button>
       </div>
 
-      {errors.value && value.length > 0 && errors.value.message !== "Required" && (
-        <div className="text-[12px] font-medium text-danger">{errors.value.message}</div>
-      )}
+      {errors.value &&
+        value.length > 0 &&
+        errors.value.message !== "Required" && (
+          <div className="text-[12px] font-medium text-danger">
+            {errors.value.message}
+          </div>
+        )}
 
       <button
         type="button"
@@ -217,7 +229,9 @@ function PinField({
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-[12px] font-semibold text-text-secondary">{label}</label>
+      <label className="text-[12px] font-semibold text-text-secondary">
+        {label}
+      </label>
       <input
         className="h-9 rounded-lg border-2 border-border-light bg-bg px-3 text-[13px] font-mono text-text outline-none focus:border-accent"
         type="text"
@@ -229,7 +243,9 @@ function PinField({
         {...register}
       />
       <div className="text-[11px] text-text-muted">{hint}</div>
-      {error && <div className="text-[11px] font-medium text-danger">{error}</div>}
+      {error && (
+        <div className="text-[11px] font-medium text-danger">{error}</div>
+      )}
     </div>
   );
 }

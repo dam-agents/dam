@@ -12,10 +12,7 @@ async function main() {
   // Brand fetch is unauthenticated and runs in parallel with auth init so the
   // post-login render starts with the right title + theme colors. A failed
   // fetch falls back to the bundled defaults — login still works.
-  const [user] = await Promise.all([
-    initAuth(),
-    loadBrand().then(applyBrand),
-  ]);
+  const [user] = await Promise.all([initAuth(), loadBrand().then(applyBrand)]);
   if (!user) return; // Redirecting to Keycloak, don't render
 
   const { default: App } = await import("./app.js");

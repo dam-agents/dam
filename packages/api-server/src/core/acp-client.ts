@@ -12,18 +12,28 @@ function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
     ws.on("open", () => {
       const readable = new ReadableStream<AnyMessage>({
         start(controller) {
-          ws.on("message", (data) => controller.enqueue(JSON.parse(data.toString())));
+          ws.on("message", (data) =>
+            controller.enqueue(JSON.parse(data.toString())),
+          );
           ws.on("close", () => {
-            try { controller.close(); } catch {}
+            try {
+              controller.close();
+            } catch {}
           });
           ws.on("error", (err) => {
-            try { controller.error(err); } catch {}
+            try {
+              controller.error(err);
+            } catch {}
           });
         },
       });
       const writable = new WritableStream<AnyMessage>({
-        write(chunk) { ws.send(JSON.stringify(chunk)); },
-        close() { ws.close(); },
+        write(chunk) {
+          ws.send(JSON.stringify(chunk));
+        },
+        close() {
+          ws.close();
+        },
       });
       resolve({ stream: { readable, writable }, ws });
     });
@@ -50,10 +60,10 @@ type SessionAttach =
 
 export type SendPromptOpts = SessionAttach;
 
-export type TriggerSessionOpts =
-  & { prompt: string; mcpServers?: unknown[] }
-  & SessionAttach;
-
+export type TriggerSessionOpts = {
+  prompt: string;
+  mcpServers?: unknown[];
+} & SessionAttach;
 
 export interface AcpClient {
   listSessions(): Promise<AcpSessionInfo[]>;
@@ -79,14 +89,23 @@ async function withAcpConnection<T>(
   const connection = new ClientSideConnection(
     () => ({
       async requestPermission(params: any) {
-        return { outcome: { outcome: "selected" as const, optionId: params.options[0].optionId } };
+        return {
+          outcome: {
+            outcome: "selected" as const,
+            optionId: params.options[0].optionId,
+          },
+        };
       },
       async sessionUpdate(params: any) {
         resetTimeout();
         await handlers.sessionUpdate?.(params);
       },
-      async writeTextFile() { return {}; },
-      async readTextFile() { return { content: "" }; },
+      async writeTextFile() {
+        return {};
+      },
+      async readTextFile() {
+        return { content: "" };
+      },
       async extNotification() {},
     }),
     stream,
@@ -94,7 +113,11 @@ async function withAcpConnection<T>(
 
   const cleanup = () => {
     clearTimeout(timer);
-    if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close();
+    if (
+      ws.readyState === WebSocket.OPEN ||
+      ws.readyState === WebSocket.CONNECTING
+    )
+      ws.close();
   };
 
   try {
@@ -108,12 +131,21 @@ async function withAcpConnection<T>(
       fn(connection),
       new Promise<never>((_, reject) => {
         if (ac.signal.aborted) {
-          reject(new Error(`ACP connection timed out after ${TIMEOUT_MS / 1000}s of inactivity`));
+          reject(
+            new Error(
+              `ACP connection timed out after ${TIMEOUT_MS / 1000}s of inactivity`,
+            ),
+          );
           return;
         }
         ac.signal.addEventListener(
           "abort",
-          () => reject(new Error(`ACP connection timed out after ${TIMEOUT_MS / 1000}s of inactivity`)),
+          () =>
+            reject(
+              new Error(
+                `ACP connection timed out after ${TIMEOUT_MS / 1000}s of inactivity`,
+              ),
+            ),
           { once: true },
         );
       }),
@@ -128,12 +160,12 @@ export function createAcpClient(opts: {
   namespace: string;
   instanceName: string;
 }): AcpClient {
-  return createAcpClientForUrl(`ws://${podBaseUrl(opts.instanceName, opts.namespace)}/api/acp`);
+  return createAcpClientForUrl(
+    `ws://${podBaseUrl(opts.instanceName, opts.namespace)}/api/acp`,
+  );
 }
 
-export function createForkAcpClient(opts: {
-  podIP: string;
-}): AcpClient {
+export function createForkAcpClient(opts: { podIP: string }): AcpClient {
   return createAcpClientForUrl(`ws://${opts.podIP}:8080/api/acp`);
 }
 
@@ -150,10 +182,16 @@ function createAcpClientForUrl(url: string): AcpClient {
 
       const connection = new ClientSideConnection(
         () => ({
-          async requestPermission() { return { outcome: { outcome: "selected" as const, optionId: "" } }; },
+          async requestPermission() {
+            return { outcome: { outcome: "selected" as const, optionId: "" } };
+          },
           async sessionUpdate() {},
-          async writeTextFile() { return {}; },
-          async readTextFile() { return { content: "" }; },
+          async writeTextFile() {
+            return {};
+          },
+          async readTextFile() {
+            return { content: "" };
+          },
           async extNotification() {},
         }),
         stream,
@@ -170,72 +208,96 @@ function createAcpClientForUrl(url: string): AcpClient {
       } catch {
         return [];
       } finally {
-        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        if (
+          ws.readyState === WebSocket.OPEN ||
+          ws.readyState === WebSocket.CONNECTING
+        ) {
           ws.close();
         }
       }
     },
 
-    async sendPrompt(prompt: string, sendOpts: SendPromptOpts): Promise<string> {
+    async sendPrompt(
+      prompt: string,
+      sendOpts: SendPromptOpts,
+    ): Promise<string> {
       const responseChunks: string[] = [];
 
-      await withAcpConnection(url, "platform-acp", {
-        async sessionUpdate(params: any) {
-          if (params.update?.sessionUpdate === "agent_message_chunk" && params.update.content?.type === "text") {
-            responseChunks.push(params.update.content.text);
-          }
+      await withAcpConnection(
+        url,
+        "platform-acp",
+        {
+          async sessionUpdate(params: any) {
+            if (
+              params.update?.sessionUpdate === "agent_message_chunk" &&
+              params.update.content?.type === "text"
+            ) {
+              responseChunks.push(params.update.content.text);
+            }
+          },
         },
-      }, async (connection) => {
-        let sessionId: string;
-        if ("resumeSessionId" in sendOpts) {
-          // loadSession (not unstable_resumeSession) survives the agent-runtime's
-          // idle reap — the runtime replays history from its log or cold-bootstraps
-          // the session in the agent subprocess.
-          await connection.loadSession({
-            sessionId: sendOpts.resumeSessionId,
-            cwd: ".",
-            mcpServers: [],
+        async (connection) => {
+          let sessionId: string;
+          if ("resumeSessionId" in sendOpts) {
+            // loadSession (not unstable_resumeSession) survives the agent-runtime's
+            // idle reap — the runtime replays history from its log or cold-bootstraps
+            // the session in the agent subprocess.
+            await connection.loadSession({
+              sessionId: sendOpts.resumeSessionId,
+              cwd: ".",
+              mcpServers: [],
+            });
+            // History replay arrives as agent_message_chunk notifications; drop them
+            // so the caller only sees this turn's response.
+            responseChunks.length = 0;
+            sessionId = sendOpts.resumeSessionId;
+          } else {
+            const s = await connection.newSession({ cwd: ".", mcpServers: [] });
+            sessionId = s.sessionId;
+            await sendOpts.onSessionCreated(sessionId);
+          }
+          await connection.prompt({
+            sessionId,
+            prompt: [{ type: "text", text: prompt }],
           });
-          // History replay arrives as agent_message_chunk notifications; drop them
-          // so the caller only sees this turn's response.
-          responseChunks.length = 0;
-          sessionId = sendOpts.resumeSessionId;
-        } else {
-          const s = await connection.newSession({ cwd: ".", mcpServers: [] });
-          sessionId = s.sessionId;
-          await sendOpts.onSessionCreated(sessionId);
-        }
-        await connection.prompt({ sessionId, prompt: [{ type: "text", text: prompt }] });
-      });
+        },
+      );
 
       return responseChunks.join("");
     },
 
-    async triggerSession(triggerOpts: TriggerSessionOpts): Promise<TriggerSessionResult> {
-      return withAcpConnection(url, "platform-trigger", {}, async (connection) => {
-        let sessionId: string;
-        const mcpServers = (triggerOpts.mcpServers ?? []) as any[];
+    async triggerSession(
+      triggerOpts: TriggerSessionOpts,
+    ): Promise<TriggerSessionResult> {
+      return withAcpConnection(
+        url,
+        "platform-trigger",
+        {},
+        async (connection) => {
+          let sessionId: string;
+          const mcpServers = (triggerOpts.mcpServers ?? []) as any[];
 
-        if ("resumeSessionId" in triggerOpts) {
-          await connection.unstable_resumeSession({
-            sessionId: triggerOpts.resumeSessionId,
-            cwd: ".",
-            mcpServers,
+          if ("resumeSessionId" in triggerOpts) {
+            await connection.unstable_resumeSession({
+              sessionId: triggerOpts.resumeSessionId,
+              cwd: ".",
+              mcpServers,
+            });
+            sessionId = triggerOpts.resumeSessionId;
+          } else {
+            const s = await connection.newSession({ cwd: ".", mcpServers });
+            sessionId = s.sessionId;
+            await triggerOpts.onSessionCreated(sessionId);
+          }
+
+          const r = await connection.prompt({
+            sessionId,
+            prompt: [{ type: "text", text: triggerOpts.prompt }],
           });
-          sessionId = triggerOpts.resumeSessionId;
-        } else {
-          const s = await connection.newSession({ cwd: ".", mcpServers });
-          sessionId = s.sessionId;
-          await triggerOpts.onSessionCreated(sessionId);
-        }
 
-        const r = await connection.prompt({
-          sessionId,
-          prompt: [{ type: "text", text: triggerOpts.prompt }],
-        });
-
-        return { sessionId, stopReason: r.stopReason };
-      });
+          return { sessionId, stopReason: r.stopReason };
+        },
+      );
     },
   };
 }

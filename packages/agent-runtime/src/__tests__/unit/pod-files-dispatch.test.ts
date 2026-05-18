@@ -15,7 +15,10 @@ describe("dispatch", () => {
   it("writes the well-formed entry and tolerates a sibling that throws in applyFile", () => {
     const home = mkdtempSync(join(tmpdir(), "pod-files-dispatch-"));
     const goodPath = join(home, "good.yml");
-    const evilPath = join(mkdtempSync(join(tmpdir(), "elsewhere-")), "evil.yml");
+    const evilPath = join(
+      mkdtempSync(join(tmpdir(), "elsewhere-")),
+      "evil.yml",
+    );
     const payload = JSON.stringify({
       files: [
         // Well-formed shape, but applyFile rejects this: path resolves

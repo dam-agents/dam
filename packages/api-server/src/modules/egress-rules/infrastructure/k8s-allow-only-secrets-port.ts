@@ -40,7 +40,10 @@ function k8sName(ownerSub: string, host: string): string {
   // Owner sub is hashed implicitly via the label selector; the name only
   // needs to be unique per (owner, host). Owner subs from Keycloak are
   // UUID-shaped, but we don't trust that — keep a short prefix off the host.
-  const safeOwner = ownerSub.replace(/[^a-z0-9-]/gi, "").toLowerCase().slice(0, 8);
+  const safeOwner = ownerSub
+    .replace(/[^a-z0-9-]/gi, "")
+    .toLowerCase()
+    .slice(0, 8);
   return `${NAME_PREFIX}${safeOwner}-${hostToNameSuffix(host)}`.slice(0, 253);
 }
 
@@ -55,7 +58,9 @@ export interface K8sAllowOnlySecretsPort {
   ensure(ownerSub: string, host: string): Promise<void>;
 }
 
-export function createK8sAllowOnlySecretsPort(client: K8sClient): K8sAllowOnlySecretsPort {
+export function createK8sAllowOnlySecretsPort(
+  client: K8sClient,
+): K8sAllowOnlySecretsPort {
   return {
     async ensure(ownerSub, host) {
       // Cheap pre-check: does any Secret with this owner+host already exist?

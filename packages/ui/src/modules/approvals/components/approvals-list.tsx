@@ -1,5 +1,12 @@
 import type { ApprovalView } from "api-server-api";
-import { Check, CheckCheck, Globe, Settings2, ShieldOff, X } from "lucide-react";
+import {
+  Check,
+  CheckCheck,
+  Globe,
+  Settings2,
+  ShieldOff,
+  X,
+} from "lucide-react";
 import { useMemo } from "react";
 
 import { useStore } from "../../../store.js";
@@ -18,10 +25,15 @@ const STATUS_LABEL: Record<ApprovalView["status"], string> = {
 };
 
 function isHeldCallStillLive(row: ApprovalView): boolean {
-  return row.status === "pending" && new Date(row.expiresAt).getTime() > Date.now();
+  return (
+    row.status === "pending" && new Date(row.expiresAt).getTime() > Date.now()
+  );
 }
 
-function describePayload(row: ApprovalView): { title: string; subtitle: string } {
+function describePayload(row: ApprovalView): {
+  title: string;
+  subtitle: string;
+} {
   if (row.payload.kind === "ext_authz") {
     return {
       title: `${row.payload.method} ${row.payload.host}`,
@@ -38,13 +50,22 @@ export interface ApprovalsListProps {
   emptyLabel?: string;
 }
 
-export function ApprovalsList({ rows, density = "full", emptyLabel = "Nothing pending" }: ApprovalsListProps) {
+export function ApprovalsList({
+  rows,
+  density = "full",
+  emptyLabel = "Nothing pending",
+}: ApprovalsListProps) {
   const sorted = useMemo(
-    () => [...rows].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)),
+    () =>
+      [...rows].sort(
+        (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt),
+      ),
     [rows],
   );
   if (sorted.length === 0) {
-    return <p className="px-4 py-5 text-[12px] text-text-muted">{emptyLabel}</p>;
+    return (
+      <p className="px-4 py-5 text-[12px] text-text-muted">{emptyLabel}</p>
+    );
   }
   return (
     <ul className="flex flex-col">
@@ -55,7 +76,13 @@ export function ApprovalsList({ rows, density = "full", emptyLabel = "Nothing pe
   );
 }
 
-function ApprovalRow({ row, density }: { row: ApprovalView; density: "compact" | "full" }) {
+function ApprovalRow({
+  row,
+  density,
+}: {
+  row: ApprovalView;
+  density: "compact" | "full";
+}) {
   const approveOnce = useApproveOnce();
   const approvePermanent = useApprovePermanent();
   const approveHost = useApproveHost();
@@ -65,11 +92,11 @@ function ApprovalRow({ row, density }: { row: ApprovalView; density: "compact" |
   const { title, subtitle } = describePayload(row);
   const live = isHeldCallStillLive(row);
   const inflight =
-    approveOnce.isPending
-    || approvePermanent.isPending
-    || approveHost.isPending
-    || denyForever.isPending
-    || dismiss.isPending;
+    approveOnce.isPending ||
+    approvePermanent.isPending ||
+    approveHost.isPending ||
+    denyForever.isPending ||
+    dismiss.isPending;
   const expired = row.status === "expired";
   // Allow-once is only meaningful for ext_authz: there's a single in-flight
   // call to release. ACP-native rows don't have a hold to release — the
@@ -86,7 +113,9 @@ function ApprovalRow({ row, density }: { row: ApprovalView; density: "compact" |
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[13px] font-medium text-text truncate">{title}</span>
+            <span className="text-[13px] font-medium text-text truncate">
+              {title}
+            </span>
             {row.status !== "pending" && (
               <span className="text-[10px] uppercase tracking-wider text-text-muted bg-border-light rounded px-1.5 py-0.5">
                 {STATUS_LABEL[row.status]}
@@ -175,7 +204,8 @@ function ApprovalRow({ row, density }: { row: ApprovalView; density: "compact" |
       )}
       {expired && row.type === "ext_authz" && (
         <p className="text-[11px] text-text-muted">
-          The original request already failed. Allow permanently writes a rule that future retries match.
+          The original request already failed. Allow permanently writes a rule
+          that future retries match.
         </p>
       )}
     </li>

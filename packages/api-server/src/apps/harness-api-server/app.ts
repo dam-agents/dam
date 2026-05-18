@@ -5,7 +5,8 @@ import type { Db } from "db";
 import { createK8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { LABEL_OWNER } from "../../modules/agents/infrastructure/labels.js";
 import {
-  composeInstancesModule, createKeycloakUserDirectory,
+  composeInstancesModule,
+  createKeycloakUserDirectory,
 } from "../../modules/instances/index.js";
 import { composeAgentsModule } from "../../modules/agents/index.js";
 import { composeTemplatesModule } from "../../modules/templates/index.js";
@@ -58,7 +59,15 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     k8s: k8sClient,
     podFiles: { bus: podFilesBus, fetchSnapshot: podFilesSnapshot },
     agentHome: config.agentHome,
-    composeSkills: (owner) => composeSkillsModule(api, config.namespace, owner, db, seedSources, config.brand.name),
+    composeSkills: (owner) =>
+      composeSkillsModule(
+        api,
+        config.namespace,
+        owner,
+        db,
+        seedSources,
+        config.brand.name,
+      ),
     schedulesServiceFor: (owner) =>
       composeSchedulesModule(api, config.namespace, owner).schedules,
     handleTrigger: async (body) => {
@@ -74,17 +83,35 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       if (!owner) {
         throw new Error(`instance ${body.instanceId}: missing owner label`);
       }
-      const { readSpec: readTemplateSpec } = composeTemplatesModule(api, config.namespace);
+      const { readSpec: readTemplateSpec } = composeTemplatesModule(
+        api,
+        config.namespace,
+      );
       const { agents } = composeAgentsModule({
-        api, namespace: config.namespace, owner, readTemplateSpec,
+        api,
+        namespace: config.namespace,
+        owner,
+        readTemplateSpec,
       });
       const { isOwnedInstance } = composeInstancesModule({
-        api, namespace: config.namespace, owner, db, userDirectory, channelSecretStore,
+        api,
+        namespace: config.namespace,
+        owner,
+        db,
+        userDirectory,
+        channelSecretStore,
         getAgent: (id) => agents.get(id),
       });
-      const { isOwnedSchedule } = composeSchedulesModule(api, config.namespace, owner);
+      const { isOwnedSchedule } = composeSchedulesModule(
+        api,
+        config.namespace,
+        owner,
+      );
       const { sessions } = composeSessionsModule({
-        db, namespace: config.namespace, isOwnedInstance, isOwnedSchedule,
+        db,
+        namespace: config.namespace,
+        isOwnedInstance,
+        isOwnedSchedule,
       });
 
       let resumeSessionId: string | undefined;
@@ -105,15 +132,26 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
               prompt: body.task,
               mcpServers: body.mcpServers,
               onSessionCreated: (sid) =>
-                sessions.create(sid, body.instanceId, SessionMode.Chat, sessionType as any, body.schedule),
+                sessions.create(
+                  sid,
+                  body.instanceId,
+                  SessionMode.Chat,
+                  sessionType as any,
+                  body.schedule,
+                ),
             },
       );
     },
   });
 
-  const server = serve({ fetch: app.fetch, port: config.harnessServerPort }, () => {
-    process.stderr.write(`harness-api listening on http://localhost:${config.harnessServerPort}\n`);
-  });
+  const server = serve(
+    { fetch: app.fetch, port: config.harnessServerPort },
+    () => {
+      process.stderr.write(
+        `harness-api listening on http://localhost:${config.harnessServerPort}\n`,
+      );
+    },
+  );
 
   return { server };
 }

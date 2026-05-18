@@ -1,5 +1,12 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { File as FileIcon, Folder as FolderIcon, FolderUp, Sparkles, Upload, X } from "lucide-react";
+import {
+  File as FileIcon,
+  Folder as FolderIcon,
+  FolderUp,
+  Sparkles,
+  Upload,
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 
@@ -10,14 +17,25 @@ import {
 import { FormField } from "../../../components/form-field.js";
 import { HoverTooltip } from "../../../components/hover-tooltip.js";
 import type { EgressPreset, EnvVar, TemplateView } from "../../../types.js";
-import { APP_OAUTH_SECRET_PREFIX, isProviderPresetType } from "../../../types.js";
+import {
+  APP_OAUTH_SECRET_PREFIX,
+  isProviderPresetType,
+} from "../../../types.js";
 import {
   useAppConnections,
   useOAuthAppConnections,
 } from "../../connections/api/queries.js";
-import { type BundleEntry, filterImportEntries, isTarballName, walkDataTransfer } from "../../files/api/import-bundle.js";
+import {
+  type BundleEntry,
+  filterImportEntries,
+  isTarballName,
+  walkDataTransfer,
+} from "../../files/api/import-bundle.js";
 import { useSecrets } from "../../secrets/api/queries.js";
-import { addAgentSchema, type AddAgentValues } from "../forms/add-agent-schema.js";
+import {
+  addAgentSchema,
+  type AddAgentValues,
+} from "../forms/add-agent-schema.js";
 
 type Step = "pick" | "configure";
 
@@ -75,9 +93,10 @@ export function AddAgentDialog({
       // If we were in pass-through mode, the user is now building a
       // multi-file import — fold the raw bundle in as a regular file so
       // it's still included.
-      const base = importRawBundle && prev.length === 0
-        ? [{ path: importRawBundle.name, file: importRawBundle }]
-        : prev;
+      const base =
+        importRawBundle && prev.length === 0
+          ? [{ path: importRawBundle.name, file: importRawBundle }]
+          : prev;
       const seen = new Set(base.map((e) => e.path));
       const merged = [...base];
       for (const e of kept) {
@@ -122,11 +141,11 @@ export function AddAgentDialog({
   // the folder wrapper.
   const handleIncoming = (incoming: BundleEntry[]) => {
     if (
-      incoming.length === 1
-      && isTarballName(incoming[0].path)
-      && !incoming[0].path.includes("/")
-      && importEntries.length === 0
-      && !importRawBundle
+      incoming.length === 1 &&
+      isTarballName(incoming[0].path) &&
+      !incoming[0].path.includes("/") &&
+      importEntries.length === 0 &&
+      !importRawBundle
     ) {
       setImportRawBundle(incoming[0].file);
       setImportDropped(0);
@@ -151,7 +170,13 @@ export function AddAgentDialog({
   } = useForm<AddAgentValues>({
     resolver: zodResolver(addAgentSchema),
     mode: "onChange",
-    defaultValues: { name: "", description: "", selSecrets: [], selApps: [], egressPreset: "trusted" },
+    defaultValues: {
+      name: "",
+      description: "",
+      selSecrets: [],
+      selApps: [],
+      egressPreset: "trusted",
+    },
   });
   const { errors, isSubmitting, isValid } = formState;
 
@@ -198,15 +223,19 @@ export function AddAgentDialog({
   const oauthAppEntries = useMemo<OAuthAppEntry[]>(() => {
     const secretByName = new Map(secrets.map((s) => [s.name, s]));
     return oauthAppConnections.flatMap((conn) => {
-      const mirror = secretByName.get(`${APP_OAUTH_SECRET_PREFIX}${conn.connectionId}`);
+      const mirror = secretByName.get(
+        `${APP_OAUTH_SECRET_PREFIX}${conn.connectionId}`,
+      );
       if (!mirror) return [];
-      return [{
-        secretId: mirror.id,
-        appId: conn.appId,
-        displayName: conn.displayName,
-        hosts: conn.hosts,
-        expired: conn.expired,
-      }];
+      return [
+        {
+          secretId: mirror.id,
+          appId: conn.appId,
+          displayName: conn.displayName,
+          hosts: conn.hosts,
+          expired: conn.expired,
+        },
+      ];
     });
   }, [oauthAppConnections, secrets]);
 
@@ -273,8 +302,14 @@ export function AddAgentDialog({
                     onClick={() => pickTemplate(tmpl)}
                     className="flex flex-col gap-1 rounded-lg border-2 border-border-light bg-bg px-4 py-3 text-left transition-colors hover:border-accent hover:bg-accent-light min-w-0"
                   >
-                    <div className="text-[14px] font-semibold text-text truncate w-full">{tmpl.name}</div>
-                    {tmpl.description && <div className="text-[12px] text-text-muted truncate w-full">{tmpl.description}</div>}
+                    <div className="text-[14px] font-semibold text-text truncate w-full">
+                      {tmpl.name}
+                    </div>
+                    {tmpl.description && (
+                      <div className="text-[12px] text-text-muted truncate w-full">
+                        {tmpl.description}
+                      </div>
+                    )}
                   </button>
                 ))}
               </div>
@@ -316,7 +351,9 @@ export function AddAgentDialog({
         ) : (
           <form onSubmit={submitForm} className="contents">
             <div>
-              <h2 className="text-[20px] font-bold text-text">Configure Agent</h2>
+              <h2 className="text-[20px] font-bold text-text">
+                Configure Agent
+              </h2>
               <p className="text-[12px] text-text-muted mt-1">
                 {selectedTemplate ? (
                   <>
@@ -329,7 +366,9 @@ export function AddAgentDialog({
                         </span>
                       }
                     >
-                      <span className="font-mono">{selectedTemplate.image}</span>
+                      <span className="font-mono">
+                        {selectedTemplate.image}
+                      </span>
                     </HoverTooltip>
                   </>
                 ) : (
@@ -373,7 +412,9 @@ export function AddAgentDialog({
                   if (!files || files.length === 0) return;
                   handleIncoming(
                     Array.from(files).map((f) => ({
-                      path: (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name,
+                      path:
+                        (f as File & { webkitRelativePath?: string })
+                          .webkitRelativePath || f.name,
                       file: f,
                     })),
                   );
@@ -408,7 +449,8 @@ export function AddAgentDialog({
                   }
                 }}
                 onDragLeave={(e) => {
-                  if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+                  if (e.currentTarget.contains(e.relatedTarget as Node | null))
+                    return;
                   setDropActive(false);
                 }}
                 onDrop={(e) => {
@@ -440,12 +482,26 @@ export function AddAgentDialog({
                   <>
                     <Upload size={24} className="text-text-muted" />
                     <div className="text-[13px] text-text">
-                      <span className="font-semibold">{importEntries.length + importDropped}</span> file{importEntries.length + importDropped === 1 ? "" : "s"} selected ·{" "}
-                      <span className="text-text-secondary">{importEntries.length} to import</span>
+                      <span className="font-semibold">
+                        {importEntries.length + importDropped}
+                      </span>{" "}
+                      file
+                      {importEntries.length + importDropped === 1
+                        ? ""
+                        : "s"}{" "}
+                      selected ·{" "}
+                      <span className="text-text-secondary">
+                        {importEntries.length} to import
+                      </span>
                       {importDropped > 0 && (
                         <>
-                          {" "}·{" "}
-                          <span className="text-text-muted">{importDropped} filtered (<code className="font-mono">node_modules</code>, <code className="font-mono">.venv</code>, etc.)</span>
+                          {" "}
+                          ·{" "}
+                          <span className="text-text-muted">
+                            {importDropped} filtered (
+                            <code className="font-mono">node_modules</code>,{" "}
+                            <code className="font-mono">.venv</code>, etc.)
+                          </span>
                         </>
                       )}
                     </div>
@@ -457,7 +513,8 @@ export function AddAgentDialog({
                       Drop a folder or files here
                     </div>
                     <div className="text-[11px] text-text-muted">
-                      <code className="font-mono">.tar.gz</code> bundles pass through verbatim
+                      <code className="font-mono">.tar.gz</code> bundles pass
+                      through verbatim
                     </div>
                   </>
                 )}
@@ -479,7 +536,11 @@ export function AddAgentDialog({
                   {(importRawBundle || importEntries.length > 0) && (
                     <button
                       type="button"
-                      onClick={() => { setImportEntries([]); setImportRawBundle(null); setImportDropped(0); }}
+                      onClick={() => {
+                        setImportEntries([]);
+                        setImportRawBundle(null);
+                        setImportDropped(0);
+                      }}
                       className="text-[12px] text-text-muted hover:text-text underline"
                     >
                       Clear
@@ -487,7 +548,8 @@ export function AddAgentDialog({
                   )}
                 </div>
                 <div className="text-[11px] text-text-muted italic">
-                  Tip: drag-and-drop supports a mix of folders and files in one go.
+                  Tip: drag-and-drop supports a mix of folders and files in one
+                  go.
                 </div>
               </div>
               {importGroups.length > 0 && (
@@ -498,13 +560,23 @@ export function AddAgentDialog({
                       className="inline-flex items-center gap-1.5 rounded-md border-2 border-border-light bg-bg px-2 py-1 text-[12px] text-text max-w-full"
                     >
                       {g.isFolder ? (
-                        <FolderIcon size={12} className="text-text-muted shrink-0" />
+                        <FolderIcon
+                          size={12}
+                          className="text-text-muted shrink-0"
+                        />
                       ) : (
-                        <FileIcon size={12} className="text-text-muted shrink-0" />
+                        <FileIcon
+                          size={12}
+                          className="text-text-muted shrink-0"
+                        />
                       )}
-                      <span className="font-mono truncate" title={g.name}>{g.name}</span>
+                      <span className="font-mono truncate" title={g.name}>
+                        {g.name}
+                      </span>
                       {g.isFolder && (
-                        <span className="text-text-muted shrink-0">({g.count})</span>
+                        <span className="text-text-muted shrink-0">
+                          ({g.count})
+                        </span>
                       )}
                       <button
                         type="button"
@@ -524,8 +596,8 @@ export function AddAgentDialog({
               <div className="rounded-lg border-2 border-warning bg-warning-light px-4 py-3 flex items-center gap-3">
                 <Sparkles size={16} className="text-warning shrink-0" />
                 <p className="text-[12px] text-text-secondary">
-                  No provider configured, so this agent won't be able to reach an
-                  AI model.{" "}
+                  No provider configured, so this agent won't be able to reach
+                  an AI model.{" "}
                   <button
                     type="button"
                     className="text-accent font-semibold hover:underline"
@@ -567,8 +639,12 @@ export function AddAgentDialog({
                     {...register("egressPreset")}
                   />
                   <span className="flex flex-col gap-0.5">
-                    <span className="text-[13px] font-semibold text-text">Trusted defaults (recommended)</span>
-                    <span className="text-[12px] text-text-muted">npm, PyPI, GitHub, package mirrors, Anthropic</span>
+                    <span className="text-[13px] font-semibold text-text">
+                      Trusted defaults (recommended)
+                    </span>
+                    <span className="text-[12px] text-text-muted">
+                      npm, PyPI, GitHub, package mirrors, Anthropic
+                    </span>
                   </span>
                 </label>
                 <label className="flex items-start gap-2 cursor-pointer rounded-lg border-2 border-border-light bg-bg px-4 py-2.5">
@@ -579,8 +655,12 @@ export function AddAgentDialog({
                     {...register("egressPreset")}
                   />
                   <span className="flex flex-col gap-0.5">
-                    <span className="text-[13px] font-semibold text-text">Strict default-deny</span>
-                    <span className="text-[12px] text-text-muted">Every host hits the inbox until you approve</span>
+                    <span className="text-[13px] font-semibold text-text">
+                      Strict default-deny
+                    </span>
+                    <span className="text-[12px] text-text-muted">
+                      Every host hits the inbox until you approve
+                    </span>
                   </span>
                 </label>
                 <label className="flex items-start gap-2 cursor-pointer rounded-lg border-2 border-warning/40 bg-bg px-4 py-2.5">
@@ -591,8 +671,12 @@ export function AddAgentDialog({
                     {...register("egressPreset")}
                   />
                   <span className="flex flex-col gap-0.5">
-                    <span className="text-[13px] font-semibold text-text">Allow everything</span>
-                    <span className="text-[12px] text-text-muted">Development escape hatch — no inbox prompts</span>
+                    <span className="text-[13px] font-semibold text-text">
+                      Allow everything
+                    </span>
+                    <span className="text-[12px] text-text-muted">
+                      Development escape hatch — no inbox prompts
+                    </span>
                   </span>
                 </label>
               </div>

@@ -95,7 +95,7 @@ export interface SkillPublishRecord {
   sourceName: string;
   sourceGitUrl: string;
   prUrl: string;
-  publishedAt: string;  // ISO 8601
+  publishedAt: string; // ISO 8601
 }
 
 /** Reconciled view of an instance's skills: both the installed (tracked in

@@ -1,12 +1,22 @@
-import { cancel, confirm, intro, isCancel, log, note, outro, password, select, spinner, text } from "@clack/prompts";
+import {
+  cancel,
+  confirm,
+  intro,
+  isCancel,
+  log,
+  note,
+  outro,
+  password,
+  select,
+  spinner,
+  text,
+} from "@clack/prompts";
 import { Command } from "commander";
 import { PROVIDERS, type Instance } from "api-server-api";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { InstanceService } from "../../instance/index.js";
 import { validateInstanceName } from "../../instance/commands/create-helpers.js";
-import {
-  formatTransportError,
-} from "../../instance/commands/errors.js";
+import { formatTransportError } from "../../instance/commands/errors.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import {
   EXIT_INSTANCE_BELOW_FLOOR,
@@ -16,7 +26,10 @@ import {
 import { waitForRunning } from "../../instance/services/wait-for-state.js";
 import type { TemplateService } from "../../template/index.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
-import { groupGithubPats, type GithubPatPair } from "../lib/group-github-pats.js";
+import {
+  groupGithubPats,
+  type GithubPatPair,
+} from "../lib/group-github-pats.js";
 
 const WAIT_TIMEOUT_SECONDS = 120;
 
@@ -54,7 +67,9 @@ function trpcCode(e: unknown): string | undefined {
 
 function classifyFailure(e: unknown): "rollback" | "ambiguous" {
   const code = trpcCode(e);
-  return code !== undefined && ROLLBACK_CODES.has(code) ? "rollback" : "ambiguous";
+  return code !== undefined && ROLLBACK_CODES.has(code)
+    ? "rollback"
+    : "ambiguous";
 }
 
 /**
@@ -94,10 +109,14 @@ function formatOrphans(
   if (!orphanAgent && orphanSecrets.length === 0) return null;
   const lines = ["Cleanup partially failed. Manual cleanup needed:"];
   if (orphanAgent) {
-    lines.push(`  Agent: ${orphanAgent} (delete via web UI or \`dam instance delete\`)`);
+    lines.push(
+      `  Agent: ${orphanAgent} (delete via web UI or \`dam instance delete\`)`,
+    );
   }
   if (orphanSecrets.length > 0) {
-    lines.push(`  Secrets: ${orphanSecrets.join(", ")} (delete via web UI's secrets page)`);
+    lines.push(
+      `  Secrets: ${orphanSecrets.join(", ")} (delete via web UI's secrets page)`,
+    );
   }
   return lines.join("\n");
 }
@@ -123,13 +142,19 @@ interface CliOpts {
 export function buildCreateCommand(deps: CreateAgentCommandDeps): Command {
   return new Command("create")
     .description("Interactively create an agent and a running instance")
-    .option("--server <url>", "override the configured server URL for this call")
+    .option(
+      "--server <url>",
+      "override the configured server URL for this call",
+    )
     .action(async (opts: CliOpts) => {
       await runCreate(opts, deps);
     });
 }
 
-async function runCreate(opts: CliOpts, deps: CreateAgentCommandDeps): Promise<void> {
+async function runCreate(
+  opts: CliOpts,
+  deps: CreateAgentCommandDeps,
+): Promise<void> {
   if (!process.stdin.isTTY) {
     process.stderr.write(
       "error: dam agent create requires an interactive terminal; use `dam instance create` for scripted setup\n",
@@ -169,7 +194,9 @@ async function runCreate(opts: CliOpts, deps: CreateAgentCommandDeps): Promise<v
   const tmplResult = await templateSvc.list();
   if (!tmplResult.ok) {
     if (tmplResult.error.kind === "auth-required") {
-      cancel(`not authenticated: ${tmplResult.error.reason}\nhint: run \`dam auth login\` first`);
+      cancel(
+        `not authenticated: ${tmplResult.error.reason}\nhint: run \`dam auth login\` first`,
+      );
     } else {
       cancel(formatTransportError(tmplResult.error.reason, host));
     }
@@ -275,7 +302,9 @@ async function runCreate(opts: CliOpts, deps: CreateAgentCommandDeps): Promise<v
   // we remove it on natural wait completion to restore default behavior.
   const onSigint = () => {
     spin.stop("Cancelled");
-    log.warn(`Agent ${name} already exists; delete with \`dam instance delete ${name}\` if not needed.`);
+    log.warn(
+      `Agent ${name} already exists; delete with \`dam instance delete ${name}\` if not needed.`,
+    );
     process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
   };
   process.once("SIGINT", onSigint);
@@ -307,7 +336,9 @@ async function runCreate(opts: CliOpts, deps: CreateAgentCommandDeps): Promise<v
       return;
     }
     case "error":
-      spin.stop(`Instance entered error state: ${waitResult.instance.error ?? "unknown"}`);
+      spin.stop(
+        `Instance entered error state: ${waitResult.instance.error ?? "unknown"}`,
+      );
       note(`dam instance get ${name}`, "Inspect");
       process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
       return;
@@ -315,7 +346,9 @@ async function runCreate(opts: CliOpts, deps: CreateAgentCommandDeps): Promise<v
       // The agent + instance both exist server-side; the pod is just slow.
       // Per spec: warn and exit 0. The user can check progress with
       // `dam instance get`.
-      spin.stop(`Instance still starting after ${WAIT_TIMEOUT_SECONDS}s (state: ${waitResult.lastState})`);
+      spin.stop(
+        `Instance still starting after ${WAIT_TIMEOUT_SECONDS}s (state: ${waitResult.lastState})`,
+      );
       note(`dam instance get ${name}`, "Check status");
       process.exit(EXIT_INSTANCE_SUCCESS);
       return;
@@ -398,7 +431,10 @@ async function handleStage1Failure(
   }
   if (lines.length > 0) {
     log.warn(
-      ["These may have been created server-side; check via the web UI:", ...lines].join("\n"),
+      [
+        "These may have been created server-side; check via the web UI:",
+        ...lines,
+      ].join("\n"),
     );
   }
 }
@@ -445,7 +481,9 @@ async function pickProvider(
   const existing: ExistingProvider[] = list
     .filter(
       (s): s is typeof s & { type: ProviderType } =>
-        s.type === "anthropic" || s.type === "ibm-litellm" || s.type === "openai",
+        s.type === "anthropic" ||
+        s.type === "ibm-litellm" ||
+        s.type === "openai",
     )
     .map((s) => ({ id: s.id, name: s.name, type: s.type }));
 
@@ -474,7 +512,12 @@ async function pickProvider(
     await flushCleanup(trpc, cleanup);
     process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
   }
-  return { secretId: found.id, name: found.name, type: found.type, createdNew: false };
+  return {
+    secretId: found.id,
+    name: found.name,
+    type: found.type,
+    createdNew: false,
+  };
 }
 
 async function addOrReplaceProvider(
@@ -508,7 +551,12 @@ async function addOrReplaceProvider(
       if (isCancel(replace)) return cancelAndCleanup(trpc, cleanup);
 
       if (!replace) {
-        return { secretId: existingOfType.id, name: existingOfType.name, type, createdNew: false };
+        return {
+          secretId: existingOfType.id,
+          name: existingOfType.name,
+          type,
+          createdNew: false,
+        };
       }
 
       const apiKey = await password({
@@ -521,8 +569,16 @@ async function addOrReplaceProvider(
       if (isCancel(apiKey)) return cancelAndCleanup(trpc, cleanup);
 
       try {
-        await trpc.secrets.update.mutate({ id: existingOfType.id, value: apiKey });
-        return { secretId: existingOfType.id, name: existingOfType.name, type, createdNew: false };
+        await trpc.secrets.update.mutate({
+          id: existingOfType.id,
+          value: apiKey,
+        });
+        return {
+          secretId: existingOfType.id,
+          name: existingOfType.name,
+          type,
+          createdNew: false,
+        };
       } catch (e) {
         log.error(`Failed to replace API key: ${errorReason(e)}`);
         continue;
@@ -544,11 +600,20 @@ async function addOrReplaceProvider(
     if (isCancel(apiKey)) return cancelAndCleanup(trpc, cleanup);
 
     try {
-      const created = await trpc.secrets.create.mutate({ type, name, value: apiKey });
+      const created = await trpc.secrets.create.mutate({
+        type,
+        name,
+        value: apiKey,
+      });
       // Track immediately so any cancel/throw between here and runCreate
       // reaching the rollback ledger doesn't orphan the new secret.
       cleanup.newSecretIds.push(created.id);
-      return { secretId: created.id, name: created.name, type, createdNew: true };
+      return {
+        secretId: created.id,
+        name: created.name,
+        type,
+        createdNew: true,
+      };
     } catch (e) {
       log.error(`Failed to create secret: ${errorReason(e)}`);
       // Fall through to next loop iteration.

@@ -17,7 +17,12 @@ export interface TelegramChannel extends Channel {
 
 export type ChannelConfig = SlackChannel | TelegramChannel;
 
-export type InstanceState = "starting" | "running" | "hibernating" | "hibernated" | "error";
+export type InstanceState =
+  | "starting"
+  | "running"
+  | "hibernating"
+  | "hibernated"
+  | "error";
 
 export interface Instance {
   id: string;
@@ -74,7 +79,10 @@ export interface InstancesService {
    * before connecting. See ADR-032.
    */
   ensureReady: (id: string) => Promise<void>;
-  connectSlack: (id: string, slackChannelId: string) => Promise<ConnectSlackResult>;
+  connectSlack: (
+    id: string,
+    slackChannelId: string,
+  ) => Promise<ConnectSlackResult>;
   disconnectSlack: (id: string) => Promise<Instance | null>;
   connectTelegram: (id: string, botToken: string) => Promise<Instance | null>;
   disconnectTelegram: (id: string) => Promise<Instance | null>;

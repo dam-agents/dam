@@ -7,7 +7,10 @@ import type { SkillSourceSeed } from "./seed-sources.js";
 export interface SkillsRepository {
   list(owner: string): Promise<SkillSource[]>;
   get(id: string, owner: string): Promise<SkillSource | null>;
-  create(input: { name: string; gitUrl: string }, owner: string): Promise<SkillSource>;
+  create(
+    input: { name: string; gitUrl: string },
+    owner: string,
+  ): Promise<SkillSource>;
   delete(id: string, owner: string): Promise<void>;
 }
 

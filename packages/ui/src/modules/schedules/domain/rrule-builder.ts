@@ -1,5 +1,5 @@
 import type { Weekday } from "rrule";
-import { Frequency,RRule } from "rrule";
+import { Frequency, RRule } from "rrule";
 
 /**
  * Preset shapes the user can pick in the create-schedule form.
@@ -39,9 +39,17 @@ function toOptions(preset: Exclude<FrequencyPreset, { kind: "custom" }>) {
   const byweekday = daysFilterToByWeekday(preset.days);
   switch (preset.kind) {
     case "minutely":
-      return { freq: Frequency.MINUTELY, interval: preset.interval, ...byweekday };
+      return {
+        freq: Frequency.MINUTELY,
+        interval: preset.interval,
+        ...byweekday,
+      };
     case "hourly":
-      return { freq: Frequency.HOURLY, interval: preset.interval, ...byweekday };
+      return {
+        freq: Frequency.HOURLY,
+        interval: preset.interval,
+        ...byweekday,
+      };
     case "daily":
       return {
         freq: Frequency.DAILY,
@@ -89,22 +97,35 @@ export function detectPreset(rruleBody: string): FrequencyPreset {
   try {
     const options = RRule.parseString(rruleBody);
     const days = byweekdayToIso(options.byweekday) ?? [...ALL_DAYS];
-    const interval = typeof options.interval === "number" ? options.interval : 1;
+    const interval =
+      typeof options.interval === "number" ? options.interval : 1;
 
     // rrule.js's parseString returns BYHOUR/BYMINUTE as either a single
     // number or number[] depending on the input. Normalise to an array.
     const hours = toNumArray(options.byhour);
     const minutes = toNumArray(options.byminute);
 
-    if (options.freq === Frequency.MINUTELY && hours.length === 0 && minutes.length === 0) {
+    if (
+      options.freq === Frequency.MINUTELY &&
+      hours.length === 0 &&
+      minutes.length === 0
+    ) {
       return { kind: "minutely", interval, days };
     }
-    if (options.freq === Frequency.HOURLY && hours.length === 0 && minutes.length === 0) {
+    if (
+      options.freq === Frequency.HOURLY &&
+      hours.length === 0 &&
+      minutes.length === 0
+    ) {
       return { kind: "hourly", interval, days };
     }
     // Both DAILY and WEEKLY-with-BYHOUR+BYMINUTE collapse to the "daily"
     // preset now that days-of-week is a universal filter.
-    if ((options.freq === Frequency.DAILY || options.freq === Frequency.WEEKLY) && hours.length === 1 && minutes.length === 1) {
+    if (
+      (options.freq === Frequency.DAILY || options.freq === Frequency.WEEKLY) &&
+      hours.length === 1 &&
+      minutes.length === 1
+    ) {
       return { kind: "daily", hour: hours[0], minute: minutes[0], days };
     }
   } catch {
@@ -115,7 +136,8 @@ export function detectPreset(rruleBody: string): FrequencyPreset {
 
 function toNumArray(v: unknown): number[] {
   if (v == null) return [];
-  if (Array.isArray(v)) return v.filter((x): x is number => typeof x === "number");
+  if (Array.isArray(v))
+    return v.filter((x): x is number => typeof x === "number");
   return typeof v === "number" ? [v] : [];
 }
 
@@ -126,7 +148,8 @@ function byweekdayToIso(byweekday: unknown): number[] | null {
   for (const bw of byweekday) {
     // rrule.js encodes Weekday as a Weekday instance with `.weekday`, or as
     // a raw number 0..6 (0=Mon). Handle both.
-    const n = typeof bw === "number" ? bw : (bw as { weekday?: number }).weekday;
+    const n =
+      typeof bw === "number" ? bw : (bw as { weekday?: number }).weekday;
     if (typeof n !== "number") continue;
     // 0=Mon..6=Sun in rrule.js → 1..7 ISO
     mapped.push(n + 1);
@@ -183,7 +206,10 @@ export function isInQuietHours(date: Date, windows: QuietWindow[]): boolean {
  * intentionally small for UI responsiveness; the server enforces a
  * larger cap as the authoritative check.
  */
-export function hasVisibleOccurrence(rruleBody: string, windows: QuietWindow[]): boolean {
+export function hasVisibleOccurrence(
+  rruleBody: string,
+  windows: QuietWindow[],
+): boolean {
   const enabled = windows.filter((w) => w.enabled);
   if (enabled.length === 0) return true;
   try {

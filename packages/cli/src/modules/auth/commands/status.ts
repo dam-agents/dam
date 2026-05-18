@@ -16,7 +16,9 @@ export interface StatusCommandDeps {
 
 export function buildStatusCommand(deps: StatusCommandDeps): Command {
   return new Command("status")
-    .description("List configured hosts, their credential source, and the active server")
+    .description(
+      "List configured hosts, their credential source, and the active server",
+    )
     .action(async () => {
       const result = await deps.authService.status();
       if (!result.ok) {
@@ -28,7 +30,11 @@ export function buildStatusCommand(deps: StatusCommandDeps): Command {
       if (report.entries.length === 0) {
         process.stderr.write("No hosts configured.\n");
         process.stderr.write("hint: run `dam auth login` to authenticate\n");
-        process.exit(report.activeHostValid ? EXIT_AUTH_SUCCESS : EXIT_AUTH_STATUS_NO_VALID);
+        process.exit(
+          report.activeHostValid
+            ? EXIT_AUTH_SUCCESS
+            : EXIT_AUTH_STATUS_NO_VALID,
+        );
       }
 
       const lines: string[] = [];
@@ -36,7 +42,9 @@ export function buildStatusCommand(deps: StatusCommandDeps): Command {
         lines.push(formatEntry(entry));
       }
       process.stdout.write(`${lines.join("\n")}\n`);
-      process.exit(report.activeHostValid ? EXIT_AUTH_SUCCESS : EXIT_AUTH_STATUS_NO_VALID);
+      process.exit(
+        report.activeHostValid ? EXIT_AUTH_SUCCESS : EXIT_AUTH_STATUS_NO_VALID,
+      );
     });
 }
 
@@ -53,7 +61,9 @@ function formatEntry(entry: StatusEntry): string {
 function printStatusError(e: StatusError): void {
   switch (e.kind) {
     case "auth-store":
-      process.stderr.write(`error: failed to read credential store: ${e.detail}\n`);
+      process.stderr.write(
+        `error: failed to read credential store: ${e.detail}\n`,
+      );
       return;
   }
 }

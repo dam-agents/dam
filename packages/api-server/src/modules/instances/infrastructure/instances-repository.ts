@@ -1,15 +1,31 @@
 import { is409, type K8sClient } from "../../agents/infrastructure/k8s.js";
 import { retry } from "../../agents/infrastructure/retry.js";
 import {
-  LABEL_TYPE, TYPE_INSTANCE, LABEL_OWNER, LABEL_INSTANCE_REF, LABEL_AGENT_REF, LAST_ACTIVITY_KEY,
-  LABEL_ROLE, ROLE_AGENT,
+  LABEL_TYPE,
+  TYPE_INSTANCE,
+  LABEL_OWNER,
+  LABEL_INSTANCE_REF,
+  LABEL_AGENT_REF,
+  LAST_ACTIVITY_KEY,
+  LABEL_ROLE,
+  ROLE_AGENT,
 } from "../../agents/infrastructure/labels.js";
 import {
-  isOwnedBy, hasType, patchSpecField, setDesiredState, isPodReady,
+  isOwnedBy,
+  hasType,
+  patchSpecField,
+  setDesiredState,
+  isPodReady,
 } from "../../agents/infrastructure/configmap-mappers.js";
-import { parseInfraInstance, buildInstanceConfigMap } from "./configmap-mappers.js";
 import {
-  pollUntilReady, WAKE_POLL_INITIAL_MS, WAKE_POLL_MAX_MS, WAKE_TIMEOUT_MS,
+  parseInfraInstance,
+  buildInstanceConfigMap,
+} from "./configmap-mappers.js";
+import {
+  pollUntilReady,
+  WAKE_POLL_INITIAL_MS,
+  WAKE_POLL_MAX_MS,
+  WAKE_TIMEOUT_MS,
 } from "../../agents/infrastructure/poll-until-ready.js";
 import type { InfraInstance } from "../domain/instance-assembly.js";
 
@@ -33,8 +49,16 @@ async function retryOnConflict<T>(fn: () => Promise<T>): Promise<T> {
 export interface InstancesRepository {
   list(owner?: string): Promise<InfraInstance[]>;
   get(id: string, owner?: string): Promise<InfraInstance | null>;
-  create(agentId: string, spec: Record<string, unknown>, owner: string): Promise<InfraInstance>;
-  updateSpec(id: string, owner: string | undefined, patch: Record<string, unknown>): Promise<InfraInstance | null>;
+  create(
+    agentId: string,
+    spec: Record<string, unknown>,
+    owner: string,
+  ): Promise<InfraInstance>;
+  updateSpec(
+    id: string,
+    owner: string | undefined,
+    patch: Record<string, unknown>,
+  ): Promise<InfraInstance | null>;
   delete(id: string, owner?: string): Promise<boolean>;
   restart(id: string, owner?: string): Promise<boolean>;
   wake(id: string): Promise<InfraInstance | null>;
@@ -42,7 +66,9 @@ export interface InstancesRepository {
   getOwner(id: string): Promise<string | null>;
   /** Resolve an instance to its `(owner, agentId)`. Used by the ext_authz
    *  hot path to look up egress rules and credit pending approvals. */
-  resolveIdentity(id: string): Promise<{ owner: string; agentId: string } | null>;
+  resolveIdentity(
+    id: string,
+  ): Promise<{ owner: string; agentId: string } | null>;
   patchAnnotation(id: string, key: string, value: string): Promise<void>;
   wakeIfHibernated(id: string): Promise<boolean>;
   isPodReady(id: string): Promise<boolean>;
@@ -71,7 +97,9 @@ export function createInstancesRepository(k8s: K8sClient): InstancesRepository {
   // trip, no GET).
   async function bumpLastActivity(id: string): Promise<void> {
     await k8s.patchConfigMap(id, {
-      metadata: { annotations: { [LAST_ACTIVITY_KEY]: new Date().toISOString() } },
+      metadata: {
+        annotations: { [LAST_ACTIVITY_KEY]: new Date().toISOString() },
+      },
     });
   }
 
@@ -231,7 +259,9 @@ export function createInstancesRepository(k8s: K8sClient): InstancesRepository {
           WAKE_TIMEOUT_MS,
         );
         if (!ready) {
-          throw new Error(`instance ${id} did not become ready within ${WAKE_TIMEOUT_MS / 1000}s`);
+          throw new Error(
+            `instance ${id} did not become ready within ${WAKE_TIMEOUT_MS / 1000}s`,
+          );
         }
         await bumpLastActivity(id);
       })().finally(() => {

@@ -127,7 +127,9 @@ export interface CreateOAuthEngineOptions {
   pendingFlowTtlMs?: number;
 }
 
-export function createOAuthEngine(opts?: CreateOAuthEngineOptions): OAuthEngine {
+export function createOAuthEngine(
+  opts?: CreateOAuthEngineOptions,
+): OAuthEngine {
   const now = opts?.now ?? (() => Date.now());
   const fetchImpl = opts?.fetchImpl ?? fetch;
   const ttlMs = opts?.pendingFlowTtlMs ?? 10 * 60 * 1000;
@@ -217,7 +219,10 @@ export function createOAuthEngine(opts?: CreateOAuthEngineOptions): OAuthEngine 
         );
       }
       const contentType = res.headers.get("content-type") ?? "";
-      let data: Partial<TokenEndpointResponse> & { error?: string; error_description?: string };
+      let data: Partial<TokenEndpointResponse> & {
+        error?: string;
+        error_description?: string;
+      };
       if (contentType.includes("application/json")) {
         data = (await res.json()) as typeof data;
       } else {
@@ -229,12 +234,20 @@ export function createOAuthEngine(opts?: CreateOAuthEngineOptions): OAuthEngine 
         const error = parsed.get("error");
         data = {
           ...(access_token ? { access_token } : {}),
-          ...(parsed.get("refresh_token") ? { refresh_token: parsed.get("refresh_token")! } : {}),
-          ...(parsed.get("token_type") ? { token_type: parsed.get("token_type")! } : {}),
-          ...(parsed.get("expires_in") ? { expires_in: Number(parsed.get("expires_in")) } : {}),
+          ...(parsed.get("refresh_token")
+            ? { refresh_token: parsed.get("refresh_token")! }
+            : {}),
+          ...(parsed.get("token_type")
+            ? { token_type: parsed.get("token_type")! }
+            : {}),
+          ...(parsed.get("expires_in")
+            ? { expires_in: Number(parsed.get("expires_in")) }
+            : {}),
           ...(parsed.get("scope") ? { scope: parsed.get("scope")! } : {}),
           ...(error ? { error } : {}),
-          ...(parsed.get("error_description") ? { error_description: parsed.get("error_description")! } : {}),
+          ...(parsed.get("error_description")
+            ? { error_description: parsed.get("error_description")! }
+            : {}),
         };
         if (!access_token && !error) {
           throw new Error(
@@ -249,14 +262,18 @@ export function createOAuthEngine(opts?: CreateOAuthEngineOptions): OAuthEngine 
       // downstream "expected string, received undefined" when the Secret
       // is written.
       if (!data.access_token) {
-        const detail = data.error_description ?? data.error ?? "no access_token in response";
+        const detail =
+          data.error_description ?? data.error ?? "no access_token in response";
         const code = data.error ? `${data.error}: ` : "";
-        throw new Error(`OAuth token exchange rejected by provider — ${code}${detail}`);
+        throw new Error(
+          `OAuth token exchange rejected by provider — ${code}${detail}`,
+        );
       }
 
       const tokens: TokenSet = { accessToken: data.access_token };
       if (data.refresh_token) tokens.refreshToken = data.refresh_token;
-      if (data.expires_in) tokens.expiresAt = Math.floor(now() / 1000) + data.expires_in;
+      if (data.expires_in)
+        tokens.expiresAt = Math.floor(now() / 1000) + data.expires_in;
       return tokens;
     },
   };

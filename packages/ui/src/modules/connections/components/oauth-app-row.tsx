@@ -1,7 +1,10 @@
 import { ExternalLink, Unplug } from "lucide-react";
 
 import { useStore } from "../../../store.js";
-import type { OAuthAppConnection, OAuthAppDescriptor } from "../api/fetchers.js";
+import type {
+  OAuthAppConnection,
+  OAuthAppDescriptor,
+} from "../api/fetchers.js";
 import { useDisconnectApp } from "../api/mutations.js";
 import { appInstallUrl } from "../lib/install-url.js";
 import { OAuthAppIcon } from "./oauth-app-icon.js";
@@ -19,16 +22,28 @@ interface Props {
  * keys on `connection.connectionId` so multi-instance apps (Generic) stay
  * unambiguous when more than one connection of the same app exists.
  */
-export function OAuthAppRow({ app, connection, animationDelayMs, onReconnect }: Props) {
+export function OAuthAppRow({
+  app,
+  connection,
+  animationDelayMs,
+  onReconnect,
+}: Props) {
   const showConfirm = useStore((s) => s.showConfirm);
   const disconnectApp = useDisconnectApp();
 
   const isDisconnecting =
-    disconnectApp.isPending && disconnectApp.variables === connection.connectionId;
+    disconnectApp.isPending &&
+    disconnectApp.variables === connection.connectionId;
   const expired = connection.expired;
 
   const handleDisconnect = async () => {
-    if (!(await showConfirm(`Disconnect ${connection.displayName}?`, "Disconnect"))) return;
+    if (
+      !(await showConfirm(
+        `Disconnect ${connection.displayName}?`,
+        "Disconnect",
+      ))
+    )
+      return;
     disconnectApp.mutate(connection.connectionId);
   };
 
@@ -47,8 +62,12 @@ export function OAuthAppRow({ app, connection, animationDelayMs, onReconnect }: 
         <OAuthAppIcon appId={app.id} alt={app.displayName} />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-[14px] font-semibold text-text truncate">{connection.displayName}</div>
-        <div className="text-[12px] font-mono text-text-muted truncate">{detail}</div>
+        <div className="text-[14px] font-semibold text-text truncate">
+          {connection.displayName}
+        </div>
+        <div className="text-[12px] font-mono text-text-muted truncate">
+          {detail}
+        </div>
       </div>
       <span
         className={`text-[11px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 shrink-0 ${

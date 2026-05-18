@@ -6,7 +6,12 @@ import type {
 } from "api-server-api";
 import { SPEC_VERSION } from "api-server-api";
 import type { SchedulesRepository } from "../infrastructure/schedules-repository.js";
-import { validateCron, validateHasVisibleOccurrence, validateRRule, validateTimezone } from "../domain/recurrences.js";
+import {
+  validateCron,
+  validateHasVisibleOccurrence,
+  validateRRule,
+  validateTimezone,
+} from "../domain/recurrences.js";
 
 export function createSchedulesService(deps: {
   repo: SchedulesRepository;
@@ -18,8 +23,12 @@ export function createSchedulesService(deps: {
 
     async createCron(input: CreateCronScheduleInput) {
       validateCron(input.cron);
-      const agentRef = await deps.repo.readAgentRef(input.instanceId, deps.owner);
-      if (!agentRef) throw new Error(`Instance "${input.instanceId}" not found`);
+      const agentRef = await deps.repo.readAgentRef(
+        input.instanceId,
+        deps.owner,
+      );
+      if (!agentRef)
+        throw new Error(`Instance "${input.instanceId}" not found`);
 
       const spec: Record<string, unknown> = {
         name: input.name,
@@ -38,8 +47,12 @@ export function createSchedulesService(deps: {
       validateTimezone(input.timezone);
       validateRRule(input.rrule);
       validateHasVisibleOccurrence(input.rrule, input.quietHours ?? []);
-      const agentRef = await deps.repo.readAgentRef(input.instanceId, deps.owner);
-      if (!agentRef) throw new Error(`Instance "${input.instanceId}" not found`);
+      const agentRef = await deps.repo.readAgentRef(
+        input.instanceId,
+        deps.owner,
+      );
+      if (!agentRef)
+        throw new Error(`Instance "${input.instanceId}" not found`);
 
       const spec: Record<string, unknown> = {
         name: input.name,

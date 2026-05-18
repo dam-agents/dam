@@ -20,7 +20,9 @@ function mockFetch(captured: Request[]): typeof fetch {
   }) as unknown as typeof fetch;
 }
 
-function fakeTokenProvider(fn: () => ReturnType<TokenProvider["getValidAccessToken"]>): TokenProvider {
+function fakeTokenProvider(
+  fn: () => ReturnType<TokenProvider["getValidAccessToken"]>,
+): TokenProvider {
   return { getValidAccessToken: vi.fn(fn) };
 }
 
@@ -29,7 +31,11 @@ describe("shared trpc-client adapter", () => {
     const captured: Request[] = [];
     const fetchSpy = vi.fn(mockFetch(captured));
     const tp = fakeTokenProvider(async () => ok("AT-1"));
-    const trpc = createTrpcClient({ host: HOST, tokenProvider: tp, fetch: fetchSpy });
+    const trpc = createTrpcClient({
+      host: HOST,
+      tokenProvider: tp,
+      fetch: fetchSpy,
+    });
 
     await trpc.instances.list.query();
 
@@ -41,8 +47,14 @@ describe("shared trpc-client adapter", () => {
   it("aborts before the wire when tokenProvider returns not-logged-in — no HTTP request fires", async () => {
     const captured: Request[] = [];
     const fetchSpy = vi.fn(mockFetch(captured));
-    const tp = fakeTokenProvider(async () => err({ kind: "not-logged-in" as const, host: HOST }));
-    const trpc = createTrpcClient({ host: HOST, tokenProvider: tp, fetch: fetchSpy });
+    const tp = fakeTokenProvider(async () =>
+      err({ kind: "not-logged-in" as const, host: HOST }),
+    );
+    const trpc = createTrpcClient({
+      host: HOST,
+      tokenProvider: tp,
+      fetch: fetchSpy,
+    });
 
     let caught: unknown;
     try {
@@ -53,7 +65,9 @@ describe("shared trpc-client adapter", () => {
 
     const cause = (caught as { cause?: unknown }).cause;
     expect(cause).toBeInstanceOf(AuthRequiredAtTransportError);
-    expect((cause as AuthRequiredAtTransportError).message).toBe(`not logged in to ${HOST}`);
+    expect((cause as AuthRequiredAtTransportError).message).toBe(
+      `not logged in to ${HOST}`,
+    );
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

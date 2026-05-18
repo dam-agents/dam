@@ -124,8 +124,7 @@ export async function waitForPodReady(
       }
       lastError = `phase=${pod.status?.phase ?? "Unknown"}, ready=${ready?.status ?? "no condition"}`;
     } catch (e) {
-      lastError =
-        e instanceof Error ? e.message : "unknown error reading pod";
+      lastError = e instanceof Error ? e.message : "unknown error reading pod";
     }
     await new Promise((r) => setTimeout(r, 3000));
   }
@@ -249,8 +248,7 @@ export async function getEvents(
       .filter((e) => e.involvedObject?.name === name)
       .sort(
         (a, b) =>
-          (a.lastTimestamp?.getTime() ?? 0) -
-          (b.lastTimestamp?.getTime() ?? 0),
+          (a.lastTimestamp?.getTime() ?? 0) - (b.lastTimestamp?.getTime() ?? 0),
       )
       .slice(-20);
 
@@ -353,11 +351,14 @@ export function execInPod(
   const result = spawnSync(
     "kubectl",
     [
-      "--kubeconfig", KUBECONFIG,
+      "--kubeconfig",
+      KUBECONFIG,
       "exec",
-      "-n", namespace,
+      "-n",
+      namespace,
       podName,
-      "-c", container,
+      "-c",
+      container,
       "--",
       ...command,
     ],

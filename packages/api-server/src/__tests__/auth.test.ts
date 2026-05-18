@@ -34,9 +34,7 @@ describe("auth: protected endpoints reject unauthenticated requests", () => {
   });
 
   it("tRPC client throws without token", async () => {
-    await expect(
-      noAuthClient.templates.list.query(),
-    ).rejects.toThrow();
+    await expect(noAuthClient.templates.list.query()).rejects.toThrow();
   });
 
   it("MCP connections returns 401 without token", async () => {
@@ -69,9 +67,7 @@ describe("auth: authenticated requests succeed", () => {
   it("token contains expected audience", async () => {
     const token = await getToken();
     const [, payloadB64] = token.split(".");
-    const payload = JSON.parse(
-      Buffer.from(payloadB64, "base64url").toString(),
-    );
+    const payload = JSON.parse(Buffer.from(payloadB64, "base64url").toString());
     expect(payload.aud).toContain("platform-api");
     expect(payload.preferred_username).toBe("dev");
   });

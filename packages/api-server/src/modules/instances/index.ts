@@ -7,6 +7,8 @@ export { createKeycloakUserDirectory } from "./infrastructure/keycloak-user-dire
 export type { KeycloakUserDirectory } from "./infrastructure/keycloak-user-directory.js";
 export type { InfraInstance } from "./domain/instance-assembly.js";
 export {
-  deleteChannelsByInstance, listChannelsByOwner,
-  findBySlackChannelId, findSlackChannelByInstance,
+  deleteChannelsByInstance,
+  listChannelsByOwner,
+  findBySlackChannelId,
+  findSlackChannelByInstance,
 } from "./infrastructure/channel-bindings-repository.js";

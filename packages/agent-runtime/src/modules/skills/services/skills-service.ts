@@ -57,24 +57,38 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
 async function doInstall(deps: SkillsServiceDeps, input: InstallSkillInput) {
   const validated = validateNameAndPaths(input.name, input.skillPaths);
   if (!validated.ok) return validated;
-  return runInstall(deps, validated.value.name, validated.value.skillPaths, input);
+  return runInstall(
+    deps,
+    validated.value.name,
+    validated.value.skillPaths,
+    input,
+  );
 }
 
-async function doUninstall(deps: SkillsServiceDeps, input: UninstallSkillInput) {
+async function doUninstall(
+  deps: SkillsServiceDeps,
+  input: UninstallSkillInput,
+) {
   const validated = validateNameAndPaths(input.name, input.skillPaths);
   if (!validated.ok) return validated;
   await deps.repo.remove(validated.value.name, validated.value.skillPaths);
   return ok(undefined);
 }
 
-async function doListLocal(deps: SkillsServiceDeps, input: ListLocalSkillsInput) {
+async function doListLocal(
+  deps: SkillsServiceDeps,
+  input: ListLocalSkillsInput,
+) {
   const skillPaths = makeSkillPaths(input.skillPaths);
   if (!skillPaths.ok) return skillPaths;
   const skills = await deps.repo.listLocal(skillPaths.value);
   return ok(skills);
 }
 
-async function doReadLocal(deps: SkillsServiceDeps, input: ReadLocalSkillInput) {
+async function doReadLocal(
+  deps: SkillsServiceDeps,
+  input: ReadLocalSkillInput,
+) {
   const validated = validateNameAndPaths(input.name, input.skillPaths);
   if (!validated.ok) return validated;
   return deps.repo.readLocal(validated.value.name, validated.value.skillPaths);
@@ -83,5 +97,10 @@ async function doReadLocal(deps: SkillsServiceDeps, input: ReadLocalSkillInput) 
 async function doPublish(deps: SkillsServiceDeps, input: PublishSkillInput) {
   const validated = validateNameAndPaths(input.name, input.skillPaths);
   if (!validated.ok) return validated;
-  return runPublish(deps, validated.value.name, validated.value.skillPaths, input);
+  return runPublish(
+    deps,
+    validated.value.name,
+    validated.value.skillPaths,
+    input,
+  );
 }

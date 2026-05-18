@@ -1,4 +1,4 @@
-import { LogOut,Monitor, Moon, Sun } from "lucide-react";
+import { LogOut, Monitor, Moon, Sun } from "lucide-react";
 import { useState } from "react";
 
 import { getUser, logout } from "../../../auth.js";
@@ -12,9 +12,24 @@ const tabs: { id: Tab; label: string }[] = [
 ];
 
 const themeOptions = [
-  { value: "light" as const, icon: Sun, label: "Light", description: "Light background with dark text" },
-  { value: "dark" as const, icon: Moon, label: "Dark", description: "Dark background with light text" },
-  { value: "system" as const, icon: Monitor, label: "System", description: "Follow your operating system setting" },
+  {
+    value: "light" as const,
+    icon: Sun,
+    label: "Light",
+    description: "Light background with dark text",
+  },
+  {
+    value: "dark" as const,
+    icon: Moon,
+    label: "Dark",
+    description: "Dark background with light text",
+  },
+  {
+    value: "system" as const,
+    icon: Monitor,
+    label: "System",
+    description: "Follow your operating system setting",
+  },
 ];
 
 export function SettingsView() {
@@ -51,24 +66,31 @@ export function SettingsView() {
             <div className="mb-8">
               <h3 className="text-[14px] font-semibold mb-3">Theme</h3>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {themeOptions.map(({ value, icon: Icon, label, description }) => (
-                  <button
-                    key={value}
-                    onClick={() => setTheme(value)}
-                    className={`flex flex-col items-start gap-2 p-4 rounded-xl border-2 transition-all ${theme === value ? "border-accent bg-accent-light shadow-brutal-sm" : "border-border-light hover:border-text-muted bg-surface"}`}
-                  >
-                    <div className={`h-9 w-9 rounded-lg flex items-center justify-center ${theme === value ? "bg-accent text-white" : "bg-surface-raised text-text-secondary"}`}>
-                      <Icon size={18} />
-                    </div>
-                    <div>
-                      <div className="text-[14px] font-semibold text-text">{label}</div>
-                      <div className="text-[12px] text-text-muted mt-0.5">{description}</div>
-                    </div>
-                  </button>
-                ))}
+                {themeOptions.map(
+                  ({ value, icon: Icon, label, description }) => (
+                    <button
+                      key={value}
+                      onClick={() => setTheme(value)}
+                      className={`flex flex-col items-start gap-2 p-4 rounded-xl border-2 transition-all ${theme === value ? "border-accent bg-accent-light shadow-brutal-sm" : "border-border-light hover:border-text-muted bg-surface"}`}
+                    >
+                      <div
+                        className={`h-9 w-9 rounded-lg flex items-center justify-center ${theme === value ? "bg-accent text-white" : "bg-surface-raised text-text-secondary"}`}
+                      >
+                        <Icon size={18} />
+                      </div>
+                      <div>
+                        <div className="text-[14px] font-semibold text-text">
+                          {label}
+                        </div>
+                        <div className="text-[12px] text-text-muted mt-0.5">
+                          {description}
+                        </div>
+                      </div>
+                    </button>
+                  ),
+                )}
               </div>
             </div>
-
           </div>
         )}
 
@@ -81,11 +103,15 @@ export function SettingsView() {
 
             <div className="flex items-center gap-4 p-4 rounded-xl border-2 border-border-light bg-surface">
               <div className="h-10 w-10 rounded-full bg-accent-light flex items-center justify-center text-accent font-bold text-[16px]">
-                {(user?.profile.preferred_username ?? user?.profile.sub ?? "?")[0].toUpperCase()}
+                {(user?.profile.preferred_username ??
+                  user?.profile.sub ??
+                  "?")[0].toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-[14px] font-medium text-text truncate">
-                  {user?.profile.preferred_username ?? user?.profile.sub ?? "Unknown"}
+                  {user?.profile.preferred_username ??
+                    user?.profile.sub ??
+                    "Unknown"}
                 </div>
                 <div className="text-[12px] text-text-muted">Signed in</div>
               </div>

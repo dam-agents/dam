@@ -9,10 +9,13 @@ import type { CoreV1Api } from "@kubernetes/client-node";
 import type { Db } from "db";
 import type { SkillSourceSeed } from "../../modules/skills/index.js";
 import {
-  createK8sClient, podBaseUrl,
+  createK8sClient,
+  podBaseUrl,
 } from "../../modules/agents/infrastructure/k8s.js";
 import {
-  composeInstancesModule, createInstancesRepository, createKeycloakUserDirectory,
+  composeInstancesModule,
+  createInstancesRepository,
+  createKeycloakUserDirectory,
 } from "../../modules/instances/index.js";
 import { composeAgentsModule } from "../../modules/agents/index.js";
 import { composeTemplatesModule } from "../../modules/templates/index.js";
@@ -25,7 +28,10 @@ import { createSlackOAuthRoutes } from "../../modules/channels/infrastructure/sl
 import { createTelegramOAuthRoutes } from "../../modules/channels/infrastructure/telegram-oauth.js";
 import type { TelegramOAuthPending } from "../../modules/channels/infrastructure/telegram.js";
 import {
-  isThreadAuthorized, authorizeThread, revokeThread, listAuthorizedThreads,
+  isThreadAuthorized,
+  authorizeThread,
+  revokeThread,
+  listAuthorizedThreads,
 } from "../../modules/channels/infrastructure/telegram-threads-repository.js";
 import { createAcpRelay } from "./acp-relay.js";
 import { createTerminalRelay } from "./terminal-relay.js";
@@ -57,7 +63,10 @@ import {
   createEgressRuleWriterAdapter,
   createK8sAllowOnlySecretsPort,
 } from "./../../modules/egress-rules/compose.js";
-import type { AgentCleanupHook, PresetSeeder } from "../../modules/agents/compose.js";
+import type {
+  AgentCleanupHook,
+  PresetSeeder,
+} from "../../modules/agents/compose.js";
 import type { RedisBus } from "../../core/redis-bus.js";
 
 export interface ApiServerAppDeps {
@@ -84,9 +93,21 @@ export interface ApiServerAppDeps {
 
 export function startApiServerApp(deps: ApiServerAppDeps) {
   const {
-    config, api, db, channelManager, channelSecretStore, identityLinkService,
-    pendingSlackOAuthFlows, pendingTelegramOAuthFlows, podFilesPublisher, seedSources,
-    redisBus, approvalsRelay, wrapperFrameSender, presetSeeder, trustedHosts,
+    config,
+    api,
+    db,
+    channelManager,
+    channelSecretStore,
+    identityLinkService,
+    pendingSlackOAuthFlows,
+    pendingTelegramOAuthFlows,
+    podFilesPublisher,
+    seedSources,
+    redisBus,
+    approvalsRelay,
+    wrapperFrameSender,
+    presetSeeder,
+    trustedHosts,
     agentCleanupHooks,
   } = deps;
 
@@ -107,8 +128,9 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     requiredRole: config.keycloakRequiredRole,
   });
 
-  const slackOauthCallbackUrl = config.slackOauthCallbackUrl
-    ?? `${config.uiBaseUrl}/api/slack/oauth/callback`;
+  const slackOauthCallbackUrl =
+    config.slackOauthCallbackUrl ??
+    `${config.uiBaseUrl}/api/slack/oauth/callback`;
 
   const app = new Hono<{ Variables: { user: UserIdentity } }>();
 
@@ -137,20 +159,35 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   // dynamically so the installed-PWA name follows brand without a UI rebuild.
   app.get("/api/brand/manifest.webmanifest", (c) => {
     c.header("Content-Type", "application/manifest+json");
-    return c.body(JSON.stringify({
-      name: config.brand.name,
-      short_name: config.brand.name,
-      description: "AI agent platform",
-      theme_color: config.brand.theme.light.accent,
-      background_color: "#fafaf9",
-      display: "standalone",
-      start_url: "/",
-      icons: [
-        { src: "/api/brand/icon-192.png", sizes: "192x192", type: "image/png" },
-        { src: "/api/brand/icon-512.png", sizes: "512x512", type: "image/png" },
-        { src: "/api/brand/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
-      ],
-    }));
+    return c.body(
+      JSON.stringify({
+        name: config.brand.name,
+        short_name: config.brand.name,
+        description: "AI agent platform",
+        theme_color: config.brand.theme.light.accent,
+        background_color: "#fafaf9",
+        display: "standalone",
+        start_url: "/",
+        icons: [
+          {
+            src: "/api/brand/icon-192.png",
+            sizes: "192x192",
+            type: "image/png",
+          },
+          {
+            src: "/api/brand/icon-512.png",
+            sizes: "512x512",
+            type: "image/png",
+          },
+          {
+            src: "/api/brand/icon-512.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "maskable",
+          },
+        ],
+      }),
+    );
   });
   // Brand icon — single SVG source, rasterized on demand by sharp. Override
   // via Helm `brand.icon` (passed as BRAND_ICON_SVG env var); falls back to
@@ -161,65 +198,94 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
 
   const oauthApps = createOAuthAppRegistry({
     github: {
-      ...(config.defaultGithubClientId ? { clientId: config.defaultGithubClientId } : {}),
-      ...(config.defaultGithubClientSecret ? { clientSecret: config.defaultGithubClientSecret } : {}),
-      ...(config.defaultGithubAppSlug ? { appSlug: config.defaultGithubAppSlug } : {}),
+      ...(config.defaultGithubClientId
+        ? { clientId: config.defaultGithubClientId }
+        : {}),
+      ...(config.defaultGithubClientSecret
+        ? { clientSecret: config.defaultGithubClientSecret }
+        : {}),
+      ...(config.defaultGithubAppSlug
+        ? { appSlug: config.defaultGithubAppSlug }
+        : {}),
     },
     githubEnterprise: {
-      ...(config.defaultGithubEnterpriseHost ? { host: config.defaultGithubEnterpriseHost } : {}),
-      ...(config.defaultGithubEnterpriseClientId ? { clientId: config.defaultGithubEnterpriseClientId } : {}),
-      ...(config.defaultGithubEnterpriseClientSecret ? { clientSecret: config.defaultGithubEnterpriseClientSecret } : {}),
-      ...(config.defaultGithubEnterpriseAppSlug ? { appSlug: config.defaultGithubEnterpriseAppSlug } : {}),
+      ...(config.defaultGithubEnterpriseHost
+        ? { host: config.defaultGithubEnterpriseHost }
+        : {}),
+      ...(config.defaultGithubEnterpriseClientId
+        ? { clientId: config.defaultGithubEnterpriseClientId }
+        : {}),
+      ...(config.defaultGithubEnterpriseClientSecret
+        ? { clientSecret: config.defaultGithubEnterpriseClientSecret }
+        : {}),
+      ...(config.defaultGithubEnterpriseAppSlug
+        ? { appSlug: config.defaultGithubEnterpriseAppSlug }
+        : {}),
     },
   });
   app.route(
     "/",
-    createOAuthRoutes({ uiBaseUrl: config.uiBaseUrl, k8sClient, apps: oauthApps, brandName: config.brand.name }),
+    createOAuthRoutes({
+      uiBaseUrl: config.uiBaseUrl,
+      k8sClient,
+      apps: oauthApps,
+      brandName: config.brand.name,
+    }),
   );
 
   if (config.slackBotToken && config.slackAppToken) {
-    app.route("/", createSlackOAuthRoutes({
-      pendingFlows: pendingSlackOAuthFlows,
-      identityLinks: identityLinkService,
-      brandShort: config.brand.short,
-      oauthConfig: {
-        keycloakExternalUrl: config.keycloakExternalUrl,
-        keycloakUrl: config.keycloakUrl,
-        keycloakRealm: config.keycloakRealm,
-        keycloakClientId: config.keycloakClientId,
-        callbackUrl: slackOauthCallbackUrl,
-      },
-    }));
+    app.route(
+      "/",
+      createSlackOAuthRoutes({
+        pendingFlows: pendingSlackOAuthFlows,
+        identityLinks: identityLinkService,
+        brandShort: config.brand.short,
+        oauthConfig: {
+          keycloakExternalUrl: config.keycloakExternalUrl,
+          keycloakUrl: config.keycloakUrl,
+          keycloakRealm: config.keycloakRealm,
+          keycloakClientId: config.keycloakClientId,
+          callbackUrl: slackOauthCallbackUrl,
+        },
+      }),
+    );
   }
 
   if (config.telegramEnabled) {
-    app.route("/", createTelegramOAuthRoutes({
-      pendingFlows: pendingTelegramOAuthFlows,
-      threads: {
-        isAuthorized: isThreadAuthorized(db),
-        authorize: authorizeThread(db),
-        list: listAuthorizedThreads(db),
-        revoke: revokeThread(db),
-      },
-      isInstanceOwner: (instanceId, sub) => instancesRepo.isOwnedBy(instanceId, sub),
-      oauthConfig: {
-        keycloakExternalUrl: config.keycloakExternalUrl,
-        keycloakUrl: config.keycloakUrl,
-        keycloakRealm: config.keycloakRealm,
-        keycloakClientId: config.keycloakClientId,
-        callbackUrl: `${config.uiBaseUrl}/api/telegram/oauth/callback`,
-      },
-    }));
+    app.route(
+      "/",
+      createTelegramOAuthRoutes({
+        pendingFlows: pendingTelegramOAuthFlows,
+        threads: {
+          isAuthorized: isThreadAuthorized(db),
+          authorize: authorizeThread(db),
+          list: listAuthorizedThreads(db),
+          revoke: revokeThread(db),
+        },
+        isInstanceOwner: (instanceId, sub) =>
+          instancesRepo.isOwnedBy(instanceId, sub),
+        oauthConfig: {
+          keycloakExternalUrl: config.keycloakExternalUrl,
+          keycloakUrl: config.keycloakUrl,
+          keycloakRealm: config.keycloakRealm,
+          keycloakClientId: config.keycloakClientId,
+          callbackUrl: `${config.uiBaseUrl}/api/telegram/oauth/callback`,
+        },
+      }),
+    );
   }
 
-  async function verifyOwner(instanceId: string, owner: string): Promise<boolean> {
+  async function verifyOwner(
+    instanceId: string,
+    owner: string,
+  ): Promise<boolean> {
     return instancesRepo.isOwnedBy(instanceId, owner);
   }
 
   app.all("/api/instances/:id/trpc/*", async (c) => {
     const user = c.get("user");
     const instanceId = c.req.param("id")!;
-    if (!await verifyOwner(instanceId, user.sub)) {
+    if (!(await verifyOwner(instanceId, user.sub))) {
       return c.json({ error: "not found" }, 404);
     }
 
@@ -236,11 +302,17 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       const upstream = await fetch(upstreamUrl, {
         method: c.req.method,
         headers,
-        body: c.req.method !== "GET" && c.req.method !== "HEAD" ? c.req.raw.body : undefined,
+        body:
+          c.req.method !== "GET" && c.req.method !== "HEAD"
+            ? c.req.raw.body
+            : undefined,
         // @ts-expect-error -- node fetch supports duplex
         duplex: "half",
       });
-      return new Response(upstream.body, { status: upstream.status, headers: upstream.headers });
+      return new Response(upstream.body, {
+        status: upstream.status,
+        headers: upstream.headers,
+      });
     } catch {
       return c.json({ error: "instance unreachable" }, 502);
     }
@@ -256,22 +328,33 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   // which OOMs the api-server pod on multi-GB uploads. node:http with a
   // raw stream pipe respects backpressure end-to-end so memory stays
   // flat regardless of body size.
-  const PROXY_RESPONSE_HEADER_ALLOWLIST = new Set(["content-type", "content-length"]);
+  const PROXY_RESPONSE_HEADER_ALLOWLIST = new Set([
+    "content-type",
+    "content-length",
+  ]);
   // RFC 7230 §6.1 hop-by-hop headers + auth — never forwarded upstream.
   // `transfer-encoding: chunked` alongside `content-length` from a buggy
   // or hostile client is a request-smuggling shape; strip both `te` and
   // `transfer-encoding` so the upstream sees only a single consistent
   // framing signal.
   const PROXY_HOP_BY_HOP_HEADERS = new Set([
-    "host", "authorization",
-    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
-    "te", "trailer", "transfer-encoding", "upgrade", "expect",
+    "host",
+    "authorization",
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+    "expect",
   ]);
   type ImportCtx = Context<{ Variables: { user: UserIdentity } }>;
   async function proxyImport(c: ImportCtx) {
     const user = c.get("user");
     const instanceId = c.req.param("id")!;
-    if (!await verifyOwner(instanceId, user.sub)) {
+    if (!(await verifyOwner(instanceId, user.sub))) {
       return c.json({ error: "not found" }, 404);
     }
     // Hard byte ceiling at the proxy boundary. Requires Content-Length so
@@ -280,22 +363,34 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     // lying with `Content-Length: 1` can't trickle bytes past us.
     const lengthHeader = c.req.header("content-length");
     if (!lengthHeader) {
-      return c.json({ error: "Content-Length required for import upload" }, 411);
+      return c.json(
+        { error: "Content-Length required for import upload" },
+        411,
+      );
     }
     const length = Number.parseInt(lengthHeader, 10);
     if (!Number.isFinite(length) || length < 0) {
       return c.json({ error: "invalid Content-Length" }, 400);
     }
     if (length > config.maxImportBundleBytes) {
-      return c.json({ error: `bundle exceeds maximum size of ${config.maxImportBundleBytes} bytes` }, 413);
+      return c.json(
+        {
+          error: `bundle exceeds maximum size of ${config.maxImportBundleBytes} bytes`,
+        },
+        413,
+      );
     }
     try {
       await instancesRepo.ensureReady(instanceId);
     } catch (err) {
-      process.stderr.write(`[import-proxy] ensureReady failed for ${instanceId}: ${(err as Error).message}\n`);
+      process.stderr.write(
+        `[import-proxy] ensureReady failed for ${instanceId}: ${(err as Error).message}\n`,
+      );
       return c.json({ error: "instance unreachable" }, 502);
     }
-    const upstreamUrl = new URL(`http://${podBaseUrl(instanceId, config.namespace)}/api/import`);
+    const upstreamUrl = new URL(
+      `http://${podBaseUrl(instanceId, config.namespace)}/api/import`,
+    );
     const outHeaders: Record<string, string> = {};
     c.req.raw.headers.forEach((v, k) => {
       if (PROXY_HOP_BY_HOP_HEADERS.has(k.toLowerCase())) return;
@@ -316,25 +411,39 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         resolved = true;
         resolve(resp);
       };
-      const upstreamReq = httpRequest({
-        protocol: upstreamUrl.protocol,
-        hostname: upstreamUrl.hostname,
-        port: upstreamUrl.port,
-        path: upstreamUrl.pathname + upstreamUrl.search,
-        method: "POST",
-        headers: outHeaders,
-      }, (upstreamRes) => {
-        const responseHeaders = new Headers();
-        for (const [name, value] of Object.entries(upstreamRes.headers)) {
-          if (value === undefined) continue;
-          if (!PROXY_RESPONSE_HEADER_ALLOWLIST.has(name.toLowerCase())) continue;
-          responseHeaders.set(name, Array.isArray(value) ? value.join(", ") : value);
-        }
-        // toWeb gives a Web ReadableStream backed by the IncomingMessage —
-        // Hono streams this back to the client without buffering.
-        const body = Readable.toWeb(upstreamRes) as ReadableStream<Uint8Array>;
-        resolveOnce(new Response(body, { status: upstreamRes.statusCode ?? 502, headers: responseHeaders }));
-      });
+      const upstreamReq = httpRequest(
+        {
+          protocol: upstreamUrl.protocol,
+          hostname: upstreamUrl.hostname,
+          port: upstreamUrl.port,
+          path: upstreamUrl.pathname + upstreamUrl.search,
+          method: "POST",
+          headers: outHeaders,
+        },
+        (upstreamRes) => {
+          const responseHeaders = new Headers();
+          for (const [name, value] of Object.entries(upstreamRes.headers)) {
+            if (value === undefined) continue;
+            if (!PROXY_RESPONSE_HEADER_ALLOWLIST.has(name.toLowerCase()))
+              continue;
+            responseHeaders.set(
+              name,
+              Array.isArray(value) ? value.join(", ") : value,
+            );
+          }
+          // toWeb gives a Web ReadableStream backed by the IncomingMessage —
+          // Hono streams this back to the client without buffering.
+          const body = Readable.toWeb(
+            upstreamRes,
+          ) as ReadableStream<Uint8Array>;
+          resolveOnce(
+            new Response(body, {
+              status: upstreamRes.statusCode ?? 502,
+              headers: responseHeaders,
+            }),
+          );
+        },
+      );
       upstreamReq.on("error", () => {
         resolveOnce(c.json({ error: "instance unreachable" }, 502));
       });
@@ -353,7 +462,9 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         upstreamReq.end();
         return;
       }
-      const source = Readable.fromWeb(incomingBody as unknown as Parameters<typeof Readable.fromWeb>[0]);
+      const source = Readable.fromWeb(
+        incomingBody as unknown as Parameters<typeof Readable.fromWeb>[0],
+      );
       let seen = 0;
       const cap = config.maxImportBundleBytes;
       const counter = new Transform({
@@ -367,11 +478,21 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         },
       });
       counter.on("error", () => {
-        try { upstreamReq.destroy(); } catch {}
-        resolveOnce(c.json({ error: `bundle exceeds maximum size of ${cap} bytes` }, 413));
+        try {
+          upstreamReq.destroy();
+        } catch {}
+        resolveOnce(
+          c.json({ error: `bundle exceeds maximum size of ${cap} bytes` }, 413),
+        );
       });
       counter.pipe(upstreamReq);
-      source.on("error", () => { try { upstreamReq.destroy(); } catch {} }).pipe(counter);
+      source
+        .on("error", () => {
+          try {
+            upstreamReq.destroy();
+          } catch {}
+        })
+        .pipe(counter);
     });
   }
   app.post("/api/instances/:id/import", (c) => proxyImport(c));
@@ -379,18 +500,37 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   app.all("/api/trpc/*", (c) => {
     const user = c.get("user");
 
-    const { templates, readSpec: readTemplateSpec } = composeTemplatesModule(api, config.namespace);
+    const { templates, readSpec: readTemplateSpec } = composeTemplatesModule(
+      api,
+      config.namespace,
+    );
     const { agents } = composeAgentsModule({
-      api, namespace: config.namespace, owner: user.sub,
-      readTemplateSpec, presetSeeder, cleanupHooks: agentCleanupHooks,
+      api,
+      namespace: config.namespace,
+      owner: user.sub,
+      readTemplateSpec,
+      presetSeeder,
+      cleanupHooks: agentCleanupHooks,
     });
     const { instances, isOwnedInstance } = composeInstancesModule({
-      api, namespace: config.namespace, owner: user.sub, db, userDirectory, channelSecretStore,
+      api,
+      namespace: config.namespace,
+      owner: user.sub,
+      db,
+      userDirectory,
+      channelSecretStore,
       getAgent: (id) => agents.get(id),
     });
-    const { schedules, isOwnedSchedule } = composeSchedulesModule(api, config.namespace, user.sub);
+    const { schedules, isOwnedSchedule } = composeSchedulesModule(
+      api,
+      config.namespace,
+      user.sub,
+    );
     const { sessions } = composeSessionsModule({
-      db, namespace: config.namespace, isOwnedInstance, isOwnedSchedule,
+      db,
+      namespace: config.namespace,
+      isOwnedInstance,
+      isOwnedSchedule,
       closeTerminalSession: terminalRelay.closeSession,
       notifyModeChange: (instanceId, sessionId, mode) => {
         const frame = JSON.stringify({
@@ -401,7 +541,14 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         redisBus.publish(injectChannelOf(instanceId), frame).catch(() => {});
       },
     });
-    const skills = composeSkillsModule(api, config.namespace, user.sub, db, seedSources, config.brand.name);
+    const skills = composeSkillsModule(
+      api,
+      config.namespace,
+      user.sub,
+      db,
+      seedSources,
+      config.brand.name,
+    );
     const grants = createAgentGrantsPort(k8sClient, user.sub);
     const secrets = createSecretsService({
       k8sPort: createK8sSecretsPort(k8sClient, user.sub),
@@ -432,7 +579,8 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     const { service: approvals } = composeApprovalsService({
       db,
       ownerSub: user.sub,
-      isInstanceOwnedBy: (instanceId, ownerSub) => instancesRepo.isOwnedBy(instanceId, ownerSub),
+      isInstanceOwnedBy: (instanceId, ownerSub) =>
+        instancesRepo.isOwnedBy(instanceId, ownerSub),
       egressRuleWriter: createEgressRuleWriterAdapter(db),
       bus: redisBus,
       wrapperFrameSender,
@@ -464,8 +612,19 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     config.namespace,
     instancesRepo,
     approvalsRelay,
-    { resolve: (id) => instancesRepo.resolveIdentity(id).then((r) => r ? { ownerSub: r.owner, agentId: r.agentId } : null) },
-    (sessionId, instanceId) => persistAcpSession(sessionId, instanceId, SessionMode.Chat, SessionType.Regular),
+    {
+      resolve: (id) =>
+        instancesRepo
+          .resolveIdentity(id)
+          .then((r) => (r ? { ownerSub: r.owner, agentId: r.agentId } : null)),
+    },
+    (sessionId, instanceId) =>
+      persistAcpSession(
+        sessionId,
+        instanceId,
+        SessionMode.Chat,
+        SessionType.Regular,
+      ),
   );
 
   const terminalRelay = createTerminalRelay(config.namespace, instancesRepo, {
@@ -473,7 +632,9 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   });
 
   const server = serve({ fetch: app.fetch, port: config.port }, () => {
-    process.stderr.write(`api-server listening on http://localhost:${config.port}\n`);
+    process.stderr.write(
+      `api-server listening on http://localhost:${config.port}\n`,
+    );
   });
   // Node defaults `requestTimeout` to 5 minutes — that hard-caps the
   // file-import proxy roundtrip, because we hold the request open until
@@ -503,7 +664,9 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
 
   server.on("upgrade", async (req, socket, head) => {
     const url = new URL(req.url!, `http://${req.headers.host}`);
-    const match = url.pathname.match(/^\/api\/instances\/([^/]+)\/(acp|terminal)$/);
+    const match = url.pathname.match(
+      /^\/api\/instances\/([^/]+)\/(acp|terminal)$/,
+    );
     if (!match) {
       socket.destroy();
       return;
@@ -520,14 +683,15 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     try {
       user = await auth.verify(token);
     } catch (err) {
-      const status = err instanceof ForbiddenError ? "403 Forbidden" : "401 Unauthorized";
+      const status =
+        err instanceof ForbiddenError ? "403 Forbidden" : "401 Unauthorized";
       socket.write(`HTTP/1.1 ${status}\r\n\r\n`);
       socket.destroy();
       return;
     }
 
     const instanceId = decodeURIComponent(match[1]);
-    if (!await verifyOwner(instanceId, user.sub)) {
+    if (!(await verifyOwner(instanceId, user.sub))) {
       socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
       socket.destroy();
       return;

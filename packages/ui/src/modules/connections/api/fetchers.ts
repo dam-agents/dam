@@ -10,7 +10,9 @@ const mcpConnectionSchema = z.object({
 
 const mcpConnectionsSchema = z.array(mcpConnectionSchema);
 
-export async function fetchMcpConnections(): Promise<z.infer<typeof mcpConnectionsSchema>> {
+export async function fetchMcpConnections(): Promise<
+  z.infer<typeof mcpConnectionsSchema>
+> {
   const res = await authFetch("/api/mcp/connections");
   if (!res.ok) throw new Error(`Couldn't load MCP connections (${res.status})`);
   return mcpConnectionsSchema.parse(await res.json());
@@ -121,18 +123,26 @@ export async function fetchOAuthApps(): Promise<OAuthAppDescriptor[]> {
   return oauthAppsSchema.parse(await res.json());
 }
 
-export async function fetchOAuthAppConnections(): Promise<OAuthAppConnection[]> {
+export async function fetchOAuthAppConnections(): Promise<
+  OAuthAppConnection[]
+> {
   const res = await authFetch("/api/oauth/apps/connections");
   if (!res.ok) throw new Error(`Couldn't load app connections (${res.status})`);
   return oauthAppConnectionsSchema.parse(await res.json());
 }
 
-export async function startAppOAuth(args: { appId: string; input: Record<string, string> }) {
-  const res = await authFetch(`/api/oauth/apps/${encodeURIComponent(args.appId)}/connect`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(args.input),
-  });
+export async function startAppOAuth(args: {
+  appId: string;
+  input: Record<string, string>;
+}) {
+  const res = await authFetch(
+    `/api/oauth/apps/${encodeURIComponent(args.appId)}/connect`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(args.input),
+    },
+  );
   if (!res.ok) {
     // Surface the server's validation message if present (4xx body is a JSON
     // `{ error }` shape; tolerate non-JSON failure modes).
@@ -170,7 +180,9 @@ export type OAuthDiscovery = z.infer<typeof discoveryResponseSchema>;
  * Network errors are also rolled into `null` so the form falls back to
  * manual input rather than blocking on a flaky issuer.
  */
-export async function discoverOAuthEndpoints(host: string): Promise<OAuthDiscovery | null> {
+export async function discoverOAuthEndpoints(
+  host: string,
+): Promise<OAuthDiscovery | null> {
   const res = await authFetch("/api/oauth/discover", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

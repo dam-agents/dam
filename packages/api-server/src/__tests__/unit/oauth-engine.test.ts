@@ -32,10 +32,14 @@ describe("oauth-engine.start", () => {
       userSub: "sub-1",
     });
     const url = new URL(authUrl);
-    expect(url.origin + url.pathname).toBe("https://github.com/login/oauth/authorize");
+    expect(url.origin + url.pathname).toBe(
+      "https://github.com/login/oauth/authorize",
+    );
     expect(url.searchParams.get("response_type")).toBe("code");
     expect(url.searchParams.get("client_id")).toBe("client-1");
-    expect(url.searchParams.get("redirect_uri")).toBe("https://app.example/api/oauth/callback");
+    expect(url.searchParams.get("redirect_uri")).toBe(
+      "https://app.example/api/oauth/callback",
+    );
     expect(url.searchParams.get("scope")).toBe("repo read:user");
     expect(url.searchParams.get("state")).toBe(state);
     expect(url.searchParams.get("code_challenge_method")).toBe("S256");
@@ -72,16 +76,17 @@ describe("oauth-engine.start", () => {
 
 describe("oauth-engine.exchange", () => {
   it("posts the right grant_type + code + verifier and returns the token set", async () => {
-    const fetchImpl = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          access_token: "tok",
-          refresh_token: "ref",
-          expires_in: 3600,
-          token_type: "Bearer",
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            access_token: "tok",
+            refresh_token: "ref",
+            expires_in: 3600,
+            token_type: "Bearer",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
     ) as unknown as typeof fetch;
     const NOW_MS = 1_700_000_000_000;
     const engine = createOAuthEngine({ fetchImpl, now: () => NOW_MS });
@@ -105,8 +110,10 @@ describe("oauth-engine.exchange", () => {
     const [url, init] = calls[0];
     expect(url).toBe(PROVIDER.tokenEndpoint);
     const init1 = init as RequestInit;
-    expect((init1.headers as Record<string, string>)["Accept"]).toBe("application/json");
-    const body = (init1.body as URLSearchParams);
+    expect((init1.headers as Record<string, string>)["Accept"]).toBe(
+      "application/json",
+    );
+    const body = init1.body as URLSearchParams;
     expect(body.get("grant_type")).toBe("authorization_code");
     expect(body.get("code")).toBe("auth-code");
     expect(body.get("client_id")).toBe("client-1");
@@ -115,11 +122,12 @@ describe("oauth-engine.exchange", () => {
   });
 
   it("falls back to form-encoded parsing when the token endpoint returns x-www-form-urlencoded", async () => {
-    const fetchImpl = vi.fn(async () =>
-      new Response("access_token=tok&token_type=bearer&scope=repo", {
-        status: 200,
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      }),
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response("access_token=tok&token_type=bearer&scope=repo", {
+          status: 200,
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        }),
     ) as unknown as typeof fetch;
     const engine = createOAuthEngine({ fetchImpl, now: () => 0 });
     const { state } = engine.start({
@@ -142,15 +150,16 @@ describe("oauth-engine.exchange", () => {
     // mismatch, …). The engine has to surface that as a thrown error so
     // downstream code doesn't write `accessToken: undefined` into the
     // connection's K8s Secret.
-    const fetchImpl = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          error: "bad_verification_code",
-          error_description: "The code passed is incorrect or expired.",
-          error_uri: "https://docs.github.com/...",
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            error: "bad_verification_code",
+            error_description: "The code passed is incorrect or expired.",
+            error_uri: "https://docs.github.com/...",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
     ) as unknown as typeof fetch;
     const engine = createOAuthEngine({ fetchImpl, now: () => 0 });
     const { state } = engine.start({
@@ -167,11 +176,12 @@ describe("oauth-engine.exchange", () => {
   });
 
   it("throws when a form-encoded 200 carries an error parameter", async () => {
-    const fetchImpl = vi.fn(async () =>
-      new Response("error=bad_verification_code&error_description=expired", {
-        status: 200,
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      }),
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response("error=bad_verification_code&error_description=expired", {
+          status: 200,
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        }),
     ) as unknown as typeof fetch;
     const engine = createOAuthEngine({ fetchImpl, now: () => 0 });
     const { state } = engine.start({
@@ -188,8 +198,8 @@ describe("oauth-engine.exchange", () => {
   });
 
   it("throws on non-200 with the upstream body in the message", async () => {
-    const fetchImpl = vi.fn(async () =>
-      new Response("bad code", { status: 400 }),
+    const fetchImpl = vi.fn(
+      async () => new Response("bad code", { status: 400 }),
     ) as unknown as typeof fetch;
     const engine = createOAuthEngine({ fetchImpl, now: () => 0 });
     const { state } = engine.start({
@@ -200,6 +210,8 @@ describe("oauth-engine.exchange", () => {
       userSub: "sub-1",
     });
     const pending = engine.consume(state)!;
-    await expect(engine.exchange(pending, "code")).rejects.toThrow(/400.*bad code/);
+    await expect(engine.exchange(pending, "code")).rejects.toThrow(
+      /400.*bad code/,
+    );
   });
 });

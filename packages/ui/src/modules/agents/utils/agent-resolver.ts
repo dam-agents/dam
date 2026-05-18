@@ -1,4 +1,4 @@
-import type { AgentView, InstanceState,InstanceView } from "../../../types.js";
+import type { AgentView, InstanceState, InstanceView } from "../../../types.js";
 
 export type AgentDisplayState = InstanceState | "restarting" | "no-instance";
 
@@ -33,15 +33,24 @@ export function resolveAgentDisplay(
   const instance = forAgent[0] ?? null;
 
   if (!instance) {
-    return { instance: null, state: "no-instance", clickable: false, powerAction: null };
+    return {
+      instance: null,
+      state: "no-instance",
+      clickable: false,
+      powerAction: null,
+    };
   }
   const restarting = restartingInstanceIds.has(instance.id);
   const state: AgentDisplayState = restarting ? "restarting" : instance.state;
-  const clickable = !restarting && (instance.state === "running" || instance.state === "hibernated");
-  const powerAction: AgentDisplay["powerAction"] =
-    restarting ? null
-    : instance.state === "hibernated" ? "start"
-    : (instance.state === "running" || instance.state === "error") ? "restart"
-    : null;
+  const clickable =
+    !restarting &&
+    (instance.state === "running" || instance.state === "hibernated");
+  const powerAction: AgentDisplay["powerAction"] = restarting
+    ? null
+    : instance.state === "hibernated"
+      ? "start"
+      : instance.state === "running" || instance.state === "error"
+        ? "restart"
+        : null;
   return { instance, state, clickable, powerAction };
 }

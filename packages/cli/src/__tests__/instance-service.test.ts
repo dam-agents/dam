@@ -16,14 +16,22 @@ function makeTrpc(opts: {
   return {
     instances: {
       list: { query: vi.fn(async () => opts.list?.() ?? []) },
-      get: { query: vi.fn(async (input: { id: string }) => opts.get?.(input) ?? null) },
+      get: {
+        query: vi.fn(
+          async (input: { id: string }) => opts.get?.(input) ?? null,
+        ),
+      },
       delete: {
-        mutate: vi.fn(async (input: { id: string }) => opts.instancesDelete?.(input)),
+        mutate: vi.fn(async (input: { id: string }) =>
+          opts.instancesDelete?.(input),
+        ),
       },
     },
     agents: {
       delete: {
-        mutate: vi.fn(async (input: { id: string }) => opts.agentsDelete?.(input)),
+        mutate: vi.fn(async (input: { id: string }) =>
+          opts.agentsDelete?.(input),
+        ),
       },
     },
   } as unknown as TrpcClient;
@@ -31,7 +39,10 @@ function makeTrpc(opts: {
 
 /** Construct a value that quacks like a `TRPCClientError` for the
  *  service's `hasCode` detection. */
-function trpcError(code: string, message: string): Error & { data: { code: string } } {
+function trpcError(
+  code: string,
+  message: string,
+): Error & { data: { code: string } } {
   const e = new Error(message) as Error & { data: { code: string } };
   e.data = { code };
   return e;
@@ -52,9 +63,8 @@ describe("instance-service", () => {
     // dam auth login". This was a real bug caught by the integration
     // tests during issue 3.
     const wrapped = new Error("trpc client error");
-    (wrapped as Error & { cause: unknown }).cause = new AuthRequiredAtTransportError(
-      "not logged in to host X",
-    );
+    (wrapped as Error & { cause: unknown }).cause =
+      new AuthRequiredAtTransportError("not logged in to host X");
     const svc = createInstanceService({
       trpc: makeTrpc({
         list: () => {

@@ -5,14 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import {
-  afterAll,
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-} from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter } from "api-server-api/router";
 import type { ApiContext, Instance, InstancesService } from "api-server-api";
@@ -68,7 +61,9 @@ async function startFixture(opts: {
       // undefined so the value is treated as a plain object, not a
       // thenable.
       if (prop === "then") return undefined;
-      throw new Error(`fake api-server: unexpected ctx access: ${String(prop)}`);
+      throw new Error(
+        `fake api-server: unexpected ctx access: ${String(prop)}`,
+      );
     },
   }) as unknown as ApiContext;
 
@@ -76,7 +71,9 @@ async function startFixture(opts: {
     // Compat probe.
     if (req.url === "/api/version") {
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ serverVersion: "1.0.0", minClientVersion: "0.0.0" }));
+      res.end(
+        JSON.stringify({ serverVersion: "1.0.0", minClientVersion: "0.0.0" }),
+      );
       return;
     }
 
@@ -175,9 +172,19 @@ describe("dam instance list (integration)", () => {
   it("default text output: alphabetical 4-column table, exit 0", async () => {
     const fixture = await startFixture({
       list: async () => [
-        makeInstance({ id: "inst-2", name: "staging", agentId: "claude-code", state: "hibernated" }),
+        makeInstance({
+          id: "inst-2",
+          name: "staging",
+          agentId: "claude-code",
+          state: "hibernated",
+        }),
         makeInstance({ id: "inst-1", name: "prod", agentId: "claude-code" }),
-        makeInstance({ id: "inst-3", name: "test-x", agentId: "pi-agent", state: "error" }),
+        makeInstance({
+          id: "inst-3",
+          name: "test-x",
+          agentId: "pi-agent",
+          state: "error",
+        }),
       ],
       expectAuthorization: "Bearer test-token",
     });
@@ -283,7 +290,7 @@ describe("dam instance list (integration)", () => {
 
       const r = await runDam(["instance", "list"], {
         HOME: home,
-        XDG_STATE_HOME: home,  // empty state → not-logged-in
+        XDG_STATE_HOME: home, // empty state → not-logged-in
         PATH: process.env.PATH ?? "",
       });
 

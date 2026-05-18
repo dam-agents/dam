@@ -37,9 +37,9 @@ export interface ComposeApprovalsServiceDeps {
   wrapperFrameSender: WrapperFrameSender;
 }
 
-export function composeApprovalsService(
-  deps: ComposeApprovalsServiceDeps,
-): { service: ApprovalsService } {
+export function composeApprovalsService(deps: ComposeApprovalsServiceDeps): {
+  service: ApprovalsService;
+} {
   const repo = createApprovalsRepository(deps.db);
   const notifier = createRedisApprovalsBus(deps.bus);
   const service = createApprovalsService({
@@ -104,7 +104,9 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
  * ConfigMap is gone. Resolved/expired rows go too — the agent isn't around
  * to need an audit trail.
  */
-export function createApprovalsCleanupHook(db: Db): (agentId: string) => Promise<void> {
+export function createApprovalsCleanupHook(
+  db: Db,
+): (agentId: string) => Promise<void> {
   const repo = createApprovalsRepository(db);
   return (agentId) => repo.deleteForAgent(agentId);
 }

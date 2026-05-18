@@ -3,7 +3,12 @@ import { createHash } from "node:crypto";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { LocalSkill, LocalSkillFile, Result, SkillsDomainError } from "agent-runtime-api";
+import type {
+  LocalSkill,
+  LocalSkillFile,
+  Result,
+  SkillsDomainError,
+} from "agent-runtime-api";
 import { err, ok } from "agent-runtime-api";
 import { parseFrontmatter } from "../domain/frontmatter.js";
 import type { SkillName } from "../domain/skill-name.js";
@@ -36,7 +41,10 @@ export interface LocalSkillRepository {
   /** Remove `<skillPath>/<name>/` from every path. */
   remove: (name: SkillName, skillPaths: SkillPath[]) => Promise<void>;
   /** Allocate a tmpdir, run `fn` against it, then unconditionally clean up. */
-  withTempDir: <T>(prefix: string, fn: (dir: string) => Promise<T>) => Promise<T>;
+  withTempDir: <T>(
+    prefix: string,
+    fn: (dir: string) => Promise<T>,
+  ) => Promise<T>;
   /** Untar a tarball buffer into `dest`, stripping the top-level wrapper
    *  directory that GitHub tarballs add. Used by both scan (no strip) and
    *  install (strip 1). */
@@ -56,7 +64,9 @@ export interface LocalSkillRepository {
     name: SkillName,
   ) => Promise<Result<string, SkillsDomainError>>;
   /** Read SKILL.md frontmatter for a directory inside a clone. */
-  readSkillManifest: (absDir: string) => Promise<{ name?: string; description?: string }>;
+  readSkillManifest: (
+    absDir: string,
+  ) => Promise<{ name?: string; description?: string }>;
   /** Deterministic SHA-256 over a skill directory's contents. */
   hashSkillDir: (absDir: string) => Promise<string>;
 }
@@ -102,7 +112,9 @@ async function list(skillPaths: SkillPath[]): Promise<LocalSkill[]> {
       try {
         const buf = Buffer.alloc(FRONTMATTER_READ_BYTES);
         const { bytesRead } = await fd.read(buf, 0, FRONTMATTER_READ_BYTES, 0);
-        const fm = parseFrontmatter(buf.subarray(0, bytesRead).toString("utf8"));
+        const fm = parseFrontmatter(
+          buf.subarray(0, bytesRead).toString("utf8"),
+        );
         seen.add(ent.name);
         out.push({
           name: fm.name?.trim() || ent.name,
@@ -139,7 +151,10 @@ async function read(
     }
     total += stat.size;
     if (total > MAX_SKILL_BYTES) {
-      return err({ kind: "PayloadTooLarge", detail: `skill exceeds ${MAX_SKILL_BYTES} bytes total` });
+      return err({
+        kind: "PayloadTooLarge",
+        detail: `skill exceeds ${MAX_SKILL_BYTES} bytes total`,
+      });
     }
     const buf = await fs.readFile(abs);
     const relPath = path.relative(root, abs);
@@ -185,7 +200,10 @@ async function remove(name: SkillName, skillPaths: SkillPath[]): Promise<void> {
   }
 }
 
-async function withTempDir<T>(prefix: string, fn: (dir: string) => Promise<T>): Promise<T> {
+async function withTempDir<T>(
+  prefix: string,
+  fn: (dir: string) => Promise<T>,
+): Promise<T> {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
   try {
     return await fn(tmp);
@@ -208,7 +226,8 @@ async function extractTarball(
     assertSafeTarEntry(entry);
   }
   const args = ["-xzf", tgz, "--no-same-owner"];
-  if (opts.stripComponents !== undefined) args.push(`--strip-components=${opts.stripComponents}`);
+  if (opts.stripComponents !== undefined)
+    args.push(`--strip-components=${opts.stripComponents}`);
   args.push("-C", dest);
   await runProc("tar", args);
   await fs.rm(tgz);
@@ -252,7 +271,10 @@ async function resolveSkillDirInClone(
   repoDir: string,
   name: SkillName,
 ): Promise<Result<string, SkillsDomainError>> {
-  for (const candidate of [path.join(repoDir, "skills", name), path.join(repoDir, name)]) {
+  for (const candidate of [
+    path.join(repoDir, "skills", name),
+    path.join(repoDir, name),
+  ]) {
     try {
       await fs.access(path.join(candidate, "SKILL.md"));
       return ok(candidate);
@@ -261,7 +283,9 @@ async function resolveSkillDirInClone(
   return err({ kind: "SkillNotFoundInSource", source: repoDir, name });
 }
 
-async function readSkillManifest(absDir: string): Promise<{ name?: string; description?: string }> {
+async function readSkillManifest(
+  absDir: string,
+): Promise<{ name?: string; description?: string }> {
   const content = await fs.readFile(path.join(absDir, "SKILL.md"), "utf8");
   return parseFrontmatter(content);
 }
@@ -286,7 +310,10 @@ async function hashSkillDir(absDir: string): Promise<string> {
   return h.digest("hex");
 }
 
-async function findLocalSkillDir(name: SkillName, skillPaths: SkillPath[]): Promise<string | null> {
+async function findLocalSkillDir(
+  name: SkillName,
+  skillPaths: SkillPath[],
+): Promise<string | null> {
   for (const base of skillPaths) {
     const candidate = path.join(base, name);
     try {
@@ -306,12 +333,16 @@ async function assertNoSymlinks(root: string): Promise<void> {
       const full = path.join(dir, entryName);
       const st = await fs.lstat(full);
       if (st.isSymbolicLink()) {
-        throw new Error(`skill rejected: symlink at ${path.relative(root, full)}`);
+        throw new Error(
+          `skill rejected: symlink at ${path.relative(root, full)}`,
+        );
       }
       if (st.isDirectory()) {
         stack.push(full);
       } else if (!st.isFile()) {
-        throw new Error(`skill rejected: non-regular file at ${path.relative(root, full)}`);
+        throw new Error(
+          `skill rejected: non-regular file at ${path.relative(root, full)}`,
+        );
       }
     }
   }
@@ -348,7 +379,11 @@ async function runProc(cmd: string, args: string[]): Promise<string> {
     const stderrChunks: Buffer[] = [];
     const timer = setTimeout(() => {
       proc.kill("SIGKILL");
-      reject(new Error(`${cmd} ${args.join(" ")} timed out after ${COMMAND_TIMEOUT_MS}ms`));
+      reject(
+        new Error(
+          `${cmd} ${args.join(" ")} timed out after ${COMMAND_TIMEOUT_MS}ms`,
+        ),
+      );
     }, COMMAND_TIMEOUT_MS);
     proc.stdout?.on("data", (c: Buffer) => stdoutChunks.push(c));
     proc.stderr?.on("data", (c: Buffer) => stderrChunks.push(c));
@@ -363,7 +398,11 @@ async function runProc(cmd: string, args: string[]): Promise<string> {
         return;
       }
       const stderr = Buffer.concat(stderrChunks).toString("utf8").trim();
-      reject(new Error(`${cmd} ${args.join(" ")} exited ${code}${stderr ? `: ${stderr}` : ""}`));
+      reject(
+        new Error(
+          `${cmd} ${args.join(" ")} exited ${code}${stderr ? `: ${stderr}` : ""}`,
+        ),
+      );
     });
   });
 }

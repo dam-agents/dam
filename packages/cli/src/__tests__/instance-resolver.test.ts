@@ -24,7 +24,9 @@ function makeInstance(overrides: Partial<Instance> = {}): Instance {
 
 function makeService(stub: {
   list?: () => Result<readonly Instance[], TransportError | AuthRequiredError>;
-  get?: (id: string) => Result<Instance | null, TransportError | AuthRequiredError>;
+  get?: (
+    id: string,
+  ) => Result<Instance | null, TransportError | AuthRequiredError>;
 }): InstanceService {
   return {
     list: vi.fn(async () => stub.list?.() ?? ok([])),
@@ -67,7 +69,8 @@ describe("instance-resolver", () => {
       const inst = makeInstance({ name: "prod" });
       const resolver = createInstanceResolver({
         instanceService: makeService({
-          list: () => ok([makeInstance({ id: "inst-other", name: "staging" }), inst]),
+          list: () =>
+            ok([makeInstance({ id: "inst-other", name: "staging" }), inst]),
         }),
       });
 

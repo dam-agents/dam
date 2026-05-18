@@ -36,7 +36,9 @@ export type BundleError = {
 };
 
 export interface BundleBuilder {
-  pack(args: readonly ResolvedArg[]): Promise<Result<PackedBundle, BundleError>>;
+  pack(
+    args: readonly ResolvedArg[],
+  ): Promise<Result<PackedBundle, BundleError>>;
 }
 
 /** Validate raw user paths once, up-front: stat, classify, collision-check,
@@ -67,7 +69,10 @@ export async function resolveArgs(
     try {
       st = await lstat(abs);
     } catch (e) {
-      return err({ kind: "bundle-failed", reason: `'${input}': ${(e as Error).message}` });
+      return err({
+        kind: "bundle-failed",
+        reason: `'${input}': ${(e as Error).message}`,
+      });
     }
     if (st.isSymbolicLink()) {
       return err({
@@ -126,7 +131,10 @@ export function createBundleBuilder(): BundleBuilder {
   };
 }
 
-async function writeBundle(args: readonly ResolvedArg[], tmpPath: string): Promise<void> {
+async function writeBundle(
+  args: readonly ResolvedArg[],
+  tmpPath: string,
+): Promise<void> {
   const pack = tarPack();
   const sink = createWriteStream(tmpPath);
   const pipeDone = pipeline(pack, createGzip(), sink);
@@ -146,7 +154,11 @@ async function writeBundle(args: readonly ResolvedArg[], tmpPath: string): Promi
   }
 }
 
-async function emit(pack: ReturnType<typeof tarPack>, abs: string, name: string): Promise<void> {
+async function emit(
+  pack: ReturnType<typeof tarPack>,
+  abs: string,
+  name: string,
+): Promise<void> {
   let st;
   try {
     st = await lstat(abs);
@@ -158,8 +170,9 @@ async function emit(pack: ReturnType<typeof tarPack>, abs: string, name: string)
 
   if (st.isDirectory()) {
     await new Promise<void>((res, rej) => {
-      pack.entry({ name: `${name}/`, type: "directory", mode: 0o777 }, (e: Error | null | undefined) =>
-        e ? rej(e) : res(),
+      pack.entry(
+        { name: `${name}/`, type: "directory", mode: 0o777 },
+        (e: Error | null | undefined) => (e ? rej(e) : res()),
       );
     });
     const children = await readdir(abs);

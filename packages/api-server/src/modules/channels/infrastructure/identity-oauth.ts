@@ -22,11 +22,18 @@ export interface TokenExchangeResult {
 export function generatePkce(): PkcePair {
   const state = crypto.randomUUID();
   const codeVerifier = crypto.randomBytes(32).toString("base64url");
-  const codeChallenge = crypto.createHash("sha256").update(codeVerifier).digest("base64url");
+  const codeChallenge = crypto
+    .createHash("sha256")
+    .update(codeVerifier)
+    .digest("base64url");
   return { state, codeVerifier, codeChallenge };
 }
 
-export function buildAuthorizeUrl(cfg: KeycloakOAuthConfig, state: string, codeChallenge: string): string {
+export function buildAuthorizeUrl(
+  cfg: KeycloakOAuthConfig,
+  state: string,
+  codeChallenge: string,
+): string {
   const authEndpoint = `${cfg.keycloakExternalUrl}/realms/${cfg.keycloakRealm}/protocol/openid-connect/auth`;
   const params = new URLSearchParams({
     response_type: "code",

@@ -11,25 +11,38 @@ export interface Template {
   description?: string;
 }
 
-const TemplateListSchema = z.array(z.object({
-  id: z.string(),
-  name: z.string(),
-  image: z.string(),
-  description: z.string().optional(),
-}));
+const TemplateListSchema = z.array(
+  z.object({
+    id: z.string(),
+    name: z.string(),
+    image: z.string(),
+    description: z.string().optional(),
+  }),
+);
 
 export interface TemplateService {
-  list(): Promise<Result<readonly Template[], TransportError | AuthRequiredError>>;
+  list(): Promise<
+    Result<readonly Template[], TransportError | AuthRequiredError>
+  >;
 }
 
-export function createTemplateService(deps: { trpc: TrpcClient }): TemplateService {
+export function createTemplateService(deps: {
+  trpc: TrpcClient;
+}): TemplateService {
   return {
     async list() {
       const result = await trpcCall(() => deps.trpc.templates.list.query());
       if (!result.ok) return result;
       const parsed = TemplateListSchema.safeParse(result.value);
-      if (!parsed.success) return err({ kind: "transport", reason: `unexpected templates response: ${parsed.error.message}` });
-      return { ok: true, value: parsed.data } as Result<readonly Template[], never>;
+      if (!parsed.success)
+        return err({
+          kind: "transport",
+          reason: `unexpected templates response: ${parsed.error.message}`,
+        });
+      return { ok: true, value: parsed.data } as Result<
+        readonly Template[],
+        never
+      >;
     },
   };
 }

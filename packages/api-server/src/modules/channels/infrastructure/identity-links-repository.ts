@@ -9,14 +9,19 @@ export interface IdentityLink {
 }
 
 export function findIdentityByExternalUser(db: Db) {
-  return async (provider: string, externalUserId: string): Promise<IdentityLink | null> => {
+  return async (
+    provider: string,
+    externalUserId: string,
+  ): Promise<IdentityLink | null> => {
     const rows = await db
       .select()
       .from(identityLinks)
-      .where(and(
-        eq(identityLinks.provider, provider),
-        eq(identityLinks.externalUserId, externalUserId),
-      ))
+      .where(
+        and(
+          eq(identityLinks.provider, provider),
+          eq(identityLinks.externalUserId, externalUserId),
+        ),
+      )
       .limit(1);
     if (rows.length === 0) return null;
     return {
@@ -47,9 +52,13 @@ export function upsertIdentityLink(db: Db) {
 
 export function deleteIdentityLink(db: Db) {
   return async (provider: string, externalUserId: string): Promise<void> => {
-    await db.delete(identityLinks).where(and(
-      eq(identityLinks.provider, provider),
-      eq(identityLinks.externalUserId, externalUserId),
-    ));
+    await db
+      .delete(identityLinks)
+      .where(
+        and(
+          eq(identityLinks.provider, provider),
+          eq(identityLinks.externalUserId, externalUserId),
+        ),
+      );
   };
 }

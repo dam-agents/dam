@@ -16,19 +16,28 @@ function tmp(): string {
  */
 describe("applyFile path access", () => {
   it.each([
-    ["absolute outside home", () => ({ home: tmp(), path: join(tmp(), "evil.yml") })],
+    [
+      "absolute outside home",
+      () => ({ home: tmp(), path: join(tmp(), "evil.yml") }),
+    ],
     [
       "traversal back out of home",
       () => {
         const home = tmp();
         const other = tmp();
-        return { home, path: join(home, "..", other.split("/").pop()!, "evil.yml") };
+        return {
+          home,
+          path: join(home, "..", other.split("/").pop()!, "evil.yml"),
+        };
       },
     ],
-    ["sibling-prefix trick (homeX/...)", () => {
-      const home = tmp();
-      return { home, path: home + "X/evil.yml" };
-    }],
+    [
+      "sibling-prefix trick (homeX/...)",
+      () => {
+        const home = tmp();
+        return { home, path: home + "X/evil.yml" };
+      },
+    ],
   ])("rejects path %s and writes nothing", (_label, mk) => {
     const { home, path } = mk();
     expect(() =>

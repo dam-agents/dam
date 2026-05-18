@@ -14,6 +14,8 @@ export interface PodFilesRegistryDeps extends GithubEnterpriseHostsDeps {
   // Future producers' deps merge in here.
 }
 
-export function buildPodFilesRegistry(deps: PodFilesRegistryDeps): readonly FileProducer[] {
+export function buildPodFilesRegistry(
+  deps: PodFilesRegistryDeps,
+): readonly FileProducer[] {
   return [makeGithubEnterpriseHostsProducer(deps)];
 }

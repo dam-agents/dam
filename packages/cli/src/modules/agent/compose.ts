@@ -3,7 +3,10 @@ import type { TokenProvider } from "../auth/index.js";
 import type { CompatService, ConfigService } from "../cli/index.js";
 import type { InstanceService } from "../instance/index.js";
 import type { TemplateService } from "../template/index.js";
-import { createTrpcClient, type TrpcClient } from "../shared/trpc/trpc-client.js";
+import {
+  createTrpcClient,
+  type TrpcClient,
+} from "../shared/trpc/trpc-client.js";
 import { buildCreateCommand } from "./commands/create.js";
 
 /**

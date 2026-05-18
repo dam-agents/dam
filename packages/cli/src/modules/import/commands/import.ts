@@ -47,7 +47,10 @@ export function buildImportCommand(deps: ImportCommandDeps): Command {
     .description("Import local files or folders into an Instance")
     .argument("<instance-ref>", "Instance name or ID (`inst-...`)")
     .argument("<path...>", "one or more local files or directories")
-    .option("--server <url>", "override the configured server URL for this call")
+    .option(
+      "--server <url>",
+      "override the configured server URL for this call",
+    )
     .option("-y, --yes", "skip the TTY confirm prompt (required on non-TTY)")
     .option(
       "--json",
@@ -105,7 +108,9 @@ export function buildImportCommand(deps: ImportCommandDeps): Command {
           );
           process.exit(EXIT_IMPORT_INVALID_INPUT);
         }
-        process.stderr.write(`About to import into '${instance.name}' (${instance.id}):\n`);
+        process.stderr.write(
+          `About to import into '${instance.name}' (${instance.id}):\n`,
+        );
         for (const a of args) {
           process.stderr.write(`  ${a.input}\n`);
         }
@@ -163,7 +168,10 @@ async function uploadAndReport(args: {
   if (!tokenResult.ok) {
     const e = tokenResult.error;
     if (e.kind === "not-logged-in" || e.kind === "session-expired") {
-      const reason = e.kind === "not-logged-in" ? `not logged in to ${e.host}` : `session expired for ${e.host}`;
+      const reason =
+        e.kind === "not-logged-in"
+          ? `not logged in to ${e.host}`
+          : `session expired for ${e.host}`;
       process.stderr.write(`error: not authenticated: ${reason}\n`);
       process.stderr.write("hint: run `dam auth login` first\n");
     } else {
@@ -173,7 +181,9 @@ async function uploadAndReport(args: {
   }
   const token = tokenResult.value;
 
-  const blob = await openAsBlob(args.packed.tmpPath, { type: "application/gzip" });
+  const blob = await openAsBlob(args.packed.tmpPath, {
+    type: "application/gzip",
+  });
   const form = new FormData();
   form.set("bundle", blob, "bundle.tar.gz");
 
@@ -188,7 +198,9 @@ async function uploadAndReport(args: {
       },
     );
   } catch (e) {
-    process.stderr.write(`error: cannot reach server: ${(e as Error).message}\n`);
+    process.stderr.write(
+      `error: cannot reach server: ${(e as Error).message}\n`,
+    );
     return EXIT_IMPORT_RUNTIME_FAILURE;
   }
 
@@ -263,4 +275,3 @@ function formatBytes(n: number): string {
   }
   return `${i === 0 ? value.toString() : value.toFixed(1)} ${units[i]}`;
 }
-

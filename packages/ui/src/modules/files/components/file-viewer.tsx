@@ -28,11 +28,21 @@ function hexDump(base64: string): string {
   const maxBytes = Math.min(raw.length, 1024);
   for (let off = 0; off < maxBytes; off += 16) {
     const slice = raw.slice(off, Math.min(off + 16, maxBytes));
-    const hex = Array.from(slice).map(c => c.charCodeAt(0).toString(16).padStart(2, "0")).join(" ");
-    const ascii = Array.from(slice).map(c => { const code = c.charCodeAt(0); return code >= 0x20 && code < 0x7f ? c : "."; }).join("");
-    lines.push(`${off.toString(16).padStart(8, "0")}  ${hex.padEnd(47)}  ${ascii}`);
+    const hex = Array.from(slice)
+      .map((c) => c.charCodeAt(0).toString(16).padStart(2, "0"))
+      .join(" ");
+    const ascii = Array.from(slice)
+      .map((c) => {
+        const code = c.charCodeAt(0);
+        return code >= 0x20 && code < 0x7f ? c : ".";
+      })
+      .join("");
+    lines.push(
+      `${off.toString(16).padStart(8, "0")}  ${hex.padEnd(47)}  ${ascii}`,
+    );
   }
-  if (raw.length > maxBytes) lines.push(`... ${raw.length - maxBytes} more bytes`);
+  if (raw.length > maxBytes)
+    lines.push(`... ${raw.length - maxBytes} more bytes`);
   return lines.join("\n");
 }
 
@@ -57,20 +67,25 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
   const filename = path.split("/").pop();
   const editable = !binary && hasContent;
 
-  const selectedInstance = useStore(s => s.selectedInstance);
-  const setOpenFileDirty = useStore(s => s.setOpenFileDirty);
-  const showToast = useStore(s => s.showToast);
-  const showConfirm = useStore(s => s.showConfirm);
+  const selectedInstance = useStore((s) => s.selectedInstance);
+  const setOpenFileDirty = useStore((s) => s.setOpenFileDirty);
+  const showToast = useStore((s) => s.showToast);
+  const showConfirm = useStore((s) => s.showConfirm);
 
   const [renderMd, setRenderMd] = useState(true);
   const [renderSvg, setRenderSvg] = useState(true);
   const [editMode, setEditMode] = useState(false);
   const [draft, setDraft] = useState(content);
-  const [baseMtimeMs, setBaseMtimeMs] = useState<number | undefined>(file.mtimeMs);
+  const [baseMtimeMs, setBaseMtimeMs] = useState<number | undefined>(
+    file.mtimeMs,
+  );
 
   const dirty = editMode && draft !== content;
   useUnsavedGuard(dirty);
-  useEffect(() => { setOpenFileDirty(dirty); return () => setOpenFileDirty(false); }, [dirty, setOpenFileDirty]);
+  useEffect(() => {
+    setOpenFileDirty(dirty);
+    return () => setOpenFileDirty(false);
+  }, [dirty, setOpenFileDirty]);
 
   // Reset draft / baseline when the user switches files or the cache delivers
   // fresh content (e.g., after a save or external change).
@@ -113,17 +128,32 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
           setEditMode(false);
           showToast({ kind: "success", message: `Saved ${path}` });
         } catch (err2) {
-          showToast({ kind: "error", message: err2 instanceof Error ? err2.message : "Save failed" });
+          showToast({
+            kind: "error",
+            message: err2 instanceof Error ? err2.message : "Save failed",
+          });
         }
         return;
       }
       showToast({ kind: "error", message: msg });
     }
-  }, [selectedInstance, editable, writeMutation, path, draft, baseMtimeMs, showToast, showConfirm]);
+  }, [
+    selectedInstance,
+    editable,
+    writeMutation,
+    path,
+    draft,
+    baseMtimeMs,
+    showToast,
+    showConfirm,
+  ]);
 
   const cancelEdit = useCallback(async () => {
     if (dirty) {
-      const ok = await showConfirm("Discard unsaved changes?", "Unsaved changes");
+      const ok = await showConfirm(
+        "Discard unsaved changes?",
+        "Unsaved changes",
+      );
       if (!ok) return;
     }
     setDraft(content);
@@ -160,10 +190,18 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="flex items-center gap-2 px-3 h-9 border-b border-border-light shrink-0">
-        <button className="flex items-center gap-1 text-[12px] font-semibold text-text-muted hover:text-accent transition-colors shrink-0" onClick={onClose}>
+        <button
+          className="flex items-center gap-1 text-[12px] font-semibold text-text-muted hover:text-accent transition-colors shrink-0"
+          onClick={onClose}
+        >
           <ArrowLeft size={12} /> Back
         </button>
-        <span className="text-[12px] font-mono text-text-secondary truncate flex-1" title={path}>{pathLabel}</span>
+        <span
+          className="text-[12px] font-mono text-text-secondary truncate flex-1"
+          title={path}
+        >
+          {pathLabel}
+        </span>
         {editable && !editMode && (
           <button
             className="flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md text-text-muted hover:text-accent transition-colors"
@@ -204,7 +242,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
         {isSvg && !editMode && (
           <button
             className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md transition-colors ${renderSvg ? "text-accent bg-accent-light" : "text-text-muted hover:text-text-secondary"}`}
-            onClick={() => setRenderSvg(p => !p)}
+            onClick={() => setRenderSvg((p) => !p)}
             title={renderSvg ? "Show raw SVG" : "Render SVG"}
           >
             {renderSvg ? <Code size={11} /> : <Eye size={11} />}
@@ -214,7 +252,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
         {isMarkdown && !editMode && (
           <button
             className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md transition-colors ${renderMd ? "text-accent bg-accent-light" : "text-text-muted hover:text-text-secondary"}`}
-            onClick={() => setRenderMd(p => !p)}
+            onClick={() => setRenderMd((p) => !p)}
             title={renderMd ? "Show raw" : "Render markdown"}
           >
             {renderMd ? <Code size={11} /> : <Eye size={11} />}
@@ -222,7 +260,11 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
           </button>
         )}
       </div>
-      <div className={editMode ? "flex-1 overflow-hidden p-2" : "flex-1 overflow-auto p-4"}>
+      <div
+        className={
+          editMode ? "flex-1 overflow-hidden p-2" : "flex-1 overflow-auto p-4"
+        }
+      >
         {editMode ? (
           <CodeEditor
             value={draft}
@@ -247,16 +289,27 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
         ) : binary && !content ? (
           <div className="py-12 text-center text-[13px] text-text-muted">
             <p>File too large to preview</p>
-            <p className="mt-1 text-[11px]">Files over 10 MB cannot be displayed</p>
+            <p className="mt-1 text-[11px]">
+              Files over 10 MB cannot be displayed
+            </p>
           </div>
         ) : binary ? (
           <div>
             <div className="mb-2 flex items-baseline gap-2">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-text-muted">Binary file — hex dump</p>
-              {mime && <p className="text-[11px] font-mono text-text-muted">{mime}</p>}
+              <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-text-muted">
+                Binary file — hex dump
+              </p>
+              {mime && (
+                <p className="text-[11px] font-mono text-text-muted">{mime}</p>
+              )}
             </div>
-            <p className="mb-3 text-[11px] text-text-muted">This file is not directly viewable. The first bytes are shown below.</p>
-            <pre className="text-[11px] font-mono leading-[1.6] text-text-secondary whitespace-pre overflow-x-auto">{hexDump(content)}</pre>
+            <p className="mb-3 text-[11px] text-text-muted">
+              This file is not directly viewable. The first bytes are shown
+              below.
+            </p>
+            <pre className="text-[11px] font-mono leading-[1.6] text-text-secondary whitespace-pre overflow-x-auto">
+              {hexDump(content)}
+            </pre>
           </div>
         ) : isSvg && renderSvg ? (
           <div className="flex items-center justify-center">

@@ -13,8 +13,13 @@ export interface LogoutCommandDeps {
 
 export function buildLogoutCommand(deps: LogoutCommandDeps): Command {
   return new Command("logout")
-    .description("Clear local credentials and best-effort revoke the refresh token")
-    .option("--server <url>", "host to log out of; defaults to the active server")
+    .description(
+      "Clear local credentials and best-effort revoke the refresh token",
+    )
+    .option(
+      "--server <url>",
+      "host to log out of; defaults to the active server",
+    )
     .action(async (opts: { server?: string }) => {
       let host = opts.server;
       if (!host) {
@@ -56,7 +61,9 @@ export function buildLogoutCommand(deps: LogoutCommandDeps): Command {
 function printLogoutError(e: LogoutError): void {
   switch (e.kind) {
     case "auth-store":
-      process.stderr.write(`error: failed to update credential store: ${e.detail}\n`);
+      process.stderr.write(
+        `error: failed to update credential store: ${e.detail}\n`,
+      );
       return;
   }
 }

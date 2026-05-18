@@ -54,7 +54,13 @@ function langFromPath(path: string): string | undefined {
   return ext ? extToLang[ext] : undefined;
 }
 
-export function HighlightedCode({ code, path }: { code: string; path: string }) {
+export function HighlightedCode({
+  code,
+  path,
+}: {
+  code: string;
+  path: string;
+}) {
   const html = useMemo(() => {
     const lang = langFromPath(path);
     if (lang) {
@@ -68,12 +74,18 @@ export function HighlightedCode({ code, path }: { code: string; path: string }) 
   if (html) {
     return (
       <pre className="text-[12px] leading-[1.65] font-mono text-text whitespace-pre tab-[2]">
-        <code className="hljs" style={{ background: "transparent" }} dangerouslySetInnerHTML={{ __html: html }} />
+        <code
+          className="hljs"
+          style={{ background: "transparent" }}
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
       </pre>
     );
   }
 
   return (
-    <pre className="text-[12px] leading-[1.65] font-mono text-text whitespace-pre tab-[2]">{code}</pre>
+    <pre className="text-[12px] leading-[1.65] font-mono text-text whitespace-pre tab-[2]">
+      {code}
+    </pre>
   );
 }

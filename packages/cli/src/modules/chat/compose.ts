@@ -10,7 +10,11 @@ import { createChatService } from "./services/chat-service.js";
 import { createSessionsPort } from "./services/sessions-service.js";
 
 export function composeChatModule({
-  compatService, configService, tokenProvider, buildTrpc, createInstanceService,
+  compatService,
+  configService,
+  tokenProvider,
+  buildTrpc,
+  createInstanceService,
 }: {
   compatService: CompatService;
   configService: ConfigService;
@@ -22,23 +26,36 @@ export function composeChatModule({
     createSessionsPort({ trpc: buildTrpc(host) });
 
   const chatService = createChatService({
-    compatService, configService, tokenProvider, createInstanceService,
+    compatService,
+    configService,
+    tokenProvider,
+    createInstanceService,
     createSessionsPort: buildSessionsPort,
-    confirmModeSwitch: () => new Promise((resolve) => {
-      const rl = createInterface({ input: process.stdin, output: process.stderr });
-      process.stderr.write("Switch session mode\nSwitch this session to terminal mode? Files and history are preserved,\nbut any running tasks will be cancelled.\n");
-      rl.question("[y/N] ", (answer) => { rl.close(); resolve(answer.trim().toLowerCase() === "y"); });
-    }),
+    confirmModeSwitch: () =>
+      new Promise((resolve) => {
+        const rl = createInterface({
+          input: process.stdin,
+          output: process.stderr,
+        });
+        process.stderr.write(
+          "Switch session mode\nSwitch this session to terminal mode? Files and history are preserved,\nbut any running tasks will be cancelled.\n",
+        );
+        rl.question("[y/N] ", (answer) => {
+          rl.close();
+          resolve(answer.trim().toLowerCase() === "y");
+        });
+      }),
     isTty: Boolean(process.stdin.isTTY),
   });
 
-  const sessionParent = new Command("session").description("Manage sessions for an Instance");
-  sessionParent.addCommand(buildSessionListCommand({ chatService }), { isDefault: true });
+  const sessionParent = new Command("session").description(
+    "Manage sessions for an Instance",
+  );
+  sessionParent.addCommand(buildSessionListCommand({ chatService }), {
+    isDefault: true,
+  });
 
   return {
-    commands: [
-      buildChatCommand({ chatService }),
-      sessionParent,
-    ],
+    commands: [buildChatCommand({ chatService }), sessionParent],
   };
 }

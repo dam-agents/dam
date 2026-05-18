@@ -23,7 +23,9 @@ export function TabButton({
       {count > 0 && (
         <span
           className={`text-[10px] font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center ${
-            active ? "bg-accent text-white" : "bg-surface-raised text-text-muted"
+            active
+              ? "bg-accent text-white"
+              : "bg-surface-raised text-text-muted"
           }`}
         >
           {count}

@@ -4,10 +4,7 @@ import type {
   TerminalStrategy,
 } from "api-server-api";
 import type { Result } from "../../../result.js";
-import type {
-  AuthRequiredError,
-  TransportError,
-} from "../../shared/errors.js";
+import type { AuthRequiredError, TransportError } from "../../shared/errors.js";
 import { trpcCall } from "../../shared/trpc/classify.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
 
@@ -27,12 +24,23 @@ export interface SessionsPort {
 export function createSessionsPort(deps: { trpc: TrpcClient }): SessionsPort {
   return {
     async list(instanceId) {
-      return trpcCall(() => deps.trpc.sessions.list.query({ instanceId }) as Promise<readonly SessionView[]>);
+      return trpcCall(
+        () =>
+          deps.trpc.sessions.list.query({ instanceId }) as Promise<
+            readonly SessionView[]
+          >,
+      );
     },
     async resolveTerminal(instanceId, strategy, opts) {
-      return trpcCall(() => deps.trpc.sessions.resolveTerminal.mutate({
-        instanceId, strategy, reset: opts?.reset, force: opts?.force,
-      }) as Promise<SessionResolution>);
+      return trpcCall(
+        () =>
+          deps.trpc.sessions.resolveTerminal.mutate({
+            instanceId,
+            strategy,
+            reset: opts?.reset,
+            force: opts?.force,
+          }) as Promise<SessionResolution>,
+      );
     },
   };
 }

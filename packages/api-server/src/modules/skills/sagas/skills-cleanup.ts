@@ -8,19 +8,28 @@
  */
 import type { Subscription } from "rxjs";
 import { mergeMap } from "rxjs/operators";
-import { events$, ofType, EventType, type InstanceDeleted } from "../../../events.js";
+import {
+  events$,
+  ofType,
+  EventType,
+  type InstanceDeleted,
+} from "../../../events.js";
 
 export function startSkillsCleanupSaga(
   deleteInstanceSkills: (instanceId: string) => Promise<void>,
 ): Subscription {
-  return events$().pipe(
-    ofType<InstanceDeleted>(EventType.InstanceDeleted),
-    mergeMap(async (event) => {
-      try {
-        await deleteInstanceSkills(event.instanceId);
-      } catch (err) {
-        process.stderr.write(`[skills-cleanup] failed for ${event.instanceId}: ${err}\n`);
-      }
-    }),
-  ).subscribe();
+  return events$()
+    .pipe(
+      ofType<InstanceDeleted>(EventType.InstanceDeleted),
+      mergeMap(async (event) => {
+        try {
+          await deleteInstanceSkills(event.instanceId);
+        } catch (err) {
+          process.stderr.write(
+            `[skills-cleanup] failed for ${event.instanceId}: ${err}\n`,
+          );
+        }
+      }),
+    )
+    .subscribe();
 }

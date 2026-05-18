@@ -13,13 +13,10 @@ const adminAppSlugSchema = z
   .nullable()
   .default(null)
   .transform((v) => (v == null || v === "" ? null : v))
-  .refine(
-    (v) => v == null || isValidAppSlug(v),
-    {
-      message:
-        "Admin-default GitHub App slug must be 1–39 lowercase letters, digits, and single hyphens — no leading, trailing, or consecutive hyphens.",
-    },
-  );
+  .refine((v) => v == null || isValidAppSlug(v), {
+    message:
+      "Admin-default GitHub App slug must be 1–39 lowercase letters, digits, and single hyphens — no leading, trailing, or consecutive hyphens.",
+  });
 
 const configSchema = z.object({
   /** Build-time semver from this package's package.json — not env-driven.
@@ -101,7 +98,11 @@ const configSchema = z.object({
    *  controller-default agent PVC. Admins on tighter PVCs (the bundled
    *  `claude-code` template ships with a 5 GiB `homeMountSize`) should
    *  lower this via `MAX_IMPORT_BUNDLE_BYTES`. */
-  maxImportBundleBytes: z.coerce.number().int().positive().default(5 * 1024 * 1024 * 1024),
+  maxImportBundleBytes: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(5 * 1024 * 1024 * 1024),
   /** Brand presented to end users — display name, slash-command identifier,
    *  and theme accent colors. Surfaced to the UI via `GET /api/brand` and
    *  used internally for OAuth client_name, Slack slash command, skill
@@ -154,11 +155,13 @@ export function loadConfig(): Config {
     agentHome: process.env.AGENT_HOME,
     skillSourcesSeed: process.env.SKILL_SOURCES_SEED,
     defaultGithubClientId: process.env.PLATFORM_DEFAULT_GITHUB_CLIENT_ID,
-    defaultGithubClientSecret: process.env.PLATFORM_DEFAULT_GITHUB_CLIENT_SECRET,
+    defaultGithubClientSecret:
+      process.env.PLATFORM_DEFAULT_GITHUB_CLIENT_SECRET,
     defaultGithubAppSlug: process.env.PLATFORM_DEFAULT_GITHUB_APP_SLUG,
     defaultGithubEnterpriseHost: process.env.PLATFORM_DEFAULT_GHE_HOST,
     defaultGithubEnterpriseClientId: process.env.PLATFORM_DEFAULT_GHE_CLIENT_ID,
-    defaultGithubEnterpriseClientSecret: process.env.PLATFORM_DEFAULT_GHE_CLIENT_SECRET,
+    defaultGithubEnterpriseClientSecret:
+      process.env.PLATFORM_DEFAULT_GHE_CLIENT_SECRET,
     defaultGithubEnterpriseAppSlug: process.env.PLATFORM_DEFAULT_GHE_APP_SLUG,
     redisUrl: process.env.REDIS_URL,
     redisPassword: process.env.REDIS_PASSWORD,

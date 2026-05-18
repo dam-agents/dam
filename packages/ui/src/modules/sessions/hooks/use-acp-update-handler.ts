@@ -21,13 +21,16 @@ export function useAcpUpdateHandler(
   const setMessages = useStore((s) => s.setMessages);
   const addLog = useStore((s) => s.addLog);
 
-  const dismissStalePermission = useCallback((toolCallId: string | undefined) => {
-    if (!toolCallId) return;
-    const pending = useStore.getState().pendingPermissions;
-    if (pending.some((p) => p.toolCallId === toolCallId)) {
-      useStore.getState().dismissPendingPermission(toolCallId);
-    }
-  }, []);
+  const dismissStalePermission = useCallback(
+    (toolCallId: string | undefined) => {
+      if (!toolCallId) return;
+      const pending = useStore.getState().pendingPermissions;
+      if (pending.some((p) => p.toolCallId === toolCallId)) {
+        useStore.getState().dismissPendingPermission(toolCallId);
+      }
+    },
+    [],
+  );
 
   return useCallback(() => {
     return (update: AcpUpdate) => {
@@ -35,8 +38,11 @@ export function useAcpUpdateHandler(
 
       const { sessionUpdate: kind } = update;
 
-      if ((kind === "tool_call" || kind === "tool_call_update")
-          && update.status && update.status !== "pending") {
+      if (
+        (kind === "tool_call" || kind === "tool_call_update") &&
+        update.status &&
+        update.status !== "pending"
+      ) {
         dismissStalePermission(update.toolCallId);
       }
 

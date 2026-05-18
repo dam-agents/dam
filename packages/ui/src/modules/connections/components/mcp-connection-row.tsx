@@ -10,11 +10,16 @@ interface Props {
   onReconnect: (hostname: string) => void;
 }
 
-export function McpConnectionRow({ connection, animationDelayMs, onReconnect }: Props) {
+export function McpConnectionRow({
+  connection,
+  animationDelayMs,
+  onReconnect,
+}: Props) {
   const { hostname, connectedAt, expired } = connection;
   const showConfirm = useStore((s) => s.showConfirm);
   const disconnectMcp = useDisconnectMcp();
-  const isDisconnecting = disconnectMcp.isPending && disconnectMcp.variables === hostname;
+  const isDisconnecting =
+    disconnectMcp.isPending && disconnectMcp.variables === hostname;
 
   const handleDisconnect = async () => {
     if (!(await showConfirm(`Disconnect "${hostname}"?`, "Disconnect"))) return;
@@ -30,9 +35,13 @@ export function McpConnectionRow({ connection, animationDelayMs, onReconnect }: 
         <Globe size={16} />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-[14px] font-semibold text-text truncate">{hostname}</div>
+        <div className="text-[14px] font-semibold text-text truncate">
+          {hostname}
+        </div>
         <div className="text-[12px] font-mono text-text-muted truncate">
-          {expired ? "Expired" : `Connected ${new Date(connectedAt).toLocaleDateString()}`}
+          {expired
+            ? "Expired"
+            : `Connected ${new Date(connectedAt).toLocaleDateString()}`}
         </div>
       </div>
       <span

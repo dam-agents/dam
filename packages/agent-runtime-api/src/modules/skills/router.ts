@@ -13,18 +13,30 @@ import {
 function toTrpcError(error: SkillsDomainError): TRPCError {
   switch (error.kind) {
     case "InvalidSkillName":
-      return new TRPCError({ code: "BAD_REQUEST", message: `invalid skill name: ${error.reason}` });
+      return new TRPCError({
+        code: "BAD_REQUEST",
+        message: `invalid skill name: ${error.reason}`,
+      });
     case "InvalidSkillPath":
-      return new TRPCError({ code: "BAD_REQUEST", message: `invalid skill path: ${error.reason}` });
+      return new TRPCError({
+        code: "BAD_REQUEST",
+        message: `invalid skill path: ${error.reason}`,
+      });
     case "SkillNotFound":
-      return new TRPCError({ code: "NOT_FOUND", message: `skill ${JSON.stringify(error.name)} not found` });
+      return new TRPCError({
+        code: "NOT_FOUND",
+        message: `skill ${JSON.stringify(error.name)} not found`,
+      });
     case "SkillNotFoundInSource":
       return new TRPCError({
         code: "NOT_FOUND",
         message: `skill ${JSON.stringify(error.name)} not found in source ${error.source}`,
       });
     case "PayloadTooLarge":
-      return new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: error.detail });
+      return new TRPCError({
+        code: "PAYLOAD_TOO_LARGE",
+        message: error.detail,
+      });
     case "SourceFetchFailed":
       return new TRPCError({
         code: "BAD_GATEWAY",

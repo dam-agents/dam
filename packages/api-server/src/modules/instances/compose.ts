@@ -4,16 +4,24 @@ import type { Agent, InstancesService } from "api-server-api";
 import { createK8sClient } from "../agents/infrastructure/k8s.js";
 import { createUnitOfWork } from "../../core/unit-of-work.js";
 import type { ChannelSecretStore } from "../channels/infrastructure/channel-secret-store.js";
-import { createInstancesRepository, type InstancesRepository } from "./infrastructure/instances-repository.js";
 import {
-  listChannelsByOwner, listChannelsByInstance,
-  upsertChannel, deleteChannelByType,
+  createInstancesRepository,
+  type InstancesRepository,
+} from "./infrastructure/instances-repository.js";
+import {
+  listChannelsByOwner,
+  listChannelsByInstance,
+  upsertChannel,
+  deleteChannelByType,
   deleteChannelsByInstanceIds,
-  upsertChannelTx, listChannelsByInstanceTx,
+  upsertChannelTx,
+  listChannelsByInstanceTx,
 } from "./infrastructure/channel-bindings-repository.js";
 import {
-  listAllowedUsersByOwner, listAllowedUsersByInstance,
-  setAllowedUsers, deleteAllowedUsersByInstanceIds,
+  listAllowedUsersByOwner,
+  listAllowedUsersByInstance,
+  setAllowedUsers,
+  deleteAllowedUsersByInstanceIds,
 } from "./infrastructure/allowed-users-repository.js";
 import type { KeycloakUserDirectory } from "./infrastructure/keycloak-user-directory.js";
 import { createInstancesService } from "./services/instances-service.js";
@@ -43,21 +51,37 @@ export function composeInstancesModule(deps: {
       listChannelsByInstance: listChannelsByInstance(deps.db, ownerForDbScope),
       upsertChannel: upsertChannel(deps.db, ownerForDbScope),
       deleteChannelByType: deleteChannelByType(deps.db, ownerForDbScope),
-      deleteChannelsByInstanceIds: deleteChannelsByInstanceIds(deps.db, ownerForDbScope),
+      deleteChannelsByInstanceIds: deleteChannelsByInstanceIds(
+        deps.db,
+        ownerForDbScope,
+      ),
       unitOfWork: createUnitOfWork(deps.db),
       channelsTxRepo: {
-        upsertChannel: (tx, instanceId, channel) => upsertChannelTx(tx, ownerForDbScope, instanceId, channel),
-        listByInstance: (tx, instanceId) => listChannelsByInstanceTx(tx, ownerForDbScope, instanceId),
+        upsertChannel: (tx, instanceId, channel) =>
+          upsertChannelTx(tx, ownerForDbScope, instanceId, channel),
+        listByInstance: (tx, instanceId) =>
+          listChannelsByInstanceTx(tx, ownerForDbScope, instanceId),
       },
       channelSecretStore: deps.channelSecretStore,
-      listAllowedUsersByOwner: listAllowedUsersByOwner(deps.db, ownerForDbScope),
-      listAllowedUsersByInstance: listAllowedUsersByInstance(deps.db, ownerForDbScope),
+      listAllowedUsersByOwner: listAllowedUsersByOwner(
+        deps.db,
+        ownerForDbScope,
+      ),
+      listAllowedUsersByInstance: listAllowedUsersByInstance(
+        deps.db,
+        ownerForDbScope,
+      ),
       setAllowedUsers: setAllowedUsers(deps.db, ownerForDbScope),
-      deleteAllowedUsersByInstanceIds: deleteAllowedUsersByInstanceIds(deps.db, ownerForDbScope),
+      deleteAllowedUsersByInstanceIds: deleteAllowedUsersByInstanceIds(
+        deps.db,
+        ownerForDbScope,
+      ),
       userDirectory: deps.userDirectory,
     }),
     repo,
     isOwnedInstance: (instanceId) =>
-      deps.owner === undefined ? Promise.resolve(true) : repo.isOwnedBy(instanceId, deps.owner),
+      deps.owner === undefined
+        ? Promise.resolve(true)
+        : repo.isOwnedBy(instanceId, deps.owner),
   };
 }

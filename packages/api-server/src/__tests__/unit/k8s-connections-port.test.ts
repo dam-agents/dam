@@ -94,7 +94,10 @@ describe("sdsFileKeyForHost", () => {
 
 describe("connectionSecretName", () => {
   it("hashes both owner and connection so the name fits RFC 1123", () => {
-    const name = connectionSecretName("uuid-with-Mixed-Case", "mcp.example.com");
+    const name = connectionSecretName(
+      "uuid-with-Mixed-Case",
+      "mcp.example.com",
+    );
     expect(name).toMatch(/^platform-conn-[a-f0-9]{16}-[a-f0-9]{16}$/);
   });
 
@@ -130,7 +133,9 @@ describe("K8sConnectionsPort.upsertConnection — single-host", () => {
       "mcp.example.com",
     );
     // Schema version pinned — future bumps drive migrations.
-    expect(ann["agent-platform.ai/schema-version"]).toBe(CONNECTION_SCHEMA_VERSION);
+    expect(ann["agent-platform.ai/schema-version"]).toBe(
+      CONNECTION_SCHEMA_VERSION,
+    );
     expect(ann["agent-platform.ai/host-patterns"]).toBe("mcp.example.com");
     expect(JSON.parse(ann["agent-platform.ai/injection-hosts"]!)).toEqual([
       { host: "mcp.example.com" },
@@ -156,7 +161,8 @@ describe("K8sConnectionsPort.upsertConnection — single-host", () => {
       metadata: SAMPLE_METADATA,
     });
     const name = connectionSecretName("owner-1", "mcp.example.com");
-    const firstConnectedAt = store.get(name)!.metadata!.annotations!["agent-platform.ai/connected-at"];
+    const firstConnectedAt =
+      store.get(name)!.metadata!.annotations!["agent-platform.ai/connected-at"];
 
     await new Promise((r) => setTimeout(r, 5));
     await port.upsertConnection({
@@ -164,7 +170,9 @@ describe("K8sConnectionsPort.upsertConnection — single-host", () => {
       tokens: { accessToken: "second", expiresAt: 2 },
       metadata: SAMPLE_METADATA,
     });
-    expect(store.get(name)!.metadata!.annotations!["agent-platform.ai/connected-at"]).toBe(firstConnectedAt);
+    expect(
+      store.get(name)!.metadata!.annotations!["agent-platform.ai/connected-at"],
+    ).toBe(firstConnectedAt);
   });
 
   it("rejects metadata with an empty hosts list (caller bug)", async () => {
@@ -213,9 +221,9 @@ describe("K8sConnectionsPort — multi-host (issue #219)", () => {
     const secret = store.get(name)!;
     // One Secret, one mount, three chains.
     expect(Array.from(store.values())).toHaveLength(1);
-    expect(secret.metadata?.annotations?.["agent-platform.ai/host-patterns"]).toBe(
-      "api.github.com,github.com,raw.githubusercontent.com",
-    );
+    expect(
+      secret.metadata?.annotations?.["agent-platform.ai/host-patterns"],
+    ).toBe("api.github.com,github.com,raw.githubusercontent.com");
     const parsed = JSON.parse(
       secret.metadata!.annotations!["agent-platform.ai/injection-hosts"]!,
     );
@@ -226,10 +234,15 @@ describe("K8sConnectionsPort — multi-host (issue #219)", () => {
 
     // github.com: HTTP Basic, username `x-access-token`. Makes `git clone` work.
     const wwwSds = decode(secret, sdsFileKeyForHost("github.com"));
-    const expectedB64 = Buffer.from("x-access-token:tok-1", "utf8").toString("base64");
+    const expectedB64 = Buffer.from("x-access-token:tok-1", "utf8").toString(
+      "base64",
+    );
     expect(wwwSds).toContain(`inline_string: "Basic ${expectedB64}"`);
 
-    const rawSds = decode(secret, sdsFileKeyForHost("raw.githubusercontent.com"));
+    const rawSds = decode(
+      secret,
+      sdsFileKeyForHost("raw.githubusercontent.com"),
+    );
     expect(rawSds).toContain('inline_string: "Bearer tok-1"');
   });
 
@@ -282,7 +295,9 @@ describe("K8sConnectionsPort — multi-host (issue #219)", () => {
       metadata: GITHUB_METADATA,
     });
     const name = connectionSecretName("owner-1", "github");
-    expect(store.get(name)!.data![sdsFileKeyForHost("github.com")]).toBeDefined();
+    expect(
+      store.get(name)!.data![sdsFileKeyForHost("github.com")],
+    ).toBeDefined();
 
     // Reconnect with one host — dropped hosts' SDS files must go.
     await port.upsertConnection({
@@ -293,7 +308,9 @@ describe("K8sConnectionsPort — multi-host (issue #219)", () => {
     const after = store.get(name)!;
     expect(after.data![sdsFileKeyForHost("api.github.com")]).toBeDefined();
     expect(after.data![sdsFileKeyForHost("github.com")]).toBeUndefined();
-    expect(after.data![sdsFileKeyForHost("raw.githubusercontent.com")]).toBeUndefined();
+    expect(
+      after.data![sdsFileKeyForHost("raw.githubusercontent.com")],
+    ).toBeUndefined();
   });
 
   it("writeRefreshedTokens re-renders every host's SDS file from the new token", async () => {
@@ -320,9 +337,14 @@ describe("K8sConnectionsPort — multi-host (issue #219)", () => {
     const apiSds = decode(after, sdsFileKeyForHost("api.github.com"));
     expect(apiSds).toContain('inline_string: "Bearer rotated"');
     const wwwSds = decode(after, sdsFileKeyForHost("github.com"));
-    const expectedB64 = Buffer.from("x-access-token:rotated", "utf8").toString("base64");
+    const expectedB64 = Buffer.from("x-access-token:rotated", "utf8").toString(
+      "base64",
+    );
     expect(wwwSds).toContain(`inline_string: "Basic ${expectedB64}"`);
-    const rawSds = decode(after, sdsFileKeyForHost("raw.githubusercontent.com"));
+    const rawSds = decode(
+      after,
+      sdsFileKeyForHost("raw.githubusercontent.com"),
+    );
     expect(rawSds).toContain('inline_string: "Bearer rotated"');
     expect(decode(after, "refresh_token")).toBe("ref-new");
   });
@@ -425,7 +447,9 @@ describe("listAllConnectionWorkItems / writeRefreshedTokens / markConnectionExpi
 
     const items = await listAllConnectionWorkItems(client);
     expect(items).toHaveLength(2);
-    expect(new Set(items.map((i) => i.owner))).toEqual(new Set(["owner-a", "owner-b"]));
+    expect(new Set(items.map((i) => i.owner))).toEqual(
+      new Set(["owner-a", "owner-b"]),
+    );
   });
 
   it("writeRefreshedTokens replaces token data while keeping host metadata stable", async () => {
@@ -465,7 +489,10 @@ describe("listAllConnectionWorkItems / writeRefreshedTokens / markConnectionExpi
       tokens: { accessToken: "t", refreshToken: "r", expiresAt: 100 },
       metadata: SAMPLE_METADATA,
     });
-    await markConnectionExpired(client, connectionSecretName("owner-1", "mcp.example.com"));
+    await markConnectionExpired(
+      client,
+      connectionSecretName("owner-1", "mcp.example.com"),
+    );
     const items = await listAllConnectionWorkItems(client);
     expect(items[0]!.status).toBe("expired");
   });
