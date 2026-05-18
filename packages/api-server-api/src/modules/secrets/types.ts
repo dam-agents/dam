@@ -148,10 +148,10 @@ export interface BobModelPins {
   chatMode?: string;
 }
 
-// api.us-east must stay uncredentialed (401 on a real token) — that
-// host is in trustedHosts, not here.
-const BOB_HOST = "prod.ibm-bob-staging.cloud.ibm.com";
-const BOB_PLACEHOLDER = "sk-placeholder";
+// Bob CLI silently downgrades to the legacy `prod.ibm-bob-staging` backend
+// when BOBSHELL_API_KEY starts with `sk-`/`pk-`; the placeholder must not.
+const BOB_HOST = "api.us-east.bob.ibm.com";
+const BOB_PLACEHOLDER = "dummy-placeholder";
 
 export function bobEnvMappings(pins: BobModelPins = {}): EnvMapping[] {
   const out: EnvMapping[] = [
@@ -294,6 +294,8 @@ export const PROVIDERS = {
         key: "api-key",
         label: "API Key",
         defaultEnvMappings: bobEnvMappings(),
+        // Opaque api-keys go in under `Apikey`; `Bearer` triggers JWT auth.
+        injection: { headerName: "Authorization", valueFormat: "Apikey {value}" },
         extraInjections: [{ headerName: "X-Bobshell-Internal", queryParamName: "key" }],
       },
     ],
