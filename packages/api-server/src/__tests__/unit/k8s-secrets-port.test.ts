@@ -100,6 +100,19 @@ describe("resolveInjection", () => {
       valueFormat: "Bearer {value}",
     });
   });
+
+  it("twin secret: caller's injectionConfig wins over preset's mode.injection", () => {
+    // Without precedence the twin inherits bob's primary `Apikey` injection.
+    expect(
+      resolveInjection("bob", "api-key", {
+        headerName: "X-Bobshell-Internal",
+        queryParamName: "key",
+      }),
+    ).toEqual({
+      headerName: "X-Bobshell-Internal",
+      valueFormat: "Bearer {value}",
+    });
+  });
 });
 
 describe("injectionFileContent", () => {
