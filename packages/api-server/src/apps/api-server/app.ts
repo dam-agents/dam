@@ -392,8 +392,6 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     const { sessions } = composeSessionsModule({
       db, namespace: config.namespace, isOwnedInstance, isOwnedSchedule,
       closeTerminalSession: terminalRelay.closeSession,
-      resetAcpSession: (instanceId, sessionId) =>
-        fetch(`http://${podBaseUrl(instanceId, config.namespace)}/api/sessions/${encodeURIComponent(sessionId)}/reset`, { method: "POST" }).catch(() => {}),
       notifyModeChange: (instanceId, sessionId, mode) => {
         const frame = JSON.stringify({
           jsonrpc: "2.0",

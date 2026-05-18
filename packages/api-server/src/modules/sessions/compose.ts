@@ -12,7 +12,6 @@ export function composeSessionsModule(deps: {
   isOwnedInstance: (instanceId: string) => Promise<boolean>;
   isOwnedSchedule: (scheduleId: string) => Promise<boolean>;
   closeTerminalSession?: (sessionId: string) => void;
-  resetAcpSession?: (instanceId: string, sessionId: string) => Promise<void>;
   notifyModeChange?: (instanceId: string, sessionId: string, mode: string) => void;
 }): {
   sessions: SessionsApiService;
@@ -30,7 +29,6 @@ export function composeSessionsModule(deps: {
       deactivateByScheduleId: deactivateByScheduleId(deps.db),
       namespace: deps.namespace,
       closeTerminalSession: deps.closeTerminalSession,
-      resetAcpSession: deps.resetAcpSession,
       notifyModeChange: deps.notifyModeChange,
     }),
   };

@@ -1,4 +1,9 @@
-import { isRequest, isResponse, parseFrame, type JsonRpcId } from "../domain/frames.js";
+import {
+  isRequest,
+  isResponse,
+  parseFrame,
+  type JsonRpcId,
+} from "../domain/frames.js";
 import type { AgentProcess } from "../infrastructure/agent-process.js";
 import type { ClientChannel } from "../infrastructure/client-channel.js";
 import { rewriteAuthError, rewriteCwd } from "../infrastructure/mappers.js";
@@ -217,7 +222,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   function getOrCreateLog(sessionId: string): SessionLog {
     let log = sessionLogs.get(sessionId);
     if (!log) {
-      log = { entries: [], nextSeq: 1, totalBytes: 0, truncated: false, metadata: null };
+      log = {
+        entries: [],
+        nextSeq: 1,
+        totalBytes: 0,
+        truncated: false,
+        metadata: null,
+      };
       sessionLogs.set(sessionId, log);
     }
     return log;
@@ -244,7 +255,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     return map?.get(sessionId) ?? 0;
   }
 
-  function setCursor(channel: ClientChannel, sessionId: string, seq: number): void {
+  function setCursor(
+    channel: ClientChannel,
+    sessionId: string,
+    seq: number,
+  ): void {
     let map = channelCursors.get(channel);
     if (!map) {
       map = new Map();
@@ -338,7 +353,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   function appendAndFanOut(
     sessionId: string,
     line: string,
-    options?: { skipChannel?: ClientChannel; onlyChannel?: ClientChannel | null },
+    options?: {
+      skipChannel?: ClientChannel;
+      onlyChannel?: ClientChannel | null;
+    },
   ): void {
     const seq = appendToLog(sessionId, line);
     const out = rewriteAuthError(line);
@@ -373,7 +391,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
    * but a fresh channel (after reload) will catch it through the normal
    * catch-up from cursor=0.
    */
-  function appendUserPromptToLog(sessionId: string, prompt: unknown, originator: ClientChannel): void {
+  function appendUserPromptToLog(
+    sessionId: string,
+    prompt: unknown,
+    originator: ClientChannel,
+  ): void {
     if (!Array.isArray(prompt)) return;
     for (const block of prompt) {
       if (!block || typeof block !== "object") continue;
@@ -406,12 +428,18 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     const engaged = hasEngagedChannel(sessionId);
     let hasPending = false;
     for (const req of pendingFromAgent.values()) {
-      if (req.sessionId === sessionId) { hasPending = true; break; }
+      if (req.sessionId === sessionId) {
+        hasPending = true;
+        break;
+      }
     }
     const existing = orphanTimers.get(sessionId);
     const shouldRun = hasPending && !engaged && !agentExited;
     if (shouldRun && !existing) {
-      orphanTimers.set(sessionId, setTimeout(() => expireSession(sessionId), orphanTtlMs));
+      orphanTimers.set(
+        sessionId,
+        setTimeout(() => expireSession(sessionId), orphanTtlMs),
+      );
     } else if (!shouldRun && existing) {
       clearTimeout(existing);
       orphanTimers.delete(sessionId);
@@ -560,14 +588,17 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       params: { sessionId },
     });
     deps.log?.(`closing idle session ${sessionId}`);
-    // Drop the log + any lingering cursors for this session. Next load for
-    // this sid will cold-bootstrap via the agent again.
-    sessionLogs.delete(sessionId);
-    for (const cursors of channelCursors.values()) cursors.delete(sessionId);
   }
 
-  function sendErrorResponse(channel: ClientChannel, id: JsonRpcId, message: string): void {
-    sendToChannel(channel, JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32000, message } }));
+  function sendErrorResponse(
+    channel: ClientChannel,
+    id: JsonRpcId,
+    message: string,
+  ): void {
+    sendToChannel(
+      channel,
+      JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32000, message } }),
+    );
   }
 
   // ── Prompt queue ──
@@ -575,7 +606,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   function forwardPromptToAgent(
     a: AgentProcess,
     sessionId: string,
-    entry: { channel: ClientChannel; outboundId: number; originalId: JsonRpcId; frame: unknown },
+    entry: {
+      channel: ClientChannel;
+      outboundId: number;
+      originalId: JsonRpcId;
+      frame: unknown;
+    },
   ): void {
     activePromptBySession.set(sessionId, {
       sessionId,
@@ -610,7 +646,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     log: SessionLog,
   ): void {
     if (log.metadata === null) {
-      throw new Error(`serveLoadFromLog called for ${sessionId} without cached metadata`);
+      throw new Error(
+        `serveLoadFromLog called for ${sessionId} without cached metadata`,
+      );
     }
     catchUp(channel, sessionId);
     engage(channel, sessionId);
@@ -637,12 +675,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     log: SessionLog,
   ): void {
     if (log.metadata === null) {
-      throw new Error(`serveResumeFromLog called for ${sessionId} without cached metadata`);
+      throw new Error(
+        `serveResumeFromLog called for ${sessionId} without cached metadata`,
+      );
     }
     engage(channel, sessionId);
-    const lastSeq = log.entries.length > 0
-      ? log.entries[log.entries.length - 1].seq
-      : 0;
+    const lastSeq =
+      log.entries.length > 0 ? log.entries[log.entries.length - 1].seq : 0;
     setCursor(channel, sessionId, lastSeq);
     const response = JSON.stringify({
       jsonrpc: "2.0",
@@ -705,13 +744,16 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           // authoritative log state: session/new and session/fork start an
           // empty log that the creator's prompts will populate, and
           // session/load populates it via replaySessionHistory.
-          const cacheable = mapping.method === "session/new"
-            || mapping.method === "session/fork"
-            || mapping.method === "session/load";
+          const cacheable =
+            mapping.method === "session/new" ||
+            mapping.method === "session/fork" ||
+            mapping.method === "session/load";
           if (cacheable) {
             const log = getOrCreateLog(sidForChannel);
             if (log.metadata === null) {
-              log.metadata = (frame as { result?: unknown }).result ?? { sessionId: sidForChannel };
+              log.metadata = (frame as { result?: unknown }).result ?? {
+                sessionId: sidForChannel,
+              };
             }
           }
         }
@@ -743,8 +785,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         // Rewrite the response id back to what the originating client used.
         // Skip when the runtime initiated the call (no client to respond to).
         if (mapping.channel && mapping.originalId !== null) {
-          const out = JSON.stringify({ ...(frame as object), id: mapping.originalId });
-          if (mapping.channel.isOpen()) mapping.channel.send(rewriteAuthError(out));
+          const out = JSON.stringify({
+            ...(frame as object),
+            id: mapping.originalId,
+          });
+          if (mapping.channel.isOpen())
+            mapping.channel.send(rewriteAuthError(out));
         }
 
         // If this response completes a queued prompt, advance the session's
@@ -762,11 +808,14 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             activePromptBySession.delete(sid);
             if (agent && !agentExited) advanceQueue(agent, sid);
           }
-          appendAndFanOut(sid, JSON.stringify({
-            jsonrpc: "2.0",
-            method: "platform/turnEnded",
-            params: { sessionId: sid },
-          }));
+          appendAndFanOut(
+            sid,
+            JSON.stringify({
+              jsonrpc: "2.0",
+              method: "platform/turnEnded",
+              params: { sessionId: sid },
+            }),
+          );
           // Reap the SDK session if the turn finished with nothing left to
           // watch it — e.g. a scheduled trigger fired a prompt with no UI
           // attached. If a queued prompt was just promoted by advanceQueue,
@@ -795,7 +844,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (sessionId) {
       const boot = bootstrapBySession.get(sessionId);
       if (boot) {
-        appendAndFanOut(sessionId, line, { onlyChannel: boot.initiatorChannel });
+        appendAndFanOut(sessionId, line, {
+          onlyChannel: boot.initiatorChannel,
+        });
       } else {
         appendAndFanOut(sessionId, line);
       }
@@ -806,7 +857,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   // ── Client → agent traffic ──
 
-  function handleClientMessage(a: AgentProcess, channel: ClientChannel, data: string): void {
+  function handleClientMessage(
+    a: AgentProcess,
+    channel: ClientChannel,
+    data: string,
+  ): void {
     const frame = parseFrame(data);
     if (!frame) {
       deps.log?.(`dropping non-JSON client message: ${data}`);
@@ -826,9 +881,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }
 
     if (isRequest(frame)) {
-      const method = typeof (frame as { method?: unknown }).method === "string"
-        ? (frame as { method: string }).method
-        : "";
+      const method =
+        typeof (frame as { method?: unknown }).method === "string"
+          ? (frame as { method: string }).method
+          : "";
       const paramsSid = extractParamsSessionId(frame);
 
       // `session/resume` short-circuit: the runtime mediates resume entirely.
@@ -917,7 +973,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       // we stash it from params to recover it when the response comes back.
       const attachSessionId = method === "session/load" ? paramsSid : null;
 
-      const rewritten = rewriteCwd({ ...frame, id: outboundId }, deps.workingDir);
+      const rewritten = rewriteCwd(
+        { ...frame, id: outboundId },
+        deps.workingDir,
+      );
       outboundIdToClient.set(outboundId, {
         channel,
         originalId: frame.id,
@@ -943,21 +1002,36 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         // never see the user's message. The runtime fans out to everyone
         // including the sender; the sending client's UI reconciles the echo
         // against its optimistic bubble.
-        const promptBlocks = (frame as { params?: { prompt?: unknown } }).params?.prompt;
+        const promptBlocks = (frame as { params?: { prompt?: unknown } }).params
+          ?.prompt;
         appendUserPromptToLog(promptSessionId, promptBlocks, channel);
 
         if (activePromptBySession.has(promptSessionId)) {
           const queue = promptQueueBySession.get(promptSessionId) ?? [];
           if (queue.length >= PROMPT_QUEUE_CAP) {
             outboundIdToClient.delete(outboundId);
-            sendErrorResponse(channel, frame.id, `prompt queue full for session ${promptSessionId}`);
+            sendErrorResponse(
+              channel,
+              frame.id,
+              `prompt queue full for session ${promptSessionId}`,
+            );
             return;
           }
-          queue.push({ channel, outboundId, originalId: frame.id, frame: rewritten });
+          queue.push({
+            channel,
+            outboundId,
+            originalId: frame.id,
+            frame: rewritten,
+          });
           promptQueueBySession.set(promptSessionId, queue);
           return;
         }
-        forwardPromptToAgent(a, promptSessionId, { channel, outboundId, originalId: frame.id, frame: rewritten });
+        forwardPromptToAgent(a, promptSessionId, {
+          channel,
+          outboundId,
+          originalId: frame.id,
+          frame: rewritten,
+        });
         return;
       }
 
@@ -1012,7 +1086,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     },
 
     shutdown() {
-      for (const channel of engagedSessions.keys()) channel.close(1000, "shutdown");
+      for (const channel of engagedSessions.keys())
+        channel.close(1000, "shutdown");
       engagedSessions.clear();
       channelCursors.clear();
       sessionLogs.clear();
@@ -1030,7 +1105,8 @@ function extractSessionCloseSupported(frame: unknown): boolean {
   if (typeof result !== "object" || result === null) return false;
   const caps = (result as { agentCapabilities?: unknown }).agentCapabilities;
   if (typeof caps !== "object" || caps === null) return false;
-  const session = (caps as { sessionCapabilities?: unknown }).sessionCapabilities;
+  const session = (caps as { sessionCapabilities?: unknown })
+    .sessionCapabilities;
   if (typeof session !== "object" || session === null) return false;
   const close = (session as { close?: unknown }).close;
   return typeof close === "object" && close !== null;

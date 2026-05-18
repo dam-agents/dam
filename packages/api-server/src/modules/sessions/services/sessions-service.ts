@@ -14,7 +14,6 @@ export function createSessionsService(deps: {
   deactivateByScheduleId: (scheduleId: string) => Promise<void>;
   namespace: string;
   closeTerminalSession?: (sessionId: string) => void;
-  resetAcpSession?: (instanceId: string, sessionId: string) => Promise<void>;
   notifyModeChange?: (instanceId: string, sessionId: string, mode: SessionMode) => void;
 }): SessionsApiService {
   const service: SessionsApiService = {
@@ -67,10 +66,7 @@ export function createSessionsService(deps: {
     async setMode(sessionId: string, instanceId: string, mode: SessionMode) {
       if (!await deps.isOwnedInstance(instanceId)) return;
       await deps.setMode(sessionId, instanceId, mode);
-      if (mode !== SessionMode.Terminal) {
-        deps.closeTerminalSession?.(sessionId);
-        await deps.resetAcpSession?.(instanceId, sessionId);
-      }
+      if (mode !== SessionMode.Terminal) deps.closeTerminalSession?.(sessionId);
       deps.notifyModeChange?.(instanceId, sessionId, mode);
     },
 
