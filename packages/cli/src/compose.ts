@@ -6,6 +6,7 @@ import { composeCliModule } from "./modules/cli/compose.js";
 import { composeImportModule } from "./modules/import/compose.js";
 import { composeInstanceModule } from "./modules/instance/compose.js";
 import { composeTemplateModule } from "./modules/template/compose.js";
+import { createTrpcClient } from "./modules/shared/trpc/trpc-client.js";
 
 export interface ComposeOptions {
   /** Override for the production config path (resolved via XDG —
@@ -36,15 +37,16 @@ export function compose(opts: ComposeOptions = {}): Command {
     compatService: cli.services.compatService,
     configService: cli.services.configService,
   });
-  // The instance and template modules are wired after auth so their
-  // bearer-supplier closures can reach `auth.exports.tokenProvider`.
+  const { tokenProvider } = auth.exports;
+  const buildTrpc = (host: string) => createTrpcClient({ host, tokenProvider });
+
   const template = composeTemplateModule({
-    tokenProvider: auth.exports.tokenProvider,
+    buildTrpc,
     configService: cli.services.configService,
     compatService: cli.services.compatService,
   });
   const instance = composeInstanceModule({
-    tokenProvider: auth.exports.tokenProvider,
+    buildTrpc,
     configService: cli.services.configService,
     compatService: cli.services.compatService,
     templateService: template.exports.createService,
@@ -57,11 +59,11 @@ export function compose(opts: ComposeOptions = {}): Command {
     templateService: template.exports.createService,
     instanceService: instance.exports.createService,
   });
-
   const chat = composeChatModule({
+    buildTrpc,
     compatService: cli.services.compatService,
     configService: cli.services.configService,
-    tokenProvider: auth.exports.tokenProvider,
+    tokenProvider,
     createInstanceService: instance.exports.createService,
   });
 

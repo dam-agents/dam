@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { err, ok, type Result } from "../../../result.js";
-import type { AuthRequiredError, TransportError } from "../../instance/domain/errors.js";
-import { classifyTrpcError } from "../../shared/trpc/classify.js";
+import { err, type Result } from "../../../result.js";
+import type { AuthRequiredError, TransportError } from "../../shared/errors.js";
+import { trpcCall } from "../../shared/trpc/classify.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
 
 export interface Template {
@@ -25,13 +25,11 @@ export interface TemplateService {
 export function createTemplateService(deps: { trpc: TrpcClient }): TemplateService {
   return {
     async list() {
-      try {
-        const parsed = TemplateListSchema.safeParse(await deps.trpc.templates.list.query());
-        if (!parsed.success) return err({ kind: "transport", reason: `unexpected templates response: ${parsed.error.message}` });
-        return ok(parsed.data);
-      } catch (e) {
-        return classifyTrpcError(e);
-      }
+      const result = await trpcCall(() => deps.trpc.templates.list.query());
+      if (!result.ok) return result;
+      const parsed = TemplateListSchema.safeParse(result.value);
+      if (!parsed.success) return err({ kind: "transport", reason: `unexpected templates response: ${parsed.error.message}` });
+      return { ok: true, value: parsed.data } as Result<readonly Template[], never>;
     },
   };
 }

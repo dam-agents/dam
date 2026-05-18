@@ -1,11 +1,9 @@
 import { createTRPCClient, httpBatchLink, type TRPCClient } from "@trpc/client";
 import type { AppRouter } from "api-server-api";
-import type { Result } from "../../../result.js";
-import type { AuthRequiredError } from "../../instance/domain/errors.js";
+import type { TokenProvider } from "../../auth/index.js";
 
 export type TrpcClient = TRPCClient<AppRouter>;
 
-// Thrown inside the tRPC header pipeline to abort a request before the wire when auth fails.
 export class AuthRequiredAtTransportError extends Error {
   readonly kind = "auth-required" as const;
   constructor(reason: string) { super(reason); this.name = "AuthRequiredAtTransportError"; }
@@ -13,7 +11,7 @@ export class AuthRequiredAtTransportError extends Error {
 
 export function createTrpcClient(deps: {
   host: string;
-  getToken: () => Promise<Result<string, AuthRequiredError>>;
+  tokenProvider: TokenProvider;
   fetch?: typeof fetch;
 }): TrpcClient {
   return createTRPCClient<AppRouter>({
@@ -22,9 +20,16 @@ export function createTrpcClient(deps: {
         url: `${deps.host.replace(/\/+$/, "")}/api/trpc`,
         fetch: deps.fetch,
         headers: async () => {
-          const tok = await deps.getToken();
-          if (!tok.ok) throw new AuthRequiredAtTransportError(tok.error.reason);
-          return { authorization: `Bearer ${tok.value}` };
+          const result = await deps.tokenProvider.getValidAccessToken(deps.host);
+          if (result.ok) return { authorization: `Bearer ${result.value}` };
+          const e = result.error as { kind: string; reason?: string; host?: string };
+          if (e.kind === "not-logged-in" || e.kind === "session-expired") {
+            const reason = e.kind === "not-logged-in"
+              ? (e.host ? `not logged in to ${e.host}` : "not logged in")
+              : (e.host ? `session expired for ${e.host}` : "session expired");
+            throw new AuthRequiredAtTransportError(reason);
+          }
+          throw new Error(e.reason ?? e.kind);
         },
       }),
     ],

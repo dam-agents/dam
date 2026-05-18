@@ -1,9 +1,7 @@
 import { Command } from "commander";
-import type { TokenProvider } from "../auth/index.js";
 import type { CompatService, ConfigService } from "../cli/index.js";
 import type { TemplateService } from "../template/index.js";
-import { createTrpcClient, type TrpcClient } from "../shared/trpc/trpc-client.js";
-import { createBearerSupplier } from "../shared/trpc/bearer-supplier.js";
+import type { TrpcClient } from "../shared/trpc/trpc-client.js";
 import { buildCreateCommand } from "./commands/create.js";
 import { buildDeleteCommand } from "./commands/delete.js";
 import { buildGetCommand } from "./commands/get.js";
@@ -17,21 +15,19 @@ export interface InstanceModule {
 }
 
 export function composeInstanceModule(opts: {
-  tokenProvider: TokenProvider;
+  buildTrpc: (host: string) => TrpcClient;
   configService: ConfigService;
   compatService: CompatService;
   templateService: (host: string) => TemplateService;
 }): InstanceModule {
-  const buildTrpc = (host: string): TrpcClient =>
-    createTrpcClient({ host, getToken: createBearerSupplier(opts.tokenProvider, host) });
   const createService = (host: string): InstanceService =>
-    createInstanceService({ trpc: buildTrpc(host) });
+    createInstanceService({ trpc: opts.buildTrpc(host) });
   const shared = { compatService: opts.compatService, configService: opts.configService, createInstanceService: createService };
 
   const parent = new Command("instance").description("Address Instances by name or ID");
   parent.addCommand(buildListCommand(shared), { isDefault: true });
   parent.addCommand(buildGetCommand(shared));
-  parent.addCommand(buildCreateCommand({ ...shared, createTemplateService: opts.templateService, createTrpcClient: buildTrpc }));
+  parent.addCommand(buildCreateCommand({ ...shared, createTemplateService: opts.templateService, createTrpcClient: opts.buildTrpc }));
   parent.addCommand(buildDeleteCommand(shared));
   parent.addCommand(buildRestartCommand(shared));
 

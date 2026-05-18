@@ -1,12 +1,4 @@
-export interface TransportError {
-  kind: "transport";
-  reason: string;
-}
-
-export interface AuthRequiredError {
-  kind: "auth-required";
-  reason: string;
-}
+export type { TransportError, AuthRequiredError } from "../../shared/errors.js";
 
 export interface NotFoundError {
   kind: "not-found";
@@ -19,9 +11,3 @@ export interface AmbiguousError {
   ref: string;
   matches: readonly { id: string; name: string }[];
 }
-
-export type InstanceDomainError =
-  | TransportError
-  | AuthRequiredError
-  | NotFoundError
-  | AmbiguousError;
