@@ -4,7 +4,7 @@ Domain terms used across this project. Each term is scoped to its bounded contex
 
 ## Substrate
 
-Persistence vocabulary shared by every bounded context. See [`docs/architecture/persistence.md`](../docs/architecture/persistence.md) for the substrate split.
+Persistence vocabulary shared by every bounded context. See [`docs/architecture/persistence.md`](architecture/persistence.md) for the substrate split.
 
 | Term | Definition |
 |------|-----------|
