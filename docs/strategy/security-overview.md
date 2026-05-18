@@ -117,11 +117,13 @@ flowchart LR
   gw -->|"egress on allow<br/>(credential injected if configured)"| ext
 ```
 
-Three AuthorizationPolicies sit at the doors that matter: the gateway
-pod's door, the harness path on the api-server, and the per-instance
-`ext-authz` service. Each one only admits the matching instance's
-SPIFFE ID, so peer instances are denied at the mesh — they can resolve
-the address but the call never lands.
+Two AuthorizationPolicies sit at the doors that matter: the harness
+path on the api-server, and the per-instance `ext-authz` service.
+Each one only admits the gateway whose SPIFFE ID belongs to the right
+instance, so one instance can never call another instance's harness
+or ext-authz — the address resolves, but the call never lands. The
+gateway pod itself has no AuthorizationPolicy in front of it; the
+agent's NetworkPolicy is the only gate on the agent → gateway hop.
 
 On top of that, every outgoing request through the gateway runs
 through a second gate. Envoy (the program running inside the gateway
