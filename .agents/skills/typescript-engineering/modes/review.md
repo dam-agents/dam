@@ -1,6 +1,6 @@
 # Review Mode
 
-The user wants an architecture review of a TypeScript client-server project that follows (or aims to follow) the opinionated TSEng architecture. Architecture docs live at `../architecture/` relative to this file.
+The user wants an architecture review of a TypeScript client-server project that follows (or aims to follow) the opinionated TypeScript Engineering (TSEng) architecture. Architecture docs live at `../architecture/` relative to this file.
 
 ## Scope
 
