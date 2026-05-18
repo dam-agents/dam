@@ -82,7 +82,9 @@ By default the container runs on the cluster's normal container
 runtime — usually `runc` — which shares a kernel with the host
 machine. The four controls above all still stand, but if an attacker
 ever broke out of the container into the kernel, they'd be on the host
-directly. That's a known, hard problem in the container world.
+directly. That's a known, hard problem in the container world — the
+runc container-escape CVEs disclosed in November 2025 and the "Copy
+Fail" Linux-kernel LPE in April 2026 are recent examples.
 
 If you're running Platform somewhere where that risk matters, the
 cluster operator should swap in a stronger runtime —
@@ -152,6 +154,7 @@ and answers one of three things:
 | Agent exfiltrates data through cluster DNS | The agent has no DNS egress at all; the controller injects a hostAliases entry so `HTTPS_PROXY` resolves the gateway Service without a lookup |
 | Route-confusion exfil through the gateway | Per-host Envoy filter chains pinned to each credential's host, with SAN-bound upstream TLS validation |
 | Direct pod-IP bypass of the api-server | Pod-level DENY AuthorizationPolicy admits only the waypoint's SA (harness) or a per-instance SA (`ext-authz`) |
+| Agent escapes the container into the host kernel (the late-2025 runc CVEs; Linux kernel LPEs like "Copy Fail") | Not closed by any control above — all four layers run on top of the host kernel. Only a runtime that doesn't share that kernel fully mitigates: gVisor intercepts the container's syscalls in userspace; Kata Containers gives each pod its own lightweight VM. The cluster operator opts in via RuntimeClass — see [Security boundary](#security-boundary) above |
 
 ## See also
 
