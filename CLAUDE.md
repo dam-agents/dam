@@ -59,6 +59,10 @@ Generic conventions for TS server-side code (tRPC, Zod, RxJS, layering). Invoke 
 
 Always follow [`docs/guidelines/documentation-guidelines.md`](docs/guidelines/documentation-guidelines.md).
 
+## Work process
+
+Proposed ideal flow for new features — see [`docs/guidelines/work-process.md`](docs/guidelines/work-process.md).
+
 ## UI (`packages/ui`)
 
 Follow the [`react-ui-engineering`](.agents/skills/react-ui-engineering/SKILL.md) skill for all React + TypeScript work. Run `mise run lint:fix` after edits; auto-fixes import order and `import type`.
