@@ -554,6 +554,49 @@ func TestEnsureLeafSecretOwnerReference_Idempotent(t *testing.T) {
 	require.Len(t, got.OwnerReferences, 1, "must not duplicate the owner ref across reconciles")
 }
 
+func TestReconcileOrphanLeafSecrets(t *testing.T) {
+	// orphan: leaf Secret whose instance ConfigMap is gone — must be reaped.
+	orphan := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "deleted-instance-envoy-tls",
+			Namespace: "test-agents",
+		},
+		Type: corev1.SecretTypeTLS,
+	}
+	// live: leaf Secret whose instance ConfigMap still exists — must be kept.
+	live := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-instance-envoy-tls",
+			Namespace: "test-agents",
+		},
+		Type: corev1.SecretTypeTLS,
+	}
+	// unrelated: a Secret with a similar suffix but wrong type — must not be touched.
+	unrelated := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "something-envoy-tls",
+			Namespace: "test-agents",
+		},
+		Type: corev1.SecretTypeOpaque,
+	}
+	liveCM := instanceCM("running") // name = "my-instance"
+	r, client := setupReconciler(t,
+		map[string]*corev1.ConfigMap{"claude-code": agentCM()},
+		liveCM, orphan, live, unrelated,
+	)
+
+	r.ReconcileOrphanLeafSecrets(context.Background())
+
+	_, err := client.CoreV1().Secrets("test-agents").Get(context.Background(), orphan.Name, metav1.GetOptions{})
+	assert.Error(t, err, "orphan leaf Secret must be deleted")
+
+	_, err = client.CoreV1().Secrets("test-agents").Get(context.Background(), live.Name, metav1.GetOptions{})
+	assert.NoError(t, err, "live instance leaf Secret must be retained")
+
+	_, err = client.CoreV1().Secrets("test-agents").Get(context.Background(), unrelated.Name, metav1.GetOptions{})
+	assert.NoError(t, err, "non-TLS Secret with similar name must not be touched")
+}
+
 func TestEnsureLeafSecretOwnerReference_NoSecretYetIsNoop(t *testing.T) {
 	// First reconcile arrives before cert-manager has issued the Secret —
 	// must not error; the next reconcile will patch the owner ref.

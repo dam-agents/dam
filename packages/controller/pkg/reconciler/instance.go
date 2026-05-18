@@ -354,6 +354,67 @@ func (r *InstanceReconciler) ReconcileOrphanPVCs(ctx context.Context) {
 	}
 }
 
+// ReconcileOrphanLeafSecrets deletes any per-instance envoy leaf TLS
+// Secret whose instance ConfigMap no longer exists. Covers historical
+// leaks from before owner-references were added to these Secrets, plus
+// any future Secret that slips through (e.g. cert-manager produced the
+// Secret between the controller patching the ownerRef and the instance
+// being deleted, or the controller crashed in that window).
+//
+// Match is intentionally tight: Secret name ends in `-envoy-tls`, type
+// is `kubernetes.io/tls`, and the prefix names a non-existent
+// ConfigMap. Anything else is left alone.
+func (r *InstanceReconciler) ReconcileOrphanLeafSecrets(ctx context.Context) {
+	secrets, err := r.client.CoreV1().Secrets(r.config.Namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		slog.Warn("orphan leaf Secret GC: listing Secrets failed", "error", err)
+		return
+	}
+	deleted := 0
+	scanned := 0
+	for _, sec := range secrets.Items {
+		instanceName, ok := instanceNameFromLeafSecret(sec)
+		if !ok {
+			continue
+		}
+		scanned++
+		_, err := r.client.CoreV1().ConfigMaps(r.config.Namespace).Get(ctx, instanceName, metav1.GetOptions{})
+		if err == nil {
+			continue
+		}
+		if !errors.IsNotFound(err) {
+			slog.Warn("orphan leaf Secret GC: API lookup failed", "instance", instanceName, "error", err)
+			continue
+		}
+		if err := r.client.CoreV1().Secrets(r.config.Namespace).Delete(ctx, sec.Name, metav1.DeleteOptions{}); err != nil {
+			slog.Warn("orphan leaf Secret GC: delete failed", "secret", sec.Name, "instance", instanceName, "error", err)
+			continue
+		}
+		slog.Info("orphan leaf Secret GC: deleted Secret for missing instance", "secret", sec.Name, "instance", instanceName)
+		deleted++
+	}
+	if deleted > 0 {
+		slog.Info("orphan leaf Secret GC: sweep complete", "deleted", deleted, "scanned", scanned)
+	}
+}
+
+// instanceNameFromLeafSecret returns (instance, true) if the Secret is
+// shaped like a per-instance envoy leaf TLS Secret produced by
+// cert-manager from BuildEnvoyLeafCertificate, else ("", false).
+func instanceNameFromLeafSecret(sec corev1.Secret) (string, bool) {
+	if sec.Type != corev1.SecretTypeTLS {
+		return "", false
+	}
+	const suffix = envoyLeafSecretSuffix
+	if len(sec.Name) <= len(suffix) {
+		return "", false
+	}
+	if sec.Name[len(sec.Name)-len(suffix):] != suffix {
+		return "", false
+	}
+	return sec.Name[:len(sec.Name)-len(suffix)], true
+}
+
 func (r *InstanceReconciler) setError(ctx context.Context, name, msg string) error {
 	WriteInstanceStatus(ctx, r.client, r.config.Namespace, name, types.NewInstanceStatus("error", msg))
 	return fmt.Errorf("instance %s: %s", name, msg)
