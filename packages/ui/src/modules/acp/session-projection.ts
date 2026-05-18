@@ -35,8 +35,15 @@ import type { AcpUpdate } from "./types.js";
  * to agent chunks: those arrive piece by piece and trimming would collapse
  * inter-chunk spaces into `"helloworld"`.
  */
+const SYSTEM_TAG_RE = /(<[a-z-]+>)([\s\S]*?)(<\/[a-z-]+>)/g;
 function stripUserTags(raw: string): string {
-  return raw.replace(/<[a-z-]+>[\s\S]*?<\/[a-z-]+>/g, "").trim();
+  let result = raw;
+  let prev;
+  do {
+    prev = result;
+    result = result.replace(SYSTEM_TAG_RE, "");
+  } while (result !== prev);
+  return result.trim();
 }
 
 function mapToolContent(

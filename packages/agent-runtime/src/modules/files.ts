@@ -2,13 +2,13 @@ import { dirname, join, resolve } from "node:path";
 import { readdirSync } from "node:fs";
 import {
   mkdir,
-  readFile,
+  open,
   rename,
   rm,
   stat as statAsync,
   writeFile,
 } from "node:fs/promises";
-import { fileTypeFromFile } from "file-type";
+import { fileTypeFromBuffer } from "file-type";
 import type {
   FileReadResult,
   FilesDomainError,
@@ -98,15 +98,15 @@ export function createFilesService(workingDir: string): FilesService {
       if (!rel) return err({ kind: "NotFound", path: rel });
       const abs = toAbs(rel);
       if (!abs) return err({ kind: "NotFound", path: rel });
+      let fh;
       try {
-        const s = await statAsync(abs);
+        fh = await open(abs, "r");
+        const s = await fh.stat();
         if (!s.isFile()) return err({ kind: "NotFound", path: rel });
-        if (s.size > MAX_FILE_SIZE) {
-          return ok({ path: rel, binary: true });
-        }
-        const type = await fileTypeFromFile(abs);
-        const buf = await readFile(abs);
+        if (s.size > MAX_FILE_SIZE) return ok({ path: rel, binary: true });
+        const buf = await fh.readFile();
         const mtimeMs = s.mtimeMs;
+        const type = await fileTypeFromBuffer(buf);
         if (type) {
           return ok({
             path: rel,
@@ -116,8 +116,6 @@ export function createFilesService(workingDir: string): FilesService {
             mtimeMs,
           });
         }
-        // file-type only detects known binary formats. Fall back to null-byte check
-        // to catch unknown binary formats (raw .bin dumps, proprietary formats, etc.)
         if (hasNullBytes(buf)) {
           return ok({
             path: rel,
@@ -145,6 +143,8 @@ export function createFilesService(workingDir: string): FilesService {
         return ok({ path: rel, content, mimeType, mtimeMs });
       } catch {
         return err({ kind: "NotFound", path: rel });
+      } finally {
+        await fh?.close();
       }
     },
     writeFileSafe: async (
