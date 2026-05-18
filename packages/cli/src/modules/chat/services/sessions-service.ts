@@ -1,33 +1,55 @@
-import type { SessionMode, SessionResolution, SessionView, TerminalStrategy } from "api-server-api";
+import type {
+  SessionResolution,
+  SessionView,
+  TerminalStrategy,
+} from "api-server-api";
 import { ok, type Result } from "../../../result.js";
-import type { AuthRequiredError, TransportError } from "../../instance/domain/errors.js";
+import type {
+  AuthRequiredError,
+  TransportError,
+} from "../../instance/domain/errors.js";
 import { classifyTrpcError } from "../../shared/trpc/classify.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
 
 export interface SessionsPort {
-  list(instanceId: string): Promise<Result<readonly SessionView[], TransportError | AuthRequiredError>>;
-  create(sessionId: string, instanceId: string, mode: SessionMode): Promise<Result<void, TransportError | AuthRequiredError>>;
-  setMode(sessionId: string, instanceId: string, mode: SessionMode): Promise<Result<void, TransportError | AuthRequiredError>>;
-  resolveTerminal(instanceId: string, strategy: TerminalStrategy, opts?: { reset?: boolean; force?: boolean }): Promise<Result<SessionResolution, TransportError | AuthRequiredError>>;
+  list(
+    instanceId: string,
+  ): Promise<
+    Result<readonly SessionView[], TransportError | AuthRequiredError>
+  >;
+  resolveTerminal(
+    instanceId: string,
+    strategy: TerminalStrategy,
+    opts?: { reset?: boolean; force?: boolean },
+  ): Promise<Result<SessionResolution, TransportError | AuthRequiredError>>;
 }
 
 export function createSessionsPort(deps: { trpc: TrpcClient }): SessionsPort {
   return {
     async list(instanceId) {
-      try { return ok(await deps.trpc.sessions.list.query({ instanceId }) as readonly SessionView[]); }
-      catch (e) { return classifyTrpcError(e); }
-    },
-    async create(sessionId, instanceId, mode) {
-      try { await deps.trpc.sessions.create.mutate({ sessionId, instanceId, mode }); return ok(undefined); }
-      catch (e) { return classifyTrpcError(e); }
-    },
-    async setMode(sessionId, instanceId, mode) {
-      try { await deps.trpc.sessions.setMode.mutate({ sessionId, instanceId, mode }); return ok(undefined); }
-      catch (e) { return classifyTrpcError(e); }
+      try {
+        return ok(
+          (await deps.trpc.sessions.list.query({
+            instanceId,
+          })) as readonly SessionView[],
+        );
+      } catch (e) {
+        return classifyTrpcError(e);
+      }
     },
     async resolveTerminal(instanceId, strategy, opts) {
-      try { return ok(await deps.trpc.sessions.resolveTerminal.mutate({ instanceId, strategy, reset: opts?.reset, force: opts?.force }) as SessionResolution); }
-      catch (e) { return classifyTrpcError(e); }
+      try {
+        return ok(
+          (await deps.trpc.sessions.resolveTerminal.mutate({
+            instanceId,
+            strategy,
+            reset: opts?.reset,
+            force: opts?.force,
+          })) as SessionResolution,
+        );
+      } catch (e) {
+        return classifyTrpcError(e);
+      }
     },
   };
 }

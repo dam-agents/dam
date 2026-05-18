@@ -1,9 +1,14 @@
 import { Command } from "commander";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import { describeConfigError, printCompatResolveError, printServiceError } from "../../instance/commands/errors.js";
+import { resolveActiveHost } from "../../shared/preflight.js";
+import { printServiceError } from "../../instance/commands/errors.js";
 import { renderTable } from "../../shared/render-table.js";
 import type { TemplateService } from "../services/template-service.js";
-import { EXIT_TEMPLATE_BELOW_FLOOR, EXIT_TEMPLATE_RUNTIME_FAILURE, EXIT_TEMPLATE_SUCCESS } from "./exit-codes.js";
+import {
+  EXIT_TEMPLATE_BELOW_FLOOR,
+  EXIT_TEMPLATE_RUNTIME_FAILURE,
+  EXIT_TEMPLATE_SUCCESS,
+} from "./exit-codes.js";
 
 const DESCRIPTION_MAX = 60;
 
@@ -14,41 +19,55 @@ export function buildListCommand(deps: {
 }): Command {
   return new Command("list")
     .description("List agent templates available on the active host")
-    .option("--server <url>", "override the configured server URL for this call")
+    .option(
+      "--server <url>",
+      "override the configured server URL for this call",
+    )
     .option("--json", "emit raw JSON instead of the default table")
-    .addHelpText("after", "\nExamples:\n  dam template list\n  dam template list --json | jq '.[].id'\n")
+    .addHelpText(
+      "after",
+      "\nExamples:\n  dam template list\n  dam template list --json | jq '.[].id'\n",
+    )
     .action(async (opts: { server?: string; json?: boolean }) => {
-      const flag = opts.server ? { server: opts.server } : undefined;
+      const host = await resolveActiveHost(deps, {
+        flag: opts.server ? { server: opts.server } : undefined,
+        exitCodes: {
+          runtimeFailure: EXIT_TEMPLATE_RUNTIME_FAILURE,
+          belowFloor: EXIT_TEMPLATE_BELOW_FLOOR,
+        },
+      });
 
-      const compat = await deps.compatService.check({ flag });
-      if (!compat.ok) { printCompatResolveError(compat.error); process.exit(EXIT_TEMPLATE_RUNTIME_FAILURE); }
-      if (compat.value.kind === "below-floor") {
-        process.stderr.write(`error: CLI ${compat.value.localCli} is below the server's minimum required version ${compat.value.serverMinClient}; upgrade and retry\n`);
-        process.exit(EXIT_TEMPLATE_BELOW_FLOOR);
-      }
-      if (compat.value.kind === "behind-current") {
-        process.stderr.write(`warning: CLI ${compat.value.localCli} is behind server ${compat.value.serverVersion}; consider upgrading\n`);
-      }
-
-      const cfg = await deps.configService.getResolved({ flag });
-      if (!cfg.ok) { process.stderr.write(`error: ${describeConfigError(cfg.error)}\n`); process.exit(EXIT_TEMPLATE_RUNTIME_FAILURE); }
-
-      const host = cfg.value.server;
       const result = await deps.createTemplateService(host).list();
-      if (!result.ok) { printServiceError(result.error, host); process.exit(EXIT_TEMPLATE_RUNTIME_FAILURE); }
+      if (!result.ok) {
+        printServiceError(result.error, host);
+        process.exit(EXIT_TEMPLATE_RUNTIME_FAILURE);
+      }
 
-      if (opts.json) { process.stdout.write(`${JSON.stringify(result.value)}\n`); process.exit(EXIT_TEMPLATE_SUCCESS); }
-
-      if (result.value.length === 0) {
-        process.stderr.write("No templates.\nhint: ask your operator to add one to the cluster\n");
+      if (opts.json) {
+        process.stdout.write(`${JSON.stringify(result.value)}\n`);
         process.exit(EXIT_TEMPLATE_SUCCESS);
       }
 
-      const sorted = [...result.value].sort((a, b) => a.name.localeCompare(b.name));
-      process.stdout.write(renderTable([
-        ["NAME", "ID", "DESCRIPTION"],
-        ...sorted.map((t) => [t.name, t.id, truncate(t.description ?? "", DESCRIPTION_MAX)]),
-      ]));
+      if (result.value.length === 0) {
+        process.stderr.write(
+          "No templates.\nhint: ask your operator to add one to the cluster\n",
+        );
+        process.exit(EXIT_TEMPLATE_SUCCESS);
+      }
+
+      const sorted = [...result.value].sort((a, b) =>
+        a.name.localeCompare(b.name),
+      );
+      process.stdout.write(
+        renderTable([
+          ["NAME", "ID", "DESCRIPTION"],
+          ...sorted.map((t) => [
+            t.name,
+            t.id,
+            truncate(t.description ?? "", DESCRIPTION_MAX),
+          ]),
+        ]),
+      );
       process.exit(EXIT_TEMPLATE_SUCCESS);
     });
 }

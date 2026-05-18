@@ -21,34 +21,30 @@ export function createInstanceService(deps: { trpc: TrpcClient }): InstanceServi
     async get(id) {
       try { return ok(await deps.trpc.instances.get.query({ id }) as Instance); }
       catch (e) {
-        if (hasTrpcCode(e, "NOT_FOUND")) return ok(null);
+        if ((e as any)?.data?.code === "NOT_FOUND") return ok(null);
         return classifyTrpcError(e);
       }
     },
     async deleteAgent(agentId) {
       try { await deps.trpc.agents.delete.mutate({ id: agentId }); return ok(undefined); }
       catch (e) {
-        if (hasTrpcCode(e, "NOT_FOUND")) return err({ kind: "not-found", ref: agentId, via: "id" });
+        if ((e as any)?.data?.code === "NOT_FOUND") return err({ kind: "not-found", ref: agentId, via: "id" });
         return classifyTrpcError(e);
       }
     },
     async deleteInstance(id) {
       try { await deps.trpc.instances.delete.mutate({ id }); return ok(undefined); }
       catch (e) {
-        if (hasTrpcCode(e, "NOT_FOUND")) return err({ kind: "not-found", ref: id, via: "id" });
+        if ((e as any)?.data?.code === "NOT_FOUND") return err({ kind: "not-found", ref: id, via: "id" });
         return classifyTrpcError(e);
       }
     },
     async restart(id) {
       try { await deps.trpc.instances.restart.mutate({ id }); return ok(undefined); }
       catch (e) {
-        if (hasTrpcCode(e, "NOT_FOUND")) return err({ kind: "not-found", ref: id, via: "id" });
+        if ((e as any)?.data?.code === "NOT_FOUND") return err({ kind: "not-found", ref: id, via: "id" });
         return classifyTrpcError(e);
       }
     },
   };
-}
-
-function hasTrpcCode(e: unknown, code: string): boolean {
-  return typeof e === "object" && e !== null && (e as { data?: { code?: string } }).data?.code === code;
 }

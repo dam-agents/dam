@@ -5,8 +5,21 @@ import type { InstanceService } from "../services/instance-service.js";
 import { createInstanceResolver } from "../services/instance-resolver.js";
 import { fetchOrFallback } from "../services/fetch-or-fallback.js";
 import { waitForRunning } from "../services/wait-for-state.js";
-import { describeConfigError, exitCodeForResolveError, formatTransportError, printCompatResolveError, printResolveError, printServiceError } from "./errors.js";
-import { EXIT_INSTANCE_BELOW_FLOOR, EXIT_INSTANCE_INVALID_INPUT, EXIT_INSTANCE_RUNTIME_FAILURE, EXIT_INSTANCE_SUCCESS, EXIT_INSTANCE_NOT_RESOLVED } from "./exit-codes.js";
+import { resolveActiveHost } from "../../shared/preflight.js";
+import { parseTimeout } from "../../shared/parse-timeout.js";
+import {
+  exitCodeForResolveError,
+  formatTransportError,
+  printResolveError,
+  printServiceError,
+} from "./errors.js";
+import {
+  EXIT_INSTANCE_BELOW_FLOOR,
+  EXIT_INSTANCE_INVALID_INPUT,
+  EXIT_INSTANCE_RUNTIME_FAILURE,
+  EXIT_INSTANCE_SUCCESS,
+  EXIT_INSTANCE_NOT_RESOLVED,
+} from "./exit-codes.js";
 
 const DEFAULT_TIMEOUT_SECONDS = 120;
 // Grace before first poll so the controller observes pod deletion before we see stale "running".
@@ -18,9 +31,14 @@ export function buildRestartCommand(deps: {
   createInstanceService: (host: string) => InstanceService;
 }): Command {
   return new Command("restart")
-    .description("Restart an Instance (recreates the pod; persistent volumes survive)")
+    .description(
+      "Restart an Instance (recreates the pod; persistent volumes survive)",
+    )
     .argument("<ref>", "Instance Ref — name or 'inst-…' ID")
-    .option("--server <url>", "override the configured server URL for this call")
+    .option(
+      "--server <url>",
+      "override the configured server URL for this call",
+    )
     .option("--wait", "poll until state == `running` (or terminal error)")
     .option(
       "--timeout <seconds>",
@@ -31,35 +49,43 @@ export function buildRestartCommand(deps: {
       "after",
       "\nExamples:\n  dam instance restart my-agent\n  dam instance restart my-agent --wait\n",
     )
-    .action(async (ref: string, opts: { server?: string; wait?: boolean; timeout?: string; json?: boolean }) => {
-      await runRestart(ref, opts, deps);
-    });
+    .action(
+      async (
+        ref: string,
+        opts: {
+          server?: string;
+          wait?: boolean;
+          timeout?: string;
+          json?: boolean;
+        },
+      ) => {
+        await runRestart(ref, opts, deps);
+      },
+    );
 }
 
 type RestartDeps = Parameters<typeof buildRestartCommand>[0];
 
-async function runRestart(ref: string, opts: { server?: string; wait?: boolean; timeout?: string; json?: boolean }, deps: RestartDeps): Promise<void> {
-  const flag = opts.server ? { server: opts.server } : undefined;
-
-  const timeoutSeconds = parseTimeout(opts.timeout);
+async function runRestart(
+  ref: string,
+  opts: { server?: string; wait?: boolean; timeout?: string; json?: boolean },
+  deps: RestartDeps,
+): Promise<void> {
+  const timeoutSeconds = parseTimeout(opts.timeout, DEFAULT_TIMEOUT_SECONDS);
   if (timeoutSeconds === null) {
-    process.stderr.write(`error: invalid \`--timeout\` value \`${opts.timeout}\`; expected positive integer\n`);
+    process.stderr.write(
+      `error: invalid \`--timeout\` value \`${opts.timeout}\`; expected positive integer\n`,
+    );
     process.exit(EXIT_INSTANCE_INVALID_INPUT);
   }
 
-  const compat = await deps.compatService.check({ flag });
-  if (!compat.ok) { printCompatResolveError(compat.error); process.exit(EXIT_INSTANCE_RUNTIME_FAILURE); }
-  if (compat.value.kind === "below-floor") {
-    process.stderr.write(`error: CLI ${compat.value.localCli} is below the server's minimum required version ${compat.value.serverMinClient}; upgrade and retry\n`);
-    process.exit(EXIT_INSTANCE_BELOW_FLOOR);
-  }
-  if (compat.value.kind === "behind-current") {
-    process.stderr.write(`warning: CLI ${compat.value.localCli} is behind server ${compat.value.serverVersion}; consider upgrading\n`);
-  }
-
-  const cfg = await deps.configService.getResolved({ flag });
-  if (!cfg.ok) { process.stderr.write(`error: ${describeConfigError(cfg.error)}\n`); process.exit(EXIT_INSTANCE_RUNTIME_FAILURE); }
-  const host = cfg.value.server;
+  const host = await resolveActiveHost(deps, {
+    flag: opts.server ? { server: opts.server } : undefined,
+    exitCodes: {
+      runtimeFailure: EXIT_INSTANCE_RUNTIME_FAILURE,
+      belowFloor: EXIT_INSTANCE_BELOW_FLOOR,
+    },
+  });
 
   const svc = deps.createInstanceService(host);
   const resolver = createInstanceResolver({ instanceService: svc });
@@ -89,7 +115,9 @@ async function runRestart(ref: string, opts: { server?: string; wait?: boolean; 
       onStateChange: (state) => {
         if (opts.json) return;
         if (!firstStateSeen) {
-          process.stderr.write(`Waiting for "${instance.name}"… state: ${state}\n`);
+          process.stderr.write(
+            `Waiting for "${instance.name}"… state: ${state}\n`,
+          );
           firstStateSeen = true;
         } else {
           process.stderr.write(`state: ${state}\n`);
@@ -125,25 +153,23 @@ async function runRestart(ref: string, opts: { server?: string; wait?: boolean; 
         process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
         return;
       case "transport":
-        process.stderr.write(`error: ${formatTransportError(waitResult.reason, host)}\n`);
+        process.stderr.write(
+          `error: ${formatTransportError(waitResult.reason, host)}\n`,
+        );
         process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
         return;
     }
   }
 
   if (opts.json) {
-    const payload = finalInstance ?? (await fetchOrFallback(svc, instance, "after restart"));
+    const payload =
+      finalInstance ?? (await fetchOrFallback(svc, instance, "after restart"));
     process.stdout.write(`${JSON.stringify(payload)}\n`);
   } else {
     const tail = finalInstance ? ` State: ${finalInstance.state}.` : "";
-    process.stdout.write(`✓ Restarted instance "${instance.name}" (${instance.id}).${tail}\n`);
+    process.stdout.write(
+      `✓ Restarted instance "${instance.name}" (${instance.id}).${tail}\n`,
+    );
   }
   process.exit(EXIT_INSTANCE_SUCCESS);
-}
-
-function parseTimeout(raw: string | undefined): number | null {
-  if (raw === undefined) return DEFAULT_TIMEOUT_SECONDS;
-  const n = Number(raw);
-  if (!Number.isFinite(n) || n <= 0) return null;
-  return n;
 }

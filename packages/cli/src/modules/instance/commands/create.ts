@@ -2,21 +2,35 @@ import { Command } from "commander";
 import type { Instance } from "api-server-api";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { TemplateService } from "../../template/index.js";
-import { AuthRequiredAtTransportError, type TrpcClient } from "../../shared/trpc/trpc-client.js";
+import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
+import { classifyTrpcError } from "../../shared/trpc/classify.js";
+import { resolveActiveHost } from "../../shared/preflight.js";
+import { parseTimeout } from "../../shared/parse-timeout.js";
 import type { InstanceService } from "../services/instance-service.js";
 import { fetchOrFallback } from "../services/fetch-or-fallback.js";
 import { waitForRunning } from "../services/wait-for-state.js";
-import { describeConfigError, formatTransportError, printCompatResolveError, printServiceError } from "./errors.js";
+import { formatTransportError, printServiceError } from "./errors.js";
 import { parseEnvFlag, validateInstanceName } from "./create-helpers.js";
-import { EXIT_INSTANCE_BELOW_FLOOR, EXIT_INSTANCE_INVALID_INPUT, EXIT_INSTANCE_RUNTIME_FAILURE, EXIT_INSTANCE_SUCCESS } from "./exit-codes.js";
+import {
+  EXIT_INSTANCE_BELOW_FLOOR,
+  EXIT_INSTANCE_INVALID_INPUT,
+  EXIT_INSTANCE_RUNTIME_FAILURE,
+  EXIT_INSTANCE_SUCCESS,
+} from "./exit-codes.js";
 
 const DEFAULT_TIMEOUT_SECONDS = 120;
 const ROLLBACK_TIMEOUT_MS = 10_000;
 
 // Definitive server rejections — safe to roll back the orphan agent.
 const ROLLBACK_CODES = new Set([
-  "CONFLICT", "BAD_REQUEST", "NOT_FOUND", "UNAUTHORIZED",
-  "FORBIDDEN", "PRECONDITION_FAILED", "UNIMPLEMENTED", "RESOURCE_EXHAUSTED",
+  "CONFLICT",
+  "BAD_REQUEST",
+  "NOT_FOUND",
+  "UNAUTHORIZED",
+  "FORBIDDEN",
+  "PRECONDITION_FAILED",
+  "UNIMPLEMENTED",
+  "RESOURCE_EXHAUSTED",
 ]);
 
 export function buildCreateCommand(deps: {
@@ -29,8 +43,14 @@ export function buildCreateCommand(deps: {
   return new Command("create")
     .description("Create a new Instance from a template on the active host")
     .argument("<name>", "Instance name (1+ chars, must not start with `inst-`)")
-    .option("--server <url>", "override the configured server URL for this call")
-    .option("--template <id>", "template id (required; see `dam template list`)")
+    .option(
+      "--server <url>",
+      "override the configured server URL for this call",
+    )
+    .option(
+      "--template <id>",
+      "template id (required; see `dam template list`)",
+    )
     .option("--description <text>", "free-form description")
     .option(
       "--env <KEY=VAL>",
@@ -51,20 +71,43 @@ export function buildCreateCommand(deps: {
         "Examples:",
         "  dam instance create my-agent --template claude-code",
         "  dam instance create my-agent --template claude-code --wait",
-        "  dam instance create my-agent --template pi-agent --env OPENAI_API_KEY=sk-… --description \"Coding helper\"",
+        '  dam instance create my-agent --template pi-agent --env OPENAI_API_KEY=sk-… --description "Coding helper"',
         "",
       ].join("\n"),
     )
-    .action(async (name: string, opts: { server?: string; template?: string; description?: string; env?: string[]; wait?: boolean; timeout?: string; json?: boolean }) => {
-      await runCreate(name, opts, deps);
-    });
+    .action(
+      async (
+        name: string,
+        opts: {
+          server?: string;
+          template?: string;
+          description?: string;
+          env?: string[];
+          wait?: boolean;
+          timeout?: string;
+          json?: boolean;
+        },
+      ) => {
+        await runCreate(name, opts, deps);
+      },
+    );
 }
 
 type CreateDeps = Parameters<typeof buildCreateCommand>[0];
 
-async function runCreate(name: string, opts: { server?: string; template?: string; description?: string; env?: string[]; wait?: boolean; timeout?: string; json?: boolean }, deps: CreateDeps): Promise<void> {
-  const flag = opts.server ? { server: opts.server } : undefined;
-
+async function runCreate(
+  name: string,
+  opts: {
+    server?: string;
+    template?: string;
+    description?: string;
+    env?: string[];
+    wait?: boolean;
+    timeout?: string;
+    json?: boolean;
+  },
+  deps: CreateDeps,
+): Promise<void> {
   const nameCheck = validateInstanceName(name);
   if (!nameCheck.ok) {
     if (nameCheck.error === "reserved-prefix") {
@@ -105,7 +148,7 @@ async function runCreate(name: string, opts: { server?: string; template?: strin
     );
   }
 
-  const timeoutSeconds = parseTimeout(opts.timeout);
+  const timeoutSeconds = parseTimeout(opts.timeout, DEFAULT_TIMEOUT_SECONDS);
   if (timeoutSeconds === null) {
     process.stderr.write(
       `error: invalid \`--timeout\` value \`${opts.timeout}\`; expected positive integer\n`,
@@ -113,25 +156,24 @@ async function runCreate(name: string, opts: { server?: string; template?: strin
     process.exit(EXIT_INSTANCE_INVALID_INPUT);
   }
 
-  const compat = await deps.compatService.check({ flag });
-  if (!compat.ok) { printCompatResolveError(compat.error); process.exit(EXIT_INSTANCE_RUNTIME_FAILURE); }
-  if (compat.value.kind === "below-floor") {
-    process.stderr.write(`error: CLI ${compat.value.localCli} is below the server's minimum required version ${compat.value.serverMinClient}; upgrade and retry\n`);
-    process.exit(EXIT_INSTANCE_BELOW_FLOOR);
-  }
-  if (compat.value.kind === "behind-current") {
-    process.stderr.write(`warning: CLI ${compat.value.localCli} is behind server ${compat.value.serverVersion}; consider upgrading\n`);
-  }
-
-  const cfg = await deps.configService.getResolved({ flag });
-  if (!cfg.ok) { process.stderr.write(`error: ${describeConfigError(cfg.error)}\n`); process.exit(EXIT_INSTANCE_RUNTIME_FAILURE); }
-  const host = cfg.value.server;
+  const host = await resolveActiveHost(deps, {
+    flag: opts.server ? { server: opts.server } : undefined,
+    exitCodes: {
+      runtimeFailure: EXIT_INSTANCE_RUNTIME_FAILURE,
+      belowFloor: EXIT_INSTANCE_BELOW_FLOOR,
+    },
+  });
 
   const tmplResult = await deps.createTemplateService(host).list();
-  if (!tmplResult.ok) { printServiceError(tmplResult.error, host); process.exit(EXIT_INSTANCE_RUNTIME_FAILURE); }
+  if (!tmplResult.ok) {
+    printServiceError(tmplResult.error, host);
+    process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
+  }
   const match = tmplResult.value.find((t) => t.id === template);
   if (!match) {
-    process.stderr.write(`error: unknown template \`${template}\`; available: ${tmplResult.value.map((t) => t.id).join(", ") || "(none)"}\n`);
+    process.stderr.write(
+      `error: unknown template \`${template}\`; available: ${tmplResult.value.map((t) => t.id).join(", ") || "(none)"}\n`,
+    );
     process.exit(EXIT_INSTANCE_INVALID_INPUT);
   }
 
@@ -146,14 +188,17 @@ async function runCreate(name: string, opts: { server?: string; template?: strin
     });
     agentId = agent.id;
   } catch (e) {
-    if (hasTrpcCode(e, "NOT_FOUND")) {
+    if ((e as any)?.data?.code === "NOT_FOUND") {
       process.stderr.write(
         `error: template \`${template}\` was deleted while creating; retry\n`,
       );
       process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
     }
-    if (hasAuthSentinel(e)) {
-      process.stderr.write(`error: not authenticated: ${errorReason(e)}\nhint: run \`dam auth login\` first\n`);
+    const classified = classifyTrpcError(e);
+    if (!classified.ok && classified.error.kind === "auth-required") {
+      process.stderr.write(
+        `error: not authenticated: ${classified.error.reason}\nhint: run \`dam auth login\` first\n`,
+      );
       process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
     }
     process.stderr.write(`error: failed to create agent: ${errorReason(e)}\n`);
@@ -215,7 +260,9 @@ async function runCreate(name: string, opts: { server?: string; template?: strin
         process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
         return;
       case "transport":
-        process.stderr.write(`error: ${formatTransportError(waitResult.reason, host)}\n`);
+        process.stderr.write(
+          `error: ${formatTransportError(waitResult.reason, host)}\n`,
+        );
         process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
         return;
     }
@@ -231,51 +278,43 @@ async function runCreate(name: string, opts: { server?: string; template?: strin
   process.exit(EXIT_INSTANCE_SUCCESS);
 }
 
-function parseTimeout(raw: string | undefined): number | null {
-  if (raw === undefined) return DEFAULT_TIMEOUT_SECONDS;
-  const n = Number(raw);
-  if (!Number.isFinite(n) || n <= 0) return null;
-  return n;
-}
-
-async function tryRollbackAgent(trpc: TrpcClient, agentId: string, originalError: unknown): Promise<void> {
-  const code = trpcCode(originalError);
+async function tryRollbackAgent(
+  trpc: TrpcClient,
+  agentId: string,
+  originalError: unknown,
+): Promise<void> {
+  const code = (originalError as any)?.data?.code as string | undefined;
   if (!code || !ROLLBACK_CODES.has(code)) {
-    process.stderr.write(`error: failed to create instance: ${errorReason(originalError)}\nhint: agent \`${agentId}\` may be orphaned; check via the web UI\n`);
+    process.stderr.write(
+      `error: failed to create instance: ${errorReason(originalError)}\nhint: agent \`${agentId}\` may be orphaned; check via the web UI\n`,
+    );
     return;
   }
   try {
     await Promise.race([
       trpc.agents.delete.mutate({ id: agentId }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("rollback timeout")), ROLLBACK_TIMEOUT_MS)),
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("rollback timeout")),
+          ROLLBACK_TIMEOUT_MS,
+        ),
+      ),
     ]);
-    process.stderr.write(`error: ${trpcMessage(originalError) ?? errorReason(originalError)}\n`);
+    const msg = trpcMessage(originalError) ?? errorReason(originalError);
+    process.stderr.write(`error: ${msg}\n`);
   } catch (rollbackErr) {
-    process.stderr.write(`error: ${errorReason(originalError)}\nerror: also failed to clean up agent \`${agentId}\`: ${errorReason(rollbackErr)}\nhint: delete the orphan agent via the web UI\n`);
+    process.stderr.write(
+      `error: ${errorReason(originalError)}\nerror: also failed to clean up agent \`${agentId}\`: ${errorReason(rollbackErr)}\nhint: delete the orphan agent via the web UI\n`,
+    );
   }
-}
-
-function hasTrpcCode(e: unknown, code: string): boolean { return trpcCode(e) === code; }
-
-function trpcCode(e: unknown): string | undefined {
-  return typeof e === "object" && e !== null ? (e as { data?: { code?: string } }).data?.code : undefined;
-}
-
-function trpcMessage(e: unknown): string | undefined {
-  if (typeof e !== "object" || e === null) return undefined;
-  const msg = (e as { message?: unknown }).message;
-  return typeof msg === "string" && msg.length > 0 ? msg : undefined;
 }
 
 function errorReason(e: unknown): string {
   return e instanceof Error ? e.message : typeof e === "string" ? e : "unknown failure";
 }
 
-function hasAuthSentinel(e: unknown): boolean {
-  let cursor: unknown = e;
-  for (let depth = 0; cursor && depth < 8; depth++) {
-    if (cursor instanceof AuthRequiredAtTransportError) return true;
-    cursor = (cursor as { cause?: unknown }).cause;
-  }
-  return false;
+function trpcMessage(e: unknown): string | undefined {
+  if (typeof e !== "object" || e === null) return undefined;
+  const msg = (e as { message?: unknown }).message;
+  return typeof msg === "string" && msg.length > 0 ? msg : undefined;
 }
