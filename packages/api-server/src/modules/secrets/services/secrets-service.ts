@@ -8,6 +8,8 @@ import {
   type CreateGithubPatOutput,
   type EnvMapping,
   type InjectionConfig,
+  type ProviderPreset,
+  type ProviderPresetMode,
   type SecretsService,
   type CreateSecretInput,
   type UpdateGithubPatInput,
@@ -31,12 +33,15 @@ import { hostPatternFor, pathPatternFor } from "../domain/types.js";
  * their own env). ADR-040: keeps non-UI clients (CLI, scripts) from
  * producing secrets the controller can't merge into agent pod env.
  */
-function registryEnvMappings(type: SecretType, authMode?: string): EnvMapping[] | undefined {
+function registryEnvMappings(
+  type: SecretType,
+  authMode?: string,
+): EnvMapping[] | undefined {
   if (type === "generic") return undefined;
-  const preset = PROVIDERS[type];
+  const preset: ProviderPreset = PROVIDERS[type];
   // Anthropic has 2 modes — picked by the value-prefix discriminator
   // (authMode). Other presets have exactly one mode.
-  const mode = authMode
+  const mode: ProviderPresetMode | undefined = authMode
     ? preset.modes.find((m) => m.key === authMode)
     : preset.modes[0];
   return mode?.defaultEnvMappings;
@@ -47,15 +52,20 @@ function registryExtraInjections(
   authMode?: string,
 ): readonly InjectionConfig[] {
   if (type === "generic") return [];
-  const preset = PROVIDERS[type];
-  const mode = authMode
+  const preset: ProviderPreset = PROVIDERS[type];
+  const mode: ProviderPresetMode | undefined = authMode
     ? preset.modes.find((m) => m.key === authMode)
     : preset.modes[0];
   return mode?.extraInjections ?? [];
 }
 
-function twinDisplayName(primaryName: string, injection: InjectionConfig): string {
-  const tag = injection.queryParamName ? `?${injection.queryParamName}` : injection.headerName;
+function twinDisplayName(
+  primaryName: string,
+  injection: InjectionConfig,
+): string {
+  const tag = injection.queryParamName
+    ? `?${injection.queryParamName}`
+    : injection.headerName;
   return `${primaryName} (${tag})`;
 }
 
@@ -76,7 +86,9 @@ async function anthropicModeRotationFor(
   const secrets = await k8sPort.listSecrets();
   const existing = secrets.find((s) => s.id === id);
   if (!existing || existing.type !== "anthropic") return null;
-  const newAuthMode: AuthMode = newValue.startsWith("sk-ant-oat") ? "oauth" : "api-key";
+  const newAuthMode: AuthMode = newValue.startsWith("sk-ant-oat")
+    ? "oauth"
+    : "api-key";
   if (newAuthMode === existing.authMode) return null;
   const mode = PROVIDERS.anthropic.modes.find((m) => m.key === newAuthMode);
   if (!mode) return null;
@@ -88,18 +100,32 @@ async function anthropicModeRotationFor(
 // trigger (envoy-secrets-rev on the gateway StatefulSet); rolling the agent
 // pod for them would be gratuitous. ADR-040 §Fanout: host edits hot, env
 // edits roll.
-function combinedSecretsRev(grantedSecrets: readonly K8sStoredSecret[]): string {
+function combinedSecretsRev(
+  grantedSecrets: readonly K8sStoredSecret[],
+): string {
   const data = [...grantedSecrets]
     .sort((a, b) => a.id.localeCompare(b.id))
     .map((s) => ({ id: s.id, envMappings: s.envMappings ?? [] }));
-  return createHash("sha256").update(JSON.stringify(data)).digest("hex").slice(0, 16);
+  return createHash("sha256")
+    .update(JSON.stringify(data))
+    .digest("hex")
+    .slice(0, 16);
 }
 
-function envMappingsChanged(before: K8sStoredSecret, after: K8sStoredSecret): boolean {
-  return JSON.stringify(before.envMappings ?? []) !== JSON.stringify(after.envMappings ?? []);
+function envMappingsChanged(
+  before: K8sStoredSecret,
+  after: K8sStoredSecret,
+): boolean {
+  return (
+    JSON.stringify(before.envMappings ?? []) !==
+    JSON.stringify(after.envMappings ?? [])
+  );
 }
 
-function hostOrPathChanged(before: K8sStoredSecret, after: K8sStoredSecret): boolean {
+function hostOrPathChanged(
+  before: K8sStoredSecret,
+  after: K8sStoredSecret,
+): boolean {
   return (
     before.hostPattern !== after.hostPattern ||
     (before.pathPattern ?? "") !== (after.pathPattern ?? "")
@@ -112,11 +138,19 @@ function buildHostGrantsMap(
   allSecrets: readonly K8sStoredSecret[],
   grantedIds: readonly string[],
 ): Map<string, { hosts: readonly { host: string; pathPattern?: string }[] }> {
-  const grants = new Map<string, { hosts: readonly { host: string; pathPattern?: string }[] }>();
+  const grants = new Map<
+    string,
+    { hosts: readonly { host: string; pathPattern?: string }[] }
+  >();
   for (const s of allSecrets) {
     if (!grantedIds.includes(s.id)) continue;
     grants.set(s.id, {
-      hosts: [{ host: s.hostPattern, ...(s.pathPattern ? { pathPattern: s.pathPattern } : {}) }],
+      hosts: [
+        {
+          host: s.hostPattern,
+          ...(s.pathPattern ? { pathPattern: s.pathPattern } : {}),
+        },
+      ],
     });
   }
   return grants;
@@ -132,7 +166,10 @@ export interface AgentConnectionRulesSync {
   syncForAgent(input: {
     agentId: string;
     decidedBy: string;
-    grants: Map<string, { hosts: readonly { host: string; pathPattern?: string }[] }>;
+    grants: Map<
+      string,
+      { hosts: readonly { host: string; pathPattern?: string }[] }
+    >;
     /** Secret IDs the secrets module owns; rules from app-connections (which
      *  share the `connection:<id>` source prefix) stay untouched. */
     ownedSourceIds: ReadonlySet<string>;
@@ -154,7 +191,8 @@ function toSecretView(s: K8sStoredSecret): SecretView {
     createdAt: s.createdAt,
   };
   if (s.pathPattern) view.pathPattern = s.pathPattern;
-  if (type === "generic" && s.injectionConfig) view.injectionConfig = s.injectionConfig;
+  if (type === "generic" && s.injectionConfig)
+    view.injectionConfig = s.injectionConfig;
   if (s.envMappings?.length) view.envMappings = s.envMappings;
   return view;
 }
@@ -171,7 +209,9 @@ export function createSecretsService(deps: {
   ownerSub?: string;
   /** Resolves agent display names for the `listGrantedAgents` endpoint.
    *  Falls back to agentId as name when unwired. */
-  listOwnedAgentSummaries?: () => Promise<readonly { id: string; name: string }[]>;
+  listOwnedAgentSummaries?: () => Promise<
+    readonly { id: string; name: string }[]
+  >;
 }): SecretsService {
   async function createOne(input: CreateSecretInput): Promise<SecretView> {
     const hostPattern = hostPatternFor(input.type, input.hostPattern);
@@ -188,10 +228,9 @@ export function createSecretsService(deps: {
     // Default preset envMappings when the caller didn't supply any.
     // Sources the bundle from the PROVIDERS registry — adding a new
     // preset requires only one entry there, not a branch here.
-    const envMappings: EnvMapping[] | undefined =
-      input.envMappings?.length
-        ? input.envMappings
-        : registryEnvMappings(input.type, authMode);
+    const envMappings: EnvMapping[] | undefined = input.envMappings?.length
+      ? input.envMappings
+      : registryEnvMappings(input.type, authMode);
     // Path pattern: presets that scope to a path (currently only OpenAI's
     // `/v1/*`) take it from the registry; generic secrets respect the
     // user-supplied value.
@@ -203,7 +242,9 @@ export function createSecretsService(deps: {
       value: input.value,
       hostPattern,
       ...(pathPattern ? { pathPattern } : {}),
-      ...(input.injectionConfig ? { injectionConfig: input.injectionConfig } : {}),
+      ...(input.injectionConfig
+        ? { injectionConfig: input.injectionConfig }
+        : {}),
       ...(authMode ? { authMode } : {}),
       ...(envMappings?.length ? { envMappings } : {}),
     });
@@ -266,18 +307,27 @@ export function createSecretsService(deps: {
 
     create: createOne,
 
-    async createGithubPat(input: CreateGithubPatInput): Promise<CreateGithubPatOutput> {
+    async createGithubPat(
+      input: CreateGithubPatInput,
+    ): Promise<CreateGithubPatOutput> {
       // Basic auth header value for the github.com half: HTTP Basic decodes
       // the base64-wrapped `username:password` form. Using the literal
       // `x-access-token` username is GitHub's documented pattern for PATs.
-      const basicValue = Buffer.from(`x-access-token:${input.token}`).toString("base64");
+      const basicValue = Buffer.from(`x-access-token:${input.token}`).toString(
+        "base64",
+      );
       const apiSecret = await createOne({
         type: "generic",
         name: input.name,
         value: input.token,
         hostPattern: "api.github.com",
-        injectionConfig: { headerName: "Authorization", valueFormat: "Bearer {value}" },
-        envMappings: [{ envName: "GH_TOKEN", placeholder: DEFAULT_ENV_PLACEHOLDER }],
+        injectionConfig: {
+          headerName: "Authorization",
+          valueFormat: "Bearer {value}",
+        },
+        envMappings: [
+          { envName: "GH_TOKEN", placeholder: DEFAULT_ENV_PLACEHOLDER },
+        ],
       });
       let gitSecret: SecretView;
       try {
@@ -286,7 +336,10 @@ export function createSecretsService(deps: {
           name: input.name,
           value: basicValue,
           hostPattern: "github.com",
-          injectionConfig: { headerName: "Authorization", valueFormat: "Basic {value}" },
+          injectionConfig: {
+            headerName: "Authorization",
+            valueFormat: "Basic {value}",
+          },
         });
       } catch (err) {
         // Roll back the api.github.com half so a partial failure doesn't
@@ -302,7 +355,9 @@ export function createSecretsService(deps: {
       };
     },
 
-    async updateGithubPat(input: UpdateGithubPatInput): Promise<UpdateGithubPatOutput> {
+    async updateGithubPat(
+      input: UpdateGithubPatInput,
+    ): Promise<UpdateGithubPatOutput> {
       // Re-wrap the github.com half server-side so callers send `{token}`
       // only — same shape symmetry as createGithubPat.
       //
@@ -320,11 +375,25 @@ export function createSecretsService(deps: {
       // practice this leaves `gh` working with the new token and
       // `git clone` working with the old; a retry of `updateGithubPat`
       // converges both halves.
-      const basicValue = Buffer.from(`x-access-token:${input.token}`).toString("base64");
-      const apiResult = await deps.k8sPort.updateSecret(input.apiSecretId, { value: input.token });
-      if (!apiResult) throw new TRPCError({ code: "NOT_FOUND", message: "api.github.com secret not found" });
-      const gitResult = await deps.k8sPort.updateSecret(input.gitSecretId, { value: basicValue });
-      if (!gitResult) throw new TRPCError({ code: "NOT_FOUND", message: "github.com secret not found" });
+      const basicValue = Buffer.from(`x-access-token:${input.token}`).toString(
+        "base64",
+      );
+      const apiResult = await deps.k8sPort.updateSecret(input.apiSecretId, {
+        value: input.token,
+      });
+      if (!apiResult)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "api.github.com secret not found",
+        });
+      const gitResult = await deps.k8sPort.updateSecret(input.gitSecretId, {
+        value: basicValue,
+      });
+      if (!gitResult)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "github.com secret not found",
+        });
       return { apiSecretId: input.apiSecretId, gitSecretId: input.gitSecretId };
     },
 
@@ -347,8 +416,12 @@ export function createSecretsService(deps: {
       const result = await deps.k8sPort.updateSecret(id, {
         ...(patch.name !== undefined ? { name: patch.name } : {}),
         ...(patch.value !== undefined ? { value: patch.value } : {}),
-        ...(patch.hostPattern !== undefined ? { hostPattern: patch.hostPattern } : {}),
-        ...(patch.pathPattern !== undefined ? { pathPattern: patch.pathPattern } : {}),
+        ...(patch.hostPattern !== undefined
+          ? { hostPattern: patch.hostPattern }
+          : {}),
+        ...(patch.pathPattern !== undefined
+          ? { pathPattern: patch.pathPattern }
+          : {}),
         ...(patch.injectionConfig !== undefined
           ? { injectionConfig: patch.injectionConfig }
           : rotation
@@ -376,7 +449,9 @@ export function createSecretsService(deps: {
       const envChanged = envMappingsChanged(before, after);
       if (valueChanged || hostChanged) {
         const allSecretsForTwins = await deps.k8sPort.listSecrets();
-        const twins = allSecretsForTwins.filter((s) => s.primarySecretId === id);
+        const twins = allSecretsForTwins.filter(
+          (s) => s.primarySecretId === id,
+        );
         for (const twin of twins) {
           await deps.k8sPort.updateSecret(twin.id, {
             ...(valueChanged ? { value: patch.value } : {}),
@@ -407,10 +482,14 @@ export function createSecretsService(deps: {
             });
           }
           if (envChanged) {
-            const grantedForAgent = allSecrets.filter((s) => g.grantedSecretIds.includes(s.id));
+            const grantedForAgent = allSecrets.filter((s) =>
+              g.grantedSecretIds.includes(s.id),
+            );
             const hash = combinedSecretsRev(grantedForAgent);
             await Promise.all(
-              g.instanceCmNames.map((cmName) => deps.grants.bumpSecretsRev(cmName, hash)),
+              g.instanceCmNames.map((cmName) =>
+                deps.grants.bumpSecretsRev(cmName, hash),
+              ),
             );
           }
         }),
@@ -432,8 +511,12 @@ export function createSecretsService(deps: {
     async getAgentAccess(agentId: string) {
       const grants = await deps.grants.get(agentId);
       const allSecrets = await deps.k8sPort.listSecrets();
-      const twinIds = new Set(allSecrets.filter((s) => s.primarySecretId).map((s) => s.id));
-      return { secretIds: grants.grantedSecretIds.filter((id) => !twinIds.has(id)) };
+      const twinIds = new Set(
+        allSecrets.filter((s) => s.primarySecretId).map((s) => s.id),
+      );
+      return {
+        secretIds: grants.grantedSecretIds.filter((id) => !twinIds.has(id)),
+      };
     },
 
     async listGrantedAgents(secretId: string) {
@@ -441,12 +524,17 @@ export function createSecretsService(deps: {
       if (granted.length === 0) return [];
       const all = await deps.listOwnedAgentSummaries?.();
       const byId = new Map((all ?? []).map((a) => [a.id, a.name] as const));
-      return granted.map((g) => ({ id: g.agentId, name: byId.get(g.agentId) ?? g.agentId }));
+      return granted.map((g) => ({
+        id: g.agentId,
+        name: byId.get(g.agentId) ?? g.agentId,
+      }));
     },
 
     async setAgentAccess(agentId: string, access: AgentAccess) {
       const allSecrets = await deps.k8sPort.listSecrets();
-      const twinIds = new Set(allSecrets.filter((s) => s.primarySecretId).map((s) => s.id));
+      const twinIds = new Set(
+        allSecrets.filter((s) => s.primarySecretId).map((s) => s.id),
+      );
       const twinsByPrimary = new Map<string, string[]>();
       for (const s of allSecrets) {
         if (!s.primarySecretId) continue;

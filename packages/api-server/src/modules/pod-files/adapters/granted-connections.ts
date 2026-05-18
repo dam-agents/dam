@@ -13,7 +13,10 @@ import { createK8sConnectionsPort } from "../../connections/infrastructure/k8s-c
  */
 export function createGrantedConnectionsAdapter(
   client: K8sClient,
-): (owner: string, agentId: string) => Promise<
+): (
+  owner: string,
+  agentId: string,
+) => Promise<
   { id: string; provider: string; metadata: Record<string, unknown> }[]
 > {
   return async (owner, agentId) => {
@@ -29,7 +32,7 @@ export function createGrantedConnectionsAdapter(
         id: c.connection,
         provider: c.connection,
         metadata: {
-          baseUrl: c.hostPattern,
+          baseUrl: c.hosts[0],
           ...(c.displayName ? { displayName: c.displayName } : {}),
         },
       }));

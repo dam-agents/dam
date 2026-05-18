@@ -7,7 +7,15 @@
  * newly-created secrets land in K8s for the sidecar to discover.
  */
 import type * as k8s from "@kubernetes/client-node";
-import { isProviderPresetType, PROVIDERS, type EnvMapping, type InjectionConfig, type SecretType } from "api-server-api";
+import {
+  isProviderPresetType,
+  PROVIDERS,
+  type EnvMapping,
+  type InjectionConfig,
+  type ProviderPreset,
+  type ProviderPresetMode,
+  type SecretType,
+} from "api-server-api";
 
 import type { K8sClient } from "../../agents/infrastructure/k8s.js";
 
@@ -43,8 +51,9 @@ export function resolveInjection(
   injectionConfig: InjectionConfig | undefined,
 ): { headerName: string; valueFormat: string } {
   if (isProviderPresetType(type as SecretType)) {
-    const preset = PROVIDERS[type as Exclude<SecretType, "generic">];
-    const mode = authMode
+    const preset: ProviderPreset =
+      PROVIDERS[type as Exclude<SecretType, "generic">];
+    const mode: ProviderPresetMode | undefined = authMode
       ? preset.modes.find((m) => m.key === authMode)
       : preset.modes[0];
     if (mode?.injection) {
@@ -61,7 +70,10 @@ export function resolveInjection(
   };
 }
 
-export function injectionFileContent(value: string, valueFormat: string): string {
+export function injectionFileContent(
+  value: string,
+  valueFormat: string,
+): string {
   return valueFormat.replaceAll("{value}", value);
 }
 
@@ -169,7 +181,11 @@ const K8S_NAME_PREFIX = "platform-cred-";
 const K8S_NAME_MAX_ID_LEN = 253 - K8S_NAME_PREFIX.length;
 
 function k8sSecretName(id: string): string {
-  if (id.length === 0 || id.length > K8S_NAME_MAX_ID_LEN || !K8S_NAME_RE.test(id)) {
+  if (
+    id.length === 0 ||
+    id.length > K8S_NAME_MAX_ID_LEN ||
+    !K8S_NAME_RE.test(id)
+  ) {
     throw new Error(
       `secret id ${JSON.stringify(id)} is not a valid K8s name component`,
     );
@@ -225,7 +241,10 @@ function parseStoredSecret(s: k8s.V1Secret): K8sStoredSecret | null {
   return stored;
 }
 
-export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSecretsPort {
+export function createK8sSecretsPort(
+  client: K8sClient,
+  ownerSub: string,
+): K8sSecretsPort {
   return {
     async listSecrets() {
       const list = await client.listSecrets(
@@ -236,9 +255,26 @@ export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSe
         .filter((s): s is K8sStoredSecret => s !== null);
     },
 
-    async createSecret({ id, name, type, value, hostPattern, pathPattern, injectionConfig, authMode, envMappings, primarySecretId }) {
-      const secretType = isProviderPresetType(type as SecretType) ? type : "generic";
-      const { headerName, valueFormat } = resolveInjection(secretType, authMode, injectionConfig);
+    async createSecret({
+      id,
+      name,
+      type,
+      value,
+      hostPattern,
+      pathPattern,
+      injectionConfig,
+      authMode,
+      envMappings,
+      primarySecretId,
+    }) {
+      const secretType = isProviderPresetType(type as SecretType)
+        ? type
+        : "generic";
+      const { headerName, valueFormat } = resolveInjection(
+        secretType,
+        authMode,
+        injectionConfig,
+      );
       const annotations: Record<string, string> = {
         [ANN_HOST_PATTERN]: hostPattern,
         [ANN_HEADER_NAME]: headerName,
@@ -249,12 +285,16 @@ export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSe
       // holds the bare value), and stamping the default `Bearer {value}`
       // would mislead anyone reading the raw Secret. Always stamp it for
       // header-only secrets, since the SDS file content is baked from it.
-      if (injectionConfig?.valueFormat !== undefined || !injectionConfig?.queryParamName) {
+      if (
+        injectionConfig?.valueFormat !== undefined ||
+        !injectionConfig?.queryParamName
+      ) {
         annotations[ANN_VALUE_FORMAT] = valueFormat;
       }
       if (pathPattern) annotations[ANN_PATH_PATTERN] = pathPattern;
       if (authMode) annotations[ANN_AUTH_MODE] = authMode;
-      if (envMappings?.length) annotations[ANN_ENV_MAPPINGS] = JSON.stringify(envMappings);
+      if (envMappings?.length)
+        annotations[ANN_ENV_MAPPINGS] = JSON.stringify(envMappings);
       if (injectionConfig?.queryParamName) {
         annotations[ANN_QUERY_PARAM] = injectionConfig.queryParamName;
       }
@@ -273,7 +313,11 @@ export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSe
         type: "Opaque",
         stringData: {
           "sds.yaml": sdsYamlContent(
-            sdsInlineString(value, valueFormat, injectionConfig?.queryParamName),
+            sdsInlineString(
+              value,
+              valueFormat,
+              injectionConfig?.queryParamName,
+            ),
           ),
         },
       };
@@ -290,12 +334,16 @@ export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSe
       const labels = existing.metadata?.labels ?? {};
       const secretType = labels[LABEL_SECRET_TYPE] ?? "generic";
 
-      if (patch.name !== undefined) annotations["agent-platform.ai/display-name"] = patch.name;
-      if (patch.hostPattern !== undefined) annotations[ANN_HOST_PATTERN] = patch.hostPattern;
+      if (patch.name !== undefined)
+        annotations["agent-platform.ai/display-name"] = patch.name;
+      if (patch.hostPattern !== undefined)
+        annotations[ANN_HOST_PATTERN] = patch.hostPattern;
       if (patch.pathPattern === null) delete annotations[ANN_PATH_PATTERN];
-      else if (patch.pathPattern !== undefined) annotations[ANN_PATH_PATTERN] = patch.pathPattern;
+      else if (patch.pathPattern !== undefined)
+        annotations[ANN_PATH_PATTERN] = patch.pathPattern;
       if (patch.envMappings !== undefined) {
-        if (patch.envMappings.length > 0) annotations[ANN_ENV_MAPPINGS] = JSON.stringify(patch.envMappings);
+        if (patch.envMappings.length > 0)
+          annotations[ANN_ENV_MAPPINGS] = JSON.stringify(patch.envMappings);
         else delete annotations[ANN_ENV_MAPPINGS];
       }
 
@@ -304,7 +352,8 @@ export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSe
       // enforces that any `injectionConfig` change is paired with a new
       // `value`, so we re-bake the SDS file in that branch below — there is
       // no need to recover the prior value from the existing inline_string.
-      const newAuthMode: AuthMode | undefined = patch.authMode ?? (annotations[ANN_AUTH_MODE] as AuthMode | undefined);
+      const newAuthMode: AuthMode | undefined =
+        patch.authMode ?? (annotations[ANN_AUTH_MODE] as AuthMode | undefined);
       // Recover the existing InjectionConfig from annotations to seed
       // resolveInjection when the caller didn't supply a fresh one.
       // Query-only secrets may have no ANN_VALUE_FORMAT (we skip
@@ -315,26 +364,37 @@ export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSe
         const v = annotations[ANN_VALUE_FORMAT];
         const q = annotations[ANN_QUERY_PARAM];
         if (v) {
-          existingInjection = q ? { headerName: h, valueFormat: v, queryParamName: q } : { headerName: h, valueFormat: v };
+          existingInjection = q
+            ? { headerName: h, valueFormat: v, queryParamName: q }
+            : { headerName: h, valueFormat: v };
         } else if (q) {
           existingInjection = { headerName: h, queryParamName: q };
         }
       }
       const newInjection: InjectionConfig | undefined =
-        patch.injectionConfig === null ? undefined :
-        patch.injectionConfig ?? existingInjection;
+        patch.injectionConfig === null
+          ? undefined
+          : (patch.injectionConfig ?? existingInjection);
 
-      const { headerName, valueFormat } = resolveInjection(secretType, newAuthMode, newInjection);
+      const { headerName, valueFormat } = resolveInjection(
+        secretType,
+        newAuthMode,
+        newInjection,
+      );
       annotations[ANN_HEADER_NAME] = headerName;
       // Mirror createSecret: skip stamping ANN_VALUE_FORMAT for query-only
       // secrets where the user didn't explicitly supply a valueFormat.
-      if (newInjection?.valueFormat !== undefined || !newInjection?.queryParamName) {
+      if (
+        newInjection?.valueFormat !== undefined ||
+        !newInjection?.queryParamName
+      ) {
         annotations[ANN_VALUE_FORMAT] = valueFormat;
       } else {
         delete annotations[ANN_VALUE_FORMAT];
       }
       if (newAuthMode) annotations[ANN_AUTH_MODE] = newAuthMode;
-      if (newInjection?.queryParamName) annotations[ANN_QUERY_PARAM] = newInjection.queryParamName;
+      if (newInjection?.queryParamName)
+        annotations[ANN_QUERY_PARAM] = newInjection.queryParamName;
       else delete annotations[ANN_QUERY_PARAM];
 
       const body: k8s.V1Secret = {
@@ -345,7 +405,11 @@ export function createK8sSecretsPort(client: K8sClient, ownerSub: string): K8sSe
         body.stringData = {
           ...(body.stringData ?? {}),
           "sds.yaml": sdsYamlContent(
-            sdsInlineString(patch.value, valueFormat, newInjection?.queryParamName),
+            sdsInlineString(
+              patch.value,
+              valueFormat,
+              newInjection?.queryParamName,
+            ),
           ),
         };
         body.data = undefined;

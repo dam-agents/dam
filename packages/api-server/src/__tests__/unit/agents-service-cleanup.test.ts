@@ -6,7 +6,11 @@ function makeRepo(overrides: Partial<AgentsRepository> = {}): AgentsRepository {
   return {
     list: async () => [],
     get: async () => null,
-    create: async () => ({ id: "a", name: "a", spec: { name: "a", version: "1", image: "img" } }),
+    create: async () => ({
+      id: "a",
+      name: "a",
+      spec: { name: "a", version: "1", image: "img" },
+    }),
     updateSpec: async () => null,
     delete: async () => {},
     ...overrides,
@@ -19,11 +23,14 @@ describe("agents-service.delete cleanup hooks", () => {
     const svc = createAgentsService({
       repo: makeRepo(),
       owner: "u-1",
-      agentHome: "/home/agent",
       readTemplateSpec: async () => null,
       cleanupHooks: [
-        async (id) => { calls.push({ hook: "egress", id }); },
-        async (id) => { calls.push({ hook: "approvals", id }); },
+        async (id) => {
+          calls.push({ hook: "egress", id });
+        },
+        async (id) => {
+          calls.push({ hook: "approvals", id });
+        },
       ],
     });
 
@@ -36,15 +43,20 @@ describe("agents-service.delete cleanup hooks", () => {
 
   it("logs and continues when one hook throws", async () => {
     const calls: string[] = [];
-    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const stderr = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
     const svc = createAgentsService({
       repo: makeRepo(),
       owner: "u-1",
-      agentHome: "/home/agent",
       readTemplateSpec: async () => null,
       cleanupHooks: [
-        async () => { throw new Error("boom"); },
-        async (id) => { calls.push(id); },
+        async () => {
+          throw new Error("boom");
+        },
+        async (id) => {
+          calls.push(id);
+        },
       ],
     });
 
@@ -63,12 +75,17 @@ describe("agents-service.delete cleanup hooks", () => {
     const calls: string[] = [];
     const svc = createAgentsService({
       repo: makeRepo({
-        delete: async () => { throw new Error("k8s 500"); },
+        delete: async () => {
+          throw new Error("k8s 500");
+        },
       }),
       owner: "u-1",
-      agentHome: "/home/agent",
       readTemplateSpec: async () => null,
-      cleanupHooks: [async (id) => { calls.push(id); }],
+      cleanupHooks: [
+        async (id) => {
+          calls.push(id);
+        },
+      ],
     });
 
     await expect(svc.delete("agent-xyz")).rejects.toThrow("k8s 500");
@@ -79,7 +96,6 @@ describe("agents-service.delete cleanup hooks", () => {
     const svc = createAgentsService({
       repo: makeRepo(),
       owner: "u-1",
-      agentHome: "/home/agent",
       readTemplateSpec: async () => null,
     });
     await expect(svc.delete("agent-xyz")).resolves.toBeUndefined();
