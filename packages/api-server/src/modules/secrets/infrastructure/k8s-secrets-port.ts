@@ -64,7 +64,7 @@ export function resolveInjection(
   }
   return {
     headerName: "Authorization",
-    valueFormat: "Bearer {value}",
+    valueFormat: injectionConfig?.valueFormat ?? "Bearer {value}",
   };
 }
 
