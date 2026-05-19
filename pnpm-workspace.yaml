@@ -21,6 +21,9 @@ trustPolicyExclude:
   # maintainer (paulmillr), GitHub tag matches, restored in 5.0.0 via
   # `trustedPublisher: github`. Benign publisher-side workflow change.
   - 'chokidar@4.0.3'
+minimumReleaseAgeExclude:
+  # CVE-2026-45736 security fix — released 2026-05-12, inside the 7-day window
+  - 'ws@8.20.1'
 allowBuilds:
   # grpc-tools downloads the protoc binary in a postinstall step; needed
   # by `mise run api-server:gen:proto` (ts-proto codegen for ext_authz).

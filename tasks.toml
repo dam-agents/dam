@@ -84,7 +84,7 @@ depends = ["common:check:*"]
 ["common:check:lockfile-age"]
 description = "Verify no lockfile dependency is newer than 7 days"
 dir = "{{config_root}}"
-sources = ["pnpm-lock.yaml"]
+sources = ["pnpm-lock.yaml", "pnpm-workspace.yaml"]
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
@@ -96,6 +96,13 @@ else
 fi
 export LOCKFILE_ENTRIES=$(mktemp); trap 'rm -f "$LOCKFILE_ENTRIES"' EXIT
 yq '.packages | keys | .[]' pnpm-lock.yaml | sed 's/\(.*\)@/\1\t/' > "$LOCKFILE_ENTRIES"
+# Honour pnpm minimumReleaseAgeExclude — same packages pnpm itself skips
+while IFS= read -r excl; do
+  [[ -z "$excl" ]] && continue
+  excl_name="${excl%@*}"; excl_ver="${excl##*@}"
+  tmp=$(mktemp)
+  awk -F'\t' -v n="$excl_name" -v v="$excl_ver" '!(n==$1 && v==$2)' "$LOCKFILE_ENTRIES" > "$tmp" && mv "$tmp" "$LOCKFILE_ENTRIES"
+done < <(yq '.minimumReleaseAgeExclude // [] | .[]' pnpm-workspace.yaml 2>/dev/null)
 check_pkg() {
   export PKG_NAME="$1" PKG_VERSIONS=$(awk -F'\t' -v n="$1" '$1==n{printf(c++?",":"[")"\""$2"\""}END{print"]"}' "$LOCKFILE_ENTRIES")
   curl -sf --max-time 10 -H 'Accept: application/json' \
