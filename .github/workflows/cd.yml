@@ -168,4 +168,4 @@ jobs:
         run: |
           mise run setup
           mise run cli:build
-          npm publish --tag ${{ steps.version.outputs.npmTag }}
+          npx npm@11.14.1 publish --tag ${{ steps.version.outputs.npmTag }}
