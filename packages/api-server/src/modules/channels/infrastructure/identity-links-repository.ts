@@ -1,5 +1,6 @@
 import type { Db } from "db";
 import { identityLinks, eq, and } from "db";
+import type { Cipher } from "./cipher.js";
 
 export interface IdentityLink {
   provider: string;
@@ -8,7 +9,7 @@ export interface IdentityLink {
   refreshToken: string | null;
 }
 
-export function findIdentityByExternalUser(db: Db) {
+export function findIdentityByExternalUser(db: Db, cipher: Cipher) {
   return async (
     provider: string,
     externalUserId: string,
@@ -28,24 +29,34 @@ export function findIdentityByExternalUser(db: Db) {
       provider: rows[0].provider,
       externalUserId: rows[0].externalUserId,
       keycloakSub: rows[0].keycloakSub,
-      refreshToken: rows[0].refreshToken,
+      refreshToken:
+        rows[0].refreshToken === null
+          ? null
+          : cipher.decrypt(rows[0].refreshToken),
     };
   };
 }
 
-export function upsertIdentityLink(db: Db) {
+export function upsertIdentityLink(db: Db, cipher: Cipher) {
   return async (
     provider: string,
     externalUserId: string,
     keycloakSub: string,
     refreshToken: string | null,
   ): Promise<void> => {
+    const encrypted =
+      refreshToken === null ? null : cipher.encrypt(refreshToken);
     await db
       .insert(identityLinks)
-      .values({ provider, externalUserId, keycloakSub, refreshToken })
+      .values({
+        provider,
+        externalUserId,
+        keycloakSub,
+        refreshToken: encrypted,
+      })
       .onConflictDoUpdate({
         target: [identityLinks.provider, identityLinks.externalUserId],
-        set: { keycloakSub, refreshToken },
+        set: { keycloakSub, refreshToken: encrypted },
       });
   };
 }

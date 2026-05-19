@@ -39,6 +39,17 @@ const configSchema = z.object({
   extAuthzPort: z.coerce.number().default(4002),
   databaseUrl: z.string(),
   migrationsPath: z.string().default("./packages/db/drizzle"),
+  /** Base64-encoded 32-byte AES-256-GCM key for column-level encryption
+   *  of identity_links.refresh_token (ADR-045). Provisioned by Helm via
+   *  `platform.apiserver.encryptionKey.secretName`; never rotated by the
+   *  app. Decoded length must equal 32 bytes — wrong length crashes the
+   *  pod at startup with a clear error. */
+  encryptionKey: z
+    .string()
+    .min(1, "ENCRYPTION_KEY must be set")
+    .refine((v) => Buffer.from(v, "base64").length === 32, {
+      message: "ENCRYPTION_KEY must be base64-encoded 32 bytes",
+    }),
   slackBotToken: z.string().nullable().default(null),
   slackAppToken: z.string().nullable().default(null),
   slackOauthCallbackUrl: z.string().nullable().default(null),
@@ -138,6 +149,7 @@ export function loadConfig(): Config {
     extAuthzPort: process.env.EXT_AUTHZ_PORT,
     databaseUrl: process.env.DATABASE_URL,
     migrationsPath: process.env.MIGRATIONS_PATH,
+    encryptionKey: process.env.ENCRYPTION_KEY,
     slackBotToken: process.env.SLACK_BOT_TOKEN,
     slackAppToken: process.env.SLACK_APP_TOKEN,
     slackOauthCallbackUrl: process.env.SLACK_OAUTH_CALLBACK_URL,

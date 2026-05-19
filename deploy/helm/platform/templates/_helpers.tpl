@@ -146,6 +146,14 @@ Shared PostgreSQL secrets name
 {{- printf "%s-postgres-secrets" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
+{{/*
+api-server data encryption key (ADR-045). 32 random bytes, base64-encoded,
+persisted across upgrades via `lookup` on the Secret.
+*/}}
+{{- define "platform.apiserver.encryptionKey.secretName" -}}
+{{- printf "%s-apiserver-encryption-key" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
 {{/* ---- Shared Redis (ADR-036) ---- */}}
 
 {{/*

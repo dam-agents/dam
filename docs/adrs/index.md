@@ -49,6 +49,7 @@ This directory contains ADRs for the Platform project.
 | [042](042-agent-egress-network-policy.md)     | Agent egress is gated by NetworkPolicy; the agent is not a mesh participant | @pilartomas |
 | [043](043-agent-pod-config-layers.md)         | Three-layer agent pod configuration — base / templateDefaults / templates | @jezekra1 |
 | [044](044-provider-twin-secrets.md)           | Provider twin secrets — multiple injection points per credential | @xjacka |
+| [045](045-encrypt-refresh-tokens.md)          | Encrypt `identity_links.refresh_token` at rest (AES-256-GCM, helm-generated DEK) | @jezekra1 |
 
 ## Drafts
 

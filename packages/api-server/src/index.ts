@@ -41,6 +41,7 @@ import {
   upsertIdentityLink,
   deleteIdentityLink,
 } from "./modules/channels/infrastructure/identity-links-repository.js";
+import { createCipher } from "./modules/channels/infrastructure/cipher.js";
 import {
   isThreadAuthorized,
   authorizeThread,
@@ -154,9 +155,11 @@ const persistTelegramSession = (
     threadId,
   );
 
+const cipher = createCipher(config.encryptionKey);
+
 const identityLinkService = createIdentityLinkService({
-  findByExternalUser: findIdentityByExternalUser(db),
-  upsert: upsertIdentityLink(db),
+  findByExternalUser: findIdentityByExternalUser(db, cipher),
+  upsert: upsertIdentityLink(db, cipher),
   delete: deleteIdentityLink(db),
 });
 
