@@ -5,13 +5,13 @@ depends = ["api-server:check:*"]
 dir = "{{config_root}}/packages/api-server"
 depends = ["common:setup:pnpm"]
 run = "pnpm exec tsc --noEmit"
-sources = ["src/**/*.ts", "tsconfig.json", "../../tsconfig.base.json"]
+sources = ["src/**/*.ts", "tsconfig.json", "../dev-config/tsconfig.base.json"]
 
 ["api-server:check:lint"]
 dir = "{{config_root}}/packages/api-server"
 depends = ["common:setup:pnpm"]
 run = "pnpm exec eslint ."
-sources = ["src/**/*.ts", "eslint.config.js", "../../eslint.config.base.js"]
+sources = ["src/**/*.ts", "eslint.config.js", "../dev-config/eslint.base.js"]
 
 ["api-server:check:format"]
 dir = "{{config_root}}/packages/api-server"

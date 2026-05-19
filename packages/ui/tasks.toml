@@ -9,13 +9,13 @@ depends = ["ui:check:*"]
 dir = "{{config_root}}/packages/ui"
 depends = ["ui:setup"]
 run = "pnpm exec tsc --noEmit"
-sources = ["src/**/*.ts", "src/**/*.tsx", "tsconfig.json", "../../tsconfig.base.json"]
+sources = ["src/**/*.ts", "src/**/*.tsx", "tsconfig.json", "../dev-config/tsconfig.base.json"]
 
 ["ui:check:lint"]
 dir = "{{config_root}}/packages/ui"
 depends = ["common:setup:pnpm"]
 run = "pnpm exec eslint ."
-sources = ["src/**/*.ts", "src/**/*.tsx", "eslint.config.js", "../../eslint.config.base.js"]
+sources = ["src/**/*.ts", "src/**/*.tsx", "eslint.config.js", "../dev-config/eslint.base.js"]
 
 ["ui:check:format"]
 dir = "{{config_root}}/packages/ui"
