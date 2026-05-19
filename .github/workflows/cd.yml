@@ -164,7 +164,7 @@ jobs:
 
       - name: Publish CLI to npm
         if: startsWith(github.ref, 'refs/tags/v')
-        working-directory: apps/cli
+        working-directory: packages/cli
         run: |
           mise run setup
           mise run cli:build
