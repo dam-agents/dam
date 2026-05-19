@@ -16,6 +16,12 @@ import {
 } from "../../../components/connections-picker.js";
 import { FormField } from "../../../components/form-field.js";
 import { HoverTooltip } from "../../../components/hover-tooltip.js";
+import {
+  DialogBody,
+  DialogFooter,
+  DialogHeader,
+  Modal,
+} from "../../../components/modal.js";
 import type { EgressPreset, EnvVar, TemplateView } from "../../../types.js";
 import {
   APP_OAUTH_SECRET_PREFIX,
@@ -285,12 +291,14 @@ export function AddAgentDialog({
   const providerSecrets = secrets.filter((s) => isProviderPresetType(s.type));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[4px] anim-in">
-      <div className="w-[520px] max-w-[calc(100vw-2rem)] max-h-[85vh] overflow-y-auto rounded-xl border-2 border-border bg-surface p-5 md:p-7 flex flex-col gap-5 anim-scale-in shadow-brutal">
-        {step === "pick" ? (
-          <>
+    <Modal widthClass="w-[520px]">
+      {step === "pick" ? (
+        <>
+          <DialogHeader>
             <h2 className="text-[20px] font-bold text-text">Add Agent</h2>
+          </DialogHeader>
 
+          <DialogBody className="flex flex-col gap-5">
             {templates.length > 0 && (
               <div className="flex flex-col gap-2">
                 <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">
@@ -337,51 +345,49 @@ export function AddAgentDialog({
                 </button>
               </div>
             </div>
+          </DialogBody>
 
-            <div className="flex justify-end pt-1">
-              <button
-                type="button"
-                className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
-                onClick={onCancel}
-              >
-                Cancel
-              </button>
-            </div>
-          </>
-        ) : (
-          <form onSubmit={submitForm} className="contents">
-            <div>
-              <h2 className="text-[20px] font-bold text-text">
-                Configure Agent
-              </h2>
-              <p className="text-[12px] text-text-muted mt-1">
-                {selectedTemplate ? (
-                  <>
-                    Template:{" "}
-                    <HoverTooltip
-                      placement="right"
-                      trigger={
-                        <span className="font-semibold text-text-secondary border-b border-dotted border-text-muted cursor-help">
-                          {selectedTemplate.name}
-                        </span>
-                      }
-                    >
-                      <span className="font-mono">
-                        {selectedTemplate.image}
+          <DialogFooter>
+            <button
+              type="button"
+              className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
+              onClick={onCancel}
+            >
+              Cancel
+            </button>
+          </DialogFooter>
+        </>
+      ) : (
+        <form onSubmit={submitForm} className="contents">
+          <DialogHeader>
+            <h2 className="text-[20px] font-bold text-text">Configure Agent</h2>
+            <p className="text-[12px] text-text-muted mt-1">
+              {selectedTemplate ? (
+                <>
+                  Template:{" "}
+                  <HoverTooltip
+                    placement="right"
+                    trigger={
+                      <span className="font-semibold text-text-secondary border-b border-dotted border-text-muted cursor-help">
+                        {selectedTemplate.name}
                       </span>
-                    </HoverTooltip>
-                  </>
-                ) : (
-                  <>
-                    Image:{" "}
-                    <span className="font-mono text-text-secondary break-all">
-                      {customImage}
-                    </span>
-                  </>
-                )}
-              </p>
-            </div>
+                    }
+                  >
+                    <span className="font-mono">{selectedTemplate.image}</span>
+                  </HoverTooltip>
+                </>
+              ) : (
+                <>
+                  Image:{" "}
+                  <span className="font-mono text-text-secondary break-all">
+                    {customImage}
+                  </span>
+                </>
+              )}
+            </p>
+          </DialogHeader>
 
+          <DialogBody className="flex flex-col gap-5">
             <FormField label="Name" error={errors.name?.message}>
               <input
                 className={INPUT_CLASS}
@@ -681,26 +687,26 @@ export function AddAgentDialog({
                 </label>
               </div>
             </fieldset>
+          </DialogBody>
 
-            <div className="flex items-center justify-end gap-3 pt-1">
-              <button
-                type="button"
-                className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
-                onClick={() => setStep("pick")}
-              >
-                Back
-              </button>
-              <button
-                type="submit"
-                className={`btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent ${!isValid ? "opacity-40" : ""}`}
-                disabled={isSubmitting}
-              >
-                Create Agent
-              </button>
-            </div>
-          </form>
-        )}
-      </div>
-    </div>
+          <DialogFooter>
+            <button
+              type="button"
+              className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
+              onClick={() => setStep("pick")}
+            >
+              Back
+            </button>
+            <button
+              type="submit"
+              className={`btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent ${!isValid ? "opacity-40" : ""}`}
+              disabled={isSubmitting}
+            >
+              Create Agent
+            </button>
+          </DialogFooter>
+        </form>
+      )}
+    </Modal>
   );
 }

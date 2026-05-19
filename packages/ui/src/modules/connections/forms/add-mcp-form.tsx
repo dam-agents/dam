@@ -1,6 +1,12 @@
+import type { FormEvent } from "react";
 import { useState } from "react";
 
-import { Modal } from "../../../components/modal.js";
+import {
+  DialogBody,
+  DialogFooter,
+  DialogHeader,
+  Modal,
+} from "../../../components/modal.js";
 import { useStore } from "../../../store.js";
 import { useStartMcpOAuth } from "../api/mutations.js";
 
@@ -17,7 +23,8 @@ export function AddMcpForm({ initialUrl = "", onCancel }: Props) {
   const showToast = useStore((s) => s.showToast);
   const startMcpOAuth = useStartMcpOAuth();
 
-  const submit = () => {
+  const onSubmit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
     const trimmed = url.trim();
     if (!trimmed) return;
     startMcpOAuth.mutate(trimmed, {
@@ -36,20 +43,25 @@ export function AddMcpForm({ initialUrl = "", onCancel }: Props) {
 
   return (
     <Modal widthClass="w-[480px]">
-      <div className="flex flex-col gap-5 p-5 md:p-7">
-        <h2 className="text-[20px] font-bold text-text">Connect MCP Server</h2>
-        <p className="text-[13px] text-text-secondary">
-          Enter the URL of a remote MCP server to connect via OAuth.
-        </p>
-        <input
-          className={INPUT_CLASS}
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
-          placeholder="https://example.com/mcp"
-          autoFocus
-        />
-        <div className="flex justify-end gap-3">
+      <form onSubmit={onSubmit} className="contents">
+        <DialogHeader>
+          <h2 className="text-[20px] font-bold text-text">
+            Connect MCP Server
+          </h2>
+          <p className="text-[13px] text-text-secondary mt-1">
+            Enter the URL of a remote MCP server to connect via OAuth.
+          </p>
+        </DialogHeader>
+        <DialogBody>
+          <input
+            className={INPUT_CLASS}
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://example.com/mcp"
+            autoFocus
+          />
+        </DialogBody>
+        <DialogFooter>
           <button
             type="button"
             className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
@@ -58,15 +70,14 @@ export function AddMcpForm({ initialUrl = "", onCancel }: Props) {
             Cancel
           </button>
           <button
-            type="button"
+            type="submit"
             className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent"
-            onClick={submit}
             disabled={!url.trim() || startMcpOAuth.isPending}
           >
             {startMcpOAuth.isPending ? "..." : "Connect"}
           </button>
-        </div>
-      </div>
+        </DialogFooter>
+      </form>
     </Modal>
   );
 }

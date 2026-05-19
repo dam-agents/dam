@@ -11,7 +11,12 @@ import {
 } from "../../../components/env-mappings-editor.js";
 import { FormError } from "../../../components/form-error.js";
 import { FormField } from "../../../components/form-field.js";
-import { Modal } from "../../../components/modal.js";
+import {
+  DialogBody,
+  DialogFooter,
+  DialogHeader,
+  Modal,
+} from "../../../components/modal.js";
 import {
   DEFAULT_INJECTION_CONFIG,
   type EnvMapping,
@@ -189,7 +194,7 @@ export function EditSecretDialog({ secret, onClose }: Props) {
   return (
     <Modal widthClass="w-[540px]">
       <form onSubmit={onSubmit} className="contents">
-        <div className="px-7 pt-7 pb-4 border-b-2 border-border-light">
+        <DialogHeader>
           <h2 className="text-[20px] font-bold text-text">Edit Secret</h2>
           <p className="text-[12px] text-text-muted mt-1 font-mono">
             {secret.hostPattern}
@@ -197,9 +202,9 @@ export function EditSecretDialog({ secret, onClose }: Props) {
               <span className="text-text-secondary">{secret.pathPattern}</span>
             )}
           </p>
-        </div>
+        </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto px-7 py-5 flex flex-col gap-5">
+        <DialogBody className="flex flex-col gap-5">
           <FormField label="Name" error={errors.name?.message}>
             <input className={INPUT_CLASS} autoFocus {...register("name")} />
           </FormField>
@@ -334,9 +339,9 @@ export function EditSecretDialog({ secret, onClose }: Props) {
             />
             <FormError message={errors.envMappings?.message} />
           </div>
-        </div>
+        </DialogBody>
 
-        <div className="px-7 py-4 border-t-2 border-border-light flex justify-end gap-3">
+        <DialogFooter>
           <button
             type="button"
             className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
@@ -351,7 +356,7 @@ export function EditSecretDialog({ secret, onClose }: Props) {
           >
             {saving ? "..." : "Save"}
           </button>
-        </div>
+        </DialogFooter>
       </form>
       {pendingPatch && (
         <RollConfirmation

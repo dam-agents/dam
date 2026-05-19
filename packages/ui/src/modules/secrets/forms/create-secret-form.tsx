@@ -10,7 +10,12 @@ import {
 } from "../../../components/env-mappings-editor.js";
 import { FormError } from "../../../components/form-error.js";
 import { FormField } from "../../../components/form-field.js";
-import { Modal } from "../../../components/modal.js";
+import {
+  DialogBody,
+  DialogFooter,
+  DialogHeader,
+  Modal,
+} from "../../../components/modal.js";
 import { DEFAULT_INJECTION_CONFIG } from "../../../types.js";
 import { useCreateSecret } from "../api/mutations.js";
 import { validateEnvMappingsSize } from "../utils/env-mappings-size.js";
@@ -119,15 +124,15 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
   return (
     <Modal widthClass="w-[480px]">
       <form onSubmit={onSubmit} className="contents">
-        <div className="px-7 pt-7 pb-4 border-b-2 border-border-light">
+        <DialogHeader>
           <h2 className="text-[20px] font-bold text-text">Add Secret</h2>
           <p className="text-[13px] text-text-secondary leading-relaxed mt-1">
             Injects a bearer token into outgoing HTTP requests whose host
             matches the pattern below.
           </p>
-        </div>
+        </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto px-7 py-5 flex flex-col gap-5">
+        <DialogBody className="flex flex-col gap-5">
           <FormField
             label="Name"
             hint="A label so you can identify this secret later."
@@ -282,9 +287,9 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
             />
             <FormError message={errors.envMappings?.message} />
           </div>
-        </div>
+        </DialogBody>
 
-        <div className="px-7 py-4 border-t-2 border-border-light flex justify-end gap-3">
+        <DialogFooter>
           <button
             type="button"
             className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
@@ -299,7 +304,7 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
           >
             {saving ? "..." : "Add Secret"}
           </button>
-        </div>
+        </DialogFooter>
       </form>
     </Modal>
   );

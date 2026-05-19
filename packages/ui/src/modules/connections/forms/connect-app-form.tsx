@@ -1,7 +1,13 @@
 import { Check, Copy, ExternalLink } from "lucide-react";
+import type { FormEvent } from "react";
 import { useRef, useState } from "react";
 
-import { Modal } from "../../../components/modal.js";
+import {
+  DialogBody,
+  DialogFooter,
+  DialogHeader,
+  Modal,
+} from "../../../components/modal.js";
 import { useStore } from "../../../store.js";
 import {
   discoverOAuthEndpoints,
@@ -156,7 +162,8 @@ export function ConnectAppForm({ app, onCancel }: Props) {
     });
   };
 
-  const submit = () => {
+  const onSubmit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
     if (!allFilled) return;
     // Drop:
     //  - `overridable` fields unless the override panel is open AND the
@@ -205,118 +212,118 @@ export function ConnectAppForm({ app, onCancel }: Props) {
 
   return (
     <Modal widthClass="w-[480px]">
-      {/* Scrollable body — `min-h-0 flex-1` lets the modal cap at max-h-[85vh]
-         and the inner area scroll when content overflows; the footer below
-         stays pinned. */}
-      <div className="min-h-0 flex-1 overflow-y-auto flex flex-col gap-5 p-5 md:p-7">
-        <h2 className="text-[20px] font-bold text-text">
-          Connect {app.displayName}
-        </h2>
-        <p className="text-[13px] text-text-secondary">{app.description}</p>
-        {app.registrationUrl && !usingDefaultApp && (
-          <a
-            href={app.registrationUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-[13px] text-accent hover:underline inline-flex items-center gap-1.5"
+      <form onSubmit={onSubmit} className="contents">
+        <DialogHeader>
+          <h2 className="text-[20px] font-bold text-text">
+            Connect {app.displayName}
+          </h2>
+          <p className="text-[13px] text-text-secondary mt-1">
+            {app.description}
+          </p>
+        </DialogHeader>
+        <DialogBody className="flex flex-col gap-5">
+          {app.registrationUrl && !usingDefaultApp && (
+            <a
+              href={app.registrationUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[13px] text-accent hover:underline inline-flex items-center gap-1.5"
+            >
+              Register an OAuth app first <ExternalLink size={13} />
+            </a>
+          )}
+          {!usingDefaultApp && <CallbackUrlField url={app.callbackUrl} />}
+          {app.defaultsApplied && (
+            <div className="rounded-lg border-2 border-success/30 bg-success/5 px-4 py-3 text-[12px] text-text-secondary">
+              <div>
+                Connecting to the platform's pre-configured {app.displayName}{" "}
+                app — no setup required.
+              </div>
+              <button
+                type="button"
+                className="mt-1.5 text-[12px] font-semibold text-accent hover:underline"
+                onClick={() => setShowOverride((v) => !v)}
+              >
+                {showOverride
+                  ? "Use the platform's app instead"
+                  : "Use a different app"}
+              </button>
+            </div>
+          )}
+          {app.credentialsInherited && !app.defaultsApplied && (
+            <div className="rounded-lg border-2 border-success/30 bg-success/5 px-4 py-3 text-[12px] text-text-secondary">
+              <div>
+                Reusing the Client ID and secret from another connected app in
+                this family — no need to re-enter them.
+              </div>
+              <button
+                type="button"
+                className="mt-1.5 text-[12px] font-semibold text-accent hover:underline"
+                onClick={() => setShowOverride((v) => !v)}
+              >
+                {showOverride
+                  ? "Use stored credentials instead"
+                  : "Use different credentials"}
+              </button>
+            </div>
+          )}
+          {visibleInputs.map((field) => {
+            const isDiscoveryHostField =
+              app.discoverFromHostField === field.name;
+            const helperOverride =
+              isDiscoveryHostField &&
+              discovery.host === (values[field.name] ?? "").trim()
+                ? discoveryHelperText(discovery, app.displayName)
+                : null;
+            return (
+              <div key={field.name} className="flex flex-col gap-1.5">
+                <label className="text-[13px] font-semibold text-text">
+                  {field.label}
+                </label>
+                <input
+                  type={field.secret ? "password" : "text"}
+                  className={INPUT_CLASS}
+                  value={values[field.name] ?? ""}
+                  onChange={(e) => setField(field.name, e.target.value)}
+                  onBlur={
+                    isDiscoveryHostField
+                      ? () => {
+                          const v = (values[field.name] ?? "").trim();
+                          if (v) void runDiscovery(v);
+                        }
+                      : undefined
+                  }
+                  placeholder={field.placeholder ?? ""}
+                  autoComplete="off"
+                  autoFocus={field === visibleInputs[0]}
+                />
+                {helperOverride ??
+                  (field.helper && (
+                    <span className="text-[12px] text-text-muted">
+                      {field.helper}
+                    </span>
+                  ))}
+              </div>
+            );
+          })}
+        </DialogBody>
+        <DialogFooter>
+          <button
+            type="button"
+            className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
+            onClick={onCancel}
           >
-            Register an OAuth app first <ExternalLink size={13} />
-          </a>
-        )}
-        {!usingDefaultApp && <CallbackUrlField url={app.callbackUrl} />}
-        {app.defaultsApplied && (
-          <div className="rounded-lg border-2 border-success/30 bg-success/5 px-4 py-3 text-[12px] text-text-secondary">
-            <div>
-              Connecting to the platform's pre-configured {app.displayName} app
-              — no setup required.
-            </div>
-            <button
-              type="button"
-              className="mt-1.5 text-[12px] font-semibold text-accent hover:underline"
-              onClick={() => setShowOverride((v) => !v)}
-            >
-              {showOverride
-                ? "Use the platform's app instead"
-                : "Use a different app"}
-            </button>
-          </div>
-        )}
-        {app.credentialsInherited && !app.defaultsApplied && (
-          <div className="rounded-lg border-2 border-success/30 bg-success/5 px-4 py-3 text-[12px] text-text-secondary">
-            <div>
-              Reusing the Client ID and secret from another connected app in
-              this family — no need to re-enter them.
-            </div>
-            <button
-              type="button"
-              className="mt-1.5 text-[12px] font-semibold text-accent hover:underline"
-              onClick={() => setShowOverride((v) => !v)}
-            >
-              {showOverride
-                ? "Use stored credentials instead"
-                : "Use different credentials"}
-            </button>
-          </div>
-        )}
-        {visibleInputs.map((field) => {
-          const isDiscoveryHostField = app.discoverFromHostField === field.name;
-          const helperOverride =
-            isDiscoveryHostField &&
-            discovery.host === (values[field.name] ?? "").trim()
-              ? discoveryHelperText(discovery, app.displayName)
-              : null;
-          return (
-            <div key={field.name} className="flex flex-col gap-1.5">
-              <label className="text-[13px] font-semibold text-text">
-                {field.label}
-              </label>
-              <input
-                type={field.secret ? "password" : "text"}
-                className={INPUT_CLASS}
-                value={values[field.name] ?? ""}
-                onChange={(e) => setField(field.name, e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && allFilled && submit()}
-                onBlur={
-                  isDiscoveryHostField
-                    ? () => {
-                        const v = (values[field.name] ?? "").trim();
-                        if (v) void runDiscovery(v);
-                      }
-                    : undefined
-                }
-                placeholder={field.placeholder ?? ""}
-                autoComplete="off"
-                autoFocus={field === visibleInputs[0]}
-              />
-              {helperOverride ??
-                (field.helper && (
-                  <span className="text-[12px] text-text-muted">
-                    {field.helper}
-                  </span>
-                ))}
-            </div>
-          );
-        })}
-      </div>
-      {/* Footer is pinned outside the scroll region so Connect/Cancel are
-         always reachable, even on short viewports / long descriptors. */}
-      <div className="flex justify-end gap-3 p-5 md:p-7 border-t-2 border-border-light">
-        <button
-          type="button"
-          className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
-          onClick={onCancel}
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent"
-          onClick={submit}
-          disabled={!allFilled || startAppOAuth.isPending}
-        >
-          {startAppOAuth.isPending ? "..." : "Connect"}
-        </button>
-      </div>
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent"
+            disabled={!allFilled || startAppOAuth.isPending}
+          >
+            {startAppOAuth.isPending ? "..." : "Connect"}
+          </button>
+        </DialogFooter>
+      </form>
     </Modal>
   );
 }
