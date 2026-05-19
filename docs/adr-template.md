@@ -6,16 +6,21 @@
 
 ## Context
 
-What is the issue motivating this decision?
+What changed, or what gap surfaced, that forces a decision now. One short paragraph. Stop when the reader has enough to understand *why now*.
 
 ## Decision
 
-What we decided.
+Open with one or two sentences naming what was decided. A reader who stops here should already have the answer. The rest of the section names the rules and boundaries of the decision — not the mechanism that implements it.
 
 ## Alternatives Considered
 
-What else was evaluated and why rejected.
+- **Name** — why rejected, one line.
+- **Name** — why rejected, one line.
 
 ## Consequences
 
-What becomes easier or more difficult.
+Pros and cons, both stated, each backed by concrete evidence — a measurement, a prior incident, a constraint, a contract. No "feels cleaner," no "more elegant."
+
+- **Easier:** what now becomes cheap, possible, or obvious — and the evidence that it does.
+- **Harder:** what now costs more, or what future work has to work around — and the evidence that it does.
+- **Committed-to:** what's now load-bearing — the thing a future reader would ask "do we still need this?" about.
