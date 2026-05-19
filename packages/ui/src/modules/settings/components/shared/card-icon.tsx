@@ -43,17 +43,36 @@ const STYLES: Record<
   },
 };
 
-export function CardIcon({ provider }: { provider: ProviderPresetType }) {
+export function CardIcon({
+  provider,
+  size = "md",
+}: {
+  provider: ProviderPresetType;
+  /** "md" = 40×40 (default, used in provider cards). "sm" = 28×28
+   *  (compact use inside dropdown rows / inline labels). The brand mark
+   *  inside scales proportionally so it stays centered. */
+  size?: "md" | "sm";
+}) {
   const style = STYLES[provider];
   const Icon = style.Icon;
+  const small = size === "sm";
   return (
     <div
       className={cn(
-        "w-10 h-10 shrink-0 rounded-lg flex items-center justify-center",
+        "shrink-0 rounded-lg flex items-center justify-center",
+        small ? "w-7 h-7" : "w-10 h-10",
         style.bg,
       )}
     >
-      <Icon className={style.iconClass} />
+      <Icon
+        className={cn(
+          style.iconClass,
+          small &&
+            (provider === "ibm-litellm"
+              ? "!text-[16px]"
+              : "!w-3.5 !h-3.5"),
+        )}
+      />
     </div>
   );
 }

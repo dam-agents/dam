@@ -1,4 +1,11 @@
-import { ExternalLink, Unplug } from "lucide-react";
+import {
+  Close as X,
+  Launch as ExternalLink,
+} from "@carbon/icons-react";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 
 import { useStore } from "../../../store.js";
 import type { OAuthAppConnection, OAuthAppDescriptor } from "../api/fetchers.js";
@@ -39,53 +46,51 @@ export function OAuthAppRow({ app, connection, animationDelayMs, onReconnect }: 
   const installUrl = appInstallUrl(connection);
 
   return (
-    <div
-      className="flex items-center gap-4 rounded-xl border-2 border-border bg-surface px-5 py-4 transition-shadow hover:shadow-[4px_4px_0_#292524] shadow-brutal anim-in"
+    <Card
+      className="flex items-center gap-4 px-5 py-4 transition-shadow hover:shadow-md anim-in"
       style={{ animationDelay: `${animationDelayMs}ms` }}
     >
-      <div className="w-9 h-9 shrink-0 rounded-lg border-2 border-border-light bg-bg flex items-center justify-center text-text-secondary">
+      <div className="w-9 h-9 shrink-0 rounded-lg border border-border bg-background flex items-center justify-center text-foreground/80">
         <OAuthAppIcon appId={app.id} alt={app.displayName} />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-[14px] font-semibold text-text truncate">{connection.displayName}</div>
-        <div className="text-[12px] font-mono text-text-muted truncate">{detail}</div>
+        <div className="text-[14px] font-semibold text-foreground truncate">{connection.displayName}</div>
+        <div className="text-[12px] font-mono text-muted-foreground truncate">{detail}</div>
       </div>
-      <span
-        className={`text-[11px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 shrink-0 ${
-          expired
-            ? "bg-danger-light text-danger border-danger"
-            : "bg-info-light text-info border-info"
-        }`}
+      <Badge
+        variant={expired ? "destructive" : "secondary"}
+        className="shrink-0 uppercase tracking-[0.03em]"
       >
         {expired ? "Expired" : "Connected"}
-      </span>
+      </Badge>
       {expired && (
-        <button
-          onClick={() => onReconnect(app)}
-          className="btn-brutal h-7 rounded-md border-2 border-accent bg-accent-light px-3 text-[11px] font-bold text-accent hover:bg-accent hover:text-white shadow-[2px_2px_0_var(--color-accent)]"
-        >
+        <Button size="sm" onClick={() => onReconnect(app)}>
           Reconnect
-        </button>
+        </Button>
       )}
       {installUrl && (
-        <a
-          href={installUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="btn-brutal h-7 rounded-md border-2 border-border bg-surface px-3 text-[11px] font-bold text-text-secondary hover:text-accent hover:border-accent shadow-brutal-sm inline-flex items-center gap-1.5"
+        <Button
+          asChild
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
           title="Install or manage which repositories this GitHub App can access"
         >
-          Install to repository <ExternalLink size={11} />
-        </a>
+          <a href={installUrl} target="_blank" rel="noopener noreferrer">
+            Install <ExternalLink className="h-3 w-3" />
+          </a>
+        </Button>
       )}
-      <button
+      <Button
+        variant="outline"
+        size="icon"
         onClick={handleDisconnect}
         disabled={isDisconnecting}
-        className="btn-brutal h-7 w-7 rounded-md border-2 border-border-light bg-surface flex items-center justify-center text-text-muted hover:text-danger hover:border-danger disabled:opacity-40 shadow-brutal-sm"
+        className="h-7 w-7 text-muted-foreground hover:text-destructive hover:border-destructive disabled:opacity-40"
         title="Disconnect"
       >
-        <Unplug size={13} />
-      </button>
-    </div>
+        <X size={13} />
+      </Button>
+    </Card>
   );
 }

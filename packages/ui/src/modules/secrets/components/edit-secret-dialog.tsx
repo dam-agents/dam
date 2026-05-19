@@ -4,6 +4,18 @@ import { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+
 import {
   allEnvMappingsValid,
   EnvMappingsEditor,
@@ -11,7 +23,6 @@ import {
 } from "../../../components/env-mappings-editor.js";
 import { FormError } from "../../../components/form-error.js";
 import { FormField } from "../../../components/form-field.js";
-import { Modal } from "../../../components/modal.js";
 import {
   DEFAULT_INJECTION_CONFIG,
   type EnvMapping,
@@ -59,10 +70,6 @@ const genericSchema = z.object({
 });
 
 type EditSecretValues = z.infer<typeof anthropicSchema>;
-
-const INPUT_CLASS =
-  "w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)]";
-const MONO_INPUT_CLASS = `${INPUT_CLASS} font-mono`;
 
 interface UpdateSecretPatch {
   id: string;
@@ -173,183 +180,174 @@ export function EditSecretDialog({ secret, onClose }: Props) {
   };
 
   return (
-    <Modal widthClass="w-[540px]">
-      <form onSubmit={onSubmit} className="contents">
-        <div className="px-7 pt-7 pb-4 border-b-2 border-border-light">
-          <h2 className="text-[20px] font-bold text-text">Edit Secret</h2>
-          <p className="text-[12px] text-text-muted mt-1 font-mono">
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-lg max-h-[85vh] flex flex-col gap-4">
+        <DialogHeader className="shrink-0">
+          <DialogTitle>Edit Secret</DialogTitle>
+          <DialogDescription className="font-mono text-[12px]">
             {secret.hostPattern}
             {secret.pathPattern && (
-              <span className="text-text-secondary">{secret.pathPattern}</span>
+              <span className="text-foreground/70">{secret.pathPattern}</span>
             )}
-          </p>
-        </div>
+          </DialogDescription>
+        </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto px-7 py-5 flex flex-col gap-5">
-          <FormField label="Name" error={errors.name?.message}>
-            <input className={INPUT_CLASS} autoFocus {...register("name")} />
-          </FormField>
+        <form onSubmit={onSubmit} className="contents">
+          <div className="flex-1 min-h-0 overflow-y-auto -mx-1 px-1 flex flex-col gap-5">
+            <FormField label="Name" error={errors.name?.message}>
+              <Input autoFocus {...register("name")} />
+            </FormField>
 
-          <FormField
-            label="Token"
-            hint="Leave blank to keep the current token. Type a new value to rotate it."
-            error={errors.value?.message}
-          >
-            <input
-              className={INPUT_CLASS}
-              type="password"
-              placeholder="••••••••"
-              autoComplete="new-password"
-              disabled={saving}
-              {...register("value")}
-            />
-          </FormField>
-
-          {isGeneric && (
             <FormField
-              label="Host Pattern"
-              hint="Hostname the Envoy sidecar matches against outbound requests. Required."
-              error={errors.hostPattern?.message}
+              label="Token"
+              hint="Leave blank to keep the current token. Type a new value to rotate it."
+              error={errors.value?.message}
             >
-              <input
-                className={MONO_INPUT_CLASS}
-                placeholder="e.g. api.example.com"
+              <Input
+                type="password"
+                placeholder="••••••••"
+                autoComplete="new-password"
                 disabled={saving}
-                {...register("hostPattern")}
+                {...register("value")}
               />
             </FormField>
-          )}
 
-          {isGeneric && (
-            <FormField
-              label="Path Pattern"
-              hint="Restrict injection to URL paths matching this pattern. Leave blank to match every path on the host."
-            >
-              <input
-                className={MONO_INPUT_CLASS}
-                placeholder="e.g. /v1/*"
-                disabled={saving}
-                {...register("pathPattern")}
-              />
-            </FormField>
-          )}
-
-          {isGeneric && (
-            <FormField
-              label="Header Name"
-              hint="HTTP header the Envoy sidecar writes the secret into."
-              error={errors.headerName?.message}
-            >
-              <input
-                className={MONO_INPUT_CLASS}
-                placeholder={DEFAULT_INJECTION_CONFIG.headerName}
-                disabled={saving}
-                {...register("headerName")}
-              />
-            </FormField>
-          )}
-
-          {isGeneric && (
-            <FormField
-              label="Value Format"
-              hint={
-                <>
-                  Template for the header value. Use{" "}
-                  <span className="font-mono">{`{value}`}</span> as the token
-                  placeholder.
-                </>
-              }
-            >
-              <input
-                className={MONO_INPUT_CLASS}
-                placeholder={DEFAULT_INJECTION_CONFIG.valueFormat}
-                disabled={saving}
-                {...register("valueFormat")}
-              />
-            </FormField>
-          )}
-
-          {isGeneric && (
-            <FormField
-              label="URL Query Parameter"
-              hint={
-                <>
-                  For APIs that read the credential from the URL (e.g.{" "}
-                  <span className="font-mono">?key=&lt;value&gt;</span>). When
-                  set, the bare value is moved into this query parameter and
-                  the header is stripped — <span className="font-mono">Value
-                  Format</span> doesn't apply here. Need <em>both</em> a
-                  header and a URL injection on the same endpoint? Create two
-                  Secrets with the same host pattern.{" "}
-                  <strong className="text-warning">
-                    Credentials in query strings are routinely logged by web
-                    servers, CDNs, and load balancers — prefer header injection
-                    unless the upstream API requires this.
-                  </strong>
-                </>
-              }
-              error={errors.queryParamName?.message}
-            >
-              <input
-                className={MONO_INPUT_CLASS}
-                placeholder="e.g. key"
-                disabled={saving}
-                {...register("queryParamName")}
-              />
-            </FormField>
-          )}
-
-          <div className="flex flex-col gap-2">
-            <span className="text-[11px] font-bold text-text-secondary uppercase tracking-[0.03em]">
-              Pod Env Vars
-            </span>
-            <p className="text-[11px] text-text-muted">
-              Applied to every instance granted this connector on next pod
-              restart.
-            </p>
-            <Controller
-              control={control}
-              name="envMappings"
-              render={({ field }) => (
-                <EnvMappingsEditor
-                  value={field.value}
-                  onChange={field.onChange}
+            {isGeneric && (
+              <FormField
+                label="Host Pattern"
+                hint="Hostname the Envoy sidecar matches against outbound requests. Required."
+                error={errors.hostPattern?.message}
+              >
+                <Input
+                  className="font-mono"
+                  placeholder="e.g. api.example.com"
                   disabled={saving}
+                  {...register("hostPattern")}
                 />
-              )}
-            />
-            <FormError message={errors.envMappings?.message} />
-          </div>
-        </div>
+              </FormField>
+            )}
 
-        <div className="px-7 py-4 border-t-2 border-border-light flex justify-end gap-3">
-          <button
-            type="button"
-            className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
-            onClick={onClose}
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent"
-            disabled={!canSave}
-          >
-            {saving ? "..." : "Save"}
-          </button>
-        </div>
-      </form>
-      {pendingPatch && (
-        <RollConfirmation
-          loading={grantedAgentsQuery.isLoading}
-          error={grantedAgentsQuery.isError}
-          agents={grantedAgentsQuery.data ?? []}
-          saving={saving}
-          onCancel={() => setPendingPatch(null)}
-          onConfirm={confirmAndApply}
-        />
-      )}
-    </Modal>
+            {isGeneric && (
+              <FormField
+                label="Path Pattern"
+                hint="Restrict injection to URL paths matching this pattern. Leave blank to match every path on the host."
+              >
+                <Input
+                  className="font-mono"
+                  placeholder="e.g. /v1/*"
+                  disabled={saving}
+                  {...register("pathPattern")}
+                />
+              </FormField>
+            )}
+
+            {isGeneric && (
+              <FormField
+                label="Header Name"
+                hint="HTTP header the Envoy sidecar writes the secret into."
+                error={errors.headerName?.message}
+              >
+                <Input
+                  className="font-mono"
+                  placeholder={DEFAULT_INJECTION_CONFIG.headerName}
+                  disabled={saving}
+                  {...register("headerName")}
+                />
+              </FormField>
+            )}
+
+            {isGeneric && (
+              <FormField
+                label="Value Format"
+                hint={
+                  <>
+                    Template for the header value. Use{" "}
+                    <span className="font-mono">{`{value}`}</span> as the token
+                    placeholder.
+                  </>
+                }
+              >
+                <Input
+                  className="font-mono"
+                  placeholder={DEFAULT_INJECTION_CONFIG.valueFormat}
+                  disabled={saving}
+                  {...register("valueFormat")}
+                />
+              </FormField>
+            )}
+
+            {isGeneric && (
+              <FormField
+                label="URL Query Parameter"
+                hint={
+                  <>
+                    For APIs that read the credential from the URL (e.g.{" "}
+                    <span className="font-mono">?key=&lt;value&gt;</span>). When
+                    set, the bare value is moved into this query parameter and
+                    the header is stripped — <span className="font-mono">Value
+                    Format</span> doesn't apply here. Need <em>both</em> a
+                    header and a URL injection on the same endpoint? Create two
+                    Secrets with the same host pattern.{" "}
+                    <strong className="text-warning">
+                      Credentials in query strings are routinely logged by web
+                      servers, CDNs, and load balancers — prefer header injection
+                      unless the upstream API requires this.
+                    </strong>
+                  </>
+                }
+                error={errors.queryParamName?.message}
+              >
+                <Input
+                  className="font-mono"
+                  placeholder="e.g. key"
+                  disabled={saving}
+                  {...register("queryParamName")}
+                />
+              </FormField>
+            )}
+
+            <div className="flex flex-col gap-2">
+              <span className="text-[11px] font-bold text-foreground/80 uppercase tracking-[0.03em]">
+                Pod Env Vars
+              </span>
+              <p className="text-[11px] text-muted-foreground">
+                Applied to every instance granted this connector on next pod
+                restart.
+              </p>
+              <Controller
+                control={control}
+                name="envMappings"
+                render={({ field }) => (
+                  <EnvMappingsEditor
+                    value={field.value}
+                    onChange={field.onChange}
+                    disabled={saving}
+                  />
+                )}
+              />
+              <FormError message={errors.envMappings?.message} />
+            </div>
+          </div>
+
+          <DialogFooter className="shrink-0">
+            <Button type="submit" disabled={!canSave}>
+              {saving ? "..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </form>
+
+        {pendingPatch && (
+          <RollConfirmation
+            loading={grantedAgentsQuery.isLoading}
+            error={grantedAgentsQuery.isError}
+            agents={grantedAgentsQuery.data ?? []}
+            saving={saving}
+            onCancel={() => setPendingPatch(null)}
+            onConfirm={confirmAndApply}
+          />
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -371,61 +369,62 @@ function RollConfirmation({
   onConfirm: () => void;
 }) {
   return (
-    <div className="absolute inset-0 flex items-center justify-center bg-black/40 z-10 rounded-2xl">
-      <div className="w-[420px] rounded-xl border-2 border-border bg-bg p-6 shadow-brutal-lg flex flex-col gap-4">
+    <div className="absolute inset-0 flex items-center justify-center bg-black/40 z-10 rounded-lg">
+      <Card className="w-[420px] p-6 flex flex-col gap-4 shadow-lg">
         <div>
-          <h3 className="text-[16px] font-bold text-text">Restart granted agents?</h3>
-          <p className="text-[13px] text-text-secondary mt-2">
+          <h3 className="text-[16px] font-semibold text-foreground">
+            Restart granted agents?
+          </h3>
+          <p className="text-[13px] text-foreground/80 mt-2">
             Editing env mappings on this secret rolls every agent that has it
             granted. Running sessions on those agents will be interrupted.
           </p>
         </div>
         {loading ? (
-          <p className="text-[12px] text-text-muted italic">
+          <p className="text-[12px] text-muted-foreground italic">
             Looking up affected agents…
           </p>
         ) : error ? (
           // Without this branch, an isError state collapses to `agents=[]`
           // and the dialog would say "no agents granted" — letting the user
           // confirm a roll against an empty list produced by an API failure.
-          <p className="text-[12px] text-danger">
+          <p className="text-[12px] text-destructive">
             Couldn't load the list of affected agents. Cancel and try again.
           </p>
         ) : agents.length === 0 ? (
-          <p className="text-[12px] text-text-muted">
+          <p className="text-[12px] text-muted-foreground">
             No agents currently have this secret granted.
           </p>
         ) : (
           <div className="flex flex-col gap-1">
-            <span className="text-[10px] font-bold text-text-muted uppercase tracking-[0.05em]">
+            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.05em]">
               Affected ({agents.length})
             </span>
-            <ul className="list-disc pl-5 text-[12px] text-text-secondary max-h-32 overflow-y-auto">
+            <ul className="list-disc pl-5 text-[12px] text-foreground/80 max-h-32 overflow-y-auto">
               {agents.map((a) => (
                 <li key={a.id}>{a.name}</li>
               ))}
             </ul>
           </div>
         )}
-        <div className="flex justify-end gap-3 pt-2">
-          <button
+        <div className="flex justify-end gap-2 pt-2">
+          <Button
             type="button"
-            className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
+            variant="outline"
             onClick={onCancel}
             disabled={saving}
           >
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent"
             onClick={onConfirm}
             disabled={saving || loading || error}
           >
             {saving ? "Saving…" : "Restart and save"}
-          </button>
+          </Button>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

@@ -1,8 +1,11 @@
+import { Checkmark } from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
+import * as SelectPrimitive from "@radix-ui/react-select";
 import { File as FileIcon, Folder as FolderIcon, FolderUp, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -46,6 +49,8 @@ import {
 import { type BundleEntry, filterImportEntries, isTarballName, walkDataTransfer } from "../../files/api/import-bundle.js";
 import { useSecrets } from "../../secrets/api/queries.js";
 import { PROVIDER_CARDS } from "../../settings/components/provider-cards.js";
+import { PROVIDER_DESCRIPTIONS } from "../../settings/components/provider-chooser-dialog.js";
+import { CardIcon } from "../../settings/components/shared/card-icon.js";
 import { addAgentSchema, type AddAgentValues } from "../forms/add-agent-schema.js";
 
 type Step = "pick" | "configure";
@@ -290,10 +295,11 @@ export function AddAgentDialog({
     [providerSecrets.map((s) => s.id).join("|")],
   );
 
-  // Inline provider setup — when there's no provider yet, the form's top
-  // section shows a dropdown to pick one. Picking a preset shows its card
-  // form right below; after save, the secret list refetches and
-  // `pickedProvider` self-clears via the effect below.
+  // Inline provider setup — picking a preset from the dropdown's "Set up
+  // new" group shows that preset's card form right below the field.
+  // After the user saves a key, the secret list refetches; this effect
+  // notices the type now has a configured secret and closes the setup
+  // card.
   const [pickedProvider, setPickedProvider] = useState<ProviderPresetType | null>(null);
 
   useEffect(() => {
@@ -712,6 +718,11 @@ export function AddAgentDialog({
   );
 }
 
+// Synthetic value prefix on "Set up new" rows so the single Select can
+// distinguish "select an existing secret by id" from "kick off a setup
+// flow for this preset".
+const SETUP_VALUE_PREFIX = "setup:";
+
 function ProviderPickerSection({
   providerSecrets,
   configuredTypes,
@@ -727,54 +738,68 @@ function ProviderPickerSection({
   selectedProviderSecretId: string | null;
   onSelectProviderSecret: (secretId: string) => void;
 }) {
-  // Configured providers — pick which one this agent should use.
-  if (providerSecrets.length > 0) {
-    return (
-      <FormField label="Provider">
-        <Select
-          value={selectedProviderSecretId ?? ""}
-          onValueChange={onSelectProviderSecret}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Pick a provider…" />
-          </SelectTrigger>
-          <SelectContent>
-            {providerSecrets.map((s) => {
-              const meta =
-                s.type in PROVIDERS
-                  ? PROVIDERS[s.type as ProviderPresetType]
-                  : null;
-              return (
-                <SelectItem key={s.id} value={s.id}>
-                  {meta?.displayName ?? s.name}
-                </SelectItem>
-              );
-            })}
-          </SelectContent>
-        </Select>
-      </FormField>
-    );
-  }
-
-  // No providers yet — let the user pick a preset and set one up inline.
   const PickedCard = picked ? PROVIDER_CARDS[picked] : null;
   const available = PROVIDER_PRESET_TYPES.filter((t) => !configuredTypes.has(t));
+
+  const handlePick = (value: string) => {
+    if (value.startsWith(SETUP_VALUE_PREFIX)) {
+      onPick(value.slice(SETUP_VALUE_PREFIX.length) as ProviderPresetType);
+      return;
+    }
+    onSelectProviderSecret(value);
+  };
+
+  // The trigger reflects the in-flight "Adding X" preset until a key is
+  // saved; otherwise it shows whichever existing provider secret is the
+  // selected one for this agent.
+  const triggerValue = picked
+    ? `${SETUP_VALUE_PREFIX}${picked}`
+    : (selectedProviderSecretId ?? "");
+
+  const placeholder =
+    providerSecrets.length === 0 ? "Set up a provider…" : "Pick a provider…";
 
   return (
     <FormField label="Provider">
       <div className="flex flex-col gap-3">
-        <Select
-          value={picked ?? ""}
-          onValueChange={(v) => onPick(v as ProviderPresetType)}
-        >
+        <Select value={triggerValue} onValueChange={handlePick}>
           <SelectTrigger>
-            <SelectValue placeholder="Set up a provider…" />
+            <SelectValue placeholder={placeholder} />
           </SelectTrigger>
           <SelectContent>
+            {/* Each row uses a custom item so the description can sit
+                OUTSIDE Radix's ItemText — that way the trigger only shows
+                the icon + name (compact), but the dropdown row shows the
+                full sub-header underneath. */}
+            {providerSecrets.map((s) => {
+              const isPreset = s.type in PROVIDERS;
+              const presetType = isPreset
+                ? (s.type as ProviderPresetType)
+                : null;
+              const meta = presetType ? PROVIDERS[presetType] : null;
+              return (
+                <ProviderRowItem
+                  key={s.id}
+                  value={s.id}
+                  iconProvider={presetType}
+                  title={meta?.displayName ?? s.name}
+                  description={presetType ? PROVIDER_DESCRIPTIONS[presetType] : undefined}
+                  badge={
+                    <Badge variant="secondary" className="gap-1">
+                      <Checkmark className="h-3 w-3" /> Connected
+                    </Badge>
+                  }
+                />
+              );
+            })}
             {available.map((id) => (
-              <SelectItem key={id} value={id}>
-                {PROVIDERS[id].displayName}
-              </SelectItem>
+              <ProviderRowItem
+                key={id}
+                value={`${SETUP_VALUE_PREFIX}${id}`}
+                iconProvider={id}
+                title={PROVIDERS[id].displayName}
+                description={PROVIDER_DESCRIPTIONS[id]}
+              />
             ))}
           </SelectContent>
         </Select>
@@ -801,5 +826,51 @@ function ProviderPickerSection({
         )}
       </div>
     </FormField>
+  );
+}
+
+/**
+ * Provider dropdown row — built on Radix's SelectPrimitive directly so
+ * the description sub-header can sit outside `ItemText` (and therefore
+ * outside the trigger's render of the selected value). The trigger stays
+ * compact (icon + name + optional badge); the dropdown row shows the
+ * description below.
+ */
+function ProviderRowItem({
+  value,
+  iconProvider,
+  title,
+  description,
+  badge,
+}: {
+  value: string;
+  iconProvider: ProviderPresetType | null;
+  title: string;
+  description?: string;
+  badge?: React.ReactNode;
+}) {
+  return (
+    <SelectPrimitive.Item
+      value={value}
+      className={cn(
+        "relative flex flex-col cursor-default select-none rounded-sm py-2 pl-2 pr-2 text-sm outline-hidden",
+        "focus:bg-muted focus:text-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      )}
+    >
+      <SelectPrimitive.ItemText>
+        <span className="flex items-center gap-2.5">
+          {iconProvider && <CardIcon provider={iconProvider} size="sm" />}
+          <span className="text-[14px] font-semibold text-foreground">
+            {title}
+          </span>
+          {badge}
+        </span>
+      </SelectPrimitive.ItemText>
+      {description && (
+        <span className="text-[12px] text-muted-foreground leading-snug mt-1 pl-[38px] block">
+          {description}
+        </span>
+      )}
+    </SelectPrimitive.Item>
   );
 }

@@ -3,6 +3,11 @@ import { useEffect, useState } from "react";
 
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 import {
   PROVIDER_PRESET_TYPES,
@@ -28,10 +33,12 @@ export function ProvidersView() {
   const configured = PROVIDER_PRESET_TYPES.filter((t) => secretByType[t]);
   const hasAny = configured.length > 0;
 
-  // The chooser opens to pick a preset; once picked, that preset's card
-  // shows in unconfigured mode at the top of the section so the user can
-  // enter the key inline. After save, the secret appears in the list and
-  // we auto-clear `picked`.
+  // Two stacked modals: the chooser (pick a preset) → the setup modal
+  // (paste a key). Picking inside the chooser closes it and opens the
+  // setup modal. Closing the setup modal without saving leaves the page
+  // untouched — nothing reaches the providers list until a key is saved
+  // and the api-server returns a real secret. After save, the secret
+  // appears in the list and the auto-clear below dismisses the modal.
   const [chooserOpen, setChooserOpen] = useState(false);
   const [picked, setPicked] = useState<ProviderPresetType | null>(null);
 
@@ -43,34 +50,27 @@ export function ProvidersView() {
 
   return (
     <div className="w-full max-w-2xl">
-      <header className="flex items-center gap-3 mb-4">
-        <h1 className="text-[20px] md:text-[24px] font-bold text-foreground">
-          Providers
-        </h1>
-        {/* Header CTA only shows once at least one provider is configured —
-            on the empty state, the EmptyState card carries the primary CTA
-            so the page has a single focal action. */}
-        {hasAny && (
-          <div className="ml-auto flex items-center gap-2">
-            <Button onClick={() => setChooserOpen(true)}>
-              <Plus />
-              <span className="hidden sm:inline">Set up</span> Provider
-            </Button>
-          </div>
-        )}
-      </header>
+      {/* Header + description only render once at least one provider
+          is configured. On the empty state the EmptyState card's own
+          title carries the page heading. */}
+      {hasAny && (
+        <>
+          <header className="flex items-center gap-3 mb-4">
+            <h1 className="text-[20px] md:text-[24px] font-bold text-foreground">
+              Providers
+            </h1>
+            <div className="ml-auto flex items-center gap-2">
+              <Button onClick={() => setChooserOpen(true)}>
+                <Plus />
+                <span className="hidden sm:inline">Set up</span> Provider
+              </Button>
+            </div>
+          </header>
 
-      <p className="text-[14px] text-foreground/80 mb-8 leading-relaxed">
-        API keys for the AI harnesses that power your agents.
-      </p>
-
-      {/* In-flight setup — picked provider's card shows above everything
-          else so the form is the most prominent thing on the page until
-          the user saves or backs out. */}
-      {PickedCard && (
-        <section className="mb-8 anim-in">
-          <PickedCard secret={undefined} />
-        </section>
+          <p className="text-[14px] text-foreground/80 mb-8 leading-relaxed">
+            API keys for the AI harnesses that power your agents.
+          </p>
+        </>
       )}
 
       {isPending && (
@@ -88,48 +88,34 @@ export function ProvidersView() {
         </section>
       )}
 
-      {!isPending && !hasAny && !PickedCard && (
+      {!isPending && !hasAny && (
         <EmptyState
           palette="sunset"
           className="mb-8"
-          eyebrow="Providers"
-          title="Connect your AI provider"
+          title="Set up a provider"
           description={
             <>
-              DAM agents need an API key from a provider — Anthropic, IBM
-              watsonx, OpenAI — to reach a model. Keys stay encrypted in the
-              cluster and are injected at request time, so the agent never
-              sees the raw value.
+              Agents need an API key from a provider — Anthropic, OpenAI,
+              IBM LiteLLM, or Bob Shell — to reach a model. Keys are stored
+              as K8s Secrets and injected by the credential gateway at
+              request time, so the agent runtime never sees the raw value.
             </>
           }
           bullets={[
-            {
-              icon: <span className="text-[10px] font-bold">1</span>,
-              text: (
-                <>
-                  Pick a provider — start with Anthropic for Claude Code
-                  agents.
-                </>
-              ),
-            },
-            {
-              icon: <span className="text-[10px] font-bold">2</span>,
-              text: (
-                <>
-                  Paste your API key. It's encrypted at rest and routed via
-                  the credential gateway, never written to a pod env.
-                </>
-              ),
-            },
-            {
-              icon: <span className="text-[10px] font-bold">3</span>,
-              text: (
-                <>
-                  You can add more providers later — agents can mix-and-match
-                  per task.
-                </>
-              ),
-            },
+            <>
+              <span className="font-semibold">Pick a preset</span> — start
+              with Anthropic for Claude Code agents.
+            </>,
+            <>
+              <span className="font-semibold">Paste your key</span> —
+              encrypted at rest and routed via the per-instance Envoy
+              gateway, never written to a pod env.
+            </>,
+            <>
+              <span className="font-semibold">Add as many as you need</span>{" "}
+              — each agent picks one provider, and different agents can use
+              different ones.
+            </>,
           ]}
           action={
             <Button onClick={() => setChooserOpen(true)}>
@@ -148,6 +134,23 @@ export function ProvidersView() {
           setPicked(type);
         }}
       />
+
+      {/* Setup modal — opens stacked on top of the chooser flow. The
+          provider's card renders inside; closing without saving leaves
+          the page untouched, and after save the auto-clear effect above
+          dismisses the modal. */}
+      {PickedCard && picked && (
+        <Dialog open onOpenChange={(o) => !o && setPicked(null)}>
+          <DialogContent className="max-w-lg">
+            {/* The card supplies its own title + brand mark, so the
+                DialogTitle is hidden but kept for screen readers. */}
+            <DialogTitle className="sr-only">
+              Set up {PROVIDERS[picked].displayName}
+            </DialogTitle>
+            <PickedCard secret={undefined} />
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

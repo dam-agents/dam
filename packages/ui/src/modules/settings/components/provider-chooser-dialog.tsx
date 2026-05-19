@@ -21,7 +21,7 @@ const COMING_SOON: { name: string; description: string }[] = [
   { name: "Google", description: "Powers Gemini CLI agents" },
 ];
 
-const DESCRIPTIONS: Record<ProviderPresetType, string> = {
+export const PROVIDER_DESCRIPTIONS: Record<ProviderPresetType, string> = {
   anthropic: "Claude Code, Claude SDK, and any Anthropic-compatible client.",
   "ibm-litellm": "IBM's internal LiteLLM proxy — Claude on watsonx-routed AWS.",
   openai: "GPT-family models for Codex and OpenAI-compatible agents.",
@@ -73,7 +73,7 @@ export function ProviderChooserList({
                     )}
                   </div>
                   <div className="text-[12px] text-muted-foreground leading-snug mt-0.5">
-                    {DESCRIPTIONS[id]}
+                    {PROVIDER_DESCRIPTIONS[id]}
                   </div>
                 </div>
               </button>

@@ -43,13 +43,12 @@ const BACKGROUND_BY_PALETTE: Record<EmptyStatePalette, string> = {
 
 /**
  * Shared "rich" empty-state card. Used on the Agents / Providers /
- * Connections pages as the first-run coaching surface — eyebrow,
- * headline, prose, optional bullet "what you can do" list, and a single
- * primary CTA. Each consuming view picks a {@link EmptyStatePalette} so
- * the three pages share a vocabulary but read distinctly.
+ * Connections pages as the first-run coaching surface — title, prose,
+ * optional plain bulleted list of what-you-can-do points, and a single
+ * primary CTA. Each consuming view picks a {@link EmptyStatePalette}
+ * so the three pages share a vocabulary but read distinctly.
  */
 export function EmptyState({
-  eyebrow,
   title,
   description,
   bullets,
@@ -58,10 +57,9 @@ export function EmptyState({
   palette = "aurora",
   className,
 }: {
-  eyebrow?: string;
   title: string;
   description: ReactNode;
-  bullets?: { icon: ReactNode; text: ReactNode }[];
+  bullets?: ReactNode[];
   action?: ReactNode;
   secondaryAction?: ReactNode;
   palette?: EmptyStatePalette;
@@ -76,11 +74,6 @@ export function EmptyState({
       )}
     >
       <div className="relative max-w-xl">
-        {eyebrow && (
-          <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-primary/80 mb-2">
-            {eyebrow}
-          </div>
-        )}
         <h2 className="text-[22px] md:text-[26px] font-semibold tracking-tight leading-tight mb-3">
           {title}
         </h2>
@@ -88,14 +81,9 @@ export function EmptyState({
           {description}
         </div>
         {bullets && bullets.length > 0 && (
-          <ul className="flex flex-col gap-2.5 mb-6">
+          <ul className="list-disc pl-5 marker:text-muted-foreground flex flex-col gap-2 mb-6 text-[13px] text-foreground/80">
             {bullets.map((b, i) => (
-              <li key={i} className="flex items-start gap-3 text-[13px] text-foreground/80">
-                <span className="mt-[2px] h-5 w-5 rounded-md bg-info-light text-info flex items-center justify-center shrink-0">
-                  {b.icon}
-                </span>
-                <span>{b.text}</span>
-              </li>
+              <li key={i}>{b}</li>
             ))}
           </ul>
         )}

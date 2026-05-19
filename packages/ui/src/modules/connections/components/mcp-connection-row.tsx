@@ -1,6 +1,6 @@
 import {
+  Close as X,
   Globe,
-  Unlink as Unplug,
 } from "@carbon/icons-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -64,7 +64,7 @@ export function McpConnectionRow({ connection, animationDelayMs, onReconnect }: 
         className="h-7 w-7 text-muted-foreground hover:text-destructive hover:border-destructive disabled:opacity-40"
         title="Disconnect"
       >
-        <Unplug size={13} />
+        <X size={13} />
       </Button>
     </Card>
   );

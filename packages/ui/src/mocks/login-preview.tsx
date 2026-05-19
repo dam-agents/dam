@@ -13,49 +13,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { cn } from "@/lib/utils";
 
-import {
-  AuroraBackdrop,
-  ConstellationBackdrop,
-  ForestBackdrop,
-  PulseBackdrop,
-  SunsetBackdrop,
-  SwarmBackdrop,
-} from "./login-backdrops.js";
-
-type BackdropKey =
-  | "aurora"
-  | "sunset"
-  | "forest"
-  | "pulse"
-  | "constellation"
-  | "swarm";
-
-const BACKDROPS: { key: BackdropKey; label: string; group: "Color" | "Agents" }[] = [
-  { key: "aurora", label: "Aurora", group: "Color" },
-  { key: "sunset", label: "Sunset", group: "Color" },
-  { key: "forest", label: "Forest", group: "Color" },
-  { key: "pulse", label: "Pulse", group: "Agents" },
-  { key: "constellation", label: "Constellation", group: "Agents" },
-  { key: "swarm", label: "Swarm", group: "Agents" },
-];
-
-function renderBackdrop(key: BackdropKey) {
-  switch (key) {
-    case "aurora": return <AuroraBackdrop />;
-    case "sunset": return <SunsetBackdrop />;
-    case "forest": return <ForestBackdrop />;
-    case "pulse": return <PulseBackdrop />;
-    case "constellation": return <ConstellationBackdrop />;
-    case "swarm": return <SwarmBackdrop />;
-  }
-}
+import { AuroraBackdrop } from "./login-backdrops.js";
 
 export function LoginPreview({ onClose }: { onClose: () => void }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [backdrop, setBackdrop] = useState<BackdropKey>("aurora");
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -69,33 +32,8 @@ export function LoginPreview({ onClose }: { onClose: () => void }) {
     <div className="fixed inset-0 z-[200] overflow-y-auto bg-background">
       {/* Preview mode chrome — makes it obvious this isn't the real login */}
       <div className="sticky top-0 z-[50] border-b bg-background/95 backdrop-blur-xl">
-        <div className="mx-auto max-w-6xl px-6 py-3 flex items-center gap-3 flex-wrap">
+        <div className="mx-auto max-w-6xl px-6 py-3 flex items-center gap-3">
           <Badge variant="secondary">Design preview</Badge>
-          <div className="flex items-center gap-1 flex-wrap">
-            {BACKDROPS.map((b, idx) => {
-              const prev = BACKDROPS[idx - 1];
-              const groupBreak = prev && prev.group !== b.group;
-              return (
-                <div key={b.key} className="flex items-center gap-1">
-                  {groupBreak && (
-                    <span className="mx-1 h-4 w-px bg-border" aria-hidden />
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setBackdrop(b.key)}
-                    className={cn(
-                      "text-xs px-2.5 py-1 rounded-md transition-colors",
-                      backdrop === b.key
-                        ? "bg-foreground text-background font-semibold"
-                        : "text-muted-foreground hover:text-foreground hover:bg-muted",
-                    )}
-                  >
-                    {b.label}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
           <div className="ml-auto">
             <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close">
               <X />
@@ -107,7 +45,7 @@ export function LoginPreview({ onClose }: { onClose: () => void }) {
       {/* Split layout — centered content well so the two columns stay
           together as the viewport grows wider. */}
       <div className="relative min-h-[calc(100dvh-57px)] flex items-center justify-center px-6 py-12 md:px-12 md:py-16">
-        {renderBackdrop(backdrop)}
+        <AuroraBackdrop />
         <div className="relative z-10 w-full max-w-[1400px] flex flex-col md:flex-row md:items-center gap-12 md:gap-16">
         {/* Left: sign-in form */}
         <div className="md:w-1/2 flex">

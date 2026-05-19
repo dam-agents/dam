@@ -1,11 +1,8 @@
 import {
   Add as Plus,
-  CalendarHeatMap,
-  Cloud,
   Password as KeyRound,
   Play,
   Renew as RotateCw,
-  Security,
   TrashCan as Trash2,
 } from "@carbon/icons-react";
 import { useMemo, useState } from "react";
@@ -65,12 +62,13 @@ export function ListView() {
   return (
     <>
       <div className="w-full max-w-2xl">
-        {/* Page header — header CTA only shows when there's already an
-            agent. On the empty state, the EmptyState card carries the
-            primary CTA so the page has a single focal action. */}
-        <div className="flex items-center gap-3 mb-8">
-          <h1 className="text-[20px] md:text-[24px] font-bold text-foreground">Agents</h1>
-          {initialLoaded && agents.length > 0 && (
+        {/* Page header — only renders once at least one agent exists. On
+            the empty state the EmptyState card's own title ("Add your
+            first agent") carries the page heading, so the redundant h1
+            stays hidden until there's content to label. */}
+        {initialLoaded && agents.length > 0 && (
+          <div className="flex items-center gap-3 mb-8">
+            <h1 className="text-[20px] md:text-[24px] font-bold text-foreground">Agents</h1>
             <div className="ml-auto flex items-center gap-2 md:gap-3">
               <Button
                 id="tour-add-agent"
@@ -80,8 +78,8 @@ export function ListView() {
                 <Plus /> <span className="hidden sm:inline">Add</span> Agent
               </Button>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Skeleton during initial load — only when we expect agents */}
         {!initialLoaded && agents.length > 0 && (
@@ -98,8 +96,7 @@ export function ListView() {
         {initialLoaded && agents.length === 0 && !busyAgent && (
           <EmptyState
             palette="aurora"
-            eyebrow="Agents"
-            title="Spin up your first agent"
+            title="Add your first agent"
             description={
               <>
                 Agents are AI harnesses — Claude Code, Codex, Gemini CLI — that
@@ -109,28 +106,19 @@ export function ListView() {
               </>
             }
             bullets={[
-              {
-                icon: <Cloud className="h-3 w-3" />,
-                text: <>Persistent: keeps state and context across sessions.</>,
-              },
-              {
-                icon: <Security className="h-3 w-3" />,
-                text: (
-                  <>
-                    Network-isolated: only reaches hosts you allow, with
-                    credentials injected at the gateway.
-                  </>
-                ),
-              },
-              {
-                icon: <CalendarHeatMap className="h-3 w-3" />,
-                text: (
-                  <>
-                    Schedulable: trigger an agent on a cron and let it work
-                    while you're away.
-                  </>
-                ),
-              },
+              <>
+                <span className="font-semibold">Persistent</span> — keeps state
+                and context across sessions.
+              </>,
+              <>
+                <span className="font-semibold">Network-isolated</span> — only
+                reaches hosts you allow, with credentials injected at the
+                gateway.
+              </>,
+              <>
+                <span className="font-semibold">Schedulable</span> — trigger an
+                agent on a cron and let it work while you're away.
+              </>,
             ]}
             action={
               <Button onClick={() => setShowAddAgent(true)} disabled={busyAgent}>

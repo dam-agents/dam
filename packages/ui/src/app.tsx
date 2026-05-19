@@ -5,7 +5,6 @@ import { MobileNav } from "./components/mobile-nav.js";
 import { OfflineBanner } from "./components/offline-banner.js";
 import { Sidebar } from "./components/sidebar.js";
 import { ToastOverlay } from "./components/toast-overlay.js";
-import { AllSetPreviewToggle } from "./mocks/all-set-preview-toggle.js";
 import { LoginPreviewToggle } from "./mocks/login-preview-toggle.js";
 import { StyleGuideToggle } from "./mocks/style-guide-toggle.js";
 import { ListView } from "./modules/agents/views/list-view.js";
@@ -141,7 +140,6 @@ export default function App() {
       <WelcomeTour />
       <StyleGuideToggle />
       <LoginPreviewToggle />
-      <AllSetPreviewToggle />
     </div>
   );
 }
