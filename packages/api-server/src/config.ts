@@ -1,5 +1,5 @@
 import { brandSchema } from "api-server-api";
-import { z } from "zod/v4";
+import { z } from "zod";
 import pkg from "../package.json" with { type: "json" };
 import { isValidAppSlug } from "./modules/connections/infrastructure/oauth-apps.js";
 
