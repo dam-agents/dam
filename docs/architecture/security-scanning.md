@@ -3,29 +3,27 @@
 Last verified: 2026-05-19
 
 Motivated by: operational policy, not an architectural decision — no ADR.
-Image scanning, source SAST, and dependency advisory follow industry-standard
-shapes; the choices here are off-the-shelf integrations, not load-bearing
-decisions worth a separate record.
 
 ## Overview
 
-Three scanners cover three different surfaces of the same supply chain:
+Two scanners find vulnerabilities, one poller turns them into GitHub issues,
+and two more tools cover source-level and direct-dependency gaps:
 
-| Layer         | Scanner                | What it catches                                                                  | Where alerts surface                                          | Triage owner       |
-|---------------|------------------------|----------------------------------------------------------------------------------|---------------------------------------------------------------|--------------------|
-| Built images  | Quay.io Clair          | CVEs in OS packages and language deps baked into the image (apt, pip, npm, etc.) | Auto-filed GitHub issue (`security`, `vulnerability` labels)  | Security oncall    |
-| Our source    | CodeQL                 | SAST findings in our Go and TypeScript code                                      | GitHub **Security → Code scanning** tab                       | PR author / review |
-| Declared deps | Dependabot             | Vulnerable npm / Go / GitHub Actions / Docker base versions                      | Auto-filed PR; alert in **Security → Dependabot** tab         | PR author          |
+| Scanner       | What it scans                                                                 | Where alerts surface                                         |
+|---------------|-------------------------------------------------------------------------------|--------------------------------------------------------------|
+| Quay.io Clair | Built container images — OS packages, language deps, Red Hat base layer CVEs  | GitHub issue via `daily.yml` (`security` + `vulnerability`)  |
+| Mend SCA      | Repo lockfiles — npm and Go transitive dependency CVEs                        | GitHub issue (auto-filed by Mend App, same labels)           |
+| CodeQL        | Our Go and TypeScript source (SAST)                                           | GitHub **Security → Code scanning** tab                      |
+| Dependabot    | Direct dependency advisories (mostly redundant to Mend, kept as safety net)   | GitHub **Security → Dependabot** tab; auto-filed PRs         |
 
-GitHub **secret scanning** is auto-enabled on public repos and complements the
-above by blocking accidental credential commits at push time. No config in this
-repo; alerts surface in the Security tab.
+GitHub **secret scanning** complements the above by blocking credential commits
+at push time.
 
 ## Pipeline
 
 ```mermaid
 flowchart LR
-  subgraph build["GitHub Actions"]
+  subgraph ci["GitHub Actions"]
     cd[cd.yml]
     poll[daily.yml<br/>daily cron]
   end
@@ -36,6 +34,8 @@ flowchart LR
     api[security API]
   end
 
+  mend[Mend SCA<br/>GitHub App]
+
   subgraph github["GitHub"]
     issue[issue]
   end
@@ -45,74 +45,95 @@ flowchart LR
   clair --> api
   poll -->|GET /security| api
   poll -->|gh issue create / comment| issue
+  mend -->|scan lockfiles| issue
 ```
 
-We poll instead of receiving a webhook because Quay's webhook notifications
-have a body template but no header field, so they can't carry the bearer
-token GitHub's `repository_dispatch` requires. Polling keeps the auth shape
-one-way (CI → Quay) and removes the need for a fine-grained PAT stored in
-Quay's UI.
+### Quay Clair + daily.yml
 
-Quay rescans existing images whenever its CVE database updates, so a CVE
-disclosed *after* a release still produces a finding — which is the whole
-reason for moving off ghcr.io ([free Clair scanning is the killer feature][quay-scan]).
-The poll runs daily, so there's up to ~24h between Clair finding a CVE and
-an issue being filed. Tune the `cron:` line in
-[`daily.yml`](../../.github/workflows/daily.yml) if that window is too wide.
+[`cd.yml`](../../.github/workflows/cd.yml) pushes images to Quay on every
+`main` push and `v*` tag. Quay's built-in Clair scanner runs automatically and
+rescans whenever its CVE database updates — so a CVE disclosed *after* a
+release still produces a finding. Images use hardened Red Hat base layers, so
+Clair also catches CVEs in OS-level packages from upstream.
 
-## Workflows in this repo
+[`daily.yml`](../../.github/workflows/daily.yml) polls Quay once a day and
+turns findings into GitHub issues. One matrix job per image repository:
 
-- [`.github/workflows/cd.yml`](../../.github/workflows/cd.yml) — builds and pushes images to `quay.io/dam-agents/<component>` on every push to `main` and on `v*` tags.
-- [`.github/workflows/daily.yml`](../../.github/workflows/daily.yml) — daily poller; for each image's `latest` tag, hits Quay's security API, dedupes by `(repository, CVE, package)`, opens new issues or comments existing ones.
+1. Resolves the `latest` tag to a manifest digest via Quay's tag API.
+2. Fetches the Clair scan for that manifest. Exits with a notice if the scan
+   isn't ready yet.
+3. Flattens findings into `(CVE, package, version, severity, fixed_by)`
+   tuples, deduped by `(CVE, package)`. No severity filter — everything
+   surfaces.
+4. For each finding, searches open issues for the same CVE + repo name. Adds
+   a "still present" comment to existing issues; creates new ones with
+   `security` + `vulnerability` labels.
 
-CodeQL runs from GitHub's **default setup** (configured in repo Settings, no
-workflow file) — it picks Go and JavaScript/TypeScript automatically, runs on
-push and PR to default + protected branches, and weekly. Findings show up
-under **Security → Code scanning** the same way they would with a workflow.
+We poll instead of receiving a Quay webhook because Quay's webhook body
+template has no header field, so it can't carry the bearer token
+`repository_dispatch` requires. Polling keeps auth one-way (CI → Quay).
 
-There is no `dependabot.yml`. Dependabot alerts and security PRs are repo-level
-toggles (Settings → Code security), not config-file driven; non-security
-version bumps are explicitly opted out of so the repo doesn't drown in churn.
+### Mend SCA
 
-## Manual one-time setup
+Mend runs as a GitHub App, configured via
+[`renovate.json`](../../renovate.json): all routine package updates are
+disabled, only `vulnerabilityAlerts` is enabled. Mend scans the full
+transitive dependency tree in lockfiles and auto-files GitHub issues for CVEs
+it finds.
 
-The pipeline needs only two pieces of state outside the repo:
+## Dependency remediation
 
-1. **Quay org `dam-agents`** — public-tier (free Clair scanning). One repo per image, all public:
-   `api-server`, `claude-code`, `code-guardian`, `controller`, `google-workspace-agent`,
-   `pi-agent`, `platform-base`, `ui` (plus `charts` for the Helm OCI chart, no scan needed).
-2. **Robot account** with Write across the org. Credentials stored as repo secrets:
+When a scanner flags a transitive npm dependency, the fix is typically a
+`pnpm.overrides` entry (the vulnerable package isn't in our `package.json`).
+Scope the override to the vulnerable range so it self-expires:
+
+```jsonc
+"pnpm": {
+  "overrides": {
+    "protobufjs@<7.5.8": "7.5.8"
+  }
+}
+```
+
+When multiple major versions of the same package exist in the tree (e.g.
+`brace-expansion` 2.x and 5.x), use an exact version selector to avoid
+overriding the wrong line.
+
+`minimumReleaseAge` in `pnpm-workspace.yaml` rejects packages published within
+7 days as a supply-chain defence. Security fixes sometimes land inside that
+window — add those to `minimumReleaseAgeExclude`. The `common:check:lockfile-age`
+mise task enforces the same constraint independently and reads the same
+exclusion list.
+
+## Remediation flow
+
+1. Issue lands in the inbox.
+2. Identify the source: base image (rebuild), dependency (bump / override), or our code (patch).
+3. Merge the fix; the next scan + poll cycle stops commenting on the issue.
+4. Close the issue once a poll cycle goes quiet. Closed issues don't dedupe — if the CVE reappears, a fresh issue is opened.
+5. **No fix available?** Document risk acceptance in the issue, apply `accepted-risk`, leave open until upstream patches.
+
+## Setup
+
+External state the pipeline needs:
+
+1. **Quay org `dam-agents`** — public-tier (free Clair). One repo per image, all public.
+2. **Robot account** with Write across the org:
    ```sh
    gh secret set QUAY_USERNAME --body 'dam-agents+platform_ci'
    gh secret set QUAY_PASSWORD < ~/quay-robot-token.txt
    ```
+3. **Mend Renovate** GitHub App — installed on the repo; no credentials to store.
 
-The poller uses the default `GITHUB_TOKEN` for issue writes — no PAT, no
-Quay webhook, no header config. (We tried; Quay webhooks don't expose a
-header field, which made `repository_dispatch` infeasible.)
-
-Repo-level toggles to flip in **Settings → Code security**:
-
-- Dependabot alerts: **on**
-- Dependabot security updates: **on**
-- Secret scanning + push protection: **on**
-- CodeQL default setup: **on** (Go + JavaScript/TypeScript).
-
-## Remediation flow
-
-1. Issue or PR lands in the inbox.
-2. The owner identifies the source: a base image (rebuild), a dependency (bump), or our own code (patch).
-3. Merge the fix; the next image build's Quay scan reports the CVE gone, and the next daily poll stops commenting on the open issue.
-4. Close the issue once a poll cycle goes quiet. If the same CVE reappears later (regression, or new image with the old base), the next poll opens a fresh issue — closed issues don't dedupe.
-5. **No fix available?** Document the risk acceptance in the issue: which versions are affected, why an immediate workaround isn't possible, and what monitoring catches exploitation. Apply the `accepted-risk` label and leave open until upstream ships a patch.
+Repo-level toggles in **Settings → Code security**: Dependabot alerts **on**,
+Dependabot security updates **on**, secret scanning + push protection **on**,
+CodeQL default setup **on** (Go + JavaScript/TypeScript).
 
 ## What this does NOT cover
 
-Out of scope today, listed so the gap is visible:
-
-- **Runtime container scanning** (Falco, kube-bench at the cluster level). Catches drift after deploy; we rely on the image scan being the authoritative source pre-deploy.
-- **Kubernetes manifest hardening** (kubesec, polaris). Helm chart linting in CI is a `mise run helm:check:lint` away but doesn't include SAST-style policy.
-- **Supply-chain provenance** (cosign signing, SLSA attestations, SBOM). Quay supports cosign verification but we don't sign yet. Tracked in the security model as future work.
-- **Agent workspace contents.** Per the [persistence security note](persistence.md), workspace residue is adversarial input on the next turn — the scanners here cover the platform, not user-generated content inside an instance.
+- **Runtime container scanning** (Falco, kube-bench). We rely on image scans pre-deploy.
+- **Kubernetes manifest hardening** (kubesec, polaris). Helm linting in CI doesn't include SAST-style policy.
+- **Supply-chain provenance** (cosign, SLSA, SBOM). Tracked as future work.
+- **Agent workspace contents.** Per the [persistence security note](persistence.md), workspace residue is adversarial input — scanners cover the platform, not user-generated content.
 
 [quay-scan]: https://docs.projectquay.io/use_quay.html#security-scanning
