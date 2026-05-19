@@ -23,14 +23,14 @@ ALTER TABLE "channels" RENAME COLUMN "instance_id" TO "agent_id";--> statement-b
 CREATE UNIQUE INDEX "channels_agent_type_idx" ON "channels" USING btree ("agent_id","type");--> statement-breakpoint
 
 -- allowed_users
-ALTER TABLE "allowed_users" DROP CONSTRAINT IF EXISTS "allowed_users_pkey";--> statement-breakpoint
+ALTER TABLE "allowed_users" DROP CONSTRAINT IF EXISTS "allowed_users_instance_id_keycloak_sub_pk";--> statement-breakpoint
 ALTER TABLE "allowed_users" RENAME COLUMN "instance_id" TO "agent_id";--> statement-breakpoint
-ALTER TABLE "allowed_users" ADD CONSTRAINT "allowed_users_pkey" PRIMARY KEY ("agent_id","keycloak_sub");--> statement-breakpoint
+ALTER TABLE "allowed_users" ADD CONSTRAINT "allowed_users_agent_id_keycloak_sub_pk" PRIMARY KEY ("agent_id","keycloak_sub");--> statement-breakpoint
 
 -- telegram_threads
-ALTER TABLE "telegram_threads" DROP CONSTRAINT IF EXISTS "telegram_threads_pkey";--> statement-breakpoint
+ALTER TABLE "telegram_threads" DROP CONSTRAINT IF EXISTS "telegram_threads_instance_id_thread_id_pk";--> statement-breakpoint
 ALTER TABLE "telegram_threads" RENAME COLUMN "instance_id" TO "agent_id";--> statement-breakpoint
-ALTER TABLE "telegram_threads" ADD CONSTRAINT "telegram_threads_pkey" PRIMARY KEY ("agent_id","thread_id");--> statement-breakpoint
+ALTER TABLE "telegram_threads" ADD CONSTRAINT "telegram_threads_agent_id_thread_id_pk" PRIMARY KEY ("agent_id","thread_id");--> statement-breakpoint
 
 -- pending_approvals: drop the redundant instance_id column (agent_id is the truth)
 DROP INDEX IF EXISTS "pending_approvals_instance_status_idx";--> statement-breakpoint
@@ -47,7 +47,7 @@ ALTER TABLE "instance_skills" RENAME TO "agent_skills";--> statement-breakpoint
 ALTER TABLE "agent_skills" DROP CONSTRAINT IF EXISTS "instance_skills_pkey";--> statement-breakpoint
 DROP INDEX IF EXISTS "instance_skills_instance_idx";--> statement-breakpoint
 ALTER TABLE "agent_skills" RENAME COLUMN "instance_id" TO "agent_id";--> statement-breakpoint
-ALTER TABLE "agent_skills" ADD CONSTRAINT "agent_skills_pkey" PRIMARY KEY ("agent_id","source","name");--> statement-breakpoint
+ALTER TABLE "agent_skills" ADD CONSTRAINT "agent_skills_agent_id_source_name_pk" PRIMARY KEY ("agent_id","source","name");--> statement-breakpoint
 CREATE INDEX "agent_skills_agent_idx" ON "agent_skills" USING btree ("agent_id");--> statement-breakpoint
 
 -- instance_skill_publishes -> agent_skill_publishes
