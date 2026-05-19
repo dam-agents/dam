@@ -32,6 +32,7 @@
     "@types/ws": "^8.18.1",
     "agent-runtime-api": "workspace:*",
     "api-server-api": "workspace:*",
+    "dev-config": "workspace:*",
     "tsup": "^8.5.1",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2",

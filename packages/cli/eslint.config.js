@@ -1,3 +1,3 @@
-import base from "../../eslint.config.base.js";
+import base from "dev-config/eslint";
 
 export default base;

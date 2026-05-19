@@ -95,6 +95,9 @@ importers:
       api-server-api:
         specifier: workspace:*
         version: link:../api-server-api
+      dev-config:
+        specifier: workspace:*
+        version: link:../dev-config
       tsup:
         specifier: ^8.5.1
         version: 8.5.1(jiti@2.6.1)(postcss@8.5.14)(tsx@4.21.0)(typescript@6.0.2)(yaml@2.8.3)
@@ -117,6 +120,9 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      dev-config:
+        specifier: workspace:*
+        version: link:../dev-config
       typescript:
         specifier: ^6.0.2
         version: 6.0.2
@@ -220,6 +226,9 @@ importers:
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
+      dev-config:
+        specifier: workspace:*
+        version: link:../dev-config
       grpc-tools:
         specifier: ^1.13.1
         version: 1.13.1
@@ -245,6 +254,9 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      dev-config:
+        specifier: workspace:*
+        version: link:../dev-config
       typescript:
         specifier: ^6.0.2
         version: 6.0.2
@@ -275,6 +287,9 @@ importers:
       commander:
         specifier: ^14.0.3
         version: 14.0.3
+      dev-config:
+        specifier: workspace:*
+        version: link:../dev-config
       open:
         specifier: ^11.0.0
         version: 11.0.0
@@ -312,12 +327,24 @@ importers:
         specifier: ^3.4.7
         version: 3.4.9
     devDependencies:
+      dev-config:
+        specifier: workspace:*
+        version: link:../dev-config
       drizzle-kit:
         specifier: ^0.31.4
         version: 0.31.10
       typescript:
         specifier: ^6.0.2
         version: 6.0.2
+
+  packages/dev-config:
+    dependencies:
+      eslint-plugin-unicorn:
+        specifier: ^64.0.0
+        version: 64.0.0(eslint@10.2.0(jiti@2.6.1))
+      typescript-eslint:
+        specifier: ^8.58.2
+        version: 8.58.2(eslint@10.2.0(jiti@2.6.1))(typescript@6.0.2)
 
   packages/platform-base: {}
 
@@ -429,6 +456,9 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^4.3.4
         version: 4.7.0(vite@6.4.2(@types/node@25.6.2)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.8.3))
+      dev-config:
+        specifier: workspace:*
+        version: link:../dev-config
       playwright:
         specifier: ^1.59.0
         version: 1.59.0

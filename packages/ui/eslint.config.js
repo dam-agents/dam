@@ -1,7 +1,8 @@
 import reactHooks from "eslint-plugin-react-hooks";
 import simpleImportSort from "eslint-plugin-simple-import-sort";
 import tseslint from "typescript-eslint";
-import base from "../../eslint.config.base.js";
+
+import base from "dev-config/eslint";
 
 export default [
   ...base,
