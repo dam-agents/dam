@@ -42,6 +42,7 @@ import {
   deleteIdentityLink,
 } from "./modules/channels/infrastructure/identity-links-repository.js";
 import { createCipher } from "./modules/channels/infrastructure/cipher.js";
+import { encryptLegacyRefreshTokens } from "./bootstrap/encrypt-legacy-refresh-tokens.js";
 import {
   isThreadAuthorized,
   authorizeThread,
@@ -156,6 +157,7 @@ const persistTelegramSession = (
   );
 
 const cipher = createCipher(config.encryptionKey);
+await encryptLegacyRefreshTokens(db, cipher);
 
 const identityLinkService = createIdentityLinkService({
   findByExternalUser: findIdentityByExternalUser(db, cipher),

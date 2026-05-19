@@ -24,5 +24,5 @@ Column-level AES-256-GCM encryption inside the api-server. The DEK is a 32-byte 
 - Repo invariant: every write to `identity_links.refresh_token` must go through `cipher.encrypt`; every read through `cipher.decrypt`. Enforced by the repository being the only writer.
 - The envelope's leading version byte lets us swap algorithms in the future without a data migration; bump on change.
 - Losing the K8s Secret = unrecoverable refresh tokens → forced re-OAuth for every linked user. Acceptable: refresh tokens are short-lived (Keycloak default 30d) and re-link is one click.
-- Existing plaintext rows are lazily re-encrypted on first read after deploy — repository detects the missing `"enc:"` prefix, encrypts in place, returns plaintext to the caller. No data migration; no forced re-OAuth.
+- Existing plaintext rows are encrypted by a bootstrap step that runs at api-server startup after Drizzle SQL migrations, before serving traffic. Idempotent — rows already in the `"enc:"` form are skipped. Lives outside Drizzle migrations because Drizzle migrations are SQL-only and stock Postgres can't compute AES-256-GCM with the app's key.
 - Rotation is not automatic. To rotate the DEK, run an explicit re-encrypt pass (read with old key, write with new key, swap the Secret) — out of scope for §5.1.
