@@ -42,6 +42,8 @@ export function ChatView() {
   const selectedInstance = useStore((s) => s.selectedInstance);
   const { data: instancesData } = useInstances();
   const instances = instancesData?.list ?? [];
+  const selectedInstanceName =
+    instances.find((i) => i.id === selectedInstance)?.name ?? selectedInstance;
   const sessionId = useStore((s) => s.sessionId);
   const sessionMode = useStore((s) => s.sessionMode);
   const setSessionMode = useStore((s) => s.setSessionMode);
@@ -356,7 +358,7 @@ export function ChatView() {
           </button>
           <span className="w-px h-4 bg-border-light" />
           <h1 className="text-[14px] font-bold text-text truncate">
-            {selectedInstance}
+            {selectedInstanceName}
           </h1>
           <div className="flex h-7 rounded-md border border-border-light overflow-hidden">
             <button
