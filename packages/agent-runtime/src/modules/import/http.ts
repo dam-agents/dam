@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import http from "node:http";
 import { join } from "node:path";
+import type { ImportBundleResult } from "api-server-api";
 import busboy from "busboy";
 
 import { STAGING_PREFIX } from "./constants.js";
@@ -201,13 +202,14 @@ export function createImportHandlers(
           `import ok files=${filesWritten} bytes=${bytes} durationMs=${Date.now() - startedAt}`,
         );
         try {
-          res.writeHead(200, { "Content-Type": "application/json" }).end(
-            JSON.stringify({
-              filesWritten,
-              bytes,
-              durationMs: Date.now() - startedAt,
-            }),
-          );
+          const body: ImportBundleResult = {
+            filesWritten,
+            bytes,
+            durationMs: Date.now() - startedAt,
+          };
+          res
+            .writeHead(200, { "Content-Type": "application/json" })
+            .end(JSON.stringify(body));
         } catch (e) {
           log(
             `response write threw on success (${(e as Error).message}) — finalize already committed`,

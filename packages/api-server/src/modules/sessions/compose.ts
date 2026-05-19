@@ -1,5 +1,5 @@
 import type { Db } from "db";
-import type { SessionsApiService } from "api-server-api";
+import type { SessionsApiService, SessionMode } from "api-server-api";
 import {
   listSessionsByInstance,
   listSessionsByScheduleId,
@@ -20,7 +20,7 @@ export function composeSessionsModule(deps: {
   notifyModeChange?: (
     instanceId: string,
     sessionId: string,
-    mode: string,
+    mode: SessionMode,
   ) => void;
 }): {
   sessions: SessionsApiService;

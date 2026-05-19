@@ -4,7 +4,13 @@ import { Hono, type Context } from "hono";
 import { serve } from "@hono/node-server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter } from "api-server-api/router";
-import type { ApiContext, UserIdentity } from "api-server-api";
+import type {
+  ApiContext,
+  AuthConfig,
+  Brand,
+  UserIdentity,
+} from "api-server-api";
+import { buildPlatformSessionModeChangedNotification } from "api-server-api";
 import type { CoreV1Api } from "@kubernetes/client-node";
 import type { Db } from "db";
 import type { SkillSourceSeed } from "../../modules/skills/index.js";
@@ -148,13 +154,13 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       issuer: `${config.keycloakExternalUrl}/realms/${config.keycloakRealm}`,
       clientId: config.keycloakClientId,
       cliClientId: config.keycloakCliClientId,
-    }),
+    } satisfies AuthConfig),
   );
   // Public — UI fetches this on bootstrap (before auth) to set the page
   // title, theme-color meta, and CSS accent custom properties. Sole source
   // of brand truth; all UI components read from here, never from build-time
   // constants.
-  app.get("/api/brand", (c) => c.json(config.brand));
+  app.get("/api/brand", (c) => c.json(config.brand satisfies Brand));
   // Public — PWA manifest (replaces the build-time bundled one). Served
   // dynamically so the installed-PWA name follows brand without a UI rebuild.
   app.get("/api/brand/manifest.webmanifest", (c) => {
@@ -533,11 +539,9 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       isOwnedSchedule,
       closeTerminalSession: terminalRelay.closeSession,
       notifyModeChange: (instanceId, sessionId, mode) => {
-        const frame = JSON.stringify({
-          jsonrpc: "2.0",
-          method: "platform/sessionModeChanged",
-          params: { sessionId, mode },
-        });
+        const frame = JSON.stringify(
+          buildPlatformSessionModeChangedNotification({ sessionId, mode }),
+        );
         redisBus.publish(injectChannelOf(instanceId), frame).catch(() => {});
       },
     });

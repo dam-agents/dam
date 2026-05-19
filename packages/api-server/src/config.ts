@@ -1,3 +1,4 @@
+import { brandSchema } from "api-server-api";
 import { z } from "zod/v4";
 import pkg from "../package.json" with { type: "json" };
 import { isValidAppSlug } from "./modules/connections/infrastructure/oauth-apps.js";
@@ -107,23 +108,13 @@ const configSchema = z.object({
    *  and theme accent colors. Surfaced to the UI via `GET /api/brand` and
    *  used internally for OAuth client_name, Slack slash command, skill
    *  publish git author, MCP tool descriptions. The internal codename
-   *  ("platform") is permanent; this section is the only knob users see. */
-  brand: z.object({
-    name: z.string().default("Platform"),
-    short: z.string().default("platform"),
-    theme: z.object({
-      light: z.object({
-        accent: z.string().default("#1D6BE1"),
-        accentHover: z.string().default("#1556B8"),
-        accentLight: z.string().default("#eaf2fe"),
-      }),
-      dark: z.object({
-        accent: z.string().default("#3C92FD"),
-        accentHover: z.string().default("#2F88FD"),
-        accentLight: z.string().default("#0f1f3a"),
-      }),
-    }),
-  }),
+   *  ("platform") is permanent; this section is the only knob users see.
+   *
+   *  Shape comes from `brandSchema` in `api-server-api` so the UI parses
+   *  `GET /api/brand` against the same definition. Defaults live in the
+   *  env-var input-prep block below — not in the schema — so a malformed
+   *  server response cannot silently coerce on the UI side. */
+  brand: brandSchema,
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -170,18 +161,18 @@ export function loadConfig(): Config {
     trustedHostsPath: process.env.TRUSTED_HOSTS_PATH,
     maxImportBundleBytes: process.env.MAX_IMPORT_BUNDLE_BYTES,
     brand: {
-      name: process.env.BRAND_NAME,
-      short: process.env.BRAND_SHORT,
+      name: process.env.BRAND_NAME ?? "Platform",
+      short: process.env.BRAND_SHORT ?? "platform",
       theme: {
         light: {
-          accent: process.env.BRAND_THEME_LIGHT_ACCENT,
-          accentHover: process.env.BRAND_THEME_LIGHT_ACCENT_HOVER,
-          accentLight: process.env.BRAND_THEME_LIGHT_ACCENT_LIGHT,
+          accent: process.env.BRAND_THEME_LIGHT_ACCENT ?? "#1D6BE1",
+          accentHover: process.env.BRAND_THEME_LIGHT_ACCENT_HOVER ?? "#1556B8",
+          accentLight: process.env.BRAND_THEME_LIGHT_ACCENT_LIGHT ?? "#eaf2fe",
         },
         dark: {
-          accent: process.env.BRAND_THEME_DARK_ACCENT,
-          accentHover: process.env.BRAND_THEME_DARK_ACCENT_HOVER,
-          accentLight: process.env.BRAND_THEME_DARK_ACCENT_LIGHT,
+          accent: process.env.BRAND_THEME_DARK_ACCENT ?? "#3C92FD",
+          accentHover: process.env.BRAND_THEME_DARK_ACCENT_HOVER ?? "#2F88FD",
+          accentLight: process.env.BRAND_THEME_DARK_ACCENT_LIGHT ?? "#0f1f3a",
         },
       },
     },

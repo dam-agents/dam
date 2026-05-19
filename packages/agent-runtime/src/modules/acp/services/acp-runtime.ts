@@ -1,3 +1,5 @@
+import { buildPlatformTurnEndedNotification } from "api-server-api";
+
 import {
   isRequest,
   isResponse,
@@ -810,11 +812,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           }
           appendAndFanOut(
             sid,
-            JSON.stringify({
-              jsonrpc: "2.0",
-              method: "platform/turnEnded",
-              params: { sessionId: sid },
-            }),
+            JSON.stringify(
+              buildPlatformTurnEndedNotification({ sessionId: sid }),
+            ),
           );
           // Reap the SDK session if the turn finished with nothing left to
           // watch it — e.g. a scheduled trigger fired a prompt with no UI
