@@ -3,7 +3,7 @@ FROM ${BASE_IMAGE}
 
 USER root
 
-RUN npm install @agentclientprotocol/claude-agent-acp @anthropic-ai/claude-agent-sdk \
+RUN npm install @agentclientprotocol/claude-agent-acp \
     && npm install -g @anthropic-ai/claude-code \
     && chown -R 65532:0 /app
 
