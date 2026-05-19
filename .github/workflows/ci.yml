@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  paths:
+    runs-on: ubuntu-latest
+    outputs:
+      e2e: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.e2e == 'true' }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        id: filter
+        with:
+          filters: |
+            e2e:
+              - 'packages/api-server/**'
+              - 'packages/api-server-api/**'
+              - 'packages/db/**'
+              - 'packages/controller/**'
+              - 'packages/agent-runtime/**'
+              - 'packages/agent-runtime-api/**'
+              - 'packages/platform-base/**'
+              - 'deploy/helm/**'
+
+  check:
+    name: mise check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+      - run: mise run setup
+      - run: mise run check
+
+  test:
+    name: mise test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+      - run: mise run setup
+      - run: mise run test
+
+  e2e:
+    name: mise e2e
+    needs: [paths]
+    if: needs.paths.outputs.e2e == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      IS_SANDBOX: "1"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+      - run: mise run setup
+      - run: mise run e2e
+      - name: Teardown test cluster
+        if: always()
+        run: mise run cluster:delete -- --force

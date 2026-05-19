@@ -1,11 +1,4 @@
-name: Quay vulnerability poll
-
-# Polls Quay's public security API for each image's `latest` tag once a day
-# and opens deduped GitHub issues per (repository, CVE). Polling instead of
-# webhook because Quay's webhook notifications cannot send custom auth
-# headers, so they cannot reach repository_dispatch directly.
-#
-# See docs/architecture/security-scanning.md for the full pipeline.
+name: Daily
 
 on:
   schedule:
@@ -17,7 +10,7 @@ permissions:
   issues: write
 
 jobs:
-  poll:
+  quay-vulnerabilities:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:

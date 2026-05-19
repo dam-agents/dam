@@ -12,6 +12,9 @@ depends = ["*:fix"]
 ["test"]
 depends = ["*:test"]
 
+["e2e"]
+depends = ["*:e2e"]
+
 # -- Git hooks --
 
 ["git-hooks:pre-commit"]
@@ -109,4 +112,243 @@ if [[ -n "$HITS" ]]; then
   exit 1
 fi
 echo "OK: $(wc -l < "$LOCKFILE_ENTRIES") lockfile entries all older than ${DAYS}d"
+'''
+
+["common:check:version"]
+description = "Verify all release-participating packages share the same version"
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+version=$(
+  {
+    yq -r .version    deploy/helm/platform/Chart.yaml
+    yq -r .appVersion deploy/helm/platform/Chart.yaml
+    yq -r .version    packages/cli/package.json
+  } | sort -u
+)
+if [[ $(wc -l <<<"$version") -ne 1 ]]; then echo "ERROR: Version mismatch detected: $(echo $version)" >&2; exit 1; fi
+if ! [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$ ]]; then echo "ERROR: $version is not valid semver (X.Y.Z or X.Y.Z-rcN)" >&2; exit 1; fi
+if [[ "${GITHUB_REF:-}" == refs/tags/* ]] && [[ $GITHUB_REF != "refs/tags/v$version" ]]; then echo "ERROR: GITHUB_REF '$GITHUB_REF' does not match 'refs/tags/v$version'" >&2; exit 1; fi
+echo "OK: version $version"
+'''
+
+# -- Release --
+
+["release:set-version"]
+description = "Update version fields in all release-participating packages and commit"
+usage = 'arg "<version>" help="The new version to set (format: X.Y.Z or X.Y.Z-rcW)"'
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ -n "$(git status --porcelain)" ]]; then
+  echo "ERROR: Working directory not clean"
+  exit 1
+fi
+
+if ! [[ "$usage_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(-rc[0-9]+)?$ ]]; then
+  echo "ERROR: Invalid version format: $usage_version"
+  echo "Expected format: X.Y.Z or X.Y.Z-rcW (e.g., 1.2.3 or 1.2.3-rc1)"
+  exit 1
+fi
+
+set -x
+yq -i ".version = \"$usage_version\""    deploy/helm/platform/Chart.yaml
+yq -i ".appVersion = \"$usage_version\"" deploy/helm/platform/Chart.yaml
+yq -i ".version = \"$usage_version\""    packages/cli/package.json
+git add .
+git commit --signoff --no-verify -m "bump: v$usage_version"
+set +x
+
+echo -e "Pending version in \x1b[36m$(git branch --show-current)\x1b[0m bumped to $usage_version"
+'''
+
+["release:new"]
+description = "Open a new release by creating a release branch from current main"
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ -n "$(git status --porcelain)" ]]; then
+  echo "ERROR: Working directory not clean"
+  exit 1
+fi
+
+set -x
+git checkout main
+git pull
+set +x
+
+current_version=$(yq -r '.version' deploy/helm/platform/Chart.yaml)
+if ! [[ "$current_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+  echo "ERROR: Invalid version format: $current_version. Expected format: X.Y.Z"
+  exit 1
+fi
+next_version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((${BASH_REMATCH[3]} + 1))"
+release_branch="release-v$current_version"
+
+echo ""
+echo "What will happen:"
+echo -e "  - Nothing will be published yet."
+echo -e "  - Tip of the \x1b[36mmain\x1b[0m branch will be prepared for release $current_version in \x1b[36m$release_branch\x1b[0m branch."
+echo -e "  - Pending version in \x1b[36m$release_branch\x1b[0m will be bumped to ${current_version}-rc1."
+echo -e "  - Pending version in \x1b[36mmain\x1b[0m branch will be bumped to $next_version. (This can be bumped more if the next release needs to be minor/major.)"
+echo -e "Want to release a different version than $current_version? Cancel, run \x1b[36mmise run release:set-version <version>\x1b[0m on the \x1b[36mmain\x1b[0m branch and then re-run this task."
+gum confirm "Proceed?"
+
+set -x
+git checkout -B $release_branch origin/main
+{{ mise_bin }} run release:set-version "${current_version}-rc1"
+git push --set-upstream origin $release_branch
+set +x
+echo -e "\x1b[36m$release_branch\x1b[0m branch with pending version ${current_version}-rc1 created."
+
+set -x
+git checkout main
+{{ mise_bin }} run release:set-version "$next_version"
+git push
+set +x
+echo -e "\x1b[36mmain\x1b[0m pending version bumped to $next_version."
+
+git checkout $release_branch
+
+echo -e "Now you can use \x1b[36mmise run release:publish-rc\x1b[0m to publish a release candidate ${current_version}-rc1, or \x1b[36mmise run release:publish-stable\x1b[0m to publish stable $current_version."
+'''
+
+["release:publish-rc"]
+description = "Publish the current release branch as a release candidate"
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ -n "$(git status --porcelain)" ]]; then
+  echo "ERROR: Working directory not clean"
+  exit 1
+fi
+
+release_branch="$(git branch --show-current)"
+if [[ "$release_branch" != "release-v"* ]]; then
+  echo "ERROR: Not on a 'release-v*' branch"
+  exit 1
+fi
+
+set -x
+git pull
+set +x
+
+current_version=$(yq -r '.version' deploy/helm/platform/Chart.yaml)
+if ! [[ "$current_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)-rc([0-9]+)$ ]]; then
+  echo "ERROR: Current version must be an RC version (X.Y.Z-rcN)"
+  echo "Current version: $current_version"
+  exit 1
+fi
+
+next_version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}-rc$((${BASH_REMATCH[4]} + 1))"
+
+echo ""
+echo "What will happen:"
+echo -e "  - Tip of the \x1b[36m$release_branch\x1b[0m branch will be tagged \x1b[36mv$current_version\x1b[0m and pushed to GitHub."
+echo -e "  - GitHub Action triggered by the tag will publish a release candidate \x1b[36m$current_version\x1b[0m."
+echo -e "  - Pending version in \x1b[36m$release_branch\x1b[0m branch will be bumped to \x1b[36m$next_version\x1b[0m."
+gum confirm "Proceed?"
+
+set -x
+git tag "v$current_version"
+git push --atomic origin $release_branch "v$current_version"
+set +x
+echo -e "Pushed tag v$current_version to \x1b[36morigin/$release_branch\x1b[0m"
+
+{{ mise_bin }} run release:set-version "$next_version"
+git push
+
+git checkout $release_branch
+
+echo -e "Check the pipeline progress: https://github.com/dam-agents/dam/actions/workflows/cd.yml"
+'''
+
+["release:publish-stable"]
+description = "Publish the current release branch as a stable release"
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ -n "$(git status --porcelain)" ]]; then
+  echo "ERROR: Working directory not clean"
+  exit 1
+fi
+
+release_branch="$(git branch --show-current)"
+if [[ "$release_branch" != "release-v"* ]]; then
+  echo "ERROR: Not on a 'release-v*' branch"
+  exit 1
+fi
+
+set -x
+git pull
+set +x
+
+current_version=$(yq -r '.version' deploy/helm/platform/Chart.yaml)
+publish_version="${current_version%-rc*}"
+
+echo ""
+echo "What will happen:"
+echo -e "  - Pending version in \x1b[36m$release_branch\x1b[0m branch will be bumped to \x1b[36m$publish_version\x1b[0m."
+echo -e "  - Tip of the \x1b[36m$release_branch\x1b[0m branch will be tagged \x1b[36mv$publish_version\x1b[0m and pushed to GitHub."
+echo -e "  - GitHub Action triggered by the tag will publish a stable release \x1b[36m$publish_version\x1b[0m."
+gum confirm "Proceed?"
+
+{{ mise_bin }} run release:set-version "$publish_version"
+
+set -x
+git tag "v$publish_version"
+git push --atomic origin $release_branch "v$publish_version"
+set +x
+echo -e "Pushed tag v$publish_version to \x1b[36morigin/$release_branch\x1b[0m"
+
+echo -e "Check the pipeline progress: https://github.com/dam-agents/dam/actions/workflows/cd.yml"
+'''
+
+["release:checkout"]
+description = "Checkout the latest release branch"
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+git fetch origin --tags --quiet
+
+branch=$(git branch -r --sort=-version:refname --format "%(refname:short)" | grep 'origin/release-v' | head -n1 | sed 's|origin/||')
+
+if [[ -z "$branch" ]]; then
+  echo "ERROR: No release branch found"
+  exit 1
+fi
+
+if git rev-parse "${branch/release-/}" >/dev/null 2>&1; then
+  echo "Latest release $branch already finalized!"
+fi
+
+git checkout "$branch"
+'''
+
+["release:status"]
+description = "Show current release status and latest remote release information"
+depends = ["common:check:version"]
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+git fetch origin --tags --quiet
+
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Latest release branch:  $(git branch -r --sort=-version:refname --format "%(refname:short)" | grep 'origin/release-v' | head -n1 | sed 's|origin/||')"
+echo "Latest released tag:    $(git ls-remote --tags origin 'v*' | grep -o 'refs/tags/v[0-9]*\.[0-9]*\.[0-9]*\(-rc[0-9]*\)\?$' | sed 's|refs/tags/||' | sort -V | tail -n 1)"
+echo "CD status:              https://github.com/dam-agents/dam/actions/workflows/cd.yml"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 '''

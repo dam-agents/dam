@@ -12,6 +12,7 @@ kubeconform = "latest"
 # misc
 fd = "latest"
 yq = "latest"
+gum = "latest"
 
 [settings]
 experimental = true
