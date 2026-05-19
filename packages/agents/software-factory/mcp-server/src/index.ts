@@ -105,6 +105,9 @@ function createMcpServer(): McpServer {
 const app = express();
 app.use(express.json());
 
+// Stateless HTTP: the SDK's Protocol.connect() throws if already connected,
+// so each request gets its own McpServer + transport pair. Construction is
+// cheap (tool registration only) and matches the SDK's documented pattern.
 app.post("/mcp", async (req, res) => {
   const mcp = createMcpServer();
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });

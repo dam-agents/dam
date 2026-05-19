@@ -63,6 +63,7 @@ Each page describes how the accepted ADRs are realized in the current system. AD
 - [cli](architecture/cli.md) — `dam` command-line client, an npm-distributed Node package that points at a configured Platform deployment.
 - [skills](architecture/skills.md) — connectable git-based skill sources, install onto the per-Agent PVC, REST-only publish back as a PR, Envoy sidecar credential injection for GitHub.
 - [security-scanning](architecture/security-scanning.md) — Quay image scanning with auto-filed issues, CodeQL SAST, Dependabot, and the remediation flow.
+- [software-factory-agent](architecture/software-factory-agent.md) — heartbeat-driven product loop with a pod-local Redis lock that enforces single-flight turns; an MCP server exposes the lock to the harness.
 
 ## Strategy
 

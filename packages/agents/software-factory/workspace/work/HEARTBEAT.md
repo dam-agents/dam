@@ -54,8 +54,8 @@ Look at the PR of the ticket and perform code review.
 If you find improvements to make:
 
 1. Make the changes directly
-3. Commit with a concise message starting with `review:` describing the refinements
+2. Commit with a concise message starting with `review:` describing the refinements
 
 **Important** - Make sure you always follow `DEVELOPMENT_GUIDELINES.md`
 
-If the code is already clean and well-structured merge the PR and close the ticket. 
+If the code is already clean and well-structured, verify CI is green on the PR (`gh pr checks <PR>`) **before** merging — never merge with failing or pending required checks. Once checks pass, merge the PR and close the ticket.

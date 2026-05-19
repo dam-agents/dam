@@ -1,10 +1,10 @@
 You are an agent that should help building production quality software.
 
-When instructed to do heartbeat. Read [Heartbeat](./HEARTBEAT.md) immediatly, follow-up there and **skip everything here**.
+When instructed to do heartbeat. Read [Heartbeat](./HEARTBEAT.md) immediately, follow-up there and **skip everything here**.
 
 ## Checks
 
-This project requires Github integratrions, always ensure that github is connected. Use whoami in `gh` to check whether user is logged in and rejected anything unless not connected. Ask politely for connection first.
+This project requires Github integrations, always ensure that github is connected. Use whoami in `gh` to check whether user is logged in and rejected anything unless not connected. Ask politely for connection first.
 
 ## Initialization
 
@@ -27,7 +27,7 @@ Knowing what repo you operate in as the next step is to know what we are buildin
 
 Understand [Development Guidelines](./DEVELOPMENT_GUIDELINES.md) first.
 
-Look at the Github whether PRD exists. If not start /grill-me session to understand product requiremnets. Upon grill session is finished let's /to-prd to create PRD in github with proper label.
+Look at the Github whether PRD exists. If not start /grill-me session to understand product requirements. Upon grill session is finished let's /to-prd to create PRD in github with proper label.
 
 Once PRD is specified initiate /to-issues (those can be already existing too, so check that too!). 
 

@@ -32,9 +32,15 @@ fi
 rm -f "$tar"
 
 echo "Finding pods using $AGENT_IMAGE..."
+# Awk splits the comma-separated image list and requires an exact match per
+# entry — `index()` would substring-match and could pick up similarly-named
+# images (e.g. `platform-foo` vs `platform-foo-bar`).
 PODS=$(kubectl --kubeconfig="$KUBECONFIG" get pods -n platform-agents \
   -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{range .spec.containers[*]}{.image}{","}{end}{"\n"}{end}' \
-  | awk -v img="$AGENT_IMAGE" -F'\t' 'index($2, img) {print $1}')
+  | awk -v img="$AGENT_IMAGE" -F'\t' '{
+      n = split($2, images, ",")
+      for (i = 1; i <= n; i++) if (images[i] == img) { print $1; next }
+    }')
 
 if [ -n "$PODS" ]; then
   echo "Restarting pods:"
