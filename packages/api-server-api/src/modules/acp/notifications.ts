@@ -23,7 +23,11 @@ export type PlatformTurnEndedNotification = z.infer<
 export function buildPlatformTurnEndedNotification(
   params: PlatformTurnEndedParams,
 ): PlatformTurnEndedNotification {
-  return { jsonrpc: "2.0", method: "platform/turnEnded", params };
+  return platformTurnEndedNotificationSchema.parse({
+    jsonrpc: "2.0",
+    method: "platform/turnEnded",
+    params,
+  });
 }
 
 // --- platform/sessionModeChanged ------------------------------------------
@@ -48,9 +52,9 @@ export type PlatformSessionModeChangedNotification = z.infer<
 export function buildPlatformSessionModeChangedNotification(
   params: PlatformSessionModeChangedParams,
 ): PlatformSessionModeChangedNotification {
-  return {
+  return platformSessionModeChangedNotificationSchema.parse({
     jsonrpc: "2.0",
     method: "platform/sessionModeChanged",
     params,
-  };
+  });
 }
