@@ -41,6 +41,12 @@
       "sourceType": "github",
       "computedHash": "c75f3ffd7f894ff4c0911a5240d9dd00b15fc5b40bf5372f6afadd47ff56b9f3"
     },
+    "react-ui-engineering": {
+      "source": "dam-agents/skills",
+      "sourceType": "github",
+      "skillPath": "skills/react-ui-engineering/SKILL.md",
+      "computedHash": "b84c8dd313729a13c098067539bf08e60773adcba6479b5cac77a29861478e74"
+    },
     "review": {
       "source": "tomkis/typescript-engineering",
       "sourceType": "github",
