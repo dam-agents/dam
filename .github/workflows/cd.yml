@@ -131,7 +131,6 @@ jobs:
 
   publish:
     needs: [build-agents]
-    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
