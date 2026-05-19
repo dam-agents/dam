@@ -104,7 +104,6 @@ jobs:
         repo:
           - api-server
           - claude-code
-          - code-guardian
           - controller
           - google-workspace-agent
           - pi-agent

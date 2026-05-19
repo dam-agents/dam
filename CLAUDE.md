@@ -9,7 +9,7 @@ pnpm workspaces + standalone Go module. Concept depth lives in [`docs/architectu
 - `packages/controller/` — Go K8s reconciler + scheduler
 - `packages/api-server/` + `packages/api-server-api/` — TypeScript API server (tRPC, ACP relay) and its contract package
 - `packages/agent-runtime/` + `packages/agent-runtime-api/` — in-pod ACP WebSocket server and its contract package
-- `packages/agents/` — per-harness agent images (`claude-code`, `pi-agent`, `google-workspace`, `code-guardian`)
+- `packages/agents/` — per-harness agent images (`claude-code`, `pi-agent`, `google-workspace`)
 - `packages/ui/` — React chat interface (Vite)
 - `packages/platform-base/` — shared base image/utilities
 - `packages/db/` — database schema and migrations

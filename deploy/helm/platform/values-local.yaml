@@ -62,20 +62,6 @@ agentTemplates:
     skillPaths:
       - $HOME/.pi/agent/skills/
 
-  - name: code-guardian
-    enabled: true
-    description: "PR code review agent (gh + Claude Code)"
-    image:
-      repository: platform-code-guardian
-      tag: latest
-    storageSize: "10Gi"             # larger — clones real repos
-    skillPaths:
-      - $HOME/.claude/skills/
-    # Empty repo = the agent detects via `gh repo view`.
-    env:
-      - name: GITHUB_REPO
-        value: ""
-
   - name: bob
     enabled: true
     description: "Bob shell agent"

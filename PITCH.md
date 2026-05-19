@@ -157,6 +157,6 @@ Four things that become possible once the floor is there.
 
 **2. The morning team brief.** A scheduled agent that scans Slack and GitHub every morning and sends a team lead their situational awareness DM: who's unblocked, who's stuck, what's at risk. Read-only. Replaces a workflow that experienced PMs do manually — except this one runs at 7am whether you're online or not.
 
-**3. The codebase guardian.** An agent that scans your repo on a schedule, detects drift in `README.md` / `CLAUDE.md` / architecture notes, posts proposed edits to your team channel. When a human responds, the agent opens a PR **under that person's GitHub identity** — not a shared bot account. Whoever approves authored it. Accountability is structural, same as DAM's credential story.
+**3. The codebase reviewer.** An agent that scans your repo on a schedule, detects drift in `README.md` / `CLAUDE.md` / architecture notes, posts proposed edits to your team channel. When a human responds, the agent opens a PR **under that person's GitHub identity** — not a shared bot account. Whoever approves authored it. Accountability is structural, same as DAM's credential story.
 
 **4. The agent you sell.** You're shipping an agent as a product — a support triage bot, a release-notes writer, a translator that lives in somebody else's Jira. Every customer gets their own isolated pod, their own credentials, their own schedule. The SaaS plumbing from Section 1 is already in the box.

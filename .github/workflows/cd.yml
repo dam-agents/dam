@@ -89,10 +89,7 @@ jobs:
           - component: google-workspace-agent
             dockerfile: packages/agents/google-workspace/Dockerfile
             context: packages/agents/google-workspace
-          - component: code-guardian
-            dockerfile: packages/agents/code-guardian/Dockerfile
-            context: packages/agents/code-guardian
-          - component: pi-agent
+- component: pi-agent
             dockerfile: packages/agents/pi-agent/Dockerfile
             context: packages/agents/pi-agent
           - component: bob
