@@ -169,3 +169,31 @@ export type {
   UpdateEgressRuleInput,
   EgressRulesService,
 } from "./modules/egress-rules/types.js";
+
+// ACP platform/* synthetic notifications
+export {
+  platformTurnEndedNotificationSchema,
+  platformTurnEndedParamsSchema,
+  platformSessionModeChangedNotificationSchema,
+  platformSessionModeChangedParamsSchema,
+  buildPlatformTurnEndedNotification,
+  buildPlatformSessionModeChangedNotification,
+} from "./modules/acp/notifications.js";
+export type {
+  PlatformTurnEndedNotification,
+  PlatformTurnEndedParams,
+  PlatformSessionModeChangedNotification,
+  PlatformSessionModeChangedParams,
+} from "./modules/acp/notifications.js";
+
+// Brand
+export { brandSchema } from "./modules/brand/types.js";
+export type { Brand } from "./modules/brand/types.js";
+
+// Auth config
+export { authConfigSchema } from "./modules/auth/config.js";
+export type { AuthConfig } from "./modules/auth/config.js";
+
+// Import result
+export { importBundleResultSchema } from "./modules/instances/import.js";
+export type { ImportBundleResult } from "./modules/instances/import.js";
