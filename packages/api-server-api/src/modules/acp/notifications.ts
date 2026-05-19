@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { SessionMode } from "../sessions/types.js";
+import { sessionModeSchema } from "../sessions/types.js";
 
 // --- platform/turnEnded ----------------------------------------------------
 
@@ -30,7 +30,7 @@ export function buildPlatformTurnEndedNotification(
 
 export const platformSessionModeChangedParamsSchema = z.object({
   sessionId: z.string().min(1),
-  mode: z.enum([SessionMode.Chat, SessionMode.Terminal]),
+  mode: sessionModeSchema,
 });
 export type PlatformSessionModeChangedParams = z.infer<
   typeof platformSessionModeChangedParamsSchema

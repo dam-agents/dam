@@ -97,7 +97,11 @@ export type {
   ConnectionsService,
 } from "./modules/connections/types.js";
 
-export { SessionType, SessionMode } from "./modules/sessions/types.js";
+export {
+  SessionType,
+  SessionMode,
+  sessionModeSchema,
+} from "./modules/sessions/types.js";
 export type {
   SessionView,
   SessionResolution,

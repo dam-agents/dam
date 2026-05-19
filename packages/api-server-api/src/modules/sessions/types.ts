@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 export const SessionType = {
   Regular: "regular",
   ChannelSlack: "channel_slack",
@@ -7,12 +9,12 @@ export const SessionType = {
 
 export type SessionType = (typeof SessionType)[keyof typeof SessionType];
 
-export const SessionMode = {
-  Chat: "chat",
-  Terminal: "terminal",
-} as const;
+export enum SessionMode {
+  Chat = "chat",
+  Terminal = "terminal",
+}
 
-export type SessionMode = (typeof SessionMode)[keyof typeof SessionMode];
+export const sessionModeSchema = z.enum(SessionMode);
 
 export interface SessionView {
   sessionId: string;
