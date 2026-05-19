@@ -23,7 +23,7 @@ export function createSchedulesService(deps: {
 
     async createCron(input: CreateCronScheduleInput) {
       validateCron(input.cron);
-      const exists = await deps.repo.readAgentRef(input.agentId, deps.owner);
+      const exists = await deps.repo.agentExists(input.agentId, deps.owner);
       if (!exists) throw new Error(`Agent "${input.agentId}" not found`);
 
       const spec: Record<string, unknown> = {
@@ -43,7 +43,7 @@ export function createSchedulesService(deps: {
       validateTimezone(input.timezone);
       validateRRule(input.rrule);
       validateHasVisibleOccurrence(input.rrule, input.quietHours ?? []);
-      const exists = await deps.repo.readAgentRef(input.agentId, deps.owner);
+      const exists = await deps.repo.agentExists(input.agentId, deps.owner);
       if (!exists) throw new Error(`Agent "${input.agentId}" not found`);
 
       const spec: Record<string, unknown> = {

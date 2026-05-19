@@ -4,11 +4,15 @@ import type { K8sClient } from "../../agents/infrastructure/k8s.js";
 import {
   LABEL_TYPE,
   TYPE_SCHEDULE,
+  TYPE_AGENT,
   LABEL_OWNER,
   LABEL_AGENT_REF,
   SPEC_KEY,
 } from "../../agents/infrastructure/labels.js";
-import { isOwnedBy } from "../../agents/infrastructure/configmap-mappers.js";
+import {
+  hasType,
+  isOwnedBy,
+} from "../../agents/infrastructure/configmap-mappers.js";
 import { parseSchedule, buildScheduleConfigMap } from "./configmap-mappers.js";
 
 export interface SchedulesRepository {
@@ -26,7 +30,7 @@ export interface SchedulesRepository {
   ): Promise<Schedule | null>;
   delete(id: string, owner: string): Promise<void>;
   toggle(id: string, owner: string): Promise<Schedule | null>;
-  readAgentRef(agentId: string, owner: string): Promise<string | null>;
+  agentExists(agentId: string, owner: string): Promise<boolean>;
 }
 
 export function createSchedulesRepository(k8s: K8sClient): SchedulesRepository {
@@ -85,10 +89,9 @@ export function createSchedulesRepository(k8s: K8sClient): SchedulesRepository {
       return parseSchedule(updated);
     },
 
-    async readAgentRef(agentId, owner) {
-      const cm = await getOwned(agentId, owner);
-      if (!cm) return null;
-      return cm.metadata!.labels![LABEL_AGENT_REF] ?? null;
+    async agentExists(agentId, owner) {
+      const cm = await k8s.getConfigMap(agentId);
+      return cm !== null && hasType(cm, TYPE_AGENT) && isOwnedBy(cm, owner);
     },
   };
 }
