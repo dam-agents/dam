@@ -61,4 +61,4 @@ When promoting a Draft to Accepted: rename `DRAFT-title.md` → `NNN-title.md` a
 
 ## Template
 
-See [`docs/adr-template.md`](../../docs/adr-template.md) for the section skeleton.
+See [`docs/adr-template.md`](../../../docs/adr-template.md) for the section skeleton.
