@@ -42,19 +42,39 @@ describe("createCipher", () => {
   it("rejects an unknown envelope version", () => {
     const c = createCipher(newKey());
     const buf = Buffer.concat([Buffer.from([0xff]), randomBytes(28)]);
-    expect(() => c.decrypt(buf.toString("base64"))).toThrow(/version/);
+    expect(() => c.decrypt("enc:" + buf.toString("base64"))).toThrow(/version/);
   });
 
   it("rejects truncated input", () => {
     const c = createCipher(newKey());
     expect(() =>
-      c.decrypt(Buffer.from([0x01, 0x02, 0x03]).toString("base64")),
+      c.decrypt("enc:" + Buffer.from([0x01, 0x02, 0x03]).toString("base64")),
     ).toThrow(/short/);
   });
 
   it("rejects a wrong-length key at construction", () => {
     expect(() => createCipher(Buffer.alloc(16).toString("base64"))).toThrow(
       /bytes/,
+    );
+  });
+
+  it("ciphertext carries the 'enc:' prefix", () => {
+    const c = createCipher(newKey());
+    expect(c.encrypt("hello")).toMatch(/^enc:/);
+  });
+
+  it("isEncrypted distinguishes ciphertext from plaintext", () => {
+    const c = createCipher(newKey());
+    expect(c.isEncrypted(c.encrypt("x"))).toBe(true);
+    expect(c.isEncrypted("eyJhbGciOiJIUzI1NiJ9.payload.sig")).toBe(false);
+    expect(c.isEncrypted("plain-opaque-token-value")).toBe(false);
+    expect(c.isEncrypted("")).toBe(false);
+  });
+
+  it("decrypt refuses values without the prefix (caller must guard with isEncrypted)", () => {
+    const c = createCipher(newKey());
+    expect(() => c.decrypt("eyJhbGciOiJIUzI1NiJ9.payload.sig")).toThrow(
+      /prefix/,
     );
   });
 });
