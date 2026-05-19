@@ -1,20 +1,20 @@
+import { type AuthConfig, authConfigSchema } from "api-server-api";
 import { type User, UserManager, WebStorageStateStore } from "oidc-client-ts";
 
 let userManager: UserManager;
 let currentUser: User | null = null;
-
-interface AuthConfig {
-  issuer: string;
-  clientId: string;
-}
 
 let cachedAuthConfig: AuthConfig | null = null;
 
 async function fetchAuthConfig(): Promise<AuthConfig> {
   const res = await fetch("/api/auth/config");
   if (!res.ok) throw new Error("Failed to fetch auth config");
-  cachedAuthConfig = await res.json();
-  return cachedAuthConfig!;
+  // `.parse()` — broken auth config is unrecoverable (the OIDC client
+  // can't be constructed from a malformed response), so fail loud rather
+  // than silently fall back.
+  const parsed = authConfigSchema.parse(await res.json());
+  cachedAuthConfig = parsed;
+  return parsed;
 }
 
 /** Returns the auth config — must be called after initAuth(). */

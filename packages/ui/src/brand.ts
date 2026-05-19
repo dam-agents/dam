@@ -11,14 +11,7 @@
  * on `<html>` so light/dark themes already wired through `App.css` keep
  * working unchanged.
  */
-export interface Brand {
-  name: string;
-  short: string;
-  theme: {
-    light: { accent: string; accentHover: string; accentLight: string };
-    dark: { accent: string; accentHover: string; accentLight: string };
-  };
-}
+import { type Brand, brandSchema } from "api-server-api";
 
 const FALLBACK: Brand = {
   name: "Platform",
@@ -39,7 +32,15 @@ export async function loadBrand(): Promise<Brand> {
   try {
     const res = await fetch("/api/brand", { credentials: "omit" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    cached = (await res.json()) as Brand;
+    const parsed = brandSchema.safeParse(await res.json());
+    if (!parsed.success) {
+      console.warn(
+        "[brand] schema mismatch on /api/brand, using fallback:",
+        parsed.error.issues,
+      );
+      return cached;
+    }
+    cached = parsed.data;
   } catch (err) {
     // Rare path — only fires when the api-server is unreachable on first
     // paint; the bundled fallback keeps the UI usable.

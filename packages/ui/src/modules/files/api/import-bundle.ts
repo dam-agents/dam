@@ -1,3 +1,8 @@
+import {
+  type ImportBundleResult,
+  importBundleResultSchema,
+} from "api-server-api";
+
 import { authFetch } from "../../../auth.js";
 
 export type BundleEntry = { path: string; file: File };
@@ -206,12 +211,6 @@ export type ImportBundleArgs = {
   entries: BundleEntry[];
 };
 
-export type ImportBundleResult = {
-  filesWritten: number;
-  bytes: number;
-  durationMs: number;
-};
-
 async function postBundle(
   instanceId: string,
   bundle: Blob,
@@ -230,7 +229,18 @@ async function postBundle(
     const text = await res.text().catch(() => res.statusText);
     throw new Error(text || res.statusText);
   }
-  return res.json();
+  const parsed = importBundleResultSchema.safeParse(await res.json());
+  if (!parsed.success) {
+    console.warn(
+      "[import-bundle] schema mismatch on import response:",
+      parsed.error.issues,
+    );
+    // Degraded-but-valid response. Callers display these counts in a success
+    // toast — zeros surface "upload completed, stats unavailable" rather
+    // than crashing on undefined fields.
+    return { filesWritten: 0, bytes: 0, durationMs: 0 };
+  }
+  return parsed.data;
 }
 
 export async function importBundle({
