@@ -41,7 +41,9 @@ export function filterImportEntries(entries: BundleEntry[]): FilterReport {
  *  Paths are deduped — dropping the same folder twice yields one entry per
  *  child, not two with identical paths that would later confuse tar
  *  consumers (last entry would silently win on extract). */
-export async function walkDataTransfer(items: DataTransferItemList): Promise<BundleEntry[]> {
+export async function walkDataTransfer(
+  items: DataTransferItemList,
+): Promise<BundleEntry[]> {
   const raw: BundleEntry[] = [];
   const promises: Promise<void>[] = [];
   for (let i = 0; i < items.length; i++) {
@@ -60,10 +62,16 @@ export async function walkDataTransfer(items: DataTransferItemList): Promise<Bun
   return out;
 }
 
-async function walkEntry(entry: FileSystemEntry, prefix: string, out: BundleEntry[]): Promise<void> {
+async function walkEntry(
+  entry: FileSystemEntry,
+  prefix: string,
+  out: BundleEntry[],
+): Promise<void> {
   if (entry.isFile) {
     const fileEntry = entry as FileSystemFileEntry;
-    const file = await new Promise<File>((res, rej) => fileEntry.file(res, rej));
+    const file = await new Promise<File>((res, rej) =>
+      fileEntry.file(res, rej),
+    );
     out.push({ path: `${prefix}${entry.name}`, file });
     return;
   }
@@ -71,11 +79,15 @@ async function walkEntry(entry: FileSystemEntry, prefix: string, out: BundleEntr
     const dirEntry = entry as FileSystemDirectoryEntry;
     const reader = dirEntry.createReader();
     const children = await readAll(reader);
-    await Promise.all(children.map((c) => walkEntry(c, `${prefix}${entry.name}/`, out)));
+    await Promise.all(
+      children.map((c) => walkEntry(c, `${prefix}${entry.name}/`, out)),
+    );
   }
 }
 
-function readAll(reader: FileSystemDirectoryReader): Promise<FileSystemEntry[]> {
+function readAll(
+  reader: FileSystemDirectoryReader,
+): Promise<FileSystemEntry[]> {
   return new Promise((resolve, reject) => {
     const all: FileSystemEntry[] = [];
     const read = () =>
@@ -114,8 +126,8 @@ function splitUstarPath(path: string, enc: TextEncoder): UstarPath | null {
     const namePart = path.slice(slash + 1);
     const prefixPart = path.slice(0, slash);
     if (
-      enc.encode(namePart).byteLength <= MAX_TAR_NAME_BYTES
-      && enc.encode(prefixPart).byteLength <= MAX_TAR_PREFIX_BYTES
+      enc.encode(namePart).byteLength <= MAX_TAR_NAME_BYTES &&
+      enc.encode(prefixPart).byteLength <= MAX_TAR_PREFIX_BYTES
     ) {
       return { name: namePart, prefix: prefixPart };
     }
@@ -138,7 +150,9 @@ export async function buildBundle(entries: BundleEntry[]): Promise<Blob> {
   const splits: UstarPath[] = entries.map((ent) => {
     const split = splitUstarPath(ent.path, TAR_ENCODER);
     if (!split) {
-      throw new Error(`path too long for USTAR tar header (name>${MAX_TAR_NAME_BYTES}B and no /-split fits within prefix ${MAX_TAR_PREFIX_BYTES}B): ${ent.path}`);
+      throw new Error(
+        `path too long for USTAR tar header (name>${MAX_TAR_NAME_BYTES}B and no /-split fits within prefix ${MAX_TAR_PREFIX_BYTES}B): ${ent.path}`,
+      );
     }
     return split;
   });
@@ -205,10 +219,13 @@ async function postBundle(
 ): Promise<ImportBundleResult> {
   const form = new FormData();
   form.set("bundle", bundle, filename);
-  const res = await authFetch(`/api/instances/${encodeURIComponent(instanceId)}/import`, {
-    method: "POST",
-    body: form,
-  });
+  const res = await authFetch(
+    `/api/instances/${encodeURIComponent(instanceId)}/import`,
+    {
+      method: "POST",
+      body: form,
+    },
+  );
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
     throw new Error(text || res.statusText);
@@ -250,5 +267,9 @@ export async function importRawBundle({
  */
 export function isTarballName(name: string): boolean {
   const lower = name.toLowerCase();
-  return lower.endsWith(".tar") || lower.endsWith(".tar.gz") || lower.endsWith(".tgz");
+  return (
+    lower.endsWith(".tar") ||
+    lower.endsWith(".tar.gz") ||
+    lower.endsWith(".tgz")
+  );
 }

@@ -67,7 +67,10 @@ export interface ListApprovalsOptions {
 
 export interface ApprovalsService {
   listForOwner(opts?: ListApprovalsOptions): Promise<ApprovalView[]>;
-  listForInstance(instanceId: string, opts?: ListApprovalsOptions): Promise<ApprovalView[]>;
+  listForInstance(
+    instanceId: string,
+    opts?: ListApprovalsOptions,
+  ): Promise<ApprovalView[]>;
   approveOnce(id: string): Promise<void>;
   approvePermanent(id: string): Promise<void>;
   /** Wildcard-host variant of approve-permanent: writes a single rule that

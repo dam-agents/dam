@@ -10,6 +10,7 @@ add it to the include list in `platform.validate`.
 
 {{- define "platform.validate" -}}
 {{- include "platform.validate.anyuidCapNetRequiresAgentNamespace" . -}}
+{{- include "platform.validate.egressLockdownModeExclusive" . -}}
 {{- end -}}
 
 {{/*
@@ -22,5 +23,17 @@ group. Both are meaningless if `agentNamespace` is empty.
 {{- if not (.Values.agentNamespace | default "" | trim) -}}
 {{- fail "openshift.scc.anyuidCapNet.enabled=true requires agentNamespace to be set. The RoleBinding is namespace-scoped and grants SCC access via the system:serviceaccounts:<agentNamespace> group; an empty value makes both meaningless." -}}
 {{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+iptablesInit and npGateInit are the two egress-lockdown modes —
+exactly one belongs on a given pod. See values.yaml for the two-mode
+comment.
+*/}}
+{{- define "platform.validate.egressLockdownModeExclusive" -}}
+{{- $base := .Values.controller.agent.base -}}
+{{- if and $base.iptablesInit $base.iptablesInit.enabled $base.npGateInit $base.npGateInit.enabled -}}
+{{- fail "controller.agent.base.iptablesInit.enabled and npGateInit.enabled are mutually exclusive — enable exactly one. See values.yaml for the two-mode comment." -}}
 {{- end -}}
 {{- end -}}

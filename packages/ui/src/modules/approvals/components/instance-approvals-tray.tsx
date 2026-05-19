@@ -16,7 +16,9 @@ export interface InstanceApprovalsTrayProps {
  * it doesn't crowd the sessions list; expands automatically when new pending
  * rows arrive on the polling interval.
  */
-export function InstanceApprovalsTray({ instanceId }: InstanceApprovalsTrayProps) {
+export function InstanceApprovalsTray({
+  instanceId,
+}: InstanceApprovalsTrayProps) {
   const { data: rows = EMPTY } = useApprovalsForInstance(instanceId);
   const pending = rows.filter((r) => r.status === "pending");
   const pendingCount = pending.length;
@@ -36,7 +38,10 @@ export function InstanceApprovalsTray({ instanceId }: InstanceApprovalsTrayProps
         className="flex items-center gap-2 w-full px-4 h-9 text-left text-text-secondary hover:text-text transition-colors"
       >
         {effectiveOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        <ShieldAlert size={12} className={pendingCount > 0 ? "text-accent" : "text-text-muted"} />
+        <ShieldAlert
+          size={12}
+          className={pendingCount > 0 ? "text-accent" : "text-text-muted"}
+        />
         <span className="text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted">
           Approvals
         </span>
@@ -48,7 +53,11 @@ export function InstanceApprovalsTray({ instanceId }: InstanceApprovalsTrayProps
       </button>
       {effectiveOpen && (
         <div className="max-h-[40vh] overflow-y-auto border-t border-border-light">
-          <ApprovalsList rows={pending} density="compact" emptyLabel="Nothing pending" />
+          <ApprovalsList
+            rows={pending}
+            density="compact"
+            emptyLabel="Nothing pending"
+          />
         </div>
       )}
     </div>

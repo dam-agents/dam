@@ -54,7 +54,9 @@ export function AppStatusPill({
     <span
       className={`inline-flex items-center gap-1.5 ${textSize} font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 shrink-0 ${pillClass}`}
     >
-      <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${dotClass}`} />
+      <span
+        className={`inline-block w-2 h-2 rounded-full shrink-0 ${dotClass}`}
+      />
       {label}
     </span>
   );

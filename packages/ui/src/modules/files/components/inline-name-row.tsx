@@ -12,16 +12,25 @@ interface Props {
   onCancel: () => void;
 }
 
-export function InlineNameRow({ kind, depth, initial = "", placeholder, onCommit, onCancel }: Props) {
+export function InlineNameRow({
+  kind,
+  depth,
+  initial = "",
+  placeholder,
+  onCommit,
+  onCancel,
+}: Props) {
   return (
     <div
       className="flex items-center gap-1.5 py-[5px] text-[12px]"
       style={{ paddingLeft: `${12 + depth * 14}px`, paddingRight: 12 }}
     >
       <span className="w-[13px] shrink-0" />
-      {kind === "dir"
-        ? <Folder size={13} className="shrink-0" />
-        : <FileText size={13} className="shrink-0" />}
+      {kind === "dir" ? (
+        <Folder size={13} className="shrink-0" />
+      ) : (
+        <FileText size={13} className="shrink-0" />
+      )}
       <InlineNameInput
         initial={initial}
         placeholder={placeholder}
@@ -39,7 +48,12 @@ interface InputProps {
   onCancel: () => void;
 }
 
-function InlineNameInput({ initial, placeholder, onCommit, onCancel }: InputProps) {
+function InlineNameInput({
+  initial,
+  placeholder,
+  onCommit,
+  onCancel,
+}: InputProps) {
   const [value, setValue] = useState(initial);
   const ref = useRef<HTMLInputElement | null>(null);
   // Guard against double-firing commit from blur + Enter; both paths race.
@@ -66,8 +80,14 @@ function InlineNameInput({ initial, placeholder, onCommit, onCancel }: InputProp
       placeholder={placeholder}
       onChange={(e) => setValue(e.target.value)}
       onKeyDown={(e) => {
-        if (e.key === "Enter") { e.preventDefault(); commit(); }
-        else if (e.key === "Escape") { e.preventDefault(); committedRef.current = true; onCancel(); }
+        if (e.key === "Enter") {
+          e.preventDefault();
+          commit();
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          committedRef.current = true;
+          onCancel();
+        }
       }}
       onBlur={commit}
       onClick={(e) => e.stopPropagation()}

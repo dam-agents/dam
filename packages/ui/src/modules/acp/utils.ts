@@ -28,9 +28,15 @@ export async function buildPromptBlocks(
         continue;
       }
       try {
-        const { absolutePath } = await uploadMessageAttachment(instanceId, sessionId, {
-          name: a.name, data: a.data, mimeType: a.mimeType,
-        });
+        const { absolutePath } = await uploadMessageAttachment(
+          instanceId,
+          sessionId,
+          {
+            name: a.name,
+            data: a.data,
+            mimeType: a.mimeType,
+          },
+        );
         blocks.push({
           type: "resource_link",
           uri: `file://${absolutePath}`,
@@ -38,7 +44,9 @@ export async function buildPromptBlocks(
           mimeType: a.mimeType,
         });
       } catch (err) {
-        throw new Error(`Upload failed for "${a.name}": ${err instanceof Error ? err.message : "unknown"}`);
+        throw new Error(
+          `Upload failed for "${a.name}": ${err instanceof Error ? err.message : "unknown"}`,
+        );
       }
     }
   }
@@ -78,7 +86,9 @@ export function extractErrorMessage(e: unknown): string {
  * `code`, tRPC `data.code`) over regexing the human-readable message — the
  * latter breaks the moment server wording changes.
  */
-export function classifyResumeError(e: unknown): "not-found" | "connection" | "other" {
+export function classifyResumeError(
+  e: unknown,
+): "not-found" | "connection" | "other" {
   if (e && typeof e === "object") {
     const anyE = e as { code?: unknown; data?: { code?: unknown } };
     if (anyE.code === -32002) return "not-found";

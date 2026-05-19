@@ -47,13 +47,21 @@ Use `mise run cluster:kubectl -- <args>` and `mise run cluster:shell -- <cmd>` i
 
 Activate cluster environment for interactive use: `export KUBECONFIG="$(mise run cluster:kubeconfig)"`.
 
-## Architecture
+## System Architecture (what this system is)
 
-**Always** start from [`docs/architecture.md`](docs/architecture.md) to understand the system. Before changing behavior in any subsystem, you **must** read its architecture page and the ADRs it links. Do not infer the architecture from the code alone — the docs are the source of truth for *why* the system is shaped the way it is.
+Platform-specific. **Always** start from [`docs/architecture.md`](docs/architecture.md) to understand the system. Before changing behavior in any subsystem, you **must** read its architecture page and the ADRs it links. Do not infer the architecture from the code alone — the docs are the source of truth for *why* the system is shaped the way it is.
+
+## TypeScript Engineering (how to write TS here)
+
+Generic conventions for TS server-side code (tRPC, Zod, RxJS, layering). Invoke the `/typescript-engineering` skill whenever touching server-side TS. If you spot a contradiction between the skill and a Platform architecture doc or ADR, **stop and flag it** — the two should stay aligned, so a conflict means one of them is wrong.
 
 ## Documentation
 
 Always follow [`docs/guidelines/documentation-guidelines.md`](docs/guidelines/documentation-guidelines.md).
+
+## Work process
+
+Proposed ideal flow for new features — see [`docs/guidelines/work-process.md`](docs/guidelines/work-process.md).
 
 ## UI (`packages/ui`)
 
@@ -93,7 +101,3 @@ Run tests to confirm a clean baseline before starting work. If tests fail, repor
 ### Report
 
 After setup, report: worktree path, test results, and readiness.
-
-## TSEng
-
-This project follows the [TypeScript Engineering](tseng/index.md) architecture.

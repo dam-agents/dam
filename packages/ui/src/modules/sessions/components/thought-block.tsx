@@ -3,7 +3,13 @@ import { useEffect, useRef, useState } from "react";
 
 import { Markdown } from "../../../components/markdown.js";
 
-export function ThoughtBlock({ text, streaming }: { text: string; streaming: boolean }) {
+export function ThoughtBlock({
+  text,
+  streaming,
+}: {
+  text: string;
+  streaming: boolean;
+}) {
   const [open, setOpen] = useState(true);
   const userToggled = useRef(false);
 
@@ -22,7 +28,11 @@ export function ThoughtBlock({ text, streaming }: { text: string; streaming: boo
         className="flex items-center gap-1.5 py-1 px-2 rounded-md border border-border-light bg-surface text-text-muted cursor-pointer hover:bg-surface-raised"
         onClick={toggle}
       >
-        {open ? <ChevronDown size={12} className="shrink-0" /> : <ChevronRight size={12} className="shrink-0" />}
+        {open ? (
+          <ChevronDown size={12} className="shrink-0" />
+        ) : (
+          <ChevronRight size={12} className="shrink-0" />
+        )}
         <Brain size={12} className="shrink-0" />
         <span className="font-semibold">Thinking</span>
       </button>

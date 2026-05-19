@@ -1,4 +1,4 @@
-import { ChevronDown,ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { useMemo, useState } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
@@ -9,7 +9,10 @@ const REHYPE_PLUGINS = [rehypeHighlight];
 
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 
-function splitFrontmatter(source: string): { frontmatter: string | null; body: string } {
+function splitFrontmatter(source: string): {
+  frontmatter: string | null;
+  body: string;
+} {
   const match = source.match(FRONTMATTER_RE);
   if (!match) return { frontmatter: null, body: source };
   return { frontmatter: match[1], body: source.slice(match[0].length) };
@@ -30,37 +33,65 @@ function FrontmatterBlock({ source }: { source: string }) {
     <div className="not-prose mb-3 text-[12px]">
       <button
         type="button"
-        onClick={() => setOpen(v => !v)}
+        onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-1.5 text-text-muted hover:text-text-primary"
       >
         <Icon size={12} />
-        <span className="font-mono uppercase tracking-[0.05em] text-[11px]">Frontmatter</span>
+        <span className="font-mono uppercase tracking-[0.05em] text-[11px]">
+          Frontmatter
+        </span>
       </button>
       {open && (
-        <pre className="mt-1.5 font-mono text-[11px] leading-[1.6] text-text-secondary whitespace-pre-wrap overflow-x-auto">{source}</pre>
+        <pre className="mt-1.5 font-mono text-[11px] leading-[1.6] text-text-secondary whitespace-pre-wrap overflow-x-auto">
+          {source}
+        </pre>
       )}
     </div>
   );
 }
 
-export function Markdown({ children, onFileClick }: { children: string; onFileClick?: (path: string) => void }) {
-  const { frontmatter, body } = useMemo(() => splitFrontmatter(children), [children]);
+export function Markdown({
+  children,
+  onFileClick,
+}: {
+  children: string;
+  onFileClick?: (path: string) => void;
+}) {
+  const { frontmatter, body } = useMemo(
+    () => splitFrontmatter(children),
+    [children],
+  );
 
-  const components = useMemo<Components | undefined>(() =>
-    onFileClick ? {
-      a({ href, children }) {
-        if (href && isRelativePath(href)) {
-          const path = href.replace(/^\.\//, "");
-          return (
-            <a href="#" onClick={e => { e.preventDefault(); onFileClick(path); }} className="cursor-pointer">
-              {children}
-            </a>
-          );
-        }
-        return <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
-      }
-    } : undefined,
-  [onFileClick]);
+  const components = useMemo<Components | undefined>(
+    () =>
+      onFileClick
+        ? {
+            a({ href, children }) {
+              if (href && isRelativePath(href)) {
+                const path = href.replace(/^\.\//, "");
+                return (
+                  <a
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      onFileClick(path);
+                    }}
+                    className="cursor-pointer"
+                  >
+                    {children}
+                  </a>
+                );
+              }
+              return (
+                <a href={href} target="_blank" rel="noopener noreferrer">
+                  {children}
+                </a>
+              );
+            },
+          }
+        : undefined,
+    [onFileClick],
+  );
 
   return (
     <div className="prose">

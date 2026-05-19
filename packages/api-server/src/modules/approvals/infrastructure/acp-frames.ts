@@ -34,8 +34,16 @@ export function buildExtAuthzSynthFrame(input: SynthFrameInput): string {
       sessionId: syntheticSessionId(input.approvalId),
       options: [
         { optionId: "allow_once", name: "Allow once", kind: "allow_once" },
-        { optionId: "allow_always", name: "Allow permanently", kind: "allow_always" },
-        { optionId: "reject_always", name: "Deny forever", kind: "reject_always" },
+        {
+          optionId: "allow_always",
+          name: "Allow permanently",
+          kind: "allow_always",
+        },
+        {
+          optionId: "reject_always",
+          name: "Deny forever",
+          kind: "reject_always",
+        },
       ],
       toolCall: {
         toolCallId: syntheticSessionId(input.approvalId),

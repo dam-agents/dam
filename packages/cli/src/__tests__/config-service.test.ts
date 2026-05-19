@@ -34,19 +34,16 @@ function makeFakeEnv(values: Record<string, string> = {}): EnvReader {
   return { get: (name) => values[name] };
 }
 
-const ENV_VARS = { server: "DAM_SERVER" } as const;
-
 // Precedence + missing-config behavior is covered by resolve-config.test.ts.
 // These cases cover the service-only seams: it reads env using the
 // registered name, validates before writing, and never writes on bad input.
 
 describe("ConfigService", () => {
-  it("getResolved reads env using the var name from the envVars registry", async () => {
+  it("getResolved reads env using SERVER_ENV_VAR", async () => {
     const { store } = makeFakeStore();
     const svc = createConfigService({
       store,
       envReader: makeFakeEnv({ DAM_SERVER: "https://env" }),
-      envVars: ENV_VARS,
     });
 
     const r = await svc.getResolved({});
@@ -66,7 +63,6 @@ describe("ConfigService", () => {
         },
       },
       envReader: makeFakeEnv(),
-      envVars: ENV_VARS,
     });
 
     const r = await svc.set("server", "not-a-url");

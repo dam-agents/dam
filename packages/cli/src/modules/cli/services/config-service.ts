@@ -1,5 +1,9 @@
 import type { Config, ConfigKey } from "../domain/config.js";
-import { resolveConfig, validateValue } from "../domain/config.js";
+import {
+  resolveConfig,
+  SERVER_ENV_VAR,
+  validateValue,
+} from "../domain/config.js";
 import type {
   FileWriteError,
   InvalidValueError,
@@ -22,20 +26,15 @@ export interface ConfigService {
   >;
 }
 
-export interface ConfigServiceDeps {
+export function createConfigService(deps: {
   store: ConfigStore;
   envReader: EnvReader;
-  /** Per-key env-var registry. Adding a `Config` field means adding its
-   *  env-var name here — `Record<ConfigKey, string>` enforces that. */
-  envVars: Record<ConfigKey, string>;
-}
-
-export function createConfigService(deps: ConfigServiceDeps): ConfigService {
-  const { store, envReader, envVars } = deps;
+}): ConfigService {
+  const { store, envReader } = deps;
 
   function readEnv(): Partial<Config> {
     const out: Partial<Config> = {};
-    const server = envReader.get(envVars.server);
+    const server = envReader.get(SERVER_ENV_VAR);
     if (server !== undefined) out.server = server;
     return out;
   }

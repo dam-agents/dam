@@ -12,7 +12,10 @@ const MAX_AGE_MS = 60 * 60 * 1000;
  *
  * Best-effort: errors are logged but do not abort boot.
  */
-export async function sweepStaging(homeDir: string, log: (msg: string) => void): Promise<void> {
+export async function sweepStaging(
+  homeDir: string,
+  log: (msg: string) => void,
+): Promise<void> {
   let entries: string[];
   try {
     entries = await readdir(homeDir);

@@ -25,12 +25,16 @@ export function SessionsSidebar({
   const goBack = useStore((s) => s.goBack);
 
   const instances = useInstancesList();
-  const instanceRunState = instances.find((i) => i.id === selectedInstance)?.state;
-  const { data: sessions = [], isFetching, refetch } = useAcpSessions(
-    selectedInstance,
-    includeChannel,
-    { enabled: instanceRunState === "running" },
-  );
+  const instanceRunState = instances.find(
+    (i) => i.id === selectedInstance,
+  )?.state;
+  const {
+    data: sessions = [],
+    isFetching,
+    refetch,
+  } = useAcpSessions(selectedInstance, includeChannel, {
+    enabled: instanceRunState === "running",
+  });
   const loading = isFetching;
 
   const confirmDelete = useCallback(
@@ -92,7 +96,9 @@ export function SessionsSidebar({
             key={s.sessionId}
             session={s}
             active={s.sessionId === sessionId}
-            hasPending={pendingPermissions.some((p) => p.sessionId === s.sessionId)}
+            hasPending={pendingPermissions.some(
+              (p) => p.sessionId === s.sessionId,
+            )}
             onResume={() => onResumeSession(s.sessionId, s.mode)}
             onDelete={() => confirmDelete(s.sessionId, s.title)}
           />
@@ -110,4 +116,3 @@ export function SessionsSidebar({
     </>
   );
 }
-

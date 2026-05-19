@@ -6,7 +6,10 @@ import type { SkillRef, SkillPublishRecord } from "api-server-api";
 export interface InstanceSkillsRepository {
   listSkills(instanceId: string): Promise<SkillRef[]>;
   upsertSkill(instanceId: string, ref: SkillRef): Promise<void>;
-  removeSkill(instanceId: string, key: { source: string; name: string }): Promise<void>;
+  removeSkill(
+    instanceId: string,
+    key: { source: string; name: string },
+  ): Promise<void>;
   removeBySource(instanceIds: string[], gitUrl: string): Promise<void>;
   reconcile(instanceId: string, presentNames: Set<string>): Promise<void>;
 
@@ -23,7 +26,9 @@ function generatePublishId(): string {
 /** Postgres-backed installed-refs + publish records, both keyed by
  *  instanceId. Lifecycle is bounded by the instance: rows go away when the
  *  instance is deleted, via the InstanceDeleted saga in the Skills module. */
-export function createInstanceSkillsRepository(db: Db): InstanceSkillsRepository {
+export function createInstanceSkillsRepository(
+  db: Db,
+): InstanceSkillsRepository {
   return {
     async listSkills(instanceId) {
       const rows = await db
@@ -49,7 +54,11 @@ export function createInstanceSkillsRepository(db: Db): InstanceSkillsRepository
           contentHash: ref.contentHash ?? null,
         })
         .onConflictDoUpdate({
-          target: [instanceSkills.instanceId, instanceSkills.source, instanceSkills.name],
+          target: [
+            instanceSkills.instanceId,
+            instanceSkills.source,
+            instanceSkills.name,
+          ],
           set: {
             version: ref.version,
             contentHash: ref.contentHash ?? null,
@@ -139,8 +148,12 @@ export function createInstanceSkillsRepository(db: Db): InstanceSkillsRepository
 
     async deleteByInstance(instanceId) {
       await Promise.all([
-        db.delete(instanceSkills).where(eq(instanceSkills.instanceId, instanceId)),
-        db.delete(instanceSkillPublishes).where(eq(instanceSkillPublishes.instanceId, instanceId)),
+        db
+          .delete(instanceSkills)
+          .where(eq(instanceSkills.instanceId, instanceId)),
+        db
+          .delete(instanceSkillPublishes)
+          .where(eq(instanceSkillPublishes.instanceId, instanceId)),
       ]);
     },
   };

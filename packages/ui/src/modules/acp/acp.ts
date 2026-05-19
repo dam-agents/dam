@@ -1,6 +1,4 @@
-import {
-  ClientSideConnection,
-} from "@agentclientprotocol/sdk/dist/acp.js";
+import { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
 import type { AnyMessage } from "@agentclientprotocol/sdk/dist/jsonrpc.js";
 import type {
   RequestPermissionRequest,
@@ -9,7 +7,7 @@ import type {
 import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
 
 import { getAccessToken } from "../../auth.js";
-import { type PermissionOutcome,useStore } from "../../store.js";
+import { type PermissionOutcome, useStore } from "../../store.js";
 import type { UpdateHandler } from "./types.js";
 
 const WS_CONNECT_TIMEOUT_MS = 120_000;
@@ -17,7 +15,10 @@ const WS_CONNECT_TIMEOUT_MS = 120_000;
 function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(url);
-    const timer = setTimeout(() => { ws.close(); reject(new Error("WebSocket connect timeout")); }, WS_CONNECT_TIMEOUT_MS);
+    const timer = setTimeout(() => {
+      ws.close();
+      reject(new Error("WebSocket connect timeout"));
+    }, WS_CONNECT_TIMEOUT_MS);
     ws.onopen = () => {
       clearTimeout(timer);
       const readable = new ReadableStream<AnyMessage>({
@@ -69,7 +70,9 @@ async function wsUrl(instanceId: string): Promise<string> {
  *  wrapper isn't awaiting a response on this synthetic id). */
 const SYNTH_EGRESS_PREFIX = "_egress:";
 
-function awaitPermission(params: RequestPermissionRequest): Promise<PermissionOutcome> {
+function awaitPermission(
+  params: RequestPermissionRequest,
+): Promise<PermissionOutcome> {
   if (params.sessionId.startsWith(SYNTH_EGRESS_PREFIX)) {
     // v1: handled exclusively by the inbox UI. Return a never-resolving
     // promise so the SDK doesn't synthesize a response back to the wrapper —
@@ -113,12 +116,22 @@ export async function openConnection(
       // same `onUpdate` channel as a synthetic `sessionUpdate`.
       async extNotification(method: string, params: Record<string, unknown>) {
         if (method === "platform/turnEnded") {
-          const sessionId = typeof params?.sessionId === "string" ? params.sessionId : undefined;
+          const sessionId =
+            typeof params?.sessionId === "string"
+              ? params.sessionId
+              : undefined;
           onUpdate({ sessionUpdate: "platform_turn_ended", sessionId });
         } else if (method === "platform/sessionModeChanged") {
-          const sessionId = typeof params?.sessionId === "string" ? params.sessionId : undefined;
+          const sessionId =
+            typeof params?.sessionId === "string"
+              ? params.sessionId
+              : undefined;
           const mode = typeof params?.mode === "string" ? params.mode : "chat";
-          onUpdate({ sessionUpdate: "platform_session_mode_changed", sessionId, mode });
+          onUpdate({
+            sessionUpdate: "platform_session_mode_changed",
+            sessionId,
+            mode,
+          });
         }
       },
     }),

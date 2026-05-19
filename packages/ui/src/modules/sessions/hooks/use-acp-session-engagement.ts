@@ -47,48 +47,58 @@ export function useAcpSessionEngagement(
 
   const engagedSessionIdRef = useRef<string | null>(null);
 
-  const engage = useCallback(async (conn: ClientSideConnection) => {
-    if (!selectedInstance) return;
-    if (engagedSessionIdRef.current) return;
+  const engage = useCallback(
+    async (conn: ClientSideConnection) => {
+      if (!selectedInstance) return;
+      if (engagedSessionIdRef.current) return;
 
-    const sid = useStore.getState().sessionId;
-    if (sid) {
-      const resp = await conn.unstable_resumeSession({
-        sessionId: sid,
-        cwd: ".",
-        mcpServers: selectedMcpServers,
-      });
-      captureSessionConfig(resp);
-      engagedSessionIdRef.current = sid;
-      await applySavedPreferences(conn, sid, resp);
-    } else {
-      const s = await conn.newSession({
-        cwd: ".",
-        mcpServers: selectedMcpServers,
-      });
-      captureSessionConfig(s);
-      setSessionId(s.sessionId);
-      engagedSessionIdRef.current = s.sessionId;
-      addLog("session", { sessionId: s.sessionId });
-      // Optimistic insert so the sidebar shows the row immediately. Relay
-      // writes the DB row on first prompt; the next refetch reconciles.
-      const stub: SessionView = {
-        sessionId: s.sessionId,
-        instanceId: selectedInstance,
-        type: SessionType.Regular,
-        mode: SessionMode.Chat,
-        createdAt: new Date().toISOString(),
-        scheduleId: null,
-        title: null,
-        updatedAt: null,
-      };
-      queryClient.setQueriesData<SessionView[]>(
-        { queryKey: acpSessionsKeys.instanceLists(selectedInstance) },
-        (prev) => [stub, ...(prev ?? [])],
-      );
-      await applySavedPreferences(conn, s.sessionId, s);
-    }
-  }, [selectedInstance, selectedMcpServers, captureSessionConfig, applySavedPreferences, setSessionId, addLog]);
+      const sid = useStore.getState().sessionId;
+      if (sid) {
+        const resp = await conn.unstable_resumeSession({
+          sessionId: sid,
+          cwd: ".",
+          mcpServers: selectedMcpServers,
+        });
+        captureSessionConfig(resp);
+        engagedSessionIdRef.current = sid;
+        await applySavedPreferences(conn, sid, resp);
+      } else {
+        const s = await conn.newSession({
+          cwd: ".",
+          mcpServers: selectedMcpServers,
+        });
+        captureSessionConfig(s);
+        setSessionId(s.sessionId);
+        engagedSessionIdRef.current = s.sessionId;
+        addLog("session", { sessionId: s.sessionId });
+        // Optimistic insert so the sidebar shows the row immediately. Relay
+        // writes the DB row on first prompt; the next refetch reconciles.
+        const stub: SessionView = {
+          sessionId: s.sessionId,
+          instanceId: selectedInstance,
+          type: SessionType.Regular,
+          mode: SessionMode.Chat,
+          createdAt: new Date().toISOString(),
+          scheduleId: null,
+          title: null,
+          updatedAt: null,
+        };
+        queryClient.setQueriesData<SessionView[]>(
+          { queryKey: acpSessionsKeys.instanceLists(selectedInstance) },
+          (prev) => [stub, ...(prev ?? [])],
+        );
+        await applySavedPreferences(conn, s.sessionId, s);
+      }
+    },
+    [
+      selectedInstance,
+      selectedMcpServers,
+      captureSessionConfig,
+      applySavedPreferences,
+      setSessionId,
+      addLog,
+    ],
+  );
 
   const clear = useCallback(() => {
     engagedSessionIdRef.current = null;

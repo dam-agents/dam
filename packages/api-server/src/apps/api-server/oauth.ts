@@ -49,9 +49,12 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
   const engine = deps.engine ?? createOAuthEngine();
   const oauth = new Hono<{ Variables: { user: UserIdentity } }>();
 
-  function getUserJwt(c: { req: { header: (name: string) => string | undefined } }): string {
+  function getUserJwt(c: {
+    req: { header: (name: string) => string | undefined };
+  }): string {
     const authHeader = c.req.header("authorization");
-    if (!authHeader?.startsWith("Bearer ")) throw new Error("missing authorization header");
+    if (!authHeader?.startsWith("Bearer "))
+      throw new Error("missing authorization header");
     return authHeader.slice(7);
   }
 
@@ -73,7 +76,9 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
     const summaries = await port.listConnections();
     const descriptors = apps.list();
     for (const summary of summaries) {
-      const matched = descriptors.find((d) => matchesAppConnection(d, summary.connection));
+      const matched = descriptors.find((d) =>
+        matchesAppConnection(d, summary.connection),
+      );
       const family = matched?.credentialFamily;
       if (!family || out.has(family)) continue;
       const record = await port.getConnection(summary.connection);
@@ -105,7 +110,8 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
     const familyCreds = await readFamilyCreds(k8sConnectionsFor(user.sub));
     return c.json(
       apps.list().map((d) => {
-        const inheritFamily = d.credentialFamily && familyCreds.has(d.credentialFamily);
+        const inheritFamily =
+          d.credentialFamily && familyCreds.has(d.credentialFamily);
         const inputs = inheritFamily
           ? d.inputs.map((i) =>
               i.name === "clientId" || i.name === "clientSecret"
@@ -138,7 +144,11 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
     }
     const host = body.host?.trim();
     if (!host) return c.json({ error: "host is required" }, 400);
-    if (!/^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$/.test(host)) {
+    if (
+      !/^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$/.test(
+        host,
+      )
+    ) {
       return c.json({ error: "host must be a valid DNS hostname" }, 400);
     }
     const candidates = [
@@ -181,7 +191,9 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
       const nowSec = Math.floor(Date.now() / 1000);
       const appConns = k8sConns
         .map((conn) => {
-          const app = apps.list().find((a) => matchesAppConnection(a, conn.connection));
+          const app = apps
+            .list()
+            .find((a) => matchesAppConnection(a, conn.connection));
           if (!app) return null;
           const expired =
             conn.status === "expired" ||
@@ -189,7 +201,7 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
           const displayName =
             conn.displayName ??
             (app.id === "github-enterprise"
-              ? `${app.displayName} (${conn.hostPattern})`
+              ? `${app.displayName} (${conn.hosts[0] ?? ""})`
               : app.displayName);
           const connectionId =
             app.cardinality === "single" ? app.id : conn.connection;
@@ -197,7 +209,7 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
             appId: app.id,
             connectionId,
             displayName,
-            hostPattern: conn.hostPattern,
+            hosts: conn.hosts,
             connectedAt: conn.connectedAt ?? "",
             expired,
             // Surfaces the GitHub App slug when the connection's credentials
@@ -230,7 +242,10 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
     // applied by GET /api/oauth/apps so the connect form doesn't have to
     // round-trip the credentials it never showed the user.
     if (descriptor.credentialFamily) {
-      const merged = (body && typeof body === "object" ? { ...(body as Record<string, unknown>) } : {});
+      const merged =
+        body && typeof body === "object"
+          ? { ...(body as Record<string, unknown>) }
+          : {};
       if (!merged.clientId || !merged.clientSecret) {
         const familyCreds = await readFamilyCreds(k8sConnectionsFor(user.sub));
         const creds = familyCreds.get(descriptor.credentialFamily);
@@ -267,7 +282,10 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
     if (descriptor) {
       if (descriptor.cardinality !== "single") {
         return c.json(
-          { error: "Multi-instance app requires a connection key, not the app id." },
+          {
+            error:
+              "Multi-instance app requires a connection key, not the app id.",
+          },
           400,
         );
       }
@@ -293,12 +311,16 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
       const appList = apps.list();
       const nowSec = Math.floor(Date.now() / 1000);
       const merged = k8sConns
-        .filter((conn) => !appList.some((a) => matchesAppConnection(a, conn.connection)))
+        .filter(
+          (conn) =>
+            !appList.some((a) => matchesAppConnection(a, conn.connection)),
+        )
         .map((conn) => ({
           hostname: conn.connection,
           connectedAt: conn.connectedAt ?? "",
           expired:
-            conn.status === "expired" || (conn.expiresAt != null && conn.expiresAt < nowSec),
+            conn.status === "expired" ||
+            (conn.expiresAt != null && conn.expiresAt < nowSec),
         }));
       return c.json(merged);
     } catch (err) {
@@ -336,7 +358,10 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
 
     const meta = await discoverMcpAuth(mcpUrl);
     if (!meta) {
-      return c.json({ error: "MCP server does not support OAuth discovery" }, 400);
+      return c.json(
+        { error: "MCP server does not support OAuth discovery" },
+        400,
+      );
     }
     if (!meta.registrationEndpoint) {
       return c.json(
@@ -364,7 +389,10 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
         400,
       );
     }
-    const regData = (await regRes.json()) as { client_id: string; client_secret?: string };
+    const regData = (await regRes.json()) as {
+      client_id: string;
+      client_secret?: string;
+    };
 
     const { authUrl, state } = engine.start({
       provider: {
@@ -372,10 +400,14 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
         authorizationUrl: meta.authorizationEndpoint,
         tokenEndpoint: meta.tokenEndpoint,
         clientId: regData.client_id,
-        ...(regData.client_secret ? { clientSecret: regData.client_secret } : {}),
-        ...(meta.scopes && meta.scopes.length > 0 ? { scopes: meta.scopes } : {}),
+        ...(regData.client_secret
+          ? { clientSecret: regData.client_secret }
+          : {}),
+        ...(meta.scopes && meta.scopes.length > 0
+          ? { scopes: meta.scopes }
+          : {}),
       },
-      flow: { connectionKey: hostPattern, hostPattern },
+      flow: { connectionKey: hostPattern, hosts: [{ host: hostPattern }] },
       redirectUri,
       userJwt: jwt,
       userSub: user.sub,
@@ -418,19 +450,30 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
     const isMcp = pending.provider.id.startsWith("mcp:");
 
     const metadata: ConnectionMetadata = {
-      hostPattern: pending.flow.hostPattern,
-      headerName: "Authorization",
-      valueFormat: "Bearer {value}",
+      // Authoritative for both injection and egress. GitHub declares
+      // three (issue #219); other apps one each.
+      hosts: pending.flow.hosts,
       tokenUrl: pending.provider.tokenEndpoint,
       authorizationUrl: pending.provider.authorizationUrl,
       clientId: pending.provider.clientId,
-      ...(pending.provider.clientSecret ? { clientSecret: pending.provider.clientSecret } : {}),
+      ...(pending.provider.clientSecret
+        ? { clientSecret: pending.provider.clientSecret }
+        : {}),
       grantType: "authorization_code",
-      ...(pending.flow.displayName ? { displayName: pending.flow.displayName } : {}),
+      ...(pending.flow.displayName
+        ? { displayName: pending.flow.displayName }
+        : {}),
       ...(pending.provider.scopes && pending.provider.scopes.length > 0
         ? { scopes: pending.provider.scopes.join(" ") }
         : {}),
       ...(pending.flow.appSlug ? { appSlug: pending.flow.appSlug } : {}),
+      // Declarative env-var declarations (`GH_TOKEN`, `GH_HOST`, …)
+      // sourced from the descriptor's `flow.envMappings`. The controller
+      // materialises these as agent pod env vars; without this the
+      // controller falls back to host-specific hardcodes.
+      ...(pending.flow.envMappings?.length
+        ? { envMappings: pending.flow.envMappings }
+        : {}),
     };
     try {
       await k8sConnectionsFor(pending.userSub).upsertConnection({
@@ -444,7 +487,9 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
-      return c.redirect(`${uiBaseUrl}?oauth=error&message=${encodeURIComponent(msg)}`);
+      return c.redirect(
+        `${uiBaseUrl}?oauth=error&message=${encodeURIComponent(msg)}`,
+      );
     }
 
     // Always return the user to the platform UI after OAuth, even for
@@ -456,7 +501,7 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
     // surface the previous server-side install bounce required.
     const successParams = new URLSearchParams();
     successParams.set("oauth", "success");
-    if (isMcp) successParams.set("host", pending.flow.hostPattern);
+    if (isMcp) successParams.set("host", pending.flow.hosts[0]!.host);
     else successParams.set("app", pending.flow.connectionKey);
     return c.redirect(`${uiBaseUrl}?${successParams.toString()}`);
   });

@@ -6,7 +6,9 @@ export const connectionsRouter = t.router({
 
   getAgentConnections: t.procedure
     .input(z.object({ agentId: z.string().min(1) }))
-    .query(({ ctx, input }) => ctx.connections.getAgentConnections(input.agentId)),
+    .query(({ ctx, input }) =>
+      ctx.connections.getAgentConnections(input.agentId),
+    ),
 
   setAgentConnections: t.procedure
     .input(

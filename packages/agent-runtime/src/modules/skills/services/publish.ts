@@ -68,7 +68,12 @@ export async function runPublish(
   // 2. Tree referencing the blobs, parented on the default-branch HEAD tree.
   const tree = await deps.github.createTree(host, {
     base_tree: headSha,
-    tree: blobs.map((b) => ({ path: b.path, mode: "100644" as const, type: "blob" as const, sha: b.sha })),
+    tree: blobs.map((b) => ({
+      path: b.path,
+      mode: "100644" as const,
+      type: "blob" as const,
+      sha: b.sha,
+    })),
   });
   if (!tree.ok) return tree;
 
@@ -81,7 +86,10 @@ export async function runPublish(
     message: `Add ${name} skill`,
     tree: tree.value.sha,
     parents: [headSha],
-    author: { name: "Platform", email: "platform-publish@users.noreply.github.com" },
+    author: {
+      name: "Platform",
+      email: "platform-publish@users.noreply.github.com",
+    },
   });
   if (!commit.ok) return commit;
 

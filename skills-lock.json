@@ -56,6 +56,12 @@
       "sourceType": "github",
       "computedHash": "f014b5f744e8e1eb7c2e281297652ff5dea76694910b703801952626a5a7293b"
     },
+    "typescript-engineering": {
+      "source": "dam-agents/skills",
+      "sourceType": "github",
+      "skillPath": "skills/typescript-engineering/SKILL.md",
+      "computedHash": "e4e1d0c8965b2f88ebd8ac98d3ba40f3a100c362311b4fd05f3d67a6e5f9a98d"
+    },
     "upgrade": {
       "source": "tomkis/typescript-engineering",
       "sourceType": "github",

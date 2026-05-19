@@ -5,14 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import {
-  afterAll,
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-} from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter } from "api-server-api/router";
 import type { ApiContext, Instance, InstancesService } from "api-server-api";
@@ -59,14 +52,18 @@ async function startFixture(opts: {
     get(target, prop) {
       if (prop in target) return target[prop as string];
       if (prop === "then") return undefined;
-      throw new Error(`fake api-server: unexpected ctx access: ${String(prop)}`);
+      throw new Error(
+        `fake api-server: unexpected ctx access: ${String(prop)}`,
+      );
     },
   }) as unknown as ApiContext;
 
   const server: Server = createServer(async (req, res) => {
     if (req.url === "/api/version") {
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ serverVersion: "1.0.0", minClientVersion: "0.0.0" }));
+      res.end(
+        JSON.stringify({ serverVersion: "1.0.0", minClientVersion: "0.0.0" }),
+      );
       return;
     }
 
@@ -179,10 +176,14 @@ describe("dam instance get (integration)", () => {
       expect(r.stdout).toMatch(/^NAME:\s+prod$/m);
       expect(r.stdout).toMatch(/^ID:\s+inst-42$/m);
       expect(r.stdout).toMatch(/^TEMPLATE:\s+claude-code$/m);
-      expect(r.stdout).toMatch(/^IMAGE:\s+registry\.example\.com\/claude-code:latest$/m);
+      expect(r.stdout).toMatch(
+        /^IMAGE:\s+registry\.example\.com\/claude-code:latest$/m,
+      );
       expect(r.stdout).toMatch(/^STATE:\s+running$/m);
       expect(r.stdout).toMatch(/^DESCRIPTION:\s+My prod environment$/m);
-      expect(r.stdout).toMatch(/^ALLOWED:\s+alice@example\.com, bob@example\.com$/m);
+      expect(r.stdout).toMatch(
+        /^ALLOWED:\s+alice@example\.com, bob@example\.com$/m,
+      );
     } finally {
       await fixture.close();
     }
@@ -191,10 +192,7 @@ describe("dam instance get (integration)", () => {
   it("get by name: same output, resolver picks the right instance", async () => {
     const inst = makeInstance({ id: "inst-77", name: "staging" });
     const fixture = await startFixture({
-      list: async () => [
-        makeInstance({ id: "inst-99", name: "prod" }),
-        inst,
-      ],
+      list: async () => [makeInstance({ id: "inst-99", name: "prod" }), inst],
     });
     try {
       await configureServer(fixture.url);

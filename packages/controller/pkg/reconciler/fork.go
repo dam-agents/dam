@@ -93,7 +93,7 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("listing replier credential secrets: %v", err))
 	}
 
-	if !hasGitHubCredential(credentialSecrets) {
+	if !hasGHTokenEnv(credentialSecrets) {
 		slog.Warn("fork: replier has no GitHub credential Secret; gh/octokit calls will be unauthenticated",
 			"fork", forkName, "foreignSub", forkSpec.ForeignSub)
 	}
@@ -160,9 +160,7 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 	}
 	gatewayIP := liveGatewaySvc.Spec.ClusterIP
 
-	needsGatewayIP := r.config.AgentBase.DisableDNS ||
-		(r.config.AgentBase.IptablesInit != nil && r.config.AgentBase.IptablesInit.Enabled)
-	if needsGatewayIP && (gatewayIP == "" || gatewayIP == corev1.ClusterIPNone) {
+	if gatewayIP == "" || gatewayIP == corev1.ClusterIPNone {
 		return fmt.Errorf("fork %s: gateway Service ClusterIP not yet assigned, requeuing", forkName)
 	}
 

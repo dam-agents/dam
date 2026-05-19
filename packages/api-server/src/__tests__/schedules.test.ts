@@ -171,11 +171,7 @@ describe("schedules: API server CRUD", () => {
         "nextRun: '2026-04-08T09:05:00Z'",
         "lastResult: success",
       ].join("\n");
-      await patchConfigMapData(
-        secondCronScheduleId,
-        "status.yaml",
-        statusYaml,
-      );
+      await patchConfigMapData(secondCronScheduleId, "status.yaml", statusYaml);
 
       const sched = await client.schedules.get.query({
         id: secondCronScheduleId,
@@ -197,7 +193,6 @@ describe("schedules: API server CRUD", () => {
       }
     });
   });
-
 });
 
 describe("e2e: controller reconciliation", () => {
@@ -229,7 +224,8 @@ describe("e2e: controller reconciliation", () => {
 
   afterAll(async () => {
     try {
-      if (e2eScheduleId) await client.schedules.delete.mutate({ id: e2eScheduleId });
+      if (e2eScheduleId)
+        await client.schedules.delete.mutate({ id: e2eScheduleId });
     } catch {}
     try {
       await client.instances.delete.mutate({ id: e2eInstanceId });
@@ -266,7 +262,10 @@ describe("e2e: controller reconciliation", () => {
         await Promise.all([
           dumpPodLogs("app.kubernetes.io/component=controller"),
           describePod(podName),
-          dumpPodLogs(`agent-platform.ai/instance=${e2eInstanceId}`, "platform-agents"),
+          dumpPodLogs(
+            `agent-platform.ai/instance=${e2eInstanceId}`,
+            "platform-agents",
+          ),
           getEvents(podName),
           describeConfigMap(e2eScheduleId),
         ]);

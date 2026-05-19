@@ -3,7 +3,8 @@ import { retry } from "../../modules/agents/infrastructure/retry.js";
 
 describe("retry", () => {
   it("retries until success", async () => {
-    const fn = vi.fn()
+    const fn = vi
+      .fn()
       .mockRejectedValueOnce(new Error("transient"))
       .mockResolvedValueOnce("ok");
     expect(await retry(fn, () => true, 5, 0)).toBe("ok");
@@ -17,7 +18,9 @@ describe("retry", () => {
   });
 
   it("wraps the last error after exhausting attempts, naming fn and preserving cause", async () => {
-    async function tfn() { throw new Error("conflict"); }
+    async function tfn() {
+      throw new Error("conflict");
+    }
     await expect(retry(tfn, () => true, 3, 0)).rejects.toMatchObject({
       message: "retry(tfn): failed after 3 attempts",
       cause: expect.objectContaining({ message: "conflict" }),

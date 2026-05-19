@@ -29,10 +29,14 @@ export function SecretRow({ secret, animationDelayMs, onEdit }: Props) {
         <Lock size={16} />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-[14px] font-semibold text-text truncate">{name}</div>
+        <div className="text-[14px] font-semibold text-text truncate">
+          {name}
+        </div>
         <div className="text-[12px] font-mono text-text-muted truncate">
           {hostPattern}
-          {pathPattern && <span className="text-text-secondary">{pathPattern}</span>}
+          {pathPattern && (
+            <span className="text-text-secondary">{pathPattern}</span>
+          )}
           {envMappings && envMappings.length > 0 && (
             <>
               {" · "}

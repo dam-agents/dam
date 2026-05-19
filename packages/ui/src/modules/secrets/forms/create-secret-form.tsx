@@ -36,7 +36,10 @@ const createSecretSchema = z.object({
     ),
   envMappings: z
     .array(envMappingSchema)
-    .refine(allEnvMappingsValid, "All mappings need an env name and a placeholder"),
+    .refine(
+      allEnvMappingsValid,
+      "All mappings need an env name and a placeholder",
+    ),
 });
 
 type CreateSecretValues = z.infer<typeof createSecretSchema>;
@@ -54,20 +57,21 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
   const createSecret = useCreateSecret();
   const saving = createSecret.isPending;
 
-  const { register, handleSubmit, control, formState, setError, clearErrors } = useForm<CreateSecretValues>({
-    resolver: zodResolver(createSecretSchema),
-    mode: "onChange",
-    defaultValues: {
-      name: "",
-      value: "",
-      hostPattern: "",
-      pathPattern: "",
-      headerName: "",
-      valueFormat: "",
-      queryParamName: "",
-      envMappings: [],
-    },
-  });
+  const { register, handleSubmit, control, formState, setError, clearErrors } =
+    useForm<CreateSecretValues>({
+      resolver: zodResolver(createSecretSchema),
+      mode: "onChange",
+      defaultValues: {
+        name: "",
+        value: "",
+        hostPattern: "",
+        pathPattern: "",
+        headerName: "",
+        valueFormat: "",
+        queryParamName: "",
+        envMappings: [],
+      },
+    });
   const { errors, isDirty } = formState;
   // Validity is enforced by handleSubmit — clicking an invalid form populates
   // field errors instead of silently no-op'ing a disabled button.
@@ -89,7 +93,9 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
     }
     clearErrors("envMappings");
     const hasInjectionInput =
-      headerName.length > 0 || valueFormat.length > 0 || queryParamName.length > 0;
+      headerName.length > 0 ||
+      valueFormat.length > 0 ||
+      queryParamName.length > 0;
     createSecret.mutate(
       {
         type: "generic",
@@ -140,8 +146,10 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
             hint={
               <>
                 Injected as{" "}
-                <span className="font-mono">Authorization: Bearer &lt;value&gt;</span>. Stored
-                encrypted — the agent never sees the raw value.
+                <span className="font-mono">
+                  Authorization: Bearer &lt;value&gt;
+                </span>
+                . Stored encrypted — the agent never sees the raw value.
               </>
             }
             error={errors.value?.message}
@@ -186,8 +194,12 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
             label="Header Name (optional)"
             hint={
               <>
-                HTTP header the Envoy sidecar writes the secret into. Defaults to{" "}
-                <span className="font-mono">{DEFAULT_INJECTION_CONFIG.headerName}</span>.
+                HTTP header the Envoy sidecar writes the secret into. Defaults
+                to{" "}
+                <span className="font-mono">
+                  {DEFAULT_INJECTION_CONFIG.headerName}
+                </span>
+                .
               </>
             }
           >
@@ -203,8 +215,12 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
             hint={
               <>
                 Template for the header value. Use{" "}
-                <span className="font-mono">{`{value}`}</span> as the token placeholder. Defaults
-                to <span className="font-mono">{DEFAULT_INJECTION_CONFIG.valueFormat}</span>.
+                <span className="font-mono">{`{value}`}</span> as the token
+                placeholder. Defaults to{" "}
+                <span className="font-mono">
+                  {DEFAULT_INJECTION_CONFIG.valueFormat}
+                </span>
+                .
               </>
             }
           >
@@ -220,8 +236,8 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
             hint={
               <>
                 For APIs that read the credential from the URL (e.g.{" "}
-                <span className="font-mono">?key=&lt;value&gt;</span>). When set,
-                the bare value is moved into this query parameter and the
+                <span className="font-mono">?key=&lt;value&gt;</span>). When
+                set, the bare value is moved into this query parameter and the
                 header is stripped before the request leaves the sidecar — so
                 <span className="font-mono"> Value Format</span> doesn't apply
                 here. Need <em>both</em> a header and a URL injection on the
@@ -248,8 +264,8 @@ export function CreateSecretForm({ onCancel, onCreated }: Props) {
               Pod Env Vars (optional)
             </span>
             <p className="text-[11px] text-text-muted">
-              Inject env vars into every agent instance granted this secret.
-              The placeholder (typically{" "}
+              Inject env vars into every agent instance granted this secret. The
+              placeholder (typically{" "}
               <span className="font-mono">dummy-placeholder</span>) is swapped
               for the real value on the wire by the Envoy sidecar.
             </p>

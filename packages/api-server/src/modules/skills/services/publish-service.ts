@@ -47,7 +47,8 @@ export async function publishSkill(
   input: PublishSkillInput,
 ): Promise<PublishSkillResult> {
   const infra = await deps.instances.get(input.instanceId, deps.owner);
-  if (!infra) throw new TRPCError({ code: "NOT_FOUND", message: "instance not found" });
+  if (!infra)
+    throw new TRPCError({ code: "NOT_FOUND", message: "instance not found" });
   if (infra.currentState !== "running") {
     throw new TRPCError({
       code: "PRECONDITION_FAILED",
@@ -56,7 +57,11 @@ export async function publishSkill(
   }
 
   const source = await deps.resolveSource(input.sourceId);
-  if (!source) throw new TRPCError({ code: "NOT_FOUND", message: "skill source not found" });
+  if (!source)
+    throw new TRPCError({
+      code: "NOT_FOUND",
+      message: "skill source not found",
+    });
 
   const host = detectHost(source.gitUrl);
   if (!host) {
@@ -79,7 +84,9 @@ export async function publishSkill(
       owner: host.owner,
       repo: host.repo,
       title: input.title?.trim() || `Add ${input.name} skill`,
-      body: input.body?.trim() || `Published from ${deps.brandName}.\n\n**Skill:** \`${input.name}\``,
+      body:
+        input.body?.trim() ||
+        `Published from ${deps.brandName}.\n\n**Skill:** \`${input.name}\``,
     });
   } catch (err) {
     if (err instanceof AgentRuntimeUpstreamError) {

@@ -7,12 +7,16 @@ export interface ChildAgentProcessOptions {
   env?: Record<string, string | undefined>;
 }
 
-export function createChildAgentProcess(opts: ChildAgentProcessOptions): AgentProcess {
+export function createChildAgentProcess(
+  opts: ChildAgentProcessOptions,
+): AgentProcess {
   const [cmd, ...args] = opts.command;
 
   // Strip pnpm-injected npm_config_* vars so npx doesn't emit warnings.
   const cleanEnv = Object.fromEntries(
-    Object.entries(opts.env ?? process.env).filter(([k]) => !k.startsWith("npm_")),
+    Object.entries(opts.env ?? process.env).filter(
+      ([k]) => !k.startsWith("npm_"),
+    ),
   );
 
   const child = spawn(cmd, args, {
@@ -43,7 +47,8 @@ export function createChildAgentProcess(opts: ChildAgentProcessOptions): AgentPr
 
   return {
     send(frame) {
-      if (child.stdin!.writable) child.stdin!.write(JSON.stringify(frame) + "\n");
+      if (child.stdin!.writable)
+        child.stdin!.write(JSON.stringify(frame) + "\n");
     },
     onLine(handler) {
       handlers.push(handler);

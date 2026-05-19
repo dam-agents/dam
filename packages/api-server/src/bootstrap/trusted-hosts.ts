@@ -12,7 +12,9 @@ export function loadTrustedHosts(path: string): readonly string[] {
   try {
     raw = readFileSync(path, "utf8");
   } catch (err) {
-    process.stderr.write(`trusted-hosts: ${path}: ${err instanceof Error ? err.message : err}\n`);
+    process.stderr.write(
+      `trusted-hosts: ${path}: ${err instanceof Error ? err.message : err}\n`,
+    );
     return [];
   }
   return raw

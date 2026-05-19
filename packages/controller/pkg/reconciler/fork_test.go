@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	apitypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 	"gopkg.in/yaml.v3"
 
 	"github.com/kagenti/platform/packages/controller/pkg/config"
@@ -23,6 +24,15 @@ import (
 func setupForkReconciler(t *testing.T, agents map[string]*corev1.ConfigMap, objects ...runtime.Object) (*ForkReconciler, *fake.Clientset) {
 	t.Helper()
 	client := fake.NewSimpleClientset(objects...)
+	// See setupReconciler — fake clientset doesn't assign ClusterIPs;
+	// reactor stamps a stable IP so the fork reconciler can proceed.
+	client.PrependReactor("create", "services", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		svc := action.(k8stesting.CreateAction).GetObject().(*corev1.Service)
+		if svc.Spec.ClusterIP == "" {
+			svc.Spec.ClusterIP = "10.96.42.42"
+		}
+		return false, svc, nil
+	})
 	cfg := &config.Config{
 		Namespace:          "test-agents",
 		ReleaseNamespace:   "default",

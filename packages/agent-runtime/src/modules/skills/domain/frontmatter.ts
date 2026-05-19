@@ -5,7 +5,10 @@
  * apocohq's catalog uses `>` with line continuations, which a naive parser
  * surfaces as the literal character `>`.
  */
-export function parseFrontmatter(content: string): { name?: string; description?: string } {
+export function parseFrontmatter(content: string): {
+  name?: string;
+  description?: string;
+} {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return {};
   const lines = match[1].split(/\r?\n/);
@@ -36,7 +39,8 @@ export function parseFrontmatter(content: string): { name?: string; description?
         collected.push(line.replace(/^\s+/, ""));
         j++;
       }
-      while (collected.length > 0 && collected[collected.length - 1] === "") collected.pop();
+      while (collected.length > 0 && collected[collected.length - 1] === "")
+        collected.pop();
       out[key] = folded ? collected.join(" ") : collected.join("\n");
       i = j - 1;
       continue;

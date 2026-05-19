@@ -23,12 +23,18 @@ describe("parseEnvFlag", () => {
 
   it("rejects entries without an equals sign", () => {
     const r = parseEnvFlag(["KEY"]);
-    expect(r).toEqual({ ok: false, error: { kind: "missing-equals", input: "KEY" } });
+    expect(r).toEqual({
+      ok: false,
+      error: { kind: "missing-equals", input: "KEY" },
+    });
   });
 
   it("rejects names that don't match [A-Z_][A-Z0-9_]*", () => {
     const r = parseEnvFlag(["123KEY=foo"]);
-    expect(r).toEqual({ ok: false, error: { kind: "invalid-name", key: "123KEY" } });
+    expect(r).toEqual({
+      ok: false,
+      error: { kind: "invalid-name", key: "123KEY" },
+    });
   });
 
   it("splits on the first `=` so the value may contain more", () => {
@@ -66,7 +72,10 @@ describe("validateInstanceName", () => {
   });
 
   it("rejects names starting with `inst-`", () => {
-    expect(validateInstanceName("inst-foo")).toEqual({ ok: false, error: "reserved-prefix" });
+    expect(validateInstanceName("inst-foo")).toEqual({
+      ok: false,
+      error: "reserved-prefix",
+    });
   });
 
   it("rejects the empty string", () => {

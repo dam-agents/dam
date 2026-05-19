@@ -48,7 +48,8 @@ export async function waitForRunning(
   while (true) {
     const result = await svc.get(id);
     if (!result.ok) return { kind: "transport", reason: result.error.reason };
-    if (result.value === null) return { kind: "transport", reason: "instance disappeared during wait" };
+    if (result.value === null)
+      return { kind: "transport", reason: "instance disappeared during wait" };
     const inst = result.value;
     if (inst.state !== lastState) {
       lastState = inst.state;
@@ -56,7 +57,8 @@ export async function waitForRunning(
     }
     if (inst.state === "running") return { kind: "ready", instance: inst };
     if (inst.state === "error") return { kind: "error", instance: inst };
-    if (Date.now() >= deadline) return { kind: "timeout", lastState: inst.state };
+    if (Date.now() >= deadline)
+      return { kind: "timeout", lastState: inst.state };
     await sleep(POLL_INTERVAL_MS);
   }
 }

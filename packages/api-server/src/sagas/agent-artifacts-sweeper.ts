@@ -17,7 +17,10 @@
  * is fine — `DELETE WHERE agent_id IN (...)` is order-independent.
  */
 import type { K8sClient } from "../modules/agents/infrastructure/k8s.js";
-import { LABEL_TYPE, TYPE_AGENT } from "../modules/agents/infrastructure/labels.js";
+import {
+  LABEL_TYPE,
+  TYPE_AGENT,
+} from "../modules/agents/infrastructure/labels.js";
 
 export interface AgentArtifactsSweeper {
   start(): void;
@@ -54,7 +57,11 @@ export function createAgentArtifactsSweeper(
     running = true;
     try {
       const cms = await deps.k8s.listConfigMaps(`${LABEL_TYPE}=${TYPE_AGENT}`);
-      const live = new Set(cms.map((cm) => cm.metadata?.name).filter((n): n is string => Boolean(n)));
+      const live = new Set(
+        cms
+          .map((cm) => cm.metadata?.name)
+          .filter((n): n is string => Boolean(n)),
+      );
 
       const orphans = new Set<string>();
       for (const source of deps.sources) {

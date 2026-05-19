@@ -16,7 +16,11 @@ function toView(agent: Agent) {
 }
 
 const envVarSchema = z.object({
-  name: z.string().min(1).max(255).regex(ENV_NAME_RE, "name must match [A-Z_][A-Z0-9_]*"),
+  name: z
+    .string()
+    .min(1)
+    .max(255)
+    .regex(ENV_NAME_RE, "name must match [A-Z_][A-Z0-9_]*"),
   value: z.string().max(10000),
 });
 
@@ -35,29 +39,36 @@ export const agentsRouter = t.router({
     }),
 
   create: t.procedure
-    .input(z.object({
-      name: z.string().min(1),
-      templateId: z.string().optional(),
-      image: z.string().optional(),
-      description: z.string().optional(),
-      env: z.array(envVarSchema).max(64).optional(),
-      egressPreset: z.enum(["none", "trusted", "all"]).optional(),
-    }))
+    .input(
+      z.object({
+        name: z.string().min(1),
+        templateId: z.string().optional(),
+        image: z.string().optional(),
+        description: z.string().optional(),
+        env: z.array(envVarSchema).max(64).optional(),
+        egressPreset: z.enum(["none", "trusted", "all"]).optional(),
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
       if (!input.templateId && !input.image) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Either templateId or image is required" });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Either templateId or image is required",
+        });
       }
       const agent = await ctx.agents.create(input);
       return toView(agent);
     }),
 
   update: t.procedure
-    .input(z.object({
-      id: z.string().min(1),
-      name: z.string().min(1).max(255).optional(),
-      description: z.string().optional(),
-      env: z.array(envVarSchema).max(64).optional(),
-    }))
+    .input(
+      z.object({
+        id: z.string().min(1),
+        name: z.string().min(1).max(255).optional(),
+        description: z.string().optional(),
+        env: z.array(envVarSchema).max(64).optional(),
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
       const agent = await ctx.agents.update(input);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });

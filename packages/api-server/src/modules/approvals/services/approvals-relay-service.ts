@@ -2,7 +2,10 @@ import type { AcpPermissionOption } from "api-server-api";
 import type { ApprovalsRepository } from "../infrastructure/approvals-repository.js";
 import type { RedisBus } from "../../../core/redis-bus.js";
 import { acpNativeRowId } from "../domain/ids.js";
-import { injectChannelOf, SYNTHETIC_SESSION_PREFIX } from "../infrastructure/acp-frames.js";
+import {
+  injectChannelOf,
+  SYNTHETIC_SESSION_PREFIX,
+} from "../infrastructure/acp-frames.js";
 
 /** TTL stamped on acp_native rows. The wrapper holds the awaiting promise
  *  in-process — there's no real timeout — but the column is NOT NULL. A row
@@ -33,14 +36,19 @@ export interface RecordAcpNativePendingInput {
 export interface ApprovalsRelayService {
   /** Returns the assigned row id, or null if the request shouldn't be
    *  mirrored (e.g. synth ext_authz frames travelling over the same WS). */
-  recordAcpNativePending(input: RecordAcpNativePendingInput): Promise<string | null>;
+  recordAcpNativePending(
+    input: RecordAcpNativePendingInput,
+  ): Promise<string | null>;
   /** Called when the relay forwards an in-session JSON-RPC response
    *  upstream. The wrapper has already received the response, so we
    *  CAS-resolve and stamp `delivered_at` in one update. Idempotent at the
    *  DB layer — non-permission responses pass a row id that doesn't exist
    *  and the update affects zero rows. */
   resolveAcpNativeFromInSession(rowId: string): Promise<void>;
-  subscribeFrameInjects(instanceId: string, listener: (frame: string) => void): () => void;
+  subscribeFrameInjects(
+    instanceId: string,
+    listener: (frame: string) => void,
+  ): () => void;
 }
 
 export interface CreateApprovalsRelayServiceDeps {
@@ -67,7 +75,10 @@ export function createApprovalsRelayService(
           toolName: input.toolName,
           args: input.args,
           rpcId: input.rpcId,
-          options: input.options.map((o) => ({ optionId: o.optionId, kind: o.kind })),
+          options: input.options.map((o) => ({
+            optionId: o.optionId,
+            kind: o.kind,
+          })),
         },
         expiresAt: new Date(Date.now() + ACP_NATIVE_TTL_MS),
       });
@@ -75,7 +86,9 @@ export function createApprovalsRelayService(
     },
 
     async resolveAcpNativeFromInSession(rowId) {
-      await deps.repo.resolvePending(rowId, "allow_once", "in-session", { markDelivered: true });
+      await deps.repo.resolvePending(rowId, "allow_once", "in-session", {
+        markDelivered: true,
+      });
     },
 
     subscribeFrameInjects(instanceId, listener) {

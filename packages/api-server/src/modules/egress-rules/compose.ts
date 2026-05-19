@@ -108,7 +108,10 @@ export function createEgressRuleWriterAdapter(db: Db): EgressRuleWriterAdapter {
  * the locally-declared port in the agents module). The application root
  * passes this to `composeAgentsModule` — neither module imports the other.
  */
-export function createPresetSeederAdapter(db: Db, trustedHosts: readonly string[]) {
+export function createPresetSeederAdapter(
+  db: Db,
+  trustedHosts: readonly string[],
+) {
   const repo = createEgressRulesRepository(db);
   return createPresetSeeder({ repo, trustedHosts });
 }
@@ -136,7 +139,9 @@ export function createConnectionRulesSyncAdapter(db: Db): ConnectionRulesSync {
  * agent ConfigMap is gone. Best-effort: throws on DB error and the agents
  * service logs + continues with remaining hooks.
  */
-export function createEgressRulesCleanupHook(db: Db): (agentId: string) => Promise<void> {
+export function createEgressRulesCleanupHook(
+  db: Db,
+): (agentId: string) => Promise<void> {
   const repo = createEgressRulesRepository(db);
   return (agentId) => repo.deleteForAgent(agentId);
 }

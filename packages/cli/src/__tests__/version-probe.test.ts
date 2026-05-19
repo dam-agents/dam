@@ -39,11 +39,12 @@ describe("HttpVersionProbe", () => {
   });
 
   it("returns Ok with the parsed body on 200", async () => {
-    stubFetch(async () =>
-      new Response(
-        JSON.stringify({ serverVersion: "1.2.3", minClientVersion: "0.5.0" }),
-        { status: 200 },
-      ),
+    stubFetch(
+      async () =>
+        new Response(
+          JSON.stringify({ serverVersion: "1.2.3", minClientVersion: "0.5.0" }),
+          { status: 200 },
+        ),
     );
 
     const r = await createHttpVersionProbe().probe("http://api.example");
@@ -78,11 +79,12 @@ describe("HttpVersionProbe", () => {
   });
 
   it("malformed JSON body → Err(probe-error, malformed-response)", async () => {
-    stubFetch(async () =>
-      new Response("not json", {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
+    stubFetch(
+      async () =>
+        new Response("not json", {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
     );
 
     const r = await createHttpVersionProbe().probe("http://api.example");
@@ -93,8 +95,8 @@ describe("HttpVersionProbe", () => {
   });
 
   it("missing fields → Err(probe-error, malformed-response)", async () => {
-    stubFetch(async () =>
-      new Response(JSON.stringify({ foo: "bar" }), { status: 200 }),
+    stubFetch(
+      async () => new Response(JSON.stringify({ foo: "bar" }), { status: 200 }),
     );
 
     const r = await createHttpVersionProbe().probe("http://api.example");
@@ -109,8 +111,11 @@ describe("HttpVersionProbe", () => {
   });
 
   it("absent minClientVersion → Ok with undefined floor", async () => {
-    stubFetch(async () =>
-      new Response(JSON.stringify({ serverVersion: "1.2.3" }), { status: 200 }),
+    stubFetch(
+      async () =>
+        new Response(JSON.stringify({ serverVersion: "1.2.3" }), {
+          status: 200,
+        }),
     );
 
     const r = await createHttpVersionProbe().probe("http://api.example");
@@ -122,12 +127,13 @@ describe("HttpVersionProbe", () => {
 
   it("aborts with timeout error when fetch never resolves", async () => {
     vi.useRealTimers();
-    stubFetch((_url) =>
-      new Promise<Response>((_, reject) => {
-        // Forward the AbortSignal abort to a rejection — that's what the
-        // real `fetch` does on abort.
-        // The signal is bound at call-time; we read it from the third arg.
-      }) as Promise<Response>,
+    stubFetch(
+      (_url) =>
+        new Promise<Response>((_, reject) => {
+          // Forward the AbortSignal abort to a rejection — that's what the
+          // real `fetch` does on abort.
+          // The signal is bound at call-time; we read it from the third arg.
+        }) as Promise<Response>,
     );
 
     // We intercept again with the proper signal-aware handler:

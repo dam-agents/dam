@@ -13,9 +13,7 @@ import { join } from "node:path";
  * monkey-patching `process.env`. Defaults to `process.env` so production
  * callers don't need to know about the seam.
  */
-export function defaultAuthPath(
-  env: NodeJS.ProcessEnv = process.env,
-): string {
+export function defaultAuthPath(env: NodeJS.ProcessEnv = process.env): string {
   const xdg = env.XDG_STATE_HOME;
   if (xdg && xdg.length > 0) return join(xdg, "dam", "auth.toml");
   return join(homedir(), ".local", "state", "dam", "auth.toml");

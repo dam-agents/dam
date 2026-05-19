@@ -4,10 +4,12 @@ depends = ["helm:check:*"]
 ["helm:check:lint"]
 dir = "{{config_root}}/deploy/helm/platform"
 run = "helm lint ."
+sources = ["**/*.yaml", "**/*.yml", "**/*.tpl"]
 
 ["helm:check:render"]
 dir = "{{config_root}}/deploy/helm/platform"
 run = "helm template platform . | kubeconform -strict -summary -skip Certificate,Issuer,ClusterIssuer,AuthorizationPolicy,Gateway,SecurityContextConstraints"
+sources = ["**/*.yaml", "**/*.yml", "**/*.tpl"]
 
 ["helm:setup"]
 alias = "helm:build"

@@ -4,7 +4,9 @@ import { createK8sClient } from "../agents/infrastructure/k8s.js";
 import { createTemplatesRepository } from "./infrastructure/templates-repository.js";
 import { createTemplatesService } from "./services/templates-service.js";
 
-export type ReadTemplateSpec = (id: string) => Promise<{ spec: TemplateSpec; isOwned: boolean } | null>;
+export type ReadTemplateSpec = (
+  id: string,
+) => Promise<{ spec: TemplateSpec; isOwned: boolean } | null>;
 
 export function composeTemplatesModule(
   api: k8s.CoreV1Api,

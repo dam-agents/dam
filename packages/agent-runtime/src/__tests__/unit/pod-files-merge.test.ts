@@ -11,7 +11,12 @@ describe("mergeYAMLFillIfMissing", () => {
       "internal-ci.example.com:\n    user: ci-bot\n    git_protocol: ssh\n";
 
     const { merged, changed } = mergeYAMLFillIfMissing(existing, [
-      { "ghe.example.com": { user: "new-user", oauth_token: "dummy-placeholder" } },
+      {
+        "ghe.example.com": {
+          user: "new-user",
+          oauth_token: "dummy-placeholder",
+        },
+      },
     ]);
     expect(changed).toBe(true);
 

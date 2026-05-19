@@ -132,6 +132,7 @@ func credentialedChain(secretName, host string) envoyHostChain {
 			SecretName: secretName,
 			HeaderName: "Authorization",
 			VolumeName: "cred-" + secretName,
+			SDSFileKey: envoyCredentialKeySDS,
 		}},
 	}
 }
@@ -155,6 +156,7 @@ func queryParamChain(secretName, host, headerName, queryParamName string) envoyH
 			HeaderName:     headerName,
 			QueryParamName: queryParamName,
 			VolumeName:     "cred-" + secretName,
+			SDSFileKey:     envoyCredentialKeySDS,
 		}},
 	}
 }
@@ -173,11 +175,13 @@ func twoCredentialChain(firstName, secondName, host string) envoyHostChain {
 				SecretName: firstName,
 				HeaderName: "Authorization",
 				VolumeName: "cred-" + firstName,
+				SDSFileKey: envoyCredentialKeySDS,
 			},
 			{
 				SecretName:     secondName,
 				HeaderName:     "X-Internal-Query-" + secondName,
 				QueryParamName: "key",
+				SDSFileKey:     envoyCredentialKeySDS,
 				VolumeName:     "cred-" + secondName,
 			},
 		},
@@ -346,22 +350,104 @@ func TestCredentialEnvVars_MalformedJSONFallsBackToLegacySwitch(t *testing.T) {
 	assert.Equal(t, "dummy-placeholder", envs["ANTHROPIC_API_KEY"])
 }
 
-func TestCredentialEnvVars_MissingAnnotationFallsBackToLegacySwitch(t *testing.T) {
-	// Anthropic OAuth Secret with no `env-mappings` annotation (e.g. the
-	// secret was created via raw `kubectl apply`) — legacy switch fills in
+func TestCredentialEnvVars_AnthropicFallsBackToLegacySwitch(t *testing.T) {
+	// Anthropic Secret with no `env-mappings` annotation (e.g. created
+	// via raw `kubectl apply`) — legacy switch fills in
 	// `CLAUDE_CODE_OAUTH_TOKEN`.
 	oauthSecret := ownerSecret("platform-cred-aaa", "anthropic", "")
 	oauthSecret.Annotations[envoyAuthModeAnn] = "oauth"
 
-	// Connection-type Secret for GitHub — connections don't write
-	// `env-mappings` today, so the legacy switch emits `GH_TOKEN`.
-	ghSecret := ownerSecret("platform-conn-github", "connection", "github")
-	ghSecret.Annotations[envoyHostPatternAnn] = "api.github.com"
-
-	got := credentialEnvVars([]corev1.Secret{oauthSecret, ghSecret})
+	got := credentialEnvVars([]corev1.Secret{oauthSecret})
 	envs := envByName(got)
 	assert.Equal(t, "dummy-placeholder", envs["CLAUDE_CODE_OAUTH_TOKEN"])
+}
+
+func TestCredentialEnvVars_ConnectionEnvMappingsDeclareTheVars(t *testing.T) {
+	// Connection env vars come from the api-server's `env-mappings`
+	// annotation (declarative), not from a host-specific hardcode. A
+	// github connection stamps GH_TOKEN; a GHE connection adds GH_HOST.
+	gh := ownerSecret("platform-conn-github", "connection", "github")
+	delete(gh.Annotations, envoyHostPatternAnn)
+	gh.Annotations[envoyEnvMappingsAnn] = `[{"envName":"GH_TOKEN","placeholder":"dummy-placeholder"}]`
+
+	ghe := ownerSecret("platform-conn-ghe", "connection", "github-enterprise")
+	delete(ghe.Annotations, envoyHostPatternAnn)
+	ghe.Annotations[envoyEnvMappingsAnn] =
+		`[{"envName":"GH_TOKEN","placeholder":"dummy-placeholder"},` +
+			`{"envName":"GH_HOST","placeholder":"ghe.example.com"}]`
+
+	envs := envByName(credentialEnvVars([]corev1.Secret{gh, ghe}))
 	assert.Equal(t, "dummy-placeholder", envs["GH_TOKEN"])
+	// GHE-supplied GH_HOST persists — but GH_TOKEN dedup keeps the
+	// first-granted value (which is the github connection here).
+	assert.Equal(t, "ghe.example.com", envs["GH_HOST"])
+}
+
+func TestChainsFromSecrets_ConnectionSecretFansIntoNChains(t *testing.T) {
+	// Issue #219: one github Secret → three chains, each reading a
+	// per-host SDS file inside the same Secret volume.
+	s := ownerSecret("platform-conn-github", "connection", "github")
+	delete(s.Annotations, envoyHostPatternAnn)
+	s.Annotations[envoyInjectionHostsAnn] = `[
+		{"host":"api.github.com"},
+		{"host":"github.com","valueFormat":"Basic {value}","encoding":"basic-x-access-token"},
+		{"host":"raw.githubusercontent.com"}
+	]`
+
+	chains := chainsFromSecrets([]corev1.Secret{s})
+	require.Len(t, chains, 3)
+
+	hosts := []string{chains[0].Host, chains[1].Host, chains[2].Host}
+	assert.ElementsMatch(t,
+		[]string{"api.github.com", "github.com", "raw.githubusercontent.com"},
+		hosts,
+	)
+
+	// Same Secret volume per chain, distinct per-host SDS file. Keys
+	// must agree with the api-server's `sdsFileKeyForHost`.
+	for _, c := range chains {
+		require.Len(t, c.Credentials, 1)
+		cred := c.Credentials[0]
+		assert.Equal(t, "cred-platform-conn-github", cred.VolumeName)
+		assert.Equal(t, sdsFileKeyForHost(c.Host), cred.SDSFileKey)
+		assert.NotEqual(t, envoyCredentialKeySDS, cred.SDSFileKey,
+			"connection Secrets must use per-host SDS files, not the legacy sds.yaml key")
+	}
+}
+
+func TestChainsFromSecrets_MultiHostSecretYieldsDistinctClusterNames(t *testing.T) {
+	// Regression: one Secret with three hosts must produce three chains
+	// with three DISTINCT UpstreamCluster / ChainID. Envoy refuses to
+	// start with `duplicate cluster '…'` if two chains collide.
+	s := ownerSecret("platform-conn-github", "connection", "github")
+	delete(s.Annotations, envoyHostPatternAnn)
+	s.Annotations[envoyInjectionHostsAnn] = `[
+		{"host":"api.github.com"},
+		{"host":"github.com","valueFormat":"Basic {value}","encoding":"basic-x-access-token"},
+		{"host":"raw.githubusercontent.com"}
+	]`
+
+	chains := chainsFromSecrets([]corev1.Secret{s})
+	require.Len(t, chains, 3)
+
+	clusters := map[string]bool{}
+	chainIDs := map[string]bool{}
+	for _, c := range chains {
+		assert.False(t, clusters[c.UpstreamCluster],
+			"duplicate UpstreamCluster %q would crash Envoy", c.UpstreamCluster)
+		assert.False(t, chainIDs[c.ChainID],
+			"duplicate ChainID %q would clash on listener names", c.ChainID)
+		clusters[c.UpstreamCluster] = true
+		chainIDs[c.ChainID] = true
+	}
+}
+
+func TestSDSFileKeyForHost_StableAndShort(t *testing.T) {
+	// Pinned against the api-server's `sdsFileKeyForHost`. Mismatch =
+	// gateway reads a missing file.
+	assert.Equal(t, "host-01892413.sds.yaml", sdsFileKeyForHost("api.github.com"))
+	assert.Equal(t, "host-c2208abd.sds.yaml", sdsFileKeyForHost("github.com"))
+	assert.Equal(t, "host-3cf88e0a.sds.yaml", sdsFileKeyForHost("raw.githubusercontent.com"))
 }
 
 func TestCredentialEnvVars_AnnotationOverridesLegacyDefault(t *testing.T) {
@@ -546,6 +632,27 @@ func TestEnvoySecretsRev_QueryParamAnnotationRollsExistingPods(t *testing.T) {
 	withParam.Annotations[envoyQueryParamAnn] = "key"
 
 	assert.NotEqual(t, envoySecretsRev([]corev1.Secret{plain}), envoySecretsRev([]corev1.Secret{withParam}))
+}
+
+func TestEnvoySecretsRev_InjectionHostsAnnotationRollsExistingPods(t *testing.T) {
+	// Editing a connection's host list (descriptor change, #219) must
+	// roll the gateway — Envoy reads the bootstrap once at boot, so a
+	// chain-shape change without a roll leaves stale chains running.
+	before := ownerSecret("platform-conn-github", "connection", "github")
+	before.Annotations[envoyInjectionHostsAnn] = `[{"host":"api.github.com"}]`
+
+	after := ownerSecret("platform-conn-github", "connection", "github")
+	after.Annotations[envoyInjectionHostsAnn] = `[
+		{"host":"api.github.com"},
+		{"host":"github.com","valueFormat":"Basic {value}","encoding":"basic-x-access-token"},
+		{"host":"raw.githubusercontent.com"}
+	]`
+
+	assert.NotEqual(t,
+		envoySecretsRev([]corev1.Secret{before}),
+		envoySecretsRev([]corev1.Secret{after}),
+		"host-list edits must change the rev so the StatefulSet rolls",
+	)
 }
 
 func TestEnvoySecretsRev_TemplateRevBumpRollsExistingPods(t *testing.T) {

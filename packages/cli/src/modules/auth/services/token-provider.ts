@@ -22,14 +22,18 @@ export interface TokenProvider {
    *
    * Never logs the token. Never inspects a `DAM_TOKEN`-supplied value.
    */
-  getValidAccessToken(host: HostUrl): Promise<Result<string, TokenProviderError>>;
+  getValidAccessToken(
+    host: HostUrl,
+  ): Promise<Result<string, TokenProviderError>>;
 }
 
 /** Resolves the token endpoint for a host via OIDC discovery. The
  *  `cliClientId` used at refresh is read from the stored HostAuth, not
  *  re-probed here — see `auth-service.ts` for the login-time persist. */
 export interface HostMetadataResolver {
-  resolve(host: HostUrl): Promise<
+  resolve(
+    host: HostUrl,
+  ): Promise<
     Result<
       { tokenEndpoint: string },
       { kind: "refresh-failed"; host: HostUrl; reason: string }

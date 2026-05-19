@@ -9,11 +9,10 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 )
 
-// Agent pod opts out of ambient mesh, so kernel NetworkPolicy is the sole
-// gate on agent egress. The policy admits exactly DNS + paired gateway
-// pod on the Envoy proxy port — nothing else. HBONE port 15008 is
-// deliberately denied: the agent has no ztunnel and admitting 15008 would
-// give it a route to anything in the mesh.
+// Per-pair NP admits exactly the paired gateway on the Envoy port —
+// nothing else, no DNS, no HBONE. Combined with the chart-rendered
+// namespace deny-all baseline, this is the only allow rule for the
+// agent.
 func TestBuildAgentEgressNetworkPolicy_LongLivedPair(t *testing.T) {
 	np := BuildAgentEgressNetworkPolicy("my-instance", testConfig, testOwnerCM)
 
@@ -22,36 +21,18 @@ func TestBuildAgentEgressNetworkPolicy_LongLivedPair(t *testing.T) {
 	require.Len(t, np.OwnerReferences, 1)
 	assert.Equal(t, "my-instance", np.OwnerReferences[0].Name)
 
-	// Selector pins to THIS pair's agent pod — the gateway pod's egress
-	// stays unrestricted (it dials external upstreams for credential
-	// injection, gated by ext_authz inside its own Envoy).
+	// Selector pins to this pair's agent pod — gateway pod is
+	// unaffected (ADR-035 gates its egress at L7 ext_authz).
 	assert.Equal(t, "my-instance", np.Spec.PodSelector.MatchLabels[LabelPair])
 	assert.Equal(t, RoleAgent, np.Spec.PodSelector.MatchLabels[LabelRole])
 
 	require.Len(t, np.Spec.PolicyTypes, 1)
 	assert.Equal(t, networkingv1.PolicyTypeEgress, np.Spec.PolicyTypes[0])
 
-	require.Len(t, np.Spec.Egress, 3, "kube-system DNS + openshift-dns DNS + paired gateway, nothing else")
-
-	// Upstream Kubernetes: CoreDNS / kube-dns in `kube-system` listening
-	// on pod port 53.
-	corednsRule := np.Spec.Egress[0]
-	require.Len(t, corednsRule.To, 1)
-	require.NotNil(t, corednsRule.To[0].NamespaceSelector)
-	assert.Equal(t, "kube-system", corednsRule.To[0].NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"])
-	assertDNSPorts(t, corednsRule.Ports, 53)
-
-	// OpenShift: dns-default in `openshift-dns` listening on pod port
-	// 5353. NetworkPolicy filters on pod port after kube-proxy
-	// translation, so the upstream rule (53) does not match here.
-	openshiftRule := np.Spec.Egress[1]
-	require.Len(t, openshiftRule.To, 1)
-	require.NotNil(t, openshiftRule.To[0].NamespaceSelector)
-	assert.Equal(t, "openshift-dns", openshiftRule.To[0].NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"])
-	assertDNSPorts(t, openshiftRule.Ports, 5353)
+	require.Len(t, np.Spec.Egress, 1, "paired gateway only — no DNS, no anything else")
 
 	// Paired gateway pod — Envoy proxy port only.
-	gwRule := np.Spec.Egress[2]
+	gwRule := np.Spec.Egress[0]
 	require.Len(t, gwRule.To, 1)
 	require.NotNil(t, gwRule.To[0].PodSelector)
 	assert.Equal(t, "my-instance", gwRule.To[0].PodSelector.MatchLabels[LabelPair])
@@ -62,10 +43,7 @@ func TestBuildAgentEgressNetworkPolicy_LongLivedPair(t *testing.T) {
 	assert.Equal(t, corev1.ProtocolTCP, *gwRule.Ports[0].Protocol)
 }
 
-// Fork pair: same shape, keyed on the fork name. ADR-027's fork-pair
-// isolation property only holds because the agent NP scopes the agent's
-// egress to its OWN gateway — without this, a compromised fork agent
-// could dial the parent's gateway directly.
+// Fork pair: same shape, keyed on the fork name (ADR-027 isolation).
 func TestBuildAgentEgressNetworkPolicy_Fork(t *testing.T) {
 	np := BuildAgentEgressNetworkPolicy("fork-abc", testConfig, testForkOwnerCM)
 
@@ -73,18 +51,25 @@ func TestBuildAgentEgressNetworkPolicy_Fork(t *testing.T) {
 	assert.Equal(t, "fork-abc", np.Spec.PodSelector.MatchLabels[LabelPair])
 	assert.Equal(t, RoleAgent, np.Spec.PodSelector.MatchLabels[LabelRole])
 
-	// The gateway-pod egress rule must reference the FORK's gateway, not
-	// the parent's — otherwise the fork agent could reach the parent's
-	// gateway and inject under the parent owner's credentials.
-	gwRule := np.Spec.Egress[2]
+	// Gateway peer must scope to the fork's own gateway (ADR-027).
+	gwRule := np.Spec.Egress[0]
 	require.NotNil(t, gwRule.To[0].PodSelector)
 	assert.Equal(t, "fork-abc", gwRule.To[0].PodSelector.MatchLabels[LabelPair],
-		"fork agent NP must scope to the FORK's gateway, not the parent's")
+		"fork agent NP must scope to the fork's own gateway")
 }
 
-// HBONE port 15008 must NOT appear anywhere in the agent egress policy.
-// The agent has no ztunnel and never speaks HBONE; admitting 15008 here
-// would let the agent reach any in-mesh destination via ztunnel.
+// DNS deny is structural — proxy is IP-direct.
+func TestBuildAgentEgressNetworkPolicy_NoDNS(t *testing.T) {
+	np := BuildAgentEgressNetworkPolicy("my-instance", testConfig, testOwnerCM)
+	for _, rule := range np.Spec.Egress {
+		for _, p := range rule.Ports {
+			assert.NotEqual(t, int32(53), p.Port.IntVal, "DNS port 53 must not appear")
+			assert.NotEqual(t, int32(5353), p.Port.IntVal, "DNS port 5353 must not appear")
+		}
+	}
+}
+
+// HBONE port 15008 must NOT appear in the agent egress policy.
 func TestBuildAgentEgressNetworkPolicy_NoHBONE(t *testing.T) {
 	np := BuildAgentEgressNetworkPolicy("my-instance", testConfig, testOwnerCM)
 	for i, rule := range np.Spec.Egress {
@@ -103,36 +88,3 @@ func TestBuildAgentEgressNetworkPolicy_ManagedByLabel(t *testing.T) {
 	assert.Equal(t, "my-instance", np.Labels[LabelInstance])
 }
 
-// PoC `disableDns`: when set, the per-pair agent egress NP must NOT admit
-// DNS — closing threat-model T9 (DNS exfil via CoreDNS's upstream
-// forwarder). Only the paired-gateway rule remains.
-func TestBuildAgentEgressNetworkPolicy_DisableDNS(t *testing.T) {
-	cfg := *testConfig
-	cfg.AgentBase.DisableDNS = true
-	np := BuildAgentEgressNetworkPolicy("my-instance", &cfg, testOwnerCM)
-
-	require.Len(t, np.Spec.Egress, 1, "disableDns must collapse the policy to gateway-only")
-	gw := np.Spec.Egress[0]
-	require.NotNil(t, gw.To[0].PodSelector)
-	assert.Equal(t, "my-instance", gw.To[0].PodSelector.MatchLabels[LabelPair])
-	assert.Equal(t, RoleGateway, gw.To[0].PodSelector.MatchLabels[LabelRole])
-
-	// Explicit: no DNS port lurking anywhere.
-	for _, rule := range np.Spec.Egress {
-		for _, p := range rule.Ports {
-			assert.NotEqual(t, int32(53), p.Port.IntVal, "DNS port 53 must not appear when DNS is disabled")
-			assert.NotEqual(t, int32(5353), p.Port.IntVal, "DNS port 5353 must not appear when DNS is disabled")
-		}
-	}
-}
-
-func assertDNSPorts(t *testing.T, ports []networkingv1.NetworkPolicyPort, expected int32) {
-	t.Helper()
-	require.Len(t, ports, 2, "both UDP and TCP on the resolver's pod port — modern resolvers fall through to TCP")
-	protocols := map[corev1.Protocol]bool{}
-	for _, p := range ports {
-		protocols[*p.Protocol] = true
-		assert.Equal(t, expected, p.Port.IntVal)
-	}
-	assert.True(t, protocols[corev1.ProtocolUDP] && protocols[corev1.ProtocolTCP])
-}

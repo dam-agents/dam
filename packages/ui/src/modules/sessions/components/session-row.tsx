@@ -12,7 +12,13 @@ interface Props {
   onDelete: () => void;
 }
 
-export function SessionRow({ session: s, active, hasPending, onResume, onDelete }: Props) {
+export function SessionRow({
+  session: s,
+  active,
+  hasPending,
+  onResume,
+  onDelete,
+}: Props) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didLongPress = useRef(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -60,7 +66,9 @@ export function SessionRow({ session: s, active, hasPending, onResume, onDelete 
   // — the id suffix keeps untitled rows distinguishable from each other.
   const titleLabel = s.title || `(no title · ${s.sessionId.slice(0, 8)})`;
   const titleClass = s.title
-    ? active ? "text-accent font-bold" : "text-text font-medium"
+    ? active
+      ? "text-accent font-bold"
+      : "text-text font-medium"
     : "text-text-muted italic";
 
   return (
@@ -91,7 +99,8 @@ export function SessionRow({ session: s, active, hasPending, onResume, onDelete 
               terminal
             </span>
           )}
-          {(s.type === SessionType.ChannelSlack || s.type === SessionType.ChannelTelegram) && (
+          {(s.type === SessionType.ChannelSlack ||
+            s.type === SessionType.ChannelTelegram) && (
             <span className="text-[9px] font-bold uppercase tracking-wider text-text-muted bg-border-light rounded px-1 py-0.5 shrink-0">
               {s.type === SessionType.ChannelSlack ? "slack" : "telegram"}
             </span>

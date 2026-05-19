@@ -17,10 +17,12 @@ export interface ToastSlice {
 
 const DEFAULT_TTL = 5000;
 
-export const createToastSlice: StateCreator<PlatformStore, [], [], ToastSlice> = (
-  set,
-  get,
-) => {
+export const createToastSlice: StateCreator<
+  PlatformStore,
+  [],
+  [],
+  ToastSlice
+> = (set, get) => {
   const showToast = (input: Omit<Toast, "id">) => {
     const id = crypto.randomUUID();
     const ttl = input.ttl ?? DEFAULT_TTL;

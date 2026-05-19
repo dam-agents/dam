@@ -1,4 +1,8 @@
-import { ibmLitellmEnvMappings, PROVIDERS, type SecretView } from "../../../../types.js";
+import {
+  ibmLitellmEnvMappings,
+  PROVIDERS,
+  type SecretView,
+} from "../../../../types.js";
 import { useProviderActions } from "../use-provider-actions.js";
 import { IbmLitellmConnected } from "./connected.js";
 import { IbmLitellmForm } from "./form.js";
@@ -15,7 +19,9 @@ export function IbmLitellmCard({ secret }: { secret?: SecretView }) {
     return (
       <IbmLitellmConnected
         secret={secret}
-        onRemove={() => actions.remove(secret.id, `Remove ${NAME} token?`, "Remove Token")}
+        onRemove={() =>
+          actions.remove(secret.id, `Remove ${NAME} token?`, "Remove Token")
+        }
         onSave={({ value, pins }) =>
           actions.update({
             id: secret.id,

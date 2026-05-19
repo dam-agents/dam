@@ -1,4 +1,9 @@
-import type { EnvMapping, EnvVar, InjectionConfig, SecretType } from "api-server-api";
+import type {
+  EnvMapping,
+  EnvVar,
+  InjectionConfig,
+  SecretType,
+} from "api-server-api";
 import { isProviderPresetType } from "api-server-api";
 
 export type Role = "user" | "assistant";
@@ -49,7 +54,12 @@ export interface UploadedFilePart extends FilePart {
 
 export type Attachment = ImagePart | UploadedFilePart;
 
-export type MessagePart = TextPart | ThoughtPart | ImagePart | FilePart | ToolChip;
+export type MessagePart =
+  | TextPart
+  | ThoughtPart
+  | ImagePart
+  | FilePart
+  | ToolChip;
 
 export interface Message {
   id: string;
@@ -118,7 +128,10 @@ export interface InstanceView {
   description?: string;
   state: InstanceState;
   error?: string;
-  channels: ({ type: "slack"; slackChannelId: string } | { type: "telegram" })[];
+  channels: (
+    | { type: "slack"; slackChannelId: string }
+    | { type: "telegram" }
+  )[];
   allowedUserEmails: string[];
 }
 

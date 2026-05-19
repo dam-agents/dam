@@ -18,10 +18,7 @@ import type {
   HostUrl,
 } from "../modules/auth/infrastructure/auth-store.js";
 import type { AuthEnvReader } from "../modules/auth/infrastructure/auth-env-reader.js";
-import type {
-  CompatService,
-  ConfigService,
-} from "../modules/cli/index.js";
+import type { CompatService, ConfigService } from "../modules/cli/index.js";
 import type {
   AuthConfigProbeError,
   OidcDiscoveryError,
@@ -142,7 +139,9 @@ function oidcMissingDeviceEndpoint(): OidcDiscovery {
 function deviceFlowUnused(): DeviceFlowClient {
   return {
     async authorize() {
-      throw new Error("device flow should not be called in pre-flight failures");
+      throw new Error(
+        "device flow should not be called in pre-flight failures",
+      );
     },
   };
 }
@@ -191,7 +190,12 @@ describe("auth-service.login pre-flight (claim 9: distinct error kinds)", () => 
       authEnvReader: envReader(),
     });
 
-    const r = await svc.login({ host: HOST, openBrowser: false, force: false, isTty: false });
+    const r = await svc.login({
+      host: HOST,
+      openBrowser: false,
+      force: false,
+      isTty: false,
+    });
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.error.kind).toBe("preflight");
@@ -215,7 +219,12 @@ describe("auth-service.login pre-flight (claim 9: distinct error kinds)", () => 
       authEnvReader: envReader(),
     });
 
-    const r = await svc.login({ host: HOST, openBrowser: false, force: false, isTty: false });
+    const r = await svc.login({
+      host: HOST,
+      openBrowser: false,
+      force: false,
+      isTty: false,
+    });
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.error.kind).toBe("below-floor");
@@ -239,12 +248,19 @@ describe("auth-service.login pre-flight (claim 9: distinct error kinds)", () => 
       authEnvReader: envReader(),
     });
 
-    const r = await svc.login({ host: HOST, openBrowser: false, force: false, isTty: false });
+    const r = await svc.login({
+      host: HOST,
+      openBrowser: false,
+      force: false,
+      isTty: false,
+    });
     expect(r.ok).toBe(false);
     if (!r.ok && r.error.kind === "preflight") {
       expect(r.error.reason).toBe("missing-cli-client-id");
     } else {
-      expect.fail(`expected preflight/missing-cli-client-id; got ${JSON.stringify(r)}`);
+      expect.fail(
+        `expected preflight/missing-cli-client-id; got ${JSON.stringify(r)}`,
+      );
     }
   });
 
@@ -262,12 +278,19 @@ describe("auth-service.login pre-flight (claim 9: distinct error kinds)", () => 
       authEnvReader: envReader(),
     });
 
-    const r = await svc.login({ host: HOST, openBrowser: false, force: false, isTty: false });
+    const r = await svc.login({
+      host: HOST,
+      openBrowser: false,
+      force: false,
+      isTty: false,
+    });
     expect(r.ok).toBe(false);
     if (!r.ok && r.error.kind === "preflight") {
       expect(r.error.reason).toBe("missing-device-endpoint");
     } else {
-      expect.fail(`expected preflight/missing-device-endpoint; got ${JSON.stringify(r)}`);
+      expect.fail(
+        `expected preflight/missing-device-endpoint; got ${JSON.stringify(r)}`,
+      );
     }
   });
 
@@ -295,7 +318,12 @@ describe("auth-service.login pre-flight (claim 9: distinct error kinds)", () => 
       authEnvReader: envReader(),
     });
 
-    const r = await svc.login({ host: HOST, openBrowser: false, force: false, isTty: false });
+    const r = await svc.login({
+      host: HOST,
+      openBrowser: false,
+      force: false,
+      isTty: false,
+    });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.kind).toBe("requires-force");
   });

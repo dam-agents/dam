@@ -143,41 +143,12 @@ func TestBuildAgentStatefulSet_IptablesInitSkippedWithoutGatewayIP(t *testing.T)
 	}
 }
 
-// With disableDns: true AND a known gateway ClusterIP, the agent pod must
-// carry a hostAliases entry mapping the gateway Service name to the IP.
-// This is how HTTPS_PROXY=http://<pair>-gateway:<port> keeps resolving
-// without admitting DNS in the NetworkPolicy.
-func TestBuildAgentStatefulSet_HostAliasesWhenDNSDisabled(t *testing.T) {
+// hostAliases is no longer used — HTTPS_PROXY is IP-direct so there's no
+// hostname to override. Pod render must not carry stale hostAliases under
+// any code path.
+func TestBuildAgentStatefulSet_NoHostAliases(t *testing.T) {
 	cfg := *testConfig
-	cfg.AgentBase.DisableDNS = true
 	instance := &types.InstanceSpec{DesiredState: "running"}
 	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, &cfg, testOwnerCM, nil, "10.96.42.42")
-
-	aliases := ss.Spec.Template.Spec.HostAliases
-	require.Len(t, aliases, 1)
-	assert.Equal(t, "10.96.42.42", aliases[0].IP)
-	assert.Contains(t, aliases[0].Hostnames, "my-instance-gateway")
-}
-
-// disableDns: true with an unknown gateway ClusterIP (first reconcile race):
-// the controller must NOT block on it — the pod renders without
-// hostAliases and the next reconcile fills it in. The pod will fail to
-// reach the gateway in that window; that's the documented behavior.
-func TestBuildAgentStatefulSet_NoHostAliasesWhenClusterIPUnknown(t *testing.T) {
-	cfg := *testConfig
-	cfg.AgentBase.DisableDNS = true
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, &cfg, testOwnerCM, nil, "")
-	assert.Empty(t, ss.Spec.Template.Spec.HostAliases)
-}
-
-// disableDns: false — the default-before-PoC shape. No hostAliases regardless
-// of whether a ClusterIP was passed (DNS is doing the resolution).
-func TestBuildAgentStatefulSet_NoHostAliasesWhenDNSEnabled(t *testing.T) {
-	cfg := *testConfig
-	cfg.AgentBase.DisableDNS = false
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, &cfg, testOwnerCM, nil, "10.96.42.42")
-	assert.Empty(t, ss.Spec.Template.Spec.HostAliases,
-		"hostAliases only when DNS is disabled — otherwise rely on cluster DNS")
+	assert.Empty(t, ss.Spec.Template.Spec.HostAliases, "no hostAliases — proxy URL is IP-direct")
 }

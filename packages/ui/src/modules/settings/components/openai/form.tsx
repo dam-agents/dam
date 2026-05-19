@@ -60,7 +60,9 @@ export function OpenAIForm({
       <div className="flex items-center gap-3">
         <CardIcon variant={isEdit ? "accent" : "warning"} />
         <div className="flex-1 min-w-0">
-          <div className="text-[15px] font-bold text-text">{OPENAI_DISPLAY_NAME}</div>
+          <div className="text-[15px] font-bold text-text">
+            {OPENAI_DISPLAY_NAME}
+          </div>
           <div className="text-[12px] text-text-muted">
             {isEdit
               ? "Paste a new API key to replace the existing one."
@@ -94,9 +96,13 @@ export function OpenAIForm({
         </button>
       </div>
 
-      {errors.value && value.length > 0 && errors.value.message !== "Required" && (
-        <div className="text-[12px] font-medium text-danger">{errors.value.message}</div>
-      )}
+      {errors.value &&
+        value.length > 0 &&
+        errors.value.message !== "Required" && (
+          <div className="text-[12px] font-medium text-danger">
+            {errors.value.message}
+          </div>
+        )}
     </form>
   );
 }

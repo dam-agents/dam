@@ -1,6 +1,6 @@
 # Architecture
 
-Last verified: 2026-05-07
+Last verified: 2026-05-15
 
 ## System context
 
@@ -33,7 +33,7 @@ flowchart LR
 
   slack-user <-->|Slack API| api-server
 
-  cli -->|REST| api-server
+  cli -->|tRPC + WS| api-server
 
   api-server <-->|ACP relay / tRPC proxy| agent-runtime
   api-server -->|REST| k8s-api

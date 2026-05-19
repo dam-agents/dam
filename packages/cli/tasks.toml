@@ -5,6 +5,32 @@ depends = ["cli:check:*"]
 dir = "{{config_root}}/packages/cli"
 depends = ["common:setup:pnpm"]
 run = "pnpm exec tsc --noEmit"
+sources = ["src/**/*.ts", "tsconfig.json", "../../tsconfig.base.json"]
+
+["cli:check:lint"]
+dir = "{{config_root}}/packages/cli"
+depends = ["common:setup:pnpm"]
+run = "pnpm exec eslint ."
+sources = ["src/**/*.ts", "eslint.config.js", "../../eslint.config.base.js"]
+
+["cli:check:format"]
+dir = "{{config_root}}/packages/cli"
+depends = ["common:setup:pnpm"]
+run = "pnpm exec prettier --check 'src/**/*.ts'"
+sources = ["src/**/*.ts", "../../.prettierrc"]
+
+["cli:fix"]
+depends = ["cli:fix:*"]
+
+["cli:fix:lint"]
+dir = "{{config_root}}/packages/cli"
+depends = ["common:setup:pnpm"]
+run = "pnpm exec eslint --fix ."
+
+["cli:fix:format"]
+dir = "{{config_root}}/packages/cli"
+depends = ["common:setup:pnpm"]
+run = "pnpm exec prettier --write 'src/**/*.ts'"
 
 ["cli:test"]
 description = "Run cli unit tests"

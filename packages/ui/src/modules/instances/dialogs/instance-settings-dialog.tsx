@@ -28,30 +28,45 @@ export function InstanceSettingsDialog({
     setInput("");
   };
 
-  const removeUser = (email: string) => setUsers(users.filter(u => u !== email));
+  const removeUser = (email: string) =>
+    setUsers(users.filter((u) => u !== email));
 
   return (
     <Modal widthClass="w-[460px]">
       <div className="flex-1 overflow-y-auto p-5 md:p-7 flex flex-col gap-5">
         <div>
           <h2 className="text-[20px] font-bold text-text">Instance Settings</h2>
-          <p className="text-[12px] text-text-muted mt-1">Instance: <span className="font-semibold text-text-secondary">{instanceName}</span></p>
+          <p className="text-[12px] text-text-muted mt-1">
+            Instance:{" "}
+            <span className="font-semibold text-text-secondary">
+              {instanceName}
+            </span>
+          </p>
         </div>
 
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between">
-            <span className="text-[12px] font-bold text-text-secondary uppercase tracking-[0.03em]">Allowed Users</span>
-            <span className="text-[11px] text-text-muted">{users.length === 0 ? "unrestricted" : `${users.length} user${users.length !== 1 ? "s" : ""}`}</span>
+            <span className="text-[12px] font-bold text-text-secondary uppercase tracking-[0.03em]">
+              Allowed Users
+            </span>
+            <span className="text-[11px] text-text-muted">
+              {users.length === 0
+                ? "unrestricted"
+                : `${users.length} user${users.length !== 1 ? "s" : ""}`}
+            </span>
           </div>
-          <p className="text-[12px] text-text-muted -mt-1">User emails that can interact via Slack. Leave empty for unrestricted access.</p>
+          <p className="text-[12px] text-text-muted -mt-1">
+            User emails that can interact via Slack. Leave empty for
+            unrestricted access.
+          </p>
 
           <div className="flex gap-2">
             <input
               type="email"
               className="flex-1 h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted font-mono"
               value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && addUser()}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && addUser()}
               placeholder="user@example.com"
               autoFocus
             />
@@ -66,9 +81,14 @@ export function InstanceSettingsDialog({
 
           {users.length > 0 && (
             <div className="flex flex-col gap-1.5">
-              {users.map(email => (
-                <div key={email} className="flex items-center gap-2 rounded-lg border-2 border-border-light bg-bg px-4 py-2">
-                  <span className="flex-1 text-[13px] font-mono text-text truncate">{email}</span>
+              {users.map((email) => (
+                <div
+                  key={email}
+                  className="flex items-center gap-2 rounded-lg border-2 border-border-light bg-bg px-4 py-2"
+                >
+                  <span className="flex-1 text-[13px] font-mono text-text truncate">
+                    {email}
+                  </span>
                   <button
                     onClick={() => removeUser(email)}
                     className="shrink-0 text-text-muted hover:text-danger transition-colors"

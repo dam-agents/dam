@@ -1,5 +1,5 @@
 import type { McpServer } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
-import { useCallback, useEffect, useMemo, useRef,useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { isMcpSecret, mcpHostnameFromSecretName } from "../../../types.js";
 import { useAgentAccess } from "../../agents/api/queries.js";
@@ -53,7 +53,8 @@ export function useMcpPicker(selectedInstance: string | null) {
     (hostname: string) =>
       setEnabledMcps((p) => {
         const n = new Set(p);
-        if (n.has(hostname)) n.delete(hostname); else n.add(hostname);
+        if (n.has(hostname)) n.delete(hostname);
+        else n.add(hostname);
         return n;
       }),
     [],

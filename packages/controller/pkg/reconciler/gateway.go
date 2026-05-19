@@ -121,10 +121,10 @@ func BuildGatewayStatefulSet(instanceName string, hibernated bool, cfg *config.C
 func ptrIntOrString(v intstr.IntOrString) *intstr.IntOrString { return &v }
 
 // BuildGatewayService is the ClusterIP Service the agent reaches via
-// `HTTPS_PROXY`. The auto-assigned virtual IP is stable across pod
-// restarts — pinned into the agent pod's hostAliases (under `disableDns`)
-// and the iptables init container's allow-list. Was previously headless;
-// `Service.Spec.ClusterIP == "None"` isn't usable in hostAliases.
+// `HTTPS_PROXY`. The auto-assigned virtual IP is what HTTPS_PROXY uses
+// directly (IP-literal, no DNS) and what the iptables init container's
+// allow-list / np-gate probe target. Was previously headless;
+// `Service.Spec.ClusterIP == "None"` isn't usable as a literal target.
 func BuildGatewayService(instanceName string, cfg *config.Config, ownerCM *corev1.ConfigMap) *corev1.Service {
 	gatewayName := GatewayName(instanceName)
 	envoyPort := portInt32(cfg.EnvoyPort)

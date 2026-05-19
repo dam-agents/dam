@@ -41,10 +41,10 @@ declare module "vitest" {
 export async function teardown() {
   console.log("Deleting test cluster...");
   try {
-    execSync(
-      "mise run cluster:delete -- --vm-name=platform-k3s-test --force",
-      { stdio: "inherit", timeout: 120_000 },
-    );
+    execSync("mise run cluster:delete -- --vm-name=platform-k3s-test --force", {
+      stdio: "inherit",
+      timeout: 120_000,
+    });
   } catch (e) {
     console.error("Failed to delete test cluster:", e);
   }

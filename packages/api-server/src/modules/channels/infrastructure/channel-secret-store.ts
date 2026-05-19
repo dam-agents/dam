@@ -1,7 +1,9 @@
 import { ChannelType } from "api-server-api";
 import type { K8sClient } from "../../agents/infrastructure/k8s.js";
 import {
-  LABEL_TYPE, LABEL_INSTANCE_REF, LABEL_CHANNEL_TYPE,
+  LABEL_TYPE,
+  LABEL_INSTANCE_REF,
+  LABEL_CHANNEL_TYPE,
   TYPE_CHANNEL_SECRET,
 } from "../../agents/infrastructure/labels.js";
 
@@ -14,7 +16,10 @@ export interface ChannelSecretStore {
   deleteAllForInstance(instanceId: string): Promise<void>;
 }
 
-export function channelSecretName(instanceId: string, type: ChannelType): string {
+export function channelSecretName(
+  instanceId: string,
+  type: ChannelType,
+): string {
   return `platform-channel-${type}-${instanceId}`;
 }
 
@@ -55,7 +60,9 @@ export function createChannelSecretStore(k8s: K8sClient): ChannelSecretStore {
     async deleteAllForInstance(instanceId) {
       const selector = `${LABEL_TYPE}=${TYPE_CHANNEL_SECRET},${LABEL_INSTANCE_REF}=${instanceId}`;
       const secrets = await k8s.listSecrets(selector);
-      await Promise.all(secrets.map((s) => k8s.deleteSecret(s.metadata!.name!)));
+      await Promise.all(
+        secrets.map((s) => k8s.deleteSecret(s.metadata!.name!)),
+      );
     },
   };
 }

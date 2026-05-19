@@ -33,8 +33,12 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  try { await client.instances.delete.mutate({ id: INSTANCE_ID }); } catch {}
-  try { await client.agents.delete.mutate({ id: AGENT_ID }); } catch {}
+  try {
+    await client.instances.delete.mutate({ id: INSTANCE_ID });
+  } catch {}
+  try {
+    await client.agents.delete.mutate({ id: AGENT_ID });
+  } catch {}
 });
 
 async function buildBundle(files: Record<string, string>): Promise<Buffer> {
@@ -48,7 +52,9 @@ async function buildBundle(files: Record<string, string>): Promise<Buffer> {
       topLevel.add(path.split("/")[0]);
     }
     const chunks: Buffer[] = [];
-    for await (const chunk of createTar({ cwd: src, gzip: true }, [...topLevel])) {
+    for await (const chunk of createTar({ cwd: src, gzip: true }, [
+      ...topLevel,
+    ])) {
       chunks.push(Buffer.from(chunk as Uint8Array));
     }
     return Buffer.concat(chunks);
@@ -57,9 +63,15 @@ async function buildBundle(files: Record<string, string>): Promise<Buffer> {
   }
 }
 
-async function postImport(bundle: Buffer): Promise<{ status: number; body: string }> {
+async function postImport(
+  bundle: Buffer,
+): Promise<{ status: number; body: string }> {
   const form = new FormData();
-  form.set("bundle", new Blob([new Uint8Array(bundle)], { type: "application/gzip" }), "bundle.tar.gz");
+  form.set(
+    "bundle",
+    new Blob([new Uint8Array(bundle)], { type: "application/gzip" }),
+    "bundle.tar.gz",
+  );
   const res = await fetch(`${API_BASE}/api/instances/${INSTANCE_ID}/import`, {
     method: "POST",
     headers: { Authorization: `Bearer ${TOKEN}` },
@@ -81,14 +93,18 @@ async function readFile(path: string): Promise<string | null> {
 
 describe("import (e2e)", () => {
   it("lands the bundle under <agenthome>/work with top-level replace semantics", async () => {
-    const first = await postImport(await buildBundle({
-      "CLAUDE.md": "# project context\n",
-      ".claude/old.json": "{\"old\": true}\n",
-      ".claude/keep.json": "{\"keep\": true}\n",
-      "keep-me.txt": "original\n",
-    }));
+    const first = await postImport(
+      await buildBundle({
+        "CLAUDE.md": "# project context\n",
+        ".claude/old.json": '{"old": true}\n',
+        ".claude/keep.json": '{"keep": true}\n',
+        "keep-me.txt": "original\n",
+      }),
+    );
     expect(first.status, first.body).toBe(200);
-    expect((JSON.parse(first.body) as { filesWritten: number }).filesWritten).toBe(4);
+    expect(
+      (JSON.parse(first.body) as { filesWritten: number }).filesWritten,
+    ).toBe(4);
 
     expect(await readFile("work/CLAUDE.md")).toContain("project context");
     expect(await readFile("work/keep-me.txt")).toContain("original");
@@ -100,11 +116,13 @@ describe("import (e2e)", () => {
     // Verifies: conflicting top-level entries are replaced wholesale;
     // the existing `.claude/old.json` and `.claude/keep.json` are gone
     // because the bundle's `.claude/` replaces the directory atomically.
-    const second = await postImport(await buildBundle({
-      "CLAUDE.md": "# updated context\n",
-      ".claude/new.json": "{\"new\": true}\n",
-      "new-file.md": "fresh\n",
-    }));
+    const second = await postImport(
+      await buildBundle({
+        "CLAUDE.md": "# updated context\n",
+        ".claude/new.json": '{"new": true}\n',
+        "new-file.md": "fresh\n",
+      }),
+    );
     expect(second.status, second.body).toBe(200);
 
     expect(await readFile("work/CLAUDE.md")).toContain("updated context");

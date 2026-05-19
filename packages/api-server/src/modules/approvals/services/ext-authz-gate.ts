@@ -32,7 +32,9 @@ export interface ExtAuthzGate {
  * directly.
  */
 export interface InstanceIdentityResolver {
-  resolve(instanceId: string): Promise<{ ownerSub: string; agentId: string } | null>;
+  resolve(
+    instanceId: string,
+  ): Promise<{ ownerSub: string; agentId: string } | null>;
 }
 
 export interface EgressRuleMatcher {
@@ -59,7 +61,12 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
       const identity = await deps.identityResolver.resolve(instanceId);
       if (!identity) return "deny";
 
-      const matched = await deps.ruleMatcher.match(identity.agentId, host, method, path);
+      const matched = await deps.ruleMatcher.match(
+        identity.agentId,
+        host,
+        method,
+        path,
+      );
       if (matched) return matched.verdict;
 
       // Dedupe retried holds: when the agent's CLI retries (Envoy timeout,
@@ -86,7 +93,12 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
           payload: { kind: "ext_authz", host, method, path },
           expiresAt: new Date(Date.now() + deps.holdSeconds * 1000),
         });
-        const frame = buildExtAuthzSynthFrame({ approvalId: pendingId, host, method, path });
+        const frame = buildExtAuthzSynthFrame({
+          approvalId: pendingId,
+          host,
+          method,
+          path,
+        });
         void deps.bus.publish(injectChannelOf(instanceId), frame);
       }
 
@@ -102,7 +114,8 @@ async function waitForVerdict(
   // Re-read the row up front: a verdict written between INSERT and
   // SUBSCRIBE would otherwise be missed. Postgres is the truth path.
   const initial = await deps.repo.getPending(id);
-  if (initial && initial.status === "resolved") return verdictOf(initial.verdict);
+  if (initial && initial.status === "resolved")
+    return verdictOf(initial.verdict);
 
   return new Promise<ExtAuthzVerdict>((resolve) => {
     let settled = false;

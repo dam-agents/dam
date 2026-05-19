@@ -63,9 +63,13 @@ export function parseForkStatus(cm: k8s.V1ConfigMap): ForkStatus | null {
   if (parsed.error?.reason) {
     const reason = normaliseReason(parsed.error.reason);
     if (reason) {
-      (status as { error?: { reason: ForkFailureReason; detail?: string } }).error = {
+      (
+        status as { error?: { reason: ForkFailureReason; detail?: string } }
+      ).error = {
         reason,
-        ...(parsed.error.detail !== undefined ? { detail: parsed.error.detail } : {}),
+        ...(parsed.error.detail !== undefined
+          ? { detail: parsed.error.detail }
+          : {}),
       };
     }
   }

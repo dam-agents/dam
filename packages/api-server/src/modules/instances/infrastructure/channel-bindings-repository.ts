@@ -74,9 +74,7 @@ export async function listChannelsByInstanceTx(
   const rows = await tx
     .select()
     .from(channels)
-    .where(
-      and(eq(channels.instanceId, instanceId), eq(channels.owner, owner)),
-    );
+    .where(and(eq(channels.instanceId, instanceId), eq(channels.owner, owner)));
   return rows.map(toChannelConfig);
 }
 

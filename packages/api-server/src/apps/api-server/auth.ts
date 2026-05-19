@@ -50,7 +50,7 @@ export function createAuth(config: AuthConfig) {
     return {
       sub: payload.sub!,
       preferredUsername:
-        (payload as Record<string, unknown>).preferred_username as string ??
+        ((payload as Record<string, unknown>).preferred_username as string) ??
         payload.sub!,
     };
   }
@@ -67,11 +67,21 @@ export function createAuth(config: AuthConfig) {
       const jwt = authHeader.slice(7);
       const user = await verify(jwt);
       c.set("user", user);
-      emit({ type: EventType.UserAuthenticated, userSub: user.sub, userJwt: jwt });
+      emit({
+        type: EventType.UserAuthenticated,
+        userSub: user.sub,
+        userJwt: jwt,
+      });
       return next();
     } catch (err) {
       if (err instanceof ForbiddenError) {
-        return c.json({ error: "forbidden", message: "Access pending approval. Contact your administrator." }, 403);
+        return c.json(
+          {
+            error: "forbidden",
+            message: "Access pending approval. Contact your administrator.",
+          },
+          403,
+        );
       }
       return c.json({ error: "unauthorized" }, 401);
     }

@@ -54,7 +54,8 @@ function illegal(from: ForkPhase, to: ForkPhase): TransitionResult {
 }
 
 export function markReady(fork: Fork, podIP: string): TransitionResult {
-  if (fork.status.phase !== "Pending") return illegal(fork.status.phase, "Ready");
+  if (fork.status.phase !== "Pending")
+    return illegal(fork.status.phase, "Ready");
   if (podIP.length === 0) return { ok: false, error: { kind: "MissingPodIP" } };
   return { ok: true, fork: { ...fork, status: { phase: "Ready", podIP } } };
 }
@@ -74,7 +75,8 @@ export function markFailed(
 }
 
 export function markCompleted(fork: Fork): TransitionResult {
-  if (fork.status.phase !== "Ready") return illegal(fork.status.phase, "Completed");
+  if (fork.status.phase !== "Ready")
+    return illegal(fork.status.phase, "Completed");
   return { ok: true, fork: { ...fork, status: { phase: "Completed" } } };
 }
 

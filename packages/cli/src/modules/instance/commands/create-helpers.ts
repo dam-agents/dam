@@ -28,7 +28,9 @@ export interface ParsedEnv {
  * - On duplicate keys, **last wins**; the duplicate keys are returned
  *   alongside so the command layer can surface them.
  */
-export function parseEnvFlag(values: readonly string[]): Result<ParsedEnv, EnvParseError> {
+export function parseEnvFlag(
+  values: readonly string[],
+): Result<ParsedEnv, EnvParseError> {
   const map = new Map<string, string>();
   const duplicates = new Set<string>();
   for (const raw of values) {
@@ -48,7 +50,9 @@ export function parseEnvFlag(values: readonly string[]): Result<ParsedEnv, EnvPa
 
 export type NameValidationError = "empty" | "reserved-prefix";
 
-export function validateInstanceName(name: string): Result<void, NameValidationError> {
+export function validateInstanceName(
+  name: string,
+): Result<void, NameValidationError> {
   if (name.length === 0) return err("empty");
   if (name.startsWith(RESERVED_INSTANCE_PREFIX)) return err("reserved-prefix");
   return ok(undefined);

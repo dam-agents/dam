@@ -9,10 +9,12 @@ depends = ["controller:check:*"]
 ["controller:check:vet"]
 dir = "{{config_root}}/packages/controller"
 run = "go vet ./..."
+sources = ["**/*.go", "go.mod", "go.sum"]
 
 ["controller:check:build"]
 dir = "{{config_root}}/packages/controller"
 run = "go build -o dist/ ./..."
+sources = ["**/*.go", "go.mod", "go.sum"]
 
 ["controller:fix"]
 run = "echo 'No fix tasks for controller yet'"

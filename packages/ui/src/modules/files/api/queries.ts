@@ -46,7 +46,10 @@ export function useFileTreeQuery(instanceId: string | null) {
   });
 }
 
-export function useFileContentQuery(instanceId: string | null, path: string | null) {
+export function useFileContentQuery(
+  instanceId: string | null,
+  path: string | null,
+) {
   return useQuery({
     queryKey: fileKeys.content(instanceId ?? "_none", path ?? "_none"),
     queryFn: async () => {
@@ -72,7 +75,10 @@ export function useFileContentQuery(instanceId: string | null, path: string | nu
  * cache so the subsequent useFileContentQuery subscription reuses the result
  * instead of refetching.
  */
-export async function fetchFileContent(instanceId: string, path: string): Promise<FileContent> {
+export async function fetchFileContent(
+  instanceId: string,
+  path: string,
+): Promise<FileContent> {
   return queryClient.fetchQuery({
     queryKey: fileKeys.content(instanceId, path),
     queryFn: async () => {
@@ -89,15 +95,24 @@ export async function fetchFileContent(instanceId: string, path: string): Promis
   });
 }
 
-function invalidateFiles(qc: ReturnType<typeof useQueryClient>, instanceId: string, path?: string) {
+function invalidateFiles(
+  qc: ReturnType<typeof useQueryClient>,
+  instanceId: string,
+  path?: string,
+) {
   qc.invalidateQueries({ queryKey: fileKeys.tree(instanceId) });
-  if (path) qc.invalidateQueries({ queryKey: fileKeys.content(instanceId, path) });
+  if (path)
+    qc.invalidateQueries({ queryKey: fileKeys.content(instanceId, path) });
 }
 
 export function useFileWriteMutation(instanceId: string | null) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { path: string; content: string; expectedMtimeMs?: number }) => {
+    mutationFn: async (input: {
+      path: string;
+      content: string;
+      expectedMtimeMs?: number;
+    }) => {
       const trpc = getInstanceTrpc(instanceId!);
       return trpc.files.write.mutate(input);
     },
@@ -112,7 +127,10 @@ export function useFileCreateMutation(instanceId: string | null) {
   return useMutation({
     mutationFn: async (input: { path: string; content?: string }) => {
       const trpc = getInstanceTrpc(instanceId!);
-      return trpc.files.create.mutate({ path: input.path, content: input.content ?? "" });
+      return trpc.files.create.mutate({
+        path: input.path,
+        content: input.content ?? "",
+      });
     },
     onSuccess: (_data, vars) => {
       if (instanceId) invalidateFiles(qc, instanceId, vars.path);
@@ -136,14 +154,20 @@ export function useFolderCreateMutation(instanceId: string | null) {
 export function useFileRenameMutation(instanceId: string | null) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { from: string; to: string; overwrite?: boolean }) => {
+    mutationFn: async (input: {
+      from: string;
+      to: string;
+      overwrite?: boolean;
+    }) => {
       const trpc = getInstanceTrpc(instanceId!);
       return trpc.files.rename.mutate(input);
     },
     onSuccess: (_data, vars) => {
       if (instanceId) {
         invalidateFiles(qc, instanceId, vars.from);
-        qc.invalidateQueries({ queryKey: fileKeys.content(instanceId, vars.to) });
+        qc.invalidateQueries({
+          queryKey: fileKeys.content(instanceId, vars.to),
+        });
       }
     },
   });

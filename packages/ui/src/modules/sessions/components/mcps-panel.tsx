@@ -1,9 +1,9 @@
 import { Globe } from "lucide-react";
 
 export interface McpOption {
-  id: string;          // K8s credential Secret id
-  hostname: string;    // display label + session key
-  assigned: boolean;   // agent has this secret assigned
+  id: string; // K8s credential Secret id
+  hostname: string; // display label + session key
+  assigned: boolean; // agent has this secret assigned
 }
 
 /**
@@ -38,18 +38,30 @@ export function McpsPanel({
     <div className="flex flex-1 flex-col overflow-y-auto">
       <div className="px-4 py-3 border-b-2 border-border-light shrink-0 flex items-center text-[11px] text-text-muted">
         <span>
-          <strong className="text-text">{enabled.size}</strong> of {options.length} enabled
+          <strong className="text-text">{enabled.size}</strong> of{" "}
+          {options.length} enabled
         </span>
         <span className="ml-auto flex gap-3">
-          <button className="hover:text-accent font-semibold" onClick={onSelectAll}>All</button>
+          <button
+            className="hover:text-accent font-semibold"
+            onClick={onSelectAll}
+          >
+            All
+          </button>
           <span>·</span>
-          <button className="hover:text-accent font-semibold" onClick={onClearAll}>None</button>
+          <button
+            className="hover:text-accent font-semibold"
+            onClick={onClearAll}
+          >
+            None
+          </button>
         </span>
       </div>
 
       {hasActiveSession && (
         <div className="px-4 py-2 border-b-2 border-border-light text-[11px] text-text-muted bg-warning-light">
-          Changes apply to new sessions — the current session keeps its original selection.
+          Changes apply to new sessions — the current session keeps its original
+          selection.
         </div>
       )}
 
@@ -65,7 +77,9 @@ export function McpsPanel({
             onChange={() => onToggle(o.hostname)}
           />
           <Globe size={14} className="text-info shrink-0" />
-          <span className="text-[13px] font-medium text-text truncate">{o.hostname}</span>
+          <span className="text-[13px] font-medium text-text truncate">
+            {o.hostname}
+          </span>
         </label>
       ))}
     </div>

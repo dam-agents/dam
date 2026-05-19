@@ -24,7 +24,9 @@ interface CachedLookup {
 const TOKEN_MARGIN_SECONDS = 30;
 const LOOKUP_TTL_MS = 60_000;
 
-export function createKeycloakUserDirectory(config: KeycloakUserDirectoryConfig): KeycloakUserDirectory {
+export function createKeycloakUserDirectory(
+  config: KeycloakUserDirectoryConfig,
+): KeycloakUserDirectory {
   let tokenCache: CachedToken | null = null;
   const subToEmailCache = new Map<string, CachedLookup>();
   const emailToSubCache = new Map<string, CachedLookup>();
@@ -39,16 +41,24 @@ export function createKeycloakUserDirectory(config: KeycloakUserDirectoryConfig)
       client_id: config.clientId,
       client_secret: config.clientSecret,
     });
-    const res = await fetch(`${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: params,
-    });
+    const res = await fetch(
+      `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/token`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: params,
+      },
+    );
     if (!res.ok) {
       const body = await res.text();
-      throw new Error(`Keycloak admin token request failed: ${res.status} ${body}`);
+      throw new Error(
+        `Keycloak admin token request failed: ${res.status} ${body}`,
+      );
     }
-    const data = (await res.json()) as { access_token: string; expires_in?: number };
+    const data = (await res.json()) as {
+      access_token: string;
+      expires_in?: number;
+    };
     const expiresAt = Math.floor(Date.now() / 1000) + (data.expires_in ?? 60);
     tokenCache = { accessToken: data.access_token, expiresAt };
     return data.access_token;
@@ -56,9 +66,12 @@ export function createKeycloakUserDirectory(config: KeycloakUserDirectoryConfig)
 
   async function adminFetch(path: string): Promise<Response> {
     const token = await getAdminToken();
-    return fetch(`${config.keycloakUrl}/admin/realms/${config.keycloakRealm}${path}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    return fetch(
+      `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}${path}`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    );
   }
 
   return {
@@ -71,15 +84,25 @@ export function createKeycloakUserDirectory(config: KeycloakUserDirectoryConfig)
       const res = await adminFetch(`/users?${query}`);
       if (!res.ok) {
         const body = await res.text();
-        throw new Error(`Keycloak user lookup by email failed: ${res.status} ${body}`);
+        throw new Error(
+          `Keycloak user lookup by email failed: ${res.status} ${body}`,
+        );
       }
       const users = (await res.json()) as Array<{ id: string; email?: string }>;
-      const sub = users.find((u) => u.email?.toLowerCase() === email.toLowerCase())?.id ?? null;
-      emailToSubCache.set(email, { email: sub, expiresAt: now + LOOKUP_TTL_MS });
+      const sub =
+        users.find((u) => u.email?.toLowerCase() === email.toLowerCase())?.id ??
+        null;
+      emailToSubCache.set(email, {
+        email: sub,
+        expiresAt: now + LOOKUP_TTL_MS,
+      });
       if (sub) {
         const lookedUp = users.find((u) => u.id === sub);
         if (lookedUp?.email) {
-          subToEmailCache.set(sub, { email: lookedUp.email, expiresAt: now + LOOKUP_TTL_MS });
+          subToEmailCache.set(sub, {
+            email: lookedUp.email,
+            expiresAt: now + LOOKUP_TTL_MS,
+          });
         }
       }
       return sub;
@@ -93,8 +116,13 @@ export function createKeycloakUserDirectory(config: KeycloakUserDirectoryConfig)
       try {
         const res = await adminFetch(`/users/${encodeURIComponent(sub)}`);
         if (!res.ok) {
-          process.stderr.write(`[keycloak-user-directory] resolveBySub ${sub} failed: ${res.status}\n`);
-          subToEmailCache.set(sub, { email: null, expiresAt: now + LOOKUP_TTL_MS });
+          process.stderr.write(
+            `[keycloak-user-directory] resolveBySub ${sub} failed: ${res.status}\n`,
+          );
+          subToEmailCache.set(sub, {
+            email: null,
+            expiresAt: now + LOOKUP_TTL_MS,
+          });
           return null;
         }
         const user = (await res.json()) as { id: string; email?: string };
@@ -102,7 +130,9 @@ export function createKeycloakUserDirectory(config: KeycloakUserDirectoryConfig)
         subToEmailCache.set(sub, { email, expiresAt: now + LOOKUP_TTL_MS });
         return email;
       } catch (err) {
-        process.stderr.write(`[keycloak-user-directory] resolveBySub ${sub} errored: ${err}\n`);
+        process.stderr.write(
+          `[keycloak-user-directory] resolveBySub ${sub} errored: ${err}\n`,
+        );
         return null;
       }
     },

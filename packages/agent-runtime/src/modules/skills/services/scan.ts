@@ -52,7 +52,11 @@ async function scanGithub(
   // sentinel so the api-server can surface the structured `app_not_connected`
   // / `access_restricted` CTA the UI renders.
   let head = await deps.github.getCommitHead(host, { withAuth: false });
-  if (!head.ok && head.error.kind === "UpstreamGitHubError" && head.error.status === 404) {
+  if (
+    !head.ok &&
+    head.error.kind === "UpstreamGitHubError" &&
+    head.error.status === 404
+  ) {
     head = await deps.github.getCommitHead(host, { withAuth: true });
   }
   if (!head.ok) return head;
@@ -61,7 +65,9 @@ async function scanGithub(
   // Tarball is served by api.github.com (with a redirect to codeload that
   // the sidecar follows transparently — verified empirically). For a typical
   // skill repo this is ~50–500 KB.
-  const tarball = await deps.github.fetchTarball(host, version, { withAuth: false });
+  const tarball = await deps.github.fetchTarball(host, version, {
+    withAuth: false,
+  });
   if (!tarball.ok) return tarball;
 
   return deps.repo.withTempDir("platform-skills-scan-", async (tmp) => {
@@ -69,9 +75,15 @@ async function scanGithub(
     // GitHub tarballs wrap contents in a single top-level dir like
     // `{owner}-{repo}-{short-sha}` — find it and scan from there.
     const fs = await import("node:fs/promises");
-    const extracted = (await fs.readdir(tmp, { withFileTypes: true })).filter((e) => e.isDirectory());
+    const extracted = (await fs.readdir(tmp, { withFileTypes: true })).filter(
+      (e) => e.isDirectory(),
+    );
     if (extracted.length === 0) {
-      return err({ kind: "SourceFetchFailed", source, detail: "tarball contained no directories" });
+      return err({
+        kind: "SourceFetchFailed",
+        source,
+        detail: "tarball contained no directories",
+      });
     }
     const repoDir = path.join(tmp, extracted[0].name);
 

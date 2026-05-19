@@ -67,10 +67,20 @@ var testOwnerCM = &corev1.ConfigMap{
 func boolPtr(b bool) *bool { return &b }
 
 func credSecret(name, host string) corev1.Secret {
+	ann := map[string]string{
+		"agent-platform.ai/host-pattern":          host,
+		"agent-platform.ai/injection-header-name": "Authorization",
+	}
+	// Fixtures targeting github hosts also declare GH_TOKEN in their
+	// env-mappings — mirrors what the api-server's github descriptor
+	// stamps, so `hasGHTokenEnv` returns true for these Secrets.
+	if host == "api.github.com" || host == "github.com" || host == "raw.githubusercontent.com" {
+		ann["agent-platform.ai/env-mappings"] = `[{"envName":"GH_TOKEN","placeholder":"dummy-placeholder"}]`
+	}
 	return corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
-			Annotations: map[string]string{"agent-platform.ai/host-pattern": host, "agent-platform.ai/injection-header-name": "Authorization"},
+			Annotations: ann,
 			Labels:      map[string]string{"agent-platform.ai/owner": "owner-1", "agent-platform.ai/managed-by": "api-server"},
 		},
 		Data: map[string][]byte{"value": []byte("Bearer abc")},
@@ -85,7 +95,7 @@ func TestBuildAgentStatefulSet_Running(t *testing.T) {
 		Env:          []types.EnvVar{{Name: "GITHUB_ORG", Value: "alpha"}},
 		SecretRef:    "my-secrets",
 	}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil, "")
+	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil, "10.96.42.42")
 
 	require.NotNil(t, ss)
 	assert.Equal(t, "my-instance", ss.Name)
@@ -121,9 +131,10 @@ func TestBuildAgentStatefulSet_Running(t *testing.T) {
 	assert.Equal(t, int32(120), c.StartupProbe.FailureThreshold)
 
 	envMap := envToMap(c.Env)
-	// HTTPS_PROXY now points at the paired gateway Service DNS, not loopback.
-	assert.Equal(t, "http://my-instance-gateway:10000", envMap["HTTPS_PROXY"])
-	assert.Equal(t, "http://my-instance-gateway:10000", envMap["HTTP_PROXY"])
+	// HTTPS_PROXY is IP-direct — the gateway's ClusterIP literal so
+	// there's no DNS dependency (egress NP denies port 53).
+	assert.Equal(t, "http://10.96.42.42:10000", envMap["HTTPS_PROXY"])
+	assert.Equal(t, "http://10.96.42.42:10000", envMap["HTTP_PROXY"])
 
 	for _, e := range c.Env {
 		assert.NotEqual(t, "AGENT_RUNTIME_TOKEN", e.Name)
@@ -341,6 +352,10 @@ func TestBuildAgentStatefulSet_GHTokenSignal_WithCredential(t *testing.T) {
 	envMap := envToMap(ss.Spec.Template.Spec.Containers[0].Env)
 	assert.Equal(t, "true", envMap["PLATFORM_GH_TOKEN_AVAILABLE"])
 	assert.Equal(t, "true", ss.Spec.Template.Annotations["agent-platform.ai/gh-token-available"])
+	// Declarative env-mappings on the Secret land as actual container env
+	// — the agent SDK reads GH_TOKEN, sends Bearer, Envoy overwrites on
+	// the wire. Without this on the StatefulSet, the SDK never dispatches.
+	assert.Equal(t, "dummy-placeholder", envMap["GH_TOKEN"])
 }
 
 func TestBuildAgentStatefulSet_PodHardening(t *testing.T) {
@@ -350,6 +365,20 @@ func TestBuildAgentStatefulSet_PodHardening(t *testing.T) {
 	assert.False(t, *ss.Spec.Template.Spec.AutomountServiceAccountToken)
 	require.NotNil(t, ss.Spec.Template.Spec.ShareProcessNamespace)
 	assert.False(t, *ss.Spec.Template.Spec.ShareProcessNamespace)
+}
+
+// When the controller knows the gateway ClusterIP, HTTPS_PROXY must use
+// the IP literal — no DNS dependency, so the egress NetworkPolicy can
+// deny port 53 entirely. Falls back to the Service DNS name only when
+// the IP isn't known yet (first reconcile race).
+func TestBuildAgentStatefulSet_ProxyURLUsesIPDirectly(t *testing.T) {
+	instance := &types.InstanceSpec{DesiredState: "running"}
+	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil, "10.96.42.42")
+	envMap := envToMap(ss.Spec.Template.Spec.Containers[0].Env)
+	assert.Equal(t, "http://10.96.42.42:10000", envMap["HTTPS_PROXY"], "must be IP-direct when gateway IP is known")
+	assert.Equal(t, "http://10.96.42.42:10000", envMap["HTTP_PROXY"])
+	assert.Equal(t, "http://10.96.42.42:10000", envMap["https_proxy"])
+	assert.Equal(t, "http://10.96.42.42:10000", envMap["http_proxy"])
 }
 
 // --- Envoy bootstrap rendering (still produces the same YAML, just bound on 0.0.0.0 now) ---

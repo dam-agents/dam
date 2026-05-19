@@ -72,7 +72,11 @@ export function parseSeedSources(raw: string | undefined): SkillSourceSeed[] {
       );
     }
     seen.set(slug, entry.name);
-    return { id: `${SEED_ID_PREFIX}${slug}`, name: entry.name, gitUrl: entry.gitUrl };
+    return {
+      id: `${SEED_ID_PREFIX}${slug}`,
+      name: entry.name,
+      gitUrl: entry.gitUrl,
+    };
   });
 }
 

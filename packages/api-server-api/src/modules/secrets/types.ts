@@ -1,4 +1,9 @@
-export type SecretType = "anthropic" | "ibm-litellm" | "openai" | "bob" | "generic";
+export type SecretType =
+  | "anthropic"
+  | "ibm-litellm"
+  | "openai"
+  | "bob"
+  | "generic";
 
 /**
  * SecretTypes that have a {@link PROVIDERS} registry entry — the providers
@@ -132,11 +137,20 @@ export function ibmLitellmPinsFromEnvMappings(
   const lookup = (name: string) =>
     envMappings?.find((m) => m.envName === name)?.placeholder;
   return {
-    opus: lookup("ANTHROPIC_DEFAULT_OPUS_MODEL") ?? IBM_LITELLM_DEFAULT_MODEL_PINS.opus,
-    sonnet: lookup("ANTHROPIC_DEFAULT_SONNET_MODEL") ?? IBM_LITELLM_DEFAULT_MODEL_PINS.sonnet,
-    haiku: lookup("ANTHROPIC_DEFAULT_HAIKU_MODEL") ?? IBM_LITELLM_DEFAULT_MODEL_PINS.haiku,
-    subagent: lookup("CLAUDE_CODE_SUBAGENT_MODEL") ?? IBM_LITELLM_DEFAULT_MODEL_PINS.subagent,
-    default: lookup("ANTHROPIC_MODEL") ?? IBM_LITELLM_DEFAULT_MODEL_PINS.default,
+    opus:
+      lookup("ANTHROPIC_DEFAULT_OPUS_MODEL") ??
+      IBM_LITELLM_DEFAULT_MODEL_PINS.opus,
+    sonnet:
+      lookup("ANTHROPIC_DEFAULT_SONNET_MODEL") ??
+      IBM_LITELLM_DEFAULT_MODEL_PINS.sonnet,
+    haiku:
+      lookup("ANTHROPIC_DEFAULT_HAIKU_MODEL") ??
+      IBM_LITELLM_DEFAULT_MODEL_PINS.haiku,
+    subagent:
+      lookup("CLAUDE_CODE_SUBAGENT_MODEL") ??
+      IBM_LITELLM_DEFAULT_MODEL_PINS.subagent,
+    default:
+      lookup("ANTHROPIC_MODEL") ?? IBM_LITELLM_DEFAULT_MODEL_PINS.default,
   };
 }
 
@@ -241,7 +255,10 @@ export const PROVIDERS = {
         label: "OAuth Token",
         // Claude Code SDK reads CLAUDE_CODE_OAUTH_TOKEN; sends Bearer.
         defaultEnvMappings: [
-          { envName: "CLAUDE_CODE_OAUTH_TOKEN", placeholder: DEFAULT_ENV_PLACEHOLDER },
+          {
+            envName: "CLAUDE_CODE_OAUTH_TOKEN",
+            placeholder: DEFAULT_ENV_PLACEHOLDER,
+          },
         ],
       },
       {
@@ -249,7 +266,10 @@ export const PROVIDERS = {
         label: "API Key",
         // @anthropic-ai/sdk reads ANTHROPIC_API_KEY; sends x-api-key.
         defaultEnvMappings: [
-          { envName: "ANTHROPIC_API_KEY", placeholder: DEFAULT_ENV_PLACEHOLDER },
+          {
+            envName: "ANTHROPIC_API_KEY",
+            placeholder: DEFAULT_ENV_PLACEHOLDER,
+          },
         ],
         injection: { headerName: "x-api-key", valueFormat: "{value}" },
       },
@@ -294,16 +314,22 @@ export const PROVIDERS = {
         key: "api-key",
         label: "API Key",
         defaultEnvMappings: bobEnvMappings(),
-        extraInjections: [{ headerName: "X-Bobshell-Internal", queryParamName: "key" }],
+        extraInjections: [
+          { headerName: "X-Bobshell-Internal", queryParamName: "key" },
+        ],
       },
     ],
   },
 } satisfies Record<ProviderPresetType, ProviderPreset>;
 
 /** Iteration helper — every provider id that has a {@link PROVIDERS} entry. */
-export const PROVIDER_PRESET_TYPES = Object.keys(PROVIDERS) as readonly ProviderPresetType[];
+export const PROVIDER_PRESET_TYPES = Object.keys(
+  PROVIDERS,
+) as readonly ProviderPresetType[];
 
-export function isProviderPresetType(type: SecretType): type is ProviderPresetType {
+export function isProviderPresetType(
+  type: SecretType,
+): type is ProviderPresetType {
   return type in PROVIDERS;
 }
 

@@ -12,7 +12,9 @@ import {
 
 describe("parseFrontmatter", () => {
   it("reads plain scalars", () => {
-    expect(parseFrontmatter("---\nname: adr\ndescription: ADRs\n---\nbody")).toEqual({
+    expect(
+      parseFrontmatter("---\nname: adr\ndescription: ADRs\n---\nbody"),
+    ).toEqual({
       name: "adr",
       description: "ADRs",
     });
@@ -27,7 +29,10 @@ describe("parseFrontmatter", () => {
       "name: x",
       "---",
     ].join("\n");
-    expect(parseFrontmatter(content)).toEqual({ name: "x", description: "line one line two" });
+    expect(parseFrontmatter(content)).toEqual({
+      name: "x",
+      description: "line one line two",
+    });
   });
 });
 
@@ -65,7 +70,10 @@ describe("scanPublicGithubArchive", () => {
     await fs.rm(fixtureRoot, { recursive: true, force: true });
   });
 
-  async function makeTarball(rootName: string, files: Record<string, string>): Promise<Buffer> {
+  async function makeTarball(
+    rootName: string,
+    files: Record<string, string>,
+  ): Promise<Buffer> {
     const root = path.join(fixtureRoot, rootName);
     await fs.mkdir(root, { recursive: true });
     for (const [rel, content] of Object.entries(files)) {
@@ -79,7 +87,11 @@ describe("scanPublicGithubArchive", () => {
     return fs.readFile(tgz);
   }
 
-  function makeResponse(body: Buffer, finalUrl: string, status = 200): Response {
+  function makeResponse(
+    body: Buffer,
+    finalUrl: string,
+    status = 200,
+  ): Response {
     const res = new Response(new Uint8Array(body), { status });
     // Node fetch doesn't let us set `url` via constructor, so override for the test.
     Object.defineProperty(res, "url", { value: finalUrl });
@@ -89,18 +101,31 @@ describe("scanPublicGithubArchive", () => {
   it("walks tarball, parses frontmatter, extracts HEAD SHA from redirect URL, computes contentHash", async () => {
     const sha = "e94e714a8c27b0196448e018935dabbb38c3bdf8";
     const tarball = await makeTarball("acme-tools-e94e714", {
-      "skills/pdf/SKILL.md": "---\nname: pdf\ndescription: Work with PDFs\n---\nbody",
-      "skills/docx/SKILL.md": "---\nname: docx\ndescription: Word docs\n---\nbody",
+      "skills/pdf/SKILL.md":
+        "---\nname: pdf\ndescription: Work with PDFs\n---\nbody",
+      "skills/docx/SKILL.md":
+        "---\nname: docx\ndescription: Word docs\n---\nbody",
       "README.md": "# ignored",
     });
 
     fetchMock.mockResolvedValueOnce(
-      makeResponse(tarball, `https://codeload.github.com/acme/tools/tar.gz/${sha}`),
+      makeResponse(
+        tarball,
+        `https://codeload.github.com/acme/tools/tar.gz/${sha}`,
+      ),
     );
 
-    const skills = await scanPublicGithubArchive("https://github.com/acme/tools");
+    const skills = await scanPublicGithubArchive(
+      "https://github.com/acme/tools",
+    );
 
-    expect(skills.map((s) => ({ name: s.name, description: s.description, version: s.version }))).toEqual([
+    expect(
+      skills.map((s) => ({
+        name: s.name,
+        description: s.description,
+        version: s.version,
+      })),
+    ).toEqual([
       { name: "docx", description: "Word docs", version: sha },
       { name: "pdf", description: "Work with PDFs", version: sha },
     ]);
@@ -116,9 +141,9 @@ describe("scanPublicGithubArchive", () => {
 
   it("throws PublicArchiveNotFoundError on 404 so the caller can fall back to authenticated path", async () => {
     fetchMock.mockResolvedValueOnce(new Response("Not Found", { status: 404 }));
-    await expect(scanPublicGithubArchive("https://github.com/acme/private")).rejects.toBeInstanceOf(
-      PublicArchiveNotFoundError,
-    );
+    await expect(
+      scanPublicGithubArchive("https://github.com/acme/private"),
+    ).rejects.toBeInstanceOf(PublicArchiveNotFoundError);
   });
 
   it("returns empty list for empty repos (200 HTML, no SHA redirect)", async () => {
@@ -129,13 +154,15 @@ describe("scanPublicGithubArchive", () => {
     });
     Object.defineProperty(htmlRes, "url", { value: archiveUrl });
     fetchMock.mockResolvedValueOnce(htmlRes);
-    await expect(scanPublicGithubArchive("https://github.com/acme/empty")).resolves.toEqual([]);
+    await expect(
+      scanPublicGithubArchive("https://github.com/acme/empty"),
+    ).resolves.toEqual([]);
   });
 
   it("rejects non-GitHub URLs without fetching", async () => {
-    await expect(scanPublicGithubArchive("https://gitlab.com/foo/bar")).rejects.toThrow(
-      /only GitHub/,
-    );
+    await expect(
+      scanPublicGithubArchive("https://gitlab.com/foo/bar"),
+    ).rejects.toThrow(/only GitHub/);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

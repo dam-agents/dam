@@ -39,7 +39,11 @@ export const secretsRouter = t.router({
         })
         .superRefine((d, ctx) => {
           if (isProviderPresetType(d.type)) {
-            for (const field of ["hostPattern", "pathPattern", "injectionConfig"] as const) {
+            for (const field of [
+              "hostPattern",
+              "pathPattern",
+              "injectionConfig",
+            ] as const) {
               if (d[field] != null) {
                 ctx.addIssue({
                   code: z.ZodIssueCode.custom,
@@ -78,7 +82,9 @@ export const secretsRouter = t.router({
     )
     .mutation(({ ctx, input }) => ctx.secrets.updateGithubPat(input)),
 
-  update: t.procedure.input(updateSecretInputSchema).mutation(({ ctx, input }) => ctx.secrets.update(input)),
+  update: t.procedure
+    .input(updateSecretInputSchema)
+    .mutation(({ ctx, input }) => ctx.secrets.update(input)),
 
   delete: t.procedure
     .input(z.object({ id: z.string().min(1) }))
@@ -96,7 +102,9 @@ export const secretsRouter = t.router({
       }),
     )
     .mutation(async ({ input }) => {
-      const headers: Record<string, string> = { "anthropic-version": "2023-06-01" };
+      const headers: Record<string, string> = {
+        "anthropic-version": "2023-06-01",
+      };
       if (input.envName === "ANTHROPIC_API_KEY") {
         headers["x-api-key"] = input.value;
       } else {

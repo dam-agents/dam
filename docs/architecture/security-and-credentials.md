@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-05-14
+Last verified: 2026-05-15
 
 ## Motivated by
 
@@ -152,9 +152,9 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
 
 - **OAuth-issued tokens** (GitHub, MCP servers, Generic OAuth apps) — the
   api-server's `/api/oauth/callback` writes the access + refresh token
-  pair, with an `platform.ai/host-pattern` annotation naming the upstream
-  host the token belongs to. The refresh-token loop re-mints access
-  tokens before expiry; the agent never sees the refresh token.
+  pair plus a structured **host list** describing every wire position
+  the token should be injected on. The refresh-token loop re-mints
+  access tokens before expiry; the agent never sees the refresh token.
 - **User-supplied secrets** (Anthropic API keys, generic API tokens) —
   the secrets module writes them with the same labels and annotations.
 - **GitHub personal access tokens** — one PAT is *two* `generic` Secrets
@@ -168,6 +168,24 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
   only and a partial-create rolls back the api half if the git half
   fails). Picker UIs group the pair client-side by display name and
   hide orphans (one host missing).
+
+**Multi-host connections.** A single OAuth connection can inject the
+same token on more than one host with **different auth schemes per
+host**, all from one K8s Secret. The Secret carries a JSON
+`platform.ai/injection-hosts` annotation listing each
+`{host, headerName?, valueFormat?, encoding?, pathPattern?}` tuple; the
+controller fans the Secret into one Envoy filter chain per entry,
+mounting the Secret once and reading a per-host SDS file
+(`host-<sha8>.sds.yaml`) inside it per chain. The same list drives the
+egress allowlist (one `connection:<id>` rule per host) — there is no
+second source of truth.
+
+GitHub.com is the motivating case ([issue #219](https://github.com/dam-agents/dam/issues/219)):
+the same OAuth token must reach `api.github.com` as
+`Authorization: Bearer …`, `github.com` as
+`Authorization: Basic base64("x-access-token:<token>")` (so `git clone`
+of private repos works without a credential helper), and
+`raw.githubusercontent.com` as `Bearer` again (raw-file fetches).
 
 The Secret carries the SDS YAML Envoy reads via its `path_config_source`.
 Only the gateway pod mounts the Secret; the agent pod does not. See

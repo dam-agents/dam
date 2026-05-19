@@ -1,6 +1,10 @@
 import { and, asc, desc, eq, isNull, lt, sql, type Db } from "db";
 import { pendingApprovals } from "db";
-import type { ApprovalPayload, ApprovalStatus, ApprovalType } from "api-server-api";
+import type {
+  ApprovalPayload,
+  ApprovalStatus,
+  ApprovalType,
+} from "api-server-api";
 import type { PendingApprovalRow } from "../domain/types.js";
 
 export interface ListApprovalsRepoOpts {
@@ -23,8 +27,14 @@ export interface ApprovalsRepository {
     method: string;
     path: string;
   }): Promise<PendingApprovalRow | null>;
-  listPendingForOwner(ownerSub: string, opts?: ListApprovalsRepoOpts): Promise<PendingApprovalRow[]>;
-  listPendingForInstance(instanceId: string, opts?: ListApprovalsRepoOpts): Promise<PendingApprovalRow[]>;
+  listPendingForOwner(
+    ownerSub: string,
+    opts?: ListApprovalsRepoOpts,
+  ): Promise<PendingApprovalRow[]>;
+  listPendingForInstance(
+    instanceId: string,
+    opts?: ListApprovalsRepoOpts,
+  ): Promise<PendingApprovalRow[]>;
   /** CAS update: only succeeds if the row is still `pending`. The single
    *  consumer of the pending → resolved transition is enforced here, so
    *  concurrent inbox clicks / in-session responses are at-most-once. */
@@ -123,20 +133,26 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
       // Idempotent on id so the relay can re-emit the same acp_native row on
       // every channel re-engagement without duplicating; ext_authz uses a
       // fresh UUID per request so the conflict path is unreachable for it.
-      await db.insert(pendingApprovals).values({
-        id: row.id,
-        type: row.type,
-        instanceId: row.instanceId,
-        agentId: row.agentId,
-        ownerSub: row.ownerSub,
-        sessionId: row.sessionId,
-        payload: row.payload,
-        expiresAt: row.expiresAt,
-      }).onConflictDoNothing();
+      await db
+        .insert(pendingApprovals)
+        .values({
+          id: row.id,
+          type: row.type,
+          instanceId: row.instanceId,
+          agentId: row.agentId,
+          ownerSub: row.ownerSub,
+          sessionId: row.sessionId,
+          payload: row.payload,
+          expiresAt: row.expiresAt,
+        })
+        .onConflictDoNothing();
     },
 
     async getPending(id) {
-      const rows = await db.select().from(pendingApprovals).where(eq(pendingApprovals.id, id));
+      const rows = await db
+        .select()
+        .from(pendingApprovals)
+        .where(eq(pendingApprovals.id, id));
       return rows.length ? toPendingRow(rows[0] as RawPending) : null;
     },
 
@@ -169,7 +185,10 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
     async listPendingForOwner(ownerSub, opts) {
       const limit = clampLimit(opts?.limit);
       const where = opts?.status
-        ? and(eq(pendingApprovals.ownerSub, ownerSub), eq(pendingApprovals.status, opts.status))
+        ? and(
+            eq(pendingApprovals.ownerSub, ownerSub),
+            eq(pendingApprovals.status, opts.status),
+          )
         : eq(pendingApprovals.ownerSub, ownerSub);
       const rows = await db
         .select()
@@ -183,7 +202,10 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
     async listPendingForInstance(instanceId, opts) {
       const limit = clampLimit(opts?.limit);
       const where = opts?.status
-        ? and(eq(pendingApprovals.instanceId, instanceId), eq(pendingApprovals.status, opts.status))
+        ? and(
+            eq(pendingApprovals.instanceId, instanceId),
+            eq(pendingApprovals.status, opts.status),
+          )
         : eq(pendingApprovals.instanceId, instanceId);
       const rows = await db
         .select()
@@ -196,7 +218,8 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
 
     async resolvePending(id, verdict, decidedBy, opts) {
       const now = new Date();
-      await db.update(pendingApprovals)
+      await db
+        .update(pendingApprovals)
         .set({
           status: "resolved",
           verdict,
@@ -204,17 +227,25 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
           resolvedAt: now,
           ...(opts?.markDelivered ? { deliveredAt: now } : {}),
         })
-        .where(and(eq(pendingApprovals.id, id), eq(pendingApprovals.status, "pending")));
+        .where(
+          and(
+            eq(pendingApprovals.id, id),
+            eq(pendingApprovals.status, "pending"),
+          ),
+        );
     },
 
     async markDelivered(id) {
-      await db.update(pendingApprovals)
+      await db
+        .update(pendingApprovals)
         .set({ deliveredAt: new Date() })
-        .where(and(
-          eq(pendingApprovals.id, id),
-          eq(pendingApprovals.status, "resolved"),
-          isNull(pendingApprovals.deliveredAt),
-        ));
+        .where(
+          and(
+            eq(pendingApprovals.id, id),
+            eq(pendingApprovals.status, "resolved"),
+            isNull(pendingApprovals.deliveredAt),
+          ),
+        );
     },
 
     async listResolvedUndelivered({ staleMs, limit }) {
@@ -222,42 +253,57 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
       const rows = await db
         .select()
         .from(pendingApprovals)
-        .where(and(
-          eq(pendingApprovals.status, "resolved"),
-          isNull(pendingApprovals.deliveredAt),
-          lt(pendingApprovals.resolvedAt, cutoff),
-        ))
+        .where(
+          and(
+            eq(pendingApprovals.status, "resolved"),
+            isNull(pendingApprovals.deliveredAt),
+            lt(pendingApprovals.resolvedAt, cutoff),
+          ),
+        )
         .orderBy(asc(pendingApprovals.resolvedAt))
         .limit(limit);
       return rows.map((r) => toPendingRow(r as RawPending));
     },
 
     async expirePending(id) {
-      await db.update(pendingApprovals)
+      await db
+        .update(pendingApprovals)
         .set({ status: "expired", resolvedAt: new Date() })
-        .where(and(eq(pendingApprovals.id, id), eq(pendingApprovals.status, "pending")));
+        .where(
+          and(
+            eq(pendingApprovals.id, id),
+            eq(pendingApprovals.status, "pending"),
+          ),
+        );
     },
 
     async expireOverdue(now) {
-      const rows = await db.update(pendingApprovals)
+      const rows = await db
+        .update(pendingApprovals)
         .set({ status: "expired", resolvedAt: now })
-        .where(and(
-          eq(pendingApprovals.status, "pending"),
-          sql`${pendingApprovals.expiresAt} < ${now}`,
-        ))
+        .where(
+          and(
+            eq(pendingApprovals.status, "pending"),
+            sql`${pendingApprovals.expiresAt} < ${now}`,
+          ),
+        )
         .returning({ id: pendingApprovals.id });
       return rows.map((r) => r.id);
     },
 
     async deleteForAgent(agentId) {
-      await db.delete(pendingApprovals).where(eq(pendingApprovals.agentId, agentId));
+      await db
+        .delete(pendingApprovals)
+        .where(eq(pendingApprovals.agentId, agentId));
     },
 
     async listDistinctAgentIds() {
       const rows = await db.execute<{ agent_id: string }>(sql`
         SELECT DISTINCT agent_id FROM ${pendingApprovals}
       `);
-      return (rows as unknown as Array<{ agent_id: string }>).map((r) => r.agent_id);
+      return (rows as unknown as Array<{ agent_id: string }>).map(
+        (r) => r.agent_id,
+      );
     },
   };
 }

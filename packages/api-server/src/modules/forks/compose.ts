@@ -1,4 +1,7 @@
-import { createForksService, type ForksService } from "./services/forks-service.js";
+import {
+  createForksService,
+  type ForksService,
+} from "./services/forks-service.js";
 import type { ForkOrchestratorPort } from "./infrastructure/ports.js";
 
 export function composeForksModule(deps: {

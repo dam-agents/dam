@@ -13,7 +13,10 @@ export interface GitHostIdentity {
 /** Parse a git URL into a host-kind + owner/repo pair, or null if unsupported. */
 export function detectHost(gitUrl: string): GitHostIdentity | null {
   // Trailing slash → .git → trailing slash again, to tolerate all four shapes.
-  const trimmed = gitUrl.replace(/\/+$/, "").replace(/\.git$/, "").replace(/\/+$/, "");
+  const trimmed = gitUrl
+    .replace(/\/+$/, "")
+    .replace(/\.git$/, "")
+    .replace(/\/+$/, "");
   const m = /^https:\/\/github\.com\/([^/]+)\/([^/]+)$/.exec(trimmed);
   if (m) return { kind: "github", owner: m[1], repo: m[2] };
   return null;

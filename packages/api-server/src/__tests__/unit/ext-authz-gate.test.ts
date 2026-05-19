@@ -39,23 +39,27 @@ function makeFakeRepo(): FakeRepo {
     },
     getPending: async (id) => rows.find((r) => r.id === id) ?? null,
     findActivePendingExtAuthz: async ({ agentId, host, method, path }) => {
-      return rows.find(
-        (r) =>
-          r.agentId === agentId
-          && r.status === "pending"
-          && r.type === "ext_authz"
-          && r.payload.kind === "ext_authz"
-          && r.payload.host === host
-          && r.payload.method === method
-          && r.payload.path === path,
-      ) ?? null;
+      return (
+        rows.find(
+          (r) =>
+            r.agentId === agentId &&
+            r.status === "pending" &&
+            r.type === "ext_authz" &&
+            r.payload.kind === "ext_authz" &&
+            r.payload.host === host &&
+            r.payload.method === method &&
+            r.payload.path === path,
+        ) ?? null
+      );
     },
     listPendingForOwner: async () => [],
     listPendingForInstance: async () => [],
     resolvePending: async () => {},
     markDelivered: async () => {},
     listResolvedUndelivered: async () => [],
-    expirePending: async (id) => { expirePendingCalls.push(id); },
+    expirePending: async (id) => {
+      expirePendingCalls.push(id);
+    },
     expireOverdue: async () => [],
     deleteForAgent: async () => {},
     listDistinctAgentIds: async () => [],
@@ -63,9 +67,13 @@ function makeFakeRepo(): FakeRepo {
   return {
     repo,
     rows,
-    get inserts() { return inserts; },
+    get inserts() {
+      return inserts;
+    },
     expirePendingCalls,
-    setInitial(row) { rows.push(row); },
+    setInitial(row) {
+      rows.push(row);
+    },
     resolve(id, verdict) {
       const row = rows.find((r) => r.id === id);
       if (!row) return;
@@ -87,12 +95,19 @@ function makeFakeBus(): FakeBus {
   const publishes: { channel: string; payload: string }[] = [];
   return {
     bus: {
-      publish: async (channel, payload) => { publishes.push({ channel, payload }); },
+      publish: async (channel, payload) => {
+        publishes.push({ channel, payload });
+      },
       subscribe: (channel, listener) => {
         let set = subs.get(channel);
-        if (!set) { set = new Set(); subs.set(channel, set); }
+        if (!set) {
+          set = new Set();
+          subs.set(channel, set);
+        }
         set.add(listener);
-        return () => { set!.delete(listener); };
+        return () => {
+          set!.delete(listener);
+        };
       },
       close: async () => {},
     },
@@ -107,7 +122,9 @@ function makeFakeBus(): FakeBus {
 
 const identityResolver = {
   resolve: async (instanceId: string) =>
-    instanceId === "missing" ? null : { ownerSub: "user-1", agentId: "agent-1" },
+    instanceId === "missing"
+      ? null
+      : { ownerSub: "user-1", agentId: "agent-1" },
 };
 
 const noMatchRules = { match: async () => null };
@@ -118,8 +135,12 @@ async function flushMicrotasks(): Promise<void> {
 }
 
 describe("ext-authz gate", () => {
-  beforeEach(() => { vi.useFakeTimers(); });
-  afterEach(() => { vi.useRealTimers(); });
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 
   it("returns the matched verdict without writing a pending row", async () => {
     const repo = makeFakeRepo();
@@ -133,7 +154,10 @@ describe("ext-authz gate", () => {
     });
 
     const verdict = await gate.gateRequest({
-      instanceId: "inst-1", host: "api.x", method: "GET", path: "/",
+      instanceId: "inst-1",
+      host: "api.x",
+      method: "GET",
+      path: "/",
     });
 
     expect(verdict).toBe("allow");
@@ -153,7 +177,10 @@ describe("ext-authz gate", () => {
     });
 
     const verdict = await gate.gateRequest({
-      instanceId: "missing", host: "x", method: "GET", path: "/",
+      instanceId: "missing",
+      host: "x",
+      method: "GET",
+      path: "/",
     });
 
     expect(verdict).toBe("deny");
@@ -172,7 +199,10 @@ describe("ext-authz gate", () => {
     });
 
     const inflight = gate.gateRequest({
-      instanceId: "inst-1", host: "h", method: "GET", path: "/p",
+      instanceId: "inst-1",
+      host: "h",
+      method: "GET",
+      path: "/p",
     });
     // Yield so insertPending + publish run before we resolve.
     await flushMicrotasks();
@@ -200,7 +230,10 @@ describe("ext-authz gate", () => {
     });
 
     const inflight = gate.gateRequest({
-      instanceId: "inst-1", host: "h", method: "GET", path: "/p",
+      instanceId: "inst-1",
+      host: "h",
+      method: "GET",
+      path: "/p",
     });
     await flushMicrotasks();
 
@@ -226,7 +259,10 @@ describe("ext-authz gate", () => {
     });
 
     const first = gate.gateRequest({
-      instanceId: "inst-1", host: "h", method: "GET", path: "/p",
+      instanceId: "inst-1",
+      host: "h",
+      method: "GET",
+      path: "/p",
     });
     await flushMicrotasks();
     expect(repo.inserts).toBe(1);
@@ -235,7 +271,10 @@ describe("ext-authz gate", () => {
 
     // Retry from the agent CLI while the original row is still pending.
     const retry = gate.gateRequest({
-      instanceId: "inst-1", host: "h", method: "GET", path: "/p",
+      instanceId: "inst-1",
+      host: "h",
+      method: "GET",
+      path: "/p",
     });
     await flushMicrotasks();
 
@@ -249,5 +288,4 @@ describe("ext-authz gate", () => {
     expect(await first).toBe("allow");
     expect(await retry).toBe("allow");
   });
-
 });

@@ -44,10 +44,11 @@ const (
 	RoleGateway   = "gateway"
 )
 
-// agentProxyAddr is the agent's HTTPS_PROXY value: the paired gateway pod's
-// Service DNS. Service-form is stable across gateway pod restarts (ADR-038).
-func agentProxyAddr(instanceName string, cfg *config.Config) string {
-	return fmt.Sprintf("http://%s:%d", GatewayName(instanceName), cfg.EnvoyPort)
+// agentProxyAddr is the agent's HTTPS_PROXY value — IP-direct, no DNS.
+// The instance/fork reconcilers requeue until the gateway ClusterIP is
+// assigned, so this never sees an empty IP at steady state.
+func agentProxyAddr(cfg *config.Config, gatewayClusterIP string) string {
+	return fmt.Sprintf("http://%s:%d", gatewayClusterIP, cfg.EnvoyPort)
 }
 
 // BuildAgentStatefulSet renders the agent half of the paired pod set
@@ -58,10 +59,9 @@ func agentProxyAddr(instanceName string, cfg *config.Config) string {
 // surfaced as an env var and pod annotation; no Secret material is mounted
 // into the agent pod.
 //
-// `gatewayClusterIP` is injected into `hostAliases` when `DisableDNS` is on,
-// so `HTTPS_PROXY=http://<pair>-gateway:<port>` resolves without DNS. Empty
-// when the controller doesn't have the IP yet — caller is expected to
-// fail-closed in that case.
+// `gatewayClusterIP` is the paired gateway Service's assigned ClusterIP,
+// used directly as the HTTPS_PROXY target. The caller requeues when
+// it's not yet assigned.
 func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec *types.AgentSpec, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret, gatewayClusterIP string) *appsv1.StatefulSet {
 	base := cfg.AgentBase
 	defaults := cfg.AgentTemplateDefaults
@@ -114,7 +114,7 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 
 	caCertPath := "/etc/platform/ca/ca.crt"
 
-	proxyAddr := agentProxyAddr(name, cfg)
+	proxyAddr := agentProxyAddr(cfg, gatewayClusterIP)
 
 	// The agent container holds zero platform credentials. Inbound calls to
 	// agent-runtime's tRPC are gated by the api-server's mesh
@@ -263,8 +263,16 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 	}
 	var initContainers []corev1.Container
 	// Egress-lockdown runs before the user init so the allow-list is in
-	// place by the time anything dials the network.
+	// place by the time anything dials the network. Two flavors: the
+	// kernel-level iptables init (works on plain OCI runtimes; needs
+	// netfilter modules in the guest, which Kata/CoCo strips) and the
+	// userspace NP-readiness gate (works everywhere — no caps, no
+	// kernel modules; verifies the NetworkPolicy is in force before
+	// releasing the workload). Whichever the chart enables fires here.
 	if ic := buildIptablesInitContainer(cfg, gatewayClusterIP); ic != nil {
+		initContainers = append(initContainers, *ic)
+	}
+	if ic := buildNPGateInitContainer(cfg, gatewayClusterIP); ic != nil {
 		initContainers = append(initContainers, *ic)
 	}
 	if initScript != "" {
@@ -288,7 +296,7 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 	// wrapper scripts and operators can detect missing auth without making
 	// a 401-eliciting request first.
 	ghAvail := "false"
-	if hasGitHubCredential(credentialSecrets) {
+	if hasGHTokenEnv(credentialSecrets) {
 		ghAvail = "true"
 	}
 	env = append(env, corev1.EnvVar{Name: "PLATFORM_GH_TOKEN_AVAILABLE", Value: ghAvail})
@@ -364,11 +372,6 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 	}
 	applyAgentBaseMeta(&podMeta, base)
 
-	var hostAliases []corev1.HostAlias
-	if base.DisableDNS && gatewayClusterIP != "" {
-		hostAliases = append(hostAliases, buildGatewayHostAlias(name, gatewayClusterIP))
-	}
-
 	podSpec := corev1.PodSpec{
 		// Agent pod opts out of ambient mesh
 		// (`istio.io/dataplane-mode: none` pod label above); it has no
@@ -385,7 +388,6 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 		ShareProcessNamespace:         shareProcessNS,
 		Containers:                    containers,
 		Volumes:                       volumes,
-		HostAliases:                   hostAliases,
 	}
 	applyAgentBaseScheduling(&podSpec, base)
 

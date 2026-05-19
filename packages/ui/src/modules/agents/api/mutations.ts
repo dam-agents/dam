@@ -6,14 +6,15 @@ import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
 import type { EgressPreset, EnvVar } from "../../../types.js";
 import { egressRulesKeys } from "../../egress-rules/api/queries.js";
-import { buildBundle, type BundleEntry, importRawBundle } from "../../files/api/import-bundle.js";
+import {
+  buildBundle,
+  type BundleEntry,
+  importRawBundle,
+} from "../../files/api/import-bundle.js";
 import { instancesKeys } from "../../instances/api/queries.js";
 
 const invalidatesAgentsAndInstances = {
-  invalidates: [
-    trpc.agents.list.queryKey(),
-    instancesKeys.listWithChannels(),
-  ],
+  invalidates: [trpc.agents.list.queryKey(), instancesKeys.listWithChannels()],
 };
 
 export interface CreateAgentInput {
@@ -44,7 +45,14 @@ export interface CreateAgentInput {
  */
 export function useCreateAgent() {
   return useMutation({
-    mutationFn: async ({ secretIds, appConnectionIds, egressPreset, importEntries, importRawBundle: rawBundle, ...input }: CreateAgentInput) => {
+    mutationFn: async ({
+      secretIds,
+      appConnectionIds,
+      egressPreset,
+      importEntries,
+      importRawBundle: rawBundle,
+      ...input
+    }: CreateAgentInput) => {
       // Step order is tuned for fastest user-visible feedback:
       //   1. agents.create + invalidate → tile appears
       //   2. instances.create + invalidate → instance state on the tile
@@ -58,13 +66,17 @@ export function useCreateAgent() {
       // of when the pod comes back. Raw bundle wins when both are
       // provided.
       const agent = await api.agents.create.mutate({ ...input, egressPreset });
-      void queryClient.invalidateQueries({ queryKey: trpc.agents.list.queryKey() });
+      void queryClient.invalidateQueries({
+        queryKey: trpc.agents.list.queryKey(),
+      });
 
       const instance = await api.instances.create.mutate({
         name: input.name,
         agentId: agent.id,
       });
-      void queryClient.invalidateQueries({ queryKey: instancesKeys.listWithChannels() });
+      void queryClient.invalidateQueries({
+        queryKey: instancesKeys.listWithChannels(),
+      });
 
       let preparedBundle: { blob: Blob; label: string } | undefined;
       if (rawBundle != null) {
@@ -79,8 +91,14 @@ export function useCreateAgent() {
 
       if (preparedBundle) {
         try {
-          await importRawBundle({ instanceId: instance.id, bundle: preparedBundle.blob });
-          emitToast({ kind: "success", message: `Imported ${preparedBundle.label} into ${input.name}` });
+          await importRawBundle({
+            instanceId: instance.id,
+            bundle: preparedBundle.blob,
+          });
+          emitToast({
+            kind: "success",
+            message: `Imported ${preparedBundle.label} into ${input.name}`,
+          });
         } catch (err) {
           emitToast({
             kind: "error",
@@ -141,7 +159,10 @@ export function useSetAgentAccess() {
       // Server-side `setAgentAccess` syncs `egress_rules` with the new
       // grant list (insert/revoke connection:* rows), so refetch the
       // editor's view alongside the access query.
-      invalidates: [trpc.secrets.getAgentAccess.queryKey(), egressRulesKeys.all],
+      invalidates: [
+        trpc.secrets.getAgentAccess.queryKey(),
+        egressRulesKeys.all,
+      ],
       errorToast: "Failed to update credential access",
     },
   });
@@ -154,7 +175,10 @@ export function useSetAgentConnections() {
       // Server-side `setAgentConnections` syncs `connection:<id>` egress
       // rules per granted provider's API hosts (ADR-035).
       // Refetch the editor's view alongside the grants query.
-      invalidates: [trpc.connections.getAgentConnections.queryKey(), egressRulesKeys.all],
+      invalidates: [
+        trpc.connections.getAgentConnections.queryKey(),
+        egressRulesKeys.all,
+      ],
       errorToast: "Failed to update app connections",
     },
   });
@@ -170,7 +194,11 @@ export async function fetchAgentAccess(agentId: string) {
   });
 }
 
-async function withRetry(fn: () => Promise<void>, maxAttempts = 5, delayMs = 2000) {
+async function withRetry(
+  fn: () => Promise<void>,
+  maxAttempts = 5,
+  delayMs = 2000,
+) {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       await fn();

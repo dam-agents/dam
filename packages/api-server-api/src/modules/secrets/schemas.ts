@@ -5,7 +5,13 @@ import { ENV_NAME_RE, QUERY_PARAM_RE } from "./types.js";
 // file so UI code can import these without dragging in @trpc/server
 // transitively via router.ts.
 
-export const secretTypeSchema = z.enum(["anthropic", "ibm-litellm", "openai", "bob", "generic"]);
+export const secretTypeSchema = z.enum([
+  "anthropic",
+  "ibm-litellm",
+  "openai",
+  "bob",
+  "generic",
+]);
 
 export const envMappingSchema = z.object({
   envName: z
@@ -28,7 +34,10 @@ export const injectionConfigSchema = z.object({
     .string()
     .min(1)
     .max(128)
-    .regex(QUERY_PARAM_RE, "queryParamName must be URL-safe (A-Z a-z 0-9 . _ ~ -)")
+    .regex(
+      QUERY_PARAM_RE,
+      "queryParamName must be URL-safe (A-Z a-z 0-9 . _ ~ -)",
+    )
     .optional(),
 });
 

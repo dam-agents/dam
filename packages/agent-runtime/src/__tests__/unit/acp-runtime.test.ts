@@ -14,19 +14,32 @@ interface FakeAgent {
 function makeFakeAgent(): FakeAgent {
   const handlers: ((line: string) => void)[] = [];
   let resolveExited: () => void = () => {};
-  const exited = new Promise<void>((r) => { resolveExited = r; });
+  const exited = new Promise<void>((r) => {
+    resolveExited = r;
+  });
   const sent: unknown[] = [];
   let killedFlag = false;
 
   return {
     agent: {
-      send(frame) { sent.push(frame); },
-      onLine(h) { handlers.push(h); },
-      kill() { killedFlag = true; resolveExited(); },
+      send(frame) {
+        sent.push(frame);
+      },
+      onLine(h) {
+        handlers.push(h);
+      },
+      kill() {
+        killedFlag = true;
+        resolveExited();
+      },
       exited,
     },
-    pushLine(line) { for (const h of handlers) h(line); },
-    exit() { resolveExited(); },
+    pushLine(line) {
+      for (const h of handlers) h(line);
+    },
+    exit() {
+      resolveExited();
+    },
     sent,
     killed: () => killedFlag,
   };
@@ -57,14 +70,26 @@ function makeFakeChannel(): FakeChannel {
 
   return {
     channel: {
-      send(line) { if (open) sent.push(line); },
+      send(line) {
+        if (open) sent.push(line);
+      },
       close,
-      isOpen() { return open; },
-      onMessage(h) { msgHandlers.push(h); },
-      onClose(h) { closeHandlers.push(h); },
+      isOpen() {
+        return open;
+      },
+      onMessage(h) {
+        msgHandlers.push(h);
+      },
+      onClose(h) {
+        closeHandlers.push(h);
+      },
     },
-    pushMessage(data) { for (const h of msgHandlers) h(data); },
-    remoteClose() { close(1006, "remote close"); },
+    pushMessage(data) {
+      for (const h of msgHandlers) h(data);
+    },
+    remoteClose() {
+      close(1006, "remote close");
+    },
     sent,
     closes,
     isOpen: () => open,
@@ -75,19 +100,38 @@ const SID = "s1";
 const OTHER_SID = "s2";
 
 const newSessionRequest = (id: number) =>
-  JSON.stringify({ jsonrpc: "2.0", id, method: "session/new", params: { cwd: "." } });
+  JSON.stringify({
+    jsonrpc: "2.0",
+    id,
+    method: "session/new",
+    params: { cwd: "." },
+  });
 
 const newSessionResponse = (outboundId: number, sessionId = SID) =>
-  JSON.stringify({ jsonrpc: "2.0", id: outboundId, result: { sessionId, modes: {}, models: {}, configOptions: [] } });
+  JSON.stringify({
+    jsonrpc: "2.0",
+    id: outboundId,
+    result: { sessionId, modes: {}, models: {}, configOptions: [] },
+  });
 
 const resumeSessionRequest = (id: number, sessionId = SID) =>
-  JSON.stringify({ jsonrpc: "2.0", id, method: "session/resume", params: { sessionId, cwd: "." } });
+  JSON.stringify({
+    jsonrpc: "2.0",
+    id,
+    method: "session/resume",
+    params: { sessionId, cwd: "." },
+  });
 
 const listSessionsRequest = (id: number) =>
   JSON.stringify({ jsonrpc: "2.0", id, method: "session/list", params: {} });
 
 const promptRequest = (id: number, sessionId = SID) =>
-  JSON.stringify({ jsonrpc: "2.0", id, method: "session/prompt", params: { sessionId, prompt: [] } });
+  JSON.stringify({
+    jsonrpc: "2.0",
+    id,
+    method: "session/prompt",
+    params: { sessionId, prompt: [] },
+  });
 
 const permissionRequest = (id: number, sessionId = SID) =>
   JSON.stringify({
@@ -98,16 +142,32 @@ const permissionRequest = (id: number, sessionId = SID) =>
   });
 
 const permissionResponse = (id: number) =>
-  JSON.stringify({ jsonrpc: "2.0", id, result: { outcome: { outcome: "selected", optionId: "allow" } } });
+  JSON.stringify({
+    jsonrpc: "2.0",
+    id,
+    result: { outcome: { outcome: "selected", optionId: "allow" } },
+  });
 
 const sessionUpdate = (sessionId = SID) =>
-  JSON.stringify({ method: "session/update", params: { sessionId, update: { type: "message" } } });
+  JSON.stringify({
+    method: "session/update",
+    params: { sessionId, update: { type: "message" } },
+  });
 
 const agentPromptResponse = (outboundId: number) =>
-  JSON.stringify({ jsonrpc: "2.0", id: outboundId, result: { stopReason: "end_turn" } });
+  JSON.stringify({
+    jsonrpc: "2.0",
+    id: outboundId,
+    result: { stopReason: "end_turn" },
+  });
 
 const initializeRequest = (id: number) =>
-  JSON.stringify({ jsonrpc: "2.0", id, method: "initialize", params: { protocolVersion: 1 } });
+  JSON.stringify({
+    jsonrpc: "2.0",
+    id,
+    method: "initialize",
+    params: { protocolVersion: 1 },
+  });
 
 const initializeResponse = (
   outboundId: number,
@@ -118,9 +178,8 @@ const initializeResponse = (
     id: outboundId,
     result: {
       protocolVersion: 1,
-      agentCapabilities: sessionCapabilities === undefined
-        ? {}
-        : { sessionCapabilities },
+      agentCapabilities:
+        sessionCapabilities === undefined ? {} : { sessionCapabilities },
     },
   });
 
@@ -141,20 +200,28 @@ function completeResumeBootstrap(
   result: object = { modes: {}, models: {}, configOptions: [] },
 ): void {
   const loadFrames = fa.sent.filter(
-    (f: any) => f.method === "session/load" && f.params?.sessionId === sessionId,
+    (f: any) =>
+      f.method === "session/load" && f.params?.sessionId === sessionId,
   );
   if (loadFrames.length === 0) {
-    throw new Error(`completeResumeBootstrap: no pending session/load for ${sessionId}`);
+    throw new Error(
+      `completeResumeBootstrap: no pending session/load for ${sessionId}`,
+    );
   }
   const lastLoad = loadFrames[loadFrames.length - 1];
-  fa.pushLine(JSON.stringify({ jsonrpc: "2.0", id: outboundId(lastLoad), result }));
+  fa.pushLine(
+    JSON.stringify({ jsonrpc: "2.0", id: outboundId(lastLoad), result }),
+  );
 }
 
 describe("createAcpRuntime", () => {
   it("spawns the agent lazily on first attach", () => {
     let spawnCount = 0;
     const runtime = createAcpRuntime({
-      spawnAgent: () => { spawnCount++; return makeFakeAgent().agent; },
+      spawnAgent: () => {
+        spawnCount++;
+        return makeFakeAgent().agent;
+      },
       workingDir: "/tmp",
     });
 
@@ -169,7 +236,10 @@ describe("createAcpRuntime", () => {
 
   it("keeps the agent alive when a client disconnects", () => {
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const c = makeFakeChannel();
     runtime.attach(c.channel);
@@ -182,7 +252,10 @@ describe("createAcpRuntime", () => {
 
   it("accepts multiple channels without evicting existing ones", () => {
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const c1 = makeFakeChannel();
     const c2 = makeFakeChannel();
@@ -196,7 +269,10 @@ describe("createAcpRuntime", () => {
 
   it("does not broadcast session traffic to a channel that hasn't engaged with that session", () => {
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const viewer = makeFakeChannel();
     const ops = makeFakeChannel();
@@ -211,13 +287,24 @@ describe("createAcpRuntime", () => {
     // Agent emits a permission request scoped to SID.
     fa.pushLine(permissionRequest(9));
 
-    expect(viewer.sent.some((f) => JSON.parse(f).method === "session/request_permission")).toBe(true);
-    expect(ops.sent.some((f) => JSON.parse(f).method === "session/request_permission")).toBe(false);
+    expect(
+      viewer.sent.some(
+        (f) => JSON.parse(f).method === "session/request_permission",
+      ),
+    ).toBe(true);
+    expect(
+      ops.sent.some(
+        (f) => JSON.parse(f).method === "session/request_permission",
+      ),
+    ).toBe(false);
   });
 
   it("does not broadcast sessionUpdate notifications to a channel not engaged with the session", () => {
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const viewer = makeFakeChannel();
     const other = makeFakeChannel();
@@ -231,13 +318,20 @@ describe("createAcpRuntime", () => {
 
     fa.pushLine(sessionUpdate(SID));
 
-    expect(viewer.sent.some((f) => JSON.parse(f).params?.sessionId === SID)).toBe(true);
-    expect(other.sent.some((f) => JSON.parse(f).params?.sessionId === SID)).toBe(false);
+    expect(
+      viewer.sent.some((f) => JSON.parse(f).params?.sessionId === SID),
+    ).toBe(true);
+    expect(
+      other.sent.some((f) => JSON.parse(f).params?.sessionId === SID),
+    ).toBe(false);
   });
 
   it("engages a channel with the sessionId returned by session/new's response", () => {
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const c = makeFakeChannel();
     runtime.attach(c.channel);
@@ -249,12 +343,17 @@ describe("createAcpRuntime", () => {
     // Now the agent emits something scoped to the new session — channel
     // should receive it because the response engaged it.
     fa.pushLine(sessionUpdate(SID));
-    expect(c.sent.some((f) => JSON.parse(f).method === "session/update")).toBe(true);
+    expect(c.sent.some((f) => JSON.parse(f).method === "session/update")).toBe(
+      true,
+    );
   });
 
   it("replays pending agent requests to a channel only at engagement time", () => {
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     // Attach first so the agent process is spawned and its onLine handler is
     // wired. The channel isn't engaged with any session yet.
@@ -274,7 +373,10 @@ describe("createAcpRuntime", () => {
 
   it("replays pending agent requests to every viewer that engages with the session", () => {
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const c1 = makeFakeChannel();
     runtime.attach(c1.channel);
@@ -290,7 +392,10 @@ describe("createAcpRuntime", () => {
 
   it("accepts the first response to a permission request and drops later duplicates", () => {
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const c1 = makeFakeChannel();
     const c2 = makeFakeChannel();
@@ -312,7 +417,10 @@ describe("createAcpRuntime", () => {
 
   it("rewrites client request ids so concurrent clients cannot collide at the agent", () => {
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const c1 = makeFakeChannel();
     const c2 = makeFakeChannel();
@@ -330,7 +438,10 @@ describe("createAcpRuntime", () => {
 
   it("translates agent responses back to the originating client's id", () => {
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const c = makeFakeChannel();
     runtime.attach(c.channel);
@@ -339,14 +450,20 @@ describe("createAcpRuntime", () => {
     const sent = outboundId(fa.sent[0]);
     fa.pushLine(newSessionResponse(sent));
 
-    const forwarded = JSON.parse(c.sent.at(-1)!) as { id: number; result: { sessionId: string } };
+    const forwarded = JSON.parse(c.sent.at(-1)!) as {
+      id: number;
+      result: { sessionId: string };
+    };
     expect(forwarded.id).toBe(7);
     expect(forwarded.result.sessionId).toBe(SID);
   });
 
   it("forwards only the first prompt for a session and queues subsequent ones", () => {
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const c1 = makeFakeChannel();
     const c2 = makeFakeChannel();
@@ -362,7 +479,10 @@ describe("createAcpRuntime", () => {
 
   it("advances the queue when the active prompt's response arrives", () => {
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const c1 = makeFakeChannel();
     const c2 = makeFakeChannel();
@@ -381,7 +501,10 @@ describe("createAcpRuntime", () => {
 
   it("lets prompts for different sessions run in parallel", () => {
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const c = makeFakeChannel();
     runtime.attach(c.channel);
@@ -395,7 +518,10 @@ describe("createAcpRuntime", () => {
 
   it("drops queued prompts owned by a disconnecting client", () => {
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const c1 = makeFakeChannel();
     const c2 = makeFakeChannel();
@@ -412,7 +538,10 @@ describe("createAcpRuntime", () => {
 
   it("still advances the queue if the client owning the active prompt disconnects mid-prompt", () => {
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const c1 = makeFakeChannel();
     const c2 = makeFakeChannel();
@@ -433,7 +562,10 @@ describe("createAcpRuntime", () => {
 
   it("rejects prompts beyond the per-session queue cap with a JSON-RPC error", () => {
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const c = makeFakeChannel();
     runtime.attach(c.channel);
@@ -444,7 +576,10 @@ describe("createAcpRuntime", () => {
     expect(runtime.status().queuedPromptCount).toBe(32);
 
     c.pushMessage(promptRequest(34));
-    const last = JSON.parse(c.sent.at(-1)!) as { id: number; error: { message: string } };
+    const last = JSON.parse(c.sent.at(-1)!) as {
+      id: number;
+      error: { message: string };
+    };
     expect(last.id).toBe(34);
     expect(last.error.message).toMatch(/queue full/);
     expect(fa.sent).toHaveLength(1);
@@ -452,7 +587,10 @@ describe("createAcpRuntime", () => {
 
   it("drops client responses for ids that are not pending agent requests", () => {
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const c = makeFakeChannel();
     runtime.attach(c.channel);
@@ -463,13 +601,20 @@ describe("createAcpRuntime", () => {
 
   it("rewrites params.cwd on client frames before forwarding to the agent", () => {
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/pod/work" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/pod/work",
+    });
 
     const c = makeFakeChannel();
     runtime.attach(c.channel);
     c.pushMessage(newSessionRequest(1));
 
-    const sent = fa.sent[0] as { id: number; method: string; params: { cwd: string } };
+    const sent = fa.sent[0] as {
+      id: number;
+      method: string;
+      params: { cwd: string };
+    };
     expect(sent.method).toBe("session/new");
     expect(sent.params.cwd).toBe("/pod/work");
   });
@@ -495,7 +640,10 @@ describe("createAcpRuntime", () => {
     const fa = makeFakeAgent();
     let spawnCount = 0;
     const runtime = createAcpRuntime({
-      spawnAgent: () => { spawnCount++; return fa.agent; },
+      spawnAgent: () => {
+        spawnCount++;
+        return fa.agent;
+      },
       workingDir: "/tmp",
     });
 
@@ -517,20 +665,32 @@ describe("createAcpRuntime", () => {
 
   it("rewrites authentication_error text before forwarding to the client", () => {
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const c = makeFakeChannel();
     runtime.attach(c.channel);
     c.pushMessage(resumeSessionRequest(1));
     completeResumeBootstrap(fa, SID);
 
-    fa.pushLine(JSON.stringify({
-      method: "session/update",
-      params: { sessionId: SID, update: { content: { type: "text", text: "authentication_error: missing" } } },
-    }));
+    fa.pushLine(
+      JSON.stringify({
+        method: "session/update",
+        params: {
+          sessionId: SID,
+          update: {
+            content: { type: "text", text: "authentication_error: missing" },
+          },
+        },
+      }),
+    );
 
     const forwarded = JSON.parse(c.sent.at(-1)!);
-    expect(forwarded.params.update.content.text).toMatch(/Authentication Error:/);
+    expect(forwarded.params.update.content.text).toMatch(
+      /Authentication Error:/,
+    );
   });
 
   it("expires a session's pending agent requests after the orphan TTL with no engaged channel", () => {
@@ -597,7 +757,10 @@ describe("createAcpRuntime", () => {
 
   it("a channel that only calls listSessions never engages and cannot consume a pending request", () => {
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const viewer = makeFakeChannel();
     runtime.attach(viewer.channel);
@@ -626,7 +789,10 @@ describe("createAcpRuntime", () => {
 
   it("broadcasts a platform/turnEnded notification to engaged channels when a prompt completes", () => {
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const c1 = makeFakeChannel();
     const c2 = makeFakeChannel();
@@ -642,16 +808,24 @@ describe("createAcpRuntime", () => {
     fa.pushLine(agentPromptResponse(outbound));
 
     // Both engaged channels see the turn-ended notification.
-    const turnEnded = (sent: string[]) => sent.find((f) => {
-      try { return JSON.parse(f).method === "platform/turnEnded"; } catch { return false; }
-    });
+    const turnEnded = (sent: string[]) =>
+      sent.find((f) => {
+        try {
+          return JSON.parse(f).method === "platform/turnEnded";
+        } catch {
+          return false;
+        }
+      });
     expect(turnEnded(c1.sent)).toBeDefined();
     expect(turnEnded(c2.sent)).toBeDefined();
   });
 
   it("does not broadcast platform/turnEnded to channels not engaged with the session", () => {
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const c1 = makeFakeChannel();
     const c2 = makeFakeChannel();
@@ -666,14 +840,21 @@ describe("createAcpRuntime", () => {
     fa.pushLine(agentPromptResponse(outbound));
 
     const turnEnded = c2.sent.find((f) => {
-      try { return JSON.parse(f).method === "platform/turnEnded"; } catch { return false; }
+      try {
+        return JSON.parse(f).method === "platform/turnEnded";
+      } catch {
+        return false;
+      }
     });
     expect(turnEnded).toBeUndefined();
   });
 
   it("shutdown closes every attached channel and kills the agent", () => {
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const c1 = makeFakeChannel();
     const c2 = makeFakeChannel();
@@ -691,7 +872,10 @@ describe("createAcpRuntime", () => {
     // watching the session. The claude subprocess the SDK spawned should be
     // reaped via `session/close` to avoid unbounded memory growth.
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const c = makeFakeChannel();
     runtime.attach(c.channel);
@@ -705,18 +889,25 @@ describe("createAcpRuntime", () => {
 
     // Viewer disconnects before the response arrives.
     c.remoteClose();
-    expect(fa.sent.filter((f: any) => f.method === "session/close")).toHaveLength(0);
+    expect(
+      fa.sent.filter((f: any) => f.method === "session/close"),
+    ).toHaveLength(0);
 
     // Turn ends — nobody's watching, nothing pending → close.
     fa.pushLine(agentPromptResponse(promptOut));
-    const closeFrames = fa.sent.filter((f: any) => f.method === "session/close");
+    const closeFrames = fa.sent.filter(
+      (f: any) => f.method === "session/close",
+    );
     expect(closeFrames).toHaveLength(1);
     expect((closeFrames[0] as any).params).toEqual({ sessionId: SID });
   });
 
   it("does not close the session while a viewer is still engaged", () => {
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const c = makeFakeChannel();
     runtime.attach(c.channel);
@@ -727,12 +918,17 @@ describe("createAcpRuntime", () => {
     const promptOut = outboundId(fa.sent[1]);
     fa.pushLine(agentPromptResponse(promptOut));
 
-    expect(fa.sent.filter((f: any) => f.method === "session/close")).toHaveLength(0);
+    expect(
+      fa.sent.filter((f: any) => f.method === "session/close"),
+    ).toHaveLength(0);
   });
 
   it("closes the SDK session when the last engaged channel detaches", () => {
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const c = makeFakeChannel();
     runtime.attach(c.channel);
@@ -742,7 +938,9 @@ describe("createAcpRuntime", () => {
     // Session is idle (no prompt in flight). Viewer leaves → reap.
     c.remoteClose();
 
-    const closeFrames = fa.sent.filter((f: any) => f.method === "session/close");
+    const closeFrames = fa.sent.filter(
+      (f: any) => f.method === "session/close",
+    );
     expect(closeFrames).toHaveLength(1);
     expect((closeFrames[0] as any).params).toEqual({ sessionId: SID });
   });
@@ -755,7 +953,10 @@ describe("createAcpRuntime", () => {
     // agent. The local log stays around so a future session/resume can serve
     // from cache without forcing a cold rebuild the agent can't satisfy.
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const c = makeFakeChannel();
     runtime.attach(c.channel);
@@ -763,19 +964,26 @@ describe("createAcpRuntime", () => {
     // Client initializes; agent advertises *no* `close` capability.
     c.pushMessage(initializeRequest(0));
     const initOut = outboundId(fa.sent[0]);
-    fa.pushLine(initializeResponse(initOut, { fork: {}, list: {}, resume: {} }));
+    fa.pushLine(
+      initializeResponse(initOut, { fork: {}, list: {}, resume: {} }),
+    );
 
     c.pushMessage(newSessionRequest(1));
     const sessOut = outboundId(fa.sent[1]);
     fa.pushLine(newSessionResponse(sessOut));
     c.remoteClose();
 
-    expect(fa.sent.filter((f: any) => f.method === "session/close")).toHaveLength(0);
+    expect(
+      fa.sent.filter((f: any) => f.method === "session/close"),
+    ).toHaveLength(0);
   });
 
   it("does not send session/close when the agent's initialize omits sessionCapabilities entirely", () => {
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const c = makeFakeChannel();
     runtime.attach(c.channel);
@@ -789,12 +997,17 @@ describe("createAcpRuntime", () => {
     fa.pushLine(newSessionResponse(sessOut));
     c.remoteClose();
 
-    expect(fa.sent.filter((f: any) => f.method === "session/close")).toHaveLength(0);
+    expect(
+      fa.sent.filter((f: any) => f.method === "session/close"),
+    ).toHaveLength(0);
   });
 
   it("does send session/close when the agent advertises sessionCapabilities.close", () => {
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const c = makeFakeChannel();
     runtime.attach(c.channel);
@@ -808,14 +1021,19 @@ describe("createAcpRuntime", () => {
     fa.pushLine(newSessionResponse(sessOut));
     c.remoteClose();
 
-    const closeFrames = fa.sent.filter((f: any) => f.method === "session/close");
+    const closeFrames = fa.sent.filter(
+      (f: any) => f.method === "session/close",
+    );
     expect(closeFrames).toHaveLength(1);
     expect((closeFrames[0] as any).params).toEqual({ sessionId: SID });
   });
 
   it("does not close a session with pending permission requests", () => {
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const c = makeFakeChannel();
     runtime.attach(c.channel);
@@ -830,7 +1048,9 @@ describe("createAcpRuntime", () => {
     // Session has a pending request — must stay open for whoever answers
     // next (reconnect, another viewer). The 10-min orphan TTL will reject
     // the request if nobody comes back.
-    expect(fa.sent.filter((f: any) => f.method === "session/close")).toHaveLength(0);
+    expect(
+      fa.sent.filter((f: any) => f.method === "session/close"),
+    ).toHaveLength(0);
   });
 
   it("serves subsequent session/load from the in-memory log instead of forwarding to the agent", () => {
@@ -842,17 +1062,31 @@ describe("createAcpRuntime", () => {
     // trip, and A doesn't see anything because the log isn't fanning out
     // to cursors that are already at the tail.
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const a = makeFakeChannel();
     runtime.attach(a.channel);
 
-    a.pushMessage(JSON.stringify({
-      jsonrpc: "2.0", id: 1, method: "session/load", params: { sessionId: SID, cwd: "." },
-    }));
+    a.pushMessage(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "session/load",
+        params: { sessionId: SID, cwd: "." },
+      }),
+    );
     const aLoadOut = outboundId(fa.sent[0]);
     fa.pushLine(sessionUpdate(SID));
-    fa.pushLine(JSON.stringify({ jsonrpc: "2.0", id: aLoadOut, result: { sessionId: SID, modes: {}, models: {}, configOptions: [] } }));
+    fa.pushLine(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: aLoadOut,
+        result: { sessionId: SID, modes: {}, models: {}, configOptions: [] },
+      }),
+    );
 
     const aBefore = a.sent.length;
     const agentSentBefore = fa.sent.length;
@@ -860,14 +1094,21 @@ describe("createAcpRuntime", () => {
     // Viewer B joins and loads — should be served from memory.
     const b = makeFakeChannel();
     runtime.attach(b.channel);
-    b.pushMessage(JSON.stringify({
-      jsonrpc: "2.0", id: 42, method: "session/load", params: { sessionId: SID, cwd: "." },
-    }));
+    b.pushMessage(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 42,
+        method: "session/load",
+        params: { sessionId: SID, cwd: "." },
+      }),
+    );
 
     // Runtime did not forward to the agent.
     expect(fa.sent.length).toBe(agentSentBefore);
     // B got the history (session/update) and the synthetic response.
-    expect(b.sent.some((f) => JSON.parse(f).method === "session/update")).toBe(true);
+    expect(b.sent.some((f) => JSON.parse(f).method === "session/update")).toBe(
+      true,
+    );
     expect(b.sent.some((f) => JSON.parse(f).id === 42)).toBe(true);
     // A did not receive anything new — its cursor was already at the tail.
     expect(a.sent.length).toBe(aBefore);
@@ -880,7 +1121,10 @@ describe("createAcpRuntime", () => {
     // (works for harnesses like pi-acp that don't implement
     // unstable_resumeSession at all) and avoids a needless agent roundtrip.
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     // Tab A creates the session, populating log.metadata.
     const a = makeFakeChannel();
@@ -905,7 +1149,13 @@ describe("createAcpRuntime", () => {
     // B is engaged — a subsequent live update fans out to it.
     const live = JSON.stringify({
       method: "session/update",
-      params: { sessionId: SID, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "live" } } },
+      params: {
+        sessionId: SID,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "live" },
+        },
+      },
     });
     fa.pushLine(live);
     expect(b.sent.some((f) => f === live)).toBe(true);
@@ -917,7 +1167,10 @@ describe("createAcpRuntime", () => {
     // first to project history into React state; the live channel's
     // resume should only deliver live events from that point on.
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     // Tab A populates the log via session/new + a streamed update.
     const a = makeFakeChannel();
@@ -926,7 +1179,13 @@ describe("createAcpRuntime", () => {
     fa.pushLine(newSessionResponse(outboundId(fa.sent[0]), SID));
     const histEvent = JSON.stringify({
       method: "session/update",
-      params: { sessionId: SID, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "history" } } },
+      params: {
+        sessionId: SID,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "history" },
+        },
+      },
     });
     fa.pushLine(histEvent);
     expect(a.sent.some((f) => f === histEvent)).toBe(true);
@@ -947,7 +1206,10 @@ describe("createAcpRuntime", () => {
     // on completion, serves the parked resume waiter via engage + synthetic
     // resume response (no replay to the channel).
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const a = makeFakeChannel();
     runtime.attach(a.channel);
@@ -963,7 +1225,13 @@ describe("createAcpRuntime", () => {
     // state from a prior throwaway loadSession).
     const replay = JSON.stringify({
       method: "session/update",
-      params: { sessionId: SID, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "old" } } },
+      params: {
+        sessionId: SID,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "old" },
+        },
+      },
     });
     fa.pushLine(replay);
     expect(a.sent.some((f) => f === replay)).toBe(false);
@@ -990,7 +1258,10 @@ describe("createAcpRuntime", () => {
     // The second must pile onto the in-flight bootstrap as a waiter
     // rather than triggering a second agent forward.
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const a = makeFakeChannel();
     const b = makeFakeChannel();
@@ -1016,7 +1287,10 @@ describe("createAcpRuntime", () => {
     // response (no replay), while the load waiter gets full catch-up +
     // a load response (replay included).
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const a = makeFakeChannel();
     const b = makeFakeChannel();
@@ -1026,16 +1300,29 @@ describe("createAcpRuntime", () => {
 
     const replay = JSON.stringify({
       method: "session/update",
-      params: { sessionId: SID, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "hist" } } },
+      params: {
+        sessionId: SID,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "hist" },
+        },
+      },
     });
     fa.pushLine(replay);
 
-    b.pushMessage(JSON.stringify({
-      jsonrpc: "2.0", id: 42, method: "session/load", params: { sessionId: SID, cwd: "." },
-    }));
+    b.pushMessage(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 42,
+        method: "session/load",
+        params: { sessionId: SID, cwd: "." },
+      }),
+    );
 
     // Only one forward to the agent — B coalesced onto A's bootstrap.
-    const loadForwards = fa.sent.filter((f: any) => f.method === "session/load");
+    const loadForwards = fa.sent.filter(
+      (f: any) => f.method === "session/load",
+    );
     expect(loadForwards.length).toBe(1);
 
     completeResumeBootstrap(fa, SID);
@@ -1060,7 +1347,10 @@ describe("createAcpRuntime", () => {
     // and fanning the duplicates out to the originator (whose cursor
     // was at the tail of the first copy).
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     // Tab A creates a new session and sends a prompt.
     const a = makeFakeChannel();
@@ -1071,10 +1361,18 @@ describe("createAcpRuntime", () => {
 
     a.pushMessage(promptRequest(2));
     const promptOut = outboundId(fa.sent[1]);
-    fa.pushLine(JSON.stringify({
-      method: "session/update",
-      params: { sessionId: SID, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "hi from A" } } },
-    }));
+    fa.pushLine(
+      JSON.stringify({
+        method: "session/update",
+        params: {
+          sessionId: SID,
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "hi from A" },
+          },
+        },
+      }),
+    );
     fa.pushLine(agentPromptResponse(promptOut));
 
     const aBefore = a.sent.length;
@@ -1085,14 +1383,21 @@ describe("createAcpRuntime", () => {
     // history events appended.
     const b = makeFakeChannel();
     runtime.attach(b.channel);
-    b.pushMessage(JSON.stringify({
-      jsonrpc: "2.0", id: 42, method: "session/load", params: { sessionId: SID, cwd: "." },
-    }));
+    b.pushMessage(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 42,
+        method: "session/load",
+        params: { sessionId: SID, cwd: "." },
+      }),
+    );
 
     // No additional forward to the agent.
     expect(fa.sent.length).toBe(agentSentBefore);
     // B got the history + synthetic response.
-    expect(b.sent.some((f) => JSON.parse(f).method === "session/update")).toBe(true);
+    expect(b.sent.some((f) => JSON.parse(f).method === "session/update")).toBe(
+      true,
+    );
     expect(b.sent.some((f) => JSON.parse(f).id === 42)).toBe(true);
     // A did not receive any extra events — its cursor was at the tail.
     expect(a.sent.length).toBe(aBefore);
@@ -1107,7 +1412,10 @@ describe("createAcpRuntime", () => {
     // sender (which already rendered an optimistic bubble). On reconnect
     // the sender still gets it via catch-up from the log.
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const a = makeFakeChannel();
     const b = makeFakeChannel();
@@ -1116,21 +1424,30 @@ describe("createAcpRuntime", () => {
     a.pushMessage(resumeSessionRequest(1));
     b.pushMessage(resumeSessionRequest(1));
 
-    a.pushMessage(JSON.stringify({
-      jsonrpc: "2.0",
-      id: 7,
-      method: "session/prompt",
-      params: { sessionId: SID, prompt: [{ type: "text", text: "hello from A" }] },
-    }));
+    a.pushMessage(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 7,
+        method: "session/prompt",
+        params: {
+          sessionId: SID,
+          prompt: [{ type: "text", text: "hello from A" }],
+        },
+      }),
+    );
 
     const echoes = (ch: ReturnType<typeof makeFakeChannel>) =>
       ch.sent.filter((f) => {
         try {
           const p = JSON.parse(f);
-          return p.method === "session/update"
-            && p.params?.update?.sessionUpdate === "user_message_chunk"
-            && p.params?.update?.content?.text === "hello from A";
-        } catch { return false; }
+          return (
+            p.method === "session/update" &&
+            p.params?.update?.sessionUpdate === "user_message_chunk" &&
+            p.params?.update?.content?.text === "hello from A"
+          );
+        } catch {
+          return false;
+        }
       });
 
     // Sender skipped, other viewer receives.
@@ -1144,36 +1461,66 @@ describe("createAcpRuntime", () => {
     // up should stream the synthesized user_message_chunk to it, so the
     // user doesn't lose their own message on reload.
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const a = makeFakeChannel();
     runtime.attach(a.channel);
     // Cold-load the session to give the log cached metadata.
-    a.pushMessage(JSON.stringify({
-      jsonrpc: "2.0", id: 1, method: "session/load", params: { sessionId: SID, cwd: "." },
-    }));
+    a.pushMessage(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "session/load",
+        params: { sessionId: SID, cwd: "." },
+      }),
+    );
     const loadOut = outboundId(fa.sent[0]);
-    fa.pushLine(JSON.stringify({ jsonrpc: "2.0", id: loadOut, result: { sessionId: SID, modes: {}, models: {}, configOptions: [] } }));
+    fa.pushLine(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: loadOut,
+        result: { sessionId: SID, modes: {}, models: {}, configOptions: [] },
+      }),
+    );
 
-    a.pushMessage(JSON.stringify({
-      jsonrpc: "2.0", id: 2, method: "session/prompt",
-      params: { sessionId: SID, prompt: [{ type: "text", text: "my message" }] },
-    }));
+    a.pushMessage(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 2,
+        method: "session/prompt",
+        params: {
+          sessionId: SID,
+          prompt: [{ type: "text", text: "my message" }],
+        },
+      }),
+    );
     a.remoteClose();
 
     // Reconnect as a fresh channel.
     const a2 = makeFakeChannel();
     runtime.attach(a2.channel);
-    a2.pushMessage(JSON.stringify({
-      jsonrpc: "2.0", id: 1, method: "session/load", params: { sessionId: SID, cwd: "." },
-    }));
+    a2.pushMessage(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "session/load",
+        params: { sessionId: SID, cwd: "." },
+      }),
+    );
 
     const echo = a2.sent.find((f) => {
       try {
         const p = JSON.parse(f);
-        return p.params?.update?.sessionUpdate === "user_message_chunk"
-          && p.params?.update?.content?.text === "my message";
-      } catch { return false; }
+        return (
+          p.params?.update?.sessionUpdate === "user_message_chunk" &&
+          p.params?.update?.content?.text === "my message"
+        );
+      } catch {
+        return false;
+      }
     });
     expect(echo).toBeDefined();
   });
@@ -1183,7 +1530,10 @@ describe("createAcpRuntime", () => {
     // to every engaged channel whose cursor is behind. Cursors advance so a
     // channel cannot receive the same line twice.
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const a = makeFakeChannel();
     const b = makeFakeChannel();
@@ -1197,7 +1547,13 @@ describe("createAcpRuntime", () => {
 
     const liveChunk = JSON.stringify({
       method: "session/update",
-      params: { sessionId: SID, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "hi" } } },
+      params: {
+        sessionId: SID,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "hi" },
+        },
+      },
     });
     fa.pushLine(liveChunk);
 
@@ -1212,37 +1568,66 @@ describe("createAcpRuntime", () => {
     // parks the second load as a waiter on the in-flight bootstrap and
     // serves it from the populated log once the first response arrives.
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const a = makeFakeChannel();
     const b = makeFakeChannel();
     runtime.attach(a.channel);
     runtime.attach(b.channel);
 
-    a.pushMessage(JSON.stringify({
-      jsonrpc: "2.0", id: 1, method: "session/load", params: { sessionId: SID, cwd: "." },
-    }));
+    a.pushMessage(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "session/load",
+        params: { sessionId: SID, cwd: "." },
+      }),
+    );
     // Snapshot: only one forward to the agent at this point.
-    const forwardsAfterA = fa.sent.filter((f: any) => f.method === "session/load").length;
+    const forwardsAfterA = fa.sent.filter(
+      (f: any) => f.method === "session/load",
+    ).length;
 
     // B's load arrives while A's bootstrap is still in flight.
-    b.pushMessage(JSON.stringify({
-      jsonrpc: "2.0", id: 99, method: "session/load", params: { sessionId: SID, cwd: "." },
-    }));
+    b.pushMessage(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 99,
+        method: "session/load",
+        params: { sessionId: SID, cwd: "." },
+      }),
+    );
 
     // No second forward — B is parked as a waiter.
-    expect(fa.sent.filter((f: any) => f.method === "session/load").length).toBe(forwardsAfterA);
+    expect(fa.sent.filter((f: any) => f.method === "session/load").length).toBe(
+      forwardsAfterA,
+    );
 
     // Agent replies to A's load with history + response.
-    const aLoadOut = outboundId(fa.sent.filter((f: any) => f.method === "session/load")[0]);
+    const aLoadOut = outboundId(
+      fa.sent.filter((f: any) => f.method === "session/load")[0],
+    );
     fa.pushLine(sessionUpdate(SID));
-    fa.pushLine(JSON.stringify({ jsonrpc: "2.0", id: aLoadOut, result: { sessionId: SID, modes: {}, models: {}, configOptions: [] } }));
+    fa.pushLine(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: aLoadOut,
+        result: { sessionId: SID, modes: {}, models: {}, configOptions: [] },
+      }),
+    );
 
     // Both A and B received the history and their own response ids.
     expect(a.sent.some((f) => JSON.parse(f).id === 1)).toBe(true);
     expect(b.sent.some((f) => JSON.parse(f).id === 99)).toBe(true);
-    expect(a.sent.some((f) => JSON.parse(f).method === "session/update")).toBe(true);
-    expect(b.sent.some((f) => JSON.parse(f).method === "session/update")).toBe(true);
+    expect(a.sent.some((f) => JSON.parse(f).method === "session/update")).toBe(
+      true,
+    );
+    expect(b.sent.some((f) => JSON.parse(f).method === "session/update")).toBe(
+      true,
+    );
   });
 
   it("does not replay an answered permission request on a fresh session/load", () => {
@@ -1254,15 +1639,29 @@ describe("createAcpRuntime", () => {
     // Fix: agent requests are live-only, tracked in pendingFromAgent and
     // redelivered by engage(); never in the log.
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     const a = makeFakeChannel();
     runtime.attach(a.channel);
-    a.pushMessage(JSON.stringify({
-      jsonrpc: "2.0", id: 1, method: "session/load", params: { sessionId: SID, cwd: "." },
-    }));
+    a.pushMessage(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "session/load",
+        params: { sessionId: SID, cwd: "." },
+      }),
+    );
     const aLoadOut = outboundId(fa.sent[0]);
-    fa.pushLine(JSON.stringify({ jsonrpc: "2.0", id: aLoadOut, result: { sessionId: SID, modes: {}, models: {}, configOptions: [] } }));
+    fa.pushLine(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: aLoadOut,
+        result: { sessionId: SID, modes: {}, models: {}, configOptions: [] },
+      }),
+    );
 
     // Agent asks for permission; A receives and answers it.
     fa.pushLine(permissionRequest(7));
@@ -1273,15 +1672,23 @@ describe("createAcpRuntime", () => {
     // Fresh viewer B loads the same session. Served from cached metadata.
     const b = makeFakeChannel();
     runtime.attach(b.channel);
-    b.pushMessage(JSON.stringify({
-      jsonrpc: "2.0", id: 42, method: "session/load", params: { sessionId: SID, cwd: "." },
-    }));
+    b.pushMessage(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 42,
+        method: "session/load",
+        params: { sessionId: SID, cwd: "." },
+      }),
+    );
 
     // B must not receive the answered permission request — the log has no
     // entry for it, and engage() finds pendingFromAgent empty.
     const gotPermission = b.sent.some((f) => {
-      try { return JSON.parse(f).method === "session/request_permission"; }
-      catch { return false; }
+      try {
+        return JSON.parse(f).method === "session/request_permission";
+      } catch {
+        return false;
+      }
     });
     expect(gotPermission).toBe(false);
   });
@@ -1291,39 +1698,86 @@ describe("createAcpRuntime", () => {
     // catch-up prepends a synthetic `platform_clipped_replay` notification so
     // the UI can render a "older messages not loaded" placeholder.
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp", logBytesCap: 10 });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      logBytesCap: 10,
+    });
 
     const a = makeFakeChannel();
     runtime.attach(a.channel);
-    a.pushMessage(JSON.stringify({
-      jsonrpc: "2.0", id: 1, method: "session/load", params: { sessionId: SID, cwd: "." },
-    }));
+    a.pushMessage(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "session/load",
+        params: { sessionId: SID, cwd: "." },
+      }),
+    );
     const aLoadOut = outboundId(fa.sent[0]);
 
     // Two large-ish updates to trigger eviction.
-    const big1 = JSON.stringify({ method: "session/update", params: { sessionId: SID, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "aaaaaaaaaaaaaaa" } } } });
-    const big2 = JSON.stringify({ method: "session/update", params: { sessionId: SID, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "bbbbbbbbbbbbbbb" } } } });
+    const big1 = JSON.stringify({
+      method: "session/update",
+      params: {
+        sessionId: SID,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "aaaaaaaaaaaaaaa" },
+        },
+      },
+    });
+    const big2 = JSON.stringify({
+      method: "session/update",
+      params: {
+        sessionId: SID,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "bbbbbbbbbbbbbbb" },
+        },
+      },
+    });
     fa.pushLine(big1);
     fa.pushLine(big2);
-    fa.pushLine(JSON.stringify({ jsonrpc: "2.0", id: aLoadOut, result: { sessionId: SID } }));
+    fa.pushLine(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: aLoadOut,
+        result: { sessionId: SID },
+      }),
+    );
 
     // B loads — catch-up should prepend the sentinel.
     const b = makeFakeChannel();
     runtime.attach(b.channel);
-    b.pushMessage(JSON.stringify({
-      jsonrpc: "2.0", id: 2, method: "session/load", params: { sessionId: SID, cwd: "." },
-    }));
+    b.pushMessage(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 2,
+        method: "session/load",
+        params: { sessionId: SID, cwd: "." },
+      }),
+    );
 
     const sentinel = b.sent.find((f) => {
-      try { return JSON.parse(f).params?.update?.sessionUpdate === "platform_clipped_replay"; }
-      catch { return false; }
+      try {
+        return (
+          JSON.parse(f).params?.update?.sessionUpdate ===
+          "platform_clipped_replay"
+        );
+      } catch {
+        return false;
+      }
     });
     expect(sentinel).toBeDefined();
   });
 
   it("does not close a session while a queued prompt is waiting", () => {
     const fa = makeFakeAgent();
-    const runtime = createAcpRuntime({ spawnAgent: () => fa.agent, workingDir: "/tmp" });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
 
     // Two engaged channels: c1 sends the active prompt, c2 queues one.
     // When c1 detaches its active prompt stays (we null its channel) but
@@ -1339,15 +1793,17 @@ describe("createAcpRuntime", () => {
     const sessOut = outboundId(fa.sent[0]);
     fa.pushLine(newSessionResponse(sessOut));
     // Engage c2 with the same session via a prompt (forward engages it).
-    c2.pushMessage(promptRequest(10));  // c2 is first — its prompt is active
+    c2.pushMessage(promptRequest(10)); // c2 is first — its prompt is active
     const firstOut = outboundId(fa.sent[1]);
-    c1.pushMessage(promptRequest(11));  // c1's prompt gets queued
+    c1.pushMessage(promptRequest(11)); // c1's prompt gets queued
 
     // c2 leaves. Its active prompt's channel is nulled (still active slot).
     c2.remoteClose();
     fa.pushLine(agentPromptResponse(firstOut));
 
     // c1's queued prompt was promoted; session is busy, not idle.
-    expect(fa.sent.filter((f: any) => f.method === "session/close")).toHaveLength(0);
+    expect(
+      fa.sent.filter((f: any) => f.method === "session/close"),
+    ).toHaveLength(0);
   });
 });

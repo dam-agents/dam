@@ -100,6 +100,8 @@ export type {
 export { SessionType, SessionMode } from "./modules/sessions/types.js";
 export type {
   SessionView,
+  SessionResolution,
+  TerminalStrategy,
   SessionsService as SessionsApiService,
 } from "./modules/sessions/types.js";
 
@@ -113,9 +115,7 @@ export {
   encodeExit,
   decodeFrame,
 } from "./modules/terminal/protocol.js";
-export type {
-  TerminalFrame,
-} from "./modules/terminal/protocol.js";
+export type { TerminalFrame } from "./modules/terminal/protocol.js";
 
 export {
   FileFragmentSchema,

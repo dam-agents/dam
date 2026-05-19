@@ -2,10 +2,19 @@ import type * as k8s from "@kubernetes/client-node";
 import yaml from "js-yaml";
 import type { Schedule, ScheduleSpec, ScheduleStatus } from "api-server-api";
 import {
-  LABEL_TYPE, LABEL_OWNER, LABEL_INSTANCE_REF, LABEL_AGENT_REF, LABEL_CREATED_BY,
-  TYPE_SCHEDULE, SPEC_KEY, STATUS_KEY,
+  LABEL_TYPE,
+  LABEL_OWNER,
+  LABEL_INSTANCE_REF,
+  LABEL_AGENT_REF,
+  LABEL_CREATED_BY,
+  TYPE_SCHEDULE,
+  SPEC_KEY,
+  STATUS_KEY,
 } from "../../agents/infrastructure/labels.js";
-import { displayName, generateK8sName } from "../../agents/infrastructure/configmap-mappers.js";
+import {
+  displayName,
+  generateK8sName,
+} from "../../agents/infrastructure/configmap-mappers.js";
 
 export function parseSchedule(cm: k8s.V1ConfigMap): Schedule {
   const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as ScheduleSpec;
@@ -30,7 +39,8 @@ export function buildScheduleConfigMap(
   spec: Record<string, unknown>,
   owner: string,
 ): k8s.V1ConfigMap {
-  const createdBy = (spec as { createdBy?: string }).createdBy === "agent" ? "agent" : "user";
+  const createdBy =
+    (spec as { createdBy?: string }).createdBy === "agent" ? "agent" : "user";
   const labels: Record<string, string> = {
     [LABEL_TYPE]: TYPE_SCHEDULE,
     [LABEL_INSTANCE_REF]: instanceId,

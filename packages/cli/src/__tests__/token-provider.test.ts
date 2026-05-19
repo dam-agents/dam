@@ -37,9 +37,15 @@ function makeStore(seed: Array<[HostUrl, HostAuth]> = []): AuthStore & {
   let writes = 0;
   let removes = 0;
   return {
-    get state() { return state; },
-    get writes() { return writes; },
-    get removes() { return removes; },
+    get state() {
+      return state;
+    },
+    get writes() {
+      return writes;
+    },
+    get removes() {
+      return removes;
+    },
     async read() {
       return ok(state as ReadonlyMap<HostUrl, HostAuth>);
     },
@@ -92,7 +98,13 @@ describe("TokenProvider — claim 5: DAM_TOKEN precedence", () => {
       authStore: store,
       authEnvReader: envReader("env-token-value"),
       tokenEndpointClient: refreshClient(
-        ok({ kind: "success", access_token: "x", refresh_token: "y", expires_in: 1, token_type: "Bearer" }),
+        ok({
+          kind: "success",
+          access_token: "x",
+          refresh_token: "y",
+          expires_in: 1,
+          token_type: "Bearer",
+        }),
         spy,
       ),
       hostMetadata: metadataResolver(),
@@ -135,7 +147,13 @@ describe("TokenProvider — claim 3: proactive refresh 60s buffer", () => {
       authStore: store,
       authEnvReader: envReader(undefined),
       tokenEndpointClient: refreshClient(
-        ok({ kind: "success", access_token: "x", refresh_token: "y", expires_in: 1, token_type: "Bearer" }),
+        ok({
+          kind: "success",
+          access_token: "x",
+          refresh_token: "y",
+          expires_in: 1,
+          token_type: "Bearer",
+        }),
         spy,
       ),
       hostMetadata: metadataResolver(),
@@ -218,7 +236,11 @@ describe("TokenProvider — claim 4: invalid_grant clears creds; transient error
       authStore: store,
       authEnvReader: envReader(undefined),
       tokenEndpointClient: refreshClient(
-        ok({ kind: "error", error: "invalid_grant", error_description: "expired" }),
+        ok({
+          kind: "error",
+          error: "invalid_grant",
+          error_description: "expired",
+        }),
       ),
       hostMetadata: metadataResolver(),
       now: () => NOW,
@@ -242,9 +264,14 @@ describe("TokenProvider — claim 4: invalid_grant clears creds; transient error
       authStore: store,
       authEnvReader: envReader(undefined),
       tokenEndpointClient: {
-        async exchangeDeviceCode() { throw new Error("unused"); },
+        async exchangeDeviceCode() {
+          throw new Error("unused");
+        },
         async refresh() {
-          return { ok: false, error: { kind: "token-transport", reason: "ECONNREFUSED" } };
+          return {
+            ok: false,
+            error: { kind: "token-transport", reason: "ECONNREFUSED" },
+          };
         },
       },
       hostMetadata: metadataResolver(),

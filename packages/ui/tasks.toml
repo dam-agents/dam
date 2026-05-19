@@ -9,9 +9,32 @@ depends = ["ui:check:*"]
 dir = "{{config_root}}/packages/ui"
 depends = ["ui:setup"]
 run = "pnpm exec tsc --noEmit"
+sources = ["src/**/*.ts", "src/**/*.tsx", "tsconfig.json", "../../tsconfig.base.json"]
+
+["ui:check:lint"]
+dir = "{{config_root}}/packages/ui"
+depends = ["common:setup:pnpm"]
+run = "pnpm exec eslint ."
+sources = ["src/**/*.ts", "src/**/*.tsx", "eslint.config.js", "../../eslint.config.base.js"]
+
+["ui:check:format"]
+dir = "{{config_root}}/packages/ui"
+depends = ["common:setup:pnpm"]
+run = "pnpm exec prettier --check 'src/**/*.{ts,tsx,css}'"
+sources = ["src/**/*.ts", "src/**/*.tsx", "src/**/*.css", "../../.prettierrc"]
 
 ["ui:fix"]
-run = "echo 'No fix tasks for ui yet'"
+depends = ["ui:fix:*"]
+
+["ui:fix:lint"]
+dir = "{{config_root}}/packages/ui"
+depends = ["common:setup:pnpm"]
+run = "pnpm exec eslint --fix ."
+
+["ui:fix:format"]
+dir = "{{config_root}}/packages/ui"
+depends = ["common:setup:pnpm"]
+run = "pnpm exec prettier --write 'src/**/*.{ts,tsx,css}'"
 
 ["ui:test"]
 description = "Run UI unit tests"

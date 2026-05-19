@@ -21,8 +21,12 @@ export function OAuthAppConnectButton({ app, onConnect }: Props) {
         <OAuthAppIcon appId={app.id} alt={app.displayName} size={13} />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-[13px] font-semibold text-text">Connect {app.displayName}</div>
-        <div className="text-[11px] text-text-muted truncate">{app.description}</div>
+        <div className="text-[13px] font-semibold text-text">
+          Connect {app.displayName}
+        </div>
+        <div className="text-[11px] text-text-muted truncate">
+          {app.description}
+        </div>
       </div>
     </button>
   );

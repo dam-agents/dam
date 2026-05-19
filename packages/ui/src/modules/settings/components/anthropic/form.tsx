@@ -23,12 +23,19 @@ export function AnthropicForm({
   onSave: (input: { mode: Mode; value: string }) => Promise<void>;
   onCancel?: () => void;
 }) {
-  const { register, handleSubmit, control, watch, getValues, trigger, formState } =
-    useForm<AnthropicCredentialValues>({
-      resolver: zodResolver(anthropicCredentialSchema),
-      mode: "onChange",
-      defaultValues: { mode: initialMode, value: "" },
-    });
+  const {
+    register,
+    handleSubmit,
+    control,
+    watch,
+    getValues,
+    trigger,
+    formState,
+  } = useForm<AnthropicCredentialValues>({
+    resolver: zodResolver(anthropicCredentialSchema),
+    mode: "onChange",
+    defaultValues: { mode: initialMode, value: "" },
+  });
   const { errors, isSubmitting, isValid } = formState;
 
   const [testResult, setTestResult] = useState<
@@ -67,10 +74,13 @@ export function AnthropicForm({
     try {
       const result = await testAnthropic.mutateAsync({
         value: sanitized,
-        envName: mode === "api-key" ? "ANTHROPIC_API_KEY" : "CLAUDE_CODE_OAUTH_TOKEN",
+        envName:
+          mode === "api-key" ? "ANTHROPIC_API_KEY" : "CLAUDE_CODE_OAUTH_TOKEN",
       });
       if (token !== testTokenRef.current) return;
-      setTestResult(result.ok ? { ok: true } : { ok: false, message: result.message });
+      setTestResult(
+        result.ok ? { ok: true } : { ok: false, message: result.message },
+      );
     } catch {
       if (token !== testTokenRef.current) return;
       setTestResult({ ok: false, message: "Could not verify credential." });
@@ -106,7 +116,9 @@ export function AnthropicForm({
       <Controller
         control={control}
         name="mode"
-        render={({ field }) => <ModeToggle mode={field.value} onChange={field.onChange} />}
+        render={({ field }) => (
+          <ModeToggle mode={field.value} onChange={field.onChange} />
+        )}
       />
 
       {mode === "oauth" && <QuickSetupHint />}
@@ -142,16 +154,22 @@ export function AnthropicForm({
 
       {/* Mismatch errors live on the value field; "Required" is suppressed
           until the user actually types so the form doesn't yell on first paint. */}
-      {errors.value && value.length > 0 && errors.value.message !== "Required" && (
-        <div className="text-[12px] font-medium text-danger">{errors.value.message}</div>
-      )}
+      {errors.value &&
+        value.length > 0 &&
+        errors.value.message !== "Required" && (
+          <div className="text-[12px] font-medium text-danger">
+            {errors.value.message}
+          </div>
+        )}
       {!errors.value && testResult?.ok && (
         <div className="text-[12px] font-medium text-success flex items-center gap-1.5">
           <Check size={13} /> Credential is valid.
         </div>
       )}
       {!errors.value && testResult && !testResult.ok && (
-        <div className="text-[12px] font-medium text-danger">{testResult.message}</div>
+        <div className="text-[12px] font-medium text-danger">
+          {testResult.message}
+        </div>
       )}
     </form>
   );
@@ -168,14 +186,20 @@ function QuickSetupHint() {
     <div className="text-[13px] text-text-secondary">
       Run{" "}
       <span className="inline-flex items-center gap-1.5 align-middle">
-        <code className="font-mono font-semibold text-accent">claude setup-token</code>
+        <code className="font-mono font-semibold text-accent">
+          claude setup-token
+        </code>
         <button
           type="button"
           onClick={copy}
           className="h-5 w-5 rounded inline-flex items-center justify-center text-text-muted hover:text-accent"
           title="Copy command"
         >
-          {copied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
+          {copied ? (
+            <Check size={12} className="text-success" />
+          ) : (
+            <Copy size={12} />
+          )}
         </button>
       </span>{" "}
       on your own machine (with Claude Code installed) to generate a token.
@@ -183,7 +207,13 @@ function QuickSetupHint() {
   );
 }
 
-function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {
+function ModeToggle({
+  mode,
+  onChange,
+}: {
+  mode: Mode;
+  onChange: (m: Mode) => void;
+}) {
   return (
     <div className="flex items-center gap-1 border-b-2 border-border-light">
       {MODE_KEYS.map((m) => {

@@ -5,17 +5,34 @@ import { transitionRestartingInstances } from "../../modules/instances/store.js"
 import type { AgentView, InstanceView } from "../../types.js";
 
 const agent = (id: string): AgentView => ({
-  id, name: id, templateId: null, image: "x:latest",
+  id,
+  name: id,
+  templateId: null,
+  image: "x:latest",
 });
 
-const inst = (id: string, agentId: string, state: InstanceView["state"]): InstanceView => ({
-  id, name: id, agentId, state, channels: [], allowedUserEmails: [],
+const inst = (
+  id: string,
+  agentId: string,
+  state: InstanceView["state"],
+): InstanceView => ({
+  id,
+  name: id,
+  agentId,
+  state,
+  channels: [],
+  allowedUserEmails: [],
 });
 
 describe("resolveAgentDisplay", () => {
   test("returns no-instance when the agent has no instances", () => {
     const out = resolveAgentDisplay(agent("a"), [], new Set());
-    expect(out).toEqual({ instance: null, state: "no-instance", clickable: false, powerAction: null });
+    expect(out).toEqual({
+      instance: null,
+      state: "no-instance",
+      clickable: false,
+      powerAction: null,
+    });
   });
 
   test("picks the lowest-id instance when multiple exist", () => {
@@ -41,16 +58,19 @@ describe("resolveAgentDisplay", () => {
     ["hibernated", true, "start"],
     ["starting", false, null],
     ["hibernating", false, null],
-  ] as const)("state=%s → clickable=%s powerAction=%s", (state, clickable, powerAction) => {
-    const out = resolveAgentDisplay(
-      agent("a"),
-      [inst("i-1", "a", state)],
-      new Set(),
-    );
-    expect(out.state).toBe(state);
-    expect(out.clickable).toBe(clickable);
-    expect(out.powerAction).toBe(powerAction);
-  });
+  ] as const)(
+    "state=%s → clickable=%s powerAction=%s",
+    (state, clickable, powerAction) => {
+      const out = resolveAgentDisplay(
+        agent("a"),
+        [inst("i-1", "a", state)],
+        new Set(),
+      );
+      expect(out.state).toBe(state);
+      expect(out.clickable).toBe(clickable);
+      expect(out.powerAction).toBe(powerAction);
+    },
+  );
 
   test("restart override: state flips to restarting and actions are suppressed", () => {
     const i = inst("i-1", "a", "running");
@@ -63,35 +83,58 @@ describe("resolveAgentDisplay", () => {
 
 describe("transitionRestartingInstances", () => {
   const NOW = 1_000_000_000_000;
-  const entry = (seen: boolean, ageMs = 0) => ({ seenNonRunning: seen, clickedAt: NOW - ageMs });
+  const entry = (seen: boolean, ageMs = 0) => ({
+    seenNonRunning: seen,
+    clickedAt: NOW - ageMs,
+  });
 
   test("keeps entry while state still reads running and no dip observed", () => {
     const current = new Map([["i-1", entry(false)]]);
-    const next = transitionRestartingInstances(current, [inst("i-1", "a", "running")], NOW);
+    const next = transitionRestartingInstances(
+      current,
+      [inst("i-1", "a", "running")],
+      NOW,
+    );
     expect(next.get("i-1")).toEqual(entry(false));
   });
 
   test("marks seenNonRunning once the pod goes to starting", () => {
     const current = new Map([["i-1", entry(false)]]);
-    const next = transitionRestartingInstances(current, [inst("i-1", "a", "starting")], NOW);
+    const next = transitionRestartingInstances(
+      current,
+      [inst("i-1", "a", "starting")],
+      NOW,
+    );
     expect(next.get("i-1")).toEqual(entry(true));
   });
 
   test("clears entry once running returns after a non-running dip", () => {
     const current = new Map([["i-1", entry(true)]]);
-    const next = transitionRestartingInstances(current, [inst("i-1", "a", "running")], NOW);
+    const next = transitionRestartingInstances(
+      current,
+      [inst("i-1", "a", "running")],
+      NOW,
+    );
     expect(next.has("i-1")).toBe(false);
   });
 
   test("drops entry on error so the real failure surfaces", () => {
     const current = new Map([["i-1", entry(true)]]);
-    const next = transitionRestartingInstances(current, [inst("i-1", "a", "error")], NOW);
+    const next = transitionRestartingInstances(
+      current,
+      [inst("i-1", "a", "error")],
+      NOW,
+    );
     expect(next.has("i-1")).toBe(false);
   });
 
   test("drops entry once it exceeds the TTL, even if state still looks running", () => {
     const current = new Map([["i-1", entry(false, 121_000)]]);
-    const next = transitionRestartingInstances(current, [inst("i-1", "a", "running")], NOW);
+    const next = transitionRestartingInstances(
+      current,
+      [inst("i-1", "a", "running")],
+      NOW,
+    );
     expect(next.has("i-1")).toBe(false);
   });
 

@@ -1,7 +1,10 @@
 import type * as k8s from "@kubernetes/client-node";
 import type { AgentsService } from "api-server-api";
 import { createK8sClient } from "./infrastructure/k8s.js";
-import { createAgentsRepository, type AgentsRepository } from "./infrastructure/agents-repository.js";
+import {
+  createAgentsRepository,
+  type AgentsRepository,
+} from "./infrastructure/agents-repository.js";
 import {
   createAgentsService,
   type AgentCleanupHook,
@@ -9,7 +12,10 @@ import {
 } from "./services/agents-service.js";
 import type { ReadTemplateSpec } from "../templates/index.js";
 
-export type { AgentCleanupHook, PresetSeeder } from "./services/agents-service.js";
+export type {
+  AgentCleanupHook,
+  PresetSeeder,
+} from "./services/agents-service.js";
 
 export function composeAgentsModule(deps: {
   api: k8s.CoreV1Api;

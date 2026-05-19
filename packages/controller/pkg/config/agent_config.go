@@ -75,21 +75,27 @@ type AgentBase struct {
 	PodSecurityContext       *corev1.PodSecurityContext `json:"podSecurityContext,omitempty"`
 	ContainerSecurityContext *corev1.SecurityContext    `json:"containerSecurityContext,omitempty"`
 
-	// DisableDNS drops the cluster-DNS allow rules from the agent egress
-	// NetworkPolicy (closes threat T9). The controller injects a
-	// hostAliases entry for the paired gateway so HTTPS_PROXY still
-	// resolves.
-	DisableDNS bool `json:"disableDns,omitempty"`
-
 	// IptablesInit configures the privileged init container that pins the
 	// agent pod's OUTPUT chain to the paired gateway (kernel-level
 	// defense-in-depth on top of the NetworkPolicy).
 	IptablesInit *AgentIptablesInit `json:"iptablesInit,omitempty"`
+
+	// NPGateInit configures an unprivileged init container that gates the
+	// agent's main container on egress NetworkPolicy being verifiably
+	// enforced. Used where IptablesInit can't run.
+	NPGateInit *AgentNPGateInit `json:"npGateInit,omitempty"`
 }
 
 type AgentIptablesInit struct {
 	Enabled bool   `json:"enabled,omitempty"`
 	Image   string `json:"image,omitempty"`
+}
+
+type AgentNPGateInit struct {
+	Enabled bool   `json:"enabled,omitempty"`
+	Image   string `json:"image,omitempty"`
+	// Bound on probe convergence; fail-closed on timeout.
+	TimeoutSeconds int `json:"timeoutSeconds,omitempty"`
 }
 
 // AgentProbes — sub-field nil means "use the controller's built-in probe
