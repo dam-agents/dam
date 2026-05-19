@@ -198,6 +198,3 @@ export type { Brand } from "./modules/brand/types.js";
 export { authConfigSchema } from "./modules/auth/config.js";
 export type { AuthConfig } from "./modules/auth/config.js";
 
-// Import result
-export { importBundleResultSchema } from "./modules/instances/import.js";
-export type { ImportBundleResult } from "./modules/instances/import.js";

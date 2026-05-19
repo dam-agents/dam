@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import http from "node:http";
 import { join } from "node:path";
-import type { ImportBundleResult } from "api-server-api";
+import type { ImportBundleResult } from "agent-runtime-api";
 import busboy from "busboy";
 
 import { STAGING_PREFIX } from "./constants.js";

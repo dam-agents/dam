@@ -1,7 +1,7 @@
 import {
   type ImportBundleResult,
   importBundleResultSchema,
-} from "api-server-api";
+} from "agent-runtime-api";
 
 import { authFetch } from "../../../auth.js";
 
