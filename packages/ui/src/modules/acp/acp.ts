@@ -5,6 +5,10 @@ import type {
   SessionNotification,
 } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
+import {
+  platformSessionModeChangedParamsSchema,
+  platformTurnEndedParamsSchema,
+} from "api-server-api";
 
 import { getAccessToken } from "../../auth.js";
 import { type PermissionOutcome, useStore } from "../../store.js";
@@ -116,21 +120,28 @@ export async function openConnection(
       // same `onUpdate` channel as a synthetic `sessionUpdate`.
       async extNotification(method: string, params: Record<string, unknown>) {
         if (method === "platform/turnEnded") {
-          const sessionId =
-            typeof params?.sessionId === "string"
-              ? params.sessionId
-              : undefined;
-          onUpdate({ sessionUpdate: "platform_turn_ended", sessionId });
+          const parsed = platformTurnEndedParamsSchema.safeParse(params);
+          if (!parsed.success) {
+            console.warn(
+              "[acp] platform/turnEnded schema mismatch:",
+              parsed.error.issues,
+            );
+            return;
+          }
+          onUpdate({ sessionUpdate: "platform_turn_ended", ...parsed.data });
         } else if (method === "platform/sessionModeChanged") {
-          const sessionId =
-            typeof params?.sessionId === "string"
-              ? params.sessionId
-              : undefined;
-          const mode = typeof params?.mode === "string" ? params.mode : "chat";
+          const parsed =
+            platformSessionModeChangedParamsSchema.safeParse(params);
+          if (!parsed.success) {
+            console.warn(
+              "[acp] platform/sessionModeChanged schema mismatch:",
+              parsed.error.issues,
+            );
+            return;
+          }
           onUpdate({
             sessionUpdate: "platform_session_mode_changed",
-            sessionId,
-            mode,
+            ...parsed.data,
           });
         }
       },

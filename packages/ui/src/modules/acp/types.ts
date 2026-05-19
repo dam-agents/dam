@@ -3,6 +3,10 @@ import type {
   NewSessionResponse,
   SessionUpdate,
 } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
+import type {
+  PlatformSessionModeChangedParams,
+  PlatformTurnEndedParams,
+} from "api-server-api";
 
 /**
  * SDK `SessionUpdate` plus our two synthetic variants:
@@ -18,13 +22,11 @@ import type {
  */
 export type AcpUpdate =
   | SessionUpdate
-  | { sessionUpdate: "platform_turn_ended"; sessionId?: string }
+  | ({ sessionUpdate: "platform_turn_ended" } & PlatformTurnEndedParams)
   | { sessionUpdate: "platform_clipped_replay" }
-  | {
+  | ({
       sessionUpdate: "platform_session_mode_changed";
-      sessionId?: string;
-      mode: string;
-    };
+    } & PlatformSessionModeChangedParams);
 
 export type UpdateHandler = (update: AcpUpdate) => void;
 

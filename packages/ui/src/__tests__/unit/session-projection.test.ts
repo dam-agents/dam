@@ -175,7 +175,10 @@ describe("applyUpdate — turn boundaries", () => {
       userMsg("u1", "hi"),
       assistantMsg("a1", "hello", true),
     ];
-    const out = applyUpdate(start, { sessionUpdate: "platform_turn_ended" });
+    const out = applyUpdate(start, {
+      sessionUpdate: "platform_turn_ended",
+      sessionId: "test-sid",
+    });
     expect(out[1].streaming).toBe(false);
   });
 
@@ -186,7 +189,10 @@ describe("applyUpdate — turn boundaries", () => {
       userMsg("u2", "second"),
       assistantMsg("a2", "", true, true),
     ];
-    const out = applyUpdate(start, { sessionUpdate: "platform_turn_ended" });
+    const out = applyUpdate(start, {
+      sessionUpdate: "platform_turn_ended",
+      sessionId: "test-sid",
+    });
     expect(out[1].streaming).toBe(false);
     expect(out[3].streaming).toBe(true);
     expect(out[3].queued).toBe(true);
@@ -197,12 +203,18 @@ describe("applyUpdate — turn boundaries", () => {
       userMsg("u1", "first"),
       assistantMsg("a1", "", true, true),
     ];
-    const out = applyUpdate(start, { sessionUpdate: "platform_turn_ended" });
+    const out = applyUpdate(start, {
+      sessionUpdate: "platform_turn_ended",
+      sessionId: "test-sid",
+    });
     expect(out).toEqual(start);
   });
 
   test("platform_turn_ended on empty state is a no-op", () => {
-    const out = applyUpdate([], { sessionUpdate: "platform_turn_ended" });
+    const out = applyUpdate([], {
+      sessionUpdate: "platform_turn_ended",
+      sessionId: "test-sid",
+    });
     expect(out).toEqual([]);
   });
 
@@ -418,7 +430,10 @@ describe("queued prompt scenarios", () => {
     expect(m[3].queued).toBe(true);
 
     // Turn 1 ends.
-    m = applyUpdate(m, { sessionUpdate: "platform_turn_ended" });
+    m = applyUpdate(m, {
+      sessionUpdate: "platform_turn_ended",
+      sessionId: "test-sid",
+    });
     expect(m[1].streaming).toBe(false);
     expect(m[3].streaming).toBe(true);
 
@@ -428,7 +443,10 @@ describe("queued prompt scenarios", () => {
     expect(firstTextPart(m[3])).toBe("hello 2");
 
     // Turn 2 ends.
-    m = applyUpdate(m, { sessionUpdate: "platform_turn_ended" });
+    m = applyUpdate(m, {
+      sessionUpdate: "platform_turn_ended",
+      sessionId: "test-sid",
+    });
     expect(m[3].streaming).toBe(false);
   });
 });

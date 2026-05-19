@@ -1,5 +1,4 @@
 import type { McpServer } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
-import type { SessionMode } from "api-server-api";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "../../../api.js";
@@ -179,9 +178,9 @@ export function useAcpSession(
   modeChangeRef.current = (update) => {
     if (update.sessionUpdate !== "platform_session_mode_changed") return;
     const s = useStore.getState();
-    if (!update.sessionId || update.sessionId !== s.sessionId) return;
+    if (update.sessionId !== s.sessionId) return;
     const wasExternal = s.sessionMode !== update.mode;
-    s.setSessionMode(update.mode as SessionMode);
+    s.setSessionMode(update.mode);
     if (!wasExternal) return;
     if (update.mode === "terminal") s.setTerminalPaused(true);
     if (update.mode === "chat") resumeSession(update.sessionId);
