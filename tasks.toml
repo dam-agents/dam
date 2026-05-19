@@ -12,6 +12,9 @@ depends = ["*:fix"]
 ["test"]
 depends = ["*:test"]
 
+["e2e"]
+depends = ["*:e2e"]
+
 # -- Git hooks --
 
 ["git-hooks:pre-commit"]
