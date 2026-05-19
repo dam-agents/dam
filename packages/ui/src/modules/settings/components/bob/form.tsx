@@ -13,7 +13,7 @@ const bobCredentialSchema = z
   .object({
     value: z.string(),
     model: z.string(),
-    instanceId: z.string(),
+    agentId: z.string(),
     teamId: z.string(),
     maxCoins: z.string(),
     chatMode: z.string(),
@@ -71,7 +71,7 @@ export function BobForm({
     defaultValues: {
       value: "",
       model: pins.model ?? "",
-      instanceId: pins.instanceId ?? "",
+      agentId: pins.agentId ?? "",
       teamId: pins.teamId ?? "",
       maxCoins: pins.maxCoins ?? "",
       chatMode: pins.chatMode ?? "",
@@ -94,7 +94,7 @@ export function BobForm({
       value: stripWhitespace(values.value),
       pins: {
         model: values.model.trim() || undefined,
-        instanceId: values.instanceId.trim() || undefined,
+        agentId: values.agentId.trim() || undefined,
         teamId: values.teamId.trim() || undefined,
         maxCoins: values.maxCoins.trim() || undefined,
         chatMode: values.chatMode.trim() || undefined,
@@ -177,8 +177,8 @@ export function BobForm({
           <PinField
             label="Instance ID"
             hint="BOB_INSTANCE_ID → --instance-id. IBM tenant scoping for outbound API calls."
-            error={errors.instanceId?.message}
-            register={register("instanceId")}
+            error={errors.agentId?.message}
+            register={register("agentId")}
           />
           <PinField
             label="Team ID"

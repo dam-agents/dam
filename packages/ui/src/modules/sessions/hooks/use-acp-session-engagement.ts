@@ -21,7 +21,7 @@ import { acpSessionsKeys } from "../api/queries.js";
  * rows itself.
  *
  * Either way, the response is forwarded to `captureSessionConfig` (cache +
- * localStorage) and `applySavedPreferences` (replays the user's per-instance
+ * localStorage) and `applySavedPreferences` (replays the user's per-agent
  * mode/model/option prefs onto the new session).
  *
  * `engagedSessionIdRef` is the source of truth for "the session this live
@@ -29,7 +29,7 @@ import { acpSessionsKeys } from "../api/queries.js";
  * `resetSession` call `clear()` to drop the binding.
  */
 export function useAcpSessionEngagement(
-  selectedInstance: string | null,
+  selectedAgent: string | null,
   selectedMcpServers: McpServer[],
   captureSessionConfig: (response: SessionConfigPayload) => void,
   applySavedPreferences: (
@@ -49,7 +49,7 @@ export function useAcpSessionEngagement(
 
   const engage = useCallback(
     async (conn: ClientSideConnection) => {
-      if (!selectedInstance) return;
+      if (!selectedAgent) return;
       if (engagedSessionIdRef.current) return;
 
       const sid = useStore.getState().sessionId;
@@ -75,7 +75,7 @@ export function useAcpSessionEngagement(
         // writes the DB row on first prompt; the next refetch reconciles.
         const stub: SessionView = {
           sessionId: s.sessionId,
-          instanceId: selectedInstance,
+          agentId: selectedAgent,
           type: SessionType.Regular,
           mode: SessionMode.Chat,
           createdAt: new Date().toISOString(),
@@ -84,14 +84,14 @@ export function useAcpSessionEngagement(
           updatedAt: null,
         };
         queryClient.setQueriesData<SessionView[]>(
-          { queryKey: acpSessionsKeys.instanceLists(selectedInstance) },
+          { queryKey: acpSessionsKeys.agentLists(selectedAgent) },
           (prev) => [stub, ...(prev ?? [])],
         );
         await applySavedPreferences(conn, s.sessionId, s);
       }
     },
     [
-      selectedInstance,
+      selectedAgent,
       selectedMcpServers,
       captureSessionConfig,
       applySavedPreferences,

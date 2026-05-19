@@ -4,7 +4,6 @@ import { composeAuthModule } from "./modules/auth/compose.js";
 import { composeChatModule } from "./modules/chat/compose.js";
 import { composeCliModule } from "./modules/cli/compose.js";
 import { composeImportModule } from "./modules/import/compose.js";
-import { composeInstanceModule } from "./modules/instance/compose.js";
 import { composeTemplateModule } from "./modules/template/compose.js";
 import { createTrpcClient } from "./modules/shared/trpc/trpc-client.js";
 
@@ -45,33 +44,26 @@ export function compose(opts: ComposeOptions = {}): Command {
     configService: cli.services.configService,
     compatService: cli.services.compatService,
   });
-  const instance = composeInstanceModule({
-    buildTrpc,
-    configService: cli.services.configService,
-    compatService: cli.services.compatService,
-    templateService: template.exports.createService,
-  });
   const agent = composeAgentModule({
     tokenProvider: auth.exports.tokenProvider,
     configService: cli.services.configService,
     compatService: cli.services.compatService,
     serverEnvVar: "DAM_SERVER",
     templateService: template.exports.createService,
-    instanceService: instance.exports.createService,
   });
   const chat = composeChatModule({
     buildTrpc,
     compatService: cli.services.compatService,
     configService: cli.services.configService,
     tokenProvider,
-    createInstanceService: instance.exports.createService,
+    createAgentService: agent.exports.createService,
   });
 
   const importModule = composeImportModule({
     tokenProvider: auth.exports.tokenProvider,
     configService: cli.services.configService,
     compatService: cli.services.compatService,
-    createInstanceService: instance.exports.createService,
+    createAgentService: agent.exports.createService,
     serverEnvVar: "DAM_SERVER",
   });
 
@@ -84,7 +76,6 @@ export function compose(opts: ComposeOptions = {}): Command {
   for (const command of cli.commands) program.addCommand(command);
   for (const command of auth.commands) program.addCommand(command);
   for (const command of template.commands) program.addCommand(command);
-  for (const command of instance.commands) program.addCommand(command);
   for (const command of chat.commands) program.addCommand(command);
   for (const command of agent.commands) program.addCommand(command);
   for (const command of importModule.commands) program.addCommand(command);

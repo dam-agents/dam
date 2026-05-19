@@ -27,7 +27,7 @@ interface LiveConnection {
 export type ConnectionState = "idle" | "live" | "reloading" | "reconnecting";
 
 interface UseAcpConnectionOptions {
-  selectedInstance: string | null;
+  selectedAgent: string | null;
   sessionId: string | null;
   /** Block live-WS opening (e.g. while resumeSession's throwaway is replaying
    *  history) — both channels would otherwise receive the replay stream. */
@@ -73,7 +73,7 @@ export function useAcpConnection(
   opts: UseAcpConnectionOptions,
 ): UseAcpConnectionResult {
   const {
-    selectedInstance,
+    selectedAgent,
     sessionId,
     liveBlocked,
     makeUpdateHandler,
@@ -116,7 +116,7 @@ export function useAcpConnection(
 
   const ensureInner =
     useCallback(async (): Promise<ClientSideConnection | null> => {
-      if (!selectedInstance) return null;
+      if (!selectedAgent) return null;
 
       // If the previous live WS died with an active session, replay history
       // before opening a fresh socket. We swap the messages array in one
@@ -146,7 +146,7 @@ export function useAcpConnection(
         connectionRef.current.ws.readyState !== WebSocket.OPEN
       ) {
         const { connection, ws } = await openConnection(
-          selectedInstance,
+          selectedAgent,
           makeUpdateHandler(),
         );
         await connection.initialize({
@@ -185,7 +185,7 @@ export function useAcpConnection(
       setState("live");
       return conn;
     }, [
-      selectedInstance,
+      selectedAgent,
       makeUpdateHandler,
       engage,
       clearEngagement,
@@ -204,13 +204,14 @@ export function useAcpConnection(
 
   // Reconnect closure: late-bound via ref so the WS close handler can call
   // it without participating in ensureInner's dep graph. Recreated each time
-  // selectedInstance / ensureLive change so the captured values stay fresh.
+  // selectedAgent / ensureLive change so the captured values stay fresh.
+  // Note: `useStore.getState().selectedAgent` is the canonical store field.
   useEffect(() => {
     reconnectFnRef.current = () => {
       if (!isMountedRef.current) return;
       const sid = useStore.getState().sessionId;
-      const inst = useStore.getState().selectedInstance;
-      if (!sid || inst !== selectedInstance) return;
+      const inst = useStore.getState().selectedAgent;
+      if (!sid || inst !== selectedAgent) return;
       if (reconnectTimerRef.current) return;
 
       const attempt = reconnectAttemptRef.current;
@@ -223,8 +224,8 @@ export function useAcpConnection(
         reconnectTimerRef.current = null;
         if (!isMountedRef.current) return;
         const currentSid = useStore.getState().sessionId;
-        const currentInst = useStore.getState().selectedInstance;
-        if (!currentSid || currentInst !== selectedInstance) return;
+        const currentInst = useStore.getState().selectedAgent;
+        if (!currentSid || currentInst !== selectedAgent) return;
         try {
           await ensureLive();
           reconnectAttemptRef.current = 0;
@@ -233,26 +234,26 @@ export function useAcpConnection(
         }
       }, delay);
     };
-  }, [selectedInstance, ensureLive]);
+  }, [selectedAgent, ensureLive]);
 
   // Reset reconnect backoff when the user navigates to a different session
-  // or instance — the delays are scoped to a single connection's run.
+  // or agent — the delays are scoped to a single connection's run.
   useEffect(() => {
     reconnectAttemptRef.current = 0;
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
     }
-  }, [sessionId, selectedInstance]);
+  }, [sessionId, selectedAgent]);
 
   // Keep-alive: open a live channel whenever we're viewing a session. Without
   // this, sidebar-click resume opens a throwaway WS for history replay, and
   // any pending tool-permission prompt replayed there has no live channel to
   // answer on.
   useEffect(() => {
-    if (!selectedInstance || !sessionId || liveBlocked) return;
+    if (!selectedAgent || !sessionId || liveBlocked) return;
     ensureLive().catch(() => {});
-  }, [selectedInstance, sessionId, liveBlocked, ensureLive]);
+  }, [selectedAgent, sessionId, liveBlocked, ensureLive]);
 
   const reset = useCallback(() => {
     connectionRef.current?.ws.close();

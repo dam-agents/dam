@@ -35,7 +35,7 @@ import { getSavedPreferences } from "../components/session-config-popover.js";
  * second WS — but the surface (`loadHistory(sid) → Message[]`) stays.
  */
 export function useAcpHistory(
-  selectedInstance: string | null,
+  selectedAgent: string | null,
   selectedMcpServers: McpServer[],
   captureSessionConfig: (response: SessionConfigPayload) => void,
   handleConfigUpdate: (update: AcpUpdate) => void,
@@ -47,12 +47,12 @@ export function useAcpHistory(
 
   const loadHistory = useCallback(
     async (sid: string): Promise<Message[]> => {
-      if (!selectedInstance) return [];
+      if (!selectedAgent) return [];
 
       let replayed: Message[] = [];
       let ws: WebSocket | null = null;
       try {
-        const conn = await openConnection(selectedInstance, (update) => {
+        const conn = await openConnection(selectedAgent, (update) => {
           handleConfigUpdate(update);
           replayed = applyUpdate(replayed, update);
         });
@@ -72,7 +72,7 @@ export function useAcpHistory(
 
         // Optimistic prefs nudge — real ACP `set*` calls fire when the
         // orchestrator opens the live channel via applySavedPreferences.
-        const prefs = getSavedPreferences(selectedInstance);
+        const prefs = getSavedPreferences(selectedAgent);
         if (
           prefs.model &&
           resp.models?.availableModels?.some((m) => m.modelId === prefs.model)
@@ -91,7 +91,7 @@ export function useAcpHistory(
       return finalizeAllStreaming(replayed);
     },
     [
-      selectedInstance,
+      selectedAgent,
       selectedMcpServers,
       captureSessionConfig,
       handleConfigUpdate,

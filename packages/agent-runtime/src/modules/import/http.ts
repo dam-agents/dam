@@ -47,7 +47,7 @@ export function createImportHandlers(
   workDir: string,
   log: (msg: string) => void,
 ) {
-  // Single-flight: agent-runtime serves one instance, so concurrent imports
+  // Single-flight: agent-runtime serves one agent, so concurrent imports
   // mean two simultaneous tarballs racing the same work dir. Reject the
   // second one outright with 409; the api-server proxy surfaces the body.
   let activeImport: Promise<void> | null = null;
@@ -67,7 +67,7 @@ export function createImportHandlers(
       log(`request rejected (409): another import is already in progress`);
       res.writeHead(409, { "Content-Type": "application/json" }).end(
         JSON.stringify({
-          error: "another import is already in progress for this instance",
+          error: "another import is already in progress for this agent",
         }),
       );
       return;

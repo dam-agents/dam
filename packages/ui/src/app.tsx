@@ -88,13 +88,13 @@ export default function App() {
 
   // Browser back/forward
   useEffect(() => {
-    const enterChat = (inst: string) => {
+    const enterChat = (agentId: string) => {
       useStore.getState().resetChatContext();
-      useStore.setState({ selectedInstance: inst, view: "chat" });
+      useStore.setState({ selectedAgent: agentId, view: "chat" });
     };
     const leaveChat = () => {
       useStore.getState().resetChatContext();
-      useStore.setState({ selectedInstance: null, view: "list" });
+      useStore.setState({ selectedAgent: null, view: "list" });
     };
     const onPopState = () => {
       const path = window.location.pathname;

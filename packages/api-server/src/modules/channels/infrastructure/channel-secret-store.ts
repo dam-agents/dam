@@ -2,7 +2,7 @@ import { ChannelType } from "api-server-api";
 import type { K8sClient } from "../../agents/infrastructure/k8s.js";
 import {
   LABEL_TYPE,
-  LABEL_INSTANCE_REF,
+  LABEL_AGENT_REF,
   LABEL_CHANNEL_TYPE,
   TYPE_CHANNEL_SECRET,
 } from "../../agents/infrastructure/labels.js";
@@ -10,29 +10,26 @@ import {
 const TELEGRAM_TOKEN_KEY = "botToken";
 
 export interface ChannelSecretStore {
-  storeTelegramToken(instanceId: string, token: string): Promise<void>;
-  readTelegramToken(instanceId: string): Promise<string | null>;
-  deleteChannelSecret(instanceId: string, type: ChannelType): Promise<void>;
-  deleteAllForInstance(instanceId: string): Promise<void>;
+  storeTelegramToken(agentId: string, token: string): Promise<void>;
+  readTelegramToken(agentId: string): Promise<string | null>;
+  deleteChannelSecret(agentId: string, type: ChannelType): Promise<void>;
+  deleteAllForAgent(agentId: string): Promise<void>;
 }
 
-export function channelSecretName(
-  instanceId: string,
-  type: ChannelType,
-): string {
-  return `platform-channel-${type}-${instanceId}`;
+export function channelSecretName(agentId: string, type: ChannelType): string {
+  return `platform-channel-${type}-${agentId}`;
 }
 
 export function createChannelSecretStore(k8s: K8sClient): ChannelSecretStore {
   return {
-    async storeTelegramToken(instanceId, token) {
-      const name = channelSecretName(instanceId, ChannelType.Telegram);
+    async storeTelegramToken(agentId, token) {
+      const name = channelSecretName(agentId, ChannelType.Telegram);
       const body = {
         metadata: {
           name,
           labels: {
             [LABEL_TYPE]: TYPE_CHANNEL_SECRET,
-            [LABEL_INSTANCE_REF]: instanceId,
+            [LABEL_AGENT_REF]: agentId,
             [LABEL_CHANNEL_TYPE]: ChannelType.Telegram,
           },
         },
@@ -44,8 +41,8 @@ export function createChannelSecretStore(k8s: K8sClient): ChannelSecretStore {
       else await k8s.createSecret(body);
     },
 
-    async readTelegramToken(instanceId) {
-      const name = channelSecretName(instanceId, ChannelType.Telegram);
+    async readTelegramToken(agentId) {
+      const name = channelSecretName(agentId, ChannelType.Telegram);
       const secret = await k8s.getSecret(name);
       if (!secret) return null;
       const encoded = secret.data?.[TELEGRAM_TOKEN_KEY];
@@ -53,12 +50,12 @@ export function createChannelSecretStore(k8s: K8sClient): ChannelSecretStore {
       return Buffer.from(encoded, "base64").toString("utf-8");
     },
 
-    async deleteChannelSecret(instanceId, type) {
-      await k8s.deleteSecret(channelSecretName(instanceId, type));
+    async deleteChannelSecret(agentId, type) {
+      await k8s.deleteSecret(channelSecretName(agentId, type));
     },
 
-    async deleteAllForInstance(instanceId) {
-      const selector = `${LABEL_TYPE}=${TYPE_CHANNEL_SECRET},${LABEL_INSTANCE_REF}=${instanceId}`;
+    async deleteAllForAgent(agentId) {
+      const selector = `${LABEL_TYPE}=${TYPE_CHANNEL_SECRET},${LABEL_AGENT_REF}=${agentId}`;
       const secrets = await k8s.listSecrets(selector);
       await Promise.all(
         secrets.map((s) => k8s.deleteSecret(s.metadata!.name!)),

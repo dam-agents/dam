@@ -20,10 +20,10 @@ import { isMobile } from "../../../lib/breakpoints.js";
 import { queryClient } from "../../../query-client.js";
 import type { SessionError } from "../../../store.js";
 import { useStore } from "../../../store.js";
-import type { InstanceView } from "../../../types.js";
+import type { AgentView } from "../../../types.js";
+import { useAgents } from "../../agents/api/queries.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
-import { useInstances } from "../../instances/api/queries.js";
 import { prefetchSchedules } from "../../schedules/api/queries.js";
 import { acpSessionsKeys } from "../api/queries.js";
 import { ChatInput } from "../components/chat-input.js";
@@ -39,11 +39,11 @@ import { useAcpSession } from "../hooks/use-acp-session.js";
 import { useMcpPicker } from "../hooks/use-mcp-picker.js";
 
 export function ChatView() {
-  const selectedInstance = useStore((s) => s.selectedInstance);
-  const { data: instancesData } = useInstances();
-  const instances = instancesData?.list ?? [];
-  const selectedInstanceName =
-    instances.find((i) => i.id === selectedInstance)?.name ?? selectedInstance;
+  const selectedAgent = useStore((s) => s.selectedAgent);
+  const { data: agentsData } = useAgents();
+  const agents = agentsData?.list ?? [];
+  const selectedAgentName =
+    agents.find((a) => a.id === selectedAgent)?.name ?? selectedAgent;
   const sessionId = useStore((s) => s.sessionId);
   const sessionMode = useStore((s) => s.sessionMode);
   const setSessionMode = useStore((s) => s.setSessionMode);
@@ -87,7 +87,7 @@ export function ChatView() {
     selectAllMcps,
     clearAllMcps,
     selectedMcpServers,
-  } = useMcpPicker(selectedInstance);
+  } = useMcpPicker(selectedAgent);
 
   const {
     ensureConnection,
@@ -98,9 +98,9 @@ export function ChatView() {
     busy,
     engagedSessionIdRef,
     loadingSession,
-  } = useAcpSession(selectedInstance, selectedMcpServers, textareaRef);
+  } = useAcpSession(selectedAgent, selectedMcpServers, textareaRef);
 
-  const { openFileHandler } = useFileTree(selectedInstance);
+  const { openFileHandler } = useFileTree(selectedAgent);
 
   // ── Scroll management ──
   // Single source of truth: `stickRef` — "should we pin to the bottom?".
@@ -177,7 +177,7 @@ export function ChatView() {
 
   const showConfirm = useStore((s) => s.showConfirm);
   const handleToggleMode = useCallback(async () => {
-    if (!selectedInstance) return;
+    if (!selectedAgent) return;
     const target =
       sessionMode === SessionMode.Terminal
         ? SessionMode.Chat
@@ -189,7 +189,7 @@ export function ChatView() {
         const newSessionId = crypto.randomUUID();
         await api.sessions.create.mutate({
           sessionId: newSessionId,
-          instanceId: selectedInstance,
+          agentId: selectedAgent,
           mode: SessionMode.Terminal,
         });
         queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
@@ -218,7 +218,7 @@ export function ChatView() {
       try {
         await api.sessions.setMode.mutate({
           sessionId,
-          instanceId: selectedInstance,
+          agentId: selectedAgent,
           mode: target,
         });
         queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
@@ -240,7 +240,7 @@ export function ChatView() {
       requestAnimationFrame(() => textareaRef.current?.focus());
     }
   }, [
-    selectedInstance,
+    selectedAgent,
     sessionMode,
     sessionId,
     messages.length,
@@ -271,8 +271,8 @@ export function ChatView() {
       <div className="flex border-b border-border-light shrink-0">
         {rightTabs.map((tab) => {
           const warmCache =
-            tab === "configuration" && selectedInstance
-              ? () => prefetchSchedules(selectedInstance)
+            tab === "configuration" && selectedAgent
+              ? () => prefetchSchedules(selectedAgent)
               : undefined;
           return (
             <button
@@ -301,10 +301,9 @@ export function ChatView() {
             onClearAllMcps={clearAllMcps}
             hasActiveSession={!!sessionId}
             onResumeSession={mobileResumeSession}
-            instanceId={selectedInstance}
-            instanceRunning={
-              instances.find((i) => i.id === selectedInstance)?.state ===
-              "running"
+            agentId={selectedAgent}
+            agentRunning={
+              agents.find((a) => a.id === selectedAgent)?.state === "running"
             }
             onOpenFile={openFileHandler}
           />
@@ -358,7 +357,7 @@ export function ChatView() {
           </button>
           <span className="w-px h-4 bg-border-light" />
           <h1 className="text-[14px] font-bold text-text truncate">
-            {selectedInstanceName}
+            {selectedAgentName}
           </h1>
           <div className="flex h-7 rounded-md border border-border-light overflow-hidden">
             <button
@@ -384,20 +383,18 @@ export function ChatView() {
               <Settings2 size={14} />
             </button>
             <ChatHeaderStatus
-              selectedInstance={selectedInstance}
-              instances={instances}
+              selectedAgent={selectedAgent}
+              agents={agents}
               busy={busy}
             />
           </div>
         </header>
 
         {/* Content: Terminal or Chat */}
-        {sessionMode === SessionMode.Terminal &&
-        selectedInstance &&
-        sessionId ? (
+        {sessionMode === SessionMode.Terminal && selectedAgent && sessionId ? (
           <Terminal
             key={sessionId}
-            instanceId={selectedInstance}
+            agentId={selectedAgent}
             sessionId={sessionId}
             fresh={terminalFreshRef.current}
             autoConnect={!terminalPaused}
@@ -588,7 +585,7 @@ export function ChatView() {
                     <SessionConfigBar
                       ensureConnection={ensureConnection}
                       engagedSessionIdRef={engagedSessionIdRef}
-                      instanceId={selectedInstance ?? ""}
+                      agentId={selectedAgent ?? ""}
                     />
                   )
                 }
@@ -644,12 +641,12 @@ export function ChatView() {
 /** Small pill in the chat header. Falls through to the shared `StatusBadge`,
  *  overriding to a "Busy" variant while the agent is mid-turn. */
 function ChatHeaderStatus({
-  selectedInstance,
-  instances,
+  selectedAgent,
+  agents,
   busy,
 }: {
-  selectedInstance: string | null;
-  instances: InstanceView[];
+  selectedAgent: string | null;
+  agents: AgentView[];
   busy: boolean;
 }) {
   if (busy) {
@@ -662,8 +659,8 @@ function ChatHeaderStatus({
       />
     );
   }
-  const inst = instances.find((i) => i.id === selectedInstance);
-  return <StatusBadge size="sm" state={inst?.state ?? "starting"} />;
+  const agent = agents.find((a) => a.id === selectedAgent);
+  return <StatusBadge size="sm" state={agent?.state ?? "starting"} />;
 }
 
 function SessionErrorCard({

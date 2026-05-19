@@ -13,11 +13,10 @@ export type View = z.infer<typeof viewSchema>;
 
 export function viewToPath(
   view: View,
-  instance?: string | null,
+  agent?: string | null,
   agentId?: string | null,
 ): string {
-  if (view === "chat" && instance)
-    return `/chat/${encodeURIComponent(instance)}`;
+  if (view === "chat" && agent) return `/chat/${encodeURIComponent(agent)}`;
   if (view === "providers") return "/providers";
   if (view === "connections") return "/connections";
   if (view === "settings") return "/settings";
@@ -29,11 +28,11 @@ export function viewToPath(
 
 export function pathToState(path: string): {
   view: View;
-  instance?: string;
+  agent?: string;
   agentId?: string;
 } {
   if (path.startsWith("/chat/"))
-    return { view: "chat", instance: decodeURIComponent(path.slice(6)) };
+    return { view: "chat", agent: decodeURIComponent(path.slice(6)) };
   if (path === "/providers") return { view: "providers" };
   if (path === "/connections") return { view: "connections" };
   if (path === "/settings") return { view: "settings" };

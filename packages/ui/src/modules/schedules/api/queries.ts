@@ -3,18 +3,16 @@ import { skipToken, useQuery } from "@tanstack/react-query";
 import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
 
-export function prefetchSchedules(instanceId: string) {
+export function prefetchSchedules(agentId: string) {
   return queryClient.prefetchQuery({
-    ...trpc.schedules.list.queryOptions({ instanceId }),
+    ...trpc.schedules.list.queryOptions({ agentId }),
     staleTime: 5000,
   });
 }
 
-export function useSchedules(instanceId: string | null) {
+export function useSchedules(agentId: string | null) {
   return useQuery({
-    ...trpc.schedules.list.queryOptions(
-      instanceId ? { instanceId } : skipToken,
-    ),
+    ...trpc.schedules.list.queryOptions(agentId ? { agentId } : skipToken),
     refetchInterval: 5000,
     staleTime: 5000,
     meta: { errorToast: "Couldn't refresh schedules" },

@@ -8,7 +8,7 @@ const invalidatesScheduleList = {
 };
 
 export interface CreateScheduleInput {
-  instanceId: string;
+  agentId: string;
   name: string;
   rrule: string;
   timezone: string;

@@ -3,7 +3,7 @@
 ---
 # Public Service. ADR-041: carries only the public HTTP/tRPC port; harness
 # moves to the -harness Service (waypoint-fronted) and ext-authz moves to
-# per-instance Services rendered by the controller. This Service therefore
+# per-agent Services rendered by the controller. This Service therefore
 # never carries the istio.io/use-waypoint label — browser traffic continues
 # to authenticate via Keycloak JWT, no mesh hop needed.
 apiVersion: v1
@@ -28,7 +28,7 @@ spec:
 # Harness Service (ADR-041). The `istio.io/use-waypoint` LABEL (NOT
 # annotation — Istio 1.21+ silently ignores the annotation form) routes
 # inbound traffic via the waypoint Gateway declared in waypoint.yaml. The
-# waypoint terminates HBONE and applies per-instance AuthorizationPolicies
+# waypoint terminates HBONE and applies per-agent AuthorizationPolicies
 # (rendered by the controller) before forwarding to the api-server pod.
 # A request that reaches the api-server has already been admitted against
 # the URL `:id`; handlers can treat `:id` as authenticated.
@@ -97,7 +97,7 @@ spec:
               value: {{ include "platform.apiserver.postgres.dsn" . | quote }}
             - name: NAMESPACE
               value: {{ .Values.agentNamespace | quote }}
-            # ADR-041: api-server parses instance ID out of the per-instance
+            # ADR-041: api-server parses agent ID out of the per-agent
             # ext-authz Service hostname Envoy dialled. The release name is
             # the prefix.
             - name: PLATFORM_RELEASE_NAME

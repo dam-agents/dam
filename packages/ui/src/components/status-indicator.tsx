@@ -7,7 +7,6 @@ const stateLabel: Record<AgentDisplayState, string> = {
   hibernated: "Hibernated",
   error: "Error",
   restarting: "Restarting",
-  "no-instance": "No instance",
 };
 
 const badgeColors: Record<AgentDisplayState, string> = {
@@ -17,7 +16,6 @@ const badgeColors: Record<AgentDisplayState, string> = {
   hibernated: "bg-info-light text-info/50 border-info/25",
   error: "bg-danger-light text-danger border-danger",
   restarting: "bg-warning-light text-warning border-warning",
-  "no-instance": "bg-surface text-text-muted border-border-light",
 };
 
 const dotColors: Record<AgentDisplayState, string> = {
@@ -27,14 +25,13 @@ const dotColors: Record<AgentDisplayState, string> = {
   hibernated: "bg-info/50",
   error: "bg-danger",
   restarting: "bg-warning anim-pulse",
-  "no-instance": "bg-text-muted",
 };
 
 /** Shared state pill used in the agents list and the chat header. `sm` matches
  *  the denser chat header treatment; `md` matches the agents-list card.
  *  When both `state` and an override (`label`/`colorClasses`/`dotColorClasses`)
  *  are passed, the overrides win — used for ad-hoc pills like "Busy" that sit
- *  outside the instance-state taxonomy. */
+ *  outside the agent-state taxonomy. */
 export function StatusBadge({
   state,
   size = "md",

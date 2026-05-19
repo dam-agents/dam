@@ -1,10 +1,8 @@
 /**
- * Per-agent grants stored as annotations on the agent's instance ConfigMaps.
+ * Per-agent grants stored as annotations on the Agent ConfigMap.
  *
- * The contract is keyed by `agentId` (the agent template name). One agent
- * can back multiple instances; reads return the first instance's grants
- * (typically the only one) and writes fan out to every owned instance so
- * the agent's full instance set stays in sync.
+ * Per ADR-046, Agent and Instance were merged: each agent has exactly one
+ * ConfigMap of type `agent`, which carries the grant annotations directly.
  *
  * The controller reads these annotations on every reconcile and intersects
  * them with the owner's credential Secret list before mounting into the
@@ -12,7 +10,7 @@
  * pod roll on the next reconcile.
  *
  * Both grant lists are always selective: absence of the annotation reads
- * as an empty grant set, never "all granted." New instance ConfigMaps are
+ * as an empty grant set, never "all granted." New Agent ConfigMaps are
  * initialized with the empty annotation explicitly so the explicit-empty
  * vs. legacy-absent distinction is moot for anything created today.
  */
@@ -21,10 +19,9 @@ import {
   ANN_GRANTED_CONNECTION_IDS,
   ANN_GRANTED_SECRET_IDS,
   ANN_SECRETS_REV,
-  LABEL_AGENT_REF,
   LABEL_OWNER,
   LABEL_TYPE,
-  TYPE_INSTANCE,
+  TYPE_AGENT,
 } from "./labels.js";
 
 export interface AgentGrants {
@@ -34,13 +31,10 @@ export interface AgentGrants {
 
 /**
  * Per-agent view returned by `listAgentsGrantedSecret` — one entry per
- * unique agent (LABEL_AGENT_REF) with all of its instance ConfigMap names
- * and the agent's full granted-secret list (so callers can rebuild egress
- * grants without an extra read).
+ * agent that has the given secret in its granted set.
  */
 export interface GrantedAgentSummary {
   agentId: string;
-  instanceCmNames: string[];
   grantedSecretIds: string[];
 }
 
@@ -60,11 +54,11 @@ export interface AgentGrantsPort {
    */
   listAgentsGrantedSecret(secretId: string): Promise<GrantedAgentSummary[]>;
   /**
-   * Bump the render-affecting `secrets-rev` annotation on a single
-   * instance ConfigMap. Forces the controller's ConfigMap watch to refire
-   * so the agent pod re-renders with the merged env (ADR-040).
+   * Bump the render-affecting `secrets-rev` annotation on the Agent
+   * ConfigMap. Forces the controller's ConfigMap watch to refire so the
+   * agent pod re-renders with the merged env (ADR-040).
    */
-  bumpSecretsRev(instanceCmName: string, hash: string): Promise<void>;
+  bumpSecretsRev(agentId: string, hash: string): Promise<void>;
 }
 
 function parseList(raw: string | undefined): string[] {
@@ -89,13 +83,6 @@ export function createAgentGrantsPort(
   client: K8sClient,
   ownerSub: string,
 ): AgentGrantsPort {
-  async function listInstancesForAgent(agentId: string) {
-    const cms = await client.listConfigMaps(
-      `${LABEL_TYPE}=${TYPE_INSTANCE},${LABEL_OWNER}=${ownerSub},${LABEL_AGENT_REF}=${agentId}`,
-    );
-    return cms;
-  }
-
   async function patchAnnotations(
     name: string,
     annotations: Record<string, string | null>,
@@ -108,77 +95,67 @@ export function createAgentGrantsPort(
 
   return {
     async get(agentId) {
-      const cms = await listInstancesForAgent(agentId);
-      if (cms.length === 0) return DEFAULT_GRANTS;
-      // Multiple instances per agent share the grant set by construction
-      // (writes fan out). Read from the first.
-      return readGrants(cms[0].metadata?.annotations);
+      const cm = await client.getConfigMap(agentId);
+      if (
+        !cm ||
+        cm.metadata?.labels?.[LABEL_TYPE] !== TYPE_AGENT ||
+        cm.metadata?.labels?.[LABEL_OWNER] !== ownerSub
+      ) {
+        return DEFAULT_GRANTS;
+      }
+      return readGrants(cm.metadata?.annotations);
     },
 
     async setSecretGrants(agentId, ids) {
-      const cms = await listInstancesForAgent(agentId);
-      // setAgentAccess is only meaningful for agents that already have an
-      // instance — grants live on the instance ConfigMap. An empty list
-      // here means the caller raced ahead of the controller's CM create;
-      // surface it as an error so callers can retry instead of silently
-      // dropping the grant.
-      if (cms.length === 0) {
+      const cm = await client.getConfigMap(agentId);
+      if (
+        !cm ||
+        cm.metadata?.labels?.[LABEL_TYPE] !== TYPE_AGENT ||
+        cm.metadata?.labels?.[LABEL_OWNER] !== ownerSub
+      ) {
         throw new Error(
-          `setSecretGrants: no instance ConfigMaps for agent ${agentId} (race with instance creation? retry)`,
+          `setSecretGrants: agent ${agentId} not found or not owned`,
         );
       }
-      // Always-selective: write the literal (possibly empty) value.
-      const annotations = { [ANN_GRANTED_SECRET_IDS]: ids.join(",") };
-      await Promise.all(
-        cms.map((cm) => patchAnnotations(cm.metadata!.name!, annotations)),
-      );
+      await patchAnnotations(agentId, {
+        [ANN_GRANTED_SECRET_IDS]: ids.join(","),
+      });
     },
 
     async setConnectionGrants(agentId, ids) {
-      const cms = await listInstancesForAgent(agentId);
-      if (cms.length === 0) {
+      const cm = await client.getConfigMap(agentId);
+      if (
+        !cm ||
+        cm.metadata?.labels?.[LABEL_TYPE] !== TYPE_AGENT ||
+        cm.metadata?.labels?.[LABEL_OWNER] !== ownerSub
+      ) {
         throw new Error(
-          `setConnectionGrants: no instance ConfigMaps for agent ${agentId} (race with instance creation? retry)`,
+          `setConnectionGrants: agent ${agentId} not found or not owned`,
         );
       }
-      const annotations = { [ANN_GRANTED_CONNECTION_IDS]: ids.join(",") };
-      await Promise.all(
-        cms.map((cm) => patchAnnotations(cm.metadata!.name!, annotations)),
-      );
+      await patchAnnotations(agentId, {
+        [ANN_GRANTED_CONNECTION_IDS]: ids.join(","),
+      });
     },
 
     async listAgentsGrantedSecret(secretId) {
-      // Walk every owned instance ConfigMap and pick the ones whose
-      // granted-secret-ids annotation contains this id. Group by agentId
-      // (one agent backs N instances; writes fan out to all of them).
       const cms = await client.listConfigMaps(
-        `${LABEL_TYPE}=${TYPE_INSTANCE},${LABEL_OWNER}=${ownerSub}`,
+        `${LABEL_TYPE}=${TYPE_AGENT},${LABEL_OWNER}=${ownerSub}`,
       );
-      const byAgent = new Map<string, GrantedAgentSummary>();
+      const out: GrantedAgentSummary[] = [];
       for (const cm of cms) {
         const ann = cm.metadata?.annotations ?? {};
-        const labels = cm.metadata?.labels ?? {};
-        const agentId = labels[LABEL_AGENT_REF];
         const cmName = cm.metadata?.name;
-        if (!agentId || !cmName) continue;
+        if (!cmName) continue;
         const grantedSecretIds = parseList(ann[ANN_GRANTED_SECRET_IDS]);
         if (!grantedSecretIds.includes(secretId)) continue;
-        const existing = byAgent.get(agentId);
-        if (existing) {
-          existing.instanceCmNames.push(cmName);
-        } else {
-          byAgent.set(agentId, {
-            agentId,
-            instanceCmNames: [cmName],
-            grantedSecretIds,
-          });
-        }
+        out.push({ agentId: cmName, grantedSecretIds });
       }
-      return Array.from(byAgent.values());
+      return out;
     },
 
-    async bumpSecretsRev(instanceCmName, hash) {
-      await patchAnnotations(instanceCmName, { [ANN_SECRETS_REV]: hash });
+    async bumpSecretsRev(agentId, hash) {
+      await patchAnnotations(agentId, { [ANN_SECRETS_REV]: hash });
     },
   };
 }

@@ -104,7 +104,7 @@ describe("ForksService.openFork", () => {
   it("emits ForkReady with replyId + podIP when the orchestrator reports Ready", async () => {
     const h = makeHarness({});
     await h.service.openFork({
-      instanceId: "inst-1",
+      agentId: "inst-1",
       foreignSub: "kc|user-42",
       replyId: "reply-1",
     });
@@ -130,7 +130,7 @@ describe("ForksService.openFork", () => {
       },
     });
     await h.service.openFork({
-      instanceId: "inst-1",
+      agentId: "inst-1",
       foreignSub: "kc|user-42",
       replyId: "reply-1",
     });
@@ -149,7 +149,7 @@ describe("ForksService.openFork", () => {
   it("maps orchestrator status.Failed into ForkFailed carrying the reason", async () => {
     const h = makeHarness({});
     await h.service.openFork({
-      instanceId: "inst-1",
+      agentId: "inst-1",
       foreignSub: "kc|user-42",
       replyId: "reply-1",
     });
@@ -176,7 +176,7 @@ describe("ForksService.openFork", () => {
     const h = makeHarness({});
     await expect(
       h.service.openFork({
-        instanceId: "inst-1",
+        agentId: "inst-1",
         foreignSub: "",
         replyId: "reply-1",
       }),
@@ -188,7 +188,7 @@ describe("ForksService.closeFork", () => {
   it("deletes the K8s fork and emits ForkCompleted after a Ready fork", async () => {
     const h = makeHarness({});
     await h.service.openFork({
-      instanceId: "inst-1",
+      agentId: "inst-1",
       foreignSub: "kc|user-42",
       replyId: "reply-1",
     });

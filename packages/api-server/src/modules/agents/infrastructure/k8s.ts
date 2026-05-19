@@ -188,8 +188,8 @@ export function createK8sClient(
 // Utilities
 // ---------------------------------------------------------------------------
 
-export function podBaseUrl(instanceId: string, namespace: string): string {
-  return `${instanceId}-0.${instanceId}.${namespace}.svc:8080`;
+export function podBaseUrl(agentId: string, namespace: string): string {
+  return `${agentId}-0.${agentId}.${namespace}.svc:8080`;
 }
 
 export function createApi(namespace: string) {

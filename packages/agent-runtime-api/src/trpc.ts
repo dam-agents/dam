@@ -34,7 +34,7 @@ export const t = initTRPC.context<AgentRuntimeContext>().create({
 // Authentication of the api-server → agent-runtime hop is enforced at the
 // kernel by the agent pod's NetworkPolicy: ingress on the ACP/tRPC port is
 // admitted only from the api-server pod. The api-server, in turn, verifies
-// the user JWT and instance ownership before forwarding. There is no
+// the user JWT and agent ownership before forwarding. There is no
 // additional in-process auth check, so files.* and skills.* mount on the
 // same `t.procedure` as everything else; `protectedProcedure` is preserved
 // as an alias for callers that import it.

@@ -21,30 +21,23 @@ var testForkOwnerCM = &corev1.ConfigMap{
 
 var testForkSpec = &types.ForkSpec{
 	Version:    types.SpecVersion,
-	Instance:   "my-instance",
+	AgentName:  "my-agent",
 	ForeignSub: "kc|user-42",
 	SessionID:  "sess-1",
 }
 
-var testForkInstance = &types.InstanceSpec{
-	Version:      types.SpecVersion,
-	DesiredState: "running",
-	AgentName:    "my-agent",
-	Env:          []types.EnvVar{{Name: "GITHUB_ORG", Value: "alpha"}},
-}
-
 func TestBuildForkAgentJob_BasicShape(t *testing.T) {
-	job := BuildForkAgentJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, nil, "")
+	job := BuildForkAgentJob("fork-abc", testForkSpec, testAgent, testConfig, testForkOwnerCM, nil, "")
 
 	require.NotNil(t, job)
 	assert.Equal(t, "fork-abc", job.Name)
 	assert.Equal(t, "test-agents", job.Namespace)
 	assert.Equal(t, "agent-fork-job", job.Labels["agent-platform.ai/type"])
 	assert.Equal(t, "fork-abc", job.Labels["agent-platform.ai/fork-id"])
-	// `instance` label references the parent — for resolver / ext_authz
+	// `agent` label references the parent — for resolver / ext_authz
 	// identity. `pair` is the fork's own name — for ADR-038 NetworkPolicy
 	// scoping.
-	assert.Equal(t, "my-instance", job.Labels["agent-platform.ai/instance"])
+	assert.Equal(t, "my-agent", job.Labels["agent-platform.ai/agent"])
 	assert.Equal(t, "fork-abc", job.Labels["agent-platform.ai/pair"])
 	assert.Equal(t, "agent", job.Labels["agent-platform.ai/role"])
 	// Fork agent pod opts out of ambient — same rationale as the long-lived
@@ -60,7 +53,7 @@ func TestBuildForkAgentJob_BasicShape(t *testing.T) {
 func TestBuildForkAgentJob_ProbesDisabled(t *testing.T) {
 	cfg := *testConfig
 	cfg.AgentProbesEnabled = false
-	job := BuildForkAgentJob("fork-abc", testForkSpec, testForkInstance, testAgent, &cfg, testForkOwnerCM, nil, "")
+	job := BuildForkAgentJob("fork-abc", testForkSpec, testAgent, &cfg, testForkOwnerCM, nil, "")
 
 	c := job.Spec.Template.Spec.Containers[0]
 	assert.Nil(t, c.StartupProbe)
@@ -69,7 +62,7 @@ func TestBuildForkAgentJob_ProbesDisabled(t *testing.T) {
 }
 
 func TestBuildForkAgentJob_LifecycleGuarantees(t *testing.T) {
-	job := BuildForkAgentJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, nil, "")
+	job := BuildForkAgentJob("fork-abc", testForkSpec, testAgent, testConfig, testForkOwnerCM, nil, "")
 
 	require.NotNil(t, job.Spec.BackoffLimit)
 	assert.Equal(t, int32(0), *job.Spec.BackoffLimit)
@@ -81,20 +74,20 @@ func TestBuildForkAgentJob_LifecycleGuarantees(t *testing.T) {
 }
 
 func TestBuildForkAgentJob_ForkMetadataEnv(t *testing.T) {
-	job := BuildForkAgentJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, nil, "10.96.42.42")
+	job := BuildForkAgentJob("fork-abc", testForkSpec, testAgent, testConfig, testForkOwnerCM, nil, "10.96.42.42")
 	c := job.Spec.Template.Spec.Containers[0]
 
 	env := envMap(c.Env)
 	assert.Equal(t, "fork-abc", env["PLATFORM_FORK_ID"])
 	assert.Equal(t, "kc|user-42", env["PLATFORM_FOREIGN_SUB"])
-	assert.Equal(t, "my-instance", env["ADK_INSTANCE_ID"])
+	assert.Equal(t, "my-agent", env["PLATFORM_AGENT_ID"])
 	// HTTPS_PROXY is IP-direct — the fork's OWN gateway ClusterIP, not
 	// the parent's. The fork reconciler passes its own gateway IP.
 	assert.Equal(t, "http://10.96.42.42:10000", env["HTTPS_PROXY"])
 }
 
-func TestBuildForkAgentJob_MountsInstancePVC_NotVolumeClaimTemplate(t *testing.T) {
-	job := BuildForkAgentJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, nil, "")
+func TestBuildForkAgentJob_MountsAgentPVC_NotVolumeClaimTemplate(t *testing.T) {
+	job := BuildForkAgentJob("fork-abc", testForkSpec, testAgent, testConfig, testForkOwnerCM, nil, "")
 
 	podSpec := job.Spec.Template.Spec
 
@@ -107,18 +100,20 @@ func TestBuildForkAgentJob_MountsInstancePVC_NotVolumeClaimTemplate(t *testing.T
 	}
 	require.NotNil(t, persistentVol, "home-agent volume missing")
 	require.NotNil(t, persistentVol.PersistentVolumeClaim, "home-agent volume must reference an existing PVC")
-	assert.Equal(t, "home-agent-my-instance-0", persistentVol.PersistentVolumeClaim.ClaimName)
+	assert.Equal(t, "home-agent-my-agent-0", persistentVol.PersistentVolumeClaim.ClaimName)
 	assert.Nil(t, persistentVol.EmptyDir)
 }
 
-func TestBuildForkAgentJob_InheritsInstanceEnvAndSecretRef(t *testing.T) {
-	instance := &types.InstanceSpec{
-		Version:      types.SpecVersion,
-		DesiredState: "running",
-		Env:          []types.EnvVar{{Name: "FOO", Value: "bar"}},
-		SecretRef:    "my-extra-secret",
-	}
-	job := BuildForkAgentJob("fork-abc", testForkSpec, instance, testAgent, testConfig, testForkOwnerCM, nil, "")
+// ADR-046: the merged Agent CM carries env + secretRef directly; the fork
+// inherits them transitively through the AgentSpec.
+func TestBuildForkAgentJob_InheritsAgentEnvAndSecretRef(t *testing.T) {
+	// testAgent already carries Env=[ACP_PORT=8080] from the test fixture;
+	// add SecretRef + an extra env to exercise both paths.
+	agent := *testAgent
+	agent.Env = append([]types.EnvVar{{Name: "FOO", Value: "bar"}}, testAgent.Env...)
+	agent.SecretRef = "my-extra-secret"
+
+	job := BuildForkAgentJob("fork-abc", testForkSpec, &agent, testConfig, testForkOwnerCM, nil, "")
 	c := job.Spec.Template.Spec.Containers[0]
 
 	assert.Equal(t, "bar", envMap(c.Env)["FOO"])
@@ -139,7 +134,7 @@ func TestBuildForkAgentJob_NoSidecar(t *testing.T) {
 	// ADR-038: agent and gateway are paired pods, not co-located. Fork
 	// agents have only one container.
 	secrets := []corev1.Secret{credSecret("platform-cred-replier-x", "api.example.com")}
-	job := BuildForkAgentJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, secrets, "10.96.42.42")
+	job := BuildForkAgentJob("fork-abc", testForkSpec, testAgent, testConfig, testForkOwnerCM, secrets, "10.96.42.42")
 
 	require.Len(t, job.Spec.Template.Spec.Containers, 1, "fork agent has no sidecar")
 	agent := job.Spec.Template.Spec.Containers[0]
@@ -158,7 +153,7 @@ func TestBuildForkAgentJob_NoSidecar(t *testing.T) {
 func TestBuildForkAgentJob_NoCredentialMountsOnAgent(t *testing.T) {
 	// Replier credentials live on the paired fork gateway pod only.
 	secrets := []corev1.Secret{credSecret("platform-cred-replier-x", "api.example.com")}
-	job := BuildForkAgentJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, secrets, "")
+	job := BuildForkAgentJob("fork-abc", testForkSpec, testAgent, testConfig, testForkOwnerCM, secrets, "")
 
 	for _, v := range job.Spec.Template.Spec.Volumes {
 		assert.NotContains(t, v.Name, "cred-platform-cred-",
@@ -177,7 +172,7 @@ func TestBuildForkAgentJob_NoCredentialMountsOnAgent(t *testing.T) {
 
 func TestBuildForkAgentJob_NoFetchCACertInit(t *testing.T) {
 	secrets := []corev1.Secret{credSecret("platform-cred-replier-x", "api.example.com")}
-	job := BuildForkAgentJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, secrets, "")
+	job := BuildForkAgentJob("fork-abc", testForkSpec, testAgent, testConfig, testForkOwnerCM, secrets, "")
 
 	for _, ic := range job.Spec.Template.Spec.InitContainers {
 		assert.NotEqual(t, "fetch-ca-cert", ic.Name, "no fetch-ca-cert init container")
@@ -209,7 +204,7 @@ func TestBuildForkAgentJob_GHTokenSignal(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			job := BuildForkAgentJob("fork-abc", testForkSpec, testForkInstance, testAgent, testConfig, testForkOwnerCM, tc.secrets, "")
+			job := BuildForkAgentJob("fork-abc", testForkSpec, testAgent, testConfig, testForkOwnerCM, tc.secrets, "")
 			env := envMap(job.Spec.Template.Spec.Containers[0].Env)
 			assert.Equal(t, tc.want, env["PLATFORM_GH_TOKEN_AVAILABLE"])
 		})

@@ -10,7 +10,7 @@ export function toForeignSub(sub: string): ForeignSub {
 export type ForkPhase = "Pending" | "Ready" | "Failed" | "Completed";
 
 export interface ForkSpec {
-  readonly instanceId: string;
+  readonly agentId: string;
   readonly foreignSub: ForeignSub;
   readonly sessionId?: string;
 }

@@ -45,7 +45,7 @@ describe("on-foreign-reply saga", () => {
     emit({
       type: EventType.ForeignReplyReceived,
       replyId: "reply-1",
-      instanceId: "inst-1",
+      agentId: "inst-1",
       foreignSub: "kc|user-42",
       threadTs: "1700000000.000100",
       sessionId: "sess-7",
@@ -56,7 +56,7 @@ describe("on-foreign-reply saga", () => {
 
     expect(harness.openCalls).toEqual([
       {
-        instanceId: "inst-1",
+        agentId: "inst-1",
         foreignSub: "kc|user-42",
         replyId: "reply-1",
         sessionId: "sess-7",
@@ -69,7 +69,7 @@ describe("on-foreign-reply saga", () => {
     emit({
       type: EventType.ForeignReplyReceived,
       replyId: "reply-2",
-      instanceId: "inst-1",
+      agentId: "inst-1",
       foreignSub: "kc|user-42",
       threadTs: "1700000000.000200",
       prompt: "hi",
@@ -82,7 +82,7 @@ describe("on-foreign-reply saga", () => {
   });
 
   it("ignores unrelated events", async () => {
-    emit({ type: EventType.InstanceDeleted, instanceId: "inst-1" });
+    emit({ type: EventType.AgentDeleted, agentId: "inst-1" });
     emit({
       type: EventType.SlackTurnRelayed,
       replyId: "reply-3",
@@ -107,7 +107,7 @@ describe("on-foreign-reply saga", () => {
       emit({
         type: EventType.ForeignReplyReceived,
         replyId: "reply-4",
-        instanceId: "inst-1",
+        agentId: "inst-1",
         foreignSub: "kc|user-42",
         threadTs: "1700000000.000400",
         prompt: "hi",
@@ -149,7 +149,7 @@ describe("on-slack-turn-relayed saga", () => {
     emit({
       type: EventType.ForeignReplyReceived,
       replyId: "reply-x",
-      instanceId: "inst-1",
+      agentId: "inst-1",
       foreignSub: "kc|user-42",
       threadTs: "1700000000.000500",
       prompt: "hi",

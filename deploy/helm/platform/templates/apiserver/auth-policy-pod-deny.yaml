@@ -1,11 +1,11 @@
 {{- /*
 ADR-041: pod-level DENY ringfencing the api-server pod.
 
-The waypoint AuthorizationPolicies (rendered per-instance by the
+The waypoint AuthorizationPolicies (rendered per-agent by the
 controller) only apply to traffic ROUTED THROUGH the waypoint Service.
 Without this rule, an in-mesh pod could dial the api-server pod IP
 directly on :15008 and reach the harness handler, bypassing the
-waypoint and the per-instance principal-to-`:id` check. Same hazard
+waypoint and the per-agent principal-to-`:id` check. Same hazard
 for ext-authz: a release-namespace pod (controller, ui, postgres)
 sharing the namespace with the api-server is structurally in a
 position to dial the harness or ext-authz port directly unless we
@@ -16,7 +16,7 @@ Per-port DENY:
     Istio names the waypoint SA after the Gateway resource, so the
     principal is `<td>/ns/<release-ns>/sa/<waypoint-name>`.
   - ext-authz port: deny anything that isn't sourced in the agent
-    namespace. Per-instance AuthorizationPolicies on per-instance
+    namespace. Per-agent AuthorizationPolicies on per-agent
     ext-authz Services gate further by SA principal.
   - Public HTTP port (Keycloak-JWT-gated): no DENY rule. Traffic from
     Traefik (kube-system) and any other peer is allowed; application-
@@ -27,7 +27,7 @@ Per-port DENY:
 Istio AuthorizationPolicy semantics: DENY rules are OR-ed; a rule
 matches when ALL of its `from` AND `to` match. With action=DENY, no
 rule matching means traffic is allowed (other ALLOW policies — the
-controller-rendered per-instance ones — still gate further). DENY
+controller-rendered per-agent ones — still gate further). DENY
 beats any ALLOW when both match.
 
 Non-mesh sources (e.g. Traefik in `kube-system`) bypass Istio
@@ -63,8 +63,8 @@ spec:
             notPrincipals:
               - "{{ .Values.istio.trustDomain }}/ns/{{ .Release.Namespace }}/sa/{{ .Values.istio.waypointName }}"
     # ext-authz port: only sources in the agent namespace are admitted.
-    # Per-instance AuthorizationPolicies on per-instance ext-authz
-    # Services pin the SA principal to the matching instance.
+    # Per-agent AuthorizationPolicies on per-agent ext-authz
+    # Services pin the SA principal to the matching agent.
     - to:
         - operation:
             ports:

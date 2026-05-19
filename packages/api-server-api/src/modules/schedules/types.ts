@@ -45,14 +45,14 @@ export interface ScheduleStatus {
 export interface Schedule {
   id: string;
   name: string;
-  instanceId: string;
+  agentId: string;
   spec: ScheduleSpec;
   status?: ScheduleStatus;
 }
 
 export interface CreateCronScheduleInput {
   name: string;
-  instanceId: string;
+  agentId: string;
   cron: string;
   task: string;
   sessionMode?: "continuous" | "fresh";
@@ -61,7 +61,7 @@ export interface CreateCronScheduleInput {
 
 export interface CreateRRuleScheduleInput {
   name: string;
-  instanceId: string;
+  agentId: string;
   rrule: string;
   timezone: string;
   quietHours?: QuietWindow[];
@@ -80,7 +80,7 @@ export interface UpdateRRuleScheduleInput {
 }
 
 export interface SchedulesService {
-  list: (instanceId: string) => Promise<Schedule[]>;
+  list: (agentId: string) => Promise<Schedule[]>;
   get: (id: string) => Promise<Schedule | null>;
   createCron: (input: CreateCronScheduleInput) => Promise<Schedule>;
   createRRule: (input: CreateRRuleScheduleInput) => Promise<Schedule>;

@@ -9,7 +9,7 @@ import {
 export type ExtAuthzVerdict = "allow" | "deny";
 
 export interface ExtAuthzGateInput {
-  instanceId: string;
+  agentId: string;
   host: string;
   method: string;
   path: string;
@@ -31,9 +31,9 @@ export interface ExtAuthzGate {
  * keeps approvals from importing from agents- or egress-rules-modules
  * directly.
  */
-export interface InstanceIdentityResolver {
+export interface AgentIdentityResolver {
   resolve(
-    instanceId: string,
+    agentId: string,
   ): Promise<{ ownerSub: string; agentId: string } | null>;
 }
 
@@ -49,7 +49,7 @@ export interface EgressRuleMatcher {
 export interface CreateExtAuthzGateDeps {
   repo: ApprovalsRepository;
   bus: RedisBus;
-  identityResolver: InstanceIdentityResolver;
+  identityResolver: AgentIdentityResolver;
   ruleMatcher: EgressRuleMatcher;
   /** Bounded synchronous hold; the durable pending row outlives this. */
   holdSeconds: number;
@@ -57,8 +57,8 @@ export interface CreateExtAuthzGateDeps {
 
 export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
   return {
-    async gateRequest({ instanceId, host, method, path }) {
-      const identity = await deps.identityResolver.resolve(instanceId);
+    async gateRequest({ agentId, host, method, path }) {
+      const identity = await deps.identityResolver.resolve(agentId);
       if (!identity) return "deny";
 
       const matched = await deps.ruleMatcher.match(
@@ -86,7 +86,6 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
         await deps.repo.insertPending({
           id: pendingId,
           type: "ext_authz",
-          instanceId,
           agentId: identity.agentId,
           ownerSub: identity.ownerSub,
           sessionId: null,
@@ -99,7 +98,7 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
           method,
           path,
         });
-        void deps.bus.publish(injectChannelOf(instanceId), frame);
+        void deps.bus.publish(injectChannelOf(agentId), frame);
       }
 
       return waitForVerdict(deps, pendingId);

@@ -13,10 +13,10 @@ import {
 } from "../../../core/acp-client.js";
 
 export function createSessionsService(deps: {
-  listByInstance: (instanceId: string) => Promise<
+  listByInstance: (agentId: string) => Promise<
     {
       sessionId: string;
-      instanceId: string;
+      agentId: string;
       type: string;
       mode: string;
       scheduleId: string | null;
@@ -27,7 +27,7 @@ export function createSessionsService(deps: {
   listByScheduleId: (scheduleId: string) => Promise<
     {
       sessionId: string;
-      instanceId: string;
+      agentId: string;
       type: string;
       mode: string;
       scheduleId: string | null;
@@ -37,7 +37,7 @@ export function createSessionsService(deps: {
   >;
   findActiveByScheduleId: (scheduleId: string) => Promise<{
     sessionId: string;
-    instanceId: string;
+    agentId: string;
     type: string;
     mode: string;
     scheduleId: string | null;
@@ -45,7 +45,7 @@ export function createSessionsService(deps: {
   } | null>;
   upsert: (
     sessionId: string,
-    instanceId: string,
+    agentId: string,
     mode: SessionMode,
     type?: SessionType,
     scheduleId?: string,
@@ -53,36 +53,36 @@ export function createSessionsService(deps: {
   ) => Promise<void>;
   setMode: (
     sessionId: string,
-    instanceId: string,
+    agentId: string,
     mode: SessionMode,
   ) => Promise<void>;
-  delete: (sessionId: string, instanceId: string) => Promise<void>;
-  isOwnedInstance: (instanceId: string) => Promise<boolean>;
+  delete: (sessionId: string, agentId: string) => Promise<void>;
+  isOwnedAgent: (agentId: string) => Promise<boolean>;
   isOwnedSchedule: (scheduleId: string) => Promise<boolean>;
   deactivateByScheduleId: (scheduleId: string) => Promise<void>;
   namespace: string;
   closeTerminalSession?: (sessionId: string) => void;
   notifyModeChange?: (
-    instanceId: string,
+    agentId: string,
     sessionId: string,
     mode: SessionMode,
   ) => void;
 }): SessionsApiService {
   const service: SessionsApiService = {
-    async list(instanceId: string, includeChannel?: boolean) {
-      if (!(await deps.isOwnedInstance(instanceId))) return [];
+    async list(agentId: string, includeChannel?: boolean) {
+      if (!(await deps.isOwnedAgent(agentId))) return [];
       // Reader only — the relay writes rows on first session/prompt. Writing
       // here would surface ACP-discovered probe sessions as orphan rows.
       const acp = createAcpClient({
         namespace: deps.namespace,
-        instanceName: instanceId,
+        instanceName: agentId,
       });
 
       const [dbRows, acpSessions] = await Promise.all([
-        deps.listByInstance(instanceId),
+        deps.listByInstance(agentId),
         acp.listSessions().catch((err) => {
           process.stderr.write(
-            `[sessions] acp.listSessions failed for ${instanceId}: ${err?.message ?? err}\n`,
+            `[sessions] acp.listSessions failed for ${agentId}: ${err?.message ?? err}\n`,
           );
           return [] as AcpSessionInfo[];
         }),
@@ -105,7 +105,7 @@ export function createSessionsService(deps: {
         const acp = acpMap.get(row.sessionId);
         return {
           sessionId: row.sessionId,
-          instanceId: row.instanceId,
+          agentId: row.agentId,
           type: row.type as SessionType,
           mode: row.mode as SessionMode,
           createdAt: row.createdAt.toISOString(),
@@ -118,25 +118,25 @@ export function createSessionsService(deps: {
 
     async create(
       sessionId: string,
-      instanceId: string,
+      agentId: string,
       mode: SessionMode,
       type?: SessionType,
       scheduleId?: string,
     ) {
-      if (!(await deps.isOwnedInstance(instanceId))) return;
-      await deps.upsert(sessionId, instanceId, mode, type, scheduleId);
+      if (!(await deps.isOwnedAgent(agentId))) return;
+      await deps.upsert(sessionId, agentId, mode, type, scheduleId);
     },
 
-    async setMode(sessionId: string, instanceId: string, mode: SessionMode) {
-      if (!(await deps.isOwnedInstance(instanceId))) return;
-      await deps.setMode(sessionId, instanceId, mode);
+    async setMode(sessionId: string, agentId: string, mode: SessionMode) {
+      if (!(await deps.isOwnedAgent(agentId))) return;
+      await deps.setMode(sessionId, agentId, mode);
       if (mode !== SessionMode.Terminal) deps.closeTerminalSession?.(sessionId);
-      deps.notifyModeChange?.(instanceId, sessionId, mode);
+      deps.notifyModeChange?.(agentId, sessionId, mode);
     },
 
-    async delete(sessionId: string, instanceId: string) {
-      if (!(await deps.isOwnedInstance(instanceId))) return;
-      await deps.delete(sessionId, instanceId);
+    async delete(sessionId: string, agentId: string) {
+      if (!(await deps.isOwnedAgent(agentId))) return;
+      await deps.delete(sessionId, agentId);
     },
 
     async listByScheduleId(scheduleId: string) {
@@ -145,7 +145,7 @@ export function createSessionsService(deps: {
       return rows.map(
         (row): SessionView => ({
           sessionId: row.sessionId,
-          instanceId: row.instanceId,
+          agentId: row.agentId,
           type: row.type as SessionType,
           mode: row.mode as SessionMode,
           createdAt: row.createdAt.toISOString(),
@@ -159,7 +159,7 @@ export function createSessionsService(deps: {
       return row
         ? {
             sessionId: row.sessionId,
-            instanceId: row.instanceId,
+            agentId: row.agentId,
             type: row.type as SessionType,
             mode: row.mode as SessionMode,
             createdAt: row.createdAt.toISOString(),
@@ -174,20 +174,20 @@ export function createSessionsService(deps: {
     },
 
     async resolveTerminal(
-      instanceId: string,
+      agentId: string,
       strategy: TerminalStrategy,
       opts?: { reset?: boolean; force?: boolean },
     ): Promise<SessionResolution> {
-      if (!(await deps.isOwnedInstance(instanceId)))
+      if (!(await deps.isOwnedAgent(agentId)))
         return { kind: "session-not-found", sessionId: "" };
 
       function terminalPath(sid: string) {
-        return `/api/instances/${encodeURIComponent(instanceId)}/terminal?sessionId=${encodeURIComponent(sid)}${opts?.reset ? "&reset=1" : ""}`;
+        return `/api/instances/${encodeURIComponent(agentId)}/terminal?sessionId=${encodeURIComponent(sid)}${opts?.reset ? "&reset=1" : ""}`;
       }
 
       if (strategy.kind === "new") {
         const sessionId = randomUUID();
-        await deps.upsert(sessionId, instanceId, SessionMode.Terminal);
+        await deps.upsert(sessionId, agentId, SessionMode.Terminal);
         return {
           kind: "ready",
           sessionId,
@@ -195,7 +195,7 @@ export function createSessionsService(deps: {
         };
       }
 
-      const rows = await deps.listByInstance(instanceId);
+      const rows = await deps.listByInstance(agentId);
       const sessions = rows.filter((r) => r.type === SessionType.Regular);
 
       if (strategy.kind === "continue") {
@@ -226,11 +226,7 @@ export function createSessionsService(deps: {
             sessionId: target.sessionId,
             currentMode: SessionMode.Chat,
           };
-        await service.setMode(
-          target.sessionId,
-          instanceId,
-          SessionMode.Terminal,
-        );
+        await service.setMode(target.sessionId, agentId, SessionMode.Terminal);
       }
 
       return {

@@ -19,10 +19,13 @@ const SpecVersion = "agent-platform.ai/v1"
 
 // --- Agent ---
 
-// AgentSpec is the parsed agent template ConfigMap (spec.yaml). It carries
+// AgentSpec is the parsed Agent ConfigMap (spec.yaml) — the sole durable
+// per-agent resource after ADR-046 collapsed Instance into Agent. It carries
 // the fields a template can declare, plus the optional Layer B overrides
 // (ImagePullPolicy, StorageSize, Resources) that fall back to chart-wide
-// `controller.agent.templateDefaults.*` when empty.
+// `controller.agent.templateDefaults.*` when empty, and the formerly
+// per-instance runtime fields (`DesiredState`, `SecretRef`) that the
+// api-server now writes onto the Agent CM directly.
 //
 // Security context and scheduling/metadata are chart-only — they live on
 // `config.AgentBase` and cannot be set here by design.
@@ -45,6 +48,21 @@ type AgentSpec struct {
 	// fallback), so any `$HOME` literals in Mounts / SkillPaths are already
 	// resolved by the time the controller sees them.
 	AgentHome string `yaml:"agentHome,omitempty" json:"agentHome,omitempty"`
+
+	// Runtime fields — moved here from the retired InstanceSpec (ADR-046).
+	// DesiredState drives StatefulSet replicas (running → 1, hibernated → 0).
+	// SecretRef names a K8s Secret whose keys are envFrom-projected into the
+	// agent container (operator-supplied envs).
+	DesiredState string `yaml:"desiredState,omitempty" json:"desiredState,omitempty"`
+	SecretRef    string `yaml:"secretRef,omitempty" json:"secretRef,omitempty"`
+}
+
+// AgentStatus is the runtime status the controller writes onto the Agent
+// ConfigMap's `status.yaml`. Replaces the previous InstanceStatus.
+type AgentStatus struct {
+	Version      string `yaml:"version"`
+	CurrentState string `yaml:"currentState"`
+	Error        string `yaml:"error,omitempty"`
 }
 
 type Mount struct {
@@ -73,23 +91,6 @@ type MCPServerConfig struct {
 	Command string   `yaml:"command,omitempty"` // stdio: command to run
 	Args    []string `yaml:"args,omitempty"`    // stdio: command arguments
 	URL     string   `yaml:"url,omitempty"`     // http: server URL
-}
-
-// --- Instance ---
-
-type InstanceSpec struct {
-	Version      string   `yaml:"version"`
-	DesiredState string   `yaml:"desiredState"`
-	AgentName    string   `yaml:"agentId,omitempty"`
-	Env          []EnvVar `yaml:"env,omitempty"`
-	SecretRef    string   `yaml:"secretRef,omitempty"`
-	Description  string   `yaml:"description,omitempty"`
-}
-
-type InstanceStatus struct {
-	Version      string `yaml:"version"`
-	CurrentState string `yaml:"currentState"`
-	Error        string `yaml:"error,omitempty"`
 }
 
 // --- Schedule ---
@@ -138,9 +139,13 @@ type ScheduleStatus struct {
 
 // --- Fork ---
 
+// ForkSpec is the per-turn ephemeral runtime that derives from an Agent
+// (ADR-046: Forks survived the Instance/Agent collapse). The `AgentName`
+// names the parent Agent CM the fork impersonates; the parent's egress
+// surface scopes what the fork can reach.
 type ForkSpec struct {
 	Version    string `yaml:"version"`
-	Instance   string `yaml:"instance"`
+	AgentName  string `yaml:"agentName"`
 	ForeignSub string `yaml:"foreignSub"`
 	SessionID  string `yaml:"sessionId,omitempty"`
 }
@@ -187,6 +192,12 @@ func ParseAgentSpec(data string) (*AgentSpec, error) {
 	if spec.Image == "" {
 		return nil, fmt.Errorf("agent spec: image is required")
 	}
+	// DesiredState is optional; the controller defaults it to "running" when
+	// omitted. When set, it must be one of the two known values — the same
+	// invariant the retired InstanceSpec carried.
+	if spec.DesiredState != "" && spec.DesiredState != "running" && spec.DesiredState != "hibernated" {
+		return nil, fmt.Errorf("agent spec: desiredState must be 'running' or 'hibernated', got %q", spec.DesiredState)
+	}
 	for _, m := range spec.Mounts {
 		if !strings.HasPrefix(m.Path, "/") {
 			return nil, fmt.Errorf("agent spec: mount path %q must be absolute", m.Path)
@@ -200,23 +211,6 @@ func ParseAgentSpec(data string) (*AgentSpec, error) {
 	return &spec, nil
 }
 
-func ParseInstanceSpec(data string) (*InstanceSpec, error) {
-	var spec InstanceSpec
-	if err := yaml.Unmarshal([]byte(data), &spec); err != nil {
-		return nil, fmt.Errorf("parsing instance spec: %w", err)
-	}
-	if err := validateVersion(spec.Version); err != nil {
-		return nil, fmt.Errorf("instance spec: %w", err)
-	}
-	if spec.DesiredState == "" {
-		return nil, fmt.Errorf("instance spec: desiredState is required")
-	}
-	if spec.DesiredState != "running" && spec.DesiredState != "hibernated" {
-		return nil, fmt.Errorf("instance spec: desiredState must be 'running' or 'hibernated', got %q", spec.DesiredState)
-	}
-	return &spec, nil
-}
-
 func ParseForkSpec(data string) (*ForkSpec, error) {
 	var spec ForkSpec
 	if err := yaml.Unmarshal([]byte(data), &spec); err != nil {
@@ -225,8 +219,8 @@ func ParseForkSpec(data string) (*ForkSpec, error) {
 	if err := validateVersion(spec.Version); err != nil {
 		return nil, fmt.Errorf("fork spec: %w", err)
 	}
-	if spec.Instance == "" {
-		return nil, fmt.Errorf("fork spec: instance is required")
+	if spec.AgentName == "" {
+		return nil, fmt.Errorf("fork spec: agentName is required")
 	}
 	if spec.ForeignSub == "" {
 		return nil, fmt.Errorf("fork spec: foreignSub is required")
@@ -367,9 +361,9 @@ func SanitizeMountName(path string) string {
 	return strings.ReplaceAll(name, "/", "-")
 }
 
-// NewInstanceStatus creates a status with the current version.
-func NewInstanceStatus(state, errMsg string) *InstanceStatus {
-	return &InstanceStatus{Version: SpecVersion, CurrentState: state, Error: errMsg}
+// NewAgentStatus creates a status with the current version.
+func NewAgentStatus(state, errMsg string) *AgentStatus {
+	return &AgentStatus{Version: SpecVersion, CurrentState: state, Error: errMsg}
 }
 
 // NewScheduleStatus creates a status with the current version.

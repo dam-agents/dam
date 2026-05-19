@@ -1,10 +1,7 @@
 import { create } from "zustand";
 
+import { type AgentsSlice, createAgentsSlice } from "./modules/agents/store.js";
 import { createFilesSlice, type FilesSlice } from "./modules/files/store.js";
-import {
-  createInstancesSlice,
-  type InstancesSlice,
-} from "./modules/instances/store.js";
 import { pathToState } from "./modules/platform/lib/routes.js";
 import {
   createDialogSlice,
@@ -48,7 +45,7 @@ export type PlatformStore = DialogSlice &
   ThemeSlice &
   NavigationSlice &
   ToastSlice &
-  InstancesSlice &
+  AgentsSlice &
   SessionsSlice &
   SessionConfigSlice &
   FilesSlice &
@@ -59,7 +56,7 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createThemeSlice(...a),
   ...createNavigationSlice(...a),
   ...createToastSlice(...a),
-  ...createInstancesSlice(...a),
+  ...createAgentsSlice(...a),
   ...createSessionsSlice(...a),
   ...createSessionConfigSlice(...a),
   ...createFilesSlice(...a),

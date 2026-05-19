@@ -1,24 +1,24 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { queryClient } from "../../../query-client.js";
-import { createInstanceTrpc } from "../../instances/instance-trpc.js";
+import { createAgentTrpc } from "../../agents/agent-trpc.js";
 
 export const fileKeys = {
-  root: (instanceId: string) => ["files", instanceId] as const,
-  tree: (instanceId: string) => [...fileKeys.root(instanceId), "tree"] as const,
-  content: (instanceId: string, path: string) =>
-    [...fileKeys.root(instanceId), "content", path] as const,
+  root: (agentId: string) => ["files", agentId] as const,
+  tree: (agentId: string) => [...fileKeys.root(agentId), "tree"] as const,
+  content: (agentId: string, path: string) =>
+    [...fileKeys.root(agentId), "content", path] as const,
 };
 
-// Per-instance tRPC clients are cheap but creating a new one per refetch is
-// wasteful churn. Cache by instanceId so each polled query reuses the same
+// Per-agent tRPC clients are cheap but creating a new one per refetch is
+// wasteful churn. Cache by agentId so each polled query reuses the same
 // client for its lifetime.
-const clientCache = new Map<string, ReturnType<typeof createInstanceTrpc>>();
-function getInstanceTrpc(instanceId: string) {
-  let client = clientCache.get(instanceId);
+const clientCache = new Map<string, ReturnType<typeof createAgentTrpc>>();
+function getAgentTrpc(agentId: string) {
+  let client = clientCache.get(agentId);
   if (!client) {
-    client = createInstanceTrpc(instanceId);
-    clientCache.set(instanceId, client);
+    client = createAgentTrpc(agentId);
+    clientCache.set(agentId, client);
   }
   return client;
 }
@@ -31,15 +31,15 @@ interface FileContent {
   mtimeMs?: number;
 }
 
-export function useFileTreeQuery(instanceId: string | null) {
+export function useFileTreeQuery(agentId: string | null) {
   return useQuery({
-    queryKey: fileKeys.tree(instanceId ?? "_none"),
+    queryKey: fileKeys.tree(agentId ?? "_none"),
     queryFn: async () => {
-      const trpc = getInstanceTrpc(instanceId!);
+      const trpc = getAgentTrpc(agentId!);
       const result = await trpc.files.tree.query();
       return result.entries;
     },
-    enabled: !!instanceId,
+    enabled: !!agentId,
     refetchInterval: 2000,
     staleTime: 2000,
     meta: { errorToast: "Couldn't refresh file tree" },
@@ -47,13 +47,13 @@ export function useFileTreeQuery(instanceId: string | null) {
 }
 
 export function useFileContentQuery(
-  instanceId: string | null,
+  agentId: string | null,
   path: string | null,
 ) {
   return useQuery({
-    queryKey: fileKeys.content(instanceId ?? "_none", path ?? "_none"),
+    queryKey: fileKeys.content(agentId ?? "_none", path ?? "_none"),
     queryFn: async () => {
-      const trpc = getInstanceTrpc(instanceId!);
+      const trpc = getAgentTrpc(agentId!);
       const result = await trpc.files.read.query({ path: path! });
       return {
         path: result.path,
@@ -63,7 +63,7 @@ export function useFileContentQuery(
         mtimeMs: result.mtimeMs,
       } satisfies FileContent;
     },
-    enabled: !!instanceId && !!path,
+    enabled: !!agentId && !!path,
     refetchInterval: 2000,
     staleTime: 2000,
     retry: 0,
@@ -76,13 +76,13 @@ export function useFileContentQuery(
  * instead of refetching.
  */
 export async function fetchFileContent(
-  instanceId: string,
+  agentId: string,
   path: string,
 ): Promise<FileContent> {
   return queryClient.fetchQuery({
-    queryKey: fileKeys.content(instanceId, path),
+    queryKey: fileKeys.content(agentId, path),
     queryFn: async () => {
-      const trpc = getInstanceTrpc(instanceId);
+      const trpc = getAgentTrpc(agentId);
       const result = await trpc.files.read.query({ path });
       return {
         path: result.path,
@@ -97,15 +97,14 @@ export async function fetchFileContent(
 
 function invalidateFiles(
   qc: ReturnType<typeof useQueryClient>,
-  instanceId: string,
+  agentId: string,
   path?: string,
 ) {
-  qc.invalidateQueries({ queryKey: fileKeys.tree(instanceId) });
-  if (path)
-    qc.invalidateQueries({ queryKey: fileKeys.content(instanceId, path) });
+  qc.invalidateQueries({ queryKey: fileKeys.tree(agentId) });
+  if (path) qc.invalidateQueries({ queryKey: fileKeys.content(agentId, path) });
 }
 
-export function useFileWriteMutation(instanceId: string | null) {
+export function useFileWriteMutation(agentId: string | null) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: {
@@ -113,45 +112,45 @@ export function useFileWriteMutation(instanceId: string | null) {
       content: string;
       expectedMtimeMs?: number;
     }) => {
-      const trpc = getInstanceTrpc(instanceId!);
+      const trpc = getAgentTrpc(agentId!);
       return trpc.files.write.mutate(input);
     },
     onSuccess: (_data, vars) => {
-      if (instanceId) invalidateFiles(qc, instanceId, vars.path);
+      if (agentId) invalidateFiles(qc, agentId, vars.path);
     },
   });
 }
 
-export function useFileCreateMutation(instanceId: string | null) {
+export function useFileCreateMutation(agentId: string | null) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: { path: string; content?: string }) => {
-      const trpc = getInstanceTrpc(instanceId!);
+      const trpc = getAgentTrpc(agentId!);
       return trpc.files.create.mutate({
         path: input.path,
         content: input.content ?? "",
       });
     },
     onSuccess: (_data, vars) => {
-      if (instanceId) invalidateFiles(qc, instanceId, vars.path);
+      if (agentId) invalidateFiles(qc, agentId, vars.path);
     },
   });
 }
 
-export function useFolderCreateMutation(instanceId: string | null) {
+export function useFolderCreateMutation(agentId: string | null) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: { path: string }) => {
-      const trpc = getInstanceTrpc(instanceId!);
+      const trpc = getAgentTrpc(agentId!);
       return trpc.files.mkdir.mutate(input);
     },
     onSuccess: () => {
-      if (instanceId) invalidateFiles(qc, instanceId);
+      if (agentId) invalidateFiles(qc, agentId);
     },
   });
 }
 
-export function useFileRenameMutation(instanceId: string | null) {
+export function useFileRenameMutation(agentId: string | null) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: {
@@ -159,29 +158,29 @@ export function useFileRenameMutation(instanceId: string | null) {
       to: string;
       overwrite?: boolean;
     }) => {
-      const trpc = getInstanceTrpc(instanceId!);
+      const trpc = getAgentTrpc(agentId!);
       return trpc.files.rename.mutate(input);
     },
     onSuccess: (_data, vars) => {
-      if (instanceId) {
-        invalidateFiles(qc, instanceId, vars.from);
+      if (agentId) {
+        invalidateFiles(qc, agentId, vars.from);
         qc.invalidateQueries({
-          queryKey: fileKeys.content(instanceId, vars.to),
+          queryKey: fileKeys.content(agentId, vars.to),
         });
       }
     },
   });
 }
 
-export function useFileDeleteMutation(instanceId: string | null) {
+export function useFileDeleteMutation(agentId: string | null) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: { path: string }) => {
-      const trpc = getInstanceTrpc(instanceId!);
+      const trpc = getAgentTrpc(agentId!);
       return trpc.files.remove.mutate(input);
     },
     onSuccess: (_data, vars) => {
-      if (instanceId) invalidateFiles(qc, instanceId, vars.path);
+      if (agentId) invalidateFiles(qc, agentId, vars.path);
     },
   });
 }
@@ -206,11 +205,11 @@ function sanitizeSegment(s: string): string {
  * `resource_link` URI.
  */
 export async function uploadMessageAttachment(
-  instanceId: string,
+  agentId: string,
   sessionId: string,
   attachment: { name: string; data: string; mimeType: string },
 ): Promise<{ absolutePath: string; relPath: string }> {
-  const trpc = getInstanceTrpc(instanceId);
+  const trpc = getAgentTrpc(agentId);
   const sid = sanitizeSegment(sessionId);
   const safeName = sanitizeSegment(attachment.name || "file");
   const unique = crypto.randomUUID().slice(0, 8);
@@ -227,7 +226,7 @@ export async function uploadMessageAttachment(
   return { absolutePath, relPath };
 }
 
-export function useFileUploadMutation(instanceId: string | null) {
+export function useFileUploadMutation(agentId: string | null) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: {
@@ -236,11 +235,11 @@ export function useFileUploadMutation(instanceId: string | null) {
       contentType?: string;
       overwrite?: boolean;
     }) => {
-      const trpc = getInstanceTrpc(instanceId!);
+      const trpc = getAgentTrpc(agentId!);
       return trpc.files.upload.mutate(input);
     },
     onSuccess: (_data, vars) => {
-      if (instanceId) invalidateFiles(qc, instanceId, vars.path);
+      if (agentId) invalidateFiles(qc, agentId, vars.path);
     },
   });
 }

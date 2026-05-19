@@ -7,17 +7,14 @@ export function buildSessionListCommand(deps: {
   chatService: ChatService;
 }): Command {
   return new Command("list")
-    .description("List sessions for an Instance")
-    .argument("<instance>", "instance name or ID")
+    .description("List sessions for an Agent")
+    .argument("<agent>", "agent name or ID")
     .option("--server <url>", "override the configured server URL")
     .option("--json", "emit raw JSON instead of the default table")
     .action(
-      async (
-        instanceRef: string,
-        opts: { server?: string; json?: boolean },
-      ) => {
+      async (agentRef: string, opts: { server?: string; json?: boolean }) => {
         const result = await deps.chatService.listSessions({
-          instanceRef,
+          agentRef,
           serverFlag: opts.server,
         });
         if (!result.ok) {

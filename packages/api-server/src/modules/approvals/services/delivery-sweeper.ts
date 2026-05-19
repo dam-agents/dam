@@ -68,7 +68,7 @@ export function createDeliverySweeper(
           buildAcpPermissionResponse(rpcId, optionId),
         );
         try {
-          await deps.wrapperFrameSender.send(row.instanceId, frame);
+          await deps.wrapperFrameSender.send(row.agentId, frame);
           await deps.repo.markDelivered(row.id);
         } catch {
           // Leave for next tick. The expire-overdue pass below bounds how

@@ -10,53 +10,50 @@ import { useMemo, useState } from "react";
 
 import { StatusBadge } from "../../../components/status-indicator.js";
 import { useStore } from "../../../store.js";
-import { useWakeInstance } from "../../instances/api/mutations.js";
-import { useInstances } from "../../instances/api/queries.js";
-import {
-  useRestartInstance,
-  useSyncRestartingInstances,
-} from "../../instances/hooks/use-restart-instance.js";
 import { useTemplates } from "../../templates/api/queries.js";
-import { useCreateAgent, useDeleteAgent } from "../api/mutations.js";
+import {
+  useCreateAgent,
+  useDeleteAgent,
+  useWakeAgent,
+} from "../api/mutations.js";
 import { useAgents } from "../api/queries.js";
 import { AddAgentDialog } from "../dialogs/add-agent-dialog.js";
 import { ConfigureAgentDialog } from "../dialogs/configure-agent-dialog.js";
+import {
+  useRestartAgent,
+  useSyncRestartingAgents,
+} from "../hooks/use-restart-agent.js";
 import { resolveAgentDisplay } from "../utils/agent-resolver.js";
 
 export function ListView() {
   const { data: templates = [], refetch: refetchTemplates } = useTemplates();
   const {
-    data: agents = [],
+    data: agentsData,
     refetch: refetchAgents,
     isSuccess: agentsLoaded,
   } = useAgents();
-  const {
-    data: instancesData,
-    refetch: refetchInstances,
-    isSuccess: instancesLoaded,
-  } = useInstances();
-  const instances = instancesData?.list ?? [];
-  const restartingInstances = useStore((s) => s.restartingInstances);
-  useSyncRestartingInstances();
+  const agents = agentsData?.list ?? [];
+  const restartingAgents = useStore((s) => s.restartingAgents);
+  useSyncRestartingAgents();
 
   const createAgent = useCreateAgent();
   const deleteAgent = useDeleteAgent();
-  const { restart: restartInstance } = useRestartInstance();
-  const wakeInstance = useWakeInstance();
+  const { restart: restartAgent } = useRestartAgent();
+  const wakeAgent = useWakeAgent();
 
-  const selectInstance = useStore((s) => s.selectInstance);
+  const selectAgent = useStore((s) => s.selectAgent);
   const setView = useStore((s) => s.setView);
   const showConfirm = useStore((s) => s.showConfirm);
 
   const [showAddAgent, setShowAddAgent] = useState(false);
   const [configAgentId, setConfigAgentId] = useState<string | null>(null);
 
-  const initialLoaded = agentsLoaded && instancesLoaded;
+  const initialLoaded = agentsLoaded;
   const busyAgent = createAgent.isPending;
 
   const restartingIds = useMemo(
-    () => new Set(restartingInstances.keys()),
-    [restartingInstances],
+    () => new Set(restartingAgents.keys()),
+    [restartingAgents],
   );
 
   const configAgent = configAgentId
@@ -76,7 +73,6 @@ export function ListView() {
               onClick={() => {
                 refetchTemplates();
                 refetchAgents();
-                refetchInstances();
               }}
               className="btn-brutal h-9 w-9 rounded-lg border-2 border-border bg-surface flex items-center justify-center text-text-secondary hover:text-accent hover:border-accent shadow-brutal-sm"
             >
@@ -108,18 +104,13 @@ export function ListView() {
           </div>
         )}
 
-        {/* One row per agent — the 1:N agent→instance cardinality is hidden. */}
+        {/* One row per agent. */}
         <div className="flex flex-col gap-6">
           {initialLoaded &&
             agents.map((agent) => {
-              const display = resolveAgentDisplay(
-                agent,
-                instances,
-                restartingIds,
-              );
-              const inst = display.instance;
+              const display = resolveAgentDisplay(agent, restartingIds);
               const onOpen = () => {
-                if (inst && display.clickable) selectInstance(inst.id);
+                if (display.clickable) selectAgent(agent.id);
               };
               return (
                 <div
@@ -149,11 +140,10 @@ export function ListView() {
                       >
                         <button
                           onClick={() => {
-                            if (!inst) return;
                             if (display.powerAction === "start")
-                              wakeInstance.mutate({ id: inst.id });
+                              wakeAgent.mutate({ id: agent.id });
                             else if (display.powerAction === "restart")
-                              restartInstance(inst.id);
+                              restartAgent(agent.id);
                           }}
                           disabled={display.powerAction === null}
                           className="btn-brutal h-8 rounded-lg border-2 border-border bg-surface px-3.5 text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent disabled:opacity-40 disabled:hover:text-text-secondary disabled:hover:border-border flex items-center gap-1 shadow-brutal-sm"

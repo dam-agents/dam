@@ -26,25 +26,18 @@ beforeAll(async () => {
     description: "test agent",
   });
   AGENT_ID = agent.id;
-  const inst = await client.instances.create.mutate({
-    name: "test-inst",
-    agentId: AGENT_ID,
-  });
-  INSTANCE_ID = inst.id;
+  INSTANCE_ID = agent.id;
 });
 
 afterAll(async () => {
   const schedules = await client.schedules.list.query({
-    instanceId: INSTANCE_ID,
+    agentId: INSTANCE_ID,
   });
   for (const s of schedules) {
     try {
       await client.schedules.delete.mutate({ id: s.id });
     } catch {}
   }
-  try {
-    await client.instances.delete.mutate({ id: INSTANCE_ID });
-  } catch {}
   try {
     await client.agents.delete.mutate({ id: AGENT_ID });
   } catch {}
@@ -58,14 +51,14 @@ describe("schedules: API server CRUD", () => {
     it("returns correct fields", async () => {
       const result = await client.schedules.createCron.mutate({
         name: "daily-report",
-        instanceId: INSTANCE_ID,
+        agentId: INSTANCE_ID,
         cron: "0 9 * * *",
         task: "generate report",
       });
 
       cronScheduleId = result.id;
       expect(result.name).toBe("daily-report");
-      expect(result.instanceId).toBe(INSTANCE_ID);
+      expect(result.agentId).toBe(INSTANCE_ID);
       expect(result.type).toBe("cron");
       expect(result.cron).toBe("0 9 * * *");
       expect(result.task).toBe("generate report");
@@ -77,7 +70,7 @@ describe("schedules: API server CRUD", () => {
       await expect(
         client.schedules.createCron.mutate({
           name: "bad-cron",
-          instanceId: INSTANCE_ID,
+          agentId: INSTANCE_ID,
           cron: "not-a-cron",
           task: "test",
         }),
@@ -89,14 +82,14 @@ describe("schedules: API server CRUD", () => {
     it("returns correct fields", async () => {
       const result = await client.schedules.createCron.mutate({
         name: "health-check",
-        instanceId: INSTANCE_ID,
+        agentId: INSTANCE_ID,
         cron: "*/5 * * * *",
         task: "check health",
       });
 
       secondCronScheduleId = result.id;
       expect(result.name).toBe("health-check");
-      expect(result.instanceId).toBe(INSTANCE_ID);
+      expect(result.agentId).toBe(INSTANCE_ID);
       expect(result.type).toBe("cron");
       expect(result.cron).toBe("*/5 * * * *");
       expect(result.enabled).toBe(true);
@@ -106,7 +99,7 @@ describe("schedules: API server CRUD", () => {
   describe("list schedules", () => {
     it("returns all schedules for the instance", async () => {
       const list = await client.schedules.list.query({
-        instanceId: INSTANCE_ID,
+        agentId: INSTANCE_ID,
       });
 
       expect(list).toHaveLength(2);
@@ -116,7 +109,7 @@ describe("schedules: API server CRUD", () => {
 
     it("returns empty array for instance with no schedules", async () => {
       const list = await client.schedules.list.query({
-        instanceId: "nonexistent",
+        agentId: "nonexistent",
       });
       expect(list).toEqual([]);
     });
@@ -153,7 +146,7 @@ describe("schedules: API server CRUD", () => {
       await client.schedules.delete.mutate({ id: cronScheduleId });
 
       const list = await client.schedules.list.query({
-        instanceId: INSTANCE_ID,
+        agentId: INSTANCE_ID,
       });
       expect(list).toHaveLength(1);
       expect(list[0].name).toBe("health-check");
@@ -206,19 +199,15 @@ describe("e2e: controller reconciliation", () => {
     // for memory on the small test VM. The outer afterAll re-attempts the
     // delete and tolerates "not found", so this is safe to do early.
     try {
-      await client.instances.delete.mutate({ id: INSTANCE_ID });
+      await client.agents.delete.mutate({ id: INSTANCE_ID });
     } catch {}
 
     const agent = await client.agents.create.mutate({
-      name: "e2e-agent",
+      name: "e2e-instance",
       templateId: "claude-code",
     });
     e2eAgentId = agent.id;
-    const inst = await client.instances.create.mutate({
-      name: "e2e-instance",
-      agentId: e2eAgentId,
-    });
-    e2eInstanceId = inst.id;
+    e2eInstanceId = agent.id;
     await waitForPodReady(`${e2eInstanceId}-0`, 180_000);
   });
 
@@ -228,9 +217,6 @@ describe("e2e: controller reconciliation", () => {
         await client.schedules.delete.mutate({ id: e2eScheduleId });
     } catch {}
     try {
-      await client.instances.delete.mutate({ id: e2eInstanceId });
-    } catch {}
-    try {
       await client.agents.delete.mutate({ id: e2eAgentId });
     } catch {}
   });
@@ -238,7 +224,7 @@ describe("e2e: controller reconciliation", () => {
   it("controller writes status.yaml after cron fires", async () => {
     const sched = await client.schedules.createCron.mutate({
       name: "e2e-cron",
-      instanceId: e2eInstanceId,
+      agentId: e2eInstanceId,
       cron: "* * * * *",
       task: "e2e test task",
     });

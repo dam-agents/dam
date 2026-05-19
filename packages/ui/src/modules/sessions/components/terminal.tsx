@@ -18,13 +18,13 @@ import { getAccessToken } from "../../../auth.js";
 type ConnectionState = "connecting" | "live" | "disconnected" | "exited";
 
 export function Terminal({
-  instanceId,
+  agentId,
   sessionId,
   fresh,
   onConnected,
   autoConnect = true,
 }: {
-  instanceId: string;
+  agentId: string;
   sessionId: string;
   fresh?: boolean;
   onConnected?: () => void;
@@ -97,7 +97,7 @@ export function Terminal({
       if (cancelled) return;
 
       ws = new WebSocket(
-        `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/api/instances/${instanceId}/terminal?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(sessionId)}${fresh ? "&reset=1" : ""}`,
+        `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/api/agents/${agentId}/terminal?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(sessionId)}${fresh ? "&reset=1" : ""}`,
       );
       ws.binaryType = "arraybuffer";
 
@@ -158,7 +158,7 @@ export function Terminal({
     // `fresh` and `onConnected` are intentionally captured once at mount.
     // `reconnectKey` triggers a full teardown+reconnect cycle.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [instanceId, sessionId, reconnectKey]);
+  }, [agentId, sessionId, reconnectKey]);
 
   return (
     <div className="flex flex-1 flex-col min-h-0 relative">

@@ -4,7 +4,6 @@ import type { Schedule, ScheduleSpec, ScheduleStatus } from "api-server-api";
 import {
   LABEL_TYPE,
   LABEL_OWNER,
-  LABEL_INSTANCE_REF,
   LABEL_AGENT_REF,
   LABEL_CREATED_BY,
   TYPE_SCHEDULE,
@@ -27,15 +26,14 @@ export function parseSchedule(cm: k8s.V1ConfigMap): Schedule {
   return {
     id: cm.metadata!.name!,
     name: displayName(cm),
-    instanceId: cm.metadata!.labels![LABEL_INSTANCE_REF],
+    agentId: cm.metadata!.labels![LABEL_AGENT_REF],
     spec,
     status,
   };
 }
 
 export function buildScheduleConfigMap(
-  instanceId: string,
-  agentRef: string,
+  agentId: string,
   spec: Record<string, unknown>,
   owner: string,
 ): k8s.V1ConfigMap {
@@ -43,8 +41,7 @@ export function buildScheduleConfigMap(
     (spec as { createdBy?: string }).createdBy === "agent" ? "agent" : "user";
   const labels: Record<string, string> = {
     [LABEL_TYPE]: TYPE_SCHEDULE,
-    [LABEL_INSTANCE_REF]: instanceId,
-    [LABEL_AGENT_REF]: agentRef,
+    [LABEL_AGENT_REF]: agentId,
     [LABEL_OWNER]: owner,
     [LABEL_CREATED_BY]: createdBy,
   };

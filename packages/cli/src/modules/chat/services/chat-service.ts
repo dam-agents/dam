@@ -3,10 +3,10 @@ import { err, ok, type Result } from "../../../result.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { TokenProvider } from "../../auth/index.js";
 import {
-  createInstanceResolver,
-  type InstanceService,
+  createAgentResolver,
+  type AgentService,
   type ResolveError,
-} from "../../instance/index.js";
+} from "../../agent/index.js";
 import type { SessionsPort } from "./sessions-service.js";
 import {
   connectTerminalBridge,
@@ -27,13 +27,13 @@ export type ChatError =
 
 export interface ChatService {
   run(input: {
-    instanceRef: string;
+    agentRef: string;
     serverFlag?: string;
     strategy: TerminalStrategy;
     reset?: boolean;
   }): Promise<Result<{ bridge: BridgeResult; sessionId: string }, ChatError>>;
   listSessions(input: {
-    instanceRef: string;
+    agentRef: string;
     serverFlag?: string;
   }): Promise<Result<readonly SessionView[], ChatError>>;
 }
@@ -42,12 +42,12 @@ export function createChatService(deps: {
   compatService: CompatService;
   configService: ConfigService;
   tokenProvider: TokenProvider;
-  createInstanceService: (host: string) => InstanceService;
+  createAgentService: (host: string) => AgentService;
   createSessionsPort: (host: string) => SessionsPort;
   confirmModeSwitch: () => Promise<boolean>;
   isTty: boolean;
 }): ChatService {
-  async function bootstrap(instanceRef: string, serverFlag?: string) {
+  async function bootstrap(agentRef: string, serverFlag?: string) {
     const flag = serverFlag ? { server: serverFlag } : undefined;
     const config = await deps.configService.getResolved({ flag });
     if (!config.ok) {
@@ -77,9 +77,9 @@ export function createChatService(deps: {
       });
     }
 
-    const resolved = await createInstanceResolver({
-      instanceService: deps.createInstanceService(host),
-    }).resolve(instanceRef);
+    const resolved = await createAgentResolver({
+      agentService: deps.createAgentService(host),
+    }).resolve(agentRef);
     if (!resolved.ok) return resolved;
 
     const tok = await deps.tokenProvider.getValidAccessToken(host);
@@ -89,16 +89,16 @@ export function createChatService(deps: {
     return ok({
       host,
       token: tok.value,
-      instanceId: resolved.value.id,
+      agentId: resolved.value.id,
       sessions: deps.createSessionsPort(host),
     });
   }
 
   return {
     async listSessions(input) {
-      const ctx = await bootstrap(input.instanceRef, input.serverFlag);
+      const ctx = await bootstrap(input.agentRef, input.serverFlag);
       if (!ctx.ok) return ctx;
-      const result = await ctx.value.sessions.list(ctx.value.instanceId);
+      const result = await ctx.value.sessions.list(ctx.value.agentId);
       if (!result.ok)
         return err({
           kind: "session-failed" as const,
@@ -110,15 +110,13 @@ export function createChatService(deps: {
     async run(input) {
       if (!deps.isTty) return err({ kind: "not-a-tty" });
 
-      const ctx = await bootstrap(input.instanceRef, input.serverFlag);
+      const ctx = await bootstrap(input.agentRef, input.serverFlag);
       if (!ctx.ok) return ctx;
-      const { host, token, instanceId, sessions } = ctx.value;
+      const { host, token, agentId, sessions } = ctx.value;
 
-      let resolution = await sessions.resolveTerminal(
-        instanceId,
-        input.strategy,
-        { reset: input.reset },
-      );
+      let resolution = await sessions.resolveTerminal(agentId, input.strategy, {
+        reset: input.reset,
+      });
       if (!resolution.ok)
         return err({
           kind: "session-failed" as const,
@@ -129,7 +127,7 @@ export function createChatService(deps: {
         if (!(await deps.confirmModeSwitch()))
           return err({ kind: "mode-switch-declined" });
         resolution = await sessions.resolveTerminal(
-          instanceId,
+          agentId,
           { kind: "resume", sessionId: resolution.value.sessionId },
           { reset: input.reset, force: true },
         );

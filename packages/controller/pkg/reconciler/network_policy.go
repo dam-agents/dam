@@ -55,7 +55,7 @@ func BuildAgentEgressNetworkPolicy(pairKey string, cfg *config.Config, ownerCM *
 			Name:      pairKey + "-agent-egress",
 			Namespace: cfg.Namespace,
 			Labels: map[string]string{
-				LabelInstance:                  pairKey,
+				LabelAgent:                     pairKey,
 				LabelPair:                      pairKey,
 				LabelRole:                      RoleAgent,
 				"agent-platform.ai/managed-by": "platform-controller",
@@ -96,7 +96,7 @@ func applyNetworkPolicy(ctx context.Context, client kubernetes.Interface, desire
 	})
 }
 
-func (r *InstanceReconciler) applyAgentEgressNetworkPolicy(ctx context.Context, np *networkingv1.NetworkPolicy) error {
+func (r *AgentReconciler) applyAgentEgressNetworkPolicy(ctx context.Context, np *networkingv1.NetworkPolicy) error {
 	if err := applyNetworkPolicy(ctx, r.client, np); err != nil {
 		return fmt.Errorf("applying agent egress NetworkPolicy: %w", err)
 	}

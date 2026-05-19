@@ -1,6 +1,6 @@
 # Architecture
 
-Last verified: 2026-05-15
+Last verified: 2026-05-19
 
 ## System context
 
@@ -57,11 +57,11 @@ Each page describes how the accepted ADRs are realized in the current system. AD
 
 - [platform-topology](architecture/platform-topology.md) — the four long-lived components (controller, api-server, agent-runtime, ui), the protocols between them, and the K8s resource model.
 - [agent-lifecycle](architecture/agent-lifecycle.md) — create → wake → trigger → hibernate → delete; per-schedule sessions and forks.
-- [persistence](architecture/persistence.md) — the three substrates (Postgres, ConfigMap spec/status, per-instance PVC) and what survives each lifecycle event.
+- [persistence](architecture/persistence.md) — the three substrates (Postgres, ConfigMap spec/status, per-Agent PVC) and what survives each lifecycle event.
 - [security-and-credentials](architecture/security-and-credentials.md) — Keycloak identity, Envoy sidecar credential gateway, K8s-Secret credential storage, ext_authz HITL, network boundary.
 - [channels](architecture/channels.md) — Slack and Telegram adapters inside the api-server, inbound relay, outbound MCP tool, identity linking.
 - [cli](architecture/cli.md) — `dam` command-line client, an npm-distributed Node package that points at a configured Platform deployment.
-- [skills](architecture/skills.md) — connectable git-based skill sources, install onto the per-instance PVC, REST-only publish back as a PR, Envoy sidecar credential injection for GitHub.
+- [skills](architecture/skills.md) — connectable git-based skill sources, install onto the per-Agent PVC, REST-only publish back as a PR, Envoy sidecar credential injection for GitHub.
 - [security-scanning](architecture/security-scanning.md) — Quay image scanning with auto-filed issues, CodeQL SAST, Dependabot, and the remediation flow.
 
 ## Strategy

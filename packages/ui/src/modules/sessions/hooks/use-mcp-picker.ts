@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { isMcpSecret, mcpHostnameFromSecretName } from "../../../types.js";
 import { useAgentAccess } from "../../agents/api/queries.js";
-import { useInstancesList } from "../../instances/api/queries.js";
 import { useSecrets } from "../../secrets/api/queries.js";
 import type { McpOption } from "../components/mcps-panel.js";
 
@@ -11,16 +10,9 @@ import type { McpOption } from "../components/mcps-panel.js";
  * Manages MCP server selection for session creation.
  * Computes available options from agent access + secrets, tracks enable/disable state.
  */
-export function useMcpPicker(selectedInstance: string | null) {
-  const instances = useInstancesList();
-
+export function useMcpPicker(selectedAgent: string | null) {
   const { data: secrets = [] } = useSecrets();
-
-  const currentAgentId = useMemo(
-    () => instances.find((i) => i.id === selectedInstance)?.agentId,
-    [instances, selectedInstance],
-  );
-  const { data: access } = useAgentAccess(currentAgentId ?? null);
+  const { data: access } = useAgentAccess(selectedAgent);
 
   const mcpOptions = useMemo<McpOption[]>(() => {
     const mcpSecrets = secrets.filter(isMcpSecret);
@@ -47,7 +39,7 @@ export function useMcpPicker(selectedInstance: string | null) {
   useEffect(() => {
     initializedRef.current = false;
     setEnabledMcps(new Set());
-  }, [currentAgentId]);
+  }, [selectedAgent]);
 
   const toggleMcp = useCallback(
     (hostname: string) =>

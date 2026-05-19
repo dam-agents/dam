@@ -60,24 +60,9 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, err.Error())
 	}
 
-	instanceCM, err := r.client.CoreV1().ConfigMaps(r.config.Namespace).Get(ctx, forkSpec.Instance, metav1.GetOptions{})
-	if err != nil {
-		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("instance %q not found: %v", forkSpec.Instance, err))
-	}
-	instanceSpecYAML, ok := instanceCM.Data["spec.yaml"]
-	if !ok {
-		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("instance %q has no spec.yaml", forkSpec.Instance))
-	}
-	instanceSpec, err := types.ParseInstanceSpec(instanceSpecYAML)
-	if err != nil {
-		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("parsing instance %q: %v", forkSpec.Instance, err))
-	}
-
-	agentName := instanceCM.Labels["agent-platform.ai/agent"]
-	if agentName == "" {
-		agentName = instanceSpec.AgentName
-	}
-	_, agentSpec, err := r.resolver.Resolve(agentName)
+	// ADR-046: the fork derives from a single Agent CM that carries both
+	// definition and runtime fields. Resolve it directly.
+	_, agentSpec, err := r.resolver.Resolve(forkSpec.AgentName)
 	if err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, err.Error())
 	}
@@ -98,7 +83,7 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 			"fork", forkName, "foreignSub", forkSpec.ForeignSub)
 	}
 
-	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(forkName, forkSpec.Instance, r.config, cm, credentialSecrets)
+	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(forkName, forkSpec.AgentName, r.config, cm, credentialSecrets)
 	if err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("rendering envoy bootstrap: %v", err))
 	}
@@ -113,7 +98,7 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 
 	// ADR-041: per-fork ServiceAccount in the agent namespace. Forks get
 	// their OWN identity (not the parent's) so a compromised fork cannot
-	// reach the parent's full `/api/instances/<parent>/*` surface — only
+	// reach the parent's full `/api/agents/<parent>/*` surface — only
 	// the narrow paths the per-fork harness AuthorizationPolicy below
 	// admits. Owner-refed to the fork ConfigMap (same namespace), so
 	// K8s GC reaps it on fork-cm delete.
@@ -122,15 +107,15 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 	}
 
 	// ADR-027: per-fork harness policy admits the fork SA only to
-	// `/api/instances/<parent>/mcp` (not the parent's full surface), and
+	// `/api/agents/<parent>/mcp` (not the parent's full surface), and
 	// the per-fork ext-authz policy admits the fork SA to the parent's
-	// per-instance ext-authz Service so the parent owner's HITL rules
+	// per-agent ext-authz Service so the parent owner's HITL rules
 	// continue to gate the fork's egress. Both gate the fork *gateway*'s
 	// SPIFFE identity — the fork agent itself is not a mesh participant.
-	if err := r.applyAuthorizationPolicy(ctx, BuildForkHarnessAuthorizationPolicy(forkName, forkSpec.Instance, r.config, cm)); err != nil {
+	if err := r.applyAuthorizationPolicy(ctx, BuildForkHarnessAuthorizationPolicy(forkName, forkSpec.AgentName, r.config, cm)); err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying fork harness authz policy: %v", err))
 	}
-	if err := r.applyAuthorizationPolicy(ctx, BuildForkExtAuthzAuthorizationPolicy(forkName, forkSpec.Instance, r.config, cm)); err != nil {
+	if err := r.applyAuthorizationPolicy(ctx, BuildForkExtAuthzAuthorizationPolicy(forkName, forkSpec.AgentName, r.config, cm)); err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying fork ext-authz authz policy: %v", err))
 	}
 
@@ -146,7 +131,7 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 	// agent Job's pod starts dialing it. ADR-041: pair-key NetworkPolicy
 	// is gone — pair isolation is now enforced by the AuthorizationPolicy
 	// above.
-	gatewayPod := BuildForkGatewayPod(forkName, forkSpec.Instance, r.config, cm, credentialSecrets)
+	gatewayPod := BuildForkGatewayPod(forkName, forkSpec.AgentName, r.config, cm, credentialSecrets)
 	gatewaySvc := BuildForkGatewayService(forkName, r.config, cm)
 
 	if err := r.applyPod(ctx, gatewayPod); err != nil {
@@ -164,7 +149,7 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 		return fmt.Errorf("fork %s: gateway Service ClusterIP not yet assigned, requeuing", forkName)
 	}
 
-	desired := BuildForkAgentJob(forkName, forkSpec, instanceSpec, agentSpec, r.config, cm, credentialSecrets, gatewayIP)
+	desired := BuildForkAgentJob(forkName, forkSpec, agentSpec, r.config, cm, credentialSecrets, gatewayIP)
 
 	if err := r.applyForkJob(ctx, desired); err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying job: %v", err))
@@ -203,8 +188,8 @@ func (r *ForkReconciler) Delete(ctx context.Context, name string) {
 	// leaf Cert) are owner-refed to the fork ConfigMap and reaped by K8s GC.
 	//
 	// Release-namespace per-fork policies (harness-allow, ext-authz-allow)
-	// cannot use a cross-namespace ownerRef — same trap as the per-instance
-	// resources in InstanceReconciler.Delete. Clean them up explicitly.
+	// cannot use a cross-namespace ownerRef — same trap as the per-agent
+	// resources in AgentReconciler.Delete. Clean them up explicitly.
 	r.deleteReleaseNsForkResources(ctx, name)
 	slog.Info("fork configmap deleted", "fork", name)
 }
@@ -226,7 +211,7 @@ func (r *ForkReconciler) deleteReleaseNsForkResources(ctx context.Context, forkN
 }
 
 // ensureForkServiceAccount renders the per-fork ServiceAccount and applies
-// it idempotently. Mirrors InstanceReconciler.ensureServiceAccount (same
+// it idempotently. Mirrors AgentReconciler.ensureServiceAccount (same
 // SA shape — `automountServiceAccountToken: false`, owner-refed to the
 // fork ConfigMap, label-drift heal).
 func (r *ForkReconciler) ensureForkServiceAccount(ctx context.Context, forkName string, ownerCM *corev1.ConfigMap) error {
@@ -300,7 +285,7 @@ func (r *ForkReconciler) applyPod(ctx context.Context, desired *corev1.Pod) erro
 	return err
 }
 
-// applyService mirrors `InstanceReconciler.applyService` for fork-scoped
+// applyService mirrors `AgentReconciler.applyService` for fork-scoped
 // gateway Services.
 func (r *ForkReconciler) applyService(ctx context.Context, desired *corev1.Service) error {
 	_, err := r.client.CoreV1().Services(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
@@ -369,7 +354,7 @@ func jobFailureReason(job *batchv1.Job) string {
 	return "job failed"
 }
 
-// applyConfigMap mirrors `InstanceReconciler.applyConfigMap` for fork-scoped
+// applyConfigMap mirrors `AgentReconciler.applyConfigMap` for fork-scoped
 // ConfigMaps (Envoy bootstrap). Owner references on `desired` cause the CM to
 // be GC'd when the fork CM is deleted.
 func (r *ForkReconciler) applyConfigMap(ctx context.Context, desired *corev1.ConfigMap) error {
@@ -390,7 +375,7 @@ func (r *ForkReconciler) applyConfigMap(ctx context.Context, desired *corev1.Con
 	})
 }
 
-// applyAuthorizationPolicy mirrors `InstanceReconciler.applyAuthorizationPolicy`
+// applyAuthorizationPolicy mirrors `AgentReconciler.applyAuthorizationPolicy`
 // for fork-scoped policies (per-fork gateway admission, ADR-041).
 func (r *ForkReconciler) applyAuthorizationPolicy(ctx context.Context, desired *unstructured.Unstructured) error {
 	if r.dynamic == nil {
@@ -412,7 +397,7 @@ func (r *ForkReconciler) applyAuthorizationPolicy(ctx context.Context, desired *
 	})
 }
 
-// applyCertificate mirrors `InstanceReconciler.applyCertificate` for fork-scoped
+// applyCertificate mirrors `AgentReconciler.applyCertificate` for fork-scoped
 // cert-manager Certificates (Envoy leaf TLS).
 func (r *ForkReconciler) applyCertificate(ctx context.Context, desired *cmv1.Certificate) error {
 	if r.dynamic == nil {

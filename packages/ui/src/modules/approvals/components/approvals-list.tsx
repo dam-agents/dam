@@ -127,7 +127,7 @@ function ApprovalRow({
           )}
           {density === "full" && (
             <p className="text-[10px] text-text-muted mt-0.5">
-              agent {row.agentId} · instance {row.instanceId.slice(0, 8)}
+              agent {row.agentId}
             </p>
           )}
         </div>

@@ -7,7 +7,7 @@ import { useStore } from "../../../store.js";
 import { hasStreamingAssistant } from "../../acp/session-projection.js";
 import type { AcpUpdate } from "../../acp/types.js";
 import { classifyResumeError, extractErrorMessage } from "../../acp/utils.js";
-import { useInstancesList } from "../../instances/api/queries.js";
+import { useAgentsList } from "../../agents/api/queries.js";
 import { acpSessionsKeys } from "../api/queries.js";
 import { useAcpConfigCache } from "./use-acp-config-cache.js";
 import { useAcpConnection } from "./use-acp-connection.js";
@@ -24,7 +24,7 @@ import { useAcpUpdateHandler } from "./use-acp-update-handler.js";
  * else (wake-on-entry, busy-from-projection).
  */
 export function useAcpSession(
-  selectedInstance: string | null,
+  selectedAgent: string | null,
   selectedMcpServers: McpServer[],
   textareaRef: React.RefObject<HTMLTextAreaElement | null>,
 ) {
@@ -43,16 +43,16 @@ export function useAcpSession(
     setBusy(busy);
   }, [busy, setBusy]);
 
-  const instanceRunState = useInstancesList().find(
-    (i) => i.id === selectedInstance,
+  const agentRunState = useAgentsList().find(
+    (a) => a.id === selectedAgent,
   )?.state;
   const modeChangeRef = useRef<((u: AcpUpdate) => void) | null>(null);
 
   const { captureSessionConfig, handleConfigUpdate, applySavedPreferences } =
-    useAcpConfigCache(selectedInstance, sessionId, instanceRunState);
+    useAcpConfigCache(selectedAgent, sessionId, agentRunState);
 
   const { loadHistory } = useAcpHistory(
-    selectedInstance,
+    selectedAgent,
     selectedMcpServers,
     captureSessionConfig,
     handleConfigUpdate,
@@ -63,7 +63,7 @@ export function useAcpSession(
     engage,
     clear: clearEngagement,
   } = useAcpSessionEngagement(
-    selectedInstance,
+    selectedAgent,
     selectedMcpServers,
     captureSessionConfig,
     applySavedPreferences,
@@ -88,7 +88,7 @@ export function useAcpSession(
     connectionRef,
     reset: resetConnection,
   } = useAcpConnection({
-    selectedInstance,
+    selectedAgent,
     sessionId,
     // Don't open a live WS while resumeSession's throwaway is still
     // replaying history — both channels would otherwise receive the replay
@@ -101,12 +101,12 @@ export function useAcpSession(
     setMessages,
   });
 
-  // Wake hibernated instance on entry.
+  // Wake hibernated agent on entry.
   useEffect(() => {
-    if (selectedInstance && instanceRunState === "hibernated") {
-      api.instances.wake.mutate({ id: selectedInstance }).catch(() => {});
+    if (selectedAgent && agentRunState === "hibernated") {
+      api.agents.wake.mutate({ id: selectedAgent }).catch(() => {});
     }
-  }, [selectedInstance, instanceRunState]);
+  }, [selectedAgent, agentRunState]);
 
   const resetSession = useCallback(() => {
     resetConnection();
@@ -120,7 +120,7 @@ export function useAcpSession(
 
   const resumeSession = useCallback(
     async (sid: string, opts?: { expectNotFound?: boolean }) => {
-      if (!selectedInstance) return;
+      if (!selectedAgent) return;
 
       resetConnection();
       setLoadingSession(true);
@@ -135,7 +135,7 @@ export function useAcpSession(
 
         try {
           const sessions = await api.sessions.list.query({
-            instanceId: selectedInstance,
+            agentId: selectedAgent,
             includeChannel: false,
           });
           const match = sessions.find((s) => s.sessionId === sid);
@@ -150,7 +150,7 @@ export function useAcpSession(
           setLoadingSession(false);
           await api.sessions.delete.mutate({
             sessionId: sid,
-            instanceId: selectedInstance,
+            agentId: selectedAgent,
           });
           queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
           resetSession();
@@ -166,7 +166,7 @@ export function useAcpSession(
       }
     },
     [
-      selectedInstance,
+      selectedAgent,
       loadHistory,
       resetConnection,
       resetSession,
@@ -187,7 +187,7 @@ export function useAcpSession(
   };
 
   const { sendPrompt, stopAgent } = useAcpPrompt(
-    selectedInstance,
+    selectedAgent,
     ensureLive,
     engagedSessionIdRef,
     connectionRef,

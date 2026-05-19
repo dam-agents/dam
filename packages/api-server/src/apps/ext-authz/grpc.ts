@@ -67,11 +67,8 @@ export async function startExtAuthzGrpcApp(
         // already gates by SA principal, so a non-matching host can only
         // come from an out-of-mesh caller or a misconfigured client).
         const authority = call.getHost();
-        const instanceId = parseInstanceFromAuthority(
-          authority,
-          expectedPrefix,
-        );
-        if (!instanceId) {
+        const agentId = parseInstanceFromAuthority(authority, expectedPrefix);
+        if (!agentId) {
           process.stderr.write(
             `[ext-authz] denied: unparsable :authority='${authority}'\n`,
           );
@@ -96,7 +93,7 @@ export async function startExtAuthzGrpcApp(
         }
 
         const verdict = await deps.gate.gateRequest({
-          instanceId,
+          agentId,
           host,
           method: httpReq?.method?.toUpperCase() || "*",
           path: httpReq?.path || "*",

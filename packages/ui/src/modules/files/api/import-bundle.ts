@@ -207,19 +207,19 @@ function writeOct(buf: Uint8Array, off: number, n: number, len: number) {
 }
 
 export type ImportBundleArgs = {
-  instanceId: string;
+  agentId: string;
   entries: BundleEntry[];
 };
 
 async function postBundle(
-  instanceId: string,
+  agentId: string,
   bundle: Blob,
   filename: string,
 ): Promise<ImportBundleResult> {
   const form = new FormData();
   form.set("bundle", bundle, filename);
   const res = await authFetch(
-    `/api/instances/${encodeURIComponent(instanceId)}/import`,
+    `/api/agents/${encodeURIComponent(agentId)}/import`,
     {
       method: "POST",
       body: form,
@@ -244,11 +244,11 @@ async function postBundle(
 }
 
 export async function importBundle({
-  instanceId,
+  agentId,
   entries,
 }: ImportBundleArgs): Promise<ImportBundleResult> {
   const bundle = await buildBundle(entries);
-  return postBundle(instanceId, bundle, "bundle.tar");
+  return postBundle(agentId, bundle, "bundle.tar");
 }
 
 /**
@@ -258,16 +258,16 @@ export async function importBundle({
  * we shouldn't re-wrap it.
  */
 export type ImportRawBundleArgs = {
-  instanceId: string;
+  agentId: string;
   bundle: Blob | File;
 };
 
 export async function importRawBundle({
-  instanceId,
+  agentId,
   bundle,
 }: ImportRawBundleArgs): Promise<ImportBundleResult> {
   const filename = bundle instanceof File ? bundle.name : "bundle.tar.gz";
-  return postBundle(instanceId, bundle, filename);
+  return postBundle(agentId, bundle, filename);
 }
 
 /**

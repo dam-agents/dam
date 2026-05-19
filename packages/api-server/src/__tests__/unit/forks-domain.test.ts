@@ -14,7 +14,7 @@ function makeFork(): Fork {
     forkId: "fork-1",
     replyId: "reply-1",
     spec: {
-      instanceId: "inst-1",
+      agentId: "inst-1",
       foreignSub: toForeignSub("kc|user-42"),
     },
   });

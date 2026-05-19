@@ -1,40 +1,38 @@
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import {
-  LABEL_AGENT_REF,
+  LABEL_TYPE,
   LABEL_OWNER,
+  TYPE_AGENT,
 } from "../../modules/agents/infrastructure/labels.js";
 
-/** Resolved instance metadata. `instanceId` mirrors the URL parameter
- *  after a successful resolution; `agentId` and `owner` come from the
- *  instance ConfigMap's labels. */
-export interface InstanceIdentity {
-  instanceId: string;
+/** Resolved agent metadata. `agentId` mirrors the URL parameter after a
+ *  successful resolution; `owner` comes from the Agent ConfigMap's labels. */
+export interface AgentIdentity {
   agentId: string;
   owner: string;
 }
 
 /**
- * Resolve the calling instance from the URL `:id`.
+ * Resolve the calling agent from the URL `:id`.
  *
- * ADR-041: identity is enforced at the Istio waypoint via a per-instance
+ * ADR-041: identity is enforced at the Istio waypoint via a per-agent
  * AuthorizationPolicy that ALLOWs only principal `<td>/ns/<agent-ns>/sa/<id>`
- * to path `/api/instances/<id>/*`. By the time a request reaches this
- * handler the URL `:id` is already authenticated — the application
- * does not parse XFCC and does not consult any header.
+ * to path `/api/agents/<id>/*`. By the time a request reaches this handler
+ * the URL `:id` is already authenticated — the application does not parse
+ * XFCC and does not consult any header.
  *
- * Returns null when the instance ConfigMap is missing or unlabeled
- * (drift); callers map that to 404.
+ * Returns null when the Agent ConfigMap is missing, the type label is wrong
+ * (drift), or the owner label is missing; callers map that to 404.
  */
-export async function resolveInstance(
+export async function resolveAgent(
   k8s: K8sClient,
-  instanceId: string,
-): Promise<InstanceIdentity | null> {
-  const instanceCm = await k8s.getConfigMap(instanceId);
-  if (!instanceCm) return null;
+  agentId: string,
+): Promise<AgentIdentity | null> {
+  const cm = await k8s.getConfigMap(agentId);
+  if (!cm) return null;
+  if (cm.metadata?.labels?.[LABEL_TYPE] !== TYPE_AGENT) return null;
+  const owner = cm.metadata?.labels?.[LABEL_OWNER];
+  if (!owner) return null;
 
-  const agentId = instanceCm.metadata?.labels?.[LABEL_AGENT_REF];
-  const owner = instanceCm.metadata?.labels?.[LABEL_OWNER];
-  if (!agentId || !owner) return null;
-
-  return { instanceId, agentId, owner };
+  return { agentId, owner };
 }

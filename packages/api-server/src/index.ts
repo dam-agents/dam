@@ -1,16 +1,16 @@
 import { createDb, runMigrations } from "db";
 import { createApi } from "./modules/agents/infrastructure/k8s.js";
 import {
-  composeInstancesModule,
-  createInstancesRepository,
+  composeAgentsModule,
+  createAgentsRepository,
   createKeycloakUserDirectory,
   startK8sCleanupSaga,
   startChannelCleanupSaga,
-  deleteChannelsByInstance,
+  deleteChannelsByAgent,
   listChannelsByOwner,
   findBySlackChannelId,
-  findSlackChannelByInstance,
-} from "./modules/instances/index.js";
+  findSlackChannelByAgent,
+} from "./modules/agents/index.js";
 import { SessionMode, SessionType } from "api-server-api";
 import {
   upsertSession,
@@ -18,7 +18,7 @@ import {
   touchSession,
 } from "./modules/sessions/index.js";
 import {
-  createInstanceSkillsRepository,
+  createAgentSkillsRepository,
   parseSeedSources,
   startSkillsCleanupSaga,
 } from "./modules/skills/index.js";
@@ -46,7 +46,7 @@ import {
   authorizeThread,
   revokeThread,
   listAuthorizedThreads,
-  deleteThreadsByInstance,
+  deleteThreadsByAgent,
 } from "./modules/channels/infrastructure/telegram-threads-repository.js";
 import { createOAuthRefreshService } from "./modules/connections/services/oauth-refresh-service.js";
 import { createPodFilesBus } from "./modules/pod-files/bus.js";
@@ -88,16 +88,16 @@ await runMigrations(config.databaseUrl, config.migrationsPath);
 const { db, sql } = createDb(config.databaseUrl);
 
 const k8sClient = createK8sClient(api, config.namespace);
-const instancesRepo = createInstancesRepository(k8sClient);
+const agentsRepo = createAgentsRepository(k8sClient);
 const channelSecretStore = createChannelSecretStore(k8sClient);
 
 const k8sCleanupSub = startK8sCleanupSaga(k8sClient, channelSecretStore);
 const channelCleanupSub = startChannelCleanupSaga(
-  deleteChannelsByInstance(db),
-  deleteThreadsByInstance(db),
+  deleteChannelsByAgent(db),
+  deleteThreadsByAgent(db),
 );
-const skillsCleanupSub = startSkillsCleanupSaga((instanceId) =>
-  createInstanceSkillsRepository(db).deleteByInstance(instanceId),
+const skillsCleanupSub = startSkillsCleanupSaga((agentId) =>
+  createAgentSkillsRepository(db).deleteByAgent(agentId),
 );
 const seedSources = parseSeedSources(config.skillSourcesSeed);
 
@@ -115,25 +115,25 @@ const userDirectory = createKeycloakUserDirectory({
   clientSecret: config.keycloakApiClientSecret,
 });
 
-const { instances: systemInstances } = composeInstancesModule({
+const { agents: systemAgents } = composeAgentsModule({
   api,
   namespace: config.namespace,
   owner: undefined,
   db,
   userDirectory,
   channelSecretStore,
-  getAgent: async () => null,
+  readTemplateSpec: async () => null,
 });
 const persistSession = upsertSession(db);
 const persistSlackSession = (
   sessionId: string,
-  instanceId: string,
+  agentId: string,
   type: SessionType,
   threadTs?: string,
 ) =>
   persistSession(
     sessionId,
-    instanceId,
+    agentId,
     SessionMode.Chat,
     type,
     undefined,
@@ -141,13 +141,13 @@ const persistSlackSession = (
   );
 const persistTelegramSession = (
   sessionId: string,
-  instanceId: string,
+  agentId: string,
   type: SessionType,
   threadId?: string,
 ) =>
   persistSession(
     sessionId,
-    instanceId,
+    agentId,
     SessionMode.Chat,
     type,
     undefined,
@@ -174,8 +174,8 @@ const chatSdkState = config.telegramEnabled
 
 const channelRegistry: ChannelRegistry = {
   resolveInstanceBySlackChannel: async (slackChannelId) =>
-    (await findBySlackChannelId(db)(slackChannelId))?.instanceId ?? null,
-  resolveSlackChannelByInstance: findSlackChannelByInstance(db),
+    (await findBySlackChannelId(db)(slackChannelId))?.agentId ?? null,
+  resolveSlackChannelByInstance: findSlackChannelByAgent(db),
 };
 
 const slackWorker =
@@ -184,7 +184,7 @@ const slackWorker =
         config.namespace,
         config.slackBotToken,
         config.slackAppToken,
-        () => systemInstances,
+        () => systemAgents,
         persistSlackSession,
         identityLinkService,
         {
@@ -199,7 +199,7 @@ const slackWorker =
           find: findByInstanceAndThreadTs(db),
           touch: touchSession(db),
         },
-        (instanceId) => instancesRepo.getOwner(instanceId),
+        (agentId) => agentsRepo.getOwner(agentId),
         channelRegistry,
         config.brand.short,
       )
@@ -210,7 +210,7 @@ const telegramWorker =
     ? createTelegramWorker(
         config.namespace,
         chatSdkState,
-        () => systemInstances,
+        () => systemAgents,
         persistTelegramSession,
         {
           isAuthorized: isThreadAuthorized(db),
@@ -273,8 +273,8 @@ const trustedHosts = loadTrustedHosts(config.trustedHostsPath);
 const presetSeeder = createPresetSeederAdapter(db, trustedHosts);
 
 const wrapperFrameSender = createWrapperFrameSender({
-  resolveWrapperUrl: (instanceId) =>
-    `ws://${podBaseUrl(instanceId, config.namespace)}/api/acp`,
+  resolveWrapperUrl: (agentId) =>
+    `ws://${podBaseUrl(agentId, config.namespace)}/api/acp`,
 });
 
 // System-level approvals composition — bound to the bus + cross-module
@@ -289,8 +289,8 @@ const {
   db,
   bus: redisBus,
   identityResolver: {
-    resolve: async (instanceId) => {
-      const r = await instancesRepo.resolveIdentity(instanceId);
+    resolve: async (agentId) => {
+      const r = await agentsRepo.resolveIdentity(agentId);
       return r ? { ownerSub: r.owner, agentId: r.agentId } : null;
     },
   },

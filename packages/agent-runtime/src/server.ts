@@ -61,7 +61,7 @@ const TRPC_MAX_BODY_SIZE = 32 * 1024 * 1024;
 
 // The agent's NetworkPolicy admits ingress on this port only from the
 // api-server pod; the api-server has already verified the user JWT and
-// instance ownership before forwarding. So tRPC routes need no in-process
+// agent ownership before forwarding. So tRPC routes need no in-process
 // auth check — the kernel-level gate is the auth boundary.
 const trpcHandler = createHTTPHandler({
   router: appRouter,
@@ -310,7 +310,7 @@ if (config.PLATFORM_MCP_URL) {
   const mcpServers = (mcpConfig.mcpServers ?? {}) as Record<string, unknown>;
   // No Authorization header: the api-server's harness port identifies the
   // caller by source IP (NetworkPolicy admits only agent pods, podIpResolver
-  // maps IP → instance label). See ADR-035.
+  // maps IP → agent label). See ADR-035.
   mcpServers["platform-outbound"] = {
     type: "http",
     url: config.PLATFORM_MCP_URL,
@@ -367,11 +367,10 @@ server.listen(config.PORT, () => {
   triggerWatcher = startTriggerWatcher({
     triggersDir: config.TRIGGERS_DIR,
     apiServerUrl: config.API_SERVER_URL,
-    instanceId:
-      process.env.ADK_INSTANCE_ID ?? process.env.HOSTNAME ?? "unknown",
+    agentId: process.env.PLATFORM_AGENT_ID ?? process.env.HOSTNAME ?? "unknown",
   });
 
-  // Pod-files sync: opt-in via env. The reconciler sets the URL on instance
+  // Pod-files sync: opt-in via env. The reconciler sets the URL on agent
   // pods only — forks deliberately don't get it (they're per-turn jobs and
   // don't read pod-files state). See 034-pod-files-push.md.
   if (config.PLATFORM_POD_FILES_EVENTS_URL) {

@@ -88,7 +88,7 @@ istio:
   # + Pod from the Gateway resource declared in apiserver/waypoint.yaml.
   waypointName: apiserver-waypoint
 
-# -- Target namespace for agent workloads (instances, templates, schedules)
+# -- Target namespace for agent workloads (agents, templates, schedules, forks)
 agentNamespace: platform-agents
 
 # -- Whether to create the agent namespace (disable if it already exists or is managed externally)
@@ -285,7 +285,7 @@ apiServer:
   slackBotToken: ""
   # -- Slack app-level token (xapp-...) for Socket Mode. Required alongside slackBotToken.
   slackAppToken: ""
-  # -- Enable the Telegram channel. Each instance can connect its own bot token via the UI.
+  # -- Enable the Telegram channel. Each agent can connect its own bot token via the UI.
   telegramEnabled: false
   # -- Default hold window (seconds) for HITL ext_authz approvals. The held
   # call resolves on user verdict or denies on timeout; the durable
@@ -312,7 +312,7 @@ apiServer:
 
   # -- Ingress NetworkPolicy for the api-server pod.
   # Restricts the agent-facing ports (`harness`, `ext-authz`) to ingress from
-  # pods carrying `agent-platform.ai/instance` (agent + fork pods) in agentNamespace.
+  # pods carrying `agent-platform.ai/agent` (agent + fork pods) in agentNamespace.
   # The HTTP port stays open so the UI / ingress controller can reach it;
   # JWT auth at the application layer protects that one. Disable in
   # environments without NetworkPolicy support (e.g. some bare clusters).
@@ -436,7 +436,7 @@ controller:
       accessMode: ReadWriteMany      # ReadWriteOnce for single-node dev
 
       # Lifecycle
-      idleTimeout: "1h"              # hibernate idle instances; "0s" disables
+      idleTimeout: "1h"              # hibernate idle agents; "0s" disables
       terminationGracePeriod: 5      # gateway pods have a hardcoded drain
 
       # Pod metadata + scheduling
@@ -506,7 +506,7 @@ controller:
       # HOME inside agent containers — set as the `HOME` env var and used at
       # chart render time to substitute any literal `$HOME` in mount paths /
       # skillPaths. Per-template `agentTemplates[i].agentHome` overrides
-      # this for that template's instances. Must match the image's user
+      # this for that template's agents. Must match the image's user
       # HOME or pod-files materialization breaks silently. Also plumbed to
       # api-server for pod-files producers (currently one global value).
       agentHome: /home/agent
@@ -548,7 +548,7 @@ controller:
   envoyPort: 10000
   # -- TLS interception support for the credential injector. The chart
   # provisions a self-signed CA via cert-manager and a CA ClusterIssuer
-  # (`platform-mitm-ca-issuer`) that the controller uses to mint per-instance leaf
+  # (`platform-mitm-ca-issuer`) that the controller uses to mint per-agent leaf
   # certs for Envoy to terminate the agent's TLS and inject credential headers.
   # Requires cert-manager to be installed in the cluster (platform's cluster:install
   # task does this).
@@ -565,7 +565,7 @@ controller:
     # -- CA validity. cert-manager will renew before expiry automatically.
     caDuration: 87600h     # 10y
     caRenewBefore: 720h    # 30d
-    # -- Per-instance leaf cert validity.
+    # -- Per-agent leaf cert validity.
     leafDuration: 2160h    # 90d
     leafRenewBefore: 360h  # 15d
   resources:
@@ -578,7 +578,7 @@ controller:
 
 # -- Agent templates. Each enabled entry renders an agent-template ConfigMap
 # in `agentNamespace`. Fields named identically to `controller.agent.templateDefaults.*`
-# override the chart-wide default for instances created from this template.
+# override the chart-wide default for agents created from this template.
 # `$HOME` in mount paths / skillPaths is substituted at chart render time
 # using this entry's `agentHome` if set, else `templateDefaults.agentHome`.
 agentTemplates:

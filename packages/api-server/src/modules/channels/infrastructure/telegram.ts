@@ -3,11 +3,7 @@ import {
   createTelegramAdapter,
   type TelegramAdapter,
 } from "@chat-adapter/telegram";
-import {
-  ChannelType,
-  SessionType,
-  type InstancesService,
-} from "api-server-api";
+import { ChannelType, SessionType, type AgentsService } from "api-server-api";
 import type {
   StoredChannelConfig,
   StoredTelegramChannel,
@@ -29,14 +25,14 @@ export interface TelegramOAuthPending {
 }
 
 export interface TelegramThreadsRepo {
-  isAuthorized: (instanceId: string, threadId: string) => Promise<boolean>;
+  isAuthorized: (agentId: string, threadId: string) => Promise<boolean>;
   authorize: (
-    instanceId: string,
+    agentId: string,
     threadId: string,
     authorizedBy: string,
   ) => Promise<void>;
-  list: (instanceId: string) => Promise<string[]>;
-  revoke: (instanceId: string, threadId: string) => Promise<void>;
+  list: (agentId: string) => Promise<string[]>;
+  revoke: (agentId: string, threadId: string) => Promise<void>;
 }
 
 export interface ChannelConversation {
@@ -113,10 +109,10 @@ async function fetchTelegramChatTitle(
 export function createTelegramWorker(
   namespace: string,
   state: StateAdapter,
-  instances: () => InstancesService,
+  agents: () => AgentsService,
   persistSession: (
     sessionId: string,
-    instanceId: string,
+    agentId: string,
     type: SessionType,
     threadId?: string,
   ) => Promise<void>,
@@ -125,7 +121,7 @@ export function createTelegramWorker(
   pendingOAuthFlows: Map<string, TelegramOAuthPending>,
   threadSessions: {
     find: (
-      instanceId: string,
+      agentId: string,
       threadId: string,
     ) => Promise<{ sessionId: string } | null>;
     touch: (sessionId: string) => Promise<void>;
@@ -155,7 +151,7 @@ export function createTelegramWorker(
     ].join("\n");
 
     try {
-      await instances().ensureReady(instanceName);
+      await agents().ensureReady(instanceName);
       const acp = createAcpClient({ namespace, instanceName });
 
       const existing = await threadSessions.find(instanceName, thread.id);

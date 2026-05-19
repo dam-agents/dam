@@ -18,11 +18,8 @@ import {
   createK8sClient,
   podBaseUrl,
 } from "../../modules/agents/infrastructure/k8s.js";
-import {
-  composeInstancesModule,
-  createInstancesRepository,
-  createKeycloakUserDirectory,
-} from "../../modules/instances/index.js";
+import { createAgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
+import { createKeycloakUserDirectory } from "../../modules/agents/infrastructure/keycloak-user-directory.js";
 import { composeAgentsModule } from "../../modules/agents/index.js";
 import { composeTemplatesModule } from "../../modules/templates/index.js";
 import { composeSchedulesModule } from "../../modules/schedules/index.js";
@@ -118,7 +115,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
-  const instancesRepo = createInstancesRepository(k8sClient);
+  const agentsRepo = createAgentsRepository(k8sClient);
 
   const userDirectory = createKeycloakUserDirectory({
     keycloakUrl: config.keycloakUrl,
@@ -268,8 +265,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
           list: listAuthorizedThreads(db),
           revoke: revokeThread(db),
         },
-        isInstanceOwner: (instanceId, sub) =>
-          instancesRepo.isOwnedBy(instanceId, sub),
+        isAgentOwner: (agentId, sub) => agentsRepo.isOwnedBy(agentId, sub),
         oauthConfig: {
           keycloakExternalUrl: config.keycloakExternalUrl,
           keycloakUrl: config.keycloakUrl,
@@ -281,26 +277,23 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     );
   }
 
-  async function verifyOwner(
-    instanceId: string,
-    owner: string,
-  ): Promise<boolean> {
-    return instancesRepo.isOwnedBy(instanceId, owner);
+  async function verifyOwner(agentId: string, owner: string): Promise<boolean> {
+    return agentsRepo.isOwnedBy(agentId, owner);
   }
 
-  app.all("/api/instances/:id/trpc/*", async (c) => {
+  app.all("/api/agents/:id/trpc/*", async (c) => {
     const user = c.get("user");
-    const instanceId = c.req.param("id")!;
-    if (!(await verifyOwner(instanceId, user.sub))) {
+    const agentId = c.req.param("id")!;
+    if (!(await verifyOwner(agentId, user.sub))) {
       return c.json({ error: "not found" }, 404);
     }
 
     // No Bearer swap needed: ownership is verified above, and the agent
     // pod's NetworkPolicy admits ingress only from the api-server pod —
     // the kernel-level gate is the auth boundary on this hop.
-    const rest = c.req.path.replace(`/api/instances/${instanceId}/trpc`, "");
+    const rest = c.req.path.replace(`/api/agents/${agentId}/trpc`, "");
     const qs = c.req.url.includes("?") ? "?" + c.req.url.split("?")[1] : "";
-    const upstreamUrl = `http://${podBaseUrl(instanceId, config.namespace)}/api/trpc${rest}${qs}`;
+    const upstreamUrl = `http://${podBaseUrl(agentId, config.namespace)}/api/trpc${rest}${qs}`;
     try {
       const headers = new Headers(c.req.raw.headers);
       headers.delete("host");
@@ -320,7 +313,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         headers: upstream.headers,
       });
     } catch {
-      return c.json({ error: "instance unreachable" }, 502);
+      return c.json({ error: "agent unreachable" }, 502);
     }
   });
 
@@ -359,8 +352,8 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   type ImportCtx = Context<{ Variables: { user: UserIdentity } }>;
   async function proxyImport(c: ImportCtx) {
     const user = c.get("user");
-    const instanceId = c.req.param("id")!;
-    if (!(await verifyOwner(instanceId, user.sub))) {
+    const agentId = c.req.param("id")!;
+    if (!(await verifyOwner(agentId, user.sub))) {
       return c.json({ error: "not found" }, 404);
     }
     // Hard byte ceiling at the proxy boundary. Requires Content-Length so
@@ -387,15 +380,15 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       );
     }
     try {
-      await instancesRepo.ensureReady(instanceId);
+      await agentsRepo.ensureReady(agentId);
     } catch (err) {
       process.stderr.write(
-        `[import-proxy] ensureReady failed for ${instanceId}: ${(err as Error).message}\n`,
+        `[import-proxy] ensureReady failed for ${agentId}: ${(err as Error).message}\n`,
       );
       return c.json({ error: "instance unreachable" }, 502);
     }
     const upstreamUrl = new URL(
-      `http://${podBaseUrl(instanceId, config.namespace)}/api/import`,
+      `http://${podBaseUrl(agentId, config.namespace)}/api/import`,
     );
     const outHeaders: Record<string, string> = {};
     c.req.raw.headers.forEach((v, k) => {
@@ -501,7 +494,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         .pipe(counter);
     });
   }
-  app.post("/api/instances/:id/import", (c) => proxyImport(c));
+  app.post("/api/agents/:id/import", (c) => proxyImport(c));
 
   app.all("/api/trpc/*", (c) => {
     const user = c.get("user");
@@ -510,22 +503,16 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       api,
       config.namespace,
     );
-    const { agents } = composeAgentsModule({
-      api,
-      namespace: config.namespace,
-      owner: user.sub,
-      readTemplateSpec,
-      presetSeeder,
-      cleanupHooks: agentCleanupHooks,
-    });
-    const { instances, isOwnedInstance } = composeInstancesModule({
+    const { agents, isOwnedAgent } = composeAgentsModule({
       api,
       namespace: config.namespace,
       owner: user.sub,
       db,
       userDirectory,
       channelSecretStore,
-      getAgent: (id) => agents.get(id),
+      readTemplateSpec,
+      presetSeeder,
+      cleanupHooks: agentCleanupHooks,
     });
     const { schedules, isOwnedSchedule } = composeSchedulesModule(
       api,
@@ -535,14 +522,14 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     const { sessions } = composeSessionsModule({
       db,
       namespace: config.namespace,
-      isOwnedInstance,
+      isOwnedAgent,
       isOwnedSchedule,
       closeTerminalSession: terminalRelay.closeSession,
-      notifyModeChange: (instanceId, sessionId, mode) => {
+      notifyModeChange: (agentId, sessionId, mode) => {
         const frame = JSON.stringify(
           buildPlatformSessionModeChangedNotification({ sessionId, mode }),
         );
-        redisBus.publish(injectChannelOf(instanceId), frame).catch(() => {});
+        redisBus.publish(injectChannelOf(agentId), frame).catch(() => {});
       },
     });
     const skills = composeSkillsModule(
@@ -583,8 +570,8 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     const { service: approvals } = composeApprovalsService({
       db,
       ownerSub: user.sub,
-      isInstanceOwnedBy: (instanceId, ownerSub) =>
-        instancesRepo.isOwnedBy(instanceId, ownerSub),
+      isAgentOwnedBy: (agentId, ownerSub) =>
+        agentsRepo.isOwnedBy(agentId, ownerSub),
       egressRuleWriter: createEgressRuleWriterAdapter(db),
       bus: redisBus,
       wrapperFrameSender,
@@ -597,7 +584,6 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       createContext: (): ApiContext => ({
         templates,
         agents,
-        instances,
         schedules,
         sessions,
         secrets,
@@ -614,24 +600,24 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   const persistAcpSession = upsertSession(db);
   const acpRelay = createAcpRelay(
     config.namespace,
-    instancesRepo,
+    agentsRepo,
     approvalsRelay,
     {
       resolve: (id) =>
-        instancesRepo
+        agentsRepo
           .resolveIdentity(id)
           .then((r) => (r ? { ownerSub: r.owner, agentId: r.agentId } : null)),
     },
-    (sessionId, instanceId) =>
+    (sessionId, agentId) =>
       persistAcpSession(
         sessionId,
-        instanceId,
+        agentId,
         SessionMode.Chat,
         SessionType.Regular,
       ),
   );
 
-  const terminalRelay = createTerminalRelay(config.namespace, instancesRepo, {
+  const terminalRelay = createTerminalRelay(config.namespace, agentsRepo, {
     getSessionMode: getSessionMode(db),
   });
 
@@ -694,15 +680,15 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       return;
     }
 
-    const instanceId = decodeURIComponent(match[1]);
-    if (!(await verifyOwner(instanceId, user.sub))) {
+    const agentId = decodeURIComponent(match[1]);
+    if (!(await verifyOwner(agentId, user.sub))) {
       socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
       socket.destroy();
       return;
     }
 
     const relay = match[2] === "acp" ? acpRelay : terminalRelay;
-    relay.handleUpgrade(req, socket, head, instanceId);
+    relay.handleUpgrade(req, socket, head, agentId);
   });
 
   return { server };

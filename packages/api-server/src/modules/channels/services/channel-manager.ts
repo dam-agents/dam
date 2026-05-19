@@ -8,7 +8,7 @@ import {
   type SlackDisconnected,
   type TelegramConnected,
   type TelegramDisconnected,
-  type InstanceDeleted,
+  type AgentDeleted,
 } from "../../../events.js";
 import type { SlackWorker } from "../infrastructure/slack.js";
 import type { TelegramWorker } from "../infrastructure/telegram.js";
@@ -69,16 +69,16 @@ export function createChannelManager(deps: {
   ) as Worker[];
   const subscriptions: Subscription[] = [];
 
-  async function startTelegram(instanceId: string): Promise<void> {
+  async function startTelegram(agentId: string): Promise<void> {
     if (!telegramWorker) return;
-    const botToken = await channelSecretStore.readTelegramToken(instanceId);
+    const botToken = await channelSecretStore.readTelegramToken(agentId);
     if (!botToken) {
       process.stderr.write(
-        `[channel-manager] Telegram secret missing for ${instanceId}; skipping start\n`,
+        `[channel-manager] Telegram secret missing for ${agentId}; skipping start\n`,
       );
       return;
     }
-    await telegramWorker.start(instanceId, {
+    await telegramWorker.start(agentId, {
       type: ChannelType.Telegram,
       botToken,
     });
@@ -89,7 +89,7 @@ export function createChannelManager(deps: {
       .pipe(ofType<SlackConnected>(EventType.SlackConnected))
       .subscribe((event) => {
         if (slackWorker) {
-          slackWorker.start(event.instanceId, {
+          slackWorker.start(event.agentId, {
             type: ChannelType.Slack,
             slackChannelId: event.slackChannelId,
           });
@@ -101,7 +101,7 @@ export function createChannelManager(deps: {
     events$()
       .pipe(ofType<SlackDisconnected>(EventType.SlackDisconnected))
       .subscribe((event) => {
-        if (slackWorker) slackWorker.stop(event.instanceId);
+        if (slackWorker) slackWorker.stop(event.agentId);
       }),
   );
 
@@ -109,9 +109,9 @@ export function createChannelManager(deps: {
     events$()
       .pipe(ofType<TelegramConnected>(EventType.TelegramConnected))
       .subscribe((event) => {
-        startTelegram(event.instanceId).catch((err) => {
+        startTelegram(event.agentId).catch((err) => {
           process.stderr.write(
-            `[channel-manager] Telegram start failed for ${event.instanceId}: ${err}\n`,
+            `[channel-manager] Telegram start failed for ${event.agentId}: ${err}\n`,
           );
         });
       }),
@@ -121,15 +121,15 @@ export function createChannelManager(deps: {
     events$()
       .pipe(ofType<TelegramDisconnected>(EventType.TelegramDisconnected))
       .subscribe((event) => {
-        if (telegramWorker) telegramWorker.stop(event.instanceId);
+        if (telegramWorker) telegramWorker.stop(event.agentId);
       }),
   );
 
   subscriptions.push(
     events$()
-      .pipe(ofType<InstanceDeleted>(EventType.InstanceDeleted))
+      .pipe(ofType<AgentDeleted>(EventType.AgentDeleted))
       .subscribe((event) => {
-        for (const w of workers) w.stop(event.instanceId);
+        for (const w of workers) w.stop(event.agentId);
       }),
   );
 
@@ -139,12 +139,12 @@ export function createChannelManager(deps: {
     },
 
     async bootstrap(channelsByInstance: Map<string, ChannelConfig[]>) {
-      for (const [instanceId, channels] of channelsByInstance) {
+      for (const [agentId, channels] of channelsByInstance) {
         for (const channel of channels) {
           if (channel.type === ChannelType.Telegram) {
-            await startTelegram(instanceId);
+            await startTelegram(agentId);
           } else if (channel.type === ChannelType.Slack && slackWorker) {
-            await slackWorker.start(instanceId, channel);
+            await slackWorker.start(agentId, channel);
           }
         }
       }

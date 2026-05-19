@@ -486,11 +486,9 @@ export function createSecretsService(deps: {
               g.grantedSecretIds.includes(s.id),
             );
             const hash = combinedSecretsRev(grantedForAgent);
-            await Promise.all(
-              g.instanceCmNames.map((cmName) =>
-                deps.grants.bumpSecretsRev(cmName, hash),
-              ),
-            );
+            // Per ADR-046, the agent is its own resource — one Agent CM per
+            // agentId, so we bump the rev annotation on that CM directly.
+            await deps.grants.bumpSecretsRev(g.agentId, hash);
           }
         }),
       );

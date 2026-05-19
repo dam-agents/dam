@@ -16,13 +16,13 @@ export const sessionModeEnum = pgEnum("session_mode", ["chat", "terminal"]);
 export const channels = pgTable(
   "channels",
   {
-    instanceId: text("instance_id").notNull(),
+    agentId: text("agent_id").notNull(),
     owner: text("owner").notNull(),
     type: text("type").notNull(),
     config: jsonb("config").notNull(),
   },
   (table) => [
-    uniqueIndex("channels_instance_type_idx").on(table.instanceId, table.type),
+    uniqueIndex("channels_agent_type_idx").on(table.agentId, table.type),
     uniqueIndex("channels_slack_channel_unique_idx")
       .on(sql`(${table.config}->>'slackChannelId')`)
       .where(sql`${table.type} = 'slack'`),
@@ -46,31 +46,31 @@ export const identityLinks = pgTable(
 export const allowedUsers = pgTable(
   "allowed_users",
   {
-    instanceId: text("instance_id").notNull(),
+    agentId: text("agent_id").notNull(),
     owner: text("owner").notNull(),
     keycloakSub: text("keycloak_sub").notNull(),
   },
-  (table) => [primaryKey({ columns: [table.instanceId, table.keycloakSub] })],
+  (table) => [primaryKey({ columns: [table.agentId, table.keycloakSub] })],
 );
 
 export const telegramThreads = pgTable(
   "telegram_threads",
   {
-    instanceId: text("instance_id").notNull(),
+    agentId: text("agent_id").notNull(),
     threadId: text("thread_id").notNull(),
     authorizedBy: text("authorized_by").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
   },
-  (table) => [primaryKey({ columns: [table.instanceId, table.threadId] })],
+  (table) => [primaryKey({ columns: [table.agentId, table.threadId] })],
 );
 
 /**
- * Egress rules — per-agent (template), owner-scoped via the agent CM. A rule
- * keyed on (agent_id, host, method, path_pattern) applies to every instance
- * of that agent template the owner runs (mirrors the scoping of connector
- * envs and Secret-volume mounts; see ADR-024 / ADR-033).
+ * Egress rules — per-agent, owner-scoped via the agent CM. A rule keyed on
+ * (agent_id, host, method, path_pattern) applies to the agent's pod and
+ * any forks it spawns (mirrors the scoping of connector envs and
+ * Secret-volume mounts; see ADR-024 / ADR-033 / ADR-046).
  *
  * `source` records the row's origin — `manual`, `inbox`, `connection:<id>`,
  * `preset:trusted`, `preset:all`. User edits flip the source to `manual` so
@@ -115,7 +115,6 @@ export const pendingApprovals = pgTable(
   {
     id: text("id").primaryKey(),
     type: text("type").notNull(),
-    instanceId: text("instance_id").notNull(),
     agentId: text("agent_id").notNull(),
     ownerSub: text("owner_sub").notNull(),
     sessionId: text("session_id"),
@@ -135,10 +134,7 @@ export const pendingApprovals = pgTable(
       table.ownerSub,
       table.status,
     ),
-    index("pending_approvals_instance_status_idx").on(
-      table.instanceId,
-      table.status,
-    ),
+    index("pending_approvals_agent_status_idx").on(table.agentId, table.status),
     index("pending_approvals_undelivered_idx")
       .on(table.resolvedAt)
       .where(sql`status = 'resolved' AND delivered_at IS NULL`),
@@ -149,7 +145,7 @@ export const sessions = pgTable(
   "sessions",
   {
     sessionId: text("session_id").primaryKey(),
-    instanceId: text("instance_id").notNull(),
+    agentId: text("agent_id").notNull(),
     type: text("type").notNull().default("regular"),
     mode: sessionModeEnum("mode").notNull(),
     scheduleId: text("schedule_id"),
@@ -163,8 +159,8 @@ export const sessions = pgTable(
       .notNull(),
   },
   (table) => [
-    uniqueIndex("sessions_instance_thread_idx")
-      .on(table.instanceId, table.threadTs)
+    uniqueIndex("sessions_agent_thread_idx")
+      .on(table.agentId, table.threadTs)
       .where(sql`${table.threadTs} IS NOT NULL`),
   ],
 );
@@ -189,10 +185,10 @@ export const skillSources = pgTable(
   ],
 );
 
-export const instanceSkills = pgTable(
-  "instance_skills",
+export const agentSkills = pgTable(
+  "agent_skills",
   {
-    instanceId: text("instance_id").notNull(),
+    agentId: text("agent_id").notNull(),
     source: text("source").notNull(),
     name: text("name").notNull(),
     version: text("version").notNull(),
@@ -202,16 +198,16 @@ export const instanceSkills = pgTable(
       .notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.instanceId, table.source, table.name] }),
-    index("instance_skills_instance_idx").on(table.instanceId),
+    primaryKey({ columns: [table.agentId, table.source, table.name] }),
+    index("agent_skills_agent_idx").on(table.agentId),
   ],
 );
 
-export const instanceSkillPublishes = pgTable(
-  "instance_skill_publishes",
+export const agentSkillPublishes = pgTable(
+  "agent_skill_publishes",
   {
     id: text("id").primaryKey(),
-    instanceId: text("instance_id").notNull(),
+    agentId: text("agent_id").notNull(),
     skillName: text("skill_name").notNull(),
     sourceId: text("source_id").notNull(),
     sourceName: text("source_name").notNull(),
@@ -221,7 +217,5 @@ export const instanceSkillPublishes = pgTable(
       .defaultNow()
       .notNull(),
   },
-  (table) => [
-    index("instance_skill_publishes_instance_idx").on(table.instanceId),
-  ],
+  (table) => [index("agent_skill_publishes_agent_idx").on(table.agentId)],
 );

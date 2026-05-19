@@ -45,7 +45,6 @@ export type ApprovalPayload = ExtAuthzPayload | AcpNativePayload;
 export interface ApprovalView {
   id: string;
   type: ApprovalType;
-  instanceId: string;
   agentId: string;
   sessionId: string | null;
   payload: ApprovalPayload;
@@ -68,7 +67,7 @@ export interface ListApprovalsOptions {
 export interface ApprovalsService {
   listForOwner(opts?: ListApprovalsOptions): Promise<ApprovalView[]>;
   listForInstance(
-    instanceId: string,
+    agentId: string,
     opts?: ListApprovalsOptions,
   ): Promise<ApprovalView[]>;
   approveOnce(id: string): Promise<void>;

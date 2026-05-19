@@ -34,7 +34,7 @@ const DAYS_ISO: { iso: number; label: string }[] = [
 type QuietRow = { startTime: string; endTime: string; enabled: boolean };
 
 interface Props {
-  instanceId: string;
+  agentId: string;
   /** When set, the form is in edit mode — prefills from the schedule and
    *  calls `updateRRule` on submit. When omitted, the form creates a new
    *  schedule via `createRRule`. */
@@ -44,7 +44,7 @@ interface Props {
 }
 
 export function CreateScheduleForm({
-  instanceId,
+  agentId,
   existing,
   onCancel,
   onSaved,
@@ -200,7 +200,7 @@ export function CreateScheduleForm({
         { onSuccess: onSaved },
       );
     } else {
-      createSchedule.mutate({ instanceId, ...common }, { onSuccess: onSaved });
+      createSchedule.mutate({ agentId, ...common }, { onSuccess: onSaved });
     }
   }
 

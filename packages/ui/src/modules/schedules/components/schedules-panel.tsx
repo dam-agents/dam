@@ -11,9 +11,9 @@ export function SchedulesPanel({
 }: {
   onResumeSession?: (sessionId: string) => void;
 }) {
-  const selectedInstance = useStore((s) => s.selectedInstance);
+  const selectedAgent = useStore((s) => s.selectedAgent);
 
-  const schedulesQuery = useSchedules(selectedInstance);
+  const schedulesQuery = useSchedules(selectedAgent);
   const schedules = schedulesQuery.data ?? [];
 
   const [isCreating, setIsCreating] = useState(false);
@@ -37,9 +37,9 @@ export function SchedulesPanel({
         </button>
       </div>
 
-      {isCreating && selectedInstance && (
+      {isCreating && selectedAgent && (
         <CreateScheduleForm
-          instanceId={selectedInstance}
+          agentId={selectedAgent}
           onCancel={() => setIsCreating(false)}
           onSaved={() => setIsCreating(false)}
         />
@@ -49,10 +49,10 @@ export function SchedulesPanel({
         <p className="px-4 py-5 text-[12px] text-text-muted">No schedules</p>
       )}
       {schedules.map((schedule) =>
-        editingId === schedule.id && selectedInstance ? (
+        editingId === schedule.id && selectedAgent ? (
           <CreateScheduleForm
             key={schedule.id}
-            instanceId={selectedInstance}
+            agentId={selectedAgent}
             existing={schedule}
             onCancel={() => setEditingId(null)}
             onSaved={() => setEditingId(null)}

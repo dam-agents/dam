@@ -52,17 +52,11 @@ export interface InstallSkillResult {
 }
 
 export interface AgentRuntimeSkillsClient {
-  install(
-    instanceId: string,
-    body: InstallSkillCall,
-  ): Promise<InstallSkillResult>;
-  uninstall(instanceId: string, body: UninstallSkillCall): Promise<void>;
-  listLocal(instanceId: string, skillPaths: string[]): Promise<LocalSkill[]>;
-  publish(
-    instanceId: string,
-    body: PublishSkillCall,
-  ): Promise<PublishSkillResult>;
-  scan(instanceId: string, source: string): Promise<Skill[]>;
+  install(agentId: string, body: InstallSkillCall): Promise<InstallSkillResult>;
+  uninstall(agentId: string, body: UninstallSkillCall): Promise<void>;
+  listLocal(agentId: string, skillPaths: string[]): Promise<LocalSkill[]>;
+  publish(agentId: string, body: PublishSkillCall): Promise<PublishSkillResult>;
+  scan(agentId: string, source: string): Promise<Skill[]>;
 }
 
 export class AgentRuntimeUpstreamError extends Error {
@@ -78,11 +72,11 @@ export class AgentRuntimeUpstreamError extends Error {
 // Auth on the api-server → agent-runtime hop is enforced at the kernel by
 // the agent pod's NetworkPolicy (ingress admitted only from the api-server
 // pod). No Bearer header is sent.
-function makeClient(instanceId: string, namespace: string) {
+function makeClient(agentId: string, namespace: string) {
   return createTRPCClient<AppRouter>({
     links: [
       httpBatchLink({
-        url: `http://${podBaseUrl(instanceId, namespace)}/api/trpc`,
+        url: `http://${podBaseUrl(agentId, namespace)}/api/trpc`,
       }),
     ],
   });
@@ -126,38 +120,32 @@ export function createAgentRuntimeSkillsClient(
   namespace: string,
 ): AgentRuntimeSkillsClient {
   return {
-    install: (instanceId, body) =>
-      runWithUpstreamMapping(
-        `agent-runtime install ${instanceId}`,
-        async () => {
-          return makeClient(instanceId, namespace).skills.install.mutate(body);
-        },
-      ),
-    uninstall: (instanceId, body) =>
-      runWithUpstreamMapping(
-        `agent-runtime uninstall ${instanceId}`,
-        async () => {
-          await makeClient(instanceId, namespace).skills.uninstall.mutate(body);
-        },
-      ),
-    listLocal: async (instanceId, skillPaths) => {
+    install: (agentId, body) =>
+      runWithUpstreamMapping(`agent-runtime install ${agentId}`, async () => {
+        return makeClient(agentId, namespace).skills.install.mutate(body);
+      }),
+    uninstall: (agentId, body) =>
+      runWithUpstreamMapping(`agent-runtime uninstall ${agentId}`, async () => {
+        await makeClient(agentId, namespace).skills.uninstall.mutate(body);
+      }),
+    listLocal: async (agentId, skillPaths) => {
       const { skills } = await runWithUpstreamMapping(
-        `agent-runtime listLocal ${instanceId}`,
+        `agent-runtime listLocal ${agentId}`,
         () =>
-          makeClient(instanceId, namespace).skills.listLocal.query({
+          makeClient(agentId, namespace).skills.listLocal.query({
             skillPaths,
           }),
       );
       return skills;
     },
-    publish: (instanceId, body) =>
-      runWithUpstreamMapping(`agent-runtime publish ${instanceId}`, () =>
-        makeClient(instanceId, namespace).skills.publish.mutate(body),
+    publish: (agentId, body) =>
+      runWithUpstreamMapping(`agent-runtime publish ${agentId}`, () =>
+        makeClient(agentId, namespace).skills.publish.mutate(body),
       ),
-    scan: async (instanceId, source) => {
+    scan: async (agentId, source) => {
       const { skills } = await runWithUpstreamMapping(
-        `agent-runtime scan ${instanceId}`,
-        () => makeClient(instanceId, namespace).skills.scan.mutate({ source }),
+        `agent-runtime scan ${agentId}`,
+        () => makeClient(agentId, namespace).skills.scan.mutate({ source }),
       );
       return skills as Skill[];
     },

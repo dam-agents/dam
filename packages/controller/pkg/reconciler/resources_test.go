@@ -42,6 +42,11 @@ var testConfig = &config.Config{
 	AgentProbesEnabled: true,
 }
 
+// testAgent carries the merged Agent fields (ADR-046): image/mounts/env
+// from the former AgentSpec PLUS the runtime fields (DesiredState,
+// SecretRef) that used to live on the retired InstanceSpec. Most tests
+// inherit "running" — hibernation-specific tests override with a local
+// copy.
 var testAgent = &types.AgentSpec{
 	Image: "ghcr.io/myorg/agent:latest",
 	Mounts: []types.Mount{
@@ -54,6 +59,7 @@ var testAgent = &types.AgentSpec{
 		Requests: map[string]string{"cpu": "250m", "memory": "512Mi"},
 		Limits:   map[string]string{"cpu": "1", "memory": "2Gi"},
 	},
+	DesiredState: "running",
 }
 
 var testOwnerCM = &corev1.ConfigMap{
@@ -90,12 +96,13 @@ func credSecret(name, host string) corev1.Secret {
 // --- Agent StatefulSet tests ---
 
 func TestBuildAgentStatefulSet_Running(t *testing.T) {
-	instance := &types.InstanceSpec{
-		DesiredState: "running",
-		Env:          []types.EnvVar{{Name: "GITHUB_ORG", Value: "alpha"}},
-		SecretRef:    "my-secrets",
-	}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil, "10.96.42.42")
+	// ADR-046: env + secretRef live on the merged AgentSpec — extend a
+	// copy of testAgent rather than carrying a separate InstanceSpec.
+	agent := *testAgent
+	agent.Env = append([]types.EnvVar{}, testAgent.Env...)
+	agent.Env = append(agent.Env, types.EnvVar{Name: "GITHUB_ORG", Value: "alpha"})
+	agent.SecretRef = "my-secrets"
+	ss := BuildAgentStatefulSet("my-instance", &agent, testConfig, testOwnerCM, nil, "10.96.42.42")
 
 	require.NotNil(t, ss)
 	assert.Equal(t, "my-instance", ss.Name)
@@ -105,7 +112,7 @@ func TestBuildAgentStatefulSet_Running(t *testing.T) {
 	require.Len(t, ss.OwnerReferences, 1)
 	assert.Equal(t, "cm-uid-123", string(ss.OwnerReferences[0].UID))
 
-	assert.Equal(t, "my-instance", ss.Spec.Template.Labels["agent-platform.ai/instance"])
+	assert.Equal(t, "my-instance", ss.Spec.Template.Labels["agent-platform.ai/agent"])
 	assert.Equal(t, "my-instance", ss.Spec.Template.Labels["agent-platform.ai/pair"])
 	assert.Equal(t, "agent", ss.Spec.Template.Labels["agent-platform.ai/role"])
 	// Agent pod opts out of ambient mesh — load-bearing for the per-pair
@@ -141,7 +148,7 @@ func TestBuildAgentStatefulSet_Running(t *testing.T) {
 	}
 	assert.Equal(t, "/etc/platform/ca/ca.crt", envMap["SSL_CERT_FILE"])
 	assert.Equal(t, "/etc/platform/ca/ca.crt", envMap["NODE_EXTRA_CA_CERTS"])
-	assert.Equal(t, "my-instance", envMap["ADK_INSTANCE_ID"])
+	assert.Equal(t, "my-instance", envMap["PLATFORM_AGENT_ID"])
 	assert.Equal(t, "8080", envMap["ACP_PORT"])
 	assert.Equal(t, "alpha", envMap["GITHUB_ORG"])
 
@@ -160,8 +167,7 @@ func TestBuildAgentStatefulSet_Running(t *testing.T) {
 func TestBuildAgentStatefulSet_ProbesDisabled(t *testing.T) {
 	cfg := *testConfig
 	cfg.AgentProbesEnabled = false
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, &cfg, testOwnerCM, nil, "")
+	ss := BuildAgentStatefulSet("my-instance", testAgent, &cfg, testOwnerCM, nil, "")
 
 	c := ss.Spec.Template.Spec.Containers[0]
 	assert.Nil(t, c.StartupProbe)
@@ -170,14 +176,14 @@ func TestBuildAgentStatefulSet_ProbesDisabled(t *testing.T) {
 }
 
 func TestBuildAgentStatefulSet_Hibernated(t *testing.T) {
-	instance := &types.InstanceSpec{DesiredState: "hibernated"}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil, "")
+	hibernated := *testAgent
+	hibernated.DesiredState = "hibernated"
+	ss := BuildAgentStatefulSet("my-instance", &hibernated, testConfig, testOwnerCM, nil, "")
 	assert.Equal(t, int32(0), *ss.Spec.Replicas)
 }
 
 func TestBuildAgentStatefulSet_InitContainer(t *testing.T) {
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil, "")
+	ss := BuildAgentStatefulSet("my-instance", testAgent, testConfig, testOwnerCM, nil, "")
 	require.Len(t, ss.Spec.Template.Spec.InitContainers, 1, "only the user-defined init runs")
 	ic := ss.Spec.Template.Spec.InitContainers[0]
 	assert.Equal(t, "init", ic.Name)
@@ -188,14 +194,12 @@ func TestBuildAgentStatefulSet_InitContainer(t *testing.T) {
 func TestBuildAgentStatefulSet_NoUserInitWhenEmpty(t *testing.T) {
 	agent := *testAgent
 	agent.Init = ""
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, &agent, testConfig, testOwnerCM, nil, "")
+	ss := BuildAgentStatefulSet("my-instance", &agent, testConfig, testOwnerCM, nil, "")
 	assert.Empty(t, ss.Spec.Template.Spec.InitContainers)
 }
 
 func TestBuildAgentStatefulSet_Volumes(t *testing.T) {
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil, "")
+	ss := BuildAgentStatefulSet("my-instance", testAgent, testConfig, testOwnerCM, nil, "")
 
 	require.Len(t, ss.Spec.VolumeClaimTemplates, 1)
 	pvc := ss.Spec.VolumeClaimTemplates[0]
@@ -229,8 +233,7 @@ func TestBuildAgentStatefulSet_PVCSize(t *testing.T) {
 			{Path: "/cache", Persist: true},
 		},
 	}
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, &agent, testConfig, testOwnerCM, nil, "")
+	ss := BuildAgentStatefulSet("my-instance", &agent, testConfig, testOwnerCM, nil, "")
 
 	require.Len(t, ss.Spec.VolumeClaimTemplates, 2)
 	byName := map[string]corev1.PersistentVolumeClaim{}
@@ -246,8 +249,7 @@ func TestBuildAgentStatefulSet_PVCSize(t *testing.T) {
 func TestBuildAgentStatefulSet_AgentStorageClass(t *testing.T) {
 	cfg := *testConfig
 	cfg.AgentBase.StorageClass = "platform-rwx"
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, &cfg, testOwnerCM, nil, "")
+	ss := BuildAgentStatefulSet("my-instance", testAgent, &cfg, testOwnerCM, nil, "")
 
 	require.Len(t, ss.Spec.VolumeClaimTemplates, 1)
 	pvc := ss.Spec.VolumeClaimTemplates[0]
@@ -258,18 +260,16 @@ func TestBuildAgentStatefulSet_AgentStorageClass(t *testing.T) {
 func TestBuildAgentStatefulSet_PodFilesEventsURL(t *testing.T) {
 	cfg := *testConfig
 	cfg.HarnessServerURL = "http://platform-apiserver.default.svc:4001"
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, &cfg, testOwnerCM, nil, "")
+	ss := BuildAgentStatefulSet("my-instance", testAgent, &cfg, testOwnerCM, nil, "")
 
 	envMap := envToMap(ss.Spec.Template.Spec.Containers[0].Env)
 	assert.Equal(t,
-		"http://platform-apiserver.default.svc:4001/api/instances/my-instance/pod-files/events",
+		"http://platform-apiserver.default.svc:4001/api/agents/my-instance/pod-files/events",
 		envMap["PLATFORM_POD_FILES_EVENTS_URL"])
 }
 
 func TestBuildAgentStatefulSet_NoSecretRef(t *testing.T) {
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil, "")
+	ss := BuildAgentStatefulSet("my-instance", testAgent, testConfig, testOwnerCM, nil, "")
 	assert.Empty(t, ss.Spec.Template.Spec.Containers[0].EnvFrom)
 }
 
@@ -278,8 +278,7 @@ func TestBuildAgentStatefulSet_NoCredentialMountsOnAgent(t *testing.T) {
 	// (single-key projection of the leaf Secret). No credential Secrets,
 	// no Envoy bootstrap CM, no leaf private key.
 	secrets := []corev1.Secret{credSecret("platform-cred-aaa", "api.example.com")}
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, secrets, "")
+	ss := BuildAgentStatefulSet("my-instance", testAgent, testConfig, testOwnerCM, secrets, "")
 
 	require.Len(t, ss.Spec.Template.Spec.Containers, 1, "no sidecar — gateway is its own pod")
 
@@ -336,8 +335,7 @@ func envToMap(envs []corev1.EnvVar) map[string]string {
 // --- GH_TOKEN signal ---
 
 func TestBuildAgentStatefulSet_GHTokenSignal_NoCredential(t *testing.T) {
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil, "")
+	ss := BuildAgentStatefulSet("my-instance", testAgent, testConfig, testOwnerCM, nil, "")
 
 	envMap := envToMap(ss.Spec.Template.Spec.Containers[0].Env)
 	assert.Equal(t, "false", envMap["PLATFORM_GH_TOKEN_AVAILABLE"])
@@ -345,9 +343,8 @@ func TestBuildAgentStatefulSet_GHTokenSignal_NoCredential(t *testing.T) {
 }
 
 func TestBuildAgentStatefulSet_GHTokenSignal_WithCredential(t *testing.T) {
-	instance := &types.InstanceSpec{DesiredState: "running"}
 	secrets := []corev1.Secret{credSecret("platform-cred-gh", "api.github.com")}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, secrets, "")
+	ss := BuildAgentStatefulSet("my-instance", testAgent, testConfig, testOwnerCM, secrets, "")
 
 	envMap := envToMap(ss.Spec.Template.Spec.Containers[0].Env)
 	assert.Equal(t, "true", envMap["PLATFORM_GH_TOKEN_AVAILABLE"])
@@ -359,8 +356,7 @@ func TestBuildAgentStatefulSet_GHTokenSignal_WithCredential(t *testing.T) {
 }
 
 func TestBuildAgentStatefulSet_PodHardening(t *testing.T) {
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil, "")
+	ss := BuildAgentStatefulSet("my-instance", testAgent, testConfig, testOwnerCM, nil, "")
 	require.NotNil(t, ss.Spec.Template.Spec.AutomountServiceAccountToken)
 	assert.False(t, *ss.Spec.Template.Spec.AutomountServiceAccountToken)
 	require.NotNil(t, ss.Spec.Template.Spec.ShareProcessNamespace)
@@ -372,8 +368,7 @@ func TestBuildAgentStatefulSet_PodHardening(t *testing.T) {
 // deny port 53 entirely. Falls back to the Service DNS name only when
 // the IP isn't known yet (first reconcile race).
 func TestBuildAgentStatefulSet_ProxyURLUsesIPDirectly(t *testing.T) {
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, testConfig, testOwnerCM, nil, "10.96.42.42")
+	ss := BuildAgentStatefulSet("my-instance", testAgent, testConfig, testOwnerCM, nil, "10.96.42.42")
 	envMap := envToMap(ss.Spec.Template.Spec.Containers[0].Env)
 	assert.Equal(t, "http://10.96.42.42:10000", envMap["HTTPS_PROXY"], "must be IP-direct when gateway IP is known")
 	assert.Equal(t, "http://10.96.42.42:10000", envMap["HTTP_PROXY"])

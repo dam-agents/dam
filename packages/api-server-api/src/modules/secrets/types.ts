@@ -156,7 +156,7 @@ export function ibmLitellmPinsFromEnvMappings(
 
 export interface BobModelPins {
   model?: string;
-  instanceId?: string;
+  agentId?: string;
   teamId?: string;
   maxCoins?: string;
   chatMode?: string;
@@ -176,7 +176,7 @@ export function bobEnvMappings(pins: BobModelPins = {}): EnvMapping[] {
     if (trimmed) out.push({ envName, placeholder: trimmed });
   };
   push("BOB_SHELL_MODEL", pins.model);
-  push("BOB_INSTANCE_ID", pins.instanceId);
+  push("BOB_INSTANCE_ID", pins.agentId);
   push("BOB_TEAM_ID", pins.teamId);
   push("BOB_MAX_COINS", pins.maxCoins);
   push("BOB_CHAT_MODE", pins.chatMode);
@@ -190,12 +190,12 @@ export function bobPinsFromEnvMappings(
     envMappings?.find((m) => m.envName === name)?.placeholder;
   const pins: BobModelPins = {};
   const model = lookup("BOB_SHELL_MODEL");
-  const instanceId = lookup("BOB_INSTANCE_ID");
+  const agentId = lookup("BOB_INSTANCE_ID");
   const teamId = lookup("BOB_TEAM_ID");
   const maxCoins = lookup("BOB_MAX_COINS");
   const chatMode = lookup("BOB_CHAT_MODE");
   if (model) pins.model = model;
-  if (instanceId) pins.instanceId = instanceId;
+  if (agentId) pins.agentId = agentId;
   if (teamId) pins.teamId = teamId;
   if (maxCoins) pins.maxCoins = maxCoins;
   if (chatMode) pins.chatMode = chatMode;

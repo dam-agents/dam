@@ -8,7 +8,7 @@ metadata:
     agent-platform.ai/managed-by: platform
     # ADR-041: opt the agent namespace into Istio ambient. ztunnel
     # transparently mTLSes pod-to-pod traffic; AuthorizationPolicy on
-    # the gateway / ext-authz / harness Services enforces per-instance
+    # the gateway / ext-authz / harness Services enforces per-agent
     # SPIFFE identity.
     istio.io/dataplane-mode: ambient
 {{- end }}

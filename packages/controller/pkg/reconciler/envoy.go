@@ -133,12 +133,12 @@ const envoySecretTypeAllowOnly = "allow-only"
 // listAgentCredentialSecrets returns the owner's credential Secrets filtered
 // by the per-agent grant annotations on the instance ConfigMap. See
 // `filterByGrants` for the precise semantics.
-func listAgentCredentialSecrets(ctx context.Context, client kubernetes.Interface, namespace, owner string, instanceCM *corev1.ConfigMap) ([]corev1.Secret, error) {
+func listAgentCredentialSecrets(ctx context.Context, client kubernetes.Interface, namespace, owner string, agentCM *corev1.ConfigMap) ([]corev1.Secret, error) {
 	all, err := listOwnerCredentialSecrets(ctx, client, namespace, owner)
 	if err != nil {
 		return nil, err
 	}
-	return filterByGrants(all, instanceCM.Annotations), nil
+	return filterByGrants(all, agentCM.Annotations), nil
 }
 
 // filterByGrants narrows the owner's credential Secret list using the agent's

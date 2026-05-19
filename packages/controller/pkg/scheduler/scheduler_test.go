@@ -26,7 +26,7 @@ func scheduleCM(name, instanceName string, enabled bool) *corev1.ConfigMap {
 			Name: name, Namespace: "test-agents",
 			Labels: map[string]string{
 				"agent-platform.ai/type":     "agent-schedule",
-				"agent-platform.ai/instance": instanceName,
+				"agent-platform.ai/agent": instanceName,
 			},
 		},
 		Data: map[string]string{
@@ -112,14 +112,14 @@ func TestRemoveSchedule_NonExistent(t *testing.T) {
 	s.RemoveSchedule("nope") // should not panic
 }
 
-func TestFire_RunningInstance(t *testing.T) {
+func TestFire_RunningAgent(t *testing.T) {
 	instanceCm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "my-instance", Namespace: "test-agents",
-			Labels: map[string]string{"agent-platform.ai/type": "agent-instance"},
+			Labels: map[string]string{"agent-platform.ai/type": "agent"},
 		},
 		Data: map[string]string{
-			"spec.yaml": "version: agent-platform.ai/v1\ndesiredState: running\n",
+			"spec.yaml": "version: agent-platform.ai/v1\nimage: foo\ndesiredState: running\n",
 		},
 	}
 	readyPod := &corev1.Pod{

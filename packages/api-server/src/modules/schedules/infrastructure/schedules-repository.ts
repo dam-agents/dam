@@ -5,7 +5,6 @@ import {
   LABEL_TYPE,
   TYPE_SCHEDULE,
   LABEL_OWNER,
-  LABEL_INSTANCE_REF,
   LABEL_AGENT_REF,
   SPEC_KEY,
 } from "../../agents/infrastructure/labels.js";
@@ -13,11 +12,10 @@ import { isOwnedBy } from "../../agents/infrastructure/configmap-mappers.js";
 import { parseSchedule, buildScheduleConfigMap } from "./configmap-mappers.js";
 
 export interface SchedulesRepository {
-  list(instanceId: string, owner: string): Promise<Schedule[]>;
+  list(agentId: string, owner: string): Promise<Schedule[]>;
   get(id: string, owner: string): Promise<Schedule | null>;
   create(
-    instanceId: string,
-    agentRef: string,
+    agentId: string,
     spec: Record<string, unknown>,
     owner: string,
   ): Promise<Schedule>;
@@ -28,7 +26,7 @@ export interface SchedulesRepository {
   ): Promise<Schedule | null>;
   delete(id: string, owner: string): Promise<void>;
   toggle(id: string, owner: string): Promise<Schedule | null>;
-  readAgentRef(instanceId: string, owner: string): Promise<string | null>;
+  readAgentRef(agentId: string, owner: string): Promise<string | null>;
 }
 
 export function createSchedulesRepository(k8s: K8sClient): SchedulesRepository {
@@ -39,9 +37,9 @@ export function createSchedulesRepository(k8s: K8sClient): SchedulesRepository {
   }
 
   return {
-    async list(instanceId, owner) {
+    async list(agentId, owner) {
       const cms = await k8s.listConfigMaps(
-        `${LABEL_TYPE}=${TYPE_SCHEDULE},${LABEL_INSTANCE_REF}=${instanceId},${LABEL_OWNER}=${owner}`,
+        `${LABEL_TYPE}=${TYPE_SCHEDULE},${LABEL_AGENT_REF}=${agentId},${LABEL_OWNER}=${owner}`,
       );
       return cms.map(parseSchedule);
     },
@@ -52,8 +50,8 @@ export function createSchedulesRepository(k8s: K8sClient): SchedulesRepository {
       return parseSchedule(cm);
     },
 
-    async create(instanceId, agentRef, spec, owner) {
-      const body = buildScheduleConfigMap(instanceId, agentRef, spec, owner);
+    async create(agentId, spec, owner) {
+      const body = buildScheduleConfigMap(agentId, spec, owner);
       const created = await k8s.createConfigMap(body);
       return parseSchedule(created);
     },
@@ -87,8 +85,8 @@ export function createSchedulesRepository(k8s: K8sClient): SchedulesRepository {
       return parseSchedule(updated);
     },
 
-    async readAgentRef(instanceId, owner) {
-      const cm = await getOwned(instanceId, owner);
+    async readAgentRef(agentId, owner) {
+      const cm = await getOwned(agentId, owner);
       if (!cm) return null;
       return cm.metadata!.labels![LABEL_AGENT_REF] ?? null;
     },

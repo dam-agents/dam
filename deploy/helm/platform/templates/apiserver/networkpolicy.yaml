@@ -2,8 +2,8 @@
 {{- /*
   ADR-041: pruned to a coarse perimeter only.
 
-  Per-instance / per-pair admission moved entirely to mesh AuthorizationPolicy
-  (the controller renders per-instance policies; chart renders the pod-level
+  Per-agent / per-pair admission moved entirely to mesh AuthorizationPolicy
+  (the controller renders per-agent policies; chart renders the pod-level
   DENY in auth-policy-pod-deny.yaml). NetworkPolicy in ambient mode is
   identity-blind and sees mesh-to-mesh traffic only as HBONE 15008, so
   fine-grained gating here would be either trivially permissive or trivially
@@ -14,13 +14,13 @@
     - http (4000) from anywhere — UI, ingress controller, in-cluster.
       Application-layer auth (Keycloak JWT) is the gate.
     - harness (4001) from the release namespace only — the waypoint Pod
-      synthesised by Istio lives here. The cryptographic per-instance
-      check is the per-instance AuthorizationPolicy on the harness path,
+      synthesised by Istio lives here. The cryptographic per-agent
+      check is the per-agent AuthorizationPolicy on the harness path,
       not netpol.
-    - ext-authz (4002) from the agent namespace only — per-instance
+    - ext-authz (4002) from the agent namespace only — per-agent
       Services route from gateway pods here. The cryptographic per-
-      instance check is the per-instance AuthorizationPolicy on each
-      per-instance Service.
+      agent check is the per-agent AuthorizationPolicy on each
+      per-agent Service.
     - HBONE (15008) listed alongside each app port so the kernel-level
       netpol sees the right thing for ambient-routed traffic (Istio
       iptables redirect happens in NAT/MANGLE before FILTER).
@@ -48,7 +48,7 @@ spec:
           port: {{ .Values.apiServer.port }}
 
     # Harness — only from release namespace (where the istio waypoint Pod
-    # lives). The waypoint enforces the per-instance principal-to-`:id`
+    # lives). The waypoint enforces the per-agent principal-to-`:id`
     # check; this rule just keeps the port off-limits to other namespaces.
     - from:
         - namespaceSelector:
@@ -61,8 +61,8 @@ spec:
           port: 15008  # HBONE — required for any mesh-to-mesh hop
 
     # ext-authz — only from the agent namespace (where gateway pods dial
-    # per-instance ext-authz Services). The per-instance AuthorizationPolicy
-    # ensures only the matching instance's SA can reach its own Service.
+    # per-agent ext-authz Services). The per-agent AuthorizationPolicy
+    # ensures only the matching agent's SA can reach its own Service.
     - from:
         - namespaceSelector:
             matchLabels:

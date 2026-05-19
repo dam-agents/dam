@@ -13,15 +13,15 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
-func TestWriteInstanceStatus(t *testing.T) {
+func TestWriteAgentStatus(t *testing.T) {
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{Name: "my-instance", Namespace: "test-agents"},
 		Data:       map[string]string{"spec.yaml": "desiredState: running"},
 	}
 	client := fake.NewSimpleClientset(cm)
-	status := &types.InstanceStatus{CurrentState: "running"}
+	status := &types.AgentStatus{CurrentState: "running"}
 
-	err := WriteInstanceStatus(context.Background(), client, "test-agents", "my-instance", status)
+	err := WriteAgentStatus(context.Background(), client, "test-agents", "my-instance", status)
 	require.NoError(t, err)
 
 	updated, _ := client.CoreV1().ConfigMaps("test-agents").Get(context.Background(), "my-instance", metav1.GetOptions{})
@@ -29,25 +29,25 @@ func TestWriteInstanceStatus(t *testing.T) {
 	assert.Equal(t, "desiredState: running", updated.Data["spec.yaml"])
 }
 
-func TestWriteInstanceStatus_Error(t *testing.T) {
+func TestWriteAgentStatus_Error(t *testing.T) {
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{Name: "my-instance", Namespace: "test-agents"},
 		Data:       map[string]string{"spec.yaml": "desiredState: running"},
 	}
 	client := fake.NewSimpleClientset(cm)
-	status := &types.InstanceStatus{CurrentState: "error", Error: "template not found"}
+	status := &types.AgentStatus{CurrentState: "error", Error: "template not found"}
 
-	err := WriteInstanceStatus(context.Background(), client, "test-agents", "my-instance", status)
+	err := WriteAgentStatus(context.Background(), client, "test-agents", "my-instance", status)
 	require.NoError(t, err)
 
 	updated, _ := client.CoreV1().ConfigMaps("test-agents").Get(context.Background(), "my-instance", metav1.GetOptions{})
 	assert.Contains(t, updated.Data["status.yaml"], "error: template not found")
 }
 
-func TestWriteInstanceStatus_NotFound(t *testing.T) {
+func TestWriteAgentStatus_NotFound(t *testing.T) {
 	client := fake.NewSimpleClientset()
-	status := &types.InstanceStatus{CurrentState: "running"}
-	err := WriteInstanceStatus(context.Background(), client, "test-agents", "missing", status)
+	status := &types.AgentStatus{CurrentState: "running"}
+	err := WriteAgentStatus(context.Background(), client, "test-agents", "missing", status)
 	assert.Error(t, err)
 }
 

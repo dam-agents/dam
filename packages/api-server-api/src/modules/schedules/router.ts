@@ -21,7 +21,7 @@ function toView(sched: Schedule) {
   const base = {
     id: sched.id,
     name: sched.name,
-    instanceId: sched.instanceId,
+    agentId: sched.agentId,
     type: sched.spec.type,
     task: sched.spec.task ?? null,
     enabled: sched.spec.enabled,
@@ -49,9 +49,9 @@ function toView(sched: Schedule) {
 
 export const schedulesRouter = t.router({
   list: t.procedure
-    .input(z.object({ instanceId: z.string().min(1) }))
+    .input(z.object({ agentId: z.string().min(1) }))
     .query(async ({ ctx, input }) => {
-      const schedules = await ctx.schedules.list(input.instanceId);
+      const schedules = await ctx.schedules.list(input.agentId);
       return schedules.map(toView);
     }),
 
@@ -67,7 +67,7 @@ export const schedulesRouter = t.router({
     .input(
       z.object({
         name: z.string().min(1),
-        instanceId: z.string().min(1),
+        agentId: z.string().min(1),
         cron: z.string().min(1),
         task: z.string().min(1),
         sessionMode: z.enum(["continuous", "fresh"]).optional(),
@@ -82,7 +82,7 @@ export const schedulesRouter = t.router({
     .input(
       z.object({
         name: z.string().min(1),
-        instanceId: z.string().min(1),
+        agentId: z.string().min(1),
         rrule: z.string().min(1),
         timezone: z.string().min(1),
         quietHours: z.array(quietWindowSchema).optional(),

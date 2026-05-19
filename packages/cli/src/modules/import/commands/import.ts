@@ -2,14 +2,11 @@ import { openAsBlob } from "node:fs";
 import { Command } from "commander";
 import type { TokenProvider } from "../../auth/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import {
-  createInstanceResolver,
-  type InstanceService,
-} from "../../instance/index.js";
+import { createAgentResolver, type AgentService } from "../../agent/index.js";
 import {
   exitCodeForResolveError,
   printResolveError,
-} from "../../instance/commands/errors.js";
+} from "../../agent/commands/errors.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { confirm } from "../../shared/prompt.js";
 import {
@@ -23,15 +20,15 @@ import {
   EXIT_IMPORT_INVALID_INPUT,
   EXIT_IMPORT_RUNTIME_FAILURE,
   EXIT_IMPORT_SUCCESS,
-  EXIT_INSTANCE_NOT_RESOLVED,
+  EXIT_AGENT_NOT_RESOLVED,
 } from "./exit-codes.js";
 
 export interface ImportCommandDeps {
   compatService: CompatService;
   configService: ConfigService;
   tokenProvider: TokenProvider;
-  /** Per-host service factory from the instance module's compose. */
-  createInstanceService: (host: string) => InstanceService;
+  /** Per-host service factory from the agent module's compose. */
+  createAgentService: (host: string) => AgentService;
   bundleBuilder: BundleBuilder;
   serverEnvVar: string;
 }
@@ -44,8 +41,8 @@ interface ImportSuccess {
 
 export function buildImportCommand(deps: ImportCommandDeps): Command {
   const cmd = new Command("import")
-    .description("Import local files or folders into an Instance")
-    .argument("<instance-ref>", "Instance name or ID (`inst-...`)")
+    .description("Import local files or folders into an Agent")
+    .argument("<agent-ref>", "Agent name or ID (`agent-...`)")
     .argument("<path...>", "one or more local files or directories")
     .option(
       "--server <url>",
@@ -60,7 +57,7 @@ export function buildImportCommand(deps: ImportCommandDeps): Command {
   cmd.addHelpText(
     "after",
     () =>
-      "\nEach <path> becomes a top-level entry under 'work/' on the Instance. " +
+      "\nEach <path> becomes a top-level entry under 'work/' on the Agent. " +
       "Existing entries with the same name are replaced wholesale; other " +
       "entries under 'work/' are untouched.\n\n" +
       "Symlinks anywhere in the imported tree are skipped (not followed).\n\n" +
@@ -92,14 +89,14 @@ export function buildImportCommand(deps: ImportCommandDeps): Command {
       }
       const args = resolved.value;
 
-      const svc = deps.createInstanceService(host);
-      const resolver = createInstanceResolver({ instanceService: svc });
+      const svc = deps.createAgentService(host);
+      const resolver = createAgentResolver({ agentService: svc });
       const target = await resolver.resolve(ref);
       if (!target.ok) {
         printResolveError(target.error, host);
         process.exit(exitCodeForResolveError(target.error));
       }
-      const instance = target.value;
+      const agent = target.value;
 
       if (!opts.yes) {
         if (!process.stdin.isTTY) {
@@ -109,13 +106,13 @@ export function buildImportCommand(deps: ImportCommandDeps): Command {
           process.exit(EXIT_IMPORT_INVALID_INPUT);
         }
         process.stderr.write(
-          `About to import into '${instance.name}' (${instance.id}):\n`,
+          `About to import into '${agent.name}' (${agent.id}):\n`,
         );
         for (const a of args) {
           process.stderr.write(`  ${a.input}\n`);
         }
         process.stderr.write(
-          "This replaces each entry under 'work/' on the instance if present.\n",
+          "This replaces each entry under 'work/' on the agent if present.\n",
         );
         // Longer timeout than `confirm`'s default — users may scan a long path list.
         const okToProceed = await confirm("Continue?", { timeoutMs: 120_000 });
@@ -142,7 +139,7 @@ export function buildImportCommand(deps: ImportCommandDeps): Command {
       try {
         exitCode = await uploadAndReport({
           host,
-          instanceId: instance.id,
+          agentId: agent.id,
           packed: packed.value,
           tokenProvider: deps.tokenProvider,
           json: opts.json === true,
@@ -159,7 +156,7 @@ export function buildImportCommand(deps: ImportCommandDeps): Command {
 
 async function uploadAndReport(args: {
   host: string;
-  instanceId: string;
+  agentId: string;
   packed: PackedBundle;
   tokenProvider: TokenProvider;
   json: boolean;
@@ -190,7 +187,7 @@ async function uploadAndReport(args: {
   let res: Response;
   try {
     res = await fetch(
-      `${args.host}/api/instances/${encodeURIComponent(args.instanceId)}/import`,
+      `${args.host}/api/agents/${encodeURIComponent(args.agentId)}/import`,
       {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
@@ -233,11 +230,11 @@ async function uploadAndReport(args: {
       );
       return EXIT_IMPORT_RUNTIME_FAILURE;
     case 404:
-      process.stderr.write("error: instance no longer exists\n");
-      return EXIT_INSTANCE_NOT_RESOLVED;
+      process.stderr.write("error: agent no longer exists\n");
+      return EXIT_AGENT_NOT_RESOLVED;
     case 409:
       process.stderr.write(
-        "error: another import is already in progress for this instance\n",
+        "error: another import is already in progress for this agent\n",
       );
       return EXIT_IMPORT_RUNTIME_FAILURE;
     case 411:

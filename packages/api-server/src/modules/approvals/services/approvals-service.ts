@@ -41,7 +41,7 @@ export interface EgressRuleWriter {
  *  click-handling replica without any Redis hop. The periodic sweep retries
  *  rows whose `delivered_at` is still null (e.g. replica died mid-send). */
 export interface WrapperFrameSender {
-  send(instanceId: string, frame: string): Promise<void>;
+  send(agentId: string, frame: string): Promise<void>;
 }
 
 export interface CreateApprovalsServiceDeps {
@@ -49,7 +49,7 @@ export interface CreateApprovalsServiceDeps {
   egressRuleWriter: EgressRuleWriter;
   notifier: ApprovalsNotifier;
   wrapperFrameSender: WrapperFrameSender;
-  isInstanceOwnedBy(instanceId: string, ownerSub: string): Promise<boolean>;
+  isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   ownerSub: string;
 }
 
@@ -57,7 +57,6 @@ function toView(row: PendingApprovalRow): ApprovalView {
   return {
     id: row.id,
     type: row.type,
-    instanceId: row.instanceId,
     agentId: row.agentId,
     sessionId: row.sessionId,
     payload: row.payload,
@@ -87,9 +86,9 @@ export function createApprovalsService(
       return rows.map(toView);
     },
 
-    async listForInstance(instanceId, opts) {
-      if (!(await deps.isInstanceOwnedBy(instanceId, deps.ownerSub))) return [];
-      const rows = await deps.repo.listPendingForInstance(instanceId, opts);
+    async listForInstance(agentId, opts) {
+      if (!(await deps.isAgentOwnedBy(agentId, deps.ownerSub))) return [];
+      const rows = await deps.repo.listPendingForInstance(agentId, opts);
       // Defense-in-depth: filter to caller's own rows even though instance
       // ownership already implies it.
       return rows.filter((r) => r.ownerSub === deps.ownerSub).map(toView);
@@ -215,7 +214,7 @@ async function resolveAndDeliverAcpNative(
   const optionId = pickOptionId(row.payload.options ?? [], verdict);
   const frame = JSON.stringify(buildAcpPermissionResponse(rpcId, optionId));
   try {
-    await deps.wrapperFrameSender.send(row.instanceId, frame);
+    await deps.wrapperFrameSender.send(row.agentId, frame);
     await deps.repo.markDelivered(row.id);
   } catch {
     // Intentionally swallow — the sweep will retry. The user has seen their

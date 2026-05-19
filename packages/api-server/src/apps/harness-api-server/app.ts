@@ -5,10 +5,9 @@ import type { Db } from "db";
 import { createK8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { LABEL_OWNER } from "../../modules/agents/infrastructure/labels.js";
 import {
-  composeInstancesModule,
+  composeAgentsModule,
   createKeycloakUserDirectory,
-} from "../../modules/instances/index.js";
-import { composeAgentsModule } from "../../modules/agents/index.js";
+} from "../../modules/agents/index.js";
 import { composeTemplatesModule } from "../../modules/templates/index.js";
 import { composeSchedulesModule } from "../../modules/schedules/index.js";
 import { composeSessionsModule } from "../../modules/sessions/index.js";
@@ -75,32 +74,26 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       const sessionType = "schedule_cron";
 
       // Look up the instance's real owner from its ConfigMap. Composing
-      // with "_system" would short-circuit sessions.create's isOwnedInstance
+      // with "_system" would short-circuit sessions.create's isOwnedAgent
       // check and silently drop the DB row — so the scheduled session would
       // fire, complete, and leave no trace in the sessions table.
-      const instanceCm = await k8sClient.getConfigMap(body.instanceId);
+      const instanceCm = await k8sClient.getConfigMap(body.agentId);
       const owner = instanceCm?.metadata?.labels?.[LABEL_OWNER];
       if (!owner) {
-        throw new Error(`instance ${body.instanceId}: missing owner label`);
+        throw new Error(`instance ${body.agentId}: missing owner label`);
       }
       const { readSpec: readTemplateSpec } = composeTemplatesModule(
         api,
         config.namespace,
       );
-      const { agents } = composeAgentsModule({
-        api,
-        namespace: config.namespace,
-        owner,
-        readTemplateSpec,
-      });
-      const { isOwnedInstance } = composeInstancesModule({
+      const { isOwnedAgent } = composeAgentsModule({
         api,
         namespace: config.namespace,
         owner,
         db,
         userDirectory,
         channelSecretStore,
-        getAgent: (id) => agents.get(id),
+        readTemplateSpec,
       });
       const { isOwnedSchedule } = composeSchedulesModule(
         api,
@@ -110,7 +103,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       const { sessions } = composeSessionsModule({
         db,
         namespace: config.namespace,
-        isOwnedInstance,
+        isOwnedAgent,
         isOwnedSchedule,
       });
 
@@ -122,7 +115,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
 
       const acp = createAcpClient({
         namespace: config.namespace,
-        instanceName: body.instanceId,
+        instanceName: body.agentId,
       });
 
       return acp.triggerSession(
@@ -134,7 +127,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
               onSessionCreated: (sid) =>
                 sessions.create(
                   sid,
-                  body.instanceId,
+                  body.agentId,
                   SessionMode.Chat,
                   sessionType as any,
                   body.schedule,

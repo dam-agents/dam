@@ -67,7 +67,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
   const filename = path.split("/").pop();
   const editable = !binary && hasContent;
 
-  const selectedInstance = useStore((s) => s.selectedInstance);
+  const selectedAgent = useStore((s) => s.selectedAgent);
   const setOpenFileDirty = useStore((s) => s.setOpenFileDirty);
   const showToast = useStore((s) => s.showToast);
   const showConfirm = useStore((s) => s.showConfirm);
@@ -96,10 +96,10 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
     }
   }, [content, file.mtimeMs, editMode, path]);
 
-  const writeMutation = useFileWriteMutation(selectedInstance);
+  const writeMutation = useFileWriteMutation(selectedAgent);
 
   const save = useCallback(async () => {
-    if (!selectedInstance || !editable) return;
+    if (!selectedAgent || !editable) return;
     try {
       const res = await writeMutation.mutateAsync({
         path,
@@ -118,7 +118,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
         );
         if (!ok) {
           // Refresh from disk and leave draft intact so the user can merge.
-          const fresh = await fetchFileContent(selectedInstance, path);
+          const fresh = await fetchFileContent(selectedAgent, path);
           setBaseMtimeMs(fresh.mtimeMs);
           return;
         }
@@ -138,7 +138,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
       showToast({ kind: "error", message: msg });
     }
   }, [
-    selectedInstance,
+    selectedAgent,
     editable,
     writeMutation,
     path,

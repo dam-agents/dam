@@ -15,7 +15,7 @@ export function startOnForeignReplySaga(forks: ForksService): Subscription {
       mergeMap(async (event) => {
         try {
           await forks.openFork({
-            instanceId: event.instanceId,
+            agentId: event.agentId,
             foreignSub: event.foreignSub,
             replyId: event.replyId,
             ...(event.sessionId !== undefined

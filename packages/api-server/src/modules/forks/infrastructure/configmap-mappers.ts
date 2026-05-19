@@ -4,7 +4,7 @@ import type { ForkFailureReason } from "../../../events.js";
 import type { ForkSpec, ForkStatus } from "../domain/fork.js";
 import {
   LABEL_FORK_ID,
-  LABEL_INSTANCE_REF,
+  LABEL_AGENT_REF,
   LABEL_TYPE,
   SPEC_KEY,
   SPEC_VERSION,
@@ -33,7 +33,7 @@ export function buildForkConfigMap(args: {
 }): k8s.V1ConfigMap {
   const body: ForkSpecYaml = {
     version: SPEC_VERSION,
-    instance: args.spec.instanceId,
+    instance: args.spec.agentId,
     foreignSub: args.spec.foreignSub,
   };
   if (args.spec.sessionId !== undefined) body.sessionId = args.spec.sessionId;
@@ -43,7 +43,7 @@ export function buildForkConfigMap(args: {
       name: args.forkId,
       labels: {
         [LABEL_TYPE]: TYPE_AGENT_FORK,
-        [LABEL_INSTANCE_REF]: args.spec.instanceId,
+        [LABEL_AGENT_REF]: args.spec.agentId,
         [LABEL_FORK_ID]: args.forkId,
       },
     },

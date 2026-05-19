@@ -12,7 +12,7 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
-func WriteInstanceStatus(ctx context.Context, client kubernetes.Interface, namespace, name string, status *types.InstanceStatus) error {
+func WriteAgentStatus(ctx context.Context, client kubernetes.Interface, namespace, name string, status *types.AgentStatus) error {
 	return writeStatus(ctx, client, namespace, name, status)
 }
 

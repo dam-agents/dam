@@ -56,19 +56,19 @@ async function fileToBase64(file: File): Promise<string> {
   return btoa(binary);
 }
 
-export function useFileMutations(instanceId: string | null) {
+export function useFileMutations(agentId: string | null) {
   const showConfirm = useStore((s) => s.showConfirm);
   const showToast = useStore((s) => s.showToast);
   const openFilePath = useStore((s) => s.openFilePath);
   const setOpenFilePath = useStore((s) => s.setOpenFilePath);
 
-  const { data: fileTree = [] } = useFileTreeQuery(instanceId);
+  const { data: fileTree = [] } = useFileTreeQuery(agentId);
 
-  const createFile = useFileCreateMutation(instanceId);
-  const createFolder = useFolderCreateMutation(instanceId);
-  const renameMutation = useFileRenameMutation(instanceId);
-  const deleteMutation = useFileDeleteMutation(instanceId);
-  const uploadMutation = useFileUploadMutation(instanceId);
+  const createFile = useFileCreateMutation(agentId);
+  const createFolder = useFolderCreateMutation(agentId);
+  const renameMutation = useFileRenameMutation(agentId);
+  const deleteMutation = useFileDeleteMutation(agentId);
+  const uploadMutation = useFileUploadMutation(agentId);
 
   const createEntry = useCallback(
     async ({ kind, dir, name }: CreateEntryInput) => {
@@ -236,9 +236,9 @@ export function useFileMutations(instanceId: string | null) {
 
   const uploadBundle = useCallback(
     async (entries: BundleEntry[]) => {
-      if (!instanceId || entries.length === 0) return;
+      if (!agentId || entries.length === 0) return;
       try {
-        await importBundle({ instanceId, entries });
+        await importBundle({ agentId, entries });
         showToast({
           kind: "success",
           message: `Imported ${entries.length} file${entries.length === 1 ? "" : "s"}`,
@@ -250,7 +250,7 @@ export function useFileMutations(instanceId: string | null) {
         });
       }
     },
-    [instanceId, showToast],
+    [agentId, showToast],
   );
 
   return {

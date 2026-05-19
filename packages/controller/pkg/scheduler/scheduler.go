@@ -75,7 +75,7 @@ func (s *Scheduler) Stop() {
 
 func (s *Scheduler) SyncSchedule(cm *corev1.ConfigMap) error {
 	name := cm.Name
-	instanceName := cm.Labels["agent-platform.ai/instance"]
+	agentName := cm.Labels["agent-platform.ai/agent"]
 
 	specYAML, ok := cm.Data["spec.yaml"]
 	if !ok {
@@ -115,9 +115,9 @@ func (s *Scheduler) SyncSchedule(cm *corev1.ConfigMap) error {
 	var registerErr error
 	switch effectiveScheduleType(spec) {
 	case types.ScheduleTypeRRule:
-		registerErr = s.registerRRuleSchedule(instanceName, name, spec)
+		registerErr = s.registerRRuleSchedule(agentName, name, spec)
 	default:
-		registerErr = s.registerCronSchedule(instanceName, name, spec)
+		registerErr = s.registerCronSchedule(agentName, name, spec)
 	}
 	if registerErr != nil {
 		return registerErr
@@ -139,10 +139,10 @@ func effectiveScheduleType(spec *types.ScheduleSpec) string {
 	return types.ScheduleTypeCron
 }
 
-func (s *Scheduler) registerCronSchedule(instanceName, name string, spec *types.ScheduleSpec) error {
+func (s *Scheduler) registerCronSchedule(agentName, name string, spec *types.ScheduleSpec) error {
 	entryID, err := s.cron.AddFunc(spec.Cron, func() {
 		ctx := context.Background()
-		fireErr := s.fire(ctx, instanceName, name, spec)
+		fireErr := s.fire(ctx, agentName, name, spec)
 
 		// Always write schedule status, even on failure
 		now := time.Now().UTC().Format(time.RFC3339)
@@ -159,7 +159,7 @@ func (s *Scheduler) registerCronSchedule(instanceName, name string, spec *types.
 		result := "success"
 		if fireErr != nil {
 			result = fireErr.Error()
-			slog.Error("schedule fire failed", "schedule", name, "instance", instanceName, "error", fireErr)
+			slog.Error("schedule fire failed", "schedule", name, "agent", agentName, "error", fireErr)
 		}
 		if err := reconciler.WriteScheduleStatus(ctx, s.client, s.config.Namespace, name, types.NewScheduleStatus(now, nextRun, result)); err != nil {
 			slog.Error("writing schedule status", "schedule", name, "error", err)
@@ -181,7 +181,7 @@ func (s *Scheduler) registerCronSchedule(instanceName, name string, spec *types.
 	return nil
 }
 
-func (s *Scheduler) registerRRuleSchedule(instanceName, name string, spec *types.ScheduleSpec) error {
+func (s *Scheduler) registerRRuleSchedule(agentName, name string, spec *types.ScheduleSpec) error {
 	loc, err := types.LoadTimezone(spec.Timezone)
 	if err != nil {
 		return fmt.Errorf("schedule %s: %w", name, err)
@@ -211,7 +211,7 @@ func (s *Scheduler) registerRRuleSchedule(instanceName, name string, spec *types
 		}
 	}
 
-	go s.runRRuleJob(ctx, instanceName, name, spec, rule, loc)
+	go s.runRRuleJob(ctx, agentName, name, spec, rule, loc)
 	slog.Info("rrule registered", "schedule", name, "rrule", spec.RRule, "timezone", spec.Timezone)
 	return nil
 }
@@ -223,7 +223,7 @@ func (s *Scheduler) registerRRuleSchedule(instanceName, name string, spec *types
 // either "success" or an error message.
 func (s *Scheduler) runRRuleJob(
 	ctx context.Context,
-	instanceName, scheduleName string,
+	agentName, scheduleName string,
 	spec *types.ScheduleSpec,
 	rule *rrule.RRule,
 	loc *time.Location,
@@ -251,11 +251,11 @@ func (s *Scheduler) runRRuleJob(
 			nextRunStr = nextAfter.UTC().Format(time.RFC3339)
 		}
 
-		fireErr := s.fire(ctx, instanceName, scheduleName, spec)
+		fireErr := s.fire(ctx, agentName, scheduleName, spec)
 		result := "success"
 		if fireErr != nil {
 			result = fireErr.Error()
-			slog.Error("schedule fire failed", "schedule", scheduleName, "instance", instanceName, "error", fireErr)
+			slog.Error("schedule fire failed", "schedule", scheduleName, "agent", agentName, "error", fireErr)
 		}
 		if err := reconciler.WriteScheduleStatus(
 			ctx, s.client, s.config.Namespace, scheduleName,
@@ -309,9 +309,9 @@ func (s *Scheduler) RemoveSchedule(name string) {
 	s.mu.Unlock()
 }
 
-func (s *Scheduler) fire(ctx context.Context, instanceName, scheduleName string, spec *types.ScheduleSpec) error {
-	if err := s.lifecycle.EnsureReady(ctx, instanceName); err != nil {
-		return fmt.Errorf("ensuring %s ready: %w", instanceName, err)
+func (s *Scheduler) fire(ctx context.Context, agentName, scheduleName string, spec *types.ScheduleSpec) error {
+	if err := s.lifecycle.EnsureReady(ctx, agentName); err != nil {
+		return fmt.Errorf("ensuring %s ready: %w", agentName, err)
 	}
 
 	// Build and deliver trigger
@@ -331,7 +331,7 @@ func (s *Scheduler) fire(ctx context.Context, instanceName, scheduleName string,
 	filename := fmt.Sprintf("/home/agent/.triggers/%d.json", time.Now().UnixMilli())
 	tmpFilename := filename + ".tmp"
 
-	podName := instanceName + "-0"
+	podName := agentName + "-0"
 	cmd := []string{"sh", "-c", fmt.Sprintf("mkdir -p /home/agent/.triggers && cat > %s << 'TRIGGER_EOF'\n%s\nTRIGGER_EOF\nmv %s %s", tmpFilename, string(triggerJSON), tmpFilename, filename)}
 
 	if s.restCfg != nil {

@@ -43,7 +43,7 @@ export interface CreateSkillSourceInput {
 }
 
 export interface InstallSkillInput {
-  instanceId: string;
+  agentId: string;
   source: string;
   name: string;
   version: string;
@@ -54,7 +54,7 @@ export interface InstallSkillInput {
 }
 
 export interface UninstallSkillInput {
-  instanceId: string;
+  agentId: string;
   source: string;
   name: string;
 }
@@ -67,7 +67,7 @@ export interface LocalSkill {
 }
 
 export interface PublishSkillInput {
-  instanceId: string;
+  agentId: string;
   sourceId: string;
   name: string;
   title?: string;
@@ -115,15 +115,15 @@ export interface SkillsState {
 }
 
 export interface SkillsService {
-  listSources: (instanceId?: string) => Promise<SkillSource[]>;
+  listSources: (agentId?: string) => Promise<SkillSource[]>;
   getSource: (id: string) => Promise<SkillSource | null>;
   createSource: (input: CreateSkillSourceInput) => Promise<SkillSource>;
   deleteSource: (id: string) => Promise<void>;
   refreshSource: (id: string) => Promise<void>;
-  listSkills: (sourceId: string, instanceId?: string) => Promise<Skill[]>;
+  listSkills: (sourceId: string, agentId?: string) => Promise<Skill[]>;
   installSkill: (input: InstallSkillInput) => Promise<SkillRef[]>;
   uninstallSkill: (input: UninstallSkillInput) => Promise<SkillRef[]>;
-  listLocal: (instanceId: string) => Promise<LocalSkill[]>;
-  getState: (instanceId: string) => Promise<SkillsState>;
+  listLocal: (agentId: string) => Promise<LocalSkill[]>;
+  getState: (agentId: string) => Promise<SkillsState>;
   publishSkill: (input: PublishSkillInput) => Promise<PublishSkillResult>;
 }

@@ -42,9 +42,9 @@ const localSkillSchema = z.object({
 export const skillsRouter = t.router({
   sources: t.router({
     list: t.procedure
-      .input(z.object({ instanceId: z.string().min(1).optional() }).optional())
+      .input(z.object({ agentId: z.string().min(1).optional() }).optional())
       .output(z.array(skillSourceViewSchema))
-      .query(({ ctx, input }) => ctx.skills.listSources(input?.instanceId)),
+      .query(({ ctx, input }) => ctx.skills.listSources(input?.agentId)),
 
     create: t.procedure
       .input(
@@ -67,27 +67,27 @@ export const skillsRouter = t.router({
       .mutation(({ ctx, input }) => ctx.skills.refreshSource(input.id)),
   }),
 
-  /** `instanceId` is optional — public-archive scans don't need an instance.
+  /** `agentId` is optional — public-archive scans don't need an instance.
    *  Private-source scans (that fall through to the authenticated
    *  agent-runtime path) will throw with a clear hint if it's missing. */
   listSkills: t.procedure
     .input(
       z.object({
         sourceId: z.string().min(1),
-        instanceId: z.string().min(1).optional(),
+        agentId: z.string().min(1).optional(),
       }),
     )
     .output(z.array(skillViewSchema))
     .query(async ({ ctx, input }) => {
       const src = await ctx.skills.getSource(input.sourceId);
       if (!src) throw new TRPCError({ code: "NOT_FOUND" });
-      return ctx.skills.listSkills(input.sourceId, input.instanceId);
+      return ctx.skills.listSkills(input.sourceId, input.agentId);
     }),
 
   install: t.procedure
     .input(
       z.object({
-        instanceId: z.string().min(1),
+        agentId: z.string().min(1),
         source: z.string().url(),
         name: z.string().min(1),
         version: z.string().min(1),
@@ -100,7 +100,7 @@ export const skillsRouter = t.router({
   uninstall: t.procedure
     .input(
       z.object({
-        instanceId: z.string().min(1),
+        agentId: z.string().min(1),
         source: z.string().url(),
         name: z.string().min(1),
       }),
@@ -109,9 +109,9 @@ export const skillsRouter = t.router({
     .mutation(({ ctx, input }) => ctx.skills.uninstallSkill(input)),
 
   listLocal: t.procedure
-    .input(z.object({ instanceId: z.string().min(1) }))
+    .input(z.object({ agentId: z.string().min(1) }))
     .output(z.array(localSkillSchema))
-    .query(({ ctx, input }) => ctx.skills.listLocal(input.instanceId)),
+    .query(({ ctx, input }) => ctx.skills.listLocal(input.agentId)),
 
   /**
    * Reconciled skills view for an instance — drops ghost SkillRefs (entries
@@ -125,7 +125,7 @@ export const skillsRouter = t.router({
    * used to drive the "Published" badge on standalone skills.
    */
   state: t.procedure
-    .input(z.object({ instanceId: z.string().min(1) }))
+    .input(z.object({ agentId: z.string().min(1) }))
     .output(
       z.object({
         installed: z.array(skillRefSchema),
@@ -142,12 +142,12 @@ export const skillsRouter = t.router({
         ),
       }),
     )
-    .query(({ ctx, input }) => ctx.skills.getState(input.instanceId)),
+    .query(({ ctx, input }) => ctx.skills.getState(input.agentId)),
 
   publish: t.procedure
     .input(
       z.object({
-        instanceId: z.string().min(1),
+        agentId: z.string().min(1),
         sourceId: z.string().min(1),
         name: z.string().min(1),
         title: z.string().optional(),

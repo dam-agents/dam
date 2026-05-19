@@ -28,7 +28,7 @@ type TriggerPayload = z.infer<typeof TriggerFile>;
 interface TriggerWatcherOptions {
   triggersDir: string;
   apiServerUrl: string;
-  instanceId: string;
+  agentId: string;
 }
 
 export interface TriggerWatcher {
@@ -127,8 +127,8 @@ async function processTrigger(
       });
     }
 
-    const result = await postTrigger(options.apiServerUrl, options.instanceId, {
-      instanceId: options.instanceId,
+    const result = await postTrigger(options.apiServerUrl, options.agentId, {
+      agentId: options.agentId,
       schedule: trigger.schedule,
       task: trigger.task,
       type: trigger.type,
@@ -149,17 +149,17 @@ async function processTrigger(
   }
 }
 
-/** POST to the API server's per-instance trigger endpoint. ADR-041: the
- *  endpoint moved under `/api/instances/:id/internal/trigger` so it falls
+/** POST to the API server's per-agent trigger endpoint. ADR-041: the
+ *  endpoint lives under `/api/agents/:id/internal/trigger` so it falls
  *  under the same waypoint AuthorizationPolicy as MCP and pod-files —
  *  identity is enforced by Istio (principal == URL `:id`), not a header. */
 async function postTrigger(
   apiServerUrl: string,
-  instanceId: string,
+  agentId: string,
   body: object,
 ): Promise<{ sessionId: string; stopReason?: string }> {
   const url = new URL(
-    `/api/instances/${encodeURIComponent(instanceId)}/internal/trigger`,
+    `/api/agents/${encodeURIComponent(agentId)}/internal/trigger`,
     apiServerUrl,
   );
   const res = await fetch(url, {

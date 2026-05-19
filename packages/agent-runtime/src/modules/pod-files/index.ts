@@ -4,7 +4,7 @@ import { FileSpecSchema, type FileSpec } from "api-server-api";
 
 export interface PodFilesSyncOptions {
   /** SSE endpoint built by the reconciler:
-   *  `${HARNESS_SERVER_URL}/api/instances/<instance>/pod-files/events`. */
+   *  `${HARNESS_SERVER_URL}/api/agents/<agent>/pod-files/events`. */
   url: string;
   /** Agent container HOME — paths in incoming FileSpecs must resolve under
    *  this prefix or the write is refused (defense-in-depth). */

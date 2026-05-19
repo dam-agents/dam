@@ -61,9 +61,9 @@ func forkCM(t *testing.T, name string, spec *types.ForkSpec, createdAt time.Time
 			Name: name, Namespace: "test-agents", UID: apitypes.UID("fork-uid-" + name),
 			CreationTimestamp: metav1.Time{Time: createdAt},
 			Labels: map[string]string{
-				"agent-platform.ai/type":     "agent-fork",
-				"agent-platform.ai/instance": spec.Instance,
-				"agent-platform.ai/fork-id":  name,
+				"agent-platform.ai/type":    "agent-fork",
+				"agent-platform.ai/agent":   spec.AgentName,
+				"agent-platform.ai/fork-id": name,
 			},
 		},
 		Data: map[string]string{"spec.yaml": string(data)},
@@ -83,20 +83,19 @@ func readStatus(t *testing.T, client *fake.Clientset, name string) *types.ForkSt
 	return &s
 }
 
-func minimalForkSpec(instance string) *types.ForkSpec {
+func minimalForkSpec(agentName string) *types.ForkSpec {
 	return &types.ForkSpec{
 		Version:    types.SpecVersion,
-		Instance:   instance,
+		AgentName:  agentName,
 		ForeignSub: "kc-user-42",
 	}
 }
 
 func TestForkReconcile_CreatesJob(t *testing.T) {
-	cm := forkCM(t, "fork-1", minimalForkSpec("my-instance"), time.Unix(1_000_000-1, 0))
+	cm := forkCM(t, "fork-1", minimalForkSpec("my-agent"), time.Unix(1_000_000-1, 0))
 	r, client := setupForkReconciler(t,
-		map[string]*corev1.ConfigMap{"claude-code": agentCM()},
+		map[string]*corev1.ConfigMap{"my-agent": agentCM("running")},
 		cm,
-		instanceCM("running"),
 	)
 
 	err := r.Reconcile(context.Background(), cm)
@@ -112,11 +111,10 @@ func TestForkReconcile_CreatesJob(t *testing.T) {
 }
 
 func TestForkReconcile_WritesReadyOnPodReady(t *testing.T) {
-	cm := forkCM(t, "fork-2", minimalForkSpec("my-instance"), time.Unix(1_000_000-1, 0))
+	cm := forkCM(t, "fork-2", minimalForkSpec("my-agent"), time.Unix(1_000_000-1, 0))
 	r, client := setupForkReconciler(t,
-		map[string]*corev1.ConfigMap{"claude-code": agentCM()},
+		map[string]*corev1.ConfigMap{"my-agent": agentCM("running")},
 		cm,
-		instanceCM("running"),
 		&corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "fork-2-xyz", Namespace: "test-agents",
@@ -142,11 +140,10 @@ func TestForkReconcile_WritesReadyOnPodReady(t *testing.T) {
 }
 
 func TestForkReconcile_TimeoutEmitsFailed(t *testing.T) {
-	cm := forkCM(t, "fork-3", minimalForkSpec("my-instance"), time.Unix(1_000_000-200, 0))
+	cm := forkCM(t, "fork-3", minimalForkSpec("my-agent"), time.Unix(1_000_000-200, 0))
 	r, client := setupForkReconciler(t,
-		map[string]*corev1.ConfigMap{"claude-code": agentCM()},
+		map[string]*corev1.ConfigMap{"my-agent": agentCM("running")},
 		cm,
-		instanceCM("running"),
 	)
 
 	err := r.Reconcile(context.Background(), cm)
@@ -160,11 +157,10 @@ func TestForkReconcile_TimeoutEmitsFailed(t *testing.T) {
 }
 
 func TestForkReconcile_JobFailedEmitsPodNotReady(t *testing.T) {
-	cm := forkCM(t, "fork-4", minimalForkSpec("my-instance"), time.Unix(1_000_000-1, 0))
+	cm := forkCM(t, "fork-4", minimalForkSpec("my-agent"), time.Unix(1_000_000-1, 0))
 	r, client := setupForkReconciler(t,
-		map[string]*corev1.ConfigMap{"claude-code": agentCM()},
+		map[string]*corev1.ConfigMap{"my-agent": agentCM("running")},
 		cm,
-		instanceCM("running"),
 	)
 
 	require.NoError(t, r.Reconcile(context.Background(), cm))
@@ -187,10 +183,10 @@ func TestForkReconcile_JobFailedEmitsPodNotReady(t *testing.T) {
 	assert.Equal(t, types.ForkReasonPodNotReady, status.Error.Reason)
 }
 
-func TestForkReconcile_MissingInstanceEmitsOrchestrationFailed(t *testing.T) {
-	cm := forkCM(t, "fork-5", minimalForkSpec("ghost-instance"), time.Unix(1_000_000-1, 0))
+func TestForkReconcile_MissingAgentEmitsOrchestrationFailed(t *testing.T) {
+	cm := forkCM(t, "fork-5", minimalForkSpec("ghost-agent"), time.Unix(1_000_000-1, 0))
 	r, client := setupForkReconciler(t,
-		map[string]*corev1.ConfigMap{"claude-code": agentCM()},
+		map[string]*corev1.ConfigMap{},
 		cm,
 	)
 
@@ -206,7 +202,7 @@ func TestForkReconcile_MissingInstanceEmitsOrchestrationFailed(t *testing.T) {
 
 func TestForkReconcile_InvalidSpecEmitsOrchestrationFailed(t *testing.T) {
 	r, client := setupForkReconciler(t,
-		map[string]*corev1.ConfigMap{"claude-code": agentCM()},
+		map[string]*corev1.ConfigMap{"my-agent": agentCM("running")},
 	)
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -228,12 +224,11 @@ func TestForkReconcile_InvalidSpecEmitsOrchestrationFailed(t *testing.T) {
 }
 
 func TestForkReconcile_TerminalPhasesAreNoOp(t *testing.T) {
-	cm := forkCM(t, "fork-7", minimalForkSpec("my-instance"), time.Unix(1_000_000-1, 0))
+	cm := forkCM(t, "fork-7", minimalForkSpec("my-agent"), time.Unix(1_000_000-1, 0))
 	cm.Data["status.yaml"] = "version: agent-platform.ai/v1\nphase: Completed\n"
 	r, client := setupForkReconciler(t,
-		map[string]*corev1.ConfigMap{"claude-code": agentCM()},
+		map[string]*corev1.ConfigMap{"my-agent": agentCM("running")},
 		cm,
-		instanceCM("running"),
 	)
 
 	err := r.Reconcile(context.Background(), cm)

@@ -16,7 +16,7 @@ import {
 import type { ForkOrchestratorPort } from "../infrastructure/ports.js";
 
 export interface OpenForkInput {
-  instanceId: string;
+  agentId: string;
   foreignSub: string;
   replyId: string;
   sessionId?: string;
@@ -90,7 +90,7 @@ export function createForksService(deps: {
         forkId,
         replyId: input.replyId,
         spec: {
-          instanceId: input.instanceId,
+          agentId: input.agentId,
           foreignSub: toForeignSub(input.foreignSub),
           ...(input.sessionId !== undefined
             ? { sessionId: input.sessionId }

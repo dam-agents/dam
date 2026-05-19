@@ -31,25 +31,25 @@ func GatewayName(pairKey string) string {
 }
 
 // BuildGatewayStatefulSet renders the long-lived gateway StatefulSet paired
-// with the agent StatefulSet of the same instance. Replicas track the agent's
+// with the agent StatefulSet of the same agent. Replicas track the agent's
 // desired state (running → 1, hibernated → 0) so the pair scales as a unit.
 //
-// `instanceName` is both the pair key and the parent instance reference
+// `agentName` is both the pair key and the parent agent reference
 // (long-lived pairs collapse the two).
-func BuildGatewayStatefulSet(instanceName string, hibernated bool, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret) *appsv1.StatefulSet {
+func BuildGatewayStatefulSet(agentName string, hibernated bool, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret) *appsv1.StatefulSet {
 	replicas := int32(1)
 	if hibernated {
 		replicas = 0
 	}
 
-	gatewayName := GatewayName(instanceName)
+	gatewayName := GatewayName(agentName)
 	labels := map[string]string{
-		LabelInstance: instanceName,
-		LabelPair:     instanceName,
-		LabelRole:     RoleGateway,
+		LabelAgent: agentName,
+		LabelPair:  agentName,
+		LabelRole:  RoleGateway,
 	}
 
-	volumes := envoyVolumes(instanceName, credentialSecrets)
+	volumes := envoyVolumes(agentName, credentialSecrets)
 	containers := []corev1.Container{envoyContainer(cfg, credentialSecrets)}
 
 	falseVal := false
@@ -65,7 +65,7 @@ func BuildGatewayStatefulSet(instanceName string, hibernated bool, cfg *config.C
 	}
 
 	podSpec := corev1.PodSpec{
-		// Gateway pod runs as the per-instance SA so that its SPIFFE
+		// Gateway pod runs as the per-agent SA so that its SPIFFE
 		// workload identity is `<td>/ns/<ns>/sa/<id>`. The agent half
 		// of the pair has no SPIFFE (it opts out of ambient — see
 		// resources.go), so the SA is effectively "the gateway's
@@ -73,7 +73,7 @@ func BuildGatewayStatefulSet(instanceName string, hibernated bool, cfg *config.C
 		// admit this principal at the api-server end of the gateway →
 		// api-server hops. The agent → gateway hop is gated at the
 		// kernel by the per-pair NetworkPolicy.
-		ServiceAccountName:            instanceName,
+		ServiceAccountName:            agentName,
 		TerminationGracePeriodSeconds: &gracePeriod,
 		AutomountServiceAccountToken:  &falseVal,
 		Containers:                    containers,
@@ -125,15 +125,15 @@ func ptrIntOrString(v intstr.IntOrString) *intstr.IntOrString { return &v }
 // directly (IP-literal, no DNS) and what the iptables init container's
 // allow-list / np-gate probe target. Was previously headless;
 // `Service.Spec.ClusterIP == "None"` isn't usable as a literal target.
-func BuildGatewayService(instanceName string, cfg *config.Config, ownerCM *corev1.ConfigMap) *corev1.Service {
-	gatewayName := GatewayName(instanceName)
+func BuildGatewayService(agentName string, cfg *config.Config, ownerCM *corev1.ConfigMap) *corev1.Service {
+	gatewayName := GatewayName(agentName)
 	envoyPort := portInt32(cfg.EnvoyPort)
-	selector := map[string]string{LabelPair: instanceName, LabelRole: RoleGateway}
+	selector := map[string]string{LabelPair: agentName, LabelRole: RoleGateway}
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      gatewayName,
 			Namespace: cfg.Namespace,
-			Labels:    map[string]string{LabelInstance: instanceName, LabelPair: instanceName, LabelRole: RoleGateway},
+			Labels:    map[string]string{LabelAgent: agentName, LabelPair: agentName, LabelRole: RoleGateway},
 			OwnerReferences: []metav1.OwnerReference{
 				*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
 			},
@@ -155,14 +155,14 @@ func BuildGatewayService(instanceName string, cfg *config.Config, ownerCM *corev
 // owner reference on the fork ConfigMap GCs the Pod when the fork CM is
 // deleted (ADR-038).
 //
-// `parentInstanceID` flows into the `agent-platform.ai/instance` label so
+// `parentAgentID` flows into the `agent-platform.ai/agent` label so
 // ext_authz Check calls from this gateway resolve under the parent
-// instance's egress rules (ADR-027). The pair key is the fork's own name
-// so the fork pair is structurally isolated from the parent instance pair.
-func BuildForkGatewayPod(forkName, parentInstanceID string, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret) *corev1.Pod {
+// agent's egress rules (ADR-027). The pair key is the fork's own name
+// so the fork pair is structurally isolated from the parent agent's pair.
+func BuildForkGatewayPod(forkName, parentAgentID string, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret) *corev1.Pod {
 	gatewayName := GatewayName(forkName)
 	labels := map[string]string{
-		LabelInstance: parentInstanceID,
+		LabelAgent:    parentAgentID,
 		LabelPair:     forkName,
 		LabelRole:     RoleGateway,
 		ForkLabelType: ForkJobLabelType,
@@ -189,8 +189,8 @@ func BuildForkGatewayPod(forkName, parentInstanceID string, cfg *config.Config, 
 			// ambient (no SPIFFE on that pod), so this gateway SA is the
 			// SPIFFE principal both per-fork harness and per-fork
 			// ext-authz AuthorizationPolicies admit — narrowly scoped to
-			// the parent's surface (`/api/instances/<parent>/mcp` + the
-			// parent's per-instance ext-authz Service).
+			// the parent's surface (`/api/agents/<parent>/mcp` + the
+			// parent's per-agent ext-authz Service).
 			ServiceAccountName:            forkName,
 			RestartPolicy:                 corev1.RestartPolicyAlways,
 			TerminationGracePeriodSeconds: &gracePeriod,

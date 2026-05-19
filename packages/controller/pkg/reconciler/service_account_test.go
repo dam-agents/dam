@@ -17,7 +17,7 @@ func TestBuildServiceAccount_Shape(t *testing.T) {
 
 	assert.Equal(t, "my-instance", sa.Name)
 	assert.Equal(t, testConfig.Namespace, sa.Namespace)
-	assert.Equal(t, "my-instance", sa.Labels[LabelInstance])
+	assert.Equal(t, "my-instance", sa.Labels[LabelAgent])
 	require.NotNil(t, sa.AutomountServiceAccountToken)
 	assert.False(t, *sa.AutomountServiceAccountToken,
 		"SPIFFE identity is independent of SA-token mounts; the agent + gateway pods stay credential-free at the K8s API surface")
@@ -41,11 +41,10 @@ func TestBuildServiceAccount_NameEqualsInstanceID(t *testing.T) {
 // manual creation). Without this, a drifted SA silently bypasses the
 // owner-ref + token guarantees.
 func TestApplyServiceAccount_HealsLabelDrift(t *testing.T) {
-	cm := instanceCM("running")
-	r, client := setupReconciler(t,
-		map[string]*corev1.ConfigMap{"claude-code": agentCM()},
-		cm,
-	)
+	cm := agentCM("running")
+	// Override the agent name to match the SA we pre-create below.
+	cm.Name = "my-instance"
+	r, client := setupReconciler(t, cm)
 	// Pre-create a drifted SA with no owner-ref and AutomountSA=nil.
 	pre := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
@@ -62,7 +61,7 @@ func TestApplyServiceAccount_HealsLabelDrift(t *testing.T) {
 
 	got, err := client.CoreV1().ServiceAccounts(testConfig.Namespace).Get(t.Context(), "my-instance", metav1.GetOptions{})
 	require.NoError(t, err)
-	assert.Equal(t, "my-instance", got.Labels[LabelInstance], "instance label must be reconciled onto a pre-existing SA")
+	assert.Equal(t, "my-instance", got.Labels[LabelAgent], "instance label must be reconciled onto a pre-existing SA")
 	assert.Equal(t, "stays", got.Labels["unrelated"], "unrelated labels from other controllers must be preserved")
 	require.NotNil(t, got.AutomountServiceAccountToken)
 	assert.False(t, *got.AutomountServiceAccountToken)

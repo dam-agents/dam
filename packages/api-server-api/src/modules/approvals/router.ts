@@ -13,9 +13,9 @@ export const approvalsRouter = t.router({
     .query(({ ctx, input }) => ctx.approvals.listForOwner(input)),
 
   listForInstance: t.procedure
-    .input(z.object({ instanceId: z.string().min(1), ...listOptionFields }))
+    .input(z.object({ agentId: z.string().min(1), ...listOptionFields }))
     .query(({ ctx, input }) =>
-      ctx.approvals.listForInstance(input.instanceId, {
+      ctx.approvals.listForInstance(input.agentId, {
         limit: input.limit,
         status: input.status,
       }),

@@ -345,12 +345,10 @@ describe("secrets-service.update — fanout (ADR-040)", () => {
       granted: [
         {
           agentId: "agent-a",
-          instanceCmNames: ["a-inst"],
           grantedSecretIds: ["secret-x"],
         },
         {
           agentId: "agent-b",
-          instanceCmNames: ["b-inst-1", "b-inst-2"],
           grantedSecretIds: ["secret-x"],
         },
       ],
@@ -369,7 +367,6 @@ describe("secrets-service.update — fanout (ADR-040)", () => {
       granted: [
         {
           agentId: "agent-a",
-          instanceCmNames: ["a-inst"],
           grantedSecretIds: ["secret-x"],
         },
       ],
@@ -389,7 +386,6 @@ describe("secrets-service.update — fanout (ADR-040)", () => {
       granted: [
         {
           agentId: "agent-a",
-          instanceCmNames: ["a-inst"],
           grantedSecretIds: ["secret-x"],
         },
       ],
@@ -409,7 +405,6 @@ describe("secrets-service.update — fanout (ADR-040)", () => {
       granted: [
         {
           agentId: "agent-a",
-          instanceCmNames: ["a-inst"],
           grantedSecretIds: ["secret-x"],
         },
       ],
@@ -439,12 +434,10 @@ describe("secrets-service.listGrantedAgents (ADR-040)", () => {
     const { port: grants } = makeGrants([
       {
         agentId: "agent-a",
-        instanceCmNames: ["a-inst"],
         grantedSecretIds: ["secret-x"],
       },
       {
         agentId: "agent-b",
-        instanceCmNames: ["b-inst"],
         grantedSecretIds: ["secret-x"],
       },
     ]);
@@ -469,7 +462,6 @@ describe("secrets-service.listGrantedAgents (ADR-040)", () => {
     const { port: grants } = makeGrants([
       {
         agentId: "agent-a",
-        instanceCmNames: ["a-inst"],
         grantedSecretIds: ["secret-x"],
       },
     ]);

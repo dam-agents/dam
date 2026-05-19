@@ -7,8 +7,8 @@ export {
   allowedUsers,
   telegramThreads,
   skillSources,
-  instanceSkills,
-  instanceSkillPublishes,
+  agentSkills,
+  agentSkillPublishes,
   egressRules,
   pendingApprovals,
 } from "./schema.js";

@@ -12,7 +12,7 @@ const schema = z.object({
   API_SERVER_URL: z.string().default(""),
   PLATFORM_MCP_URL: z.string().optional(),
   /** SSE endpoint for declarative pod-files materialization (built by the
-   *  reconciler from the harness server URL + instance id). When unset the
+   *  reconciler from the harness server URL + agent id). When unset the
    *  loop is skipped — used for forks and any pod that shouldn't receive
    *  pod-files state. */
   PLATFORM_POD_FILES_EVENTS_URL: z.string().optional(),

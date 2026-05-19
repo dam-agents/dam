@@ -5,12 +5,12 @@ import {
   mountPodFilesEventsRoute,
   type PodFilesEventsDeps,
 } from "./pod-files-events.js";
-import { resolveInstance } from "./instance-auth.js";
+import { resolveAgent } from "./instance-auth.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 
 export interface TriggerRequest {
-  instanceId: string;
+  agentId: string;
   schedule: string;
   task: string;
   sessionMode?: "continuous" | "fresh";
@@ -35,20 +35,20 @@ export function createHarnessRouter(deps: {
 
   // ADR-041: trigger endpoint moved under /api/instances/:id/* so it falls
   // under the same per-instance AuthorizationPolicy as MCP and pod-files.
-  // The waypoint enforces principal == URL :id; the body's `instanceId`
+  // The waypoint enforces principal == URL :id; the body's `agentId`
   // field is preserved for compatibility but ignored — the URL is the
   // source of truth.
   app.post("/api/instances/:id/internal/trigger", async (c) => {
-    const instanceId = c.req.param("id")!;
+    const agentId = c.req.param("id")!;
     const body = await c.req.json<TriggerRequest>();
     if (!body.schedule || !body.task) {
       return c.json({ error: "schedule, task required" }, 400);
     }
-    const verified = await resolveInstance(deps.k8s, instanceId);
+    const verified = await resolveAgent(deps.k8s, agentId);
     if (!verified) {
       return c.json({ error: "not found" }, 404);
     }
-    const result = await deps.handleTrigger({ ...body, instanceId });
+    const result = await deps.handleTrigger({ ...body, agentId });
     return c.json(result);
   });
 

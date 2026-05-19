@@ -18,17 +18,13 @@ export function createSchedulesService(deps: {
   owner: string;
 }): SchedulesService {
   return {
-    list: (instanceId) => deps.repo.list(instanceId, deps.owner),
+    list: (agentId) => deps.repo.list(agentId, deps.owner),
     get: (id) => deps.repo.get(id, deps.owner),
 
     async createCron(input: CreateCronScheduleInput) {
       validateCron(input.cron);
-      const agentRef = await deps.repo.readAgentRef(
-        input.instanceId,
-        deps.owner,
-      );
-      if (!agentRef)
-        throw new Error(`Instance "${input.instanceId}" not found`);
+      const exists = await deps.repo.readAgentRef(input.agentId, deps.owner);
+      if (!exists) throw new Error(`Agent "${input.agentId}" not found`);
 
       const spec: Record<string, unknown> = {
         name: input.name,
@@ -40,19 +36,15 @@ export function createSchedulesService(deps: {
         createdBy: input.createdBy ?? "user",
       };
       if (input.sessionMode) spec.sessionMode = input.sessionMode;
-      return deps.repo.create(input.instanceId, agentRef, spec, deps.owner);
+      return deps.repo.create(input.agentId, spec, deps.owner);
     },
 
     async createRRule(input: CreateRRuleScheduleInput) {
       validateTimezone(input.timezone);
       validateRRule(input.rrule);
       validateHasVisibleOccurrence(input.rrule, input.quietHours ?? []);
-      const agentRef = await deps.repo.readAgentRef(
-        input.instanceId,
-        deps.owner,
-      );
-      if (!agentRef)
-        throw new Error(`Instance "${input.instanceId}" not found`);
+      const exists = await deps.repo.readAgentRef(input.agentId, deps.owner);
+      if (!exists) throw new Error(`Agent "${input.agentId}" not found`);
 
       const spec: Record<string, unknown> = {
         name: input.name,
@@ -68,7 +60,7 @@ export function createSchedulesService(deps: {
         spec.quietHours = input.quietHours;
       }
       if (input.sessionMode) spec.sessionMode = input.sessionMode;
-      return deps.repo.create(input.instanceId, agentRef, spec, deps.owner);
+      return deps.repo.create(input.agentId, spec, deps.owner);
     },
 
     async updateRRule(input: UpdateRRuleScheduleInput) {

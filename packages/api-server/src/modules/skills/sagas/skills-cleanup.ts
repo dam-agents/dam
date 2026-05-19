@@ -1,5 +1,5 @@
 /**
- * Reacts to InstanceDeleted — deletes per-instance Skills application state
+ * Reacts to AgentDeleted — deletes per-instance Skills application state
  * (installed-skill rows + publish records) from Postgres. Mirrors the
  * channel-cleanup saga.
  *
@@ -12,21 +12,21 @@ import {
   events$,
   ofType,
   EventType,
-  type InstanceDeleted,
+  type AgentDeleted,
 } from "../../../events.js";
 
 export function startSkillsCleanupSaga(
-  deleteInstanceSkills: (instanceId: string) => Promise<void>,
+  deleteInstanceSkills: (agentId: string) => Promise<void>,
 ): Subscription {
   return events$()
     .pipe(
-      ofType<InstanceDeleted>(EventType.InstanceDeleted),
+      ofType<AgentDeleted>(EventType.AgentDeleted),
       mergeMap(async (event) => {
         try {
-          await deleteInstanceSkills(event.instanceId);
+          await deleteInstanceSkills(event.agentId);
         } catch (err) {
           process.stderr.write(
-            `[skills-cleanup] failed for ${event.instanceId}: ${err}\n`,
+            `[skills-cleanup] failed for ${event.agentId}: ${err}\n`,
           );
         }
       }),

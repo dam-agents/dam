@@ -42,7 +42,7 @@ export interface BundleBuilder {
 }
 
 /** Validate raw user paths once, up-front: stat, classify, collision-check,
- *  top-level exclusion-check. Cheap; runs before instance resolution. */
+ *  top-level exclusion-check. Cheap; runs before agent resolution. */
 export async function resolveArgs(
   paths: readonly string[],
 ): Promise<Result<ResolvedArg[], BundleError>> {

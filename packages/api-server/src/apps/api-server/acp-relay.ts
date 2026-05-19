@@ -2,7 +2,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
-import type { InstancesRepository } from "../../modules/instances/infrastructure/instances-repository.js";
+import type { AgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
 import {
   LAST_ACTIVITY_KEY,
   ACTIVE_SESSION_KEY,
@@ -79,11 +79,11 @@ function sanitizeCloseCode(code: number): number {
   return 1011;
 }
 
-function shouldUpdateActivity(instanceId: string): boolean {
+function shouldUpdateActivity(agentId: string): boolean {
   const now = Date.now();
-  const last = lastActivityTimestamps.get(instanceId) ?? 0;
+  const last = lastActivityTimestamps.get(agentId) ?? 0;
   if (now - last < DEBOUNCE_MS) return false;
-  lastActivityTimestamps.set(instanceId, now);
+  lastActivityTimestamps.set(agentId, now);
   return true;
 }
 
@@ -101,9 +101,9 @@ function connectUpstream(url: string): Promise<WebSocket> {
 /** Resolves an instance to its `(ownerSub, agentId)`. Injected by the
  *  composition root so the relay doesn't reach into the agents module's
  *  infrastructure for this lookup. */
-export interface InstanceIdentityLookup {
+export interface AgentIdentityLookup {
   resolve(
-    instanceId: string,
+    agentId: string,
   ): Promise<{ ownerSub: string; agentId: string } | null>;
 }
 
@@ -112,14 +112,14 @@ export interface InstanceIdentityLookup {
  *  doesn't reach into the sessions module directly. */
 export type PersistSession = (
   sessionId: string,
-  instanceId: string,
+  agentId: string,
 ) => Promise<void>;
 
 export function createAcpRelay(
   namespace: string,
-  repo: InstancesRepository,
+  repo: AgentsRepository,
   approvals: ApprovalsRelayService,
-  identityLookup: InstanceIdentityLookup,
+  identityLookup: AgentIdentityLookup,
   persistSession: PersistSession,
 ) {
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
@@ -128,7 +128,7 @@ export function createAcpRelay(
     req: IncomingMessage,
     socket: Duplex,
     head: Buffer,
-    instanceId: string,
+    agentId: string,
   ) {
     wss.handleUpgrade(req, socket, head, (client) => {
       client.on("error", () => {
@@ -147,12 +147,9 @@ export function createAcpRelay(
       // Subscribe the inject channel for synth ext_authz frames bound for
       // this UI client. Unrelated to ACP-native delivery — that path is
       // outbox-driven and lives entirely in the approvals service.
-      const unsubInjects = approvals.subscribeFrameInjects(
-        instanceId,
-        (frame) => {
-          if (client.readyState === WebSocket.OPEN) client.send(frame);
-        },
-      );
+      const unsubInjects = approvals.subscribeFrameInjects(agentId, (frame) => {
+        if (client.readyState === WebSocket.OPEN) client.send(frame);
+      });
       client.once("close", () => unsubInjects());
 
       function mirrorPermissionRequest(msg: JsonRpcRequest): void {
@@ -171,10 +168,9 @@ export function createAcpRelay(
         }));
         approvals
           .recordAcpNativePending({
-            instanceId,
+            agentId: identity.agentId,
             sessionId,
             rpcId: msg.id,
-            agentId: identity.agentId,
             ownerSub: identity.ownerSub,
             toolName,
             args: tc.rawInput,
@@ -184,17 +180,15 @@ export function createAcpRelay(
       }
 
       function mirrorPermissionResponse(msg: JsonRpcResponse): void {
-        // Compute the row id deterministically from `(instanceId, rpcId)`.
+        // Compute the row id deterministically from `(agentId, rpcId)`.
         // Non-permission responses produce a row id that doesn't exist in
         // pending_approvals; the CAS-resolve update affects zero rows and
         // silently no-ops. So we don't need an in-memory tracking map.
-        const rowId = acpNativeRowId(instanceId, msg.id);
+        const rowId = acpNativeRowId(agentId, msg.id);
         approvals.resolveAcpNativeFromInSession(rowId).catch(() => {});
       }
 
-      repo
-        .patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "true")
-        .catch(() => {});
+      repo.patchAnnotation(agentId, ACTIVE_SESSION_KEY, "true").catch(() => {});
 
       const pending: {
         data: Buffer | ArrayBuffer | Buffer[];
@@ -204,10 +198,10 @@ export function createAcpRelay(
         pending.push({ data: data as Buffer, isBinary });
       });
 
-      const upstreamUrl = `ws://${podBaseUrl(instanceId, namespace)}/api/acp`;
+      const upstreamUrl = `ws://${podBaseUrl(agentId, namespace)}/api/acp`;
 
       identityLookup
-        .resolve(instanceId)
+        .resolve(agentId)
         .then((resolved) => {
           if (!resolved) {
             client.close(1011, "instance not found");
@@ -215,11 +209,11 @@ export function createAcpRelay(
           }
           identity = resolved;
         })
-        .then(() => repo.ensureReady(instanceId))
+        .then(() => repo.ensureReady(agentId))
         .then(() => connectUpstream(upstreamUrl))
         .then((upstream) => {
           repo
-            .patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "true")
+            .patchAnnotation(agentId, ACTIVE_SESSION_KEY, "true")
             .catch(() => {});
 
           for (const msg of pending) {
@@ -233,10 +227,10 @@ export function createAcpRelay(
           client.on("message", (data, isBinary) => {
             if (upstream.readyState !== WebSocket.OPEN) return;
 
-            if (shouldUpdateActivity(instanceId)) {
+            if (shouldUpdateActivity(agentId)) {
               repo
                 .patchAnnotation(
-                  instanceId,
+                  agentId,
                   LAST_ACTIVITY_KEY,
                   new Date().toISOString(),
                 )
@@ -258,7 +252,7 @@ export function createAcpRelay(
               const sid = extractRequestSessionId(parsed);
               if (sid) {
                 const requestId = parsed.id;
-                persistSession(sid, instanceId).then(
+                persistSession(sid, agentId).then(
                   () => {
                     if (upstream.readyState === WebSocket.OPEN) {
                       upstream.send(data, { binary: false });
@@ -336,7 +330,7 @@ export function createAcpRelay(
 
           client.on("close", () => {
             repo
-              .patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "")
+              .patchAnnotation(agentId, ACTIVE_SESSION_KEY, "")
               .catch(() => {});
             // Inbox-driven verdicts no longer need this upstream — delivery
             // happens out-of-band via WrapperFrameSender on the click-handling

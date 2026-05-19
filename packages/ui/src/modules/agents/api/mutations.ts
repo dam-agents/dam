@@ -11,10 +11,10 @@ import {
   type BundleEntry,
   importRawBundle,
 } from "../../files/api/import-bundle.js";
-import { instancesKeys } from "../../instances/api/queries.js";
+import { agentsKeys } from "./queries.js";
 
-const invalidatesAgentsAndInstances = {
-  invalidates: [trpc.agents.list.queryKey(), instancesKeys.listWithChannels()],
+const invalidatesAgentsList = {
+  invalidates: [agentsKeys.listWithChannels(), trpc.agents.list.queryKey()],
 };
 
 export interface CreateAgentInput {
@@ -29,7 +29,7 @@ export interface CreateAgentInput {
   appConnectionIds?: string[];
   egressPreset?: EgressPreset;
   /** Optional local-context import. Files are bundled and uploaded as a
-   *  tar to the new instance's `<agenthome>/work` after the instance is
+   *  tar to the new agent's `<agenthome>/work` after the agent is
    *  created. Failures here surface as a toast but do not roll back the
    *  agent — the user can retry from the files panel. */
   importEntries?: BundleEntry[];
@@ -39,9 +39,10 @@ export interface CreateAgentInput {
 }
 
 /**
- * Create-agent orchestrates four calls in sequence: create agent, create
- * instance, set agent access, set app connections. Optionally also fires
- * a one-shot file import into the new instance.
+ * Create-agent orchestrates: create agent, optional file import, set agent
+ * access, set app connections. Per ADR-046 the agent is now a single CM
+ * (no separate instance create) — `agents.create` returns the full Agent
+ * including runtime state.
  */
 export function useCreateAgent() {
   return useMutation({
@@ -54,28 +55,21 @@ export function useCreateAgent() {
       ...input
     }: CreateAgentInput) => {
       // Step order is tuned for fastest user-visible feedback:
-      //   1. agents.create + invalidate → tile appears
-      //   2. instances.create + invalidate → instance state on the tile
-      //   3. buildBundle (lazy Blob, microseconds) + upload
-      //   4. setAgentAccess / setAgentConnections
+      //   1. agents.create + invalidate → tile appears with runtime state
+      //   2. buildBundle (lazy Blob, microseconds) + upload
+      //   3. setAgentAccess / setAgentConnections
       // Import goes BEFORE access/connection mutations: those rewrite the
-      // instance ConfigMap's grant annotations, which the controller
-      // applies by deleting and recreating the pod — running the import
-      // after them races with the pod swap and surfaces as "instance
-      // unreachable". The PVC outlives the pod so files land regardless
-      // of when the pod comes back. Raw bundle wins when both are
-      // provided.
+      // agent ConfigMap's grant annotations, which the controller applies
+      // by deleting and recreating the pod — running the import after them
+      // races with the pod swap and surfaces as "agent unreachable". The
+      // PVC outlives the pod so files land regardless of when the pod
+      // comes back. Raw bundle wins when both are provided.
       const agent = await api.agents.create.mutate({ ...input, egressPreset });
       void queryClient.invalidateQueries({
         queryKey: trpc.agents.list.queryKey(),
       });
-
-      const instance = await api.instances.create.mutate({
-        name: input.name,
-        agentId: agent.id,
-      });
       void queryClient.invalidateQueries({
-        queryKey: instancesKeys.listWithChannels(),
+        queryKey: agentsKeys.listWithChannels(),
       });
 
       let preparedBundle: { blob: Blob; label: string } | undefined;
@@ -92,7 +86,7 @@ export function useCreateAgent() {
       if (preparedBundle) {
         try {
           await importRawBundle({
-            instanceId: instance.id,
+            agentId: agent.id,
             bundle: preparedBundle.blob,
           });
           emitToast({
@@ -126,7 +120,7 @@ export function useCreateAgent() {
       return agent;
     },
     meta: {
-      ...invalidatesAgentsAndInstances,
+      ...invalidatesAgentsList,
       errorToast: "Failed to create agent",
     },
   });
@@ -136,7 +130,7 @@ export function useDeleteAgent() {
   return useMutation({
     ...trpc.agents.delete.mutationOptions(),
     meta: {
-      ...invalidatesAgentsAndInstances,
+      ...invalidatesAgentsList,
       errorToast: "Failed to delete agent",
     },
   });
@@ -146,8 +140,74 @@ export function useUpdateAgent() {
   return useMutation({
     ...trpc.agents.update.mutationOptions(),
     meta: {
-      invalidates: [trpc.agents.list.queryKey()],
+      invalidates: [trpc.agents.list.queryKey(), agentsKeys.listWithChannels()],
       errorToast: "Failed to update agent",
+    },
+  });
+}
+
+export function useWakeAgent() {
+  return useMutation({
+    ...trpc.agents.wake.mutationOptions(),
+    meta: {
+      ...invalidatesAgentsList,
+      errorToast: "Failed to start agent",
+    },
+  });
+}
+
+/**
+ * Raw restart mutation. The UI-side "Restarting" pill lifecycle is managed
+ * by useRestartAgent in hooks/use-restart-agent.ts — consumers should
+ * call that hook, not this mutation directly, so the pill lights up the
+ * moment the user clicks.
+ */
+export function useRestartAgentMutation() {
+  return useMutation({
+    ...trpc.agents.restart.mutationOptions(),
+    meta: {
+      ...invalidatesAgentsList,
+      errorToast: "Failed to restart agent",
+    },
+  });
+}
+
+export function useConnectSlack() {
+  return useMutation({
+    ...trpc.agents.connectSlack.mutationOptions(),
+    meta: {
+      ...invalidatesAgentsList,
+      errorToast: "Failed to connect Slack",
+    },
+  });
+}
+
+export function useDisconnectSlack() {
+  return useMutation({
+    ...trpc.agents.disconnectSlack.mutationOptions(),
+    meta: {
+      ...invalidatesAgentsList,
+      errorToast: "Failed to disconnect Slack",
+    },
+  });
+}
+
+export function useConnectTelegram() {
+  return useMutation({
+    ...trpc.agents.connectTelegram.mutationOptions(),
+    meta: {
+      ...invalidatesAgentsList,
+      errorToast: "Failed to connect Telegram",
+    },
+  });
+}
+
+export function useDisconnectTelegram() {
+  return useMutation({
+    ...trpc.agents.disconnectTelegram.mutationOptions(),
+    meta: {
+      ...invalidatesAgentsList,
+      errorToast: "Failed to disconnect Telegram",
     },
   });
 }

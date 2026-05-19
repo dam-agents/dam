@@ -3,7 +3,7 @@ import { streamSSE } from "hono/streaming";
 import type { PodFilesBus } from "../../modules/pod-files/bus.js";
 import type { FileSpec } from "../../modules/pod-files/types.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
-import { resolveInstance } from "./instance-auth.js";
+import { resolveAgent } from "./instance-auth.js";
 
 export interface PodFilesEventsDeps {
   k8s: K8sClient;
@@ -23,12 +23,12 @@ export interface PodFilesEventsDeps {
  * share one topic.
  */
 export function mountPodFilesEventsRoute(app: Hono, deps: PodFilesEventsDeps) {
-  app.get("/api/instances/:id/pod-files/events", async (c) => {
-    const instanceId = c.req.param("id")!;
-    const identity = await resolveInstance(deps.k8s, instanceId);
+  app.get("/api/agents/:id/pod-files/events", async (c) => {
+    const agentId = c.req.param("id")!;
+    const identity = await resolveAgent(deps.k8s, agentId);
     if (!identity) return c.json({ error: "not found" }, 404);
 
-    const { agentId, owner } = identity;
+    const { owner } = identity;
     return streamSSE(c, async (stream) => {
       // Subscribe before the snapshot fetch so we don't miss an upsert that
       // races with it.

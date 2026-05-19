@@ -17,7 +17,7 @@ import type {
 } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
-import { resolveInstance } from "./instance-auth.js";
+import { resolveAgent } from "./instance-auth.js";
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
 
@@ -39,7 +39,7 @@ function resolveWorkspacePath(input: string, agentHome: string): string {
 interface McpSession {
   transport: WebStandardStreamableHTTPServerTransport;
   server: McpServer;
-  instanceId: string;
+  agentId: string;
   lastActivity: number;
 }
 
@@ -104,19 +104,19 @@ export interface McpSessionDeps {
 }
 
 export function createMcpSession(
-  instanceId: string,
+  agentId: string,
   deps: McpSessionDeps,
 ): McpSession {
   const { agentHome, schedules } = deps;
   const server = new McpServer({
-    name: `platform-${instanceId}`,
+    name: `platform-${agentId}`,
     version: "1.0.0",
   });
 
   const runtimeClient = createTRPCClient<AppRouter>({
     links: [
       httpBatchLink({
-        url: `http://${podBaseUrl(instanceId, deps.k8s.namespace)}/api/trpc`,
+        url: `http://${podBaseUrl(agentId, deps.k8s.namespace)}/api/trpc`,
       }),
     ],
   });
@@ -127,7 +127,7 @@ export function createMcpSession(
     { channel: z.enum([ChannelType.Slack, ChannelType.Telegram]) },
     async ({ channel }) => {
       const chats = await deps.channelManager.listConversations(
-        instanceId,
+        agentId,
         channel,
       );
       return textResult(JSON.stringify({ chats }));
@@ -195,7 +195,7 @@ export function createMcpSession(
         };
       }
       const result = await deps.channelManager.postMessage(
-        instanceId,
+        agentId,
         channel,
         text,
         {
@@ -209,7 +209,7 @@ export function createMcpSession(
   );
 
   // ---- Skills tools ---------------------------------------------------------
-  // `instanceId` is captured from the verified MCP session, so agents cannot
+  // `agentId` is captured from the verified MCP session, so agents cannot
   // spoof it via tool input.
 
   server.tool(
@@ -219,7 +219,7 @@ export function createMcpSession(
     () =>
       textTool(
         "Failed to list skill sources",
-        () => deps.skills.listSources(instanceId),
+        () => deps.skills.listSources(agentId),
         (sources) => JSON.stringify(sources),
       ),
   );
@@ -231,7 +231,7 @@ export function createMcpSession(
     ({ sourceId }) =>
       textTool(
         "Failed to list skills",
-        () => deps.skills.listSkills(sourceId, instanceId),
+        () => deps.skills.listSkills(sourceId, agentId),
         (list) => JSON.stringify(list),
       ),
   );
@@ -247,7 +247,7 @@ export function createMcpSession(
     ({ source, name, version }) =>
       textTool(
         "Failed to install skill",
-        () => deps.skills.installSkill({ instanceId, source, name, version }),
+        () => deps.skills.installSkill({ agentId, source, name, version }),
         (installed) =>
           `Installed ${name} @ ${version.slice(0, 8)}. Instance now has ${installed.length} skill(s).`,
       ),
@@ -263,7 +263,7 @@ export function createMcpSession(
     ({ source, name }) =>
       textTool(
         "Failed to uninstall skill",
-        () => deps.skills.uninstallSkill({ instanceId, source, name }),
+        () => deps.skills.uninstallSkill({ agentId, source, name }),
         (remaining) =>
           `Uninstalled ${name}. Instance now has ${remaining.length} skill(s).`,
       ),
@@ -282,7 +282,7 @@ export function createMcpSession(
       textTool(
         "Failed to publish skill",
         () =>
-          deps.skills.publishSkill({ instanceId, sourceId, name, title, body }),
+          deps.skills.publishSkill({ agentId, sourceId, name, title, body }),
         (result) => `Published ${name}. PR: ${result.prUrl}`,
       ),
   );
@@ -297,7 +297,7 @@ export function createMcpSession(
     "List all platform schedules registered for this agent instance. These are persistent cron schedules visible in the host UI (not in-session or in-process cron tools).",
     {},
     async () => {
-      const list = await schedules.list(instanceId);
+      const list = await schedules.list(agentId);
       return {
         content: [
           { type: "text" as const, text: JSON.stringify(list, null, 2) },
@@ -335,7 +335,7 @@ export function createMcpSession(
       try {
         const sched = await schedules.createCron({
           name,
-          instanceId,
+          agentId,
           cron,
           task,
           sessionMode,
@@ -378,7 +378,7 @@ export function createMcpSession(
     { id: z.string().min(1) },
     async ({ id }) => {
       const existing = await schedules.get(id);
-      if (!existing || existing.instanceId !== instanceId) {
+      if (!existing || existing.agentId !== agentId) {
         return {
           content: [
             {
@@ -419,7 +419,7 @@ export function createMcpSession(
     { id: z.string().min(1) },
     async ({ id }) => {
       const existing = await schedules.get(id);
-      if (!existing || existing.instanceId !== instanceId) {
+      if (!existing || existing.agentId !== agentId) {
         return {
           content: [
             {
@@ -450,7 +450,7 @@ export function createMcpSession(
   const session: McpSession = {
     transport,
     server,
-    instanceId,
+    agentId,
     lastActivity: Date.now(),
   };
   return session;
@@ -466,10 +466,10 @@ export interface MountMcpDeps {
 
 export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
   app.all("/api/instances/:id/mcp", async (c) => {
-    const instanceId = c.req.param("id")!;
+    const agentId = c.req.param("id")!;
     // ADR-041: principal == URL :id is enforced at the waypoint; this
     // resolve is just a label lookup for owner / agentId.
-    const verified = await resolveInstance(deps.k8s, instanceId);
+    const verified = await resolveAgent(deps.k8s, agentId);
     if (!verified) {
       return c.json({ error: "not found" }, 404);
     }
@@ -478,7 +478,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
 
     if (sessionId && sessions.has(sessionId)) {
       const session = sessions.get(sessionId)!;
-      if (session.instanceId !== instanceId) {
+      if (session.agentId !== agentId) {
         return c.json({ error: "not found" }, 404);
       }
       session.lastActivity = Date.now();
@@ -491,7 +491,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
 
     const skills = deps.composeSkills(verified.owner);
     const schedules = deps.schedulesServiceFor(verified.owner);
-    const session = createMcpSession(instanceId, {
+    const session = createMcpSession(agentId, {
       channelManager: deps.channelManager,
       k8s: deps.k8s,
       skills,

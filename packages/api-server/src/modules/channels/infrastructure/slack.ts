@@ -6,11 +6,7 @@ import {
 } from "@slack/bolt";
 import { filter, merge, take, timeout } from "rxjs";
 import { match, P } from "ts-pattern";
-import {
-  ChannelType,
-  SessionType,
-  type InstancesService,
-} from "api-server-api";
+import { ChannelType, SessionType, type AgentsService } from "api-server-api";
 import type { StoredChannelConfig } from "../stored-channel.js";
 import type { PostMessageOptions } from "../services/channel-manager.js";
 import {
@@ -67,7 +63,7 @@ async function getContextMessages(
 
 export interface ChannelRegistry {
   resolveInstanceBySlackChannel(slackChannelId: string): Promise<string | null>;
-  resolveSlackChannelByInstance(instanceId: string): Promise<string | null>;
+  resolveSlackChannelByInstance(agentId: string): Promise<string | null>;
 }
 
 export interface SlackWorker {
@@ -96,10 +92,10 @@ export function createSlackWorker(
   namespace: string,
   botToken: string,
   appToken: string,
-  instances: () => InstancesService,
+  agents: () => AgentsService,
   persistSession: (
     sessionId: string,
-    instanceId: string,
+    agentId: string,
     type: SessionType,
     threadTs?: string,
   ) => Promise<void>,
@@ -108,12 +104,12 @@ export function createSlackWorker(
   pendingOAuthFlows: Map<string, SlackOAuthPending>,
   threadSessions: {
     find: (
-      instanceId: string,
+      agentId: string,
       threadTs: string,
     ) => Promise<{ sessionId: string } | null>;
     touch: (sessionId: string) => Promise<void>;
   },
-  getInstanceOwner: (instanceId: string) => Promise<string | null>,
+  getInstanceOwner: (agentId: string) => Promise<string | null>,
   channelRegistry: ChannelRegistry,
   /** Lowercase brand identifier used as the Slack slash command name (e.g.
    *  brandShort="name" → /name login). Sourced from BRAND_SHORT env var. */
@@ -140,7 +136,7 @@ export function createSlackWorker(
     });
 
     try {
-      await instances().ensureReady(instanceName);
+      await agents().ensureReady(instanceName);
       const acp = createAcpClient({ namespace, instanceName });
       const onSessionCreated = (sid: string) =>
         persistSession(
@@ -286,7 +282,7 @@ export function createSlackWorker(
     emit({
       type: EventType.ForeignReplyReceived,
       replyId,
-      instanceId: args.instanceName,
+      agentId: args.instanceName,
       foreignSub: args.keycloakSub,
       threadTs: args.threadTs,
       ...(existing ? { sessionId: existing.sessionId } : {}),
@@ -502,7 +498,7 @@ export function createSlackWorker(
 
     const [ownerSub, isAllowed] = await Promise.all([
       getInstanceOwner(args.instanceName),
-      instances().isAllowedUser(args.instanceName, args.keycloakSub),
+      agents().isAllowedUser(args.instanceName, args.keycloakSub),
     ]);
     const isOwner = ownerSub !== null && ownerSub === args.keycloakSub;
     if (!isOwner && !isAllowed) {

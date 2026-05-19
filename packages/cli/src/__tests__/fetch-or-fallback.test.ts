@@ -1,18 +1,17 @@
 import { describe, it, expect, vi } from "vitest";
-import type { Instance } from "api-server-api";
-import { fetchOrFallback } from "../modules/instance/services/fetch-or-fallback.js";
-import type { InstanceService } from "../modules/instance/services/instance-service.js";
+import { fetchOrFallback } from "../modules/agent/services/fetch-or-fallback.js";
+import type { AgentService } from "../modules/agent/services/agent-service.js";
+import type { AgentView } from "../modules/agent/domain/agent-view.js";
 import { err, ok, type Result } from "../result.js";
 import type {
   AuthRequiredError,
   TransportError,
-} from "../modules/instance/domain/errors.js";
+} from "../modules/agent/domain/errors.js";
 
-function makeInstance(overrides: Partial<Instance> = {}): Instance {
+function makeAgent(overrides: Partial<AgentView> = {}): AgentView {
   return {
-    id: "inst-1",
+    id: "agent-1",
     name: "demo",
-    agentId: "agt-1",
     templateId: "tmpl-x",
     image: "img:1",
     state: "starting",
@@ -23,13 +22,12 @@ function makeInstance(overrides: Partial<Instance> = {}): Instance {
 }
 
 function makeService(
-  getResult: () => Result<Instance | null, TransportError | AuthRequiredError>,
-): InstanceService {
+  getResult: () => Result<AgentView | null, TransportError | AuthRequiredError>,
+): AgentService {
   return {
     list: vi.fn(async () => ok([])),
     get: vi.fn(async () => getResult()),
     deleteAgent: vi.fn(async () => ok(undefined)),
-    deleteInstance: vi.fn(async () => ok(undefined)),
     restart: vi.fn(async () => ok(undefined)),
   };
 }
@@ -40,17 +38,17 @@ describe("fetchOrFallback", () => {
   // contract tested here applies identically to `create --wait --json`
   // (timeout branch) and `restart [--wait] --json`.
 
-  it("returns the refreshed Instance when svc.get succeeds", async () => {
-    const fresh = makeInstance({ state: "running" });
+  it("returns the refreshed Agent when svc.get succeeds", async () => {
+    const fresh = makeAgent({ state: "running" });
     const svc = makeService(() => ok(fresh));
 
-    const result = await fetchOrFallback(svc, makeInstance(), "after restart");
+    const result = await fetchOrFallback(svc, makeAgent(), "after restart");
 
     expect(result).toBe(fresh);
   });
 
   it("falls back to the caller-supplied snapshot when svc.get returns a transport error", async () => {
-    const fallback = makeInstance({ state: "starting" });
+    const fallback = makeAgent({ state: "starting" });
     const svc = makeService(() =>
       err({ kind: "transport", reason: "ECONNREFUSED" }),
     );
@@ -62,13 +60,13 @@ describe("fetchOrFallback", () => {
 
     expect(result).toBe(fallback);
     expect(stderr).toHaveBeenCalledWith(
-      `warning: could not refresh instance "demo" after wait timeout; emitting last-known state\n`,
+      `warning: could not refresh agent "demo" after wait timeout; emitting last-known state\n`,
     );
     stderr.mockRestore();
   });
 
-  it("falls back to the snapshot when svc.get returns ok(null) — instance vanished during refresh", async () => {
-    const fallback = makeInstance();
+  it("falls back to the snapshot when svc.get returns ok(null) — agent vanished during refresh", async () => {
+    const fallback = makeAgent();
     const svc = makeService(() => ok(null));
     const stderr = vi
       .spyOn(process.stderr, "write")

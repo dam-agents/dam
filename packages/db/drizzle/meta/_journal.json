@@ -92,6 +92,13 @@
       "when": 1778198400000,
       "tag": "0012_terminal_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1779494400000,
+      "tag": "0013_eliminate_instance",
+      "breakpoints": true
     }
   ]
 }

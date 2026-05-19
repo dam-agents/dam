@@ -105,6 +105,13 @@ export interface TemplateView {
   description?: string;
 }
 
+export type AgentState =
+  | "starting"
+  | "running"
+  | "hibernating"
+  | "hibernated"
+  | "error";
+
 export interface AgentView {
   id: string;
   name: string;
@@ -112,21 +119,7 @@ export interface AgentView {
   image: string;
   description?: string;
   env?: EnvVar[];
-}
-
-export type InstanceState =
-  | "starting"
-  | "running"
-  | "hibernating"
-  | "hibernated"
-  | "error";
-
-export interface InstanceView {
-  id: string;
-  name: string;
-  agentId: string;
-  description?: string;
-  state: InstanceState;
+  state: AgentState;
   error?: string;
   channels: (
     | { type: "slack"; slackChannelId: string }
@@ -144,7 +137,7 @@ export interface QuietWindowView {
 export interface Schedule {
   id: string;
   name: string;
-  instanceId: string;
+  agentId: string;
   type: "cron" | "rrule";
   cron: string | null;
   rrule: string | null;

@@ -13,10 +13,10 @@ import (
 )
 
 const (
-	ForkJobLabelType     = "agent-fork-job"
-	ForkLabelForkID      = "agent-platform.ai/fork-id"
-	ForkLabelInstanceRef = "agent-platform.ai/instance"
-	ForkLabelType        = "agent-platform.ai/type"
+	ForkJobLabelType  = "agent-fork-job"
+	ForkLabelForkID   = "agent-platform.ai/fork-id"
+	ForkLabelAgentRef = "agent-platform.ai/agent"
+	ForkLabelType     = "agent-platform.ai/type"
 )
 
 // BuildForkAgentJob constructs the agent half of the per-turn paired pod
@@ -35,7 +35,6 @@ const (
 func BuildForkAgentJob(
 	forkName string,
 	forkSpec *types.ForkSpec,
-	instanceSpec *types.InstanceSpec,
 	agentSpec *types.AgentSpec,
 	cfg *config.Config,
 	ownerCM *corev1.ConfigMap,
@@ -65,14 +64,14 @@ func BuildForkAgentJob(
 	labels := map[string]string{
 		ForkLabelType:   ForkJobLabelType,
 		ForkLabelForkID: forkName,
-		// `agent-platform.ai/instance` references the *parent* instance for
+		// `agent-platform.ai/agent` references the *parent* agent for
 		// fork pods — the pod-IP resolver and ext_authz identity flow
 		// through that label, so traffic from the fork resolves under the
 		// parent's egress rules (ADR-027).
-		ForkLabelInstanceRef: forkSpec.Instance,
+		ForkLabelAgentRef: forkSpec.AgentName,
 		// Pair key + role for ADR-038 NetworkPolicy / Service scoping.
 		// Using the fork name as the pair key isolates the fork from the
-		// parent instance pair: fork agent only reaches fork gateway,
+		// parent agent's pair: fork agent only reaches fork gateway,
 		// never the parent's gateway.
 		LabelPair: forkName,
 		LabelRole: RoleAgent,
@@ -105,29 +104,27 @@ func BuildForkAgentJob(
 		{Name: "GIT_SSL_CAINFO", Value: caCertPath},
 		{Name: "NODE_USE_ENV_PROXY", Value: "1"},
 		{Name: "GIT_HTTP_PROXY_AUTHMETHOD", Value: "basic"},
-		{Name: "ADK_INSTANCE_ID", Value: forkSpec.Instance},
+		{Name: "PLATFORM_AGENT_ID", Value: forkSpec.AgentName},
 		{Name: "API_SERVER_URL", Value: cfg.APIServerURL()},
 		{Name: "HOME", Value: agentHome},
-		{Name: "PLATFORM_MCP_URL", Value: fmt.Sprintf("%s/api/instances/%s/mcp", cfg.HarnessServerURL, forkSpec.Instance)},
+		{Name: "PLATFORM_MCP_URL", Value: fmt.Sprintf("%s/api/agents/%s/mcp", cfg.HarnessServerURL, forkSpec.AgentName)},
 		{Name: "PLATFORM_FORK_ID", Value: forkName},
 		{Name: "PLATFORM_FOREIGN_SUB", Value: forkSpec.ForeignSub},
 	}
 	// Placeholder credential envs from the replier's K8s Secrets — same
 	// purpose as the long-lived shape: satisfy the harness's is-env-set
 	// check; the gateway's Envoy overwrites the header on the wire.
+	// ADR-046: the merged AgentSpec carries the only user-owned env layer.
 	env = append(env, credentialEnvVars(credentialSecrets)...)
 	for _, e := range specEnv {
 		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
 	}
-	for _, e := range instanceSpec.Env {
-		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
-	}
 
 	var envFrom []corev1.EnvFromSource
-	if instanceSpec.SecretRef != "" {
+	if agentSpec.SecretRef != "" {
 		envFrom = append(envFrom, corev1.EnvFromSource{
 			SecretRef: &corev1.SecretEnvSource{
-				LocalObjectReference: corev1.LocalObjectReference{Name: instanceSpec.SecretRef},
+				LocalObjectReference: corev1.LocalObjectReference{Name: agentSpec.SecretRef},
 			},
 		})
 	}
@@ -141,7 +138,7 @@ func BuildForkAgentJob(
 			Name: volName, MountPath: m.Path,
 		})
 		if m.Persist {
-			pvcName := fmt.Sprintf("%s-%s-0", volName, forkSpec.Instance)
+			pvcName := fmt.Sprintf("%s-%s-0", volName, forkSpec.AgentName)
 			volumes = append(volumes, corev1.Volume{
 				Name: volName,
 				VolumeSource: corev1.VolumeSource{

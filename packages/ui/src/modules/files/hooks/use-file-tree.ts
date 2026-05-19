@@ -8,7 +8,7 @@ import { fetchFileContent } from "../api/queries.js";
  * chat surface (side panel click, Markdown link, etc.). The resulting content
  * lives in the TanStack Query cache; components render via useFileContentQuery.
  */
-export function useFileTree(selectedInstance: string | null) {
+export function useFileTree(selectedAgent: string | null) {
   const openFilePath = useStore((s) => s.openFilePath);
   const openFileDirty = useStore((s) => s.openFileDirty);
   const setOpenFilePath = useStore((s) => s.setOpenFilePath);
@@ -18,7 +18,7 @@ export function useFileTree(selectedInstance: string | null) {
 
   const openFileHandler = useCallback(
     async (path: string) => {
-      if (!selectedInstance) return;
+      if (!selectedAgent) return;
       if (openFilePath === path) {
         if (openFileDirty) {
           const ok = await showConfirm(
@@ -40,7 +40,7 @@ export function useFileTree(selectedInstance: string | null) {
       try {
         // Pre-warm the content cache before switching the viewer so the UI
         // doesn't flash empty while the poll-driven subscription catches up.
-        await fetchFileContent(selectedInstance, path);
+        await fetchFileContent(selectedAgent, path);
         setOpenFilePath(path);
         setRightTab("files");
       } catch (err) {
@@ -54,7 +54,7 @@ export function useFileTree(selectedInstance: string | null) {
       }
     },
     [
-      selectedInstance,
+      selectedAgent,
       openFilePath,
       openFileDirty,
       setOpenFilePath,

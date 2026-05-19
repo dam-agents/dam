@@ -64,7 +64,7 @@ function isCuratedSource(src: SkillSource): boolean {
 }
 
 interface SkillsPanelProps {
-  instanceId: string | null;
+  agentId: string | null;
   isRunning: boolean;
   /** Opens a file in the Files tab. Threaded from useFileTree via ChatView. */
   onOpenFile?: (path: string) => void;
@@ -110,7 +110,7 @@ function skillSourceUrl(
 }
 
 export function SkillsPanel({
-  instanceId,
+  agentId,
   isRunning,
   onOpenFile,
 }: SkillsPanelProps) {
@@ -175,16 +175,16 @@ export function SkillsPanel({
   const loadSkills = useCallback(
     async (sourceId: string) => {
       // Public GitHub sources are scanned directly from the api-server, so no
-      // running instance is required. Private sources need the agent pod to
+      // running agent is required. Private sources need the agent pod to
       // delegate to — the server surfaces a PRECONDITION_FAILED in that case
       // and we render it the same way any other per-source error renders.
-      if (!instanceId) return;
+      if (!agentId) return;
       setLoadingBySource((l) => ({ ...l, [sourceId]: true }));
       setErrorBySource((e) => ({ ...e, [sourceId]: null }));
       try {
         const list = await api.skills.listSkills.query({
           sourceId,
-          instanceId,
+          agentId,
         });
         setSkillsBySource((s) => ({ ...s, [sourceId]: list }));
       } catch (err) {
@@ -196,7 +196,7 @@ export function SkillsPanel({
         setLoadingBySource((l) => ({ ...l, [sourceId]: false }));
       }
     },
-    [instanceId],
+    [agentId],
   );
 
   const refreshSource = useCallback(
@@ -220,7 +220,7 @@ export function SkillsPanel({
     // deleted out-of-band), and persists the cleanup — so manual file
     // deletions stop showing as "installed" the moment the panel polls.
     const refreshInstalled = async () => {
-      if (!instanceId) {
+      if (!agentId) {
         if (!cancelled) {
           setInstalled([]);
           setLocalSkills([]);
@@ -229,7 +229,7 @@ export function SkillsPanel({
         return;
       }
       try {
-        const state = await api.skills.state.query({ instanceId });
+        const state = await api.skills.state.query({ agentId });
         if (!cancelled) {
           setInstalled(state.installed);
           setLocalSkills(state.standalone);
@@ -240,10 +240,10 @@ export function SkillsPanel({
 
     (async () => {
       try {
-        // Pass instanceId so the backend composes user + platform + agent
+        // Pass agentId so the backend composes user + platform + agent
         // (template-seeded) sources into a single ordered list.
         const srcs = await api.skills.sources.list.query(
-          instanceId ? { instanceId } : undefined,
+          agentId ? { agentId } : undefined,
         );
         if (!cancelled) setSources(srcs);
       } catch {
@@ -259,7 +259,7 @@ export function SkillsPanel({
       cancelled = true;
       clearInterval(iv);
     };
-  }, [instanceId]);
+  }, [agentId]);
 
   useEffect(() => {
     // Only fetch for expanded sources. A collapsed row is invisible, so
@@ -282,7 +282,7 @@ export function SkillsPanel({
     installed.find((s) => s.source === source && s.name === name);
 
   const toggle = async (skill: Skill) => {
-    if (!instanceId || !isRunning) return;
+    if (!agentId || !isRunning) return;
     const key = skillKey(skill.source, skill.name);
     setBusyRow(key);
     const currentlyInstalled = isInstalled(skill.source, skill.name);
@@ -290,12 +290,12 @@ export function SkillsPanel({
       () =>
         currentlyInstalled
           ? api.skills.uninstall.mutate({
-              instanceId,
+              agentId,
               source: skill.source,
               name: skill.name,
             })
           : api.skills.install.mutate({
-              instanceId,
+              agentId,
               source: skill.source,
               name: skill.name,
               version: skill.version,
@@ -308,13 +308,13 @@ export function SkillsPanel({
   };
 
   const updateDrift = async (skill: Skill) => {
-    if (!instanceId || !isRunning) return;
+    if (!agentId || !isRunning) return;
     const key = skillKey(skill.source, skill.name);
     setBusyRow(key);
     const result = await runAction(
       () =>
         api.skills.install.mutate({
-          instanceId,
+          agentId,
           source: skill.source,
           name: skill.name,
           version: skill.version,
@@ -371,11 +371,11 @@ export function SkillsPanel({
   };
 
   const publish = async () => {
-    if (!instanceId || !publishFor) return;
+    if (!agentId || !publishFor) return;
     setPublishBusy(true);
     try {
       const result = await api.skills.publish.mutate({
-        instanceId,
+        agentId,
         sourceId: publishForm.sourceId,
         name: publishFor.name,
         title: publishForm.title.trim() || undefined,
@@ -421,7 +421,7 @@ export function SkillsPanel({
 
   const deleteSource = async (src: SkillSource) => {
     const ok = await showConfirm(
-      `Remove source "${src.name}"? Installed skills stay on running instances.`,
+      `Remove source "${src.name}"? Installed skills stay on running agents.`,
       "Remove Source",
     );
     if (!ok) return;
@@ -444,9 +444,9 @@ export function SkillsPanel({
 
   return (
     <div className="flex flex-col">
-      {!isRunning && instanceId && (
+      {!isRunning && agentId && (
         <div className="px-4 py-2 border-b border-border-light text-[11px] text-text-muted bg-warning-light">
-          Start the instance to manage skills.
+          Start the agent to manage skills.
         </div>
       )}
 
@@ -776,7 +776,7 @@ export function SkillsPanel({
                   installed.contentHash !== skill.contentHash;
                 const key = skillKey(skill.source, skill.name);
                 const rowBusy = busyRow === key;
-                const disabled = !instanceId || !isRunning || rowBusy;
+                const disabled = !agentId || !isRunning || rowBusy;
 
                 return (
                   <label

@@ -8,7 +8,7 @@ import {
   stepLabels,
   type StepStatus,
 } from "../lib/onboarding.js";
-import { useAgents } from "../modules/agents/api/queries.js";
+import { useAgents, useAgentsList } from "../modules/agents/api/queries.js";
 import {
   useAppConnections,
   useMcpConnections,
@@ -26,7 +26,8 @@ export function SetupProgressBar() {
   // connections) while the initial fetches are in flight.
   const onOnboardingView =
     view === "list" || view === "providers" || view === "connections";
-  const { data: agents = [], isSuccess: agentsLoaded } = useAgents();
+  const { isSuccess: agentsLoaded } = useAgents();
+  const agents = useAgentsList();
   const { data: secrets = [], isSuccess: secretsLoaded } = useSecrets({
     enabled: onOnboardingView,
   });

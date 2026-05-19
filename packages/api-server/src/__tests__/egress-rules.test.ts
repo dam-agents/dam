@@ -31,12 +31,7 @@ beforeAll(async () => {
     egressPreset: "none",
   });
   AGENT_ID = agent.id;
-  // The Envoy sidecar (and therefore the entire ext_authz enforcement
-  const inst = await client.instances.create.mutate({
-    name: "egress-test-inst",
-    agentId: AGENT_ID,
-  });
-  INSTANCE_ID = inst.id;
+  INSTANCE_ID = agent.id;
   POD_NAME = `${INSTANCE_ID}-0`;
   await waitForPodReady(POD_NAME, 240_000);
 
@@ -51,9 +46,6 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  try {
-    await client.instances.delete.mutate({ id: INSTANCE_ID });
-  } catch {}
   try {
     await client.agents.delete.mutate({ id: AGENT_ID });
   } catch {}
@@ -77,7 +69,7 @@ async function clearAllRules() {
  *  rule, so it's the right cleanup verb here. */
 async function dismissAllApprovals() {
   const rows = await client.approvals.listForInstance.query({
-    instanceId: INSTANCE_ID,
+    agentId: INSTANCE_ID,
     status: "pending",
   });
   for (const r of rows) {
@@ -131,7 +123,7 @@ async function findPendingForHost(
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const rows = await client.approvals.listForInstance.query({
-      instanceId: INSTANCE_ID,
+      agentId: INSTANCE_ID,
       status: "pending",
     });
     const found = rows.find(

@@ -85,6 +85,6 @@ func TestBuildAgentEgressNetworkPolicy_NoHBONE(t *testing.T) {
 func TestBuildAgentEgressNetworkPolicy_ManagedByLabel(t *testing.T) {
 	np := BuildAgentEgressNetworkPolicy("my-instance", testConfig, testOwnerCM)
 	assert.Equal(t, "platform-controller", np.Labels["agent-platform.ai/managed-by"])
-	assert.Equal(t, "my-instance", np.Labels[LabelInstance])
+	assert.Equal(t, "my-instance", np.Labels[LabelAgent])
 }
 

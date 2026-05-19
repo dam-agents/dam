@@ -6,14 +6,14 @@ import type { ChatError, ChatService } from "../services/chat-service.js";
 export function buildChatCommand(deps: { chatService: ChatService }): Command {
   return new Command("chat")
     .description("Connect your terminal to an agent's interactive TUI")
-    .argument("<instance>", "instance name or ID")
+    .argument("<agent>", "agent name or ID")
     .option("--server <url>", "override the configured server URL")
     .option("-c, --continue", "continue the most recent terminal session")
     .option("-r, --resume <session-id>", "resume a specific session by ID")
     .option("--reset", "kill existing PTY and start a fresh terminal")
     .action(
       async (
-        instanceRef: string,
+        agentRef: string,
         opts: {
           server?: string;
           continue?: boolean;
@@ -28,7 +28,7 @@ export function buildChatCommand(deps: { chatService: ChatService }): Command {
             : { kind: "new" };
 
         const result = await deps.chatService.run({
-          instanceRef,
+          agentRef,
           serverFlag: opts.server,
           strategy,
           reset: opts.reset,
@@ -40,7 +40,7 @@ export function buildChatCommand(deps: { chatService: ChatService }): Command {
         }
 
         const { bridge, sessionId } = result.value;
-        const resume = `\x1b[32mdam chat ${instanceRef} --resume ${sessionId}\x1b[0m`;
+        const resume = `\x1b[32mdam chat ${agentRef} --resume ${sessionId}\x1b[0m`;
         const status =
           bridge.kind === "exited"
             ? `\x1b[33mSession ended\x1b[0m \x1b[2mProcess exited with code ${bridge.code}\x1b[0m`
@@ -90,12 +90,12 @@ export function printError(e: ChatError): void {
     case "not-found":
       w(
         e.via === "id"
-          ? `no instance with id '${e.ref}'`
-          : `no instance named '${e.ref}'`,
+          ? `no agent with id '${e.ref}'`
+          : `no agent named '${e.ref}'`,
       );
       return;
     case "ambiguous":
-      w(`multiple instances named '${e.ref}':`);
+      w(`multiple agents named '${e.ref}':`);
       for (const m of e.matches) process.stderr.write(`  ${m.id}\n`);
       process.stderr.write("specify by id instead\n");
       return;
@@ -112,7 +112,7 @@ export function printError(e: ChatError): void {
       w(`session error: ${e.reason}`);
       return;
     case "no-terminal-session":
-      w("no terminal session to continue; start one with: dam chat <instance>");
+      w("no terminal session to continue; start one with: dam chat <agent>");
       return;
     case "multiple-terminal-sessions":
       w("multiple terminal sessions found; specify one with --resume:");

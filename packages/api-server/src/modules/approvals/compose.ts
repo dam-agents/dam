@@ -15,7 +15,7 @@ import {
   createExtAuthzGate,
   type EgressRuleMatcher,
   type ExtAuthzGate,
-  type InstanceIdentityResolver,
+  type AgentIdentityResolver,
 } from "./services/ext-authz-gate.js";
 import {
   createDeliverySweeper,
@@ -31,7 +31,7 @@ import type { RedisBus } from "../../core/redis-bus.js";
 export interface ComposeApprovalsServiceDeps {
   db: Db;
   ownerSub: string;
-  isInstanceOwnedBy(instanceId: string, ownerSub: string): Promise<boolean>;
+  isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   egressRuleWriter: EgressRuleWriter;
   bus: RedisBus;
   wrapperFrameSender: WrapperFrameSender;
@@ -47,7 +47,7 @@ export function composeApprovalsService(deps: ComposeApprovalsServiceDeps): {
     egressRuleWriter: deps.egressRuleWriter,
     notifier,
     wrapperFrameSender: deps.wrapperFrameSender,
-    isInstanceOwnedBy: deps.isInstanceOwnedBy,
+    isAgentOwnedBy: deps.isAgentOwnedBy,
     ownerSub: deps.ownerSub,
   });
   return { service };
@@ -62,7 +62,7 @@ export function composeApprovalsService(deps: ComposeApprovalsServiceDeps): {
 export interface ComposeApprovalsSystemDeps {
   db: Db;
   bus: RedisBus;
-  identityResolver: InstanceIdentityResolver;
+  identityResolver: AgentIdentityResolver;
   ruleMatcher: EgressRuleMatcher;
   wrapperFrameSender: WrapperFrameSender;
   holdSeconds: number;
@@ -122,7 +122,7 @@ export type {
   ExtAuthzGateInput,
   ExtAuthzVerdict,
   EgressRuleMatcher,
-  InstanceIdentityResolver,
+  AgentIdentityResolver,
 } from "./services/ext-authz-gate.js";
 export type { DeliverySweeper } from "./services/delivery-sweeper.js";
 export type {

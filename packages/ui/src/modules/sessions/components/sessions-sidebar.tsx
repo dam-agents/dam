@@ -3,8 +3,8 @@ import { ArrowLeft, Plus, RefreshCw } from "lucide-react";
 import { useCallback } from "react";
 
 import { useStore } from "../../../store.js";
-import { InstanceApprovalsTray } from "../../approvals/components/instance-approvals-tray.js";
-import { useInstancesList } from "../../instances/api/queries.js";
+import { useAgentsList } from "../../agents/api/queries.js";
+import { AgentApprovalsTray } from "../../approvals/components/agent-approvals-tray.js";
 import { useAcpSessions } from "../api/queries.js";
 import { SessionRow } from "./session-row.js";
 
@@ -15,7 +15,7 @@ export function SessionsSidebar({
   onResumeSession: (sid: string, mode?: SessionMode) => void;
   onNewSession: () => void;
 }) {
-  const selectedInstance = useStore((s) => s.selectedInstance);
+  const selectedAgent = useStore((s) => s.selectedAgent);
   const sessionId = useStore((s) => s.sessionId);
   const pendingPermissions = useStore((s) => s.pendingPermissions);
   const includeChannel = useStore((s) => s.includeChannelSessions);
@@ -24,16 +24,14 @@ export function SessionsSidebar({
   const showConfirm = useStore((s) => s.showConfirm);
   const goBack = useStore((s) => s.goBack);
 
-  const instances = useInstancesList();
-  const instanceRunState = instances.find(
-    (i) => i.id === selectedInstance,
-  )?.state;
+  const agents = useAgentsList();
+  const agentRunState = agents.find((a) => a.id === selectedAgent)?.state;
   const {
     data: sessions = [],
     isFetching,
     refetch,
-  } = useAcpSessions(selectedInstance, includeChannel, {
-    enabled: instanceRunState === "running",
+  } = useAcpSessions(selectedAgent, includeChannel, {
+    enabled: agentRunState === "running",
   });
   const loading = isFetching;
 
@@ -104,7 +102,7 @@ export function SessionsSidebar({
           />
         ))}
       </div>
-      <InstanceApprovalsTray instanceId={selectedInstance} />
+      <AgentApprovalsTray agentId={selectedAgent} />
       <div className="px-3 py-3 border-t border-border-light shrink-0">
         <button
           className="w-full h-9 rounded-md border border-border-light text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center justify-center gap-1.5 transition-colors"

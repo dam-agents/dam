@@ -37,7 +37,7 @@ describe("shared trpc-client adapter", () => {
       fetch: fetchSpy,
     });
 
-    await trpc.instances.list.query();
+    await trpc.agents.list.query();
 
     expect(tp.getValidAccessToken).toHaveBeenCalledOnce();
     expect(captured).toHaveLength(1);
@@ -58,7 +58,7 @@ describe("shared trpc-client adapter", () => {
 
     let caught: unknown;
     try {
-      await trpc.instances.list.query();
+      await trpc.agents.list.query();
     } catch (e) {
       caught = e;
     }

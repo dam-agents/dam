@@ -1,12 +1,13 @@
 # Persistence
 
-Last verified: 2026-05-12
+Last verified: 2026-05-19
 
 ## Motivated by
 
 - [ADR-001 — Ephemeral containers + persistent workspace volumes](../adrs/001-ephemeral-containers.md) — agents are stateless processes; their state lives on PVCs that outlive the pod
 - [ADR-006 — ConfigMaps over CRDs](../adrs/006-configmaps-over-crds.md) — domain resources are namespace-scoped ConfigMaps with a single-writer-per-key split
 - [ADR-017 — DB-backed ACP sessions](../adrs/017-db-backed-sessions.md) — Postgres holds session metadata so the UI works even when pods are hibernated
+- [ADR-046 — Eliminate Instance, collapse into Agent](../adrs/046-eliminate-instance.md) — the merged `agent` ConfigMap is the sole resource per Agent and carries both `spec.yaml` and `status.yaml`
 
 ## Overview
 
@@ -15,11 +16,11 @@ Platform persists state on three durable substrates, split cleanly between the p
 **Platform-owned** (the agent never touches these):
 
 - **Postgres** — application state the api-server owns end-to-end. Sole writer: api-server; the controller never reads from or writes to Postgres. Holds anything that has to be queryable when no agent pod is running (sessions, channel bindings, identity links, allow-listed users) plus any other api-server-only domain resource.
-- **ConfigMaps** — resource state the controller reconciles into running infrastructure (templates, instances, schedules, forks), with a `spec.yaml` / `status.yaml` ownership split. Sole writer of `spec.yaml`: api-server. Sole writer of `status.yaml`: controller.
+- **ConfigMaps** — resource state the controller reconciles into running infrastructure (templates, agents, schedules, forks), with a `spec.yaml` / `status.yaml` ownership split. Sole writer of `spec.yaml`: api-server. Sole writer of `status.yaml`: controller.
 
 **Agent-owned**:
 
-- **Per-instance PVCs** — the workspace and `$HOME` mounted into the agent pod. The agent process reads and writes here freely; it has no direct access to Postgres or to the ConfigMaps that describe it. Persists across hibernation; reclaimed when the instance is deleted.
+- **Per-Agent PVCs** — the workspace and `$HOME` mounted into the agent pod. The agent process reads and writes here freely; it has no direct access to Postgres or to the ConfigMaps that describe it. Persists across hibernation; reclaimed when the Agent is deleted.
 
 **Choosing between Postgres and ConfigMaps.** A new resource belongs on a ConfigMap iff the controller reconciles it. If only the api-server reads and writes it, it belongs in Postgres. The spec/status single-writer split exists to coordinate api-server and controller; without a controller reader, it has no purpose, and putting api-server-only state on a ConfigMap is using the K8s API as a generic key-value store. ADR-006's "K8s is the database" framing predates Postgres landing in the platform — the rule above is the post-[ADR-017](../adrs/017-db-backed-sessions.md) refinement.
 
@@ -41,7 +42,7 @@ flowchart LR
     cm-anno[ConfigMap<br/>annotations]
   end
 
-  pvc[(Per-instance PVC)]
+  pvc[(Per-Agent PVC)]
 
   api-server -->|write| postgres
   api-server -->|write| cm-spec
@@ -61,36 +62,38 @@ flowchart LR
 
 Postgres carries application state the api-server owns end-to-end — anything that has to be queryable when no agent pod is running, plus any domain resource the controller does not reconcile.
 
-- **session metadata** ([ADR-017](../adrs/017-db-backed-sessions.md)) — Platform enriches each ACP session with metadata the protocol does not carry: a source-type discriminator (UI-initiated vs. channel-initiated vs. schedule-driven), the owning instance, the linked schedule when applicable, and creation time. The DB is the source of truth for these enrichments; the agent runtime owns the conversation itself. The sessions list reads enrichments straight from the DB and overlays live ACP data (title, last update) only when the pod is running. A row is written when the session is first prompted — chat sessions by the ACP relay, channel and schedule sessions by their respective adapters — so sessions created but never used leave no metadata behind.
-- **channel routing** — bindings between external chat surfaces and the instance/session they map to. Owned by [channels](channels.md).
+- **session metadata** ([ADR-017](../adrs/017-db-backed-sessions.md)) — Platform enriches each ACP session with metadata the protocol does not carry: a source-type discriminator (UI-initiated vs. channel-initiated vs. schedule-driven), the owning Agent, the linked schedule when applicable, and creation time. The DB is the source of truth for these enrichments; the agent runtime owns the conversation itself. The sessions list reads enrichments straight from the DB and overlays live ACP data (title, last update) only when the pod is running. A row is written when the session is first prompted — chat sessions by the ACP relay, channel and schedule sessions by their respective adapters — so sessions created but never used leave no metadata behind.
+- **channel routing** — bindings between external chat surfaces and the Agent/session they map to. Owned by [channels](channels.md).
 - **identity and auth** — links between channel-side identities and platform users, plus the auth allow-list. Owned by [security-and-credentials](security-and-credentials.md).
-- **skills catalog** — connected sources, per-instance install records, and publish history. Owned by [skills](skills.md).
+- **skills catalog** — connected sources, per-Agent install records, and publish history. Owned by [skills](skills.md).
 
 The api-server is the sole writer for all of it. The controller does not touch Postgres — its bookkeeping lives on `status.yaml` of the ConfigMap it owns. The authoritative schema and migrations live in [`packages/db/`](../../packages/db/).
 
 ### ConfigMaps
 
-Resources the controller reconciles are labeled ConfigMaps ([ADR-006](../adrs/006-configmaps-over-crds.md)). Four types, distinguished by `platform.ai/type`:
+Resources the controller reconciles are labeled ConfigMaps ([ADR-006](../adrs/006-configmaps-over-crds.md)). Four types after [ADR-046](../adrs/046-eliminate-instance.md) collapsed the former `agent` (template) + `agent-instance` (instance) pair into a single `agent` CM that owns both definition and runtime state, distinguished by `platform.ai/type`:
 
-| Type | What it declares |
-|---|---|
-| `agent` | Template: image, command, default env, mount declarations, injection rules |
-| `agent-instance` | Instance: template ref, env overrides, secret refs, `desiredState` |
-| `agent-schedule` | Schedule: RRULE, quiet hours, task payload, session mode |
-| `agent-fork` | Forked run: parent instance ref + overrides |
+| Type | What it declares | `spec.yaml` writer | `status.yaml` writer |
+|---|---|---|---|
+| `template` | Template: image, command, default env, mount declarations, injection rules (read-only blueprint copied into an Agent at create time) | api-server | (no status — templates are not reconciled) |
+| `agent` | Agent: image / mount declarations, env, secret refs, allowed users, `desiredState`. **Both** `spec.yaml` (api-server) **and** `status.yaml` (controller) live on this single CM — there is no longer a separate "instance" CM where status lives | api-server | controller |
+| `agent-schedule` | Schedule: RRULE, quiet hours, task payload, session mode | api-server | controller |
+| `agent-fork` | Forked run: parent Agent ref + overrides | api-server | controller |
 
-Each ConfigMap carries two `data` keys with strict single-writer ownership:
+The single-writer split for the merged `agent` CM is the same `spec.yaml` / `status.yaml` pattern used elsewhere — what changed in ADR-046 is that the runtime state (`status.yaml`, plus the high-frequency annotations) now lives on the **same** ConfigMap as the definition, rather than on a paired `agent-instance` CM. The `inst-` ID prefix retires; the merged Agent uses `agent-` as the sole ID prefix.
+
+Each reconciled ConfigMap carries two `data` keys with strict single-writer ownership:
 
 - **`spec.yaml`** — user intent. Written exclusively by the api-server.
 - **`status.yaml`** — observed state and scheduler bookkeeping (next fire, last fire, error). Written exclusively by the controller.
 
-High-frequency, lightweight metadata (heartbeats, activity timestamps) lives on **annotations** rather than `status.yaml` to avoid rewriting the spec/status payload on every update.
+High-frequency, lightweight metadata (heartbeats, activity timestamps, `granted-secret-ids`, `granted-connection-ids`, `secrets-rev`, `last-activity`) lives on **annotations** rather than `status.yaml` to avoid rewriting the spec/status payload on every update.
 
 ConfigMaps were chosen over CRDs so that Platform installs without cluster-admin — the schema maps directly onto a CRD spec if the constraint ever lifts. There is no schema validation at the K8s API layer; both the api-server (on write) and the controller (on read) validate in application code.
 
-### Per-instance PVCs
+### Per-Agent PVCs
 
-Each `agent-instance` reconciles into a StatefulSet whose `volumeClaimTemplates` are derived from the agent template's declared mounts ([ADR-001](../adrs/001-ephemeral-containers.md)). A mount marked `persist: true` becomes a PVC; a non-persisted mount becomes an `emptyDir` that dies with the pod. PVCs are `ReadWriteMany` so the workspace can be shared concurrently between the instance's original owner and a foreign user running a fork against it — both pods mount the same volume at the same time.
+Each `agent` reconciles into a StatefulSet whose `volumeClaimTemplates` are derived from the Agent's declared mounts ([ADR-001](../adrs/001-ephemeral-containers.md)). A mount marked `persist: true` becomes a PVC; a non-persisted mount becomes an `emptyDir` that dies with the pod. PVCs are `ReadWriteMany` so the workspace can be shared concurrently between the Agent's original owner and a foreign user running a fork against it — both pods mount the same volume at the same time.
 
 The default Claude Code template persists the workspace and `$HOME`. Together these hold:
 
@@ -99,7 +102,7 @@ The default Claude Code template persists the workspace and `$HOME`. Together th
 - **`.triggers/`** — pending trigger payloads. The controller delivers each payload via `kubectl exec` into the *running* pod, which writes the file onto its mounted PVC; the controller itself never mounts the volume. The pod must therefore be awake before delivery, and the schedule loop wakes it first if it is hibernated (see [agent-lifecycle](agent-lifecycle.md)).
 - **`.import-staging-*/`** — transient extraction directories used by the bundled file-import path before entries are merged into `<homeDir>/work`. Orphaned staging dirs from crashed imports are reclaimed by an agent-runtime boot sweeper; see [platform-topology](platform-topology.md).
 
-PVCs survive hibernation — when a StatefulSet scales to zero replicas, the volume detaches but is retained. The controller explicitly deletes PVCs on instance deletion (the standard StatefulSet behavior is to retain them to prevent data loss; Platform opts back into reclamation because instance deletion is intentional).
+PVCs survive hibernation — when a StatefulSet scales to zero replicas, the volume detaches but is retained. The controller explicitly deletes PVCs on Agent deletion (the standard StatefulSet behavior is to retain them to prevent data loss; Platform opts back into reclamation because Agent deletion is intentional).
 
 What does **not** survive hibernation: anything written to the container's ephemeral filesystem outside the persisted mounts — OS-level changes, packages installed at runtime, files in `/tmp`. Tools and dependencies the agent relies on must be baked into the image at build time.
 
@@ -112,13 +115,13 @@ What does **not** survive hibernation: anything written to the container's ephem
 | Wake (replicas → 1) | survives | survives | survives |
 | api-server restart | survives | survives | survives |
 | Controller restart | survives | survives | survives |
-| Instance delete | session rows removed by api-server | ConfigMap removed | PVCs removed by controller |
+| Agent delete | session rows removed by api-server | ConfigMap removed | PVCs removed by controller |
 | Schedule delete | session rows optionally removed (UI checkbox) | ConfigMap removed | n/a |
 
-Schedules are independent ConfigMaps and survive instance deletion as orphans unless the deletion path explicitly cascades. Sessions linked to a deleted schedule are kept by default; the UI offers a checkbox to remove them with the schedule.
+Schedules are independent ConfigMaps and survive Agent deletion as orphans unless the deletion path explicitly cascades. Sessions linked to a deleted schedule are kept by default; the UI offers a checkbox to remove them with the schedule.
 
 ## Security boundary
 
-The PVC is a **shared mutable surface across every session, trigger, fork, and channel-driven prompt that runs on the same instance.** Anything written into the workspace by one turn — model output saved to disk, tool output, files fetched from upstream — is plain context for the next turn. Treat workspace contents as adversarial input. A scheduled job can plant a file that prompt-injects a later user-driven session; a Slack-driven prompt can leak its instructions through residue left on disk.
+The PVC is a **shared mutable surface across every session, trigger, fork, and channel-driven prompt that runs on the same Agent.** Anything written into the workspace by one turn — model output saved to disk, tool output, files fetched from upstream — is plain context for the next turn. Treat workspace contents as adversarial input. A scheduled job can plant a file that prompt-injects a later user-driven session; a Slack-driven prompt can leak its instructions through residue left on disk.
 
 The platform does not sandbox writes within the workspace. Mitigations live elsewhere: NetworkPolicy restricts which upstreams the agent can reach (the agent pod can only dial its paired gateway pod, never an upstream directly — [ADR-038](../adrs/038-paired-gateway-pod.md)), the gateway pod gates credentialed egress, and forks let you run with a narrowed credential set without polluting the parent's workspace. The threat model and credential isolation are detailed on [security-and-credentials](security-and-credentials.md).

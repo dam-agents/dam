@@ -7,7 +7,6 @@ import type {
 export interface PendingApprovalRow {
   id: string;
   type: ApprovalType;
-  instanceId: string;
   agentId: string;
   ownerSub: string;
   sessionId: string | null;

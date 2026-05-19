@@ -4,7 +4,7 @@ import type { WrapperFrameSender } from "../services/approvals-service.js";
 export interface CreateWrapperFrameSenderDeps {
   /** Resolve an instance to the wrapper's ACP WebSocket URL. The composition
    *  root injects this — keeps approvals out of pod-networking details. */
-  resolveWrapperUrl(instanceId: string): string;
+  resolveWrapperUrl(agentId: string): string;
   /** How long to wait for the WS to OPEN before failing. */
   connectTimeoutMs?: number;
 }
@@ -24,8 +24,8 @@ export function createWrapperFrameSender(
 ): WrapperFrameSender {
   const connectTimeoutMs = deps.connectTimeoutMs ?? 5000;
   return {
-    async send(instanceId, frame) {
-      const url = deps.resolveWrapperUrl(instanceId);
+    async send(agentId, frame) {
+      const url = deps.resolveWrapperUrl(agentId);
       const ws = new WebSocket(url);
       try {
         await waitForOpen(ws, connectTimeoutMs);

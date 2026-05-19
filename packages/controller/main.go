@@ -94,7 +94,7 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 
 	cmInformer := factory.Core().V1().ConfigMaps()
 	agentResolver := reconciler.NewAgentResolver(cmInformer.Lister().ConfigMaps(cfg.Namespace))
-	instanceReconciler := reconciler.NewInstanceReconciler(client, cfg, agentResolver).WithDynamicClient(dynClient)
+	agentReconciler := reconciler.NewAgentReconciler(client, cfg).WithDynamicClient(dynClient)
 	forkReconciler := reconciler.NewForkReconciler(client, cfg, agentResolver).WithDynamicClient(dynClient)
 
 	sched := scheduler.New(client, cfg).WithRESTConfig(restCfg)
@@ -104,12 +104,12 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	idleChecker := reconciler.NewIdleChecker(client, cfg)
 	go idleChecker.RunLoop(ctx)
 
-	// Periodic GC for resources whose instance ConfigMap has been removed
+	// Periodic GC for resources whose agent ConfigMap has been removed
 	// out-of-band (issue #244). The Delete event handler covers the
 	// happy path; this catches crashes mid-delete and direct kubectl removals.
 	// Leaf TLS Secrets are also reaped here so historical leaks (from before
 	// owner-references were added) are eventually cleaned up.
-	go runOrphanSweep(ctx, instanceReconciler, 10*time.Minute)
+	go runOrphanSweep(ctx, agentReconciler, 10*time.Minute)
 
 	queue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]())
 	defer queue.ShutDown()
@@ -137,8 +137,8 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 			}
 			cmType := cm.Labels["agent-platform.ai/type"]
 			switch cmType {
-			case "agent-instance":
-				instanceReconciler.Delete(ctx, cm.Name)
+			case "agent":
+				agentReconciler.Delete(ctx, cm.Name)
 			case "agent-schedule":
 				sched.RemoveSchedule(cm.Name)
 			case "agent-fork":
@@ -171,9 +171,9 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 
 			cmType := cm.Labels["agent-platform.ai/type"]
 			switch cmType {
-			case "agent-instance":
-				if err := instanceReconciler.Reconcile(ctx, cm); err != nil {
-					slog.Error("reconcile instance", "name", name, "error", err)
+			case "agent":
+				if err := agentReconciler.Reconcile(ctx, cm); err != nil {
+					slog.Error("reconcile agent", "name", name, "error", err)
 					queue.AddRateLimited(key)
 					return
 				}
@@ -196,7 +196,7 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	}
 }
 
-func runOrphanSweep(ctx context.Context, r *reconciler.InstanceReconciler, interval time.Duration) {
+func runOrphanSweep(ctx context.Context, r *reconciler.AgentReconciler, interval time.Duration) {
 	sweep := func() {
 		r.ReconcileOrphanPVCs(ctx)
 		r.ReconcileOrphanLeafSecrets(ctx)

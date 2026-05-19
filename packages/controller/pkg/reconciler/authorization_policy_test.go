@@ -8,8 +8,8 @@ import (
 )
 
 // ADR-041 + ADR-027: per-fork harness policy admits the fork SA only to
-// `/api/instances/<parent>/mcp` — NOT the parent's full
-// `/api/instances/<parent>/*` surface. This is the credential boundary
+// `/api/agents/<parent>/mcp` — NOT the parent's full
+// `/api/agents/<parent>/*` surface. This is the credential boundary
 // for forks: a compromised fork cannot reach pod-files SSE,
 // `/internal/trigger`, or any future per-instance harness endpoint
 // scoped to the parent.
@@ -33,7 +33,7 @@ func TestBuildForkHarnessAuthorizationPolicy_NarrowToMcp(t *testing.T) {
 	op, _ := to[0].(map[string]interface{})["operation"].(map[string]interface{})
 	paths, _ := op["paths"].([]interface{})
 	require.Len(t, paths, 1)
-	assert.Equal(t, "/api/instances/parent-instance/mcp", paths[0],
+	assert.Equal(t, "/api/agents/parent-instance/mcp", paths[0],
 		"fork must reach ONLY the parent's MCP endpoint — not pod-files, not /internal/trigger")
 }
 
@@ -85,8 +85,8 @@ func TestBuildHarnessAuthorizationPolicy_PathPrefix(t *testing.T) {
 	to, _ := rule0["to"].([]interface{})
 	op, _ := to[0].(map[string]interface{})["operation"].(map[string]interface{})
 	paths, _ := op["paths"].([]interface{})
-	assert.Equal(t, "/api/instances/my-instance/*", paths[0],
-		"harness policy must scope to /api/instances/<id>/* — the URL :id is the SPIFFE-bound identity")
+	assert.Equal(t, "/api/agents/my-instance/*", paths[0],
+		"harness policy must scope to /api/agents/<id>/* — the URL :id is the SPIFFE-bound identity")
 }
 
 // ADR-041: ext-authz policy targets the per-instance ext-authz Service

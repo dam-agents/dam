@@ -10,12 +10,12 @@ import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
 
 export interface SessionsPort {
   list(
-    instanceId: string,
+    agentId: string,
   ): Promise<
     Result<readonly SessionView[], TransportError | AuthRequiredError>
   >;
   resolveTerminal(
-    instanceId: string,
+    agentId: string,
     strategy: TerminalStrategy,
     opts?: { reset?: boolean; force?: boolean },
   ): Promise<Result<SessionResolution, TransportError | AuthRequiredError>>;
@@ -23,19 +23,19 @@ export interface SessionsPort {
 
 export function createSessionsPort(deps: { trpc: TrpcClient }): SessionsPort {
   return {
-    async list(instanceId) {
+    async list(agentId) {
       return trpcCall(
         () =>
-          deps.trpc.sessions.list.query({ instanceId }) as Promise<
+          deps.trpc.sessions.list.query({ agentId }) as Promise<
             readonly SessionView[]
           >,
       );
     },
-    async resolveTerminal(instanceId, strategy, opts) {
+    async resolveTerminal(agentId, strategy, opts) {
       return trpcCall(
         () =>
           deps.trpc.sessions.resolveTerminal.mutate({
-            instanceId,
+            agentId,
             strategy,
             reset: opts?.reset,
             force: opts?.force,

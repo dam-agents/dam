@@ -3,7 +3,6 @@ import type { ApprovalsService } from "./modules/approvals/types.js";
 import type { ChannelsService } from "./modules/channels/types.js";
 import type { ConnectionsService } from "./modules/connections/types.js";
 import type { EgressRulesService } from "./modules/egress-rules/types.js";
-import type { InstancesService } from "./modules/instances/types.js";
 import type { SchedulesService } from "./modules/schedules/types.js";
 import type { SecretsService } from "./modules/secrets/types.js";
 import type { SessionsService } from "./modules/sessions/types.js";
@@ -18,7 +17,6 @@ export interface UserIdentity {
 export interface ApiContext {
   templates: TemplatesService;
   agents: AgentsService;
-  instances: InstancesService;
   schedules: SchedulesService;
   sessions: SessionsService;
   secrets: SecretsService;

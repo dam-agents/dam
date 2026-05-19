@@ -6,8 +6,7 @@ import type {
   SkillSource,
 } from "api-server-api";
 import type { AgentsRepository } from "../../agents/infrastructure/agents-repository.js";
-import type { InstancesRepository } from "../../instances/infrastructure/instances-repository.js";
-import type { InstanceSkillsRepository } from "../infrastructure/instance-skills-repository.js";
+import type { AgentSkillsRepository } from "../infrastructure/agent-skills-repository.js";
 import {
   AgentRuntimeUpstreamError,
   type AgentRuntimeSkillsClient,
@@ -23,8 +22,7 @@ export interface PublishServiceDeps {
    *  template-synthesised `template:*` ids — publishing is supposed to work
    *  against template-bound sources too. */
   resolveSource: (id: string) => Promise<SkillSource | null>;
-  instances: InstancesRepository;
-  instanceSkills: InstanceSkillsRepository;
+  agentSkills: AgentSkillsRepository;
   agents: AgentsRepository;
   runtimeClient: AgentRuntimeSkillsClient;
   /** Display name surfaced in the auto-generated PR body when the caller
@@ -46,13 +44,13 @@ export async function publishSkill(
   deps: PublishServiceDeps,
   input: PublishSkillInput,
 ): Promise<PublishSkillResult> {
-  const infra = await deps.instances.get(input.instanceId, deps.owner);
-  if (!infra)
-    throw new TRPCError({ code: "NOT_FOUND", message: "instance not found" });
-  if (infra.currentState !== "running") {
+  const agent = await deps.agents.get(input.agentId, deps.owner);
+  if (!agent)
+    throw new TRPCError({ code: "NOT_FOUND", message: "agent not found" });
+  if (agent.currentState !== "running") {
     throw new TRPCError({
       code: "PRECONDITION_FAILED",
-      message: `instance is ${infra.currentState ?? "not running"}; start it before publishing`,
+      message: `agent is ${agent.currentState ?? "not running"}; start it before publishing`,
     });
   }
 
@@ -71,14 +69,13 @@ export async function publishSkill(
     });
   }
 
-  const agent = await deps.agents.get(infra.agentId, deps.owner);
-  const skillPaths = agent?.spec.skillPaths?.length
+  const skillPaths = agent.spec.skillPaths?.length
     ? agent.spec.skillPaths
     : DEFAULT_SKILL_PATHS;
 
   let result;
   try {
-    result = await deps.runtimeClient.publish(input.instanceId, {
+    result = await deps.runtimeClient.publish(input.agentId, {
       name: input.name,
       skillPaths,
       owner: host.owner,
@@ -107,7 +104,7 @@ export async function publishSkill(
     prUrl: result.prUrl,
     publishedAt: new Date().toISOString(),
   };
-  await deps.instanceSkills.appendPublish(input.instanceId, record);
+  await deps.agentSkills.appendPublish(input.agentId, record);
 
   return result;
 }

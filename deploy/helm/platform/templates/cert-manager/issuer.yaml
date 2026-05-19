@@ -2,7 +2,7 @@
 {{/*
 Cluster issuers backing the experimental Envoy credential-injector path
 (ADR-033). The bootstrap issuer signs the platform-mitm-ca Certificate; the CA
-issuer then signs per-instance leaf certs that Envoy uses to terminate the
+issuer then signs per-agent leaf certs that Envoy uses to terminate the
 agent's TLS for credential injection.
 
 ClusterIssuers are cluster-scoped — names collide globally. Override via

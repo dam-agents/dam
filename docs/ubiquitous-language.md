@@ -13,45 +13,47 @@ Persistence vocabulary shared by every bounded context. See [`docs/architecture/
 
 ## Agents (bounded context)
 
+Per [ADR-046](adrs/046-eliminate-instance.md), `Instance` is retired; the merged `Agent` carries definition, runtime state, and lifecycle.
+
 | Term | Definition |
 |------|-----------|
 | Template | A read-only catalog blueprint that defines the base image, mounts, env, and resources for creating an agent |
-| Agent | A user-owned definition of a runnable AI harness, optionally derived from a template |
-| Instance | A running (or hibernated) deployment of an agent with its own state and environment; aggregate root assembled from Infra State (desiredState, env, secretRef) and Application State (channels, session metadata) |
+| Agent | The durable, owned, runnable resource — definition, runtime state, and lifecycle. A single ConfigMap whose `spec.yaml` (api-server writer) carries env, secret refs, allowed users, and `desiredState`, and whose `status.yaml` (controller writer) carries observed state. Optionally derived from a Template at create-time |
 | Session | One conversation with the agent harness, with its own lifecycle and metadata |
-| Schedule | A time-triggered task attached to an instance — either cron-based or heartbeat |
-| Desired State | The target lifecycle state of an instance: running or hibernated |
-| Wake | Transitioning an instance from hibernated to running |
-| Heartbeat | A recurring schedule type defined by interval, internally converted to cron |
+| Schedule | A time-triggered task attached to an Agent — either cron-based or heartbeat |
+| Desired State | The target lifecycle state of an Agent: running or hibernated |
+| Wake | Transitioning an Agent from hibernated to running |
+| Heartbeat | A recurring schedule type attached to an Agent, defined by interval and internally converted to cron |
+| Reserved ID Prefix (agent-) | `agent-` — the prefix the controller mints onto every Agent ID; the api-server forbids Agent names that begin with it at create-time, and the CLI uses it as the ID-vs-name syntactic split signal |
 | Keycloak User Directory | Infrastructure port resolving between user emails and Keycloak `sub` identifiers; backed by the Keycloak admin API |
 
 ## Channels (bounded context)
 
 | Term | Definition |
 |------|-----------|
-| Channel | An external communication pathway connecting users to an agent instance (e.g., Slack) |
-| Channel Binding | The 1:1 linkage between a Slack channel and an Instance; a Slack channel may be bound to at most one Instance globally; Instance delete or Slack disconnect releases the binding |
-| Channel Worker | A long-running process that bridges an external service to an agent instance |
-| Thread | A Slack conversation thread identified by its `thread_ts` timestamp; maps 1:1 to at most one Session per Instance |
-| Foreign Replier | A linked Slack user in an instance's `allowedUsers` list whose identity differs from the Instance owner; triggers a Fork for the turn |
+| Channel | An external communication pathway connecting users to an Agent (e.g., Slack) |
+| Channel Binding | The 1:1 linkage between a Slack channel and an Agent; a Slack channel may be bound to at most one Agent globally; Agent delete or Slack disconnect releases the binding |
+| Channel Worker | A long-running process that bridges an external service to an Agent |
+| Thread | A Slack conversation thread identified by its `thread_ts` timestamp; maps 1:1 to at most one Session per Agent |
+| Foreign Replier | A linked Slack user in an Agent's `allowedUsers` list whose identity differs from the Agent owner; triggers a Fork for the turn |
 
 ## Forks (bounded context)
 
 | Term | Definition |
 |------|-----------|
-| Fork | An ephemeral, per-turn execution environment derived from an Instance that impersonates a foreign user for the duration of one Slack turn |
-| Foreign Sub | The Keycloak `sub` of a Slack replier who is not the Instance owner |
+| Fork | An ephemeral, per-turn execution environment derived from an Agent that impersonates a foreign user for the duration of one Slack turn. Job-shaped and run-to-completion — distinct from the Agent's StatefulSet shape |
+| Foreign Sub | The Keycloak `sub` of a Slack replier who is not the Agent owner |
 | Fork Phase | The lifecycle state of a Fork: Pending, Ready, Failed, or Completed |
 
 ## Skills — api-server side (bounded context)
 
-Catalog and orchestration view of skills. Distinct from the agent-runtime's Skills context — same words, different responsibilities. The api-server owns *which sources are connected, which skills are installed where, and what was published from which instance*; it never manipulates files on a pod directly. Per [`docs/architecture/persistence.md`](../docs/architecture/persistence.md), every concept here is Application State and lives in Postgres or in api-server config.
+Catalog and orchestration view of skills. Distinct from the agent-runtime's Skills context — same words, different responsibilities. The api-server owns *which sources are connected, which skills are installed where, and what was published from which Agent*; it never manipulates files on a pod directly. Per [`docs/architecture/persistence.md`](../docs/architecture/persistence.md), every concept here is Application State and lives in Postgres or in api-server config.
 
 | Term | Definition |
 |------|-----------|
 | Skill Source | A connected source of skills addressable by id; one of three kinds — user (Postgres row, owner-scoped), system (Seed List entry, cluster-admin-declared), or template (synthesised from a Template's `skillSources`) |
-| Installed Skill Ref | A record that a Scanned Skill from a Skill Source is installed at a Version on a specific Instance; identity is `(instanceId, source, name)` |
-| Skill Publish Record | A record that a Local Skill from an Instance was published as a PR to a Skill Source; written on every successful Publish, denormalized so it survives source rename or deletion |
+| Installed Skill Ref | A record that a Scanned Skill from a Skill Source is installed at a Version on a specific Agent; identity is `(agentId, source, name)` |
+| Skill Publish Record | A record that a Local Skill from an Agent was published as a PR to a Skill Source; written on every successful Publish, denormalized so it survives source rename or deletion |
 | Seed List | The cluster-admin-declared system Skill Sources injected as JSON into api-server config (`SKILL_SOURCES_SEED`) at startup; merged into Skill Source listings with `system: true` and protected from user deletion |
 
 ## Skills — agent-runtime side (bounded context)
@@ -76,12 +78,12 @@ Pod-side operational view of skills. Distinct from the api-server's Skills conte
 |------|-----------|
 | Approval | A user-pending decision that gates either a credentialed egress request (ext_authz) or a harness tool call (acp_native); persisted in the `pending_approvals` table |
 | Pending Approval | An approval whose verdict has not yet been decided; lives in the inbox |
-| Inbox | The user-facing surface listing pending approvals — top-level page, sidebar bell with badge, and per-instance tray |
+| Inbox | The user-facing surface listing pending approvals — top-level page, sidebar bell with badge, and per-Agent tray |
 | Verdict | The user's decision on a pending approval: `allow_once`, `allow`, or `deny` |
 | Synth Frame | A synthetic ACP `session/request_permission` frame the relay injects into an attached client WS for an ext_authz approval; the synthetic session id has the `_egress:` prefix so the UI dispatches it to the inbox rather than the in-session permission queue |
 | Held Call | An ext_authz request blocking on the API Server while it waits for a verdict, up to `approvalHoldSeconds` (default 30 minutes); durable pending row outlives the hold |
 | ext_authz Gate | The application service that runs Envoy's HTTP ext_authz check: rule lookup, pending-row creation, synth-frame fan-out, synchronous hold, wake-up, expiry |
-| Wrapper Response | A JSON-RPC response frame the inbox publishes when resolving an acp_native row; whichever replica holds the upstream WS for the instance forwards it to the wrapper |
+| Wrapper Response | A JSON-RPC response frame the inbox publishes when resolving an acp_native row; whichever replica holds the upstream WS for the Agent forwards it to the wrapper |
 | Approvals Relay Service | Server-internal port the ACP relay consumes for mirror writes (record / resolve acp-native pending) and stream subscriptions (synth frames, wrapper responses) |
 
 ## Egress Rules (bounded context)
@@ -99,7 +101,7 @@ Pod-side operational view of skills. Distinct from the api-server's Skills conte
 | Secret | A user-owned credential (e.g., an Anthropic API key) stored as a K8s Secret labelled with the owner's `sub` and mounted into the agent pod's Envoy sidecar for wire-level injection on outbound traffic |
 | Secret Type | The provider taxonomy for a secret — currently `anthropic` (hostPattern fixed) or `generic` (user-supplied host/path patterns) |
 | Host Pattern | The hostname pattern that identifies which outbound requests the Envoy sidecar should inject this secret into |
-| Secret Assignment | The linkage between a Secret and an Agent that makes the secret available to that agent's egress; stored as the `agent-platform.ai/secret-mode` + `agent-platform.ai/granted-secret-ids` annotations on the agent's instance ConfigMap |
+| Secret Assignment | The linkage between a Secret and an Agent that makes the secret available to that Agent's egress; stored as the `agent-platform.ai/secret-mode` + `agent-platform.ai/granted-secret-ids` annotations on the Agent ConfigMap |
 | Provider | The external service a secret authenticates against (e.g., Anthropic); for typed secrets the provider determines default routing rules |
 
 ## Platform CLI (bounded context)
@@ -116,6 +118,5 @@ Pod-side operational view of skills. Distinct from the api-server's Skills conte
 | Auth Store | The machine-managed credential file at `$XDG_STATE_HOME/dam/auth.toml` (mode 0600, atomic writes) holding Host Auth entries keyed by Host URL — distinct from Config, which is user-editable |
 | Token Provider | The single cross-module application service every authenticated CLI verb calls to obtain a valid bearer for a Host — owns `DAM_TOKEN` precedence, proactive refresh within 60s of expiry, and the `invalid_grant` → clear-creds policy |
 | CLI Client | The Platform CLI's public OAuth client registered in Keycloak (`platform-cli` by default, advertised as `cliClientId` on `/api/auth/config`); device-grant only, no client secret, no redirect URIs |
-| Instance Ref | The user-supplied string that addresses an Instance from the CLI — either an Instance ID (anything starting with the Reserved ID Prefix) or an Instance name, disambiguated syntactically |
-| Instance Resolver | The cross-module application service every Instance-targeted CLI verb consumes to convert an Instance Ref into the owner's Instance; exact case-sensitive name match; returns a typed not-found / ambiguous / transport / auth-required error |
-| Reserved ID Prefix | `inst-` — the prefix the controller mints onto every Instance ID; the CLI uses it as the ID-vs-name syntactic split signal and the api-server forbids Instance names that begin with it at create-time |
+| Agent Ref | The user-supplied string that addresses an Agent from the CLI — either an Agent ID (anything starting with the Reserved ID Prefix `agent-`) or an Agent name, disambiguated syntactically |
+| Agent Resolver | The cross-module application service every Agent-targeted CLI verb consumes to convert an Agent Ref into the owner's Agent; exact case-sensitive name match; returns a typed not-found / ambiguous / transport / auth-required error |

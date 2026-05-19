@@ -2,7 +2,7 @@
 # Istio's mesh-controller observes this Gateway resource (gatewayClassName:
 # istio-waypoint) and synthesises the waypoint Deployment + Pod itself —
 # this chart never declares Pod/Deployment YAML for the waypoint. The
-# waypoint terminates inbound HBONE from ztunnel so per-instance L7
+# waypoint terminates inbound HBONE from ztunnel so per-agent L7
 # AuthorizationPolicies can apply.
 #
 # Label discipline: the waypoint Pod inherits this resource's labels.

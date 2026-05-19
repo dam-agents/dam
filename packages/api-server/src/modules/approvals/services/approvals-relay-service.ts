@@ -15,10 +15,9 @@ import {
 const ACP_NATIVE_TTL_MS = 24 * 60 * 60 * 1000;
 
 export interface RecordAcpNativePendingInput {
-  instanceId: string;
+  agentId: string;
   sessionId: string;
   rpcId: number | string;
-  agentId: string;
   ownerSub: string;
   toolName: string;
   args: unknown;
@@ -46,7 +45,7 @@ export interface ApprovalsRelayService {
    *  and the update affects zero rows. */
   resolveAcpNativeFromInSession(rowId: string): Promise<void>;
   subscribeFrameInjects(
-    instanceId: string,
+    agentId: string,
     listener: (frame: string) => void,
   ): () => void;
 }
@@ -62,11 +61,10 @@ export function createApprovalsRelayService(
   return {
     async recordAcpNativePending(input) {
       if (input.sessionId.startsWith(SYNTHETIC_SESSION_PREFIX)) return null;
-      const rowId = acpNativeRowId(input.instanceId, input.rpcId);
+      const rowId = acpNativeRowId(input.agentId, input.rpcId);
       await deps.repo.insertPending({
         id: rowId,
         type: "acp_native",
-        instanceId: input.instanceId,
         agentId: input.agentId,
         ownerSub: input.ownerSub,
         sessionId: input.sessionId,
@@ -91,8 +89,8 @@ export function createApprovalsRelayService(
       });
     },
 
-    subscribeFrameInjects(instanceId, listener) {
-      return deps.bus.subscribe(injectChannelOf(instanceId), listener);
+    subscribeFrameInjects(agentId, listener) {
+      return deps.bus.subscribe(injectChannelOf(agentId), listener);
     },
   };
 }

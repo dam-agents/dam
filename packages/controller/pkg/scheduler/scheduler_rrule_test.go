@@ -23,7 +23,7 @@ func rruleScheduleCM(name, instanceName, specBody string) *corev1.ConfigMap {
 			Name: name, Namespace: "test-agents",
 			Labels: map[string]string{
 				"agent-platform.ai/type":     "agent-schedule",
-				"agent-platform.ai/instance": instanceName,
+				"agent-platform.ai/agent": instanceName,
 			},
 		},
 		Data: map[string]string{"spec.yaml": specBody},
@@ -39,9 +39,9 @@ func runningInstanceCM(name string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name, Namespace: "test-agents",
-			Labels: map[string]string{"agent-platform.ai/type": "agent-instance"},
+			Labels: map[string]string{"agent-platform.ai/type": "agent"},
 		},
-		Data: map[string]string{"spec.yaml": "version: agent-platform.ai/v1\ndesiredState: running\n"},
+		Data: map[string]string{"spec.yaml": "version: agent-platform.ai/v1\nimage: foo\ndesiredState: running\n"},
 	}
 }
 

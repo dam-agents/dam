@@ -32,7 +32,7 @@ export interface ApprovalsRepository {
     opts?: ListApprovalsRepoOpts,
   ): Promise<PendingApprovalRow[]>;
   listPendingForInstance(
-    instanceId: string,
+    agentId: string,
     opts?: ListApprovalsRepoOpts,
   ): Promise<PendingApprovalRow[]>;
   /** CAS update: only succeeds if the row is still `pending`. The single
@@ -71,7 +71,6 @@ export interface ApprovalsRepository {
 export interface NewPendingApproval {
   id: string;
   type: ApprovalType;
-  instanceId: string;
   agentId: string;
   ownerSub: string;
   sessionId: string | null;
@@ -82,7 +81,6 @@ export interface NewPendingApproval {
 interface RawPending {
   id: string;
   type: string;
-  instanceId: string;
   agentId: string;
   ownerSub: string;
   sessionId: string | null;
@@ -112,7 +110,6 @@ function toPendingRow(r: RawPending): PendingApprovalRow {
   return {
     id: r.id,
     type: r.type as ApprovalType,
-    instanceId: r.instanceId,
     agentId: r.agentId,
     ownerSub: r.ownerSub,
     sessionId: r.sessionId,
@@ -138,7 +135,6 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
         .values({
           id: row.id,
           type: row.type,
-          instanceId: row.instanceId,
           agentId: row.agentId,
           ownerSub: row.ownerSub,
           sessionId: row.sessionId,
@@ -163,7 +159,7 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
       // gates the candidate set; lookups here run after a status='pending'
       // + agent_id filter so the row count is small.
       const rows = await db.execute(sql`
-        SELECT id, type, instance_id AS "instanceId", agent_id AS "agentId",
+        SELECT id, type, agent_id AS "agentId", agent_id AS "agentId",
                owner_sub AS "ownerSub", session_id AS "sessionId", payload,
                created_at AS "createdAt", expires_at AS "expiresAt",
                resolved_at AS "resolvedAt", verdict, decided_by AS "decidedBy",
@@ -199,14 +195,14 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
       return rows.map((r) => toPendingRow(r as RawPending));
     },
 
-    async listPendingForInstance(instanceId, opts) {
+    async listPendingForInstance(agentId, opts) {
       const limit = clampLimit(opts?.limit);
       const where = opts?.status
         ? and(
-            eq(pendingApprovals.instanceId, instanceId),
+            eq(pendingApprovals.agentId, agentId),
             eq(pendingApprovals.status, opts.status),
           )
-        : eq(pendingApprovals.instanceId, instanceId);
+        : eq(pendingApprovals.agentId, agentId);
       const rows = await db
         .select()
         .from(pendingApprovals)

@@ -10,7 +10,7 @@ import type { ForkSpec } from "../../modules/forks/domain/fork.js";
 import { toForeignSub } from "../../modules/forks/domain/fork.js";
 
 const spec: ForkSpec = {
-  instanceId: "inst-abc",
+  agentId: "inst-abc",
   foreignSub: toForeignSub("kc-user-42"),
   sessionId: "sess-1",
 };
@@ -37,7 +37,7 @@ describe("buildForkConfigMap", () => {
 
   it("omits sessionId when not provided", () => {
     const withoutSession: ForkSpec = {
-      instanceId: "inst-abc",
+      agentId: "inst-abc",
       foreignSub: toForeignSub("kc-user-42"),
     };
     const cm = buildForkConfigMap({

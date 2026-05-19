@@ -38,8 +38,8 @@ export function ConfigurationPanel({
   onClearAllMcps,
   hasActiveSession,
   onResumeSession,
-  instanceId,
-  instanceRunning,
+  agentId,
+  agentRunning,
   onOpenFile,
 }: {
   mcpOptions: McpOption[];
@@ -50,8 +50,8 @@ export function ConfigurationPanel({
   hasActiveSession: boolean;
   /** Called when the user clicks a past run under a schedule card. */
   onResumeSession?: (sessionId: string) => void;
-  instanceId: string | null;
-  instanceRunning: boolean;
+  agentId: string | null;
+  agentRunning: boolean;
   onOpenFile?: (path: string) => void;
 }) {
   return (
@@ -77,8 +77,8 @@ export function ConfigurationPanel({
 
       <Section title="Skills">
         <SkillsPanel
-          instanceId={instanceId}
-          isRunning={instanceRunning}
+          agentId={agentId}
+          isRunning={agentRunning}
           onOpenFile={onOpenFile}
         />
       </Section>

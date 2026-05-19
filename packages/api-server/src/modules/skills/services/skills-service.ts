@@ -14,13 +14,12 @@ import type {
   UninstallSkillInput,
 } from "api-server-api";
 import type { AgentsRepository } from "../../agents/infrastructure/agents-repository.js";
-import type { InstancesRepository } from "../../instances/infrastructure/instances-repository.js";
 import type { TemplatesRepository } from "../../templates/infrastructure/templates-repository.js";
 import {
   SkillSourceProtectedError,
   type SkillsRepository,
 } from "../infrastructure/skills-repository.js";
-import type { InstanceSkillsRepository } from "../infrastructure/instance-skills-repository.js";
+import type { AgentSkillsRepository } from "../infrastructure/agent-skills-repository.js";
 import type { SkillSourceSeed } from "../infrastructure/seed-sources.js";
 import { seedToSkillSource } from "../infrastructure/seed-sources.js";
 import {
@@ -50,8 +49,7 @@ const DEFAULT_SKILL_PATHS = ["/home/agent/.agents/skills/"];
 
 export interface SkillsServiceDeps {
   repo: SkillsRepository;
-  instanceSkillsRepo: InstanceSkillsRepository;
-  instancesRepo: InstancesRepository;
+  agentSkillsRepo: AgentSkillsRepository;
   agentsRepo: AgentsRepository;
   templatesRepo: TemplatesRepository;
   /** System (cluster-admin-declared) Skill Sources, parsed once at api-server
@@ -104,11 +102,8 @@ async function resolveSkillPaths(
   return DEFAULT_SKILL_PATHS;
 }
 
-async function loadRunningInstance(
-  deps: SkillsServiceDeps,
-  instanceId: string,
-) {
-  const infra = await deps.instancesRepo.get(instanceId, deps.owner);
+async function loadRunningInstance(deps: SkillsServiceDeps, agentId: string) {
+  const infra = await deps.agentsRepo.get(agentId, deps.owner);
   if (!infra)
     throw new TRPCError({ code: "NOT_FOUND", message: "instance not found" });
   if (infra.currentState !== "running") {
@@ -142,11 +137,11 @@ function enrichSources(sources: SkillSource[]): SkillSource[] {
  *  hard dependency. */
 async function loadTemplateSources(
   deps: SkillsServiceDeps,
-  instanceId: string,
+  agentId: string,
 ): Promise<SkillSource[]> {
-  const instance = await deps.instancesRepo.get(instanceId, deps.owner);
+  const instance = await deps.agentsRepo.get(agentId, deps.owner);
   if (!instance) return [];
-  const agent = await deps.agentsRepo.get(instance.agentId, deps.owner);
+  const agent = await deps.agentsRepo.get(instance.id, deps.owner);
   if (!agent?.templateId) return [];
   const template = await deps.templatesRepo.get(agent.templateId);
   if (!template?.spec.skillSources?.length) return [];
@@ -251,11 +246,11 @@ function removeSkillRef(
 
 export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
   return {
-    async listSources(instanceId?: string) {
+    async listSources(agentId?: string) {
       const [owned, template] = await Promise.all([
         deps.repo.list(deps.owner),
-        instanceId
-          ? loadTemplateSources(deps, instanceId)
+        agentId
+          ? loadTemplateSources(deps, agentId)
           : Promise.resolve<SkillSource[]>([]),
       ]);
       const seeds = deps.seedSources.map(seedToSkillSource);
@@ -302,15 +297,15 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       // (the stale rows persist), which is confusing at best and wrong when
       // the user has manually deleted the skill files in the meantime.
       if (src) {
-        const instances = await deps.instancesRepo.list(deps.owner);
-        await deps.instanceSkillsRepo.removeBySource(
+        const instances = await deps.agentsRepo.list(deps.owner);
+        await deps.agentSkillsRepo.removeBySource(
           instances.map((i) => i.id),
           src.gitUrl,
         );
       }
     },
 
-    async listSkills(sourceId: string, instanceId?: string) {
+    async listSkills(sourceId: string, agentId?: string) {
       const src = await resolveSource(deps, sourceId);
       if (!src) {
         throw new TRPCError({
@@ -336,15 +331,15 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
 
       // Private/authenticated path: delegate to agent-runtime inside a
       // running instance pod, whose Envoy sidecar performs the token swap.
-      // Without an instanceId we can't target a pod — refuse with a clear
+      // Without an agentId we can't target a pod — refuse with a clear
       // message.
-      if (!instanceId) {
+      if (!agentId) {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
           message: "source is private; select an instance to scan it",
         });
       }
-      const infra = await deps.instancesRepo.get(instanceId, deps.owner);
+      const infra = await deps.agentsRepo.get(agentId, deps.owner);
       if (!infra)
         throw new TRPCError({
           code: "NOT_FOUND",
@@ -358,7 +353,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       }
       try {
         return await deps.scanSource(src.gitUrl, (gitUrl) =>
-          deps.runtimeClient.scan(instanceId, gitUrl),
+          deps.runtimeClient.scan(agentId, gitUrl),
         );
       } catch (err) {
         if (err instanceof AgentRuntimeUpstreamError) throw upstreamToTrpc(err);
@@ -367,12 +362,12 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     },
 
     async installSkill(input: InstallSkillInput) {
-      const infra = await loadRunningInstance(deps, input.instanceId);
-      const skillPaths = await resolveSkillPaths(deps, infra.agentId);
+      const infra = await loadRunningInstance(deps, input.agentId);
+      const skillPaths = await resolveSkillPaths(deps, infra.id);
 
       let result;
       try {
-        result = await deps.runtimeClient.install(input.instanceId, {
+        result = await deps.runtimeClient.install(input.agentId, {
           source: input.source,
           name: input.name,
           version: input.version,
@@ -394,10 +389,8 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         version: input.version,
         contentHash,
       };
-      await deps.instanceSkillsRepo.upsertSkill(input.instanceId, ref);
-      const current = await deps.instanceSkillsRepo.listSkills(
-        input.instanceId,
-      );
+      await deps.agentSkillsRepo.upsertSkill(input.agentId, ref);
+      const current = await deps.agentSkillsRepo.listSkills(input.agentId);
       return upsertSkillRef(
         current.filter(
           (s) => !(s.source === ref.source && s.name === ref.name),
@@ -407,21 +400,19 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     },
 
     async uninstallSkill(input: UninstallSkillInput) {
-      const infra = await loadRunningInstance(deps, input.instanceId);
-      const skillPaths = await resolveSkillPaths(deps, infra.agentId);
+      const infra = await loadRunningInstance(deps, input.agentId);
+      const skillPaths = await resolveSkillPaths(deps, infra.id);
 
-      await deps.runtimeClient.uninstall(input.instanceId, {
+      await deps.runtimeClient.uninstall(input.agentId, {
         name: input.name,
         skillPaths,
       });
 
-      await deps.instanceSkillsRepo.removeSkill(input.instanceId, {
+      await deps.agentSkillsRepo.removeSkill(input.agentId, {
         source: input.source,
         name: input.name,
       });
-      const current = await deps.instanceSkillsRepo.listSkills(
-        input.instanceId,
-      );
+      const current = await deps.agentSkillsRepo.listSkills(input.agentId);
       return removeSkillRef(current, {
         source: input.source,
         name: input.name,
@@ -433,8 +424,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         {
           owner: deps.owner,
           resolveSource: (id) => resolveSource(deps, id),
-          instances: deps.instancesRepo,
-          instanceSkills: deps.instanceSkillsRepo,
+          agentSkills: deps.agentSkillsRepo,
           agents: deps.agentsRepo,
           runtimeClient: deps.runtimeClient,
           brandName: deps.brandName,
@@ -459,20 +449,18 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       deps.invalidateScan(source.gitUrl);
     },
 
-    async listLocal(instanceId: string): Promise<LocalSkill[]> {
-      const infra = await deps.instancesRepo.get(instanceId, deps.owner);
+    async listLocal(agentId: string): Promise<LocalSkill[]> {
+      const infra = await deps.agentsRepo.get(agentId, deps.owner);
       if (!infra) return [];
       // No filesystem to read when the pod isn't running.
       if (infra.currentState !== "running") return [];
-      const skillPaths = await resolveSkillPaths(deps, infra.agentId);
-      const all = await deps.runtimeClient.listLocal(instanceId, skillPaths);
+      const skillPaths = await resolveSkillPaths(deps, infra.id);
+      const all = await deps.runtimeClient.listLocal(agentId, skillPaths);
       // Subtract anything already tracked as installed-from-remote (by directory
       // name). Matches behavior that the remote-installed entry is the canonical
       // one when names collide.
       const tracked = new Set(
-        (await deps.instanceSkillsRepo.listSkills(instanceId)).map(
-          (s) => s.name,
-        ),
+        (await deps.agentSkillsRepo.listSkills(agentId)).map((s) => s.name),
       );
       return all.filter((s) => !tracked.has(s.name));
     },
@@ -491,30 +479,30 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
      * the tracked refs as-is (no reconciliation) and an empty standalone
      * list. This avoids wrongly dropping rows during a restart.
      */
-    async getState(instanceId: string): Promise<SkillsState> {
-      const infra = await deps.instancesRepo.get(instanceId, deps.owner);
+    async getState(agentId: string): Promise<SkillsState> {
+      const infra = await deps.agentsRepo.get(agentId, deps.owner);
       if (!infra)
         return { installed: [], standalone: [], instancePublishes: [] };
       if (infra.currentState !== "running") {
         const [installed, instancePublishes] = await Promise.all([
-          deps.instanceSkillsRepo.listSkills(instanceId),
-          deps.instanceSkillsRepo.listPublishes(instanceId),
+          deps.agentSkillsRepo.listSkills(agentId),
+          deps.agentSkillsRepo.listPublishes(agentId),
         ]);
         return { installed, standalone: [], instancePublishes };
       }
 
-      const skillPaths = await resolveSkillPaths(deps, infra.agentId);
-      const local = await deps.runtimeClient.listLocal(instanceId, skillPaths);
+      const skillPaths = await resolveSkillPaths(deps, infra.id);
+      const local = await deps.runtimeClient.listLocal(agentId, skillPaths);
 
       const onDisk = new Set(local.map((s) => s.name));
 
       // Drop ghost rows whose directories no longer exist. Reconcile only
       // performs a write when something needs evicting.
-      await deps.instanceSkillsRepo.reconcile(instanceId, onDisk);
+      await deps.agentSkillsRepo.reconcile(agentId, onDisk);
 
       const [installed, instancePublishes] = await Promise.all([
-        deps.instanceSkillsRepo.listSkills(instanceId),
-        deps.instanceSkillsRepo.listPublishes(instanceId),
+        deps.agentSkillsRepo.listSkills(agentId),
+        deps.agentSkillsRepo.listPublishes(agentId),
       ]);
 
       const trackedNames = new Set(installed.map((s) => s.name));

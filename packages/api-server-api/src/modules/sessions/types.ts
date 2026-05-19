@@ -18,7 +18,7 @@ export const sessionModeSchema = z.enum(SessionMode);
 
 export interface SessionView {
   sessionId: string;
-  instanceId: string;
+  agentId: string;
   type: SessionType;
   mode: SessionMode;
   createdAt: string;
@@ -40,25 +40,21 @@ export type SessionResolution =
   | { kind: "session-not-found"; sessionId: string };
 
 export interface SessionsService {
-  list(instanceId: string, includeChannel?: boolean): Promise<SessionView[]>;
+  list(agentId: string, includeChannel?: boolean): Promise<SessionView[]>;
   create(
     sessionId: string,
-    instanceId: string,
+    agentId: string,
     mode: SessionMode,
     type?: SessionType,
     scheduleId?: string,
   ): Promise<void>;
-  setMode(
-    sessionId: string,
-    instanceId: string,
-    mode: SessionMode,
-  ): Promise<void>;
-  delete(sessionId: string, instanceId: string): Promise<void>;
+  setMode(sessionId: string, agentId: string, mode: SessionMode): Promise<void>;
+  delete(sessionId: string, agentId: string): Promise<void>;
   listByScheduleId(scheduleId: string): Promise<SessionView[]>;
   findByScheduleId(scheduleId: string): Promise<SessionView | null>;
   resetByScheduleId(scheduleId: string): Promise<void>;
   resolveTerminal(
-    instanceId: string,
+    agentId: string,
     strategy: TerminalStrategy,
     opts?: { reset?: boolean; force?: boolean },
   ): Promise<SessionResolution>;

@@ -1,7 +1,7 @@
 import type { CreateSecretInput, UpdateSecretInput } from "api-server-api";
 
 import { useStore } from "../../../store.js";
-import { useAgents } from "../../agents/api/queries.js";
+import { useAgentsList } from "../../agents/api/queries.js";
 import {
   useCreateSecret,
   useDeleteSecret,
@@ -22,7 +22,7 @@ import {
 export function useProviderActions() {
   const showConfirm = useStore((s) => s.showConfirm);
   const setView = useStore((s) => s.setView);
-  const { data: agents = [] } = useAgents();
+  const agents = useAgentsList();
   const createSecret = useCreateSecret();
   const updateSecret = useUpdateSecret();
   const deleteSecret = useDeleteSecret();

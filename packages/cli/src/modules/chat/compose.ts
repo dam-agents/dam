@@ -2,7 +2,7 @@ import { createInterface } from "node:readline";
 import { Command } from "commander";
 import type { CompatService, ConfigService } from "../cli/index.js";
 import type { TokenProvider } from "../auth/index.js";
-import type { InstanceService } from "../instance/index.js";
+import type { AgentService } from "../agent/index.js";
 import type { TrpcClient } from "../shared/trpc/trpc-client.js";
 import { buildChatCommand } from "./commands/chat.js";
 import { buildSessionListCommand } from "./commands/session-list.js";
@@ -14,13 +14,13 @@ export function composeChatModule({
   configService,
   tokenProvider,
   buildTrpc,
-  createInstanceService,
+  createAgentService,
 }: {
   compatService: CompatService;
   configService: ConfigService;
   tokenProvider: TokenProvider;
   buildTrpc: (host: string) => TrpcClient;
-  createInstanceService: (host: string) => InstanceService;
+  createAgentService: (host: string) => AgentService;
 }): { commands: ReadonlyArray<Command> } {
   const buildSessionsPort = (host: string) =>
     createSessionsPort({ trpc: buildTrpc(host) });
@@ -29,7 +29,7 @@ export function composeChatModule({
     compatService,
     configService,
     tokenProvider,
-    createInstanceService,
+    createAgentService,
     createSessionsPort: buildSessionsPort,
     confirmModeSwitch: () =>
       new Promise((resolve) => {
@@ -49,7 +49,7 @@ export function composeChatModule({
   });
 
   const sessionParent = new Command("session").description(
-    "Manage sessions for an Instance",
+    "Manage sessions for an Agent",
   );
   sessionParent.addCommand(buildSessionListCommand({ chatService }), {
     isDefault: true,

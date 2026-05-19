@@ -11,22 +11,22 @@ import { createPortal } from "react-dom";
 import { runAction } from "../../../lib/query-helpers.js";
 import { useStore } from "../../../store.js";
 
-function prefKey(instanceId: string, key: string) {
-  return `platform-pref:${instanceId}:${key}`;
+function prefKey(agentId: string, key: string) {
+  return `platform-pref:${agentId}:${key}`;
 }
 
-function savePreference(instanceId: string, key: string, value: string) {
+function savePreference(agentId: string, key: string, value: string) {
   try {
-    localStorage.setItem(prefKey(instanceId, key), value);
+    localStorage.setItem(prefKey(agentId, key), value);
   } catch {}
 }
 
-export function getSavedPreferences(instanceId: string): {
+export function getSavedPreferences(agentId: string): {
   model?: string;
   mode?: string;
   config: Record<string, string>;
 } {
-  const prefix = `platform-pref:${instanceId}:config:`;
+  const prefix = `platform-pref:${agentId}:config:`;
   const config: Record<string, string> = {};
   try {
     for (let i = 0; i < localStorage.length; i++) {
@@ -37,8 +37,8 @@ export function getSavedPreferences(instanceId: string): {
     }
   } catch {}
   return {
-    model: localStorage.getItem(prefKey(instanceId, "model")) ?? undefined,
-    mode: localStorage.getItem(prefKey(instanceId, "mode")) ?? undefined,
+    model: localStorage.getItem(prefKey(agentId, "model")) ?? undefined,
+    mode: localStorage.getItem(prefKey(agentId, "mode")) ?? undefined,
     config,
   };
 }
@@ -67,11 +67,11 @@ function shortModelLabel(model: {
 export function SessionConfigBar({
   ensureConnection,
   engagedSessionIdRef,
-  instanceId,
+  agentId,
 }: {
   ensureConnection: () => Promise<ClientSideConnection | null>;
   engagedSessionIdRef: React.RefObject<string | null>;
-  instanceId: string;
+  agentId: string;
 }) {
   const modes = useStore((s) => s.sessionModes);
   const models = useStore((s) => s.sessionModels);
@@ -147,7 +147,7 @@ export function SessionConfigBar({
   const setMode = (modeId: string) => {
     if (!modes) return;
     setSessionModes({ ...modes, currentModeId: modeId });
-    savePreference(instanceId, "mode", modeId);
+    savePreference(agentId, "mode", modeId);
     runAction(async () => {
       const conn = await ensureConnection();
       // Re-apply optimistic value — ensureConnection may have overwritten via captureSessionConfig
@@ -164,7 +164,7 @@ export function SessionConfigBar({
   const setModel = (modelId: string) => {
     if (!models) return;
     setSessionModels({ ...models, currentModelId: modelId });
-    savePreference(instanceId, "model", modelId);
+    savePreference(agentId, "model", modelId);
     runAction(async () => {
       const conn = await ensureConnection();
       // Re-apply optimistic value — ensureConnection may have overwritten via captureSessionConfig
@@ -188,7 +188,7 @@ export function SessionConfigBar({
       return { ...o, currentValue: value } as SessionConfigOption;
     });
     setSessionConfigOptions(updated);
-    savePreference(instanceId, `config:${opt.id}`, String(value));
+    savePreference(agentId, `config:${opt.id}`, String(value));
 
     runAction(async () => {
       const conn = await ensureConnection();

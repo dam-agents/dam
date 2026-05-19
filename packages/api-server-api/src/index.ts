@@ -16,26 +16,21 @@ export type {
 export type {
   Agent,
   AgentSpec,
+  AgentState,
   AgentsService,
   CreateAgentInput,
   UpdateAgentInput,
+  ConnectSlackError,
+  ConnectSlackResult,
+  Channel,
+  SlackChannel,
+  TelegramChannel,
+  ChannelConfig,
 } from "./modules/agents/types.js";
 export {
   PROTECTED_AGENT_ENV_NAMES,
   isProtectedAgentEnvName,
 } from "./modules/agents/types.js";
-
-export type {
-  Instance,
-  InstanceState,
-  Channel,
-  SlackChannel,
-  TelegramChannel,
-  ChannelConfig,
-  CreateInstanceInput,
-  UpdateInstanceInput,
-  InstancesService,
-} from "./modules/instances/types.js";
 
 export type {
   Schedule,

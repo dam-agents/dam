@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
-import { printServiceError } from "../../instance/commands/errors.js";
+import { printServiceError } from "../../agent/commands/errors.js";
 import { renderTable } from "../../shared/render-table.js";
 import type { TemplateService } from "../services/template-service.js";
 import {

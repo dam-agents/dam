@@ -2,7 +2,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
-import type { InstancesRepository } from "../../modules/instances/infrastructure/instances-repository.js";
+import type { AgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
 import {
   LAST_ACTIVITY_KEY,
   ACTIVE_SESSION_KEY,
@@ -16,14 +16,14 @@ export interface TerminalRelay {
     req: IncomingMessage,
     socket: Duplex,
     head: Buffer,
-    instanceId: string,
+    agentId: string,
   ): void;
   closeSession(sessionId: string): void;
 }
 
 export function createTerminalRelay(
   namespace: string,
-  repo: InstancesRepository,
+  repo: AgentsRepository,
   deps?: {
     getSessionMode?: (sessionId: string) => Promise<string | null>;
   },
@@ -53,7 +53,7 @@ export function createTerminalRelay(
     req: IncomingMessage,
     socket: Duplex,
     head: Buffer,
-    instanceId: string,
+    agentId: string,
   ) {
     const url = new URL(req.url!, `http://${req.headers.host}`);
     const sessionId = url.searchParams.get("sessionId") ?? "default";
@@ -107,17 +107,15 @@ export function createTerminalRelay(
       };
       client.on("message", buffer);
 
-      repo
-        .patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "true")
-        .catch(() => {});
+      repo.patchAnnotation(agentId, ACTIVE_SESSION_KEY, "true").catch(() => {});
 
       repo
-        .ensureReady(instanceId)
+        .ensureReady(agentId)
         .then(
           () =>
             new Promise<WebSocket>((resolve, reject) => {
               const ws = new WebSocket(
-                `ws://${podBaseUrl(instanceId, namespace)}/api/terminal?sessionId=${encodeURIComponent(sessionId)}${reset ? "&reset=1" : ""}`,
+                `ws://${podBaseUrl(agentId, namespace)}/api/terminal?sessionId=${encodeURIComponent(sessionId)}${reset ? "&reset=1" : ""}`,
               );
               ws.on("open", () => resolve(ws));
               ws.on("error", (err) => {
@@ -143,13 +141,13 @@ export function createTerminalRelay(
 
             const now = Date.now();
             if (
-              now - (lastActivity.get(instanceId) ?? 0) >=
+              now - (lastActivity.get(agentId) ?? 0) >=
               ACTIVITY_DEBOUNCE_MS
             ) {
-              lastActivity.set(instanceId, now);
+              lastActivity.set(agentId, now);
               repo
                 .patchAnnotation(
-                  instanceId,
+                  agentId,
                   LAST_ACTIVITY_KEY,
                   new Date().toISOString(),
                 )
@@ -184,7 +182,7 @@ export function createTerminalRelay(
             if (activeClients.get(sessionId) === client)
               activeClients.delete(sessionId);
             repo
-              .patchAnnotation(instanceId, ACTIVE_SESSION_KEY, "")
+              .patchAnnotation(agentId, ACTIVE_SESSION_KEY, "")
               .catch(() => {});
             if (upstream.readyState === WebSocket.OPEN) upstream.close();
           });

@@ -102,10 +102,10 @@ export const createSessionsSlice: StateCreator<
   },
 
   deleteSession: async (sessionId) => {
-    const instanceId = get().selectedInstance;
-    if (!instanceId) return;
+    const agentId = get().selectedAgent;
+    if (!agentId) return;
     const ok = await runAction(
-      () => api.sessions.delete.mutate({ sessionId, instanceId }),
+      () => api.sessions.delete.mutate({ sessionId, agentId }),
       "Failed to delete session",
     );
     if (ok === ACTION_FAILED) return;

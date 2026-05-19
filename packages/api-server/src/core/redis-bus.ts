@@ -4,7 +4,7 @@ export type BusListener = (payload: string) => void;
 
 /**
  * Generic Redis pub/sub primitive. Channel names belong to the consumer:
- * approvals use `approval:<id>`, the ACP relay uses `inject:<instanceId>`,
+ * approvals use `approval:<id>`, the ACP relay uses `inject:<agentId>`,
  * etc. The bus is on the signal path only — Postgres remains the source of
  * truth for any durable state (ADR-036).
  */

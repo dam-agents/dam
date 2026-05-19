@@ -23,7 +23,6 @@ function makeFakeRepo(): FakeRepo {
       rows.push({
         id: input.id,
         type: input.type,
-        instanceId: input.instanceId,
         agentId: input.agentId,
         ownerSub: input.ownerSub,
         sessionId: input.sessionId,
@@ -121,10 +120,8 @@ function makeFakeBus(): FakeBus {
 }
 
 const identityResolver = {
-  resolve: async (instanceId: string) =>
-    instanceId === "missing"
-      ? null
-      : { ownerSub: "user-1", agentId: "agent-1" },
+  resolve: async (agentId: string) =>
+    agentId === "missing" ? null : { ownerSub: "user-1", agentId: "agent-1" },
 };
 
 const noMatchRules = { match: async () => null };
@@ -154,7 +151,7 @@ describe("ext-authz gate", () => {
     });
 
     const verdict = await gate.gateRequest({
-      instanceId: "inst-1",
+      agentId: "inst-1",
       host: "api.x",
       method: "GET",
       path: "/",
@@ -177,7 +174,7 @@ describe("ext-authz gate", () => {
     });
 
     const verdict = await gate.gateRequest({
-      instanceId: "missing",
+      agentId: "missing",
       host: "x",
       method: "GET",
       path: "/",
@@ -199,7 +196,7 @@ describe("ext-authz gate", () => {
     });
 
     const inflight = gate.gateRequest({
-      instanceId: "inst-1",
+      agentId: "inst-1",
       host: "h",
       method: "GET",
       path: "/p",
@@ -230,7 +227,7 @@ describe("ext-authz gate", () => {
     });
 
     const inflight = gate.gateRequest({
-      instanceId: "inst-1",
+      agentId: "inst-1",
       host: "h",
       method: "GET",
       path: "/p",
@@ -259,7 +256,7 @@ describe("ext-authz gate", () => {
     });
 
     const first = gate.gateRequest({
-      instanceId: "inst-1",
+      agentId: "inst-1",
       host: "h",
       method: "GET",
       path: "/p",
@@ -271,7 +268,7 @@ describe("ext-authz gate", () => {
 
     // Retry from the agent CLI while the original row is still pending.
     const retry = gate.gateRequest({
-      instanceId: "inst-1",
+      agentId: "inst-1",
       host: "h",
       method: "GET",
       path: "/p",

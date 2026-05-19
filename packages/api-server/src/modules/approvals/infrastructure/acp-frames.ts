@@ -63,5 +63,5 @@ export function buildExtAuthzSynthFrame(input: SynthFrameInput): string {
 
 /** Redis channel pattern for fanning synth frames to the relay's clients. */
 export const INJECT_CHANNEL_PREFIX = "inject:";
-export const injectChannelOf = (instanceId: string): string =>
-  `${INJECT_CHANNEL_PREFIX}${instanceId}`;
+export const injectChannelOf = (agentId: string): string =>
+  `${INJECT_CHANNEL_PREFIX}${agentId}`;

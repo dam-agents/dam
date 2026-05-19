@@ -68,7 +68,7 @@ export function FilesPanel({
 }: {
   onOpenFile: (path: string) => void;
 }) {
-  const selectedInstance = useStore((s) => s.selectedInstance);
+  const selectedAgent = useStore((s) => s.selectedAgent);
   const openFilePath = useStore((s) => s.openFilePath);
   const setOpenFilePath = useStore((s) => s.setOpenFilePath);
 
@@ -79,9 +79,9 @@ export function FilesPanel({
     deleteEntry,
     uploadFiles,
     uploadBundle,
-  } = useFileMutations(selectedInstance);
+  } = useFileMutations(selectedAgent);
   const { data: openFile, error: openFileError } = useFileContentQuery(
-    selectedInstance,
+    selectedAgent,
     openFilePath,
   );
 

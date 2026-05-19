@@ -33,7 +33,7 @@ interface LiveConnection {
  * connection layer; they will move into useAcpConnection in a later step.
  */
 export function useAcpPrompt(
-  selectedInstance: string | null,
+  selectedAgent: string | null,
   ensureConnection: () => Promise<ClientSideConnection | null>,
   engagedSessionIdRef: React.MutableRefObject<string | null>,
   connectionRef: React.MutableRefObject<LiveConnection | null>,
@@ -49,7 +49,7 @@ export function useAcpPrompt(
     async (text: string, attachments?: Attachment[]) => {
       if (
         (!text && (!attachments || attachments.length === 0)) ||
-        !selectedInstance
+        !selectedAgent
       )
         return;
 
@@ -99,7 +99,7 @@ export function useAcpPrompt(
         const sid = engagedSessionIdRef.current;
         if (!sid) throw new Error("No active session");
         const promptBlocks = await buildPromptBlocks(
-          selectedInstance,
+          selectedAgent,
           sid,
           text,
           attachments,
@@ -136,7 +136,7 @@ export function useAcpPrompt(
       }
     },
     [
-      selectedInstance,
+      selectedAgent,
       ensureConnection,
       engagedSessionIdRef,
       addLog,

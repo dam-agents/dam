@@ -15,7 +15,7 @@ export type PromptBlock =
  *  behaviour (inline text resources and bogus `file:///name` URIs) left the
  *  agent with references to files it couldn't actually read. */
 export async function buildPromptBlocks(
-  instanceId: string,
+  agentId: string,
   sessionId: string,
   text: string,
   attachments: Attachment[] | undefined,
@@ -29,7 +29,7 @@ export async function buildPromptBlocks(
       }
       try {
         const { absolutePath } = await uploadMessageAttachment(
-          instanceId,
+          agentId,
           sessionId,
           {
             name: a.name,

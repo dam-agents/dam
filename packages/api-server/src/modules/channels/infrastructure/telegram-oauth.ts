@@ -10,10 +10,7 @@ const FLOW_TTL_MS = 10 * 60 * 1000;
 export function createTelegramOAuthRoutes(deps: {
   pendingFlows: Map<string, TelegramOAuthPending>;
   threads: TelegramThreadsRepo;
-  isInstanceOwner: (
-    instanceId: string,
-    keycloakSub: string,
-  ) => Promise<boolean>;
+  isAgentOwner: (agentId: string, keycloakSub: string) => Promise<boolean>;
   oauthConfig: KeycloakOAuthConfig;
 }) {
   const routes = new Hono();
@@ -53,7 +50,7 @@ export function createTelegramOAuthRoutes(deps: {
       return c.text("Token exchange failed. Send /login again.", 400);
     }
 
-    const isOwner = await deps.isInstanceOwner(
+    const isOwner = await deps.isAgentOwner(
       pending.instanceName,
       result.keycloakSub,
     );

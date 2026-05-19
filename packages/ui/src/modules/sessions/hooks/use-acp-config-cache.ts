@@ -11,8 +11,8 @@ import {
 } from "../../acp/types.js";
 import { getSavedPreferences } from "../components/session-config-popover.js";
 
-const cachedConfigKey = (instanceId: string) =>
-  `platform-cached-config:${instanceId}`;
+const cachedConfigKey = (agentId: string) =>
+  `platform-cached-config:${agentId}`;
 
 export interface AcpConfigCache {
   /** Persist a fresh session-config response into the store + localStorage. */
@@ -20,7 +20,7 @@ export interface AcpConfigCache {
   /** Apply incremental ACP `current_mode_update` / `config_option_update`
    *  notifications to the store. */
   handleConfigUpdate: (update: AcpUpdate) => void;
-  /** Replay the user's saved per-instance preferences into a freshly-created
+  /** Replay the user's saved per-agent preferences into a freshly-created
    *  session — sets model/mode and forwards each config option. */
   applySavedPreferences: (
     conn: ClientSideConnection,
@@ -30,9 +30,9 @@ export interface AcpConfigCache {
 }
 
 /**
- * Owns the per-instance config cache: store mirror, localStorage persistence,
+ * Owns the per-agent config cache: store mirror, localStorage persistence,
  * and the throwaway-session bootstrap that hydrates the cache when a fresh
- * UI loads on a running instance with no live session yet.
+ * UI loads on a running agent with no live session yet.
  *
  * Returns three callbacks the orchestrator weaves into the connection
  * lifecycle: `captureSessionConfig` after newSession/loadSession,
@@ -40,9 +40,9 @@ export interface AcpConfigCache {
  * once a new session is up.
  */
 export function useAcpConfigCache(
-  selectedInstance: string | null,
+  selectedAgent: string | null,
   sessionId: string | null,
-  instanceRunState: string | undefined,
+  agentRunState: string | undefined,
 ): AcpConfigCache {
   const setSessionModes = useStore((s) => s.setSessionModes);
   const setSessionModels = useStore((s) => s.setSessionModels);
@@ -53,10 +53,10 @@ export function useAcpConfigCache(
       setSessionModes(response.modes ?? null);
       setSessionModels(response.models ?? null);
       setSessionConfigOptions(response.configOptions ?? []);
-      if (selectedInstance) {
+      if (selectedAgent) {
         try {
           localStorage.setItem(
-            cachedConfigKey(selectedInstance),
+            cachedConfigKey(selectedAgent),
             JSON.stringify({
               modes: response.modes ?? null,
               models: response.models ?? null,
@@ -66,12 +66,7 @@ export function useAcpConfigCache(
         } catch {}
       }
     },
-    [
-      selectedInstance,
-      setSessionModes,
-      setSessionModels,
-      setSessionConfigOptions,
-    ],
+    [selectedAgent, setSessionModes, setSessionModels, setSessionConfigOptions],
   );
 
   const handleConfigUpdate = useCallback(
@@ -93,8 +88,8 @@ export function useAcpConfigCache(
       sid: string,
       sessionResponse: SessionConfigPayload,
     ) => {
-      if (!selectedInstance) return;
-      const prefs = getSavedPreferences(selectedInstance);
+      if (!selectedAgent) return;
+      const prefs = getSavedPreferences(selectedAgent);
       const calls: Promise<unknown>[] = [];
       if (
         prefs.model &&
@@ -144,15 +139,15 @@ export function useAcpConfigCache(
       }
       if (calls.length) await Promise.all(calls);
     },
-    [selectedInstance, setSessionModes, setSessionModels],
+    [selectedAgent, setSessionModes, setSessionModels],
   );
 
   // Hydrate from localStorage cache, or fetch via a throwaway session if the
-  // cache is empty and the instance is running. Skipped while a real session
+  // cache is empty and the agent is running. Skipped while a real session
   // is active — that path captures config via captureSessionConfig.
   useEffect(() => {
-    if (!selectedInstance || sessionId) return;
-    const prefs = getSavedPreferences(selectedInstance);
+    if (!selectedAgent || sessionId) return;
+    const prefs = getSavedPreferences(selectedAgent);
 
     const applyConfig = (data: SessionConfigPayload) => {
       if (data.modes) {
@@ -178,7 +173,7 @@ export function useAcpConfigCache(
     };
 
     try {
-      const raw = localStorage.getItem(cachedConfigKey(selectedInstance));
+      const raw = localStorage.getItem(cachedConfigKey(selectedAgent));
       if (raw) {
         const parsed = sessionConfigPayloadSchema.safeParse(JSON.parse(raw));
         if (parsed.success) {
@@ -197,14 +192,14 @@ export function useAcpConfigCache(
       );
     }
 
-    if (instanceRunState !== "running") return;
+    if (agentRunState !== "running") return;
     let cancelled = false;
 
     (async () => {
       for (let attempt = 0; attempt < 3 && !cancelled; attempt++) {
         try {
           const { connection, ws } = await openConnection(
-            selectedInstance,
+            selectedAgent,
             () => {},
           );
           if (cancelled) {
@@ -232,7 +227,7 @@ export function useAcpConfigCache(
           };
           try {
             localStorage.setItem(
-              cachedConfigKey(selectedInstance),
+              cachedConfigKey(selectedAgent),
               JSON.stringify(data),
             );
           } catch {}
@@ -248,9 +243,9 @@ export function useAcpConfigCache(
       cancelled = true;
     };
   }, [
-    selectedInstance,
+    selectedAgent,
     sessionId,
-    instanceRunState,
+    agentRunState,
     setSessionModes,
     setSessionModels,
     setSessionConfigOptions,

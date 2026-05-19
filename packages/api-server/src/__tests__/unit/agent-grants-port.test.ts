@@ -9,7 +9,7 @@ import {
   LABEL_AGENT_REF,
   LABEL_OWNER,
   LABEL_TYPE,
-  TYPE_INSTANCE,
+  TYPE_AGENT,
 } from "../../modules/agents/infrastructure/labels.js";
 
 function instanceCM(
@@ -21,7 +21,7 @@ function instanceCM(
     metadata: {
       name,
       labels: {
-        [LABEL_TYPE]: TYPE_INSTANCE,
+        [LABEL_TYPE]: TYPE_AGENT,
         [LABEL_OWNER]: "owner-1",
         [LABEL_AGENT_REF]: agentRef,
       },
@@ -223,10 +223,6 @@ describe("createAgentGrantsPort.listAgentsGrantedSecret", () => {
     const result = await port.listAgentsGrantedSecret("secret-x");
     expect(result).toHaveLength(1);
     expect(result[0]!.agentId).toBe("agent-a");
-    expect(result[0]!.instanceCmNames.sort()).toEqual([
-      "a1-inst-1",
-      "a1-inst-2",
-    ]);
     expect(result[0]!.grantedSecretIds.sort()).toEqual([
       "secret-x",
       "secret-y",
