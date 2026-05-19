@@ -197,4 +197,3 @@ export type { Brand } from "./modules/brand/types.js";
 // Auth config
 export { authConfigSchema } from "./modules/auth/config.js";
 export type { AuthConfig } from "./modules/auth/config.js";
-
