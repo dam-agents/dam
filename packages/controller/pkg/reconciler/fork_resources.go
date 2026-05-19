@@ -279,7 +279,7 @@ func BuildForkAgentJob(
 		// flows through the fork *gateway*'s SPIFFE principal
 		// (gateway is still in mesh), not the agent's; the per-fork
 		// harness AuthorizationPolicy admits the fork SA only to
-		// `/api/instances/<parent>/mcp`.
+		// `/api/agents/<parent>/mcp`.
 		ServiceAccountName:            forkName,
 		RestartPolicy:                 corev1.RestartPolicyNever,
 		TerminationGracePeriodSeconds: &base.TerminationGracePeriod,

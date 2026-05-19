@@ -182,7 +182,7 @@ export function createSessionsService(deps: {
         return { kind: "session-not-found", sessionId: "" };
 
       function terminalPath(sid: string) {
-        return `/api/instances/${encodeURIComponent(agentId)}/terminal?sessionId=${encodeURIComponent(sid)}${opts?.reset ? "&reset=1" : ""}`;
+        return `/api/agents/${encodeURIComponent(agentId)}/terminal?sessionId=${encodeURIComponent(sid)}${opts?.reset ? "&reset=1" : ""}`;
       }
 
       if (strategy.kind === "new") {

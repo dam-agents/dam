@@ -65,7 +65,7 @@ async function postImport(
     new Blob([new Uint8Array(bundle)], { type: "application/gzip" }),
     "bundle.tar.gz",
   );
-  const res = await fetch(`${API_BASE}/api/instances/${INSTANCE_ID}/import`, {
+  const res = await fetch(`${API_BASE}/api/agents/${INSTANCE_ID}/import`, {
     method: "POST",
     headers: { Authorization: `Bearer ${TOKEN}` },
     body: form,
@@ -75,7 +75,7 @@ async function postImport(
 
 async function readFile(path: string): Promise<string | null> {
   const res = await fetch(
-    `${API_BASE}/api/instances/${INSTANCE_ID}/trpc/files.read?input=${encodeURIComponent(JSON.stringify({ path }))}`,
+    `${API_BASE}/api/agents/${INSTANCE_ID}/trpc/files.read?input=${encodeURIComponent(JSON.stringify({ path }))}`,
     { headers: { Authorization: `Bearer ${TOKEN}` } },
   );
   const text = await res.text();

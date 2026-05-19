@@ -33,12 +33,12 @@ export function createHarnessRouter(deps: {
 }) {
   const app = new Hono();
 
-  // ADR-041: trigger endpoint moved under /api/instances/:id/* so it falls
+  // ADR-041: trigger endpoint moved under /api/agents/:id/* so it falls
   // under the same per-instance AuthorizationPolicy as MCP and pod-files.
   // The waypoint enforces principal == URL :id; the body's `agentId`
   // field is preserved for compatibility but ignored — the URL is the
   // source of truth.
-  app.post("/api/instances/:id/internal/trigger", async (c) => {
+  app.post("/api/agents/:id/internal/trigger", async (c) => {
     const agentId = c.req.param("id")!;
     const body = await c.req.json<TriggerRequest>();
     if (!body.schedule || !body.task) {

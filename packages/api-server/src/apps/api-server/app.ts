@@ -655,7 +655,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   server.on("upgrade", async (req, socket, head) => {
     const url = new URL(req.url!, `http://${req.headers.host}`);
     const match = url.pathname.match(
-      /^\/api\/instances\/([^/]+)\/(acp|terminal)$/,
+      /^\/api\/agents\/([^/]+)\/(acp|terminal)$/,
     );
     if (!match) {
       socket.destroy();
