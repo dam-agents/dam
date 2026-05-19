@@ -5,7 +5,7 @@ import { SessionMode } from "../sessions/types.js";
 // --- platform/turnEnded ----------------------------------------------------
 
 export const platformTurnEndedParamsSchema = z.object({
-  sessionId: z.string(),
+  sessionId: z.string().min(1),
 });
 export type PlatformTurnEndedParams = z.infer<
   typeof platformTurnEndedParamsSchema
@@ -29,7 +29,7 @@ export function buildPlatformTurnEndedNotification(
 // --- platform/sessionModeChanged ------------------------------------------
 
 export const platformSessionModeChangedParamsSchema = z.object({
-  sessionId: z.string(),
+  sessionId: z.string().min(1),
   mode: z.enum([SessionMode.Chat, SessionMode.Terminal]),
 });
 export type PlatformSessionModeChangedParams = z.infer<
