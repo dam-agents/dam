@@ -4,7 +4,11 @@ import { useCallback, useEffect } from "react";
 
 import { useStore } from "../../../store.js";
 import { openConnection } from "../../acp/acp.js";
-import type { AcpUpdate, SessionConfigPayload } from "../../acp/types.js";
+import {
+  type AcpUpdate,
+  type SessionConfigPayload,
+  sessionConfigPayloadSchema,
+} from "../../acp/types.js";
 import { getSavedPreferences } from "../components/session-config-popover.js";
 
 const cachedConfigKey = (instanceId: string) =>
@@ -176,10 +180,22 @@ export function useAcpConfigCache(
     try {
       const raw = localStorage.getItem(cachedConfigKey(selectedInstance));
       if (raw) {
-        applyConfig(JSON.parse(raw));
-        return;
+        const parsed = sessionConfigPayloadSchema.safeParse(JSON.parse(raw));
+        if (parsed.success) {
+          applyConfig(parsed.data);
+          return;
+        }
+        console.warn(
+          "[acp-config-cache] schema mismatch on cached session config, will refetch:",
+          parsed.error.issues,
+        );
       }
-    } catch {}
+    } catch (err) {
+      console.warn(
+        "[acp-config-cache] could not JSON.parse cached session config, will refetch:",
+        err,
+      );
+    }
 
     if (instanceRunState !== "running") return;
     let cancelled = false;
