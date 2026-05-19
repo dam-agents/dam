@@ -129,7 +129,8 @@ export function createOAuthRefreshService(deps: {
     ((level, msg, data) => {
       // Stable token (`oauth-refresh`) so log scrapers can dashboard the loop
       // without depending on free-form text.
-      const line = `[oauth-refresh] ${msg}` + (data ? ` ${JSON.stringify(data)}` : "");
+      const line =
+        `[oauth-refresh] ${msg}` + (data ? ` ${JSON.stringify(data)}` : "");
       if (level === "error") console.error(line);
       else if (level === "warn") console.warn(line);
       else process.stderr.write(line + "\n");
@@ -204,7 +205,8 @@ export function createOAuthRefreshService(deps: {
       refresh_token: tokens.refreshToken,
       client_id: metadata.clientId,
     });
-    if (metadata.clientSecret) params.set("client_secret", metadata.clientSecret);
+    if (metadata.clientSecret)
+      params.set("client_secret", metadata.clientSecret);
 
     const res = await fetchImpl(metadata.tokenUrl, {
       method: "POST",
@@ -222,7 +224,10 @@ export function createOAuthRefreshService(deps: {
     });
 
     const bodyText = await res.text();
-    const parsed = parseTokenEndpointBody(bodyText, res.headers.get("content-type"));
+    const parsed = parseTokenEndpointBody(
+      bodyText,
+      res.headers.get("content-type"),
+    );
 
     // GitHub returns HTTP 200 with `{error: …}` (or `error=…` form-encoded)
     // when the refresh token is bad. Treat as a hard failure regardless of
@@ -241,8 +246,12 @@ export function createOAuthRefreshService(deps: {
       return;
     }
 
-    if (res.ok && typeof parsed.access_token === "string" && parsed.access_token.length > 0) {
-      const data = parsed as TokenEndpointSuccess;
+    if (
+      res.ok &&
+      typeof parsed.access_token === "string" &&
+      parsed.access_token.length > 0
+    ) {
+      const data = parsed as unknown as TokenEndpointSuccess;
       const expiresAt = data.expires_in
         ? Math.floor(now() / 1000) + data.expires_in
         : undefined;

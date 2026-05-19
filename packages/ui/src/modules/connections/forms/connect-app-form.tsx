@@ -3,7 +3,10 @@ import { useRef, useState } from "react";
 
 import { Modal } from "../../../components/modal.js";
 import { useStore } from "../../../store.js";
-import { discoverOAuthEndpoints, type OAuthAppDescriptor } from "../api/fetchers.js";
+import {
+  discoverOAuthEndpoints,
+  type OAuthAppDescriptor,
+} from "../api/fetchers.js";
 import { useStartAppOAuth } from "../api/mutations.js";
 
 const INPUT_CLASS =
@@ -14,7 +17,11 @@ function discoveryHelperText(
   appName: string,
 ) {
   if (discovery.state === "loading") {
-    return <span className="text-[12px] text-text-muted">Looking up issuer metadata…</span>;
+    return (
+      <span className="text-[12px] text-text-muted">
+        Looking up issuer metadata…
+      </span>
+    );
   }
   if (discovery.state === "ok") {
     return (
@@ -45,7 +52,9 @@ function CallbackUrlField({ url }: { url: string }) {
   };
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="text-[13px] font-semibold text-text">Callback URL</label>
+      <label className="text-[13px] font-semibold text-text">
+        Callback URL
+      </label>
       <div className="flex items-center gap-2">
         <code className="flex-1 h-10 rounded-lg border-2 border-border-light bg-bg px-4 flex items-center text-[13px] font-mono text-text-secondary truncate">
           {url}
@@ -56,11 +65,16 @@ function CallbackUrlField({ url }: { url: string }) {
           className="btn-brutal h-10 w-10 rounded-lg border-2 border-border bg-surface flex items-center justify-center text-text-secondary hover:text-accent hover:border-accent shadow-brutal-sm"
           title="Copy callback URL"
         >
-          {copied ? <Check size={14} className="text-success" /> : <Copy size={14} />}
+          {copied ? (
+            <Check size={14} className="text-success" />
+          ) : (
+            <Copy size={14} />
+          )}
         </button>
       </div>
       <span className="text-[12px] text-text-muted">
-        Paste this exact URL into your OAuth app's Authorization callback / redirect URI field.
+        Paste this exact URL into your OAuth app's Authorization callback /
+        redirect URI field.
       </span>
     </div>
   );
@@ -93,7 +107,9 @@ export function ConnectAppForm({ app, onCancel }: Props) {
   // stored fallback (family creds, admin defaults) and hide behind the
   // override panel; `optional` fields have no fallback and stay visible
   // always.
-  const visibleInputs = app.inputs.filter((f) => !f.overridable || showOverride);
+  const visibleInputs = app.inputs.filter(
+    (f) => !f.overridable || showOverride,
+  );
   const allFilled = app.inputs
     .filter((field) => !field.overridable && !field.optional)
     .every((field) => (values[field.name] ?? "").trim().length > 0);
@@ -157,7 +173,9 @@ export function ConnectAppForm({ app, onCancel }: Props) {
     //    default.
     const input = Object.fromEntries(
       app.inputs
-        .map((field) => [field.name, (values[field.name] ?? "").trim()] as const)
+        .map(
+          (field) => [field.name, (values[field.name] ?? "").trim()] as const,
+        )
         .filter(([, v], i) => {
           const f = app.inputs[i]!;
           if (f.optional) return v.length > 0;
@@ -191,7 +209,9 @@ export function ConnectAppForm({ app, onCancel }: Props) {
          and the inner area scroll when content overflows; the footer below
          stays pinned. */}
       <div className="min-h-0 flex-1 overflow-y-auto flex flex-col gap-5 p-5 md:p-7">
-        <h2 className="text-[20px] font-bold text-text">Connect {app.displayName}</h2>
+        <h2 className="text-[20px] font-bold text-text">
+          Connect {app.displayName}
+        </h2>
         <p className="text-[13px] text-text-secondary">{app.description}</p>
         {app.registrationUrl && !usingDefaultApp && (
           <a
@@ -207,15 +227,17 @@ export function ConnectAppForm({ app, onCancel }: Props) {
         {app.defaultsApplied && (
           <div className="rounded-lg border-2 border-success/30 bg-success/5 px-4 py-3 text-[12px] text-text-secondary">
             <div>
-              Connecting to the platform's pre-configured {app.displayName}{" "}
-              app — no setup required.
+              Connecting to the platform's pre-configured {app.displayName} app
+              — no setup required.
             </div>
             <button
               type="button"
               className="mt-1.5 text-[12px] font-semibold text-accent hover:underline"
               onClick={() => setShowOverride((v) => !v)}
             >
-              {showOverride ? "Use the platform's app instead" : "Use a different app"}
+              {showOverride
+                ? "Use the platform's app instead"
+                : "Use a different app"}
             </button>
           </div>
         )}
@@ -230,19 +252,24 @@ export function ConnectAppForm({ app, onCancel }: Props) {
               className="mt-1.5 text-[12px] font-semibold text-accent hover:underline"
               onClick={() => setShowOverride((v) => !v)}
             >
-              {showOverride ? "Use stored credentials instead" : "Use different credentials"}
+              {showOverride
+                ? "Use stored credentials instead"
+                : "Use different credentials"}
             </button>
           </div>
         )}
         {visibleInputs.map((field) => {
           const isDiscoveryHostField = app.discoverFromHostField === field.name;
           const helperOverride =
-            isDiscoveryHostField && discovery.host === (values[field.name] ?? "").trim()
+            isDiscoveryHostField &&
+            discovery.host === (values[field.name] ?? "").trim()
               ? discoveryHelperText(discovery, app.displayName)
               : null;
           return (
             <div key={field.name} className="flex flex-col gap-1.5">
-              <label className="text-[13px] font-semibold text-text">{field.label}</label>
+              <label className="text-[13px] font-semibold text-text">
+                {field.label}
+              </label>
               <input
                 type={field.secret ? "password" : "text"}
                 className={INPUT_CLASS}
@@ -261,9 +288,12 @@ export function ConnectAppForm({ app, onCancel }: Props) {
                 autoComplete="off"
                 autoFocus={field === visibleInputs[0]}
               />
-              {helperOverride ?? (field.helper && (
-                <span className="text-[12px] text-text-muted">{field.helper}</span>
-              ))}
+              {helperOverride ??
+                (field.helper && (
+                  <span className="text-[12px] text-text-muted">
+                    {field.helper}
+                  </span>
+                ))}
             </div>
           );
         })}

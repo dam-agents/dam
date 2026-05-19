@@ -90,32 +90,38 @@ export function AgentEgressEditor({
   currentPreset?: EgressPreset | null;
   staged?: StagedNetworkAccessController;
 }) {
-  const { data: serverRules = EMPTY, isLoading } = useEgressRulesForAgent(agentId);
+  const { data: serverRules = EMPTY, isLoading } =
+    useEgressRulesForAgent(agentId);
   const { data: trustedHosts = EMPTY_HOSTS } = useTrustedHosts();
   const createRule = useCreateEgressRule();
   const revokeRule = useRevokeEgressRule();
   const applyPreset = useApplyEgressPreset();
   const [draft, setDraft] = useState<AddRuleDraft>(EMPTY_DRAFT);
-  const [livePreset, setLivePreset] = useState<EgressPreset>(currentPreset ?? "trusted");
+  const [livePreset, setLivePreset] = useState<EgressPreset>(
+    currentPreset ?? "trusted",
+  );
 
   const stagedMode = staged !== undefined;
 
   // Path-specific rules need MITM, which means the controller has to
   // re-issue the leaf cert and roll the agent pod. The L4 (host-only) path
   // is a pure DB write — no roll. Warn the user so they own the timing.
-  const draftIsPathSpecific = draft.method !== "*" || draft.pathPattern.trim() !== "*";
+  const draftIsPathSpecific =
+    draft.method !== "*" || draft.pathPattern.trim() !== "*";
   const draftRequiresRestart =
-    draft.host.trim().length > 0
-    && draftIsPathSpecific
-    && !serverRules.some(
-      (r) => r.host === draft.host.trim() && (r.method !== "*" || r.pathPattern !== "*"),
+    draft.host.trim().length > 0 &&
+    draftIsPathSpecific &&
+    !serverRules.some(
+      (r) =>
+        r.host === draft.host.trim() &&
+        (r.method !== "*" || r.pathPattern !== "*"),
     );
 
   const canAdd =
-    draft.host.trim().length > 0
-    && draft.method.trim().length > 0
-    && draft.pathPattern.trim().length > 0
-    && !createRule.isPending;
+    draft.host.trim().length > 0 &&
+    draft.method.trim().length > 0 &&
+    draft.pathPattern.trim().length > 0 &&
+    !createRule.isPending;
 
   const onAddRule = () => {
     if (!canAdd) return;
@@ -133,11 +139,12 @@ export function AgentEgressEditor({
       return;
     }
     if (
-      draftRequiresRestart
-      && !window.confirm(
+      draftRequiresRestart &&
+      !window.confirm(
         `Saving this rule will restart the agent (~5–15s) so Envoy can MITM "${next.host}" for path-level enforcement. Continue?`,
       )
-    ) return;
+    )
+      return;
     createRule.mutate(
       { agentId, ...next },
       { onSuccess: () => setDraft(EMPTY_DRAFT) },
@@ -164,11 +171,12 @@ export function AgentEgressEditor({
 
   const onApplyPresetLive = () => {
     if (
-      livePreset === "all"
-      && !window.confirm(
+      livePreset === "all" &&
+      !window.confirm(
         "Allow everything is a development escape hatch. Are you sure? You can still narrow with deny rules below.",
       )
-    ) return;
+    )
+      return;
     applyPreset.mutate({ agentId, preset: livePreset });
   };
 
@@ -181,7 +189,7 @@ export function AgentEgressEditor({
   };
 
   const dropdownValue = stagedMode
-    ? staged.preset ?? currentPreset ?? "trusted"
+    ? (staged.preset ?? currentPreset ?? "trusted")
     : livePreset;
   const stagedAddCount = stagedMode ? staged.pendingAdds.length : 0;
   const stagedDeleteCount = stagedMode ? staged.pendingDeletes.size : 0;
@@ -206,7 +214,10 @@ export function AgentEgressEditor({
         sourceBadge: `from ${g.label}`,
       }))
     : [];
-  const previewRows: PreviewRow[] = [...presetPreviewRows, ...connectionGrantPreviews];
+  const previewRows: PreviewRow[] = [
+    ...presetPreviewRows,
+    ...connectionGrantPreviews,
+  ];
 
   return (
     <div className="flex flex-col gap-4">
@@ -227,7 +238,9 @@ export function AgentEgressEditor({
             onChange={(e) => onPresetSelect(e.target.value as EgressPreset)}
             className="h-7 px-2 rounded border border-border-light bg-bg text-[12px]"
           >
-            <option value="trusted">Trusted defaults (npm, PyPI, GitHub, Anthropic, …)</option>
+            <option value="trusted">
+              Trusted defaults (npm, PyPI, GitHub, Anthropic, …)
+            </option>
             <option value="none">Strict default-deny (no rules added)</option>
             <option value="all">Allow everything (development only)</option>
           </select>
@@ -264,18 +277,30 @@ export function AgentEgressEditor({
           </Field>
           <Field label="Method" widthClass="w-[100px]">
             <select
-              value={ALL_METHODS.includes(draft.method as (typeof ALL_METHODS)[number]) || draft.method === "*" ? draft.method : "*"}
+              value={
+                ALL_METHODS.includes(
+                  draft.method as (typeof ALL_METHODS)[number],
+                ) || draft.method === "*"
+                  ? draft.method
+                  : "*"
+              }
               onChange={(e) => setDraft({ ...draft, method: e.target.value })}
               className="w-full h-7 px-2 rounded border border-border-light bg-bg text-[12px]"
             >
               <option value="*">* (any)</option>
-              {ALL_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+              {ALL_METHODS.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
             </select>
           </Field>
           <Field label="Path" widthClass="min-w-[160px] flex-1">
             <input
               value={draft.pathPattern}
-              onChange={(e) => setDraft({ ...draft, pathPattern: e.target.value })}
+              onChange={(e) =>
+                setDraft({ ...draft, pathPattern: e.target.value })
+              }
               onKeyDown={onInputKeyDown}
               placeholder="*  or  /v1/messages*"
               className="w-full h-7 px-2 rounded border border-border-light bg-bg text-[12px] font-mono"
@@ -284,7 +309,12 @@ export function AgentEgressEditor({
           <Field label="Verdict" widthClass="w-[100px]">
             <select
               value={draft.verdict}
-              onChange={(e) => setDraft({ ...draft, verdict: e.target.value as "allow" | "deny" })}
+              onChange={(e) =>
+                setDraft({
+                  ...draft,
+                  verdict: e.target.value as "allow" | "deny",
+                })
+              }
               className="w-full h-7 px-2 rounded border border-border-light bg-bg text-[12px]"
             >
               <option value="allow">allow</option>
@@ -310,7 +340,9 @@ export function AgentEgressEditor({
 
         {isLoading ? (
           <p className="px-4 py-5 text-[12px] text-text-muted">loading…</p>
-        ) : serverRules.length === 0 && stagedAddCount === 0 && previewRows.length === 0 ? (
+        ) : serverRules.length === 0 &&
+          stagedAddCount === 0 &&
+          previewRows.length === 0 ? (
           <p className="px-4 py-5 text-[12px] text-text-muted">
             No rules yet. Every outbound request will surface in the inbox.
           </p>
@@ -318,14 +350,19 @@ export function AgentEgressEditor({
           <ul className="flex flex-col">
             {serverRules.map((r) => {
               const userDelete = stagedMode && staged.pendingDeletes.has(r.id);
-              const presetSweep = presetPending && r.source.startsWith("preset:");
+              const presetSweep =
+                presetPending && r.source.startsWith("preset:");
               const connId = r.source.startsWith("connection:")
                 ? r.source.slice("connection:".length)
                 : null;
               const connectionSweep =
-                stagedMode && connId !== null && staged.pendingConnectionRevokes.has(connId);
+                stagedMode &&
+                connId !== null &&
+                staged.pendingConnectionRevokes.has(connId);
               const sourceLabelOverride =
-                connId !== null && stagedMode && staged.connectionLabels.has(connId)
+                connId !== null &&
+                stagedMode &&
+                staged.connectionLabels.has(connId)
                   ? `from ${staged.connectionLabels.get(connId)!}`
                   : null;
               return (
@@ -346,24 +383,32 @@ export function AgentEgressEditor({
             {previewRows.map((p) => (
               <PreviewPresetRow key={p.key} row={p} />
             ))}
-            {stagedMode && staged.pendingAdds.map((a) => (
-              <PendingAddRow
-                key={a.tempId}
-                add={a}
-                onCancel={() => staged.removePendingAdd(a.tempId)}
-              />
-            ))}
+            {stagedMode &&
+              staged.pendingAdds.map((a) => (
+                <PendingAddRow
+                  key={a.tempId}
+                  add={a}
+                  onCancel={() => staged.removePendingAdd(a.tempId)}
+                />
+              ))}
           </ul>
         )}
-        {stagedMode && (stagedAddCount > 0 || stagedDeleteCount > 0 || presetPending) && (
-          <p className="px-3 py-2 text-[11px] text-text-muted border-t border-border-light bg-bg/40">
-            Pending: {[
-              presetPending && `apply preset ${staged.preset}`,
-              stagedAddCount > 0 && `${stagedAddCount} new rule${stagedAddCount === 1 ? "" : "s"}`,
-              stagedDeleteCount > 0 && `${stagedDeleteCount} delete${stagedDeleteCount === 1 ? "" : "s"}`,
-            ].filter(Boolean).join(" · ")}. Save to commit.
-          </p>
-        )}
+        {stagedMode &&
+          (stagedAddCount > 0 || stagedDeleteCount > 0 || presetPending) && (
+            <p className="px-3 py-2 text-[11px] text-text-muted border-t border-border-light bg-bg/40">
+              Pending:{" "}
+              {[
+                presetPending && `apply preset ${staged.preset}`,
+                stagedAddCount > 0 &&
+                  `${stagedAddCount} new rule${stagedAddCount === 1 ? "" : "s"}`,
+                stagedDeleteCount > 0 &&
+                  `${stagedDeleteCount} delete${stagedDeleteCount === 1 ? "" : "s"}`,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+              . Save to commit.
+            </p>
+          )}
       </div>
     </div>
   );
@@ -380,7 +425,9 @@ function Field({
 }) {
   return (
     <label className={`flex flex-col gap-1 ${widthClass}`}>
-      <span className="text-[10px] uppercase tracking-wider text-text-muted">{label}</span>
+      <span className="text-[10px] uppercase tracking-wider text-text-muted">
+        {label}
+      </span>
       {children}
     </label>
   );
@@ -416,13 +463,21 @@ function RuleRow({
   const sourceLabel = sourceLabelOverride ?? formatSource(rule.source);
   const dim = pendingDelete ? "opacity-40 line-through" : "";
   return (
-    <li className={`border-b border-border-light px-3 py-2 flex items-center gap-2 text-[12px] ${dim}`}>
-      <span className={`uppercase tracking-wider text-[10px] rounded border px-1.5 py-0.5 ${verdictTone}`}>
+    <li
+      className={`border-b border-border-light px-3 py-2 flex items-center gap-2 text-[12px] ${dim}`}
+    >
+      <span
+        className={`uppercase tracking-wider text-[10px] rounded border px-1.5 py-0.5 ${verdictTone}`}
+      >
         {rule.verdict}
       </span>
-      <span className="font-mono text-[11px] text-text-muted w-[60px]">{rule.method}</span>
+      <span className="font-mono text-[11px] text-text-muted w-[60px]">
+        {rule.method}
+      </span>
       <span className="font-medium truncate">{rule.host}</span>
-      <span className="font-mono text-[11px] text-text-muted truncate">{rule.pathPattern}</span>
+      <span className="font-mono text-[11px] text-text-muted truncate">
+        {rule.pathPattern}
+      </span>
       {sourceLabel && (
         <span
           title={`source: ${rule.source}`}
@@ -462,12 +517,18 @@ function PendingAddRow({
       : "text-danger border-danger/40";
   return (
     <li className="border-b border-border-light px-3 py-2 flex items-center gap-2 text-[12px] bg-accent-light/30">
-      <span className={`uppercase tracking-wider text-[10px] rounded border px-1.5 py-0.5 ${verdictTone}`}>
+      <span
+        className={`uppercase tracking-wider text-[10px] rounded border px-1.5 py-0.5 ${verdictTone}`}
+      >
         {add.verdict}
       </span>
-      <span className="font-mono text-[11px] text-text-muted w-[60px]">{add.method}</span>
+      <span className="font-mono text-[11px] text-text-muted w-[60px]">
+        {add.method}
+      </span>
       <span className="font-medium truncate">{add.host}</span>
-      <span className="font-mono text-[11px] text-text-muted truncate">{add.pathPattern}</span>
+      <span className="font-mono text-[11px] text-text-muted truncate">
+        {add.pathPattern}
+      </span>
       <span className="text-[10px] text-accent rounded border border-accent/40 px-1.5 py-0.5">
         new
       </span>
@@ -497,16 +558,21 @@ interface PreviewRow {
   sourceBadge: string;
 }
 
-function buildPresetPreviewRows(preset: EgressPreset, trustedHosts: readonly string[]): PreviewRow[] {
+function buildPresetPreviewRows(
+  preset: EgressPreset,
+  trustedHosts: readonly string[],
+): PreviewRow[] {
   if (preset === "none") return [];
   if (preset === "all") {
-    return [{
-      key: "preview:all",
-      host: "*",
-      method: "*",
-      pathPattern: "*",
-      sourceBadge: "preset: all",
-    }];
+    return [
+      {
+        key: "preview:all",
+        host: "*",
+        method: "*",
+        pathPattern: "*",
+        sourceBadge: "preset: all",
+      },
+    ];
   }
   return trustedHosts.map((host) => ({
     key: `preview:trusted:${host}`,
@@ -523,9 +589,13 @@ function PreviewPresetRow({ row }: { row: PreviewRow }) {
       <span className="uppercase tracking-wider text-[10px] rounded border px-1.5 py-0.5 text-accent border-accent/40">
         allow
       </span>
-      <span className="font-mono text-[11px] text-text-muted w-[60px]">{row.method}</span>
+      <span className="font-mono text-[11px] text-text-muted w-[60px]">
+        {row.method}
+      </span>
       <span className="font-medium truncate">{row.host}</span>
-      <span className="font-mono text-[11px] text-text-muted truncate">{row.pathPattern}</span>
+      <span className="font-mono text-[11px] text-text-muted truncate">
+        {row.pathPattern}
+      </span>
       <span
         title={`Preview — ${row.sourceBadge} (saved on commit)`}
         className="text-[10px] text-text-muted rounded border border-border-light px-1.5 py-0.5"
@@ -551,6 +621,7 @@ function formatSource(source: EgressRuleView["source"]): string | null {
   if (source === "inbox") return "from inbox";
   if (source === "preset:trusted") return "preset: trusted";
   if (source === "preset:all") return "preset: all";
-  if (source.startsWith("connection:")) return `from ${source.slice("connection:".length)}`;
+  if (source.startsWith("connection:"))
+    return `from ${source.slice("connection:".length)}`;
   return source;
 }

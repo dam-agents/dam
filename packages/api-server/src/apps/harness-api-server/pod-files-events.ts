@@ -49,10 +49,15 @@ export function mountPodFilesEventsRoute(app: Hono, deps: PodFilesEventsDeps) {
       stream.onAbort(wakeWaiter);
 
       try {
-        const snapshot = await deps.fetchSnapshot(owner, agentId).catch((err) => {
-          console.warn(`pod-files snapshot for owner=${owner} agent=${agentId} failed:`, err);
-          return [] as FileSpec[];
-        });
+        const snapshot = await deps
+          .fetchSnapshot(owner, agentId)
+          .catch((err) => {
+            console.warn(
+              `pod-files snapshot for owner=${owner} agent=${agentId} failed:`,
+              err,
+            );
+            return [] as FileSpec[];
+          });
         await stream.writeSSE({
           event: "snapshot",
           data: JSON.stringify({ files: snapshot }),

@@ -3,11 +3,17 @@ import yaml from "js-yaml";
 import {
   ANN_GRANTED_CONNECTION_IDS,
   ANN_GRANTED_SECRET_IDS,
-  LABEL_TYPE, LABEL_OWNER, LABEL_AGENT_REF, LAST_ACTIVITY_KEY,
-  TYPE_INSTANCE, SPEC_KEY, STATUS_KEY,
+  LABEL_TYPE,
+  LABEL_OWNER,
+  LABEL_AGENT_REF,
+  LAST_ACTIVITY_KEY,
+  TYPE_INSTANCE,
+  SPEC_KEY,
+  STATUS_KEY,
 } from "../../agents/infrastructure/labels.js";
 import {
-  generateK8sName, isPodReady,
+  generateK8sName,
+  isPodReady,
 } from "../../agents/infrastructure/configmap-mappers.js";
 import type { InfraInstance } from "../domain/instance-assembly.js";
 
@@ -18,13 +24,19 @@ interface RawInstanceSpec {
   description?: string;
 }
 
-export function parseInfraInstance(cm: k8s.V1ConfigMap, pod?: k8s.V1Pod): InfraInstance {
+export function parseInfraInstance(
+  cm: k8s.V1ConfigMap,
+  pod?: k8s.V1Pod,
+): InfraInstance {
   const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as RawInstanceSpec;
   const statusYaml = cm.data?.[STATUS_KEY];
   let currentState: InfraInstance["currentState"];
   let error: string | undefined;
   if (statusYaml) {
-    const raw = yaml.load(statusYaml) as { currentState?: string; error?: string };
+    const raw = yaml.load(statusYaml) as {
+      currentState?: string;
+      error?: string;
+    };
     currentState = raw.currentState as InfraInstance["currentState"];
     error = raw.error || undefined;
   }

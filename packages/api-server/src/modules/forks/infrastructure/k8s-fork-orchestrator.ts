@@ -1,10 +1,7 @@
 import type * as k8s from "@kubernetes/client-node";
 import type { ForkStatus } from "../domain/fork.js";
 import { err, ok, type Result } from "../../../core/result.js";
-import type {
-  ForkOrchestratorPort,
-  OrchestratorCreateError,
-} from "./ports.js";
+import type { ForkOrchestratorPort, OrchestratorCreateError } from "./ports.js";
 import { buildForkConfigMap, parseForkStatus } from "./configmap-mappers.js";
 
 export interface K8sForkOrchestratorDeps {

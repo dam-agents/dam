@@ -1,20 +1,11 @@
 import { Command } from "commander";
-import type { TokenProvider } from "../auth/index.js";
 import type { CompatService, ConfigService } from "../cli/index.js";
-import { createTrpcClient } from "../shared/trpc/trpc-client.js";
-import { createBearerSupplier } from "../shared/trpc/bearer-supplier.js";
+import type { TrpcClient } from "../shared/trpc/trpc-client.js";
 import { buildListCommand } from "./commands/list.js";
 import {
   createTemplateService,
   type TemplateService,
 } from "./services/template-service.js";
-
-export interface TemplateModuleOptions {
-  tokenProvider: TokenProvider;
-  configService: ConfigService;
-  compatService: CompatService;
-  serverEnvVar: string;
-}
 
 export interface TemplateModule {
   commands: ReadonlyArray<Command>;
@@ -23,14 +14,13 @@ export interface TemplateModule {
   };
 }
 
-export function composeTemplateModule(opts: TemplateModuleOptions): TemplateModule {
-  const createService = (host: string): TemplateService => {
-    const trpc = createTrpcClient({
-      host,
-      getToken: createBearerSupplier(opts.tokenProvider, host),
-    });
-    return createTemplateService({ trpc });
-  };
+export function composeTemplateModule(opts: {
+  buildTrpc: (host: string) => TrpcClient;
+  configService: ConfigService;
+  compatService: CompatService;
+}): TemplateModule {
+  const createService = (host: string): TemplateService =>
+    createTemplateService({ trpc: opts.buildTrpc(host) });
 
   const parent = new Command("template").description(
     "Discover agent templates on the active host",
@@ -40,7 +30,6 @@ export function composeTemplateModule(opts: TemplateModuleOptions): TemplateModu
       compatService: opts.compatService,
       configService: opts.configService,
       createTemplateService: createService,
-      serverEnvVar: opts.serverEnvVar,
     }),
     { isDefault: true },
   );

@@ -46,10 +46,7 @@ async function runDam(
 
 interface Fixture {
   url: string;
-  setResponse: (res: {
-    status?: number;
-    body?: string | object;
-  }) => void;
+  setResponse: (res: { status?: number; body?: string | object }) => void;
   close: () => Promise<void>;
 }
 
@@ -170,7 +167,9 @@ describe("dam ping (integration)", () => {
       PATH: process.env.PATH ?? "",
     });
     expect(r.exitCode).not.toBe(0);
-    expect(r.stderr).toContain("below the server's minimum required version 99.0.0");
+    expect(r.stderr).toContain(
+      "below the server's minimum required version 99.0.0",
+    );
     expect(r.stdout).not.toContain("ok");
   });
 
@@ -181,7 +180,7 @@ describe("dam ping (integration)", () => {
     });
     expect(r.exitCode).not.toBe(0);
     expect(r.stderr).toContain("no server configured");
-    expect(r.stderr).toContain('dam config set server');
+    expect(r.stderr).toContain("dam config set server");
     expect(r.stderr).toContain("DAM_SERVER");
   });
 

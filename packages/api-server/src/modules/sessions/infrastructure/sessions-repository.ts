@@ -27,7 +27,12 @@ export function findActiveByScheduleId(db: Db) {
     const rows = await db
       .select()
       .from(sessions)
-      .where(and(eq(sessions.scheduleId, scheduleId), eq(sessions.scheduleActive, true)))
+      .where(
+        and(
+          eq(sessions.scheduleId, scheduleId),
+          eq(sessions.scheduleActive, true),
+        ),
+      )
       .orderBy(desc(sessions.createdAt))
       .limit(1);
     return rows[0] ?? null;
@@ -48,7 +53,12 @@ export function findByInstanceAndThreadTs(db: Db) {
     const rows = await db
       .select()
       .from(sessions)
-      .where(and(eq(sessions.instanceId, instanceId), eq(sessions.threadTs, threadTs)))
+      .where(
+        and(
+          eq(sessions.instanceId, instanceId),
+          eq(sessions.threadTs, threadTs),
+        ),
+      )
       .limit(1);
     return rows[0] ?? null;
   };
@@ -72,7 +82,11 @@ export function upsertSession(db: Db) {
 
 export function getSessionMode(db: Db) {
   return async (sessionId: string): Promise<string | null> => {
-    const rows = await db.select({ mode: sessions.mode }).from(sessions).where(eq(sessions.sessionId, sessionId)).limit(1);
+    const rows = await db
+      .select({ mode: sessions.mode })
+      .from(sessions)
+      .where(eq(sessions.sessionId, sessionId))
+      .limit(1);
     return rows[0]?.mode ?? null;
   };
 }
@@ -82,7 +96,12 @@ export function setSessionMode(db: Db) {
     await db
       .update(sessions)
       .set({ mode })
-      .where(and(eq(sessions.sessionId, sessionId), eq(sessions.instanceId, instanceId)));
+      .where(
+        and(
+          eq(sessions.sessionId, sessionId),
+          eq(sessions.instanceId, instanceId),
+        ),
+      );
   };
 }
 
@@ -97,6 +116,13 @@ export function touchSession(db: Db) {
 
 export function deleteSession(db: Db) {
   return async (sessionId: string, instanceId: string) => {
-    await db.delete(sessions).where(and(eq(sessions.sessionId, sessionId), eq(sessions.instanceId, instanceId)));
+    await db
+      .delete(sessions)
+      .where(
+        and(
+          eq(sessions.sessionId, sessionId),
+          eq(sessions.instanceId, instanceId),
+        ),
+      );
   };
 }

@@ -79,12 +79,18 @@ describe("OAuth app registry — descriptors", () => {
       "clientSecret",
       "appSlug",
     ]);
-    expect(github.inputs.find((i) => i.name === "clientSecret")?.secret).toBe(true);
+    expect(github.inputs.find((i) => i.name === "clientSecret")?.secret).toBe(
+      true,
+    );
     // appSlug is intrinsically optional (OAuth Apps don't have one) — always
     // visible in the form, not gated behind the override toggle that
     // dynamic family-creds / admin-default coverage uses.
-    expect(github.inputs.find((i) => i.name === "appSlug")?.optional).toBe(true);
-    expect(github.inputs.find((i) => i.name === "appSlug")?.overridable).toBeUndefined();
+    expect(github.inputs.find((i) => i.name === "appSlug")?.optional).toBe(
+      true,
+    );
+    expect(
+      github.inputs.find((i) => i.name === "appSlug")?.overridable,
+    ).toBeUndefined();
 
     const ghe = reg.get("github-enterprise")!;
     expect(ghe.inputs.map((i) => i.name)).toEqual([
@@ -94,18 +100,37 @@ describe("OAuth app registry — descriptors", () => {
       "appSlug",
     ]);
     expect(ghe.inputs.find((i) => i.name === "appSlug")?.optional).toBe(true);
-    expect(ghe.inputs.find((i) => i.name === "appSlug")?.overridable).toBeUndefined();
+    expect(
+      ghe.inputs.find((i) => i.name === "appSlug")?.overridable,
+    ).toBeUndefined();
   });
 
   it("descriptors carry a stable connectionKey separate from the id", () => {
     const reg = createOAuthAppRegistry();
     expect(reg.get("github")!.connectionKey).toBe("github");
-    expect(reg.get("github-enterprise")!.connectionKey).toBe("github-enterprise");
+    expect(reg.get("github-enterprise")!.connectionKey).toBe(
+      "github-enterprise",
+    );
   });
 
   it("get() returns null for an unknown app id without throwing", () => {
     const reg = createOAuthAppRegistry();
     expect(reg.get("not-a-real-app")).toBeNull();
+  });
+
+  // Issue #219: github's `hosts` covers REST API, `git`, and raw-fetch.
+  it("the github descriptor declares three injection hosts with their auth schemes", () => {
+    const reg = createOAuthAppRegistry();
+    const github = reg.get("github")!;
+    expect(github.hosts).toEqual([
+      { host: "api.github.com" },
+      {
+        host: "github.com",
+        valueFormat: "Basic {value}",
+        encoding: "basic-x-access-token",
+      },
+      { host: "raw.githubusercontent.com" },
+    ]);
   });
 });
 
@@ -123,9 +148,18 @@ describe("OAuth app registry — build()", () => {
     expect(built.provider.clientId).toBe("id");
     expect(built.provider.clientSecret).toBe("sec");
     expect(built.provider.scopes).toEqual(["repo", "read:user", "user:email"]);
+    // Issue #219: three hosts, three schemes, one OAuth dance.
     expect(built.flow).toEqual({
       connectionKey: "github",
-      hostPattern: "api.github.com",
+      hosts: [
+        { host: "api.github.com" },
+        {
+          host: "github.com",
+          valueFormat: "Basic {value}",
+          encoding: "basic-x-access-token",
+        },
+        { host: "raw.githubusercontent.com" },
+      ],
       displayName: "GitHub",
       envMappings: [{ envName: "GH_TOKEN", placeholder: "dummy-placeholder" }],
     });
@@ -145,13 +179,15 @@ describe("OAuth app registry — build()", () => {
     expect(built.provider.tokenEndpoint).toBe(
       "https://ghe.example.com/login/oauth/access_token",
     );
-    expect(built.flow.hostPattern).toBe("ghe.example.com");
+    expect(built.flow.hosts).toEqual([{ host: "ghe.example.com" }]);
     expect(built.flow.connectionKey).toBe("github-enterprise");
     expect(built.flow.envMappings).toEqual([
       { envName: "GH_TOKEN", placeholder: "dummy-placeholder" },
       { envName: "GH_HOST", placeholder: "ghe.example.com" },
     ]);
-    expect(built.connectionDisplayName).toBe("GitHub Enterprise (ghe.example.com)");
+    expect(built.connectionDisplayName).toBe(
+      "GitHub Enterprise (ghe.example.com)",
+    );
   });
 
   it("rejects missing client credentials with a Zod error", () => {
@@ -162,11 +198,16 @@ describe("OAuth app registry — build()", () => {
 
   it("builds a Google service flow with the OIDC baseline + service-specific scopes and offline-access auth params", () => {
     const reg = createOAuthAppRegistry();
-    const built = reg.build("google-drive", { clientId: "id", clientSecret: "sec" });
+    const built = reg.build("google-drive", {
+      clientId: "id",
+      clientSecret: "sec",
+    });
     expect(built.provider.authorizationUrl).toBe(
       "https://accounts.google.com/o/oauth2/v2/auth",
     );
-    expect(built.provider.tokenEndpoint).toBe("https://oauth2.googleapis.com/token");
+    expect(built.provider.tokenEndpoint).toBe(
+      "https://oauth2.googleapis.com/token",
+    );
     expect(built.provider.scopes).toEqual([
       "openid",
       "email",
@@ -180,7 +221,10 @@ describe("OAuth app registry — build()", () => {
     });
     expect(built.flow).toEqual({
       connectionKey: "google-drive",
-      hostPattern: "www.googleapis.com",
+      hosts: [
+        { host: "www.googleapis.com", pathPattern: "/drive/*" },
+        { host: "www.googleapis.com", pathPattern: "/upload/drive/*" },
+      ],
       displayName: "Google Drive",
     });
     expect(built.connectionDisplayName).toBe("Google Drive");
@@ -188,8 +232,13 @@ describe("OAuth app registry — build()", () => {
 
   it("Google Health uses the health.googleapis.com host and health-specific scopes", () => {
     const reg = createOAuthAppRegistry();
-    const built = reg.build("google-health", { clientId: "id", clientSecret: "sec" });
-    expect(built.flow.hostPattern).toBe("health.googleapis.com");
+    const built = reg.build("google-health", {
+      clientId: "id",
+      clientSecret: "sec",
+    });
+    expect(built.flow.hosts.map((h) => h.host)).toEqual([
+      "health.googleapis.com",
+    ]);
     expect(built.provider.scopes).toContain(
       "https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly",
     );
@@ -212,7 +261,7 @@ describe("OAuth app registry — build()", () => {
     expect(built.provider.scopes).toContain("user-modify-playback-state");
     expect(built.flow).toEqual({
       connectionKey: "spotify",
-      hostPattern: "api.spotify.com",
+      hosts: [{ host: "api.spotify.com" }],
       displayName: "Spotify",
     });
     expect(built.flow.envMappings).toBeUndefined();
@@ -241,10 +290,14 @@ describe("OAuth app registry — build()", () => {
       clientId: "id",
       clientSecret: "sec",
     });
-    expect(built.provider.authorizationUrl).toBe("https://linear.app/oauth/authorize");
-    expect(built.provider.tokenEndpoint).toBe("https://api.linear.app/oauth/token");
+    expect(built.provider.authorizationUrl).toBe(
+      "https://linear.app/oauth/authorize",
+    );
+    expect(built.provider.tokenEndpoint).toBe(
+      "https://api.linear.app/oauth/token",
+    );
     expect(built.provider.scopes).toEqual(["read", "write"]);
-    expect(built.flow.hostPattern).toBe("api.linear.app");
+    expect(built.flow.hosts).toEqual([{ host: "api.linear.app" }]);
     expect(built.flow.connectionKey).toMatch(/^generic-[a-f0-9]{16}$/);
     expect(built.flow.displayName).toBe("Linear");
     expect(built.connectionDisplayName).toBe("Linear");
@@ -313,7 +366,9 @@ describe("OAuth app registry — admin defaults", () => {
     // Required = !overridable && !optional (appSlug is optional so it
     // never appears in the required set regardless of admin coverage).
     expect(
-      github.inputs.filter((i) => !i.overridable && !i.optional).map((i) => i.name),
+      github.inputs
+        .filter((i) => !i.overridable && !i.optional)
+        .map((i) => i.name),
     ).toEqual([]);
     expect(github.inputs.map((i) => i.name)).toEqual([
       "clientId",
@@ -332,7 +387,9 @@ describe("OAuth app registry — admin defaults", () => {
     // as defaultsApplied because the form still requires user input.
     expect(github.defaultsApplied).toBeUndefined();
     expect(
-      github.inputs.filter((i) => !i.overridable && !i.optional).map((i) => i.name),
+      github.inputs
+        .filter((i) => !i.overridable && !i.optional)
+        .map((i) => i.name),
     ).toEqual(["clientSecret"]);
   });
 
@@ -386,12 +443,22 @@ describe("OAuth app registry — admin defaults", () => {
     const reg = createOAuthAppRegistry();
     const baseInput = { clientId: "id", clientSecret: "sec" };
     // Whitespace / uppercase — should never have been accepted.
-    expect(() => reg.build("github", { ...baseInput, appSlug: "Has Spaces" })).toThrow(/App slug/);
-    expect(() => reg.build("github", { ...baseInput, appSlug: "MyApp" })).toThrow(/App slug/);
+    expect(() =>
+      reg.build("github", { ...baseInput, appSlug: "Has Spaces" }),
+    ).toThrow(/App slug/);
+    expect(() =>
+      reg.build("github", { ...baseInput, appSlug: "MyApp" }),
+    ).toThrow(/App slug/);
     // GitHub disallows leading, trailing, and consecutive hyphens — mirror that.
-    expect(() => reg.build("github", { ...baseInput, appSlug: "-leading" })).toThrow(/App slug/);
-    expect(() => reg.build("github", { ...baseInput, appSlug: "trailing-" })).toThrow(/App slug/);
-    expect(() => reg.build("github", { ...baseInput, appSlug: "double--hyphen" })).toThrow(/App slug/);
+    expect(() =>
+      reg.build("github", { ...baseInput, appSlug: "-leading" }),
+    ).toThrow(/App slug/);
+    expect(() =>
+      reg.build("github", { ...baseInput, appSlug: "trailing-" }),
+    ).toThrow(/App slug/);
+    expect(() =>
+      reg.build("github", { ...baseInput, appSlug: "double--hyphen" }),
+    ).toThrow(/App slug/);
     // 1–39 chars: 40 chars is one over the limit.
     expect(() =>
       reg.build("github", { ...baseInput, appSlug: "a".repeat(40) }),
@@ -401,7 +468,13 @@ describe("OAuth app registry — admin defaults", () => {
   it("accepts well-formed GitHub App slugs", () => {
     const reg = createOAuthAppRegistry();
     const baseInput = { clientId: "id", clientSecret: "sec" };
-    for (const slug of ["a", "dependabot", "github-actions", "my-app-1", "a".repeat(39)]) {
+    for (const slug of [
+      "a",
+      "dependabot",
+      "github-actions",
+      "my-app-1",
+      "a".repeat(39),
+    ]) {
       const built = reg.build("github", { ...baseInput, appSlug: slug });
       expect(built.flow.appSlug).toBe(slug);
     }
@@ -428,10 +501,12 @@ describe("OAuth app registry — admin defaults", () => {
     const ghe = reg.get("github-enterprise")!;
     expect(ghe.defaultsApplied).toBe(true);
     expect(
-      ghe.inputs.filter((i) => !i.overridable && !i.optional).map((i) => i.name),
+      ghe.inputs
+        .filter((i) => !i.overridable && !i.optional)
+        .map((i) => i.name),
     ).toEqual([]);
     const built = reg.build("github-enterprise", {});
-    expect(built.flow.hostPattern).toBe("ghe.corp.example");
+    expect(built.flow.hosts).toEqual([{ host: "ghe.corp.example" }]);
     expect(built.provider.authorizationUrl).toBe(
       "https://ghe.corp.example/login/oauth/authorize",
     );
@@ -499,9 +574,9 @@ describe("callbackUrlForApp", () => {
   it("does not rewrite hosts that merely start with `localhost`", () => {
     const reg = createOAuthAppRegistry();
     const spotify = reg.get("spotify")!;
-    expect(callbackUrlForApp(spotify, "http://localhost.example.com:4444")).toBe(
-      "http://localhost.example.com:4444/api/oauth/callback",
-    );
+    expect(
+      callbackUrlForApp(spotify, "http://localhost.example.com:4444"),
+    ).toBe("http://localhost.example.com:4444/api/oauth/callback");
   });
 });
 
@@ -518,7 +593,9 @@ describe("matchesAppConnection", () => {
     const reg = createOAuthAppRegistry();
     const generic = reg.get("generic")!;
     expect(matchesAppConnection(generic, "generic")).toBe(true);
-    expect(matchesAppConnection(generic, "generic-abc1234567890def")).toBe(true);
+    expect(matchesAppConnection(generic, "generic-abc1234567890def")).toBe(
+      true,
+    );
     expect(matchesAppConnection(generic, "github")).toBe(false);
     // No accidental match on "generic-enterprise" if such an app type ever exists.
     expect(matchesAppConnection(generic, "genericstuff")).toBe(false);

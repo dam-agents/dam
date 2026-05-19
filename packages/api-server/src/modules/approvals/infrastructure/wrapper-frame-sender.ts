@@ -31,7 +31,10 @@ export function createWrapperFrameSender(
         await waitForOpen(ws, connectTimeoutMs);
         await sendAndDrain(ws, frame);
       } finally {
-        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        if (
+          ws.readyState === WebSocket.OPEN ||
+          ws.readyState === WebSocket.CONNECTING
+        ) {
           ws.close();
         }
       }

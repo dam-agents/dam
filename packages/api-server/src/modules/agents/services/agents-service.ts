@@ -9,7 +9,10 @@ import {
 } from "api-server-api";
 import { TRPCError } from "@trpc/server";
 import type { AgentsRepository } from "../infrastructure/agents-repository.js";
-import { assembleSpecFromTemplate, assembleSpecFromImage } from "../domain/spec-assembly.js";
+import {
+  assembleSpecFromTemplate,
+  assembleSpecFromImage,
+} from "../domain/spec-assembly.js";
 
 /**
  * Port consumed by `create()` to seed `egress_rules` for a brand-new agent
@@ -36,7 +39,10 @@ export type AgentCleanupHook = (agentId: string) => Promise<void>;
  * taken from `current` rather than `incoming`, preventing clients from
  * clobbering template-owned envs.
  */
-function preserveProtectedEnvs(current: EnvVar[], incoming: EnvVar[]): EnvVar[] {
+function preserveProtectedEnvs(
+  current: EnvVar[],
+  incoming: EnvVar[],
+): EnvVar[] {
   const preserved = current.filter((e) => isProtectedAgentEnvName(e.name));
   const user = incoming.filter((e) => !isProtectedAgentEnvName(e.name));
   return [...preserved, ...user];
@@ -45,7 +51,9 @@ function preserveProtectedEnvs(current: EnvVar[], incoming: EnvVar[]): EnvVar[] 
 export function createAgentsService(deps: {
   repo: AgentsRepository;
   owner: string;
-  readTemplateSpec: (id: string) => Promise<{ spec: TemplateSpec; isOwned: boolean } | null>;
+  readTemplateSpec: (
+    id: string,
+  ) => Promise<{ spec: TemplateSpec; isOwned: boolean } | null>;
   /** Seeds egress_rules at create time. Optional so the system-instances
    *  composition (which never creates agents) can omit it. */
   presetSeeder?: PresetSeeder;
@@ -93,7 +101,11 @@ export function createAgentsService(deps: {
       // retry is idempotent against the lookup index. The chosen preset is
       // not stored on the spec — the seeded rows' `source` is the truth.
       if (deps.presetSeeder) {
-        await deps.presetSeeder.seed(agent.id, input.egressPreset ?? "trusted", deps.owner);
+        await deps.presetSeeder.seed(
+          agent.id,
+          input.egressPreset ?? "trusted",
+          deps.owner,
+        );
       }
       return agent;
     },

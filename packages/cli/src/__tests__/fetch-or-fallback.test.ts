@@ -51,8 +51,12 @@ describe("fetchOrFallback", () => {
 
   it("falls back to the caller-supplied snapshot when svc.get returns a transport error", async () => {
     const fallback = makeInstance({ state: "starting" });
-    const svc = makeService(() => err({ kind: "transport", reason: "ECONNREFUSED" }));
-    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const svc = makeService(() =>
+      err({ kind: "transport", reason: "ECONNREFUSED" }),
+    );
+    const stderr = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
 
     const result = await fetchOrFallback(svc, fallback, "after wait timeout");
 
@@ -66,7 +70,9 @@ describe("fetchOrFallback", () => {
   it("falls back to the snapshot when svc.get returns ok(null) — instance vanished during refresh", async () => {
     const fallback = makeInstance();
     const svc = makeService(() => ok(null));
-    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const stderr = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
 
     const result = await fetchOrFallback(svc, fallback, "after restart");
 

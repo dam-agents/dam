@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import type { Agent } from "api-server-api";
-import { assembleInstance, computeState, type InfraInstance } from "../../modules/instances/domain/instance-assembly.js";
+import {
+  assembleInstance,
+  computeState,
+  type InfraInstance,
+} from "../../modules/instances/domain/instance-assembly.js";
 
 function infra(overrides: Partial<InfraInstance> = {}): InfraInstance {
   return {
@@ -29,11 +33,15 @@ function agent(overrides: Partial<Agent> = {}): Agent {
 
 describe("computeState", () => {
   it("returns starting when currentState is running but pod not ready", () => {
-    expect(computeState(infra({ currentState: "running", podReady: false }))).toBe("starting");
+    expect(
+      computeState(infra({ currentState: "running", podReady: false })),
+    ).toBe("starting");
   });
 
   it("returns running when currentState is running and pod ready", () => {
-    expect(computeState(infra({ currentState: "running", podReady: true }))).toBe("running");
+    expect(
+      computeState(infra({ currentState: "running", podReady: true })),
+    ).toBe("running");
   });
 });
 
@@ -47,7 +55,10 @@ describe("assembleInstance projection", () => {
   it("returns templateId null when the agent has no template", () => {
     const result = assembleInstance(
       infra(),
-      agent({ templateId: undefined, spec: { version: "v1", name: "raw", image: "raw:1" } }),
+      agent({
+        templateId: undefined,
+        spec: { version: "v1", name: "raw", image: "raw:1" },
+      }),
       [],
       [],
     );
@@ -61,4 +72,3 @@ describe("assembleInstance projection", () => {
     expect(result.image).toBe("");
   });
 });
-

@@ -9,6 +9,32 @@ depends = ["agent-runtime:check:*"]
 dir = "{{config_root}}/packages/agent-runtime"
 depends = ["agent-runtime:setup"]
 run = "pnpm exec tsc --noEmit"
+sources = ["src/**/*.ts", "tsconfig.json", "../../tsconfig.base.json"]
+
+["agent-runtime:check:lint"]
+dir = "{{config_root}}/packages/agent-runtime"
+depends = ["common:setup:pnpm"]
+run = "pnpm exec eslint ."
+sources = ["src/**/*.ts", "eslint.config.js", "../../eslint.config.base.js"]
+
+["agent-runtime:check:format"]
+dir = "{{config_root}}/packages/agent-runtime"
+depends = ["common:setup:pnpm"]
+run = "pnpm exec prettier --check 'src/**/*.ts'"
+sources = ["src/**/*.ts", "../../.prettierrc"]
+
+["agent-runtime:fix"]
+depends = ["agent-runtime:fix:*"]
+
+["agent-runtime:fix:lint"]
+dir = "{{config_root}}/packages/agent-runtime"
+depends = ["common:setup:pnpm"]
+run = "pnpm exec eslint --fix ."
+
+["agent-runtime:fix:format"]
+dir = "{{config_root}}/packages/agent-runtime"
+depends = ["common:setup:pnpm"]
+run = "pnpm exec prettier --write 'src/**/*.ts'"
 
 ["agent-runtime:test"]
 description = "Run agent-runtime unit tests"

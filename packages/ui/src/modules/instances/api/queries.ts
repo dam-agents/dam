@@ -5,7 +5,8 @@ import type { InstanceView } from "../../../types.js";
 
 export const instancesKeys = {
   root: ["instances"] as const,
-  listWithChannels: () => [...instancesKeys.root, "list-with-channels"] as const,
+  listWithChannels: () =>
+    [...instancesKeys.root, "list-with-channels"] as const,
 };
 
 /**

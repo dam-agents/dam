@@ -36,7 +36,11 @@ export function createForksService(deps: {
   const generateForkId = deps.generateForkId ?? randomUUID;
   const open = new Map<string, Fork>();
 
-  function emitFailed(fork: Fork, reason: ForkFailureReason, detail?: string): void {
+  function emitFailed(
+    fork: Fork,
+    reason: ForkFailureReason,
+    detail?: string,
+  ): void {
     const next = markFailed(fork, reason, detail);
     if (!next.ok) return;
     open.delete(fork.forkId);
@@ -88,7 +92,9 @@ export function createForksService(deps: {
         spec: {
           instanceId: input.instanceId,
           foreignSub: toForeignSub(input.foreignSub),
-          ...(input.sessionId !== undefined ? { sessionId: input.sessionId } : {}),
+          ...(input.sessionId !== undefined
+            ? { sessionId: input.sessionId }
+            : {}),
         },
       });
       open.set(forkId, fork);
@@ -99,7 +105,9 @@ export function createForksService(deps: {
       });
       if (!created.ok) {
         const detail =
-          created.error.kind === "WriteFailed" ? created.error.detail : created.error.kind;
+          created.error.kind === "WriteFailed"
+            ? created.error.detail
+            : created.error.kind;
         emitFailed(fork, "OrchestrationFailed", detail);
         return;
       }

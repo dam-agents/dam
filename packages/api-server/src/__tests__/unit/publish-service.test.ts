@@ -128,7 +128,9 @@ describe("publishSkill — thin proxy", () => {
 
   it("does not append a publish record when agent-runtime fails", async () => {
     const { deps, runtimeClient, instanceSkills } = makeDeps();
-    (runtimeClient.publish as any) = vi.fn().mockRejectedValue(new Error("upstream down"));
+    (runtimeClient.publish as any) = vi
+      .fn()
+      .mockRejectedValue(new Error("upstream down"));
 
     await expect(publishSkill(deps, input)).rejects.toThrow(/upstream down/);
     expect(instanceSkills.appendPublish).not.toHaveBeenCalled();
@@ -137,13 +139,19 @@ describe("publishSkill — thin proxy", () => {
   it("NOT_FOUND when instance is missing", async () => {
     const { deps } = makeDeps();
     (deps.instances as any).get = vi.fn().mockResolvedValue(null);
-    await expect(publishSkill(deps, input)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(publishSkill(deps, input)).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
   });
 
   it("PRECONDITION_FAILED when instance is hibernated", async () => {
     const { deps } = makeDeps();
-    (deps.instances as any).get = vi.fn().mockResolvedValue(makeInfra({ currentState: "hibernated" }));
-    await expect(publishSkill(deps, input)).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    (deps.instances as any).get = vi
+      .fn()
+      .mockResolvedValue(makeInfra({ currentState: "hibernated" }));
+    await expect(publishSkill(deps, input)).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+    });
   });
 
   it("NOT_IMPLEMENTED when source host is unsupported", async () => {
@@ -153,7 +161,9 @@ describe("publishSkill — thin proxy", () => {
       name: "Foo",
       gitUrl: "https://gitlab.com/foo/bar",
     });
-    await expect(publishSkill(deps, input)).rejects.toMatchObject({ code: "NOT_IMPLEMENTED" });
+    await expect(publishSkill(deps, input)).rejects.toMatchObject({
+      code: "NOT_IMPLEMENTED",
+    });
   });
 
   it("translates upstream 'app_not_connected' to a PRECONDITION_FAILED with platform-cta: URL", async () => {
@@ -176,7 +186,9 @@ describe("publishSkill — thin proxy", () => {
 
     // The message should carry the CTA URL so the UI can parse it out.
     const err = (await publishSkill(deps, input).catch((e) => e)) as TRPCError;
-    expect(err.message).toContain("platform-cta:http://localhost:4444/connections?connect=github");
+    expect(err.message).toContain(
+      "platform-cta:http://localhost:4444/connections?connect=github",
+    );
   });
 
   it("translates upstream 'access_restricted' (agent not granted) similarly with manage_url", async () => {
@@ -196,6 +208,8 @@ describe("publishSkill — thin proxy", () => {
     const err = (await publishSkill(deps, input).catch((e) => e)) as TRPCError;
     expect(err).toBeInstanceOf(TRPCError);
     expect(err.code).toBe("PRECONDITION_FAILED");
-    expect(err.message).toContain("platform-cta:http://localhost:4444/agents?manage=abc");
+    expect(err.message).toContain(
+      "platform-cta:http://localhost:4444/agents?manage=abc",
+    );
   });
 });

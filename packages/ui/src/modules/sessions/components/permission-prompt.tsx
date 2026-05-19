@@ -5,7 +5,11 @@ import { useStore } from "../../../store.js";
 
 function toolTitle(toolCall: unknown): string {
   if (toolCall && typeof toolCall === "object") {
-    const tc = toolCall as { title?: string; kind?: string; toolCallId?: string };
+    const tc = toolCall as {
+      title?: string;
+      kind?: string;
+      toolCallId?: string;
+    };
     return tc.title ?? tc.kind ?? "this tool call";
   }
   return "this tool call";
@@ -40,7 +44,9 @@ export function PermissionPrompt() {
   const sessionId = useStore((s) => s.sessionId);
   const pendingPermissions = useStore((s) => s.pendingPermissions);
   const resolve = useStore((s) => s.resolvePendingPermission);
-  const pending = sessionId ? pendingPermissions.filter((p) => p.sessionId === sessionId) : [];
+  const pending = sessionId
+    ? pendingPermissions.filter((p) => p.sessionId === sessionId)
+    : [];
   const current = pending[0];
 
   useEffect(() => {
@@ -48,13 +54,21 @@ export function PermissionPrompt() {
     const onKey = (e: KeyboardEvent) => {
       // Ignore when typing elsewhere so digit input doesn't select options.
       const target = e.target as HTMLElement | null;
-      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      )
+        return;
       const num = Number.parseInt(e.key, 10);
       if (Number.isNaN(num)) return;
       if (num < 1 || num > current.options.length) return;
       e.preventDefault();
       const opt = current.options[num - 1];
-      resolve(current.toolCallId, { outcome: { outcome: "selected", optionId: opt.optionId } });
+      resolve(current.toolCallId, {
+        outcome: { outcome: "selected", optionId: opt.optionId },
+      });
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -63,13 +77,16 @@ export function PermissionPrompt() {
   if (!current) return null;
 
   const pick = (opt: PermissionOption) =>
-    resolve(current.toolCallId, { outcome: { outcome: "selected", optionId: opt.optionId } });
+    resolve(current.toolCallId, {
+      outcome: { outcome: "selected", optionId: opt.optionId },
+    });
 
   return (
     <div className="border-t bg-surface/50 backdrop-blur-xl px-4 md:px-8 py-3">
       <div className="mx-auto max-w-[760px] rounded-lg border-2 border-accent bg-bg p-3.5 flex flex-col gap-2 shadow-brutal-accent">
         <div className="text-[14px] font-bold text-text break-all">
-          Allow <span className="text-accent">{toolTitle(current.toolCall)}</span>?
+          Allow{" "}
+          <span className="text-accent">{toolTitle(current.toolCall)}</span>?
         </div>
         <div className="flex flex-col gap-1.5">
           {current.options.map((opt, i) => (
@@ -78,14 +95,17 @@ export function PermissionPrompt() {
               onClick={() => pick(opt)}
               className={`flex items-center gap-3 rounded-md border-2 border-border-light bg-surface px-3 py-2 text-left text-[13px] text-text transition-colors ${optionAccent(opt.kind)}`}
             >
-              <span className="text-text-muted font-mono text-[11px] w-4 shrink-0">{i + 1}</span>
+              <span className="text-text-muted font-mono text-[11px] w-4 shrink-0">
+                {i + 1}
+              </span>
               <span className="flex-1">{opt.name}</span>
             </button>
           ))}
         </div>
         {pending.length > 1 && (
           <div className="text-[11px] text-text-muted">
-            {pending.length - 1} more request{pending.length - 1 === 1 ? "" : "s"} queued
+            {pending.length - 1} more request
+            {pending.length - 1 === 1 ? "" : "s"} queued
           </div>
         )}
       </div>

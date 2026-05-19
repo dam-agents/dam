@@ -4,7 +4,8 @@ import { api } from "../../../api.js";
 
 export const egressRulesKeys = {
   all: ["egress-rules"] as const,
-  forAgent: (agentId: string | null) => [...egressRulesKeys.all, "agent", agentId] as const,
+  forAgent: (agentId: string | null) =>
+    [...egressRulesKeys.all, "agent", agentId] as const,
   currentPreset: (agentId: string | null) =>
     [...egressRulesKeys.all, "agent", agentId, "preset"] as const,
 };

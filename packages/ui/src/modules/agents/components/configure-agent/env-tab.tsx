@@ -91,7 +91,11 @@ export function EnvTab({
             </ul>
           </div>
         )}
-        <EnvVarsEditor value={envVars} onChange={setEnvVars} disabled={saving} />
+        <EnvVarsEditor
+          value={envVars}
+          onChange={setEnvVars}
+          disabled={saving}
+        />
       </div>
     </>
   );
@@ -117,7 +121,10 @@ function InheritedEnvRow({ entry }: { entry: InheritedEnv }) {
         {entry.name}
       </span>
       <span className="text-text-muted">=</span>
-      <span className="font-mono text-text-muted truncate flex-1" title={entry.value}>
+      <span
+        className="font-mono text-text-muted truncate flex-1"
+        title={entry.value}
+      >
         {entry.value}
       </span>
       {!isSystem && (

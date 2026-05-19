@@ -104,10 +104,12 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	idleChecker := reconciler.NewIdleChecker(client, cfg)
 	go idleChecker.RunLoop(ctx)
 
-	// Periodic GC for PVCs whose instance ConfigMap has been removed
+	// Periodic GC for resources whose instance ConfigMap has been removed
 	// out-of-band (issue #244). The Delete event handler covers the
 	// happy path; this catches crashes mid-delete and direct kubectl removals.
-	go runOrphanPVCSweep(ctx, instanceReconciler, 10*time.Minute)
+	// Leaf TLS Secrets are also reaped here so historical leaks (from before
+	// owner-references were added) are eventually cleaned up.
+	go runOrphanSweep(ctx, instanceReconciler, 10*time.Minute)
 
 	queue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]())
 	defer queue.ShutDown()
@@ -194,8 +196,12 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	}
 }
 
-func runOrphanPVCSweep(ctx context.Context, r *reconciler.InstanceReconciler, interval time.Duration) {
-	r.ReconcileOrphanPVCs(ctx)
+func runOrphanSweep(ctx context.Context, r *reconciler.InstanceReconciler, interval time.Duration) {
+	sweep := func() {
+		r.ReconcileOrphanPVCs(ctx)
+		r.ReconcileOrphanLeafSecrets(ctx)
+	}
+	sweep()
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	for {
@@ -203,7 +209,7 @@ func runOrphanPVCSweep(ctx context.Context, r *reconciler.InstanceReconciler, in
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			r.ReconcileOrphanPVCs(ctx)
+			sweep()
 		}
 	}
 }

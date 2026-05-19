@@ -18,8 +18,10 @@ export interface InfraInstance {
 
 export function computeState(infra: InfraInstance): InstanceState {
   if (infra.currentState === "error") return "error";
-  if (infra.desiredState === "running" && infra.currentState !== "running") return "starting";
-  if (infra.desiredState === "hibernated" && infra.currentState === "running") return "hibernating";
+  if (infra.desiredState === "running" && infra.currentState !== "running")
+    return "starting";
+  if (infra.desiredState === "hibernated" && infra.currentState === "running")
+    return "hibernating";
   if (infra.desiredState === "hibernated") return "hibernated";
   if (!infra.podReady) return "starting";
   return "running";

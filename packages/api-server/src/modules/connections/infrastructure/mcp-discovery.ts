@@ -91,7 +91,8 @@ async function fetchProtectedResource(
   // RFC 9728 §3.1: path-aware variant appends the resource path after the
   // well-known segment. Bare-origin variant covers servers that publish a
   // single PRM doc per origin regardless of resource path.
-  const pathSuffix = mcpUrl.pathname === "/" ? "" : mcpUrl.pathname.replace(/\/$/, "");
+  const pathSuffix =
+    mcpUrl.pathname === "/" ? "" : mcpUrl.pathname.replace(/\/$/, "");
   const candidates = pathSuffix
     ? [
         `${mcpUrl.origin}/.well-known/oauth-protected-resource${pathSuffix}`,
@@ -99,7 +100,11 @@ async function fetchProtectedResource(
       ]
     : [`${mcpUrl.origin}/.well-known/oauth-protected-resource`];
   for (const url of candidates) {
-    const data = await fetchJson<ProtectedResourceMetadata>(url, fetchImpl, timeoutMs);
+    const data = await fetchJson<ProtectedResourceMetadata>(
+      url,
+      fetchImpl,
+      timeoutMs,
+    );
     if (data && Array.isArray(data.authorization_servers)) return data;
   }
   return null;
@@ -139,7 +144,9 @@ async function fetchJson<T>(
   timeoutMs: number,
 ): Promise<T | null> {
   try {
-    const res = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs) });
+    const res = await fetchImpl(url, {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
     if (!res.ok) return null;
     return (await res.json()) as T;
   } catch {

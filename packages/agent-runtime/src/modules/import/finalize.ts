@@ -24,7 +24,10 @@ export type FinalizeResult = {
  * landed and later entries un-landed. A re-import converges because the
  * operation is idempotent in destination terms.
  */
-export async function finalize(stagingDir: string, destDir: string): Promise<FinalizeResult> {
+export async function finalize(
+  stagingDir: string,
+  destDir: string,
+): Promise<FinalizeResult> {
   await mkdir(destDir, { recursive: true });
   const topLevel = await readdir(stagingDir);
   for (const name of topLevel) {

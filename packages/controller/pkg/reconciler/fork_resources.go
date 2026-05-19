@@ -40,6 +40,7 @@ func BuildForkAgentJob(
 	cfg *config.Config,
 	ownerCM *corev1.ConfigMap,
 	credentialSecrets []corev1.Secret,
+	gatewayClusterIP string,
 ) *batchv1.Job {
 	base := cfg.AgentBase
 	defaults := cfg.AgentTemplateDefaults
@@ -88,8 +89,11 @@ func BuildForkAgentJob(
 
 	caCertPath := "/etc/platform/ca/ca.crt"
 
-	// Paired gateway Service DNS — stable across the fork lifetime.
-	proxyAddr := fmt.Sprintf("http://%s:%d", GatewayName(forkName), cfg.EnvoyPort)
+	// Paired gateway's ClusterIP literal — IP-direct so HTTPS_PROXY has
+	// zero DNS dependency. The fork reconciler requeues until the gateway
+	// Service has been assigned a ClusterIP (see fork.go), so the IP is
+	// always known by the time we get here.
+	proxyAddr := fmt.Sprintf("http://%s:%d", gatewayClusterIP, cfg.EnvoyPort)
 
 	env := []corev1.EnvVar{
 		{Name: "HTTPS_PROXY", Value: proxyAddr},
@@ -194,6 +198,12 @@ func BuildForkAgentJob(
 		initScript = defaults.Init
 	}
 	var initContainers []corev1.Container
+	if ic := buildIptablesInitContainer(cfg, gatewayClusterIP); ic != nil {
+		initContainers = append(initContainers, *ic)
+	}
+	if ic := buildNPGateInitContainer(cfg, gatewayClusterIP); ic != nil {
+		initContainers = append(initContainers, *ic)
+	}
 	if initScript != "" {
 		initContainers = append(initContainers, corev1.Container{
 			Name:            "init",
@@ -212,7 +222,7 @@ func BuildForkAgentJob(
 
 	// GH_TOKEN signal — mirrors the long-lived shape.
 	ghAvail := "false"
-	if hasGitHubCredential(credentialSecrets) {
+	if hasGHTokenEnv(credentialSecrets) {
 		ghAvail = "true"
 	}
 	env = append(env, corev1.EnvVar{Name: "PLATFORM_GH_TOKEN_AVAILABLE", Value: ghAvail})

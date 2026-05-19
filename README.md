@@ -66,3 +66,7 @@ Open [localhost:4444](http://localhost:4444) (login: `dev` / `dev`), create an i
 - **[Security model](docs/strategy/security-model.md)** — the three big risks when running AI agents, how DAM handles each, and what's still unsolved
 - **[Multiplayer](docs/strategy/multi-player.md)** — DAM's multi-user model: what's private to each player, what's shared when you collaborate, and what's install-wide plumbing
 - **[Why DAM exists](PITCH.md)** — the three problems every agent hits in production, how DAM solves each, and a 5-minute walkthrough
+
+## Contributing
+
+- **[Work process](docs/guidelines/work-process.md)** — the proposed ideal flow from idea to merged code

@@ -1,4 +1,4 @@
-import { type User,UserManager, WebStorageStateStore } from "oidc-client-ts";
+import { type User, UserManager, WebStorageStateStore } from "oidc-client-ts";
 
 let userManager: UserManager;
 let currentUser: User | null = null;

@@ -3,6 +3,7 @@ package reconciler
 import (
 	"bytes"
 	"context"
+	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -35,10 +36,15 @@ const (
 	envoyManagedByLabel   = "agent-platform.ai/managed-by"
 	envoySecretTypeLabel  = "agent-platform.ai/secret-type"
 	envoyConnectionLabel  = "agent-platform.ai/connection"
+	// Non-connection Secrets: single injection target via these.
 	envoyHostPatternAnn   = "agent-platform.ai/host-pattern"
 	envoyHeaderNameAnn    = "agent-platform.ai/injection-header-name"
 	envoyQueryParamAnn    = "agent-platform.ai/injection-query-param"
 	envoyAuthModeAnn      = "agent-platform.ai/auth-mode"
+	// Connection Secrets: N injection targets as JSON. Issue #219. (The
+	// api-server also stamps `agent-platform.ai/host-patterns` for kubectl
+	// readability; the controller doesn't read it.)
+	envoyInjectionHostsAnn = "agent-platform.ai/injection-hosts"
 	// JSON-encoded list of {envName, placeholder} the api-server stamps on a
 	// user-typed credential Secret. Authoritative source for the env vars
 	// the agent harness needs as placeholders (ADR-041). Connection-type
@@ -69,12 +75,12 @@ func EnvoyBootstrapName(instanceName string) string {
 }
 
 // envoyCredential is one injection step in a host's filter chain. Each
-// credentialed K8s Secret renders to one of these; multiple credentials
+// (Secret, host) pair renders to one of these; multiple credentials
 // pointing at the same host stack inside a single `envoyHostChain` so
-// users can express "two injections on the same endpoint" by creating
-// two Secrets with the same host-pattern.
+// users can express "two injections on the same endpoint" by stacking
+// two Secrets or two host entries in one connection Secret.
 type envoyCredential struct {
-	SecretName string // K8s Secret name, used for the per-credential file path
+	SecretName string // K8s Secret name, used for diagnostics + ChainID derivation
 	HeaderName string // header credential_injector writes into
 	// When non-empty, a Lua filter after credential_injector moves the
 	// injected header value into this URL query parameter and strips the
@@ -83,6 +89,10 @@ type envoyCredential struct {
 	// raw value in that case so the URL doesn't grow a `Bearer ` prefix.
 	QueryParamName string
 	VolumeName     string // pod-level volume name for this Secret
+	// SDS file key inside the Secret's volume. Single-host
+	// Secrets use `sds.yaml`; connection Secrets use `host-<sha8>.sds.yaml`
+	// so one Secret carries N chains' credentials (issue #219).
+	SDSFileKey string
 }
 
 // envoyHostChain is one TLS-terminating filter chain. `Credentials` is
@@ -229,14 +239,14 @@ type envMapping struct {
 }
 
 // credentialEnvVars synthesizes the env-var placeholders the agent harness
-// needs so SDKs will dispatch (Envoy overwrites the real header on the wire).
-//
-// Source of truth (ADR-041): the api-server stamps `envoyEnvMappingsAnn` on
-// each user-typed credential Secret. Secrets are pre-sorted by Name in
-// `listOwnerCredentialSecrets`, so the inner dedup gives "first-granted
-// wins" on env-name collisions. When the annotation is missing or malformed
-// the legacy switch fills in the canonical env per secret type — covers
-// connection-type Secrets (no annotation today) and hand-crafted fixtures.
+// needs so SDKs will dispatch (Envoy overwrites the real header on the
+// wire). Source of truth: every Secret stamps `envoyEnvMappingsAnn` with
+// the env it contributes (api-server connections from
+// `flow.envMappings`; secrets module from `defaultEnvMappings`). The
+// anthropic auth-mode switch remains as a fallback for Secrets created
+// via raw `kubectl apply` without the annotation. Secrets are pre-sorted
+// by Name in `listOwnerCredentialSecrets`, so dedup is "first-granted
+// wins" on env-name collisions.
 func credentialEnvVars(secrets []corev1.Secret) []corev1.EnvVar {
 	const fallbackPlaceholder = "dummy-placeholder"
 	seen := map[string]struct{}{}
@@ -258,9 +268,6 @@ func credentialEnvVars(secrets []corev1.Secret) []corev1.EnvVar {
 		if raw := s.Annotations[envoyEnvMappingsAnn]; raw != "" {
 			var mappings []envMapping
 			if err := json.Unmarshal([]byte(raw), &mappings); err != nil {
-				// Bad annotation shouldn't crash the reconcile loop, but
-				// silently dropping it produces a pod missing env vars with
-				// no operator visibility — log it so the cause is findable.
 				slog.Warn("invalid env-mappings annotation; skipping",
 					"namespace", s.Namespace, "secret", s.Name, "error", err)
 			} else {
@@ -270,54 +277,120 @@ func credentialEnvVars(secrets []corev1.Secret) []corev1.EnvVar {
 				continue
 			}
 		}
-		switch s.Labels[envoySecretTypeLabel] {
-		case "anthropic":
+		// Anthropic fallback for hand-crafted Secrets without the
+		// annotation. Every other Secret type relies on env-mappings.
+		if s.Labels[envoySecretTypeLabel] == "anthropic" {
 			if s.Annotations[envoyAuthModeAnn] == "api-key" {
 				envs = add(envs, "ANTHROPIC_API_KEY", fallbackPlaceholder)
 			} else {
 				envs = add(envs, "CLAUDE_CODE_OAUTH_TOKEN", fallbackPlaceholder)
-			}
-		case "connection":
-			host := s.Annotations[envoyHostPatternAnn]
-			if host == "github.com" || host == "api.github.com" {
-				envs = add(envs, "GH_TOKEN", fallbackPlaceholder)
 			}
 		}
 	}
 	return envs
 }
 
-// hasGitHubCredential reports whether any of the owner's K8s credential
-// Secrets target a GitHub host. Used by the reconciler to warn when an
-// instance has no GitHub credential so gh/octokit don't lose auth silently.
-func hasGitHubCredential(secrets []corev1.Secret) bool {
-	for _, s := range secrets {
-		host := s.Annotations[envoyHostPatternAnn]
-		if host == "github.com" || host == "api.github.com" {
+// hasGHTokenEnv reports whether any granted Secret declares `GH_TOKEN`
+// in its env-mappings. Used to set `PLATFORM_GH_TOKEN_AVAILABLE` and to
+// gate the no-credential warning — replaces a hardcoded github-host
+// check with a derivation from the declarative env-mapping spec.
+func hasGHTokenEnv(secrets []corev1.Secret) bool {
+	for _, e := range credentialEnvVars(secrets) {
+		if e.Name == "GH_TOKEN" {
 			return true
 		}
 	}
 	return false
 }
 
-// chainsFromSecrets groups Secrets by host-pattern into one filter chain
-// per host. Multiple credentialed Secrets sharing a host stack as
-// separate `envoyCredential` entries inside the chain — that's how users
-// express "two injections on the same endpoint" (e.g. a header AND a
-// URL query parameter, possibly with different formats).
+// connectionHostInjection mirrors the TS `ConnectionHostInjection`
+// persisted on the `injection-hosts` annotation. Decoded once per Secret
+// and fanned out by `chainsFromSecrets`.
+type connectionHostInjection struct {
+	Host        string `json:"host"`
+	PathPattern string `json:"pathPattern,omitempty"`
+	HeaderName  string `json:"headerName,omitempty"`
+	ValueFormat string `json:"valueFormat,omitempty"`
+	Encoding    string `json:"encoding,omitempty"`
+}
+
+// sdsFileKeyForHost mirrors the api-server's `sdsFileKeyForHost`. MUST
+// stay byte-identical — pinned by tests on both sides. SHA-1 is
+// non-cryptographic use.
+func sdsFileKeyForHost(host string) string {
+	h := sha1.Sum([]byte(host)) // #nosec G401 — non-cryptographic
+	return "host-" + hex.EncodeToString(h[:])[:8] + ".sds.yaml"
+}
+
+// expandConnectionSecret turns a connection Secret into one (host, cred)
+// pair per entry in its `injection-hosts` JSON. Non-connection Secrets
+// remain single-host (handled by the caller).
+type hostCredential struct {
+	host string
+	cred envoyCredential
+}
+
+func expandConnectionSecret(s corev1.Secret) []hostCredential {
+	entries := parseConnectionHosts(s)
+	if len(entries) == 0 {
+		return nil
+	}
+	// Dedup hosts inside one Secret — descriptor bugs or migration
+	// quirks can list the same host twice; emitting two chains for the
+	// same SNI would crash Envoy with duplicate filter chains.
+	seenHost := map[string]struct{}{}
+	out := make([]hostCredential, 0, len(entries))
+	for _, e := range entries {
+		if e.Host == "" {
+			continue
+		}
+		if _, dup := seenHost[e.Host]; dup {
+			slog.Warn("duplicate host in injection-hosts; skipping later entry",
+				"namespace", s.Namespace, "secret", s.Name, "host", e.Host)
+			continue
+		}
+		seenHost[e.Host] = struct{}{}
+		header := e.HeaderName
+		if header == "" {
+			header = "Authorization"
+		}
+		out = append(out, hostCredential{
+			host: e.Host,
+			cred: envoyCredential{
+				SecretName: s.Name,
+				HeaderName: header,
+				VolumeName: "cred-" + s.Name,
+				SDSFileKey: sdsFileKeyForHost(e.Host),
+			},
+		})
+	}
+	return out
+}
+
+// parseConnectionHosts reads `injection-hosts` JSON. Connection Secrets
+// without it are ignored — the api-server always writes the JSON.
+func parseConnectionHosts(s corev1.Secret) []connectionHostInjection {
+	raw := s.Annotations[envoyInjectionHostsAnn]
+	if raw == "" {
+		return nil
+	}
+	var entries []connectionHostInjection
+	if err := json.Unmarshal([]byte(raw), &entries); err != nil {
+		slog.Warn("malformed injection-hosts annotation; skipping",
+			"namespace", s.Namespace, "secret", s.Name, "error", err)
+		return nil
+	}
+	return entries
+}
+
+// chainsFromSecrets groups (Secret, host) pairs into one filter chain
+// per host. Connection Secrets fan into N pairs via `injection-hosts`
+// JSON (issue #219); other types use the legacy `host-pattern`. Within a
+// chain, duplicate header names are dropped (credential_injector
+// overwrite: true would silently clobber) with a warning.
 //
-// Within a chain each credential MUST use a unique header name. Envoy's
-// credential_injector runs in `overwrite: true` mode, so two injectors
-// writing the same header would silently clobber one another. We drop
-// the later one (input is name-sorted upstream) and emit a warning;
-// validating this at api-server create time is the right long-term home
-// but defense-in-depth here keeps the gateway up either way.
-//
-// A host with ONLY allow-only Secrets renders as an uncredentialed
-// chain (MITM termination for the gate, then dynamic_forward_proxy).
-// A host with both allow-only AND credentialed Secrets renders as a
-// credentialed chain — allow-only contributes nothing in that case
-// (it's a path-policy hint, not an instruction to skip injection).
+// Allow-only-only host → uncredentialed chain (MITM gate + dynamic_forward
+// _proxy). Mixed → credentialed chain; allow-only contributes nothing.
 func chainsFromSecrets(secrets []corev1.Secret) []envoyHostChain {
 	type bucket struct {
 		host        string
@@ -327,57 +400,89 @@ func chainsFromSecrets(secrets []corev1.Secret) []envoyHostChain {
 	}
 	byHost := map[string]*bucket{}
 	order := []string{}
-	for _, s := range secrets {
-		host := s.Annotations[envoyHostPatternAnn]
+
+	add := func(host, secretName string, cred *envoyCredential) {
 		if host == "" {
-			continue
+			return
 		}
 		b := byHost[host]
 		if b == nil {
-			b = &bucket{host: host, seenHeader: map[string]string{}, first: s.Name}
+			b = &bucket{host: host, seenHeader: map[string]string{}, first: secretName}
 			byHost[host] = b
 			order = append(order, host)
 		}
-		if s.Labels[envoySecretTypeLabel] == envoySecretTypeAllowOnly {
-			// Allow-only Secrets carry no credential payload — they only
-			// exist to extend the leaf cert's SAN list so the host
-			// terminates on the L7 chain at all. Nothing to add to
-			// `credentials`; if the host has no other credentialed
-			// Secrets the chain stays uncredentialed.
-			continue
+		if cred == nil {
+			return
 		}
-		header := s.Annotations[envoyHeaderNameAnn]
+		header := cred.HeaderName
 		if header == "" {
 			header = "Authorization"
 		}
 		if winner, dup := b.seenHeader[header]; dup {
-			slog.Warn("duplicate injection header on host; later secret skipped to avoid credential_injector clobber",
+			slog.Warn("duplicate injection header on host; later credential skipped to avoid credential_injector clobber",
 				"host", host, "headerName", header,
-				"winningSecret", winner, "skippedSecret", s.Name)
+				"winningSecret", winner, "skippedSecret", secretName)
+			return
+		}
+		b.seenHeader[header] = secretName
+		c := *cred
+		c.HeaderName = header
+		b.credentials = append(b.credentials, c)
+	}
+
+	for _, s := range secrets {
+		switch s.Labels[envoySecretTypeLabel] {
+		case "connection":
+			for _, hc := range expandConnectionSecret(s) {
+				cred := hc.cred
+				add(hc.host, s.Name, &cred)
+			}
 			continue
 		}
-		b.seenHeader[header] = s.Name
-		b.credentials = append(b.credentials, envoyCredential{
+		// Non-connection Secret: single host via the legacy host-pattern
+		// annotation. Allow-only Secrets register the host (extends the
+		// leaf cert SAN list, forces L7 termination) but contribute no
+		// credential.
+		host := s.Annotations[envoyHostPatternAnn]
+		if host == "" {
+			continue
+		}
+		if s.Labels[envoySecretTypeLabel] == envoySecretTypeAllowOnly {
+			add(host, s.Name, nil)
+			continue
+		}
+		cred := envoyCredential{
 			SecretName:     s.Name,
-			HeaderName:     header,
+			HeaderName:     s.Annotations[envoyHeaderNameAnn],
 			QueryParamName: s.Annotations[envoyQueryParamAnn],
 			VolumeName:     "cred-" + s.Name,
-		})
+			SDSFileKey:     envoyCredentialKeySDS,
+		}
+		add(host, s.Name, &cred)
 	}
+
 	chains := make([]envoyHostChain, 0, len(order))
 	for _, host := range order {
 		b := byHost[host]
+		// Suffix the host fingerprint so one Secret driving multiple
+		// hosts (github → 3 chains, #219) doesn't collide on
+		// `chain_<secret>` / `upstream_<secret>`.
 		chains = append(chains, envoyHostChain{
-			// ChainID + UpstreamCluster are derived from the first
-			// Secret's name. Stable across reconciles so kubelet diffs
-			// stay tight when an extra Secret is granted on the host.
-			ChainID:         "chain_" + b.first,
-			UpstreamCluster: "upstream_" + b.first,
+			ChainID:         "chain_" + b.first + "_" + hostShort(host),
+			UpstreamCluster: "upstream_" + b.first + "_" + hostShort(host),
 			Host:            host,
 			Credentials:     b.credentials,
 		})
 	}
 	return chains
+}
+
+// hostShort returns an 8-hex-char fingerprint of a hostname — same prefix
+// shape as `sdsFileKeyForHost` so ChainID / UpstreamCluster stay readable
+// and stable across reconciles.
+func hostShort(host string) string {
+	h := sha1.Sum([]byte(host)) // #nosec G401 — non-cryptographic
+	return hex.EncodeToString(h[:])[:8]
 }
 
 // Bootstrap template — TLS-intercepting CONNECT proxy.
@@ -612,7 +717,7 @@ static_resources:
                             name: {{ $.CredentialSDSName }}
                             sds_config:
                               path_config_source:
-                                path: {{ $.CredentialsRoot }}/{{ $cred.VolumeName }}/{{ $.CredentialFile }}
+                                path: {{ $.CredentialsRoot }}/{{ $cred.VolumeName }}/{{ $cred.SDSFileKey }}
                                 # Watch the Secret-volume mount root, not the
                                 # sds.yaml path. Kubelet rotates the ..data
                                 # symlink inside the mount when a Secret
@@ -953,7 +1058,6 @@ func renderEnvoyBootstrap(extAuthzInstanceID string, cfg *config.Config, chains 
 		Port                   int
 		Chains                 []envoyHostChain
 		CredentialsRoot        string
-		CredentialFile         string
 		CredentialSDSName      string
 		LeafTLSDir             string
 		HarnessAuthority       string
@@ -968,7 +1072,6 @@ func renderEnvoyBootstrap(extAuthzInstanceID string, cfg *config.Config, chains 
 		Port:                   cfg.EnvoyPort,
 		Chains:                 chains,
 		CredentialsRoot:        envoyCredentialsRoot,
-		CredentialFile:         envoyCredentialKeySDS,
 		CredentialSDSName:      envoyCredentialSDSName,
 		LeafTLSDir:             envoyLeafTLSMount,
 		HarnessAuthority:       harnessAuthority,
@@ -1066,26 +1169,23 @@ func ptrBool(b bool) *bool { return &b }
 // Bump on any template change that affects pod-visible behavior.
 const envoyBootstrapTemplateRev = "v10-url-encode-cred"
 
-// envoySecretsRev is a stable digest of the Secret set that drives Envoy's
-// chain rendering: secret name + host + secret-type label + headerName +
-// queryParamName, plus a template-revision marker. Stamped on the pod
-// template so the StatefulSet rolls when any of those change (new
-// credentialed connection, allow-only Secret added, host retargeted,
-// header renamed, query-param flipped on/off, template format bumped).
-// Sort first so reconcile order doesn't churn the hash.
+// envoySecretsRev digests the Secret set that drives Envoy's chain
+// rendering. Includes `injection-hosts` JSON so a descriptor change
+// (host added / removed / retargeted on a connection) rolls the gateway —
+// Envoy reads the bootstrap once at boot, so without a roll the chain
+// shape goes stale.
 func envoySecretsRev(secrets []corev1.Secret) string {
 	parts := []string{"tmpl=" + envoyBootstrapTemplateRev}
 	for _, s := range secrets {
-		parts = append(parts, fmt.Sprintf("%s|%s|%s|%s|%s",
+		parts = append(parts, fmt.Sprintf("%s|%s|%s|%s|%s|%s",
 			s.Name,
 			s.Annotations[envoyHostPatternAnn],
 			s.Labels[envoySecretTypeLabel],
 			s.Annotations[envoyHeaderNameAnn],
 			s.Annotations[envoyQueryParamAnn],
+			s.Annotations[envoyInjectionHostsAnn],
 		))
 	}
-	// Keep the template marker first; sort the rest so reconcile order
-	// doesn't churn the hash.
 	sort.Strings(parts[1:])
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\n")))
 	return hex.EncodeToString(sum[:8])

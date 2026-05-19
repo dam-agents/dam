@@ -4,8 +4,8 @@ import type {
   SessionConfigSelectGroup,
   SessionConfigSelectOption,
 } from "@agentclientprotocol/sdk/dist/acp.js";
-import { Check, ChevronDown,ChevronUp } from "lucide-react";
-import { useCallback,useEffect, useRef, useState } from "react";
+import { Check, ChevronDown, ChevronUp } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { runAction } from "../../../lib/query-helpers.js";
@@ -16,10 +16,16 @@ function prefKey(instanceId: string, key: string) {
 }
 
 function savePreference(instanceId: string, key: string, value: string) {
-  try { localStorage.setItem(prefKey(instanceId, key), value); } catch {}
+  try {
+    localStorage.setItem(prefKey(instanceId, key), value);
+  } catch {}
 }
 
-export function getSavedPreferences(instanceId: string): { model?: string; mode?: string; config: Record<string, string> } {
+export function getSavedPreferences(instanceId: string): {
+  model?: string;
+  mode?: string;
+  config: Record<string, string>;
+} {
   const prefix = `platform-pref:${instanceId}:config:`;
   const config: Record<string, string> = {};
   try {
@@ -38,7 +44,10 @@ export function getSavedPreferences(instanceId: string): { model?: string; mode?
 }
 
 /** Extract short model name from description (e.g. "Sonnet 4.6 · Best for..." → "Sonnet 4.6") */
-function shortModelLabel(model: { name: string; description?: string | null }): string {
+function shortModelLabel(model: {
+  name: string;
+  description?: string | null;
+}): string {
   if (model.description) {
     const before = model.description.split("·")[0]?.trim();
     if (before && before !== model.name) return before;
@@ -64,12 +73,12 @@ export function SessionConfigBar({
   engagedSessionIdRef: React.RefObject<string | null>;
   instanceId: string;
 }) {
-  const modes = useStore(s => s.sessionModes);
-  const models = useStore(s => s.sessionModels);
-  const configOptions = useStore(s => s.sessionConfigOptions);
-  const setSessionModes = useStore(s => s.setSessionModes);
-  const setSessionModels = useStore(s => s.setSessionModels);
-  const setSessionConfigOptions = useStore(s => s.setSessionConfigOptions);
+  const modes = useStore((s) => s.sessionModes);
+  const models = useStore((s) => s.sessionModels);
+  const configOptions = useStore((s) => s.sessionConfigOptions);
+  const setSessionModes = useStore((s) => s.setSessionModes);
+  const setSessionModels = useStore((s) => s.setSessionModels);
+  const setSessionConfigOptions = useStore((s) => s.setSessionConfigOptions);
 
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -105,14 +114,17 @@ export function SessionConfigBar({
       if (
         triggerRef.current?.contains(target) ||
         popoverRef.current?.contains(target)
-      ) return;
+      )
+        return;
       setOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  const currentMode = modes?.availableModes.find(m => m.id === modes.currentModeId);
+  const currentMode = modes?.availableModes.find(
+    (m) => m.id === modes.currentModeId,
+  );
   const hasConfig = !!(modes || models || configOptions.length > 0);
   const [initializing, setInitializing] = useState(false);
 
@@ -120,7 +132,7 @@ export function SessionConfigBar({
   // one so the config options populate.
   const handleOpen = async () => {
     if (hasConfig) {
-      setOpen(o => !o);
+      setOpen((o) => !o);
       return;
     }
     // No session yet — create one to get config options
@@ -161,13 +173,17 @@ export function SessionConfigBar({
         setSessionModels({ ...latest, currentModelId: modelId });
       }
       const sid = engagedSessionIdRef.current;
-      if (conn && sid) await conn.unstable_setSessionModel({ sessionId: sid, modelId });
+      if (conn && sid)
+        await conn.unstable_setSessionModel({ sessionId: sid, modelId });
     }, "Couldn't change model");
   };
 
   // Config option: optimistic, persist, fire-and-forget
-  const setConfigOption = (opt: SessionConfigOption, value: boolean | string) => {
-    const updated = configOptions.map(o => {
+  const setConfigOption = (
+    opt: SessionConfigOption,
+    value: boolean | string,
+  ) => {
+    const updated = configOptions.map((o) => {
       if (o.id !== opt.id) return o;
       return { ...o, currentValue: value } as SessionConfigOption;
     });
@@ -178,9 +194,15 @@ export function SessionConfigBar({
       const conn = await ensureConnection();
       const sid = engagedSessionIdRef.current;
       if (!conn || !sid) return;
-      const req = opt.type === "boolean"
-        ? { sessionId: sid, configId: opt.id, type: "boolean" as const, value: value as boolean }
-        : { sessionId: sid, configId: opt.id, value: value as string };
+      const req =
+        opt.type === "boolean"
+          ? {
+              sessionId: sid,
+              configId: opt.id,
+              type: "boolean" as const,
+              value: value as boolean,
+            }
+          : { sessionId: sid, configId: opt.id, value: value as string };
       const resp = await conn.setSessionConfigOption(req);
       setSessionConfigOptions(resp.configOptions);
     }, `Couldn't apply "${opt.name}"`);
@@ -188,9 +210,13 @@ export function SessionConfigBar({
 
   // Filter config options: exclude "model" and "mode" categories since those
   // have dedicated UI sections above. This prevents mode appearing twice.
-  const extraOptions = configOptions.filter(o => o.category !== "model" && o.category !== "mode");
+  const extraOptions = configOptions.filter(
+    (o) => o.category !== "model" && o.category !== "mode",
+  );
 
-  const currentModel = models?.availableModels.find(m => m.modelId === models.currentModelId);
+  const currentModel = models?.availableModels.find(
+    (m) => m.modelId === models.currentModelId,
+  );
 
   return (
     <>
@@ -205,88 +231,134 @@ export function SessionConfigBar({
           <span className="text-text-muted">Loading...</span>
         ) : (
           <span className="truncate max-w-[250px]">
-            {[currentModel && shortModelLabel(currentModel), currentMode?.name].filter(Boolean).join(" · ") || "Config"}
+            {[currentModel && shortModelLabel(currentModel), currentMode?.name]
+              .filter(Boolean)
+              .join(" · ") || "Config"}
           </span>
         )}
-        {!initializing && (open ? <ChevronDown size={12} className="shrink-0" /> : <ChevronUp size={12} className="shrink-0" />)}
+        {!initializing &&
+          (open ? (
+            <ChevronDown size={12} className="shrink-0" />
+          ) : (
+            <ChevronUp size={12} className="shrink-0" />
+          ))}
       </button>
 
       {/* Popover — portaled to body to escape stacking context */}
-      {open && hasConfig && pos && createPortal(
-        <div
-          ref={popoverRef}
-          className="fixed w-[300px] max-h-[400px] overflow-y-auto rounded-xl border-2 border-border bg-surface z-[9999] anim-scale-in shadow-brutal"
-          style={{
-            left: pos.left,
-            bottom: pos.bottom,
-          }}
-        >
-          {/* Model selector */}
-          {models && (
-            <div className="border-b border-border-light">
-              <div className="px-4 pt-3 pb-1 text-[10px] font-bold uppercase tracking-[0.05em] text-text-muted">Model</div>
-              {models.availableModels.map(m => {
-                const active = m.modelId === models.currentModelId;
-                return (
+      {open &&
+        hasConfig &&
+        pos &&
+        createPortal(
+          <div
+            ref={popoverRef}
+            className="fixed w-[300px] max-h-[400px] overflow-y-auto rounded-xl border-2 border-border bg-surface z-[9999] anim-scale-in shadow-brutal"
+            style={{
+              left: pos.left,
+              bottom: pos.bottom,
+            }}
+          >
+            {/* Model selector */}
+            {models && (
+              <div className="border-b border-border-light">
+                <div className="px-4 pt-3 pb-1 text-[10px] font-bold uppercase tracking-[0.05em] text-text-muted">
+                  Model
+                </div>
+                {models.availableModels.map((m) => {
+                  const active = m.modelId === models.currentModelId;
+                  return (
+                    <button
+                      key={m.modelId}
+                      className={`flex items-center gap-2 w-full px-4 py-2 text-[13px] text-left transition-colors ${active ? "text-accent bg-accent-light font-semibold" : "text-text hover:bg-surface-raised"}`}
+                      onClick={() => setModel(m.modelId)}
+                    >
+                      {active && <Check size={12} className="shrink-0" />}
+                      <div className={active ? "" : "ml-[20px]"}>
+                        <div>{m.name}</div>
+                        <div className="text-[11px] text-text-muted font-normal font-mono">
+                          {m.modelId}
+                        </div>
+                        {m.description && (
+                          <div className="text-[11px] text-text-muted font-normal">
+                            {m.description}
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Mode selector */}
+            {modes && modes.availableModes.length > 1 && (
+              <div className="border-b border-border-light">
+                <div className="px-4 pt-3 pb-1 text-[10px] font-bold uppercase tracking-[0.05em] text-text-muted">
+                  Mode
+                </div>
+                {modes.availableModes.map((m) => (
                   <button
-                    key={m.modelId}
-                    className={`flex items-center gap-2 w-full px-4 py-2 text-[13px] text-left transition-colors ${active ? "text-accent bg-accent-light font-semibold" : "text-text hover:bg-surface-raised"}`}
-                    onClick={() => setModel(m.modelId)}
+                    key={m.id}
+                    className={`flex items-center gap-2 w-full px-4 py-2 text-[13px] text-left transition-colors ${m.id === modes.currentModeId ? "text-accent bg-accent-light font-semibold" : "text-text hover:bg-surface-raised"}`}
+                    onClick={() => setMode(m.id)}
                   >
-                    {active && <Check size={12} className="shrink-0" />}
-                    <div className={active ? "" : "ml-[20px]"}>
+                    {m.id === modes.currentModeId && (
+                      <Check size={12} className="shrink-0" />
+                    )}
+                    <div
+                      className={
+                        m.id === modes.currentModeId ? "" : "ml-[20px]"
+                      }
+                    >
                       <div>{m.name}</div>
-                      <div className="text-[11px] text-text-muted font-normal font-mono">{m.modelId}</div>
-                      {m.description && <div className="text-[11px] text-text-muted font-normal">{m.description}</div>}
+                      {m.description && (
+                        <div className="text-[11px] text-text-muted">
+                          {m.description}
+                        </div>
+                      )}
                     </div>
                   </button>
-                );
-              })}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
 
-          {/* Mode selector */}
-          {modes && modes.availableModes.length > 1 && (
-            <div className="border-b border-border-light">
-              <div className="px-4 pt-3 pb-1 text-[10px] font-bold uppercase tracking-[0.05em] text-text-muted">Mode</div>
-              {modes.availableModes.map(m => (
-                <button
-                  key={m.id}
-                  className={`flex items-center gap-2 w-full px-4 py-2 text-[13px] text-left transition-colors ${m.id === modes.currentModeId ? "text-accent bg-accent-light font-semibold" : "text-text hover:bg-surface-raised"}`}
-                  onClick={() => setMode(m.id)}
-                >
-                  {m.id === modes.currentModeId && <Check size={12} className="shrink-0" />}
-                  <div className={m.id === modes.currentModeId ? "" : "ml-[20px]"}>
-                    <div>{m.name}</div>
-                    {m.description && <div className="text-[11px] text-text-muted">{m.description}</div>}
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
+            {/* Config options (excluding model and mode categories) */}
+            {extraOptions.length > 0 && (
+              <div>
+                <div className="px-4 pt-3 pb-1 text-[10px] font-bold uppercase tracking-[0.05em] text-text-muted">
+                  Options
+                </div>
+                {extraOptions.map((opt) => (
+                  <ConfigOptionRow
+                    key={opt.id}
+                    option={opt}
+                    onChange={(v) => setConfigOption(opt, v)}
+                  />
+                ))}
+              </div>
+            )}
 
-          {/* Config options (excluding model and mode categories) */}
-          {extraOptions.length > 0 && (
-            <div>
-              <div className="px-4 pt-3 pb-1 text-[10px] font-bold uppercase tracking-[0.05em] text-text-muted">Options</div>
-              {extraOptions.map(opt => (
-                <ConfigOptionRow key={opt.id} option={opt} onChange={(v) => setConfigOption(opt, v)} />
-              ))}
-            </div>
-          )}
-
-          {/* Empty state */}
-          {!models && (!modes || modes.availableModes.length <= 1) && extraOptions.length === 0 && (
-            <div className="px-4 py-4 text-[12px] text-text-muted">No configuration options available</div>
-          )}
-        </div>,
-        document.body,
-      )}
+            {/* Empty state */}
+            {!models &&
+              (!modes || modes.availableModes.length <= 1) &&
+              extraOptions.length === 0 && (
+                <div className="px-4 py-4 text-[12px] text-text-muted">
+                  No configuration options available
+                </div>
+              )}
+          </div>,
+          document.body,
+        )}
     </>
   );
 }
 
-function ConfigOptionRow({ option, onChange }: { option: SessionConfigOption; onChange: (v: boolean | string) => void }) {
+function ConfigOptionRow({
+  option,
+  onChange,
+}: {
+  option: SessionConfigOption;
+  onChange: (v: boolean | string) => void;
+}) {
   if (option.type === "boolean") {
     return (
       <label className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-surface-raised transition-colors">
@@ -298,7 +370,11 @@ function ConfigOptionRow({ option, onChange }: { option: SessionConfigOption; on
         />
         <div className="flex-1 min-w-0">
           <div className="text-[13px] font-medium text-text">{option.name}</div>
-          {option.description && <div className="text-[11px] text-text-muted">{option.description}</div>}
+          {option.description && (
+            <div className="text-[11px] text-text-muted">
+              {option.description}
+            </div>
+          )}
         </div>
       </label>
     );
@@ -309,10 +385,16 @@ function ConfigOptionRow({ option, onChange }: { option: SessionConfigOption; on
   const flatOptions = flattenSelectOptions(selectOpt.options);
   return (
     <div className="px-4 py-2.5">
-      <div className="text-[13px] font-medium text-text mb-1">{option.name}</div>
-      {option.description && <div className="text-[11px] text-text-muted mb-2">{option.description}</div>}
+      <div className="text-[13px] font-medium text-text mb-1">
+        {option.name}
+      </div>
+      {option.description && (
+        <div className="text-[11px] text-text-muted mb-2">
+          {option.description}
+        </div>
+      )}
       <div className="flex flex-wrap gap-1">
-        {flatOptions.map(o => (
+        {flatOptions.map((o) => (
           <button
             key={o.value}
             className={`text-[11px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 transition-colors ${o.value === selectOpt.currentValue ? "bg-accent text-white border-accent-hover" : "bg-surface text-text-muted border-border-light hover:border-accent hover:text-accent"}`}
@@ -326,11 +408,13 @@ function ConfigOptionRow({ option, onChange }: { option: SessionConfigOption; on
   );
 }
 
-function flattenSelectOptions(options: Array<SessionConfigSelectOption> | Array<SessionConfigSelectGroup>): SessionConfigSelectOption[] {
+function flattenSelectOptions(
+  options: Array<SessionConfigSelectOption> | Array<SessionConfigSelectGroup>,
+): SessionConfigSelectOption[] {
   if (!options || options.length === 0) return [];
   // Check if grouped
   if ("group" in options[0]) {
-    return (options as SessionConfigSelectGroup[]).flatMap(g => g.options);
+    return (options as SessionConfigSelectGroup[]).flatMap((g) => g.options);
   }
   return options as SessionConfigSelectOption[];
 }

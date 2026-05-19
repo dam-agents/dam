@@ -15,7 +15,10 @@ export interface K8sClient {
   listConfigMaps(labelSelector: string): Promise<k8s.V1ConfigMap[]>;
   getConfigMap(name: string): Promise<k8s.V1ConfigMap | null>;
   createConfigMap(body: k8s.V1ConfigMap): Promise<k8s.V1ConfigMap>;
-  replaceConfigMap(name: string, body: k8s.V1ConfigMap): Promise<k8s.V1ConfigMap>;
+  replaceConfigMap(
+    name: string,
+    body: k8s.V1ConfigMap,
+  ): Promise<k8s.V1ConfigMap>;
   patchConfigMap(name: string, body: object): Promise<void>;
   deleteConfigMap(name: string): Promise<void>;
 
@@ -39,17 +42,27 @@ export interface K8sClient {
 // ---------------------------------------------------------------------------
 
 function isStatus(err: unknown, code: number): boolean {
-  return err instanceof Error && "code" in err && (err as { code: number }).code === code;
+  return (
+    err instanceof Error &&
+    "code" in err &&
+    (err as { code: number }).code === code
+  );
 }
 const is404 = (err: unknown) => isStatus(err, 404);
 export const is409 = (err: unknown) => isStatus(err, 409);
 
-export function createK8sClient(api: k8s.CoreV1Api, namespace: string): K8sClient {
+export function createK8sClient(
+  api: k8s.CoreV1Api,
+  namespace: string,
+): K8sClient {
   return {
     namespace,
 
     async listConfigMaps(labelSelector) {
-      const res = await api.listNamespacedConfigMap({ namespace, labelSelector });
+      const res = await api.listNamespacedConfigMap({
+        namespace,
+        labelSelector,
+      });
       return res.items ?? [];
     },
 
@@ -63,17 +76,27 @@ export function createK8sClient(api: k8s.CoreV1Api, namespace: string): K8sClien
     },
 
     async createConfigMap(body) {
-      return api.createNamespacedConfigMap({ namespace, body: { ...body, metadata: { ...body.metadata, namespace } } });
+      return api.createNamespacedConfigMap({
+        namespace,
+        body: { ...body, metadata: { ...body.metadata, namespace } },
+      });
     },
 
     async replaceConfigMap(name, body) {
-      return api.replaceNamespacedConfigMap({ name, namespace, body: { ...body, metadata: { ...body.metadata, namespace } } });
+      return api.replaceNamespacedConfigMap({
+        name,
+        namespace,
+        body: { ...body, metadata: { ...body.metadata, namespace } },
+      });
     },
 
     async patchConfigMap(name, body) {
       await api.patchNamespacedConfigMap(
         { name, namespace, body },
-        k8s.setHeaderOptions("Content-Type", k8s.PatchStrategy.StrategicMergePatch),
+        k8s.setHeaderOptions(
+          "Content-Type",
+          k8s.PatchStrategy.StrategicMergePatch,
+        ),
       );
     },
 
@@ -96,11 +119,18 @@ export function createK8sClient(api: k8s.CoreV1Api, namespace: string): K8sClien
     },
 
     async createSecret(body) {
-      return api.createNamespacedSecret({ namespace, body: { ...body, metadata: { ...body.metadata, namespace } } });
+      return api.createNamespacedSecret({
+        namespace,
+        body: { ...body, metadata: { ...body.metadata, namespace } },
+      });
     },
 
     async replaceSecret(name, body) {
-      return api.replaceNamespacedSecret({ name, namespace, body: { ...body, metadata: { ...body.metadata, namespace } } });
+      return api.replaceNamespacedSecret({
+        name,
+        namespace,
+        body: { ...body, metadata: { ...body.metadata, namespace } },
+      });
     },
 
     async deleteSecret(name) {
@@ -141,7 +171,10 @@ export function createK8sClient(api: k8s.CoreV1Api, namespace: string): K8sClien
     },
 
     async listPVCs(labelSelector) {
-      const res = await api.listNamespacedPersistentVolumeClaim({ namespace, labelSelector });
+      const res = await api.listNamespacedPersistentVolumeClaim({
+        namespace,
+        labelSelector,
+      });
       return res.items ?? [];
     },
 

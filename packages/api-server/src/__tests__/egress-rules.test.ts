@@ -64,7 +64,9 @@ afterAll(async () => {
  *  recreating the agent between tests (which would re-roll the heavy
  *  claude-code pod). */
 async function clearAllRules() {
-  const rules = await client.egressRules.listForAgent.query({ agentId: AGENT_ID });
+  const rules = await client.egressRules.listForAgent.query({
+    agentId: AGENT_ID,
+  });
   for (const r of rules) {
     await client.egressRules.revoke.mutate({ id: r.id });
   }
@@ -98,14 +100,22 @@ function curl(host: string, scheme: "http" | "https", timeoutSec = 4) {
   // so on the L4 SNI-passthrough path curl would otherwise fail with
   // CURLE_SSL_CACERT (77) even when the gate allowed the request. We're
   // testing gate enforcement, not TLS validation — `-k` decouples them.
-  return execInPod(POD_NAME, "agent", [
-    "curl",
-    "-sSk",
-    "-o", "/dev/null",
-    "-w", "%{http_code}",
-    "--max-time", String(timeoutSec),
-    `${scheme}://${host}/`,
-  ], { timeoutMs: (timeoutSec + 5) * 1000 });
+  return execInPod(
+    POD_NAME,
+    "agent",
+    [
+      "curl",
+      "-sSk",
+      "-o",
+      "/dev/null",
+      "-w",
+      "%{http_code}",
+      "--max-time",
+      String(timeoutSec),
+      `${scheme}://${host}/`,
+    ],
+    { timeoutMs: (timeoutSec + 5) * 1000 },
+  );
 }
 
 /** Poll for a pending approval matching `host`. The api-server resolves
@@ -136,7 +146,9 @@ async function findPendingForHost(
 describe("egress rules: enforcement", () => {
   describe("HTTPS — L4 path (host-only rules)", () => {
     it("default-deny: curl https://example.com hangs and creates a pending approval", async () => {
-      const before = (await client.egressRules.listForAgent.query({ agentId: AGENT_ID })).length;
+      const before = (
+        await client.egressRules.listForAgent.query({ agentId: AGENT_ID })
+      ).length;
       expect(before).toBe(0);
 
       const res = curl("example.com", "https");
@@ -240,9 +252,14 @@ describe("egress rules: enforcement", () => {
 
   describe("preset switching", () => {
     it("applying `trusted` seeds preset:trusted rows; switching to `none` revokes them", async () => {
-      await client.egressRules.applyPreset.mutate({ agentId: AGENT_ID, preset: "trusted" });
+      await client.egressRules.applyPreset.mutate({
+        agentId: AGENT_ID,
+        preset: "trusted",
+      });
 
-      const seeded = await client.egressRules.listForAgent.query({ agentId: AGENT_ID });
+      const seeded = await client.egressRules.listForAgent.query({
+        agentId: AGENT_ID,
+      });
       expect(seeded.length).toBeGreaterThan(0);
       // Every seeded row carries the preset:trusted source.
       for (const r of seeded) {
@@ -253,9 +270,16 @@ describe("egress rules: enforcement", () => {
       const apiAnthropic = seeded.find((r) => r.host === "api.anthropic.com");
       expect(apiAnthropic).toBeDefined();
 
-      await client.egressRules.applyPreset.mutate({ agentId: AGENT_ID, preset: "none" });
-      const swept = await client.egressRules.listForAgent.query({ agentId: AGENT_ID });
-      expect(swept.filter((r) => r.source.startsWith("preset:")).length).toBe(0);
+      await client.egressRules.applyPreset.mutate({
+        agentId: AGENT_ID,
+        preset: "none",
+      });
+      const swept = await client.egressRules.listForAgent.query({
+        agentId: AGENT_ID,
+      });
+      expect(swept.filter((r) => r.source.startsWith("preset:")).length).toBe(
+        0,
+      );
     });
 
     it("connection grant promotes a preset:* row so a later preset switch keeps it", async () => {
@@ -267,9 +291,16 @@ describe("egress rules: enforcement", () => {
       // one. Without promotion, the connection insert silently no-ops and
       // a later preset switch wipes the host even though the user still
       // has the grant.
-      await client.egressRules.applyPreset.mutate({ agentId: AGENT_ID, preset: "trusted" });
-      const presetSeeded = await client.egressRules.listForAgent.query({ agentId: AGENT_ID });
-      const beforeGrant = presetSeeded.find((r) => r.host === "api.anthropic.com");
+      await client.egressRules.applyPreset.mutate({
+        agentId: AGENT_ID,
+        preset: "trusted",
+      });
+      const presetSeeded = await client.egressRules.listForAgent.query({
+        agentId: AGENT_ID,
+      });
+      const beforeGrant = presetSeeded.find(
+        (r) => r.host === "api.anthropic.com",
+      );
       expect(beforeGrant?.source).toBe("preset:trusted");
 
       // Pick any Anthropic-typed secret the test environment exposes;
@@ -282,15 +313,20 @@ describe("egress rules: enforcement", () => {
         secretIds: [anthropic.id],
       });
 
-      const afterGrant = (await client.egressRules.listForAgent.query({ agentId: AGENT_ID }))
-        .find((r) => r.host === "api.anthropic.com");
+      const afterGrant = (
+        await client.egressRules.listForAgent.query({ agentId: AGENT_ID })
+      ).find((r) => r.host === "api.anthropic.com");
       expect(afterGrant?.source).toBe(`connection:${anthropic.id}`);
 
       // Switching the preset off should NOT take down the host — the row
       // is now connection-owned, not preset:*.
-      await client.egressRules.applyPreset.mutate({ agentId: AGENT_ID, preset: "none" });
-      const afterSwitch = (await client.egressRules.listForAgent.query({ agentId: AGENT_ID }))
-        .find((r) => r.host === "api.anthropic.com");
+      await client.egressRules.applyPreset.mutate({
+        agentId: AGENT_ID,
+        preset: "none",
+      });
+      const afterSwitch = (
+        await client.egressRules.listForAgent.query({ agentId: AGENT_ID })
+      ).find((r) => r.host === "api.anthropic.com");
       expect(afterSwitch?.source).toBe(`connection:${anthropic.id}`);
 
       // Cleanup: revoke the grant so subsequent tests start without it.
@@ -309,10 +345,18 @@ describe("egress rules: enforcement", () => {
         verdict: "allow",
       });
 
-      await client.egressRules.applyPreset.mutate({ agentId: AGENT_ID, preset: "trusted" });
-      await client.egressRules.applyPreset.mutate({ agentId: AGENT_ID, preset: "none" });
+      await client.egressRules.applyPreset.mutate({
+        agentId: AGENT_ID,
+        preset: "trusted",
+      });
+      await client.egressRules.applyPreset.mutate({
+        agentId: AGENT_ID,
+        preset: "none",
+      });
 
-      const after = await client.egressRules.listForAgent.query({ agentId: AGENT_ID });
+      const after = await client.egressRules.listForAgent.query({
+        agentId: AGENT_ID,
+      });
       const stillThere = after.find((r) => r.id === manual.id);
       expect(stillThere).toBeDefined();
       expect(stillThere?.source).toBe("manual");
@@ -328,12 +372,16 @@ describe("egress rules: enforcement", () => {
 
       const pending = await findPendingForHost("example.com");
       expect(pending).toBeDefined();
-      const beforeRules = await client.egressRules.listForAgent.query({ agentId: AGENT_ID });
+      const beforeRules = await client.egressRules.listForAgent.query({
+        agentId: AGENT_ID,
+      });
 
       await client.approvals.dismiss.mutate({ id: pending!.id });
 
       // No rule should have been written by the dismiss path.
-      const afterRules = await client.egressRules.listForAgent.query({ agentId: AGENT_ID });
+      const afterRules = await client.egressRules.listForAgent.query({
+        agentId: AGENT_ID,
+      });
       expect(afterRules.length).toBe(beforeRules.length);
 
       // The next request to the same host should re-prompt (verified by
@@ -351,9 +399,14 @@ describe("egress rules: enforcement", () => {
 
       await client.approvals.denyForever.mutate({ id: pending!.id });
 
-      const rules = await client.egressRules.listForAgent.query({ agentId: AGENT_ID });
+      const rules = await client.egressRules.listForAgent.query({
+        agentId: AGENT_ID,
+      });
       const denyRule = rules.find(
-        (r) => r.host === "example.com" && r.verdict === "deny" && r.source === "inbox",
+        (r) =>
+          r.host === "example.com" &&
+          r.verdict === "deny" &&
+          r.source === "inbox",
       );
       expect(denyRule).toBeDefined();
 

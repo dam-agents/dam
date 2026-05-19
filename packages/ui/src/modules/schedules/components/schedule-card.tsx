@@ -44,14 +44,25 @@ export function ScheduleCard({
   onEdit,
   onResumeSession,
 }: Props) {
-  const { id, name, type, cron, rrule, timezone, quietHours, enabled, sessionMode, createdBy, status } = schedule;
-  const scheduleSummary = type === "rrule" && rrule
-    ? rruleToText(rrule)
-    : cron ?? "";
-  const activeQuietHours = quietHours.filter(q => q.enabled).length;
+  const {
+    id,
+    name,
+    type,
+    cron,
+    rrule,
+    timezone,
+    quietHours,
+    enabled,
+    sessionMode,
+    createdBy,
+    status,
+  } = schedule;
+  const scheduleSummary =
+    type === "rrule" && rrule ? rruleToText(rrule) : (cron ?? "");
+  const activeQuietHours = quietHours.filter((q) => q.enabled).length;
   const lastResult = status?.lastResult ?? "";
   const resultClass = lastResult === "success" ? "text-success" : "text-danger";
-  const showConfirm = useStore(s => s.showConfirm);
+  const showConfirm = useStore((s) => s.showConfirm);
   const toggleSchedule = useToggleSchedule();
   const deleteSchedule = useDeleteSchedule();
   const resetScheduleSession = useResetScheduleSession();
@@ -70,10 +81,12 @@ export function ScheduleCard({
 
   const handleResetSession = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (await showConfirm(
-      `Reset session for "${name}"? The next tick will start a fresh conversation.`,
-      "Reset Session",
-    )) {
+    if (
+      await showConfirm(
+        `Reset session for "${name}"? The next tick will start a fresh conversation.`,
+        "Reset Session",
+      )
+    ) {
       resetScheduleSession.mutate({ scheduleId: id });
     }
   };
@@ -85,8 +98,14 @@ export function ScheduleCard({
         onClick={onToggleExpanded}
       >
         <div className="flex items-center gap-2">
-          {isExpanded ? <ChevronDown size={12} className="text-text-muted shrink-0" /> : <ChevronRight size={12} className="text-text-muted shrink-0" />}
-          <span className="text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 bg-info-light text-info border-info">{type}</span>
+          {isExpanded ? (
+            <ChevronDown size={12} className="text-text-muted shrink-0" />
+          ) : (
+            <ChevronRight size={12} className="text-text-muted shrink-0" />
+          )}
+          <span className="text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 bg-info-light text-info border-info">
+            {type}
+          </span>
           {createdBy === "agent" && (
             <span
               title="Scheduled by the agent itself"
@@ -108,7 +127,9 @@ export function ScheduleCard({
               🌙 {activeQuietHours}
             </span>
           )}
-          <span className="text-[13px] font-semibold text-text flex-1 truncate">{name}</span>
+          <span className="text-[13px] font-semibold text-text flex-1 truncate">
+            {name}
+          </span>
           {enabled && status?.nextRun && (
             <span
               className="text-[11px] font-semibold text-text-secondary flex items-center gap-1 shrink-0"
@@ -118,7 +139,12 @@ export function ScheduleCard({
               {relativeFromNow(status.nextRun)}
             </span>
           )}
-          <span className="text-[11px] font-mono text-text-muted truncate max-w-[30%]" title={scheduleSummary}>{scheduleSummary}</span>
+          <span
+            className="text-[11px] font-mono text-text-muted truncate max-w-[30%]"
+            title={scheduleSummary}
+          >
+            {scheduleSummary}
+          </span>
           <button
             className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 ${enabled ? "bg-success-light text-success border-success" : "bg-bg text-text-muted border-border-light"} hover:opacity-80`}
             onClick={handleToggleEnabled}
@@ -128,7 +154,10 @@ export function ScheduleCard({
           {onEdit && type === "rrule" && (
             <button
               className="text-text-muted hover:text-accent transition-colors"
-              onClick={e => { e.stopPropagation(); onEdit(); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit();
+              }}
               title="Edit schedule"
             >
               <Pencil size={13} />
@@ -144,8 +173,12 @@ export function ScheduleCard({
         {(status || timezone) && (
           <div className="flex flex-wrap gap-3 text-[11px] text-text-muted pl-5">
             {timezone && <span>{timezone}</span>}
-            {status?.lastRun && <span>last: {new Date(status.lastRun).toLocaleString()}</span>}
-            {status?.nextRun && <span>next: {new Date(status.nextRun).toLocaleString()}</span>}
+            {status?.lastRun && (
+              <span>last: {new Date(status.lastRun).toLocaleString()}</span>
+            )}
+            {status?.nextRun && (
+              <span>next: {new Date(status.nextRun).toLocaleString()}</span>
+            )}
             {lastResult && <span className={resultClass}>{lastResult}</span>}
           </div>
         )}
@@ -154,9 +187,11 @@ export function ScheduleCard({
       {isExpanded && (
         <div className="border-t border-border-light bg-bg/50">
           {sessions.length === 0 && (
-            <p className="px-4 py-3 text-[11px] text-text-muted pl-9">No sessions yet</p>
+            <p className="px-4 py-3 text-[11px] text-text-muted pl-9">
+              No sessions yet
+            </p>
           )}
-          {sessions.map(session => (
+          {sessions.map((session) => (
             <ScheduleSessionRow
               key={session.sessionId}
               session={session}

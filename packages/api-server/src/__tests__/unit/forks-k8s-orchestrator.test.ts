@@ -198,7 +198,8 @@ describe("createK8sForkOrchestrator", () => {
     });
 
     const received = [];
-    for await (const status of orch.watchStatus("fork-1")) received.push(status);
+    for await (const status of orch.watchStatus("fork-1"))
+      received.push(status);
 
     expect(received).toEqual([
       { phase: "Pending" },
@@ -209,6 +210,8 @@ describe("createK8sForkOrchestrator", () => {
 
 function cm(status: Record<string, unknown>): k8s.V1ConfigMap {
   return {
-    data: { "status.yaml": yaml.dump({ version: "agent-platform.ai/v1", ...status }) },
+    data: {
+      "status.yaml": yaml.dump({ version: "agent-platform.ai/v1", ...status }),
+    },
   } as k8s.V1ConfigMap;
 }

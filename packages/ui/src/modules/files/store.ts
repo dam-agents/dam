@@ -18,9 +18,12 @@ export interface FilesSlice {
   setOpenFileDirty: (dirty: boolean) => void;
 }
 
-export const createFilesSlice: StateCreator<PlatformStore, [], [], FilesSlice> = (
-  set,
-) => ({
+export const createFilesSlice: StateCreator<
+  PlatformStore,
+  [],
+  [],
+  FilesSlice
+> = (set) => ({
   openFilePath: null,
   rightTab: "files",
   openFileDirty: false,

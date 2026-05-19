@@ -75,7 +75,9 @@ function parseList(raw: string | undefined): string[] {
     .filter((s) => s.length > 0);
 }
 
-function readGrants(annotations: Record<string, string> | undefined): AgentGrants {
+function readGrants(
+  annotations: Record<string, string> | undefined,
+): AgentGrants {
   const ann = annotations ?? {};
   return {
     grantedSecretIds: parseList(ann[ANN_GRANTED_SECRET_IDS]),
@@ -83,7 +85,10 @@ function readGrants(annotations: Record<string, string> | undefined): AgentGrant
   };
 }
 
-export function createAgentGrantsPort(client: K8sClient, ownerSub: string): AgentGrantsPort {
+export function createAgentGrantsPort(
+  client: K8sClient,
+  ownerSub: string,
+): AgentGrantsPort {
   async function listInstancesForAgent(agentId: string) {
     const cms = await client.listConfigMaps(
       `${LABEL_TYPE}=${TYPE_INSTANCE},${LABEL_OWNER}=${ownerSub},${LABEL_AGENT_REF}=${agentId}`,
@@ -91,7 +96,10 @@ export function createAgentGrantsPort(client: K8sClient, ownerSub: string): Agen
     return cms;
   }
 
-  async function patchAnnotations(name: string, annotations: Record<string, string | null>) {
+  async function patchAnnotations(
+    name: string,
+    annotations: Record<string, string | null>,
+  ) {
     // strategic-merge-patch: a null value clears the annotation key.
     await client.patchConfigMap(name, {
       metadata: { annotations },
@@ -109,6 +117,16 @@ export function createAgentGrantsPort(client: K8sClient, ownerSub: string): Agen
 
     async setSecretGrants(agentId, ids) {
       const cms = await listInstancesForAgent(agentId);
+      // setAgentAccess is only meaningful for agents that already have an
+      // instance — grants live on the instance ConfigMap. An empty list
+      // here means the caller raced ahead of the controller's CM create;
+      // surface it as an error so callers can retry instead of silently
+      // dropping the grant.
+      if (cms.length === 0) {
+        throw new Error(
+          `setSecretGrants: no instance ConfigMaps for agent ${agentId} (race with instance creation? retry)`,
+        );
+      }
       // Always-selective: write the literal (possibly empty) value.
       const annotations = { [ANN_GRANTED_SECRET_IDS]: ids.join(",") };
       await Promise.all(
@@ -118,6 +136,11 @@ export function createAgentGrantsPort(client: K8sClient, ownerSub: string): Agen
 
     async setConnectionGrants(agentId, ids) {
       const cms = await listInstancesForAgent(agentId);
+      if (cms.length === 0) {
+        throw new Error(
+          `setConnectionGrants: no instance ConfigMaps for agent ${agentId} (race with instance creation? retry)`,
+        );
+      }
       const annotations = { [ANN_GRANTED_CONNECTION_IDS]: ids.join(",") };
       await Promise.all(
         cms.map((cm) => patchAnnotations(cm.metadata!.name!, annotations)),

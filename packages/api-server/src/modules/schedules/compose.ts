@@ -16,6 +16,7 @@ export function composeSchedulesModule(
   const repo = createSchedulesRepository(k8s);
   return {
     schedules: createSchedulesService({ repo, owner }),
-    isOwnedSchedule: async (scheduleId) => (await repo.get(scheduleId, owner)) !== null,
+    isOwnedSchedule: async (scheduleId) =>
+      (await repo.get(scheduleId, owner)) !== null,
   };
 }

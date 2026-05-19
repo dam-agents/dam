@@ -18,7 +18,10 @@ export function upstreamToTrpc(err: AgentRuntimeUpstreamError): TRPCError {
   const cta = body?.connect_url ?? body?.manage_url;
   const encoded = cta ? `${message}\nplatform-cta:${cta}` : message;
 
-  if (body?.error === "app_not_connected" || body?.error === "access_restricted") {
+  if (
+    body?.error === "app_not_connected" ||
+    body?.error === "access_restricted"
+  ) {
     return new TRPCError({ code: "PRECONDITION_FAILED", message: encoded });
   }
   if (status === 403) {

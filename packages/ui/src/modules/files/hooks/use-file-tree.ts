@@ -21,14 +21,20 @@ export function useFileTree(selectedInstance: string | null) {
       if (!selectedInstance) return;
       if (openFilePath === path) {
         if (openFileDirty) {
-          const ok = await showConfirm("Discard unsaved changes?", "Unsaved changes");
+          const ok = await showConfirm(
+            "Discard unsaved changes?",
+            "Unsaved changes",
+          );
           if (!ok) return;
         }
         setOpenFilePath(null);
         return;
       }
       if (openFileDirty) {
-        const ok = await showConfirm("Discard unsaved changes?", "Unsaved changes");
+        const ok = await showConfirm(
+          "Discard unsaved changes?",
+          "Unsaved changes",
+        );
         if (!ok) return;
       }
       try {
@@ -40,11 +46,22 @@ export function useFileTree(selectedInstance: string | null) {
       } catch (err) {
         showToast({
           kind: "error",
-          message: err instanceof Error && err.message ? err.message : `Couldn't open ${path}`,
+          message:
+            err instanceof Error && err.message
+              ? err.message
+              : `Couldn't open ${path}`,
         });
       }
     },
-    [selectedInstance, openFilePath, openFileDirty, setOpenFilePath, setRightTab, showToast, showConfirm],
+    [
+      selectedInstance,
+      openFilePath,
+      openFileDirty,
+      setOpenFilePath,
+      setRightTab,
+      showToast,
+      showConfirm,
+    ],
   );
 
   return { openFileHandler };

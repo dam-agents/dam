@@ -46,7 +46,10 @@ const baseShape = {
     ),
   envMappings: z
     .array(envMappingSchema)
-    .refine(allEnvMappingsValid, "All mappings need an env name and a placeholder"),
+    .refine(
+      allEnvMappingsValid,
+      "All mappings need an env name and a placeholder",
+    ),
 };
 
 const anthropicSchema = z.object(baseShape);
@@ -83,27 +86,30 @@ export function EditSecretDialog({ secret, onClose }: Props) {
   const isGeneric = secret.type === "generic";
   const updateSecret = useUpdateSecret();
   const saving = updateSecret.isPending;
-  const [pendingPatch, setPendingPatch] = useState<UpdateSecretPatch | null>(null);
+  const [pendingPatch, setPendingPatch] = useState<UpdateSecretPatch | null>(
+    null,
+  );
   // Only fetch when there's a pending env-affecting patch to confirm —
   // skips the tRPC roundtrip for cosmetic edits and the initial render.
   const grantedAgentsQuery = useGrantedAgentsForSecret(secret.id, {
     enabled: pendingPatch !== null,
   });
 
-  const { register, handleSubmit, control, formState, setError, clearErrors } = useForm<EditSecretValues>({
-    resolver: zodResolver(isGeneric ? genericSchema : anthropicSchema),
-    mode: "onChange",
-    defaultValues: {
-      name: secret.name,
-      value: "",
-      hostPattern: secret.hostPattern,
-      pathPattern: secret.pathPattern ?? "",
-      headerName: secret.injectionConfig?.headerName ?? "",
-      valueFormat: secret.injectionConfig?.valueFormat ?? "",
-      queryParamName: secret.injectionConfig?.queryParamName ?? "",
-      envMappings: secret.envMappings ?? [],
-    },
-  });
+  const { register, handleSubmit, control, formState, setError, clearErrors } =
+    useForm<EditSecretValues>({
+      resolver: zodResolver(isGeneric ? genericSchema : anthropicSchema),
+      mode: "onChange",
+      defaultValues: {
+        name: secret.name,
+        value: "",
+        hostPattern: secret.hostPattern,
+        pathPattern: secret.pathPattern ?? "",
+        headerName: secret.injectionConfig?.headerName ?? "",
+        valueFormat: secret.injectionConfig?.valueFormat ?? "",
+        queryParamName: secret.injectionConfig?.queryParamName ?? "",
+        envMappings: secret.envMappings ?? [],
+      },
+    });
   const { errors, isDirty, dirtyFields } = formState;
   // Validity is enforced by handleSubmit — clicking an invalid form populates
   // field errors instead of silently no-op'ing a disabled button.
@@ -112,25 +118,33 @@ export function EditSecretDialog({ secret, onClose }: Props) {
   const onSubmit = handleSubmit((values) => {
     const patch: UpdateSecretPatch = { id: secret.id };
     if (dirtyFields.name) patch.name = values.name.trim();
-    if (dirtyFields.value && values.value.length > 0) patch.value = values.value;
+    if (dirtyFields.value && values.value.length > 0)
+      patch.value = values.value;
     if (isGeneric) {
-      if (dirtyFields.hostPattern) patch.hostPattern = values.hostPattern.trim();
+      if (dirtyFields.hostPattern)
+        patch.hostPattern = values.hostPattern.trim();
       if (dirtyFields.pathPattern) {
         const trimmed = values.pathPattern.trim();
         patch.pathPattern = trimmed === "" ? null : trimmed;
       }
-      if (dirtyFields.headerName || dirtyFields.valueFormat || dirtyFields.queryParamName) {
+      if (
+        dirtyFields.headerName ||
+        dirtyFields.valueFormat ||
+        dirtyFields.queryParamName
+      ) {
         if (patch.value === undefined) {
           // The api-server rejects this combination because the SDS file is
           // pre-baked with the previous format and would drift. Surface it
           // inline instead of round-tripping for the error.
           setError("value", {
             type: "manual",
-            message: "Re-enter the token when changing the header, value format, or query parameter.",
+            message:
+              "Re-enter the token when changing the header, value format, or query parameter.",
           });
           return;
         }
-        const header = values.headerName.trim() || DEFAULT_INJECTION_CONFIG.headerName;
+        const header =
+          values.headerName.trim() || DEFAULT_INJECTION_CONFIG.headerName;
         const format = values.valueFormat.trim();
         const queryParam = values.queryParamName.trim();
         patch.injectionConfig = {
@@ -276,11 +290,11 @@ export function EditSecretDialog({ secret, onClose }: Props) {
                 <>
                   For APIs that read the credential from the URL (e.g.{" "}
                   <span className="font-mono">?key=&lt;value&gt;</span>). When
-                  set, the bare value is moved into this query parameter and
-                  the header is stripped — <span className="font-mono">Value
-                  Format</span> doesn't apply here. Need <em>both</em> a
-                  header and a URL injection on the same endpoint? Create two
-                  Secrets with the same host pattern.{" "}
+                  set, the bare value is moved into this query parameter and the
+                  header is stripped —{" "}
+                  <span className="font-mono">Value Format</span> doesn't apply
+                  here. Need <em>both</em> a header and a URL injection on the
+                  same endpoint? Create two Secrets with the same host pattern.{" "}
                   <strong className="text-warning">
                     Credentials in query strings are routinely logged by web
                     servers, CDNs, and load balancers — prefer header injection
@@ -374,7 +388,9 @@ function RollConfirmation({
     <div className="absolute inset-0 flex items-center justify-center bg-black/40 z-10 rounded-2xl">
       <div className="w-[420px] rounded-xl border-2 border-border bg-bg p-6 shadow-brutal-lg flex flex-col gap-4">
         <div>
-          <h3 className="text-[16px] font-bold text-text">Restart granted agents?</h3>
+          <h3 className="text-[16px] font-bold text-text">
+            Restart granted agents?
+          </h3>
           <p className="text-[13px] text-text-secondary mt-2">
             Editing env mappings on this secret rolls every agent that has it
             granted. Running sessions on those agents will be interrupted.

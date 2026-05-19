@@ -42,7 +42,11 @@ export interface AuthModuleOptions {
 export interface AuthModule {
   commands: ReadonlyArray<Command>;
   exports: { tokenProvider: TokenProvider };
-  internals: { authStore: AuthStore; authPath: string; authEnvReader: AuthEnvReader };
+  internals: {
+    authStore: AuthStore;
+    authPath: string;
+    authEnvReader: AuthEnvReader;
+  };
 }
 
 /**
@@ -94,7 +98,10 @@ export function composeAuthModule(opts: AuthModuleOptions): AuthModule {
   const revokeClient = createRevokeClient();
   const browserOpener = createBrowserOpener();
 
-  const hostMetadata = createTokenEndpointResolver(authConfigProbe, oidcDiscovery);
+  const hostMetadata = createTokenEndpointResolver(
+    authConfigProbe,
+    oidcDiscovery,
+  );
 
   const tokenProvider = createTokenProvider({
     authStore,

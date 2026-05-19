@@ -6,7 +6,11 @@ import { ChannelsPanel } from "./channels-panel.js";
 import { type McpOption, McpsPanel } from "./mcps-panel.js";
 import { SkillsPanel } from "./skills-panel.js";
 
-function Section({ title, defaultOpen = true, children }: {
+function Section({
+  title,
+  defaultOpen = true,
+  children,
+}: {
   title: string;
   defaultOpen?: boolean;
   children: React.ReactNode;
@@ -16,7 +20,7 @@ function Section({ title, defaultOpen = true, children }: {
     <div className="mb-1">
       <button
         className="flex items-center gap-2 w-full px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted hover:text-text-secondary transition-colors bg-surface-raised"
-        onClick={() => setOpen(o => !o)}
+        onClick={() => setOpen((o) => !o)}
       >
         {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         {title}
@@ -72,7 +76,11 @@ export function ConfigurationPanel({
       </Section>
 
       <Section title="Skills">
-        <SkillsPanel instanceId={instanceId} isRunning={instanceRunning} onOpenFile={onOpenFile} />
+        <SkillsPanel
+          instanceId={instanceId}
+          isRunning={instanceRunning}
+          onOpenFile={onOpenFile}
+        />
       </Section>
     </div>
   );

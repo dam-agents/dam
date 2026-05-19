@@ -54,7 +54,7 @@ describe("TOML ConfigStore", () => {
     const raw = await readFile(configPath, "utf-8");
     expect(raw).toContain('foo = "bar"');
     expect(raw).toContain('server = "https://new"');
-    expect(raw).not.toContain('https://old');
+    expect(raw).not.toContain("https://old");
   });
 
   it("malformed TOML returns Err(MalformedConfigError)", async () => {
@@ -79,5 +79,4 @@ describe("TOML ConfigStore", () => {
     const r = await store.read();
     expect(r).toEqual({ ok: true, value: { server: "https://nested.test" } });
   });
-
 });

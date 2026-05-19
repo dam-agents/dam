@@ -72,7 +72,12 @@ describe("resolveInjection", () => {
   });
 
   it("generic respects user-supplied valueFormat", () => {
-    expect(resolveInjection("generic", undefined, { headerName: "Token", valueFormat: "Token {value}" })).toEqual({
+    expect(
+      resolveInjection("generic", undefined, {
+        headerName: "Token",
+        valueFormat: "Token {value}",
+      }),
+    ).toEqual({
       headerName: "Token",
       valueFormat: "Token {value}",
     });
@@ -130,7 +135,9 @@ describe("injectionFileContent", () => {
 describe("sdsYamlContent", () => {
   it("emits an SDS DiscoveryResponse with the supplied string as inline_string", () => {
     const yaml = sdsYamlContent("Bearer abc");
-    expect(yaml).toContain('"@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret');
+    expect(yaml).toContain(
+      '"@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret',
+    );
     expect(yaml).toContain("name: credential");
     expect(yaml).toContain("generic_secret:");
     expect(yaml).toContain('inline_string: "Bearer abc"');
@@ -159,9 +166,15 @@ describe("createK8sSecretsPort.createSecret", () => {
     const s = created[0]!;
     expect(s.metadata?.name).toBe("platform-cred-abc");
     expect(s.metadata?.labels?.["agent-platform.ai/owner"]).toBe("owner-1");
-    expect(s.metadata?.labels?.["agent-platform.ai/secret-type"]).toBe("anthropic");
-    expect(s.metadata?.annotations?.["agent-platform.ai/injection-header-name"]).toBe("x-api-key");
-    expect(s.metadata?.annotations?.["agent-platform.ai/auth-mode"]).toBe("api-key");
+    expect(s.metadata?.labels?.["agent-platform.ai/secret-type"]).toBe(
+      "anthropic",
+    );
+    expect(
+      s.metadata?.annotations?.["agent-platform.ai/injection-header-name"],
+    ).toBe("x-api-key");
+    expect(s.metadata?.annotations?.["agent-platform.ai/auth-mode"]).toBe(
+      "api-key",
+    );
     expect(s.stringData?.["sds.yaml"]).toContain('inline_string: "sk-ant-key"');
     expect(s.stringData?.value).toBeUndefined();
   });
@@ -180,8 +193,12 @@ describe("createK8sSecretsPort.createSecret", () => {
     });
 
     const s = created[0]!;
-    expect(s.metadata?.annotations?.["agent-platform.ai/injection-header-name"]).toBe("Authorization");
-    expect(s.stringData?.["sds.yaml"]).toContain('inline_string: "Bearer oauth-token"');
+    expect(
+      s.metadata?.annotations?.["agent-platform.ai/injection-header-name"],
+    ).toBe("Authorization");
+    expect(s.stringData?.["sds.yaml"]).toContain(
+      'inline_string: "Bearer oauth-token"',
+    );
   });
 
   it("generic respects valueFormat with arbitrary header", async () => {
@@ -198,8 +215,12 @@ describe("createK8sSecretsPort.createSecret", () => {
     });
 
     const s = created[0]!;
-    expect(s.metadata?.annotations?.["agent-platform.ai/injection-header-name"]).toBe("X-Auth");
-    expect(s.stringData?.["sds.yaml"]).toContain('inline_string: "Token raw-tok"');
+    expect(
+      s.metadata?.annotations?.["agent-platform.ai/injection-header-name"],
+    ).toBe("X-Auth");
+    expect(s.stringData?.["sds.yaml"]).toContain(
+      'inline_string: "Token raw-tok"',
+    );
   });
 
   it("generic defaults to Authorization: Bearer when injectionConfig is omitted", async () => {
@@ -215,7 +236,9 @@ describe("createK8sSecretsPort.createSecret", () => {
     });
 
     const s = created[0]!;
-    expect(s.metadata?.annotations?.["agent-platform.ai/injection-header-name"]).toBe("Authorization");
+    expect(
+      s.metadata?.annotations?.["agent-platform.ai/injection-header-name"],
+    ).toBe("Authorization");
     expect(s.stringData?.["sds.yaml"]).toContain('inline_string: "Bearer tok"');
   });
 });
@@ -234,8 +257,11 @@ describe("createK8sSecretsPort.createSecret — envMappings", () => {
       envMappings: [{ envName: "MY_KEY", placeholder: "dummy-placeholder" }],
     });
 
-    const ann = created[0]!.metadata?.annotations?.["agent-platform.ai/env-mappings"];
-    expect(ann).toBe(JSON.stringify([{ envName: "MY_KEY", placeholder: "dummy-placeholder" }]));
+    const ann =
+      created[0]!.metadata?.annotations?.["agent-platform.ai/env-mappings"];
+    expect(ann).toBe(
+      JSON.stringify([{ envName: "MY_KEY", placeholder: "dummy-placeholder" }]),
+    );
   });
 
   it("omits envMappings annotation when array is empty", async () => {
@@ -251,7 +277,9 @@ describe("createK8sSecretsPort.createSecret — envMappings", () => {
       envMappings: [],
     });
 
-    expect(created[0]!.metadata?.annotations?.["agent-platform.ai/env-mappings"]).toBeUndefined();
+    expect(
+      created[0]!.metadata?.annotations?.["agent-platform.ai/env-mappings"],
+    ).toBeUndefined();
   });
 });
 
@@ -312,7 +340,9 @@ describe("createK8sSecretsPort — queryParamName injection", () => {
 
     const ann = created[0]!.metadata?.annotations ?? {};
     expect(ann["agent-platform.ai/injection-query-param"]).toBe("key");
-    expect(ann["agent-platform.ai/injection-header-name"]).toBe("X-Bobshell-Credential");
+    expect(ann["agent-platform.ai/injection-header-name"]).toBe(
+      "X-Bobshell-Credential",
+    );
   });
 
   it("round-trips queryParamName through listSecrets", async () => {
@@ -382,7 +412,9 @@ describe("createK8sSecretsPort — queryParamName injection", () => {
     });
 
     const ann = created[0]!.metadata?.annotations ?? {};
-    expect(ann["agent-platform.ai/injection-value-format"]).toBe("Custom {value}");
+    expect(ann["agent-platform.ai/injection-value-format"]).toBe(
+      "Custom {value}",
+    );
   });
 
   it("drops the annotation when injectionConfig is reset to null", async () => {
@@ -429,8 +461,14 @@ describe("createK8sSecretsPort.updateSecret", () => {
     await port.updateSecret("abc", { value: "new" });
 
     expect(replaced).toHaveLength(1);
-    expect(replaced[0]!.body.stringData?.["sds.yaml"]).toContain('inline_string: "new"');
-    expect(replaced[0]!.body.metadata?.annotations?.["agent-platform.ai/injection-header-name"]).toBe("x-api-key");
+    expect(replaced[0]!.body.stringData?.["sds.yaml"]).toContain(
+      'inline_string: "new"',
+    );
+    expect(
+      replaced[0]!.body.metadata?.annotations?.[
+        "agent-platform.ai/injection-header-name"
+      ],
+    ).toBe("x-api-key");
   });
 
   it("persists envMappings on update", async () => {
@@ -449,8 +487,13 @@ describe("createK8sSecretsPort.updateSecret", () => {
       envMappings: [{ envName: "NEW_VAR", placeholder: "ph" }],
     });
 
-    const ann = replaced[0]!.body.metadata?.annotations?.["agent-platform.ai/env-mappings"];
-    expect(ann).toBe(JSON.stringify([{ envName: "NEW_VAR", placeholder: "ph" }]));
+    const ann =
+      replaced[0]!.body.metadata?.annotations?.[
+        "agent-platform.ai/env-mappings"
+      ];
+    expect(ann).toBe(
+      JSON.stringify([{ envName: "NEW_VAR", placeholder: "ph" }]),
+    );
   });
 
   it("removes envMappings annotation when updated with empty array", async () => {
@@ -468,7 +511,11 @@ describe("createK8sSecretsPort.updateSecret", () => {
 
     await port.updateSecret("upd2", { envMappings: [] });
 
-    expect(replaced[0]!.body.metadata?.annotations?.["agent-platform.ai/env-mappings"]).toBeUndefined();
+    expect(
+      replaced[0]!.body.metadata?.annotations?.[
+        "agent-platform.ai/env-mappings"
+      ],
+    ).toBeUndefined();
   });
 
   it("updates display name", async () => {
@@ -485,7 +532,11 @@ describe("createK8sSecretsPort.updateSecret", () => {
 
     await port.updateSecret("upd3", { name: "New Name" });
 
-    expect(replaced[0]!.body.metadata?.annotations?.["agent-platform.ai/display-name"]).toBe("New Name");
+    expect(
+      replaced[0]!.body.metadata?.annotations?.[
+        "agent-platform.ai/display-name"
+      ],
+    ).toBe("New Name");
   });
 
   it("returns before/after stored views so callers can diff render-affecting fields", async () => {
@@ -512,8 +563,12 @@ describe("createK8sSecretsPort.updateSecret", () => {
     expect(result).not.toBeNull();
     expect(result!.before.hostPattern).toBe("api.old.example");
     expect(result!.after.hostPattern).toBe("api.new.example");
-    expect(result!.before.envMappings).toEqual([{ envName: "OLD", placeholder: "ph" }]);
-    expect(result!.after.envMappings).toEqual([{ envName: "NEW", placeholder: "ph2" }]);
+    expect(result!.before.envMappings).toEqual([
+      { envName: "OLD", placeholder: "ph" },
+    ]);
+    expect(result!.after.envMappings).toEqual([
+      { envName: "NEW", placeholder: "ph2" },
+    ]);
   });
 
   it("returns null when the secret is not found", async () => {
@@ -533,31 +588,46 @@ describe("createK8sSecretsPort.updateSecret", () => {
       type: "generic",
       value: "old-pat",
       hostPattern: "github.com",
-      injectionConfig: { headerName: "Authorization", valueFormat: "Bearer {value}" },
+      injectionConfig: {
+        headerName: "Authorization",
+        valueFormat: "Bearer {value}",
+      },
     });
 
     await port.updateSecret("rebake", {
       value: "new-pat",
-      injectionConfig: { headerName: "Authorization", valueFormat: "Basic {value}" },
+      injectionConfig: {
+        headerName: "Authorization",
+        valueFormat: "Basic {value}",
+      },
     });
 
-    expect(replaced[0]!.body.stringData?.["sds.yaml"]).toContain('inline_string: "Basic new-pat"');
-    expect(replaced[0]!.body.metadata?.annotations?.["agent-platform.ai/injection-value-format"]).toBe(
-      "Basic {value}",
+    expect(replaced[0]!.body.stringData?.["sds.yaml"]).toContain(
+      'inline_string: "Basic new-pat"',
     );
+    expect(
+      replaced[0]!.body.metadata?.annotations?.[
+        "agent-platform.ai/injection-value-format"
+      ],
+    ).toBe("Basic {value}");
   });
 });
 
 describe("updateSecretInputSchema", () => {
   it("accepts a value-only patch", () => {
-    expect(updateSecretInputSchema.safeParse({ id: "abc", value: "tok" }).success).toBe(true);
+    expect(
+      updateSecretInputSchema.safeParse({ id: "abc", value: "tok" }).success,
+    ).toBe(true);
   });
 
   it("accepts injectionConfig + value together", () => {
     const r = updateSecretInputSchema.safeParse({
       id: "abc",
       value: "tok",
-      injectionConfig: { headerName: "Authorization", valueFormat: "Basic {value}" },
+      injectionConfig: {
+        headerName: "Authorization",
+        valueFormat: "Basic {value}",
+      },
     });
     expect(r.success).toBe(true);
   });
@@ -565,7 +635,10 @@ describe("updateSecretInputSchema", () => {
   it("rejects an injectionConfig change without value", () => {
     const r = updateSecretInputSchema.safeParse({
       id: "abc",
-      injectionConfig: { headerName: "Authorization", valueFormat: "Basic {value}" },
+      injectionConfig: {
+        headerName: "Authorization",
+        valueFormat: "Basic {value}",
+      },
     });
     expect(r.success).toBe(false);
     if (!r.success) {
@@ -575,7 +648,10 @@ describe("updateSecretInputSchema", () => {
   });
 
   it("rejects a clear-injectionConfig (null) without value", () => {
-    const r = updateSecretInputSchema.safeParse({ id: "abc", injectionConfig: null });
+    const r = updateSecretInputSchema.safeParse({
+      id: "abc",
+      injectionConfig: null,
+    });
     expect(r.success).toBe(false);
     if (!r.success) {
       expect(r.error.issues[0]!.path).toEqual(["value"]);

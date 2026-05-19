@@ -10,7 +10,10 @@ import type { FileSpec, MergeMode } from "./types.js";
  * snapshots are byte-stable when state hasn't changed).
  */
 export function mergeFileSpecsByPath(specs: FileSpec[]): FileSpec[] {
-  const byPath = new Map<string, { mode: MergeMode; fragments: FileSpec["fragments"] }>();
+  const byPath = new Map<
+    string,
+    { mode: MergeMode; fragments: FileSpec["fragments"] }
+  >();
   for (const s of specs) {
     if (s.fragments.length === 0) continue;
     const existing = byPath.get(s.path);

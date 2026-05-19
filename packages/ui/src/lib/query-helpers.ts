@@ -11,7 +11,10 @@ export type ActionResult<T> = T | typeof ACTION_FAILED;
  * Wrap a user-initiated action (button click, dialog submit). Any error surfaces
  * as a toast; returns ACTION_FAILED so callers can short-circuit.
  */
-export async function runAction<T>(fn: () => Promise<T>, fallback: string): Promise<ActionResult<T>> {
+export async function runAction<T>(
+  fn: () => Promise<T>,
+  fallback: string,
+): Promise<ActionResult<T>> {
   try {
     return await fn();
   } catch (err: unknown) {

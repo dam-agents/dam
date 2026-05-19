@@ -1,0 +1,23 @@
+{{- /*
+Namespace-scoped deny-all egress baseline for agent pods. Per-pair
+NetworkPolicies (controller-rendered) layer allow rules on top — agent
+pods have no egress unless a per-pair NP admits the destination.
+Role-scoped to `agent` so the paired gateway pod (which needs broad
+outbound for credential injection per ADR-035) is untouched.
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: agent-egress-deny-all
+  namespace: {{ .Values.agentNamespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    agent-platform.ai/managed-by: platform-helm
+    agent-platform.ai/role: agent
+spec:
+  podSelector:
+    matchLabels:
+      agent-platform.ai/role: agent
+  policyTypes:
+    - Egress
+  egress: []

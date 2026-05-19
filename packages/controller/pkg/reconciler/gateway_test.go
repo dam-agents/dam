@@ -85,7 +85,9 @@ func TestBuildGatewayStatefulSet_NoAgentVolumes(t *testing.T) {
 func TestBuildGatewayService(t *testing.T) {
 	svc := BuildGatewayService("my-instance", testConfig, testOwnerCM)
 	assert.Equal(t, "my-instance-gateway", svc.Name)
-	assert.Equal(t, corev1.ClusterIPNone, svc.Spec.ClusterIP)
+	// Not headless ("" means apiserver auto-assigns) — hostAliases /
+	// iptables allow-list need a routable virtual IP.
+	assert.Empty(t, svc.Spec.ClusterIP, "gateway Service must not be headless")
 	require.Len(t, svc.Spec.Ports, 1)
 	assert.Equal(t, "proxy", svc.Spec.Ports[0].Name)
 	assert.Equal(t, int32(10000), svc.Spec.Ports[0].Port)

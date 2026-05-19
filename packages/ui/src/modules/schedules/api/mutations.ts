@@ -24,7 +24,8 @@ export function useCreateSchedule() {
         ...input,
         quietHours: input.quietHours.length > 0 ? input.quietHours : undefined,
         // "fresh" is the absence of a persisted session on the wire.
-        sessionMode: input.sessionMode === "fresh" ? undefined : input.sessionMode,
+        sessionMode:
+          input.sessionMode === "fresh" ? undefined : input.sessionMode,
       }),
     meta: {
       ...invalidatesScheduleList,
@@ -48,7 +49,8 @@ export function useUpdateSchedule() {
     mutationFn: (input: UpdateScheduleInput) =>
       api.schedules.updateRRule.mutate({
         ...input,
-        sessionMode: input.sessionMode === "fresh" ? undefined : input.sessionMode,
+        sessionMode:
+          input.sessionMode === "fresh" ? undefined : input.sessionMode,
       }),
     meta: {
       ...invalidatesScheduleList,

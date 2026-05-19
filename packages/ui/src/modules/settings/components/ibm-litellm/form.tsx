@@ -44,7 +44,10 @@ export function IbmLitellmForm({
 }: {
   variant: "wizard" | "edit";
   initialPins?: IbmLitellmModelPins;
-  onSave: (input: { value: string; pins: IbmLitellmModelPins }) => Promise<void>;
+  onSave: (input: {
+    value: string;
+    pins: IbmLitellmModelPins;
+  }) => Promise<void>;
   onCancel?: () => void;
 }) {
   const pins = initialPins ?? IBM_LITELLM_DEFAULT_MODEL_PINS;
@@ -92,7 +95,9 @@ export function IbmLitellmForm({
       <div className="flex items-center gap-3">
         <CardIcon variant={isEdit ? "accent" : "warning"} />
         <div className="flex-1 min-w-0">
-          <div className="text-[15px] font-bold text-text">IBM LiteLLM ETE Proxy</div>
+          <div className="text-[15px] font-bold text-text">
+            IBM LiteLLM ETE Proxy
+          </div>
           <div className="text-[12px] text-text-muted">
             {isEdit
               ? "Paste a new token to replace the existing one. Model overrides apply to both Claude Code and pi-agent."
@@ -126,9 +131,13 @@ export function IbmLitellmForm({
         </button>
       </div>
 
-      {errors.value && value.length > 0 && errors.value.message !== "Required" && (
-        <div className="text-[12px] font-medium text-danger">{errors.value.message}</div>
-      )}
+      {errors.value &&
+        value.length > 0 &&
+        errors.value.message !== "Required" && (
+          <div className="text-[12px] font-medium text-danger">
+            {errors.value.message}
+          </div>
+        )}
 
       <button
         type="button"
@@ -190,7 +199,9 @@ function ModelField({
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-[12px] font-semibold text-text-secondary">{label}</label>
+      <label className="text-[12px] font-semibold text-text-secondary">
+        {label}
+      </label>
       <input
         className="h-9 rounded-lg border-2 border-border-light bg-bg px-3 text-[13px] font-mono text-text outline-none focus:border-accent"
         type="text"
@@ -200,7 +211,9 @@ function ModelField({
         {...register}
       />
       <div className="text-[11px] text-text-muted">{hint}</div>
-      {error && <div className="text-[11px] font-medium text-danger">{error}</div>}
+      {error && (
+        <div className="text-[11px] font-medium text-danger">{error}</div>
+      )}
     </div>
   );
 }

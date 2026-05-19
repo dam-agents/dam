@@ -18,12 +18,14 @@ export default defineConfig({
   // Ship a self-contained dist/bin.js. Node-builtins stay external; runtime
   // deps fold into the bundle so `node dist/bin.js` works from anywhere.
   noExternal: [
+    "@clack/prompts",
     "@trpc/client",
     "@trpc/server",
     "api-server-api",
     "commander",
     "open",
     "smol-toml",
+    "tar-stream",
     "ws",
     "zod",
   ],

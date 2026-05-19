@@ -2,8 +2,11 @@ import type * as k8s from "@kubernetes/client-node";
 import yaml from "js-yaml";
 import type { Agent, AgentSpec } from "api-server-api";
 import {
-  LABEL_TYPE, LABEL_OWNER, LABEL_TEMPLATE_REF,
-  TYPE_AGENT, SPEC_KEY,
+  LABEL_TYPE,
+  LABEL_OWNER,
+  LABEL_TEMPLATE_REF,
+  TYPE_AGENT,
+  SPEC_KEY,
 } from "./labels.js";
 import { displayName, generateK8sName } from "./configmap-mappers.js";
 

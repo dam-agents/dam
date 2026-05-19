@@ -1,5 +1,5 @@
-import { Plus,X } from "lucide-react";
-import { useEffect,useState } from "react";
+import { Plus, X } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import { useStore } from "../../../store.js";
 import {
@@ -18,19 +18,21 @@ export function ChannelsPanel() {
   const slackAvailable = !!availableChannels.slack;
   const telegramAvailable = !!availableChannels.telegram;
 
-  const selectedInstance = useStore(s => s.selectedInstance);
+  const selectedInstance = useStore((s) => s.selectedInstance);
   const connectSlack = useConnectSlack();
   const disconnectSlack = useDisconnectSlack();
   const connectTelegram = useConnectTelegram();
   const disconnectTelegram = useDisconnectTelegram();
   const updateInstance = useUpdateInstance();
 
-  const inst = instances.find(i => i.id === selectedInstance);
-  const slackChannel = inst?.channels.find(c => c.type === "slack");
-  const telegramChannel = inst?.channels.find(c => c.type === "telegram");
+  const inst = instances.find((i) => i.id === selectedInstance);
+  const slackChannel = inst?.channels.find((c) => c.type === "slack");
+  const telegramChannel = inst?.channels.find((c) => c.type === "telegram");
 
   const [slackEnabled, setSlackEnabled] = useState(!!slackChannel);
-  const [channelId, setChannelId] = useState(slackChannel?.type === "slack" ? slackChannel.slackChannelId : "");
+  const [channelId, setChannelId] = useState(
+    slackChannel?.type === "slack" ? slackChannel.slackChannelId : "",
+  );
   const [telegramEnabled, setTelegramEnabled] = useState(!!telegramChannel);
   const [botToken, setBotToken] = useState("");
   const [editingBotToken, setEditingBotToken] = useState(!telegramChannel);
@@ -40,8 +42,8 @@ export function ChannelsPanel() {
   const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
-    const sc = inst?.channels.find(c => c.type === "slack");
-    const tc = inst?.channels.find(c => c.type === "telegram");
+    const sc = inst?.channels.find((c) => c.type === "slack");
+    const tc = inst?.channels.find((c) => c.type === "telegram");
     setSlackEnabled(!!sc);
     setChannelId(sc?.type === "slack" ? sc.slackChannelId : "");
     setTelegramEnabled(!!tc);
@@ -54,13 +56,13 @@ export function ChannelsPanel() {
   const addUser = () => {
     const v = userInput.trim();
     if (!v || users.includes(v)) return;
-    setUsers(prev => [...prev, v]);
+    setUsers((prev) => [...prev, v]);
     setUserInput("");
     setDirty(true);
   };
 
   const removeUser = (u: string) => {
-    setUsers(prev => prev.filter(x => x !== u));
+    setUsers((prev) => prev.filter((x) => x !== u));
     setDirty(true);
   };
 
@@ -69,22 +71,42 @@ export function ChannelsPanel() {
     setSaving(true);
     try {
       if (slackEnabled && !slackChannel && channelId.trim()) {
-        await connectSlack.mutateAsync({ id: inst.id, slackChannelId: channelId.trim() });
+        await connectSlack.mutateAsync({
+          id: inst.id,
+          slackChannelId: channelId.trim(),
+        });
       } else if (!slackEnabled && slackChannel) {
         await disconnectSlack.mutateAsync({ id: inst.id });
-      } else if (slackEnabled && slackChannel && slackChannel.type === "slack" && channelId.trim() !== slackChannel.slackChannelId) {
+      } else if (
+        slackEnabled &&
+        slackChannel &&
+        slackChannel.type === "slack" &&
+        channelId.trim() !== slackChannel.slackChannelId
+      ) {
         await disconnectSlack.mutateAsync({ id: inst.id });
-        await connectSlack.mutateAsync({ id: inst.id, slackChannelId: channelId.trim() });
+        await connectSlack.mutateAsync({
+          id: inst.id,
+          slackChannelId: channelId.trim(),
+        });
       }
       if (telegramEnabled && !telegramChannel && botToken.trim()) {
-        await connectTelegram.mutateAsync({ id: inst.id, botToken: botToken.trim() });
+        await connectTelegram.mutateAsync({
+          id: inst.id,
+          botToken: botToken.trim(),
+        });
       } else if (!telegramEnabled && telegramChannel) {
         await disconnectTelegram.mutateAsync({ id: inst.id });
       } else if (telegramEnabled && telegramChannel && botToken.trim()) {
         await disconnectTelegram.mutateAsync({ id: inst.id });
-        await connectTelegram.mutateAsync({ id: inst.id, botToken: botToken.trim() });
+        await connectTelegram.mutateAsync({
+          id: inst.id,
+          botToken: botToken.trim(),
+        });
       }
-      await updateInstance.mutateAsync({ id: inst.id, allowedUserEmails: users });
+      await updateInstance.mutateAsync({
+        id: inst.id,
+        allowedUserEmails: users,
+      });
       setDirty(false);
     } finally {
       setSaving(false);
@@ -103,13 +125,18 @@ export function ChannelsPanel() {
     <div className="flex flex-col gap-4 p-4 overflow-y-auto">
       {slackAvailable && (
         <fieldset className="rounded-lg border-2 border-border p-4 flex flex-col gap-3">
-          <legend className="text-[12px] font-bold uppercase tracking-[0.05em] text-text-secondary px-1">Slack</legend>
+          <legend className="text-[12px] font-bold uppercase tracking-[0.05em] text-text-secondary px-1">
+            Slack
+          </legend>
 
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
               checked={slackEnabled}
-              onChange={e => { setSlackEnabled(e.target.checked); setDirty(true); }}
+              onChange={(e) => {
+                setSlackEnabled(e.target.checked);
+                setDirty(true);
+              }}
               className="w-4 h-4 accent-[var(--color-accent)]"
             />
             <span className="text-[13px] font-semibold text-text">Enabled</span>
@@ -118,26 +145,43 @@ export function ChannelsPanel() {
           {slackEnabled && (
             <>
               <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted">Channel ID</label>
+                <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted">
+                  Channel ID
+                </label>
                 <input
                   type="text"
                   value={channelId}
-                  onChange={e => { setChannelId(e.target.value); setDirty(true); }}
+                  onChange={(e) => {
+                    setChannelId(e.target.value);
+                    setDirty(true);
+                  }}
                   placeholder="C0..."
                   className="h-8 rounded-md border border-border-light bg-bg px-3 text-[13px] text-text outline-none focus:border-accent"
                 />
               </div>
 
               <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted">Allowed users</label>
+                <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted">
+                  Allowed users
+                </label>
                 {users.length === 0 && (
-                  <span className="text-[12px] text-text-muted italic">Unrestricted — any linked Slack user can interact</span>
+                  <span className="text-[12px] text-text-muted italic">
+                    Unrestricted — any linked Slack user can interact
+                  </span>
                 )}
                 <div className="flex flex-col gap-1">
-                  {users.map(u => (
-                    <div key={u} className="flex items-center gap-2 rounded-md border border-border-light bg-bg px-2 py-1">
-                      <span className="flex-1 text-[12px] font-mono text-text truncate">{u}</span>
-                      <button onClick={() => removeUser(u)} className="text-text-muted hover:text-danger shrink-0">
+                  {users.map((u) => (
+                    <div
+                      key={u}
+                      className="flex items-center gap-2 rounded-md border border-border-light bg-bg px-2 py-1"
+                    >
+                      <span className="flex-1 text-[12px] font-mono text-text truncate">
+                        {u}
+                      </span>
+                      <button
+                        onClick={() => removeUser(u)}
+                        className="text-text-muted hover:text-danger shrink-0"
+                      >
                         <X size={12} />
                       </button>
                     </div>
@@ -147,8 +191,10 @@ export function ChannelsPanel() {
                   <input
                     type="email"
                     value={userInput}
-                    onChange={e => setUserInput(e.target.value)}
-                    onKeyDown={e => e.key === "Enter" && (e.preventDefault(), addUser())}
+                    onChange={(e) => setUserInput(e.target.value)}
+                    onKeyDown={(e) =>
+                      e.key === "Enter" && (e.preventDefault(), addUser())
+                    }
                     placeholder="user@example.com"
                     className="flex-1 h-7 rounded-md border border-border-light bg-bg px-2 text-[12px] text-text outline-none focus:border-accent"
                   />
@@ -168,15 +214,18 @@ export function ChannelsPanel() {
 
       {telegramAvailable && (
         <fieldset className="rounded-lg border-2 border-border p-4 flex flex-col gap-3">
-          <legend className="text-[12px] font-bold uppercase tracking-[0.05em] text-text-secondary px-1">Telegram</legend>
+          <legend className="text-[12px] font-bold uppercase tracking-[0.05em] text-text-secondary px-1">
+            Telegram
+          </legend>
 
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
               checked={telegramEnabled}
-              onChange={e => {
+              onChange={(e) => {
                 setTelegramEnabled(e.target.checked);
-                if (e.target.checked && !telegramChannel) setEditingBotToken(true);
+                if (e.target.checked && !telegramChannel)
+                  setEditingBotToken(true);
                 setDirty(true);
               }}
               className="w-4 h-4 accent-[var(--color-accent)]"
@@ -186,23 +235,31 @@ export function ChannelsPanel() {
 
           {telegramEnabled && (
             <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted">Bot token</label>
+              <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted">
+                Bot token
+              </label>
               {editingBotToken ? (
                 <>
                   <input
                     type="password"
                     value={botToken}
-                    onChange={e => { setBotToken(e.target.value); setDirty(true); }}
+                    onChange={(e) => {
+                      setBotToken(e.target.value);
+                      setDirty(true);
+                    }}
                     placeholder="123456:ABC-..."
                     className="h-8 rounded-md border border-border-light bg-bg px-3 text-[13px] text-text outline-none focus:border-accent"
                   />
                   <span className="text-[11px] text-text-muted mt-1">
-                    Create a bot with @BotFather in Telegram and paste the token here.
+                    Create a bot with @BotFather in Telegram and paste the token
+                    here.
                   </span>
                 </>
               ) : (
                 <div className="flex items-center gap-2">
-                  <span className="flex-1 text-[13px] text-text-muted font-mono">••••••••</span>
+                  <span className="flex-1 text-[13px] text-text-muted font-mono">
+                    ••••••••
+                  </span>
                   <button
                     type="button"
                     onClick={() => setEditingBotToken(true)}

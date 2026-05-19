@@ -3,10 +3,20 @@ import { javascript } from "@codemirror/lang-javascript";
 import { json } from "@codemirror/lang-json";
 import { markdown } from "@codemirror/lang-markdown";
 import { yaml } from "@codemirror/lang-yaml";
-import { bracketMatching, indentOnInput, indentUnit } from "@codemirror/language";
+import {
+  bracketMatching,
+  indentOnInput,
+  indentUnit,
+} from "@codemirror/language";
 import type { Extension } from "@codemirror/state";
 import { Compartment, EditorState } from "@codemirror/state";
-import { EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from "@codemirror/view";
+import {
+  EditorView,
+  highlightActiveLine,
+  highlightActiveLineGutter,
+  keymap,
+  lineNumbers,
+} from "@codemirror/view";
 import { useEffect, useRef } from "react";
 
 function languageExtension(path: string): Extension | null {
@@ -54,8 +64,12 @@ export function CodeEditor({ value, path, onChange, onSave, readOnly }: Props) {
   const languageCompRef = useRef(new Compartment());
   const readOnlyCompRef = useRef(new Compartment());
 
-  useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
-  useEffect(() => { onSaveRef.current = onSave; }, [onSave]);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+  useEffect(() => {
+    onSaveRef.current = onSave;
+  }, [onSave]);
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -72,7 +86,14 @@ export function CodeEditor({ value, path, onChange, onSave, readOnly }: Props) {
         indentUnit.of("  "),
         EditorState.tabSize.of(2),
         keymap.of([
-          { key: "Mod-s", preventDefault: true, run: () => { onSaveRef.current(); return true; } },
+          {
+            key: "Mod-s",
+            preventDefault: true,
+            run: () => {
+              onSaveRef.current();
+              return true;
+            },
+          },
           ...defaultKeymap,
           ...historyKeymap,
         ]),
@@ -83,7 +104,9 @@ export function CodeEditor({ value, path, onChange, onSave, readOnly }: Props) {
         readOnlyCompRef.current.of(EditorState.readOnly.of(!!readOnly)),
         EditorView.theme({
           "&": { height: "100%", fontSize: "12px" },
-          ".cm-scroller": { fontFamily: "var(--font-mono, ui-monospace, monospace)" },
+          ".cm-scroller": {
+            fontFamily: "var(--font-mono, ui-monospace, monospace)",
+          },
         }),
       ],
     });
@@ -102,7 +125,9 @@ export function CodeEditor({ value, path, onChange, onSave, readOnly }: Props) {
     const view = viewRef.current;
     if (!view) return;
     if (view.state.doc.toString() !== value) {
-      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } });
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: value },
+      });
     }
   }, [value]);
 
@@ -116,8 +141,17 @@ export function CodeEditor({ value, path, onChange, onSave, readOnly }: Props) {
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
-    view.dispatch({ effects: readOnlyCompRef.current.reconfigure(EditorState.readOnly.of(!!readOnly)) });
+    view.dispatch({
+      effects: readOnlyCompRef.current.reconfigure(
+        EditorState.readOnly.of(!!readOnly),
+      ),
+    });
   }, [readOnly]);
 
-  return <div ref={hostRef} className="h-full min-h-[200px] border border-border-light rounded overflow-hidden" />;
+  return (
+    <div
+      ref={hostRef}
+      className="h-full min-h-[200px] border border-border-light rounded overflow-hidden"
+    />
+  );
 }

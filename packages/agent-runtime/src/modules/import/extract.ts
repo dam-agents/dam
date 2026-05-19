@@ -75,9 +75,17 @@ function isReadEntry(entry: Stats | ReadEntry): entry is ReadEntry {
 
 const WINDOWS_ABS_RE = /^([A-Za-z]:[\\/]|\\\\)/;
 
-function validateEntry(path: string, entry: ReadEntry, root: string): ImportDomainError | null {
+function validateEntry(
+  path: string,
+  entry: ReadEntry,
+  root: string,
+): ImportDomainError | null {
   if (entry.type !== "File" && entry.type !== "Directory") {
-    return { kind: "InvalidEntry", path, reason: `unsupported tar entry type ${entry.type}` };
+    return {
+      kind: "InvalidEntry",
+      path,
+      reason: `unsupported tar entry type ${entry.type}`,
+    };
   }
   if (path.startsWith("/") || WINDOWS_ABS_RE.test(path)) {
     return { kind: "InvalidEntry", path, reason: "absolute path" };

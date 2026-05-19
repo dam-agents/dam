@@ -110,14 +110,3 @@ if [[ -n "$HITS" ]]; then
 fi
 echo "OK: $(wc -l < "$LOCKFILE_ENTRIES") lockfile entries all older than ${DAYS}d"
 '''
-
-["common:check:lint"]
-dir = "{{config_root}}"
-run = "pnpm exec eslint ."
-
-["common:fix"]
-depends = ["common:fix:*"]
-
-["common:fix:lint"]
-dir = "{{config_root}}"
-run = "pnpm exec eslint --fix ."

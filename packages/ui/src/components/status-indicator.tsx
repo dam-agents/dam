@@ -56,8 +56,12 @@ export function StatusBadge({
   const resolvedColors = colorClasses ?? (state ? badgeColors[state] : "");
   const resolvedDot = dotColorClasses ?? (state ? dotColors[state] : "");
   return (
-    <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.03em] ${border} rounded-full px-2.5 py-0.5 ${resolvedColors}`}>
-      <span className={`inline-block ${dot} rounded-full shrink-0 ${resolvedDot}`} />
+    <span
+      className={`inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.03em] ${border} rounded-full px-2.5 py-0.5 ${resolvedColors}`}
+    >
+      <span
+        className={`inline-block ${dot} rounded-full shrink-0 ${resolvedDot}`}
+      />
       {resolvedLabel}
     </span>
   );

@@ -69,14 +69,24 @@ export interface UseAcpConnectionResult {
  * the lifecycle (`pendingReloadRef`, `reconnectFnRef`, etc.) all live next
  * to the code that reads them.
  */
-export function useAcpConnection(opts: UseAcpConnectionOptions): UseAcpConnectionResult {
+export function useAcpConnection(
+  opts: UseAcpConnectionOptions,
+): UseAcpConnectionResult {
   const {
-    selectedInstance, sessionId, liveBlocked,
-    makeUpdateHandler, engage, clearEngagement, loadHistory, setMessages,
+    selectedInstance,
+    sessionId,
+    liveBlocked,
+    makeUpdateHandler,
+    engage,
+    clearEngagement,
+    loadHistory,
+    setMessages,
   } = opts;
 
   const connectionRef = useRef<LiveConnection | null>(null);
-  const ensureInFlightRef = useRef<Promise<ClientSideConnection | null> | null>(null);
+  const ensureInFlightRef = useRef<Promise<ClientSideConnection | null> | null>(
+    null,
+  );
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptRef = useRef(0);
   const isMountedRef = useRef(true);
@@ -90,77 +100,98 @@ export function useAcpConnection(opts: UseAcpConnectionOptions): UseAcpConnectio
   const [state, setState] = useState<ConnectionState>("idle");
 
   // Cleanup on unmount: cancel any in-flight reconnect, close the live WS.
-  useEffect(() => () => {
-    isMountedRef.current = false;
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
-    connectionRef.current?.ws.close();
-    connectionRef.current = null;
-    clearEngagement();
-  }, [clearEngagement]);
+  useEffect(
+    () => () => {
+      isMountedRef.current = false;
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      connectionRef.current?.ws.close();
+      connectionRef.current = null;
+      clearEngagement();
+    },
+    [clearEngagement],
+  );
 
-  const ensureInner = useCallback(async (): Promise<ClientSideConnection | null> => {
-    if (!selectedInstance) return null;
+  const ensureInner =
+    useCallback(async (): Promise<ClientSideConnection | null> => {
+      if (!selectedInstance) return null;
 
-    // If the previous live WS died with an active session, replay history
-    // before opening a fresh socket. We swap the messages array in one
-    // render rather than pre-clearing, so the user keeps seeing their
-    // existing conversation until the fresh array is ready.
-    if (pendingReloadRef.current) {
-      const sid = useStore.getState().sessionId;
-      pendingReloadRef.current = false;
-      if (sid) {
-        setState("reloading");
-        try {
-          const fresh = await loadHistory(sid);
-          
-          if (useStore.getState().sessionId !== sid) return null;
-          setMessages(fresh);
-        } catch (e) {
-          // Network still unreachable — restore the flag so the next
-          // ensureLive (likely the next reconnect-timer fire) tries again.
-          pendingReloadRef.current = true;
-          throw e;
+      // If the previous live WS died with an active session, replay history
+      // before opening a fresh socket. We swap the messages array in one
+      // render rather than pre-clearing, so the user keeps seeing their
+      // existing conversation until the fresh array is ready.
+      if (pendingReloadRef.current) {
+        const sid = useStore.getState().sessionId;
+        pendingReloadRef.current = false;
+        if (sid) {
+          setState("reloading");
+          try {
+            const fresh = await loadHistory(sid);
+
+            if (useStore.getState().sessionId !== sid) return null;
+            setMessages(fresh);
+          } catch (e) {
+            // Network still unreachable — restore the flag so the next
+            // ensureLive (likely the next reconnect-timer fire) tries again.
+            pendingReloadRef.current = true;
+            throw e;
+          }
         }
       }
-    }
 
-    if (!connectionRef.current || connectionRef.current.ws.readyState !== WebSocket.OPEN) {
-      const { connection, ws } = await openConnection(selectedInstance, makeUpdateHandler());
-      await connection.initialize({
-        protocolVersion: PROTOCOL_VERSION,
-        clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
-      });
-      // addEventListener (not onclose=) so we don't clobber the handler that
-      // closes the ACP ReadableStream controller inside openConnection.
-      ws.addEventListener("close", () => {
-        // Skip if a newer WS has taken over (resetConnection→ensureLive race).
-        if (connectionRef.current?.ws !== ws) return;
-        connectionRef.current = null;
-        clearEngagement();
-        // Mark reload-on-next-ensureLive only if a session is bound — no
-        // session means there's nothing to reload.
-        if (useStore.getState().sessionId) pendingReloadRef.current = true;
-        // Any in-flight stream is now dead. Finalize streaming bubbles so
-        // busy clears and the next turn opens a fresh bubble instead of
-        // merging into a stale one.
-        setMessages((prev) => finalizeAllStreaming(prev));
-        setState("idle");
-        reconnectFnRef.current?.();
-      });
-      ws.addEventListener("error", () => {
-        useStore.getState().addLog("error", { message: "WebSocket connection error" });
-      });
-      connectionRef.current = { connection, ws };
-    }
+      if (
+        !connectionRef.current ||
+        connectionRef.current.ws.readyState !== WebSocket.OPEN
+      ) {
+        const { connection, ws } = await openConnection(
+          selectedInstance,
+          makeUpdateHandler(),
+        );
+        await connection.initialize({
+          protocolVersion: PROTOCOL_VERSION,
+          clientCapabilities: {
+            fs: { readTextFile: true, writeTextFile: true },
+          },
+        });
+        // addEventListener (not onclose=) so we don't clobber the handler that
+        // closes the ACP ReadableStream controller inside openConnection.
+        ws.addEventListener("close", () => {
+          // Skip if a newer WS has taken over (resetConnection→ensureLive race).
+          if (connectionRef.current?.ws !== ws) return;
+          connectionRef.current = null;
+          clearEngagement();
+          // Mark reload-on-next-ensureLive only if a session is bound — no
+          // session means there's nothing to reload.
+          if (useStore.getState().sessionId) pendingReloadRef.current = true;
+          // Any in-flight stream is now dead. Finalize streaming bubbles so
+          // busy clears and the next turn opens a fresh bubble instead of
+          // merging into a stale one.
+          setMessages((prev) => finalizeAllStreaming(prev));
+          setState("idle");
+          reconnectFnRef.current?.();
+        });
+        ws.addEventListener("error", () => {
+          useStore
+            .getState()
+            .addLog("error", { message: "WebSocket connection error" });
+        });
+        connectionRef.current = { connection, ws };
+      }
 
-    const conn = connectionRef.current.connection;
-    await engage(conn);
-    setState("live");
-    return conn;
-  }, [selectedInstance, makeUpdateHandler, engage, clearEngagement, loadHistory, setMessages]);
+      const conn = connectionRef.current.connection;
+      await engage(conn);
+      setState("live");
+      return conn;
+    }, [
+      selectedInstance,
+      makeUpdateHandler,
+      engage,
+      clearEngagement,
+      loadHistory,
+      setMessages,
+    ]);
 
   const ensureLive = useCallback((): Promise<ClientSideConnection | null> => {
     if (!ensureInFlightRef.current) {
@@ -183,7 +214,8 @@ export function useAcpConnection(opts: UseAcpConnectionOptions): UseAcpConnectio
       if (reconnectTimerRef.current) return;
 
       const attempt = reconnectAttemptRef.current;
-      const delay = RECONNECT_DELAYS[Math.min(attempt, RECONNECT_DELAYS.length - 1)];
+      const delay =
+        RECONNECT_DELAYS[Math.min(attempt, RECONNECT_DELAYS.length - 1)];
       reconnectAttemptRef.current = attempt + 1;
       setState("reconnecting");
 

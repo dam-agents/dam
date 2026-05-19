@@ -53,7 +53,9 @@ export function dispatch(event: string, data: string, agentHome: string): void {
     try {
       applyFile(file, agentHome);
     } catch (err) {
-      process.stderr.write(`[pod-files] apply failed for ${file.path}: ${err}\n`);
+      process.stderr.write(
+        `[pod-files] apply failed for ${file.path}: ${err}\n`,
+      );
     }
   }
 }

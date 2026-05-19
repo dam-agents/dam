@@ -4,67 +4,40 @@ import { ChannelType } from "api-server-api";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { InstanceService } from "../services/instance-service.js";
 import { createInstanceResolver } from "../services/instance-resolver.js";
-import {
-  describeConfigError,
-  exitCodeForResolveError,
-  printCompatResolveError,
-  printResolveError,
-} from "./errors.js";
+import { resolveActiveHost } from "../../shared/preflight.js";
+import { exitCodeForResolveError, printResolveError } from "./errors.js";
 import {
   EXIT_INSTANCE_BELOW_FLOOR,
   EXIT_INSTANCE_RUNTIME_FAILURE,
   EXIT_INSTANCE_SUCCESS,
 } from "./exit-codes.js";
 
-export interface GetCommandDeps {
+export function buildGetCommand(deps: {
   compatService: CompatService;
   configService: ConfigService;
   createInstanceService: (host: string) => InstanceService;
-  serverEnvVar: string;
-}
-
-export function buildGetCommand(deps: GetCommandDeps): Command {
+}): Command {
   return new Command("get")
     .description("Show one Instance's details, addressed by name or ID")
     .argument("<ref>", "Instance Ref — name or 'inst-…' ID")
-    .option("--server <url>", "override the configured server URL for this call")
+    .option(
+      "--server <url>",
+      "override the configured server URL for this call",
+    )
     .option("--json", "emit raw JSON instead of the default vertical layout")
     .addHelpText(
       "after",
       "\nExamples:\n  dam instance get my-agent\n  dam instance get inst-abc123 --json\n",
     )
     .action(async (ref: string, opts: { server?: string; json?: boolean }) => {
-      const flag = opts.server ? { server: opts.server } : undefined;
+      const host = await resolveActiveHost(deps, {
+        flag: opts.server ? { server: opts.server } : undefined,
+        exitCodes: {
+          runtimeFailure: EXIT_INSTANCE_RUNTIME_FAILURE,
+          belowFloor: EXIT_INSTANCE_BELOW_FLOOR,
+        },
+      });
 
-      // Compat pre-flight — same gate `ping` and `auth login` use.
-      // Matches `ping`: all compat-resolve failures (missing-config,
-      // malformed-config, probe-error) exit as runtime failure so the
-      // exit code is consistent across commands that share this gate.
-      const compat = await deps.compatService.check({ flag });
-      if (!compat.ok) {
-        printCompatResolveError(compat.error, deps.serverEnvVar);
-        process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
-      }
-      const verdict = compat.value;
-      if (verdict.kind === "below-floor") {
-        process.stderr.write(
-          `error: CLI ${verdict.localCli} is below the server's minimum required version ${verdict.serverMinClient}; upgrade and retry\n`,
-        );
-        process.exit(EXIT_INSTANCE_BELOW_FLOOR);
-      }
-      if (verdict.kind === "behind-current") {
-        process.stderr.write(
-          `warning: CLI ${verdict.localCli} is behind server ${verdict.serverVersion}; consider upgrading\n`,
-        );
-      }
-
-      const cfg = await deps.configService.getResolved({ flag });
-      if (!cfg.ok) {
-        process.stderr.write(`error: ${describeConfigError(cfg.error)}\n`);
-        process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
-      }
-
-      const host = cfg.value.server;
       const svc = deps.createInstanceService(host);
       const resolver = createInstanceResolver({ instanceService: svc });
       const result = await resolver.resolve(ref);
@@ -83,8 +56,6 @@ export function buildGetCommand(deps: GetCommandDeps): Command {
     });
 }
 
-/** Vertical key:value layout with dynamic column alignment.
- *  `ERROR:` appended only when state === "error". */
 function renderInstance(instance: Instance): string {
   const entries: [string, string][] = [
     ["NAME", instance.name],
@@ -97,11 +68,18 @@ function renderInstance(instance: Instance): string {
   entries.push(["CHANNELS", renderChannels(instance.channels)]);
   entries.push([
     "ALLOWED",
-    instance.allowedUserEmails.length === 0 ? "<none>" : instance.allowedUserEmails.join(", "),
+    instance.allowedUserEmails.length === 0
+      ? "<none>"
+      : instance.allowedUserEmails.join(", "),
   ]);
-  if (instance.state === "error" && instance.error) entries.push(["ERROR", instance.error]);
+  if (instance.state === "error" && instance.error)
+    entries.push(["ERROR", instance.error]);
   const pad = Math.max(...entries.map(([k]) => k.length)) + 2;
-  return entries.map(([k, v]) => `${k}:${" ".repeat(pad - k.length)}${v}`).join("\n") + "\n";
+  return (
+    entries
+      .map(([k, v]) => `${k}:${" ".repeat(pad - k.length)}${v}`)
+      .join("\n") + "\n"
+  );
 }
 
 function renderChannels(channels: readonly ChannelConfig[]): string {

@@ -1,16 +1,22 @@
 import type { Agent } from "api-server-api";
 import type { K8sClient } from "./k8s.js";
-import {
-  LABEL_TYPE, TYPE_AGENT, LABEL_OWNER,
-} from "./labels.js";
+import { LABEL_TYPE, TYPE_AGENT, LABEL_OWNER } from "./labels.js";
 import { isOwnedBy, hasType, patchSpecField } from "./configmap-mappers.js";
 import { parseAgent, buildAgentConfigMap } from "./agents-configmap-mappers.js";
 
 export interface AgentsRepository {
   list(owner: string): Promise<Agent[]>;
   get(id: string, owner: string): Promise<Agent | null>;
-  create(spec: Record<string, unknown>, owner: string, templateId?: string): Promise<Agent>;
-  updateSpec(id: string, owner: string, patch: Record<string, unknown>): Promise<Agent | null>;
+  create(
+    spec: Record<string, unknown>,
+    owner: string,
+    templateId?: string,
+  ): Promise<Agent>;
+  updateSpec(
+    id: string,
+    owner: string,
+    patch: Record<string, unknown>,
+  ): Promise<Agent | null>;
   delete(id: string, owner: string): Promise<void>;
 }
 

@@ -34,4 +34,6 @@ export const anthropicCredentialSchema = z
     }
   });
 
-export type AnthropicCredentialValues = z.infer<typeof anthropicCredentialSchema>;
+export type AnthropicCredentialValues = z.infer<
+  typeof anthropicCredentialSchema
+>;

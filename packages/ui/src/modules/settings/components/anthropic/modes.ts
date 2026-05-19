@@ -1,4 +1,4 @@
-import { type EnvMapping,PROVIDERS } from "../../../../types.js";
+import { type EnvMapping, PROVIDERS } from "../../../../types.js";
 
 /** Ordered Mode keys — left→right toggle order, Zod enum source, and
  *  iteration order. */

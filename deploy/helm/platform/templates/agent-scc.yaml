@@ -1,20 +1,95 @@
-{{- if .Values.openshift.scc.nonroot.enabled }}
+{{- if .Values.openshift.scc.anyuidCapNet.enabled }}
 {{/*
-Bind nonroot-v2 to every ServiceAccount in agentNamespace so agent pods
-run as image USER (65532) rather than the namespace-range UID that
-restricted-v2 would assign. See values.yaml for the full motivation.
+Custom `anyuid-cap-net` SCC for agent pods on OpenShift. Tightens
+anyuid as far as it goes while admitting the `iptablesInit` init
+container: requires drop ALL caps, no priv escalation, runtime/default
+seccomp (all from restricted-v2). The two real relaxations are:
+
+  - runAsUser: RunAsAny — the iptablesInit init container needs root
+    because containerd doesn't promote capabilities.add into the
+    ambient set, so non-root processes can't exercise NET_ADMIN.
+  - allowedCapabilities: NET_ADMIN + NET_RAW — opt-in via container
+    caps.add (only the init container actually requests them).
+
+Priority intentionally `null` (= 0): admission prefers more restrictive
+SCCs the SA already has access to (restricted-v2 default), and only
+falls through to this one for pods that actually request NET_ADMIN.
 */}}
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: {{ include "platform.fullname" . }}-anyuid-cap-net
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+allowHostDirVolumePlugin: false
+allowHostIPC: false
+allowHostNetwork: false
+allowHostPID: false
+allowHostPorts: false
+allowPrivilegeEscalation: false
+allowPrivilegedContainer: false
+allowedCapabilities:
+  - NET_ADMIN
+  - NET_RAW
+defaultAddCapabilities: null
+fsGroup:
+  type: RunAsAny
+groups: []
+priority: null
+readOnlyRootFilesystem: false
+requiredDropCapabilities:
+  - ALL
+runAsUser:
+  type: RunAsAny
+seLinuxContext:
+  type: MustRunAs
+seccompProfiles:
+  - runtime/default
+supplementalGroups:
+  type: RunAsAny
+users: []
+volumes:
+  - configMap
+  - csi
+  - downwardAPI
+  - emptyDir
+  - ephemeral
+  - persistentVolumeClaim
+  - projected
+  - secret
+---
+{{/*
+Grant `use` on the custom SCC. OpenShift auto-generates
+`system:openshift:scc:<name>` ClusterRoles only for built-in SCCs
+(restricted-v2, nonroot-v2, anyuid, …); for custom SCCs no ClusterRole
+is created, so we render one ourselves. SCC is cluster-scoped, so the
+rule must live in a ClusterRole (Role can only reference namespaced
+resources). The RoleBinding below stays namespace-scoped so the grant
+is limited to `agentNamespace`.
+*/}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "platform.fullname" . }}-anyuid-cap-net-use
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["security.openshift.io"]
+    resources: ["securitycontextconstraints"]
+    resourceNames: ["{{ include "platform.fullname" . }}-anyuid-cap-net"]
+    verbs: ["use"]
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: {{ include "platform.fullname" . }}-agent-nonroot
+  name: {{ include "platform.fullname" . }}-agent-anyuid-cap-net
   namespace: {{ .Values.agentNamespace }}
   labels:
     {{- include "platform.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: system:openshift:scc:nonroot-v2
+  name: {{ include "platform.fullname" . }}-anyuid-cap-net-use
 subjects:
   - kind: Group
     apiGroup: rbac.authorization.k8s.io

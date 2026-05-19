@@ -58,9 +58,9 @@ describe("TOML AuthStore", () => {
     await writeFile(
       authPath,
       [
-        '# user note',
+        "# user note",
         'unknown_top_level = "preserved"',
-        '',
+        "",
         '[hosts."http://dam.localhost:4444"]',
         'issuer = "http://keycloak.localhost:4444/realms/platform"',
         'username = "petr"',
@@ -69,7 +69,7 @@ describe("TOML AuthStore", () => {
         'access_token = "a"',
         'refresh_token = "r"',
         'expires_at = "2026-05-06T15:34:01.000Z"',
-        '',
+        "",
       ].join("\n"),
       "utf-8",
     );

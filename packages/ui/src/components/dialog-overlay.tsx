@@ -4,8 +4,8 @@ import { useEffect, useRef } from "react";
 import { useStore } from "../store.js";
 
 export function DialogOverlay() {
-  const dialog = useStore(s => s.dialog);
-  const closeDialog = useStore(s => s.closeDialog);
+  const dialog = useStore((s) => s.dialog);
+  const closeDialog = useStore((s) => s.closeDialog);
   const confirmRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -34,8 +34,12 @@ export function DialogOverlay() {
             <AlertTriangle size={16} className="text-accent" />
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="text-[15px] font-bold text-text mb-1">{dialog.title}</h3>
-            <div className="text-[13px] text-text-secondary leading-relaxed">{dialog.message}</div>
+            <h3 className="text-[15px] font-bold text-text mb-1">
+              {dialog.title}
+            </h3>
+            <div className="text-[13px] text-text-secondary leading-relaxed">
+              {dialog.message}
+            </div>
           </div>
         </div>
         <div className="flex justify-end gap-2 pt-1">

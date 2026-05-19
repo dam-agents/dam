@@ -1,4 +1,4 @@
-import { Bot, Settings,Sparkles, Unplug } from "lucide-react";
+import { Bot, Settings, Sparkles, Unplug } from "lucide-react";
 
 import { useStore } from "../store.js";
 

@@ -47,14 +47,19 @@ export function ConnectionsView() {
   const [showAddMcp, setShowAddMcp] = useState(false);
   const [showAddSecret, setShowAddSecret] = useState(false);
   const [editingSecret, setEditingSecret] = useState<SecretView | null>(null);
-  const [connectingApp, setConnectingApp] = useState<OAuthAppDescriptor | null>(null);
+  const [connectingApp, setConnectingApp] = useState<OAuthAppDescriptor | null>(
+    null,
+  );
 
   const customSecrets = secrets.filter(isCustomSecret);
   const appsById = new Map(oauthApps.map((a) => [a.id, a]));
   const singleAppsConnected = new Set(
     oauthAppConnections
       .map((c) => appsById.get(c.appId))
-      .filter((a): a is NonNullable<typeof a> => a != null && a.cardinality === "single")
+      .filter(
+        (a): a is NonNullable<typeof a> =>
+          a != null && a.cardinality === "single",
+      )
       .map((a) => a.id),
   );
   const availableToConnect = oauthApps.filter(
@@ -80,7 +85,9 @@ export function ConnectionsView() {
   return (
     <div className="w-full max-w-2xl">
       <div className="flex items-center gap-3 mb-8">
-        <h1 className="text-[20px] md:text-[24px] font-bold text-text">Connections</h1>
+        <h1 className="text-[20px] md:text-[24px] font-bold text-text">
+          Connections
+        </h1>
         <button
           onClick={refreshAll}
           className="ml-auto h-8 w-8 rounded-lg border-2 border-border bg-surface flex items-center justify-center text-text-secondary hover:text-accent hover:border-accent btn-brutal shadow-brutal-sm"
@@ -92,7 +99,8 @@ export function ConnectionsView() {
       </div>
 
       <p className="text-[14px] text-text-secondary mb-8 leading-relaxed">
-        External services and credentials available to your agents. Injected into outbound HTTP requests — agents never see raw tokens.
+        External services and credentials available to your agents. Injected
+        into outbound HTTP requests — agents never see raw tokens.
       </p>
 
       {/* Apps */}
@@ -101,16 +109,19 @@ export function ConnectionsView() {
           Apps
         </h2>
         <p className="text-[12px] text-text-muted mb-4">
-          OAuth apps like GitHub. Connect them here to grant agents API access on your behalf.
+          OAuth apps like GitHub. Connect them here to grant agents API access
+          on your behalf.
         </p>
 
         {isPendingOAuthApps && <ListSkeleton />}
 
-        {!isPendingOAuthApps && oauthAppConnections.length === 0 && availableToConnect.length === 0 && (
-          <div className="rounded-xl border-2 border-border-light bg-surface px-6 py-8 text-center text-[14px] text-text-muted anim-in">
-            No OAuth apps available.
-          </div>
-        )}
+        {!isPendingOAuthApps &&
+          oauthAppConnections.length === 0 &&
+          availableToConnect.length === 0 && (
+            <div className="rounded-xl border-2 border-border-light bg-surface px-6 py-8 text-center text-[14px] text-text-muted anim-in">
+              No OAuth apps available.
+            </div>
+          )}
 
         {!isPendingOAuthApps && oauthAppConnections.length > 0 && (
           <div className="flex flex-col gap-3">
@@ -131,13 +142,18 @@ export function ConnectionsView() {
         )}
 
         {!isPendingOAuthApps && availableToConnect.length > 0 && (
-          <div className={`grid grid-cols-1 sm:grid-cols-2 gap-2 ${oauthAppConnections.length > 0 ? "mt-4" : ""}`}>
+          <div
+            className={`grid grid-cols-1 sm:grid-cols-2 gap-2 ${oauthAppConnections.length > 0 ? "mt-4" : ""}`}
+          >
             {availableToConnect.map((app) => (
-              <OAuthAppConnectButton key={app.id} app={app} onConnect={setConnectingApp} />
+              <OAuthAppConnectButton
+                key={app.id}
+                app={app}
+                onConnect={setConnectingApp}
+              />
             ))}
           </div>
         )}
-
       </section>
 
       {/* MCP Servers */}
@@ -146,18 +162,19 @@ export function ConnectionsView() {
           MCP Servers
         </h2>
         <p className="text-[12px] text-text-muted mb-4">
-          Remote tool servers connected via OAuth. They provide tools your agents can use during sessions.
+          Remote tool servers connected via OAuth. They provide tools your
+          agents can use during sessions.
         </p>
 
-        {isPendingMcpConnections && (
-          <ListSkeleton />
-        )}
+        {isPendingMcpConnections && <ListSkeleton />}
 
-        {!isPendingMcpConnections && mcpConnections.length === 0 && !showAddMcp && (
-          <div className="rounded-xl border-2 border-border-light bg-surface px-6 py-8 text-center text-[14px] text-text-muted anim-in">
-            No MCP servers connected yet
-          </div>
-        )}
+        {!isPendingMcpConnections &&
+          mcpConnections.length === 0 &&
+          !showAddMcp && (
+            <div className="rounded-xl border-2 border-border-light bg-surface px-6 py-8 text-center text-[14px] text-text-muted anim-in">
+              No MCP servers connected yet
+            </div>
+          )}
 
         {!isPendingMcpConnections && mcpConnections.length > 0 && (
           <div className="flex flex-col gap-3">
@@ -166,7 +183,9 @@ export function ConnectionsView() {
                 key={connection.hostname}
                 connection={connection}
                 animationDelayMs={i * 50}
-                onReconnect={(hostname) => openAddMcp(`https://${hostname}/mcp`)}
+                onReconnect={(hostname) =>
+                  openAddMcp(`https://${hostname}/mcp`)
+                }
               />
             ))}
           </div>
@@ -190,12 +209,11 @@ export function ConnectionsView() {
           Secrets
         </h2>
         <p className="text-[12px] text-text-muted mb-4">
-          Custom bearer tokens injected into outbound requests matching a host pattern.
+          Custom bearer tokens injected into outbound requests matching a host
+          pattern.
         </p>
 
-        {isPendingSecrets && (
-          <ListSkeleton />
-        )}
+        {isPendingSecrets && <ListSkeleton />}
 
         {!isPendingSecrets && customSecrets.length === 0 && !showAddSecret && (
           <div className="rounded-xl border-2 border-border-light bg-surface px-6 py-8 text-center text-[14px] text-text-muted anim-in">
@@ -236,7 +254,10 @@ export function ConnectionsView() {
       )}
 
       {connectingApp && (
-        <ConnectAppForm app={connectingApp} onCancel={() => setConnectingApp(null)} />
+        <ConnectAppForm
+          app={connectingApp}
+          onCancel={() => setConnectingApp(null)}
+        />
       )}
 
       {showAddSecret && (

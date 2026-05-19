@@ -34,28 +34,7 @@ When promoting a Draft to Accepted: rename `DRAFT-title.md` → `NNN-title.md` a
 - File names: short kebab-case, 2-3 words max
 - Index: `docs/adrs/index.md` — always keep in sync
 
+
 ## Template
 
-```markdown
-# ADR-NNN: Title
-
-**Date:** YYYY-MM-DD
-**Status:** Proposed | Accepted | Deprecated | Superseded by ADR-NNN
-**Owner:** @github-username
-
-## Context
-
-What is the issue motivating this decision?
-
-## Decision
-
-What we decided.
-
-## Alternatives Considered
-
-What else was evaluated and why rejected.
-
-## Consequences
-
-What becomes easier or more difficult.
-```
+Look at the template at `docs/adr-template.md` for the expected structure and content of ADR files. Follow that format closely.

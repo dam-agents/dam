@@ -10,7 +10,10 @@ import { TRPCError } from "@trpc/server";
 import type { InstancesRepository } from "../infrastructure/instances-repository.js";
 import type { KeycloakUserDirectory } from "../infrastructure/keycloak-user-directory.js";
 import type { ChannelSecretStore } from "../../channels/infrastructure/channel-secret-store.js";
-import { assembleInstance, findOrphanedInstanceIds } from "../domain/instance-assembly.js";
+import {
+  assembleInstance,
+  findOrphanedInstanceIds,
+} from "../domain/instance-assembly.js";
 import { isSlackChannelUniqueViolation } from "../infrastructure/channel-bindings-repository.js";
 import { ok, err } from "../../../core/result.js";
 import type { UnitOfWork, Tx } from "../../../core/unit-of-work.js";
@@ -26,7 +29,11 @@ export function createInstancesService(deps: {
   deleteChannelByType: (instanceId: string, type: ChannelType) => Promise<void>;
   unitOfWork: UnitOfWork;
   channelsTxRepo: {
-    upsertChannel: (tx: Tx, instanceId: string, channel: ChannelConfig) => Promise<void>;
+    upsertChannel: (
+      tx: Tx,
+      instanceId: string,
+      channel: ChannelConfig,
+    ) => Promise<void>;
     listByInstance: (tx: Tx, instanceId: string) => Promise<ChannelConfig[]>;
   };
   deleteChannelsByInstanceIds: (instanceIds: string[]) => Promise<void>;
@@ -45,7 +52,10 @@ export function createInstancesService(deps: {
 
   async function emailsToSubs(emails: string[]): Promise<string[]> {
     const resolved = await Promise.all(
-      emails.map(async (e) => ({ email: e, sub: await deps.userDirectory.resolveByEmail(e) })),
+      emails.map(async (e) => ({
+        email: e,
+        sub: await deps.userDirectory.resolveByEmail(e),
+      })),
     );
     const missing = resolved.filter((r) => r.sub === null).map((r) => r.email);
     if (missing.length > 0) {
@@ -63,7 +73,9 @@ export function createInstancesService(deps: {
       ]);
 
       const infraIds = new Set(infraInstances.map((i) => i.id));
-      const psqlInstanceIds = [...new Set([...channelMap.keys(), ...allowedUsersMap.keys()])];
+      const psqlInstanceIds = [
+        ...new Set([...channelMap.keys(), ...allowedUsersMap.keys()]),
+      ];
       const orphans = findOrphanedInstanceIds(infraIds, psqlInstanceIds);
       if (orphans.length > 0) {
         await Promise.all([
@@ -77,9 +89,10 @@ export function createInstancesService(deps: {
       }
 
       const allSubs = [...new Set([...allowedUsersMap.values()].flat())];
-      const subEmailMap = allSubs.length > 0
-        ? await deps.userDirectory.resolveManyBySub(allSubs)
-        : new Map<string, string>();
+      const subEmailMap =
+        allSubs.length > 0
+          ? await deps.userDirectory.resolveManyBySub(allSubs)
+          : new Map<string, string>();
 
       const agentIds = [...new Set(infraInstances.map((i) => i.agentId))];
       const agents = await Promise.all(agentIds.map((id) => deps.getAgent(id)));
@@ -144,7 +157,11 @@ export function createInstancesService(deps: {
         secretRef: input.secretRef,
         description: input.description,
       };
-      const infra = await deps.repo.create(input.agentId, spec, deps.owner ?? "");
+      const infra = await deps.repo.create(
+        input.agentId,
+        spec,
+        deps.owner ?? "",
+      );
       const emails = input.allowedUserEmails ?? [];
       if (emails.length > 0) {
         const subs = await emailsToSubs(emails);
@@ -152,7 +169,11 @@ export function createInstancesService(deps: {
       }
       const instance = assembleInstance(infra, agent, [], emails);
 
-      emit({ type: EventType.InstanceCreated, instanceId: instance.id, agentId: input.agentId });
+      emit({
+        type: EventType.InstanceCreated,
+        instanceId: instance.id,
+        agentId: input.agentId,
+      });
       return instance;
     },
 
@@ -179,7 +200,8 @@ export function createInstancesService(deps: {
     },
 
     async wake(id) {
-      if (deps.owner && !await deps.repo.isOwnedBy(id, deps.owner)) return null;
+      if (deps.owner && !(await deps.repo.isOwnedBy(id, deps.owner)))
+        return null;
       const infra = await deps.repo.wake(id);
       if (!infra) return null;
       const [channels, allowedSubs, agent] = await Promise.all([
@@ -225,7 +247,9 @@ export function createInstancesService(deps: {
         deps.getAgent(infra.agentId),
       ]);
       const emails = await subsToEmails(allowedSubs);
-      return ok(assembleInstance(infra, agent, txResult.value.channels, emails));
+      return ok(
+        assembleInstance(infra, agent, txResult.value.channels, emails),
+      );
     },
 
     async disconnectSlack(id) {
@@ -266,7 +290,10 @@ export function createInstancesService(deps: {
       if (!infra) return null;
 
       await deps.deleteChannelByType(id, ChannelType.Telegram);
-      await deps.channelSecretStore.deleteChannelSecret(id, ChannelType.Telegram);
+      await deps.channelSecretStore.deleteChannelSecret(
+        id,
+        ChannelType.Telegram,
+      );
       emit({ type: EventType.TelegramDisconnected, instanceId: id });
 
       const [channels, allowedSubs, agent] = await Promise.all([
@@ -300,7 +327,7 @@ export function createInstancesService(deps: {
     },
 
     async ensureReady(id) {
-      if (deps.owner && !await deps.repo.isOwnedBy(id, deps.owner)) {
+      if (deps.owner && !(await deps.repo.isOwnedBy(id, deps.owner))) {
         throw new Error(`instance ${id}: not found or not owned`);
       }
       await deps.repo.ensureReady(id);

@@ -2,8 +2,12 @@ import type { Schedule, ScheduleSpec } from "api-server-api";
 import yaml from "js-yaml";
 import type { K8sClient } from "../../agents/infrastructure/k8s.js";
 import {
-  LABEL_TYPE, TYPE_SCHEDULE, LABEL_OWNER, LABEL_INSTANCE_REF,
-  LABEL_AGENT_REF, SPEC_KEY,
+  LABEL_TYPE,
+  TYPE_SCHEDULE,
+  LABEL_OWNER,
+  LABEL_INSTANCE_REF,
+  LABEL_AGENT_REF,
+  SPEC_KEY,
 } from "../../agents/infrastructure/labels.js";
 import { isOwnedBy } from "../../agents/infrastructure/configmap-mappers.js";
 import { parseSchedule, buildScheduleConfigMap } from "./configmap-mappers.js";
@@ -11,8 +15,17 @@ import { parseSchedule, buildScheduleConfigMap } from "./configmap-mappers.js";
 export interface SchedulesRepository {
   list(instanceId: string, owner: string): Promise<Schedule[]>;
   get(id: string, owner: string): Promise<Schedule | null>;
-  create(instanceId: string, agentRef: string, spec: Record<string, unknown>, owner: string): Promise<Schedule>;
-  update(id: string, patch: Record<string, unknown>, owner: string): Promise<Schedule | null>;
+  create(
+    instanceId: string,
+    agentRef: string,
+    spec: Record<string, unknown>,
+    owner: string,
+  ): Promise<Schedule>;
+  update(
+    id: string,
+    patch: Record<string, unknown>,
+    owner: string,
+  ): Promise<Schedule | null>;
   delete(id: string, owner: string): Promise<void>;
   toggle(id: string, owner: string): Promise<Schedule | null>;
   readAgentRef(instanceId: string, owner: string): Promise<string | null>;
@@ -48,7 +61,10 @@ export function createSchedulesRepository(k8s: K8sClient): SchedulesRepository {
     async update(id, patch, owner) {
       const cm = await getOwned(id, owner);
       if (!cm) return null;
-      const current = yaml.load(cm.data?.[SPEC_KEY] ?? "") as Record<string, unknown>;
+      const current = yaml.load(cm.data?.[SPEC_KEY] ?? "") as Record<
+        string,
+        unknown
+      >;
       const nextSpec = { ...current, ...patch };
       cm.data = { ...cm.data, [SPEC_KEY]: yaml.dump(nextSpec) };
       const updated = await k8s.replaceConfigMap(id, cm);

@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 
-import { applyUpdate, finalizeAllStreaming, hasStreamingAssistant } from "../../modules/acp/session-projection.js";
+import {
+  applyUpdate,
+  finalizeAllStreaming,
+  hasStreamingAssistant,
+} from "../../modules/acp/session-projection.js";
 import type { Message, ToolChip } from "../../types.js";
 
 // Stable UUIDs would be nice; Node >= 18 has globalThis.crypto.randomUUID —
@@ -8,10 +12,20 @@ import type { Message, ToolChip } from "../../types.js";
 // on-demand bubbles, so assertions focus on shape rather than id equality.
 
 function userMsg(id: string, text: string): Message {
-  return { id, role: "user", parts: [{ kind: "text", text }], streaming: false };
+  return {
+    id,
+    role: "user",
+    parts: [{ kind: "text", text }],
+    streaming: false,
+  };
 }
 
-function assistantMsg(id: string, text: string, streaming = false, queued?: boolean): Message {
+function assistantMsg(
+  id: string,
+  text: string,
+  streaming = false,
+  queued?: boolean,
+): Message {
   return {
     id,
     role: "assistant",
@@ -21,7 +35,10 @@ function assistantMsg(id: string, text: string, streaming = false, queued?: bool
   };
 }
 
-const txtChunk = (text: string, kind: "agent_message_chunk" | "user_message_chunk" = "agent_message_chunk") => ({
+const txtChunk = (
+  text: string,
+  kind: "agent_message_chunk" | "user_message_chunk" = "agent_message_chunk",
+) => ({
   sessionUpdate: kind,
   content: { type: "text" as const, text },
 });
@@ -31,7 +48,8 @@ const txtChunk = (text: string, kind: "agent_message_chunk" | "user_message_chun
  *  mismatch should fail loudly rather than silently return "". */
 function firstTextPart({ parts }: Message): string {
   const [first] = parts;
-  if (first?.kind !== "text") throw new Error(`expected text part, got ${first?.kind ?? "none"}`);
+  if (first?.kind !== "text")
+    throw new Error(`expected text part, got ${first?.kind ?? "none"}`);
   return first.text;
 }
 
@@ -45,7 +63,10 @@ describe("applyUpdate — agent content", () => {
   });
 
   test("appends to the active (streaming, non-queued) assistant", () => {
-    const start: Message[] = [userMsg("u1", "hi"), assistantMsg("a1", "he", true)];
+    const start: Message[] = [
+      userMsg("u1", "hi"),
+      assistantMsg("a1", "he", true),
+    ];
     const out = applyUpdate(start, txtChunk("llo"));
     expect(out).toHaveLength(2);
     expect(out[1].parts).toEqual([{ kind: "text", text: "hello" }]);
@@ -100,21 +121,33 @@ describe("applyUpdate — agent content", () => {
   });
 
   test("agent_thought_chunk produces a thought part distinct from text", () => {
-    const out = applyUpdate([], { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "thinking" } });
+    const out = applyUpdate([], {
+      sessionUpdate: "agent_thought_chunk",
+      content: { type: "text", text: "thinking" },
+    });
     expect(out[0].role).toBe("assistant");
     expect(out[0].parts).toEqual([{ kind: "thought", text: "thinking" }]);
   });
 
   test("consecutive thought chunks merge into one part", () => {
     let messages: Message[] = [];
-    messages = applyUpdate(messages, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "rea" } });
-    messages = applyUpdate(messages, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "soning" } });
+    messages = applyUpdate(messages, {
+      sessionUpdate: "agent_thought_chunk",
+      content: { type: "text", text: "rea" },
+    });
+    messages = applyUpdate(messages, {
+      sessionUpdate: "agent_thought_chunk",
+      content: { type: "text", text: "soning" },
+    });
     expect(messages[0].parts).toEqual([{ kind: "thought", text: "reasoning" }]);
   });
 
   test("thought followed by message yields two parts in order", () => {
     let messages: Message[] = [];
-    messages = applyUpdate(messages, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "let me think" } });
+    messages = applyUpdate(messages, {
+      sessionUpdate: "agent_thought_chunk",
+      content: { type: "text", text: "let me think" },
+    });
     messages = applyUpdate(messages, txtChunk("the answer"));
     expect(messages[0].parts).toEqual([
       { kind: "thought", text: "let me think" },
@@ -125,7 +158,10 @@ describe("applyUpdate — agent content", () => {
   test("message followed by thought yields two parts and does not merge", () => {
     let messages: Message[] = [];
     messages = applyUpdate(messages, txtChunk("hi"));
-    messages = applyUpdate(messages, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "wait" } });
+    messages = applyUpdate(messages, {
+      sessionUpdate: "agent_thought_chunk",
+      content: { type: "text", text: "wait" },
+    });
     expect(messages[0].parts).toEqual([
       { kind: "text", text: "hi" },
       { kind: "thought", text: "wait" },
@@ -135,7 +171,10 @@ describe("applyUpdate — agent content", () => {
 
 describe("applyUpdate — turn boundaries", () => {
   test("platform_turn_ended closes the active assistant", () => {
-    const start: Message[] = [userMsg("u1", "hi"), assistantMsg("a1", "hello", true)];
+    const start: Message[] = [
+      userMsg("u1", "hi"),
+      assistantMsg("a1", "hello", true),
+    ];
     const out = applyUpdate(start, { sessionUpdate: "platform_turn_ended" });
     expect(out[1].streaming).toBe(false);
   });
@@ -172,15 +211,28 @@ describe("applyUpdate — turn boundaries", () => {
       userMsg("u1", "hi"),
       assistantMsg("a1", "hello", true),
     ];
-    const out = applyUpdate(start, { ...txtChunk("bye", "user_message_chunk"), messageId: "u2" });
+    const out = applyUpdate(start, {
+      ...txtChunk("bye", "user_message_chunk"),
+      messageId: "u2",
+    });
     expect(out).toHaveLength(3);
     expect(out[1].streaming).toBe(false);
     expect(out[2]).toMatchObject({ id: "u2", role: "user" });
   });
 
   test("user_message_chunk with existing messageId merges text", () => {
-    const start: Message[] = [{ id: "u1", role: "user", parts: [{ kind: "text", text: "hel" }], streaming: false }];
-    const out = applyUpdate(start, { ...txtChunk("lo", "user_message_chunk"), messageId: "u1" });
+    const start: Message[] = [
+      {
+        id: "u1",
+        role: "user",
+        parts: [{ kind: "text", text: "hel" }],
+        streaming: false,
+      },
+    ];
+    const out = applyUpdate(start, {
+      ...txtChunk("lo", "user_message_chunk"),
+      messageId: "u1",
+    });
     expect(out).toHaveLength(1);
     expect(out[0].parts).toEqual([{ kind: "text", text: "hello" }]);
   });
@@ -190,7 +242,10 @@ describe("applyUpdate — turn boundaries", () => {
     const update = {
       sessionUpdate: "user_message_chunk" as const,
       messageId: "u1",
-      content: { type: "text" as const, text: 'see <context ref="file:///notes.md">big body</context> please' },
+      content: {
+        type: "text" as const,
+        text: 'see <context ref="file:///notes.md">big body</context> please',
+      },
     };
     const out = applyUpdate(start, update);
     expect(out).toHaveLength(1);
@@ -205,7 +260,10 @@ describe("applyUpdate — turn boundaries", () => {
     const out = applyUpdate([], {
       sessionUpdate: "user_message_chunk" as const,
       messageId: "u1",
-      content: { type: "text" as const, text: "look at [@image.png](file:///tmp/image.png)" },
+      content: {
+        type: "text" as const,
+        text: "look at [@image.png](file:///tmp/image.png)",
+      },
     });
     expect(out[0].parts).toEqual([
       { kind: "text", text: "look at" },
@@ -216,7 +274,10 @@ describe("applyUpdate — turn boundaries", () => {
 
 describe("applyUpdate — tool calls", () => {
   test("tool_call appends a chip to the active assistant", () => {
-    const start: Message[] = [userMsg("u1", "run it"), assistantMsg("a1", "", true)];
+    const start: Message[] = [
+      userMsg("u1", "run it"),
+      assistantMsg("a1", "", true),
+    ];
     const out = applyUpdate(start, {
       sessionUpdate: "tool_call",
       toolCallId: "t1",
@@ -236,7 +297,9 @@ describe("applyUpdate — tool calls", () => {
       {
         id: "a1",
         role: "assistant",
-        parts: [{ kind: "tool", toolCallId: "t1", title: "Bash", status: "pending" }],
+        parts: [
+          { kind: "tool", toolCallId: "t1", title: "Bash", status: "pending" },
+        ],
         streaming: true,
       },
     ];
@@ -255,7 +318,9 @@ describe("applyUpdate — tool calls", () => {
       {
         id: "a1",
         role: "assistant",
-        parts: [{ kind: "tool", toolCallId: "t1", title: "Bash", status: "pending" }],
+        parts: [
+          { kind: "tool", toolCallId: "t1", title: "Bash", status: "pending" },
+        ],
         streaming: false,
       },
       userMsg("u2", "continue"),
@@ -271,7 +336,10 @@ describe("applyUpdate — tool calls", () => {
   });
 
   test("tool_call_update for unknown chip is a no-op", () => {
-    const start: Message[] = [userMsg("u1", "hi"), assistantMsg("a1", "hello", false)];
+    const start: Message[] = [
+      userMsg("u1", "hi"),
+      assistantMsg("a1", "hello", false),
+    ];
     const out = applyUpdate(start, {
       sessionUpdate: "tool_call_update",
       toolCallId: "missing",
@@ -284,17 +352,25 @@ describe("applyUpdate — tool calls", () => {
 describe("replay scenarios", () => {
   test("classic multi-turn replay: user, agent, user, agent", () => {
     let m: Message[] = [];
-    m = applyUpdate(m, { ...txtChunk("q1", "user_message_chunk"), messageId: "u1" });
+    m = applyUpdate(m, {
+      ...txtChunk("q1", "user_message_chunk"),
+      messageId: "u1",
+    });
     m = applyUpdate(m, txtChunk("a1", "agent_message_chunk"));
-    m = applyUpdate(m, { ...txtChunk("q2", "user_message_chunk"), messageId: "u2" });
+    m = applyUpdate(m, {
+      ...txtChunk("q2", "user_message_chunk"),
+      messageId: "u2",
+    });
     m = applyUpdate(m, txtChunk("a2", "agent_message_chunk"));
     m = finalizeAllStreaming(m);
 
-    expect(m.map((message) => ({
-      role: message.role,
-      text: firstTextPart(message),
-      streaming: message.streaming,
-    }))).toEqual([
+    expect(
+      m.map((message) => ({
+        role: message.role,
+        text: firstTextPart(message),
+        streaming: message.streaming,
+      })),
+    ).toEqual([
       { role: "user", text: "q1", streaming: false },
       { role: "assistant", text: "a1", streaming: false },
       { role: "user", text: "q2", streaming: false },
@@ -304,9 +380,17 @@ describe("replay scenarios", () => {
 
   test("tool chip is grouped under the assistant bubble, not a second one", () => {
     let m: Message[] = [];
-    m = applyUpdate(m, { ...txtChunk("run ls", "user_message_chunk"), messageId: "u1" });
+    m = applyUpdate(m, {
+      ...txtChunk("run ls", "user_message_chunk"),
+      messageId: "u1",
+    });
     m = applyUpdate(m, txtChunk("sure", "agent_message_chunk"));
-    m = applyUpdate(m, { sessionUpdate: "tool_call", toolCallId: "t1", title: "ls", status: "completed" });
+    m = applyUpdate(m, {
+      sessionUpdate: "tool_call",
+      toolCallId: "t1",
+      title: "ls",
+      status: "completed",
+    });
     m = applyUpdate(m, txtChunk("done", "agent_message_chunk"));
     m = finalizeAllStreaming(m);
 
@@ -366,6 +450,8 @@ describe("finalizeAllStreaming + hasStreamingAssistant", () => {
     expect(hasStreamingAssistant([userMsg("u1", "x")])).toBe(false);
     expect(hasStreamingAssistant([assistantMsg("a1", "x", false)])).toBe(false);
     expect(hasStreamingAssistant([assistantMsg("a1", "x", true)])).toBe(true);
-    expect(hasStreamingAssistant([assistantMsg("a1", "", true, true)])).toBe(true);
+    expect(hasStreamingAssistant([assistantMsg("a1", "", true, true)])).toBe(
+      true,
+    );
   });
 });

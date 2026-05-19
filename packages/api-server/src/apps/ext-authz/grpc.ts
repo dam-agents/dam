@@ -43,7 +43,9 @@ export interface ExtAuthzGrpcAppDeps {
  * resolver and the `x-platform-instance` initial-metadata header are
  * gone; identity flows purely through Service routing + mesh policy.
  */
-export async function startExtAuthzGrpcApp(deps: ExtAuthzGrpcAppDeps): Promise<{ server: grpc.Server }> {
+export async function startExtAuthzGrpcApp(
+  deps: ExtAuthzGrpcAppDeps,
+): Promise<{ server: grpc.Server }> {
   const server = new grpc.Server({
     "grpc.keepalive_time_ms": Math.min(60_000, deps.holdSeconds * 1000),
     "grpc.keepalive_timeout_ms": 20_000,
@@ -65,10 +67,18 @@ export async function startExtAuthzGrpcApp(deps: ExtAuthzGrpcAppDeps): Promise<{
         // already gates by SA principal, so a non-matching host can only
         // come from an out-of-mesh caller or a misconfigured client).
         const authority = call.getHost();
-        const instanceId = parseInstanceFromAuthority(authority, expectedPrefix);
+        const instanceId = parseInstanceFromAuthority(
+          authority,
+          expectedPrefix,
+        );
         if (!instanceId) {
-          process.stderr.write(`[ext-authz] denied: unparsable :authority='${authority}'\n`);
-          callback(null, denied(`unable to derive instance from :authority='${authority}'`));
+          process.stderr.write(
+            `[ext-authz] denied: unparsable :authority='${authority}'\n`,
+          );
+          callback(
+            null,
+            denied(`unable to derive instance from :authority='${authority}'`),
+          );
           return;
         }
 
@@ -93,7 +103,10 @@ export async function startExtAuthzGrpcApp(deps: ExtAuthzGrpcAppDeps): Promise<{
         });
         callback(null, verdict === "allow" ? ok() : denied("policy denied"));
       } catch (err) {
-        callback(null, denied(err instanceof Error ? err.message : "internal error"));
+        callback(
+          null,
+          denied(err instanceof Error ? err.message : "internal error"),
+        );
       }
     },
   };
@@ -109,7 +122,9 @@ export async function startExtAuthzGrpcApp(deps: ExtAuthzGrpcAppDeps): Promise<{
           rej(err);
           return;
         }
-        process.stderr.write(`ext-authz gRPC listening on 0.0.0.0:${deps.port}\n`);
+        process.stderr.write(
+          `ext-authz gRPC listening on 0.0.0.0:${deps.port}\n`,
+        );
         res();
       },
     );
@@ -121,7 +136,10 @@ export async function startExtAuthzGrpcApp(deps: ExtAuthzGrpcAppDeps): Promise<{
  *  Returns null if the host doesn't match the expected per-instance Service
  *  prefix — i.e. the gateway pod somehow dialled a non-per-instance host,
  *  which the AuthorizationPolicy stack should already prevent. */
-function parseInstanceFromAuthority(authority: string, expectedPrefix: string): string | null {
+function parseInstanceFromAuthority(
+  authority: string,
+  expectedPrefix: string,
+): string | null {
   if (!authority) return null;
   const stripped = stripPort(authority);
   // First DNS label is the Service name (e.g. `platform-extauthz-abc`).

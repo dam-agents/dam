@@ -97,12 +97,16 @@ createAgentNamespace: true
 # -- OpenShift-specific knobs. No-op on vanilla Kubernetes.
 openshift:
   scc:
-    # Bind `system:openshift:scc:nonroot-v2` to ServiceAccounts in `agentNamespace`
-    # so agent pods run as image USER (65532) instead of the namespace-range UID
-    # that restricted-v2 would assign. Required on OpenShift when the agent PVC's
-    # StorageClass initializes the share root with a hardcoded UID — common on
-    # managed NFS (IBM Cloud File Storage for VPC, etc.); pair with SC `uid: "65532"`.
-    nonroot:
+    # Custom `anyuid-cap-net` SCC for agent pods on OpenShift. Modeled on
+    # the built-in `anyuid` SCC (runAsUser: RunAsAny so the iptablesInit
+    # init container can run as root; the agent container itself stays at
+    # image USER 65532), with NET_ADMIN + NET_RAW added to
+    # allowedCapabilities. Renders a cluster-scoped SCC + RoleBinding to
+    # all SAs in `agentNamespace`. Default ON — required for
+    # `iptablesInit`, harmless otherwise (OpenShift admission still
+    # prefers more restrictive SCCs when the pod doesn't request the
+    # extra capabilities).
+    anyuidCapNet:
       enabled: false
 
 # -- Shared local PostgreSQL instance
@@ -112,7 +116,7 @@ postgres:
   image: registry.access.redhat.com/hi/postgresql:18
   user: platform
   # password is auto-generated if not set
-  password: ""
+  password: null
   storage: 5Gi
   storageClass: ""
   resources:
@@ -154,7 +158,7 @@ keycloak:
   admin:
     user: admin
     # password is auto-generated if not set
-    password: ""
+    password: null
 
   # -- Realm and OIDC client configuration
   realm: platform
@@ -183,15 +187,15 @@ keycloak:
   # Local dev and e2e tests (via values-local.yaml) enable it.
   testUser:
     enabled: false
-    username: ""
-    password: ""
+    username: null
+    password: null
 
   # -- Database connection (empty host = use shared local postgres)
   db:
     host: ""
     port: 5432
     user: platform
-    password: ""
+    password: null
     database: keycloak
 
   resources:
@@ -395,7 +399,7 @@ apiServer:
     host: ""
     port: 5432
     user: platform
-    password: ""
+    password: null
     database: platform
   resources:
     requests:
@@ -466,6 +470,36 @@ controller:
         allowPrivilegeEscalation: false
         capabilities:
           drop: ["ALL"]
+
+      # ━━━ EGRESS LOCKDOWN — pick ONE mode ━━━
+      # Two mutually-exclusive layers (the chart validates). Both ride
+      # on top of HTTPS_PROXY (IP-direct), the per-pair NetworkPolicy,
+      # and the namespace deny-all baseline.
+      #
+      #   - iptablesInit: privileged init container, plain OCI runtime.
+      #     Requires netfilter modules in the guest.
+      #
+      #   - npGateInit: unprivileged init container, works on guests
+      #     without netfilter (Kata/CoCo on OpenShift Sandboxed Containers).
+      iptablesInit:
+        enabled: true
+        # SIG Release distroless-iptables — same image kube-proxy uses.
+        # Ships sh + iptables-wrapper; pinned by tag.
+        image: registry.k8s.io/build-image/distroless-iptables:v0.9.2
+
+      # -- Userspace init container that blocks the agent's main
+      # container until the egress NetworkPolicy is verifiably enforced.
+      # Pure userspace TCP probe; no caps; works against any guest kernel.
+      npGateInit:
+        enabled: false
+        # busybox provides nc + sh in one image. K8s SIG distroless
+        # variants don't bundle nc. Digest pins the multi-arch manifest
+        # list — resolves to amd64/arm64/etc at pull time. Rotate manually.
+        image: docker.io/library/busybox:1.37@sha256:1487d0af5f52b4ba31c7e465126ee2123fe3f2305d638e7827681e7cf6c83d5e
+        # Hard deadline before the init container fails the pod. OVN-K
+        # typically converges in well under a second; 30s is generous
+        # for cold node churn / controller restart scenarios.
+        timeoutSeconds: 30
       # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     templateDefaults:

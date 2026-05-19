@@ -47,10 +47,12 @@ export const skillsRouter = t.router({
       .query(({ ctx, input }) => ctx.skills.listSources(input?.instanceId)),
 
     create: t.procedure
-      .input(z.object({
-        name: z.string().min(1).max(128),
-        gitUrl: z.string().url(),
-      }))
+      .input(
+        z.object({
+          name: z.string().min(1).max(128),
+          gitUrl: z.string().url(),
+        }),
+      )
       .output(skillSourceViewSchema)
       .mutation(({ ctx, input }) => ctx.skills.createSource(input)),
 
@@ -69,10 +71,12 @@ export const skillsRouter = t.router({
    *  Private-source scans (that fall through to the authenticated
    *  agent-runtime path) will throw with a clear hint if it's missing. */
   listSkills: t.procedure
-    .input(z.object({
-      sourceId: z.string().min(1),
-      instanceId: z.string().min(1).optional(),
-    }))
+    .input(
+      z.object({
+        sourceId: z.string().min(1),
+        instanceId: z.string().min(1).optional(),
+      }),
+    )
     .output(z.array(skillViewSchema))
     .query(async ({ ctx, input }) => {
       const src = await ctx.skills.getSource(input.sourceId);
@@ -81,22 +85,26 @@ export const skillsRouter = t.router({
     }),
 
   install: t.procedure
-    .input(z.object({
-      instanceId: z.string().min(1),
-      source: z.string().url(),
-      name: z.string().min(1),
-      version: z.string().min(1),
-      contentHash: z.string().optional(),
-    }))
+    .input(
+      z.object({
+        instanceId: z.string().min(1),
+        source: z.string().url(),
+        name: z.string().min(1),
+        version: z.string().min(1),
+        contentHash: z.string().optional(),
+      }),
+    )
     .output(z.array(skillRefSchema))
     .mutation(({ ctx, input }) => ctx.skills.installSkill(input)),
 
   uninstall: t.procedure
-    .input(z.object({
-      instanceId: z.string().min(1),
-      source: z.string().url(),
-      name: z.string().min(1),
-    }))
+    .input(
+      z.object({
+        instanceId: z.string().min(1),
+        source: z.string().url(),
+        name: z.string().min(1),
+      }),
+    )
     .output(z.array(skillRefSchema))
     .mutation(({ ctx, input }) => ctx.skills.uninstallSkill(input)),
 
@@ -137,13 +145,15 @@ export const skillsRouter = t.router({
     .query(({ ctx, input }) => ctx.skills.getState(input.instanceId)),
 
   publish: t.procedure
-    .input(z.object({
-      instanceId: z.string().min(1),
-      sourceId: z.string().min(1),
-      name: z.string().min(1),
-      title: z.string().optional(),
-      body: z.string().optional(),
-    }))
+    .input(
+      z.object({
+        instanceId: z.string().min(1),
+        sourceId: z.string().min(1),
+        name: z.string().min(1),
+        title: z.string().optional(),
+        body: z.string().optional(),
+      }),
+    )
     .output(publishResultSchema)
     .mutation(({ ctx, input }) => ctx.skills.publishSkill(input)),
 });

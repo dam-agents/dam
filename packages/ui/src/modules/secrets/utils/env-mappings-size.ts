@@ -14,7 +14,9 @@ export type EnvMappingsSizeResult =
   | { ok: true }
   | { ok: false; bytes: number; limit: number };
 
-export function validateEnvMappingsSize(mappings: EnvMapping[]): EnvMappingsSizeResult {
+export function validateEnvMappingsSize(
+  mappings: EnvMapping[],
+): EnvMappingsSizeResult {
   // Mirrors what the api-server writes: `JSON.stringify(envMappings)`. The
   // serialized length is what counts against the K8s annotation budget.
   const bytes = new TextEncoder().encode(JSON.stringify(mappings)).length;

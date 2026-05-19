@@ -31,8 +31,14 @@ export function FileRowMenu({ isDir, x, y, onClose, onAction }: Props) {
     const { width, height } = el.getBoundingClientRect();
     const viewportW = window.innerWidth;
     const viewportH = window.innerHeight;
-    const left = Math.max(VIEWPORT_MARGIN, Math.min(x, viewportW - width - VIEWPORT_MARGIN));
-    const top = Math.max(VIEWPORT_MARGIN, Math.min(y, viewportH - height - VIEWPORT_MARGIN));
+    const left = Math.max(
+      VIEWPORT_MARGIN,
+      Math.min(x, viewportW - width - VIEWPORT_MARGIN),
+    );
+    const top = Math.max(
+      VIEWPORT_MARGIN,
+      Math.min(y, viewportH - height - VIEWPORT_MARGIN),
+    );
     setPos({ left, top });
   }, [x, y]);
 
@@ -66,25 +72,43 @@ export function FileRowMenu({ isDir, x, y, onClose, onAction }: Props) {
       ref={ref}
       role="menu"
       className="fixed z-50 min-w-[160px] rounded-md border border-border-light bg-surface shadow-md py-1 text-[12px]"
-      style={pos ? { left: pos.left, top: pos.top } : { left: x, top: y, visibility: "hidden" }}
+      style={
+        pos
+          ? { left: pos.left, top: pos.top }
+          : { left: x, top: y, visibility: "hidden" }
+      }
       onClick={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.preventDefault()}
     >
       {isDir && (
         <>
           <MenuItem onSelect={() => dispatch("new-file")}>New file…</MenuItem>
-          <MenuItem onSelect={() => dispatch("new-folder")}>New folder…</MenuItem>
-          <MenuItem onSelect={() => dispatch("upload-here")}>Upload files here…</MenuItem>
+          <MenuItem onSelect={() => dispatch("new-folder")}>
+            New folder…
+          </MenuItem>
+          <MenuItem onSelect={() => dispatch("upload-here")}>
+            Upload files here…
+          </MenuItem>
         </>
       )}
       <MenuItem onSelect={() => dispatch("rename")}>Rename</MenuItem>
-      <MenuItem danger onSelect={() => dispatch("delete")}>Delete</MenuItem>
+      <MenuItem danger onSelect={() => dispatch("delete")}>
+        Delete
+      </MenuItem>
     </div>,
     document.body,
   );
 }
 
-function MenuItem({ children, danger, onSelect }: { children: React.ReactNode; danger?: boolean; onSelect: () => void }) {
+function MenuItem({
+  children,
+  danger,
+  onSelect,
+}: {
+  children: React.ReactNode;
+  danger?: boolean;
+  onSelect: () => void;
+}) {
   return (
     <button
       role="menuitem"

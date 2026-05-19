@@ -36,11 +36,15 @@ export const GH_ENTERPRISE_HOSTS_RELATIVE_PATH = ".config/gh/hosts.yml";
  * Strip scheme and port from `metadata.baseUrl` so the host can be matched
  * against Envoy's SNI filter chains.
  */
-function extractHost(metadata: Record<string, unknown> | null | undefined): string | undefined {
+function extractHost(
+  metadata: Record<string, unknown> | null | undefined,
+): string | undefined {
   if (!metadata) return undefined;
   const raw = metadata["baseUrl"];
   if (typeof raw !== "string") return undefined;
-  const noScheme = raw.startsWith("https://") ? raw.slice("https://".length) : raw;
+  const noScheme = raw.startsWith("https://")
+    ? raw.slice("https://".length)
+    : raw;
   const host = noScheme.split(":")[0]?.split("/")[0];
   return host && host.length > 0 ? host : undefined;
 }
@@ -51,7 +55,9 @@ function extractHost(metadata: Record<string, unknown> | null | undefined): stri
  * filter). Pick the OAuth login (`metadata.username`) by default and fall
  * back through `login` and `name` so older records keep working.
  */
-function pickUsername(metadata: Record<string, unknown> | null | undefined): string | undefined {
+function pickUsername(
+  metadata: Record<string, unknown> | null | undefined,
+): string | undefined {
   if (!metadata) return undefined;
   for (const key of ["username", "login", "name"]) {
     const v = metadata[key];

@@ -1,4 +1,11 @@
-import { watch, mkdirSync, readdirSync, readFileSync, unlinkSync, existsSync } from "node:fs";
+import {
+  watch,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  unlinkSync,
+  existsSync,
+} from "node:fs";
 import { join } from "node:path";
 import { z } from "zod/v4";
 import { config } from "./modules/config.js";
@@ -28,7 +35,9 @@ export interface TriggerWatcher {
   activeCount(): number;
 }
 
-export function startTriggerWatcher(options: TriggerWatcherOptions): TriggerWatcher {
+export function startTriggerWatcher(
+  options: TriggerWatcherOptions,
+): TriggerWatcher {
   const { triggersDir } = options;
   const inflightSchedules = new Set<string>();
   const processingFiles = new Set<string>();
@@ -56,12 +65,11 @@ export function startTriggerWatcher(options: TriggerWatcherOptions): TriggerWatc
       processingFiles.add(file);
       inflightSchedules.add(trigger.schedule);
 
-      processTrigger(trigger, filePath, options)
-        .finally(() => {
-          processingFiles.delete(file);
-          inflightSchedules.delete(trigger.schedule);
-          scanAndProcess();
-        });
+      processTrigger(trigger, filePath, options).finally(() => {
+        processingFiles.delete(file);
+        inflightSchedules.delete(trigger.schedule);
+        scanAndProcess();
+      });
     }
   }
 
@@ -79,8 +87,12 @@ function peekTrigger(filePath: string): TriggerPayload | null {
     const raw = readFileSync(filePath, "utf8");
     return TriggerFile.parse(JSON.parse(raw));
   } catch (err) {
-    process.stderr.write(`[trigger] Invalid trigger file ${filePath}: ${err}\n`);
-    try { unlinkSync(filePath); } catch {}
+    process.stderr.write(
+      `[trigger] Invalid trigger file ${filePath}: ${err}\n`,
+    );
+    try {
+      unlinkSync(filePath);
+    } catch {}
     return null;
   }
 }
@@ -90,11 +102,15 @@ async function processTrigger(
   filePath: string,
   options: TriggerWatcherOptions,
 ): Promise<void> {
-  process.stderr.write(`[trigger] Processing: ${trigger.schedule} (${trigger.timestamp})\n`);
+  process.stderr.write(
+    `[trigger] Processing: ${trigger.schedule} (${trigger.timestamp})\n`,
+  );
 
   try {
     if (!options.apiServerUrl) {
-      process.stderr.write(`[trigger] API_SERVER_URL not set, skipping ${trigger.schedule}\n`);
+      process.stderr.write(
+        `[trigger] API_SERVER_URL not set, skipping ${trigger.schedule}\n`,
+      );
       return;
     }
     const mcpServers = [...trigger.mcpServers];
@@ -103,7 +119,12 @@ async function processTrigger(
       // gateway pod's Envoy and on through the Istio mesh, which conveys
       // the gateway pod's SPIFFE peer principal to the waypoint. The
       // waypoint enforces principal == URL `:id` (ADR-041).
-      mcpServers.push({ type: "http", name: "platform-outbound", url: config.PLATFORM_MCP_URL, headers: [] });
+      mcpServers.push({
+        type: "http",
+        name: "platform-outbound",
+        url: config.PLATFORM_MCP_URL,
+        headers: [],
+      });
     }
 
     const result = await postTrigger(options.apiServerUrl, options.instanceId, {
@@ -114,11 +135,17 @@ async function processTrigger(
       sessionMode: trigger.sessionMode,
       mcpServers,
     });
-    process.stderr.write(`[trigger] Completed: ${trigger.schedule} session=${result.sessionId} stopReason=${result.stopReason ?? "done"}\n`);
+    process.stderr.write(
+      `[trigger] Completed: ${trigger.schedule} session=${result.sessionId} stopReason=${result.stopReason ?? "done"}\n`,
+    );
   } catch (err) {
-    process.stderr.write(`[trigger] Session error for ${trigger.schedule}: ${err}\n`);
+    process.stderr.write(
+      `[trigger] Session error for ${trigger.schedule}: ${err}\n`,
+    );
   } finally {
-    try { unlinkSync(filePath); } catch {}
+    try {
+      unlinkSync(filePath);
+    } catch {}
   }
 }
 
@@ -131,7 +158,10 @@ async function postTrigger(
   instanceId: string,
   body: object,
 ): Promise<{ sessionId: string; stopReason?: string }> {
-  const url = new URL(`/api/instances/${encodeURIComponent(instanceId)}/internal/trigger`, apiServerUrl);
+  const url = new URL(
+    `/api/instances/${encodeURIComponent(instanceId)}/internal/trigger`,
+    apiServerUrl,
+  );
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 )
@@ -40,6 +41,17 @@ func newFakeDynamic() *dynfake.FakeDynamicClient {
 func setupReconciler(t *testing.T, agents map[string]*corev1.ConfigMap, objects ...runtime.Object) (*InstanceReconciler, *fake.Clientset) {
 	t.Helper()
 	client := fake.NewSimpleClientset(objects...)
+	// The fake clientset doesn't simulate kube-apiserver's ClusterIP
+	// assignment, but the reconciler now requires it on every path
+	// (HTTPS_PROXY is IP-direct). Reactor stamps a stable IP onto any
+	// ClusterIP-typed Service at Create so reconcile can proceed.
+	client.PrependReactor("create", "services", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		svc := action.(k8stesting.CreateAction).GetObject().(*corev1.Service)
+		if svc.Spec.ClusterIP == "" {
+			svc.Spec.ClusterIP = "10.96.42.42"
+		}
+		return false, svc, nil
+	})
 	cfg := &config.Config{
 		Namespace:         "test-agents",
 		ReleaseNamespace:  "default",
@@ -109,9 +121,10 @@ func TestReconcile_CreateResources(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int32(1), *ss.Spec.Replicas)
 
-	// Proxy URL targets the paired gateway Service (ADR-038).
+	// Proxy URL is the paired gateway's ClusterIP literal — IP-direct so
+	// the egress NP can deny DNS entirely (ADR-038).
 	envMap := envToMap(ss.Spec.Template.Spec.Containers[0].Env)
-	assert.Equal(t, "http://my-instance-gateway:10000", envMap["HTTPS_PROXY"])
+	assert.Equal(t, "http://10.96.42.42:10000", envMap["HTTPS_PROXY"])
 
 	// Gateway StatefulSet — also replicas=1
 	gws, err := client.AppsV1().StatefulSets("test-agents").Get(ctx, "my-instance-gateway", metav1.GetOptions{})
@@ -123,10 +136,11 @@ func TestReconcile_CreateResources(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, corev1.ClusterIPNone, svc.Spec.ClusterIP)
 
-	// Gateway Service
+	// Gateway Service — ClusterIP-typed (not headless) so hostAliases /
+	// iptables allow-list have a stable IP to pin.
 	gwSvc, err := client.CoreV1().Services("test-agents").Get(ctx, "my-instance-gateway", metav1.GetOptions{})
 	require.NoError(t, err, "gateway Service must be created so HTTPS_PROXY DNS resolves")
-	assert.Equal(t, corev1.ClusterIPNone, gwSvc.Spec.ClusterIP)
+	assert.NotEqual(t, corev1.ClusterIPNone, gwSvc.Spec.ClusterIP, "gateway Service must not be headless")
 
 	// Per-instance ServiceAccount — kept off-pod via
 	// automountServiceAccountToken: false. The agent pod has no SPIFFE
@@ -485,3 +499,111 @@ func TestReconcileOrphanPVCs(t *testing.T) {
 }
 
 func int32Ptr(i int32) *int32 { return &i }
+
+// Issue: when an instance is deleted, the cert-manager-produced envoy leaf
+// TLS Secret must be cascade-deleted. cert-manager doesn't set an
+// OwnerReference on that Secret by default, so the controller patches one
+// pointing back at the instance ConfigMap.
+
+func TestEnsureLeafSecretOwnerReference_AddsOwnerRef(t *testing.T) {
+	instance := instanceCM("running")
+	// Seed the cluster with a Secret as if cert-manager had already produced
+	// it but without an OwnerReference (default cert-manager behaviour).
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-instance-envoy-tls",
+			Namespace: "test-agents",
+		},
+		Type: corev1.SecretTypeTLS,
+	}
+	r, client := setupReconciler(t,
+		map[string]*corev1.ConfigMap{"claude-code": agentCM()},
+		instance, secret,
+	)
+
+	require.NoError(t, r.ensureLeafSecretOwnerReference(context.Background(), "my-instance", instance))
+
+	got, err := client.CoreV1().Secrets("test-agents").Get(context.Background(), "my-instance-envoy-tls", metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Len(t, got.OwnerReferences, 1)
+	assert.Equal(t, instance.UID, got.OwnerReferences[0].UID)
+	assert.Equal(t, "ConfigMap", got.OwnerReferences[0].Kind)
+	assert.Equal(t, instance.Name, got.OwnerReferences[0].Name)
+}
+
+func TestEnsureLeafSecretOwnerReference_Idempotent(t *testing.T) {
+	instance := instanceCM("running")
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-instance-envoy-tls",
+			Namespace: "test-agents",
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: "v1", Kind: "ConfigMap", Name: instance.Name, UID: instance.UID,
+			}},
+		},
+	}
+	r, client := setupReconciler(t,
+		map[string]*corev1.ConfigMap{"claude-code": agentCM()},
+		instance, secret,
+	)
+
+	require.NoError(t, r.ensureLeafSecretOwnerReference(context.Background(), "my-instance", instance))
+
+	got, err := client.CoreV1().Secrets("test-agents").Get(context.Background(), "my-instance-envoy-tls", metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Len(t, got.OwnerReferences, 1, "must not duplicate the owner ref across reconciles")
+}
+
+func TestReconcileOrphanLeafSecrets(t *testing.T) {
+	// orphan: leaf Secret whose instance ConfigMap is gone — must be reaped.
+	orphan := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "deleted-instance-envoy-tls",
+			Namespace: "test-agents",
+		},
+		Type: corev1.SecretTypeTLS,
+	}
+	// live: leaf Secret whose instance ConfigMap still exists — must be kept.
+	live := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-instance-envoy-tls",
+			Namespace: "test-agents",
+		},
+		Type: corev1.SecretTypeTLS,
+	}
+	// unrelated: a Secret with a similar suffix but wrong type — must not be touched.
+	unrelated := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "something-envoy-tls",
+			Namespace: "test-agents",
+		},
+		Type: corev1.SecretTypeOpaque,
+	}
+	liveCM := instanceCM("running") // name = "my-instance"
+	r, client := setupReconciler(t,
+		map[string]*corev1.ConfigMap{"claude-code": agentCM()},
+		liveCM, orphan, live, unrelated,
+	)
+
+	r.ReconcileOrphanLeafSecrets(context.Background())
+
+	_, err := client.CoreV1().Secrets("test-agents").Get(context.Background(), orphan.Name, metav1.GetOptions{})
+	assert.Error(t, err, "orphan leaf Secret must be deleted")
+
+	_, err = client.CoreV1().Secrets("test-agents").Get(context.Background(), live.Name, metav1.GetOptions{})
+	assert.NoError(t, err, "live instance leaf Secret must be retained")
+
+	_, err = client.CoreV1().Secrets("test-agents").Get(context.Background(), unrelated.Name, metav1.GetOptions{})
+	assert.NoError(t, err, "non-TLS Secret with similar name must not be touched")
+}
+
+func TestEnsureLeafSecretOwnerReference_NoSecretYetIsNoop(t *testing.T) {
+	// First reconcile arrives before cert-manager has issued the Secret —
+	// must not error; the next reconcile will patch the owner ref.
+	instance := instanceCM("running")
+	r, _ := setupReconciler(t,
+		map[string]*corev1.ConfigMap{"claude-code": agentCM()},
+		instance,
+	)
+	assert.NoError(t, r.ensureLeafSecretOwnerReference(context.Background(), "my-instance", instance))
+}

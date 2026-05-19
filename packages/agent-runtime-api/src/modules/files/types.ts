@@ -24,7 +24,9 @@ export type FilesDomainError =
 
 export interface FilesService {
   buildTree: () => { path: string; type: "file" | "dir" }[];
-  readFileSafe: (rel: string) => Promise<Result<FileReadResult, FilesDomainError>>;
+  readFileSafe: (
+    rel: string,
+  ) => Promise<Result<FileReadResult, FilesDomainError>>;
   /** Overwrite an existing file. Errors with Conflict when expectedMtimeMs is
    *  provided and the file was modified in the meantime. */
   writeFileSafe: (
@@ -34,7 +36,10 @@ export interface FilesService {
   ) => Promise<Result<FileWriteOk, FilesDomainError>>;
   /** Create a new file. Errors with AlreadyExists when the path is taken.
    *  Auto-creates missing parent directories. */
-  createFileSafe: (rel: string, content: string) => Promise<Result<FileWriteOk, FilesDomainError>>;
+  createFileSafe: (
+    rel: string,
+    content: string,
+  ) => Promise<Result<FileWriteOk, FilesDomainError>>;
   /** Create a directory (recursive mkdir). */
   mkdirSafe: (rel: string) => Promise<Result<{ ok: true }, FilesDomainError>>;
   /** Move/rename a file or directory. Errors with AlreadyExists when the

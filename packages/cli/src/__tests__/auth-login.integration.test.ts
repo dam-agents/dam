@@ -66,9 +66,7 @@ class CookieJar {
   }
 
   header(): string {
-    return [...this.store.entries()]
-      .map(([k, v]) => `${k}=${v}`)
-      .join("; ");
+    return [...this.store.entries()].map(([k, v]) => `${k}=${v}`).join("; ");
   }
 }
 
@@ -87,8 +85,10 @@ async function step(
   const cookieHeader = jar.header();
   if (cookieHeader.length > 0) headers.set("Cookie", cookieHeader);
   const res = await fetch(url, { ...init, headers, redirect: "manual" });
-  const setCookie = (res.headers as unknown as { getSetCookie?: () => string[] })
-    .getSetCookie?.() ?? [];
+  const setCookie =
+    (
+      res.headers as unknown as { getSetCookie?: () => string[] }
+    ).getSetCookie?.() ?? [];
   for (const sc of setCookie) jar.ingest(sc);
   return { res, url };
 }
@@ -205,104 +205,119 @@ beforeAll(async () => {
 // `runIf(true)` rather than `runIf(clusterUp)` because vitest evaluates the
 // argument at registration time, before `beforeAll` has set `clusterUp`.
 // Each `it` checks `clusterUp` early-return instead.
-describe.runIf(true)("dam auth login (integration vs local k3s Keycloak)", () => {
-  let tmpHome: string;
-  let tmpState: string;
-  let tmpConfig: string;
+describe.runIf(true)(
+  "dam auth login (integration vs local k3s Keycloak)",
+  () => {
+    let tmpHome: string;
+    let tmpState: string;
+    let tmpConfig: string;
 
-  beforeEach(async () => {
-    if (!clusterUp) return;
-    tmpHome = await mkdtemp(join(tmpdir(), "dam-auth-home-"));
-    tmpState = await mkdtemp(join(tmpdir(), "dam-auth-state-"));
-    tmpConfig = await mkdtemp(join(tmpdir(), "dam-auth-config-"));
-  });
-
-  afterEach(async () => {
-    if (!clusterUp) return;
-    await rm(tmpHome, { recursive: true, force: true });
-    await rm(tmpState, { recursive: true, force: true });
-    await rm(tmpConfig, { recursive: true, force: true });
-  });
-
-  afterAll(() => {
-    // dist/bin.js stays for subsequent vitest runs.
-  });
-
-  it("completes the device flow against the live cluster, writes auth.toml mode 0600, and the token authorizes api-server", async () => {
-    if (!clusterUp) return;
-
-    const env = {
-      HOME: tmpHome,
-      XDG_STATE_HOME: tmpState,
-      XDG_CONFIG_HOME: tmpConfig,
-      PATH: process.env.PATH ?? "",
-    };
-
-    // Spawn `dam auth login --no-browser`. The CLI prints the verification
-    // URL and user code, then blocks polling. In parallel, we drive the
-    // user-side consent.
-    const child = execFile("node", [BIN_PATH, "auth", "login", "--server", API_BASE, "--no-browser"], {
-      env,
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout?.on("data", (d: Buffer) => {
-      stdout += d.toString("utf-8");
-    });
-    child.stderr?.on("data", (d: Buffer) => {
-      stderr += d.toString("utf-8");
+    beforeEach(async () => {
+      if (!clusterUp) return;
+      tmpHome = await mkdtemp(join(tmpdir(), "dam-auth-home-"));
+      tmpState = await mkdtemp(join(tmpdir(), "dam-auth-state-"));
+      tmpConfig = await mkdtemp(join(tmpdir(), "dam-auth-config-"));
     });
 
-    const verificationUri = await waitForLine(
-      () => stdout,
-      (s) => {
-        const m = /(http:\/\/keycloak[^\s]+device\?user_code=[A-Z0-9-]+)/.exec(s);
-        return m?.[1];
-      },
-      10_000,
-    );
-    expect(verificationUri).toBeDefined();
-    await authorizeAsDevUser(verificationUri!);
-
-    // Wait for the CLI to finish (poll interval is 5s, plus the consent
-    // round-trip — give 60s safety budget).
-    const exit = await new Promise<{ code: number; signal: NodeJS.Signals | null }>((res) =>
-      child.on("close", (code, signal) =>
-        res({ code: code ?? 0, signal }),
-      ),
-    );
-    expect(exit.code, `stdout: ${stdout}\nstderr: ${stderr}`).toBe(0);
-    expect(stdout).toContain("✓ Logged in to");
-
-    // Assert auth.toml shape and mode.
-    const authPath = join(tmpState, "dam", "auth.toml");
-    const stats = await stat(authPath);
-    expect(stats.mode & 0o777).toBe(0o600);
-
-    const tomlContent = await readFile(authPath, "utf-8");
-    const parsed = parseToml(tomlContent) as {
-      hosts?: Record<string, {
-        access_token?: string;
-        refresh_token?: string;
-        cli_client_id?: string;
-      }>;
-    };
-    expect(parsed.hosts).toBeDefined();
-    const entry = parsed.hosts?.[API_BASE];
-    expect(entry, `auth.toml missing entry for ${API_BASE}`).toBeDefined();
-    expect(entry?.access_token).toBeTruthy();
-    expect(entry?.refresh_token).toBeTruthy();
-    expect(entry?.cli_client_id).toBe("platform-cli");
-
-    // The persisted access token should authorize a request to the
-    // api-server (any tRPC route works — health is unauthenticated, so we
-    // use the templates list).
-    const apiRes = await fetch(`${API_BASE}/api/trpc/templates.list?batch=1&input=${encodeURIComponent("{}")}`, {
-      headers: { Authorization: `Bearer ${entry!.access_token!}` },
+    afterEach(async () => {
+      if (!clusterUp) return;
+      await rm(tmpHome, { recursive: true, force: true });
+      await rm(tmpState, { recursive: true, force: true });
+      await rm(tmpConfig, { recursive: true, force: true });
     });
-    expect(apiRes.status).toBeLessThan(400);
-  }, 120_000);
-});
+
+    afterAll(() => {
+      // dist/bin.js stays for subsequent vitest runs.
+    });
+
+    it("completes the device flow against the live cluster, writes auth.toml mode 0600, and the token authorizes api-server", async () => {
+      if (!clusterUp) return;
+
+      const env = {
+        HOME: tmpHome,
+        XDG_STATE_HOME: tmpState,
+        XDG_CONFIG_HOME: tmpConfig,
+        PATH: process.env.PATH ?? "",
+      };
+
+      // Spawn `dam auth login --no-browser`. The CLI prints the verification
+      // URL and user code, then blocks polling. In parallel, we drive the
+      // user-side consent.
+      const child = execFile(
+        "node",
+        [BIN_PATH, "auth", "login", "--server", API_BASE, "--no-browser"],
+        {
+          env,
+        },
+      );
+      let stdout = "";
+      let stderr = "";
+      child.stdout?.on("data", (d: Buffer) => {
+        stdout += d.toString("utf-8");
+      });
+      child.stderr?.on("data", (d: Buffer) => {
+        stderr += d.toString("utf-8");
+      });
+
+      const verificationUri = await waitForLine(
+        () => stdout,
+        (s) => {
+          const m =
+            /(http:\/\/keycloak[^\s]+device\?user_code=[A-Z0-9-]+)/.exec(s);
+          return m?.[1];
+        },
+        10_000,
+      );
+      expect(verificationUri).toBeDefined();
+      await authorizeAsDevUser(verificationUri!);
+
+      // Wait for the CLI to finish (poll interval is 5s, plus the consent
+      // round-trip — give 60s safety budget).
+      const exit = await new Promise<{
+        code: number;
+        signal: NodeJS.Signals | null;
+      }>((res) =>
+        child.on("close", (code, signal) => res({ code: code ?? 0, signal })),
+      );
+      expect(exit.code, `stdout: ${stdout}\nstderr: ${stderr}`).toBe(0);
+      expect(stdout).toContain("✓ Logged in to");
+
+      // Assert auth.toml shape and mode.
+      const authPath = join(tmpState, "dam", "auth.toml");
+      const stats = await stat(authPath);
+      expect(stats.mode & 0o777).toBe(0o600);
+
+      const tomlContent = await readFile(authPath, "utf-8");
+      const parsed = parseToml(tomlContent) as {
+        hosts?: Record<
+          string,
+          {
+            access_token?: string;
+            refresh_token?: string;
+            cli_client_id?: string;
+          }
+        >;
+      };
+      expect(parsed.hosts).toBeDefined();
+      const entry = parsed.hosts?.[API_BASE];
+      expect(entry, `auth.toml missing entry for ${API_BASE}`).toBeDefined();
+      expect(entry?.access_token).toBeTruthy();
+      expect(entry?.refresh_token).toBeTruthy();
+      expect(entry?.cli_client_id).toBe("platform-cli");
+
+      // The persisted access token should authorize a request to the
+      // api-server (any tRPC route works — health is unauthenticated, so we
+      // use the templates list).
+      const apiRes = await fetch(
+        `${API_BASE}/api/trpc/templates.list?batch=1&input=${encodeURIComponent("{}")}`,
+        {
+          headers: { Authorization: `Bearer ${entry!.access_token!}` },
+        },
+      );
+      expect(apiRes.status).toBeLessThan(400);
+    }, 120_000);
+  },
+);
 
 async function waitForLine(
   read: () => string,

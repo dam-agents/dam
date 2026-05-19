@@ -40,9 +40,13 @@ export function useAcpSession(
   // sendPrompt / resume / disconnect paths. The projection owns streaming
   // state on every message, so "any streaming assistant" is authoritative.
   const busy = hasStreamingAssistant(messages);
-  useEffect(() => { setBusy(busy); }, [busy, setBusy]);
+  useEffect(() => {
+    setBusy(busy);
+  }, [busy, setBusy]);
 
-  const instanceRunState = useInstancesList().find(i => i.id === selectedInstance)?.state;
+  const instanceRunState = useInstancesList().find(
+    (i) => i.id === selectedInstance,
+  )?.state;
   const modeChangeRef = useRef<((u: AcpUpdate) => void) | null>(null);
 
   const { captureSessionConfig, handleConfigUpdate, applySavedPreferences } =
@@ -55,25 +59,36 @@ export function useAcpSession(
     handleConfigUpdate,
   );
 
-  const { engagedSessionIdRef, engage, clear: clearEngagement } = useAcpSessionEngagement(
+  const {
+    engagedSessionIdRef,
+    engage,
+    clear: clearEngagement,
+  } = useAcpSessionEngagement(
     selectedInstance,
     selectedMcpServers,
     captureSessionConfig,
     applySavedPreferences,
   );
 
-  const handleUpdate = useCallback((update: AcpUpdate) => {
-    if (update.sessionUpdate === "platform_session_mode_changed") {
-      modeChangeRef.current?.(update);
-      queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
-      return;
-    }
-    handleConfigUpdate(update);
-  }, [handleConfigUpdate]);
+  const handleUpdate = useCallback(
+    (update: AcpUpdate) => {
+      if (update.sessionUpdate === "platform_session_mode_changed") {
+        modeChangeRef.current?.(update);
+        queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
+        return;
+      }
+      handleConfigUpdate(update);
+    },
+    [handleConfigUpdate],
+  );
 
   const makeUpdateHandler = useAcpUpdateHandler(handleUpdate);
 
-  const { ensureLive, connectionRef, reset: resetConnection } = useAcpConnection({
+  const {
+    ensureLive,
+    connectionRef,
+    reset: resetConnection,
+  } = useAcpConnection({
     selectedInstance,
     sessionId,
     // Don't open a live WS while resumeSession's throwaway is still
@@ -104,42 +119,62 @@ export function useAcpSession(
     s.setSessionConfigOptions([]);
   }, [resetConnection, setSessionId, setMessages]);
 
-  const resumeSession = useCallback(async (sid: string, opts?: { expectNotFound?: boolean }) => {
-    if (!selectedInstance) return;
+  const resumeSession = useCallback(
+    async (sid: string, opts?: { expectNotFound?: boolean }) => {
+      if (!selectedInstance) return;
 
-    resetConnection();
-    setLoadingSession(true);
-    setMessages([]);
-    useStore.getState().setSessionError(null);
-    setSessionId(sid);
-
-    try {
-      const fresh = await loadHistory(sid);
-      if (useStore.getState().sessionId !== sid) return;
-      setMessages(fresh);
+      resetConnection();
+      setLoadingSession(true);
+      setMessages([]);
+      useStore.getState().setSessionError(null);
+      setSessionId(sid);
 
       try {
-        const sessions = await api.sessions.list.query({ instanceId: selectedInstance, includeChannel: false });
-        const match = sessions.find((s) => s.sessionId === sid);
-        if (match?.mode && match.mode !== useStore.getState().sessionMode) {
-          useStore.getState().setSessionMode(match.mode);
+        const fresh = await loadHistory(sid);
+        if (useStore.getState().sessionId !== sid) return;
+        setMessages(fresh);
+
+        try {
+          const sessions = await api.sessions.list.query({
+            instanceId: selectedInstance,
+            includeChannel: false,
+          });
+          const match = sessions.find((s) => s.sessionId === sid);
+          if (match?.mode && match.mode !== useStore.getState().sessionMode) {
+            useStore.getState().setSessionMode(match.mode);
+          }
+        } catch {}
+      } catch (e) {
+        if (useStore.getState().sessionId !== sid) return;
+        const kind = classifyResumeError(e);
+        if (kind === "not-found" && opts?.expectNotFound) {
+          setLoadingSession(false);
+          await api.sessions.delete.mutate({
+            sessionId: sid,
+            instanceId: selectedInstance,
+          });
+          queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
+          resetSession();
+          return;
         }
-      } catch {}
-    } catch (e) {
-      if (useStore.getState().sessionId !== sid) return;
-      const kind = classifyResumeError(e);
-      if (kind === "not-found" && opts?.expectNotFound) {
-        setLoadingSession(false);
-        await api.sessions.delete.mutate({ sessionId: sid, instanceId: selectedInstance });
-        queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
-        resetSession();
-        return;
+        useStore.getState().setSessionError({
+          sessionId: sid,
+          message: extractErrorMessage(e),
+          kind,
+        });
+      } finally {
+        if (useStore.getState().sessionId === sid) setLoadingSession(false);
       }
-      useStore.getState().setSessionError({ sessionId: sid, message: extractErrorMessage(e), kind });
-    } finally {
-      if (useStore.getState().sessionId === sid) setLoadingSession(false);
-    }
-  }, [selectedInstance, loadHistory, resetConnection, resetSession, setMessages, setSessionId]);
+    },
+    [
+      selectedInstance,
+      loadHistory,
+      resetConnection,
+      resetSession,
+      setMessages,
+      setSessionId,
+    ],
+  );
 
   modeChangeRef.current = (update) => {
     if (update.sessionUpdate !== "platform_session_mode_changed") return;
