@@ -32,3 +32,6 @@ allowBuilds:
   # it, vite/tsup/vitest fail to start. pnpm 10 errors on un-approved build
   # scripts even when `--frozen-lockfile`, so we have to list it.
   esbuild: true
+minimumReleaseAgeExclude:
+  # Renovate security update: ws@8.20.1
+  - ws@8.20.1
