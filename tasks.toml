@@ -110,3 +110,69 @@ if [[ -n "$HITS" ]]; then
 fi
 echo "OK: $(wc -l < "$LOCKFILE_ENTRIES") lockfile entries all older than ${DAYS}d"
 '''
+
+["common:check:version"]
+description = "Verify all release-participating packages share the same version"
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+version=$(
+  {
+    yq -r .version    deploy/helm/platform/Chart.yaml
+    yq -r .appVersion deploy/helm/platform/Chart.yaml
+    yq -r .version    packages/cli/package.json
+  } | sort -u
+)
+if [[ $(wc -l <<<"$version") -ne 1 ]]; then echo "ERROR: Version mismatch detected: $(echo $version)" >&2; exit 1; fi
+if ! [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$ ]]; then echo "ERROR: $version is not valid semver (X.Y.Z or X.Y.Z-rcN)" >&2; exit 1; fi
+if [[ "${GITHUB_REF:-}" == refs/tags/* ]] && [[ $GITHUB_REF != "refs/tags/v$version" ]]; then echo "ERROR: GITHUB_REF '$GITHUB_REF' does not match 'refs/tags/v$version'" >&2; exit 1; fi
+echo "OK: version $version"
+'''
+
+# -- Release --
+
+["release:set-version"]
+description = "Update version fields in all release-participating packages and commit"
+usage = 'arg "<version>" help="The new version to set (format: X.Y.Z or X.Y.Z-rcW)"'
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ -n "$(git status --porcelain)" ]]; then
+  echo "ERROR: Working directory not clean"
+  exit 1
+fi
+
+if ! [[ "$usage_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(-rc[0-9]+)?$ ]]; then
+  echo "ERROR: Invalid version format: $usage_version"
+  echo "Expected format: X.Y.Z or X.Y.Z-rcW (e.g., 1.2.3 or 1.2.3-rc1)"
+  exit 1
+fi
+
+set -x
+yq -i ".version = \"$usage_version\""    deploy/helm/platform/Chart.yaml
+yq -i ".appVersion = \"$usage_version\"" deploy/helm/platform/Chart.yaml
+yq -i ".version = \"$usage_version\""    packages/cli/package.json
+git add .
+git commit --signoff --no-verify -m "bump: v$usage_version"
+set +x
+
+echo "Version bumped to $usage_version"
+'''
+
+["release:status"]
+description = "Show current release status and latest remote release information"
+depends = ["common:check:version"]
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+git fetch origin --tags --quiet
+
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Latest released tag:  $(git ls-remote --tags origin 'v*' | grep -o 'refs/tags/v[0-9]*\.[0-9]*\.[0-9]*\(-rc[0-9]*\)\?$' | sed 's|refs/tags/||' | sort -V | tail -n 1)"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+'''
