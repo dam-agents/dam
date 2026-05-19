@@ -58,4 +58,4 @@ If you find improvements to make:
 
 **Important** - Make sure you always follow `DEVELOPMENT_GUIDELINES.md`
 
-If the code is already clean and well-structured, verify CI is green on the PR (`gh pr checks <PR>`) **before** merging — never merge with failing or pending required checks. Once checks pass, merge the PR and close the ticket.
+If the code is already clean and well-structured, verify CI is green on the PR (`gh pr checks <PR>`) **before** merging — never merge with failing or pending required checks. Once checks pass, merge the PR, close the ticket, and **remove the `needs review` label from the ticket** (closing an issue does not clear labels) so the orchestration phase doesn't pick it up again.
