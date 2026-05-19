@@ -1,6 +1,6 @@
 # Security scanning
 
-Last verified: 2026-05-06
+Last verified: 2026-05-19
 
 Motivated by: operational policy, not an architectural decision — no ADR.
 Image scanning, source SAST, and dependency advisory follow industry-standard
@@ -26,8 +26,8 @@ repo; alerts surface in the Security tab.
 ```mermaid
 flowchart LR
   subgraph build["GitHub Actions"]
-    main[main.yml<br/>publish.yml]
-    poll[quay-vuln-issue.yml<br/>daily cron]
+    cd[cd.yml]
+    poll[daily.yml<br/>daily cron]
   end
 
   subgraph quay["Quay.io"]
@@ -40,7 +40,7 @@ flowchart LR
     issue[issue]
   end
 
-  main -->|push image| images
+  cd -->|push image| images
   images --> clair
   clair --> api
   poll -->|GET /security| api
@@ -58,13 +58,12 @@ disclosed *after* a release still produces a finding — which is the whole
 reason for moving off ghcr.io ([free Clair scanning is the killer feature][quay-scan]).
 The poll runs daily, so there's up to ~24h between Clair finding a CVE and
 an issue being filed. Tune the `cron:` line in
-[`quay-vuln-issue.yml`](../../.github/workflows/quay-vuln-issue.yml) if that
-window is too wide.
+[`daily.yml`](../../.github/workflows/daily.yml) if that window is too wide.
 
 ## Workflows in this repo
 
-- [`.github/workflows/main.yml`](../../.github/workflows/main.yml) and [`publish.yml`](../../.github/workflows/publish.yml) — push to `quay.io/dam-agents/<component>`.
-- [`.github/workflows/quay-vuln-issue.yml`](../../.github/workflows/quay-vuln-issue.yml) — daily poller; for each image's `latest` tag, hits Quay's security API, dedupes by `(repository, CVE, package)`, opens new issues or comments existing ones.
+- [`.github/workflows/cd.yml`](../../.github/workflows/cd.yml) — builds and pushes images to `quay.io/dam-agents/<component>` on every push to `main` and on `v*` tags.
+- [`.github/workflows/daily.yml`](../../.github/workflows/daily.yml) — daily poller; for each image's `latest` tag, hits Quay's security API, dedupes by `(repository, CVE, package)`, opens new issues or comments existing ones.
 
 CodeQL runs from GitHub's **default setup** (configured in repo Settings, no
 workflow file) — it picks Go and JavaScript/TypeScript automatically, runs on
