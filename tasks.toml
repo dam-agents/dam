@@ -264,7 +264,7 @@ git push
 
 git checkout $release_branch
 
-echo -e "Check the pipeline progress: https://github.com/dam-agents/dam/actions/workflows/release.yml"
+echo -e "Check the pipeline progress: https://github.com/dam-agents/dam/actions/workflows/publish.yml"
 '''
 
 ["release:publish-stable"]
@@ -307,7 +307,7 @@ git push --atomic origin $release_branch "v$publish_version"
 set +x
 echo -e "Pushed tag v$publish_version to \x1b[36morigin/$release_branch\x1b[0m"
 
-echo -e "Check the pipeline progress: https://github.com/dam-agents/dam/actions/workflows/release.yml"
+echo -e "Check the pipeline progress: https://github.com/dam-agents/dam/actions/workflows/publish.yml"
 '''
 
 ["release:checkout"]
@@ -346,6 +346,6 @@ git fetch origin --tags --quiet
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Latest release branch:  $(git branch -r --sort=-version:refname --format "%(refname:short)" | grep 'origin/release-v' | head -n1 | sed 's|origin/||')"
 echo "Latest released tag:    $(git ls-remote --tags origin 'v*' | grep -o 'refs/tags/v[0-9]*\.[0-9]*\.[0-9]*\(-rc[0-9]*\)\?$' | sed 's|refs/tags/||' | sort -V | tail -n 1)"
-echo "CI status:              https://github.com/dam-agents/dam/actions/workflows/release.yml"
+echo "CI status:              https://github.com/dam-agents/dam/actions/workflows/publish.yml"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 '''
