@@ -1,7 +1,12 @@
 import type { StateCreator } from "zustand";
 
 import type { PlatformStore } from "../../../store.js";
-import { pathToState, type View, viewToPath } from "../lib/routes.js";
+import {
+  pathToState,
+  type View,
+  viewSchema,
+  viewToPath,
+} from "../lib/routes.js";
 
 export interface NavigationSlice {
   view: View;
@@ -25,7 +30,12 @@ export const createNavigationSlice: StateCreator<
     const saved = sessionStorage.getItem("platform-return-view");
     if (saved) {
       sessionStorage.removeItem("platform-return-view");
-      return saved as View;
+      const parsed = viewSchema.safeParse(saved);
+      if (parsed.success) return parsed.data;
+      console.warn(
+        "[navigation] schema mismatch on platform-return-view, falling back to URL:",
+        parsed.error.issues,
+      );
     }
     return pathToState(window.location.pathname).view;
   })(),

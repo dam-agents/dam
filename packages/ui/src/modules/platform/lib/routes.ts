@@ -1,11 +1,15 @@
-export type View =
-  | "list"
-  | "chat"
-  | "providers"
-  | "connections"
-  | "settings"
-  | "inbox"
-  | "agent-egress";
+import { z } from "zod";
+
+export const viewSchema = z.enum([
+  "list",
+  "chat",
+  "providers",
+  "connections",
+  "settings",
+  "inbox",
+  "agent-egress",
+]);
+export type View = z.infer<typeof viewSchema>;
 
 export function viewToPath(
   view: View,

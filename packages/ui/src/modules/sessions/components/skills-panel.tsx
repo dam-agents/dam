@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { z } from "zod";
 
 import { api } from "../../../api.js";
 import { ACTION_FAILED, runAction } from "../../../lib/query-helpers.js";
@@ -25,12 +26,21 @@ import { useStore } from "../../../store.js";
  *  browser, not per instance — catalog preferences apply everywhere. */
 const COLLAPSED_STORAGE_KEY = "platform:skills:collapsed";
 
+const collapsedStorageSchema = z.array(z.string());
+
 function loadCollapsed(): Set<string> {
   try {
     const raw = localStorage.getItem(COLLAPSED_STORAGE_KEY);
     if (!raw) return new Set();
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? new Set(parsed) : new Set();
+    const parsed = collapsedStorageSchema.safeParse(JSON.parse(raw));
+    if (!parsed.success) {
+      console.warn(
+        "[skills-panel] schema mismatch on collapsed-skills, resetting:",
+        parsed.error.issues,
+      );
+      return new Set();
+    }
+    return new Set(parsed.data);
   } catch {
     return new Set();
   }
