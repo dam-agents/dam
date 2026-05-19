@@ -22,7 +22,7 @@ describe("buildForkConfigMap", () => {
     expect(cm.metadata?.name).toBe("fork-1");
     expect(cm.metadata?.labels).toMatchObject({
       "agent-platform.ai/type": "agent-fork",
-      "agent-platform.ai/instance": "inst-abc",
+      "agent-platform.ai/agent": "inst-abc",
       "agent-platform.ai/fork-id": "fork-1",
     });
 

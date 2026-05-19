@@ -249,7 +249,7 @@ describe("e2e: controller reconciliation", () => {
           dumpPodLogs("app.kubernetes.io/component=controller"),
           describePod(podName),
           dumpPodLogs(
-            `agent-platform.ai/instance=${e2eInstanceId}`,
+            `agent-platform.ai/agent=${e2eInstanceId}`,
             "platform-agents",
           ),
           getEvents(podName),

@@ -1103,7 +1103,7 @@ func BuildEnvoyBootstrapConfigMap(instanceName, extAuthzInstanceID string, cfg *
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      EnvoyBootstrapName(instanceName),
 			Namespace: cfg.Namespace,
-			Labels:    map[string]string{"agent-platform.ai/instance": instanceName},
+			Labels:    map[string]string{LabelAgent: instanceName},
 			OwnerReferences: []metav1.OwnerReference{
 				*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
 			},

@@ -39,7 +39,7 @@ func portInt32(p int) int32 {
 const (
 	// LabelAgent points at the durable Agent ConfigMap. After ADR-046
 	// collapsed Instance into Agent, this replaces the former
-	// `agent-platform.ai/instance` label.
+	// `agent-platform.ai/agent` label.
 	LabelAgent  = "agent-platform.ai/agent"
 	LabelPair   = "agent-platform.ai/pair"
 	LabelRole   = "agent-platform.ai/role"

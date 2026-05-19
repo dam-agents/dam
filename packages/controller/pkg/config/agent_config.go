@@ -42,7 +42,7 @@ func (d Duration) MarshalJSON() ([]byte, error) {
 // scheduling and security are controller-internal.
 //
 // On metadata collision: controller-managed labels on agent pods (selector
-// labels `agent-platform.ai/instance|pair|role`) and annotations the
+// labels `agent-platform.ai/agent|pair|role`) and annotations the
 // controller sets itself (e.g. `agent-platform.ai/gh-token-available`)
 // always win. ExtraLabels/ExtraAnnotations entries with the same key
 // drop silently — see applyAgentBaseMeta.

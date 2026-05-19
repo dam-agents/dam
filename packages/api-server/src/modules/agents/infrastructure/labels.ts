@@ -1,6 +1,6 @@
 /** K8s label keys and well-known values used across the agents module.
  *  Per ADR-046, Instance and Agent merged into Agent. The previous
- *  agent-instance type and agent-platform.ai/instance label are gone. */
+ *  agent-instance type and agent-platform.ai/agent label are gone. */
 
 // ---- Label keys ----
 export const LABEL_TYPE = "agent-platform.ai/type";
