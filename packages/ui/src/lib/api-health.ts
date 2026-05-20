@@ -19,29 +19,22 @@ function sync() {
   for (const l of listeners) l();
 }
 
-function startPolling() {
-  if (pollTimer) return;
-  async function poll() {
-    if (!apiDown) return;
-    if (!navigator.onLine) {
-      pollTimer = setTimeout(poll, 3_000);
+async function poll() {
+  if (!apiDown) return;
+  if (!navigator.onLine) {
+    pollTimer = setTimeout(poll, 3_000);
+    return;
+  }
+  try {
+    const res = await fetch("/api/health");
+    if (res.ok) {
+      onFetchSuccess();
       return;
     }
-    try {
-      const res = await fetch("/api/health");
-      if (res.ok) {
-        failureCount = 0;
-        apiDown = false;
-        pollTimer = null;
-        sync();
-        return;
-      }
-    } catch {
-      // still down
-    }
-    if (apiDown) pollTimer = setTimeout(poll, 3_000);
+  } catch {
+    // still down
   }
-  pollTimer = setTimeout(poll, 3_000);
+  if (apiDown) pollTimer = setTimeout(poll, 3_000);
 }
 
 export function onFetchError() {
@@ -50,7 +43,7 @@ export function onFetchError() {
   if (failureCount >= 2 && !apiDown) {
     apiDown = true;
     sync();
-    startPolling();
+    pollTimer = setTimeout(poll, 3_000);
   }
 }
 

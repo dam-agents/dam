@@ -1,19 +1,10 @@
 import { Loader2, WifiOff } from "lucide-react";
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 
 import { getApiHealthSnapshot, subscribeApiHealth } from "../lib/api-health.js";
-import { queryClient } from "../query-client.js";
 
 export function ConnectionBanner() {
   const status = useSyncExternalStore(subscribeApiHealth, getApiHealthSnapshot);
-  const prevRef = useRef(status);
-
-  useEffect(() => {
-    if (prevRef.current !== "connected" && status === "connected") {
-      queryClient.invalidateQueries();
-    }
-    prevRef.current = status;
-  }, [status]);
 
   if (status === "connected") return null;
 

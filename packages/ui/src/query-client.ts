@@ -5,7 +5,11 @@ import {
   type QueryKey,
 } from "@tanstack/react-query";
 
-import { isApiReconnecting } from "./lib/api-health.js";
+import {
+  getApiHealthSnapshot,
+  isApiReconnecting,
+  subscribeApiHealth,
+} from "./lib/api-health.js";
 import { emitToast } from "./lib/toast-sink.js";
 
 declare module "@tanstack/react-query" {
@@ -62,4 +66,10 @@ export const queryClient = new QueryClient({
       },
     },
   },
+});
+
+subscribeApiHealth(() => {
+  if (getApiHealthSnapshot() === "connected") {
+    queryClient.invalidateQueries();
+  }
 });
