@@ -43,18 +43,6 @@ export function getSavedPreferences(instanceId: string): {
   };
 }
 
-/** Extract short model name from description (e.g. "Sonnet 4.6 · Best for..." → "Sonnet 4.6") */
-function shortModelLabel(model: {
-  name: string;
-  description?: string | null;
-}): string {
-  if (model.description) {
-    const before = model.description.split("·")[0]?.trim();
-    if (before && before !== model.name) return before;
-  }
-  return model.name;
-}
-
 /**
  * Inline session config controls: mode label + popover for modes, config options, and model.
  * All dynamically driven from ACP session state — renders nothing if the agent doesn't report capabilities.
@@ -231,7 +219,7 @@ export function SessionConfigBar({
           <span className="text-text-muted">Loading...</span>
         ) : (
           <span className="truncate max-w-[250px]">
-            {[currentModel && shortModelLabel(currentModel), currentMode?.name]
+            {[currentModel?.name, currentMode?.name]
               .filter(Boolean)
               .join(" · ") || "Config"}
           </span>
