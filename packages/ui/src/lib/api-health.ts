@@ -1,13 +1,19 @@
 import { onlineManager } from "@tanstack/react-query";
 
-type ApiStatus = "connected" | "reconnecting";
+export type ConnectionStatus = "connected" | "reconnecting" | "offline";
 
-let status: ApiStatus = "connected";
+let apiDown = false;
 let failureCount = 0;
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
+let status: ConnectionStatus = navigator.onLine ? "connected" : "offline";
 const listeners = new Set<() => void>();
 
-function setStatus(next: ApiStatus) {
+function sync() {
+  const next: ConnectionStatus = !navigator.onLine
+    ? "offline"
+    : apiDown
+      ? "reconnecting"
+      : "connected";
   if (status === next) return;
   status = next;
   for (const l of listeners) l();
@@ -16,7 +22,7 @@ function setStatus(next: ApiStatus) {
 function startPolling() {
   if (pollTimer) return;
   async function poll() {
-    if (status !== "reconnecting") return;
+    if (!apiDown) return;
     if (!navigator.onLine) {
       pollTimer = setTimeout(poll, 3_000);
       return;
@@ -25,39 +31,38 @@ function startPolling() {
       const res = await fetch("/api/health");
       if (res.ok) {
         failureCount = 0;
+        apiDown = false;
         pollTimer = null;
-        setStatus("connected");
+        sync();
         return;
       }
     } catch {
       // still down
     }
-    if (status === "reconnecting") pollTimer = setTimeout(poll, 3_000);
+    if (apiDown) pollTimer = setTimeout(poll, 3_000);
   }
   pollTimer = setTimeout(poll, 3_000);
-}
-
-function stopPolling() {
-  if (pollTimer) {
-    clearTimeout(pollTimer);
-    pollTimer = null;
-  }
 }
 
 export function onFetchError() {
   if (!navigator.onLine) return;
   failureCount++;
-  if (failureCount >= 2 && status === "connected") {
-    setStatus("reconnecting");
+  if (failureCount >= 2 && !apiDown) {
+    apiDown = true;
+    sync();
     startPolling();
   }
 }
 
 export function onFetchSuccess() {
   failureCount = 0;
-  if (status === "reconnecting") {
-    stopPolling();
-    setStatus("connected");
+  if (apiDown) {
+    apiDown = false;
+    if (pollTimer) {
+      clearTimeout(pollTimer);
+      pollTimer = null;
+    }
+    sync();
   }
 }
 
@@ -72,22 +77,23 @@ export function subscribeApiHealth(cb: () => void): () => void {
   };
 }
 
-export function getApiHealthSnapshot(): ApiStatus {
+export function getApiHealthSnapshot(): ConnectionStatus {
   return status;
 }
 
 // Compose browser connectivity + API health into TanStack Query's online
 // signal. When either is down, queries pause instead of erroring out.
 onlineManager.setEventListener((setOnline) => {
-  const update = () => setOnline(navigator.onLine && status !== "reconnecting");
+  const onStatusChange = () => setOnline(status === "connected");
+  listeners.add(onStatusChange);
 
-  window.addEventListener("online", update);
-  window.addEventListener("offline", update);
-  listeners.add(update);
+  const onConnectivityChange = () => sync();
+  window.addEventListener("online", onConnectivityChange);
+  window.addEventListener("offline", onConnectivityChange);
 
   return () => {
-    window.removeEventListener("online", update);
-    window.removeEventListener("offline", update);
-    listeners.delete(update);
+    listeners.delete(onStatusChange);
+    window.removeEventListener("online", onConnectivityChange);
+    window.removeEventListener("offline", onConnectivityChange);
   };
 });

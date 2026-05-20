@@ -1,38 +1,23 @@
 import { Loader2, WifiOff } from "lucide-react";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 
 import { getApiHealthSnapshot, subscribeApiHealth } from "../lib/api-health.js";
 import { queryClient } from "../query-client.js";
 
 export function ConnectionBanner() {
-  const [online, setOnline] = useState(() => navigator.onLine);
-  const apiStatus = useSyncExternalStore(
-    subscribeApiHealth,
-    getApiHealthSnapshot,
-  );
-  const prevRef = useRef(apiStatus);
+  const status = useSyncExternalStore(subscribeApiHealth, getApiHealthSnapshot);
+  const prevRef = useRef(status);
 
   useEffect(() => {
-    const on = () => setOnline(true);
-    const off = () => setOnline(false);
-    window.addEventListener("online", on);
-    window.addEventListener("offline", off);
-    return () => {
-      window.removeEventListener("online", on);
-      window.removeEventListener("offline", off);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (prevRef.current === "reconnecting" && apiStatus === "connected") {
+    if (prevRef.current !== "connected" && status === "connected") {
       queryClient.invalidateQueries();
     }
-    prevRef.current = apiStatus;
-  }, [apiStatus]);
+    prevRef.current = status;
+  }, [status]);
 
-  if (online && apiStatus === "connected") return null;
+  if (status === "connected") return null;
 
-  const offline = !online;
+  const offline = status === "offline";
   return (
     <div className="fixed bottom-14 left-0 right-0 z-[60] flex h-11 items-center justify-center gap-2 border-t border-warning bg-warning-light px-5 text-[13px] font-semibold text-warning md:bottom-0">
       {offline ? (
