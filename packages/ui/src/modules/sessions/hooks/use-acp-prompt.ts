@@ -1,5 +1,5 @@
 import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
@@ -10,6 +10,8 @@ import {
 } from "../../acp/session-projection.js";
 import { buildPromptBlocks, extractErrorMessage } from "../../acp/utils.js";
 import { acpSessionsKeys } from "../api/queries.js";
+
+const DELIVERY_TIMEOUT_MS = 60_000;
 
 interface LiveConnection {
   connection: ClientSideConnection;
@@ -44,6 +46,7 @@ export function useAcpPrompt(
 } {
   const setMessages = useStore((s) => s.setMessages);
   const addLog = useStore((s) => s.addLog);
+  const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const sendPrompt = useCallback(
     async (text: string, attachments?: Attachment[]) => {
@@ -92,6 +95,32 @@ export function useAcpPrompt(
       ]);
       addLog("prompt", { text });
 
+      if (watchdogRef.current) clearTimeout(watchdogRef.current);
+      watchdogRef.current = setTimeout(() => {
+        const msgs = useStore.getState().messages;
+        const bubble = msgs.find((m) => m.id === aId);
+        if (bubble?.streaming && bubble.parts.length === 0) {
+          addLog("error", { message: "Delivery watchdog fired" });
+          setMessages((p) =>
+            p.map((m) =>
+              m.id === aId
+                ? {
+                    ...m,
+                    streaming: false,
+                    queued: false,
+                    parts: [],
+                    error: {
+                      message: "Couldn't deliver — the agent didn't respond.",
+                      retryWith: { text, attachments },
+                    },
+                  }
+                : m,
+            ),
+          );
+        }
+        watchdogRef.current = null;
+      }, DELIVERY_TIMEOUT_MS);
+
       try {
         const conn = await ensureConnection();
         if (!conn) throw new Error("Failed to establish connection");
@@ -131,6 +160,10 @@ export function useAcpPrompt(
           ),
         );
       } finally {
+        if (watchdogRef.current) {
+          clearTimeout(watchdogRef.current);
+          watchdogRef.current = null;
+        }
         queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
         textareaRef.current?.focus();
       }
