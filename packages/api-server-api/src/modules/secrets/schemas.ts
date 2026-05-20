@@ -2,10 +2,6 @@ import { z } from "zod";
 import { ENV_NAME_RE } from "../shared.js";
 import { isProviderPresetType, QUERY_PARAM_RE } from "./types.js";
 
-// Browser-safe Zod schemas for the secrets module. Lives in its own
-// file so UI code can import these without dragging in @trpc/server
-// transitively via router.ts.
-
 export const secretTypeSchema = z.enum([
   "anthropic",
   "ibm-litellm",

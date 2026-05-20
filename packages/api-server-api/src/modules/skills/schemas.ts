@@ -1,14 +1,5 @@
 import { z } from "zod";
 
-// Browser-safe Zod schemas for the skills module. Lives in its own
-// file so UI code can import these without dragging in @trpc/server
-// transitively via router.ts.
-//
-// This module is the one exception to "input schemas only" in
-// api-server-api — the existing inline output schemas (used by
-// .output(...)) also moved here, since they were already living
-// alongside the procedures. No new output schemas are added.
-
 // --- Entity / output schemas ---
 
 /** A connected skill source (e.g. a public git repo). */

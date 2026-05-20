@@ -1,9 +1,5 @@
 import { z } from "zod";
 
-// Browser-safe Zod schemas for the schedules module. Lives in its own
-// file so UI code can import these without dragging in @trpc/server
-// transitively via router.ts.
-
 // "schedule session mode" — how the agent resumes between scheduled
 // ticks. Distinct from sessions/types.ts `sessionModeSchema`
 // (chat / terminal), which is about the channel kind. Extracted here

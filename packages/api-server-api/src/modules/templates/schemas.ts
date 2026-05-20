@@ -1,9 +1,5 @@
 import { z } from "zod";
 
-// Browser-safe Zod schemas for the templates module. Lives in its own
-// file so UI code can import these without dragging in @trpc/server
-// transitively via router.ts.
-
 export const templateGetInputSchema = z.object({
   id: z.string().min(1),
 });

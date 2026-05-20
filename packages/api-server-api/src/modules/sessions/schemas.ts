@@ -1,10 +1,6 @@
 import { z } from "zod";
 import { SessionMode, SessionType, sessionModeSchema } from "./types.js";
 
-// Browser-safe Zod schemas for the sessions module. Lives in its own
-// file so UI code can import these without dragging in @trpc/server
-// transitively via router.ts.
-
 const sessionTypeSchema = z.enum([
   SessionType.Regular,
   SessionType.ChannelSlack,

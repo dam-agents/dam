@@ -1,9 +1,5 @@
 import { z } from "zod";
 
-// Browser-safe Zod schemas for the egress-rules module. Lives in its own
-// file so UI code can import these without dragging in @trpc/server
-// transitively via router.ts.
-
 export const ruleVerdictSchema = z.enum(["allow", "deny"]);
 
 // Used both by egress-rules procedures (applyPreset) and by
