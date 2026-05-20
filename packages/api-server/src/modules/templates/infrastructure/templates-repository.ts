@@ -1,4 +1,5 @@
 import type { Template, TemplateSpec } from "api-server-api";
+import { templateSpecSchema } from "api-server-api";
 import yaml from "js-yaml";
 import type { K8sClient } from "../../agents/infrastructure/k8s.js";
 import {
@@ -38,7 +39,7 @@ export function createTemplatesRepository(k8s: K8sClient): TemplatesRepository {
       const cm = await k8s.getConfigMap(id);
       if (!cm || !hasType(cm, TYPE_TEMPLATE)) return null;
       return {
-        spec: yaml.load(cm.data?.[SPEC_KEY] ?? "") as TemplateSpec,
+        spec: templateSpecSchema.parse(yaml.load(cm.data?.[SPEC_KEY] ?? "")),
         isOwned: !!cm.metadata?.labels?.[LABEL_OWNER],
       };
     },

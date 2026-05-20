@@ -1,11 +1,8 @@
 import type * as k8s from "@kubernetes/client-node";
 import yaml from "js-yaml";
-import type {
-  Agent,
-  AgentSpec,
-  AgentState,
-  ChannelConfig,
-} from "api-server-api";
+import { z } from "zod";
+import { agentSpecSchema } from "api-server-api";
+import type { Agent, AgentState, ChannelConfig } from "api-server-api";
 import {
   ANN_GRANTED_CONNECTION_IDS,
   ANN_GRANTED_SECRET_IDS,
@@ -23,12 +20,17 @@ import {
   isPodReady,
 } from "./configmap-mappers.js";
 
+const agentStatusSchema = z.object({
+  currentState: z.enum(["running", "hibernated", "error"]).optional(),
+  error: z.string().optional(),
+});
+
 /** The raw observed lifecycle from the agent's status.yaml. */
 export interface InfraAgent {
   id: string;
   name: string;
   templateId?: string;
-  spec: AgentSpec;
+  spec: z.infer<typeof agentSpecSchema>;
   desiredState: "running" | "hibernated";
   currentState?: "running" | "hibernated" | "error";
   error?: string;
@@ -52,16 +54,13 @@ export function parseInfraAgent(
   cm: k8s.V1ConfigMap,
   pod?: k8s.V1Pod,
 ): InfraAgent {
-  const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as AgentSpec;
+  const spec = agentSpecSchema.parse(yaml.load(cm.data?.[SPEC_KEY] ?? ""));
   const statusYaml = cm.data?.[STATUS_KEY];
   let currentState: InfraAgent["currentState"];
   let error: string | undefined;
   if (statusYaml) {
-    const raw = yaml.load(statusYaml) as {
-      currentState?: string;
-      error?: string;
-    };
-    currentState = raw.currentState as InfraAgent["currentState"];
+    const raw = agentStatusSchema.parse(yaml.load(statusYaml));
+    currentState = raw.currentState;
     error = raw.error || undefined;
   }
   return {
@@ -110,11 +109,6 @@ export function buildAgentConfigMap(
       labels,
       annotations: {
         [LAST_ACTIVITY_KEY]: new Date().toISOString(),
-        // Initialize both grant annotations to "" explicitly. Both grants
-        // are always selective; absent annotations would also read as
-        // empty after the legacy "all granted" mode was removed, but
-        // writing them at creation makes the intent visible on the CM
-        // and avoids surprises if a future read ever defaults differently.
         [ANN_GRANTED_SECRET_IDS]: "",
         [ANN_GRANTED_CONNECTION_IDS]: "",
       },

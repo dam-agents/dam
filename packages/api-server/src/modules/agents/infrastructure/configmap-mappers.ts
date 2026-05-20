@@ -22,8 +22,12 @@ export function specYaml(cm: k8s.V1ConfigMap): unknown {
 }
 
 export function displayName(cm: k8s.V1ConfigMap): string {
-  const spec = specYaml(cm) as { name?: string } | null;
-  return spec?.name ?? cm.metadata!.name!;
+  const spec = specYaml(cm);
+  if (spec != null && typeof spec === "object" && "name" in spec) {
+    const name = (spec as { name: unknown }).name;
+    if (typeof name === "string") return name;
+  }
+  return cm.metadata!.name!;
 }
 
 export function isOwnedBy(cm: k8s.V1ConfigMap, owner: string): boolean {

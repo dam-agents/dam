@@ -1,5 +1,6 @@
 import type * as k8s from "@kubernetes/client-node";
 import yaml from "js-yaml";
+import { z } from "zod";
 import type { ForkFailureReason } from "../../../events.js";
 import type { ForkSpec, ForkStatus } from "../domain/fork.js";
 import {
@@ -19,13 +20,20 @@ interface ForkSpecYaml {
   sessionId?: string;
 }
 
-interface ForkStatusYaml {
-  version?: string;
-  phase?: string;
-  jobName?: string;
-  podIP?: string;
-  error?: { reason?: string; detail?: string };
-}
+const forkStatusYamlSchema = z
+  .object({
+    version: z.string().optional(),
+    phase: z.string().optional(),
+    jobName: z.string().optional(),
+    podIP: z.string().optional(),
+    error: z
+      .object({
+        reason: z.string().optional(),
+        detail: z.string().optional(),
+      })
+      .optional(),
+  })
+  .nullable();
 
 export function buildForkConfigMap(args: {
   forkId: string;
@@ -54,7 +62,7 @@ export function buildForkConfigMap(args: {
 export function parseForkStatus(cm: k8s.V1ConfigMap): ForkStatus | null {
   const raw = cm.data?.[STATUS_KEY];
   if (!raw) return null;
-  const parsed = yaml.load(raw) as ForkStatusYaml | null;
+  const parsed = forkStatusYamlSchema.parse(yaml.load(raw));
   if (!parsed || !parsed.phase) return null;
   const phase = normalisePhase(parsed.phase);
   if (!phase) return null;

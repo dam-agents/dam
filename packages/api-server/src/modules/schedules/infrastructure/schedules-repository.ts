@@ -1,4 +1,5 @@
-import type { Schedule, ScheduleSpec } from "api-server-api";
+import type { Schedule } from "api-server-api";
+import { scheduleSpecSchema } from "api-server-api";
 import yaml from "js-yaml";
 import type { K8sClient } from "../../agents/infrastructure/k8s.js";
 import {
@@ -82,7 +83,9 @@ export function createSchedulesRepository(k8s: K8sClient): SchedulesRepository {
     async toggle(id, owner) {
       const cm = await getOwned(id, owner);
       if (!cm) return null;
-      const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as ScheduleSpec;
+      const spec = scheduleSpecSchema.parse(
+        yaml.load(cm.data?.[SPEC_KEY] ?? ""),
+      );
       spec.enabled = !spec.enabled;
       cm.data = { ...cm.data, [SPEC_KEY]: yaml.dump(spec) };
       const updated = await k8s.replaceConfigMap(id, cm);

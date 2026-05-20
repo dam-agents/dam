@@ -4,6 +4,13 @@ export type { ApiContext, UserIdentity } from "./context.js";
 export { ChannelType, type EnvVar } from "./modules/shared.js";
 
 export { SPEC_VERSION } from "./modules/templates/types.js";
+export {
+  mountSchema,
+  resourcesSchema,
+  envVarSchema,
+  skillSourceSeedSchema,
+  templateSpecSchema,
+} from "./modules/templates/schemas.js";
 export type {
   Template,
   TemplateSpec,
@@ -31,7 +38,12 @@ export {
   PROTECTED_AGENT_ENV_NAMES,
   isProtectedAgentEnvName,
 } from "./modules/agents/types.js";
+export { agentSpecSchema } from "./modules/agents/schemas.js";
 
+export {
+  scheduleSpecSchema,
+  scheduleStatusSchema,
+} from "./modules/schedules/schemas.js";
 export type {
   Schedule,
   ScheduleSpec,

@@ -1,6 +1,7 @@
 import type * as k8s from "@kubernetes/client-node";
 import yaml from "js-yaml";
-import type { Schedule, ScheduleSpec, ScheduleStatus } from "api-server-api";
+import { scheduleSpecSchema, scheduleStatusSchema } from "api-server-api";
+import type { Schedule } from "api-server-api";
 import {
   LABEL_TYPE,
   LABEL_OWNER,
@@ -16,12 +17,12 @@ import {
 } from "../../agents/infrastructure/configmap-mappers.js";
 
 export function parseSchedule(cm: k8s.V1ConfigMap): Schedule {
-  const spec = yaml.load(cm.data?.[SPEC_KEY] ?? "") as ScheduleSpec;
+  const spec = scheduleSpecSchema.parse(yaml.load(cm.data?.[SPEC_KEY] ?? ""));
   if (spec.createdBy !== "agent") spec.createdBy = "user";
   const statusYaml = cm.data?.[STATUS_KEY];
-  let status: ScheduleStatus | undefined;
+  let status: Schedule["status"];
   if (statusYaml) {
-    status = yaml.load(statusYaml) as ScheduleStatus;
+    status = scheduleStatusSchema.parse(yaml.load(statusYaml));
   }
   return {
     id: cm.metadata!.name!,
