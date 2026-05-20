@@ -362,6 +362,10 @@ export function createAgentsService(deps: {
 
     async isAllowedUser(agentId, keycloakSub) {
       const subs = await deps.listAllowedUsersByAgent(agentId);
+      // Empty list means unrestricted — the UI surfaces this as
+      // "any linked Slack user can interact." A non-empty list flips
+      // the gate into allow-listed mode.
+      if (subs.length === 0) return true;
       return subs.includes(keycloakSub);
     },
   };
