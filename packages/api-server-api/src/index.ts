@@ -126,6 +126,10 @@ export type {
   AppConnectionView,
   ConnectionsService,
 } from "./modules/connections/types.js";
+export {
+  connectionGetAgentConnectionsInputSchema,
+  connectionSetAgentConnectionsInputSchema,
+} from "./modules/connections/schemas.js";
 
 export {
   SessionType,
