@@ -8,7 +8,7 @@
   Isolated by default. Credentialed. Always-on.
 </h3>
 
-Keep your coding agents running when you close the lid. Ship them to your team. Sell them to your customers. DAM gives Claude Code, Codex, Gemini CLI, or pi.dev an isolated Kubernetes pod, a credential-injecting proxy, a scheduler, and a Slack channel.
+Keep your coding agents running when you close the lid. Ship them to your team. Sell them to your customers. DAM gives Claude Code, Codex, Antigravity CLI, or pi.dev an isolated Kubernetes pod, a credential-injecting proxy, a scheduler, and a Slack channel.
 
 ## What you get
 
