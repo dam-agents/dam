@@ -12,7 +12,6 @@ import {
   describeConfigMap,
   getEvents,
 } from "./helpers/kubectl.js";
-import yaml from "js-yaml";
 
 let AGENT_ID: string;
 
