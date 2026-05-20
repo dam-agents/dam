@@ -125,13 +125,23 @@ app.post("/mcp", async (req, res) => {
 });
 
 app.post("/lock/refresh", async (_req, res) => {
-  const result = await refreshLock();
-  res.json(result);
+  try {
+    const result = await refreshLock();
+    res.json(result);
+  } catch (err) {
+    process.stderr.write(`[mcp] /lock/refresh error: ${String(err)}\n`);
+    if (!res.headersSent) res.status(500).json({ error: "refresh failed" });
+  }
 });
 
 app.post("/lock/release", async (_req, res) => {
-  const result = await releaseLock();
-  res.json(result);
+  try {
+    const result = await releaseLock();
+    res.json(result);
+  } catch (err) {
+    process.stderr.write(`[mcp] /lock/release error: ${String(err)}\n`);
+    if (!res.headersSent) res.status(500).json({ error: "release failed" });
+  }
 });
 
 app.get("/healthz", (_req, res) => {
