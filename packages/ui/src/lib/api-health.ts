@@ -87,13 +87,12 @@ onlineManager.setEventListener((setOnline) => {
   const onStatusChange = () => setOnline(status === "connected");
   listeners.add(onStatusChange);
 
-  const onConnectivityChange = () => sync();
-  window.addEventListener("online", onConnectivityChange);
-  window.addEventListener("offline", onConnectivityChange);
+  window.addEventListener("online", sync);
+  window.addEventListener("offline", sync);
 
   return () => {
     listeners.delete(onStatusChange);
-    window.removeEventListener("online", onConnectivityChange);
-    window.removeEventListener("offline", onConnectivityChange);
+    window.removeEventListener("online", sync);
+    window.removeEventListener("offline", sync);
   };
 });
