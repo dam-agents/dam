@@ -24,6 +24,10 @@ const ANTHROPIC_OAUTH_MAPPING = PROVIDERS.anthropic.modes.find(
   (m) => m.key === "oauth",
 )!.defaultEnvMappings;
 
+const ANTHROPIC_API_KEY_MAPPING = PROVIDERS.anthropic.modes.find(
+  (m) => m.key === "api-key",
+)!.defaultEnvMappings;
+
 function makePort(existing: K8sStoredSecret) {
   const store = new Map([[existing.id, existing]]);
   const updates: UpdateCall[] = [];
@@ -99,6 +103,27 @@ describe("secrets-service.update — Anthropic auth-mode rotation", () => {
     });
   });
 
+  it("oauth → api-key: rewrites env, clears injection config, flips auth-mode", async () => {
+    const { port, updates } = makePort(anthropicSecret("oauth"));
+    const { port: grants } = makeGrants();
+    const svc = createSecretsService({
+      k8sPort: port,
+      grants,
+      ownerSub: "owner-1",
+    });
+
+    await svc.update({ id: "secret-1", value: "sk-ant-api03-newkey" });
+
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toMatchObject({
+      id: "secret-1",
+      value: "sk-ant-api03-newkey",
+      authMode: "api-key",
+      envMappings: ANTHROPIC_API_KEY_MAPPING,
+      injectionConfig: null,
+    });
+  });
+
   it("no-op when the new value's prefix matches the existing mode", async () => {
     const { port, updates } = makePort(anthropicSecret("api-key"));
     const { port: grants } = makeGrants();
@@ -109,6 +134,23 @@ describe("secrets-service.update — Anthropic auth-mode rotation", () => {
     });
 
     await svc.update({ id: "secret-1", value: "sk-ant-api03-anothernewkey" });
+
+    expect(updates).toHaveLength(1);
+    expect(updates[0]?.authMode).toBeUndefined();
+    expect(updates[0]?.envMappings).toBeUndefined();
+    expect(updates[0]?.injectionConfig).toBeUndefined();
+  });
+
+  it("no-op when the new oauth value matches existing oauth mode", async () => {
+    const { port, updates } = makePort(anthropicSecret("oauth"));
+    const { port: grants } = makeGrants();
+    const svc = createSecretsService({
+      k8sPort: port,
+      grants,
+      ownerSub: "owner-1",
+    });
+
+    await svc.update({ id: "secret-1", value: "sk-ant-oat01-rotated" });
 
     expect(updates).toHaveLength(1);
     expect(updates[0]?.authMode).toBeUndefined();
