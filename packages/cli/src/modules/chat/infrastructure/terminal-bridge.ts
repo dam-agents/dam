@@ -28,7 +28,7 @@ export function connectTerminalBridge({
   return new Promise<BridgeResult>((resolve) => {
     let settled = false;
     const proto = host.startsWith("https://") ? "wss:" : "ws:";
-    const base = host.replace(/^https?:\/\//, "");
+    const base = host.replace(/^https?:\/\//, "").replace(/\/+$/, "");
     const sep = terminalPath.includes("?") ? "&" : "?";
     const ws = new WebSocket(
       `${proto}//${base}${terminalPath}${sep}token=${encodeURIComponent(token)}`,
