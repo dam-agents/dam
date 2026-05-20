@@ -20,10 +20,9 @@ export const api = createTRPCClient<AppRouter>({
           throw error;
         }
       },
-      headers: async () => {
-        const token = await getAccessToken();
-        return { Authorization: `Bearer ${token}` };
-      },
+      headers: async () => ({
+        Authorization: `Bearer ${await getAccessToken()}`,
+      }),
     }),
   ],
 });

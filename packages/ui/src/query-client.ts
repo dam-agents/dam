@@ -25,25 +25,23 @@ declare module "@tanstack/react-query" {
 // 5-second poll would emit a toast every tick while the backend is down.
 const notifiedOutages = new WeakSet<Query<unknown, unknown, unknown>>();
 
-const queryCache = new QueryCache({
-  onSuccess: (_data, query) => {
-    notifiedOutages.delete(query);
-  },
-  onError: (_error, query) => {
-    const toast = query.meta?.errorToast;
-    if (
-      !toast ||
-      notifiedOutages.has(query) ||
-      getApiHealthSnapshot() === "reconnecting"
-    )
-      return;
-    notifiedOutages.add(query);
-    emitToast({ kind: "warning", message: toast });
-  },
-});
-
 export const queryClient = new QueryClient({
-  queryCache,
+  queryCache: new QueryCache({
+    onSuccess: (_data, query) => {
+      notifiedOutages.delete(query);
+    },
+    onError: (_error, query) => {
+      const toast = query.meta?.errorToast;
+      if (
+        !toast ||
+        notifiedOutages.has(query) ||
+        getApiHealthSnapshot() === "reconnecting"
+      )
+        return;
+      notifiedOutages.add(query);
+      emitToast({ kind: "warning", message: toast });
+    },
+  }),
   defaultOptions: {
     queries: {
       retry: 3,
@@ -71,11 +69,9 @@ export const queryClient = new QueryClient({
 });
 
 onlineManager.setEventListener((setOnline) =>
-  subscribeApiHealth(() => setOnline(getApiHealthSnapshot() === "connected")),
+  subscribeApiHealth(() => {
+    const connected = getApiHealthSnapshot() === "connected";
+    setOnline(connected);
+    if (connected) queryClient.invalidateQueries();
+  }),
 );
-
-subscribeApiHealth(() => {
-  if (getApiHealthSnapshot() === "connected") {
-    queryClient.invalidateQueries();
-  }
-});
