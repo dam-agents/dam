@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { ENV_NAME_RE } from "../shared.js";
-import { QUERY_PARAM_RE } from "./types.js";
+import { isProviderPresetType, QUERY_PARAM_RE } from "./types.js";
 
 // Browser-safe Zod schemas for the secrets module. Lives in its own
 // file so UI code can import these without dragging in @trpc/server
@@ -55,7 +55,41 @@ export const injectionConfigSchema = z.object({
     .optional(),
 });
 
-export const updateSecretInputSchema = z
+export const secretCreateInputSchema = z
+  .object({
+    type: secretTypeSchema,
+    name: z.string().min(1).max(100),
+    value: z.string().min(1),
+    hostPattern: hostPatternSchema.optional(),
+    pathPattern: z.string().min(1).max(1000).optional(),
+    injectionConfig: injectionConfigSchema.optional(),
+    envMappings: envMappingsSchema.optional(),
+  })
+  .superRefine((d, ctx) => {
+    if (isProviderPresetType(d.type)) {
+      for (const field of [
+        "hostPattern",
+        "pathPattern",
+        "injectionConfig",
+      ] as const) {
+        if (d[field] != null) {
+          ctx.addIssue({
+            code: "custom",
+            message: `${field} cannot be set for ${d.type} secrets`,
+            path: [field],
+          });
+        }
+      }
+    } else if (!d.hostPattern) {
+      ctx.addIssue({
+        code: "custom",
+        message: "hostPattern is required for generic secrets",
+        path: ["hostPattern"],
+      });
+    }
+  });
+
+export const secretUpdateInputSchema = z
   .object({
     id: z.string().min(1),
     name: z.string().min(1).max(100).optional(),
@@ -74,9 +108,40 @@ export const updateSecretInputSchema = z
     // identical to what was stored.
     if (d.injectionConfig !== undefined && d.value === undefined) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message: "value is required when changing injectionConfig",
         path: ["value"],
       });
     }
   });
+
+export const secretDeleteInputSchema = z.object({ id: z.string().min(1) });
+
+export const secretCreateGithubPatInputSchema = z.object({
+  name: z.string().min(1).max(100),
+  token: z.string().min(1),
+});
+
+export const secretUpdateGithubPatInputSchema = z.object({
+  apiSecretId: z.string().min(1),
+  gitSecretId: z.string().min(1),
+  token: z.string().min(1),
+});
+
+export const secretGetAgentAccessInputSchema = z.object({
+  agentId: z.string().min(1),
+});
+
+export const secretSetAgentAccessInputSchema = z.object({
+  agentId: z.string().min(1),
+  secretIds: z.array(z.string().min(1)),
+});
+
+export const secretTestAnthropicInputSchema = z.object({
+  value: z.string().min(1),
+  envName: z.enum(["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"]),
+});
+
+export const secretListGrantedAgentsInputSchema = z.object({
+  id: z.string().min(1),
+});

@@ -1,4 +1,11 @@
+import type { z } from "zod";
 import { ENV_NAME_RE } from "../shared.js";
+import type {
+  secretCreateGithubPatInputSchema,
+  secretCreateInputSchema,
+  secretUpdateGithubPatInputSchema,
+  secretUpdateInputSchema,
+} from "./schemas.js";
 
 export type SecretType =
   | "anthropic"
@@ -350,28 +357,8 @@ export interface SecretView {
   envMappings?: EnvMapping[];
 }
 
-export interface CreateSecretInput {
-  type: SecretType;
-  name: string;
-  value: string;
-  hostPattern?: string;
-  pathPattern?: string;
-  injectionConfig?: InjectionConfig;
-  envMappings?: EnvMapping[];
-}
-
-export interface UpdateSecretInput {
-  id: string;
-  name?: string;
-  value?: string;
-  /** Only permitted on generic secrets. */
-  hostPattern?: string;
-  /** `null` clears the path pattern; `undefined` leaves it unchanged. */
-  pathPattern?: string | null;
-  /** `null` resets to the default; `undefined` leaves it unchanged. */
-  injectionConfig?: InjectionConfig | null;
-  envMappings?: EnvMapping[];
-}
+export type SecretCreateInput = z.infer<typeof secretCreateInputSchema>;
+export type SecretUpdateInput = z.infer<typeof secretUpdateInputSchema>;
 
 export interface AgentAccess {
   secretIds: string[];
@@ -383,10 +370,9 @@ export interface AgentAccess {
  * one for `api.github.com` (Bearer / `GH_TOKEN`) and one for `github.com`
  * (Basic, with the value pre-wrapped as `base64("x-access-token:" + token)`).
  */
-export interface CreateGithubPatInput {
-  name: string;
-  token: string;
-}
+export type SecretCreateGithubPatInput = z.infer<
+  typeof secretCreateGithubPatInputSchema
+>;
 
 export interface CreateGithubPatOutput {
   name: string;
@@ -400,11 +386,9 @@ export interface CreateGithubPatOutput {
  * auth value server-side so callers send `{apiSecretId, gitSecretId,
  * token}` only.
  */
-export interface UpdateGithubPatInput {
-  apiSecretId: string;
-  gitSecretId: string;
-  token: string;
-}
+export type SecretUpdateGithubPatInput = z.infer<
+  typeof secretUpdateGithubPatInputSchema
+>;
 
 export interface UpdateGithubPatOutput {
   apiSecretId: string;
@@ -420,10 +404,14 @@ export interface GrantedAgentSummary {
 
 export interface SecretsService {
   list(): Promise<SecretView[]>;
-  create(input: CreateSecretInput): Promise<SecretView>;
-  createGithubPat(input: CreateGithubPatInput): Promise<CreateGithubPatOutput>;
-  updateGithubPat(input: UpdateGithubPatInput): Promise<UpdateGithubPatOutput>;
-  update(input: UpdateSecretInput): Promise<void>;
+  create(input: SecretCreateInput): Promise<SecretView>;
+  createGithubPat(
+    input: SecretCreateGithubPatInput,
+  ): Promise<CreateGithubPatOutput>;
+  updateGithubPat(
+    input: SecretUpdateGithubPatInput,
+  ): Promise<UpdateGithubPatOutput>;
+  update(input: SecretUpdateInput): Promise<void>;
   delete(id: string): Promise<void>;
   getAgentAccess(agentId: string): Promise<AgentAccess>;
   setAgentAccess(agentId: string, access: AgentAccess): Promise<void>;

@@ -76,12 +76,12 @@ export type {
   ProviderPresetMode,
   ProviderPresetType,
   SecretView,
-  CreateSecretInput,
-  CreateGithubPatInput,
+  SecretCreateInput,
+  SecretCreateGithubPatInput,
   CreateGithubPatOutput,
-  UpdateGithubPatInput,
+  SecretUpdateGithubPatInput,
   UpdateGithubPatOutput,
-  UpdateSecretInput,
+  SecretUpdateInput,
   AgentAccess,
   SecretsService,
   EnvMapping,
@@ -89,6 +89,17 @@ export type {
   IbmLitellmModelPins,
   BobModelPins,
 } from "./modules/secrets/types.js";
+export {
+  secretCreateGithubPatInputSchema,
+  secretCreateInputSchema,
+  secretDeleteInputSchema,
+  secretGetAgentAccessInputSchema,
+  secretListGrantedAgentsInputSchema,
+  secretSetAgentAccessInputSchema,
+  secretTestAnthropicInputSchema,
+  secretUpdateGithubPatInputSchema,
+  secretUpdateInputSchema,
+} from "./modules/secrets/schemas.js";
 export { ENV_NAME_RE } from "./modules/shared.js";
 export {
   DEFAULT_ENV_PLACEHOLDER,
@@ -105,10 +116,7 @@ export {
   bobPinsFromEnvMappings,
   BOB_CHAT_MODES,
 } from "./modules/secrets/types.js";
-export {
-  hostPatternSchema,
-  updateSecretInputSchema,
-} from "./modules/secrets/schemas.js";
+export { hostPatternSchema } from "./modules/secrets/schemas.js";
 
 export type { ChannelsService } from "./modules/channels/types.js";
 

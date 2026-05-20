@@ -4,17 +4,17 @@ import {
   DEFAULT_ENV_PLACEHOLDER,
   isProviderPresetType,
   PROVIDERS,
-  type CreateGithubPatInput,
+  type SecretCreateGithubPatInput,
   type CreateGithubPatOutput,
   type EnvMapping,
   type InjectionConfig,
   type ProviderPreset,
   type ProviderPresetMode,
   type SecretsService,
-  type CreateSecretInput,
-  type UpdateGithubPatInput,
+  type SecretCreateInput,
+  type SecretUpdateGithubPatInput,
   type UpdateGithubPatOutput,
-  type UpdateSecretInput,
+  type SecretUpdateInput,
   type SecretType,
   type SecretView,
   type AgentAccess,
@@ -213,7 +213,7 @@ export function createSecretsService(deps: {
     readonly { id: string; name: string }[]
   >;
 }): SecretsService {
-  async function createOne(input: CreateSecretInput): Promise<SecretView> {
+  async function createOne(input: SecretCreateInput): Promise<SecretView> {
     const hostPattern = hostPatternFor(input.type, input.hostPattern);
     const id = randomUUID();
     // Anthropic OAuth tokens are `sk-ant-oat…`; API keys are `sk-ant-api…`.
@@ -308,7 +308,7 @@ export function createSecretsService(deps: {
     create: createOne,
 
     async createGithubPat(
-      input: CreateGithubPatInput,
+      input: SecretCreateGithubPatInput,
     ): Promise<CreateGithubPatOutput> {
       // Basic auth header value for the github.com half: HTTP Basic decodes
       // the base64-wrapped `username:password` form. Using the literal
@@ -356,7 +356,7 @@ export function createSecretsService(deps: {
     },
 
     async updateGithubPat(
-      input: UpdateGithubPatInput,
+      input: SecretUpdateGithubPatInput,
     ): Promise<UpdateGithubPatOutput> {
       // Re-wrap the github.com half server-side so callers send `{token}`
       // only — same shape symmetry as createGithubPat.
@@ -397,7 +397,7 @@ export function createSecretsService(deps: {
       return { apiSecretId: input.apiSecretId, gitSecretId: input.gitSecretId };
     },
 
-    async update({ id, ...patch }: UpdateSecretInput) {
+    async update({ id, ...patch }: SecretUpdateInput) {
       // Anthropic value swaps re-discriminate the auth mode from the new
       // value's prefix and rewrite envMappings + injectionConfig to match.
       // Without this, replacing an API key (stored as

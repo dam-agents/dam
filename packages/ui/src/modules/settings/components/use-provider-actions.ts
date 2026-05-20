@@ -1,4 +1,4 @@
-import type { CreateSecretInput, UpdateSecretInput } from "api-server-api";
+import type { SecretCreateInput, SecretUpdateInput } from "api-server-api";
 
 import { useStore } from "../../../store.js";
 import { useAgentsList } from "../../agents/api/queries.js";
@@ -37,14 +37,14 @@ export function useProviderActions() {
     /** Create a new secret. If this is the user's first secret of any kind
      *  (no agents yet), navigate to the agent list — they're done with
      *  the providers wizard. */
-    async create(input: CreateSecretInput) {
+    async create(input: SecretCreateInput) {
       const isFirst = agents.length === 0;
       await createSecret.mutateAsync(input);
       if (isFirst) setView("list");
     },
 
     /** Replace value/envMappings on an existing secret. */
-    async update(input: UpdateSecretInput) {
+    async update(input: SecretUpdateInput) {
       await updateSecret.mutateAsync(input);
     },
   };

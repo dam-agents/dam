@@ -12,15 +12,23 @@ import {
   text,
 } from "@clack/prompts";
 import { Command } from "commander";
-import { PROVIDERS } from "api-server-api";
+import {
+  PROVIDERS,
+  secretCreateGithubPatInputSchema,
+  secretCreateInputSchema,
+  secretUpdateGithubPatInputSchema,
+  secretUpdateInputSchema,
+} from "api-server-api";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { AgentService } from "../services/agent-service.js";
 import type { AgentView } from "../domain/agent-view.js";
 import { validateAgentName } from "./create-helpers.js";
 import { formatTransportError } from "./errors.js";
+import { parseOrExit } from "../../shared/parse-or-exit.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import {
   EXIT_AGENT_BELOW_FLOOR,
+  EXIT_AGENT_INVALID_INPUT,
   EXIT_AGENT_RUNTIME_FAILURE,
   EXIT_AGENT_SUCCESS,
 } from "./exit-codes.js";
@@ -569,11 +577,14 @@ async function addOrReplaceProvider(
       });
       if (isCancel(apiKey)) return cancelAndCleanup(trpc, cleanup);
 
+      const updateInput = await parseOrExit(
+        secretUpdateInputSchema,
+        { id: existingOfType.id, value: apiKey },
+        EXIT_AGENT_INVALID_INPUT,
+        () => flushCleanup(trpc, cleanup),
+      );
       try {
-        await trpc.secrets.update.mutate({
-          id: existingOfType.id,
-          value: apiKey,
-        });
+        await trpc.secrets.update.mutate(updateInput);
         return {
           secretId: existingOfType.id,
           name: existingOfType.name,
@@ -600,12 +611,14 @@ async function addOrReplaceProvider(
     });
     if (isCancel(apiKey)) return cancelAndCleanup(trpc, cleanup);
 
+    const createInput = await parseOrExit(
+      secretCreateInputSchema,
+      { type, name, value: apiKey },
+      EXIT_AGENT_INVALID_INPUT,
+      () => flushCleanup(trpc, cleanup),
+    );
     try {
-      const created = await trpc.secrets.create.mutate({
-        type,
-        name,
-        value: apiKey,
-      });
+      const created = await trpc.secrets.create.mutate(createInput);
       // Track immediately so any cancel/throw between here and runCreate
       // reaching the rollback ledger doesn't orphan the new secret.
       cleanup.newSecretIds.push(created.id);
@@ -720,12 +733,18 @@ async function addOrReplaceGithubPat(
       });
       if (isCancel(token)) return cancelAndCleanup(trpc, cleanup);
 
-      try {
-        await trpc.secrets.updateGithubPat.mutate({
+      const updateInput = await parseOrExit(
+        secretUpdateGithubPatInputSchema,
+        {
           apiSecretId: collide.apiSecretId,
           gitSecretId: collide.gitSecretId,
           token,
-        });
+        },
+        EXIT_AGENT_INVALID_INPUT,
+        () => flushCleanup(trpc, cleanup),
+      );
+      try {
+        await trpc.secrets.updateGithubPat.mutate(updateInput);
         return { ...collide, createdNew: false };
       } catch (e) {
         log.error(`Failed to replace GitHub PAT: ${errorReason(e)}`);
@@ -742,11 +761,14 @@ async function addOrReplaceGithubPat(
     });
     if (isCancel(token)) return cancelAndCleanup(trpc, cleanup);
 
+    const createInput = await parseOrExit(
+      secretCreateGithubPatInputSchema,
+      { name: DEFAULT_GITHUB_PAT_NAME, token },
+      EXIT_AGENT_INVALID_INPUT,
+      () => flushCleanup(trpc, cleanup),
+    );
     try {
-      const created = await trpc.secrets.createGithubPat.mutate({
-        name: DEFAULT_GITHUB_PAT_NAME,
-        token,
-      });
+      const created = await trpc.secrets.createGithubPat.mutate(createInput);
       // Track immediately so any cancel/throw between here and runCreate
       // reaching the rollback ledger doesn't orphan the new pair.
       cleanup.newSecretIds.push(created.apiSecretId, created.gitSecretId);

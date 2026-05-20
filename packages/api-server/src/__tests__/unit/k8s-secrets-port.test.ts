@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type * as k8s from "@kubernetes/client-node";
-import { hostPatternSchema, updateSecretInputSchema } from "api-server-api";
+import { hostPatternSchema, secretUpdateInputSchema } from "api-server-api";
 
 import {
   createK8sSecretsPort,
@@ -613,15 +613,15 @@ describe("createK8sSecretsPort.updateSecret", () => {
   });
 });
 
-describe("updateSecretInputSchema", () => {
+describe("secretUpdateInputSchema", () => {
   it("accepts a value-only patch", () => {
     expect(
-      updateSecretInputSchema.safeParse({ id: "abc", value: "tok" }).success,
+      secretUpdateInputSchema.safeParse({ id: "abc", value: "tok" }).success,
     ).toBe(true);
   });
 
   it("accepts injectionConfig + value together", () => {
-    const r = updateSecretInputSchema.safeParse({
+    const r = secretUpdateInputSchema.safeParse({
       id: "abc",
       value: "tok",
       injectionConfig: {
@@ -633,7 +633,7 @@ describe("updateSecretInputSchema", () => {
   });
 
   it("rejects an injectionConfig change without value", () => {
-    const r = updateSecretInputSchema.safeParse({
+    const r = secretUpdateInputSchema.safeParse({
       id: "abc",
       injectionConfig: {
         headerName: "Authorization",
@@ -648,7 +648,7 @@ describe("updateSecretInputSchema", () => {
   });
 
   it("rejects a clear-injectionConfig (null) without value", () => {
-    const r = updateSecretInputSchema.safeParse({
+    const r = secretUpdateInputSchema.safeParse({
       id: "abc",
       injectionConfig: null,
     });
@@ -659,7 +659,7 @@ describe("updateSecretInputSchema", () => {
   });
 
   it("rejects a wildcard hostPattern on update", () => {
-    const r = updateSecretInputSchema.safeParse({
+    const r = secretUpdateInputSchema.safeParse({
       id: "abc",
       hostPattern: "*.vercel.com",
     });
