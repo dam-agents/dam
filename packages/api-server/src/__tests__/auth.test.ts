@@ -11,6 +11,12 @@ describe("auth: public endpoints", () => {
     expect(await res.json()).toEqual({ status: "ok" });
   });
 
+  it("/api/brand/icon-192.png returns 200 without token", async () => {
+    const res = await fetch(`${API_BASE}/api/brand/icon-192.png`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("image/png");
+  });
+
   it("/api/auth/config returns issuer, clientId and cliClientId without token", async () => {
     const res = await fetch(`${API_BASE}/api/auth/config`);
     expect(res.status).toBe(200);
