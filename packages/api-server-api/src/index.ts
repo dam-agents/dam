@@ -38,11 +38,18 @@ export {
   PROTECTED_AGENT_ENV_NAMES,
   isProtectedAgentEnvName,
 } from "./modules/agents/types.js";
-export { agentSpecSchema } from "./modules/agents/schemas.js";
+export {
+  agentSpecSchema,
+  createAgentInputSchema,
+  updateAgentInputSchema,
+} from "./modules/agents/schemas.js";
 
 export {
+  createCronInputSchema,
+  createRRuleInputSchema,
   scheduleSpecSchema,
   scheduleStatusSchema,
+  updateRRuleInputSchema,
 } from "./modules/schedules/schemas.js";
 export type {
   Schedule,
@@ -94,7 +101,10 @@ export {
   BOB_CHAT_MODES,
 } from "./modules/secrets/types.js";
 export {
+  createGithubPatInputSchema,
+  createSecretInputSchema,
   hostPatternSchema,
+  updateGithubPatInputSchema,
   updateSecretInputSchema,
 } from "./modules/secrets/schemas.js";
 
@@ -112,6 +122,15 @@ export {
   SessionMode,
   sessionModeSchema,
 } from "./modules/sessions/types.js";
+export {
+  createSessionInputSchema,
+  resolveTerminalInputSchema,
+  sessionTypeSchema,
+} from "./modules/sessions/schemas.js";
+export type {
+  CreateSessionInput,
+  ResolveTerminalInput,
+} from "./modules/sessions/schemas.js";
 export type {
   SessionView,
   SessionResolution,
@@ -174,6 +193,13 @@ export type {
   ApprovalsService,
 } from "./modules/approvals/types.js";
 
+export {
+  createEgressRuleInputSchema,
+  egressPresetSchema,
+  ruleVerdictSchema,
+  updateEgressRuleInputSchema,
+  applyEgressPresetInputSchema,
+} from "./modules/egress-rules/schemas.js";
 export type {
   RuleVerdict,
   EgressRuleSource,

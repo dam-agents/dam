@@ -1,8 +1,8 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { t } from "../../trpc.js";
-import { ENV_NAME_RE } from "../secrets/types.js";
 import type { Agent } from "./types.js";
+import { createAgentInputSchema, updateAgentInputSchema } from "./schemas.js";
 
 function toView(agent: Agent) {
   return {
@@ -19,15 +19,6 @@ function toView(agent: Agent) {
   };
 }
 
-const envVarSchema = z.object({
-  name: z
-    .string()
-    .min(1)
-    .max(255)
-    .regex(ENV_NAME_RE, "name must match [A-Z_][A-Z0-9_]*"),
-  value: z.string().max(10000),
-});
-
 export const agentsRouter = t.router({
   list: t.procedure.query(async ({ ctx }) => {
     const agents = await ctx.agents.list();
@@ -43,23 +34,7 @@ export const agentsRouter = t.router({
     }),
 
   create: t.procedure
-    .input(
-      z.object({
-        name: z
-          .string()
-          .min(1)
-          .refine((n) => !n.startsWith("agent-"), {
-            message: "agent name cannot start with 'agent-' (reserved for IDs)",
-          }),
-        templateId: z.string().optional(),
-        image: z.string().optional(),
-        description: z.string().optional(),
-        env: z.array(envVarSchema).max(64).optional(),
-        secretRef: z.string().optional(),
-        allowedUserEmails: z.array(z.email()).optional(),
-        egressPreset: z.enum(["none", "trusted", "all"]).optional(),
-      }),
-    )
+    .input(createAgentInputSchema)
     .mutation(async ({ ctx, input }) => {
       if (!input.templateId && !input.image) {
         throw new TRPCError({
@@ -72,16 +47,7 @@ export const agentsRouter = t.router({
     }),
 
   update: t.procedure
-    .input(
-      z.object({
-        id: z.string().min(1),
-        name: z.string().min(1).max(255).optional(),
-        description: z.string().optional(),
-        env: z.array(envVarSchema).max(64).optional(),
-        secretRef: z.string().optional(),
-        allowedUserEmails: z.array(z.email()).optional(),
-      }),
-    )
+    .input(updateAgentInputSchema)
     .mutation(async ({ ctx, input }) => {
       const agent = await ctx.agents.update(input);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });

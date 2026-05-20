@@ -1,13 +1,10 @@
 import { z } from "zod";
 import { t } from "../../trpc.js";
-import { SessionMode, SessionType, sessionModeSchema } from "./types.js";
-
-const sessionType = z.enum([
-  SessionType.Regular,
-  SessionType.ChannelSlack,
-  SessionType.ChannelTelegram,
-  SessionType.ScheduleCron,
-]);
+import { sessionModeSchema } from "./types.js";
+import {
+  createSessionInputSchema,
+  resolveTerminalInputSchema,
+} from "./schemas.js";
 
 export const sessionsRouter = t.router({
   list: t.procedure
@@ -22,17 +19,7 @@ export const sessionsRouter = t.router({
     ),
 
   create: t.procedure
-    .input(
-      z.object({
-        sessionId: z.string().min(1),
-        agentId: z.string().min(1),
-        type: sessionType.optional(),
-        scheduleId: z.string().optional(),
-        // Default at the API edge so existing clients omitting `mode` still
-        // land at "chat"; internal callers receive a concrete SessionMode.
-        mode: sessionModeSchema.default(SessionMode.Chat),
-      }),
-    )
+    .input(createSessionInputSchema)
     .mutation(({ ctx, input }) =>
       ctx.sessions.create(
         input.sessionId,
@@ -74,18 +61,7 @@ export const sessionsRouter = t.router({
     ),
 
   resolveTerminal: t.procedure
-    .input(
-      z.object({
-        agentId: z.string().min(1),
-        strategy: z.discriminatedUnion("kind", [
-          z.object({ kind: z.literal("new") }),
-          z.object({ kind: z.literal("continue") }),
-          z.object({ kind: z.literal("resume"), sessionId: z.string().min(1) }),
-        ]),
-        reset: z.boolean().optional(),
-        force: z.boolean().optional(),
-      }),
-    )
+    .input(resolveTerminalInputSchema)
     .mutation(({ ctx, input }) =>
       ctx.sessions.resolveTerminal(input.agentId, input.strategy, {
         reset: input.reset,

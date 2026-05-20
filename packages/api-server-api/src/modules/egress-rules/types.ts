@@ -1,3 +1,8 @@
+import type {
+  CreateEgressRuleInput,
+  UpdateEgressRuleInput,
+} from "./schemas.js";
+
 export type RuleVerdict = "allow" | "deny";
 
 /**
@@ -39,20 +44,10 @@ export interface EgressRuleView {
   source: EgressRuleSource;
 }
 
-export interface CreateEgressRuleInput {
-  agentId: string;
-  host: string;
-  method: string;
-  pathPattern: string;
-  verdict: RuleVerdict;
-}
-
-export interface UpdateEgressRuleInput {
-  id: string;
-  method: string;
-  pathPattern: string;
-  verdict: RuleVerdict;
-}
+export type {
+  CreateEgressRuleInput,
+  UpdateEgressRuleInput,
+} from "./schemas.js";
 
 export interface EgressRulesService {
   listForAgent(agentId: string): Promise<EgressRuleView[]>;

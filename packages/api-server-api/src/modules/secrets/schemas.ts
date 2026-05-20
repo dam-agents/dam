@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ENV_NAME_RE, QUERY_PARAM_RE } from "./types.js";
+import { ENV_NAME_RE, isProviderPresetType, QUERY_PARAM_RE } from "./types.js";
 
 // Browser-safe Zod schemas for the secrets module. Lives in its own
 // file so UI code can import these without dragging in @trpc/server
@@ -54,6 +54,42 @@ export const injectionConfigSchema = z.object({
     .optional(),
 });
 
+export const createSecretInputSchema = z
+  .object({
+    type: secretTypeSchema,
+    name: z.string().min(1).max(100),
+    value: z.string().min(1),
+    hostPattern: hostPatternSchema.optional(),
+    pathPattern: z.string().min(1).max(1000).optional(),
+    injectionConfig: injectionConfigSchema.optional(),
+    envMappings: envMappingsSchema.optional(),
+  })
+  .superRefine((d, ctx) => {
+    if (isProviderPresetType(d.type)) {
+      for (const field of [
+        "hostPattern",
+        "pathPattern",
+        "injectionConfig",
+      ] as const) {
+        if (d[field] != null) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `${field} cannot be set for ${d.type} secrets`,
+            path: [field],
+          });
+        }
+      }
+    } else if (!d.hostPattern) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "hostPattern is required for generic secrets",
+        path: ["hostPattern"],
+      });
+    }
+  });
+
+export type CreateSecretInput = z.infer<typeof createSecretInputSchema>;
+
 export const updateSecretInputSchema = z
   .object({
     id: z.string().min(1),
@@ -65,12 +101,6 @@ export const updateSecretInputSchema = z
     envMappings: envMappingsSchema.optional(),
   })
   .superRefine((d, ctx) => {
-    // The raw token is stored only inside the SDS file's `inline_string`
-    // pre-baked with the current `valueFormat`. Changing `injectionConfig`
-    // alone would leave that file out of sync with the new format, so we
-    // require callers to re-supply `value` and re-bake atomically. `null`
-    // (clear-to-defaults) counts as a change too — defaults aren't always
-    // identical to what was stored.
     if (d.injectionConfig !== undefined && d.value === undefined) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -79,3 +109,20 @@ export const updateSecretInputSchema = z
       });
     }
   });
+
+export type UpdateSecretInput = z.infer<typeof updateSecretInputSchema>;
+
+export const createGithubPatInputSchema = z.object({
+  name: z.string().min(1).max(100),
+  token: z.string().min(1),
+});
+
+export type CreateGithubPatInput = z.infer<typeof createGithubPatInputSchema>;
+
+export const updateGithubPatInputSchema = z.object({
+  apiSecretId: z.string().min(1),
+  gitSecretId: z.string().min(1),
+  token: z.string().min(1),
+});
+
+export type UpdateGithubPatInput = z.infer<typeof updateGithubPatInputSchema>;

@@ -1,13 +1,11 @@
 import { z } from "zod";
 import { t } from "../../trpc.js";
 import {
-  envMappingsSchema,
-  hostPatternSchema,
-  injectionConfigSchema,
-  secretTypeSchema,
+  createGithubPatInputSchema,
+  createSecretInputSchema,
+  updateGithubPatInputSchema,
   updateSecretInputSchema,
 } from "./schemas.js";
-import { isProviderPresetType } from "./types.js";
 
 // Re-export so existing barrel consumers (`api-server-api`'s index.ts +
 // the api-server's tests) keep working. UI code that imports
@@ -27,60 +25,15 @@ export const secretsRouter = t.router({
   list: t.procedure.query(({ ctx }) => ctx.secrets.list()),
 
   create: t.procedure
-    .input(
-      z
-        .object({
-          type: secretTypeSchema,
-          name: z.string().min(1).max(100),
-          value: z.string().min(1),
-          hostPattern: hostPatternSchema.optional(),
-          pathPattern: z.string().min(1).max(1000).optional(),
-          injectionConfig: injectionConfigSchema.optional(),
-          envMappings: envMappingsSchema.optional(),
-        })
-        .superRefine((d, ctx) => {
-          if (isProviderPresetType(d.type)) {
-            for (const field of [
-              "hostPattern",
-              "pathPattern",
-              "injectionConfig",
-            ] as const) {
-              if (d[field] != null) {
-                ctx.addIssue({
-                  code: z.ZodIssueCode.custom,
-                  message: `${field} cannot be set for ${d.type} secrets`,
-                  path: [field],
-                });
-              }
-            }
-          } else if (!d.hostPattern) {
-            ctx.addIssue({
-              code: z.ZodIssueCode.custom,
-              message: "hostPattern is required for generic secrets",
-              path: ["hostPattern"],
-            });
-          }
-        }),
-    )
+    .input(createSecretInputSchema)
     .mutation(({ ctx, input }) => ctx.secrets.create(input)),
 
   createGithubPat: t.procedure
-    .input(
-      z.object({
-        name: z.string().min(1).max(100),
-        token: z.string().min(1),
-      }),
-    )
+    .input(createGithubPatInputSchema)
     .mutation(({ ctx, input }) => ctx.secrets.createGithubPat(input)),
 
   updateGithubPat: t.procedure
-    .input(
-      z.object({
-        apiSecretId: z.string().min(1),
-        gitSecretId: z.string().min(1),
-        token: z.string().min(1),
-      }),
-    )
+    .input(updateGithubPatInputSchema)
     .mutation(({ ctx, input }) => ctx.secrets.updateGithubPat(input)),
 
   update: t.procedure

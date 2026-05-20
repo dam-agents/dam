@@ -1,7 +1,7 @@
 import type { EnvVar } from "../shared.js";
 import { ChannelType } from "../shared.js";
-import type { EgressPreset } from "../egress-rules/types.js";
 import type { Mount, Resources } from "../templates/types.js";
+import type { CreateAgentInput, UpdateAgentInput } from "./schemas.js";
 
 export { ChannelType };
 
@@ -82,31 +82,7 @@ export interface Agent {
   allowedUserEmails: string[];
 }
 
-export interface CreateAgentInput {
-  name: string;
-  templateId?: string;
-  image?: string;
-  description?: string;
-  env?: EnvVar[];
-  secretRef?: string;
-  allowedUserEmails?: string[];
-  /** Transient: bulk-seeds egress_rules at create time and is then
-   *  forgotten. The preset is not stored on the agent spec — its `source`
-   *  on the seeded rules is the truth. Defaults to `trusted` so a
-   *  brand-new agent can reach Anthropic, npm, PyPI, GitHub, etc. without
-   *  per-host inbox prompts. To switch presets later, call
-   *  `egressRules.applyPreset`. */
-  egressPreset?: EgressPreset;
-}
-
-export interface UpdateAgentInput {
-  id: string;
-  name?: string;
-  description?: string;
-  env?: EnvVar[];
-  secretRef?: string;
-  allowedUserEmails?: string[];
-}
+export type { CreateAgentInput, UpdateAgentInput } from "./schemas.js";
 
 export type ConnectSlackError =
   | { type: "AgentNotFound" }

@@ -1,7 +1,10 @@
 import { z } from "zod";
 import { t } from "../../trpc.js";
-
-const ruleVerdict = z.enum(["allow", "deny"]);
+import {
+  applyEgressPresetInputSchema,
+  createEgressRuleInputSchema,
+  updateEgressRuleInputSchema,
+} from "./schemas.js";
 
 export const egressRulesRouter = t.router({
   listForAgent: t.procedure
@@ -13,26 +16,11 @@ export const egressRulesRouter = t.router({
     .query(({ ctx, input }) => ctx.egressRules.currentPreset(input.agentId)),
 
   create: t.procedure
-    .input(
-      z.object({
-        agentId: z.string().min(1),
-        host: z.string().min(1),
-        method: z.string().min(1),
-        pathPattern: z.string().min(1),
-        verdict: ruleVerdict,
-      }),
-    )
+    .input(createEgressRuleInputSchema)
     .mutation(({ ctx, input }) => ctx.egressRules.create(input)),
 
   update: t.procedure
-    .input(
-      z.object({
-        id: z.string().min(1),
-        method: z.string().min(1),
-        pathPattern: z.string().min(1),
-        verdict: ruleVerdict,
-      }),
-    )
+    .input(updateEgressRuleInputSchema)
     .mutation(({ ctx, input }) => ctx.egressRules.update(input)),
 
   revoke: t.procedure
@@ -40,12 +28,7 @@ export const egressRulesRouter = t.router({
     .mutation(({ ctx, input }) => ctx.egressRules.revoke(input.id)),
 
   applyPreset: t.procedure
-    .input(
-      z.object({
-        agentId: z.string().min(1),
-        preset: z.enum(["none", "trusted", "all"]),
-      }),
-    )
+    .input(applyEgressPresetInputSchema)
     .mutation(({ ctx, input }) =>
       ctx.egressRules.applyPreset(input.agentId, input.preset),
     ),

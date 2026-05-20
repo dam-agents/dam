@@ -1,3 +1,10 @@
+import type {
+  CreateGithubPatInput,
+  CreateSecretInput,
+  UpdateGithubPatInput,
+  UpdateSecretInput,
+} from "./schemas.js";
+
 export type SecretType =
   | "anthropic"
   | "ibm-litellm"
@@ -350,43 +357,13 @@ export interface SecretView {
   envMappings?: EnvMapping[];
 }
 
-export interface CreateSecretInput {
-  type: SecretType;
-  name: string;
-  value: string;
-  hostPattern?: string;
-  pathPattern?: string;
-  injectionConfig?: InjectionConfig;
-  envMappings?: EnvMapping[];
-}
-
-export interface UpdateSecretInput {
-  id: string;
-  name?: string;
-  value?: string;
-  /** Only permitted on generic secrets. */
-  hostPattern?: string;
-  /** `null` clears the path pattern; `undefined` leaves it unchanged. */
-  pathPattern?: string | null;
-  /** `null` resets to the default; `undefined` leaves it unchanged. */
-  injectionConfig?: InjectionConfig | null;
-  envMappings?: EnvMapping[];
-}
+export type { CreateSecretInput, UpdateSecretInput } from "./schemas.js";
 
 export interface AgentAccess {
   secretIds: string[];
 }
 
-/**
- * Input for {@link SecretsService.createGithubPat}. A single GitHub PAT is
- * fanned out server-side into two `generic` secrets that share this `name`:
- * one for `api.github.com` (Bearer / `GH_TOKEN`) and one for `github.com`
- * (Basic, with the value pre-wrapped as `base64("x-access-token:" + token)`).
- */
-export interface CreateGithubPatInput {
-  name: string;
-  token: string;
-}
+export type { CreateGithubPatInput } from "./schemas.js";
 
 export interface CreateGithubPatOutput {
   name: string;
@@ -394,17 +371,7 @@ export interface CreateGithubPatOutput {
   gitSecretId: string;
 }
 
-/**
- * Input for {@link SecretsService.updateGithubPat}. Replaces the token on
- * an existing PAT pair by id, re-wrapping the github.com half's basic-
- * auth value server-side so callers send `{apiSecretId, gitSecretId,
- * token}` only.
- */
-export interface UpdateGithubPatInput {
-  apiSecretId: string;
-  gitSecretId: string;
-  token: string;
-}
+export type { UpdateGithubPatInput } from "./schemas.js";
 
 export interface UpdateGithubPatOutput {
   apiSecretId: string;
