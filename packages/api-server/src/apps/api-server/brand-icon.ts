@@ -9,7 +9,7 @@ import { DEFAULT_BRAND_ICON_SVG } from "./default-brand-icon.js";
  *   - `BRAND_ICON_SVG` env var (set by Helm when `brand.icon` is overridden)
  *     is the override. Empty / unset → bundled default.
  *   - `/api/brand/icon.svg`        → raw SVG (image/svg+xml)
- *   - `/api/brand/icon-:size.png`  → square PNG raster at `:size` px,
+ *   - `/api/brand/icon-{size}.png` → square PNG raster at `{size}` px,
  *     produced by sharp. Allowed sizes whitelisted to keep the cache
  *     bounded; the manifest + html links only need 180/192/512.
  *
@@ -54,9 +54,9 @@ export function mountBrandIconRoutes<E extends Env>(
     return c.body(svg);
   });
 
-  app.get("/api/brand/icon-:size.png", async (c) => {
-    const sizeStr = c.req.param("size");
-    const size = Number(sizeStr);
+  app.get("/api/brand/:file{icon-\\d+\\.png$}", async (c) => {
+    const file = c.req.param("file");
+    const size = Number(file.replace("icon-", "").replace(".png", ""));
     if (!ALLOWED_SIZES.has(size)) {
       return c.json(
         { error: `size must be one of ${[...ALLOWED_SIZES].join(", ")}` },
