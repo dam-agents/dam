@@ -13,12 +13,11 @@ function sync() {
       : "connected";
   if (status === next) return;
   status = next;
-  if (next === "reconnecting" && !pollTimer)
-    pollTimer = setTimeout(poll, 3_000);
-  else if (next !== "reconnecting" && pollTimer) {
+  if (pollTimer) {
     clearTimeout(pollTimer);
     pollTimer = null;
   }
+  if (next === "reconnecting") pollTimer = setTimeout(poll, 3_000);
   for (const l of listeners) l();
 }
 
@@ -31,7 +30,7 @@ async function poll() {
       return;
     }
   } catch {
-    // still down
+    // noop
   }
   if (failureCount >= 2) pollTimer = setTimeout(poll, 3_000);
 }
@@ -43,6 +42,7 @@ export function onFetchError() {
 }
 
 export function onFetchSuccess() {
+  if (failureCount === 0) return;
   failureCount = 0;
   sync();
 }
