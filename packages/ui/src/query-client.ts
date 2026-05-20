@@ -5,6 +5,7 @@ import {
   type QueryKey,
 } from "@tanstack/react-query";
 
+import { isApiReconnecting } from "./lib/api-health.js";
 import { emitToast } from "./lib/toast-sink.js";
 
 declare module "@tanstack/react-query" {
@@ -29,7 +30,7 @@ const queryCache = new QueryCache({
   },
   onError: (_error, query) => {
     const toast = query.meta?.errorToast;
-    if (!toast || notifiedOutages.has(query)) return;
+    if (!toast || notifiedOutages.has(query) || isApiReconnecting()) return;
     notifiedOutages.add(query);
     emitToast({ kind: "warning", message: toast });
   },
@@ -49,6 +50,7 @@ export const queryClient = new QueryClient({
         );
       },
       onError: (error, _vars, _ctx, mutation) => {
+        if (isApiReconnecting()) return;
         const title = mutation.meta?.errorToast;
         const detail =
           error instanceof Error && error.message ? error.message : "";

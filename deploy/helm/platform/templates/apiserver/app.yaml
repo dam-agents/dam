@@ -63,7 +63,10 @@ metadata:
 spec:
   replicas: 1
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app.kubernetes.io/component: apiserver
@@ -76,6 +79,7 @@ spec:
     spec:
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
       serviceAccountName: {{ include "platform.apiserver.serviceAccountName" . }}
+      terminationGracePeriodSeconds: 45
       containers:
         - name: apiserver
           image: "{{ .Values.apiServer.image.repository }}:{{ .Values.apiServer.image.tag | default .Chart.AppVersion }}"
@@ -87,6 +91,10 @@ spec:
               name: harness
             - containerPort: {{ .Values.apiServer.extAuthzPort }}
               name: ext-authz
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "5"]
           env:
             - name: POSTGRES_PASSWORD
               valueFrom:

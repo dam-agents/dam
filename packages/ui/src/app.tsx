@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { DialogOverlay } from "./components/dialog-overlay.js";
 import { MobileNav } from "./components/mobile-nav.js";
 import { OfflineBanner } from "./components/offline-banner.js";
+import { ReconnectingBanner } from "./components/reconnecting-banner.js";
 import { SetupProgressBar } from "./components/setup-progress-bar.js";
 import { Sidebar } from "./components/sidebar.js";
 import { ToastOverlay } from "./components/toast-overlay.js";
@@ -127,6 +128,7 @@ export default function App() {
         <DialogOverlay />
         <ToastOverlay />
         <OfflineBanner />
+        <ReconnectingBanner />
       </>
     );
 
@@ -161,6 +163,7 @@ export default function App() {
       <DialogOverlay />
       <ToastOverlay />
       <OfflineBanner />
+      <ReconnectingBanner />
     </div>
   );
 }
