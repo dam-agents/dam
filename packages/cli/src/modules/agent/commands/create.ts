@@ -1,9 +1,11 @@
 import { Command } from "commander";
+import { agentCreateInputSchema } from "api-server-api";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { AgentView } from "../domain/agent-view.js";
 import type { TemplateService } from "../../template/index.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
 import { classifyTrpcError } from "../../shared/trpc/classify.js";
+import { parseOrExit } from "../../shared/parse-or-exit.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { parseTimeout } from "../../shared/parse-timeout.js";
 import type { AgentService } from "../services/agent-service.js";
@@ -165,14 +167,19 @@ async function runCreate(
   }
 
   const trpc = deps.createTrpcClient(host);
-  let agent: AgentView;
-  try {
-    agent = (await trpc.agents.create.mutate({
+  const createInput = await parseOrExit(
+    agentCreateInputSchema,
+    {
       name,
       templateId: template,
       description: opts.description,
       env: env.length > 0 ? env : undefined,
-    })) as AgentView;
+    },
+    EXIT_AGENT_INVALID_INPUT,
+  );
+  let agent: AgentView;
+  try {
+    agent = await trpc.agents.create.mutate(createInput);
   } catch (e) {
     if ((e as any)?.data?.code === "NOT_FOUND") {
       process.stderr.write(

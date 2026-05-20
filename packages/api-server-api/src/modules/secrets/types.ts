@@ -1,3 +1,5 @@
+import { ENV_NAME_RE } from "../shared.js";
+
 export type SecretType =
   | "anthropic"
   | "ibm-litellm"
@@ -27,8 +29,6 @@ export interface EnvMapping {
 }
 
 export const DEFAULT_ENV_PLACEHOLDER = "dummy-placeholder";
-
-export const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
 
 export function isValidEnvName(name: string): boolean {
   return name.length > 0 && ENV_NAME_RE.test(name);

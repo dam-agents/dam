@@ -1,7 +1,6 @@
-import type { EnvVar } from "api-server-api";
+import { ENV_NAME_RE, type EnvVar } from "api-server-api";
 import { err, ok, type Result } from "../../../result.js";
 
-const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
 const RESERVED_AGENT_PREFIX = "agent-";
 
 export type EnvParseError =
@@ -23,8 +22,7 @@ export interface ParsedEnv {
  * - Split on the **first** `=`; subsequent `=` chars are kept in the value.
  * - Missing `=` → `missing-equals` (exit 2).
  * - Empty value (`KEY=`) is valid.
- * - Key must match `[A-Z_][A-Z0-9_]*` (same regex the server enforces
- *   via `ENV_NAME_RE` in `secrets/types.ts`).
+ * - Key must match `[A-Z_][A-Z0-9_]*` (the server's `ENV_NAME_RE`).
  * - On duplicate keys, **last wins**; the duplicate keys are returned
  *   alongside so the command layer can surface them.
  */

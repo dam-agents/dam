@@ -1,7 +1,7 @@
 export type { AppRouter } from "./router.js";
 export type { ApiContext, UserIdentity } from "./context.js";
 
-export { ChannelType, type EnvVar } from "./modules/shared.js";
+export { ChannelType, envVarSchema, type EnvVar } from "./modules/shared.js";
 
 export { SPEC_VERSION } from "./modules/templates/types.js";
 export {
@@ -25,8 +25,8 @@ export type {
   AgentSpec,
   AgentState,
   AgentsService,
-  CreateAgentInput,
-  UpdateAgentInput,
+  AgentCreateInput,
+  AgentUpdateInput,
   ConnectSlackError,
   ConnectSlackResult,
   Channel,
@@ -34,6 +34,18 @@ export type {
   TelegramChannel,
   ChannelConfig,
 } from "./modules/agents/types.js";
+export {
+  agentConnectSlackInputSchema,
+  agentConnectTelegramInputSchema,
+  agentCreateInputSchema,
+  agentDeleteInputSchema,
+  agentDisconnectSlackInputSchema,
+  agentDisconnectTelegramInputSchema,
+  agentGetInputSchema,
+  agentRestartInputSchema,
+  agentUpdateInputSchema,
+  agentWakeInputSchema,
+} from "./modules/agents/schemas.js";
 export {
   PROTECTED_AGENT_ENV_NAMES,
   isProtectedAgentEnvName,
@@ -77,10 +89,10 @@ export type {
   IbmLitellmModelPins,
   BobModelPins,
 } from "./modules/secrets/types.js";
+export { ENV_NAME_RE } from "./modules/shared.js";
 export {
   DEFAULT_ENV_PLACEHOLDER,
   DEFAULT_INJECTION_CONFIG,
-  ENV_NAME_RE,
   isValidEnvName,
   PROVIDERS,
   PROVIDER_PRESET_TYPES,

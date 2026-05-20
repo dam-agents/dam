@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { ENV_NAME_RE, QUERY_PARAM_RE } from "./types.js";
+import { ENV_NAME_RE } from "../shared.js";
+import { QUERY_PARAM_RE } from "./types.js";
 
 // Browser-safe Zod schemas for the secrets module. Lives in its own
 // file so UI code can import these without dragging in @trpc/server

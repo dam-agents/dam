@@ -1,7 +1,11 @@
+import type { z } from "zod";
 import type { EnvVar } from "../shared.js";
 import { ChannelType } from "../shared.js";
-import type { EgressPreset } from "../egress-rules/types.js";
 import type { Mount, Resources } from "../templates/types.js";
+import type {
+  agentCreateInputSchema,
+  agentUpdateInputSchema,
+} from "./schemas.js";
 
 export { ChannelType };
 
@@ -82,31 +86,8 @@ export interface Agent {
   allowedUserEmails: string[];
 }
 
-export interface CreateAgentInput {
-  name: string;
-  templateId?: string;
-  image?: string;
-  description?: string;
-  env?: EnvVar[];
-  secretRef?: string;
-  allowedUserEmails?: string[];
-  /** Transient: bulk-seeds egress_rules at create time and is then
-   *  forgotten. The preset is not stored on the agent spec — its `source`
-   *  on the seeded rules is the truth. Defaults to `trusted` so a
-   *  brand-new agent can reach Anthropic, npm, PyPI, GitHub, etc. without
-   *  per-host inbox prompts. To switch presets later, call
-   *  `egressRules.applyPreset`. */
-  egressPreset?: EgressPreset;
-}
-
-export interface UpdateAgentInput {
-  id: string;
-  name?: string;
-  description?: string;
-  env?: EnvVar[];
-  secretRef?: string;
-  allowedUserEmails?: string[];
-}
+export type AgentCreateInput = z.infer<typeof agentCreateInputSchema>;
+export type AgentUpdateInput = z.infer<typeof agentUpdateInputSchema>;
 
 export type ConnectSlackError =
   | { type: "AgentNotFound" }
@@ -119,8 +100,8 @@ export type ConnectSlackResult =
 export interface AgentsService {
   list: () => Promise<Agent[]>;
   get: (id: string) => Promise<Agent | null>;
-  create: (input: CreateAgentInput) => Promise<Agent>;
-  update: (input: UpdateAgentInput) => Promise<Agent | null>;
+  create: (input: AgentCreateInput) => Promise<Agent>;
+  update: (input: AgentUpdateInput) => Promise<Agent | null>;
   delete: (id: string) => Promise<void>;
   restart: (id: string) => Promise<boolean>;
   wake: (id: string) => Promise<Agent | null>;

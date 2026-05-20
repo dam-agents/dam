@@ -1,7 +1,17 @@
 import { TRPCError } from "@trpc/server";
-import { z } from "zod";
 import { t } from "../../trpc.js";
-import { ENV_NAME_RE } from "../secrets/types.js";
+import {
+  agentConnectSlackInputSchema,
+  agentConnectTelegramInputSchema,
+  agentCreateInputSchema,
+  agentDeleteInputSchema,
+  agentDisconnectSlackInputSchema,
+  agentDisconnectTelegramInputSchema,
+  agentGetInputSchema,
+  agentRestartInputSchema,
+  agentUpdateInputSchema,
+  agentWakeInputSchema,
+} from "./schemas.js";
 import type { Agent } from "./types.js";
 
 function toView(agent: Agent) {
@@ -19,69 +29,27 @@ function toView(agent: Agent) {
   };
 }
 
-const envVarSchema = z.object({
-  name: z
-    .string()
-    .min(1)
-    .max(255)
-    .regex(ENV_NAME_RE, "name must match [A-Z_][A-Z0-9_]*"),
-  value: z.string().max(10000),
-});
-
 export const agentsRouter = t.router({
   list: t.procedure.query(async ({ ctx }) => {
     const agents = await ctx.agents.list();
     return agents.map(toView);
   }),
 
-  get: t.procedure
-    .input(z.object({ id: z.string().min(1) }))
-    .query(async ({ ctx, input }) => {
-      const agent = await ctx.agents.get(input.id);
-      if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
-      return toView(agent);
-    }),
+  get: t.procedure.input(agentGetInputSchema).query(async ({ ctx, input }) => {
+    const agent = await ctx.agents.get(input.id);
+    if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
+    return toView(agent);
+  }),
 
   create: t.procedure
-    .input(
-      z.object({
-        name: z
-          .string()
-          .min(1)
-          .refine((n) => !n.startsWith("agent-"), {
-            message: "agent name cannot start with 'agent-' (reserved for IDs)",
-          }),
-        templateId: z.string().optional(),
-        image: z.string().optional(),
-        description: z.string().optional(),
-        env: z.array(envVarSchema).max(64).optional(),
-        secretRef: z.string().optional(),
-        allowedUserEmails: z.array(z.email()).optional(),
-        egressPreset: z.enum(["none", "trusted", "all"]).optional(),
-      }),
-    )
+    .input(agentCreateInputSchema)
     .mutation(async ({ ctx, input }) => {
-      if (!input.templateId && !input.image) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Either templateId or image is required",
-        });
-      }
       const agent = await ctx.agents.create(input);
       return toView(agent);
     }),
 
   update: t.procedure
-    .input(
-      z.object({
-        id: z.string().min(1),
-        name: z.string().min(1).max(255).optional(),
-        description: z.string().optional(),
-        env: z.array(envVarSchema).max(64).optional(),
-        secretRef: z.string().optional(),
-        allowedUserEmails: z.array(z.email()).optional(),
-      }),
-    )
+    .input(agentUpdateInputSchema)
     .mutation(async ({ ctx, input }) => {
       const agent = await ctx.agents.update(input);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
@@ -89,18 +57,18 @@ export const agentsRouter = t.router({
     }),
 
   delete: t.procedure
-    .input(z.object({ id: z.string().min(1) }))
+    .input(agentDeleteInputSchema)
     .mutation(({ ctx, input }) => ctx.agents.delete(input.id)),
 
   restart: t.procedure
-    .input(z.object({ id: z.string().min(1) }))
+    .input(agentRestartInputSchema)
     .mutation(async ({ ctx, input }) => {
       const ok = await ctx.agents.restart(input.id);
       if (!ok) throw new TRPCError({ code: "NOT_FOUND" });
     }),
 
   wake: t.procedure
-    .input(z.object({ id: z.string().min(1) }))
+    .input(agentWakeInputSchema)
     .mutation(async ({ ctx, input }) => {
       const agent = await ctx.agents.wake(input.id);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
@@ -108,12 +76,7 @@ export const agentsRouter = t.router({
     }),
 
   connectSlack: t.procedure
-    .input(
-      z.object({
-        id: z.string().min(1),
-        slackChannelId: z.string().min(1),
-      }),
-    )
+    .input(agentConnectSlackInputSchema)
     .mutation(async ({ ctx, input }) => {
       if (!ctx.channels.available.slack)
         throw new TRPCError({
@@ -134,7 +97,7 @@ export const agentsRouter = t.router({
     }),
 
   disconnectSlack: t.procedure
-    .input(z.object({ id: z.string().min(1) }))
+    .input(agentDisconnectSlackInputSchema)
     .mutation(async ({ ctx, input }) => {
       const agent = await ctx.agents.disconnectSlack(input.id);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
@@ -142,12 +105,7 @@ export const agentsRouter = t.router({
     }),
 
   connectTelegram: t.procedure
-    .input(
-      z.object({
-        id: z.string().min(1),
-        botToken: z.string().min(1),
-      }),
-    )
+    .input(agentConnectTelegramInputSchema)
     .mutation(async ({ ctx, input }) => {
       if (!ctx.channels.available.telegram)
         throw new TRPCError({
@@ -160,7 +118,7 @@ export const agentsRouter = t.router({
     }),
 
   disconnectTelegram: t.procedure
-    .input(z.object({ id: z.string().min(1) }))
+    .input(agentDisconnectTelegramInputSchema)
     .mutation(async ({ ctx, input }) => {
       const agent = await ctx.agents.disconnectTelegram(input.id);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });

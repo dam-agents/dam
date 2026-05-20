@@ -1,9 +1,9 @@
 import {
   isProtectedAgentEnvName,
   type AgentsService,
-  type CreateAgentInput,
+  type AgentCreateInput,
   type EgressPreset,
-  type UpdateAgentInput,
+  type AgentUpdateInput,
   type EnvVar,
   type TemplateSpec,
   type ChannelConfig,
@@ -167,7 +167,7 @@ export function createAgentsService(deps: {
       return project(infra);
     },
 
-    async create(input: CreateAgentInput) {
+    async create(input: AgentCreateInput) {
       let spec: Record<string, unknown>;
       let templateId: string | undefined;
       if (input.templateId) {
@@ -224,7 +224,7 @@ export function createAgentsService(deps: {
       return agent;
     },
 
-    async update(input: UpdateAgentInput) {
+    async update(input: AgentUpdateInput) {
       let env = input.env;
       if (env !== undefined) {
         const current = await deps.repo.get(input.id, deps.owner);
