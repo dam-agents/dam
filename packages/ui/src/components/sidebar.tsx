@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { getBrand } from "../brand.js";
 import { InboxBell } from "../modules/approvals/components/inbox-bell.js";
 import { useStore } from "../store.js";
+import { IbmResearchDamLogo } from "./brand-logo.js";
 
 const STORAGE_KEY = "platform-sidebar-collapsed";
 
@@ -40,19 +41,36 @@ export function Sidebar() {
         collapsed ? "w-[52px]" : "w-[200px]",
       )}
     >
-      {/* Brand */}
+      {/* Brand — typeset "IBM Research DAM" using IBM Plex Sans (the
+          default app font) with light + semibold weights for the two
+          halves. Sized to match the nav labels below. Collapsed rail
+          falls back to just "DAM". */}
       <Button
         variant="ghost"
         onClick={() => setView("list")}
-        className={cn("h-12 rounded-none justify-start px-3.5", collapsed && "justify-center px-0")}
+        className={cn(
+          // px-[18px] so the brand text starts at the same x-offset as
+          // each nav label below (nav wrapper px-2 + nav button px-2.5
+          // = 18px from the sidebar's left edge).
+          "h-12 rounded-none justify-start px-[18px]",
+          collapsed && "justify-center px-0",
+        )}
         title="Home"
       >
-        <span className="text-[15px] font-extrabold tracking-tight text-foreground uppercase">
-          {getBrand().short}
-        </span>
+        {collapsed ? (
+          <span className="text-sm font-semibold text-foreground">DAM</span>
+        ) : (
+          <span className="text-sm text-foreground">
+            <span className="font-normal">IBM Research </span>
+            <span className="font-semibold">DAM</span>
+          </span>
+        )}
       </Button>
 
-      {/* Nav items */}
+      {/* Nav items — icons render only when the rail is collapsed (or
+          on mobile, which uses MobileNav). Expanded desktop shows
+          labels only, since the typeset brand above sets the visual
+          tone. */}
       <div className="flex flex-col gap-0.5 mt-2 px-2">
         {navItems.map(({ view: v, label, icon: Icon }) => {
           const active = view === v;
@@ -64,13 +82,16 @@ export function Sidebar() {
               onClick={() => setView(v)}
               title={collapsed ? label : undefined}
               className={cn(
-                "h-9 justify-start gap-2.5",
+                "h-9 justify-start",
                 collapsed ? "justify-center px-0" : "px-2.5",
                 active && "bg-muted",
               )}
             >
-              <Icon className="shrink-0" />
-              {!collapsed && <span className="text-sm font-medium">{label}</span>}
+              {collapsed ? (
+                <Icon className="shrink-0" />
+              ) : (
+                <span className="text-sm font-medium">{label}</span>
+              )}
             </Button>
           );
         })}
@@ -86,27 +107,29 @@ export function Sidebar() {
           onClick={() => setView("settings")}
           title={collapsed ? "Settings" : undefined}
           className={cn(
-            "h-9 justify-start gap-2.5",
+            "h-9 justify-start",
             collapsed ? "justify-center px-0" : "px-2.5",
             view === "settings" && "bg-muted",
           )}
         >
-          <Settings className="shrink-0" />
-          {!collapsed && <span className="text-sm font-medium">Settings</span>}
+          {collapsed ? (
+            <Settings className="shrink-0" />
+          ) : (
+            <span className="text-sm font-medium">Settings</span>
+          )}
         </Button>
 
         <Button
           variant="ghost"
           onClick={() => setCollapsed((c) => !c)}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className={cn("h-9 justify-start gap-2.5", collapsed ? "justify-center px-0" : "px-2.5")}
+          className={cn("h-9 justify-start", collapsed ? "justify-center px-0" : "px-2.5")}
         >
           {collapsed ? (
             <PanelLeftOpen className="shrink-0" />
           ) : (
-            <PanelLeftClose className="shrink-0" />
+            <span className="text-sm font-medium">Collapse</span>
           )}
-          {!collapsed && <span className="text-sm font-medium">Collapse</span>}
         </Button>
       </div>
     </nav>
