@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ChevronDown, ChevronRight, X } from "lucide-react";
+import { ChevronDown, ChevronRight, ExternalLink, X } from "lucide-react";
 import { useState } from "react";
 import { useForm, type UseFormRegisterReturn } from "react-hook-form";
 import { z } from "zod";
@@ -118,7 +118,15 @@ export function BobForm({
           <div className="text-[12px] text-text-muted">
             {isEdit
               ? "Paste a new token to replace the existing one. Advanced settings are passed to Bob as CLI flags / env."
-              : "IBM's AI shell assistant. Paste your Bob API key to get started."}
+              : "IBM's AI shell assistant. Paste a Bob API key of type Inference to get started."}{" "}
+            <a
+              href="https://bob.ibm.com/admin/apikeys"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-accent hover:underline inline-flex items-center gap-1"
+            >
+              Manage keys <ExternalLink size={11} />
+            </a>
           </div>
         </div>
         {onCancel && (
