@@ -45,7 +45,7 @@ Credential Secrets, the leaf TLS Secret, and the Envoy bootstrap ConfigMap
 move to the gateway pod. The agent pod keeps only the CA bundle.
 `automountServiceAccountToken: false` stays on both.
 
-ADR-035's pod-IP resolver ([pod-ip-resolver.ts](../../packages/api-server/src/modules/instances/infrastructure/pod-ip-resolver.ts))
+ADR-035's pod-IP resolver (`pod-ip-resolver.ts`, removed in ADR-041)
 narrows its filter to `role=gateway`. The IP source moves from agent pod
 to gateway pod; the protocol, rule model, and `x-platform-instance`
 header check are unchanged.
