@@ -1099,31 +1099,33 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   };
 }
 
+function isNonNullObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+
 function extractSessionCloseSupported(frame: unknown): boolean {
-  if (typeof frame !== "object" || frame === null) return false;
-  const result = (frame as { result?: unknown }).result;
-  if (typeof result !== "object" || result === null) return false;
-  const caps = (result as { agentCapabilities?: unknown }).agentCapabilities;
-  if (typeof caps !== "object" || caps === null) return false;
-  const session = (caps as { sessionCapabilities?: unknown })
-    .sessionCapabilities;
-  if (typeof session !== "object" || session === null) return false;
-  const close = (session as { close?: unknown }).close;
-  return typeof close === "object" && close !== null;
+  if (!isNonNullObject(frame)) return false;
+  const result = frame.result;
+  if (!isNonNullObject(result)) return false;
+  const caps = result.agentCapabilities;
+  if (!isNonNullObject(caps)) return false;
+  const session = caps.sessionCapabilities;
+  if (!isNonNullObject(session)) return false;
+  return isNonNullObject(session.close);
 }
 
 function extractParamsSessionId(frame: unknown): string | null {
-  if (typeof frame !== "object" || frame === null) return null;
-  const f = frame as { params?: unknown };
-  if (typeof f.params !== "object" || f.params === null) return null;
-  const sid = (f.params as { sessionId?: unknown }).sessionId;
+  if (!isNonNullObject(frame)) return null;
+  const params = frame.params;
+  if (!isNonNullObject(params)) return null;
+  const sid = params.sessionId;
   return typeof sid === "string" ? sid : null;
 }
 
 function extractResultSessionId(frame: unknown): string | null {
-  if (typeof frame !== "object" || frame === null) return null;
-  const f = frame as { result?: unknown };
-  if (typeof f.result !== "object" || f.result === null) return null;
-  const sid = (f.result as { sessionId?: unknown }).sessionId;
+  if (!isNonNullObject(frame)) return null;
+  const result = frame.result;
+  if (!isNonNullObject(result)) return null;
+  const sid = result.sessionId;
   return typeof sid === "string" ? sid : null;
 }

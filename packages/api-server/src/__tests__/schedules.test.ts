@@ -3,10 +3,8 @@ import { TRPCClientError } from "@trpc/client";
 import type { AppRouter } from "api-server-api";
 import { client } from "./helpers/trpc-client.js";
 import {
-  getConfigMap,
   configMapExists,
   patchConfigMapData,
-  waitForConfigMapKey,
   waitForScheduleStatus,
   waitForPodReady,
   dumpPodLogs,

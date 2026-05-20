@@ -7,7 +7,6 @@ import {
   type EnvVar,
   type TemplateSpec,
   type ChannelConfig,
-  SPEC_VERSION,
   ChannelType,
 } from "api-server-api";
 import { TRPCError } from "@trpc/server";
