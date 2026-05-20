@@ -151,6 +151,16 @@ export type {
   TerminalStrategy,
   SessionsService as SessionsApiService,
 } from "./modules/sessions/types.js";
+export {
+  sessionCreateInputSchema,
+  sessionDeleteInputSchema,
+  sessionListByScheduleIdInputSchema,
+  sessionListInputSchema,
+  sessionResetByScheduleIdInputSchema,
+  sessionResolveTerminalInputSchema,
+  sessionSetModeInputSchema,
+  terminalStrategySchema,
+} from "./modules/sessions/schemas.js";
 
 export {
   OP_INPUT,

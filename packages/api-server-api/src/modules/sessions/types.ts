@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { terminalStrategySchema } from "./schemas.js";
 
 export const SessionType = {
   Regular: "regular",
@@ -27,10 +28,7 @@ export interface SessionView {
   updatedAt?: string | null;
 }
 
-export type TerminalStrategy =
-  | { kind: "new" }
-  | { kind: "continue" }
-  | { kind: "resume"; sessionId: string };
+export type TerminalStrategy = z.infer<typeof terminalStrategySchema>;
 
 export type SessionResolution =
   | { kind: "ready"; sessionId: string; terminalPath: string }
