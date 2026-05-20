@@ -1,6 +1,6 @@
 import type {
-  PublishSkillInput,
-  PublishSkillResult,
+  SkillPublishInput,
+  SkillPublishResult,
   Result,
   SkillsDomainError,
 } from "agent-runtime-api";
@@ -36,8 +36,8 @@ export async function runPublish(
   deps: PublishDeps,
   name: SkillName,
   skillPaths: SkillPath[],
-  input: PublishSkillInput,
-): Promise<Result<PublishSkillResult, SkillsDomainError>> {
+  input: SkillPublishInput,
+): Promise<Result<SkillPublishResult, SkillsDomainError>> {
   const host = { owner: input.owner, repo: input.repo };
 
   const filesRes = await deps.repo.readLocal(name, skillPaths);

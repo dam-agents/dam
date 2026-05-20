@@ -1,7 +1,7 @@
 import * as path from "node:path";
 import type {
   Result,
-  ScanSkillSourceInput,
+  SkillScanInput,
   ScannedSkill,
   SkillsDomainError,
 } from "agent-runtime-api";
@@ -33,7 +33,7 @@ export interface ScanDeps {
  */
 export async function runScan(
   deps: ScanDeps,
-  input: ScanSkillSourceInput,
+  input: SkillScanInput,
 ): Promise<Result<ScannedSkill[], SkillsDomainError>> {
   const host = detectGithubOwnerRepo(input.source);
   if (host) return scanGithub(deps, input.source, host);

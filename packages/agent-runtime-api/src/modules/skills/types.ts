@@ -1,45 +1,20 @@
-import { z } from "zod/v4";
+import type { z } from "zod";
 import type { Result } from "../../result.js";
+import type {
+  skillInstallInputSchema,
+  skillListLocalInputSchema,
+  skillPublishInputSchema,
+  skillReadLocalInputSchema,
+  skillScanInputSchema,
+  skillUninstallInputSchema,
+} from "./schemas.js";
 
-export const installSkillInput = z.object({
-  source: z.string().min(1),
-  name: z.string().min(1),
-  version: z.string().min(1),
-  skillPaths: z.array(z.string().min(1)).min(1),
-});
-export type InstallSkillInput = z.infer<typeof installSkillInput>;
-
-export const uninstallSkillInput = z.object({
-  name: z.string().min(1),
-  skillPaths: z.array(z.string().min(1)).min(1),
-});
-export type UninstallSkillInput = z.infer<typeof uninstallSkillInput>;
-
-export const scanSkillSourceInput = z.object({
-  source: z.string().min(1),
-});
-export type ScanSkillSourceInput = z.infer<typeof scanSkillSourceInput>;
-
-export const publishSkillInput = z.object({
-  name: z.string().min(1),
-  skillPaths: z.array(z.string().min(1)).min(1),
-  owner: z.string().min(1),
-  repo: z.string().min(1),
-  title: z.string().min(1),
-  body: z.string(),
-});
-export type PublishSkillInput = z.infer<typeof publishSkillInput>;
-
-export const listLocalSkillsInput = z.object({
-  skillPaths: z.array(z.string().min(1)).min(1),
-});
-export type ListLocalSkillsInput = z.infer<typeof listLocalSkillsInput>;
-
-export const readLocalSkillInput = z.object({
-  name: z.string().min(1),
-  skillPaths: z.array(z.string().min(1)).min(1),
-});
-export type ReadLocalSkillInput = z.infer<typeof readLocalSkillInput>;
+export type SkillInstallInput = z.infer<typeof skillInstallInputSchema>;
+export type SkillUninstallInput = z.infer<typeof skillUninstallInputSchema>;
+export type SkillScanInput = z.infer<typeof skillScanInputSchema>;
+export type SkillPublishInput = z.infer<typeof skillPublishInputSchema>;
+export type SkillListLocalInput = z.infer<typeof skillListLocalInputSchema>;
+export type SkillReadLocalInput = z.infer<typeof skillReadLocalInputSchema>;
 
 export interface ScannedSkill {
   source: string;
@@ -61,15 +36,15 @@ export interface LocalSkillFile {
   base64?: true;
 }
 
-export interface ReadLocalSkillResult {
+export interface SkillReadLocalResult {
   files: LocalSkillFile[];
 }
 
-export interface InstallSkillResult {
+export interface SkillInstallResult {
   contentHash: string;
 }
 
-export interface PublishSkillResult {
+export interface SkillPublishResult {
   prUrl: string;
   branch: string;
 }
@@ -99,21 +74,21 @@ export type SkillsDomainError =
 
 export interface SkillsService {
   install: (
-    input: InstallSkillInput,
-  ) => Promise<Result<InstallSkillResult, SkillsDomainError>>;
+    input: SkillInstallInput,
+  ) => Promise<Result<SkillInstallResult, SkillsDomainError>>;
   uninstall: (
-    input: UninstallSkillInput,
+    input: SkillUninstallInput,
   ) => Promise<Result<void, SkillsDomainError>>;
   listLocal: (
-    input: ListLocalSkillsInput,
+    input: SkillListLocalInput,
   ) => Promise<Result<LocalSkill[], SkillsDomainError>>;
   readLocal: (
-    input: ReadLocalSkillInput,
-  ) => Promise<Result<ReadLocalSkillResult, SkillsDomainError>>;
+    input: SkillReadLocalInput,
+  ) => Promise<Result<SkillReadLocalResult, SkillsDomainError>>;
   scan: (
-    input: ScanSkillSourceInput,
+    input: SkillScanInput,
   ) => Promise<Result<ScannedSkill[], SkillsDomainError>>;
   publish: (
-    input: PublishSkillInput,
-  ) => Promise<Result<PublishSkillResult, SkillsDomainError>>;
+    input: SkillPublishInput,
+  ) => Promise<Result<SkillPublishResult, SkillsDomainError>>;
 }

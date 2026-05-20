@@ -1,6 +1,6 @@
 import type {
-  InstallSkillInput,
-  InstallSkillResult,
+  SkillInstallInput,
+  SkillInstallResult,
   Result,
   SkillsDomainError,
 } from "agent-runtime-api";
@@ -24,8 +24,8 @@ export async function runInstall(
   deps: InstallDeps,
   name: SkillName,
   skillPaths: SkillPath[],
-  input: InstallSkillInput,
-): Promise<Result<InstallSkillResult, SkillsDomainError>> {
+  input: SkillInstallInput,
+): Promise<Result<SkillInstallResult, SkillsDomainError>> {
   return deps.repo.withTempDir("platform-skill-", async (tmp) => {
     const fetched = await fetchSourceAtVersion(
       deps,
