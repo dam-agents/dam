@@ -11,14 +11,18 @@ This project requires Github integrations, always ensure that github is connecte
 The project has to be initialized. You need to read `config.json` in workspace. If it doesn't exist ask user for configuration.
 
 - You will need github repository where the system operates.
+- Verify the repository's **default branch** is `main` (or, if the project is configured for a different long-lived trunk, confirm that's what the user wants). Run `gh repo view --json defaultBranchRef`; if the default points at a feature branch, fix it with `gh repo edit --default-branch main` before continuing. Every PR you ever file uses this branch as its base — getting it wrong silently routes work into a stale branch.
 
 Once gathered all data store to `config.json`
 
 Make sure the repository has existing labels created:
 
-- `PRD` - labels PRD tickets
-- `working` - tickets that are actively being worked on
-- `needs review` - active working is done, to be reviewed before merge
+- `PRD` — labels PRD tickets
+- `prd:<n>` — links a decomposed ticket back to its parent PRD (`<n>` is the PRD issue number). Every issue created by `/to-issues` must carry this label.
+- `working` — tickets that are actively being worked on
+- `needs review` — active working is done, to be reviewed before merge
+- `done` — PRD has been fully delivered; the heartbeat must exit and disable its schedule when it sets this label
+- `area:ci` — reserved canonical label for CI/CD work; at most one open `area:ci` issue may exist at a time
 
 
 ### Create PRD (Product Requirement Document) and issues
@@ -29,7 +33,7 @@ Understand [Development Guidelines](./DEVELOPMENT_GUIDELINES.md) first.
 
 Look at the Github whether PRD exists. If not start /grill-me session to understand product requirements. Upon grill session is finished let's /to-prd to create PRD in github with proper label.
 
-Once PRD is specified initiate /to-issues (those can be already existing too, so check that too!). 
+Once PRD is specified initiate /to-issues — but **first check whether the PRD has already been decomposed**. Query `gh issue list --label "prd:<PRD-number>" --state all`. If any issue exists (open *or* closed), the PRD is already decomposed — do **not** run `/to-issues` again. Either resume the existing breakdown or evaluate done-detection (see HEARTBEAT.md). 
 
 Having the tickets and PRD specified, your next goal is to setup heartbeat. You can easily achieve that via `mcp__platform-outbound__create_schedule` just make sure you setup Heartbeat schedule that is awaking the agent every minute to do the heartbeat.
 

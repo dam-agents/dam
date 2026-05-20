@@ -13,6 +13,16 @@ Break a plan into independently-grabbable issues using vertical slices (tracer b
 
 Work from whatever is already in the conversation context. If the user passes an issue reference (issue number, URL, or path) as an argument, fetch it from the issue tracker and read its full body and comments.
 
+### 1a. Check for prior decomposition (mandatory precondition)
+
+If the source is a PRD on the issue tracker, query existing issues — **both open and closed** — for the `prd:<PRD-number>` label:
+
+```sh
+gh issue list --label "prd:<n>" --state all
+```
+
+If **any** issue is returned, the PRD has already been decomposed. **Do not run this skill.** Return to the caller — they should either resume the existing breakdown (pick up unfinished work, or re-open a closed ticket if scope must be re-attempted) or recognise the PRD as complete and run done-detection. Re-running `/to-issues` against an already-decomposed PRD is the documented duplicate-issue failure mode.
+
 ### 2. Explore the codebase (optional)
 
 If you have not already explored the codebase, do so to understand the current state of the code. Issue titles and descriptions should use the project's domain glossary vocabulary, and respect ADRs in the area you're touching.
@@ -48,6 +58,8 @@ Iterate until the user approves the breakdown.
 For each approved slice, publish a new issue to the issue tracker. Use the issue body template below.
 
 Publish issues in dependency order (blockers first) so you can reference real issue identifiers in the "Blocked by" field.
+
+**Every published issue must carry the label `prd:<PRD-number>`** so the orchestrator can find all children of a PRD in one query and so the idempotency check in step 1a works. If the label does not yet exist on the repo, create it first (`gh label create "prd:<n>"`). Also link the parent PRD in the body via `Refs #<PRD-number>` (use `Refs`, not `Closes` — a single child closing should not auto-close the PRD).
 
 <issue-template>
 ## Parent
