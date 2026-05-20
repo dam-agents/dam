@@ -13,6 +13,7 @@ import {
 } from "@clack/prompts";
 import { Command } from "commander";
 import {
+  agentCreateInputSchema,
   PROVIDERS,
   secretCreateGithubPatInputSchema,
   secretCreateInputSchema,
@@ -256,12 +257,18 @@ async function runCreate(
   const spin = spinner();
   spin.start("Creating agent...");
 
+  const createInput = await parseOrExit(
+    agentCreateInputSchema,
+    { name, templateId },
+    EXIT_AGENT_INVALID_INPUT,
+    async () => {
+      spin.stop("Invalid input");
+      await flushCleanup(trpc, cleanup);
+    },
+  );
   let agent: AgentView;
   try {
-    agent = (await trpc.agents.create.mutate({
-      name,
-      templateId,
-    })) as AgentView;
+    agent = await trpc.agents.create.mutate(createInput);
     cleanup.agentId = agent.id;
   } catch (e) {
     spin.stop("Setup failed");
