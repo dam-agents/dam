@@ -14,7 +14,7 @@ import {
 
 interface ForkSpecYaml {
   version: string;
-  instance: string;
+  agentName: string;
   foreignSub: string;
   sessionId?: string;
 }
@@ -33,7 +33,7 @@ export function buildForkConfigMap(args: {
 }): k8s.V1ConfigMap {
   const body: ForkSpecYaml = {
     version: SPEC_VERSION,
-    instance: args.spec.agentId,
+    agentName: args.spec.agentId,
     foreignSub: args.spec.foreignSub,
   };
   if (args.spec.sessionId !== undefined) body.sessionId = args.spec.sessionId;
