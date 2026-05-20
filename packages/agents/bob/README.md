@@ -6,7 +6,7 @@ Platform agent running [Bob Shell](https://internal.bob.ibm.com/docs/shell) — 
 
 | Component | Source | Purpose |
 |---|---|---|
-| Harness | `bobshell` (IBM internal S3 distribution) | Bob CLI in `--experimental-acp` mode + native TUI |
+| Harness | `bobshell` (installed from `bob.ibm.com/download/bobshell.sh`) | Bob CLI in `--experimental-acp` mode + native TUI |
 | ACP bridge | `bob-acp-shim.mjs` (verbatim from upstream Bob) | Translates Bob's session/update events into the shape the platform UI expects; auto-approves `session/request_permission` (Bob's ACP doesn't actually issue per-tool HITL requests for built-in tools — see autonomy posture below) |
 | Storage | `/home/agent` PVC (ADR-027) | Bob's session index lives under `~/.bob/`; survives pod restarts |
 

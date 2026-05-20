@@ -4,9 +4,9 @@ FROM ${BASE_IMAGE}
 
 USER root
 
-# Bob installer — bobshell isn't on npmjs.org; the S3 bucket is the
-# only distribution channel. `--pm npm` skips pnpm/yarn detection.
-RUN curl -fsSL https://s3.us-south.cloud-object-storage.appdomain.cloud/bobshell/install-bobshell.sh \
+# Bob installer — bobshell isn't on npmjs.org; bob.ibm.com is the
+# official distribution channel. `--pm npm` skips pnpm/yarn detection.
+RUN curl -fsSL https://bob.ibm.com/download/bobshell.sh \
     | bash -s -- --pm npm \
     && chown -R 65532:0 /app
 
