@@ -1,5 +1,13 @@
 import { z } from "zod";
 
+// Browser-safe Zod schemas for the templates module. Lives in its own
+// file so UI code can import these without dragging in @trpc/server
+// transitively via router.ts.
+
+export const templateGetInputSchema = z.object({
+  id: z.string().min(1),
+});
+
 export const mountSchema = z.object({
   path: z.string(),
   persist: z.boolean(),
@@ -11,7 +19,11 @@ export const resourcesSchema = z.object({
   limits: z.record(z.string(), z.string()).optional(),
 });
 
-export const envVarSchema = z.object({
+// Loose schema for parsing ConfigMap-stored env entries. Looser than
+// the user-input `envVarSchema` in `../shared.ts` because data already
+// inside a ConfigMap was written by code we trust and may predate the
+// stricter user-input rules.
+const envVarConfigMapSchema = z.object({
   name: z.string(),
   value: z.string(),
 });
@@ -28,7 +40,7 @@ export const templateSpecSchema = z
     description: z.string().optional(),
     mounts: z.array(mountSchema).optional(),
     init: z.string().optional(),
-    env: z.array(envVarSchema).optional(),
+    env: z.array(envVarConfigMapSchema).optional(),
     resources: resourcesSchema.optional(),
     imagePullPolicy: z.string().optional(),
     storageSize: z.string().optional(),

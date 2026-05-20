@@ -18,6 +18,7 @@ export type {
   Resources,
   SkillSourceSeed,
 } from "./modules/templates/types.js";
+export { templateGetInputSchema } from "./modules/templates/schemas.js";
 
 export type {
   Agent,
