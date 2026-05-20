@@ -1,7 +1,7 @@
 import type { Db } from "db";
 import type { SessionsApiService, SessionMode } from "api-server-api";
 import {
-  listSessionsByInstance,
+  listSessionsByAgent,
   listSessionsByScheduleId,
   findActiveByScheduleId,
   deactivateByScheduleId,
@@ -27,7 +27,7 @@ export function composeSessionsModule(deps: {
 } {
   return {
     sessions: createSessionsService({
-      listByInstance: listSessionsByInstance(deps.db),
+      listByAgent: listSessionsByAgent(deps.db),
       listByScheduleId: listSessionsByScheduleId(deps.db),
       findActiveByScheduleId: findActiveByScheduleId(deps.db),
       upsert: upsertSession(deps.db),

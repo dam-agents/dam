@@ -250,7 +250,6 @@ export function createAgentsService(deps: {
     },
 
     async delete(id) {
-      const owner = deps.owner ?? "";
       const deleted = await deps.repo.delete(id, deps.owner);
       if (!deleted) return;
       await deps.deleteAllowedUsersByAgentIds([id]);
@@ -266,7 +265,6 @@ export function createAgentsService(deps: {
           );
         }
       }
-      void owner;
       emit({ type: EventType.AgentDeleted, agentId: id });
     },
 

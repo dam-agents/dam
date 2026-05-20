@@ -17,7 +17,7 @@ import type {
 } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
-import { resolveAgent } from "./instance-auth.js";
+import { resolveAgent } from "./agent-auth.js";
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
 

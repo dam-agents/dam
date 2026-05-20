@@ -29,7 +29,7 @@ describe("buildForkConfigMap", () => {
     const body = yaml.load(cm.data!["spec.yaml"]) as Record<string, unknown>;
     expect(body).toEqual({
       version: "agent-platform.ai/v1",
-      instance: "inst-abc",
+      agentName: "inst-abc",
       foreignSub: "kc-user-42",
       sessionId: "sess-1",
     });

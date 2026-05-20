@@ -2,7 +2,7 @@ import type { Db } from "db";
 import { sessions, eq, and, desc, sql } from "db";
 import { SessionMode, SessionType } from "api-server-api";
 
-export function listSessionsByInstance(db: Db) {
+export function listSessionsByAgent(db: Db) {
   return async (agentId: string) => {
     return db
       .select()

@@ -159,7 +159,7 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
       // gates the candidate set; lookups here run after a status='pending'
       // + agent_id filter so the row count is small.
       const rows = await db.execute(sql`
-        SELECT id, type, agent_id AS "agentId", agent_id AS "agentId",
+        SELECT id, type, agent_id AS "agentId",
                owner_sub AS "ownerSub", session_id AS "sessionId", payload,
                created_at AS "createdAt", expires_at AS "expiresAt",
                resolved_at AS "resolvedAt", verdict, decided_by AS "decidedBy",

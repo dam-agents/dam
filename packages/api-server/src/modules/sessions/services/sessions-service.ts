@@ -13,7 +13,7 @@ import {
 } from "../../../core/acp-client.js";
 
 export function createSessionsService(deps: {
-  listByInstance: (agentId: string) => Promise<
+  listByAgent: (agentId: string) => Promise<
     {
       sessionId: string;
       agentId: string;
@@ -79,7 +79,7 @@ export function createSessionsService(deps: {
       });
 
       const [dbRows, acpSessions] = await Promise.all([
-        deps.listByInstance(agentId),
+        deps.listByAgent(agentId),
         acp.listSessions().catch((err) => {
           process.stderr.write(
             `[sessions] acp.listSessions failed for ${agentId}: ${err?.message ?? err}\n`,
@@ -195,7 +195,7 @@ export function createSessionsService(deps: {
         };
       }
 
-      const rows = await deps.listByInstance(agentId);
+      const rows = await deps.listByAgent(agentId);
       const sessions = rows.filter((r) => r.type === SessionType.Regular);
 
       if (strategy.kind === "continue") {

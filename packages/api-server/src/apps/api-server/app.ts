@@ -18,9 +18,11 @@ import {
   createK8sClient,
   podBaseUrl,
 } from "../../modules/agents/infrastructure/k8s.js";
-import { createAgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
-import { createKeycloakUserDirectory } from "../../modules/agents/infrastructure/keycloak-user-directory.js";
-import { composeAgentsModule } from "../../modules/agents/index.js";
+import {
+  composeAgentsModule,
+  createAgentsRepository,
+  createKeycloakUserDirectory,
+} from "../../modules/agents/index.js";
 import { composeTemplatesModule } from "../../modules/templates/index.js";
 import { composeSchedulesModule } from "../../modules/schedules/index.js";
 import { composeSessionsModule } from "../../modules/sessions/index.js";

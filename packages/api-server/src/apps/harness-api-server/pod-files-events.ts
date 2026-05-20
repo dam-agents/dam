@@ -3,7 +3,7 @@ import { streamSSE } from "hono/streaming";
 import type { PodFilesBus } from "../../modules/pod-files/bus.js";
 import type { FileSpec } from "../../modules/pod-files/types.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
-import { resolveAgent } from "./instance-auth.js";
+import { resolveAgent } from "./agent-auth.js";
 
 export interface PodFilesEventsDeps {
   k8s: K8sClient;

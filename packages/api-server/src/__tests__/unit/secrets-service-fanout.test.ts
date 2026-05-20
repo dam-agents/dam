@@ -396,7 +396,7 @@ describe("secrets-service.update — fanout (ADR-040)", () => {
     });
     expect(syncCalls).toHaveLength(0);
     expect(bumps).toHaveLength(1);
-    expect(bumps[0]!.cmName).toBe("a-inst");
+    expect(bumps[0]!.cmName).toBe("agent-a");
   });
 
   it("name-only edit → no fanout", async () => {

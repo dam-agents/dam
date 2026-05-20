@@ -21,7 +21,7 @@ import { execInPod, waitForPodReady } from "./helpers/kubectl.js";
  */
 
 let AGENT_ID: string;
-let INSTANCE_ID: string;
+
 let POD_NAME: string;
 
 beforeAll(async () => {
@@ -31,12 +31,12 @@ beforeAll(async () => {
     egressPreset: "none",
   });
   AGENT_ID = agent.id;
-  INSTANCE_ID = agent.id;
-  POD_NAME = `${INSTANCE_ID}-0`;
+
+  POD_NAME = `${AGENT_ID}-0`;
   await waitForPodReady(POD_NAME, 240_000);
 
   // Warm-up: pod ready ≠ ext_authz pipeline ready. The api-server
-  // resolves instance → agent identity lazily on the first Check call,
+  // hits the per-agent ext_authz Service lazily on the first Check call,
   // and the cold lookup after pod creation can leave the first
   // request's gate call returning deny without inserting a pending row.
   // Issue one curl, drain any approvals, then start asserting.
@@ -69,7 +69,7 @@ async function clearAllRules() {
  *  rule, so it's the right cleanup verb here. */
 async function dismissAllApprovals() {
   const rows = await client.approvals.listForInstance.query({
-    agentId: INSTANCE_ID,
+    agentId: AGENT_ID,
     status: "pending",
   });
   for (const r of rows) {
@@ -111,7 +111,7 @@ function curl(host: string, scheme: "http" | "https", timeoutSec = 4) {
 }
 
 /** Poll for a pending approval matching `host`. The api-server resolves
- *  the instance → agent identity asynchronously after the pod becomes
+ *  the per-agent ext_authz Service asynchronously after the pod becomes
  *  Ready, so the first ext_authz Check after pod startup can race that
  *  resolution and return deny without inserting a pending row. Retrying
  *  for a few seconds is enough — once the resolution lands, every
@@ -123,7 +123,7 @@ async function findPendingForHost(
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const rows = await client.approvals.listForInstance.query({
-      agentId: INSTANCE_ID,
+      agentId: AGENT_ID,
       status: "pending",
     });
     const found = rows.find(
