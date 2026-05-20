@@ -3,6 +3,7 @@ import { composeAgentModule } from "./modules/agent/compose.js";
 import { composeAuthModule } from "./modules/auth/compose.js";
 import { composeChatModule } from "./modules/chat/compose.js";
 import { composeCliModule } from "./modules/cli/compose.js";
+import { composeEditorModule } from "./modules/editor/compose.js";
 import { composeImportModule } from "./modules/import/compose.js";
 import { composeInstanceModule } from "./modules/instance/compose.js";
 import { composeTemplateModule } from "./modules/template/compose.js";
@@ -75,6 +76,13 @@ export function compose(opts: ComposeOptions = {}): Command {
     serverEnvVar: "DAM_SERVER",
   });
 
+  const editor = composeEditorModule({
+    compatService: cli.services.compatService,
+    configService: cli.services.configService,
+    tokenProvider,
+    createInstanceService: instance.exports.createService,
+  });
+
   const program = new Command();
   program
     .name("dam")
@@ -88,6 +96,7 @@ export function compose(opts: ComposeOptions = {}): Command {
   for (const command of chat.commands) program.addCommand(command);
   for (const command of agent.commands) program.addCommand(command);
   for (const command of importModule.commands) program.addCommand(command);
+  for (const command of editor.commands) program.addCommand(command);
 
   return program;
 }

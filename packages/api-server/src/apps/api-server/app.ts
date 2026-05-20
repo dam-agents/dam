@@ -35,6 +35,7 @@ import {
 } from "../../modules/channels/infrastructure/telegram-threads-repository.js";
 import { createAcpRelay } from "./acp-relay.js";
 import { createTerminalRelay } from "./terminal-relay.js";
+import { createEditorRelay } from "./editor-relay.js";
 import { getSessionMode } from "../../modules/sessions/infrastructure/sessions-repository.js";
 import { createOAuthRoutes } from "./oauth.js";
 import { mountBrandIconRoutes } from "./brand-icon.js";
@@ -631,6 +632,8 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     getSessionMode: getSessionMode(db),
   });
 
+  const editorRelay = createEditorRelay(config.namespace, instancesRepo);
+
   const server = serve({ fetch: app.fetch, port: config.port }, () => {
     process.stderr.write(
       `api-server listening on http://localhost:${config.port}\n`,
@@ -665,7 +668,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   server.on("upgrade", async (req, socket, head) => {
     const url = new URL(req.url!, `http://${req.headers.host}`);
     const match = url.pathname.match(
-      /^\/api\/instances\/([^/]+)\/(acp|terminal)$/,
+      /^\/api\/instances\/([^/]+)\/(acp|terminal|editor)$/,
     );
     if (!match) {
       socket.destroy();
@@ -674,6 +677,9 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
 
     const token = url.searchParams.get("token");
     if (!token) {
+      process.stderr.write(
+        `[ws-upgrade] 401 no-token path=${url.pathname}\n`,
+      );
       socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
       socket.destroy();
       return;
@@ -685,6 +691,9 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     } catch (err) {
       const status =
         err instanceof ForbiddenError ? "403 Forbidden" : "401 Unauthorized";
+      process.stderr.write(
+        `[ws-upgrade] ${status} path=${url.pathname} reason=${err instanceof Error ? err.message : String(err)}\n`,
+      );
       socket.write(`HTTP/1.1 ${status}\r\n\r\n`);
       socket.destroy();
       return;
@@ -697,7 +706,12 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       return;
     }
 
-    const relay = match[2] === "acp" ? acpRelay : terminalRelay;
+    const relay =
+      match[2] === "acp"
+        ? acpRelay
+        : match[2] === "terminal"
+          ? terminalRelay
+          : editorRelay;
     relay.handleUpgrade(req, socket, head, instanceId);
   });
 

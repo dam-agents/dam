@@ -11,6 +11,7 @@ import { fetchOrFallback } from "../services/fetch-or-fallback.js";
 import { waitForRunning } from "../services/wait-for-state.js";
 import { formatTransportError, printServiceError } from "./errors.js";
 import { parseEnvFlag, validateInstanceName } from "./create-helpers.js";
+import { generateEditorKey } from "../infrastructure/editor-keys.js";
 import {
   EXIT_INSTANCE_BELOW_FLOOR,
   EXIT_INSTANCE_INVALID_INPUT,
@@ -58,6 +59,10 @@ export function buildCreateCommand(deps: {
       (val: string, prev: string[]) => [...prev, val],
       [] as string[],
     )
+    .option(
+      "--with-editor",
+      "enable VSCode Remote-SSH editor attach via `dam editor <name>` (PROTOTYPE)",
+    )
     .option("--wait", "poll until state == `running` (or terminal error)")
     .option(
       "--timeout <seconds>",
@@ -83,6 +88,7 @@ export function buildCreateCommand(deps: {
           template?: string;
           description?: string;
           env?: string[];
+          withEditor?: boolean;
           wait?: boolean;
           timeout?: string;
           json?: boolean;
@@ -102,6 +108,7 @@ async function runCreate(
     template?: string;
     description?: string;
     env?: string[];
+    withEditor?: boolean;
     wait?: boolean;
     timeout?: string;
     json?: boolean;
@@ -146,6 +153,21 @@ async function runCreate(
     process.stderr.write(
       `warning: \`--env ${dup}=…\` was provided multiple times; using the last value\n`,
     );
+  }
+
+  let editorPrivateKeyPath: string | undefined;
+  if (opts.withEditor) {
+    try {
+      const key = await generateEditorKey(name);
+      env.push({ name: "PLATFORM_EDITOR", value: "1" });
+      env.push({ name: "PLATFORM_EDITOR_PUBKEY", value: key.publicKey });
+      editorPrivateKeyPath = key.privateKeyPath;
+    } catch (e) {
+      process.stderr.write(
+        `error: failed to generate editor keypair: ${e instanceof Error ? e.message : String(e)}\n`,
+      );
+      process.exit(EXIT_INSTANCE_RUNTIME_FAILURE);
+    }
   }
 
   const timeoutSeconds = parseTimeout(opts.timeout, DEFAULT_TIMEOUT_SECONDS);
@@ -274,6 +296,11 @@ async function runCreate(
     process.stdout.write(
       `✓ Created instance "${finalInstance.name}" (${finalInstance.id}). State: ${finalInstance.state}.\n`,
     );
+    if (editorPrivateKeyPath) {
+      process.stdout.write(
+        `  editor key: ${editorPrivateKeyPath}\n  attach: dam editor ${finalInstance.name}\n`,
+      );
+    }
   }
   process.exit(EXIT_INSTANCE_SUCCESS);
 }

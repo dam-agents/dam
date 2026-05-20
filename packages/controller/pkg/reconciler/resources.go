@@ -340,9 +340,10 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 		Name:            "agent",
 		Image:           agentSpec.Image,
 		ImagePullPolicy: corev1.PullPolicy(pullPolicy),
-		Ports: []corev1.ContainerPort{{
-			Name: "acp", ContainerPort: 8080,
-		}},
+		Ports: []corev1.ContainerPort{
+			{Name: "acp", ContainerPort: 8080},
+			{Name: "editor", ContainerPort: 2222},
+		},
 		Env:             env,
 		EnvFrom:         envFrom,
 		StartupProbe:    startupProbe,
@@ -430,9 +431,10 @@ func BuildAgentService(name string, cfg *config.Config, ownerCM *corev1.ConfigMa
 		Spec: corev1.ServiceSpec{
 			ClusterIP: corev1.ClusterIPNone,
 			Selector:  selector,
-			Ports: []corev1.ServicePort{{
-				Name: "acp", Port: 8080, TargetPort: intstr.FromString("acp"),
-			}},
+			Ports: []corev1.ServicePort{
+				{Name: "acp", Port: 8080, TargetPort: intstr.FromString("acp")},
+				{Name: "editor", Port: 2222, TargetPort: intstr.FromString("editor")},
+			},
 		},
 	}
 }
