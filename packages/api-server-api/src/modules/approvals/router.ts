@@ -1,19 +1,21 @@
-import { z } from "zod";
 import { t } from "../../trpc.js";
-
-const approvalStatus = z.enum(["pending", "resolved", "expired"]);
-const listOptionFields = {
-  limit: z.number().int().positive().max(500).optional(),
-  status: approvalStatus.optional(),
-} as const;
+import {
+  approvalApproveHostInputSchema,
+  approvalApproveOnceInputSchema,
+  approvalApprovePermanentInputSchema,
+  approvalDenyForeverInputSchema,
+  approvalDismissInputSchema,
+  approvalListForInstanceInputSchema,
+  approvalListForOwnerInputSchema,
+} from "./schemas.js";
 
 export const approvalsRouter = t.router({
   listForOwner: t.procedure
-    .input(z.object(listOptionFields).optional())
+    .input(approvalListForOwnerInputSchema)
     .query(({ ctx, input }) => ctx.approvals.listForOwner(input)),
 
   listForInstance: t.procedure
-    .input(z.object({ agentId: z.string().min(1), ...listOptionFields }))
+    .input(approvalListForInstanceInputSchema)
     .query(({ ctx, input }) =>
       ctx.approvals.listForInstance(input.agentId, {
         limit: input.limit,
@@ -22,22 +24,22 @@ export const approvalsRouter = t.router({
     ),
 
   approveOnce: t.procedure
-    .input(z.object({ id: z.string().min(1) }))
+    .input(approvalApproveOnceInputSchema)
     .mutation(({ ctx, input }) => ctx.approvals.approveOnce(input.id)),
 
   approvePermanent: t.procedure
-    .input(z.object({ id: z.string().min(1) }))
+    .input(approvalApprovePermanentInputSchema)
     .mutation(({ ctx, input }) => ctx.approvals.approvePermanent(input.id)),
 
   approveHost: t.procedure
-    .input(z.object({ id: z.string().min(1) }))
+    .input(approvalApproveHostInputSchema)
     .mutation(({ ctx, input }) => ctx.approvals.approveHost(input.id)),
 
   denyForever: t.procedure
-    .input(z.object({ id: z.string().min(1) }))
+    .input(approvalDenyForeverInputSchema)
     .mutation(({ ctx, input }) => ctx.approvals.denyForever(input.id)),
 
   dismiss: t.procedure
-    .input(z.object({ id: z.string().min(1) }))
+    .input(approvalDismissInputSchema)
     .mutation(({ ctx, input }) => ctx.approvals.dismiss(input.id)),
 });

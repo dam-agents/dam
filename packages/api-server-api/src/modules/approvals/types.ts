@@ -1,6 +1,12 @@
+import type { z } from "zod";
+import type {
+  approvalListOptionsSchema,
+  approvalStatusSchema,
+} from "./schemas.js";
+
 export type ApprovalType = "ext_authz" | "acp_native";
 
-export type ApprovalStatus = "pending" | "resolved" | "expired";
+export type ApprovalStatus = z.infer<typeof approvalStatusSchema>;
 
 /** Verdict the user picked. `allow_once` / `deny_once` resolve only the
  *  held call (no rule written) so a future request from the same shape
@@ -55,20 +61,17 @@ export interface ApprovalView {
   status: ApprovalStatus;
 }
 
-export interface ListApprovalsOptions {
-  /** Max rows to return; server clamps to a safe upper bound. The inbox
-   *  always shows pending first; resolved/expired rows are capped to
-   *  prevent the list from growing unbounded over time. */
-  limit?: number;
-  /** Restrict to a single status. Omit to include all (subject to `limit`). */
-  status?: ApprovalStatus;
-}
+/** Shared options for the two `list*` procedures: server clamps `limit`
+ *  to a safe upper bound, and `status` omitted means "include all"
+ *  (subject to `limit`). The inbox always shows pending first; resolved
+ *  and expired rows are capped to keep the list from growing unbounded. */
+export type ApprovalListOptions = z.infer<typeof approvalListOptionsSchema>;
 
 export interface ApprovalsService {
-  listForOwner(opts?: ListApprovalsOptions): Promise<ApprovalView[]>;
+  listForOwner(opts?: ApprovalListOptions): Promise<ApprovalView[]>;
   listForInstance(
     agentId: string,
-    opts?: ListApprovalsOptions,
+    opts?: ApprovalListOptions,
   ): Promise<ApprovalView[]>;
   approveOnce(id: string): Promise<void>;
   approvePermanent(id: string): Promise<void>;

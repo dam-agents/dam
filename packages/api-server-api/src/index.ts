@@ -192,7 +192,19 @@ export type {
   AcpPermissionOptionKind,
   ApprovalView,
   ApprovalsService,
+  ApprovalListOptions,
 } from "./modules/approvals/types.js";
+export {
+  approvalApproveHostInputSchema,
+  approvalApproveOnceInputSchema,
+  approvalApprovePermanentInputSchema,
+  approvalDenyForeverInputSchema,
+  approvalDismissInputSchema,
+  approvalListForInstanceInputSchema,
+  approvalListForOwnerInputSchema,
+  approvalListOptionsSchema,
+  approvalStatusSchema,
+} from "./modules/approvals/schemas.js";
 
 export type {
   RuleVerdict,
