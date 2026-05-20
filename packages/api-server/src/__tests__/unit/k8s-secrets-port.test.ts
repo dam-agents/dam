@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type * as k8s from "@kubernetes/client-node";
-import { updateSecretInputSchema } from "api-server-api";
+import { hostPatternSchema, updateSecretInputSchema } from "api-server-api";
 
 import {
   createK8sSecretsPort,
@@ -656,5 +656,50 @@ describe("updateSecretInputSchema", () => {
     if (!r.success) {
       expect(r.error.issues[0]!.path).toEqual(["value"]);
     }
+  });
+
+  it("rejects a wildcard hostPattern on update", () => {
+    const r = updateSecretInputSchema.safeParse({
+      id: "abc",
+      hostPattern: "*.vercel.com",
+    });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(r.error.issues[0]!.message).toMatch(/wildcard/i);
+    }
+  });
+});
+
+describe("hostPatternSchema", () => {
+  it("accepts an exact hostname", () => {
+    expect(hostPatternSchema.safeParse("api.example.com").success).toBe(true);
+  });
+
+  it("rejects a leading wildcard", () => {
+    const r = hostPatternSchema.safeParse("*.example.com");
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(r.error.issues[0]!.message).toMatch(/wildcard/i);
+    }
+  });
+
+  it("rejects a bare wildcard", () => {
+    const r = hostPatternSchema.safeParse("*");
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(r.error.issues[0]!.message).toMatch(/wildcard/i);
+    }
+  });
+
+  it("rejects a wildcard embedded in the hostname", () => {
+    const r = hostPatternSchema.safeParse("api.*.example.com");
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(r.error.issues[0]!.message).toMatch(/wildcard/i);
+    }
+  });
+
+  it("rejects an empty string", () => {
+    expect(hostPatternSchema.safeParse("").success).toBe(false);
   });
 });

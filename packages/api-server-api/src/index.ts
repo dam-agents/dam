@@ -93,7 +93,10 @@ export {
   bobPinsFromEnvMappings,
   BOB_CHAT_MODES,
 } from "./modules/secrets/types.js";
-export { updateSecretInputSchema } from "./modules/secrets/schemas.js";
+export {
+  hostPatternSchema,
+  updateSecretInputSchema,
+} from "./modules/secrets/schemas.js";
 
 export type { ChannelsService } from "./modules/channels/types.js";
 

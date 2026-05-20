@@ -13,6 +13,19 @@ export const secretTypeSchema = z.enum([
   "generic",
 ]);
 
+/**
+ * Reusable hostPattern field. Rejects wildcard patterns (`*`) because the
+ * agent network gateway (Envoy) cannot route them and the pod would crash-loop.
+ */
+export const hostPatternSchema = z
+  .string()
+  .min(1)
+  .max(253)
+  .refine((v) => !v.includes("*"), {
+    message:
+      "Wildcard host patterns are not supported. Please specify exact hostnames.",
+  });
+
 export const envMappingSchema = z.object({
   envName: z
     .string()
@@ -46,7 +59,7 @@ export const updateSecretInputSchema = z
     id: z.string().min(1),
     name: z.string().min(1).max(100).optional(),
     value: z.string().min(1).optional(),
-    hostPattern: z.string().min(1).max(253).optional(),
+    hostPattern: hostPatternSchema.optional(),
     pathPattern: z.string().max(1000).nullable().optional(),
     injectionConfig: injectionConfigSchema.nullable().optional(),
     envMappings: envMappingsSchema.optional(),

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { t } from "../../trpc.js";
 import {
   envMappingsSchema,
+  hostPatternSchema,
   injectionConfigSchema,
   secretTypeSchema,
   updateSecretInputSchema,
@@ -32,7 +33,7 @@ export const secretsRouter = t.router({
           type: secretTypeSchema,
           name: z.string().min(1).max(100),
           value: z.string().min(1),
-          hostPattern: z.string().min(1).max(253).optional(),
+          hostPattern: hostPatternSchema.optional(),
           pathPattern: z.string().min(1).max(1000).optional(),
           injectionConfig: injectionConfigSchema.optional(),
           envMappings: envMappingsSchema.optional(),
