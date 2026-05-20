@@ -20,7 +20,7 @@ Keep your coding agents running when you close the lid. Ship them to your team. 
 
 - **Slack-native channels** — One Slack app, unlimited agents, per-thread routing. Your agents live where your team already works.
 
-- **Bring your own agent** — Claude Code and [pi.dev](https://pi.dev) ship as built-in templates. Codex, Gemini CLI, or anything that speaks [ACP](https://agentclientprotocol.com/get-started/introduction) works too. No lock-in to one vendor's SDK or cloud.
+- **Bring your own agent** — Claude Code and [pi.dev](https://pi.dev) ship as built-in templates. Codex, Antigravity CLI, or anything that speaks [ACP](https://agentclientprotocol.com/get-started/introduction) works too. No lock-in to one vendor's SDK or cloud.
 
 ![DAM UI — agent chatting with Google Drive access](docs/assets/hero.png)
 
