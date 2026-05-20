@@ -182,7 +182,7 @@ export function SkillsPanel({
       setLoadingBySource((l) => ({ ...l, [sourceId]: true }));
       setErrorBySource((e) => ({ ...e, [sourceId]: null }));
       try {
-        const list = await api.skills.listSkills.query({
+        const list = await api.skills.list.query({
           sourceId,
           agentId,
         });

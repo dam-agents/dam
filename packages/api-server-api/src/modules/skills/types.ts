@@ -1,87 +1,36 @@
-/** An installed skill on an instance, keyed by source + name. Version is a commit SHA. */
-export interface SkillRef {
-  source: string;
-  name: string;
-  version: string;
-  /** Deterministic SHA-256 of the skill directory's file contents at install
-   *  time. Compared to the scanner's contentHash to flag drift. Optional for
-   *  backward compatibility with installs that pre-date this field. */
-  contentHash?: string;
-}
+import type { z } from "zod";
+import type {
+  localSkillSchema,
+  skillCreateSourceInputSchema,
+  skillInstallInputSchema,
+  skillPublishInputSchema,
+  skillPublishResultSchema,
+  skillRefSchema,
+  skillSchema,
+  skillSourceSchema,
+  skillUninstallInputSchema,
+} from "./schemas.js";
 
-/** A connected skill source (e.g. a public git repo). */
-export interface SkillSource {
-  id: string;
-  name: string;
-  gitUrl: string;
-  /** True when the source is managed by the cluster admin (Helm-seeded). Users can't delete it. */
-  system?: boolean;
-  /** Present when the source was declared by an agent template (spec.skillSources).
-   *  UI-only hint for the "Agent" badge — backend treats template sources as read-only. */
-  fromTemplate?: {
-    templateId: string;
-    templateName: string;
-  };
-  /** True when the current user has a publish credential stored for this source. */
-  canPublish?: boolean;
-}
+export type SkillRef = z.infer<typeof skillRefSchema>;
+export type SkillSource = z.infer<typeof skillSourceSchema>;
+export type Skill = z.infer<typeof skillSchema>;
+export type LocalSkill = z.infer<typeof localSkillSchema>;
 
-/** A skill available from a connected source. Version is the source's HEAD
- *  commit SHA; contentHash is a deterministic content signature used for
- *  drift detection (see SkillRef.contentHash). */
-export interface Skill {
-  source: string;
-  name: string;
-  description: string;
-  version: string;
-  contentHash: string;
-}
+export type SkillCreateSourceInput = z.infer<
+  typeof skillCreateSourceInputSchema
+>;
 
-export interface CreateSkillSourceInput {
-  name: string;
-  gitUrl: string;
-}
+export type SkillInstallInput = z.infer<typeof skillInstallInputSchema>;
 
-export interface InstallSkillInput {
-  agentId: string;
-  source: string;
-  name: string;
-  version: string;
-  /** Content hash captured from the scan result. Optional because the MCP
-   *  tool flow may install a skill without a prior scan (in which case the
-   *  agent-runtime computes + returns it at install time). */
-  contentHash?: string;
-}
+export type SkillUninstallInput = z.infer<typeof skillUninstallInputSchema>;
 
-export interface UninstallSkillInput {
-  agentId: string;
-  source: string;
-  name: string;
-}
+export type SkillPublishInput = z.infer<typeof skillPublishInputSchema>;
 
-/** A skill authored directly on the instance's PVC (not installed from a remote source). */
-export interface LocalSkill {
-  name: string;
-  description: string;
-  skillPath: string;
-}
-
-export interface PublishSkillInput {
-  agentId: string;
-  sourceId: string;
-  name: string;
-  title?: string;
-  body?: string;
-}
-
-export interface PublishSkillResult {
-  prUrl: string;
-  branch: string;
-}
+export type SkillPublishResult = z.infer<typeof skillPublishResultSchema>;
 
 /**
  * Explicit record of a publish event. Written on a successful
- * `publishSkill` call into the Postgres `instance_skill_publishes`
+ * `publish` call into the Postgres `instance_skill_publishes`
  * table. Drives the `Published` badge + "View PR" link in the UI —
  * the name-match heuristic it replaces had confusing false positives
  * when a local skill happened to share a name with a catalog entry.
@@ -117,13 +66,13 @@ export interface SkillsState {
 export interface SkillsService {
   listSources: (agentId?: string) => Promise<SkillSource[]>;
   getSource: (id: string) => Promise<SkillSource | null>;
-  createSource: (input: CreateSkillSourceInput) => Promise<SkillSource>;
+  createSource: (input: SkillCreateSourceInput) => Promise<SkillSource>;
   deleteSource: (id: string) => Promise<void>;
   refreshSource: (id: string) => Promise<void>;
-  listSkills: (sourceId: string, agentId?: string) => Promise<Skill[]>;
-  installSkill: (input: InstallSkillInput) => Promise<SkillRef[]>;
-  uninstallSkill: (input: UninstallSkillInput) => Promise<SkillRef[]>;
+  list: (sourceId: string, agentId?: string) => Promise<Skill[]>;
+  install: (input: SkillInstallInput) => Promise<SkillRef[]>;
+  uninstall: (input: SkillUninstallInput) => Promise<SkillRef[]>;
   listLocal: (agentId: string) => Promise<LocalSkill[]>;
   getState: (agentId: string) => Promise<SkillsState>;
-  publishSkill: (input: PublishSkillInput) => Promise<PublishSkillResult>;
+  publish: (input: SkillPublishInput) => Promise<SkillPublishResult>;
 }

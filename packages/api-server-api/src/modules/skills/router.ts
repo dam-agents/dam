@@ -1,115 +1,71 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { t } from "../../trpc.js";
-
-const skillSourceViewSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  gitUrl: z.string(),
-  system: z.boolean().optional(),
-  fromTemplate: z
-    .object({ templateId: z.string(), templateName: z.string() })
-    .optional(),
-  canPublish: z.boolean().optional(),
-});
-
-const publishResultSchema = z.object({
-  prUrl: z.string().url(),
-  branch: z.string(),
-});
-
-const skillViewSchema = z.object({
-  source: z.string(),
-  name: z.string(),
-  description: z.string(),
-  version: z.string(),
-  contentHash: z.string(),
-});
-
-const skillRefSchema = z.object({
-  source: z.string(),
-  name: z.string(),
-  version: z.string(),
-  contentHash: z.string().optional(),
-});
-
-const localSkillSchema = z.object({
-  name: z.string(),
-  description: z.string(),
-  skillPath: z.string(),
-});
+import {
+  localSkillSchema,
+  skillCreateSourceInputSchema,
+  skillDeleteSourceInputSchema,
+  skillInstallInputSchema,
+  skillListLocalInputSchema,
+  skillListInputSchema,
+  skillListSourcesInputSchema,
+  skillPublishInputSchema,
+  skillPublishResultSchema,
+  skillRefSchema,
+  skillRefreshSourceInputSchema,
+  skillSchema,
+  skillSourceSchema,
+  skillStateInputSchema,
+  skillUninstallInputSchema,
+} from "./schemas.js";
 
 export const skillsRouter = t.router({
   sources: t.router({
     list: t.procedure
-      .input(z.object({ agentId: z.string().min(1).optional() }).optional())
-      .output(z.array(skillSourceViewSchema))
+      .input(skillListSourcesInputSchema)
+      .output(z.array(skillSourceSchema))
       .query(({ ctx, input }) => ctx.skills.listSources(input?.agentId)),
 
     create: t.procedure
-      .input(
-        z.object({
-          name: z.string().min(1).max(128),
-          gitUrl: z.string().url(),
-        }),
-      )
-      .output(skillSourceViewSchema)
+      .input(skillCreateSourceInputSchema)
+      .output(skillSourceSchema)
       .mutation(({ ctx, input }) => ctx.skills.createSource(input)),
 
     delete: t.procedure
-      .input(z.object({ id: z.string().min(1) }))
+      .input(skillDeleteSourceInputSchema)
       .mutation(({ ctx, input }) => ctx.skills.deleteSource(input.id)),
 
     /** Drop the scan cache for this source so the next listSkills re-queries
      *  upstream. Called after merging a PR, pushing out-of-band, etc. */
     refresh: t.procedure
-      .input(z.object({ id: z.string().min(1) }))
+      .input(skillRefreshSourceInputSchema)
       .mutation(({ ctx, input }) => ctx.skills.refreshSource(input.id)),
   }),
 
   /** `agentId` is optional — public-archive scans don't need an instance.
    *  Private-source scans (that fall through to the authenticated
    *  agent-runtime path) will throw with a clear hint if it's missing. */
-  listSkills: t.procedure
-    .input(
-      z.object({
-        sourceId: z.string().min(1),
-        agentId: z.string().min(1).optional(),
-      }),
-    )
-    .output(z.array(skillViewSchema))
+  list: t.procedure
+    .input(skillListInputSchema)
+    .output(z.array(skillSchema))
     .query(async ({ ctx, input }) => {
       const src = await ctx.skills.getSource(input.sourceId);
       if (!src) throw new TRPCError({ code: "NOT_FOUND" });
-      return ctx.skills.listSkills(input.sourceId, input.agentId);
+      return ctx.skills.list(input.sourceId, input.agentId);
     }),
 
   install: t.procedure
-    .input(
-      z.object({
-        agentId: z.string().min(1),
-        source: z.string().url(),
-        name: z.string().min(1),
-        version: z.string().min(1),
-        contentHash: z.string().optional(),
-      }),
-    )
+    .input(skillInstallInputSchema)
     .output(z.array(skillRefSchema))
-    .mutation(({ ctx, input }) => ctx.skills.installSkill(input)),
+    .mutation(({ ctx, input }) => ctx.skills.install(input)),
 
   uninstall: t.procedure
-    .input(
-      z.object({
-        agentId: z.string().min(1),
-        source: z.string().url(),
-        name: z.string().min(1),
-      }),
-    )
+    .input(skillUninstallInputSchema)
     .output(z.array(skillRefSchema))
-    .mutation(({ ctx, input }) => ctx.skills.uninstallSkill(input)),
+    .mutation(({ ctx, input }) => ctx.skills.uninstall(input)),
 
   listLocal: t.procedure
-    .input(z.object({ agentId: z.string().min(1) }))
+    .input(skillListLocalInputSchema)
     .output(z.array(localSkillSchema))
     .query(({ ctx, input }) => ctx.skills.listLocal(input.agentId)),
 
@@ -125,7 +81,7 @@ export const skillsRouter = t.router({
    * used to drive the "Published" badge on standalone skills.
    */
   state: t.procedure
-    .input(z.object({ agentId: z.string().min(1) }))
+    .input(skillStateInputSchema)
     .output(
       z.object({
         installed: z.array(skillRefSchema),
@@ -145,15 +101,7 @@ export const skillsRouter = t.router({
     .query(({ ctx, input }) => ctx.skills.getState(input.agentId)),
 
   publish: t.procedure
-    .input(
-      z.object({
-        agentId: z.string().min(1),
-        sourceId: z.string().min(1),
-        name: z.string().min(1),
-        title: z.string().optional(),
-        body: z.string().optional(),
-      }),
-    )
-    .output(publishResultSchema)
-    .mutation(({ ctx, input }) => ctx.skills.publishSkill(input)),
+    .input(skillPublishInputSchema)
+    .output(skillPublishResultSchema)
+    .mutation(({ ctx, input }) => ctx.skills.publish(input)),
 });

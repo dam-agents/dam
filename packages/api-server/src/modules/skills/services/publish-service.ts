@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import type {
-  PublishSkillInput,
-  PublishSkillResult,
+  SkillPublishInput,
+  SkillPublishResult,
   SkillPublishRecord,
   SkillSource,
 } from "api-server-api";
@@ -42,8 +42,8 @@ export interface PublishServiceDeps {
  */
 export async function publishSkill(
   deps: PublishServiceDeps,
-  input: PublishSkillInput,
-): Promise<PublishSkillResult> {
+  input: SkillPublishInput,
+): Promise<SkillPublishResult> {
   const agent = await deps.agents.get(input.agentId, deps.owner);
   if (!agent)
     throw new TRPCError({ code: "NOT_FOUND", message: "agent not found" });

@@ -1,17 +1,17 @@
 import crypto from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import type {
-  CreateSkillSourceInput,
-  InstallSkillInput,
   LocalSkill,
-  PublishSkillInput,
-  PublishSkillResult,
   Skill,
+  SkillCreateSourceInput,
+  SkillInstallInput,
+  SkillPublishInput,
+  SkillPublishResult,
   SkillRef,
   SkillSource,
   SkillsService,
   SkillsState,
-  UninstallSkillInput,
+  SkillUninstallInput,
 } from "api-server-api";
 import type { AgentsRepository } from "../../agents/infrastructure/agents-repository.js";
 import type { TemplatesRepository } from "../../templates/infrastructure/templates-repository.js";
@@ -267,7 +267,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       const [enriched] = enrichSources([s]);
       return enriched;
     },
-    createSource: (input: CreateSkillSourceInput) =>
+    createSource: (input: SkillCreateSourceInput) =>
       deps.repo.create(input, deps.owner),
     async deleteSource(id) {
       // Template-derived ids are synthesised at read time — there's no row
@@ -305,7 +305,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       }
     },
 
-    async listSkills(sourceId: string, agentId?: string) {
+    async list(sourceId: string, agentId?: string) {
       const src = await resolveSource(deps, sourceId);
       if (!src) {
         throw new TRPCError({
@@ -361,7 +361,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       }
     },
 
-    async installSkill(input: InstallSkillInput) {
+    async install(input: SkillInstallInput) {
       const infra = await loadRunningInstance(deps, input.agentId);
       const skillPaths = await resolveSkillPaths(deps, infra.id);
 
@@ -399,7 +399,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       );
     },
 
-    async uninstallSkill(input: UninstallSkillInput) {
+    async uninstall(input: SkillUninstallInput) {
       const infra = await loadRunningInstance(deps, input.agentId);
       const skillPaths = await resolveSkillPaths(deps, infra.id);
 
@@ -419,7 +419,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       });
     },
 
-    async publishSkill(input: PublishSkillInput): Promise<PublishSkillResult> {
+    async publish(input: SkillPublishInput): Promise<SkillPublishResult> {
       const result = await runPublishSkill(
         {
           owner: deps.owner,

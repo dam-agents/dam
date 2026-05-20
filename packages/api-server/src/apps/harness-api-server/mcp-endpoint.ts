@@ -231,7 +231,7 @@ export function createMcpSession(
     ({ sourceId }) =>
       textTool(
         "Failed to list skills",
-        () => deps.skills.listSkills(sourceId, agentId),
+        () => deps.skills.list(sourceId, agentId),
         (list) => JSON.stringify(list),
       ),
   );
@@ -247,7 +247,7 @@ export function createMcpSession(
     ({ source, name, version }) =>
       textTool(
         "Failed to install skill",
-        () => deps.skills.installSkill({ agentId, source, name, version }),
+        () => deps.skills.install({ agentId, source, name, version }),
         (installed) =>
           `Installed ${name} @ ${version.slice(0, 8)}. Instance now has ${installed.length} skill(s).`,
       ),
@@ -263,7 +263,7 @@ export function createMcpSession(
     ({ source, name }) =>
       textTool(
         "Failed to uninstall skill",
-        () => deps.skills.uninstallSkill({ agentId, source, name }),
+        () => deps.skills.uninstall({ agentId, source, name }),
         (remaining) =>
           `Uninstalled ${name}. Instance now has ${remaining.length} skill(s).`,
       ),
@@ -281,8 +281,7 @@ export function createMcpSession(
     ({ sourceId, name, title, body }) =>
       textTool(
         "Failed to publish skill",
-        () =>
-          deps.skills.publishSkill({ agentId, sourceId, name, title, body }),
+        () => deps.skills.publish({ agentId, sourceId, name, title, body }),
         (result) => `Published ${name}. PR: ${result.prUrl}`,
       ),
   );

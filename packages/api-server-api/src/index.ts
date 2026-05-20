@@ -190,19 +190,36 @@ export type {
 } from "./modules/pod-files/types.js";
 
 export type {
+  LocalSkill,
   Skill,
+  SkillCreateSourceInput,
+  SkillInstallInput,
+  SkillPublishInput,
+  SkillPublishRecord,
+  SkillPublishResult,
   SkillRef,
   SkillSource,
   SkillsService,
   SkillsState,
-  SkillPublishRecord,
-  CreateSkillSourceInput,
-  InstallSkillInput,
-  UninstallSkillInput,
-  LocalSkill,
-  PublishSkillInput,
-  PublishSkillResult,
+  SkillUninstallInput,
 } from "./modules/skills/types.js";
+export {
+  localSkillSchema,
+  skillCreateSourceInputSchema,
+  skillDeleteSourceInputSchema,
+  skillInstallInputSchema,
+  skillListLocalInputSchema,
+  skillListInputSchema,
+  skillListSourcesInputSchema,
+  skillPublishInputSchema,
+  skillPublishResultSchema,
+  skillRefSchema,
+  skillRefreshSourceInputSchema,
+  skillSchema,
+  skillSourceSchema,
+  skillStateInputSchema,
+  skillUninstallInputSchema,
+} from "./modules/skills/schemas.js";
 
 export type {
   ApprovalType,
