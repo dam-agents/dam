@@ -1,9 +1,8 @@
 import { useEffect } from "react";
 
+import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
 import { MobileNav } from "./components/mobile-nav.js";
-import { OfflineBanner } from "./components/offline-banner.js";
-import { ReconnectingBanner } from "./components/reconnecting-banner.js";
 import { SetupProgressBar } from "./components/setup-progress-bar.js";
 import { Sidebar } from "./components/sidebar.js";
 import { ToastOverlay } from "./components/toast-overlay.js";
@@ -127,8 +126,7 @@ export default function App() {
         <ChatView />
         <DialogOverlay />
         <ToastOverlay />
-        <OfflineBanner />
-        <ReconnectingBanner />
+        <ConnectionBanner />
       </>
     );
 
@@ -162,8 +160,7 @@ export default function App() {
       <MobileNav />
       <DialogOverlay />
       <ToastOverlay />
-      <OfflineBanner />
-      <ReconnectingBanner />
+      <ConnectionBanner />
     </div>
   );
 }

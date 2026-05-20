@@ -1,3 +1,5 @@
+import { onlineManager } from "@tanstack/react-query";
+
 type ApiStatus = "connected" | "reconnecting";
 
 let status: ApiStatus = "connected";
@@ -5,14 +7,10 @@ let failureCount = 0;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 const listeners = new Set<() => void>();
 
-function notify() {
-  for (const l of listeners) l();
-}
-
 function setStatus(next: ApiStatus) {
   if (status === next) return;
   status = next;
-  notify();
+  for (const l of listeners) l();
 }
 
 function startPolling() {
@@ -70,3 +68,19 @@ export function subscribeApiHealth(cb: () => void): () => void {
 export function getApiHealthSnapshot(): ApiStatus {
   return status;
 }
+
+// Compose browser connectivity + API health into TanStack Query's online
+// signal. When either is down, queries pause instead of erroring out.
+onlineManager.setEventListener((setOnline) => {
+  const update = () => setOnline(navigator.onLine && status !== "reconnecting");
+
+  window.addEventListener("online", update);
+  window.addEventListener("offline", update);
+  listeners.add(update);
+
+  return () => {
+    window.removeEventListener("online", update);
+    window.removeEventListener("offline", update);
+    listeners.delete(update);
+  };
+});
