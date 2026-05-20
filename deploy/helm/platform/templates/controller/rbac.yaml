@@ -66,8 +66,12 @@ rules:
     resources: ["persistentvolumeclaims"]
     verbs: ["get", "list", "delete"]
   - apiGroups: [""]
+    # Per-fork gateway Pod (ADR-038): the fork's paired gateway is a bare
+    # Pod, not a StatefulSet, so the controller needs full CRUD on pods
+    # in the agent namespace to bring it up and tear it down with the
+    # fork Job. Owner-refed to the fork ConfigMap.
     resources: ["pods"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: [""]
     resources: ["pods/exec"]
     verbs: ["create"]
