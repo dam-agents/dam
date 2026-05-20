@@ -25,5 +25,5 @@ export type {
   SkillsService,
   UninstallSkillInput,
 } from "./modules/skills/types.js";
-export { importBundleResultSchema } from "./modules/import/result.js";
-export type { ImportBundleResult } from "./modules/import/result.js";
+export { importBundleResultSchema } from "./modules/import/types.js";
+export type { ImportBundleResult } from "./modules/import/types.js";

@@ -182,13 +182,13 @@ export {
   platformSessionModeChangedParamsSchema,
   buildPlatformTurnEndedNotification,
   buildPlatformSessionModeChangedNotification,
-} from "./modules/acp/notifications.js";
+} from "./modules/acp/types.js";
 export type {
   PlatformTurnEndedNotification,
   PlatformTurnEndedParams,
   PlatformSessionModeChangedNotification,
   PlatformSessionModeChangedParams,
-} from "./modules/acp/notifications.js";
+} from "./modules/acp/types.js";
 
 // Brand
 export { brandSchema } from "./modules/brand/types.js";
