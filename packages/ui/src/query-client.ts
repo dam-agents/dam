@@ -1,15 +1,12 @@
 import {
+  onlineManager,
   type Query,
   QueryCache,
   QueryClient,
   type QueryKey,
 } from "@tanstack/react-query";
 
-import {
-  getApiHealthSnapshot,
-  isApiReconnecting,
-  subscribeApiHealth,
-} from "./lib/api-health.js";
+import { getApiHealthSnapshot, subscribeApiHealth } from "./lib/api-health.js";
 import { emitToast } from "./lib/toast-sink.js";
 
 declare module "@tanstack/react-query" {
@@ -34,7 +31,12 @@ const queryCache = new QueryCache({
   },
   onError: (_error, query) => {
     const toast = query.meta?.errorToast;
-    if (!toast || notifiedOutages.has(query) || isApiReconnecting()) return;
+    if (
+      !toast ||
+      notifiedOutages.has(query) ||
+      getApiHealthSnapshot() === "reconnecting"
+    )
+      return;
     notifiedOutages.add(query);
     emitToast({ kind: "warning", message: toast });
   },
@@ -54,7 +56,7 @@ export const queryClient = new QueryClient({
         );
       },
       onError: (error, _vars, _ctx, mutation) => {
-        if (isApiReconnecting()) return;
+        if (getApiHealthSnapshot() === "reconnecting") return;
         const title = mutation.meta?.errorToast;
         const detail =
           error instanceof Error && error.message ? error.message : "";
@@ -67,6 +69,10 @@ export const queryClient = new QueryClient({
     },
   },
 });
+
+onlineManager.setEventListener((setOnline) =>
+  subscribeApiHealth(() => setOnline(getApiHealthSnapshot() === "connected")),
+);
 
 subscribeApiHealth(() => {
   if (getApiHealthSnapshot() === "connected") {
