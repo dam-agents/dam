@@ -333,14 +333,16 @@ export function createMcpSession(
     },
     async ({ name, cron, task, sessionMode }) => {
       try {
-        const sched = await schedules.createCron({
-          name,
-          agentId,
-          cron,
-          task,
-          sessionMode,
-          createdBy: "agent",
-        });
+        const sched = await schedules.createCron(
+          {
+            name,
+            agentId,
+            cron,
+            task,
+            sessionMode,
+          },
+          "agent",
+        );
         return {
           content: [
             {

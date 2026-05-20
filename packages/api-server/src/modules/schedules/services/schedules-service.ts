@@ -1,8 +1,8 @@
 import type {
   SchedulesService,
-  CreateCronScheduleInput,
-  CreateRRuleScheduleInput,
-  UpdateRRuleScheduleInput,
+  ScheduleCreateCronInput,
+  ScheduleCreateRRuleInput,
+  ScheduleUpdateRRuleInput,
 } from "api-server-api";
 import { SPEC_VERSION } from "api-server-api";
 import type { SchedulesRepository } from "../infrastructure/schedules-repository.js";
@@ -21,7 +21,7 @@ export function createSchedulesService(deps: {
     list: (agentId) => deps.repo.list(agentId, deps.owner),
     get: (id) => deps.repo.get(id, deps.owner),
 
-    async createCron(input: CreateCronScheduleInput) {
+    async createCron(input: ScheduleCreateCronInput, createdBy = "user") {
       validateCron(input.cron);
       const exists = await deps.repo.agentExists(input.agentId, deps.owner);
       if (!exists) throw new Error(`Agent "${input.agentId}" not found`);
@@ -33,13 +33,13 @@ export function createSchedulesService(deps: {
         cron: input.cron,
         task: input.task,
         enabled: true,
-        createdBy: input.createdBy ?? "user",
+        createdBy,
       };
       if (input.sessionMode) spec.sessionMode = input.sessionMode;
       return deps.repo.create(input.agentId, spec, deps.owner);
     },
 
-    async createRRule(input: CreateRRuleScheduleInput) {
+    async createRRule(input: ScheduleCreateRRuleInput) {
       validateTimezone(input.timezone);
       validateRRule(input.rrule);
       validateHasVisibleOccurrence(input.rrule, input.quietHours ?? []);
@@ -63,7 +63,7 @@ export function createSchedulesService(deps: {
       return deps.repo.create(input.agentId, spec, deps.owner);
     },
 
-    async updateRRule(input: UpdateRRuleScheduleInput) {
+    async updateRRule(input: ScheduleUpdateRRuleInput) {
       validateTimezone(input.timezone);
       validateRRule(input.rrule);
       validateHasVisibleOccurrence(input.rrule, input.quietHours);

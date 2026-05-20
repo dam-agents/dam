@@ -7,7 +7,6 @@ export { SPEC_VERSION } from "./modules/templates/types.js";
 export {
   mountSchema,
   resourcesSchema,
-  envVarSchema,
   skillSourceSeedSchema,
   templateSpecSchema,
 } from "./modules/templates/schemas.js";
@@ -64,11 +63,21 @@ export type {
   ScheduleStatus,
   QuietWindow,
   ScheduleCreator,
-  CreateCronScheduleInput,
-  CreateRRuleScheduleInput,
-  UpdateRRuleScheduleInput,
+  ScheduleCreateCronInput,
+  ScheduleCreateRRuleInput,
+  ScheduleUpdateRRuleInput,
   SchedulesService,
 } from "./modules/schedules/types.js";
+export {
+  quietWindowSchema,
+  scheduleCreateCronInputSchema,
+  scheduleCreateRRuleInputSchema,
+  scheduleDeleteInputSchema,
+  scheduleGetInputSchema,
+  scheduleListInputSchema,
+  scheduleToggleInputSchema,
+  scheduleUpdateRRuleInputSchema,
+} from "./modules/schedules/schemas.js";
 
 export type {
   SecretType,
