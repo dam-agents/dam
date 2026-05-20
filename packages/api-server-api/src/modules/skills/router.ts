@@ -6,8 +6,8 @@ import {
   skillCreateSourceInputSchema,
   skillDeleteSourceInputSchema,
   skillInstallInputSchema,
-  skillListLocalInputSchema,
   skillListInputSchema,
+  skillListLocalInputSchema,
   skillListSourcesInputSchema,
   skillPublishInputSchema,
   skillPublishResultSchema,
@@ -16,6 +16,7 @@ import {
   skillSchema,
   skillSourceSchema,
   skillStateInputSchema,
+  skillStateOutputSchema,
   skillUninstallInputSchema,
 } from "./schemas.js";
 
@@ -82,22 +83,7 @@ export const skillsRouter = t.router({
    */
   state: t.procedure
     .input(skillStateInputSchema)
-    .output(
-      z.object({
-        installed: z.array(skillRefSchema),
-        standalone: z.array(localSkillSchema),
-        instancePublishes: z.array(
-          z.object({
-            skillName: z.string(),
-            sourceId: z.string(),
-            sourceName: z.string(),
-            sourceGitUrl: z.string(),
-            prUrl: z.string(),
-            publishedAt: z.string(),
-          }),
-        ),
-      }),
-    )
+    .output(skillStateOutputSchema)
     .query(({ ctx, input }) => ctx.skills.getState(input.agentId)),
 
   publish: t.procedure

@@ -58,6 +58,40 @@ export const localSkillSchema = z.object({
   skillPath: z.string(),
 });
 
+/** Explicit record of a publish event. Written on a successful
+ *  `publish` call into the Postgres `instance_skill_publishes` table.
+ *  Drives the `Published` badge + "View PR" link in the UI — the
+ *  name-match heuristic it replaces had confusing false positives
+ *  when a local skill happened to share a name with a catalog entry.
+ *
+ *  Source fields are denormalized so the record stays usable after
+ *  the source is renamed or deleted. */
+export const skillPublishRecordSchema = z.object({
+  skillName: z.string(),
+  sourceId: z.string(),
+  sourceName: z.string(),
+  sourceGitUrl: z.string(),
+  prUrl: z.string(),
+  /** ISO 8601 timestamp. */
+  publishedAt: z.string(),
+});
+
+/** Reconciled view of an instance's skills: both the installed
+ *  (tracked in Postgres `instance_skills` AND present on disk) and
+ *  the standalone (on disk but not tracked). Computing this in one
+ *  pass lets the server drop ghost SkillRefs — entries whose
+ *  directories were deleted out-of-band — and persist the cleanup so
+ *  the declarative state stops drifting from the filesystem.
+ *
+ *  `instancePublishes` carries the publish history for this instance
+ *  so the UI can light up the "Published" badge on exactly the
+ *  skills the user actually pushed. */
+export const skillStateOutputSchema = z.object({
+  installed: z.array(skillRefSchema),
+  standalone: z.array(localSkillSchema),
+  instancePublishes: z.array(skillPublishRecordSchema),
+});
+
 // --- Input schemas ---
 
 export const skillListSourcesInputSchema = z
