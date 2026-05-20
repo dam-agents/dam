@@ -57,3 +57,4 @@ This directory contains ADRs for the Platform project.
 |-------|-------|-------|
 | [DRAFT](DRAFT-multi-agent.md) | Multi-agent collaboration — isolated instances with shared artifacts | @tomkis |
 | [DRAFT](044-file-import.md) | File import — bundled, atomic, one-shot | @janjeliga |
+| [DRAFT](DRAFT-fake-slack-e2e.md) | Fake Slack server for e2e testing | @tomkis |
