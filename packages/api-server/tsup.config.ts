@@ -1,7 +1,7 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: ["src/index.ts"],
+  entry: ["src/index.ts", "src/scripts/migrate-fold-instances.ts"],
   format: "esm",
   target: "node22",
   platform: "node",
