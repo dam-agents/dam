@@ -8,6 +8,16 @@ export type {
   FilesDomainError,
   FilesService,
 } from "./modules/files/types.js";
+export {
+  fileCreateInputSchema,
+  fileMkdirInputSchema,
+  fileReadInputSchema,
+  fileRemoveInputSchema,
+  fileRenameInputSchema,
+  fileUploadInputSchema,
+  fileWriteInputSchema,
+  pathSchema,
+} from "./modules/files/schemas.js";
 export type {
   GitHubErrorBody,
   InstallSkillInput,
