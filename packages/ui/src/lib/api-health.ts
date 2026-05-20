@@ -4,7 +4,7 @@ type ApiStatus = "connected" | "reconnecting";
 
 let status: ApiStatus = "connected";
 let failureCount = 0;
-let pollTimer: ReturnType<typeof setInterval> | null = null;
+let pollTimer: ReturnType<typeof setTimeout> | null = null;
 const listeners = new Set<() => void>();
 
 function setStatus(next: ApiStatus) {
@@ -15,24 +15,31 @@ function setStatus(next: ApiStatus) {
 
 function startPolling() {
   if (pollTimer) return;
-  pollTimer = setInterval(async () => {
-    if (!navigator.onLine) return;
+  async function poll() {
+    if (status !== "reconnecting") return;
+    if (!navigator.onLine) {
+      pollTimer = setTimeout(poll, 3_000);
+      return;
+    }
     try {
       const res = await fetch("/api/health");
       if (res.ok) {
         failureCount = 0;
-        stopPolling();
+        pollTimer = null;
         setStatus("connected");
+        return;
       }
     } catch {
       // still down
     }
-  }, 3_000);
+    if (status === "reconnecting") pollTimer = setTimeout(poll, 3_000);
+  }
+  pollTimer = setTimeout(poll, 3_000);
 }
 
 function stopPolling() {
   if (pollTimer) {
-    clearInterval(pollTimer);
+    clearTimeout(pollTimer);
     pollTimer = null;
   }
 }

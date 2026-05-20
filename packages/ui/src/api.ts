@@ -12,7 +12,8 @@ export const api = createTRPCClient<AppRouter>({
         try {
           const response = await globalThis.fetch(input, init);
           if (response.ok) onFetchSuccess();
-          else if (response.status >= 500) onFetchError();
+          else if (response.status === 502 || response.status === 503)
+            onFetchError();
           return response;
         } catch (error) {
           onFetchError();
