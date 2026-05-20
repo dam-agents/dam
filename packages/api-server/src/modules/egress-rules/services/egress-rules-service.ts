@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type {
-  CreateEgressRuleInput,
   EgressPreset,
+  EgressRuleCreateInput,
+  EgressRuleUpdateInput,
   EgressRuleView,
   EgressRulesService,
-  UpdateEgressRuleInput,
 } from "api-server-api";
 import type { EgressRulesRepository } from "../infrastructure/egress-rules-repository.js";
 import type { EgressRuleRow } from "../domain/types.js";
@@ -67,7 +67,7 @@ export function createEgressRulesService(
       return deps.trustedHosts;
     },
 
-    async create(input: CreateEgressRuleInput) {
+    async create(input: EgressRuleCreateInput) {
       if (!(await deps.isAgentOwnedBy(input.agentId, deps.ownerSub))) {
         throw new Error("agent not found");
       }
@@ -94,7 +94,7 @@ export function createEgressRulesService(
       return toView(row);
     },
 
-    async update(input: UpdateEgressRuleInput) {
+    async update(input: EgressRuleUpdateInput) {
       const rule = await deps.repo.getById(input.id);
       if (!rule || !(await deps.isAgentOwnedBy(rule.agentId, deps.ownerSub))) {
         throw new Error("egress rule not found");

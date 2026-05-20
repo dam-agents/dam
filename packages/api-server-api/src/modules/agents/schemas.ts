@@ -1,15 +1,7 @@
 import { z } from "zod";
+import { egressPresetSchema } from "../egress-rules/schemas.js";
 import { envVarSchema } from "../shared.js";
 import { mountSchema, resourcesSchema } from "../templates/schemas.js";
-
-// TODO(#195, sub-issue 06): move to egress-rules/schemas.ts once that
-// module's schemas are extracted; egress-rules is its conceptual owner.
-// Transient on create: bulk-seeds egress_rules and is then forgotten — the
-// preset is not stored on the agent spec; its `source` on the seeded rules
-// is the truth. Defaults to `trusted` so a brand-new agent can reach
-// Anthropic, npm, PyPI, GitHub, etc. without per-host inbox prompts. To
-// switch presets later, call `egressRules.applyPreset`.
-const egressPresetSchema = z.enum(["none", "trusted", "all"]);
 
 const idSchema = z.object({ id: z.string().min(1) });
 

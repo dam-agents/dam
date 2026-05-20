@@ -215,10 +215,20 @@ export type {
   EgressRuleSource,
   EgressPreset,
   EgressRuleView,
-  CreateEgressRuleInput,
-  UpdateEgressRuleInput,
+  EgressRuleCreateInput,
+  EgressRuleUpdateInput,
   EgressRulesService,
 } from "./modules/egress-rules/types.js";
+export {
+  egressPresetSchema,
+  egressRuleApplyPresetInputSchema,
+  egressRuleCreateInputSchema,
+  egressRuleCurrentPresetInputSchema,
+  egressRuleListForAgentInputSchema,
+  egressRuleRevokeInputSchema,
+  egressRuleUpdateInputSchema,
+  ruleVerdictSchema,
+} from "./modules/egress-rules/schemas.js";
 
 // ACP platform/* synthetic notifications
 export {
