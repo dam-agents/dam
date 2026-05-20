@@ -11,6 +11,9 @@ export {
   agentSkillPublishes,
   egressRules,
   pendingApprovals,
+  activityEvents,
+  actorRoles,
+  agents,
 } from "./schema.js";
 export {
   eq,

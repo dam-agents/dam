@@ -13,7 +13,9 @@ import { composeSchedulesModule } from "../../modules/schedules/index.js";
 import { composeSessionsModule } from "../../modules/sessions/index.js";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
 import type { SkillSourceSeed } from "../../modules/skills/index.js";
+import { SessionType } from "api-server-api";
 import { createAcpClient } from "../../core/acp-client.js";
+import { emit, EventType, type TurnOutcome } from "../../events.js";
 import { createHarnessRouter } from "./harness-router.js";
 import type { Config } from "../../config.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
@@ -71,7 +73,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       composeSchedulesModule(api, config.namespace, owner).schedules,
     handleTrigger: async (body) => {
       const mode = body.sessionMode ?? "fresh";
-      const sessionType = "schedule_cron";
 
       // Look up the instance's real owner from its ConfigMap. Composing
       // with "_system" would short-circuit sessions.create's isOwnedAgent
@@ -118,22 +119,48 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         instanceName: body.agentId,
       });
 
-      return acp.triggerSession(
-        resumeSessionId
-          ? { prompt: body.task, mcpServers: body.mcpServers, resumeSessionId }
-          : {
-              prompt: body.task,
-              mcpServers: body.mcpServers,
-              onSessionCreated: (sid) =>
-                sessions.create(
-                  sid,
-                  body.agentId,
-                  SessionMode.Chat,
-                  sessionType as any,
-                  body.schedule,
-                ),
-            },
-      );
+      let sessionId: string | null = resumeSessionId ?? null;
+      let outcome: TurnOutcome = "failure";
+      try {
+        const result = await acp.triggerSession(
+          resumeSessionId
+            ? {
+                prompt: body.task,
+                mcpServers: body.mcpServers,
+                resumeSessionId,
+              }
+            : {
+                prompt: body.task,
+                mcpServers: body.mcpServers,
+                // Capture sessionId here so the ScheduleFired event reflects
+                // the real session even when the ACP call throws after the
+                // session row has already been created.
+                onSessionCreated: (sid) => {
+                  sessionId = sid;
+                  return sessions.create(
+                    sid,
+                    body.agentId,
+                    SessionMode.Chat,
+                    SessionType.ScheduleCron,
+                    body.schedule,
+                  );
+                },
+              },
+        );
+        sessionId = result.sessionId;
+        outcome = "success";
+        return result;
+      } finally {
+        emit({
+          type: EventType.ScheduleFired,
+          scheduleId: body.schedule,
+          agentId: body.agentId,
+          ownerSub: owner,
+          mode,
+          sessionId,
+          outcome,
+        });
+      }
     },
   });
 

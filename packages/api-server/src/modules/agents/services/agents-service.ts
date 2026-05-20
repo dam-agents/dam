@@ -220,7 +220,11 @@ export function createAgentsService(deps: {
       }
 
       const agent = assembleAgent(infra, [], emails);
-      emit({ type: EventType.AgentCreated, agentId: agent.id });
+      emit({
+        type: EventType.AgentCreated,
+        agentId: agent.id,
+        ownerSub: owner,
+      });
       return agent;
     },
 

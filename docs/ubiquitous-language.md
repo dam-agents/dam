@@ -115,6 +115,19 @@ Pod-side operational view of skills. Distinct from the api-server's Skills conte
 | Acceptance Gate | The api-server middleware on the public port that refuses every request from a sub whose latest Acceptance row doesn't match the current Terms Version, returning 412 with `{ currentVersion, currentHash }` |
 | Stale Acceptance | The state of a sub whose latest Acceptance is for an older Terms Version than the current one; the gate refuses them until they accept again |
 
+## Usage Tracking (bounded context)
+
+| Term | Definition |
+|------|-----------|
+| Activity Event | An append-only `activity_events` row capturing one semantically-meaningful interaction — auth, channel turn, schedule fire, OAuth connection lifecycle, file import. Carries actor, agent, surface, outcome, and event-type-specific payload |
+| Actor Sub | The pseudonymized identifier of the user who triggered an Activity Event — `HMAC-SHA256(ACTIVITY_HMAC_KEY, keycloak_sub)` rendered as hex. Joinable across `activity_events`, `actor_roles`, and `agents.owner_sub` because the same key is used everywhere |
+| Sub Pseudonymizer | The repository-boundary helper that applies the HMAC to every `sub` before it reaches Postgres — single chokepoint, raw subs stay in-process only |
+| Activity Outcome | A `success` / `failure` Postgres enum on every Activity Event — no default, so a missing outcome surfaces as a constraint violation rather than silently miscounting |
+| Agent Mirror | The Postgres `agents` table — a per-install projection of agent ConfigMaps that lets SQL views resolve `agent_id → owner_sub` without a K8s API round-trip; populated by an event saga + startup K8s scan |
+| Inspector | A Keycloak user carrying the configured inspector realm role (`platform-inspector` by default) who can read `/api/usage/*` but is otherwise indistinguishable from a regular platform user |
+| Usage View | A named SQL view (`usage_*`) that aggregates Activity Events into an operator-facing metric. View names form the public read API; consumers never query the raw table |
+| Pilot Metric Filter | The `WHERE actor_sub NOT IN (SELECT … FROM usage_core_actor_subs)` clause (or its `agent_id` / `owner_sub` analogue) applied on every pilot Usage View to exclude core-team activity — keyed on `actor_roles.is_core`, populated from JWT `realm_access.roles` at auth time |
+
 ## Platform CLI (bounded context)
 
 | Term | Definition |

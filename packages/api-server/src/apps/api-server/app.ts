@@ -31,6 +31,7 @@ import { SessionMode, SessionType } from "api-server-api";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
 import { createSlackOAuthRoutes } from "../../modules/channels/infrastructure/slack-oauth.js";
 import { createTelegramOAuthRoutes } from "../../modules/channels/infrastructure/telegram-oauth.js";
+import type { UsageRoutes } from "../../modules/usage/index.js";
 import type { TelegramOAuthPending } from "../../modules/channels/infrastructure/telegram.js";
 import {
   isThreadAuthorized,
@@ -73,6 +74,7 @@ import type {
   PresetSeeder,
 } from "../../modules/agents/compose.js";
 import type { RedisBus } from "../../core/redis-bus.js";
+import { emit, EventType, type TurnOutcome } from "../../events.js";
 
 export interface ApiServerAppDeps {
   config: Config;
@@ -94,6 +96,7 @@ export interface ApiServerAppDeps {
    *  module's per-agent durable state; the orphan-sweeper saga is the
    *  belt-and-suspenders for anything missed here. */
   agentCleanupHooks: readonly AgentCleanupHook[];
+  usageRoutes: UsageRoutes;
 }
 
 export function startApiServerApp(deps: ApiServerAppDeps) {
@@ -131,13 +134,18 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     jwksUrl: `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/certs`,
     audience: config.keycloakApiAudience,
     requiredRole: config.keycloakRequiredRole,
+    uiClientId: config.keycloakClientId,
+    cliClientId: config.keycloakCliClientId,
+    coreRole: config.keycloakInspectorRole,
   });
 
   const slackOauthCallbackUrl =
     config.slackOauthCallbackUrl ??
     `${config.uiBaseUrl}/api/slack/oauth/callback`;
 
-  const app = new Hono<{ Variables: { user: UserIdentity } }>();
+  const app = new Hono<{
+    Variables: { user: UserIdentity; roles: string[] };
+  }>();
 
   app.get("/api/health", (c) => c.json({ status: "ok" }));
   app.get("/api/version", (c) =>
@@ -153,6 +161,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       issuer: `${config.keycloakExternalUrl}/realms/${config.keycloakRealm}`,
       clientId: config.keycloakClientId,
       cliClientId: config.keycloakCliClientId,
+      inspectorRole: config.keycloakInspectorRole ?? "",
     } satisfies AuthConfig),
   );
   // Public — UI fetches this on bootstrap (before auth) to set the page
@@ -237,6 +246,8 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       brandName: config.brand.name,
     }),
   );
+
+  app.route("/", deps.usageRoutes);
 
   if (config.slackBotToken && config.slackAppToken) {
     app.route(
@@ -351,7 +362,9 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     "upgrade",
     "expect",
   ]);
-  type ImportCtx = Context<{ Variables: { user: UserIdentity } }>;
+  type ImportCtx = Context<{
+    Variables: { user: UserIdentity; roles: string[] };
+  }>;
   async function proxyImport(c: ImportCtx) {
     const user = c.get("user");
     const agentId = c.req.param("id")!;
@@ -373,7 +386,20 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     if (!Number.isFinite(length) || length < 0) {
       return c.json({ error: "invalid Content-Length" }, 400);
     }
+    let emitted = false;
+    const fireEmit = (outcome: TurnOutcome) => {
+      if (emitted) return;
+      emitted = true;
+      emit({
+        type: EventType.FilesImported,
+        actorSub: user.sub,
+        agentId,
+        outcome,
+        bytes: length,
+      });
+    };
     if (length > config.maxImportBundleBytes) {
+      fireEmit("failure");
       return c.json(
         {
           error: `bundle exceeds maximum size of ${config.maxImportBundleBytes} bytes`,
@@ -387,6 +413,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       process.stderr.write(
         `[import-proxy] ensureReady failed for ${agentId}: ${(err as Error).message}\n`,
       );
+      fireEmit("failure");
       return c.json({ error: "instance unreachable" }, 502);
     }
     const upstreamUrl = new URL(
@@ -432,6 +459,8 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
               Array.isArray(value) ? value.join(", ") : value,
             );
           }
+          const status = upstreamRes.statusCode ?? 502;
+          fireEmit(status >= 200 && status < 300 ? "success" : "failure");
           // toWeb gives a Web ReadableStream backed by the IncomingMessage —
           // Hono streams this back to the client without buffering.
           const body = Readable.toWeb(
@@ -439,19 +468,21 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
           ) as ReadableStream<Uint8Array>;
           resolveOnce(
             new Response(body, {
-              status: upstreamRes.statusCode ?? 502,
+              status,
               headers: responseHeaders,
             }),
           );
         },
       );
       upstreamReq.on("error", () => {
+        fireEmit("failure");
         resolveOnce(c.json({ error: "instance unreachable" }, 502));
       });
       upstreamReq.on("close", () => {
         // Backstop: if the upstream socket closed without ever emitting
         // either `response` or `error` (Node sometimes does this on
         // mid-request aborts), the Promise would otherwise hang.
+        fireEmit("failure");
         resolveOnce(c.json({ error: "instance closed connection" }, 502));
       });
 
@@ -482,6 +513,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         try {
           upstreamReq.destroy();
         } catch {}
+        fireEmit("failure");
         resolveOnce(
           c.json({ error: `bundle exceeds maximum size of ${cap} bytes` }, 413),
         );
@@ -673,7 +705,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
 
     let user: UserIdentity;
     try {
-      user = await auth.verify(token);
+      user = (await auth.verify(token)).user;
     } catch (err) {
       const status =
         err instanceof ForbiddenError ? "403 Forbidden" : "401 Unauthorized";

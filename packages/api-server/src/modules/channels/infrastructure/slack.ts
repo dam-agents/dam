@@ -21,6 +21,7 @@ import {
   type DomainEvent,
   type ForkFailed,
   type ForkReady,
+  type TurnOutcome,
 } from "../../../events.js";
 import type { IdentityLinkService } from "./../services/identity-link-service.js";
 import {
@@ -125,6 +126,7 @@ export function createSlackWorker(
     eventTs: string;
     text: string;
     hasThread: boolean;
+    actorSub: string;
   }) {
     if (!app) return;
     const { instanceName } = ctx;
@@ -135,6 +137,7 @@ export function createSlackWorker(
       name: "eyes",
     });
 
+    let outcome: TurnOutcome = "failure";
     try {
       await agents().ensureReady(instanceName);
       const acp = createAcpClient({ namespace, instanceName });
@@ -170,13 +173,21 @@ export function createSlackWorker(
         instanceName,
         response,
       );
-      emit({ type: EventType.SlackTurnRelayed, replyId: ctx.eventTs });
+      outcome = "success";
     } catch (err) {
       process.stderr.write(`[${instanceName}] ACP error: ${err}\n`);
       await app.client.chat.postMessage({
         channel: ctx.channel,
         thread_ts: ctx.threadTs,
         text: `Error: ${formatError(err)}`,
+      });
+    } finally {
+      emit({
+        type: EventType.ChannelTurnRelayed,
+        channel: "slack",
+        agentId: instanceName,
+        actorSub: ctx.actorSub,
+        outcome,
       });
     }
   }
@@ -251,6 +262,7 @@ export function createSlackWorker(
             threadTs: args.threadTs,
             instanceName: args.instanceName,
             slackUserId: args.slackUserId,
+            actorSub: args.keycloakSub,
             prompt,
             existingSessionId,
           }).catch((err) => {
@@ -301,6 +313,7 @@ export function createSlackWorker(
       threadTs: string;
       instanceName: string;
       slackUserId: string;
+      actorSub: string;
       prompt: string;
       existingSessionId: string | undefined;
     },
@@ -310,6 +323,7 @@ export function createSlackWorker(
 
     await match(outcome)
       .with({ type: EventType.ForkReady }, async (event) => {
+        let turnOutcome: TurnOutcome = "failure";
         try {
           const acp = createForkAcpClient({ podIP: event.podIP });
           const response = ctx.existingSessionId
@@ -333,6 +347,7 @@ export function createSlackWorker(
             ctx.instanceName,
             response,
           );
+          turnOutcome = "success";
         } catch (err) {
           process.stderr.write(
             `[slack/fork ${event.forkId}] ACP error: ${err}\n`,
@@ -344,8 +359,11 @@ export function createSlackWorker(
           });
         } finally {
           emit({
-            type: EventType.SlackTurnRelayed,
-            replyId: event.replyId,
+            type: EventType.ChannelTurnRelayed,
+            channel: "slack",
+            agentId: ctx.instanceName,
+            actorSub: ctx.actorSub,
+            outcome: turnOutcome,
             forkId: event.forkId,
           });
         }
@@ -363,6 +381,16 @@ export function createSlackWorker(
             `[slack/fork] failed to notify ${ctx.slackUserId} of fork failure "${event.reason}": ${formatError(err)}\n`,
           );
         }
+        // Emit with forkId so the on-channel-turn-relayed saga calls
+        // closeFork — without this the failed fork orphans its k8s state.
+        emit({
+          type: EventType.ChannelTurnRelayed,
+          channel: "slack",
+          agentId: ctx.instanceName,
+          actorSub: ctx.actorSub,
+          outcome: "failure",
+          forkId: event.forkId,
+        });
       })
       .exhaustive();
   }
@@ -522,6 +550,7 @@ export function createSlackWorker(
       eventTs: args.eventTs,
       text: args.text,
       hasThread: args.hasThread,
+      actorSub: args.keycloakSub,
     });
   }
 

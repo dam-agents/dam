@@ -93,6 +93,34 @@ export function getUser(): User | null {
   return currentUser;
 }
 
+/** Returns realm roles from the current user's access token, or [] if not authenticated. */
+export function getCurrentRoles(): string[] {
+  const token = currentUser?.access_token;
+  if (!token) return [];
+  try {
+    const payload = JSON.parse(base64UrlDecode(token.split(".")[1] ?? "")) as {
+      realm_access?: { roles?: string[] };
+    };
+    return payload.realm_access?.roles ?? [];
+  } catch {
+    return [];
+  }
+}
+
+// JWT payloads are base64url, not base64 — `atob` alone fails on payloads
+// containing `-` or `_`. Convert to base64 + restore padding before decoding.
+function base64UrlDecode(s: string): string {
+  const b64 = s.replace(/-/g, "+").replace(/_/g, "/");
+  return atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4));
+}
+
+/** True if the current user has the inspector role and usage tracking is enabled server-side. */
+export function isUsageInspector(): boolean {
+  const role = cachedAuthConfig?.inspectorRole;
+  if (!role) return false;
+  return getCurrentRoles().includes(role);
+}
+
 /** Redirect to Keycloak logout. */
 export async function logout(): Promise<void> {
   await userManager.signoutRedirect();

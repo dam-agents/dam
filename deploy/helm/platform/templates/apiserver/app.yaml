@@ -134,6 +134,15 @@ spec:
             - name: TELEGRAM_ENABLED
               value: "true"
             {{- end }}
+            {{- if .Values.apiServer.activityTracking.enabled }}
+            - name: ACTIVITY_TRACKING_ENABLED
+              value: "true"
+            {{- end }}
+            - name: ACTIVITY_HMAC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.fullname" . }}-apiserver-activity
+                  key: ACTIVITY_HMAC_KEY
             {{- if .Values.keycloak.enabled }}
             - name: KEYCLOAK_URL
               value: "http://{{ include "platform.keycloak.fullname" . }}:{{ .Values.keycloak.port }}"
@@ -157,6 +166,10 @@ spec:
             {{- if .Values.keycloak.requiredRole }}
             - name: KEYCLOAK_REQUIRED_ROLE
               value: {{ .Values.keycloak.requiredRole | quote }}
+            {{- end }}
+            {{- if .Values.keycloak.inspectorRole }}
+            - name: KEYCLOAK_INSPECTOR_ROLE
+              value: {{ .Values.keycloak.inspectorRole | quote }}
             {{- end }}
             {{- end }}
             - name: AGENT_HOME

@@ -44,6 +44,12 @@ const configSchema = z.object({
   slackAppToken: z.string().nullable().default(null),
   slackOauthCallbackUrl: z.string().nullable().default(null),
   telegramEnabled: z.coerce.boolean().default(false),
+  activityTrackingEnabled: z.coerce.boolean().default(false),
+  /** HMAC key used to pseudonymize Keycloak `sub` values written to
+   *  `activity_events`, `actor_roles`, and `instances` (GDPR Art. 32).
+   *  Must be stable across restarts — rotating it orphans every existing
+   *  row. The Helm chart auto-generates and persists this in a Secret. */
+  activityHmacKey: z.string().min(1, "ACTIVITY_HMAC_KEY must be set"),
   uiBaseUrl: z.url().default("http://localhost:4444"),
   keycloakUrl: z.url().default("http://platform-keycloak:8080"),
   keycloakExternalUrl: z.url().default("http://keycloak.localhost:4444"),
@@ -57,6 +63,10 @@ const configSchema = z.object({
   keycloakApiClientId: z.string().default("platform-api"),
   keycloakApiClientSecret: z.string().default(""),
   keycloakRequiredRole: z.string().optional(),
+  /** Realm role granting read access to the inspector endpoints
+   *  (`GET /api/usage`, `GET /api/usage/report`). Unset means usage endpoints
+   *  are off entirely. Threaded from `keycloak.inspectorRole` Helm value. */
+  keycloakInspectorRole: z.string().optional(),
   agentHome: z.string().default("/home/agent"),
   /** JSON array of system Skill Sources declared by the cluster admin via
    *  Helm values. Empty/unset means no seed sources. Validated by Zod inside
@@ -133,6 +143,8 @@ export function loadConfig(): Config {
     slackAppToken: process.env.SLACK_APP_TOKEN,
     slackOauthCallbackUrl: process.env.SLACK_OAUTH_CALLBACK_URL,
     telegramEnabled: process.env.TELEGRAM_ENABLED,
+    activityTrackingEnabled: process.env.ACTIVITY_TRACKING_ENABLED,
+    activityHmacKey: process.env.ACTIVITY_HMAC_KEY,
     uiBaseUrl: process.env.UI_BASE_URL,
     keycloakUrl: process.env.KEYCLOAK_URL,
     keycloakExternalUrl: process.env.KEYCLOAK_EXTERNAL_URL,
@@ -143,6 +155,7 @@ export function loadConfig(): Config {
     keycloakApiClientId: process.env.KEYCLOAK_API_CLIENT_ID,
     keycloakApiClientSecret: process.env.KEYCLOAK_API_CLIENT_SECRET,
     keycloakRequiredRole: process.env.KEYCLOAK_REQUIRED_ROLE,
+    keycloakInspectorRole: process.env.KEYCLOAK_INSPECTOR_ROLE,
     agentHome: process.env.AGENT_HOME,
     skillSourcesSeed: process.env.SKILL_SOURCES_SEED,
     defaultGithubClientId: process.env.PLATFORM_DEFAULT_GITHUB_CLIENT_ID,

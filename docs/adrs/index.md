@@ -52,6 +52,7 @@ This directory contains ADRs for the Platform project.
 | [045](045-file-import.md) | File import — bundled, atomic, one-shot | @janjeliga |
 | [046](046-eliminate-instance.md)              | Eliminate Instance — collapse into Agent | @jezekra1 |
 | [047](047-terms-of-use-acceptance.md)         | Terms of Use acceptance — api-server gate with hash-as-proof | @tomkis |
+| [048](048-usage-tracking.md)                  | Usage tracking — append-only activity log with pseudonymized identifiers | @jjeliga |
 
 ## Drafts
 

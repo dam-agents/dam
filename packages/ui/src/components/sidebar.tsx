@@ -1,4 +1,5 @@
 import {
+  BarChart3,
   Bot,
   PanelLeftClose,
   PanelLeftOpen,
@@ -8,8 +9,10 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { isUsageInspector } from "../auth.js";
 import { getBrand } from "../brand.js";
 import { InboxBell } from "../modules/approvals/components/inbox-bell.js";
+import { openUsageReport } from "../modules/usage/api/open-usage-report.js";
 import { useStore } from "../store.js";
 import { Logo } from "./logo.js";
 
@@ -24,6 +27,7 @@ const navItems = [
 export function Sidebar() {
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
+  const showUsage = isUsageInspector();
 
   const [collapsed, setCollapsed] = useState(() => {
     return localStorage.getItem(STORAGE_KEY) === "true";
@@ -72,6 +76,18 @@ export function Sidebar() {
             </button>
           );
         })}
+        {showUsage && (
+          <button
+            onClick={openUsageReport}
+            title={collapsed ? "Usage" : undefined}
+            className={`flex items-center gap-2.5 rounded-lg transition-colors h-9 text-text-secondary hover:text-text hover:bg-surface-raised ${collapsed ? "justify-center px-0" : "px-2.5"}`}
+          >
+            <BarChart3 size={18} className="shrink-0" />
+            {!collapsed && (
+              <span className="text-[14px] font-medium">Usage</span>
+            )}
+          </button>
+        )}
       </div>
 
       {/* Spacer */}

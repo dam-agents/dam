@@ -26,6 +26,7 @@ import {
   type OAuthAppRegistry,
 } from "../../modules/connections/infrastructure/oauth-apps.js";
 import { discoverMcpAuth } from "../../modules/connections/infrastructure/mcp-discovery.js";
+import { emit, EventType } from "../../events.js";
 
 // ---------------------------------------------------------------------------
 // Routes
@@ -47,7 +48,9 @@ export interface OAuthRoutesDeps {
 export function createOAuthRoutes(deps: OAuthRoutesDeps) {
   const { uiBaseUrl, k8sClient, apps, brandName } = deps;
   const engine = deps.engine ?? createOAuthEngine();
-  const oauth = new Hono<{ Variables: { user: UserIdentity } }>();
+  const oauth = new Hono<{
+    Variables: { user: UserIdentity; roles: string[] };
+  }>();
 
   function getUserJwt(c: {
     req: { header: (name: string) => string | undefined };
@@ -297,6 +300,12 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
     }
     const user = c.get("user");
     await k8sConnectionsFor(user.sub).deleteConnection(connectionKey);
+    emit({
+      type: EventType.ConnectionRemoved,
+      actorSub: user.sub,
+      connectionKey,
+      kind: "oauth_app",
+    });
     return c.json({ ok: true });
   });
 
@@ -334,6 +343,12 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
     try {
       const user = c.get("user");
       await k8sConnectionsFor(user.sub).deleteConnection(hostname);
+      emit({
+        type: EventType.ConnectionRemoved,
+        actorSub: user.sub,
+        connectionKey: hostname,
+        kind: "mcp",
+      });
       return c.json({ ok: true });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
@@ -491,6 +506,12 @@ export function createOAuthRoutes(deps: OAuthRoutesDeps) {
         `${uiBaseUrl}?oauth=error&message=${encodeURIComponent(msg)}`,
       );
     }
+    emit({
+      type: EventType.ConnectionCreated,
+      actorSub: pending.userSub,
+      connectionKey: pending.flow.connectionKey,
+      kind: isMcp ? "mcp" : "oauth_app",
+    });
 
     // Always return the user to the platform UI after OAuth, even for
     // GitHub App connections that still need an install step. The UI then

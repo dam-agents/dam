@@ -99,6 +99,20 @@
       "when": 1779494400000,
       "tag": "0013_eliminate_instance",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1779580800000,
+      "tag": "0014_activity_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1779667200000,
+      "tag": "0015_usage_views",
+      "breakpoints": true
     }
   ]
 }
