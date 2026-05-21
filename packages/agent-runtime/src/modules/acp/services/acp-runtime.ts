@@ -136,7 +136,17 @@ interface SessionLog {
    * and our log mirrors what it would replay." When `maybeCloseIdleSession`
    * tears the session down inside the agent, it MUST reset `metadata` to
    * null AND clear `entries`, so the next access goes through cold-bootstrap
-   * and rehydrates both sides from disk. */
+   * and rehydrates both sides from disk.
+   *
+   * `null` represents two states: (a) the session was never bootstrapped, or
+   * (b) the most recent cold `session/load` failed — the cache-population
+   * guard in `handleAgentLine` skips writes when the agent's response has
+   * `result === undefined` (i.e. an error frame), so an error leaves
+   * `metadata` null. The bootstrap completion handler relies on exactly
+   * this to detect cold-load failure (`loadFailed = log.metadata === null`)
+   * and relay the agent's error to parked waiters. A future discriminated
+   * union (`{ status: "loaded"; data: unknown } | null`) would let the
+   * type system encode this directly. */
   metadata: unknown | null;
 }
 
@@ -793,6 +803,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           const boot = bootstrapBySession.get(sid);
           if (boot) {
             bootstrapBySession.delete(sid);
+            // Error responses leave metadata null (cache-population guard
+            // above requires `result !== undefined`); see SessionLog.metadata
+            // invariant for the full coupling.
             const loadFailed = log.metadata === null;
             for (const waiter of boot.waiters) {
               if (!waiter.channel.isOpen()) continue;
