@@ -12,6 +12,25 @@
 -- a startup bootstrap that backfills agents pre-dating the saga.
 
 -- ----------------------------------------------------------------------------
+-- Helper views — referenced by core-team filters in the views below
+-- ----------------------------------------------------------------------------
+
+-- Keycloak subs currently flagged with the core role (latest seen on auth).
+CREATE VIEW "usage_core_actor_subs" AS
+  SELECT actor_sub
+  FROM actor_roles
+  WHERE is_core = true;
+--> statement-breakpoint
+-- Agents owned by anyone with the core role. Used to exclude core-team
+-- agent activity from pilot metrics. Owners with no auth events yet won't
+-- appear here — see the edge-case discussion in usage-tracking-steps.md.
+CREATE VIEW "usage_core_agents" AS
+  SELECT DISTINCT a.id AS agent_id
+  FROM agents a
+  JOIN usage_core_actor_subs cs ON cs.actor_sub = a.owner_sub;
+--> statement-breakpoint
+
+-- ----------------------------------------------------------------------------
 -- Auth views (from activity_events, type='auth')
 -- ----------------------------------------------------------------------------
 
@@ -89,25 +108,6 @@ CREATE VIEW "usage_distinct_users_per_day_7d" AS
     AND actor_sub NOT IN (SELECT actor_sub FROM usage_core_actor_subs)
   GROUP BY day
   ORDER BY day DESC;
---> statement-breakpoint
-
--- ----------------------------------------------------------------------------
--- Helper views — referenced by commented core-team filters in views below
--- ----------------------------------------------------------------------------
-
--- Keycloak subs currently flagged with the core role (latest seen on auth).
-CREATE VIEW "usage_core_actor_subs" AS
-  SELECT actor_sub
-  FROM actor_roles
-  WHERE is_core = true;
---> statement-breakpoint
--- Agents owned by anyone with the core role. Used to exclude core-team
--- agent activity from pilot metrics. Owners with no auth events yet won't
--- appear here — see the edge-case discussion in usage-tracking-steps.md.
-CREATE VIEW "usage_core_agents" AS
-  SELECT DISTINCT a.id AS agent_id
-  FROM agents a
-  JOIN usage_core_actor_subs cs ON cs.actor_sub = a.owner_sub;
 --> statement-breakpoint
 
 -- ----------------------------------------------------------------------------

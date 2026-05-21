@@ -1,4 +1,4 @@
-import type { AgentRegistryRow } from "./infrastructure/agents-postgres-repository.js";
+import type { AgentRegistryRow } from "./domain/types.js";
 
 export type BootstrapAgentsDeps = {
   listIdentities: () => Promise<{ id: string; owner: string }[]>;

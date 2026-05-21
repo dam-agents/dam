@@ -7,7 +7,7 @@ import {
   type AgentCreated,
   type AgentDeleted,
 } from "../../../events.js";
-import type { AgentRegistryRow } from "../infrastructure/agents-postgres-repository.js";
+import type { AgentRegistryRow } from "../domain/types.js";
 
 export type PersistAgentsDeps = {
   upsertAgent: (row: AgentRegistryRow) => Promise<void>;

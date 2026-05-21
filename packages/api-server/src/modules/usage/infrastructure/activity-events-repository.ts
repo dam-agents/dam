@@ -1,16 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { activityEvents, actorRoles, sql, type Db } from "db";
-import type { TurnOutcome } from "../../../events.js";
 import type { SubPseudonymizer } from "../../../core/sub-pseudonymizer.js";
-
-export type ActivityEventRow = {
-  type: string;
-  actorSub: string | null;
-  agentId: string | null;
-  surface: string | null;
-  outcome: TurnOutcome;
-  payload: Record<string, unknown>;
-};
+import type { ActivityEventRow } from "../domain/types.js";
 
 export function insertActivityEvent(db: Db, pseudo: SubPseudonymizer) {
   return async (row: ActivityEventRow): Promise<void> => {

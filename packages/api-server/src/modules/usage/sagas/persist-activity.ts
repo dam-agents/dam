@@ -11,7 +11,7 @@ import {
   type ConnectionRemoved,
   type FilesImported,
 } from "../../../events.js";
-import type { ActivityEventRow } from "../infrastructure/activity-events-repository.js";
+import type { ActivityEventRow } from "../domain/types.js";
 
 export type PersistActivityDeps = {
   insert: (row: ActivityEventRow) => Promise<void>;

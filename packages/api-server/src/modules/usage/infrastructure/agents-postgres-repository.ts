@@ -1,10 +1,6 @@
 import { eq, agents, sql, type Db } from "db";
 import type { SubPseudonymizer } from "../../../core/sub-pseudonymizer.js";
-
-export type AgentRegistryRow = {
-  id: string;
-  ownerSub: string;
-};
+import type { AgentRegistryRow } from "../domain/types.js";
 
 /** Idempotent. Resets `deleted_at` and refreshes ownerSub on conflict so a
  *  re-used agent id (collision or future deterministic naming) reflects the
