@@ -13,7 +13,8 @@ USER root
 RUN dnf install -y nodejs22-full-i18n && dnf clean all
 
 # Pi harness
-RUN npm install -g @earendil-works/pi-coding-agent pi-acp @zhafron/pi-memory \
+RUN --mount=type=cache,target=/root/.npm \
+    npm install -g @earendil-works/pi-coding-agent pi-acp @zhafron/pi-memory \
     && chown -R 65532:0 /app
 
 COPY harness-chat.sh /usr/local/bin/harness-chat

@@ -47,17 +47,29 @@ esac
 ["image:controller"]
 description = "Build controller Docker image"
 dir = "{{config_root}}"
-run = 'docker build -t platform-controller:latest packages/controller/'
+run = '''
+#!/usr/bin/env bash
+[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
+docker build -t platform-controller:latest packages/controller/
+'''
 
 ["image:apiserver"]
 description = "Build api-server Docker image"
 dir = "{{config_root}}"
-run = 'docker build -f packages/api-server/Dockerfile -t platform-api-server:latest .'
+run = '''
+#!/usr/bin/env bash
+[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
+docker build -f packages/api-server/Dockerfile -t platform-api-server:latest .
+'''
 
 ["image:ui"]
 description = "Build UI Docker image"
 dir = "{{config_root}}"
-run = 'docker build -f packages/ui/Dockerfile -t platform-ui:latest .'
+run = '''
+#!/usr/bin/env bash
+[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
+docker build -f packages/ui/Dockerfile -t platform-ui:latest .
+'''
 
 ["image:agent"]
 description = "Build agent Docker images (platform-base + claude-code + google-workspace + pi-agent + bob)"
@@ -65,6 +77,7 @@ dir = "{{config_root}}"
 run = '''
 #!/usr/bin/env bash
 set -eo pipefail
+[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
 docker build -f packages/platform-base/Dockerfile -t platform-base .
 docker build -t platform-claude-code:latest packages/agents/claude-code
 docker build -t platform-google-workspace-agent:latest packages/agents/google-workspace

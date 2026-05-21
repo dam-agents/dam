@@ -13,7 +13,8 @@ COPY packages/api-server-api/package.json packages/api-server-api/
 COPY packages/agent-runtime-api/package.json packages/agent-runtime-api/
 COPY packages/db/package.json packages/db/
 
-RUN pnpm install --frozen-lockfile --filter api-server...
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm-store \
+    PNPM_STORE_DIR=/pnpm-store pnpm install --frozen-lockfile --filter api-server...
 
 COPY packages/dev-config/ packages/dev-config/
 COPY packages/api-server-api/ packages/api-server-api/

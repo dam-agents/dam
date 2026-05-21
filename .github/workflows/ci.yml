@@ -69,9 +69,106 @@ jobs:
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           sudo docker image prune --all --force
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      # Build images with GHA layer cache (mount caches in Dockerfiles help within-run)
+      - name: Build controller image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: packages/controller
+          load: true
+          tags: platform-controller:latest
+          cache-from: |
+            type=gha,scope=ci-controller
+            type=gha,scope=controller
+          cache-to: type=gha,mode=max,scope=ci-controller
+      - name: Build api-server image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: packages/api-server/Dockerfile
+          load: true
+          tags: platform-api-server:latest
+          cache-from: |
+            type=gha,scope=ci-apiserver
+            type=gha,scope=api-server
+          cache-to: type=gha,mode=max,scope=ci-apiserver
+      - name: Build UI image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: packages/ui/Dockerfile
+          load: true
+          tags: platform-ui:latest
+          cache-from: |
+            type=gha,scope=ci-ui
+            type=gha,scope=ui
+          cache-to: type=gha,mode=max,scope=ci-ui
+      - name: Build platform-base image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: packages/platform-base/Dockerfile
+          load: true
+          tags: platform-base:latest
+          cache-from: |
+            type=gha,scope=ci-platform-base
+            type=gha,scope=platform-base
+          cache-to: type=gha,mode=max,scope=ci-platform-base
+      - name: Build claude-code agent image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: packages/agents/claude-code
+          load: true
+          tags: platform-claude-code:latest
+          build-contexts: |
+            platform-base=docker-image://platform-base:latest
+          cache-from: |
+            type=gha,scope=ci-claude-code
+            type=gha,scope=claude-code
+          cache-to: type=gha,mode=max,scope=ci-claude-code
+      - name: Build google-workspace agent image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: packages/agents/google-workspace
+          load: true
+          tags: platform-google-workspace-agent:latest
+          build-contexts: |
+            platform-base=docker-image://platform-base:latest
+          cache-from: |
+            type=gha,scope=ci-google-workspace
+            type=gha,scope=google-workspace-agent
+          cache-to: type=gha,mode=max,scope=ci-google-workspace
+      - name: Build pi-agent image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: packages/agents/pi-agent
+          load: true
+          tags: platform-pi-agent:latest
+          build-contexts: |
+            platform-base=docker-image://platform-base:latest
+          cache-from: |
+            type=gha,scope=ci-pi-agent
+            type=gha,scope=pi-agent
+          cache-to: type=gha,mode=max,scope=ci-pi-agent
+      - name: Build bob agent image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: packages/agents/bob
+          load: true
+          tags: platform-bob:latest
+          build-contexts: |
+            platform-base=docker-image://platform-base:latest
+          cache-from: |
+            type=gha,scope=ci-bob
+            type=gha,scope=bob
+          cache-to: type=gha,mode=max,scope=ci-bob
+
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
       - run: mise run setup
       - run: mise run e2e
+        env:
+          SKIP_IMAGE_BUILD: "1"
       - name: Teardown test cluster
         if: always()
         run: mise run cluster:delete -- --force

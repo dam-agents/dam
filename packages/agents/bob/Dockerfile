@@ -6,7 +6,8 @@ USER root
 
 # Bob installer — bobshell isn't on npmjs.org; bob.ibm.com is the
 # official distribution channel. `--pm npm` skips pnpm/yarn detection.
-RUN curl -fsSL https://bob.ibm.com/download/bobshell.sh \
+RUN --mount=type=cache,target=/root/.npm \
+    curl -fsSL https://bob.ibm.com/download/bobshell.sh \
     | bash -s -- --pm npm \
     && chown -R 65532:0 /app
 

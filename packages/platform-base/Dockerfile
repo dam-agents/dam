@@ -17,7 +17,8 @@ COPY packages/agent-runtime/package.json packages/agent-runtime/
 COPY packages/agent-runtime-api/package.json packages/agent-runtime-api/
 COPY packages/api-server-api/package.json packages/api-server-api/
 
-RUN pnpm install --frozen-lockfile --filter agent-runtime...
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm-store \
+    PNPM_STORE_DIR=/pnpm-store pnpm install --frozen-lockfile --filter agent-runtime...
 
 COPY packages/dev-config/ packages/dev-config/
 COPY packages/agent-runtime-api/ packages/agent-runtime-api/
