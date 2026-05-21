@@ -1,7 +1,7 @@
 /**
  * Generic helpers shared across modules that read/write platform ConfigMaps.
- * Per-module parsers (parseTemplate, parseAgent, parseInfraInstance,
- * parseSchedule) live in each module's own infrastructure folder.
+ * Per-module parsers (parseTemplate, parseInfraAgent, parseSchedule) live
+ * in each module's own infrastructure folder.
  */
 import type * as k8s from "@kubernetes/client-node";
 import yaml from "js-yaml";

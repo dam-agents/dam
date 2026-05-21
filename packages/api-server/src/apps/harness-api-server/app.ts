@@ -77,10 +77,10 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       // with "_system" would short-circuit sessions.create's isOwnedAgent
       // check and silently drop the DB row — so the scheduled session would
       // fire, complete, and leave no trace in the sessions table.
-      const instanceCm = await k8sClient.getConfigMap(body.agentId);
-      const owner = instanceCm?.metadata?.labels?.[LABEL_OWNER];
+      const agentCm = await k8sClient.getConfigMap(body.agentId);
+      const owner = agentCm?.metadata?.labels?.[LABEL_OWNER];
       if (!owner) {
-        throw new Error(`instance ${body.agentId}: missing owner label`);
+        throw new Error(`agent ${body.agentId}: missing owner label`);
       }
       const { readSpec: readTemplateSpec } = composeTemplatesModule(
         api,

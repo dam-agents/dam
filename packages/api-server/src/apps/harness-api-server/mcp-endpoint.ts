@@ -61,7 +61,7 @@ function errorResult(text: string): ToolContent {
 function errMessage(err: unknown, fallback: string): string {
   if (err instanceof TRPCError) {
     if (err.code === "PRECONDITION_FAILED") {
-      return `the instance must be running to manage skills: ${err.message}`;
+      return `the agent must be running to manage skills: ${err.message}`;
     }
     if (err.code === "NOT_FOUND") return `not found: ${err.message}`;
     return err.message;
@@ -123,7 +123,7 @@ export function createMcpSession(
 
   server.tool(
     "describe_channel",
-    "Describe a channel on this agent instance. Returns { chats: [{ id, title }] } listing authorized chats (DMs/threads/rooms). Use the id as chatId in send_channel_message.",
+    "Describe a channel on this agent. Returns { chats: [{ id, title }] } listing authorized chats (DMs/threads/rooms). Use the id as chatId in send_channel_message.",
     { channel: z.enum([ChannelType.Slack, ChannelType.Telegram]) },
     async ({ channel }) => {
       const chats = await deps.channelManager.listConversations(
@@ -136,7 +136,7 @@ export function createMcpSession(
 
   server.tool(
     "send_channel_message",
-    `Send a message to a connected channel (slack or telegram) for this agent instance. Pass chatId to address a specific chat (get ids from describe_channel); omit to use the last-active chat. Optionally attach a single file by setting attachment.path — accepts an absolute path on the agent pod (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md). 10 MiB cap.`,
+    `Send a message to a connected channel (slack or telegram) for this agent. Pass chatId to address a specific chat (get ids from describe_channel); omit to use the last-active chat. Optionally attach a single file by setting attachment.path — accepts an absolute path on the agent pod (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md). 10 MiB cap.`,
     {
       channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
       text: z.string(),
@@ -214,7 +214,7 @@ export function createMcpSession(
 
   server.tool(
     "list_skill_sources",
-    "List the skill sources (public git repos) this instance can install from. Each entry has an id, display name, git URL, and a system flag indicating admin-managed sources.",
+    "List the skill sources (public git repos) this agent can install from. Each entry has an id, display name, git URL, and a system flag indicating admin-managed sources.",
     {},
     () =>
       textTool(
@@ -238,7 +238,7 @@ export function createMcpSession(
 
   server.tool(
     "install_skill",
-    "Install a skill onto THIS running agent instance. Files land on the pod's persistent volume at the agent's configured skill path; the harness picks them up on the next session.",
+    "Install a skill onto THIS running agent. Files land on the pod's persistent volume at the agent's configured skill path; the harness picks them up on the next session.",
     {
       source: z.string().url(),
       name: z.string().min(1),
@@ -249,13 +249,13 @@ export function createMcpSession(
         "Failed to install skill",
         () => deps.skills.installSkill({ agentId, source, name, version }),
         (installed) =>
-          `Installed ${name} @ ${version.slice(0, 8)}. Instance now has ${installed.length} skill(s).`,
+          `Installed ${name} @ ${version.slice(0, 8)}. Agent now has ${installed.length} skill(s).`,
       ),
   );
 
   server.tool(
     "uninstall_skill",
-    "Uninstall a skill from THIS agent instance. Removes the directory from the pod and drops the entry from the instance spec.",
+    "Uninstall a skill from THIS agent. Removes the directory from the pod and drops the entry from the agent spec.",
     {
       source: z.string().url(),
       name: z.string().min(1),
@@ -265,13 +265,13 @@ export function createMcpSession(
         "Failed to uninstall skill",
         () => deps.skills.uninstallSkill({ agentId, source, name }),
         (remaining) =>
-          `Uninstalled ${name}. Instance now has ${remaining.length} skill(s).`,
+          `Uninstalled ${name}. Agent now has ${remaining.length} skill(s).`,
       ),
   );
 
   server.tool(
     "publish_skill",
-    "Open a pull request that adds an existing on-disk skill from THIS instance to a connected source. PRECONDITION: the skill directory (SKILL.md + supporting files) must already exist under one of your configured skill paths — author the files first using your normal file-writing tools, then call this. This tool only ships an already-authored skill upstream; it does not create or scaffold one. Requires the source to have a publish credential configured. Returns the PR URL on success.",
+    "Open a pull request that adds an existing on-disk skill from THIS agent to a connected source. PRECONDITION: the skill directory (SKILL.md + supporting files) must already exist under one of your configured skill paths — author the files first using your normal file-writing tools, then call this. This tool only ships an already-authored skill upstream; it does not create or scaffold one. Requires the source to have a publish credential configured. Returns the PR URL on success.",
     {
       sourceId: z.string().min(1),
       name: z.string().min(1),
@@ -288,13 +288,13 @@ export function createMcpSession(
   );
 
   // ---- Schedule tools -------------------------------------------------------
-  // Schedule management: agent may only see/modify schedules belonging to its own instance.
+  // Schedule management: agent may only see/modify schedules belonging to itself.
   // Descriptions are deliberately assertive — Claude Code ships with an in-process
   // scheduled-tasks tool that would otherwise be preferred. These schedules are the
   // *persistent, platform-level* ones visible in the host UI.
   server.tool(
     "list_schedules",
-    "List all platform schedules registered for this agent instance. These are persistent cron schedules visible in the host UI (not in-session or in-process cron tools).",
+    "List all platform schedules registered for this agent. These are persistent cron schedules visible in the host UI (not in-session or in-process cron tools).",
     {},
     async () => {
       const list = await schedules.list(agentId);
@@ -308,7 +308,7 @@ export function createMcpSession(
 
   server.tool(
     "create_schedule",
-    "Register a PERSISTENT cron schedule on this agent instance. The schedule runs on the platform Kubernetes controller, survives Claude process restarts, shows up in the host UI, and fires the given prompt as a new trigger. PREFER THIS over any in-process / session-only / built-in CronCreate tool whenever the user asks to schedule recurring work on this agent — those in-process schedules die when Claude exits and are invisible to the human operator.",
+    "Register a PERSISTENT cron schedule on this agent. The schedule runs on the platform Kubernetes controller, survives Claude process restarts, shows up in the host UI, and fires the given prompt as a new trigger. PREFER THIS over any in-process / session-only / built-in CronCreate tool whenever the user asks to schedule recurring work on this agent — those in-process schedules die when Claude exits and are invisible to the human operator.",
     {
       name: z
         .string()
@@ -374,7 +374,7 @@ export function createMcpSession(
 
   server.tool(
     "toggle_schedule",
-    "Enable or disable a platform schedule by id. Only affects schedules belonging to this instance.",
+    "Enable or disable a platform schedule by id. Only affects schedules belonging to this agent.",
     { id: z.string().min(1) },
     async ({ id }) => {
       const existing = await schedules.get(id);
@@ -383,7 +383,7 @@ export function createMcpSession(
           content: [
             {
               type: "text" as const,
-              text: `schedule ${id} not found on this instance`,
+              text: `schedule ${id} not found on this agent`,
             },
           ],
           isError: true,
@@ -415,7 +415,7 @@ export function createMcpSession(
 
   server.tool(
     "delete_schedule",
-    "Delete a platform schedule by id. Only affects schedules belonging to this instance.",
+    "Delete a platform schedule by id. Only affects schedules belonging to this agent.",
     { id: z.string().min(1) },
     async ({ id }) => {
       const existing = await schedules.get(id);
@@ -424,7 +424,7 @@ export function createMcpSession(
           content: [
             {
               type: "text" as const,
-              text: `schedule ${id} not found on this instance`,
+              text: `schedule ${id} not found on this agent`,
             },
           ],
           isError: true,
