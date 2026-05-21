@@ -34,7 +34,17 @@ flowchart LR
 - **Heartbeat driver** — instructions baked into the agent's workspace, read by the Claude Code harness on each wake. The driver is the only caller of `acquire_lock`; it bails out immediately if `acquired: false`.
 - **Hooks** — Claude Code's `PostToolUse` hook calls `/lock/refresh` after every tool use, and the `Stop` hook calls `/lock/release` when the turn ends. The harness never has to think about lock lifetime explicitly.
 
-Everything except the GitHub egress is loopback-only. The trust boundary is the pod boundary; the lock has no reason to be reachable from outside.
+Everything except the GitHub egress is loopback-only by default. The trust boundary is the pod boundary; the lock has no reason to be reachable from outside.
+
+### Operator overrides
+
+Four environment variables on the agent pod override the defaults:
+
+- `MCP_PORT` (default `7777`) — lock server listen port.
+- `LOCK_TTL_SECONDS` (default `900`) — lock TTL in Redis.
+- `REDIS_HOST` (default `127.0.0.1`) and `REDIS_PORT` (default `6379`) — where the lock server talks to Redis.
+
+These exist for testing and operational flexibility. **The pod-local invariant is unchanged by their existence** — the lock holder is identified by module-scope state in the MCP server process, which only works because the heartbeat, the MCP server, and the Redis the lock lives in are all in the same pod. Pointing `REDIS_HOST` / `REDIS_PORT` at an off-pod Redis breaks that invariant: two pods sharing a Redis key cannot tell whose token is whose, and the lock no longer serializes anything useful. If a cross-pod coordination need arises, the right answer is the redesign described in "What this does not address" below, not an env override.
 
 ## Lock semantics
 
