@@ -21,61 +21,39 @@ The subsystem cuts cleanly across three bounded contexts:
 - **api-server — Runtime Delivery context** owns the outbox tables, the delivery worker, the `runtime.applyState` and `runtime.deliverSignal` calls into agents, and the `runtime.hello` / `runtime.ack` callbacks from agents.
 - **agent-runtime — Runtime Channel context** receives `applyState` and `deliverSignal`, dispatches Contributions to per-kind drivers, reconciles on-disk state to match the snapshot, calls back to `hello` on boot.
 
+A grant of one Connection produces Contributions of several kinds. They don't all travel the same rail:
+
 ```mermaid
 flowchart LR
-  user[browser user]
+  grant[Connection grant<br/>on Agent A]
+  grant --> env-rail[env Contributions]
+  grant --> host-rail[egress-host Contributions]
+  grant --> rt-rail[file / mcp-entry / skill-ref Contributions]
 
-  subgraph apiserver[api-server]
-    conn[connections-service]
-    fanout[contribution-fanout]
-    outbox[(runtime_state_outbox<br/>runtime_signal_outbox)]
-    worker[runtime-delivery-worker]
-    harness-srv[harness-API-server<br/>hello/ack]
-    egress-rules[(egress_rules)]
-    secrets-rev["secrets-rev annotation"]
-  end
-
-  subgraph postgres[Postgres]
-    connections[(connections table)]
-    agents-cm[(agents Postgres+ConfigMap)]
-  end
-
-  redis[(Redis pub/sub)]
-
-  subgraph controllerpod[controller]
-    reconciler[reconciler<br/>renders pod env]
-  end
-
-  subgraph gatewaypod[gateway pod]
-    envoy[Envoy ext_authz]
-  end
-
-  subgraph agentpod[agent pod]
-    rt[agent-runtime<br/>runtime channel]
-    drivers[per-kind drivers]
-    pvc[(per-Agent PVC)]
-  end
-
-  user -->|tRPC| conn
-  conn --> connections
-  conn --> fanout
-  fanout -->|env contributions| secrets-rev
-  fanout -->|egress-host contributions| egress-rules
-  fanout -->|file / mcp-entry / skill-ref| outbox
-  fanout -.publish.-> redis
-  secrets-rev --> reconciler
-  reconciler -.pod roll.-> agentpod
-  egress-rules --> envoy
-
-  outbox --> worker
-  redis -.wake.-> worker
-  worker -->|runtime.v1.applyState<br/>runtime.v1.deliverSignal| rt
-  rt --> drivers
-  drivers --> pvc
-  rt -->|runtime.v1.hello<br/>runtime.v1.ack| harness-srv
+  env-rail -->|bump annotation| controller[controller render → pod roll]
+  host-rail -->|sync rows| envoy[egress_rules → Envoy ext_authz]
+  rt-rail -->|outbox row| channel[runtime channel<br/>see below]
 ```
 
-The split makes the three concerns visible: the **catalog and grant model** (left), the **delivery substrate** (middle), the **on-pod materialization** (right). The agent pod sees the runtime channel and the drivers; everything else is api-server-side machinery.
+Two of the three rails were already in place before this subsystem and stay unchanged ([ADR-040](../adrs/040-unified-secret-contributions.md) for envs; [ADR-035](../adrs/035-unified-hitl-ux.md) for egress_rules). The third rail — the runtime channel — is new and is what the rest of this page is about.
+
+The runtime channel itself is two pairs of tRPC routes between api-server and agent-runtime, with the outbox + worker as the delivery substrate:
+
+```mermaid
+flowchart LR
+  outbox[(outbox tables)]
+  worker[delivery worker]
+  rt[agent-runtime]
+  drivers[per-kind drivers]
+  hello[hello / ack<br/>endpoint]
+
+  outbox --> worker
+  worker -->|applyState<br/>deliverSignal| rt
+  rt --> drivers
+  rt -->|hello / ack| hello
+```
+
+State changes write to the outbox, the worker reads and dispatches, the agent receives state pushes and signal pushes, and the agent calls back on boot/wake to catch up. Everything else in this subsystem hangs off these two diagrams.
 
 ## Concepts
 
@@ -223,27 +201,23 @@ Four tRPC routes, two on each side, prefixed by protocol-major version (`runtime
 sequenceDiagram
   autonumber
   participant USER as user (UI)
-  participant AS as api-server<br/>(connections + fanout)
+  participant AS as api-server
   participant PG as Postgres
-  participant RED as Redis
-  participant WK as runtime-delivery-worker
+  participant WK as delivery worker
   participant RT as agent-runtime
-  participant DRV as drivers
 
   USER->>AS: grant Connection X to Agent A
-  AS->>PG: BEGIN<br/>insert/update connection grant<br/>upsert runtime_state_outbox(agent_id=A)<br/>COMMIT
-  AS->>RED: publish agent-state:A
+  AS->>PG: BEGIN — write grant + upsert outbox row — COMMIT
+  AS->>WK: Redis publish (best-effort wake)
   AS-->>USER: 200
 
-  RED-->>WK: wake
-  WK->>PG: SELECT … FOR UPDATE SKIP LOCKED
-  WK->>WK: read agent A's state from agents-cache<br/>(running? skip if not)
+  WK->>PG: claim outbox row (FOR UPDATE SKIP LOCKED)
+  Note over WK: skip if Agent A not running
   WK->>PG: compute current contributions for A
-  WK->>RT: runtime.v1.applyState(contributions, version, hash)
-  RT->>DRV: dispatch per kind<br/>(file / mcp-entry / skill-ref)
-  DRV-->>RT: applied
-  RT-->>WK: { applied: true, appliedHash }
-  WK->>PG: DELETE state outbox row
+  WK->>RT: runtime.v1.applyState
+  RT->>RT: dispatch per kind to drivers
+  RT-->>WK: { applied, appliedHash }
+  WK->>PG: DELETE outbox row
 ```
 
 ### `applyState` — state delivery (server → agent)
