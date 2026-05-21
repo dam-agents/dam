@@ -266,7 +266,7 @@ echo "Loading images into k3s..."
 tar="/tmp/platform-images.tar"
 docker save -o "$tar" platform-controller:latest platform-api-server:latest platform-ui:latest platform-claude-code:latest platform-google-workspace-agent:latest platform-pi-agent:latest platform-bob:latest
 if [ -n "${IS_SANDBOX:-}" ]; then
-  docker image prune --all --force >/dev/null 2>&1 || true
+  [ -z "${CI:-}" ] && docker image prune --all --force >/dev/null 2>&1 || true
   sudo k3s ctr images import "$tar"
 else
   limactl copy "$tar" "$LIMA_INSTANCE":"$tar"

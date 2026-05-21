@@ -39,6 +39,7 @@ declare module "vitest" {
 }
 
 export async function teardown() {
+  if (process.env.CI) return;
   console.log("Deleting test cluster...");
   try {
     execSync("mise run cluster:delete -- --vm-name=platform-k3s-test --force", {
