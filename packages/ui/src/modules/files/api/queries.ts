@@ -29,6 +29,7 @@ interface FileContent {
   binary?: boolean;
   mimeType?: string;
   mtimeMs?: number;
+  tooLarge?: boolean;
 }
 
 export function useFileTreeQuery(agentId: string | null) {
@@ -52,22 +53,39 @@ export function useFileContentQuery(
 ) {
   return useQuery({
     queryKey: fileKeys.content(agentId ?? "_none", path ?? "_none"),
-    queryFn: async () => {
-      const trpc = getAgentTrpc(agentId!);
-      const result = await trpc.files.read.query({ path: path! });
-      return {
-        path: result.path,
-        content: result.content ?? "",
-        binary: result.binary,
-        mimeType: result.mimeType,
-        mtimeMs: result.mtimeMs,
-      } satisfies FileContent;
-    },
+    queryFn: async () => readFileContent(agentId!, path!),
     enabled: !!agentId && !!path,
     refetchInterval: 2000,
     staleTime: 2000,
     retry: 0,
   });
+}
+
+async function readFileContent(
+  agentId: string,
+  path: string,
+): Promise<FileContent> {
+  const trpc = getAgentTrpc(agentId);
+  try {
+    const result = await trpc.files.read.query({ path });
+    return {
+      path: result.path,
+      content: result.content,
+      binary: result.binary,
+      mimeType: result.mimeType,
+      mtimeMs: result.mtimeMs,
+    };
+  } catch (e) {
+    // Convert the transport-layer "too large" error back into a typed
+    // placeholder so the viewer can render its "file too large" state.
+    // The query-cache close-on-error path is reserved for genuinely
+    // gone files (rename, delete, NOT_FOUND).
+    const code = (e as { data?: { code?: string } }).data?.code;
+    if (code === "PAYLOAD_TOO_LARGE") {
+      return { path, content: "", binary: true, tooLarge: true };
+    }
+    throw e;
+  }
 }
 
 /**
@@ -81,17 +99,7 @@ export async function fetchFileContent(
 ): Promise<FileContent> {
   return queryClient.fetchQuery({
     queryKey: fileKeys.content(agentId, path),
-    queryFn: async () => {
-      const trpc = getAgentTrpc(agentId);
-      const result = await trpc.files.read.query({ path });
-      return {
-        path: result.path,
-        content: result.content ?? "",
-        binary: result.binary,
-        mimeType: result.mimeType,
-        mtimeMs: result.mtimeMs,
-      };
-    },
+    queryFn: async () => readFileContent(agentId, path),
   });
 }
 

@@ -14,6 +14,7 @@ interface OpenFile {
   binary?: boolean;
   mimeType?: string;
   mtimeMs?: number;
+  tooLarge?: boolean;
 }
 
 interface Props {
@@ -58,7 +59,7 @@ function isImageMime(mime: string | undefined): boolean {
 }
 
 export function FileViewer({ file, onClose, onOpenFile }: Props) {
-  const { path, content, binary, mimeType: mime } = file;
+  const { path, content, binary, mimeType: mime, tooLarge } = file;
   const isMarkdown = mime === "text/markdown";
   const isSvg = mime === "image/svg+xml";
   const isBinaryImage = binary && content && isImageMime(mime) && !isSvg;
@@ -286,7 +287,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
             title={filename ?? "pdf"}
             className="w-full h-[calc(100dvh-200px)] rounded border border-border-light bg-white"
           />
-        ) : binary && !content ? (
+        ) : tooLarge ? (
           <div className="py-12 text-center text-[13px] text-text-muted">
             <p>File too large to preview</p>
             <p className="mt-1 text-[11px]">

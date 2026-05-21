@@ -167,19 +167,24 @@ export function createMcpSession(
       let resolved: ChannelAttachment | undefined;
       if (attachment) {
         const resolvedPath = resolveWorkspacePath(attachment.path, agentHome);
-        let file: { content?: string; binary?: boolean; mimeType?: string };
+        let file: { content: string; binary: boolean; mimeType?: string };
         try {
           file = await runtimeClient.files.read.query({ path: resolvedPath });
         } catch (err) {
-          const msg =
-            err instanceof TRPCClientError && err.data?.code === "NOT_FOUND"
-              ? `attachment not found: ${attachment.path} (resolved to ${resolvedPath})`
-              : `failed to read attachment ${attachment.path}: ${err instanceof Error ? err.message : String(err)}`;
-          return errorResult(msg);
-        }
-        if (file.content === undefined) {
+          if (err instanceof TRPCClientError) {
+            if (err.data?.code === "NOT_FOUND") {
+              return errorResult(
+                `attachment not found: ${attachment.path} (resolved to ${resolvedPath})`,
+              );
+            }
+            if (err.data?.code === "PAYLOAD_TOO_LARGE") {
+              return errorResult(
+                `attachment ${attachment.path} exceeds the 10 MB per-file cap`,
+              );
+            }
+          }
           return errorResult(
-            `attachment ${attachment.path} is too large or unreadable (runtime returned no content)`,
+            `failed to read attachment ${attachment.path}: ${err instanceof Error ? err.message : String(err)}`,
           );
         }
         const data = file.binary

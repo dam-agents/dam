@@ -1,4 +1,4 @@
-# ADR-044: File import — bundled, top-level replace into the work dir
+# ADR-045: File import — bundled, top-level replace into the work dir
 
 **Date:** 2026-05-13
 **Status:** Accepted

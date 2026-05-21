@@ -284,6 +284,9 @@ importers:
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
+      agent-runtime-api:
+        specifier: workspace:*
+        version: link:../agent-runtime-api
       api-server-api:
         specifier: workspace:*
         version: link:../api-server-api

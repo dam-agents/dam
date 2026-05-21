@@ -38,6 +38,7 @@
     "@types/node": "^25.5.0",
     "@types/tar-stream": "^3.1.4",
     "@types/ws": "^8.18.1",
+    "agent-runtime-api": "workspace:*",
     "api-server-api": "workspace:*",
     "commander": "^14.0.3",
     "dev-config": "workspace:*",

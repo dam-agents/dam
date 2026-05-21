@@ -3,6 +3,7 @@ import { composeAgentModule } from "./modules/agent/compose.js";
 import { composeAuthModule } from "./modules/auth/compose.js";
 import { composeChatModule } from "./modules/chat/compose.js";
 import { composeCliModule } from "./modules/cli/compose.js";
+import { composeFileModule } from "./modules/file/compose.js";
 import { composeImportModule } from "./modules/import/compose.js";
 import { composeTemplateModule } from "./modules/template/compose.js";
 import { createTrpcClient } from "./modules/shared/trpc/trpc-client.js";
@@ -67,6 +68,13 @@ export function compose(opts: ComposeOptions = {}): Command {
     serverEnvVar: "DAM_SERVER",
   });
 
+  const fileModule = composeFileModule({
+    tokenProvider: auth.exports.tokenProvider,
+    configService: cli.services.configService,
+    compatService: cli.services.compatService,
+    createAgentService: agent.exports.createService,
+  });
+
   const program = new Command();
   program
     .name("dam")
@@ -79,6 +87,7 @@ export function compose(opts: ComposeOptions = {}): Command {
   for (const command of chat.commands) program.addCommand(command);
   for (const command of agent.commands) program.addCommand(command);
   for (const command of importModule.commands) program.addCommand(command);
+  for (const command of fileModule.commands) program.addCommand(command);
 
   return program;
 }

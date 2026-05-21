@@ -16,7 +16,7 @@ import type {
   FileWriteOk,
   Result,
 } from "agent-runtime-api";
-import { err, ok } from "agent-runtime-api";
+import { err, MAX_FILE_SIZE, ok } from "agent-runtime-api";
 
 const EXCLUDE = new Set([
   ".git",
@@ -27,8 +27,6 @@ const EXCLUDE = new Set([
   "node_modules",
   ".DS_Store",
 ]);
-
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
 /** Fallback check for binary content when magic-byte detection fails. Null bytes in the first 8 KB are a reliable signal. */
 function hasNullBytes(buf: Buffer): boolean {
@@ -103,7 +101,17 @@ export function createFilesService(workingDir: string): FilesService {
         fh = await open(abs, "r");
         const s = await fh.stat();
         if (!s.isFile()) return err({ kind: "NotFound", path: rel });
-        if (s.size > MAX_FILE_SIZE) return ok({ path: rel, binary: true });
+        if (s.size > MAX_FILE_SIZE) {
+          // Reading a file over the tRPC-shaped cap is a transport
+          // constraint, not a successful "no content" read. Surfaces as
+          // PAYLOAD_TOO_LARGE at the router, matching the symmetric
+          // behavior of uploadFileSafe. Streaming transfer for large
+          // single files is out of scope for this route.
+          return err({
+            kind: "PayloadTooLarge",
+            detail: `file ${s.size} bytes (max ${MAX_FILE_SIZE})`,
+          });
+        }
         const buf = await fh.readFile();
         const mtimeMs = s.mtimeMs;
         const type = await fileTypeFromBuffer(buf);
@@ -140,7 +148,7 @@ export function createFilesService(workingDir: string): FilesService {
                   : lower.endsWith(".xml")
                     ? "application/xml"
                     : "text/plain";
-        return ok({ path: rel, content, mimeType, mtimeMs });
+        return ok({ path: rel, content, binary: false, mimeType, mtimeMs });
       } catch {
         return err({ kind: "NotFound", path: rel });
       } finally {

@@ -1,11 +1,16 @@
 import type { Result } from "../../result.js";
 
+/** Wire-level per-file cap for tRPC-shaped reads and uploads. Honest about
+ *  the transport: JSON-base64 of ~10 MB fits well below the 32 MB tRPC body
+ *  ceiling. Larger transfers want a streaming endpoint, not this surface. */
+export const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
 export interface FileReadResult {
   path: string;
-  content?: string;
-  binary?: boolean;
-  mimeType?: string;
-  mtimeMs?: number;
+  content: string;
+  binary: boolean;
+  mimeType: string;
+  mtimeMs: number;
 }
 
 export interface FileWriteOk {
