@@ -1,8 +1,6 @@
 import type { StateCreator } from "zustand";
 
-import { queryClient } from "../../query-client.js";
 import type { PlatformStore } from "../../store.js";
-import { fileKeys } from "./api/keys.js";
 
 export type RightTab = "files" | "log" | "configuration";
 
@@ -72,7 +70,6 @@ export const createFilesSlice: StateCreator<
       else next.add(path);
       return { expandedDirs: { ...state.expandedDirs, [agentId]: next } };
     });
-    queryClient.invalidateQueries({ queryKey: fileKeys.tree(agentId) });
   },
   pruneExpandedDir: (agentId, path) => {
     set((state) => {
@@ -97,6 +94,5 @@ export const createFilesSlice: StateCreator<
         },
       };
     });
-    queryClient.invalidateQueries({ queryKey: fileKeys.tree(agentId) });
   },
 });

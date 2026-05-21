@@ -1,4 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { TRPCClientError } from "@trpc/client";
 
 import { api } from "../../../api.js";
@@ -36,32 +41,37 @@ interface ListDirsResponse {
   results: DirListResult[];
 }
 
-/** Read the latest expanded set imperatively. We avoid closing over a
- *  render-time snapshot inside queryFn — when the store action calls
- *  `queryClient.invalidateQueries`, the refetch can fire before React has
- *  re-rendered with the new closure, so the queryFn must read at call time. */
-function readExpanded(agentId: string): ReadonlySet<string> {
-  return useStore.getState().expandedDirs[agentId] ?? EMPTY_EXPANDED;
+function useExpandedDirs(agentId: string | null): ReadonlySet<string> {
+  return useStore((s) =>
+    agentId ? (s.expandedDirs[agentId] ?? EMPTY_EXPANDED) : EMPTY_EXPANDED,
+  );
 }
 
-function buildListDirsQueryFn(agentId: string) {
-  return async (): Promise<ListDirsResponse> => {
-    const trpc = getAgentTrpc(agentId);
-    const paths = ["", ...readExpanded(agentId)];
-    return trpc.files.listDirs.query({ paths });
-  };
+/** Sorted, deduped paths to fetch. The sort makes the query key stable
+ *  across renders so React Query treats `{a, b}` and `{b, a}` as the same
+ *  entry instead of churning two cache rows. */
+function paramsForExpanded(expanded: ReadonlySet<string>): string[] {
+  return ["", ...expanded].sort();
 }
 
 /** Master polled query that batches every currently-open directory into one
- *  round trip (ADR-049). Each `<DirContents>` subscribes to its slice via
- *  `useDirSnapshot`; the underlying query is shared by React Query dedup. */
+ *  round trip (ADR-049). The sorted paths set is part of the key, so an
+ *  expand/collapse swaps to a new entry and React Query refetches without
+ *  any explicit invalidation. Each `<DirContents>` subscribes via
+ *  `useDirSnapshot` against the same key. */
 export function useFileListDirsQuery(agentId: string | null) {
+  const expanded = useExpandedDirs(agentId);
+  const paths = paramsForExpanded(expanded);
   return useQuery({
-    queryKey: fileKeys.tree(agentId ?? "_none"),
-    queryFn: agentId ? buildListDirsQueryFn(agentId) : skipFetch,
+    queryKey: fileKeys.treeForPaths(agentId ?? "_none", paths),
+    queryFn: async (): Promise<ListDirsResponse> => {
+      const trpc = getAgentTrpc(agentId!);
+      return trpc.files.listDirs.query({ paths });
+    },
     enabled: !!agentId,
     refetchInterval: 2000,
     staleTime: 2000,
+    placeholderData: keepPreviousData,
     meta: { errorToast: "Couldn't refresh file tree" },
   });
 }
@@ -70,19 +80,21 @@ export function useFileListDirsQuery(agentId: string | null) {
  *  until the slice is present; null is the right answer for "the user just
  *  expanded this dir and the next poll hasn't arrived yet". */
 export function useDirSnapshot(agentId: string | null, path: string) {
+  const expanded = useExpandedDirs(agentId);
+  const paths = paramsForExpanded(expanded);
   return useQuery({
-    queryKey: fileKeys.tree(agentId ?? "_none"),
-    queryFn: agentId ? buildListDirsQueryFn(agentId) : skipFetch,
+    queryKey: fileKeys.treeForPaths(agentId ?? "_none", paths),
+    queryFn: async (): Promise<ListDirsResponse> => {
+      const trpc = getAgentTrpc(agentId!);
+      return trpc.files.listDirs.query({ paths });
+    },
     enabled: !!agentId,
     refetchInterval: 2000,
     staleTime: 2000,
+    placeholderData: keepPreviousData,
     select: (data) => data.results.find((r) => r.path === path) ?? null,
   });
 }
-
-const skipFetch = (): Promise<ListDirsResponse> => {
-  return Promise.resolve({ results: [] });
-};
 
 export function useFileContentQuery(
   agentId: string | null,
