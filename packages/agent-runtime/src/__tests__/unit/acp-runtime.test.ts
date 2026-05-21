@@ -1053,6 +1053,184 @@ describe("createAcpRuntime", () => {
     ).toHaveLength(0);
   });
 
+  it("after closing an idle session, the next session/resume falls into cold-bootstrap (not hot-path from stale cache)", () => {
+    // Regression: maybeCloseIdleSession used to leave log.metadata intact
+    // after sending session/close. A reconnecting viewer's session/resume
+    // then hit the hot path and was served synthetically from cache — the
+    // agent was never told to rehydrate, and the subsequent session/prompt
+    // was forwarded to an agent that no longer had the session, producing
+    // "Session not found" with no recovery.
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
+
+    // Tab A creates the session and populates log.metadata.
+    const a = makeFakeChannel();
+    runtime.attach(a.channel);
+    a.pushMessage(newSessionRequest(1));
+    const newOut = outboundId(fa.sent[0]);
+    fa.pushLine(newSessionResponse(newOut, SID));
+
+    // Tab A leaves → session is idle → runtime sends session/close.
+    a.remoteClose();
+    expect(
+      fa.sent.filter((f: any) => f.method === "session/close"),
+    ).toHaveLength(1);
+
+    // A fresh viewer resumes. With the fix, this MUST cold-bootstrap a
+    // session/load to rehydrate the agent — not serve from cache.
+    const agentSentBefore = fa.sent.length;
+    const b = makeFakeChannel();
+    runtime.attach(b.channel);
+    b.pushMessage(resumeSessionRequest(7));
+
+    const newForwards = fa.sent.slice(agentSentBefore);
+    const loadForwards = newForwards.filter(
+      (f: any) => f.method === "session/load",
+    );
+    expect(loadForwards).toHaveLength(1);
+    expect((loadForwards[0] as any).params.sessionId).toBe(SID);
+    // No synthetic resume response yet — waiter is parked on bootstrap.
+    expect(b.sent.some((f) => JSON.parse(f).id === 7)).toBe(false);
+
+    // Agent succeeds → resume waiter served.
+    completeResumeBootstrap(fa, SID);
+    expect(b.sent.some((f) => JSON.parse(f).id === 7)).toBe(true);
+  });
+
+  it("after closing an idle session, cold revival does not double the log on the agent's history replay", () => {
+    // Without resetting log.entries in maybeCloseIdleSession, the agent's
+    // replaySessionHistory events on a post-close cold load would append on
+    // top of the pre-close history — the log would double in size and a
+    // later hot-path session/load would replay duplicated entries.
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
+
+    // Tab A: cold-load, populates log with one history entry + metadata.
+    const a = makeFakeChannel();
+    runtime.attach(a.channel);
+    a.pushMessage(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "session/load",
+        params: { sessionId: SID, cwd: "." },
+      }),
+    );
+    const aLoadOut = outboundId(fa.sent[0]);
+    const histA = JSON.stringify({
+      method: "session/update",
+      params: {
+        sessionId: SID,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "old" },
+        },
+      },
+    });
+    fa.pushLine(histA);
+    fa.pushLine(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: aLoadOut,
+        result: { sessionId: SID, modes: {}, models: {}, configOptions: [] },
+      }),
+    );
+
+    // A leaves → session/close → log reset.
+    a.remoteClose();
+
+    // B resumes → cold bootstrap → agent replays the same history.
+    const b = makeFakeChannel();
+    runtime.attach(b.channel);
+    b.pushMessage(resumeSessionRequest(2));
+    fa.pushLine(histA);
+    completeResumeBootstrap(fa, SID);
+
+    // C joins via session/load → hot-path serves from cache. C should see
+    // exactly ONE copy of the history update, not two.
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+    c.pushMessage(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 3,
+        method: "session/load",
+        params: { sessionId: SID, cwd: "." },
+      }),
+    );
+    const histCount = c.sent.filter((f) => f === histA).length;
+    expect(histCount).toBe(1);
+  });
+
+  it("after closing an idle session, a failed cold session/load relays the agent's error to the resume waiter and does not poison the cache", () => {
+    // If the agent's on-disk store doesn't have the session (lost, corrupted,
+    // wrong cwd), the cold load returns an error response. The runtime must
+    // relay that error to the parked resume waiter under the waiter's
+    // original id, and must NOT cache phantom { sessionId } metadata — or a
+    // retry would hit the hot path and serve from poisoned cache.
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
+
+    // Set up cached metadata via session/new, then reap.
+    const a = makeFakeChannel();
+    runtime.attach(a.channel);
+    a.pushMessage(newSessionRequest(1));
+    const newOut = outboundId(fa.sent[0]);
+    fa.pushLine(newSessionResponse(newOut, SID));
+    a.remoteClose();
+
+    // Fresh viewer resumes → cold path → runtime issues session/load.
+    const b = makeFakeChannel();
+    runtime.attach(b.channel);
+    b.pushMessage(resumeSessionRequest(42));
+
+    const loadFrame = fa.sent.find(
+      (f: any) => f.method === "session/load" && f.params.sessionId === SID,
+    );
+    expect(loadFrame).toBeDefined();
+    const loadOut = outboundId(loadFrame);
+
+    // Agent errors — session not on disk.
+    fa.pushLine(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: loadOut,
+        error: {
+          code: -32603,
+          message: "Internal error",
+          data: { details: "Session not found" },
+        },
+      }),
+    );
+
+    // B receives the error under its own id, not a synthetic success.
+    const bResp = b.sent.map((f) => JSON.parse(f)).find((p) => p.id === 42);
+    expect(bResp).toBeDefined();
+    expect(bResp.error).toBeDefined();
+    expect(bResp.result).toBeUndefined();
+
+    // A retry from another channel must also cold-bootstrap, not hit a
+    // poisoned hot-path cache.
+    const agentSentBefore = fa.sent.length;
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+    c.pushMessage(resumeSessionRequest(99));
+    const newForwards = fa.sent.slice(agentSentBefore);
+    expect(
+      newForwards.filter((f: any) => f.method === "session/load"),
+    ).toHaveLength(1);
+    expect(c.sent.some((f) => JSON.parse(f).id === 99)).toBe(false);
+  });
+
   it("serves subsequent session/load from the in-memory log instead of forwarding to the agent", () => {
     // Viewer A cold-bootstraps the session: forwards session/load to the
     // agent, receives history + response, engages live. Viewer B opens a

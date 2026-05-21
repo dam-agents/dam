@@ -130,7 +130,13 @@ interface SessionLog {
   truncated: boolean;
   /** Cached `session/load` response metadata, captured from the first
    * (cold) bootstrap response. Used to synthesize responses to subsequent
-   * `session/load` requests without forwarding to the agent. */
+   * `session/load` requests without forwarding to the agent.
+   *
+   * Invariant: `metadata !== null` means "the agent has this session live
+   * and our log mirrors what it would replay." When `maybeCloseIdleSession`
+   * tears the session down inside the agent, it MUST reset `metadata` to
+   * null AND clear `entries`, so the next access goes through cold-bootstrap
+   * and rehydrates both sides from disk. */
   metadata: unknown | null;
 }
 
@@ -587,6 +593,23 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       method: "session/close",
       params: { sessionId },
     });
+    // Invalidate the cache so the next session/resume or session/load goes
+    // through cold-bootstrap (the agent will rehydrate from disk and the
+    // log will repopulate from the replay events). Without this reset,
+    // hot-path resume would serve from stale cache, the next session/prompt
+    // would be forwarded to an agent that no longer has the session, and
+    // the harness would respond with "Session not found". Resetting entries
+    // too prevents the replay on revival from doubling the log on top of
+    // pre-close history. Safe because we only get here when no channel is
+    // engaged (see hasEngagedChannel check above).
+    const log = sessionLogs.get(sessionId);
+    if (log) {
+      log.entries = [];
+      log.nextSeq = 1;
+      log.totalBytes = 0;
+      log.truncated = false;
+      log.metadata = null;
+    }
     deps.log?.(`closing idle session ${sessionId}`);
   }
 
@@ -748,12 +771,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             mapping.method === "session/new" ||
             mapping.method === "session/fork" ||
             mapping.method === "session/load";
-          if (cacheable) {
+          const result = (frame as { result?: unknown }).result;
+          if (cacheable && result !== undefined) {
             const log = getOrCreateLog(sidForChannel);
             if (log.metadata === null) {
-              log.metadata = (frame as { result?: unknown }).result ?? {
-                sessionId: sidForChannel,
-              };
+              log.metadata = result;
             }
           }
         }
@@ -771,8 +793,20 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           const boot = bootstrapBySession.get(sid);
           if (boot) {
             bootstrapBySession.delete(sid);
+            const loadFailed = log.metadata === null;
             for (const waiter of boot.waiters) {
               if (!waiter.channel.isOpen()) continue;
+              if (loadFailed) {
+                // Relay the agent's error to the waiter under its own id
+                // — we have no cached metadata to synthesize a response,
+                // and a thrown error here would leave the waiter hanging.
+                const out = JSON.stringify({
+                  ...(frame as object),
+                  id: waiter.originalId,
+                });
+                waiter.channel.send(rewriteAuthError(out));
+                continue;
+              }
               if (waiter.kind === "load") {
                 serveLoadFromLog(waiter.channel, waiter.originalId, sid, log);
               } else {
