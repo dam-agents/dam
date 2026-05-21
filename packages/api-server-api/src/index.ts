@@ -225,6 +225,12 @@ export {
 } from "./modules/skills/schemas.js";
 
 export type {
+  FilesService,
+  UploadFileInput,
+  UploadFileResult,
+} from "./modules/files/router.js";
+
+export type {
   ApprovalType,
   ApprovalStatus,
   ApprovalVerdict,

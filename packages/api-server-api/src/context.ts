@@ -3,6 +3,7 @@ import type { ApprovalsService } from "./modules/approvals/types.js";
 import type { ChannelsService } from "./modules/channels/types.js";
 import type { ConnectionsService } from "./modules/connections/types.js";
 import type { EgressRulesService } from "./modules/egress-rules/types.js";
+import type { FilesService } from "./modules/files/router.js";
 import type { SchedulesService } from "./modules/schedules/types.js";
 import type { SecretsService } from "./modules/secrets/types.js";
 import type { SessionsService } from "./modules/sessions/types.js";
@@ -25,5 +26,6 @@ export interface ApiContext {
   skills: SkillsService;
   approvals: ApprovalsService;
   egressRules: EgressRulesService;
+  files: FilesService;
   user: UserIdentity;
 }

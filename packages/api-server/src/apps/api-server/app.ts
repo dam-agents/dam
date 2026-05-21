@@ -29,6 +29,7 @@ import { composeSessionsModule } from "../../modules/sessions/index.js";
 import { upsertSession } from "../../modules/sessions/infrastructure/sessions-repository.js";
 import { SessionMode, SessionType } from "api-server-api";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
+import { composeFilesModule } from "../../modules/files/files-service.js";
 import { createSlackOAuthRoutes } from "../../modules/channels/infrastructure/slack-oauth.js";
 import { createTelegramOAuthRoutes } from "../../modules/channels/infrastructure/telegram-oauth.js";
 import type { UsageRoutes } from "../../modules/usage/index.js";
@@ -610,6 +611,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       bus: redisBus,
       wrapperFrameSender,
     });
+    const files = composeFilesModule(api, config.namespace, user.sub);
 
     return fetchRequestHandler({
       endpoint: "/api/trpc",
@@ -626,6 +628,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         skills,
         approvals,
         egressRules,
+        files,
         user,
       }),
     });
