@@ -2,6 +2,12 @@ import type { TerminalStrategy } from "api-server-api";
 import { Command } from "commander";
 import { SERVER_ENV_VAR } from "../../cli/index.js";
 import type { ChatError, ChatService } from "../services/chat-service.js";
+import {
+  EXIT_AGENT_NOT_RESOLVED,
+  EXIT_CHAT_BELOW_FLOOR,
+  EXIT_CHAT_INVALID_INPUT,
+  EXIT_CHAT_RUNTIME_FAILURE,
+} from "./exit-codes.js";
 
 export function buildChatCommand(deps: { chatService: ChatService }): Command {
   return new Command("chat")
@@ -56,18 +62,18 @@ export function buildChatCommand(deps: { chatService: ChatService }): Command {
 export function exitCodeFor(e: ChatError): number {
   switch (e.kind) {
     case "below-floor":
-      return 3;
+      return EXIT_CHAT_BELOW_FLOOR;
     case "not-found":
     case "ambiguous":
-      return 5;
+      return EXIT_AGENT_NOT_RESOLVED;
     case "not-a-tty":
     case "no-terminal-session":
     case "multiple-terminal-sessions":
     case "session-not-found":
     case "mode-switch-declined":
-      return 2;
+      return EXIT_CHAT_INVALID_INPUT;
     default:
-      return 1;
+      return EXIT_CHAT_RUNTIME_FAILURE;
   }
 }
 
