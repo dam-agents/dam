@@ -115,54 +115,14 @@ jobs:
             type=gha,scope=ci-platform-base
             type=gha,scope=platform-base
           cache-to: type=gha,mode=max,scope=ci-platform-base
-      - name: Build claude-code agent image
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
-        with:
-          context: packages/agents/claude-code
-          load: true
-          tags: platform-claude-code:latest
-          build-contexts: |
-            platform-base=docker-image://platform-base:latest
-          cache-from: |
-            type=gha,scope=ci-claude-code
-            type=gha,scope=claude-code
-          cache-to: type=gha,mode=max,scope=ci-claude-code
-      - name: Build google-workspace agent image
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
-        with:
-          context: packages/agents/google-workspace
-          load: true
-          tags: platform-google-workspace-agent:latest
-          build-contexts: |
-            platform-base=docker-image://platform-base:latest
-          cache-from: |
-            type=gha,scope=ci-google-workspace
-            type=gha,scope=google-workspace-agent
-          cache-to: type=gha,mode=max,scope=ci-google-workspace
-      - name: Build pi-agent image
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
-        with:
-          context: packages/agents/pi-agent
-          load: true
-          tags: platform-pi-agent:latest
-          build-contexts: |
-            platform-base=docker-image://platform-base:latest
-          cache-from: |
-            type=gha,scope=ci-pi-agent
-            type=gha,scope=pi-agent
-          cache-to: type=gha,mode=max,scope=ci-pi-agent
-      - name: Build bob agent image
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
-        with:
-          context: packages/agents/bob
-          load: true
-          tags: platform-bob:latest
-          build-contexts: |
-            platform-base=docker-image://platform-base:latest
-          cache-from: |
-            type=gha,scope=ci-bob
-            type=gha,scope=bob
-          cache-to: type=gha,mode=max,scope=ci-bob
+      # Agent images depend on platform-base via FROM — use docker build
+      # (not buildx docker-container driver) so FROM resolves from daemon
+      - name: Build agent images
+        run: |
+          docker build -t platform-claude-code:latest packages/agents/claude-code
+          docker build -t platform-google-workspace-agent:latest packages/agents/google-workspace
+          docker build -t platform-pi-agent:latest packages/agents/pi-agent
+          docker build -t platform-bob:latest packages/agents/bob
 
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
       - run: mise run setup
