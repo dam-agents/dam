@@ -566,24 +566,40 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   }
 
   /**
-   * Close an SDK session when nothing is keeping it alive. Each open session
-   * pins a `claude` CLI subprocess (~300MB RSS) inside the agent pod; leaving
-   * them open after viewers leave accumulates until the pod OOMs.
+   * Tear a session down on both sides of the relay: send `session/close` to
+   * the agent (if it supports it) and drop the runtime's cache + per-channel
+   * cursors. The two halves MUST happen together — otherwise the cache lies
+   * to the UI about a session the agent has forgotten, and the next
+   * `session/prompt` comes back with "Session not found".
    *
-   * "Idle" means: no channel engaged with the session, no active or queued
-   * prompts, no agent→client requests still pending (permission prompts).
-   * The SDK respawns the subprocess on the next resume/load, so closing is
-   * safe — we just trade memory for a brief cold-start when a viewer returns.
+   * Fire-and-forget on the agent side: we don't register the outbound id, so
+   * the agent's response is silently dropped by `handleAgentLine`.
+   */
+  function tearDownSession(sessionId: string): void {
+    if (agent && !agentExited && sessionCloseSupported) {
+      agent.send({
+        jsonrpc: "2.0",
+        id: nextOutboundId++,
+        method: "session/close",
+        params: { sessionId },
+      });
+    }
+    sessionLogs.delete(sessionId);
+    for (const cursors of channelCursors.values()) cursors.delete(sessionId);
+  }
+
+  /**
+   * Refcount-driven reap: when no channel is engaged with the session and no
+   * work is in flight, tear it down to free the ~300MB CLI subprocess the
+   * SDK pins per session. The cold-bootstrap path rehydrates from disk on
+   * the next viewer's `session/resume`.
    *
-   * Fire-and-forget: we don't register the outbound id, so the agent's
-   * response is silently dropped by `handleAgentLine`.
+   * Skipped entirely when the agent doesn't advertise
+   * `sessionCapabilities.close`: we can't tell the agent to drop the session,
+   * so we also keep the cache so future resumes can still serve from memory.
    */
   function maybeCloseIdleSession(sessionId: string): void {
     if (!agent || agentExited) return;
-    // Skip if the agent didn't advertise `sessionCapabilities.close` in its
-    // initialize response. The session lives on inside the agent — keep the
-    // local log + cursors so a future session/resume can serve from cache
-    // without forcing a cold re-bootstrap the agent likely can't satisfy.
     if (!sessionCloseSupported) return;
     if (hasEngagedChannel(sessionId)) return;
     if (activePromptBySession.has(sessionId)) return;
@@ -596,30 +612,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (req.sessionId === sessionId) return;
     }
 
-    const id = nextOutboundId++;
-    agent.send({
-      jsonrpc: "2.0",
-      id,
-      method: "session/close",
-      params: { sessionId },
-    });
-    // Invalidate the cache so the next session/resume or session/load goes
-    // through cold-bootstrap (the agent will rehydrate from disk and the
-    // log will repopulate from the replay events). Without this reset,
-    // hot-path resume would serve from stale cache, the next session/prompt
-    // would be forwarded to an agent that no longer has the session, and
-    // the harness would respond with "Session not found". Resetting entries
-    // too prevents the replay on revival from doubling the log on top of
-    // pre-close history. Safe because we only get here when no channel is
-    // engaged (see hasEngagedChannel check above).
-    const log = sessionLogs.get(sessionId);
-    if (log) {
-      log.entries = [];
-      log.nextSeq = 1;
-      log.totalBytes = 0;
-      log.truncated = false;
-      log.metadata = null;
-    }
+    tearDownSession(sessionId);
     deps.log?.(`closing idle session ${sessionId}`);
   }
 
@@ -1118,17 +1111,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     },
 
     resetSession(sessionId) {
-      if (agent && !agentExited && sessionCloseSupported) {
-        agent.send({
-          jsonrpc: "2.0",
-          id: nextOutboundId++,
-          method: "session/close",
-          params: { sessionId },
-        });
-      }
-      // Always clear client-side state even if the agent didn't accept the close.
-      sessionLogs.delete(sessionId);
-      for (const cursors of channelCursors.values()) cursors.delete(sessionId);
+      tearDownSession(sessionId);
       deps.log?.(`reset session ${sessionId}`);
     },
 
