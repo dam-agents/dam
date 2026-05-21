@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 
 import { useFileRowDrag } from "../hooks/use-file-row-drag.js";
-import { useFilesPanel } from "./files-panel-context.js";
+import { useFilesPanel } from "./files-panel-controller.js";
 
 interface Props {
   name: string;

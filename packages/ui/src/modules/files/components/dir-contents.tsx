@@ -2,7 +2,7 @@ import { Fragment } from "react";
 
 import { useDirSnapshot } from "../api/queries.js";
 import { FileRow } from "./file-row.js";
-import { useFilesPanel } from "./files-panel-context.js";
+import { useFilesPanel } from "./files-panel-controller.js";
 import { InlineNameRow } from "./inline-name-row.js";
 
 interface Props {
