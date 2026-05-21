@@ -592,6 +592,14 @@ agentTemplates:
     skillPaths:
       - $HOME/.claude/skills/
 
+  - name: codex
+    enabled: true
+    description: "OpenAI Codex coding agent"
+    image:
+      repository: quay.io/dam-agents/codex
+      tag: ""
+    storageSize: "5Gi"
+
   - name: bob
     enabled: true
     description: "Bob shell agent"

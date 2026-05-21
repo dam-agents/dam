@@ -72,7 +72,7 @@ docker build -f packages/ui/Dockerfile -t platform-ui:latest .
 '''
 
 ["image:agent"]
-description = "Build agent Docker images (platform-base + claude-code + google-workspace + pi-agent + bob)"
+description = "Build agent Docker images (platform-base + claude-code + codex + google-workspace + pi-agent + bob)"
 dir = "{{config_root}}"
 run = '''
 #!/usr/bin/env bash
@@ -80,6 +80,7 @@ set -eo pipefail
 [ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
 docker build -f packages/platform-base/Dockerfile -t platform-base .
 docker build -t platform-claude-code:latest packages/agents/claude-code
+docker build -t platform-codex:latest packages/agents/codex
 docker build -t platform-google-workspace-agent:latest packages/agents/google-workspace
 docker build -t platform-pi-agent:latest packages/agents/pi-agent
 docker build -t platform-bob:latest packages/agents/bob
@@ -361,7 +362,7 @@ kubectl --kubeconfig="$KUBECONFIG" label namespace default istio.io/dataplane-mo
 # 3. Load images into k3s (built by depends: image:*)
 echo "Loading images into k3s..."
 tar="/tmp/platform-images.tar"
-docker save -o "$tar" platform-controller:latest platform-api-server:latest platform-ui:latest platform-claude-code:latest platform-google-workspace-agent:latest platform-pi-agent:latest platform-bob:latest
+docker save -o "$tar" platform-controller:latest platform-api-server:latest platform-ui:latest platform-claude-code:latest platform-codex:latest platform-google-workspace-agent:latest platform-pi-agent:latest platform-bob:latest
 if [ -n "${IS_SANDBOX:-}" ]; then
   [ -z "${CI:-}" ] && docker image prune --all --force >/dev/null 2>&1 || true
   sudo k3s ctr images import "$tar"
@@ -524,7 +525,7 @@ set -eo pipefail
 
 echo "Loading into k3s..."
 tar="/tmp/platform-agent-images.tar"
-docker save platform-claude-code:latest platform-google-workspace-agent:latest platform-pi-agent:latest platform-bob:latest -o "$tar"
+docker save platform-claude-code:latest platform-codex:latest platform-google-workspace-agent:latest platform-pi-agent:latest platform-bob:latest -o "$tar"
 
 if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"

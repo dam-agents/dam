@@ -42,6 +42,14 @@ agentTemplates:
     skillPaths:
       - $HOME/.claude/skills/
 
+  - name: codex
+    enabled: true
+    description: "OpenAI Codex coding agent"
+    image:
+      repository: platform-codex
+      tag: latest
+    storageSize: "5Gi"
+
   - name: google-workspace
     enabled: true
     description: "Google Workspace agent with Drive and Gmail via gws CLI"

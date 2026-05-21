@@ -1,0 +1,20 @@
+# Platform defaults — agent pod is the sandbox; auth comes from env.
+forced_login_method = "api"
+
+# Override the built-in openai provider to disable WebSocket transport.
+# The Envoy MITM proxy can't relay WSS upgrades, so Codex would hang on
+# the WSS handshake then fall back to HTTP. Disabling WSS skips the delay.
+[model_providers.openai-platform]
+name = "OpenAI"
+env_key = "OPENAI_API_KEY"
+supports_websockets = false
+
+# Trust the agent working directory so Codex doesn't prompt on startup.
+[projects."/home/agent/work"]
+trust_level = "trusted"
+
+# Clear the built-in model catalog so the Platform UI doesn't show a
+# model picker with irrelevant OpenAI model names. The active model is
+# controlled by the OPENAI_MODEL env var injected via credential config.
+[model_catalog]
+models = []

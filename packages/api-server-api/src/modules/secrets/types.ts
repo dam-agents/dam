@@ -109,9 +109,9 @@ const IBM_LITELLM_BASE_URL = `https://${IBM_LITELLM_HOST}`;
  * advanced disclosure; the default bundle (with `IBM_LITELLM_DEFAULT_MODEL_PINS`)
  * is what the registry stores.
  *
- * 13 entries: 1 credential placeholder, 1 endpoint pin, 2 behavior flags,
- * 5 Claude Code model pins, 4 pi-agent `openai-proxy` SPECS overrides
- * (`pi-dynamic-providers/index.ts`).
+ * 16 entries: 1 credential placeholder, 1 endpoint pin, 2 behavior flags,
+ * 5 Claude Code model pins, 4 pi-agent `openai-proxy` overrides
+ * (`pi-dynamic-providers/index.ts`), 3 Codex/OpenAI-compatible env vars.
  */
 export function ibmLitellmEnvMappings(
   pins: IbmLitellmModelPins = IBM_LITELLM_DEFAULT_MODEL_PINS,
@@ -130,6 +130,9 @@ export function ibmLitellmEnvMappings(
     { envName: "OPENAI_PROXY_MODEL", placeholder: pins.opus },
     { envName: "OPENAI_PROXY_CONTEXT_WINDOW", placeholder: "200000" },
     { envName: "OPENAI_PROXY_MAX_TOKENS", placeholder: "8192" },
+    { envName: "OPENAI_API_KEY", placeholder: "sk-dummy" },
+    { envName: "OPENAI_BASE_URL", placeholder: IBM_LITELLM_BASE_URL },
+    { envName: "OPENAI_MODEL", placeholder: "gpt-5.5" },
   ];
 }
 
