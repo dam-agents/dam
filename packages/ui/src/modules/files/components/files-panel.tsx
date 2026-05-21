@@ -3,11 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useStore } from "../../../store.js";
 import { type BundleEntry, walkDataTransfer } from "../api/import-bundle.js";
-import {
-  useDirSnapshot,
-  useFileContentQuery,
-  useFileListDirsQuery,
-} from "../api/queries.js";
+import { useDirSnapshot, useFileContentQuery } from "../api/queries.js";
 import {
   type FileEntryKind,
   useFileMutations,
@@ -42,16 +38,12 @@ export function FilesPanel({
   const openFilePath = useStore((s) => s.openFilePath);
   const setOpenFilePath = useStore((s) => s.setOpenFilePath);
   const toggleExpandedDir = useStore((s) => s.toggleExpandedDir);
-  const pruneExpandedDir = useStore((s) => s.pruneExpandedDir);
   const expandedDirs = useStore((s) =>
     selectedAgent
       ? (s.expandedDirs[selectedAgent] ?? EMPTY_EXPANDED)
       : EMPTY_EXPANDED,
   );
 
-  // Drives the polled query for this agent; child components subscribe to
-  // slices via useDirSnapshot.
-  const masterQuery = useFileListDirsQuery(selectedAgent);
   const rootSnapshot = useDirSnapshot(selectedAgent, "");
 
   const { createEntry, renameEntry, deleteEntry, uploadFiles, uploadBundle } =
@@ -66,18 +58,6 @@ export function FilesPanel({
   useEffect(() => {
     if (openFileError) setOpenFilePath(null);
   }, [openFileError, setOpenFilePath]);
-
-  // Silently drop expanded paths the server reports gone (ADR-049). Re-runs
-  // on every successful poll; pruneExpandedDir is a no-op when the path is
-  // already absent.
-  useEffect(() => {
-    if (!masterQuery.data || !selectedAgent) return;
-    for (const result of masterQuery.data.results) {
-      if (!result.ok && result.error === "not-found") {
-        pruneExpandedDir(selectedAgent, result.path);
-      }
-    }
-  }, [masterQuery.data, selectedAgent, pruneExpandedDir]);
 
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [pendingNew, setPendingNew] = useState<PendingNew | null>(null);

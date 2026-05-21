@@ -54,29 +54,9 @@ function paramsForExpanded(expanded: ReadonlySet<string>): string[] {
   return ["", ...expanded].sort();
 }
 
-/** Master polled query that batches every currently-open directory into one
- *  round trip (ADR-049). The sorted paths set is part of the key, so an
- *  expand/collapse swaps to a new entry and React Query refetches without
- *  any explicit invalidation. Each `<DirContents>` subscribes via
- *  `useDirSnapshot` against the same key. */
-export function useFileListDirsQuery(agentId: string | null) {
-  const expanded = useExpandedDirs(agentId);
-  const paths = paramsForExpanded(expanded);
-  return useQuery({
-    queryKey: fileKeys.treeForPaths(agentId ?? "_none", paths),
-    queryFn: async (): Promise<ListDirsResponse> => {
-      const trpc = getAgentTrpc(agentId!);
-      return trpc.files.listDirs.query({ paths });
-    },
-    enabled: !!agentId,
-    refetchInterval: 2000,
-    staleTime: 2000,
-    placeholderData: keepPreviousData,
-    meta: { errorToast: "Couldn't refresh file tree" },
-  });
-}
-
-/** Subscribe to one directory's slice of the master query. Returns null
+/** Subscribe to one directory's slice of the batched poll. The sorted paths
+ *  set is part of the key (ADR-049), so an expand/collapse swaps to a new
+ *  entry and React Query refetches without any explicit invalidation. Returns null
  *  until the slice is present; null is the right answer for "the user just
  *  expanded this dir and the next poll hasn't arrived yet". */
 export function useDirSnapshot(agentId: string | null, path: string) {
@@ -93,6 +73,7 @@ export function useDirSnapshot(agentId: string | null, path: string) {
     staleTime: 2000,
     placeholderData: keepPreviousData,
     select: (data) => data.results.find((r) => r.path === path) ?? null,
+    meta: { errorToast: "Couldn't refresh file tree" },
   });
 }
 
