@@ -1,20 +1,17 @@
 import {
   Bot,
   Connect,
+  Menu,
   Model,
-  OpenPanelLeft as PanelLeftOpen,
   Settings,
-  SidePanelClose as PanelLeftClose,
 } from "@carbon/icons-react";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-import { getBrand } from "../brand.js";
 import { InboxBell } from "../modules/approvals/components/inbox-bell.js";
 import { useStore } from "../store.js";
-import { IbmResearchDamLogo } from "./brand-logo.js";
 
 const STORAGE_KEY = "platform-sidebar-collapsed";
 
@@ -41,36 +38,38 @@ export function Sidebar() {
         collapsed ? "w-[52px]" : "w-[200px]",
       )}
     >
-      {/* Brand — typeset "IBM Research DAM" using IBM Plex Sans (the
-          default app font) with light + semibold weights for the two
-          halves. Sized to match the nav labels below. Collapsed rail
-          falls back to just "DAM". */}
-      <Button
-        variant="ghost"
-        onClick={() => setView("list")}
-        className={cn(
-          // px-[18px] so the brand text starts at the same x-offset as
-          // each nav label below (nav wrapper px-2 + nav button px-2.5
-          // = 18px from the sidebar's left edge).
-          "h-12 rounded-none justify-start px-[18px]",
-          collapsed && "justify-center px-0",
+      {/* Brand row — hamburger always lives at the same x-offset as the
+          nav icons below; brand text fades out when collapsed but the
+          hamburger stays put so nothing visually shifts during the
+          width transition. */}
+      <div className="flex items-center h-12 px-2">
+        <Button
+          variant="ghost"
+          onClick={() => setCollapsed((c) => !c)}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          className="h-9 px-2.5 shrink-0 justify-start hover:bg-transparent"
+        >
+          <Menu className="shrink-0" />
+        </Button>
+        {!collapsed && (
+          <Button
+            variant="ghost"
+            onClick={() => setView("list")}
+            className="h-9 px-0 justify-start flex-1 hover:bg-transparent"
+            title="Home"
+          >
+            <span className="text-sm text-foreground">
+              <span className="font-normal">IBM Research </span>
+              <span className="font-semibold">DAM</span>
+            </span>
+          </Button>
         )}
-        title="Home"
-      >
-        {collapsed ? (
-          <span className="text-sm font-semibold text-foreground">DAM</span>
-        ) : (
-          <span className="text-sm text-foreground">
-            <span className="font-normal">IBM Research </span>
-            <span className="font-semibold">DAM</span>
-          </span>
-        )}
-      </Button>
+      </div>
 
-      {/* Nav items — icons render only when the rail is collapsed (or
-          on mobile, which uses MobileNav). Expanded desktop shows
-          labels only, since the typeset brand above sets the visual
-          tone. */}
+      {/* Nav items — icon + label rows. Always left-aligned so icons
+          stay anchored at the same x-offset; the label just hides on
+          collapse and the sidebar shrinks around the icon. */}
       <div className="flex flex-col gap-0.5 mt-2 px-2">
         {navItems.map(({ view: v, label, icon: Icon }) => {
           const active = view === v;
@@ -82,16 +81,12 @@ export function Sidebar() {
               onClick={() => setView(v)}
               title={collapsed ? label : undefined}
               className={cn(
-                "h-9 justify-start",
-                collapsed ? "justify-center px-0" : "px-2.5",
+                "h-9 justify-start gap-2.5 px-2.5",
                 active && "bg-muted",
               )}
             >
-              {collapsed ? (
-                <Icon className="shrink-0" />
-              ) : (
-                <span className="text-sm font-medium">{label}</span>
-              )}
+              <Icon className="shrink-0" />
+              {!collapsed && <span className="text-sm font-medium">{label}</span>}
             </Button>
           );
         })}
@@ -107,29 +102,12 @@ export function Sidebar() {
           onClick={() => setView("settings")}
           title={collapsed ? "Settings" : undefined}
           className={cn(
-            "h-9 justify-start",
-            collapsed ? "justify-center px-0" : "px-2.5",
+            "h-9 justify-start gap-2.5 px-2.5",
             view === "settings" && "bg-muted",
           )}
         >
-          {collapsed ? (
-            <Settings className="shrink-0" />
-          ) : (
-            <span className="text-sm font-medium">Settings</span>
-          )}
-        </Button>
-
-        <Button
-          variant="ghost"
-          onClick={() => setCollapsed((c) => !c)}
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className={cn("h-9 justify-start", collapsed ? "justify-center px-0" : "px-2.5")}
-        >
-          {collapsed ? (
-            <PanelLeftOpen className="shrink-0" />
-          ) : (
-            <span className="text-sm font-medium">Collapse</span>
-          )}
+          <Settings className="shrink-0" />
+          {!collapsed && <span className="text-sm font-medium">Settings</span>}
         </Button>
       </div>
     </nav>

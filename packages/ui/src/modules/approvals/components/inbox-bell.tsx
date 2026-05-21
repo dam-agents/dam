@@ -49,38 +49,24 @@ export function InboxBell({ collapsed }: InboxBellProps) {
         onClick={() => setOpen((o) => !o)}
         title={collapsed ? "Inbox" : undefined}
         className={cn(
-          "flex items-center gap-2.5 rounded-lg transition-colors h-9 w-full",
-          collapsed ? "justify-center px-0" : "px-2.5",
+          "flex items-center gap-2.5 rounded-lg transition-colors h-9 w-full justify-start px-2.5",
           active
             ? "text-primary bg-primary/10"
             : "text-foreground/80 hover:text-foreground hover:bg-muted",
         )}
       >
-        {collapsed ? (
-          <span className="relative shrink-0">
-            <Inbox size={18} />
-            {pendingCount > 0 && (
-              <Badge
-                variant="default"
-                className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center border-0"
-              >
-                {pendingCount > 9 ? "9+" : pendingCount}
-              </Badge>
-            )}
-          </span>
-        ) : (
-          <>
-            <span className="text-[14px] font-medium">Inbox</span>
-            {pendingCount > 0 && (
-              <Badge
-                variant="default"
-                className="ml-auto min-w-[18px] h-[18px] px-1.5 rounded-full text-[10px] font-bold flex items-center justify-center border-0"
-              >
-                {pendingCount > 9 ? "9+" : pendingCount}
-              </Badge>
-            )}
-          </>
-        )}
+        <span className="relative shrink-0">
+          <Inbox size={18} />
+          {pendingCount > 0 && (
+            <Badge
+              variant="default"
+              className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center border-0"
+            >
+              {pendingCount > 9 ? "9+" : pendingCount}
+            </Badge>
+          )}
+        </span>
+        {!collapsed && <span className="text-[14px] font-medium">Inbox</span>}
       </button>
       {open && (
         <div className="absolute left-full ml-2 bottom-0 z-40 w-[320px] rounded-lg border border-input bg-card shadow-sm overflow-hidden anim-scale-in">
