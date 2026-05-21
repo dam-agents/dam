@@ -5,10 +5,10 @@ import type {
   StatusError,
 } from "../services/auth-service.js";
 import {
-  EXIT_AUTH_RUNTIME_FAILURE,
+  EXIT_RUNTIME_FAILURE,
   EXIT_AUTH_STATUS_NO_VALID,
-  EXIT_AUTH_SUCCESS,
-} from "./exit-codes.js";
+  EXIT_SUCCESS,
+} from "../../shared/exit-codes.js";
 
 export interface StatusCommandDeps {
   authService: AuthService;
@@ -23,7 +23,7 @@ export function buildStatusCommand(deps: StatusCommandDeps): Command {
       const result = await deps.authService.status();
       if (!result.ok) {
         printStatusError(result.error);
-        process.exit(EXIT_AUTH_RUNTIME_FAILURE);
+        process.exit(EXIT_RUNTIME_FAILURE);
       }
 
       const report = result.value;
@@ -31,9 +31,7 @@ export function buildStatusCommand(deps: StatusCommandDeps): Command {
         process.stderr.write("No hosts configured.\n");
         process.stderr.write("hint: run `dam auth login` to authenticate\n");
         process.exit(
-          report.activeHostValid
-            ? EXIT_AUTH_SUCCESS
-            : EXIT_AUTH_STATUS_NO_VALID,
+          report.activeHostValid ? EXIT_SUCCESS : EXIT_AUTH_STATUS_NO_VALID,
         );
       }
 
@@ -43,7 +41,7 @@ export function buildStatusCommand(deps: StatusCommandDeps): Command {
       }
       process.stdout.write(`${lines.join("\n")}\n`);
       process.exit(
-        report.activeHostValid ? EXIT_AUTH_SUCCESS : EXIT_AUTH_STATUS_NO_VALID,
+        report.activeHostValid ? EXIT_SUCCESS : EXIT_AUTH_STATUS_NO_VALID,
       );
     });
 }

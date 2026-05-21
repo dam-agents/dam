@@ -5,10 +5,10 @@ import { printServiceError } from "../../agent/commands/errors.js";
 import { renderTable } from "../../shared/render-table.js";
 import type { TemplateService } from "../services/template-service.js";
 import {
-  EXIT_TEMPLATE_BELOW_FLOOR,
-  EXIT_TEMPLATE_RUNTIME_FAILURE,
-  EXIT_TEMPLATE_SUCCESS,
-} from "./exit-codes.js";
+  EXIT_BELOW_FLOOR,
+  EXIT_RUNTIME_FAILURE,
+  EXIT_SUCCESS,
+} from "../../shared/exit-codes.js";
 
 const DESCRIPTION_MAX = 60;
 
@@ -32,27 +32,27 @@ export function buildListCommand(deps: {
       const host = await resolveActiveHost(deps, {
         flag: opts.server ? { server: opts.server } : undefined,
         exitCodes: {
-          runtimeFailure: EXIT_TEMPLATE_RUNTIME_FAILURE,
-          belowFloor: EXIT_TEMPLATE_BELOW_FLOOR,
+          runtimeFailure: EXIT_RUNTIME_FAILURE,
+          belowFloor: EXIT_BELOW_FLOOR,
         },
       });
 
       const result = await deps.createTemplateService(host).list();
       if (!result.ok) {
         printServiceError(result.error, host);
-        process.exit(EXIT_TEMPLATE_RUNTIME_FAILURE);
+        process.exit(EXIT_RUNTIME_FAILURE);
       }
 
       if (opts.json) {
         process.stdout.write(`${JSON.stringify(result.value)}\n`);
-        process.exit(EXIT_TEMPLATE_SUCCESS);
+        process.exit(EXIT_SUCCESS);
       }
 
       if (result.value.length === 0) {
         process.stderr.write(
           "No templates.\nhint: ask your operator to add one to the cluster\n",
         );
-        process.exit(EXIT_TEMPLATE_SUCCESS);
+        process.exit(EXIT_SUCCESS);
       }
 
       const sorted = [...result.value].sort((a, b) =>
@@ -68,7 +68,7 @@ export function buildListCommand(deps: {
           ]),
         ]),
       );
-      process.exit(EXIT_TEMPLATE_SUCCESS);
+      process.exit(EXIT_SUCCESS);
     });
 }
 

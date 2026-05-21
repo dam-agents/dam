@@ -4,10 +4,10 @@ import { SERVER_ENV_VAR } from "../../cli/index.js";
 import type { ChatError, ChatService } from "../services/chat-service.js";
 import {
   EXIT_AGENT_NOT_RESOLVED,
-  EXIT_CHAT_BELOW_FLOOR,
-  EXIT_CHAT_INVALID_INPUT,
-  EXIT_CHAT_RUNTIME_FAILURE,
-} from "./exit-codes.js";
+  EXIT_BELOW_FLOOR,
+  EXIT_INVALID_INPUT,
+  EXIT_RUNTIME_FAILURE,
+} from "../../shared/exit-codes.js";
 
 export function buildChatCommand(deps: { chatService: ChatService }): Command {
   return new Command("chat")
@@ -62,7 +62,7 @@ export function buildChatCommand(deps: { chatService: ChatService }): Command {
 export function exitCodeFor(e: ChatError): number {
   switch (e.kind) {
     case "below-floor":
-      return EXIT_CHAT_BELOW_FLOOR;
+      return EXIT_BELOW_FLOOR;
     case "not-found":
     case "ambiguous":
       return EXIT_AGENT_NOT_RESOLVED;
@@ -71,9 +71,9 @@ export function exitCodeFor(e: ChatError): number {
     case "multiple-terminal-sessions":
     case "session-not-found":
     case "mode-switch-declined":
-      return EXIT_CHAT_INVALID_INPUT;
+      return EXIT_INVALID_INPUT;
     default:
-      return EXIT_CHAT_RUNTIME_FAILURE;
+      return EXIT_RUNTIME_FAILURE;
   }
 }
 

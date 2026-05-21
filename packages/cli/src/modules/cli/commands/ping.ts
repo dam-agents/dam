@@ -7,7 +7,10 @@ import type {
 } from "../domain/errors.js";
 import type { CompatService } from "../services/compat-service.js";
 import type { ConfigService } from "../services/config-service.js";
-import { EXIT_COMPAT_BELOW_FLOOR, EXIT_RUNTIME_FAILURE } from "./exit-codes.js";
+import {
+  EXIT_BELOW_FLOOR,
+  EXIT_RUNTIME_FAILURE,
+} from "../../shared/exit-codes.js";
 
 export function buildPingCommand(deps: {
   service: CompatService;
@@ -50,7 +53,7 @@ export function buildPingCommand(deps: {
           process.stderr.write(
             `error: CLI ${verdict.localCli} is below the server's minimum required version ${verdict.serverMinClient}; upgrade and retry\n`,
           );
-          process.exit(EXIT_COMPAT_BELOW_FLOOR);
+          process.exit(EXIT_BELOW_FLOOR);
       }
     });
 }

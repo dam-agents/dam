@@ -1,9 +1,9 @@
 import type { AuthRequiredError, TransportError } from "../domain/errors.js";
 import type { ResolveError } from "../services/agent-resolver.js";
 import {
-  EXIT_AGENT_RUNTIME_FAILURE,
   EXIT_AGENT_NOT_RESOLVED,
-} from "./exit-codes.js";
+  EXIT_RUNTIME_FAILURE,
+} from "../../shared/exit-codes.js";
 
 export function formatTransportError(reason: string, host: string): string {
   return `cannot reach server \`${host}\`: ${reason}`;
@@ -12,7 +12,7 @@ export function formatTransportError(reason: string, host: string): string {
 export function exitCodeForResolveError(error: ResolveError): number {
   return error.kind === "not-found" || error.kind === "ambiguous"
     ? EXIT_AGENT_NOT_RESOLVED
-    : EXIT_AGENT_RUNTIME_FAILURE;
+    : EXIT_RUNTIME_FAILURE;
 }
 
 export function printServiceError(

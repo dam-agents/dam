@@ -8,10 +8,10 @@ import { createAgentResolver } from "../services/agent-resolver.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { exitCodeForResolveError, printResolveError } from "./errors.js";
 import {
-  EXIT_AGENT_BELOW_FLOOR,
-  EXIT_AGENT_RUNTIME_FAILURE,
-  EXIT_AGENT_SUCCESS,
-} from "./exit-codes.js";
+  EXIT_BELOW_FLOOR,
+  EXIT_RUNTIME_FAILURE,
+  EXIT_SUCCESS,
+} from "../../shared/exit-codes.js";
 
 export function buildGetCommand(deps: {
   compatService: CompatService;
@@ -34,8 +34,8 @@ export function buildGetCommand(deps: {
       const host = await resolveActiveHost(deps, {
         flag: opts.server ? { server: opts.server } : undefined,
         exitCodes: {
-          runtimeFailure: EXIT_AGENT_RUNTIME_FAILURE,
-          belowFloor: EXIT_AGENT_BELOW_FLOOR,
+          runtimeFailure: EXIT_RUNTIME_FAILURE,
+          belowFloor: EXIT_BELOW_FLOOR,
         },
       });
 
@@ -49,11 +49,11 @@ export function buildGetCommand(deps: {
 
       if (opts.json) {
         process.stdout.write(`${JSON.stringify(result.value)}\n`);
-        process.exit(EXIT_AGENT_SUCCESS);
+        process.exit(EXIT_SUCCESS);
       }
 
       process.stdout.write(renderAgent(result.value));
-      process.exit(EXIT_AGENT_SUCCESS);
+      process.exit(EXIT_SUCCESS);
     });
 }
 

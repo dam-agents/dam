@@ -28,11 +28,11 @@ import { formatTransportError } from "./errors.js";
 import { parseOrExit } from "../../shared/parse-or-exit.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import {
-  EXIT_AGENT_BELOW_FLOOR,
-  EXIT_AGENT_INVALID_INPUT,
-  EXIT_AGENT_RUNTIME_FAILURE,
-  EXIT_AGENT_SUCCESS,
-} from "./exit-codes.js";
+  EXIT_BELOW_FLOOR,
+  EXIT_INVALID_INPUT,
+  EXIT_RUNTIME_FAILURE,
+  EXIT_SUCCESS,
+} from "../../shared/exit-codes.js";
 import { waitForRunning } from "../services/wait-for-state.js";
 import type { TemplateService } from "../../template/index.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
@@ -171,7 +171,7 @@ async function runCreate(
     process.stderr.write(
       "error: dam agent create-interactive requires an interactive terminal; use `dam agent create` for scripted setup\n",
     );
-    process.exit(EXIT_AGENT_RUNTIME_FAILURE);
+    process.exit(EXIT_RUNTIME_FAILURE);
   }
 
   intro("dam agent create-interactive");
@@ -181,8 +181,8 @@ async function runCreate(
   const host = await resolveActiveHost(deps, {
     flag,
     exitCodes: {
-      runtimeFailure: EXIT_AGENT_RUNTIME_FAILURE,
-      belowFloor: EXIT_AGENT_BELOW_FLOOR,
+      runtimeFailure: EXIT_RUNTIME_FAILURE,
+      belowFloor: EXIT_BELOW_FLOOR,
     },
   });
 
@@ -212,11 +212,11 @@ async function runCreate(
     } else {
       cancel(formatTransportError(tmplResult.error.reason, host));
     }
-    process.exit(EXIT_AGENT_RUNTIME_FAILURE);
+    process.exit(EXIT_RUNTIME_FAILURE);
   }
   if (tmplResult.value.length === 0) {
     cancel("no templates available on this server");
-    process.exit(EXIT_AGENT_RUNTIME_FAILURE);
+    process.exit(EXIT_RUNTIME_FAILURE);
   }
 
   const templateId = await select<string>({
@@ -260,7 +260,7 @@ async function runCreate(
   const createInput = await parseOrExit(
     agentCreateInputSchema,
     { name, templateId },
-    EXIT_AGENT_INVALID_INPUT,
+    EXIT_INVALID_INPUT,
     async () => {
       spin.stop("Invalid input");
       await flushCleanup(trpc, cleanup);
@@ -273,7 +273,7 @@ async function runCreate(
   } catch (e) {
     spin.stop("Setup failed");
     await handleStage1Failure(trpc, cleanup, e);
-    process.exit(EXIT_AGENT_RUNTIME_FAILURE);
+    process.exit(EXIT_RUNTIME_FAILURE);
   }
 
   // --- Step 6: setAgentAccess ---------------------------------------
@@ -305,7 +305,7 @@ async function runCreate(
       `Agent ${name} was created but the credential grant did not land. ` +
         `Configure access via the web UI, or run \`dam agent delete ${name}\` to start over.`,
     );
-    process.exit(EXIT_AGENT_RUNTIME_FAILURE);
+    process.exit(EXIT_RUNTIME_FAILURE);
   }
 
   // --- Step 7: wait for running --------------------------------------
@@ -324,7 +324,7 @@ async function runCreate(
     log.warn(
       `Agent ${name} already exists; delete with \`dam agent delete ${name}\` if not needed.`,
     );
-    process.exit(EXIT_AGENT_RUNTIME_FAILURE);
+    process.exit(EXIT_RUNTIME_FAILURE);
   };
   process.once("SIGINT", onSigint);
 
@@ -351,7 +351,7 @@ async function runCreate(
         `→ Next: dam chat ${name}`,
       ];
       outro(lines.join("\n"));
-      process.exit(EXIT_AGENT_SUCCESS);
+      process.exit(EXIT_SUCCESS);
       return;
     }
     case "error":
@@ -359,7 +359,7 @@ async function runCreate(
         `Agent entered error state: ${waitResult.agent.error ?? "unknown"}`,
       );
       note(`dam agent get ${name}`, "Inspect");
-      process.exit(EXIT_AGENT_RUNTIME_FAILURE);
+      process.exit(EXIT_RUNTIME_FAILURE);
       return;
     case "timeout":
       // The agent exists server-side; the pod is just slow. Per spec:
@@ -369,12 +369,12 @@ async function runCreate(
         `Agent still starting after ${WAIT_TIMEOUT_SECONDS}s (state: ${waitResult.lastState})`,
       );
       note(`dam agent get ${name}`, "Check status");
-      process.exit(EXIT_AGENT_SUCCESS);
+      process.exit(EXIT_SUCCESS);
       return;
     case "transport":
       spin.stop(`Lost connection while waiting: ${waitResult.reason}`);
       note(`dam agent get ${name}`, "Check status");
-      process.exit(EXIT_AGENT_RUNTIME_FAILURE);
+      process.exit(EXIT_RUNTIME_FAILURE);
       return;
   }
 }
@@ -492,7 +492,7 @@ async function pickProvider(
   } catch (e) {
     cancel(`failed to list secrets: ${errorReason(e)}`);
     await flushCleanup(trpc, cleanup);
-    process.exit(EXIT_AGENT_RUNTIME_FAILURE);
+    process.exit(EXIT_RUNTIME_FAILURE);
   }
   const existing: ExistingProvider[] = list
     .filter(
@@ -526,7 +526,7 @@ async function pickProvider(
     // this it means the picker handed us something unexpected.
     cancel("internal: picked provider not in list");
     await flushCleanup(trpc, cleanup);
-    process.exit(EXIT_AGENT_RUNTIME_FAILURE);
+    process.exit(EXIT_RUNTIME_FAILURE);
   }
   return {
     secretId: found.id,
@@ -587,7 +587,7 @@ async function addOrReplaceProvider(
       const updateInput = await parseOrExit(
         secretUpdateInputSchema,
         { id: existingOfType.id, value: apiKey },
-        EXIT_AGENT_INVALID_INPUT,
+        EXIT_INVALID_INPUT,
         () => flushCleanup(trpc, cleanup),
       );
       try {
@@ -621,7 +621,7 @@ async function addOrReplaceProvider(
     const createInput = await parseOrExit(
       secretCreateInputSchema,
       { type, name, value: apiKey },
-      EXIT_AGENT_INVALID_INPUT,
+      EXIT_INVALID_INPUT,
       () => flushCleanup(trpc, cleanup),
     );
     try {
@@ -666,7 +666,7 @@ async function pickGithubPat(
   } catch (e) {
     cancel(`failed to list secrets: ${errorReason(e)}`);
     await flushCleanup(trpc, cleanup);
-    process.exit(EXIT_AGENT_RUNTIME_FAILURE);
+    process.exit(EXIT_RUNTIME_FAILURE);
   }
   const pairs = groupGithubPats(list);
 
@@ -696,7 +696,7 @@ async function pickGithubPat(
   if (!found) {
     cancel("internal: picked PAT not in list");
     await flushCleanup(trpc, cleanup);
-    process.exit(EXIT_AGENT_RUNTIME_FAILURE);
+    process.exit(EXIT_RUNTIME_FAILURE);
   }
   return { ...found, createdNew: false };
 }
@@ -747,7 +747,7 @@ async function addOrReplaceGithubPat(
           gitSecretId: collide.gitSecretId,
           token,
         },
-        EXIT_AGENT_INVALID_INPUT,
+        EXIT_INVALID_INPUT,
         () => flushCleanup(trpc, cleanup),
       );
       try {
@@ -771,7 +771,7 @@ async function addOrReplaceGithubPat(
     const createInput = await parseOrExit(
       secretCreateGithubPatInputSchema,
       { name: DEFAULT_GITHUB_PAT_NAME, token },
-      EXIT_AGENT_INVALID_INPUT,
+      EXIT_INVALID_INPUT,
       () => flushCleanup(trpc, cleanup),
     );
     try {

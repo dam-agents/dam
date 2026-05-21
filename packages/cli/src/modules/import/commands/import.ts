@@ -16,12 +16,12 @@ import {
   resolveArgs,
 } from "../infrastructure/bundle-builder.js";
 import {
-  EXIT_IMPORT_BELOW_FLOOR,
-  EXIT_IMPORT_INVALID_INPUT,
-  EXIT_IMPORT_RUNTIME_FAILURE,
-  EXIT_IMPORT_SUCCESS,
+  EXIT_BELOW_FLOOR,
+  EXIT_INVALID_INPUT,
+  EXIT_RUNTIME_FAILURE,
+  EXIT_SUCCESS,
   EXIT_AGENT_NOT_RESOLVED,
-} from "./exit-codes.js";
+} from "../../shared/exit-codes.js";
 
 export interface ImportCommandDeps {
   compatService: CompatService;
@@ -76,8 +76,8 @@ export function buildImportCommand(deps: ImportCommandDeps): Command {
       const host = await resolveActiveHost(deps, {
         flag,
         exitCodes: {
-          runtimeFailure: EXIT_IMPORT_RUNTIME_FAILURE,
-          belowFloor: EXIT_IMPORT_BELOW_FLOOR,
+          runtimeFailure: EXIT_RUNTIME_FAILURE,
+          belowFloor: EXIT_BELOW_FLOOR,
         },
       });
 
@@ -85,7 +85,7 @@ export function buildImportCommand(deps: ImportCommandDeps): Command {
       const resolved = await resolveArgs(paths);
       if (!resolved.ok) {
         process.stderr.write(`error: ${resolved.error.reason}\n`);
-        process.exit(EXIT_IMPORT_INVALID_INPUT);
+        process.exit(EXIT_INVALID_INPUT);
       }
       const args = resolved.value;
 
@@ -103,7 +103,7 @@ export function buildImportCommand(deps: ImportCommandDeps): Command {
           process.stderr.write(
             "error: refusing destructive import on non-TTY; pass --yes\n",
           );
-          process.exit(EXIT_IMPORT_INVALID_INPUT);
+          process.exit(EXIT_INVALID_INPUT);
         }
         process.stderr.write(
           `About to import into '${agent.name}' (${agent.id}):\n`,
@@ -122,20 +122,20 @@ export function buildImportCommand(deps: ImportCommandDeps): Command {
           } else {
             process.stdout.write("Cancelled.\n");
           }
-          process.exit(EXIT_IMPORT_SUCCESS);
+          process.exit(EXIT_SUCCESS);
         }
       }
 
       const packed = await deps.bundleBuilder.pack(args);
       if (!packed.ok) {
         process.stderr.write(`error: ${packed.error.reason}\n`);
-        process.exit(EXIT_IMPORT_INVALID_INPUT);
+        process.exit(EXIT_INVALID_INPUT);
       }
 
       // Cleanup must run before process.exit — process.exit halts the event
       // loop before pending microtasks, so a finally-block awaiting cleanup
       // would leak the tmpdir on every successful import.
-      let exitCode = EXIT_IMPORT_RUNTIME_FAILURE;
+      let exitCode = EXIT_RUNTIME_FAILURE;
       try {
         exitCode = await uploadAndReport({
           host,
@@ -174,7 +174,7 @@ async function uploadAndReport(args: {
     } else {
       process.stderr.write(`error: ${e.reason}\n`);
     }
-    return EXIT_IMPORT_RUNTIME_FAILURE;
+    return EXIT_RUNTIME_FAILURE;
   }
   const token = tokenResult.value;
 
@@ -198,7 +198,7 @@ async function uploadAndReport(args: {
     process.stderr.write(
       `error: cannot reach server: ${(e as Error).message}\n`,
     );
-    return EXIT_IMPORT_RUNTIME_FAILURE;
+    return EXIT_RUNTIME_FAILURE;
   }
 
   const body = await res.text();
@@ -209,7 +209,7 @@ async function uploadAndReport(args: {
       parsed = JSON.parse(body) as ImportSuccess;
     } catch {
       process.stderr.write("error: malformed success response from server\n");
-      return EXIT_IMPORT_RUNTIME_FAILURE;
+      return EXIT_RUNTIME_FAILURE;
     }
     if (args.json) {
       process.stdout.write(`${JSON.stringify(parsed)}\n`);
@@ -218,7 +218,7 @@ async function uploadAndReport(args: {
         `Imported ${parsed.filesWritten} files (${formatBytes(parsed.bytes)}) in ${(parsed.durationMs / 1000).toFixed(1)}s.\n`,
       );
     }
-    return EXIT_IMPORT_SUCCESS;
+    return EXIT_SUCCESS;
   }
 
   const serverMessage = extractServerError(body) ?? res.statusText;
@@ -228,7 +228,7 @@ async function uploadAndReport(args: {
         `error: not authenticated: ${serverMessage}\n` +
           `       run "dam auth login" first\n`,
       );
-      return EXIT_IMPORT_RUNTIME_FAILURE;
+      return EXIT_RUNTIME_FAILURE;
     case 404:
       process.stderr.write("error: agent no longer exists\n");
       return EXIT_AGENT_NOT_RESOLVED;
@@ -236,19 +236,19 @@ async function uploadAndReport(args: {
       process.stderr.write(
         "error: another import is already in progress for this agent\n",
       );
-      return EXIT_IMPORT_RUNTIME_FAILURE;
+      return EXIT_RUNTIME_FAILURE;
     case 411:
     case 413:
       process.stderr.write(`error: ${serverMessage}\n`);
-      return EXIT_IMPORT_RUNTIME_FAILURE;
+      return EXIT_RUNTIME_FAILURE;
     case 422:
       process.stderr.write(`error: bundle rejected: ${serverMessage}\n`);
-      return EXIT_IMPORT_RUNTIME_FAILURE;
+      return EXIT_RUNTIME_FAILURE;
     default:
       process.stderr.write(
         `error: cannot reach server: HTTP ${res.status} ${serverMessage}\n`,
       );
-      return EXIT_IMPORT_RUNTIME_FAILURE;
+      return EXIT_RUNTIME_FAILURE;
   }
 }
 

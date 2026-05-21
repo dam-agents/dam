@@ -10,11 +10,11 @@ import {
 } from "./errors.js";
 import { confirm } from "../../shared/prompt.js";
 import {
-  EXIT_AGENT_BELOW_FLOOR,
-  EXIT_AGENT_INVALID_INPUT,
-  EXIT_AGENT_RUNTIME_FAILURE,
-  EXIT_AGENT_SUCCESS,
-} from "./exit-codes.js";
+  EXIT_BELOW_FLOOR,
+  EXIT_INVALID_INPUT,
+  EXIT_RUNTIME_FAILURE,
+  EXIT_SUCCESS,
+} from "../../shared/exit-codes.js";
 
 export function buildDeleteCommand(deps: {
   compatService: CompatService;
@@ -57,8 +57,8 @@ async function runDelete(
   const host = await resolveActiveHost(deps, {
     flag: opts.server ? { server: opts.server } : undefined,
     exitCodes: {
-      runtimeFailure: EXIT_AGENT_RUNTIME_FAILURE,
-      belowFloor: EXIT_AGENT_BELOW_FLOOR,
+      runtimeFailure: EXIT_RUNTIME_FAILURE,
+      belowFloor: EXIT_BELOW_FLOOR,
     },
   });
 
@@ -76,7 +76,7 @@ async function runDelete(
       process.stderr.write(
         "error: delete requires confirmation; pass `--yes` or run interactively\n",
       );
-      process.exit(EXIT_AGENT_INVALID_INPUT);
+      process.exit(EXIT_INVALID_INPUT);
     }
     const proceed = await confirm(
       `Delete agent "${agent.name}"? This destroys all persistent data and cannot be undone.`,
@@ -87,7 +87,7 @@ async function runDelete(
       } else {
         process.stdout.write("Cancelled.\n");
       }
-      process.exit(EXIT_AGENT_SUCCESS);
+      process.exit(EXIT_SUCCESS);
     }
   }
 
@@ -100,7 +100,7 @@ async function runDelete(
       alreadyGone = true;
     } else {
       printServiceError(result.error, host);
-      process.exit(EXIT_AGENT_RUNTIME_FAILURE);
+      process.exit(EXIT_RUNTIME_FAILURE);
     }
   }
 
@@ -120,5 +120,5 @@ async function runDelete(
   } else {
     process.stdout.write(`✓ Deleted agent "${agent.name}".\n`);
   }
-  process.exit(EXIT_AGENT_SUCCESS);
+  process.exit(EXIT_SUCCESS);
 }

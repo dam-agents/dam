@@ -1,6 +1,0 @@
-export {
-  EXIT_SUCCESS,
-  EXIT_RUNTIME_FAILURE,
-  EXIT_INVALID_INPUT,
-  EXIT_BELOW_FLOOR as EXIT_COMPAT_BELOW_FLOOR,
-} from "../../shared/exit-codes.js";

@@ -2,9 +2,9 @@ import { Command } from "commander";
 import type { ConfigService } from "../../cli/index.js";
 import type { AuthService, LogoutError } from "../services/auth-service.js";
 import {
-  EXIT_AUTH_INVALID_INPUT,
-  EXIT_AUTH_RUNTIME_FAILURE,
-} from "./exit-codes.js";
+  EXIT_INVALID_INPUT,
+  EXIT_RUNTIME_FAILURE,
+} from "../../shared/exit-codes.js";
 
 export interface LogoutCommandDeps {
   authService: AuthService;
@@ -34,7 +34,7 @@ export function buildLogoutCommand(deps: LogoutCommandDeps): Command {
               "error: no server configured; pass `--server <url>` or run `dam config set server <url>`\n",
             );
           }
-          process.exit(EXIT_AUTH_INVALID_INPUT);
+          process.exit(EXIT_INVALID_INPUT);
         }
         host = resolved.value.server;
       }
@@ -42,7 +42,7 @@ export function buildLogoutCommand(deps: LogoutCommandDeps): Command {
       const result = await deps.authService.logout(host);
       if (!result.ok) {
         printLogoutError(result.error);
-        process.exit(EXIT_AUTH_RUNTIME_FAILURE);
+        process.exit(EXIT_RUNTIME_FAILURE);
       }
 
       if (result.value.alreadyLoggedOut) {

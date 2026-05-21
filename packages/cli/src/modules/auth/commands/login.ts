@@ -4,10 +4,10 @@ import type { ConfigService } from "../../cli/index.js";
 import type { AuthEnvReader } from "../infrastructure/auth-env-reader.js";
 import type { AuthService, LoginError } from "../services/auth-service.js";
 import {
-  EXIT_AUTH_BELOW_FLOOR,
-  EXIT_AUTH_INVALID_INPUT,
-  EXIT_AUTH_RUNTIME_FAILURE,
-} from "./exit-codes.js";
+  EXIT_BELOW_FLOOR,
+  EXIT_INVALID_INPUT,
+  EXIT_RUNTIME_FAILURE,
+} from "../../shared/exit-codes.js";
 
 const EXIT_AUTH_SUCCESS_OR_ABORT = 0;
 
@@ -51,7 +51,7 @@ export function buildLoginCommand(deps: LoginCommandDeps): Command {
                 "error: no server configured; pass `--server <url>` or run `dam config set server <url>`\n",
               );
             }
-            process.exit(EXIT_AUTH_INVALID_INPUT);
+            process.exit(EXIT_INVALID_INPUT);
           }
           host = resolved.value.server;
         }
@@ -135,16 +135,16 @@ export function buildLoginCommand(deps: LoginCommandDeps): Command {
 function exitCodeFor(e: LoginError): number {
   switch (e.kind) {
     case "below-floor":
-      return EXIT_AUTH_BELOW_FLOOR;
+      return EXIT_BELOW_FLOOR;
     case "requires-force":
-      return EXIT_AUTH_INVALID_INPUT;
+      return EXIT_INVALID_INPUT;
     case "aborted":
       return EXIT_AUTH_SUCCESS_OR_ABORT;
     case "preflight":
     case "device-flow":
     case "transport":
     case "auth-store":
-      return EXIT_AUTH_RUNTIME_FAILURE;
+      return EXIT_RUNTIME_FAILURE;
   }
 }
 
