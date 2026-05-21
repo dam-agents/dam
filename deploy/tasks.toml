@@ -230,7 +230,16 @@ istio_install_if_missing() {
 }
 
 istio_install_if_missing istio-base istio/base
-istio_install_if_missing istiod istio/istiod --set profile=ambient
+# Pin workload SVID TTL to 30d (issue #283). The default 24h races
+# against lima VM suspend/resume on a sleeping host laptop — when the
+# rotation window slips past expiry, every mesh hop dies until ztunnel
+# is bounced. Bumping the TTL well past a typical dev-cluster lifetime
+# (and well under Istio's 90d MAX_WORKLOAD_CERT_TTL default) takes the
+# rotation race off the critical path for normal dev work; the
+# ztunnel-cert-watchdog CronJob below covers the residual.
+istio_install_if_missing istiod istio/istiod \
+  --set profile=ambient \
+  --set pilot.env.DEFAULT_WORKLOAD_CERT_TTL=720h
 # k3s places CNI dirs at non-upstream paths (/var/lib/rancher/k3s/...).
 # Without these overrides istio-cni-node loops "no networks found in
 # /host/etc/cni/net.d" and ambient redirection never engages.
@@ -241,6 +250,94 @@ istio_install_if_missing istio-cni istio/cni \
 istio_install_if_missing ztunnel istio/ztunnel
 kubectl --kubeconfig="$KUBECONFIG" -n istio-system rollout status ds/ztunnel --timeout=120s
 kubectl --kubeconfig="$KUBECONFIG" -n istio-system rollout status ds/istio-cni-node --timeout=120s
+
+# Watchdog: every 10 min, scan ztunnel pod logs for the expired-SVID
+# markers (issue #283) and roll ds/ztunnel if any are present. Belt-and-
+# suspenders against any rotation failure that slips past the 30d
+# DEFAULT_WORKLOAD_CERT_TTL pinned on istiod above (e.g. a cluster left
+# running past TTL, an upstream istio bug). Apply is idempotent on
+# re-runs of cluster:install.
+kubectl --kubeconfig="$KUBECONFIG" apply -f - <<'YAML'
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ztunnel-cert-watchdog
+  namespace: istio-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ztunnel-cert-watchdog
+  namespace: istio-system
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: ["apps"]
+    resources: ["daemonsets"]
+    # list+watch needed by `rollout status` (it watches the ds);
+    # patch is what `rollout restart` does (pod-template annotation).
+    verbs: ["get", "list", "watch", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ztunnel-cert-watchdog
+  namespace: istio-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ztunnel-cert-watchdog
+subjects:
+  - kind: ServiceAccount
+    name: ztunnel-cert-watchdog
+    namespace: istio-system
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ztunnel-cert-watchdog
+  namespace: istio-system
+spec:
+  schedule: "*/10 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 600
+      template:
+        spec:
+          serviceAccountName: ztunnel-cert-watchdog
+          restartPolicy: Never
+          containers:
+            - name: watchdog
+              image: alpine/k8s:1.30.4
+              command:
+                - sh
+                - -c
+                - |
+                  set -eu
+                  TRIGGERED=0
+                  for pod in $(kubectl -n istio-system get pods -l app=ztunnel -o name); do
+                    if kubectl -n istio-system logs --since=15m "$pod" 2>/dev/null \
+                        | grep -qiE 'certificate expired|AlertReceived\(CertificateExpired\)'; then
+                      echo "watchdog: $pod reported expired SVID — rolling ds/ztunnel"
+                      TRIGGERED=1
+                      break
+                    fi
+                  done
+                  if [ "$TRIGGERED" = 1 ]; then
+                    kubectl -n istio-system rollout restart ds/ztunnel
+                    kubectl -n istio-system rollout status ds/ztunnel --timeout=120s
+                  else
+                    echo "watchdog: ztunnel SVIDs healthy"
+                  fi
+YAML
 
 # Release namespace must be ambient so the api-server pod and the
 # Istio-synthesised waypoint Pod participate in mesh mTLS. The helm

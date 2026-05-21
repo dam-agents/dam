@@ -47,6 +47,8 @@ Use `mise run cluster:kubectl -- <args>` and `mise run cluster:shell -- <cmd>` i
 
 Activate cluster environment for interactive use: `export KUBECONFIG="$(mise run cluster:kubeconfig)"`.
 
+If the UI suddenly can't log in or `cluster:install` hangs on the keycloak realm step with a misleading `Connection reset`, suspect expired Istio ambient workload SVIDs (issue #283). The `ztunnel-cert-watchdog` CronJob in `istio-system` auto-rolls `ds/ztunnel` within ~10 min when it sees the expired-cert signature; `mise run cluster:fix-certs` is the manual escape hatch if you can't wait.
+
 ## System Architecture (what this system is)
 
 Platform-specific. **Always** start from [`docs/architecture.md`](docs/architecture.md) to understand the system. Before changing behavior in any subsystem, you **must** read its architecture page and the ADRs it links. Do not infer the architecture from the code alone — the docs are the source of truth for *why* the system is shaped the way it is.

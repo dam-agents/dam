@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-05-19
+Last verified: 2026-05-21
 
 ## Motivated by
 
@@ -332,3 +332,18 @@ to api-server endpoints. Each pod's gate matches its threat model:
 the agent runs untrusted code and is held at the kernel layer; the
 gateway is platform-controlled and its identity flows through the
 mesh.
+
+## Dev cluster: SVID rotation resilience
+
+A dev-cluster constraint, not an architectural property. The local
+k3s/lima `cluster:install` ([`deploy/tasks.toml`](../../deploy/tasks.toml))
+pins `DEFAULT_WORKLOAD_CERT_TTL=720h` on istiod so workload SVIDs
+outlive a typical dev cluster's lifetime, and installs a
+`ztunnel-cert-watchdog` CronJob in `istio-system` that scans recent
+ztunnel logs every 10 min and rolls `ds/ztunnel` if it sees
+`certificate expired` / `AlertReceived(CertificateExpired)`. Together
+these absorb the race where lima VM suspend/resume on a sleeping host
+laptop slips past the default 24h rotation window and stalls every
+mesh hop — see [issue #283](https://github.com/dam-agents/dam/issues/283).
+Production deployments configure mesh PKI separately and don't get
+either knob.
