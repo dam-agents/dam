@@ -16,8 +16,18 @@ Read `config.json` in workspace first, if not existing exit immediately.
 For the PRD recorded in `config.json`, inspect its labels:
 
 - **PRD has label `done`** → the product loop for this PRD is finished. Call `mcp__platform-outbound__delete_schedule` to disable this heartbeat and exit. Do not file issues, do not re-decompose, do not look for new work.
+- **PRD has label `paused`** → the heartbeat is suspended waiting for user intervention. Do nothing this turn; do not query GitHub further, do not file or modify issues, do not run skills. Exit immediately. The user resumes work by removing the `paused` label — the next heartbeat that finds it absent runs the "Resume from pause" flow below.
 - **PRD has no `prd:<n>`-labelled children at all** (query with `gh issue list --label "prd:<n>" --state all`) → the PRD has not yet been decomposed; invoke `/to-issues` for it once.
 - **PRD has children but none with `working` or `needs review`** → evaluate "Done detection" below **before** picking new work. The heartbeat must never re-run `/to-issues` against a PRD that already has any `prd:<n>`-labelled issue (open *or* closed).
+
+### Resume from pause
+
+If `config.json` shows `stuckCounters` is non-empty (i.e. a previous turn paused) **and** the PRD no longer carries `paused`, the user has cleared the suspension:
+
+1. Clear `stuckCounters` to `{}` in `config.json`.
+2. Reset `idleHeartbeats` to `0`.
+3. Post a brief "Resuming work on PRD #M — counters cleared." note via `/pause-and-notify`'s resume helper (channel + a one-line comment on the PRD).
+4. Proceed with orchestration as normal.
 
 ## Your Workflow
 
@@ -88,6 +98,36 @@ After closing a ticket, or whenever orchestration finds no `working` / `needs re
 
 If both are true, label the PRD `done`, call `mcp__platform-outbound__delete_schedule` to disable this heartbeat, and exit. The product loop is complete. Do not file anything else.
 
-### Idle-cycle safeguard
+### Stuck detection (mandatory at end of every turn)
 
-Track in `config.json` an `idleHeartbeats` counter: the number of consecutive heartbeats that produced **no merged PR and no label transition**. Reset to 0 whenever a PR merges or a ticket moves between `working` / `needs review` / closed. If `idleHeartbeats` reaches **5**, stop and surface a message to the user via the channel ("I think I'm done — is there more work?") rather than continuing to look for work. Do not invent new issues to "find something to do".
+A turn is "stuck" when the work this heartbeat tried to do failed in a way the agent can name — not when work merely took multiple heartbeats. Three consecutive heartbeats on the same ticket are normal if each turn made progress (commits, comments, partial diffs). The trigger is observed failure, not elapsed time.
+
+**Recognise these as failures** (non-exhaustive — use judgment on anything else that obstructs progress):
+
+- `push_blocked` — `git push` / `gh pr create` returned a permission, auth, or branch-protection error.
+- `ci_red` — the PR's CI is red on the current head SHA after this turn's push.
+- `tool_error` — a meaningful tool call returned an error you could not work around (deploy failed, install failed, gh API 4xx/5xx on a normal operation).
+- `unknown` — you genuinely don't know how to proceed: the requirement is ambiguous, the failure cause is opaque, or you've tried multiple approaches and none landed. Naming this explicitly is **not** a weakness; silent retry is.
+
+**Do NOT count as failures**: long-but-progressing work, expected churn (review comments, follow-up commits), or rate-limited responses that succeeded on retry.
+
+**At the end of every turn**, before exiting:
+
+1. If you observed one or more failures on the active work unit (ticket or PR), append to `stuckCounters[<work-unit>].failures` in `config.json`:
+   ```json
+   { "type": "ci_red", "detail": "lint failure on sha abc123", "at": "<ISO-8601>" }
+   ```
+   Set `stuckCounters[<work-unit>].kind` to `implementation`, `review`, or `ci` based on which phase failed.
+
+2. Evaluate `stuckThresholds` from `config.json` (defaults: `failuresPerWorkUnit: 3`, `ciRedConsecutive: 3`):
+   - If `failures.length >= failuresPerWorkUnit` → invoke `/pause-and-notify` with the active work unit.
+   - If the last `ciRedConsecutive` entries are all `type: "ci_red"` with the same SHA → invoke `/pause-and-notify`.
+   - You may also pause early if you recorded a single failure of `type: "unknown"` and can articulate why you need human guidance — judgment call.
+
+3. After `/pause-and-notify` returns, exit the turn.
+
+### Idle safeguard (configurable)
+
+Distinct from stuck detection: this catches "nothing to do, no failures either" (e.g. all open tickets blocked on external dependencies the agent can't move).
+
+Track in `config.json` an `idleHeartbeats` counter: consecutive heartbeats that produced **no merged PR, no label transition, and recorded no failures**. Reset to 0 on any PR merge or label move between `working` / `needs review` / closed. If `idleHeartbeats` reaches `stuckThresholds.idleHeartbeats` (default 5), invoke `/pause-and-notify` with reason `idle` instead of continuing to look for work. Do not invent new issues to "find something to do".

@@ -2,6 +2,16 @@ You are an agent that should help building production quality software.
 
 When instructed to do heartbeat. Read [Heartbeat](./HEARTBEAT.md) immediately, follow-up there and **skip everything here**.
 
+## User-initiated resume
+
+If you are in an interactive session (not a scheduled heartbeat) and the user tells you to continue / resume / unpause while the PRD currently carries the `paused` label, treat that as explicit permission:
+
+1. Acknowledge the user. If they included guidance about what was stuck (e.g. "I fixed the GitHub Actions secret"), note it.
+2. Call `/pause-and-notify` in resume mode — it will remove the `paused` label, clear `stuckCounters`, post a brief resume note to the channel, and comment on the PRD.
+3. The next scheduled heartbeat (or your current session, if the user is asking you to keep working) proceeds normally.
+
+Do **not** silently remove the `paused` label without a user request. The label is the user's signal that the heartbeat has stopped; only the user (or the user proxying through you in a session) may clear it.
+
 ## Checks
 
 This project requires Github integrations, always ensure that github is connected. Use whoami in `gh` to check whether user is logged in and rejected anything unless not connected. Ask politely for connection first.
@@ -22,7 +32,28 @@ Make sure the repository has existing labels created:
 - `working` — tickets that are actively being worked on
 - `needs review` — active working is done, to be reviewed before merge
 - `done` — PRD has been fully delivered; the heartbeat must exit and disable its schedule when it sets this label
+- `paused` — applied to the PRD when the heartbeat suspends itself after repeated failures. The user removes this label to resume work. See `/pause-and-notify` and the "Stuck detection" section of HEARTBEAT.md.
 - `area:ci` — reserved canonical label for CI/CD work; at most one open `area:ci` issue may exist at a time
+
+### `config.json` shape
+
+Persist at least these fields so the heartbeat survives pod restarts:
+
+```json
+{
+  "github": { "repo": "<owner/repo>", "prd": <prd-issue-number> },
+  "stuckThresholds": {
+    "failuresPerWorkUnit": 3,
+    "ciRedConsecutive": 3,
+    "idleHeartbeats": 5
+  },
+  "stuckCounters": {},
+  "lastTurn": null,
+  "idleHeartbeats": 0
+}
+```
+
+`stuckThresholds` is the only operator-tunable block — if it's missing on read, fall back to the defaults shown above. All other fields are maintained by the heartbeat itself.
 
 
 ### Create PRD (Product Requirement Document) and issues
