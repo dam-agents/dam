@@ -321,21 +321,21 @@ Every api-server replica runs a worker loop. Competing consumers via `FOR UPDATE
 
 ```mermaid
 flowchart TD
-  start([loop start])
+  loopStart([loop start])
   wait[wait for Redis signal or 30s sweep]
   query[claim outbox rows FOR UPDATE SKIP LOCKED]
   check{agent running?}
   skip[unlock row, continue]
   compute[compute snapshot, filter by capabilities]
-  call[POST runtime.v1.applyState]
-  succ[DELETE row]
+  dispatch[POST runtime.v1.applyState]
+  ok[DELETE row]
   fail[increment attempts, schedule retry, drop on TTL]
 
-  start --> wait --> query --> check
+  loopStart --> wait --> query --> check
   check -->|no| skip --> wait
-  check -->|yes| compute --> call
-  call -->|applied| succ --> wait
-  call -->|error| fail --> wait
+  check -->|yes| compute --> dispatch
+  dispatch -->|applied| ok --> wait
+  dispatch -->|error| fail --> wait
 ```
 
 Signal-outbox loop is parallel, structurally identical, dispatches to `runtime.v1.deliverSignal`.
