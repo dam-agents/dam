@@ -1098,6 +1098,24 @@ describe("createAcpRuntime", () => {
     // Agent succeeds → resume waiter served.
     completeResumeBootstrap(fa, SID);
     expect(b.sent.some((f) => JSON.parse(f).id === 7)).toBe(true);
+
+    // End-to-end proof of rehydration: a session/prompt issued by B after
+    // the resume must reach the agent under a real outbound id, and the
+    // agent's response must flow back to B under its original id. Before
+    // the fix this was the failing step — the resume would be served from
+    // stale cache, the agent had no record of the session, and the prompt
+    // came back with "Session not found".
+    const promptBefore = fa.sent.length;
+    b.pushMessage(promptRequest(8, SID));
+    const promptForwards = fa.sent
+      .slice(promptBefore)
+      .filter((f: any) => f.method === "session/prompt");
+    expect(promptForwards).toHaveLength(1);
+    const promptOut = outboundId(promptForwards[0]);
+    fa.pushLine(agentPromptResponse(promptOut));
+    const promptResp = b.sent.map((f) => JSON.parse(f)).find((p) => p.id === 8);
+    expect(promptResp).toBeDefined();
+    expect(promptResp.result).toBeDefined();
   });
 
   it("after closing an idle session, cold revival does not double the log on the agent's history replay", () => {
