@@ -27,6 +27,7 @@ const navItems = [
 export function Sidebar() {
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
+  // Static at mount; role changes take effect on next page reload.
   const showUsage = isUsageInspector();
 
   const [collapsed, setCollapsed] = useState(() => {

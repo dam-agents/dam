@@ -198,7 +198,7 @@ export function createTelegramWorker(
       type: EventType.ChannelTurnRelayed,
       channel: "telegram",
       agentId: instanceName,
-      actorSub: "",
+      actorSub: null,
       outcome,
     });
   }

@@ -65,7 +65,7 @@ export function startPersistActivitySaga(
           try {
             await deps.insert({
               type: "channel_turn",
-              actorSub: event.actorSub || null,
+              actorSub: event.actorSub,
               agentId: event.agentId,
               surface: event.channel,
               outcome: event.outcome,

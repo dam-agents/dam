@@ -21,6 +21,7 @@ export type ActivityRetentionJob = {
 export function startActivityRetentionJob(db: Db): ActivityRetentionJob {
   const deleteOld = deleteActivityEventsOlderThan(db);
   let timer: NodeJS.Timeout | null = null;
+  let running = false;
 
   async function tick(): Promise<void> {
     try {
@@ -46,14 +47,16 @@ export function startActivityRetentionJob(db: Db): ActivityRetentionJob {
 
   return {
     start() {
-      if (timer) return;
+      if (running) return;
+      running = true;
       timer = setTimeout(function loop() {
         tick().finally(() => {
-          timer = setTimeout(loop, WEEK_MS);
+          if (running) timer = setTimeout(loop, WEEK_MS);
         });
       }, STARTUP_DELAY_MS);
     },
     stop() {
+      running = false;
       if (timer) clearTimeout(timer);
       timer = null;
     },

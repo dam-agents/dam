@@ -130,7 +130,8 @@ export type ChannelTurnRelayed = {
   type: EventType.ChannelTurnRelayed;
   channel: "slack" | "telegram";
   agentId: string;
-  actorSub: string;
+  /** Null for unauthenticated relays (Telegram: only the owner runs /login, so guest replies have no Keycloak sub). */
+  actorSub: string | null;
   /** "success" when the ACP turn completed and the reply was posted; "failure"
    *  on any caught error in the relay path (ACP throw, fork provisioning
    *  failure, post-back failure). Drives the success/failure breakouts in the
