@@ -1,6 +1,6 @@
 # Skills
 
-Last verified: 2026-05-15
+Last verified: 2026-05-21
 
 ## Motivated by
 
@@ -13,11 +13,11 @@ Last verified: 2026-05-15
 
 ## Overview
 
-A **skill** is a directory containing a `SKILL.md` manifest (YAML frontmatter — `name`, `description`) plus supporting files. Platform does not interpret skills; it **transports** them between external git repositories and the per-instance PVC, where the harness reads them from configured paths.
+A **skill** is a directory containing a `SKILL.md` manifest (YAML frontmatter — `name`, `description`) plus supporting files. Platform does not interpret skills; it **transports** them between external git repositories and the per-agent PVC, where the harness reads them from configured paths.
 
 The subsystem splits cleanly across two bounded contexts ([`tseng/vocabulary.md`](../../tseng/vocabulary.md)):
 
-- **api-server side** — owns the catalog: which sources are connected, which skills are installed where, and what was published from which instance. All of it is api-server-only Application State and lives in Postgres or in api-server config. The api-server never touches a pod's filesystem directly.
+- **api-server side** — owns the catalog: which sources are connected, which skills are installed where, and what was published from which agent. All of it is api-server-only Application State and lives in Postgres or in api-server config. The api-server never touches a pod's filesystem directly.
 - **agent-runtime side** — owns the pod-local files: scanning a source, materializing a skill into the configured paths, walking the disk to enumerate local skills, and publishing a local skill upstream. It never reasons about catalogs, drift, or which user owns what.
 
 The two contexts share the agent-runtime as the only path that reaches a pod, and the paired gateway pod as the only path that reaches GitHub with credentials. Everything else is a tRPC call between them.
@@ -38,13 +38,13 @@ flowchart LR
 
   subgraph postgres[Postgres]
     src[(skill_sources)]
-    inst[(instance_skills)]
-    pubs[(instance_skill_publishes)]
+    inst[(agent_skills)]
+    pubs[(agent_skill_publishes)]
   end
 
   subgraph pod[agent pod]
     rt-skills[agent-runtime skills]
-    pvc[(per-instance PVC<br/>skillPaths)]
+    pvc[(per-agent PVC<br/>skillPaths)]
   end
 
   subgraph gateway[gateway pod]
@@ -77,7 +77,7 @@ A connection to an external git repository, addressable by id. Three kinds, all 
 
 - **User source** — a row in Postgres (`skill_sources`), owner-scoped. Created and deleted by the user via tRPC.
 - **System source** — a Helm-declared platform-wide entry from `skills.skillSources` ([`deploy/helm/platform/values.yaml`](../../deploy/helm/platform/values.yaml)). Loaded into api-server config from the `SKILL_SOURCES_SEED` env at boot, never persisted to Postgres. Marked `system: true` and protected from deletion. Badged "Platform".
-- **Template source** — declared on a template's `spec.skillSources`. Surfaced read-only on every instance derived from that template. Badged "Agent".
+- **Template source** — declared on a template's `spec.skillSources`. Surfaced read-only on every agent derived from that template. Badged "Agent".
 
 Listing dedupes on `gitUrl` with first-wins precedence: user → template → system. A user creating a custom source for the same URL shadows the system entry; deleting the user row exposes the system entry again.
 
@@ -85,18 +85,18 @@ Listing dedupes on `gitUrl` with first-wins precedence: user → template → sy
 
 A **Scanned Skill** is what an api-server scan returns from a Source: `(name, description, version, contentHash)`, where `version` is the source's HEAD commit SHA and `contentHash` is a deterministic SHA-256 over the skill directory.
 
-An **Installed Skill Ref** is a row in `instance_skills` keyed `(instanceId, source, name)` recording which Scanned Skill is installed at which Version on which Instance. The on-disk directory at the configured Skill Paths is the source of truth for "what is installed" — the Postgres row is a declarative record that self-heals on each `state` query.
+An **Installed Skill Ref** is a row in `agent_skills` keyed `(agentId, source, name)` recording which Scanned Skill is installed at which Version on which Agent. The on-disk directory at the configured Skill Paths is the source of truth for "what is installed" — the Postgres row is a declarative record that self-heals on each `state` query.
 
 A **Local Skill** is a directory present in some Skill Path on the pod, regardless of how it got there. The reconciled `state` view splits Locals into:
 
-- **Installed** — also tracked in `instance_skills`. Drift surfaces when its Postgres `contentHash` differs from the upstream scan's `contentHash`.
-- **Standalone** — on disk but not tracked. Authored in place via the Files panel. May carry a "Published" badge if it has a matching `instance_skill_publishes` row.
+- **Installed** — also tracked in `agent_skills`. Drift surfaces when its Postgres `contentHash` differs from the upstream scan's `contentHash`.
+- **Standalone** — on disk but not tracked. Authored in place via the Files panel. May carry a "Published" badge if it has a matching `agent_skill_publishes` row.
 
-A **Skill Publish Record** (`instance_skill_publishes`) is the explicit log of a successful publish: skillName, sourceId, prUrl, plus the source name and gitUrl denormalized so the record stays usable after the source is renamed or deleted. This is what drives the "Published" badge — replacing a name-match heuristic that produced false positives.
+A **Skill Publish Record** (`agent_skill_publishes`) is the explicit log of a successful publish: skillName, sourceId, prUrl, plus the source name and gitUrl denormalized so the record stays usable after the source is renamed or deleted. This is what drives the "Published" badge — replacing a name-match heuristic that produced false positives.
 
 ### Skill Path
 
-An absolute on-pod directory the harness reads skills from. Resolved per instance via a precedence chain at install time: the agent's own `spec.skillPaths` (copied from the template at agent creation) wins over the template's `spec.skillPaths`, which wins over the cross-harness default `/home/agent/.agents/skills/`. Claude-Code-derived templates override to `/home/agent/.claude/skills/`.
+An absolute on-pod directory the harness reads skills from. Resolved per agent via a precedence chain at install time: the agent's own `spec.skillPaths` (copied from the template at agent creation) wins over the template's `spec.skillPaths`, which wins over the cross-harness default `/home/agent/.agents/skills/`. Claude-Code-derived templates override to `/home/agent/.claude/skills/`.
 
 Install writes the skill directory into **every** configured Skill Path; uninstall removes it from all of them. Scanning the disk for Local Skills walks every path in order and dedupes by directory name (first found wins).
 
@@ -108,13 +108,13 @@ Lives in [`packages/api-server/src/modules/skills/`](../../packages/api-server/s
 
 - The **Skill Source catalogue** — CRUD on user sources, merging in system seeds and template sources, dedupe and badge resolution.
 - The **scan cache** — per-`gitUrl`, 5-minute TTL, invalidated on `sources.refresh` or after a successful publish to that source.
-- **Public-archive scanning** — for `github.com` URLs, downloads `archive/HEAD.tar.gz` directly from GitHub, walks for `SKILL.md`, parses frontmatter, computes `contentHash`. No credentials required. This is the path that lets the catalog UI render even when no instance is running.
-- **Private / non-GitHub fallback** — falls through to the agent-runtime `skills.scan` over the harness port. Requires a running instance because the credential path needs the paired gateway pod; the api-server has none.
-- **Install / uninstall orchestration** — calls agent-runtime over its harness-port tRPC and on success upserts the `instance_skills` row with the returned `contentHash`. The api-server is the only pod whose NetworkPolicy can reach the agent's tRPC listener; no Bearer token is sent.
-- **Publish orchestration** ([`publish-service`](../../packages/api-server/src/modules/skills/services/publish-service.ts)) — validates that the source is a GitHub URL (only host that supports publish), calls agent-runtime, and on success writes the `instance_skill_publishes` row and invalidates the scan cache for that source.
-- **Reconciled `state` view** — joins live `listLocal` from agent-runtime with the `instance_skills` rows, drops ghost rows whose directories were deleted out-of-band (and persists the cleanup), and folds in the `instance_skill_publishes` rows.
-- **MCP tools** — five tools registered on the per-instance MCP endpoint ([`mcp-endpoint.ts`](../../packages/api-server/src/apps/harness-api-server/mcp-endpoint.ts)): `list_skill_sources`, `list_skills_in_source`, `install_skill`, `uninstall_skill`, `publish_skill`. `instanceId` is bound by the verified MCP session token, not user input — agents cannot spoof which instance they're acting on.
-- **Cleanup saga** — subscribes to `InstanceDeleted` and deletes both `instance_skills` and `instance_skill_publishes` rows for the deleted instance. User-owned `skill_sources` are unaffected; they outlive any single instance.
+- **Public-archive scanning** — for `github.com` URLs, downloads `archive/HEAD.tar.gz` directly from GitHub, walks for `SKILL.md`, parses frontmatter, computes `contentHash`. No credentials required. This is the path that lets the catalog UI render even when no agent is running.
+- **Private / non-GitHub fallback** — falls through to the agent-runtime `skills.scan` over the harness port. Requires a running agent because the credential path needs the paired gateway pod; the api-server has none.
+- **Install / uninstall orchestration** — calls agent-runtime over its harness-port tRPC and on success upserts the `agent_skills` row with the returned `contentHash`. The api-server is the only pod whose NetworkPolicy can reach the agent's tRPC listener; no Bearer token is sent.
+- **Publish orchestration** ([`publish-service`](../../packages/api-server/src/modules/skills/services/publish-service.ts)) — validates that the source is a GitHub URL (only host that supports publish), calls agent-runtime, and on success writes the `agent_skill_publishes` row and invalidates the scan cache for that source.
+- **Reconciled `state` view** — joins live `listLocal` from agent-runtime with the `agent_skills` rows, drops ghost rows whose directories were deleted out-of-band (and persists the cleanup), and folds in the `agent_skill_publishes` rows.
+- **MCP tools** — five tools registered on the per-agent MCP endpoint ([`mcp-endpoint.ts`](../../packages/api-server/src/apps/harness-api-server/mcp-endpoint.ts)): `list_skill_sources`, `list_skills_in_source`, `install_skill`, `uninstall_skill`, `publish_skill`. `agentId` is bound by the verified MCP session token, not user input — agents cannot spoof which agent they're acting on.
+- **Cleanup saga** — subscribes to `AgentDeleted` and deletes both `agent_skills` and `agent_skill_publishes` rows for the deleted agent. User-owned `skill_sources` are unaffected; they outlive any single agent.
 
 ### agent-runtime skills service
 
@@ -132,7 +132,7 @@ Boot-time wiring runs `gh auth setup-git` once before the tRPC server starts, so
 
 Agent-runtime never holds a real GitHub token. The paired gateway pod performs the swap:
 
-1. The agent pod's `HTTPS_PROXY` is `http://<instance>-gateway:<envoy-port>` — the per-instance gateway Service DNS ([ADR-038](../adrs/038-paired-gateway-pod.md)). The agent pod's NetworkPolicy admits no other route to TCP 80/443, so credential injection is enforced by the cluster, not by the agent honoring an env var. `SSL_CERT_FILE` points at the cluster-issued MITM CA so TLS termination on the gateway succeeds ([security-and-credentials](security-and-credentials.md)).
+1. The agent pod's `HTTPS_PROXY` is `http://<agent>-gateway:<envoy-port>` — the per-agent gateway Service DNS ([ADR-038](../adrs/038-paired-gateway-pod.md)). The agent pod's NetworkPolicy admits no other route to TCP 80/443, so credential injection is enforced by the cluster, not by the agent honoring an env var. `SSL_CERT_FILE` points at the cluster-issued MITM CA so TLS termination on the gateway succeeds ([security-and-credentials](security-and-credentials.md)).
 2. Envoy renders **three** host-specific filter chains for one GitHub OAuth Secret ([issue #219](https://github.com/dam-agents/dam/issues/219)). One Secret, three chains, three auth shapes; the Secret carries a per-host SDS file (`host-<sha8>.sds.yaml`) for each chain to read:
    - `api.github.com` — `Authorization: Bearer <token>` (REST/GraphQL API).
    - `github.com` — `Authorization: Basic base64("x-access-token:<token>")` (the HTTP Basic shape `git` over HTTPS expects, so private `git clone` / `git fetch` / `git push` work with no credential helper).
@@ -158,7 +158,7 @@ sequenceDiagram
   participant GH as GitHub
   participant PVC as PVC<br/>skillPaths
 
-  U->>API: skills.install(instanceId, source, name, version)
+  U->>API: skills.install(agentId, source, name, version)
   API->>API: resolve skillPaths from agent spec
   API->>RT: skills.install (NetworkPolicy-gated, no Bearer)
   RT->>ENV: GET /repos/.../tarball/{version}
@@ -167,7 +167,7 @@ sequenceDiagram
   ENV-->>RT: tarball
   RT->>PVC: write skill dir into every skillPath
   RT-->>API: { contentHash }
-  API->>DB: upsert instance_skills row
+  API->>DB: upsert agent_skills row
   API-->>U: updated installed list
 ```
 
@@ -185,7 +185,7 @@ sequenceDiagram
   participant ENV as gateway pod (Envoy)
   participant GH as GitHub
 
-  U->>API: skills.publish(instanceId, sourceId, name)
+  U->>API: skills.publish(agentId, sourceId, name)
   API->>API: validate sourceId is GitHub
   API->>RT: skills.publish (NetworkPolicy-gated, no Bearer)
   RT->>RT: read skill from PVC<br/>(per-file + total size caps)
@@ -194,7 +194,7 @@ sequenceDiagram
   GH-->>ENV: PR url
   ENV-->>RT: PR url
   RT-->>API: { prUrl, branch }
-  API->>DB: insert instance_skill_publishes
+  API->>DB: insert agent_skill_publishes
   API->>API: invalidate scan cache for source
   API-->>U: { prUrl, branch }
 ```
@@ -203,24 +203,24 @@ GitHub errors (missing scope, repo not found) surface to agent-runtime as the up
 
 ### Listing & scan
 
-`skills.sources.list(instanceId?)` merges the three Source kinds and returns `canPublish: true` only for GitHub URLs.
+`skills.sources.list(agentId?)` merges the three Source kinds and returns `canPublish: true` only for GitHub URLs.
 
-`skills.listSkills(sourceId, instanceId?)` resolves the source and dispatches:
+`skills.list(sourceId, agentId?)` resolves the source and dispatches:
 
-- **Public GitHub** → `public-archive-scanner` from the api-server, served from the per-`gitUrl` cache when fresh. No instance required.
-- **Anything else** → agent-runtime `skills.scan`. Requires a running instance and surfaces a clear error if `instanceId` is missing.
+- **Public GitHub** → `public-archive-scanner` from the api-server, served from the per-`gitUrl` cache when fresh. No agent required.
+- **Anything else** → agent-runtime `skills.scan`. Requires a running agent and surfaces a clear error if `agentId` is missing.
 
 The cache is invalidated on `sources.refresh` and after every successful publish to that source — the latter so a freshly-merged PR shows up on the next list.
 
 ### Reconciled state
 
-`skills.state(instanceId)` is the single read the UI uses to render the Skills panel. It composes:
+`skills.state(agentId)` is the single read the UI uses to render the Skills panel. It composes:
 
 - `listLocal` from agent-runtime — what's actually on disk, deduped across Skill Paths.
-- The `instance_skills` rows for the instance.
-- The `instance_skill_publishes` rows for the instance.
+- The `agent_skills` rows for the agent.
+- The `agent_skill_publishes` rows for the agent.
 
-Then it drops "ghost" rows (`instance_skills` rows whose directory has been deleted out-of-band, e.g. via the file panel) and persists the cleanup. The Postgres rows stop drifting from the filesystem without requiring a separate reconciler — every read is the reconciler.
+Then it drops "ghost" rows (`agent_skills` rows whose directory has been deleted out-of-band, e.g. via the file panel) and persists the cleanup. The Postgres rows stop drifting from the filesystem without requiring a separate reconciler — every read is the reconciler.
 
 ## Persistence touchpoints
 
@@ -229,17 +229,17 @@ Skills are entirely an **Application State** subsystem ([persistence](persistenc
 | Table | Key | Owner |
 |---|---|---|
 | `skill_sources` | `(id)`, unique on `(owner, gitUrl)` | per-user |
-| `instance_skills` | `(instanceId, source, name)` | per-instance |
-| `instance_skill_publishes` | `(id)`, indexed by `instanceId` | per-instance |
+| `agent_skills` | `(agentId, source, name)` | per-agent |
+| `agent_skill_publishes` | `(id)`, indexed by `agentId` | per-agent |
 
 System and template sources do **not** persist — system sources come from `SKILL_SOURCES_SEED`, template sources from the template's `spec.skillSources`. Both are computed at request time.
 
-The on-pod state lives on the per-instance PVC under the configured Skill Paths. PVC reclamation on instance deletion ([persistence § Lifetime](persistence.md#lifetime)) takes care of the file-side cleanup; the Skills cleanup saga handles the row-side. User-owned `skill_sources` survive instance deletion — they are catalog connections, not instance state.
+The on-pod state lives on the per-agent PVC under the configured Skill Paths. PVC reclamation on agent deletion ([persistence § Lifetime](persistence.md#lifetime)) takes care of the file-side cleanup; the Skills cleanup saga handles the row-side. User-owned `skill_sources` survive agent deletion — they are catalog connections, not agent state.
 
 ## Invariants
 
-- **Filesystem is authoritative for installed state.** `instance_skills` is a declarative record that self-heals on every `state` read. A skill removed via the Files panel disappears from the UI without any explicit uninstall.
+- **Filesystem is authoritative for installed state.** `agent_skills` is a declarative record that self-heals on every `state` read. A skill removed via the Files panel disappears from the UI without any explicit uninstall.
 - **api-server never touches the pod filesystem.** Every disk-touching operation goes through agent-runtime over its tRPC port; the agent pod's NetworkPolicy admits ingress only from the api-server pod, so no in-process auth is needed on that hop.
 - **agent-runtime never holds a GitHub credential.** Every authenticated GitHub call leaves the agent unauthenticated; Envoy in the paired gateway pod injects `Authorization: Bearer <user OAuth token>` from the owner's K8s Secret on the wire. A compromised agent pod cannot exfiltrate the user's GitHub token because the token is never mounted into the agent pod — only the gateway pod, and the agent pod's NetworkPolicy admits no route to GitHub other than through that gateway.
 - **Publish is REST-only.** No `git push` on the publish path. `git` is used only for cloning non-GitHub sources during install/scan, and that path also routes through the gateway pod's credential injector via `gh auth setup-git`.
-- **MCP `instanceId` is server-bound.** The per-instance MCP endpoint authenticates the agent against the agent ConfigMap's `accessTokenHash` ([channels § Auth without an admin login](channels.md#auth-without-an-admin-login)) and pins the `instanceId` from the verified token, not from tool input.
+- **MCP `agentId` is server-bound.** The per-agent MCP endpoint authenticates the agent against the agent ConfigMap's `accessTokenHash` ([channels § Auth without an admin login](channels.md#auth-without-an-admin-login)) and pins the `agentId` from the verified token, not from tool input.
