@@ -129,6 +129,3 @@ jobs:
       - run: mise run e2e
         env:
           SKIP_IMAGE_BUILD: "1"
-      - name: Teardown test cluster
-        if: always()
-        run: mise run cluster:delete -- --force
