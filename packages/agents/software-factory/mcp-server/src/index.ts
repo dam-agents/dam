@@ -4,13 +4,13 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { Redis } from "ioredis";
 
-const PORT = 7777;
+const PORT = Number(process.env.MCP_PORT ?? "7777");
 const LOCK_KEY = "agent:global";
-const TTL_SECONDS = 900;
+const TTL_SECONDS = Number(process.env.LOCK_TTL_SECONDS ?? "900");
 
 const redis = new Redis({
-  host: "127.0.0.1",
-  port: 6379,
+  host: process.env.REDIS_HOST ?? "127.0.0.1",
+  port: Number(process.env.REDIS_PORT ?? "6379"),
   lazyConnect: false,
   maxRetriesPerRequest: null,
 });
