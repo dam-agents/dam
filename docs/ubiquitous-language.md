@@ -94,6 +94,20 @@ Pod-side operational view of skills. Distinct from the api-server's Skills conte
 | Rule Verdict | `allow` or `deny` — the decision a rule encodes |
 | Rule Match | Lookup of the most-specific active rule for a given egress request; misses fall through to the ext_authz Gate's pending-approval flow |
 
+## Connections (bounded context) — proposed, in-flight design
+
+Generalises today's split between `OAuthAppDescriptor` (OAuth-app registry) and `ProviderPreset` (typed-secret registry) into one model. Terms below are in active design; structure (subtype axes, push channel, capability negotiation) is being grilled.
+
+| Term | Definition |
+|------|-----------|
+| Connection Template | A code-level catalog entry that ships defaults — pre-filled `AuthConfig` and `Contribution[]` plus the input fields the user fills in. Premade templates (e.g. GitHub, Anthropic) and "Custom" templates (MCP server, OAuth, Header) share the same shape. Carries two display-axis attributes: `category` (`app` \| `mcp` \| `other`) for UI grouping, and `isCustom` (boolean) marking templates that exist solely to generate user-typed connections. Replaces today's `OAuthAppDescriptor` + `ProviderPreset` parallel registries |
+| Connection | A single uniform shape: `{ auth: AuthConfig \| null, contributions: Contribution[], inputs, templateId? }`. No `kind` discriminator — identity is the contributions it makes and the auth it carries. A user-built Connection can be contribution-equivalent to a premade one |
+| Contribution | One typed unit a Connection emits for one Agent when granted. Kinds (provisional, extensible): `env`, `egress-host`, `file`, `mcp-entry`, `skill-ref`. Discriminated union; new kinds add by extending the union |
+| AuthConfig | Discriminated union describing how a Connection authenticates. Kinds (provisional, extensible): `oauth`, `api-key`, `header`, `none`. Separate from contributions because credentials have their own lifecycle (refresh, rotation) |
+| State Event | A declarative full snapshot of an Agent's desired Contributions, sent on connect and on every contribution change. Carries a deterministic content hash so the agent can short-circuit reconciliation when unchanged. Idempotent and replay-safe |
+| Signal Event | An imperative one-shot directive (trigger fire, rescan-skills, rotate, …). Carries a stable id for agent-side dedupe and a TTL (default 5 minutes for triggers). Server retains unacked signals and redelivers on the next connection or until TTL expiry |
+| Last Applied Hash | The agent's reported hash of the last successfully reconciled State Event, sent in the connect handshake. Server skips retransmission when it matches its current snapshot hash |
+
 ## Secrets (bounded context)
 
 | Term | Definition |
