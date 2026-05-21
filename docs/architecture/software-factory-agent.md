@@ -74,7 +74,7 @@ A heartbeat's behavior is determined entirely by the labels visible at the momen
 
 ## Stuck detection and pause
 
-The heartbeat can encounter classes of failure it cannot retry its way out of: a push blocked by branch protection, CI persistently red on the same SHA, a tool call that keeps failing, or genuine ambiguity in the requirement. Continuing to retry would burn cycles and produce noise (the [`todo-app-2` incident](#) was this failure mode taken to extremes — 31 duplicate issues across four re-decompositions before the schedule was killed manually). The agent therefore self-suspends on signal, not on time.
+The heartbeat can encounter classes of failure it cannot retry its way out of: a push blocked by branch protection, CI persistently red on the same SHA, a tool call that keeps failing, or genuine ambiguity in the requirement. Continuing to retry would burn cycles, produce noise (duplicate issues, repeated review comments), and leave the user with no signal that intervention is needed. The agent therefore self-suspends on signal, not on time.
 
 At the end of every turn the heartbeat records observed failures against the active work unit (a ticket number for implementation, a PR number for review, the string `"idle"` for the safeguard). Failure types are a small named set — `push_blocked`, `ci_red`, `tool_error`, `unknown` — so thresholds can match against them. Long-but-progressing work does **not** count; only failures the agent can name do.
 
