@@ -13,20 +13,18 @@ export interface FilesSlice {
   /** Whether the file-viewer has an unsaved in-memory edit. Surfaced here so
    *  the tree-click handler can prompt before discarding. */
   openFileDirty: boolean;
-  /** Per-agent set of currently-expanded directory paths. Drives which
-   *  directories the panel asks the agent-runtime to snapshot (ADR-049).
-   *  Lives in-memory for the page session; reset on reload. */
   expandedDirs: Record<string, Set<string>>;
   setOpenFilePath: (path: string | null) => void;
   setRightTab: (tab: RightTab) => void;
   setOpenFileDirty: (dirty: boolean) => void;
   toggleExpandedDir: (agentId: string, path: string) => void;
   pruneExpandedDir: (agentId: string, path: string) => void;
-  /** Rewrite expanded paths after a rename so that an expanded subtree
-   *  follows its new parent path instead of evaporating. */
   renameExpandedDir: (agentId: string, from: string, to: string) => void;
 }
 
+/** Drop `prefix` and every path nested under it. Collapsing a parent must
+ *  also forget its expanded children, otherwise they keep shipping in the
+ *  batched poll even though no DirContents is mounted to render them. */
 function withoutPath(set: Set<string>, prefix: string): Set<string> {
   const next = new Set<string>();
   for (const p of set) {
@@ -35,6 +33,9 @@ function withoutPath(set: Set<string>, prefix: string): Set<string> {
   return next;
 }
 
+/** Rewrite `from` and every path nested under it to live under `to`. Used
+ *  after a rename so an expanded subtree follows its new parent path
+ *  instead of evaporating. */
 function rewritePrefix(
   set: Set<string>,
   from: string,
