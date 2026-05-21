@@ -19,4 +19,3 @@ USER 65532
 COPY --from=builder --chown=65532:0 /controller /usr/local/bin/controller
 
 ENTRYPOINT ["controller"]
-
