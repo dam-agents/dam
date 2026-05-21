@@ -25,14 +25,20 @@ A grant of one Connection produces Contributions of several kinds. They don't al
 
 ```mermaid
 flowchart LR
-  grant[Connection grant<br/>on Agent A]
-  grant --> env-rail[env Contributions]
-  grant --> host-rail[egress-host Contributions]
-  grant --> rt-rail[file / mcp-entry / skill-ref Contributions]
+  grant[Connection grant on Agent A]
+  envRail[env Contributions]
+  hostRail[egress-host Contributions]
+  rtRail[file / mcp-entry / skill-ref Contributions]
+  controller[controller render then pod roll]
+  envoy[egress_rules then Envoy ext_authz]
+  channel[runtime channel]
 
-  env-rail -->|bump annotation| controller[controller render → pod roll]
-  host-rail -->|sync rows| envoy[egress_rules → Envoy ext_authz]
-  rt-rail -->|outbox row| channel[runtime channel<br/>see below]
+  grant --> envRail
+  grant --> hostRail
+  grant --> rtRail
+  envRail -->|bump annotation| controller
+  hostRail -->|sync rows| envoy
+  rtRail -->|outbox row| channel
 ```
 
 Two of the three rails were already in place before this subsystem and stay unchanged ([ADR-040](../adrs/040-unified-secret-contributions.md) for envs; [ADR-035](../adrs/035-unified-hitl-ux.md) for egress_rules). The third rail — the runtime channel — is new and is what the rest of this page is about.
@@ -45,12 +51,12 @@ flowchart LR
   worker[delivery worker]
   rt[agent-runtime]
   drivers[per-kind drivers]
-  hello[hello / ack<br/>endpoint]
+  hello[hello and ack endpoint]
 
   outbox --> worker
-  worker -->|applyState<br/>deliverSignal| rt
+  worker -->|applyState, deliverSignal| rt
   rt --> drivers
-  rt -->|hello / ack| hello
+  rt -->|hello, ack| hello
 ```
 
 State changes write to the outbox, the worker reads and dispatches, the agent receives state pushes and signal pushes, and the agent calls back on boot/wake to catch up. Everything else in this subsystem hangs off these two diagrams.
@@ -266,17 +272,17 @@ runtime.v1.hello({
 ```mermaid
 sequenceDiagram
   autonumber
-  participant RT as agent-runtime<br/>(boot/wake)
+  participant RT as agent-runtime on boot
   participant HS as harness-API-server
   participant PG as Postgres
 
-  RT->>HS: runtime.v1.hello(lastAppliedHash, capabilities, …)
+  RT->>HS: runtime.v1.hello (lastAppliedHash, capabilities)
   HS->>PG: read current state for this agent
   HS->>PG: SELECT pending signals FOR UPDATE SKIP LOCKED
-  HS-->>RT: { state?, pendingSignals }
+  HS-->>RT: state and pendingSignals
   loop per pending signal
     RT->>RT: apply locally
-    RT->>HS: runtime.v1.ack(signalId, outcome)
+    RT->>HS: runtime.v1.ack (signalId, outcome)
     HS->>PG: DELETE signal outbox row
   end
 ```
@@ -316,18 +322,19 @@ Every api-server replica runs a worker loop. Competing consumers via `FOR UPDATE
 ```mermaid
 flowchart TD
   start([loop start])
-  wait[wait for<br/>Redis signal<br/>OR 30s sweep timer]
-  query[SELECT … FROM runtime_state_outbox<br/>WHERE next_attempt_at <= now<br/>FOR UPDATE SKIP LOCKED<br/>LIMIT 50]
-  check[agent in agents-cache?<br/>state = running?]
-  skip[unlock row<br/>continue]
-  compute[compute snapshot from Postgres<br/>filter by agent capabilities]
+  wait[wait for Redis signal or 30s sweep]
+  query[claim outbox rows FOR UPDATE SKIP LOCKED]
+  check{agent running?}
+  skip[unlock row, continue]
+  compute[compute snapshot, filter by capabilities]
   call[POST runtime.v1.applyState]
   succ[DELETE row]
-  fail[increment attempts<br/>next_attempt_at = now+backoff<br/>or DELETE if TTL]
+  fail[increment attempts, schedule retry, drop on TTL]
+
   start --> wait --> query --> check
   check -->|no| skip --> wait
   check -->|yes| compute --> call
-  call -->|2xx applied| succ --> wait
+  call -->|applied| succ --> wait
   call -->|error| fail --> wait
 ```
 
