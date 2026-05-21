@@ -65,9 +65,9 @@ export const createFilesSlice: StateCreator<
   toggleExpandedDir: (agentId, path) => {
     set((state) => {
       const current = state.expandedDirs[agentId] ?? new Set<string>();
-      const next = new Set(current);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
+      const next = current.has(path)
+        ? withoutPath(current, path)
+        : new Set(current).add(path);
       return { expandedDirs: { ...state.expandedDirs, [agentId]: next } };
     });
   },
