@@ -1,44 +1,29 @@
 import { FilePlus, FolderPlus, FolderUp, Upload } from "lucide-react";
-import {
-  Fragment,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useStore } from "../../../store.js";
-import type { TreeEntry } from "../../../types.js";
 import { type BundleEntry, walkDataTransfer } from "../api/import-bundle.js";
-import { useFileContentQuery } from "../api/queries.js";
+import {
+  useDirSnapshot,
+  useFileContentQuery,
+  useFileListDirsQuery,
+} from "../api/queries.js";
 import {
   type FileEntryKind,
   useFileMutations,
 } from "../hooks/use-file-mutations.js";
-import { FileRow } from "./file-row.js";
+import { DirContents } from "./dir-contents.js";
 import { FileRowMenu, type FileRowMenuAction } from "./file-row-menu.js";
 import { FileViewer } from "./file-viewer.js";
+import {
+  FilesPanelContext,
+  type FilesPanelContextValue,
+  type MenuState,
+  type PendingNew,
+} from "./files-panel-context.js";
 import { InlineNameRow } from "./inline-name-row.js";
 
-interface PendingNew {
-  kind: FileEntryKind;
-  dir: string;
-}
-
-interface MenuState {
-  path: string;
-  x: number;
-  y: number;
-}
-
-function isDotName(path: string): boolean {
-  return path.split("/").pop()!.startsWith(".");
-}
-
-function depthOf(path: string): number {
-  return path.split("/").length - 1;
-}
+const EMPTY_EXPANDED: ReadonlySet<string> = new Set();
 
 function hasDirectoryItem(items: DataTransferItemList): boolean {
   for (let i = 0; i < items.length; i++) {
@@ -46,21 +31,6 @@ function hasDirectoryItem(items: DataTransferItemList): boolean {
     if (ent?.isDirectory) return true;
   }
   return false;
-}
-
-function compareTreeEntries(a: TreeEntry, b: TreeEntry): number {
-  const ap = a.path.split("/");
-  const bp = b.path.split("/");
-  const min = Math.min(ap.length, bp.length);
-  for (let i = 0; i < min; i++) {
-    if (ap[i] !== bp[i]) {
-      const aIsDir = i < ap.length - 1 || a.type === "dir";
-      const bIsDir = i < bp.length - 1 || b.type === "dir";
-      if (aIsDir !== bIsDir) return aIsDir ? -1 : 1;
-      return ap[i].localeCompare(bp[i]);
-    }
-  }
-  return ap.length - bp.length;
 }
 
 export function FilesPanel({
@@ -71,15 +41,21 @@ export function FilesPanel({
   const selectedAgent = useStore((s) => s.selectedAgent);
   const openFilePath = useStore((s) => s.openFilePath);
   const setOpenFilePath = useStore((s) => s.setOpenFilePath);
+  const toggleExpandedDir = useStore((s) => s.toggleExpandedDir);
+  const pruneExpandedDir = useStore((s) => s.pruneExpandedDir);
+  const expandedDirs = useStore((s) =>
+    selectedAgent
+      ? (s.expandedDirs[selectedAgent] ?? EMPTY_EXPANDED)
+      : EMPTY_EXPANDED,
+  );
 
-  const {
-    fileTree,
-    createEntry,
-    renameEntry,
-    deleteEntry,
-    uploadFiles,
-    uploadBundle,
-  } = useFileMutations(selectedAgent);
+  // Drives the polled query for this agent; child components subscribe to
+  // slices via useDirSnapshot.
+  const masterQuery = useFileListDirsQuery(selectedAgent);
+  const rootSnapshot = useDirSnapshot(selectedAgent, "");
+
+  const { createEntry, renameEntry, deleteEntry, uploadFiles, uploadBundle } =
+    useFileMutations(selectedAgent);
   const { data: openFile, error: openFileError } = useFileContentQuery(
     selectedAgent,
     openFilePath,
@@ -91,7 +67,18 @@ export function FilesPanel({
     if (openFileError) setOpenFilePath(null);
   }, [openFileError, setOpenFilePath]);
 
-  const [toggled, setToggled] = useState<Set<string>>(new Set());
+  // Silently drop expanded paths the server reports gone (ADR-049). Re-runs
+  // on every successful poll; pruneExpandedDir is a no-op when the path is
+  // already absent.
+  useEffect(() => {
+    if (!masterQuery.data || !selectedAgent) return;
+    for (const result of masterQuery.data.results) {
+      if (!result.ok && result.error === "not-found") {
+        pruneExpandedDir(selectedAgent, result.path);
+      }
+    }
+  }, [masterQuery.data, selectedAgent, pruneExpandedDir]);
+
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [pendingNew, setPendingNew] = useState<PendingNew | null>(null);
   const [panelDragActive, setPanelDragActive] = useState(false);
@@ -105,46 +92,21 @@ export function FilesPanel({
   const pickerTargetDirRef = useRef<string>("");
   const folderPickerTargetDirRef = useRef<string>("");
 
-  const sortedTree = useMemo(
-    () => [...fileTree].sort(compareTreeEntries),
-    [fileTree],
-  );
-
-  const isDirCollapsed = useCallback(
+  const handleToggleDir = useCallback(
     (path: string) => {
-      const userToggled = toggled.has(path);
-      const defaultCollapsed = isDotName(path);
-      return userToggled ? !defaultCollapsed : defaultCollapsed;
+      if (!selectedAgent) return;
+      toggleExpandedDir(selectedAgent, path);
     },
-    [toggled],
-  );
-
-  const toggleDir = useCallback((path: string) => {
-    setToggled((prev) => {
-      const next = new Set(prev);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
-      return next;
-    });
-  }, []);
-
-  const isVisible = useCallback(
-    (path: string) => {
-      const parts = path.split("/");
-      for (let i = 1; i < parts.length; i++) {
-        if (isDirCollapsed(parts.slice(0, i).join("/"))) return false;
-      }
-      return true;
-    },
-    [isDirCollapsed],
+    [selectedAgent, toggleExpandedDir],
   );
 
   const ensureExpanded = useCallback(
     (dir: string) => {
-      if (!dir || !isDirCollapsed(dir)) return;
-      toggleDir(dir);
+      if (!dir || !selectedAgent) return;
+      if (expandedDirs.has(dir)) return;
+      toggleExpandedDir(selectedAgent, dir);
     },
-    [isDirCollapsed, toggleDir],
+    [expandedDirs, selectedAgent, toggleExpandedDir],
   );
 
   const startNewIn = useCallback(
@@ -181,8 +143,8 @@ export function FilesPanel({
   );
 
   const handleRequestMenu = useCallback(
-    (path: string, x: number, y: number) => {
-      setMenu((prev) => (prev?.path === path ? null : { path, x, y }));
+    (path: string, type: "file" | "dir", x: number, y: number) => {
+      setMenu((prev) => (prev?.path === path ? null : { path, type, x, y }));
     },
     [],
   );
@@ -190,9 +152,8 @@ export function FilesPanel({
   const handleMenuAction = useCallback(
     (action: FileRowMenuAction) => {
       if (!menu) return;
-      const { path } = menu;
-      const entry = fileTree.find((e) => e.path === path);
-      const isDir = entry?.type === "dir";
+      const { path, type } = menu;
+      const isDir = type === "dir";
       switch (action) {
         case "new-file":
           if (isDir) startNewIn("file", path);
@@ -208,11 +169,11 @@ export function FilesPanel({
           setPendingNew(null);
           return;
         case "delete":
-          void deleteEntry(path);
+          void deleteEntry(path, type);
           return;
       }
     },
-    [menu, fileTree, startNewIn, openFilePickerFor, deleteEntry],
+    [menu, startNewIn, openFilePickerFor, deleteEntry],
   );
 
   const handleCommitRename = useCallback(
@@ -233,6 +194,51 @@ export function FilesPanel({
     [pendingNew, createEntry],
   );
 
+  const handleCancelRename = useCallback(() => setRenamingPath(null), []);
+  const handleCancelNew = useCallback(() => setPendingNew(null), []);
+
+  const ctxValue = useMemo<FilesPanelContextValue | null>(
+    () =>
+      selectedAgent
+        ? {
+            agentId: selectedAgent,
+            expandedDirs,
+            pendingNew,
+            renamingPath,
+            dragTargetPath,
+            menu,
+            onOpenFile,
+            onToggleDir: handleToggleDir,
+            onCommitRename: handleCommitRename,
+            onCancelRename: handleCancelRename,
+            onCommitNew: handleCommitNew,
+            onCancelNew: handleCancelNew,
+            onRequestMenu: handleRequestMenu,
+            onRowDragEnter: handleRowDragEnter,
+            onRowDragLeave: handleRowDragLeave,
+            onRowDrop: handleRowDrop,
+          }
+        : null,
+    [
+      selectedAgent,
+      expandedDirs,
+      pendingNew,
+      renamingPath,
+      dragTargetPath,
+      menu,
+      onOpenFile,
+      handleToggleDir,
+      handleCommitRename,
+      handleCancelRename,
+      handleCommitNew,
+      handleCancelNew,
+      handleRequestMenu,
+      handleRowDragEnter,
+      handleRowDragLeave,
+      handleRowDrop,
+    ],
+  );
+
   if (openFile) {
     return (
       <FileViewer
@@ -246,9 +252,10 @@ export function FilesPanel({
   // Panel-level overlay only when the pointer isn't over a specific row; that
   // row has its own highlight (see FileRow).
   const showPanelOverlay = panelDragActive && dragTargetPath === null;
-
-  const visibleEntries = sortedTree.filter((entry) => isVisible(entry.path));
-  const menuEntry = menu ? fileTree.find((e) => e.path === menu.path) : null;
+  const rootIsLoadedEmpty =
+    rootSnapshot.data?.ok === true &&
+    rootSnapshot.data.entries.length === 0 &&
+    !pendingNew;
 
   return (
     <div
@@ -358,60 +365,30 @@ export function FilesPanel({
           <FolderPlus size={13} />
         </button>
       </div>
-      {pendingNew && pendingNew.dir === "" && (
-        <InlineNameRow
-          kind={pendingNew.kind}
-          depth={0}
-          placeholder={pendingNew.kind === "dir" ? "new-folder" : "new-file.md"}
-          onCommit={handleCommitNew}
-          onCancel={() => setPendingNew(null)}
-        />
-      )}
-      {visibleEntries.length === 0 && !pendingNew && (
-        <p className="px-4 py-5 text-[12px] text-text-muted">No files yet</p>
-      )}
-      {visibleEntries.map((entry) => (
-        <Fragment key={entry.path}>
-          {renamingPath === entry.path ? (
-            <InlineNameRow
-              kind={entry.type === "dir" ? "dir" : "file"}
-              depth={depthOf(entry.path)}
-              initial={entry.path.split("/").pop() ?? ""}
-              onCommit={(next) => handleCommitRename(entry.path, next)}
-              onCancel={() => setRenamingPath(null)}
-            />
-          ) : (
-            <FileRow
-              entry={entry}
-              depth={depthOf(entry.path)}
-              isDot={isDotName(entry.path)}
-              isCollapsed={entry.type === "dir" && isDirCollapsed(entry.path)}
-              dropActive={entry.type === "dir" && dragTargetPath === entry.path}
-              menuActive={menu?.path === entry.path}
-              onOpenFile={onOpenFile}
-              onToggleDir={toggleDir}
-              onRequestMenu={handleRequestMenu}
-              onRowDragEnter={handleRowDragEnter}
-              onRowDragLeave={handleRowDragLeave}
-              onRowDrop={handleRowDrop}
-            />
-          )}
-          {pendingNew && pendingNew.dir === entry.path && (
+      {ctxValue && (
+        <FilesPanelContext.Provider value={ctxValue}>
+          {pendingNew && pendingNew.dir === "" && (
             <InlineNameRow
               kind={pendingNew.kind}
-              depth={depthOf(entry.path) + 1}
+              depth={0}
               placeholder={
                 pendingNew.kind === "dir" ? "new-folder" : "new-file.md"
               }
               onCommit={handleCommitNew}
-              onCancel={() => setPendingNew(null)}
+              onCancel={handleCancelNew}
             />
           )}
-        </Fragment>
-      ))}
+          {rootIsLoadedEmpty && (
+            <p className="px-4 py-5 text-[12px] text-text-muted">
+              No files yet
+            </p>
+          )}
+          <DirContents path="" depth={0} />
+        </FilesPanelContext.Provider>
+      )}
       {menu && (
         <FileRowMenu
-          isDir={menuEntry?.type === "dir"}
+          isDir={menu.type === "dir"}
           x={menu.x}
           y={menu.y}
           onClose={() => setMenu(null)}

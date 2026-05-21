@@ -2,6 +2,10 @@ import { z } from "zod";
 
 export const pathSchema = z.string().min(1);
 
+export const fileListDirsInputSchema = z.object({
+  paths: z.array(z.string()).max(500),
+});
+
 export const fileReadInputSchema = z.object({ path: pathSchema });
 
 export const fileWriteInputSchema = z.object({

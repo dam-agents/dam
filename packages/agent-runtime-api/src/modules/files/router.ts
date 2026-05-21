@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { protectedProcedure, t } from "../../trpc.js";
 import {
   fileCreateInputSchema,
+  fileListDirsInputSchema,
   fileMkdirInputSchema,
   fileReadInputSchema,
   fileRemoveInputSchema,
@@ -37,9 +38,11 @@ function toTrpcError(error: FilesDomainError): TRPCError {
 }
 
 export const filesRouter = t.router({
-  tree: protectedProcedure.query(({ ctx }) => ({
-    entries: ctx.files.buildTree(),
-  })),
+  listDirs: protectedProcedure
+    .input(fileListDirsInputSchema)
+    .query(async ({ ctx, input }) => ({
+      results: await ctx.files.listDirs(input.paths),
+    })),
 
   read: protectedProcedure
     .input(fileReadInputSchema)

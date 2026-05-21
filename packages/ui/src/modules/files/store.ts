@@ -1,6 +1,8 @@
 import type { StateCreator } from "zustand";
 
+import { queryClient } from "../../query-client.js";
 import type { PlatformStore } from "../../store.js";
+import { fileKeys } from "./api/keys.js";
 
 export type RightTab = "files" | "log" | "configuration";
 
@@ -13,9 +15,40 @@ export interface FilesSlice {
   /** Whether the file-viewer has an unsaved in-memory edit. Surfaced here so
    *  the tree-click handler can prompt before discarding. */
   openFileDirty: boolean;
+  /** Per-agent set of currently-expanded directory paths. Drives which
+   *  directories the panel asks the agent-runtime to snapshot (ADR-049).
+   *  Lives in-memory for the page session; reset on reload. */
+  expandedDirs: Record<string, Set<string>>;
   setOpenFilePath: (path: string | null) => void;
   setRightTab: (tab: RightTab) => void;
   setOpenFileDirty: (dirty: boolean) => void;
+  toggleExpandedDir: (agentId: string, path: string) => void;
+  pruneExpandedDir: (agentId: string, path: string) => void;
+  /** Rewrite expanded paths after a rename so that an expanded subtree
+   *  follows its new parent path instead of evaporating. */
+  renameExpandedDir: (agentId: string, from: string, to: string) => void;
+}
+
+function withoutPath(set: Set<string>, prefix: string): Set<string> {
+  const next = new Set<string>();
+  for (const p of set) {
+    if (p !== prefix && !p.startsWith(prefix + "/")) next.add(p);
+  }
+  return next;
+}
+
+function rewritePrefix(
+  set: Set<string>,
+  from: string,
+  to: string,
+): Set<string> {
+  const next = new Set<string>();
+  for (const p of set) {
+    if (p === from) next.add(to);
+    else if (p.startsWith(from + "/")) next.add(to + p.slice(from.length));
+    else next.add(p);
+  }
+  return next;
 }
 
 export const createFilesSlice: StateCreator<
@@ -27,7 +60,43 @@ export const createFilesSlice: StateCreator<
   openFilePath: null,
   rightTab: "files",
   openFileDirty: false,
+  expandedDirs: {},
   setOpenFilePath: (path) => set({ openFilePath: path, openFileDirty: false }),
   setRightTab: (tab) => set({ rightTab: tab }),
   setOpenFileDirty: (dirty) => set({ openFileDirty: dirty }),
+  toggleExpandedDir: (agentId, path) => {
+    set((state) => {
+      const current = state.expandedDirs[agentId] ?? new Set<string>();
+      const next = new Set(current);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return { expandedDirs: { ...state.expandedDirs, [agentId]: next } };
+    });
+    queryClient.invalidateQueries({ queryKey: fileKeys.tree(agentId) });
+  },
+  pruneExpandedDir: (agentId, path) => {
+    set((state) => {
+      const current = state.expandedDirs[agentId];
+      if (!current || !current.has(path)) return state;
+      return {
+        expandedDirs: {
+          ...state.expandedDirs,
+          [agentId]: withoutPath(current, path),
+        },
+      };
+    });
+  },
+  renameExpandedDir: (agentId, from, to) => {
+    set((state) => {
+      const current = state.expandedDirs[agentId];
+      if (!current) return state;
+      return {
+        expandedDirs: {
+          ...state.expandedDirs,
+          [agentId]: rewritePrefix(current, from, to),
+        },
+      };
+    });
+    queryClient.invalidateQueries({ queryKey: fileKeys.tree(agentId) });
+  },
 });

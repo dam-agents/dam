@@ -1,5 +1,14 @@
 import type { Result } from "../../result.js";
 
+export interface DirEntry {
+  name: string;
+  type: "file" | "dir";
+}
+
+export type DirListResult =
+  | { path: string; ok: true; entries: DirEntry[] }
+  | { path: string; ok: false; error: "not-found" | "forbidden" };
+
 export interface FileReadResult {
   path: string;
   content: string;
@@ -23,7 +32,10 @@ export type FilesDomainError =
   | { kind: "PayloadTooLarge"; detail: string };
 
 export interface FilesService {
-  buildTree: () => { path: string; type: "file" | "dir" }[];
+  /** Snapshot a set of directories in one call. Each path's outcome is
+   *  reported independently — one missing dir does not abort the batch.
+   *  Empty string lists the working-directory root. */
+  listDirs: (paths: string[]) => Promise<DirListResult[]>;
   readFileSafe: (
     rel: string,
   ) => Promise<Result<FileReadResult, FilesDomainError>>;

@@ -3,14 +3,12 @@ import { TRPCClientError } from "@trpc/client";
 
 import { api } from "../../../api.js";
 import { queryClient } from "../../../query-client.js";
+import { useStore } from "../../../store.js";
+import type { DirListResult } from "../../../types.js";
 import { createAgentTrpc } from "../../agents/agent-trpc.js";
+import { fileKeys } from "./keys.js";
 
-export const fileKeys = {
-  root: (agentId: string) => ["files", agentId] as const,
-  tree: (agentId: string) => [...fileKeys.root(agentId), "tree"] as const,
-  content: (agentId: string, path: string) =>
-    [...fileKeys.root(agentId), "content", path] as const,
-};
+const EMPTY_EXPANDED: ReadonlySet<string> = new Set();
 
 // Per-agent tRPC clients are cheap but creating a new one per refetch is
 // wasteful churn. Cache by agentId so each polled query reuses the same
@@ -34,20 +32,57 @@ export interface FileContent {
   tooLarge?: boolean;
 }
 
-export function useFileTreeQuery(agentId: string | null) {
+interface ListDirsResponse {
+  results: DirListResult[];
+}
+
+/** Read the latest expanded set imperatively. We avoid closing over a
+ *  render-time snapshot inside queryFn — when the store action calls
+ *  `queryClient.invalidateQueries`, the refetch can fire before React has
+ *  re-rendered with the new closure, so the queryFn must read at call time. */
+function readExpanded(agentId: string): ReadonlySet<string> {
+  return useStore.getState().expandedDirs[agentId] ?? EMPTY_EXPANDED;
+}
+
+function buildListDirsQueryFn(agentId: string) {
+  return async (): Promise<ListDirsResponse> => {
+    const trpc = getAgentTrpc(agentId);
+    const paths = ["", ...readExpanded(agentId)];
+    return trpc.files.listDirs.query({ paths });
+  };
+}
+
+/** Master polled query that batches every currently-open directory into one
+ *  round trip (ADR-049). Each `<DirContents>` subscribes to its slice via
+ *  `useDirSnapshot`; the underlying query is shared by React Query dedup. */
+export function useFileListDirsQuery(agentId: string | null) {
   return useQuery({
     queryKey: fileKeys.tree(agentId ?? "_none"),
-    queryFn: async () => {
-      const trpc = getAgentTrpc(agentId!);
-      const result = await trpc.files.tree.query();
-      return result.entries;
-    },
+    queryFn: agentId ? buildListDirsQueryFn(agentId) : skipFetch,
     enabled: !!agentId,
     refetchInterval: 2000,
     staleTime: 2000,
     meta: { errorToast: "Couldn't refresh file tree" },
   });
 }
+
+/** Subscribe to one directory's slice of the master query. Returns null
+ *  until the slice is present; null is the right answer for "the user just
+ *  expanded this dir and the next poll hasn't arrived yet". */
+export function useDirSnapshot(agentId: string | null, path: string) {
+  return useQuery({
+    queryKey: fileKeys.tree(agentId ?? "_none"),
+    queryFn: agentId ? buildListDirsQueryFn(agentId) : skipFetch,
+    enabled: !!agentId,
+    refetchInterval: 2000,
+    staleTime: 2000,
+    select: (data) => data.results.find((r) => r.path === path) ?? null,
+  });
+}
+
+const skipFetch = (): Promise<ListDirsResponse> => {
+  return Promise.resolve({ results: [] });
+};
 
 export function useFileContentQuery(
   agentId: string | null,

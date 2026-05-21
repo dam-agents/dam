@@ -3,6 +3,8 @@ export type { AgentRuntimeContext } from "./context.js";
 export type { Result } from "./result.js";
 export { ok, err } from "./result.js";
 export type {
+  DirEntry,
+  DirListResult,
   FileReadResult,
   FileWriteOk,
   FilesDomainError,
@@ -10,6 +12,7 @@ export type {
 } from "./modules/files/types.js";
 export {
   fileCreateInputSchema,
+  fileListDirsInputSchema,
   fileMkdirInputSchema,
   fileReadInputSchema,
   fileRemoveInputSchema,
