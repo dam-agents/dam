@@ -220,7 +220,7 @@ sequenceDiagram
 
   BQ->>WK: dispatch job
   WK->>PG: read outbox row, check agent state
-  Note over WK: throw if Agent A not running, BullMQ retries
+  Note over WK: exit clean if Agent A not running, sweep retries later
   WK->>PG: compute current contributions for A
   WK->>RT: runtime.v1.applyState
   RT->>RT: dispatch per kind to drivers
@@ -330,9 +330,9 @@ flowchart TD
   handlerStart([handler invoked])
   load[load outbox row by id]
   exists{row exists?}
-  noop[no-op, return success]
+  noop[exit clean, return]
   check{agent running?}
-  defer[throw, BullMQ retries with backoff]
+  defer[exit clean, sweep re-enqueues later]
   compute[compute snapshot, filter by capabilities]
   dispatch[POST runtime.v1.applyState]
   ok[DELETE outbox row, return]
@@ -347,7 +347,7 @@ flowchart TD
   dispatch -->|error| fail
 ```
 
-The signal handler is structurally identical, dispatching to `runtime.v1.deliverSignal` and checking TTL on entry. Retry policy lives in BullMQ's per-queue `defaultJobOptions` (`attempts`, `backoff`); TTL exhaustion drops the row and counts `dropped-expired`.
+BullMQ retries are reserved for transport failures (network blip, agent crash mid-call). "Agent not running" exits clean — the cron sweep re-enqueues the row on its next tick, and `hello` clears the row when the agent eventually wakes. The signal handler is structurally identical, dispatching to `runtime.v1.deliverSignal` and checking TTL on entry; TTL exhaustion drops the row and counts `dropped-expired`.
 
 ### Cron sweep
 
@@ -355,7 +355,7 @@ A scheduled job runs every few minutes and scans the outbox for rows where `last
 
 ### Agent-state cache
 
-The worker handler reads agent running-state from an in-memory cache fed by the existing ConfigMap watch in the agents service — never from a direct K8s API call. When the agent is not running the handler throws; BullMQ retries with the long-backoff policy. The agent's own `hello` clears the outbox row on wake, so the eventual retry finds no row and exits clean.
+The worker handler reads agent running-state from an in-memory cache fed by the existing ConfigMap watch in the agents service — never from a direct K8s API call. When the agent is not running the handler exits clean; the outbox row remains for the cron sweep to re-enqueue when the agent transitions back to running, and `hello` clears it on wake.
 
 ### Redis-down behavior
 
