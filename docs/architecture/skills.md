@@ -1,6 +1,6 @@
 # Skills
 
-Last verified: 2026-05-21
+Last verified: 2026-05-22
 
 ## Motivated by
 
@@ -96,7 +96,9 @@ A **Skill Publish Record** (`agent_skill_publishes`) is the explicit log of a su
 
 ### Skill Path
 
-An absolute on-pod directory the harness reads skills from. Resolved per agent via a precedence chain at install time: the agent's own `spec.skillPaths` (copied from the template at agent creation) wins over the template's `spec.skillPaths`, which wins over the cross-harness default `/home/agent/.agents/skills/`. Claude-Code-derived templates override to `/home/agent/.claude/skills/`.
+An absolute on-pod directory the harness reads skills from. Resolved per agent via a precedence chain at install time: the agent's own `spec.skillPaths` (copied from the template at agent creation) wins over the template's `spec.skillPaths`, which wins over the cross-harness default `/home/agent/.agents/skills/`. Claude-Code-derived templates override to `/home/agent/.claude/skills/`; `pi-agent` to `/home/agent/.pi/agent/skills/`; `bob` to `/home/agent/.bob/skills/`.
+
+Per-agent images create their harness-specific path as a symlink to the canonical `.agents/skills/` store (built into `platform-base`), so an install writes once on disk regardless of which path the api-server addresses. Harness-agnosticism stays in `platform-base` per [ADR-023](../adrs/023-harness-agnostic-base-image.md); each per-agent Dockerfile owns its own symlink.
 
 Install writes the skill directory into **every** configured Skill Path; uninstall removes it from all of them. Scanning the disk for Local Skills walks every path in order and dedupes by directory name (first found wins).
 
