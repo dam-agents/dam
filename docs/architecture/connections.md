@@ -252,7 +252,7 @@ sequenceDiagram
     HS-->>RT: ok
   end
   RT-->>WK: appliedVersion, appliedHash
-  WK->>PG: UPDATE outbox last_applied; UPDATE events SET dispatched_at where version up to appliedVersion
+  WK->>PG: UPDATE outbox last_applied and stamp events dispatched_at up to appliedVersion
 ```
 
 ### `applyState` — state and events delivery (server → agent)
@@ -418,7 +418,7 @@ flowchart TD
   defer[exit clean, sweep re-enqueues later]
   compute[compute state slice + non-dispatched events]
   dispatch[POST runtime.v1.applyState]
-  stamp["UPDATE outbox last_applied; UPDATE events SET dispatched_at where version &lt;= acked"]
+  stamp["UPDATE outbox last_applied and stamp events dispatched_at up to acked"]
   ok[return]
   fail[throw, BullMQ retries]
 
