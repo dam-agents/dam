@@ -14,11 +14,11 @@ import { resolveActiveHost } from "../../shared/preflight.js";
 import { classifyTrpcError } from "../../shared/trpc/classify.js";
 import { createAgentTrpcClient } from "../../shared/trpc/trpc-client.js";
 import {
-  EXIT_FILE_BELOW_FLOOR,
-  EXIT_FILE_INVALID_INPUT,
-  EXIT_FILE_RUNTIME_FAILURE,
-  EXIT_FILE_SUCCESS,
-} from "./exit-codes.js";
+  EXIT_BELOW_FLOOR,
+  EXIT_INVALID_INPUT,
+  EXIT_RUNTIME_FAILURE,
+  EXIT_SUCCESS,
+} from "../../shared/exit-codes.js";
 
 export interface FileGetDeps {
   tokenProvider: TokenProvider;
@@ -60,8 +60,8 @@ export function buildFileGetCommand(deps: FileGetDeps): Command {
         const host = await resolveActiveHost(deps, {
           flag,
           exitCodes: {
-            runtimeFailure: EXIT_FILE_RUNTIME_FAILURE,
-            belowFloor: EXIT_FILE_BELOW_FLOOR,
+            runtimeFailure: EXIT_RUNTIME_FAILURE,
+            belowFloor: EXIT_BELOW_FLOOR,
           },
         });
 
@@ -85,14 +85,14 @@ export function buildFileGetCommand(deps: FileGetDeps): Command {
           );
           if (!target.ok) {
             process.stderr.write(`error: ${target.error}\n`);
-            process.exit(EXIT_FILE_INVALID_INPUT);
+            process.exit(EXIT_INVALID_INPUT);
           }
           localPath = target.value;
           if ((await fileExists(localPath)) && !opts.overwrite) {
             process.stderr.write(
               `error: ${localPath} already exists; pass --overwrite to clobber\n`,
             );
-            process.exit(EXIT_FILE_INVALID_INPUT);
+            process.exit(EXIT_INVALID_INPUT);
           }
         }
 
@@ -107,7 +107,7 @@ export function buildFileGetCommand(deps: FileGetDeps): Command {
           result = await trpc.files.read.query({ path: remotePath });
         } catch (e) {
           printTrpcReadError(e, remotePath, host);
-          process.exit(EXIT_FILE_RUNTIME_FAILURE);
+          process.exit(EXIT_RUNTIME_FAILURE);
         }
 
         const bytes = result.binary
@@ -116,15 +116,14 @@ export function buildFileGetCommand(deps: FileGetDeps): Command {
 
         if (opts.stdout) {
           process.stdout.write(bytes);
-          process.exit(EXIT_FILE_SUCCESS);
+          process.exit(EXIT_SUCCESS);
         }
 
-        // Non-null after the !opts.stdout branch above. Express via a
-        // local const so the type narrows without a runtime guard.
-        const target_ = localPath!;
+        // Non-null after the !opts.stdout branch above.
+        const target_ = localPath as string;
         await mkdir(dirname(target_), { recursive: true });
         await writeFile(target_, bytes);
-        process.exit(EXIT_FILE_SUCCESS);
+        process.exit(EXIT_SUCCESS);
       },
     );
 }

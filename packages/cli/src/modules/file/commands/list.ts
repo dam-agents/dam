@@ -10,10 +10,10 @@ import { resolveActiveHost } from "../../shared/preflight.js";
 import { classifyTrpcError } from "../../shared/trpc/classify.js";
 import { createAgentTrpcClient } from "../../shared/trpc/trpc-client.js";
 import {
-  EXIT_FILE_BELOW_FLOOR,
-  EXIT_FILE_RUNTIME_FAILURE,
-  EXIT_FILE_SUCCESS,
-} from "./exit-codes.js";
+  EXIT_BELOW_FLOOR,
+  EXIT_RUNTIME_FAILURE,
+  EXIT_SUCCESS,
+} from "../../shared/exit-codes.js";
 
 export interface FileListDeps {
   tokenProvider: TokenProvider;
@@ -47,8 +47,8 @@ export function buildFileListCommand(deps: FileListDeps): Command {
         const host = await resolveActiveHost(deps, {
           flag,
           exitCodes: {
-            runtimeFailure: EXIT_FILE_RUNTIME_FAILURE,
-            belowFloor: EXIT_FILE_BELOW_FLOOR,
+            runtimeFailure: EXIT_RUNTIME_FAILURE,
+            belowFloor: EXIT_BELOW_FLOOR,
           },
         });
 
@@ -73,7 +73,7 @@ export function buildFileListCommand(deps: FileListDeps): Command {
           entries = res.entries;
         } catch (e) {
           printTrpcError(e, host);
-          process.exit(EXIT_FILE_RUNTIME_FAILURE);
+          process.exit(EXIT_RUNTIME_FAILURE);
         }
 
         const filtered = filterByPrefix(entries, remotePath);
@@ -85,7 +85,7 @@ export function buildFileListCommand(deps: FileListDeps): Command {
             if (e.type === "file") process.stdout.write(`${e.path}\n`);
           }
         }
-        process.exit(EXIT_FILE_SUCCESS);
+        process.exit(EXIT_SUCCESS);
       },
     );
 }

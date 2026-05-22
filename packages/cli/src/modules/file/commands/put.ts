@@ -13,11 +13,11 @@ import { resolveActiveHost } from "../../shared/preflight.js";
 import { classifyTrpcError } from "../../shared/trpc/classify.js";
 import { createAgentTrpcClient } from "../../shared/trpc/trpc-client.js";
 import {
-  EXIT_FILE_BELOW_FLOOR,
-  EXIT_FILE_INVALID_INPUT,
-  EXIT_FILE_RUNTIME_FAILURE,
-  EXIT_FILE_SUCCESS,
-} from "./exit-codes.js";
+  EXIT_BELOW_FLOOR,
+  EXIT_INVALID_INPUT,
+  EXIT_RUNTIME_FAILURE,
+  EXIT_SUCCESS,
+} from "../../shared/exit-codes.js";
 
 export interface FilePutDeps {
   tokenProvider: TokenProvider;
@@ -48,8 +48,8 @@ export function buildFilePutCommand(deps: FilePutDeps): Command {
         const host = await resolveActiveHost(deps, {
           flag,
           exitCodes: {
-            runtimeFailure: EXIT_FILE_RUNTIME_FAILURE,
-            belowFloor: EXIT_FILE_BELOW_FLOOR,
+            runtimeFailure: EXIT_RUNTIME_FAILURE,
+            belowFloor: EXIT_BELOW_FLOOR,
           },
         });
 
@@ -74,7 +74,7 @@ export function buildFilePutCommand(deps: FilePutDeps): Command {
           process.stderr.write(
             `error: cannot read ${absLocal}: ${(e as Error).message}\n`,
           );
-          process.exit(EXIT_FILE_INVALID_INPUT);
+          process.exit(EXIT_INVALID_INPUT);
         }
         let buf: Buffer;
         try {
@@ -84,14 +84,15 @@ export function buildFilePutCommand(deps: FilePutDeps): Command {
             process.stderr.write(
               `error: ${absLocal} is a directory; \`dam file put\` uploads a single file. Use \`dam import\` for directories.\n`,
             );
-            process.exit(EXIT_FILE_INVALID_INPUT);
+            process.exit(EXIT_INVALID_INPUT);
           }
           buf = await fh.readFile();
         } catch (e) {
+          await fh.close();
           process.stderr.write(
             `error: cannot read ${absLocal}: ${(e as Error).message}\n`,
           );
-          process.exit(EXIT_FILE_RUNTIME_FAILURE);
+          process.exit(EXIT_RUNTIME_FAILURE);
         } finally {
           await fh.close();
         }
@@ -114,13 +115,13 @@ export function buildFilePutCommand(deps: FilePutDeps): Command {
           });
         } catch (e) {
           printTrpcUploadError(e, remotePath, host);
-          process.exit(EXIT_FILE_RUNTIME_FAILURE);
+          process.exit(EXIT_RUNTIME_FAILURE);
         }
 
         process.stdout.write(
           `Uploaded ${buf.length} bytes to ${remotePath} on ${agent.name}.\n`,
         );
-        process.exit(EXIT_FILE_SUCCESS);
+        process.exit(EXIT_SUCCESS);
       },
     );
 }
