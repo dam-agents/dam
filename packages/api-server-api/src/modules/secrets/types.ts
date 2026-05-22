@@ -90,6 +90,8 @@ export interface IbmLitellmModelPins {
   subagent: string;
   /** `ANTHROPIC_MODEL` — fallback when no `ANTHROPIC_DEFAULT_*_MODEL` matches. */
   default: string;
+  /** `OPENAI_MODEL` — model ID for Codex and other OpenAI-compatible agents. */
+  openaiModel: string;
 }
 
 export const IBM_LITELLM_DEFAULT_MODEL_PINS: IbmLitellmModelPins = {
@@ -98,6 +100,7 @@ export const IBM_LITELLM_DEFAULT_MODEL_PINS: IbmLitellmModelPins = {
   haiku: "aws/claude-haiku-4-5",
   subagent: "aws/claude-opus-4-6",
   default: "aws/claude-opus-4-6",
+  openaiModel: "gpt-5.5",
 };
 
 const IBM_LITELLM_HOST = "ete-litellm.ai-models.vpc-int.res.ibm.com";
@@ -130,9 +133,9 @@ export function ibmLitellmEnvMappings(
     { envName: "OPENAI_PROXY_MODEL", placeholder: pins.opus },
     { envName: "OPENAI_PROXY_CONTEXT_WINDOW", placeholder: "200000" },
     { envName: "OPENAI_PROXY_MAX_TOKENS", placeholder: "8192" },
-    { envName: "OPENAI_API_KEY", placeholder: "sk-dummy" },
+    { envName: "OPENAI_API_KEY", placeholder: DEFAULT_ENV_PLACEHOLDER },
     { envName: "OPENAI_BASE_URL", placeholder: IBM_LITELLM_BASE_URL },
-    { envName: "OPENAI_MODEL", placeholder: "gpt-5.5" },
+    { envName: "OPENAI_MODEL", placeholder: pins.openaiModel },
   ];
 }
 
@@ -161,6 +164,8 @@ export function ibmLitellmPinsFromEnvMappings(
       IBM_LITELLM_DEFAULT_MODEL_PINS.subagent,
     default:
       lookup("ANTHROPIC_MODEL") ?? IBM_LITELLM_DEFAULT_MODEL_PINS.default,
+    openaiModel:
+      lookup("OPENAI_MODEL") ?? IBM_LITELLM_DEFAULT_MODEL_PINS.openaiModel,
   };
 }
 

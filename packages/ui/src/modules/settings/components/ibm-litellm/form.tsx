@@ -20,6 +20,7 @@ const ibmLitellmCredentialSchema = z
     modelHaiku: z.string().min(1, "Required"),
     modelSubagent: z.string().min(1, "Required"),
     modelDefault: z.string().min(1, "Required"),
+    modelOpenai: z.string().min(1, "Required"),
   })
   .superRefine((data, ctx) => {
     // Strip whitespace before checking emptiness (Q11=B): paste-from-terminal
@@ -61,6 +62,7 @@ export function IbmLitellmForm({
       modelHaiku: pins.haiku,
       modelSubagent: pins.subagent,
       modelDefault: pins.default,
+      modelOpenai: pins.openaiModel,
     },
   });
   const { errors, isSubmitting, isValid } = formState;
@@ -79,6 +81,7 @@ export function IbmLitellmForm({
         haiku: values.modelHaiku,
         subagent: values.modelSubagent,
         default: values.modelDefault,
+        openaiModel: values.modelOpenai,
       },
     });
   });
@@ -179,6 +182,12 @@ export function IbmLitellmForm({
             hint="ANTHROPIC_MODEL — fallback when no DEFAULT_*_MODEL matches."
             error={errors.modelDefault?.message}
             register={register("modelDefault")}
+          />
+          <ModelField
+            label="OpenAI model"
+            hint="OPENAI_MODEL — model ID for Codex and other OpenAI-compatible agents."
+            error={errors.modelOpenai?.message}
+            register={register("modelOpenai")}
           />
         </div>
       )}

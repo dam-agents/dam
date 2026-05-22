@@ -3,7 +3,9 @@ FROM ${BASE_IMAGE}
 
 USER root
 
-RUN npm install -g @zed-industries/codex-acp @openai/codex \
+COPY package.json package-lock.json /opt/codex/
+RUN --mount=type=cache,target=/root/.npm \
+    cd /opt/codex && npm ci \
     && chown -R 65532:0 /app
 
 COPY harness-chat.sh /usr/local/bin/harness-chat
@@ -16,5 +18,6 @@ COPY --chown=65532:0 workspace/ /app/working-dir/
 # by the Envoy sidecar on the wire. This placeholder satisfies the CLI's
 # startup check.
 ENV OPENAI_API_KEY=dummy-placeholder
+ENV PATH="/opt/codex/node_modules/.bin:$PATH"
 
 USER 65532
