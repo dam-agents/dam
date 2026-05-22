@@ -105,9 +105,10 @@ Generalises today's split between `OAuthAppDescriptor` (OAuth-app registry) and 
 | Contribution | One typed unit a Connection emits for one Agent when granted. Kinds (provisional, extensible): `env`, `egress-host`, `file`, `mcp-entry`, `skill-ref`. Discriminated union; new kinds add by extending the union |
 | AuthConfig | Discriminated union describing how a Connection authenticates. Kinds (provisional, extensible): `oauth`, `api-key`, `header`, `none`. Separate from contributions because credentials have their own lifecycle (refresh, rotation) |
 | State Slice | A declarative full snapshot of an Agent's desired Contributions, delivered alongside the Events slice in `applyState`. Carries a deterministic content hash so the agent can short-circuit reconciliation when unchanged. Idempotent and replay-safe |
-| Event | A one-shot directive (e.g. `trigger` — fire a session) carried in the `events[]` slice of `applyState`. Processed by the agent in order through a built-in per-kind handler. The handler's RPC to the harness API is the per-event commit; the harness handler is idempotent on the event's stable id via a unique constraint on its side-effect table |
-| Last Applied Hash | The agent's reported hash of the last successfully reconciled State Slice, sent in the connect handshake. Server skips retransmission when it matches its current hash |
-| Last Applied Version | The agent's reported per-agent monotonic version of the last successfully applied State Slice. Server rejects older deliveries from cross-replica races by comparing this to its current version |
+| Event | A one-shot directive (e.g. `trigger` — fire a session) carried in the `events[]` slice of `applyState`. Processed by the agent in order through a per-kind handler on the harness API. Each event carries its own slot in the agent's monotonic version sequence; the handler is idempotent on the event's stable id via a unique constraint on its side-effect table |
+| Version (per-agent) | A monotonic counter per Agent, bumped on every contribution edit or event insert. Lives top-level in the `applyState` payload and is the single ack cursor: the agent's `appliedVersion` advances both state and events |
+| Last Applied Version | The agent's last successfully applied `version`, reported on `hello` and `applyState` ack. Server rejects older state pushes (cross-replica race defense) and stamps events with `version <= appliedVersion` as dispatched |
+| Last Applied Hash | The agent's last successfully reconciled Contribution hash, reported on `hello` and `applyState` ack. Server skips retransmission of the state slice when it matches the current hash |
 
 ## Secrets (bounded context)
 
