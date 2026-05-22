@@ -205,20 +205,21 @@ keycloak:
 
   # -- Event logging. Login events (LOGIN, LOGIN_ERROR, LOGOUT, REGISTER,
   # …) and admin events (any change made via the admin REST API / console)
-  # are persisted to the Keycloak DB and emitted to stdout via the
-  # `jboss-logging` event listener. Stdout events ride the cluster log
-  # pipeline; DB-backed events are queryable from the admin console under
-  # `Events → Login events` / `Admin events`.
+  # are emitted to stdout via the `jboss-logging` event listener so they
+  # ride the cluster log pipeline to whatever external log service is
+  # collecting pod logs.
+  #
+  # Login events are NOT persisted to the Keycloak DB — pod logs are the
+  # source of truth. Admin events ARE persisted (low volume, useful as a
+  # break-glass surface in the Keycloak admin console under `Events →
+  # Admin events`); set `adminEventsEnabled: false` in the realm import if
+  # you want to drop that too.
   #
   # The jboss-logging listener emits successful events at DEBUG and errors
   # at WARN. `logLevel` raises the `org.keycloak.events` category to DEBUG
   # so successful logins / admin actions appear in the pod log without
   # making the rest of Keycloak chatty.
   events:
-    # -- TTL (seconds) for stored events in Postgres. Older events are
-    # pruned automatically. Default: 7 days for login events; admin
-    # events follow the same retention (Keycloak shares the field).
-    expirationSeconds: 604800
     # -- Root logger plus per-category overrides, in the comma-separated
     # form Keycloak's quarkus-logging parser expects.
     logLevel: "INFO,org.keycloak.events:debug"
