@@ -32,7 +32,7 @@ import { composeSkillsModule } from "../../modules/skills/compose.js";
 import { composeFilesModule } from "../../modules/files/files-service.js";
 import { createSlackOAuthRoutes } from "../../modules/channels/infrastructure/slack-oauth.js";
 import { createTelegramOAuthRoutes } from "../../modules/channels/infrastructure/telegram-oauth.js";
-import type { UsageRoutes } from "../../modules/usage/index.js";
+import type { UsageRoutes } from "../../modules/usage/compose.js";
 import type { TelegramOAuthPending } from "../../modules/channels/infrastructure/telegram.js";
 import {
   isThreadAuthorized,

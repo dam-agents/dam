@@ -63,7 +63,7 @@ import {
   startOnForeignReplySaga,
   startOnChannelTurnRelayedSaga,
 } from "./modules/forks/index.js";
-import { composeUsageModule } from "./modules/usage/index.js";
+import { composeUsageModule } from "./modules/usage/compose.js";
 import { createK8sForkOrchestrator } from "./modules/forks/infrastructure/k8s-fork-orchestrator.js";
 import { loadConfig } from "./config.js";
 import { startApiServerApp } from "./apps/api-server/app.js";

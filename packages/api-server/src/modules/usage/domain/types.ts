@@ -1,11 +1,9 @@
-import type { TurnOutcome } from "../../../events.js";
-
 export type ActivityEventRow = {
   type: string;
   actorSub: string | null;
   agentId: string | null;
   surface: string | null;
-  outcome: TurnOutcome;
+  outcome: "success" | "failure";
   payload: Record<string, unknown>;
 };
 

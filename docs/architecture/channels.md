@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-05-19
+Last verified: 2026-05-21
 
 ## Motivated by
 
@@ -168,6 +168,7 @@ A few observations the diagram glosses over:
 - **Wake is implicit.** The relay step is the same `ACP relay → wake-if-hibernated → forward` path used by the UI. Channels do not call lifecycle endpoints directly; routing an ACP frame is what wakes the pod ([agent-lifecycle](agent-lifecycle.md), §Wake).
 - **Resume vs. new is decided by the DB lookup, not by ADR-018's original "every message is new" rule.** [ADR-025](../adrs/025-thread-session.md) supersedes [ADR-018 §6](../adrs/018-slack-integration.md): the worker always tries to resume on a thread it has seen before. If `unstable_resumeSession` fails (PVC lost, session expired), the worker falls back to creating a new session with thread history injected from the messenger API — degrading to pre-feature behavior for that thread, no regression.
 - **`threadKey` is adapter-specific.** Slack uses `thread_ts`; Telegram uses chat id. The sessions DB keys on `(agentId, threadKey)` with a partial unique index ([persistence](persistence.md)).
+- **Turn relays emit `ChannelTurnRelayed`.** Both Slack and Telegram workers emit a `ChannelTurnRelayed` event on the in-process bus after the ACP turn finishes, carrying `channel`, `agentId`, `actorSub` (the relaying user's Keycloak `sub`, or `null` on Telegram where there is no workspace identity), and `outcome` (`"success" | "failure"`). The usage subsystem consumes this for activity tracking ([usage-tracking](usage-tracking.md)); the forks subsystem also subscribes to drive paired-pod teardown on Slack ([ADR-027](../adrs/027-slack-user-impersonation.md)).
 
 ## Outbound — agent to channel
 

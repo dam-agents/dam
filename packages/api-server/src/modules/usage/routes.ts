@@ -19,21 +19,22 @@ export function createUsageRoutes(deps: UsageRoutesDeps) {
     Variables: { user: UserIdentity; roles: string[] };
   }>();
 
-  function gate(roles: string[]): boolean {
-    return roles.includes(deps.inspectorRole);
-  }
-
-  routes.get("/api/usage/views", (c) => {
-    if (!gate(c.get("roles") ?? [])) {
+  // Inspector-role gate for every route on this router. The /report route
+  // returns text/html on failure; everything else returns JSON.
+  routes.use("*", async (c, next) => {
+    const roles = c.get("roles") ?? [];
+    if (!roles.includes(deps.inspectorRole)) {
+      if (c.req.path === "/api/usage/report") return c.text("forbidden", 403);
       return c.json({ error: "forbidden" }, 403);
     }
+    await next();
+  });
+
+  routes.get("/api/usage/views", (c) => {
     return c.json({ views: VIEW_NAMES });
   });
 
   routes.get("/api/usage/report", async (c) => {
-    if (!gate(c.get("roles") ?? [])) {
-      return c.text("forbidden", 403);
-    }
     const settled = await Promise.allSettled(
       REPORTABLE_VIEW_NAMES.map((name) => deps.service.getReport(name)),
     );
@@ -57,10 +58,6 @@ export function createUsageRoutes(deps: UsageRoutesDeps) {
   });
 
   routes.get("/api/usage", async (c) => {
-    if (!gate(c.get("roles") ?? [])) {
-      return c.json({ error: "forbidden" }, 403);
-    }
-
     const view = c.req.query("view");
     if (!view || !isViewName(view)) {
       return c.json({ error: "unknown view", view: view ?? null }, 404);

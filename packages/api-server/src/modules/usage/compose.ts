@@ -13,7 +13,7 @@ import {
 } from "./infrastructure/agents-postgres-repository.js";
 import { startPersistActivitySaga } from "./sagas/persist-activity.js";
 import { startPersistAgentsSaga } from "./sagas/persist-agents.js";
-import { bootstrapAgents } from "./bootstrap-agents.js";
+import { bootstrapAgents } from "./services/bootstrap-agents.js";
 import {
   startActivityRetentionJob,
   type ActivityRetentionJob,
