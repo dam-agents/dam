@@ -30,14 +30,12 @@ export interface UsageModuleDeps {
   listK8sAgents: () => Promise<{ id: string; owner: string }[]>;
 }
 
-export type UsageRoutes = Hono<{
-  Variables: { user: UserIdentity; roles: string[] };
-}>;
+type AppEnv = { Variables: { user: UserIdentity; roles: string[] } };
 
 export interface UsageModule {
-  /** Pre-built router for the api-server app to mount. Empty (no handlers)
-   *  when no inspector role is configured. */
-  routes: UsageRoutes;
+  /** Mounts /api/usage/* handlers on the host app. No-op when no inspector
+   *  role is configured (the module still runs persistence/sagas). */
+  mount(app: Hono<AppEnv>): void;
   /** Starts the persist-agents saga + bootstrap, and (when activity tracking
    *  is enabled) the persist-activity saga + retention job. */
   start(): void;
@@ -51,7 +49,7 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
   const upsertAgentRow = upsertAgent(deps.db, deps.subPseudonymizer);
   const markDeleted = markAgentDeleted(deps.db);
 
-  const routes: UsageRoutes = deps.inspectorRole
+  const routes: Hono<AppEnv> = deps.inspectorRole
     ? createUsageRoutes({
         service: createReportService(deps.db),
         inspectorRole: deps.inspectorRole,
@@ -100,5 +98,9 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
     retentionJob?.stop();
   }
 
-  return { routes, start, stop };
+  function mount(app: Hono<AppEnv>): void {
+    app.route("/", routes);
+  }
+
+  return { mount, start, stop };
 }

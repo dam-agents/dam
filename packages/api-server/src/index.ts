@@ -383,7 +383,7 @@ const { server: apiServer } = startApiServerApp({
   presetSeeder,
   trustedHosts,
   agentCleanupHooks,
-  usageRoutes: usage.routes,
+  mountUsageRoutes: usage.mount,
 });
 
 // Re-mints OAuth access tokens from stored refresh tokens before they expire

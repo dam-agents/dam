@@ -32,7 +32,6 @@ import { composeSkillsModule } from "../../modules/skills/compose.js";
 import { composeFilesModule } from "../../modules/files/files-service.js";
 import { createSlackOAuthRoutes } from "../../modules/channels/infrastructure/slack-oauth.js";
 import { createTelegramOAuthRoutes } from "../../modules/channels/infrastructure/telegram-oauth.js";
-import type { UsageRoutes } from "../../modules/usage/compose.js";
 import type { TelegramOAuthPending } from "../../modules/channels/infrastructure/telegram.js";
 import {
   isThreadAuthorized,
@@ -97,7 +96,9 @@ export interface ApiServerAppDeps {
    *  module's per-agent durable state; the orphan-sweeper saga is the
    *  belt-and-suspenders for anything missed here. */
   agentCleanupHooks: readonly AgentCleanupHook[];
-  usageRoutes: UsageRoutes;
+  mountUsageRoutes: (
+    app: Hono<{ Variables: { user: UserIdentity; roles: string[] } }>,
+  ) => void;
 }
 
 export function startApiServerApp(deps: ApiServerAppDeps) {
@@ -248,7 +249,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     }),
   );
 
-  app.route("/", deps.usageRoutes);
+  deps.mountUsageRoutes(app);
 
   if (config.slackBotToken && config.slackAppToken) {
     app.route(

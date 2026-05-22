@@ -1,6 +1,7 @@
 import {
   BarChart3,
   Bot,
+  type LucideIcon,
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
@@ -18,17 +19,26 @@ import { Logo } from "./logo.js";
 
 const STORAGE_KEY = "platform-sidebar-collapsed";
 
-const navItems = [
-  { view: "list" as const, label: "Agents", icon: Bot },
-  { view: "providers" as const, label: "Providers", icon: Sparkles },
-  { view: "connections" as const, label: "Connections", icon: Unplug },
-] as const;
+type RouteView = "list" | "providers" | "connections";
+type NavItem = { label: string; icon: LucideIcon } & (
+  | { view: RouteView }
+  | { action: () => void }
+);
 
 export function Sidebar() {
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
   // Static at mount; role changes take effect on next page reload.
   const showUsage = isUsageInspector();
+
+  const navItems: NavItem[] = [
+    { view: "list", label: "Agents", icon: Bot },
+    { view: "providers", label: "Providers", icon: Sparkles },
+    { view: "connections", label: "Connections", icon: Unplug },
+    ...(showUsage
+      ? [{ action: openUsageReport, label: "Usage", icon: BarChart3 }]
+      : []),
+  ];
 
   const [collapsed, setCollapsed] = useState(() => {
     return localStorage.getItem(STORAGE_KEY) === "true";
@@ -61,34 +71,25 @@ export function Sidebar() {
 
       {/* Nav items */}
       <div className="flex flex-col gap-0.5 mt-2 px-2">
-        {navItems.map(({ view: v, label, icon: Icon }) => {
-          const active = view === v;
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          const isRoute = "view" in item;
+          const active = isRoute && view === item.view;
+          const onClick = isRoute ? () => setView(item.view) : item.action;
           return (
             <button
-              key={v}
-              onClick={() => setView(v)}
-              title={collapsed ? label : undefined}
+              key={item.label}
+              onClick={onClick}
+              title={collapsed ? item.label : undefined}
               className={`flex items-center gap-2.5 rounded-lg transition-colors h-9 ${collapsed ? "justify-center px-0" : "px-2.5"} ${active ? "text-accent bg-accent-light" : "text-text-secondary hover:text-text hover:bg-surface-raised"}`}
             >
               <Icon size={18} className="shrink-0" />
               {!collapsed && (
-                <span className="text-[14px] font-medium">{label}</span>
+                <span className="text-[14px] font-medium">{item.label}</span>
               )}
             </button>
           );
         })}
-        {showUsage && (
-          <button
-            onClick={openUsageReport}
-            title={collapsed ? "Usage" : undefined}
-            className={`flex items-center gap-2.5 rounded-lg transition-colors h-9 text-text-secondary hover:text-text hover:bg-surface-raised ${collapsed ? "justify-center px-0" : "px-2.5"}`}
-          >
-            <BarChart3 size={18} className="shrink-0" />
-            {!collapsed && (
-              <span className="text-[14px] font-medium">Usage</span>
-            )}
-          </button>
-        )}
       </div>
 
       {/* Spacer */}

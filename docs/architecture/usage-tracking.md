@@ -96,7 +96,7 @@ Both sagas write through a repository layer that applies HMAC-SHA256 to every Ke
 
 Concurrency is bounded — each subscriber uses an RxJS `mergeMap` with a per-stream concurrency cap so a burst (api-server restart, silent-renew storm) cannot saturate the Postgres connection pool. The auth subscriber additionally exploits a partial unique index — one row per (sub, surface, day) — so heavy auth traffic does not bloat the table.
 
-The persist-activity saga runs conditionally on a Helm value (`apiServer.activityTracking.enabled`, default on); the persist-agents saga and the startup bootstrap run unconditionally because the `agents` table is also useful to consumers outside usage.
+The persist-activity saga runs only when activity tracking is enabled at install time (a chart-level toggle, on by default); the persist-agents saga and the startup bootstrap run unconditionally because the `agents` table is also useful to consumers outside usage.
 
 ## Pseudonymization
 
