@@ -2,11 +2,13 @@
 
 Last verified: 2026-05-22
 
+> **Status: Proposed — not yet implemented.** This page describes the target shape of the subsystem per [ADR-051](../adrs/051-connections-and-contributions.md), [ADR-052](../adrs/052-runtime-channel.md), and [ADR-053](../adrs/053-runtime-outbox-worker.md). The current system still uses the parallel OAuth-app / provider-preset registries, pod-files SSE (ADR-034), and exec-based trigger delivery (ADR-008). Other architecture pages that describe those retiring mechanisms are not updated yet — they will be revised in the implementation PR(s).
+
 ## Motivated by
 
-- [ADR-047 — Connections, Connection Templates, and Contributions: unified configuration model](../adrs/047-connections-and-contributions.md) — the domain shape that replaces the parallel OAuth-app and provider-preset registries
-- [ADR-048 — Unified runtime channel](../adrs/048-runtime-channel.md) — the wire protocol between api-server and agent-runtime; supersedes pod-files SSE (ADR-034) and trigger files (ADR-008)
-- [ADR-049 — Transactional outbox + worker](../adrs/049-runtime-outbox-worker.md) — how mutations decouple from agent reachability
+- [ADR-051 — Connections, Connection Templates, and Contributions: unified configuration model](../adrs/051-connections-and-contributions.md) — the domain shape that replaces the parallel OAuth-app and provider-preset registries
+- [ADR-052 — Unified runtime channel](../adrs/052-runtime-channel.md) — the wire protocol between api-server and agent-runtime; supersedes pod-files SSE (ADR-034) and trigger files (ADR-008)
+- [ADR-053 — Transactional outbox + worker](../adrs/053-runtime-outbox-worker.md) — how mutations decouple from agent reachability
 - [ADR-036 — Redis as a platform primitive](../adrs/036-redis-platform-primitive.md) — the signal-path substrate the worker wakes on
 - [ADR-022 — Harness API server](../adrs/022-harness-api-server.md) — the restricted port the agent reaches; per-kind event handlers live here
 - [ADR-040 — Unified secret contributions](../adrs/040-unified-secret-contributions.md) — the `env` Contribution's render-time merge survives unchanged
@@ -102,7 +104,6 @@ interface Connection {
 
 type AuthConfig =
   | { kind: "oauth"; clientId: string; refreshTokenRef: SecretRef; accessToken: SecretRef; scopes: string[]; ... }
-  | { kind: "api-key"; valueRef: SecretRef; injection: { headerName: string; valueFormat: string } }
   | { kind: "header"; valueRef: SecretRef; headerName: string; valueFormat: string }
   | { kind: "none" };
 ```
@@ -111,7 +112,7 @@ The auth field carries credential-acquisition state (tokens, refresh schedules) 
 
 ### Contribution
 
-A typed unit a Connection emits when granted to an Agent. Discriminated union, extensible per [ADR-048's evolution rule](../adrs/048-runtime-channel.md):
+A typed unit a Connection emits when granted to an Agent. Discriminated union, extensible per [ADR-052's evolution rule](../adrs/052-runtime-channel.md):
 
 ```ts
 type Contribution =

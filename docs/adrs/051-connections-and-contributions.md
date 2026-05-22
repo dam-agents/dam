@@ -1,4 +1,4 @@
-# ADR-047: Connections, Connection Templates, and Contributions — unified configuration model
+# ADR-051: Connections, Connection Templates, and Contributions — unified configuration model
 
 **Date:** 2026-05-21
 **Status:** Proposed
@@ -12,10 +12,10 @@ External integrations reach an agent through two parallel code-declared registri
 
 Replace the parallel registries with a single configuration model. Every external integration is a `Connection`, instantiated from a code-declared `Connection Template`, and emits a typed `Contribution[]` set when granted to an Agent.
 
-- **Connection** is a uniform shape: a chosen `AuthConfig` (a discriminated union over `oauth`, `api-key`, `header`, `none`), a `Contribution[]` (a discriminated union over the kinds below), the `Connection Template` it was built from, and the user-supplied inputs. A user-built custom connection and a premade preset connection share the same on-the-wire shape — the only difference is which defaults were filled in for them.
+- **Connection** is a uniform shape: a chosen `AuthConfig` (a discriminated union over `oauth`, `header`, `none`), a `Contribution[]` (a discriminated union over the kinds below), the `Connection Template` it was built from, and the user-supplied inputs. A user-built custom connection and a premade preset connection share the same on-the-wire shape — the only difference is which defaults were filled in for them. The `header` kind covers anything injected as a request header — API keys, PATs, bearer tokens, basic auth — distinguished by `headerName` + `valueFormat`.
 - **Connection Template** is a code-level catalog entry shipping inputs the user fills in plus the defaulted `auth` and `contributions[]` recipe. Two display-axis attributes — `category` (`app` | `mcp` | `other`) for UI grouping, and `isCustom` for templates that exist solely to drive user-typed instances — are the only structural metadata that exists alongside the shared shape.
-- **Contribution** kinds in the initial set: `env`, `egress-host`, `file`, `mcp-entry`, `skill-ref`. The set is open; new kinds extend the union under the evolution rule of ADR-048.
-- Contribution **routing** is per-kind. `env` keeps its render-time merge into the pod spec (ADR-040 unchanged). `egress-host` keeps its sync into the egress-rules table and Envoy filter chains (ADR-033 / 035 unchanged). `file`, `mcp-entry`, `skill-ref` ride the runtime channel (ADR-048). The api-server is the fan-out router.
+- **Contribution** kinds in the initial set: `env`, `egress-host`, `file`, `mcp-entry`, `skill-ref`. The set is open; new kinds extend the union under the evolution rule of ADR-052.
+- Contribution **routing** is per-kind. `env` keeps its render-time merge into the pod spec (ADR-040 unchanged). `egress-host` keeps its sync into the egress-rules table and Envoy filter chains (ADR-033 / 035 unchanged). `file`, `mcp-entry`, `skill-ref` ride the runtime channel (ADR-052). The api-server is the fan-out router.
 - **Channel** (Slack / Telegram inbound pathways) is not a Connection and never becomes one. Its shape — inbound, conversational, no host-egress or env contribution — is unrelated to outbound-integration shape.
 - This refactor is a clean break. The existing AppConnection and Secret data, and the OAuth-app and provider-preset registries, are reshaped in place; no migration choreography is preserved across the cutover.
 
@@ -33,7 +33,7 @@ Replace the parallel registries with a single configuration model. Every externa
 - **Easier:** The user model collapses to one Connections page with `category`-driven grouping and one "Custom Connection" affordance covering MCP, OAuth, and Header in one place.
 - **Harder:** The cutover is a wide-blast-radius schema and module reshape — the OAuth-app registry, the provider-preset registry, the egress-rules sync, the env-merge controller path, and the AppConnection + Secret UIs all reshape together. No phased dual-write story; the version of the api-server that ships the new model is incompatible with agents on the old delivery mechanisms.
 - **Harder:** Users authoring a custom connection see more abstraction than they did before — what was three buttons (Add OAuth, Add MCP, Add Secret) becomes one with a kind selector, and the UI must teach the discrimination.
-- **Committed-to:** The discriminated-union `Contribution` shape and its initial kind set are now a wire-level contract. Adding a new kind is the standard evolution path, governed by the capability-flag rule of ADR-048. The two-axis classification on Connection Template (`category` × `isCustom`) is the surface the UI binds to and is durable; renaming either is a UX-visible change.
+- **Committed-to:** The discriminated-union `Contribution` shape and its initial kind set are now a wire-level contract. Adding a new kind is the standard evolution path, governed by the capability-flag rule of ADR-052. The two-axis classification on Connection Template (`category` × `isCustom`) is the surface the UI binds to and is durable; renaming either is a UX-visible change.
 
 ## Supersedes
 

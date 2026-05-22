@@ -1,4 +1,4 @@
-# ADR-048: Unified runtime channel — state snapshot plus event stream between api-server and agent-runtime
+# ADR-052: Unified runtime channel — state snapshot plus event stream between api-server and agent-runtime
 
 **Date:** 2026-05-21
 **Status:** Proposed
@@ -6,7 +6,7 @@
 
 ## Context
 
-Configuration reaches a running agent through three disjoint mechanisms today: pod-files SSE (ADR-034) pushes user-editable config files; the controller drops trigger JSON into `~/.triggers/` via `kubectl exec` (ADR-008) for scheduled prompts; api-server initiates direct tRPC calls into the harness port for skills install/uninstall (ADR-030). MCP servers don't even have a delivery story — a single platform-outbound URL is written into `.mcp.json` once at boot from an env var. Each mechanism has its own transport, its own auth, its own failure model. None acknowledges delivery. None handles removal cleanly (`yaml-fill-if-missing` is additive only). None negotiates capabilities. Adding the `Contribution` model from ADR-047 to this surface would multiply the disjointness, not resolve it.
+Configuration reaches a running agent through three disjoint mechanisms today: pod-files SSE (ADR-034) pushes user-editable config files; the controller drops trigger JSON into `~/.triggers/` via `kubectl exec` (ADR-008) for scheduled prompts; api-server initiates direct tRPC calls into the harness port for skills install/uninstall (ADR-030). MCP servers don't even have a delivery story — a single platform-outbound URL is written into `.mcp.json` once at boot from an env var. Each mechanism has its own transport, its own auth, its own failure model. None acknowledges delivery. None handles removal cleanly (`yaml-fill-if-missing` is additive only). None negotiates capabilities. Adding the `Contribution` model from ADR-051 to this surface would multiply the disjointness, not resolve it.
 
 The runtime channel needs to carry two things that don't share semantics: an agent's *desired configuration* (which contributions should be on this pod) and the *one-shot directives* the platform wants the agent to execute (fire this trigger now). Forcing both into a single shape — either treating directives as a list inside the configuration snapshot, or treating configuration as a stream of edit events — drags the wrong properties onto half the payload. Splitting them at the wire level and sharing one ack cursor gives both their natural reconciliation rules without a second delivery rail.
 

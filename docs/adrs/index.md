@@ -50,9 +50,9 @@ This directory contains ADRs for the Platform project.
 | [043](043-agent-pod-config-layers.md)         | Three-layer agent pod configuration — base / templateDefaults / templates | @jezekra1 |
 | [044](044-provider-twin-secrets.md)           | Provider twin secrets — multiple injection points per credential | @xjacka |
 | [046](046-eliminate-instance.md)              | Eliminate Instance — collapse into Agent | @jezekra1 |
-| [047](047-connections-and-contributions.md)   | Connections, Connection Templates, and Contributions — unified configuration model | @jezekra1 |
-| [048](048-runtime-channel.md)                 | Unified runtime channel — state snapshot plus event stream between api-server and agent-runtime | @jezekra1 |
-| [049](049-runtime-outbox-worker.md)           | Transactional outbox + worker for runtime-channel delivery | @jezekra1 |
+| [047](051-connections-and-contributions.md)   | Connections, Connection Templates, and Contributions — unified configuration model | @jezekra1 |
+| [048](052-runtime-channel.md)                 | Unified runtime channel — state snapshot plus event stream between api-server and agent-runtime | @jezekra1 |
+| [049](053-runtime-outbox-worker.md)           | Transactional outbox + worker for runtime-channel delivery | @jezekra1 |
 
 ## Drafts
 

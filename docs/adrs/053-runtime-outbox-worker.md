@@ -1,4 +1,4 @@
-# ADR-049: Transactional outbox + BullMQ worker for runtime-channel delivery
+# ADR-053: Transactional outbox + BullMQ worker for runtime-channel delivery
 
 **Date:** 2026-05-21
 **Status:** Proposed
@@ -6,7 +6,7 @@
 
 ## Context
 
-The unified runtime channel (ADR-048) replaces three direct-call mechanisms (pod-files SSE, `kubectl exec` trigger files, direct skills tRPC) with one tRPC route the api-server calls (`applyState`) and one the agent calls (`hello`). Events in the payload are processed by per-kind handlers on the harness API server. The question is *who calls the agent and when*. Doing it inline from mutation handlers couples user-facing request latency to agent reachability — a hibernated or restarting pod would block or fail the user's request — and creates a fan-out problem when one mutation affects many agents. A persistent WebSocket model would push the routing concern into the cluster's load-balancer topology, bringing every cross-replica failure mode into the runtime-channel critical path. The platform's signal/truth split (ADR-036) names the right shape for problems that need both durability and low-latency cross-replica wakeup: Postgres holds the truth, Redis carries the signal. Within that shape, hand-rolling competing-consumer semantics (stalled-job recovery, retry/backoff, job-id dedupe, observability) is a meaningful surface to maintain when a battle-tested library already covers it.
+The unified runtime channel (ADR-052) replaces three direct-call mechanisms (pod-files SSE, `kubectl exec` trigger files, direct skills tRPC) with one tRPC route the api-server calls (`applyState`) and one the agent calls (`hello`). Events in the payload are processed by per-kind handlers on the harness API server. The question is *who calls the agent and when*. Doing it inline from mutation handlers couples user-facing request latency to agent reachability — a hibernated or restarting pod would block or fail the user's request — and creates a fan-out problem when one mutation affects many agents. A persistent WebSocket model would push the routing concern into the cluster's load-balancer topology, bringing every cross-replica failure mode into the runtime-channel critical path. The platform's signal/truth split (ADR-036) names the right shape for problems that need both durability and low-latency cross-replica wakeup: Postgres holds the truth, Redis carries the signal. Within that shape, hand-rolling competing-consumer semantics (stalled-job recovery, retry/backoff, job-id dedupe, observability) is a meaningful surface to maintain when a battle-tested library already covers it.
 
 ## Decision
 
@@ -45,7 +45,7 @@ Agent-bound state changes (Contribution edits, event insertions) are committed t
 
 - **Work-doing handler stamps `runtime_events.dispatched_at`** — rejected. Couples every event kind's handler to the outbox table and splits the dispatch marker between two callers (the work handler on the inbound RPC, the worker on the apply-ack). The clean shape: worker owns the outbox, work-handler owns its own side-effect table's idempotency.
 
-- **Two outbox surfaces — `runtime_state_outbox` and `runtime_signal_outbox`** — rejected. Earlier draft. Once ADR-048 collapsed signals into the runtime payload, the second outbox became a delivery rail without distinct delivery semantics. One outbox, one queue, one set of operational metrics.
+- **Two outbox surfaces — `runtime_state_outbox` and `runtime_signal_outbox`** — rejected. Earlier draft. Once ADR-052 collapsed signals into the runtime payload, the second outbox became a delivery rail without distinct delivery semantics. One outbox, one queue, one set of operational metrics.
 
 - **Inline delivery from mutation handlers** — rejected, couples user-facing request latency to the agent's reachability and forces the handler to deal with agent-down / hibernated / restarting cases that have nothing to do with the user's mutation.
 
