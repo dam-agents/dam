@@ -21,6 +21,12 @@ data:
       "resetPasswordAllowed": false,
       "editUsernameAllowed": false,
       "bruteForceProtected": true,
+      "eventsEnabled": true,
+      "eventsListeners": ["jboss-logging"],
+      "enabledEventTypes": [],
+      "eventsExpiration": {{ .Values.keycloak.events.expirationSeconds }},
+      "adminEventsEnabled": true,
+      "adminEventsDetailsEnabled": true,
       "clients": [
         {
           "clientId": {{ .Values.keycloak.clientId | quote }},

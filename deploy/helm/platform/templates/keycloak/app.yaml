@@ -82,6 +82,10 @@ spec:
                   key: KEYCLOAK_ADMIN_PASSWORD
             - name: KC_HEALTH_ENABLED
               value: "true"
+            - name: KC_LOG
+              value: "console"
+            - name: KC_LOG_LEVEL
+              value: {{ .Values.keycloak.events.logLevel | quote }}
             - name: KC_HTTP_PORT
               value: {{ .Values.keycloak.port | quote }}
             - name: KC_HOSTNAME
