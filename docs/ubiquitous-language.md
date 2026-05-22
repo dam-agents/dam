@@ -104,9 +104,10 @@ Generalises today's split between `OAuthAppDescriptor` (OAuth-app registry) and 
 | Connection | A single uniform shape: `{ auth: AuthConfig \| null, contributions: Contribution[], inputs, templateId? }`. No `kind` discriminator — identity is the contributions it makes and the auth it carries. A user-built Connection can be contribution-equivalent to a premade one |
 | Contribution | One typed unit a Connection emits for one Agent when granted. Kinds (provisional, extensible): `env`, `egress-host`, `file`, `mcp-entry`, `skill-ref`. Discriminated union; new kinds add by extending the union |
 | AuthConfig | Discriminated union describing how a Connection authenticates. Kinds (provisional, extensible): `oauth`, `api-key`, `header`, `none`. Separate from contributions because credentials have their own lifecycle (refresh, rotation) |
-| State Snapshot | A declarative full snapshot of an Agent's desired Contributions plus its Pending Triggers, sent on connect and on every state change. Carries a deterministic content hash so the agent can short-circuit reconciliation when unchanged. Idempotent and replay-safe |
-| Pending Trigger | A one-shot directive (fire a session) carried inside the State Snapshot. Server-side `dispatched_at` is stamped on the trigger row after a successful apply ack; the next snapshot omits it. Agent-side local log (`$HOME/.platform/dispatched-triggers.json`) dedupes by id so a crash between fire and ack cannot double-fire |
-| Last Applied Hash | The agent's reported hash of the last successfully reconciled State Snapshot, sent in the connect handshake. Server skips retransmission when it matches its current snapshot hash |
+| State Slice | A declarative full snapshot of an Agent's desired Contributions, delivered alongside the Events slice in `applyState`. Carries a deterministic content hash so the agent can short-circuit reconciliation when unchanged. Idempotent and replay-safe |
+| Event | A one-shot directive (e.g. `trigger` — fire a session) carried in the `events[]` slice of `applyState`. Processed by the agent in order through a built-in per-kind handler. The handler's RPC to the harness API is the per-event commit; the harness handler is idempotent on the event's stable id via a unique constraint on its side-effect table |
+| Last Applied Hash | The agent's reported hash of the last successfully reconciled State Slice, sent in the connect handshake. Server skips retransmission when it matches its current hash |
+| Last Applied Version | The agent's reported per-agent monotonic version of the last successfully applied State Slice. Server rejects older deliveries from cross-replica races by comparing this to its current version |
 
 ## Secrets (bounded context)
 
