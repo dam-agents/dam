@@ -16,7 +16,12 @@ import type {
   FileWriteOk,
   Result,
 } from "agent-runtime-api";
-import { err, MAX_FILE_SIZE, ok } from "agent-runtime-api";
+import { err, ok } from "agent-runtime-api";
+
+// Wire-level per-file cap for tRPC-shaped reads and uploads. The transport
+// is JSON-base64 — ~10 MB fits well below the 32 MB tRPC body ceiling.
+// Larger transfers want a streaming endpoint, not this surface.
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 const EXCLUDE = new Set([
   ".git",

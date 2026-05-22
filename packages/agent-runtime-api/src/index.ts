@@ -8,7 +8,6 @@ export type {
   FilesDomainError,
   FilesService,
 } from "./modules/files/types.js";
-export { MAX_FILE_SIZE } from "./modules/files/types.js";
 export {
   fileCreateInputSchema,
   fileMkdirInputSchema,

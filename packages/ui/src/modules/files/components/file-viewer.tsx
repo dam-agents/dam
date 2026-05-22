@@ -4,21 +4,16 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { HighlightedCode } from "../../../components/highlighted-code.js";
 import { Markdown } from "../../../components/markdown.js";
 import { useStore } from "../../../store.js";
-import { fetchFileContent, useFileWriteMutation } from "../api/queries.js";
+import {
+  fetchFileContent,
+  type FileContent,
+  useFileWriteMutation,
+} from "../api/queries.js";
 import { useUnsavedGuard } from "../hooks/use-unsaved-guard.js";
 import { CodeEditor } from "./code-editor.js";
 
-interface OpenFile {
-  path: string;
-  content: string;
-  binary?: boolean;
-  mimeType?: string;
-  mtimeMs?: number;
-  tooLarge?: boolean;
-}
-
 interface Props {
-  file: OpenFile;
+  file: FileContent;
   onClose: () => void;
   onOpenFile: (path: string) => void;
 }
@@ -287,7 +282,9 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
             title={filename ?? "pdf"}
             className="w-full h-[calc(100dvh-200px)] rounded border border-border-light bg-white"
           />
-        ) : tooLarge ? (
+        ) : /* tooLarge must come before the `binary` arm: PAYLOAD_TOO_LARGE
+           comes back with binary:true and content:"" so the hex-dump path
+           would otherwise render an empty buffer. */ tooLarge ? (
           <div className="py-12 text-center text-[13px] text-text-muted">
             <p>File too large to preview</p>
             <p className="mt-1 text-[11px]">

@@ -53,6 +53,17 @@ export function buildFilePutCommand(deps: FilePutDeps): Command {
           },
         });
 
+        // Resolve the agent before touching local I/O — a bad ref is the
+        // most common user error and we'd rather fail fast.
+        const svc = deps.createAgentService(host);
+        const resolver = createAgentResolver({ agentService: svc });
+        const resolved = await resolver.resolve(ref);
+        if (!resolved.ok) {
+          printResolveError(resolved.error, host);
+          process.exit(exitCodeForResolveError(resolved.error));
+        }
+        const agent = resolved.value;
+
         const absLocal = resolve(localPath);
         // Open once and stat+read through the same handle to avoid a TOCTOU
         // race between the directory-guard and the read.
@@ -69,6 +80,7 @@ export function buildFilePutCommand(deps: FilePutDeps): Command {
         try {
           const stats = await fh.stat();
           if (stats.isDirectory()) {
+            await fh.close();
             process.stderr.write(
               `error: ${absLocal} is a directory; \`dam file put\` uploads a single file. Use \`dam import\` for directories.\n`,
             );
@@ -85,15 +97,6 @@ export function buildFilePutCommand(deps: FilePutDeps): Command {
         }
         // The per-file cap belongs to the server; oversize comes back as
         // PAYLOAD_TOO_LARGE and printTrpcUploadError surfaces it.
-
-        const svc = deps.createAgentService(host);
-        const resolver = createAgentResolver({ agentService: svc });
-        const resolved = await resolver.resolve(ref);
-        if (!resolved.ok) {
-          printResolveError(resolved.error, host);
-          process.exit(exitCodeForResolveError(resolved.error));
-        }
-        const agent = resolved.value;
 
         const contentBase64 = buf.toString("base64");
 
