@@ -104,9 +104,9 @@ Generalises today's split between `OAuthAppDescriptor` (OAuth-app registry) and 
 | Connection | A single uniform shape: `{ auth: AuthConfig \| null, contributions: Contribution[], inputs, templateId? }`. No `kind` discriminator — identity is the contributions it makes and the auth it carries. A user-built Connection can be contribution-equivalent to a premade one |
 | Contribution | One typed unit a Connection emits for one Agent when granted. Kinds (provisional, extensible): `env`, `egress-host`, `file`, `mcp-entry`, `skill-ref`. Discriminated union; new kinds add by extending the union |
 | AuthConfig | Discriminated union describing how a Connection authenticates. Kinds (provisional, extensible): `oauth`, `api-key`, `header`, `none`. Separate from contributions because credentials have their own lifecycle (refresh, rotation) |
-| State Event | A declarative full snapshot of an Agent's desired Contributions, sent on connect and on every contribution change. Carries a deterministic content hash so the agent can short-circuit reconciliation when unchanged. Idempotent and replay-safe |
-| Signal Event | An imperative one-shot directive (trigger fire, rescan-skills, rotate, …). Carries a stable id for agent-side dedupe and a TTL (default 5 minutes for triggers). Server retains unacked signals and redelivers on the next connection or until TTL expiry |
-| Last Applied Hash | The agent's reported hash of the last successfully reconciled State Event, sent in the connect handshake. Server skips retransmission when it matches its current snapshot hash |
+| State Snapshot | A declarative full snapshot of an Agent's desired Contributions plus its Pending Triggers, sent on connect and on every state change. Carries a deterministic content hash so the agent can short-circuit reconciliation when unchanged. Idempotent and replay-safe |
+| Pending Trigger | A one-shot directive (fire a session) carried inside the State Snapshot. Server-side `dispatched_at` is stamped on the trigger row after a successful apply ack; the next snapshot omits it. Agent-side local log (`$HOME/.platform/dispatched-triggers.json`) dedupes by id so a crash between fire and ack cannot double-fire |
+| Last Applied Hash | The agent's reported hash of the last successfully reconciled State Snapshot, sent in the connect handshake. Server skips retransmission when it matches its current snapshot hash |
 
 ## Secrets (bounded context)
 
