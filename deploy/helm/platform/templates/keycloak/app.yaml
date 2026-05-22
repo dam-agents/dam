@@ -82,10 +82,12 @@ spec:
                   key: KEYCLOAK_ADMIN_PASSWORD
             - name: KC_HEALTH_ENABLED
               value: "true"
-            - name: KC_LOG
-              value: "console"
-            - name: KC_LOG_LEVEL
-              value: {{ .Values.keycloak.events.logLevel | quote }}
+            - name: KC_LOG_CONSOLE_OUTPUT
+              value: {{ .Values.keycloak.log.consoleOutput | quote }}
+            - name: KC_SPI_EVENTS_LISTENER_JBOSS_LOGGING_SUCCESS_LEVEL
+              value: {{ .Values.keycloak.events.successLevel | quote }}
+            - name: KC_SPI_EVENTS_LISTENER_JBOSS_LOGGING_ERROR_LEVEL
+              value: {{ .Values.keycloak.events.errorLevel | quote }}
             - name: KC_HTTP_PORT
               value: {{ .Values.keycloak.port | quote }}
             - name: KC_HOSTNAME

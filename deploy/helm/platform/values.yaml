@@ -203,26 +203,34 @@ keycloak:
   extraRedirectUris: []
   extraWebOrigins: []
 
-  # -- Event logging. Login events (LOGIN, LOGIN_ERROR, LOGOUT, REGISTER,
-  # …) and admin events (any change made via the admin REST API / console)
-  # are emitted to stdout via the `jboss-logging` event listener so they
-  # ride the cluster log pipeline to whatever external log service is
-  # collecting pod logs.
+  # -- Event logging. Login + admin events are emitted to stdout via the
+  # built-in `jboss-logging` event listener so they ride the cluster log
+  # pipeline to whatever external log service is collecting pod logs.
   #
-  # Login events are NOT persisted to the Keycloak DB — pod logs are the
-  # source of truth. Admin events ARE persisted (low volume, useful as a
-  # break-glass surface in the Keycloak admin console under `Events →
-  # Admin events`); set `adminEventsEnabled: false` in the realm import if
-  # you want to drop that too.
+  # Login events are NOT persisted to the Keycloak DB (eventsEnabled: false
+  # in the realm import) — pod logs are the source of truth. Admin events
+  # ARE persisted (low volume, useful as a break-glass audit surface in
+  # the admin console under `Events → Admin events`); set
+  # `adminEventsEnabled: false` in the realm import to drop that too.
   #
-  # The jboss-logging listener emits successful events at DEBUG and errors
-  # at WARN. `logLevel` raises the `org.keycloak.events` category to DEBUG
-  # so successful logins / admin actions appear in the pod log without
-  # making the rest of Keycloak chatty.
+  # The listener emits successes at `debug` and errors at `warn` by
+  # default. We raise success-level to `info` so successful logins appear
+  # under the default root log level without touching log categories.
+  # See https://www.keycloak.org/server/all-provider-config (search for
+  # `spi-events-listener-jboss-logging`).
   events:
-    # -- Root logger plus per-category overrides, in the comma-separated
-    # form Keycloak's quarkus-logging parser expects.
-    logLevel: "INFO,org.keycloak.events:debug"
+    # -- Log level for successful auth / admin events.
+    successLevel: "info"
+    # -- Log level for error events (LOGIN_ERROR, etc.).
+    errorLevel: "warn"
+
+  # -- Keycloak logging output.
+  log:
+    # -- Console output format. `default` is human-readable plain text;
+    # `json` is structured one-record-per-line, friendlier for external
+    # log aggregators (Loki / ELK / Datadog). Local dev overrides this
+    # to `default` in `values-local.yaml` for readable `kubectl logs`.
+    consoleOutput: "json"
 
   # -- Test user bootstrapped via realm import.
   # DISABLED by default — production deployments must not ship a known credential.
