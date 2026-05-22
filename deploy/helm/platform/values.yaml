@@ -310,6 +310,13 @@ apiServer:
   # known-broken older client. See ADR-039 §"server-advertised compatibility floor".
   minClientCliVersion: ""
 
+  # -- ADR-048/049 unified runtime channel. When false (default), the
+  # existing pod-files SSE + trigger-watcher paths remain authoritative
+  # and the new outbox tables, BullMQ workers, cron sweep, and hello/ack
+  # routes stay dormant. Flip to true after a Redis-equipped install to
+  # opt into the new delivery path.
+  runtimeChannelEnabled: false
+
   # -- Ingress NetworkPolicy for the api-server pod.
   # Restricts the agent-facing ports (`harness`, `ext-authz`) to ingress from
   # pods carrying `agent-platform.ai/agent` (agent + fork pods) in agentNamespace.

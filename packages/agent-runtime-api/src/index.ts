@@ -45,3 +45,11 @@ export {
 } from "./modules/skills/schemas.js";
 export { importBundleResultSchema } from "./modules/import/types.js";
 export type { ImportBundleResult } from "./modules/import/types.js";
+export type {
+  RuntimeChannelDomainError,
+  RuntimeChannelService,
+} from "./modules/runtime-channel/types.js";
+export {
+  applyStateInputSchema,
+  deliverSignalInputSchema,
+} from "./modules/runtime-channel/schemas.js";

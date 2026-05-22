@@ -76,6 +76,13 @@ const configSchema = z.object({
   defaultGithubEnterpriseClientId: z.string().nullable().default(null),
   defaultGithubEnterpriseClientSecret: z.string().nullable().default(null),
   defaultGithubEnterpriseAppSlug: adminAppSlugSchema,
+  /** ADR-048/049: feature flag gating the unified runtime channel.
+   *  When false (default), the pod-files SSE and trigger-watcher paths
+   *  remain authoritative; the runtime-channel module is composed but
+   *  the BullMQ workers and cron sweep are not started, so an
+   *  operator can deploy this image without rolling out the new
+   *  delivery path. */
+  runtimeChannelEnabled: z.coerce.boolean().default(false),
   redisUrl: z.string().nullable().default(null),
   /** Optional Redis AUTH password. The chart provisions a generated
    *  per-release password and binds it via secretKeyRef; standalone dev
@@ -154,6 +161,7 @@ export function loadConfig(): Config {
     defaultGithubEnterpriseClientSecret:
       process.env.PLATFORM_DEFAULT_GHE_CLIENT_SECRET,
     defaultGithubEnterpriseAppSlug: process.env.PLATFORM_DEFAULT_GHE_APP_SLUG,
+    runtimeChannelEnabled: process.env.RUNTIME_CHANNEL_ENABLED,
     redisUrl: process.env.REDIS_URL,
     redisPassword: process.env.REDIS_PASSWORD,
     approvalHoldSeconds: process.env.APPROVAL_HOLD_SECONDS,

@@ -75,6 +75,10 @@ import {
   createPresetSeederAdapter,
   listEgressRuleAgentIds,
 } from "./modules/egress-rules/compose.js";
+import {
+  composeRuntimeChannel,
+  createRuntimeChannelCleanupHook,
+} from "./modules/runtime-channel/index.js";
 import { createAgentArtifactsSweeper } from "./sagas/agent-artifacts-sweeper.js";
 import { createK8sClient as createAgentsK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
@@ -310,6 +314,27 @@ const {
 });
 deliverySweeper.start();
 
+// ADR-048/049: unified runtime channel. Composed when the feature flag
+// is on AND Redis is reachable (BullMQ requires Redis). When disabled,
+// the writer is a noop so callers can wire it unconditionally without
+// branching. The hello/ack routes mount only when the system is
+// composed — agents whose pods don't dial hello shouldn't see the
+// endpoint flap.
+const runtimeChannel =
+  config.runtimeChannelEnabled && config.redisUrl
+    ? composeRuntimeChannel({
+        db,
+        namespace: config.namespace,
+        redisUrl: config.redisUrl,
+        redisPassword: config.redisPassword ?? undefined,
+        log: (msg) => process.stderr.write(msg + "\n"),
+      })
+    : undefined;
+if (runtimeChannel) {
+  runtimeChannel.sweep.start();
+  process.stderr.write("[runtime-channel] worker + sweep started\n");
+}
+
 // Per-agent cleanup hooks fired after a successful K8s delete. Each
 // module's adapter clears its own table; failures log + continue. The
 // orphan-sweeper saga catches anything missed (replica died mid-delete,
@@ -317,6 +342,7 @@ deliverySweeper.start();
 const agentCleanupHooks = [
   createEgressRulesCleanupHook(db),
   createApprovalsCleanupHook(db),
+  createRuntimeChannelCleanupHook(db),
 ];
 
 // Cross-store orphan reaper. Lists live agent ConfigMaps, finds DB rows
@@ -376,6 +402,7 @@ const { server: harnessApiServer } = startHarnessApiServerApp({
   podFilesBus,
   podFilesSnapshot: podFilesPublisher.compute,
   seedSources,
+  runtimeChannelHelloAck: runtimeChannel?.helloAck,
 });
 
 // ADR-041: instance identity for ext-authz now flows from the per-instance
@@ -410,6 +437,7 @@ async function shutdown() {
   await oauthRefreshService.stop();
   await deliverySweeper.stop();
   await agentArtifactsSweeper.stop();
+  if (runtimeChannel) await runtimeChannel.stop();
   await channelManager.stopAll();
   await redisBus.close();
   await sql.end();

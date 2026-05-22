@@ -16,6 +16,15 @@ const schema = z.object({
    *  loop is skipped — used for forks and any pod that shouldn't receive
    *  pod-files state. */
   PLATFORM_POD_FILES_EVENTS_URL: z.string().optional(),
+  /** Base URL for the harness API server, already shaped per-agent:
+   *  `http://<harness-svc>/api/agents/<agent-id>`. Set by the controller
+   *  at pod-spec time. When unset the runtime channel boot-loop is
+   *  skipped — used in dev runs and for fork pods. ADR-048. */
+  PLATFORM_RUNTIME_CHANNEL_URL: z.string().optional(),
+  /** Build-time agent-runtime image version, reported in `hello`.
+   *  Defaults to the running package's version baked at build time;
+   *  override for tests. */
+  PLATFORM_RUNTIME_VERSION: z.string().default("0.0.0"),
 });
 
 export const config = schema.parse(process.env);

@@ -206,6 +206,10 @@ spec:
                   name: {{ printf "%s-auth" (include "platform.redis.fullname" .) }}
                   key: password
             {{- end }}
+            {{- if .Values.apiServer.runtimeChannelEnabled }}
+            - name: RUNTIME_CHANNEL_ENABLED
+              value: "true"
+            {{- end }}
             - name: APPROVAL_HOLD_SECONDS
               value: {{ .Values.apiServer.approvalHoldSeconds | quote }}
             {{- if .Values.apiServer.maxImportBundleBytes }}

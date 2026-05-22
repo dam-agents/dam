@@ -219,3 +219,49 @@ export const agentSkillPublishes = pgTable(
   },
   (table) => [index("agent_skill_publishes_agent_idx").on(table.agentId)],
 );
+
+/**
+ * ADR-049: Outbox for declarative state delivery to an agent's runtime
+ * channel. Snapshot-shaped — at most one row per agent. The mutation
+ * transaction upserts this row in the same commit as the domain change;
+ * the BullMQ worker later reads the row, computes the agent's payload
+ * (kind+impl×contributions) and pushes it via the runtime channel's
+ * `applyState`. A version number lets the agent reject older pushes
+ * after a cross-replica race, and `last_applied_hash` is set by the
+ * agent's ack so the worker skips no-op deliveries.
+ */
+export const runtimeStateOutbox = pgTable("runtime_state_outbox", {
+  agentId: text("agent_id").primaryKey(),
+  version: text("version").notNull(),
+  enqueuedAt: timestamp("enqueued_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  lastAppliedHash: text("last_applied_hash"),
+  lastAppliedAt: timestamp("last_applied_at", { withTimezone: true }),
+});
+
+/**
+ * ADR-049: Outbox for transient signals delivered via the runtime channel
+ * (e.g., scheduled triggers, ad-hoc actions). Event-shaped — one row per
+ * discrete event with its own TTL and lifecycle. The agent's ack deletes
+ * the row; the BullMQ worker retries within the TTL on transport failure;
+ * the cron sweep re-enqueues anything Redis lost. `hello` from a waking
+ * agent returns pending rows without deleting them (ack deletes).
+ */
+export const runtimeSignalOutbox = pgTable(
+  "runtime_signal_outbox",
+  {
+    id: text("id").primaryKey(),
+    agentId: text("agent_id").notNull(),
+    action: text("action").notNull(),
+    payload: jsonb("payload").notNull(),
+    enqueuedAt: timestamp("enqueued_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index("runtime_signal_outbox_agent_idx").on(table.agentId),
+    index("runtime_signal_outbox_expires_idx").on(table.expiresAt),
+  ],
+);

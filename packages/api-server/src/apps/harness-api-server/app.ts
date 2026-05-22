@@ -20,6 +20,7 @@ import type { ChannelManager } from "./../../modules/channels/services/channel-m
 import type { ChannelSecretStore } from "./../../modules/channels/infrastructure/channel-secret-store.js";
 import type { PodFilesBus } from "../../modules/pod-files/bus.js";
 import type { FileSpec } from "../../modules/pod-files/types.js";
+import type { HelloAckService } from "../../modules/runtime-channel/index.js";
 
 export interface HarnessApiServerAppDeps {
   config: Config;
@@ -30,6 +31,10 @@ export interface HarnessApiServerAppDeps {
   podFilesBus: PodFilesBus;
   podFilesSnapshot: (owner: string, agentId: string) => Promise<FileSpec[]>;
   seedSources: SkillSourceSeed[];
+  /** When undefined, runtime-channel routes are not mounted. Lets the
+   *  feature flag in `index.ts` keep the surface inert without
+   *  conditionals here. */
+  runtimeChannelHelloAck?: HelloAckService;
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
@@ -42,6 +47,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     podFilesBus,
     podFilesSnapshot,
     seedSources,
+    runtimeChannelHelloAck,
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
@@ -57,6 +63,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     channelManager,
     k8s: k8sClient,
     podFiles: { bus: podFilesBus, fetchSnapshot: podFilesSnapshot },
+    runtimeChannelHelloAck,
     agentHome: config.agentHome,
     composeSkills: (owner) =>
       composeSkillsModule(

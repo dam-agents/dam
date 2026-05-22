@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@trpc/server": "^11.16.0",
+    "api-server-api": "workspace:*",
     "zod": "^4.4.3"
   },
   "scripts": {

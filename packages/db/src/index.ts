@@ -11,6 +11,8 @@ export {
   agentSkillPublishes,
   egressRules,
   pendingApprovals,
+  runtimeStateOutbox,
+  runtimeSignalOutbox,
 } from "./schema.js";
 export {
   eq,

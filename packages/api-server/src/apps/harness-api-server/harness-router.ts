@@ -5,9 +5,11 @@ import {
   mountPodFilesEventsRoute,
   type PodFilesEventsDeps,
 } from "./pod-files-events.js";
+import { mountRuntimeChannelRoutes } from "./runtime-channel-routes.js";
 import { resolveAgent } from "./agent-auth.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import type { HelloAckService } from "../../modules/runtime-channel/index.js";
 
 export interface TriggerRequest {
   agentId: string;
@@ -28,6 +30,9 @@ export function createHarnessRouter(deps: {
   composeSkills: (owner: string) => SkillsService;
   handleTrigger: (req: TriggerRequest) => Promise<TriggerResult>;
   podFiles: Pick<PodFilesEventsDeps, "bus" | "fetchSnapshot">;
+  /** Optional — when absent, runtime-channel hello/ack routes are not
+   *  mounted. Used by the feature flag in the api-server bootstrap. */
+  runtimeChannelHelloAck?: HelloAckService;
   agentHome: string;
   schedulesServiceFor: (owner: string) => SchedulesService;
 }) {
@@ -64,6 +69,12 @@ export function createHarnessRouter(deps: {
     bus: deps.podFiles.bus,
     fetchSnapshot: deps.podFiles.fetchSnapshot,
   });
+  if (deps.runtimeChannelHelloAck) {
+    mountRuntimeChannelRoutes(app, {
+      k8s: deps.k8s,
+      helloAck: deps.runtimeChannelHelloAck,
+    });
+  }
 
   return app;
 }

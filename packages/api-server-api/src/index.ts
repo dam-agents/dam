@@ -292,3 +292,27 @@ export type { Brand } from "./modules/brand/types.js";
 // Auth config
 export { authConfigSchema } from "./modules/auth/types.js";
 export type { AuthConfig } from "./modules/auth/types.js";
+
+// Runtime channel — ADR-048
+export {
+  contributionSchema,
+  runtimeChannelAckInputSchema,
+  runtimeChannelAckResultSchema,
+  runtimeChannelApplyStateResultSchema,
+  runtimeChannelCapabilitiesSchema,
+  runtimeChannelHelloInputSchema,
+  runtimeChannelHelloResultSchema,
+  signalEventSchema,
+  stateEventSchema,
+} from "./modules/runtime-channel/schemas.js";
+export type {
+  Contribution,
+  RuntimeChannelAckInput,
+  RuntimeChannelAckResult,
+  RuntimeChannelApplyStateResult,
+  RuntimeChannelCapabilities,
+  RuntimeChannelHelloInput,
+  RuntimeChannelHelloResult,
+  SignalEvent,
+  StateEvent,
+} from "./modules/runtime-channel/schemas.js";

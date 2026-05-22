@@ -28,6 +28,10 @@ import { composeAcp } from "./modules/acp/compose.js";
 import { createWebSocketChannel } from "./modules/acp/infrastructure/create-websocket-channel.js";
 import { startTriggerWatcher, type TriggerWatcher } from "./trigger-watcher.js";
 import { startPodFilesSync } from "./modules/pod-files/index.js";
+import {
+  composeRuntimeChannel,
+  type RuntimeChannelSystem,
+} from "./modules/runtime-channel/index.js";
 
 let triggerWatcher: TriggerWatcher | undefined;
 
@@ -46,6 +50,19 @@ const skillsService = composeSkills();
 const importHandlers = createImportHandlers(homeDir, workDir, (msg) =>
   process.stderr.write(`[import] ${msg}\n`),
 );
+
+// ADR-048: unified runtime channel. Composes the per-harness driver
+// registry (built-ins + manifest extras) and the in-process service
+// the tRPC routes hand to handlers. The hello-loop runs on the listen
+// callback below once we know the HTTP server is up.
+let runtimeChannel: RuntimeChannelSystem | undefined;
+if (config.PLATFORM_RUNTIME_CHANNEL_URL) {
+  runtimeChannel = await composeRuntimeChannel({
+    harnessApiBaseUrl: config.PLATFORM_RUNTIME_CHANNEL_URL,
+    runtimeVersion: config.PLATFORM_RUNTIME_VERSION,
+    agentHome: homeDir,
+  });
+}
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -68,6 +85,32 @@ const trpcHandler = createHTTPHandler({
   createContext: (): AgentRuntimeContext => ({
     files: filesService,
     skills: skillsService,
+    runtimeChannel:
+      runtimeChannel?.service ??
+      // When the runtime channel isn't configured (forks, dev runs
+      // without `PLATFORM_RUNTIME_CHANNEL_URL`), any caller hitting the
+      // tRPC routes gets a fail-closed reply. The api-server worker
+      // only calls these routes when the agent's hello reached the
+      // server first, so a fork that never said hello can't be the
+      // caller in practice.
+      ({
+        applyState: () =>
+          Promise.resolve({
+            ok: false,
+            error: {
+              kind: "ApplyFailed",
+              reason: "runtime channel not configured for this pod",
+            },
+          }),
+        deliverSignal: () =>
+          Promise.resolve({
+            ok: false,
+            error: {
+              kind: "ApplyFailed",
+              reason: "runtime channel not configured for this pod",
+            },
+          }),
+      } as AgentRuntimeContext["runtimeChannel"]),
   }),
   maxBodySize: TRPC_MAX_BODY_SIZE,
 });
@@ -378,5 +421,13 @@ server.listen(config.PORT, () => {
       url: config.PLATFORM_POD_FILES_EVENTS_URL,
       agentHome: homeDir,
     });
+  }
+
+  // ADR-048 hello loop. Best-effort — failure does not block the rest
+  // of the agent's boot (tRPC + ACP + terminal already accepting
+  // traffic above). The loop retries until the api-server is
+  // reachable, then catches up any state and pending signals.
+  if (runtimeChannel) {
+    void runtimeChannel.helloLoop.startAndAwait();
   }
 });

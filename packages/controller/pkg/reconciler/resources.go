@@ -152,6 +152,9 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 		// (gh hosts.yml today; more producers later) directly under HOME.
 		// Forks deliberately do NOT receive this env — see fork_resources.go.
 		{Name: "PLATFORM_POD_FILES_EVENTS_URL", Value: fmt.Sprintf("%s/api/agents/%s/pod-files/events", cfg.HarnessServerURL, name)},
+		// ADR-048: unified runtime channel base URL. Agent dials `/runtime/v1/hello`
+		// + `/runtime/v1/ack` under this prefix. Forks don't get it.
+		{Name: "PLATFORM_RUNTIME_CHANNEL_URL", Value: fmt.Sprintf("%s/api/agents/%s", cfg.HarnessServerURL, name)},
 	}
 
 	// Order matters: K8s resolves duplicate env names by keeping the last
