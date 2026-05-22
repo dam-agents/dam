@@ -7,33 +7,17 @@ export class ConnectionClosedError extends Error {
   }
 }
 
-// SDK methods that issue a JSON-RPC request via `Connection.sendRequest`. The
-// SDK's receive loop never rejects `#pendingResponses` on stream close, so
-// these calls hang indefinitely when the WebSocket dies mid-flight. Listed by
-// name so adding a new SDK method is a deliberate decision rather than a
-// silent leak through an unwrapped path.
-const REQUEST_METHODS = new Set<string>([
-  "initialize",
-  "authenticate",
-  "logout",
-  "newSession",
-  "loadSession",
-  "forkSession",
-  "listSessions",
-  "unstable_resumeSession",
-  "closeSession",
-  "setSessionMode",
-  "setSessionModel",
-  "setSessionConfigOption",
-  "prompt",
-  "cancel",
-]);
-
 /**
- * Wrap a `ClientSideConnection` so every request-style method races against
+ * Wrap a `ClientSideConnection` so every Promise-returning call races against
  * the connection's `closed` promise. On close, in-flight calls reject with
  * `ConnectionClosedError` so consumer catch-paths can surface a real error
  * instead of awaiting a promise that will never settle.
+ *
+ * Implementation detects requests dynamically — every public method on
+ * `ClientSideConnection` returns a Promise, non-method members are getters
+ * (`closed`, `signal`). This avoids a hand-maintained allowlist that would
+ * silently disable the race for typos, new SDK methods, or future renames
+ * (e.g. the `unstable_*` prefix dance).
  */
 export function withCloseRace(
   conn: ClientSideConnection,
@@ -45,10 +29,13 @@ export function withCloseRace(
     get(target, prop, receiver) {
       const value = Reflect.get(target, prop, receiver);
       if (typeof value !== "function") return value;
-      if (!REQUEST_METHODS.has(prop as string)) return value.bind(target);
-      const fn = value as (...args: unknown[]) => Promise<unknown>;
-      return (...args: unknown[]) =>
-        Promise.race([fn.apply(target, args), closedThrows]);
+      const fn = value as (...args: unknown[]) => unknown;
+      return (...args: unknown[]) => {
+        const result = fn.apply(target, args);
+        return result instanceof Promise
+          ? Promise.race([result, closedThrows])
+          : result;
+      };
     },
   });
 }
