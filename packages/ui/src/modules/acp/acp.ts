@@ -12,6 +12,7 @@ import {
 
 import { getAccessToken } from "../../auth.js";
 import { type PermissionOutcome, useStore } from "../../store.js";
+import { withCloseRace } from "./close-race.js";
 import type { UpdateHandler } from "./types.js";
 
 const WS_CONNECT_TIMEOUT_MS = 120_000;
@@ -100,7 +101,7 @@ export async function openConnection(
   onUpdate: UpdateHandler,
 ): Promise<{ connection: ClientSideConnection; ws: WebSocket }> {
   const { stream, ws } = await wsStream(await wsUrl(agentId));
-  const connection = new ClientSideConnection(
+  const raw = new ClientSideConnection(
     () => ({
       async requestPermission(params: RequestPermissionRequest) {
         return awaitPermission(params);
@@ -148,5 +149,5 @@ export async function openConnection(
     }),
     stream,
   );
-  return { connection, ws };
+  return { connection: withCloseRace(raw), ws };
 }
