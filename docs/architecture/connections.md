@@ -209,20 +209,22 @@ sequenceDiagram
   participant USER as user (UI)
   participant AS as api-server
   participant PG as Postgres
-  participant WK as delivery worker
+  participant BQ as BullMQ
+  participant WK as worker handler
   participant RT as agent-runtime
 
   USER->>AS: grant Connection X to Agent A
-  AS->>PG: BEGIN — write grant + upsert outbox row — COMMIT
-  AS->>WK: Redis publish (best-effort wake)
+  AS->>PG: BEGIN, write grant, upsert outbox row, COMMIT
+  AS->>BQ: enqueue job state:A
   AS-->>USER: 200
 
-  WK->>PG: claim outbox row (FOR UPDATE SKIP LOCKED)
-  Note over WK: skip if Agent A not running
+  BQ->>WK: dispatch job
+  WK->>PG: read outbox row, check agent state
+  Note over WK: throw if Agent A not running, BullMQ retries
   WK->>PG: compute current contributions for A
   WK->>RT: runtime.v1.applyState
   RT->>RT: dispatch per kind to drivers
-  RT-->>WK: { applied, appliedHash }
+  RT-->>WK: applied, appliedHash
   WK->>PG: DELETE outbox row
 ```
 
@@ -251,7 +253,7 @@ runtime.v1.deliverSignal({
 }) => { outcome: "applied" | "rejected"; error?: string }
 ```
 
-The HTTP response *is* the ack. On `outcome: "applied"`, the worker deletes the signal-outbox row. On rejection or timeout, the worker increments `attempts` and reschedules with backoff; TTL-expired rows are dropped (logged + counted).
+The HTTP response *is* the ack. On `outcome: "applied"`, the worker deletes the signal-outbox row and the BullMQ job completes. On rejection or transport failure the job handler throws and BullMQ retries with backoff; the handler also checks TTL on entry and drops expired rows (logged + counted as `dropped-expired`).
 
 ### `hello` — agent → api-server catch-up
 
@@ -302,51 +304,62 @@ Two outbox surfaces in Postgres:
 
 ### Mutation transaction
 
-Every state-affecting handler commits the domain mutation and the outbox upsert atomically, then fires a best-effort Redis publish to wake the worker:
+Every state-affecting handler commits the domain mutation and the outbox upsert atomically, then enqueues a BullMQ job that references the outbox row:
 
 ```ts
 await db.transaction(async (tx) => {
   await tx.connections.grant(agentId, connectionId);
-  await tx.runtime_state_outbox.upsert({ agentId, nextAttemptAt: now() });
+  await tx.runtime_state_outbox.upsert({ agentId, lastEnqueuedAt: now() });
 });
-await redisBus.publish(`agent-state:${agentId}`, "{}");   // best-effort
+await stateQueue.add(
+  "state",
+  { agentId },
+  { jobId: `state:${agentId}` },   // stable id → natural coalescing
+);
 return ok();   // user-facing response returns immediately
 ```
 
-The user-facing response does not depend on agent reachability. If Redis drops the publish or the agent is offline, the sweep covers it.
+The user-facing response does not depend on agent reachability. If BullMQ's enqueue fails or Redis drops the pending job, the cron sweep re-enqueues the row.
 
-### Worker loop
+### Worker
 
-Every api-server replica runs a worker loop. Competing consumers via `FOR UPDATE SKIP LOCKED` — no leader election, no per-row dispatch dedupe.
+A BullMQ Worker on every api-server replica consumes from the two queues (`state`, `signal`). BullMQ owns the dispatch loop, retry-with-backoff, stalled-job recovery, and the dashboard surface; the platform code is the *handler*:
 
 ```mermaid
 flowchart TD
-  loopStart([loop start])
-  wait[wait for Redis signal or 30s sweep]
-  query[claim outbox rows FOR UPDATE SKIP LOCKED]
+  handlerStart([handler invoked])
+  load[load outbox row by id]
+  exists{row exists?}
+  noop[no-op, return success]
   check{agent running?}
-  skip[unlock row, continue]
+  defer[throw, BullMQ retries with backoff]
   compute[compute snapshot, filter by capabilities]
   dispatch[POST runtime.v1.applyState]
-  ok[DELETE row]
-  fail[increment attempts, schedule retry, drop on TTL]
+  ok[DELETE outbox row, return]
+  fail[throw, BullMQ retries]
 
-  loopStart --> wait --> query --> check
-  check -->|no| skip --> wait
+  handlerStart --> load --> exists
+  exists -->|no| noop
+  exists -->|yes| check
+  check -->|no| defer
   check -->|yes| compute --> dispatch
-  dispatch -->|applied| ok --> wait
-  dispatch -->|error| fail --> wait
+  dispatch -->|applied| ok
+  dispatch -->|error| fail
 ```
 
-Signal-outbox loop is parallel, structurally identical, dispatches to `runtime.v1.deliverSignal`.
+The signal handler is structurally identical, dispatching to `runtime.v1.deliverSignal` and checking TTL on entry. Retry policy lives in BullMQ's per-queue `defaultJobOptions` (`attempts`, `backoff`); TTL exhaustion drops the row and counts `dropped-expired`.
+
+### Cron sweep
+
+A scheduled job runs every few minutes and scans the outbox for rows where `last_enqueued_at < now() - 5min` (or NULL). For each, it re-enqueues a BullMQ job with the row's stable id. This is the load-bearing path for surviving any BullMQ / Redis loss: rows in Postgres are the truth, and the sweep guarantees they reach the worker even if every enqueue along the way was lost.
 
 ### Agent-state cache
 
-The worker reads agent running-state from an in-memory cache fed by the existing ConfigMap watch in the agents service — never from a direct K8s API call. Outbox rows for non-running agents stay queued; the agent's own `hello` clears state catch-up; the sweep clears signal catch-up.
+The worker handler reads agent running-state from an in-memory cache fed by the existing ConfigMap watch in the agents service — never from a direct K8s API call. When the agent is not running the handler throws; BullMQ retries with the long-backoff policy. The agent's own `hello` clears the outbox row on wake, so the eventual retry finds no row and exits clean.
 
 ### Redis-down behavior
 
-Per ADR-036, Redis is the signal path. If Redis is unreachable: publishes silently fail; the worker's sweep timer (30s default) drives dispatch instead. Delivery latency degrades from sub-second to ≤30s; no events are lost. State outbox rows remain durable in Postgres.
+Per ADR-036, Redis is the signal path; BullMQ stores job state in Redis with relaxed durability. A Redis outage may drop pending jobs; in-flight handlers see Redis errors and fail. The cron sweep is the recovery path: any outbox row whose enqueue was lost gets re-enqueued on the next sweep tick. Delivery latency degrades from sub-second to ≤ sweep-interval; no events are lost because the outbox is in Postgres.
 
 ## Agent-side: drivers and manifest
 
@@ -442,8 +455,9 @@ The UI surfaces the gap at grant time: connecting GitHub to a Claude-Code agent 
 | Substrate | What lives there | Notes |
 |---|---|---|
 | Postgres `connections` | Connection records (template id, auth, contributions[], inputs, owner) | New table for the unified model. |
-| Postgres `runtime_state_outbox` | One row per agent with pending state delivery | Coalesce-by-agent. Cleared on successful dispatch or `hello` catch-up. |
+| Postgres `runtime_state_outbox` | One row per agent with pending state delivery | Coalesce-by-agent. Cleared on successful dispatch or `hello` catch-up. Carries `last_enqueued_at` for the cron sweep. |
 | Postgres `runtime_signal_outbox` | One row per pending signal | Discrete events; TTL-bounded; cleaned up on ack. |
+| Redis (BullMQ queues) | Pending BullMQ jobs referencing outbox row ids | Relaxed durability per ADR-036; Postgres outbox + cron sweep is the recovery path. |
 | Postgres `egress_rules` | `egress-host` Contributions joined per grant | Existing table; same as today (ADR-035). |
 | K8s Secret per Connection | Auth credentials (refresh tokens, api-keys) | Owner-label-scoped; mounted into the paired gateway pod, never into the agent pod. |
 | Agent ConfigMap `secrets-rev` annotation | Bump triggers env re-render | Existing ADR-040 mechanism unchanged. |
@@ -453,8 +467,8 @@ The UI surfaces the gap at grant time: connecting GitHub to a Claude-Code agent 
 
 ## Invariants
 
-- **Mutation handlers never wait on agent reachability.** The user-facing response returns after the local transaction + Redis publish; delivery is the worker's concern. A hibernated, restarting, or unreachable agent does not delay or fail user actions.
-- **Postgres is the source of truth.** Every agent-bound change has a durable representation (a Connection grant, an outbox row) before any wire activity. Redis publishes and runtime-channel calls are wake/delivery paths only; either may fail or be replayed without correctness loss.
+- **Mutation handlers never wait on agent reachability.** The user-facing response returns after the local transaction + BullMQ enqueue; delivery is the worker's concern. A hibernated, restarting, or unreachable agent does not delay or fail user actions.
+- **Postgres is the source of truth.** Every agent-bound change has a durable representation (a Connection grant, an outbox row) before any wire activity. BullMQ jobs and runtime-channel calls are signal/delivery paths only; either may fail or be replayed without correctness loss, with the cron sweep as the recovery path.
 - **Snapshots are idempotent; reapplying the latest snapshot is safe.** Drivers tolerate repeated apply. The agent's `lastAppliedVersion` rejects older `applyState` calls; replay during disconnect/reconnect cannot regress state.
 - **The api-server is the only caller of the runtime channel from the cluster.** The harness port admits ingress only from api-server pods; the agent's only outbound channel is the paired gateway, which routes back to the harness-API-server.
 - **Every Contribution kind has exactly one rail.** The api-server's fan-out determines which rail per kind; drivers, controller-render, and Envoy never overlap responsibilities on the same kind.
