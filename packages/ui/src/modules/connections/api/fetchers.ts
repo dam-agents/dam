@@ -23,13 +23,36 @@ const startOAuthResponseSchema = z.object({
   error: z.string().optional(),
 });
 
+const oauthErrorResponseSchema = z.object({
+  error: z.string().optional(),
+});
+
+async function parseOAuthErrorDetail(
+  res: Response,
+  fallback: string,
+): Promise<string> {
+  try {
+    const body = oauthErrorResponseSchema.safeParse(await res.json());
+    return body.success && body.data.error ? body.data.error : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export async function startMcpOAuth(mcpServerUrl: string) {
   const res = await authFetch("/api/oauth/start", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ mcpServerUrl }),
   });
-  if (!res.ok) throw new Error(`OAuth start failed (${res.status})`);
+  if (!res.ok) {
+    // Surface backend validation messages, e.g. non-OAuth MCP servers.
+    const detail = await parseOAuthErrorDetail(
+      res,
+      `OAuth start failed (${res.status})`,
+    );
+    throw new Error(detail);
+  }
   return startOAuthResponseSchema.parse(await res.json());
 }
 
@@ -146,13 +169,10 @@ export async function startAppOAuth(args: {
   if (!res.ok) {
     // Surface the server's validation message if present (4xx body is a JSON
     // `{ error }` shape; tolerate non-JSON failure modes).
-    let detail = `OAuth start failed (${res.status})`;
-    try {
-      const body = (await res.json()) as { error?: string };
-      if (body.error) detail = body.error;
-    } catch {
-      /* ignore */
-    }
+    const detail = await parseOAuthErrorDetail(
+      res,
+      `OAuth start failed (${res.status})`,
+    );
     throw new Error(detail);
   }
   return startOAuthResponseSchema.parse(await res.json());
