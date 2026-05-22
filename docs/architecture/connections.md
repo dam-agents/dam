@@ -252,7 +252,7 @@ sequenceDiagram
     HS-->>RT: ok
   end
   RT-->>WK: appliedVersion, appliedHash
-  WK->>PG: UPDATE outbox last_applied_*; UPDATE events SET dispatched_at WHERE version <= appliedVersion
+  WK->>PG: UPDATE outbox last_applied; UPDATE events SET dispatched_at where version up to appliedVersion
 ```
 
 ### `applyState` — state and events delivery (server → agent)
@@ -342,7 +342,7 @@ sequenceDiagram
   RT->>HS: per-kind handler for E1.kind — does the work, idempotent on E1.id
   HS-->>RT: ok
   RT-->>WK: appliedVersion=V, appliedHash
-  WK->>PG: UPDATE runtime_events SET dispatched_at = now() WHERE version <= V AND dispatched_at IS NULL
+  WK->>PG: UPDATE runtime_events SET dispatched_at = now() where version up to V AND dispatched_at IS NULL
   Note over WK: Next dispatch state-builder excludes E1
 ```
 
@@ -418,7 +418,7 @@ flowchart TD
   defer[exit clean, sweep re-enqueues later]
   compute[compute state slice + non-dispatched events]
   dispatch[POST runtime.v1.applyState]
-  stamp[UPDATE outbox last_applied_*; UPDATE events SET dispatched_at WHERE version <= acked]
+  stamp["UPDATE outbox last_applied; UPDATE events SET dispatched_at where version &lt;= acked"]
   ok[return]
   fail[throw, BullMQ retries]
 
