@@ -12,6 +12,7 @@ import {
   markAgentDeleted,
 } from "./infrastructure/agents-postgres-repository.js";
 import { deleteActivityEventsOlderThan } from "./infrastructure/activity-retention.js";
+import { withAdvisoryLock } from "./infrastructure/advisory-lock.js";
 import { startPersistActivitySaga } from "./sagas/persist-activity.js";
 import { startPersistAgentsSaga } from "./sagas/persist-agents.js";
 import { bootstrapAgents } from "./services/bootstrap-agents.js";
@@ -80,7 +81,7 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
         upsertActorRole: upsertRole,
       });
       retentionJob = startActivityRetentionJob({
-        db: deps.db,
+        withLock: withAdvisoryLock(deps.db),
         deleteOld: deleteActivityEventsOlderThan(deps.db),
       });
       retentionJob.start();

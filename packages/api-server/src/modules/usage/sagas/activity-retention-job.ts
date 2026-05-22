@@ -1,4 +1,3 @@
-import { sql, type Db } from "db";
 import { ACTIVITY_RETENTION_DAYS } from "../domain/types.js";
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -12,38 +11,30 @@ export type ActivityRetentionJob = {
 };
 
 export type ActivityRetentionDeps = {
-  db: Db;
+  withLock: (key: number, fn: () => Promise<void>) => Promise<boolean>;
   deleteOld: (days: number) => Promise<number>;
 };
 
 /** Weekly bulk DELETE of stale activity_events rows. Multi-replica safe:
- *  competing replicas race a `pg_try_advisory_lock(key)` and only the
- *  winner runs the DELETE — losers no-op. Lock auto-released on session
- *  close. */
+ *  competing replicas race an advisory lock and only the winner runs the
+ *  DELETE — losers no-op. */
 export function startActivityRetentionJob(
   deps: ActivityRetentionDeps,
 ): ActivityRetentionJob {
-  const { db, deleteOld } = deps;
+  const { withLock, deleteOld } = deps;
   let timer: NodeJS.Timeout | null = null;
   let running = false;
 
   async function tick(): Promise<void> {
     try {
-      const acquired = await db.execute<{ ok: boolean }>(
-        sql`SELECT pg_try_advisory_lock(${ADVISORY_LOCK_KEY}) AS ok`,
-      );
-      const row = (acquired as unknown as Array<{ ok: boolean }>)[0];
-      if (!row?.ok) return;
-      try {
+      await withLock(ADVISORY_LOCK_KEY, async () => {
         const n = await deleteOld(ACTIVITY_RETENTION_DAYS);
         if (n > 0) {
           process.stderr.write(
             `[usage/retention] deleted ${n} activity_events older than ${ACTIVITY_RETENTION_DAYS}d\n`,
           );
         }
-      } finally {
-        await db.execute(sql`SELECT pg_advisory_unlock(${ADVISORY_LOCK_KEY})`);
-      }
+      });
     } catch (err) {
       process.stderr.write(`[usage/retention] tick failed: ${err}\n`);
     }
