@@ -1,7 +1,5 @@
 import { activityEvents, lt, sql, type Db } from "db";
 
-export const ACTIVITY_RETENTION_DAYS = 180;
-
 /** Bulk-deletes `activity_events` older than the cutoff. Returns row count
  *  so the caller can log it. Indexes survive — autovacuum reclaims pages
  *  on its own cadence; no manual VACUUM. */

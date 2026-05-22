@@ -11,6 +11,7 @@ import {
   upsertAgent,
   markAgentDeleted,
 } from "./infrastructure/agents-postgres-repository.js";
+import { deleteActivityEventsOlderThan } from "./infrastructure/activity-retention.js";
 import { startPersistActivitySaga } from "./sagas/persist-activity.js";
 import { startPersistAgentsSaga } from "./sagas/persist-agents.js";
 import { bootstrapAgents } from "./services/bootstrap-agents.js";
@@ -78,7 +79,10 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
         insert,
         upsertActorRole: upsertRole,
       });
-      retentionJob = startActivityRetentionJob(deps.db);
+      retentionJob = startActivityRetentionJob({
+        db: deps.db,
+        deleteOld: deleteActivityEventsOlderThan(deps.db),
+      });
       retentionJob.start();
     } else {
       process.stderr.write(

@@ -1,8 +1,5 @@
 import { sql, type Db } from "db";
-import {
-  ACTIVITY_RETENTION_DAYS,
-  deleteActivityEventsOlderThan,
-} from "../infrastructure/activity-retention.js";
+import { ACTIVITY_RETENTION_DAYS } from "../domain/types.js";
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const STARTUP_DELAY_MS = 5 * 60 * 1000;
@@ -14,12 +11,19 @@ export type ActivityRetentionJob = {
   stop(): void;
 };
 
+export type ActivityRetentionDeps = {
+  db: Db;
+  deleteOld: (days: number) => Promise<number>;
+};
+
 /** Weekly bulk DELETE of stale activity_events rows. Multi-replica safe:
  *  competing replicas race a `pg_try_advisory_lock(key)` and only the
  *  winner runs the DELETE — losers no-op. Lock auto-released on session
  *  close. */
-export function startActivityRetentionJob(db: Db): ActivityRetentionJob {
-  const deleteOld = deleteActivityEventsOlderThan(db);
+export function startActivityRetentionJob(
+  deps: ActivityRetentionDeps,
+): ActivityRetentionJob {
+  const { db, deleteOld } = deps;
   let timer: NodeJS.Timeout | null = null;
   let running = false;
 

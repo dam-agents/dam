@@ -126,7 +126,7 @@ Three Keycloak-gated endpoints, all behind the `platform-inspector` realm role:
 
 The HTML report is rendered server-side as a single static page — no JavaScript, escaped, dark-mode aware. The UI sidebar links to it via a `fetch` + Blob URL because a plain `<a href>` cannot send the Bearer token; the Blob is revoked a minute after open.
 
-When the inspector role is unconfigured (`keycloak.inspectorRole=""` in Helm), the endpoints are mounted as a no-op Hono router. Activity writes continue independently — the read API is gated on inspector configuration, the writes on the activity-tracking toggle.
+When the inspector role is not configured at install time, the read endpoints are mounted as a no-op router. Activity writes continue independently — the read API is gated on inspector configuration, the writes on the activity-tracking toggle.
 
 ## Retention
 

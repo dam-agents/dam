@@ -25,6 +25,31 @@ type NavItem = { label: string; icon: LucideIcon } & (
   | { action: () => void }
 );
 
+function NavButton({
+  icon: Icon,
+  label,
+  collapsed,
+  active = false,
+  onClick,
+}: {
+  icon: LucideIcon;
+  label: string;
+  collapsed: boolean;
+  active?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={collapsed ? label : undefined}
+      className={`flex items-center gap-2.5 rounded-lg transition-colors h-9 ${collapsed ? "justify-center px-0" : "px-2.5"} ${active ? "text-accent bg-accent-light" : "text-text-secondary hover:text-text hover:bg-surface-raised"}`}
+    >
+      <Icon size={18} className="shrink-0" />
+      {!collapsed && <span className="text-[14px] font-medium">{label}</span>}
+    </button>
+  );
+}
+
 export function Sidebar() {
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
@@ -71,25 +96,16 @@ export function Sidebar() {
 
       {/* Nav items */}
       <div className="flex flex-col gap-0.5 mt-2 px-2">
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const isRoute = "view" in item;
-          const active = isRoute && view === item.view;
-          const onClick = isRoute ? () => setView(item.view) : item.action;
-          return (
-            <button
-              key={item.label}
-              onClick={onClick}
-              title={collapsed ? item.label : undefined}
-              className={`flex items-center gap-2.5 rounded-lg transition-colors h-9 ${collapsed ? "justify-center px-0" : "px-2.5"} ${active ? "text-accent bg-accent-light" : "text-text-secondary hover:text-text hover:bg-surface-raised"}`}
-            >
-              <Icon size={18} className="shrink-0" />
-              {!collapsed && (
-                <span className="text-[14px] font-medium">{item.label}</span>
-              )}
-            </button>
-          );
-        })}
+        {navItems.map((item) => (
+          <NavButton
+            key={item.label}
+            icon={item.icon}
+            label={item.label}
+            collapsed={collapsed}
+            active={"view" in item && view === item.view}
+            onClick={"view" in item ? () => setView(item.view) : item.action}
+          />
+        ))}
       </div>
 
       {/* Spacer */}
@@ -104,16 +120,13 @@ export function Sidebar() {
         <InboxBell collapsed={collapsed} />
 
         {/* Settings */}
-        <button
+        <NavButton
+          icon={Settings}
+          label="Settings"
+          collapsed={collapsed}
+          active={view === "settings"}
           onClick={() => setView("settings")}
-          title={collapsed ? "Settings" : undefined}
-          className={`flex items-center gap-2.5 rounded-lg transition-colors h-9 ${collapsed ? "justify-center px-0" : "px-2.5"} ${view === "settings" ? "text-accent bg-accent-light" : "text-text-secondary hover:text-text hover:bg-surface-raised"}`}
-        >
-          <Settings size={18} className="shrink-0" />
-          {!collapsed && (
-            <span className="text-[14px] font-medium">Settings</span>
-          )}
-        </button>
+        />
 
         {/* Collapse toggle */}
         <button
