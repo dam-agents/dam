@@ -25,19 +25,21 @@ type NavItem = { label: string; icon: LucideIcon } & (
   | { action: () => void }
 );
 
+interface NavButtonProps {
+  icon: LucideIcon;
+  label: string;
+  collapsed: boolean;
+  active?: boolean;
+  onClick: () => void;
+}
+
 function NavButton({
   icon: Icon,
   label,
   collapsed,
   active = false,
   onClick,
-}: {
-  icon: LucideIcon;
-  label: string;
-  collapsed: boolean;
-  active?: boolean;
-  onClick: () => void;
-}) {
+}: NavButtonProps) {
   return (
     <button
       onClick={onClick}
