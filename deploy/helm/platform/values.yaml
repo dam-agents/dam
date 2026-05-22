@@ -602,6 +602,8 @@ agentTemplates:
     # dir + workspace (the bundle lives in the image), so the agent default
     # of 2 Gi is plenty.
     storageSize: "2Gi"
+    skillPaths:
+      - $HOME/.bob/skills/
     resources:
       requests:
         cpu: "500m"

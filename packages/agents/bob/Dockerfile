@@ -31,6 +31,11 @@ COPY harness-chat.sh /usr/local/bin/harness-chat
 COPY harness-terminal.sh /usr/local/bin/harness-terminal
 RUN chmod +x /usr/local/bin/harness-chat /usr/local/bin/harness-terminal
 
+# bob reads skills from $HOME/.bob/skills; symlink onto the
+# cross-harness store at $HOME/.agents/skills so installs land once.
+RUN mkdir -p /app/working-dir/.bob \
+    && ln -s ../.agents/skills /app/working-dir/.bob/skills
+
 COPY --chown=65532:0 workspace/ /app/working-dir/
 
 # Bob's default auth is W3ID SSO — opens a browser that never arrives

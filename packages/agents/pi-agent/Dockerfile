@@ -21,6 +21,11 @@ COPY harness-chat.sh /usr/local/bin/harness-chat
 COPY harness-terminal.sh /usr/local/bin/harness-terminal
 RUN chmod +x /usr/local/bin/harness-chat /usr/local/bin/harness-terminal
 
+# pi reads skills from $HOME/.pi/agent/skills; symlink onto the
+# cross-harness store at $HOME/.agents/skills so installs land once.
+RUN mkdir -p /app/working-dir/.pi/agent \
+    && ln -s ../../.agents/skills /app/working-dir/.pi/agent/skills
+
 COPY --chown=65532:0 workspace/ /app/working-dir/
 
 USER 65532

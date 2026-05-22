@@ -69,6 +69,8 @@ agentTemplates:
       repository: platform-bob
       tag: latest
     storageSize: "2Gi"
+    skillPaths:
+      - $HOME/.bob/skills/
     resources:
       requests:
         cpu: "500m"

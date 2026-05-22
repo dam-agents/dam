@@ -55,10 +55,7 @@ RUN chmod +x /usr/local/bin/harness-chat /usr/local/bin/harness-terminal
 COPY packages/platform-base/skills/ /app/working-dir/.agents/skills/
 COPY packages/platform-base/working-dir/.claude.json /app/working-dir/.claude.json
 COPY packages/platform-base/working-dir/.claude/settings.json /app/working-dir/.claude/settings.json
-RUN mkdir -p /app/working-dir/.claude /app/working-dir/.pi/agent \
-    && ln -s ../.agents/skills /app/working-dir/.claude/skills \
-    && ln -s ../../.agents/skills /app/working-dir/.pi/agent/skills \
-    && chown -R 65532:0 /app
+RUN chown -R 65532:0 /app
 
 # Claude Code 2.x changed the managed-settings.json schema: `allowedMcpServers`
 # is no longer a `string[]` of server names — the array entries are expected
