@@ -238,7 +238,7 @@ sequenceDiagram
   BQ->>WK: dispatch job
   WK->>PG: read outbox row, check agent state
   Note over WK: exit clean if Agent A not running, sweep retries later
-  WK->>PG: compute snapshot (contributions + pendingTriggers)
+  WK->>PG: compute snapshot — contributions and pendingTriggers
   WK->>RT: runtime.v1.applyState
   RT->>RT: dispatch contributions per kind to drivers
   RT->>RT: fire each new trigger, record id in local log
@@ -291,7 +291,7 @@ sequenceDiagram
   RT->>HS: runtime.v1.hello (lastAppliedHash, capabilities)
   HS->>PG: read current state for this agent
   HS->>PG: read non-dispatched, non-expired triggers
-  HS-->>RT: state (contributions + pendingTriggers)
+  HS-->>RT: state — contributions and pendingTriggers
   RT->>RT: reconcile contributions, fire each new trigger (local-log dedupes already-fired)
   RT->>HS: implicit ack via the hello response handling — next mutation sees fresh dispatched_at via worker
 ```
@@ -315,7 +315,7 @@ sequenceDiagram
 
   SCH->>PG: INSERT runtime_triggers (id, agentId, …, expiresAt)
   SCH->>PG: bump runtime_state_outbox for agentId
-  PG->>WK: BullMQ wakes; worker reads outbox + pending triggers
+  PG->>WK: BullMQ wakes — worker reads outbox and pending triggers
   WK->>RT: applyState (contributions, pendingTriggers=[T1])
   RT->>LOG: check T1.id — not present
   RT->>RT: dispatch T1 (sessions.create on harness API)
