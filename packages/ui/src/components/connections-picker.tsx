@@ -180,10 +180,15 @@ export function ConnectionsPicker({
             {apps.map((a) => (
               <AppItemRow
                 key={a.id}
-                label={a.label}
-                identity={a.identity}
+                label={a.name}
+                identity={undefined}
                 status={a.status}
-                envNames={a.envMappings?.map((m) => m.envName) ?? []}
+                envNames={a.contributions
+                  .filter(
+                    (c): c is Extract<typeof c, { kind: "env" }> =>
+                      c.kind === "env",
+                  )
+                  .map((c) => c.name)}
                 checked={selApps.has(a.id)}
                 onToggle={() => onToggleApp(a.id)}
               />

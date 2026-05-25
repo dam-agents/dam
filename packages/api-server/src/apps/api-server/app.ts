@@ -48,9 +48,13 @@ import type { Config } from "../../config.js";
 import { createAuth, ForbiddenError } from "./auth.js";
 import { createK8sSecretsPort } from "./../../modules/secrets/infrastructure/k8s-secrets-port.js";
 import { createSecretsService } from "./../../modules/secrets/services/secrets-service.js";
-import { createK8sConnectionsPort } from "./../../modules/connections/infrastructure/k8s-connections-port.js";
-import { createConnectionsService } from "./../../modules/connections/services/connections-service.js";
+import {
+  composeConnectionsAtBoot,
+  composeConnectionsForOwner,
+} from "./../../modules/connections/compose.js";
 import { createAgentGrantsPort } from "./../../modules/agents/infrastructure/agent-grants-port.js";
+import type { SecretStoreRegistry } from "./../../modules/secret-store/index.js";
+import type { RuntimeMutator } from "./../../modules/runtime-delivery/index.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { ChannelSecretStore } from "./../../modules/channels/infrastructure/channel-secret-store.js";
 import type { IdentityLinkService } from "./../../modules/channels/services/identity-link-service.js";
@@ -94,6 +98,9 @@ export interface ApiServerAppDeps {
    *  module's per-agent durable state; the orphan-sweeper saga is the
    *  belt-and-suspenders for anything missed here. */
   agentCleanupHooks: readonly AgentCleanupHook[];
+  // ADR-051 / ADR-053: Connections + runtime-delivery shared services.
+  secretStores: SecretStoreRegistry;
+  runtimeMutator: RuntimeMutator;
 }
 
 export function startApiServerApp(deps: ApiServerAppDeps) {
@@ -114,10 +121,18 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     presetSeeder,
     trustedHosts,
     agentCleanupHooks,
+    secretStores,
+    runtimeMutator,
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
   const agentsRepo = createAgentsRepository(k8sClient);
+
+  // Connection Template catalog — process-wide, built once. Custom
+  // templates (MCP, Header) are always present. Premade-app templates
+  // require operator-supplied OAuth client ids; those land alongside the
+  // OAuth-flow wiring in a follow-up.
+  const connectionsBoot = composeConnectionsAtBoot({});
 
   const userDirectory = createKeycloakUserDirectory({
     keycloakUrl: config.keycloakUrl,
@@ -551,13 +566,14 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       listOwnedAgentSummaries: async () =>
         (await agents.list()).map((a) => ({ id: a.id, name: a.name })),
     });
-    const connections = createConnectionsService({
-      port: createK8sConnectionsPort(k8sClient, user.sub),
-      grants,
-      owner: user.sub,
-      podFiles: podFilesPublisher,
-      apps: oauthApps,
-      connectionRules: createConnectionRulesSyncAdapter(db),
+    const connections = composeConnectionsForOwner({
+      ownerId: user.sub,
+      db,
+      templates: connectionsBoot.templates,
+      secretStore: secretStores.default(),
+      runtimeMutator,
+      agentsRepo,
+      connectionRulesSync: createConnectionRulesSyncAdapter(db),
     });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agents.get(agentId)) !== null && ownerSub === user.sub;

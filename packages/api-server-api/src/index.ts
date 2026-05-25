@@ -102,6 +102,21 @@ export type {
   AppConnectionStatus,
   AppConnectionView,
   ConnectionsService,
+  Connection,
+  ConnectionStatus,
+  ConnectionView,
+  ConnectionTemplateView,
+  ConnectionCategory,
+  AgentConnections,
+  AuthConfig as ConnectionAuthConfig,
+} from "./modules/connections/types.js";
+export {
+  authConfig as connectionAuthConfigSchema,
+  connection as connectionWireSchema,
+  connectionView as connectionViewSchema,
+  connectionTemplateView as connectionTemplateViewSchema,
+  connectionStatus as connectionStatusSchema,
+  connectionCategory as connectionCategorySchema,
 } from "./modules/connections/types.js";
 
 export {

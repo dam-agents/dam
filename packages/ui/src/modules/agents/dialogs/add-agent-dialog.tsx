@@ -1,4 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+import type { AppConnectionView } from "api-server-api";
 import {
   File as FileIcon,
   Folder as FolderIcon,
@@ -618,7 +619,9 @@ export function AddAgentDialog({
             <ConnectionsPicker
               loading={loadSecrets}
               secrets={secrets}
-              apps={apps}
+              /* tRPC client mints a structurally-identical but nominally
+                 distinct ConnectionView; same wire shape — cast. */
+              apps={apps as unknown as AppConnectionView[]}
               oauthApps={oauthAppEntries}
               selSecrets={selSecretsSet}
               selApps={selAppsSet}

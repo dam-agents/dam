@@ -1,5 +1,9 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { type EgressPreset, isProtectedAgentEnvName } from "api-server-api";
+import {
+  type AppConnectionView,
+  type EgressPreset,
+  isProtectedAgentEnvName,
+} from "api-server-api";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 
@@ -126,7 +130,9 @@ export function ConfigureAgentDialog({
     reset({
       name: agent.name,
       assigned: [...accessQuery.data.secretIds].sort(),
-      assignedAppIds: [...connectionsQuery.data.connectionIds].sort(),
+      assignedAppIds: connectionsQuery.data.connections
+        .map((c) => c.connectionId)
+        .sort(),
       envVars: userInitialEnv,
     });
   }, [
@@ -206,12 +212,15 @@ export function ConfigureAgentDialog({
 
     const userEnvNames = new Set(envVars.map((e) => e.name));
     for (const a of apps.filter((a) => appIdsSet.has(a.id))) {
-      for (const m of a.envMappings ?? []) {
-        if (userEnvNames.has(m.envName)) continue;
+      const envContribs = a.contributions.filter(
+        (c): c is Extract<typeof c, { kind: "env" }> => c.kind === "env",
+      );
+      for (const c of envContribs) {
+        if (userEnvNames.has(c.name)) continue;
         items.push({
-          name: m.envName,
-          value: m.placeholder,
-          source: { appLabel: a.label },
+          name: c.name,
+          value: c.placeholder,
+          source: { appLabel: a.name },
         });
       }
     }
@@ -230,8 +239,11 @@ export function ConfigureAgentDialog({
     [accessQuery.data?.secretIds],
   );
   const baselineAppIds = useMemo(
-    () => new Set(connectionsQuery.data?.connectionIds ?? []),
-    [connectionsQuery.data?.connectionIds],
+    () =>
+      new Set(
+        connectionsQuery.data?.connections.map((c) => c.connectionId) ?? [],
+      ),
+    [connectionsQuery.data?.connections],
   );
   const pendingConnectionGrants = useMemo(() => {
     type Grant = { connectionId: string; host: string; label: string };
@@ -249,8 +261,8 @@ export function ConfigureAgentDialog({
       if (baselineAppIds.has(id)) continue;
       const a = apps.find((x) => x.id === id);
       if (!a) continue;
-      for (const host of a.egressHosts ?? []) {
-        out.push({ connectionId: id, host, label: a.label });
+      for (const host of a.hosts) {
+        out.push({ connectionId: id, host, label: a.name });
       }
     }
     return out;
@@ -271,7 +283,7 @@ export function ConfigureAgentDialog({
   const connectionLabels = useMemo(() => {
     const m = new Map<string, string>();
     for (const s of secrets) m.set(s.id, s.name);
-    for (const a of apps) m.set(a.id, a.label);
+    for (const a of apps) m.set(a.id, a.name);
     return m;
   }, [secrets, apps]);
 
@@ -462,7 +474,10 @@ export function ConfigureAgentDialog({
             <ConnectionsPicker
               loading={!ready}
               secrets={secrets}
-              apps={apps}
+              /* tRPC client mints a structurally-identical but nominally
+                 distinct ConnectionView (content?: unknown vs unknown);
+                 same wire shape — cast. */
+              apps={apps as unknown as AppConnectionView[]}
               oauthApps={oauthAppEntries}
               selSecrets={assignedSet}
               selApps={appIdsSet}

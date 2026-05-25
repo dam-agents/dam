@@ -366,34 +366,9 @@ const agentArtifactsSweeper = createAgentArtifactsSweeper({
 });
 agentArtifactsSweeper.start();
 
-const { server: apiServer } = startApiServerApp({
-  config,
-  api,
-  db,
-  channelManager,
-  channelSecretStore,
-  identityLinkService,
-  pendingSlackOAuthFlows,
-  pendingTelegramOAuthFlows,
-  podFilesPublisher,
-  seedSources,
-  redisBus,
-  approvalsRelay,
-  wrapperFrameSender,
-  presetSeeder,
-  trustedHosts,
-  agentCleanupHooks,
-});
-
-// Re-mints OAuth access tokens from stored refresh tokens before they expire
-// (ADR-033 § "Token provisioning and refresh"). Single-process — multi-replica
-// leader election is a follow-up.
-const oauthRefreshService = createOAuthRefreshService({ k8sClient });
-oauthRefreshService.start();
-
-// ADR-052 / ADR-053: Runtime Delivery context. Composed before the harness
-// API server because the latter needs `hello` + the trigger event handler
-// on its tRPC surface.
+// ADR-052 / ADR-053: Runtime Delivery context. Composed before the user-
+// facing api-server app and the harness API server because both consume
+// pieces of it (runtime mutator + hello + trigger handler).
 const startTriggerSession = createStartTriggerSessionPort({
   api,
   db,
@@ -415,6 +390,33 @@ const runtimeDelivery = composeRuntimeDelivery({
   startTriggerSession,
 });
 runtimeDelivery.sweep.start();
+
+const { server: apiServer } = startApiServerApp({
+  config,
+  api,
+  db,
+  channelManager,
+  channelSecretStore,
+  identityLinkService,
+  pendingSlackOAuthFlows,
+  pendingTelegramOAuthFlows,
+  podFilesPublisher,
+  seedSources,
+  redisBus,
+  approvalsRelay,
+  wrapperFrameSender,
+  presetSeeder,
+  trustedHosts,
+  agentCleanupHooks,
+  secretStores,
+  runtimeMutator: runtimeDelivery.runtimeMutator,
+});
+
+// Re-mints OAuth access tokens from stored refresh tokens before they expire
+// (ADR-033 § "Token provisioning and refresh"). Single-process — multi-replica
+// leader election is a follow-up.
+const oauthRefreshService = createOAuthRefreshService({ k8sClient });
+oauthRefreshService.start();
 
 const { server: harnessApiServer } = startHarnessApiServerApp({
   config,

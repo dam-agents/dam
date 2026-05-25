@@ -46,7 +46,7 @@ export function SetupProgressBar() {
 
   const hasProvider = secrets.some((s) => isProviderPresetType(s.type));
   const hasConnections =
-    appConnections.some((c) => c.status === "connected") ||
+    appConnections.some((c) => c.status === "active") ||
     mcpConnections.some((c) => !c.expired) ||
     secrets.some(isCustomSecret);
 
