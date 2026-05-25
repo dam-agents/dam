@@ -416,6 +416,7 @@ const { server: harnessApiServer } = startHarnessApiServerApp({
   seedSources,
   runtimeHello: runtimeDelivery.hello,
   triggerEventHandler: runtimeDelivery.triggerHandler,
+  runtimeMutator: runtimeDelivery.runtimeMutator,
 });
 
 // ADR-041: instance identity for ext-authz now flows from the per-instance

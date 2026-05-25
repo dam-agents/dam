@@ -1,11 +1,13 @@
 package scheduler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"sync"
 	"time"
 
@@ -14,9 +16,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/kubernetes/scheme"
 	restclient "k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/remotecommand"
 	"gopkg.in/yaml.v3"
 
 	"github.com/kagenti/platform/packages/controller/pkg/config"
@@ -314,50 +314,50 @@ func (s *Scheduler) fire(ctx context.Context, agentName, scheduleName string, sp
 		return fmt.Errorf("ensuring %s ready: %w", agentName, err)
 	}
 
-	// Build and deliver trigger
-	trigger := map[string]any{
-		"type":      spec.Type,
-		"task":      spec.Task,
-		"timestamp": time.Now().UTC().Format(time.RFC3339),
-		"schedule":  scheduleName,
+	// ADR-052 / ADR-053: schedule firings flow through the runtime channel.
+	// POST to api-server's harness API; the api-server inserts a runtime_events
+	// row (kind=trigger), bumps the agent's version, upserts the outbox row,
+	// and enqueues the BullMQ delivery. The agent's event loop ultimately
+	// calls runtime.v1.events.trigger which is idempotent on event id.
+	body := map[string]any{
+		"scheduleId": scheduleName,
+		"task":       spec.Task,
 	}
 	if len(spec.MCPServers) > 0 {
-		trigger["mcpServers"] = spec.MCPServers
+		body["mcpServers"] = spec.MCPServers
 	}
 	if spec.SessionMode != "" {
-		trigger["sessionMode"] = spec.SessionMode
+		body["sessionMode"] = spec.SessionMode
 	}
-	triggerJSON, _ := json.Marshal(trigger)
-	filename := fmt.Sprintf("/home/agent/.triggers/%d.json", time.Now().UnixMilli())
-	tmpFilename := filename + ".tmp"
-
-	podName := agentName + "-0"
-	cmd := []string{"sh", "-c", fmt.Sprintf("mkdir -p /home/agent/.triggers && cat > %s << 'TRIGGER_EOF'\n%s\nTRIGGER_EOF\nmv %s %s", tmpFilename, string(triggerJSON), tmpFilename, filename)}
-
-	if s.restCfg != nil {
-		req := s.client.CoreV1().RESTClient().Post().
-			Resource("pods").
-			Name(podName).
-			Namespace(s.config.Namespace).
-			SubResource("exec").
-			VersionedParams(&corev1.PodExecOptions{
-				Container: "agent",
-				Command:   cmd,
-				Stdout:    true,
-				Stderr:    true,
-			}, scheme.ParameterCodec)
-
-		exec, err := remotecommand.NewSPDYExecutor(s.restCfg, "POST", req.URL())
-		if err != nil {
-			return fmt.Errorf("exec into %s: %w", podName, err)
-		}
-		if err := exec.StreamWithContext(ctx, remotecommand.StreamOptions{
-			Stdout: io.Discard,
-			Stderr: io.Discard,
-		}); err != nil {
-			return fmt.Errorf("exec stream to %s: %w", podName, err)
-		}
+	bodyJSON, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("marshal schedule-fired body: %w", err)
 	}
-	slog.Info("trigger delivered", "pod", podName, "file", filename)
+
+	// Tests construct the scheduler without a REST config (s.restCfg == nil)
+	// — the legacy exec path used the same gate. Mirror it: skip the HTTP
+	// dispatch and treat fire as a no-op so unit tests can still exercise
+	// EnsureReady + the cron entry plumbing.
+	if s.restCfg == nil {
+		slog.Info("trigger skipped (no rest config — likely a test)", "agent", agentName, "schedule", scheduleName)
+		return nil
+	}
+
+	url := fmt.Sprintf("%s/api/agents/%s/internal/schedule-fired", s.config.APIServerURL(), agentName)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(bodyJSON))
+	if err != nil {
+		return fmt.Errorf("build schedule-fired request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("POST schedule-fired %s: %w", agentName, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("POST schedule-fired %s: %s %s", agentName, resp.Status, string(respBody))
+	}
+	slog.Info("trigger enqueued", "agent", agentName, "schedule", scheduleName)
 	return nil
 }

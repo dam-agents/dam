@@ -1,0 +1,37 @@
+# Default runtime-manifest.yaml for platform-base. Concrete agent images
+# may override (by COPY-ing a different file at workspace/runtime-manifest.yaml).
+#
+# See docs/architecture/connections.md and ADR-052 for the schema.
+manifestVersion: 1
+
+drivers:
+  # `file` kind — params per contribution; impl needs no extra config.
+  file:
+    impl: file
+
+  # `mcp-entry` kind — every entry merges into one $HOME/.mcp.json. The
+  # platform-outbound entry plus per-Connection MCP servers all converge
+  # here. Claude Code reads this path; harnesses that read elsewhere must
+  # override (see packages/agents/<harness>/workspace/runtime-manifest.yaml).
+  mcp-entry:
+    impl: file
+    path: "$HOME/.mcp.json"
+    format: json
+    mergeMode: key-targeted
+    keyPath: mcpServers
+
+  # `skill-ref` kind — installs into the shared .agents/skills tree;
+  # symlinks under .claude/skills and .pi/agent/skills surface them to
+  # both harnesses (platform-base/Dockerfile).
+  skill-ref:
+    impl: skill-install
+    paths:
+      - "$HOME/.agents/skills"
+
+capabilities:
+  contributions:
+    - file
+    - mcp-entry
+    - skill-ref
+  events:
+    - trigger

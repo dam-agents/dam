@@ -24,6 +24,7 @@ import type { ChannelManager } from "./../../modules/channels/services/channel-m
 import type { ChannelSecretStore } from "./../../modules/channels/infrastructure/channel-secret-store.js";
 import type { PodFilesBus } from "../../modules/pod-files/bus.js";
 import type { FileSpec } from "../../modules/pod-files/types.js";
+import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
 
 export interface HarnessApiServerAppDeps {
   config: Config;
@@ -37,6 +38,8 @@ export interface HarnessApiServerAppDeps {
   // ADR-052: agent-callable runtime channel routes.
   runtimeHello: RuntimeDeliveryService;
   triggerEventHandler: TriggerEventHandler;
+  // ADR-053: controller schedule-fired hook.
+  runtimeMutator: RuntimeMutator;
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
@@ -51,6 +54,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     seedSources,
     runtimeHello,
     triggerEventHandler,
+    runtimeMutator,
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
@@ -69,6 +73,8 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     agentHome: config.agentHome,
     runtimeHello,
     triggerEventHandler,
+    db,
+    runtimeMutator,
     composeSkills: (owner) =>
       composeSkillsModule(
         api,

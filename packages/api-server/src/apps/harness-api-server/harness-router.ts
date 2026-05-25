@@ -12,8 +12,11 @@ import {
 } from "./pod-files-events.js";
 import { resolveAgent } from "./agent-auth.js";
 import { mountRuntimeTrpc } from "./runtime-trpc.js";
+import { mountScheduleFiredRoute } from "./schedule-fired.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import type { Db } from "db";
+import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
 
 export interface TriggerRequest {
   agentId: string;
@@ -39,6 +42,9 @@ export function createHarnessRouter(deps: {
   // ADR-052: runtime channel surface on the harness API.
   runtimeHello: RuntimeDeliveryService;
   triggerEventHandler: TriggerEventHandler;
+  // ADR-053: schedule-fired hook for the controller's cron during migration.
+  db: Db;
+  runtimeMutator: RuntimeMutator;
 }) {
   const app = new Hono();
 
@@ -77,6 +83,11 @@ export function createHarnessRouter(deps: {
     k8s: deps.k8s,
     hello: deps.runtimeHello,
     triggerHandler: deps.triggerEventHandler,
+  });
+  mountScheduleFiredRoute(app, {
+    db: deps.db,
+    k8s: deps.k8s,
+    runtimeMutator: deps.runtimeMutator,
   });
 
   return app;
