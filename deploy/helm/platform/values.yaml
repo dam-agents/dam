@@ -600,6 +600,16 @@ agentTemplates:
       tag: ""
     storageSize: "5Gi"
 
+  - name: pi-agent
+    enabled: true
+    description: "Pi coding agent with multi-LLM support"
+    image:
+      repository: quay.io/dam-agents/pi-agent
+      tag: ""
+    storageSize: "5Gi"
+    skillPaths:
+      - $HOME/.pi/agent/skills/
+
   - name: bob
     enabled: true
     description: "Bob shell agent"
