@@ -17,18 +17,6 @@ export function useCreateEgressRule() {
   });
 }
 
-export function useUpdateEgressRule() {
-  return useMutation({
-    ...trpc.egressRules.update.mutationOptions(),
-    meta: {
-      // Editing flips source to 'manual'; refetch so the row's badge
-      // reflects user-owned state and connection revoke won't touch it.
-      invalidates: [egressRulesKeys.all],
-      errorToast: "Couldn't update egress rule",
-    },
-  });
-}
-
 export function useRevokeEgressRule() {
   return useMutation({
     ...trpc.egressRules.revoke.mutationOptions(),
