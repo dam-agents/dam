@@ -205,6 +205,12 @@ export type { Brand } from "./modules/brand/types.js";
 export { authConfigSchema } from "./modules/auth/types.js";
 export type { AuthConfig } from "./modules/auth/types.js";
 
+// Secret-store handles (ADR-051) — store-agnostic references used inside
+// Connection.auth and anywhere the wire shape needs to point at credential
+// material without naming the backing store.
+export { secretRef } from "./modules/secret-store/types.js";
+export type { SecretRef } from "./modules/secret-store/types.js";
+
 // Runtime channel (ADR-052) — harness API contracts. Wire types
 // (Contribution, Event, applyState, hello payloads) are re-exported from
 // agent-runtime-api so the UI can import them from a single place.

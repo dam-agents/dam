@@ -59,6 +59,10 @@ import {
   createStartTriggerSessionPort,
 } from "./modules/runtime-delivery/index.js";
 import {
+  createKubernetesSecretStore,
+  createSecretStoreRegistry,
+} from "./modules/secret-store/index.js";
+import {
   composeForksModule,
   startOnForeignReplySaga,
   startOnSlackTurnRelayedSaga,
@@ -95,6 +99,13 @@ const { db, sql } = createDb(config.databaseUrl);
 const k8sClient = createK8sClient(api, config.namespace);
 const agentsRepo = createAgentsRepository(k8sClient);
 const channelSecretStore = createChannelSecretStore(k8sClient);
+
+// ADR-051: cross-cutting SecretStore registry. The K8s adapter is the only
+// implementation today; future deployments register a Vault / AWS SM
+// adapter alongside (or instead) and the api-server's domain code doesn't
+// change. Callers depend on the SecretStore port, not the K8s client.
+const secretStores = createSecretStoreRegistry();
+secretStores.register(createKubernetesSecretStore({ k8s: k8sClient }));
 
 const k8sCleanupSub = startK8sCleanupSaga(k8sClient, channelSecretStore);
 const channelCleanupSub = startChannelCleanupSaga(
