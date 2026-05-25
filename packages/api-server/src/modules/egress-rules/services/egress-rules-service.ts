@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { TRPCError } from "@trpc/server";
 import type {
   EgressPreset,
   EgressRuleCreateInput,
@@ -79,7 +80,7 @@ export function createEgressRulesService(
           reason: "not-owner",
           detail: { surface: "egress-rule.create" },
         });
-        throw new Error("agent not found");
+        throw new TRPCError({ code: "NOT_FOUND", message: "agent not found" });
       }
       const row = await deps.repo.insert({
         id: randomUUID(),
@@ -137,16 +138,27 @@ export function createEgressRulesService(
             detail: { surface: "egress-rule.update", ruleId: input.id },
           });
         }
-        throw new Error("egress rule not found");
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "egress rule not found",
+        });
       }
+      const method = input.method ?? rule.method;
+      const pathPattern = input.pathPattern ?? rule.pathPattern;
+      const verdict = input.verdict ?? rule.verdict;
       const updated = await deps.repo.updatePromoteToManual({
         id: input.id,
-        method: input.method,
-        pathPattern: input.pathPattern,
-        verdict: input.verdict,
+        method,
+        pathPattern,
+        verdict,
         decidedBy: deps.ownerSub,
       });
-      if (!updated) throw new Error("egress rule not found");
+      if (!updated) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "egress rule not found",
+        });
+      }
       securityLog("info", "egress_rule.update", {
         category: "authz-list",
         actor: deps.ownerSub,
@@ -164,10 +176,7 @@ export function createEgressRulesService(
       // The user may have just narrowed `(host, *, *)` to `(host, GET, /v1/x)`,
       // which promotes the host to L7 if it wasn't already. Same idempotent
       // ensure as create.
-      if (
-        needsL7Promotion(input.method, input.pathPattern) &&
-        deps.allowOnlySecrets
-      ) {
+      if (needsL7Promotion(method, pathPattern) && deps.allowOnlySecrets) {
         await deps.allowOnlySecrets.ensure(deps.ownerSub, updated.host);
       }
       return toView(updated);
@@ -203,7 +212,7 @@ export function createEgressRulesService(
           reason: "not-owner",
           detail: { surface: "egress-rule.preset" },
         });
-        throw new Error("agent not found");
+        throw new TRPCError({ code: "NOT_FOUND", message: "agent not found" });
       }
       if (!deps.presetSeeder) return;
       // The seeder sweeps prior `preset:*` rows before inserting the new
