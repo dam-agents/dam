@@ -1,35 +1,33 @@
 import { serve } from "@hono/node-server";
 import type { CoreV1Api } from "@kubernetes/client-node";
-import { SessionMode } from "api-server-api";
+import type { RuntimeDeliveryService } from "api-server-api";
 import type { Db } from "db";
 import { createK8sClient } from "../../modules/agents/infrastructure/k8s.js";
-import { LABEL_OWNER } from "../../modules/agents/infrastructure/labels.js";
 import {
-  composeAgentsModule,
-  createKeycloakUserDirectory,
-} from "../../modules/agents/index.js";
-import { composeTemplatesModule } from "../../modules/templates/index.js";
-import { composeSchedulesModule } from "../../modules/schedules/index.js";
-import { composeSessionsModule } from "../../modules/sessions/index.js";
+  composeSchedulesForOwner,
+  type SchedulesBoot,
+} from "../../modules/schedules/index.js";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
 import type { SkillSourceSeed } from "../../modules/skills/index.js";
-import { createAcpClient } from "../../core/acp-client.js";
 import { createHarnessRouter } from "./harness-router.js";
 import type { Config } from "../../config.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
-import type { ChannelSecretStore } from "./../../modules/channels/infrastructure/channel-secret-store.js";
-import type { PodFilesBus } from "../../modules/pod-files/bus.js";
-import type { FileSpec } from "../../modules/pod-files/types.js";
+import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
 
 export interface HarnessApiServerAppDeps {
   config: Config;
   api: CoreV1Api;
   db: Db;
   channelManager: ChannelManager;
-  channelSecretStore: ChannelSecretStore;
-  podFilesBus: PodFilesBus;
-  podFilesSnapshot: (owner: string, agentId: string) => Promise<FileSpec[]>;
   seedSources: SkillSourceSeed[];
+  // ADR-052: agent-callable runtime channel routes.
+  runtimeHello: RuntimeDeliveryService;
+  // ADR-053: shared BullMQ-backed scheduler. The MCP-side schedule tools
+  // build a per-owner service against this boot composition.
+  schedulesBoot: SchedulesBoot;
+  // ADR-052: enqueues runtime channel pushes after agent_skills changes
+  // so the agent's `skill-install` driver reconciles.
+  runtimeMutator: RuntimeMutator;
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
@@ -38,26 +36,19 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     api,
     db,
     channelManager,
-    channelSecretStore,
-    podFilesBus,
-    podFilesSnapshot,
     seedSources,
+    runtimeHello,
+    schedulesBoot,
+    runtimeMutator,
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
 
-  const userDirectory = createKeycloakUserDirectory({
-    keycloakUrl: config.keycloakUrl,
-    keycloakRealm: config.keycloakRealm,
-    clientId: config.keycloakApiClientId,
-    clientSecret: config.keycloakApiClientSecret,
-  });
-
   const app = createHarnessRouter({
     channelManager,
     k8s: k8sClient,
-    podFiles: { bus: podFilesBus, fetchSnapshot: podFilesSnapshot },
     agentHome: config.agentHome,
+    runtimeHello,
     composeSkills: (owner) =>
       composeSkillsModule(
         api,
@@ -66,75 +57,10 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         db,
         seedSources,
         config.brand.name,
+        runtimeMutator,
       ),
     schedulesServiceFor: (owner) =>
-      composeSchedulesModule(api, config.namespace, owner).schedules,
-    handleTrigger: async (body) => {
-      const mode = body.sessionMode ?? "fresh";
-      const sessionType = "schedule_cron";
-
-      // Look up the instance's real owner from its ConfigMap. Composing
-      // with "_system" would short-circuit sessions.create's isOwnedAgent
-      // check and silently drop the DB row — so the scheduled session would
-      // fire, complete, and leave no trace in the sessions table.
-      const agentCm = await k8sClient.getConfigMap(body.agentId);
-      const owner = agentCm?.metadata?.labels?.[LABEL_OWNER];
-      if (!owner) {
-        throw new Error(`agent ${body.agentId}: missing owner label`);
-      }
-      const { readSpec: readTemplateSpec } = composeTemplatesModule(
-        api,
-        config.namespace,
-      );
-      const { isOwnedAgent } = composeAgentsModule({
-        api,
-        namespace: config.namespace,
-        owner,
-        db,
-        userDirectory,
-        channelSecretStore,
-        readTemplateSpec,
-      });
-      const { isOwnedSchedule } = composeSchedulesModule(
-        api,
-        config.namespace,
-        owner,
-      );
-      const { sessions } = composeSessionsModule({
-        db,
-        namespace: config.namespace,
-        isOwnedAgent,
-        isOwnedSchedule,
-      });
-
-      let resumeSessionId: string | undefined;
-      if (mode === "continuous") {
-        const found = await sessions.findByScheduleId(body.schedule);
-        resumeSessionId = found?.sessionId;
-      }
-
-      const acp = createAcpClient({
-        namespace: config.namespace,
-        instanceName: body.agentId,
-      });
-
-      return acp.triggerSession(
-        resumeSessionId
-          ? { prompt: body.task, mcpServers: body.mcpServers, resumeSessionId }
-          : {
-              prompt: body.task,
-              mcpServers: body.mcpServers,
-              onSessionCreated: (sid) =>
-                sessions.create(
-                  sid,
-                  body.agentId,
-                  SessionMode.Chat,
-                  sessionType as any,
-                  body.schedule,
-                ),
-            },
-      );
-    },
+      composeSchedulesForOwner({ boot: schedulesBoot, owner }).schedules,
   });
 
   const server = serve(

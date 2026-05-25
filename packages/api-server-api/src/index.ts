@@ -135,11 +135,33 @@ export type {
   AppConnectionStatus,
   AppConnectionView,
   ConnectionsService,
+  Connection,
+  ConnectionStatus,
+  ConnectionView,
+  ConnectionTemplateView,
+  TemplateInput as ConnectionTemplateInput,
+  TemplateInputState as ConnectionTemplateInputState,
+  ConnectionCategory,
+  AgentConnections,
+  AuthConfig as ConnectionAuthConfig,
+  AuthKind as ConnectionAuthKind,
 } from "./modules/connections/types.js";
 export {
+  authConfig as connectionAuthConfigSchema,
+  authKind as connectionAuthKindSchema,
+  connection as connectionWireSchema,
+  connectionView as connectionViewSchema,
+  connectionTemplateView as connectionTemplateViewSchema,
+  connectionStatus as connectionStatusSchema,
+  connectionCategory as connectionCategorySchema,
+} from "./modules/connections/types.js";
+export {
+  connectionCreateInputSchema,
+  connectionDiscoverMcpInputSchema,
   connectionGetAgentConnectionsInputSchema,
   connectionSetAgentConnectionsInputSchema,
 } from "./modules/connections/schemas.js";
+export type { ConnectionCreateInput } from "./modules/connections/schemas.js";
 
 export {
   SessionType,
@@ -292,3 +314,47 @@ export type { Brand } from "./modules/brand/types.js";
 // Auth config
 export { authConfigSchema } from "./modules/auth/types.js";
 export type { AuthConfig } from "./modules/auth/types.js";
+
+// Secret-store handles (ADR-051) — store-agnostic references used inside
+// Connection.auth and anywhere the wire shape needs to point at credential
+// material without naming the backing store.
+export { secretRef } from "./modules/secret-store/types.js";
+export type { SecretRef } from "./modules/secret-store/types.js";
+
+// Runtime channel (ADR-052) — harness API contracts. Wire types
+// (Contribution, Event, applyState, hello payloads) are re-exported from
+// agent-runtime-api so the UI can import them from a single place.
+export type { HarnessRouter } from "./harness-router.js";
+export type { HarnessContext } from "./harness-context.js";
+export { helloInput, helloResult } from "./modules/runtime/types.js";
+export type {
+  HelloInput,
+  HelloResult,
+  RuntimeDeliveryService,
+} from "./modules/runtime/types.js";
+export {
+  contribution,
+  contributionKind,
+  event as runtimeEvent,
+  eventKind as runtimeEventKind,
+  capabilities,
+  mergeMode as contributionMergeMode,
+  fileFormat,
+  hostInjection,
+  applyStateInput,
+  applyStateResult,
+  stateSlice,
+} from "agent-runtime-api";
+export type {
+  Contribution,
+  ContributionKind,
+  Event as RuntimeEvent,
+  EventKind as RuntimeEventKind,
+  Capabilities,
+  MergeMode as ContributionMergeMode,
+  FileFormat,
+  HostInjection,
+  ApplyStateInput,
+  ApplyStateResult,
+  StateSlice,
+} from "agent-runtime-api";

@@ -9,10 +9,7 @@ import {
   type StepStatus,
 } from "../lib/onboarding.js";
 import { useAgents, useAgentsList } from "../modules/agents/api/queries.js";
-import {
-  useAppConnections,
-  useMcpConnections,
-} from "../modules/connections/api/queries.js";
+import { useAppConnections } from "../modules/connections/api/queries.js";
 import { useSecrets } from "../modules/secrets/api/queries.js";
 import { useStore } from "../store.js";
 import { isCustomSecret, isProviderPresetType } from "../types.js";
@@ -33,21 +30,14 @@ export function SetupProgressBar() {
   });
   const { data: appConnections = [], isSuccess: appConnectionsLoaded } =
     useAppConnections({ enabled: onOnboardingView });
-  const { data: mcpConnections = [], isSuccess: mcpConnectionsLoaded } =
-    useMcpConnections({ enabled: onOnboardingView });
-  const fullyLoaded =
-    agentsLoaded &&
-    secretsLoaded &&
-    appConnectionsLoaded &&
-    mcpConnectionsLoaded;
+  const fullyLoaded = agentsLoaded && secretsLoaded && appConnectionsLoaded;
   const shouldRender = onOnboardingView && fullyLoaded && agents.length === 0;
 
   if (!shouldRender) return null;
 
   const hasProvider = secrets.some((s) => isProviderPresetType(s.type));
   const hasConnections =
-    appConnections.some((c) => c.status === "connected") ||
-    mcpConnections.some((c) => !c.expired) ||
+    appConnections.some((c) => c.status === "active") ||
     secrets.some(isCustomSecret);
 
   const state = computeOnboardingState({

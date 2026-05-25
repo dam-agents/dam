@@ -24,7 +24,10 @@ import {
   createKeycloakUserDirectory,
 } from "../../modules/agents/index.js";
 import { composeTemplatesModule } from "../../modules/templates/index.js";
-import { composeSchedulesModule } from "../../modules/schedules/index.js";
+import {
+  composeSchedulesForOwner,
+  type SchedulesBoot,
+} from "../../modules/schedules/index.js";
 import { composeSessionsModule } from "../../modules/sessions/index.js";
 import { upsertSession } from "../../modules/sessions/infrastructure/sessions-repository.js";
 import { SessionMode, SessionType } from "api-server-api";
@@ -43,19 +46,21 @@ import { createTerminalRelay } from "./terminal-relay.js";
 import { getSessionMode } from "../../modules/sessions/infrastructure/sessions-repository.js";
 import { createOAuthRoutes } from "./oauth.js";
 import { mountBrandIconRoutes } from "./brand-icon.js";
-import { createOAuthAppRegistry } from "../../modules/connections/infrastructure/oauth-apps.js";
 import type { Config } from "../../config.js";
 import { createAuth, ForbiddenError } from "./auth.js";
 import { createK8sSecretsPort } from "./../../modules/secrets/infrastructure/k8s-secrets-port.js";
 import { createSecretsService } from "./../../modules/secrets/services/secrets-service.js";
-import { createK8sConnectionsPort } from "./../../modules/connections/infrastructure/k8s-connections-port.js";
-import { createConnectionsService } from "./../../modules/connections/services/connections-service.js";
+import {
+  composeConnectionsAtBoot,
+  composeConnectionsForOwner,
+} from "./../../modules/connections/compose.js";
 import { createAgentGrantsPort } from "./../../modules/agents/infrastructure/agent-grants-port.js";
+import type { SecretStoreRegistry } from "./../../modules/secret-store/index.js";
+import type { RuntimeMutator } from "./../../modules/runtime-delivery/index.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { ChannelSecretStore } from "./../../modules/channels/infrastructure/channel-secret-store.js";
 import type { IdentityLinkService } from "./../../modules/channels/services/identity-link-service.js";
 import type { SlackOAuthPending } from "../../modules/channels/infrastructure/slack.js";
-import type { PodFilesPublisher } from "../../modules/pod-files/publisher.js";
 import {
   composeApprovalsService,
   type ApprovalsRelayService,
@@ -83,7 +88,6 @@ export interface ApiServerAppDeps {
   identityLinkService: IdentityLinkService;
   pendingSlackOAuthFlows: Map<string, SlackOAuthPending>;
   pendingTelegramOAuthFlows: Map<string, TelegramOAuthPending>;
-  podFilesPublisher: PodFilesPublisher;
   seedSources: SkillSourceSeed[];
   redisBus: RedisBus;
   approvalsRelay: ApprovalsRelayService;
@@ -94,6 +98,10 @@ export interface ApiServerAppDeps {
    *  module's per-agent durable state; the orphan-sweeper saga is the
    *  belt-and-suspenders for anything missed here. */
   agentCleanupHooks: readonly AgentCleanupHook[];
+  // ADR-051 / ADR-053: Connections + runtime-delivery shared services.
+  secretStores: SecretStoreRegistry;
+  runtimeMutator: RuntimeMutator;
+  schedulesBoot: SchedulesBoot;
 }
 
 export function startApiServerApp(deps: ApiServerAppDeps) {
@@ -106,7 +114,6 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     identityLinkService,
     pendingSlackOAuthFlows,
     pendingTelegramOAuthFlows,
-    podFilesPublisher,
     seedSources,
     redisBus,
     approvalsRelay,
@@ -114,10 +121,54 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     presetSeeder,
     trustedHosts,
     agentCleanupHooks,
+    secretStores,
+    runtimeMutator,
+    schedulesBoot,
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
   const agentsRepo = createAgentsRepository(k8sClient);
+
+  // Connection Template catalog + OAuth engine + refresh loop — built
+  // once per process. Per-request composition wraps these with owner
+  // identity for the user-facing service. Operator-supplied OAuth
+  // credentials become template defaults; templates always appear in
+  // the catalog and the UI fills in whichever fields the operator left
+  // blank. GitHub Enterprise surfaces in the catalog regardless of
+  // operator config — the user can supply host + clientId + clientSecret
+  // when no operator default exists.
+  const connectionsBoot = composeConnectionsAtBoot({
+    db,
+    secretStore: secretStores.default(),
+    operatorCredentials: {
+      ...(config.defaultGithubClientId && config.defaultGithubClientSecret
+        ? {
+            github: {
+              clientId: config.defaultGithubClientId,
+              clientSecret: config.defaultGithubClientSecret,
+              ...(config.defaultGithubAppSlug
+                ? { appSlug: config.defaultGithubAppSlug }
+                : {}),
+            },
+          }
+        : {}),
+      githubEnterprise: {
+        ...(config.defaultGithubEnterpriseHost
+          ? { host: config.defaultGithubEnterpriseHost }
+          : {}),
+        ...(config.defaultGithubEnterpriseClientId
+          ? { clientId: config.defaultGithubEnterpriseClientId }
+          : {}),
+        ...(config.defaultGithubEnterpriseClientSecret
+          ? { clientSecret: config.defaultGithubEnterpriseClientSecret }
+          : {}),
+        ...(config.defaultGithubEnterpriseAppSlug
+          ? { appSlug: config.defaultGithubEnterpriseAppSlug }
+          : {}),
+      },
+    },
+  });
+  connectionsBoot.refreshLoop.start();
 
   const userDirectory = createKeycloakUserDirectory({
     keycloakUrl: config.keycloakUrl,
@@ -201,40 +252,14 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
 
   app.use("/api/*", auth.middleware);
 
-  const oauthApps = createOAuthAppRegistry({
-    github: {
-      ...(config.defaultGithubClientId
-        ? { clientId: config.defaultGithubClientId }
-        : {}),
-      ...(config.defaultGithubClientSecret
-        ? { clientSecret: config.defaultGithubClientSecret }
-        : {}),
-      ...(config.defaultGithubAppSlug
-        ? { appSlug: config.defaultGithubAppSlug }
-        : {}),
-    },
-    githubEnterprise: {
-      ...(config.defaultGithubEnterpriseHost
-        ? { host: config.defaultGithubEnterpriseHost }
-        : {}),
-      ...(config.defaultGithubEnterpriseClientId
-        ? { clientId: config.defaultGithubEnterpriseClientId }
-        : {}),
-      ...(config.defaultGithubEnterpriseClientSecret
-        ? { clientSecret: config.defaultGithubEnterpriseClientSecret }
-        : {}),
-      ...(config.defaultGithubEnterpriseAppSlug
-        ? { appSlug: config.defaultGithubEnterpriseAppSlug }
-        : {}),
-    },
-  });
   app.route(
     "/",
     createOAuthRoutes({
+      db,
+      secretStore: secretStores.default(),
+      engine: connectionsBoot.oauthEngine,
+      templates: connectionsBoot.templates,
       uiBaseUrl: config.uiBaseUrl,
-      k8sClient,
-      apps: oauthApps,
-      brandName: config.brand.name,
     }),
   );
 
@@ -516,11 +541,11 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       presetSeeder,
       cleanupHooks: agentCleanupHooks,
     });
-    const { schedules, isOwnedSchedule } = composeSchedulesModule(
-      api,
-      config.namespace,
-      user.sub,
-    );
+    const { schedules, isOwnedSchedule } = composeSchedulesForOwner({
+      boot: schedulesBoot,
+      owner: user.sub,
+      agentExists: async (agentId) => (await agents.get(agentId)) !== null,
+    });
     const { sessions } = composeSessionsModule({
       db,
       namespace: config.namespace,
@@ -541,6 +566,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       db,
       seedSources,
       config.brand.name,
+      runtimeMutator,
     );
     const grants = createAgentGrantsPort(k8sClient, user.sub);
     const secrets = createSecretsService({
@@ -551,13 +577,17 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       listOwnedAgentSummaries: async () =>
         (await agents.list()).map((a) => ({ id: a.id, name: a.name })),
     });
-    const connections = createConnectionsService({
-      port: createK8sConnectionsPort(k8sClient, user.sub),
-      grants,
-      owner: user.sub,
-      podFiles: podFilesPublisher,
-      apps: oauthApps,
-      connectionRules: createConnectionRulesSyncAdapter(db),
+    const connections = composeConnectionsForOwner({
+      ownerId: user.sub,
+      db,
+      templates: connectionsBoot.templates,
+      oauthEngine: connectionsBoot.oauthEngine,
+      secretStore: secretStores.default(),
+      runtimeMutator,
+      agentsRepo,
+      connectionRulesSync: createConnectionRulesSyncAdapter(db),
+      oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
+      brandName: config.brand.name,
     });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agents.get(agentId)) !== null && ownerSub === user.sub;

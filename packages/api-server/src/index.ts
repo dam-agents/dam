@@ -48,11 +48,15 @@ import {
   listAuthorizedThreads,
   deleteThreadsByAgent,
 } from "./modules/channels/infrastructure/telegram-threads-repository.js";
-import { createOAuthRefreshService } from "./modules/connections/services/oauth-refresh-service.js";
-import { createPodFilesBus } from "./modules/pod-files/bus.js";
-import { createPodFilesPublisher } from "./modules/pod-files/publisher.js";
-import { buildPodFilesRegistry } from "./modules/pod-files/registry.js";
-import { createGrantedConnectionsAdapter } from "./modules/pod-files/adapters/granted-connections.js";
+import {
+  composeRuntimeDelivery,
+  createBullConnection,
+} from "./modules/runtime-delivery/index.js";
+import { composeSchedulesAtBoot } from "./modules/schedules/index.js";
+import {
+  createKubernetesSecretStore,
+  createSecretStoreRegistry,
+} from "./modules/secret-store/index.js";
 import {
   composeForksModule,
   startOnForeignReplySaga,
@@ -90,6 +94,13 @@ const { db, sql } = createDb(config.databaseUrl);
 const k8sClient = createK8sClient(api, config.namespace);
 const agentsRepo = createAgentsRepository(k8sClient);
 const channelSecretStore = createChannelSecretStore(k8sClient);
+
+// ADR-051: cross-cutting SecretStore registry. The K8s adapter is the only
+// implementation today; future deployments register a Vault / AWS SM
+// adapter alongside (or instead) and the api-server's domain code doesn't
+// change. Callers depend on the SecretStore port, not the K8s client.
+const secretStores = createSecretStoreRegistry();
+secretStores.register(createKubernetesSecretStore({ k8s: k8sClient }));
 
 const k8sCleanupSub = startK8sCleanupSaga(k8sClient, channelSecretStore);
 const channelCleanupSub = startChannelCleanupSaga(
@@ -239,26 +250,6 @@ const channelManager = createChannelManager({
   channelSecretStore,
 });
 
-// Pod-files plumbing — see 034-pod-files-push. The github-enterprise
-// hosts.yml producer is the first registry entry; future producers (secrets-
-// as-files, schedule-driven config, …) plug into the same publisher and SSE
-// channel without changes elsewhere.
-const podFilesBus = createPodFilesBus();
-const podFilesRegistry = buildPodFilesRegistry({
-  // Agent HOME from the helm chart. Must agree with the controller's mount
-  // path; both read the same chart value.
-  agentHome: config.agentHome,
-  // Resolves an agent's granted connection records against live K8s state
-  // (instance CM annotations for grants, owner-scoped connection Secrets
-  // for the records). Two API calls per snapshot — fine for the SSE-connect
-  // and grant-change cadence.
-  fetchAgentGrantedConnections: createGrantedConnectionsAdapter(k8sClient),
-});
-const podFilesPublisher = createPodFilesPublisher({
-  bus: podFilesBus,
-  registry: podFilesRegistry,
-});
-
 if (!config.redisUrl)
   throw new Error(
     "REDIS_URL is required (Redis is a platform primitive — see ADR-036)",
@@ -266,6 +257,14 @@ if (!config.redisUrl)
 const redisBus = createRedisBus(config.redisUrl, {
   password: config.redisPassword ?? undefined,
 });
+
+// ADR-053: BullMQ connection for the runtime-channel state queue. Held
+// separate from the redis-bus client because BullMQ workers block on
+// BRPOPLPUSH and can't share a connection with pub/sub.
+const bullConnection = createBullConnection(
+  config.redisUrl,
+  config.redisPassword ?? undefined,
+);
 
 // Seed list for the `trusted` egress preset (ADR-035).
 // Read once at boot; the helm ConfigMap is the operator-editable source.
@@ -342,6 +341,36 @@ const agentArtifactsSweeper = createAgentArtifactsSweeper({
 });
 agentArtifactsSweeper.start();
 
+// ADR-052 / ADR-053: Runtime Delivery context. Composed before the user-
+// facing api-server app and the harness API server because both consume
+// pieces of it (runtime mutator + hello). Per-kind event handlers (e.g.
+// trigger) dispatch agent-side — no api-server callback.
+const runtimeDelivery = composeRuntimeDelivery({
+  db,
+  namespace: config.namespace,
+  bullConnection,
+  // Permissive `isRunning` for now — the worker treats stale dispatches as
+  // throws + BullMQ retries; the cron sweep is the durability path. A real
+  // ConfigMap-watch-fed cache is a follow-up optimization.
+  agentRunningPort: { isRunning: () => true },
+});
+runtimeDelivery.sweep.start();
+
+// ADR-053: BullMQ-owned scheduler. One queue + worker per replica;
+// every replica calls `restoreAll()` on boot. `setNextRun` writes are
+// idempotent and `queue.add` with a stable jobId rejects re-adds, so
+// concurrent restores converge on one pending job per schedule.
+const schedulesBoot = composeSchedulesAtBoot({
+  db,
+  bullConnection,
+  runtimeMutator: runtimeDelivery.runtimeMutator,
+});
+schedulesBoot.runner.restoreAll().catch((err) => {
+  process.stderr.write(
+    `[schedules] restoreAll failed: ${(err as Error).message}\n`,
+  );
+});
+
 const { server: apiServer } = startApiServerApp({
   config,
   api,
@@ -351,7 +380,6 @@ const { server: apiServer } = startApiServerApp({
   identityLinkService,
   pendingSlackOAuthFlows,
   pendingTelegramOAuthFlows,
-  podFilesPublisher,
   seedSources,
   redisBus,
   approvalsRelay,
@@ -359,23 +387,23 @@ const { server: apiServer } = startApiServerApp({
   presetSeeder,
   trustedHosts,
   agentCleanupHooks,
+  secretStores,
+  runtimeMutator: runtimeDelivery.runtimeMutator,
+  schedulesBoot,
 });
 
-// Re-mints OAuth access tokens from stored refresh tokens before they expire
-// (ADR-033 § "Token provisioning and refresh"). Single-process — multi-replica
-// leader election is a follow-up.
-const oauthRefreshService = createOAuthRefreshService({ k8sClient });
-oauthRefreshService.start();
+// OAuth access-token refresh now lives on the new SecretStore-backed
+// loop, started inside startApiServerApp via composeConnectionsAtBoot().
 
 const { server: harnessApiServer } = startHarnessApiServerApp({
   config,
   api,
   db,
   channelManager,
-  channelSecretStore,
-  podFilesBus,
-  podFilesSnapshot: podFilesPublisher.compute,
   seedSources,
+  runtimeHello: runtimeDelivery.hello,
+  schedulesBoot,
+  runtimeMutator: runtimeDelivery.runtimeMutator,
 });
 
 // ADR-041: instance identity for ext-authz now flows from the per-instance
@@ -407,10 +435,13 @@ async function shutdown() {
   skillsCleanupSub.unsubscribe();
   onForeignReplySub.unsubscribe();
   onSlackTurnRelayedSub.unsubscribe();
-  await oauthRefreshService.stop();
   await deliverySweeper.stop();
   await agentArtifactsSweeper.stop();
   await channelManager.stopAll();
+  await runtimeDelivery.sweep.stop();
+  await runtimeDelivery.worker.close();
+  await runtimeDelivery.queue.close();
+  await schedulesBoot.close();
   await redisBus.close();
   await sql.end();
   extAuthzGrpcServer.tryShutdown(() => {});

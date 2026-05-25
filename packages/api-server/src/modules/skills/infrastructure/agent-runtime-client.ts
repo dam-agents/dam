@@ -3,18 +3,6 @@ import type { AppRouter } from "agent-runtime-api";
 import type { LocalSkill, Skill } from "api-server-api";
 import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
 
-export interface InstallSkillCall {
-  source: string;
-  name: string;
-  version: string;
-  skillPaths: string[];
-}
-
-export interface UninstallSkillCall {
-  name: string;
-  skillPaths: string[];
-}
-
 export interface PublishSkillCall {
   name: string;
   skillPaths: string[];
@@ -47,13 +35,13 @@ export interface UpstreamGatewayError {
   };
 }
 
-export interface InstallSkillResult {
-  contentHash: string;
-}
-
+/**
+ * Direct tRPC client into the agent-runtime's `skills.*` router. Install
+ * and uninstall flow through `skill-ref` Contributions on the runtime
+ * channel (ADR-052 §"Supersedes ADR-030 in part") — only the read-style
+ * operations and external-write (publish) remain here.
+ */
 export interface AgentRuntimeSkillsClient {
-  install(agentId: string, body: InstallSkillCall): Promise<InstallSkillResult>;
-  uninstall(agentId: string, body: UninstallSkillCall): Promise<void>;
   listLocal(agentId: string, skillPaths: string[]): Promise<LocalSkill[]>;
   publish(agentId: string, body: PublishSkillCall): Promise<PublishSkillResult>;
   scan(agentId: string, source: string): Promise<Skill[]>;
@@ -120,14 +108,6 @@ export function createAgentRuntimeSkillsClient(
   namespace: string,
 ): AgentRuntimeSkillsClient {
   return {
-    install: (agentId, body) =>
-      runWithUpstreamMapping(`agent-runtime install ${agentId}`, async () => {
-        return makeClient(agentId, namespace).skills.install.mutate(body);
-      }),
-    uninstall: (agentId, body) =>
-      runWithUpstreamMapping(`agent-runtime uninstall ${agentId}`, async () => {
-        await makeClient(agentId, namespace).skills.uninstall.mutate(body);
-      }),
     listLocal: async (agentId, skillPaths) => {
       const { skills } = await runWithUpstreamMapping(
         `agent-runtime listLocal ${agentId}`,

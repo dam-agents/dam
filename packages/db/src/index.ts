@@ -11,6 +11,12 @@ export {
   agentSkillPublishes,
   egressRules,
   pendingApprovals,
+  connections,
+  connectionGrants,
+  agents,
+  runtimeStateOutbox,
+  runtimeEvents,
+  schedules,
 } from "./schema.js";
 export {
   eq,
@@ -21,5 +27,6 @@ export {
   isNotNull,
   isNull,
   lt,
+  lte,
   sql,
 } from "drizzle-orm";

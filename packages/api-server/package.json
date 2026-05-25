@@ -26,6 +26,7 @@
     "@trpc/server": "^11.16.0",
     "agent-runtime-api": "workspace:*",
     "api-server-api": "workspace:*",
+    "bullmq": "^5.66.0",
     "chat": "^4.26.0",
     "cron-parser": "^5.5.0",
     "db": "workspace:*",

@@ -1,0 +1,121 @@
+import type { Db } from "db";
+import type { ConnectionsService } from "api-server-api";
+import { createConnectionsRepository } from "./infrastructure/connections-repository.js";
+import {
+  createOAuthEngine,
+  type OAuthEngine,
+} from "./infrastructure/oauth-engine.js";
+import { createConnectionTemplateRegistry } from "./domain/connection-template.js";
+import { buildCatalog, type OperatorCredentials } from "./domain/catalog.js";
+import { createConnectionsService } from "./services/connections-service.js";
+import {
+  createContributionFanOut,
+  type FanOutPort,
+} from "./services/contribution-fanout.js";
+import { createOAuthFlowService } from "./services/oauth-flow.js";
+import {
+  createOAuthRefreshLoop,
+  type OAuthRefreshLoop,
+} from "./services/oauth-refresh.js";
+import type { SecretStore } from "../secret-store/index.js";
+import type { RuntimeMutator } from "../runtime-delivery/index.js";
+import type { AgentsRepository } from "../agents/infrastructure/agents-repository.js";
+import type { ConnectionRulesSync } from "../egress-rules/services/connection-rules-sync.js";
+
+/**
+ * Composes the Connections bounded context (ADR-051). One service per
+ * authenticated request, scoped to `ownerId` (the JWT sub).
+ *
+ * The Template catalog + OAuth engine + refresh loop are process-wide
+ * and stateless; build once at api-server boot and re-use.
+ */
+export interface ConnectionsBootCompose {
+  templates: ReturnType<typeof createConnectionTemplateRegistry>;
+  oauthEngine: OAuthEngine;
+  refreshLoop: OAuthRefreshLoop;
+}
+
+export interface ComposeConnectionsAtBootOpts {
+  db: Db;
+  secretStore: SecretStore;
+  /** Operator-supplied OAuth client credentials per template family.
+   *  Templates without configured creds are filtered out of the catalog
+   *  so the UI doesn't surface "Connect" buttons for integrations this
+   *  deployment can't authenticate. */
+  operatorCredentials?: OperatorCredentials;
+}
+
+export function composeConnectionsAtBoot(
+  opts: ComposeConnectionsAtBootOpts,
+): ConnectionsBootCompose {
+  const templates = createConnectionTemplateRegistry(
+    buildCatalog(opts.operatorCredentials),
+  );
+
+  const oauthEngine = createOAuthEngine();
+  const refreshLoop = createOAuthRefreshLoop({
+    db: opts.db,
+    engine: oauthEngine,
+    templates,
+    secretStore: opts.secretStore,
+  });
+
+  return { templates, oauthEngine, refreshLoop };
+}
+
+export function composeConnectionsForOwner(opts: {
+  ownerId: string;
+  db: Db;
+  templates: ReturnType<typeof createConnectionTemplateRegistry>;
+  oauthEngine: OAuthEngine;
+  secretStore: SecretStore;
+  runtimeMutator: RuntimeMutator;
+  agentsRepo: AgentsRepository;
+  connectionRulesSync: ConnectionRulesSync;
+  oauthCallbackUrl: string;
+  brandName: string;
+}): ConnectionsService {
+  const repo = createConnectionsRepository(opts.db);
+
+  const port: FanOutPort = {
+    async bumpSecretsRev(agentId): Promise<void> {
+      // ADR-040 mechanism: bump an annotation the controller's reconciler
+      // watches. The bump value is monotonic-ish (timestamp suffices —
+      // collisions in the same millisecond just no-op the rev change).
+      await opts.agentsRepo.patchAnnotation(
+        agentId,
+        "agent-platform.ai/secrets-rev",
+        String(Date.now()),
+      );
+    },
+    async syncEgressHosts(input): Promise<void> {
+      await opts.connectionRulesSync.syncForAgent(input);
+    },
+  };
+
+  const fanOut = createContributionFanOut({
+    db: opts.db,
+    port,
+    runtimeMutator: opts.runtimeMutator,
+  });
+
+  const oauthFlow = createOAuthFlowService({
+    engine: opts.oauthEngine,
+    repo,
+    templates: opts.templates,
+    secretStore: opts.secretStore,
+    ownerId: opts.ownerId,
+    callbackUrl: opts.oauthCallbackUrl,
+  });
+
+  return createConnectionsService({
+    ownerId: opts.ownerId,
+    templates: opts.templates,
+    repo,
+    secretStore: opts.secretStore,
+    fanOut,
+    oauthFlow,
+    oauthCallbackUrl: opts.oauthCallbackUrl,
+    brandName: opts.brandName,
+  });
+}
