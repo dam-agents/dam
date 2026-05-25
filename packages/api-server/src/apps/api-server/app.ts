@@ -59,7 +59,6 @@ import type { ChannelManager } from "./../../modules/channels/services/channel-m
 import type { ChannelSecretStore } from "./../../modules/channels/infrastructure/channel-secret-store.js";
 import type { IdentityLinkService } from "./../../modules/channels/services/identity-link-service.js";
 import type { SlackOAuthPending } from "../../modules/channels/infrastructure/slack.js";
-import type { PodFilesPublisher } from "../../modules/pod-files/publisher.js";
 import {
   composeApprovalsService,
   type ApprovalsRelayService,
@@ -87,7 +86,6 @@ export interface ApiServerAppDeps {
   identityLinkService: IdentityLinkService;
   pendingSlackOAuthFlows: Map<string, SlackOAuthPending>;
   pendingTelegramOAuthFlows: Map<string, TelegramOAuthPending>;
-  podFilesPublisher: PodFilesPublisher;
   seedSources: SkillSourceSeed[];
   redisBus: RedisBus;
   approvalsRelay: ApprovalsRelayService;
@@ -113,7 +111,6 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     identityLinkService,
     pendingSlackOAuthFlows,
     pendingTelegramOAuthFlows,
-    podFilesPublisher,
     seedSources,
     redisBus,
     approvalsRelay,

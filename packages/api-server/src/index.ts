@@ -49,10 +49,6 @@ import {
   deleteThreadsByAgent,
 } from "./modules/channels/infrastructure/telegram-threads-repository.js";
 import { createOAuthRefreshService } from "./modules/connections/services/oauth-refresh-service.js";
-import { createPodFilesBus } from "./modules/pod-files/bus.js";
-import { createPodFilesPublisher } from "./modules/pod-files/publisher.js";
-import { buildPodFilesRegistry } from "./modules/pod-files/registry.js";
-import { createGrantedConnectionsAdapter } from "./modules/pod-files/adapters/granted-connections.js";
 import {
   composeRuntimeDelivery,
   createBullConnection,
@@ -255,26 +251,6 @@ const channelManager = createChannelManager({
   channelSecretStore,
 });
 
-// Pod-files plumbing — see 034-pod-files-push. The github-enterprise
-// hosts.yml producer is the first registry entry; future producers (secrets-
-// as-files, schedule-driven config, …) plug into the same publisher and SSE
-// channel without changes elsewhere.
-const podFilesBus = createPodFilesBus();
-const podFilesRegistry = buildPodFilesRegistry({
-  // Agent HOME from the helm chart. Must agree with the controller's mount
-  // path; both read the same chart value.
-  agentHome: config.agentHome,
-  // Resolves an agent's granted connection records against live K8s state
-  // (instance CM annotations for grants, owner-scoped connection Secrets
-  // for the records). Two API calls per snapshot — fine for the SSE-connect
-  // and grant-change cadence.
-  fetchAgentGrantedConnections: createGrantedConnectionsAdapter(k8sClient),
-});
-const podFilesPublisher = createPodFilesPublisher({
-  bus: podFilesBus,
-  registry: podFilesRegistry,
-});
-
 if (!config.redisUrl)
   throw new Error(
     "REDIS_URL is required (Redis is a platform primitive — see ADR-036)",
@@ -400,7 +376,6 @@ const { server: apiServer } = startApiServerApp({
   identityLinkService,
   pendingSlackOAuthFlows,
   pendingTelegramOAuthFlows,
-  podFilesPublisher,
   seedSources,
   redisBus,
   approvalsRelay,
@@ -423,9 +398,6 @@ const { server: harnessApiServer } = startHarnessApiServerApp({
   api,
   db,
   channelManager,
-  channelSecretStore,
-  podFilesBus,
-  podFilesSnapshot: podFilesPublisher.compute,
   seedSources,
   runtimeHello: runtimeDelivery.hello,
   triggerEventHandler: runtimeDelivery.triggerHandler,
