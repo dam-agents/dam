@@ -29,14 +29,16 @@ interface TreeEntry {
 
 export function buildFileListCommand(deps: FileListDeps): Command {
   return new Command("list")
-    .description("List files in an Agent's workspace")
+    .description(
+      "List immediate children of a directory in an Agent's workspace",
+    )
     .argument("<ref>", "Agent Ref — name or 'agent-…' ID")
     .argument(
       "[remote-path]",
-      "filter results to a subtree (workspace-relative)",
+      "directory to list (workspace-relative; defaults to root)",
     )
     .option("--server <url>", "override the configured server URL")
-    .option("--json", "emit the full tree as JSON (files and directories)")
+    .option("--json", "emit entries as JSON (files and directories)")
     .action(
       async (
         ref: string,
@@ -67,35 +69,40 @@ export function buildFileListCommand(deps: FileListDeps): Command {
           tokenProvider: deps.tokenProvider,
         });
 
+        const dir = (remotePath ?? "").replace(/\/+$/, "");
+
         let entries: TreeEntry[];
         try {
-          const res = await trpc.files.tree.query();
-          entries = res.entries;
+          const { results } = await trpc.files.listDirs.query({
+            paths: [dir],
+          });
+          const res = results[0];
+          if (!res || !res.ok) {
+            const reason = res?.error ?? "not-found";
+            process.stderr.write(
+              `error: cannot list \`${dir || "/"}\`: ${reason}\n`,
+            );
+            process.exit(EXIT_RUNTIME_FAILURE);
+          }
+          entries = res.entries.map((e) => ({
+            path: dir ? `${dir}/${e.name}` : e.name,
+            type: e.type,
+          }));
         } catch (e) {
           printTrpcError(e, host);
           process.exit(EXIT_RUNTIME_FAILURE);
         }
 
-        const filtered = filterByPrefix(entries, remotePath);
-
         if (opts.json) {
-          process.stdout.write(`${JSON.stringify(filtered)}\n`);
+          process.stdout.write(`${JSON.stringify(entries)}\n`);
         } else {
-          for (const e of filtered) {
+          for (const e of entries) {
             if (e.type === "file") process.stdout.write(`${e.path}\n`);
           }
         }
         process.exit(EXIT_SUCCESS);
       },
     );
-}
-
-function filterByPrefix(entries: TreeEntry[], prefix?: string): TreeEntry[] {
-  if (!prefix) return entries;
-  const norm = prefix.replace(/\/+$/, "");
-  return entries.filter(
-    (e) => e.path === norm || e.path.startsWith(`${norm}/`),
-  );
 }
 
 function printTrpcError(e: unknown, host: string): void {
