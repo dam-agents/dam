@@ -31,6 +31,17 @@ export const connectionsRouter = t.router({
       ctx.connections.createFromTemplate(input).then((id) => ({ id })),
     ),
 
+  /**
+   * Start the OAuth authorization-code flow for an existing Connection.
+   * Returns the provider's authorize URL; the UI redirects the user and
+   * the provider eventually lands back at `/api/oauth/callback`.
+   */
+  startOAuth: t.procedure
+    .input(z.object({ connectionId: z.string().min(1) }))
+    .mutation(({ ctx, input }) =>
+      ctx.connections.startOAuth(input.connectionId),
+    ),
+
   delete: t.procedure
     .input(z.object({ id: z.string().min(1) }))
     .mutation(({ ctx, input }) => ctx.connections.deleteConnection(input.id)),

@@ -35,10 +35,22 @@ export const oauthAuth = z.object({
   refreshTokenRef: secretRef.optional(),
   accessTokenRef: secretRef,
   scopes: z.array(z.string()).default([]),
-  tokenUrl: z.string().url().optional(),
-  authorizationUrl: z.string().url().optional(),
+  /** Authorization-Server endpoints. Required to drive the OAuth flow;
+   *  set by the template at create time (static templates) or by the
+   *  Custom MCP discovery + DCR step (dynamic templates). */
+  tokenUrl: z.string().url(),
+  authorizationUrl: z.string().url(),
+  /** Per-Connection client_secret — set by DCR-based templates. Static
+   *  templates leave this absent and supply the secret via process config
+   *  on the template registry. */
+  clientSecretRef: secretRef.optional(),
   /** Unix seconds. Absent when the provider didn't return `expires_in`. */
   expiresAt: z.number().int().optional(),
+  /** Token-endpoint quirk: GitHub returns form-encoded unless asked for
+   *  JSON. Per-provider flag the engine honors. */
+  tokenEndpointAcceptJson: z.boolean().optional(),
+  /** Provider-specific authorize-URL params (e.g. `allow_signup=false`). */
+  extraAuthParams: z.record(z.string(), z.string()).optional(),
 });
 
 /**
@@ -174,6 +186,14 @@ export interface ConnectionsService {
     name?: string;
     inputs: Record<string, unknown>;
   }): Promise<string>;
+
+  /**
+   * Start an OAuth authorization-code flow for the given Connection.
+   * Throws if the Connection's auth.kind is not `oauth`. Returns the
+   * authorize URL the UI redirects to; the user finishes the dance at
+   * the provider and lands back at `/api/oauth/callback`.
+   */
+  startOAuth(connectionId: string): Promise<{ authUrl: string }>;
 
   /** Delete a Connection. Sweeps grants, contributions, and the backing
    *  secret. Idempotent. */

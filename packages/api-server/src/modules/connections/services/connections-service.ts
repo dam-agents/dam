@@ -10,6 +10,7 @@ import type { SecretStore } from "../../secret-store/index.js";
 import type { ConnectionsRepository } from "../infrastructure/connections-repository.js";
 import type { ConnectionTemplateRegistry } from "../domain/connection-template.js";
 import type { ContributionFanOut } from "./contribution-fanout.js";
+import type { OAuthFlowService } from "./oauth-flow.js";
 
 /**
  * Owner-scoped Connections service (ADR-051). The user-facing API the UI
@@ -32,6 +33,7 @@ export function createConnectionsService(deps: {
   repo: ConnectionsRepository;
   secretStore: SecretStore;
   fanOut: ContributionFanOut;
+  oauthFlow: OAuthFlowService;
 }): ConnectionsService {
   function toView(conn: Connection): ConnectionView {
     const template = deps.templates.get(conn.templateId);
@@ -74,6 +76,10 @@ export function createConnectionsService(deps: {
     async getConnection(id: string): Promise<ConnectionView | null> {
       const conn = await deps.repo.get(id, deps.ownerId);
       return conn ? toView(conn) : null;
+    },
+
+    startOAuth(connectionId: string): Promise<{ authUrl: string }> {
+      return deps.oauthFlow.startOAuth(connectionId);
     },
 
     async deleteConnection(id: string): Promise<void> {

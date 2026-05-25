@@ -48,7 +48,6 @@ import {
   listAuthorizedThreads,
   deleteThreadsByAgent,
 } from "./modules/channels/infrastructure/telegram-threads-repository.js";
-import { createOAuthRefreshService } from "./modules/connections/services/oauth-refresh-service.js";
 import {
   composeRuntimeDelivery,
   createBullConnection,
@@ -387,11 +386,8 @@ const { server: apiServer } = startApiServerApp({
   runtimeMutator: runtimeDelivery.runtimeMutator,
 });
 
-// Re-mints OAuth access tokens from stored refresh tokens before they expire
-// (ADR-033 § "Token provisioning and refresh"). Single-process — multi-replica
-// leader election is a follow-up.
-const oauthRefreshService = createOAuthRefreshService({ k8sClient });
-oauthRefreshService.start();
+// OAuth access-token refresh now lives on the new SecretStore-backed
+// loop, started inside startApiServerApp via composeConnectionsAtBoot().
 
 const { server: harnessApiServer } = startHarnessApiServerApp({
   config,
@@ -433,7 +429,6 @@ async function shutdown() {
   skillsCleanupSub.unsubscribe();
   onForeignReplySub.unsubscribe();
   onSlackTurnRelayedSub.unsubscribe();
-  await oauthRefreshService.stop();
   await deliverySweeper.stop();
   await agentArtifactsSweeper.stop();
   await channelManager.stopAll();

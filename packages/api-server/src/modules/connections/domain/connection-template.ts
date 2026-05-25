@@ -47,6 +47,21 @@ export interface ConnectionTemplate<Inputs = unknown> {
 
   /** UI view projection. The Connections service joins this on `listTemplates`. */
   toView(): ConnectionTemplateView;
+
+  /**
+   * OAuth flow integration. Returns extras the engine needs that don't
+   * belong on the wire shape — namely the operator-supplied `clientSecret`
+   * for static OAuth apps (GitHub, Google, …). Custom MCP / DCR templates
+   * return undefined here and put their per-Connection secret in
+   * `Connection.auth.clientSecretRef`.
+   *
+   * Absent on templates that don't use OAuth (Custom Header, None auth).
+   */
+  oauthExtras?():
+    | {
+        clientSecret?: string;
+      }
+    | undefined;
 }
 
 export interface BuildInput<Inputs> {

@@ -43,7 +43,6 @@ import { createTerminalRelay } from "./terminal-relay.js";
 import { getSessionMode } from "../../modules/sessions/infrastructure/sessions-repository.js";
 import { createOAuthRoutes } from "./oauth.js";
 import { mountBrandIconRoutes } from "./brand-icon.js";
-import { createOAuthAppRegistry } from "../../modules/connections/infrastructure/oauth-apps.js";
 import type { Config } from "../../config.js";
 import { createAuth, ForbiddenError } from "./auth.js";
 import { createK8sSecretsPort } from "./../../modules/secrets/infrastructure/k8s-secrets-port.js";
@@ -125,11 +124,22 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   const k8sClient = createK8sClient(api, config.namespace);
   const agentsRepo = createAgentsRepository(k8sClient);
 
-  // Connection Template catalog — process-wide, built once. Custom
-  // templates (MCP, Header) are always present. Premade-app templates
-  // require operator-supplied OAuth client ids; those land alongside the
-  // OAuth-flow wiring in a follow-up.
-  const connectionsBoot = composeConnectionsAtBoot({});
+  // Connection Template catalog + OAuth engine + refresh loop — built
+  // once per process. Per-request composition wraps these with owner
+  // identity for the user-facing service.
+  const connectionsBoot = composeConnectionsAtBoot({
+    db,
+    secretStore: secretStores.default(),
+    ...(config.defaultGithubClientId && config.defaultGithubClientSecret
+      ? {
+          github: {
+            clientId: config.defaultGithubClientId,
+            clientSecret: config.defaultGithubClientSecret,
+          },
+        }
+      : {}),
+  });
+  connectionsBoot.refreshLoop.start();
 
   const userDirectory = createKeycloakUserDirectory({
     keycloakUrl: config.keycloakUrl,
@@ -213,40 +223,14 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
 
   app.use("/api/*", auth.middleware);
 
-  const oauthApps = createOAuthAppRegistry({
-    github: {
-      ...(config.defaultGithubClientId
-        ? { clientId: config.defaultGithubClientId }
-        : {}),
-      ...(config.defaultGithubClientSecret
-        ? { clientSecret: config.defaultGithubClientSecret }
-        : {}),
-      ...(config.defaultGithubAppSlug
-        ? { appSlug: config.defaultGithubAppSlug }
-        : {}),
-    },
-    githubEnterprise: {
-      ...(config.defaultGithubEnterpriseHost
-        ? { host: config.defaultGithubEnterpriseHost }
-        : {}),
-      ...(config.defaultGithubEnterpriseClientId
-        ? { clientId: config.defaultGithubEnterpriseClientId }
-        : {}),
-      ...(config.defaultGithubEnterpriseClientSecret
-        ? { clientSecret: config.defaultGithubEnterpriseClientSecret }
-        : {}),
-      ...(config.defaultGithubEnterpriseAppSlug
-        ? { appSlug: config.defaultGithubEnterpriseAppSlug }
-        : {}),
-    },
-  });
   app.route(
     "/",
     createOAuthRoutes({
+      db,
+      secretStore: secretStores.default(),
+      engine: connectionsBoot.oauthEngine,
+      templates: connectionsBoot.templates,
       uiBaseUrl: config.uiBaseUrl,
-      k8sClient,
-      apps: oauthApps,
-      brandName: config.brand.name,
     }),
   );
 
@@ -567,10 +551,12 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       ownerId: user.sub,
       db,
       templates: connectionsBoot.templates,
+      oauthEngine: connectionsBoot.oauthEngine,
       secretStore: secretStores.default(),
       runtimeMutator,
       agentsRepo,
       connectionRulesSync: createConnectionRulesSyncAdapter(db),
+      oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
     });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agents.get(agentId)) !== null && ownerSub === user.sub;

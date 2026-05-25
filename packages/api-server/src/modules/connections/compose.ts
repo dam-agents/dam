@@ -1,6 +1,10 @@
 import type { Db } from "db";
 import type { ConnectionsService } from "api-server-api";
 import { createConnectionsRepository } from "./infrastructure/connections-repository.js";
+import {
+  createOAuthEngine,
+  type OAuthEngine,
+} from "./infrastructure/oauth-engine.js";
 import { createConnectionTemplateRegistry } from "./domain/connection-template.js";
 import { createGitHubTemplate } from "./domain/templates/github.js";
 import { createCustomMcpTemplate } from "./domain/templates/custom-mcp.js";
@@ -10,6 +14,11 @@ import {
   createContributionFanOut,
   type FanOutPort,
 } from "./services/contribution-fanout.js";
+import { createOAuthFlowService } from "./services/oauth-flow.js";
+import {
+  createOAuthRefreshLoop,
+  type OAuthRefreshLoop,
+} from "./services/oauth-refresh.js";
 import type { SecretStore } from "../secret-store/index.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 import type { AgentsRepository } from "../agents/infrastructure/agents-repository.js";
@@ -19,16 +28,25 @@ import type { ConnectionRulesSync } from "../egress-rules/services/connection-ru
  * Composes the Connections bounded context (ADR-051). One service per
  * authenticated request, scoped to `ownerId` (the JWT sub).
  *
- * The Template registry is process-wide and stateless — build once at
- * api-server boot and re-use.
+ * The Template registry + OAuth engine are process-wide and stateless;
+ * build once at api-server boot and re-use. Per-request composition wraps
+ * them with owner identity for the user-facing service.
  */
 export interface ConnectionsBootCompose {
   templates: ReturnType<typeof createConnectionTemplateRegistry>;
+  oauthEngine: OAuthEngine;
+  refreshLoop: OAuthRefreshLoop;
 }
 
-export function composeConnectionsAtBoot(opts: {
-  github?: { clientId: string; scopes?: string[] };
-}): ConnectionsBootCompose {
+export interface ComposeConnectionsAtBootOpts {
+  db: Db;
+  secretStore: SecretStore;
+  github?: { clientId: string; clientSecret: string; scopes?: string[] };
+}
+
+export function composeConnectionsAtBoot(
+  opts: ComposeConnectionsAtBootOpts,
+): ConnectionsBootCompose {
   const templates = createConnectionTemplateRegistry([
     // Premade app templates first (the UI groups them in the Apps section).
     ...(opts.github ? [createGitHubTemplate(opts.github)] : []),
@@ -36,17 +54,28 @@ export function composeConnectionsAtBoot(opts: {
     createCustomMcpTemplate(),
     createCustomHeaderTemplate(),
   ]);
-  return { templates };
+
+  const oauthEngine = createOAuthEngine();
+  const refreshLoop = createOAuthRefreshLoop({
+    db: opts.db,
+    engine: oauthEngine,
+    templates,
+    secretStore: opts.secretStore,
+  });
+
+  return { templates, oauthEngine, refreshLoop };
 }
 
 export function composeConnectionsForOwner(opts: {
   ownerId: string;
   db: Db;
   templates: ReturnType<typeof createConnectionTemplateRegistry>;
+  oauthEngine: OAuthEngine;
   secretStore: SecretStore;
   runtimeMutator: RuntimeMutator;
   agentsRepo: AgentsRepository;
   connectionRulesSync: ConnectionRulesSync;
+  oauthCallbackUrl: string;
 }): ConnectionsService {
   const repo = createConnectionsRepository(opts.db);
 
@@ -72,11 +101,21 @@ export function composeConnectionsForOwner(opts: {
     runtimeMutator: opts.runtimeMutator,
   });
 
+  const oauthFlow = createOAuthFlowService({
+    engine: opts.oauthEngine,
+    repo,
+    templates: opts.templates,
+    secretStore: opts.secretStore,
+    ownerId: opts.ownerId,
+    callbackUrl: opts.oauthCallbackUrl,
+  });
+
   return createConnectionsService({
     ownerId: opts.ownerId,
     templates: opts.templates,
     repo,
     secretStore: opts.secretStore,
     fanOut,
+    oauthFlow,
   });
 }
