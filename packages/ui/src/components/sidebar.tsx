@@ -1,7 +1,5 @@
 import {
-  BarChart3,
   Bot,
-  type LucideIcon,
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
@@ -10,62 +8,22 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { isUsageInspector } from "../auth.js";
 import { getBrand } from "../brand.js";
 import { InboxBell } from "../modules/approvals/components/inbox-bell.js";
-import { openUsageReport } from "../modules/usage/api/open-usage-report.js";
 import { useStore } from "../store.js";
 import { Logo } from "./logo.js";
 
 const STORAGE_KEY = "platform-sidebar-collapsed";
 
-type RouteView = "list" | "providers" | "connections";
-type NavItem = { label: string; icon: LucideIcon } & (
-  | { view: RouteView }
-  | { action: () => void }
-);
-
-interface NavButtonProps {
-  icon: LucideIcon;
-  label: string;
-  collapsed: boolean;
-  active?: boolean;
-  onClick: () => void;
-}
-
-function NavButton({
-  icon: Icon,
-  label,
-  collapsed,
-  active = false,
-  onClick,
-}: NavButtonProps) {
-  return (
-    <button
-      onClick={onClick}
-      title={collapsed ? label : undefined}
-      className={`flex items-center gap-2.5 rounded-lg transition-colors h-9 ${collapsed ? "justify-center px-0" : "px-2.5"} ${active ? "text-accent bg-accent-light" : "text-text-secondary hover:text-text hover:bg-surface-raised"}`}
-    >
-      <Icon size={18} className="shrink-0" />
-      {!collapsed && <span className="text-[14px] font-medium">{label}</span>}
-    </button>
-  );
-}
+const navItems = [
+  { view: "list" as const, label: "Agents", icon: Bot },
+  { view: "providers" as const, label: "Providers", icon: Sparkles },
+  { view: "connections" as const, label: "Connections", icon: Unplug },
+] as const;
 
 export function Sidebar() {
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
-  // Static at mount; role changes take effect on next page reload.
-  const showUsage = isUsageInspector();
-
-  const navItems: NavItem[] = [
-    { view: "list", label: "Agents", icon: Bot },
-    { view: "providers", label: "Providers", icon: Sparkles },
-    { view: "connections", label: "Connections", icon: Unplug },
-    ...(showUsage
-      ? [{ action: openUsageReport, label: "Usage", icon: BarChart3 }]
-      : []),
-  ];
 
   const [collapsed, setCollapsed] = useState(() => {
     return localStorage.getItem(STORAGE_KEY) === "true";
@@ -98,16 +56,22 @@ export function Sidebar() {
 
       {/* Nav items */}
       <div className="flex flex-col gap-0.5 mt-2 px-2">
-        {navItems.map((item) => (
-          <NavButton
-            key={item.label}
-            icon={item.icon}
-            label={item.label}
-            collapsed={collapsed}
-            active={"view" in item && view === item.view}
-            onClick={"view" in item ? () => setView(item.view) : item.action}
-          />
-        ))}
+        {navItems.map(({ view: v, label, icon: Icon }) => {
+          const active = view === v;
+          return (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              title={collapsed ? label : undefined}
+              className={`flex items-center gap-2.5 rounded-lg transition-colors h-9 ${collapsed ? "justify-center px-0" : "px-2.5"} ${active ? "text-accent bg-accent-light" : "text-text-secondary hover:text-text hover:bg-surface-raised"}`}
+            >
+              <Icon size={18} className="shrink-0" />
+              {!collapsed && (
+                <span className="text-[14px] font-medium">{label}</span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* Spacer */}
@@ -122,13 +86,16 @@ export function Sidebar() {
         <InboxBell collapsed={collapsed} />
 
         {/* Settings */}
-        <NavButton
-          icon={Settings}
-          label="Settings"
-          collapsed={collapsed}
-          active={view === "settings"}
+        <button
           onClick={() => setView("settings")}
-        />
+          title={collapsed ? "Settings" : undefined}
+          className={`flex items-center gap-2.5 rounded-lg transition-colors h-9 ${collapsed ? "justify-center px-0" : "px-2.5"} ${view === "settings" ? "text-accent bg-accent-light" : "text-text-secondary hover:text-text hover:bg-surface-raised"}`}
+        >
+          <Settings size={18} className="shrink-0" />
+          {!collapsed && (
+            <span className="text-[14px] font-medium">Settings</span>
+          )}
+        </button>
 
         {/* Collapse toggle */}
         <button

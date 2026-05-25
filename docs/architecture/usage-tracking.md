@@ -124,7 +124,7 @@ Three Keycloak-gated endpoints, all behind the `platform-inspector` realm role:
 | `GET /api/usage?view=<name>` | one view's rows as JSON | programmatic consumers |
 | `GET /api/usage/report` | full HTML page rendering the pilot view set | human inspectors |
 
-The HTML report is rendered server-side as a single static page — no JavaScript, escaped, dark-mode aware. The UI sidebar links to it via a `fetch` + Blob URL because a plain `<a href>` cannot send the Bearer token; the Blob is revoked a minute after open.
+The HTML report is rendered server-side as a single static page — no JavaScript, escaped, dark-mode aware. There is no visible UI affordance; inspectors open the report by calling `platformUsage.openReport()` in the browser devtools console. The function fetches with the Bearer token, wraps the response in a Blob URL, and opens it in a new tab (a plain `<a href>` cannot send the Bearer token); the Blob is revoked a minute after open.
 
 When the inspector role is not configured at install time, the read endpoints are mounted as a no-op router. Activity writes continue independently — the read API is gated on inspector configuration, the writes on the activity-tracking toggle.
 
