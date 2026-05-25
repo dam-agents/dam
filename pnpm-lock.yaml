@@ -46,6 +46,9 @@ importers:
       '@lydell/node-pty':
         specifier: 1.1.0
         version: 1.1.0
+      '@trpc/client':
+        specifier: ^11.16.0
+        version: 11.16.0(@trpc/server@11.16.0(typescript@6.0.2))(typescript@6.0.2)
       '@trpc/server':
         specifier: ^11.16.0
         version: 11.16.0(typescript@6.0.2)
@@ -253,6 +256,9 @@ importers:
       '@trpc/server':
         specifier: ^11.16.0
         version: 11.16.0(typescript@6.0.2)
+      agent-runtime-api:
+        specifier: workspace:*
+        version: link:../agent-runtime-api
       zod:
         specifier: ^4.4.3
         version: 4.4.3

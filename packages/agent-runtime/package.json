@@ -13,6 +13,7 @@
   "dependencies": {
     "@agentclientprotocol/claude-agent-acp": "^0.33.1",
     "@lydell/node-pty": "1.1.0",
+    "@trpc/client": "^11.16.0",
     "@trpc/server": "^11.16.0",
     "@xterm/addon-serialize": "0.14.0",
     "@xterm/headless": "5.5.0",

@@ -2,7 +2,6 @@ import http from "node:http";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { readFileSync, writeFileSync } from "node:fs";
 import headlessPkg from "@xterm/headless";
 const { Terminal: HeadlessTerminal } = headlessPkg;
 import serializePkg from "@xterm/addon-serialize";
@@ -26,10 +25,7 @@ import { composeSkills } from "./modules/skills/index.js";
 import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
 import { createWebSocketChannel } from "./modules/acp/infrastructure/create-websocket-channel.js";
-import { startTriggerWatcher, type TriggerWatcher } from "./trigger-watcher.js";
-import { startPodFilesSync } from "./modules/pod-files/index.js";
-
-let triggerWatcher: TriggerWatcher | undefined;
+import { composeRuntimeChannel } from "./modules/runtime-channel/index.js";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const homeDir = config.PLATFORM_DEV
@@ -46,6 +42,28 @@ const skillsService = composeSkills();
 const importHandlers = createImportHandlers(homeDir, workDir, (msg) =>
   process.stderr.write(`[import] ${msg}\n`),
 );
+
+// Runtime channel (ADR-052): supersedes the trigger-files watcher and the
+// pod-files SSE loop. Manifest at $WORK_DIR/runtime-manifest.yaml — every
+// agent image must ship one. Fail-fast on a missing/invalid manifest.
+const runtimeChannel = composeRuntimeChannel({
+  manifestPath: join(workDir, "runtime-manifest.yaml"),
+  agentHome: homeDir,
+  apiServerUrl: config.API_SERVER_URL,
+  agentId: process.env.PLATFORM_AGENT_ID ?? process.env.HOSTNAME ?? "unknown",
+  installSkill: async (input, paths) => {
+    // Wrap the existing skills-service install. Returns true on success;
+    // the impl logs and continues on per-skill failures so a flaky source
+    // doesn't block the rest of the apply.
+    const result = await skillsService.install({
+      source: input.sourceUrl,
+      version: input.version,
+      name: input.name,
+      skillPaths: paths,
+    });
+    return result.ok;
+  },
+});
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -68,6 +86,7 @@ const trpcHandler = createHTTPHandler({
   createContext: (): AgentRuntimeContext => ({
     files: filesService,
     skills: skillsService,
+    runtime: runtimeChannel.service,
   }),
   maxBodySize: TRPC_MAX_BODY_SIZE,
 });
@@ -244,7 +263,6 @@ const server = http.createServer((req, res) => {
       pendingRequests: s.pendingRequestCount,
       queuedPrompts: s.queuedPromptCount,
       agentAlive: s.agentAlive,
-      activeTriggers: triggerWatcher?.activeCount() ?? 0,
       terminalActive: ptySlots.size > 0,
     };
     res
@@ -301,25 +319,6 @@ server.on("upgrade", (req, socket, head) => {
   }
 });
 
-if (config.PLATFORM_MCP_URL) {
-  const mcpPath = join(workDir, ".mcp.json");
-  let mcpConfig: Record<string, unknown> = {};
-  try {
-    mcpConfig = JSON.parse(readFileSync(mcpPath, "utf8"));
-  } catch {}
-  const mcpServers = (mcpConfig.mcpServers ?? {}) as Record<string, unknown>;
-  // No Authorization header: the api-server's harness port identifies the
-  // caller by source IP (NetworkPolicy admits only agent pods, podIpResolver
-  // maps IP → agent label). See ADR-035.
-  mcpServers["platform-outbound"] = {
-    type: "http",
-    url: config.PLATFORM_MCP_URL,
-  };
-  mcpConfig.mcpServers = mcpServers;
-  writeFileSync(mcpPath, JSON.stringify(mcpConfig, null, 2));
-  process.stderr.write(`[mcp] Wrote platform-outbound to ${mcpPath}\n`);
-}
-
 // Configure git to use gh's credential helper. git doesn't know about
 // GH_TOKEN directly, so without this it prompts for a username on private
 // repos. With this, git asks `gh auth git-credential`, gets the sentinel,
@@ -364,19 +363,12 @@ server.listen(config.PORT, () => {
     process.stderr.write(`[import] ${msg}\n`),
   );
 
-  triggerWatcher = startTriggerWatcher({
-    triggersDir: config.TRIGGERS_DIR,
-    apiServerUrl: config.API_SERVER_URL,
-    agentId: process.env.PLATFORM_AGENT_ID ?? process.env.HOSTNAME ?? "unknown",
+  // Runtime channel boot/wake catch-up (ADR-052). Calls `hello` on the
+  // harness API; if anything diverged from this agent's last applied
+  // state, the response re-runs the same applyState path the worker
+  // would have run.
+  void runtimeChannel.helloOnBoot({
+    agentRuntimeVersion:
+      process.env.PLATFORM_AGENT_VERSION ?? "agent-runtime/unknown",
   });
-
-  // Pod-files sync: opt-in via env. The reconciler sets the URL on agent
-  // pods only — forks deliberately don't get it (they're per-turn jobs and
-  // don't read pod-files state). See 034-pod-files-push.md.
-  if (config.PLATFORM_POD_FILES_EVENTS_URL) {
-    startPodFilesSync({
-      url: config.PLATFORM_POD_FILES_EVENTS_URL,
-      agentHome: homeDir,
-    });
-  }
 });
