@@ -4,20 +4,15 @@ import { useEffect, useState } from "react";
 import { api } from "../../../api.js";
 import { Markdown } from "../../../components/markdown.js";
 import { useStore } from "../../../store.js";
-import {
-  fetchLatestAcceptance,
-  fetchTermsDocument,
-} from "../api/fetch-terms.js";
+import { fetchTermsDocument } from "../api/fetch-terms.js";
 
-type LatestAcceptance = {
-  version: string;
-  hash: string;
-  acceptedAt: string;
-};
+type LatestAcceptance = Awaited<
+  ReturnType<typeof api.terms.latestAcceptance.query>
+>;
 
 export function TermsView() {
   const [doc, setDoc] = useState<TermsDocument | null>(null);
-  const [latest, setLatest] = useState<LatestAcceptance | null>(null);
+  const [latest, setLatest] = useState<LatestAcceptance>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const setView = useStore((s) => s.setView);
@@ -28,7 +23,7 @@ export function TermsView() {
       try {
         const [d, l] = await Promise.all([
           fetchTermsDocument(),
-          fetchLatestAcceptance(),
+          api.terms.latestAcceptance.query(),
         ]);
         setDoc(d);
         setLatest(l);
@@ -62,7 +57,7 @@ export function TermsView() {
     setSubmitting(true);
     try {
       await api.terms.accept.mutate({ version: doc.version });
-      const refreshed = await fetchLatestAcceptance();
+      const refreshed = await api.terms.latestAcceptance.query();
       setLatest(refreshed);
       showToast({ kind: "success", message: "Terms accepted." });
       setView("list");

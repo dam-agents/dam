@@ -9,13 +9,19 @@ export interface TermsGateConfig {
   terms: TermsService;
 }
 
-const TRPC_TERMS_PREFIX = "/api/trpc/terms.";
+const TRPC_PREFIX = "/api/trpc/";
+
+function isTermsOnlyTrpcCall(path: string): boolean {
+  if (!path.startsWith(TRPC_PREFIX)) return false;
+  const procs = path.slice(TRPC_PREFIX.length).split(",");
+  return procs.length > 0 && procs.every((p) => p.startsWith("terms."));
+}
 
 export function createTermsGate(config: TermsGateConfig) {
   const middleware: MiddlewareHandler<{
     Variables: { user: UserIdentity };
   }> = async (c, next) => {
-    if (c.req.path.startsWith(TRPC_TERMS_PREFIX)) return next();
+    if (isTermsOnlyTrpcCall(c.req.path)) return next();
     const user = c.get("user");
     if (!user) return next();
     const accepted = await config.terms.isAccepted(user.sub);
