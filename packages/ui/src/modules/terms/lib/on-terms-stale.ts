@@ -1,6 +1,8 @@
-import { useStore } from "../../../store.js";
+let redirecting = false;
 
 export function onTermsStale() {
-  if (useStore.getState().view === "terms") return;
-  useStore.getState().setView("terms");
+  if (redirecting) return;
+  if (window.location.pathname === "/terms") return;
+  redirecting = true;
+  window.location.assign("/terms");
 }
