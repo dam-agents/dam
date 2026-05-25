@@ -124,9 +124,20 @@ Three Keycloak-gated endpoints, all behind the `platform-inspector` realm role:
 | `GET /api/usage?view=<name>` | one view's rows as JSON | programmatic consumers |
 | `GET /api/usage/report` | full HTML page rendering the pilot view set | human inspectors |
 
-The HTML report is rendered server-side as a single static page — no JavaScript, escaped, dark-mode aware. There is no visible UI affordance; inspectors open the report by calling `platformUsage.openReport()` in the browser devtools console. The function fetches with the Bearer token, wraps the response in a Blob URL, and opens it in a new tab (a plain `<a href>` cannot send the Bearer token); the Blob is revoked a minute after open.
+The HTML report is rendered server-side as a single static page — no JavaScript, escaped, dark-mode aware. There is no visible UI affordance; the UI exposes a `window.platformUsage.openReport()` function registered at bootstrap that inspectors call from the browser devtools console. The function fetches with the Bearer token, wraps the response in a Blob URL, and opens it in a new tab (a plain `<a href>` cannot send the Bearer token); the Blob is revoked a minute after open.
 
 When the inspector role is not configured at install time, the read endpoints are mounted as a no-op router. Activity writes continue independently — the read API is gated on inspector configuration, the writes on the activity-tracking toggle.
+
+### Opening the report
+
+For inspectors who have been granted the role:
+
+1. Sign in to the platform UI as you normally would.
+2. Open Chrome (or any Chromium-based browser) devtools — `Cmd+Option+I` on macOS, `Ctrl+Shift+I` on Windows / Linux, or right-click the page → **Inspect**.
+3. Switch to the **Console** tab.
+4. Type `platformUsage.openReport()` and press Enter. A new tab opens with the report.
+
+The function returns a `Promise`, so the console prints `Promise {<pending>}` next to the call — that's expected. If the call returns a 403, the signed-in user does not carry the inspector role; if it returns a network error, the api-server is unreachable. Type `platformUsage` on its own to confirm the global is registered (`{openReport: ƒ}`).
 
 ## Retention
 
