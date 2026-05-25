@@ -204,3 +204,50 @@ export type { Brand } from "./modules/brand/types.js";
 // Auth config
 export { authConfigSchema } from "./modules/auth/types.js";
 export type { AuthConfig } from "./modules/auth/types.js";
+
+// Runtime channel (ADR-052) — harness API contracts. Wire types
+// (Contribution, Event, applyState, hello payloads) are re-exported from
+// agent-runtime-api so the UI can import them from a single place.
+export type { HarnessRouter } from "./harness-router.js";
+export type { HarnessContext } from "./harness-context.js";
+export {
+  fireTriggerInput,
+  fireTriggerResult,
+  helloInput,
+  helloResult,
+} from "./modules/runtime/types.js";
+export type {
+  FireTriggerInput,
+  FireTriggerResult,
+  HelloInput,
+  HelloResult,
+  RuntimeDeliveryService,
+  TriggerEventHandler,
+  TriggerEventPayload,
+} from "./modules/runtime/types.js";
+export {
+  contribution,
+  contributionKind,
+  event as runtimeEvent,
+  eventKind as runtimeEventKind,
+  capabilities,
+  mergeMode as contributionMergeMode,
+  fileFormat,
+  hostInjection,
+  applyStateInput,
+  applyStateResult,
+  stateSlice,
+} from "agent-runtime-api";
+export type {
+  Contribution,
+  ContributionKind,
+  Event as RuntimeEvent,
+  EventKind as RuntimeEventKind,
+  Capabilities,
+  MergeMode as ContributionMergeMode,
+  FileFormat,
+  HostInjection,
+  ApplyStateInput,
+  ApplyStateResult,
+  StateSlice,
+} from "agent-runtime-api";
