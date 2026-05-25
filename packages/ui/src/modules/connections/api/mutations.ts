@@ -1,5 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 
+import { trpc } from "../../../trpc.js";
 import {
   disconnectApp,
   disconnectMcp,
@@ -38,6 +39,32 @@ export function useDisconnectApp() {
     meta: {
       invalidates: [oauthAppKeys.connections()],
       errorToast: "Couldn't disconnect app",
+    },
+  });
+}
+
+/**
+ * Template-driven Connection create (ADR-051). The server validates `inputs`
+ * against the template's Zod schema; the UI just gathers user input and
+ * forwards. Invalidates the connections list so the new Connection shows up.
+ */
+export function useCreateConnection() {
+  return useMutation({
+    ...trpc.connections.create.mutationOptions(),
+    meta: {
+      invalidates: [["connections"]],
+      errorToast: "Couldn't create connection",
+    },
+  });
+}
+
+/** Delete a Connection. Sweeps grants + backing secret server-side. */
+export function useDeleteConnection() {
+  return useMutation({
+    ...trpc.connections.delete.mutationOptions(),
+    meta: {
+      invalidates: [["connections"]],
+      errorToast: "Couldn't delete connection",
     },
   });
 }

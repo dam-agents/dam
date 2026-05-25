@@ -12,6 +12,25 @@ export const connectionsRouter = t.router({
     .input(z.object({ id: z.string().min(1) }))
     .query(({ ctx, input }) => ctx.connections.getConnection(input.id)),
 
+  /**
+   * Create a Connection by projecting user-typed inputs through a template.
+   * The template's `inputs` schema validates `inputs` server-side; on
+   * success, the SecretStore + Postgres rows are written atomically and
+   * the new connection id is returned. The UI never assembles `auth` or
+   * `contributions` itself — those are template-derived.
+   */
+  create: t.procedure
+    .input(
+      z.object({
+        templateId: z.string().min(1),
+        name: z.string().min(1).optional(),
+        inputs: z.record(z.string(), z.unknown()),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      ctx.connections.createFromTemplate(input).then((id) => ({ id })),
+    ),
+
   delete: t.procedure
     .input(z.object({ id: z.string().min(1) }))
     .mutation(({ ctx, input }) => ctx.connections.deleteConnection(input.id)),

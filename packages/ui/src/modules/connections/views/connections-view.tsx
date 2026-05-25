@@ -16,6 +16,7 @@ import { McpConnectionRow } from "../components/mcp-connection-row.js";
 import { OAuthAppConnectButton } from "../components/oauth-app-connect-button.js";
 import { OAuthAppRow } from "../components/oauth-app-row.js";
 import { SecretRow } from "../components/secret-row.js";
+import { ConnectionTemplatesSection } from "../components/templates-section.js";
 import { AddMcpForm } from "../forms/add-mcp-form.js";
 import { ConnectAppForm } from "../forms/connect-app-form.js";
 
@@ -102,6 +103,8 @@ export function ConnectionsView() {
         External services and credentials available to your agents. Injected
         into outbound HTTP requests — agents never see raw tokens.
       </p>
+
+      <ConnectionTemplatesSection />
 
       {/* Apps */}
       <section className="mb-10">

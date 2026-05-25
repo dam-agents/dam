@@ -163,6 +163,18 @@ export interface ConnectionsService {
   /** Read one Connection. Returns null on not-found / not-owned. */
   getConnection(id: string): Promise<ConnectionView | null>;
 
+  /**
+   * Template-driven Connection creation. The template's `inputs` schema
+   * validates `inputs`; the template's `build()` projects them to
+   * `(auth, contributions, secrets)`. The Connection record + backing
+   * secret(s) are written atomically. Returns the new connection id.
+   */
+  createFromTemplate(input: {
+    templateId: string;
+    name?: string;
+    inputs: Record<string, unknown>;
+  }): Promise<string>;
+
   /** Delete a Connection. Sweeps grants, contributions, and the backing
    *  secret. Idempotent. */
   deleteConnection(id: string): Promise<void>;

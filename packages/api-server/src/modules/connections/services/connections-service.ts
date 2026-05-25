@@ -26,26 +26,13 @@ import type { ContributionFanOut } from "./contribution-fanout.js";
  * doesn't accept raw `auth` or `contributions` from the wire — those are
  * always template-computed.
  */
-export interface CreateConnectionInput {
-  templateId: string;
-  /** Optional display name override; defaults to the template's
-   *  `defaultName(inputs)`. */
-  name?: string;
-  inputs: Record<string, unknown>;
-}
-
-export interface ConnectionsServiceExt extends ConnectionsService {
-  /** Template-driven creation. Returns the new Connection's id. */
-  createFromTemplate(input: CreateConnectionInput): Promise<string>;
-}
-
 export function createConnectionsService(deps: {
   ownerId: string;
   templates: ConnectionTemplateRegistry;
   repo: ConnectionsRepository;
   secretStore: SecretStore;
   fanOut: ContributionFanOut;
-}): ConnectionsServiceExt {
+}): ConnectionsService {
   function toView(conn: Connection): ConnectionView {
     const template = deps.templates.get(conn.templateId);
     const hosts = conn.contributions

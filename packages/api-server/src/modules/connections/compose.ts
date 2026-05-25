@@ -1,13 +1,11 @@
 import type { Db } from "db";
+import type { ConnectionsService } from "api-server-api";
 import { createConnectionsRepository } from "./infrastructure/connections-repository.js";
 import { createConnectionTemplateRegistry } from "./domain/connection-template.js";
 import { createGitHubTemplate } from "./domain/templates/github.js";
 import { createCustomMcpTemplate } from "./domain/templates/custom-mcp.js";
 import { createCustomHeaderTemplate } from "./domain/templates/custom-header.js";
-import {
-  createConnectionsService,
-  type ConnectionsServiceExt,
-} from "./services/connections-service.js";
+import { createConnectionsService } from "./services/connections-service.js";
 import {
   createContributionFanOut,
   type FanOutPort,
@@ -49,7 +47,7 @@ export function composeConnectionsForOwner(opts: {
   runtimeMutator: RuntimeMutator;
   agentsRepo: AgentsRepository;
   connectionRulesSync: ConnectionRulesSync;
-}): ConnectionsServiceExt {
+}): ConnectionsService {
   const repo = createConnectionsRepository(opts.db);
 
   const port: FanOutPort = {

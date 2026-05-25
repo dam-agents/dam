@@ -26,6 +26,15 @@ export function useAppConnections(options?: { enabled?: boolean }) {
   });
 }
 
+/** Read-only catalog of code-declared Connection Templates (ADR-051). */
+export function useConnectionTemplates(options?: { enabled?: boolean }) {
+  return useQuery({
+    ...trpc.connections.listTemplates.queryOptions(),
+    enabled: options?.enabled ?? true,
+    meta: { errorToast: "Couldn't load connection templates" },
+  });
+}
+
 export function useMcpConnections(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: mcpConnectionKeys.list(),
