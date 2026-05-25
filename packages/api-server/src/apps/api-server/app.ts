@@ -221,9 +221,6 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   // of brand truth; all UI components read from here, never from build-time
   // constants.
   app.get("/api/brand", (c) => c.json(config.brand satisfies Brand));
-  // Public — Terms of Use document. Hit by the login page and the /terms
-  // route. Ships text only on this read; the gate response carries
-  // version+hash only. See ADR-047.
   app.get("/api/terms", (c) => c.json(terms.document()));
   // Public — PWA manifest (replaces the build-time bundled one). Served
   // dynamically so the installed-PWA name follows brand without a UI rebuild.

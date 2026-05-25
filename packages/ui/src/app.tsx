@@ -101,10 +101,6 @@ export default function App() {
       </>
     );
 
-  // Terms view is full-screen and standalone — no sidebar, no other
-  // queries firing. Until the user accepts, every other authenticated
-  // surface gets 412'd by the gate; mounting the shell would spam
-  // failing queries.
   if (view === "terms")
     return (
       <>

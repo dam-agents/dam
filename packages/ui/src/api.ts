@@ -20,9 +20,7 @@ export const api = createTRPCClient<AppRouter>({
             try {
               const body = (await clone.json()) as { error?: string };
               if (body.error === "terms_stale") onTermsStale();
-            } catch {
-              // non-JSON 412 — leave the response to bubble up.
-            }
+            } catch {}
           }
           return response;
         } catch (error) {

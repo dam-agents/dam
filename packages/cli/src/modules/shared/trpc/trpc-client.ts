@@ -65,7 +65,6 @@ function wrapFetchWithTermsGate(
         }
       } catch (err) {
         if (err instanceof TermsStaleAtTransportError) throw err;
-        // non-JSON 412 — let it bubble normally
       }
     }
     return response;
