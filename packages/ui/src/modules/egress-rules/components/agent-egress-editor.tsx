@@ -3,7 +3,11 @@ import {
   RotateCounterclockwise as RotateCcw,
   TrashCan as Trash2,
 } from "@carbon/icons-react";
-import type { EgressPreset, EgressRuleView } from "api-server-api";
+import {
+  type EgressPreset,
+  type EgressRuleView,
+  formatEgressRuleSource,
+} from "api-server-api";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -473,7 +477,9 @@ function RuleRow({
     rule.verdict === "allow"
       ? "text-primary border-primary/40"
       : "text-destructive border-destructive/40";
-  const sourceLabel = sourceLabelOverride ?? formatSource(rule.source);
+  const sourceLabel =
+    sourceLabelOverride ??
+    (rule.source === "manual" ? null : formatEgressRuleSource(rule.source));
   const dim = pendingDelete ? "opacity-40 line-through" : "";
   return (
     <li
@@ -631,14 +637,4 @@ function PreviewPresetRow({ row }: { row: PreviewRow }) {
           selection or cancel the dialog to drop the preview. */}
     </li>
   );
-}
-
-function formatSource(source: EgressRuleView["source"]): string | null {
-  if (source === "manual") return null;
-  if (source === "inbox") return "from inbox";
-  if (source === "preset:trusted") return "preset: trusted";
-  if (source === "preset:all") return "preset: all";
-  if (source.startsWith("connection:"))
-    return `from ${source.slice("connection:".length)}`;
-  return source;
 }

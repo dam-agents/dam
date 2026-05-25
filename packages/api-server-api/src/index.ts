@@ -280,6 +280,10 @@ export {
   egressRuleUpdateInputSchema,
   ruleVerdictSchema,
 } from "./modules/egress-rules/schemas.js";
+export {
+  formatEgressRuleInline,
+  formatEgressRuleSource,
+} from "./modules/egress-rules/format.js";
 
 // ACP platform/* synthetic notifications
 export {
