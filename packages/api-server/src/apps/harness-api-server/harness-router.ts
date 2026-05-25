@@ -1,11 +1,17 @@
 import { Hono } from "hono";
-import type { SchedulesService, SkillsService } from "api-server-api";
+import type {
+  SchedulesService,
+  SkillsService,
+  RuntimeDeliveryService,
+  TriggerEventHandler,
+} from "api-server-api";
 import { mountMcpRoutes } from "./mcp-endpoint.js";
 import {
   mountPodFilesEventsRoute,
   type PodFilesEventsDeps,
 } from "./pod-files-events.js";
 import { resolveAgent } from "./agent-auth.js";
+import { mountRuntimeTrpc } from "./runtime-trpc.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 
@@ -30,6 +36,9 @@ export function createHarnessRouter(deps: {
   podFiles: Pick<PodFilesEventsDeps, "bus" | "fetchSnapshot">;
   agentHome: string;
   schedulesServiceFor: (owner: string) => SchedulesService;
+  // ADR-052: runtime channel surface on the harness API.
+  runtimeHello: RuntimeDeliveryService;
+  triggerEventHandler: TriggerEventHandler;
 }) {
   const app = new Hono();
 
@@ -63,6 +72,11 @@ export function createHarnessRouter(deps: {
     k8s: deps.k8s,
     bus: deps.podFiles.bus,
     fetchSnapshot: deps.podFiles.fetchSnapshot,
+  });
+  mountRuntimeTrpc(app, {
+    k8s: deps.k8s,
+    hello: deps.runtimeHello,
+    triggerHandler: deps.triggerEventHandler,
   });
 
   return app;

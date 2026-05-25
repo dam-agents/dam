@@ -54,6 +54,11 @@ import { createPodFilesPublisher } from "./modules/pod-files/publisher.js";
 import { buildPodFilesRegistry } from "./modules/pod-files/registry.js";
 import { createGrantedConnectionsAdapter } from "./modules/pod-files/adapters/granted-connections.js";
 import {
+  composeRuntimeDelivery,
+  createBullConnection,
+  createStartTriggerSessionPort,
+} from "./modules/runtime-delivery/index.js";
+import {
   composeForksModule,
   startOnForeignReplySaga,
   startOnSlackTurnRelayedSaga,
@@ -267,6 +272,14 @@ const redisBus = createRedisBus(config.redisUrl, {
   password: config.redisPassword ?? undefined,
 });
 
+// ADR-053: BullMQ connection for the runtime-channel state queue. Held
+// separate from the redis-bus client because BullMQ workers block on
+// BRPOPLPUSH and can't share a connection with pub/sub.
+const bullConnection = createBullConnection(
+  config.redisUrl,
+  config.redisPassword ?? undefined,
+);
+
 // Seed list for the `trusted` egress preset (ADR-035).
 // Read once at boot; the helm ConfigMap is the operator-editable source.
 const trustedHosts = loadTrustedHosts(config.trustedHostsPath);
@@ -367,6 +380,31 @@ const { server: apiServer } = startApiServerApp({
 const oauthRefreshService = createOAuthRefreshService({ k8sClient });
 oauthRefreshService.start();
 
+// ADR-052 / ADR-053: Runtime Delivery context. Composed before the harness
+// API server because the latter needs `hello` + the trigger event handler
+// on its tRPC surface.
+const startTriggerSession = createStartTriggerSessionPort({
+  api,
+  db,
+  namespace: config.namespace,
+  channelSecretStore,
+  keycloakUrl: config.keycloakUrl,
+  keycloakRealm: config.keycloakRealm,
+  keycloakApiClientId: config.keycloakApiClientId,
+  keycloakApiClientSecret: config.keycloakApiClientSecret,
+});
+const runtimeDelivery = composeRuntimeDelivery({
+  db,
+  namespace: config.namespace,
+  bullConnection,
+  // Permissive `isRunning` for now — the worker treats stale dispatches as
+  // throws + BullMQ retries; the cron sweep is the durability path. A real
+  // ConfigMap-watch-fed cache is a follow-up optimization.
+  agentRunningPort: { isRunning: () => true },
+  startTriggerSession,
+});
+runtimeDelivery.sweep.start();
+
 const { server: harnessApiServer } = startHarnessApiServerApp({
   config,
   api,
@@ -376,6 +414,8 @@ const { server: harnessApiServer } = startHarnessApiServerApp({
   podFilesBus,
   podFilesSnapshot: podFilesPublisher.compute,
   seedSources,
+  runtimeHello: runtimeDelivery.hello,
+  triggerEventHandler: runtimeDelivery.triggerHandler,
 });
 
 // ADR-041: instance identity for ext-authz now flows from the per-instance
@@ -411,6 +451,9 @@ async function shutdown() {
   await deliverySweeper.stop();
   await agentArtifactsSweeper.stop();
   await channelManager.stopAll();
+  await runtimeDelivery.sweep.stop();
+  await runtimeDelivery.worker.close();
+  await runtimeDelivery.queue.close();
   await redisBus.close();
   await sql.end();
   extAuthzGrpcServer.tryShutdown(() => {});

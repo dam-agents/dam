@@ -1,5 +1,9 @@
 import { serve } from "@hono/node-server";
 import type { CoreV1Api } from "@kubernetes/client-node";
+import type {
+  RuntimeDeliveryService,
+  TriggerEventHandler,
+} from "api-server-api";
 import { SessionMode } from "api-server-api";
 import type { Db } from "db";
 import { createK8sClient } from "../../modules/agents/infrastructure/k8s.js";
@@ -30,6 +34,9 @@ export interface HarnessApiServerAppDeps {
   podFilesBus: PodFilesBus;
   podFilesSnapshot: (owner: string, agentId: string) => Promise<FileSpec[]>;
   seedSources: SkillSourceSeed[];
+  // ADR-052: agent-callable runtime channel routes.
+  runtimeHello: RuntimeDeliveryService;
+  triggerEventHandler: TriggerEventHandler;
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
@@ -42,6 +49,8 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     podFilesBus,
     podFilesSnapshot,
     seedSources,
+    runtimeHello,
+    triggerEventHandler,
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
@@ -58,6 +67,8 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     k8s: k8sClient,
     podFiles: { bus: podFilesBus, fetchSnapshot: podFilesSnapshot },
     agentHome: config.agentHome,
+    runtimeHello,
+    triggerEventHandler,
     composeSkills: (owner) =>
       composeSkillsModule(
         api,
