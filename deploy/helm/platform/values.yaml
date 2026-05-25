@@ -30,6 +30,19 @@ brand:
   # for the easiest override workflow.
   icon: ""
 
+# -- Terms of Use shown at the api-server acceptance gate. Both fields are
+# required; the chart refuses to install when either is unset. Bump
+# `terms.version` on every material change to re-prompt every user; the
+# server records `sha256(text)` on each Acceptance row as proof binding.
+# See ADR-047.
+terms:
+  # Markdown content rendered at /terms and on the login page. Supply via
+  # `helm install --set-file terms.text=./TERMS.md`.
+  text: ""
+  # Free-form re-prompt trigger (e.g. "2026-05-25", "v1"). Operator
+  # judgment — whitespace edits don't bump this.
+  version: ""
+
 # -- Base domain for the app. UI and API share this host; the ingress
 # splits `/api/*` to the api-server and everything else to the UI. Keycloak
 # lives at `keycloak.{domain}`.

@@ -284,6 +284,19 @@ export const agents = pgTable(
   (table) => [index("agents_owner_idx").on(table.ownerSub)],
 );
 
+export const termsAcceptances = pgTable(
+  "terms_acceptances",
+  {
+    sub: text("sub").notNull(),
+    version: text("version").notNull(),
+    hash: text("hash").notNull(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.sub, table.version] })],
+);
+
 export const agentSkillPublishes = pgTable(
   "agent_skill_publishes",
   {

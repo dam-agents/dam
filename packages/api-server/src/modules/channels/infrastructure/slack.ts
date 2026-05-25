@@ -115,6 +115,8 @@ export function createSlackWorker(
   /** Lowercase brand identifier used as the Slack slash command name (e.g.
    *  brandShort="name" → /name login). Sourced from BRAND_SHORT env var. */
   brandShort: string,
+  isTermsAccepted: (sub: string) => Promise<boolean>,
+  uiBaseUrl: string,
   emit: (event: DomainEvent) => void = defaultEmit,
 ): SlackWorker {
   let app: BoltApp | null = null;
@@ -534,6 +536,15 @@ export function createSlackWorker(
         channel: args.channel,
         user: args.slackUserId,
         text: "You don't have access to this instance. Contact the instance owner to be added to the allowed users list.",
+      });
+      return;
+    }
+
+    if (!(await isTermsAccepted(args.keycloakSub))) {
+      await app.client.chat.postEphemeral({
+        channel: args.channel,
+        user: args.slackUserId,
+        text: `Open ${uiBaseUrl} to accept the Terms of Use before sending messages.`,
       });
       return;
     }

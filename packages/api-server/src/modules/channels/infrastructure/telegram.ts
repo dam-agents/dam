@@ -39,6 +39,10 @@ export interface TelegramThreadsRepo {
   ) => Promise<void>;
   list: (agentId: string) => Promise<string[]>;
   revoke: (agentId: string, threadId: string) => Promise<void>;
+  getAuthorizedBy: (
+    agentId: string,
+    threadId: string,
+  ) => Promise<string | null>;
 }
 
 export interface ChannelConversation {
@@ -132,6 +136,8 @@ export function createTelegramWorker(
     ) => Promise<{ sessionId: string } | null>;
     touch: (sessionId: string) => Promise<void>;
   },
+  isTermsAccepted: (sub: string) => Promise<boolean>,
+  uiBaseUrl: string,
   emit: (event: DomainEvent) => void = defaultEmit,
 ): TelegramWorker {
   const bots = new Map<string, InstanceBot>();
@@ -319,6 +325,18 @@ export function createTelegramWorker(
         if (thread.isDM) {
           await thread.post(
             "This conversation isn't authorized. An admin needs to send /login.",
+          );
+        }
+        return;
+      }
+      const authorizedBy = await threads.getAuthorizedBy(
+        instanceName,
+        thread.id,
+      );
+      if (authorizedBy && !(await isTermsAccepted(authorizedBy))) {
+        if (thread.isDM) {
+          await thread.post(
+            `Open ${uiBaseUrl} to accept the Terms of Use before continuing.`,
           );
         }
         return;

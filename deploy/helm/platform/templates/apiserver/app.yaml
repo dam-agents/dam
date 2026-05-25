@@ -249,6 +249,12 @@ spec:
             - name: BRAND_ICON_SVG
               value: {{ .Values.brand.icon | quote }}
             {{- end }}
+            # Terms of Use — see ADR-047. Required; chart validation fails
+            # the install when either value is unset.
+            - name: TERMS_VERSION
+              value: {{ .Values.terms.version | quote }}
+            - name: TERMS_TEXT
+              value: {{ .Values.terms.text | quote }}
           volumeMounts:
             - name: trusted-hosts
               mountPath: /etc/platform/trusted-hosts

@@ -9,6 +9,7 @@ import type { SecretsService } from "./modules/secrets/types.js";
 import type { SessionsService } from "./modules/sessions/types.js";
 import type { SkillsService } from "./modules/skills/types.js";
 import type { TemplatesService } from "./modules/templates/types.js";
+import type { TermsService } from "./modules/terms/types.js";
 
 export interface UserIdentity {
   sub: string;
@@ -27,5 +28,6 @@ export interface ApiContext {
   approvals: ApprovalsService;
   egressRules: EgressRulesService;
   files: FilesService;
+  terms: TermsService;
   user: UserIdentity;
 }

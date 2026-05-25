@@ -119,6 +119,14 @@ const configSchema = z.object({
    *  env-var input-prep block below — not in the schema — so a malformed
    *  server response cannot silently coerce on the UI side. */
   brand: brandSchema,
+  /** Terms of Use shown at the acceptance gate. Required Helm values
+   *  (`terms.text`, `terms.version`) — chart refuses install when unset.
+   *  Text is markdown; `version` is operator-bumped on material changes
+   *  to re-prompt every user. See ADR-047. */
+  terms: z.object({
+    version: z.string().min(1, "terms.version must be set"),
+    text: z.string().min(1, "terms.text must be set"),
+  }),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -182,6 +190,10 @@ export function loadConfig(): Config {
           accentLight: process.env.BRAND_THEME_DARK_ACCENT_LIGHT ?? "#0f1f3a",
         },
       },
+    },
+    terms: {
+      version: process.env.TERMS_VERSION,
+      text: process.env.TERMS_TEXT,
     },
   });
 }

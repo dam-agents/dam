@@ -34,6 +34,7 @@ const PUBLIC_PATHS = new Set([
   "/api/oauth/callback",
   "/api/slack/oauth/callback",
   "/api/telegram/oauth/callback",
+  "/api/terms",
 ]);
 
 const PUBLIC_PATH_PREFIXES = ["/api/brand/"];

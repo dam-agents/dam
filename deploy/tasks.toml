@@ -374,7 +374,11 @@ rm -f "$tar"
 
 # 4. Helm install or upgrade
 # Dev-cluster defaults (overridable via --set)
-DEV_DEFAULTS=(--set keycloak.admin.password=admin)
+DEV_DEFAULTS=(
+  --set keycloak.admin.password=admin
+  --set terms.version=dev
+  --set "terms.text=Dev placeholder Terms of Use. See ADR-047."
+)
 
 # Detect btrfs-backed clusters (Fedora hosts default to btrfs) and bypass
 # the bundled nfs-ganesha provisioner — it returns EREMOTEIO on every write

@@ -8,6 +8,7 @@ import type {
   ApiContext,
   AuthConfig,
   Brand,
+  TermsService,
   UserIdentity,
 } from "api-server-api";
 import { buildPlatformSessionModeChangedNotification } from "api-server-api";
@@ -41,6 +42,7 @@ import {
   authorizeThread,
   revokeThread,
   listAuthorizedThreads,
+  getAuthorizedBy,
 } from "../../modules/channels/infrastructure/telegram-threads-repository.js";
 import { createAcpRelay } from "./acp-relay.js";
 import { createTerminalRelay } from "./terminal-relay.js";
@@ -49,6 +51,8 @@ import { createOAuthRoutes } from "./oauth.js";
 import { mountBrandIconRoutes } from "./brand-icon.js";
 import type { Config } from "../../config.js";
 import { createAuth, ForbiddenError } from "./auth.js";
+import { createTermsGate } from "./terms-gate.js";
+import type { IsAcceptedPort } from "../../modules/terms/compose.js";
 import { createK8sSecretsPort } from "./../../modules/secrets/infrastructure/k8s-secrets-port.js";
 import { createSecretsService } from "./../../modules/secrets/services/secrets-service.js";
 import {
@@ -106,6 +110,8 @@ export interface ApiServerAppDeps {
   mountUsageRoutes: (
     app: Hono<{ Variables: { user: UserIdentity; roles: string[] } }>,
   ) => void;
+  terms: TermsService;
+  isTermsAccepted: IsAcceptedPort;
 }
 
 export function startApiServerApp(deps: ApiServerAppDeps) {
@@ -128,6 +134,8 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     secretStores,
     runtimeMutator,
     schedulesBoot,
+    terms,
+    isTermsAccepted,
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
@@ -213,6 +221,10 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   // of brand truth; all UI components read from here, never from build-time
   // constants.
   app.get("/api/brand", (c) => c.json(config.brand satisfies Brand));
+  // Public — Terms of Use document. Hit by the login page and the /terms
+  // route. Ships text only on this read; the gate response carries
+  // version+hash only. See ADR-047.
+  app.get("/api/terms", (c) => c.json(terms.document()));
   // Public — PWA manifest (replaces the build-time bundled one). Served
   // dynamically so the installed-PWA name follows brand without a UI rebuild.
   app.get("/api/brand/manifest.webmanifest", (c) => {
@@ -253,6 +265,8 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   mountBrandIconRoutes(app);
 
   app.use("/api/*", auth.middleware);
+  const termsGate = createTermsGate({ terms });
+  app.use("/api/*", termsGate.middleware);
 
   app.route(
     "/",
@@ -295,6 +309,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
           authorize: authorizeThread(db),
           list: listAuthorizedThreads(db),
           revoke: revokeThread(db),
+          getAuthorizedBy: getAuthorizedBy(db),
         },
         isAgentOwner: (agentId, sub) => agentsRepo.isOwnedBy(agentId, sub),
         oauthConfig: {
@@ -649,6 +664,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         approvals,
         egressRules,
         files,
+        terms,
         user,
       }),
     });
@@ -740,6 +756,12 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     const agentId = decodeURIComponent(match[1]);
     if (!(await verifyOwner(agentId, user.sub))) {
       socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+
+    if (!(await isTermsAccepted(user.sub))) {
+      socket.write("HTTP/1.1 412 Precondition Failed\r\n\r\n");
       socket.destroy();
       return;
     }

@@ -36,6 +36,7 @@ export function SettingsView() {
   const [activeTab, setActiveTab] = useState<Tab>("account");
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
+  const setView = useStore((s) => s.setView);
   const user = getUser();
 
   return (
@@ -121,6 +122,15 @@ export function SettingsView() {
               >
                 <LogOut size={14} />
                 Log out
+              </button>
+            </div>
+
+            <div className="mt-6">
+              <button
+                onClick={() => setView("terms")}
+                className="text-[13px] font-medium text-text-secondary hover:text-text underline underline-offset-2"
+              >
+                View Terms of Use
               </button>
             </div>
           </div>

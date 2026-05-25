@@ -14,6 +14,14 @@ export class AuthRequiredAtTransportError extends Error {
   }
 }
 
+export class TermsStaleAtTransportError extends Error {
+  readonly kind = "terms-stale" as const;
+  constructor(public readonly host: string) {
+    super(`Terms of Use acceptance required at ${host}`);
+    this.name = "TermsStaleAtTransportError";
+  }
+}
+
 function buildAuthHeaders(deps: {
   host: string;
   tokenProvider: TokenProvider;
@@ -41,6 +49,29 @@ function buildAuthHeaders(deps: {
   };
 }
 
+function wrapFetchWithTermsGate(
+  host: string,
+  baseFetch?: typeof fetch,
+): typeof fetch {
+  const inner = baseFetch ?? fetch;
+  return (async (input, init) => {
+    const response = await inner(input, init);
+    if (response.status === 412) {
+      const clone = response.clone();
+      try {
+        const body = (await clone.json()) as { error?: string };
+        if (body.error === "terms_stale") {
+          throw new TermsStaleAtTransportError(host);
+        }
+      } catch (err) {
+        if (err instanceof TermsStaleAtTransportError) throw err;
+        // non-JSON 412 — let it bubble normally
+      }
+    }
+    return response;
+  }) as typeof fetch;
+}
+
 export function createTrpcClient(deps: {
   host: string;
   tokenProvider: TokenProvider;
@@ -50,7 +81,7 @@ export function createTrpcClient(deps: {
     links: [
       httpBatchLink({
         url: `${deps.host.replace(/\/+$/, "")}/api/trpc`,
-        fetch: deps.fetch,
+        fetch: wrapFetchWithTermsGate(deps.host, deps.fetch),
         headers: buildAuthHeaders(deps),
       }),
     ],
@@ -68,7 +99,7 @@ export function createAgentTrpcClient(deps: {
     links: [
       httpBatchLink({
         url: base,
-        fetch: deps.fetch,
+        fetch: wrapFetchWithTermsGate(deps.host, deps.fetch),
         headers: buildAuthHeaders(deps),
       }),
     ],

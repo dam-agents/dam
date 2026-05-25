@@ -10,6 +10,7 @@ import { secretsRouter } from "./modules/secrets/router.js";
 import { sessionsRouter } from "./modules/sessions/router.js";
 import { skillsRouter } from "./modules/skills/router.js";
 import { templatesRouter } from "./modules/templates/router.js";
+import { termsRouter } from "./modules/terms/router.js";
 
 export const appRouter = t.router({
   templates: templatesRouter,
@@ -23,6 +24,7 @@ export const appRouter = t.router({
   approvals: approvalsRouter,
   egressRules: egressRulesRouter,
   files: filesRouter,
+  terms: termsRouter,
 });
 
 export type AppRouter = typeof appRouter;

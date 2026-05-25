@@ -52,6 +52,7 @@ import {
   revokeThread,
   listAuthorizedThreads,
   deleteThreadsByAgent,
+  getAuthorizedBy,
 } from "./modules/channels/infrastructure/telegram-threads-repository.js";
 import {
   composeRuntimeDelivery,
@@ -69,6 +70,7 @@ import {
 } from "./modules/forks/index.js";
 import { composeUsageModule } from "./modules/usage/compose.js";
 import { createK8sForkOrchestrator } from "./modules/forks/infrastructure/k8s-fork-orchestrator.js";
+import { composeTermsModule } from "./modules/terms/index.js";
 import { loadConfig } from "./config.js";
 import { startApiServerApp } from "./apps/api-server/app.js";
 import { startHarnessApiServerApp } from "./apps/harness-api-server/app.js";
@@ -105,6 +107,13 @@ const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);
 
 const secretStores = createSecretStoreRegistry();
 secretStores.register(createKubernetesSecretStore({ k8s: k8sClient }));
+
+const { service: termsService, isAcceptedPort: isTermsAccepted } =
+  composeTermsModule({
+    db,
+    version: config.terms.version,
+    text: config.terms.text,
+  });
 
 const k8sCleanupSub = startK8sCleanupSaga(k8sClient, channelSecretStore);
 const channelCleanupSub = startChannelCleanupSaga(
@@ -233,6 +242,8 @@ const slackWorker =
         (agentId) => agentsRepo.getOwner(agentId),
         channelRegistry,
         config.brand.short,
+        isTermsAccepted,
+        config.uiBaseUrl,
       )
     : undefined;
 
@@ -248,6 +259,7 @@ const telegramWorker =
           authorize: authorizeThread(db),
           list: listAuthorizedThreads(db),
           revoke: revokeThread(db),
+          getAuthorizedBy: getAuthorizedBy(db),
         },
         {
           keycloakExternalUrl: config.keycloakExternalUrl,
@@ -261,6 +273,8 @@ const telegramWorker =
           find: findByInstanceAndThreadTs(db),
           touch: touchSession(db),
         },
+        isTermsAccepted,
+        config.uiBaseUrl,
       )
     : undefined;
 
@@ -397,6 +411,8 @@ const { server: apiServer } = startApiServerApp({
   runtimeMutator: runtimeDelivery.runtimeMutator,
   schedulesBoot,
   mountUsageRoutes: usage.mount,
+  terms: termsService,
+  isTermsAccepted,
 });
 
 const { server: harnessApiServer } = startHarnessApiServerApp({

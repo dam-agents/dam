@@ -314,6 +314,22 @@ export type {
 export { brandSchema } from "./modules/brand/types.js";
 export type { Brand } from "./modules/brand/types.js";
 
+// Terms
+export type {
+  TermsCurrent,
+  TermsDocument,
+  StaleAcceptance,
+  AcceptedAcceptance,
+  TermsService,
+} from "./modules/terms/types.js";
+export {
+  staleAcceptanceSchema,
+  termsAcceptInputSchema,
+  termsCurrentSchema,
+  termsDocumentSchema,
+  termsLatestAcceptanceSchema,
+} from "./modules/terms/schemas.js";
+
 // Auth config
 export { authConfigSchema } from "./modules/auth/types.js";
 export type { AuthConfig } from "./modules/auth/types.js";
