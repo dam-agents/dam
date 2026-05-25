@@ -1,10 +1,10 @@
 import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
-import { KeyRound, Plug, Server, Trash2 } from "lucide-react";
+import { KeyRound, LogIn, Plug, Server, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { AppStatusPill } from "../../../components/app-status-pill.js";
 import { ListSkeleton } from "../../../components/list-skeleton.js";
-import { useDeleteConnection } from "../api/mutations.js";
+import { useDeleteConnection, useStartOAuth } from "../api/mutations.js";
 import { useAppConnections, useConnectionTemplates } from "../api/queries.js";
 import { TemplateCreateForm } from "../forms/template-create-form.js";
 
@@ -24,8 +24,17 @@ export function ConnectionTemplatesSection() {
   const templates = useConnectionTemplates();
   const connections = useAppConnections();
   const del = useDeleteConnection();
+  const startOAuth = useStartOAuth();
 
   const [creating, setCreating] = useState<ConnectionTemplateView | null>(null);
+
+  const onConnect = async (connectionId: string) => {
+    const r = (await startOAuth.mutateAsync({ connectionId })) as {
+      authUrl: string;
+    };
+    sessionStorage.setItem("platform-return-view", "connections");
+    window.location.href = r.authUrl;
+  };
 
   const byCategory = groupByCategory(templates.data ?? []);
 
@@ -57,6 +66,11 @@ export function ConnectionTemplatesSection() {
                      distinct ConnectionView — cast. */
                   connection={c as unknown as ConnectionView}
                   onDelete={() => del.mutate({ id: c.id })}
+                  onConnect={() => onConnect(c.id)}
+                  connecting={
+                    startOAuth.isPending &&
+                    startOAuth.variables?.connectionId === c.id
+                  }
                   deleting={del.isPending && del.variables?.id === c.id}
                 />
               ))}
@@ -115,12 +129,22 @@ export function ConnectionTemplatesSection() {
 function ConnectionRow({
   connection,
   onDelete,
+  onConnect,
+  connecting,
   deleting,
 }: {
   connection: ConnectionView;
   onDelete: () => void;
+  onConnect: () => void;
+  connecting: boolean;
   deleting: boolean;
 }) {
+  // OAuth Connections in `pending` state haven't completed the auth-code
+  // dance yet — surface a "Connect" button that redirects to the
+  // provider's authorize URL. Other Connections (header / none, or
+  // already-active oauth) skip the button.
+  const needsOAuth =
+    connection.authKind === "oauth" && connection.status === "pending";
   return (
     <div className="flex items-center gap-3 rounded-lg border-2 bg-bg px-4 py-3 border-border-light">
       <Plug size={14} className="text-text-secondary shrink-0" />
@@ -133,6 +157,16 @@ function ConnectionRow({
         </div>
       </div>
       <AppStatusPill status={connection.status} />
+      {needsOAuth && (
+        <button
+          onClick={onConnect}
+          disabled={connecting}
+          className="btn-brutal h-8 rounded-lg border-2 border-accent-hover bg-accent px-3 text-[12px] font-bold text-white shadow-brutal-accent disabled:opacity-50 flex items-center gap-1"
+          title="Authorize this connection"
+        >
+          <LogIn size={12} /> Connect
+        </button>
+      )}
       <button
         onClick={onDelete}
         disabled={deleting}

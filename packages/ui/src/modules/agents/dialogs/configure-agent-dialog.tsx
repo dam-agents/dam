@@ -21,11 +21,7 @@ import {
   Modal,
 } from "../../../components/modal.js";
 import type { AgentView } from "../../../types.js";
-import { APP_OAUTH_SECRET_PREFIX } from "../../../types.js";
-import {
-  useAppConnections,
-  useOAuthAppConnections,
-} from "../../connections/api/queries.js";
+import { useAppConnections } from "../../connections/api/queries.js";
 import {
   useApplyEgressPreset,
   useCreateEgressRule,
@@ -73,7 +69,6 @@ export function ConfigureAgentDialog({
 
   const { data: secrets = [] } = useSecrets();
   const { data: apps = [] } = useAppConnections();
-  const { data: oauthAppConnections = [] } = useOAuthAppConnections();
   const accessQuery = useAgentAccess(agentId);
   const connectionsQuery = useAgentConnections(agentId);
   const { data: egressRules = [] } = useEgressRulesForAgent(agentId);
@@ -169,27 +164,10 @@ export function ConfigureAgentDialog({
   const assignedSet = useMemo(() => new Set(assigned), [assigned]);
   const appIdsSet = useMemo(() => new Set(assignedAppIds), [assignedAppIds]);
 
-  // Join the api-server-driven OAuth app connections with their K8s
-  // credential Secrets so the picker can render them in the "Apps"
-  // subsection while grants flow through the secret-access mechanism.
-  const oauthAppEntries = useMemo<OAuthAppEntry[]>(() => {
-    const secretByName = new Map(secrets.map((s) => [s.name, s]));
-    return oauthAppConnections.flatMap((conn) => {
-      const mirror = secretByName.get(
-        `${APP_OAUTH_SECRET_PREFIX}${conn.connectionId}`,
-      );
-      if (!mirror) return [];
-      return [
-        {
-          secretId: mirror.id,
-          appId: conn.appId,
-          displayName: conn.displayName,
-          hosts: conn.hosts,
-          expired: conn.expired,
-        },
-      ];
-    });
-  }, [oauthAppConnections, secrets]);
+  // Legacy OAuth-app secret-mirror subsection retired with ADR-051. The
+  // unified Connections list covers every flow now; the picker's OAuth
+  // subsection just renders an empty list.
+  const oauthAppEntries: OAuthAppEntry[] = [];
 
   const inheritedEnvs = useMemo<InheritedEnv[]>(() => {
     const items: InheritedEnv[] = (agent.env ?? [])

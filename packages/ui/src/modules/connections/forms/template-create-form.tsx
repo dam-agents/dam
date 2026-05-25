@@ -7,7 +7,7 @@ import {
   DialogHeader,
   Modal,
 } from "../../../components/modal.js";
-import { useCreateConnection } from "../api/mutations.js";
+import { useCreateConnection, useStartOAuth } from "../api/mutations.js";
 
 const INPUT_CLASS =
   "w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted";
@@ -33,11 +33,14 @@ export function TemplateCreateForm({
   onCancel: () => void;
 }) {
   const create = useCreateConnection();
+  const startOAuth = useStartOAuth();
   const [name, setName] = useState("");
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
 
   const fields = fieldsForTemplate(template.id);
+  const needsOAuth = template.authKinds.includes("oauth");
+  const pending = create.isPending || startOAuth.isPending;
 
   const submit = async () => {
     setError(null);
@@ -47,6 +50,20 @@ export function TemplateCreateForm({
         name: name.trim() || undefined,
         inputs,
       })) as { id: string };
+      if (needsOAuth) {
+        // Hand off to the OAuth flow immediately so the user only sees one
+        // "Add GitHub" → authorize-at-provider step. Skipping this would
+        // leave the Connection in `pending` until the user clicks Connect
+        // in the row.
+        const r = (await startOAuth.mutateAsync({
+          connectionId: result.id,
+        })) as {
+          authUrl: string;
+        };
+        sessionStorage.setItem("platform-return-view", "connections");
+        window.location.href = r.authUrl;
+        return;
+      }
       onCreated(result.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -114,10 +131,10 @@ export function TemplateCreateForm({
         </button>
         <button
           onClick={submit}
-          disabled={create.isPending}
+          disabled={pending}
           className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent"
         >
-          {create.isPending ? "Creating…" : "Create"}
+          {pending ? "…" : needsOAuth ? "Create + Authorize" : "Create"}
         </button>
       </DialogFooter>
     </Modal>

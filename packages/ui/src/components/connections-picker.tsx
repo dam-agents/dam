@@ -1,10 +1,8 @@
 import type { AppConnectionView } from "api-server-api";
 import { Globe, Info, KeyRound, Lock, Sparkles } from "lucide-react";
 
-import { OAuthAppIcon } from "../modules/connections/components/oauth-app-icon.js";
 import type { SecretView } from "../types.js";
 import {
-  APP_OAUTH_SECRET_PREFIX,
   isMcpSecret,
   isProviderPresetType,
   mcpHostnameFromSecretName,
@@ -73,13 +71,10 @@ export function ConnectionsPicker({
   const providerSecrets = secrets.filter((s) => isProviderPresetType(s.type));
   const mcpSecrets = secrets.filter((s) => isMcpSecret(s));
   // Generic secrets exclude provider presets (Anthropic, IBM LiteLLM — they
-  // render under "providers") and platform-internal mirrors (MCP secrets,
-  // app-OAuth token mirrors — own subsections).
+  // render under "providers") and platform-internal mirrors (MCP secrets —
+  // own subsection).
   const genericSecrets = secrets.filter(
-    (s) =>
-      s.type === "generic" &&
-      !isMcpSecret(s) &&
-      !s.name.startsWith(APP_OAUTH_SECRET_PREFIX),
+    (s) => s.type === "generic" && !isMcpSecret(s),
   );
 
   // Assigned app-ids that are no longer in the live `apps` list. Can happen
@@ -340,9 +335,7 @@ function OAuthAppItemRow({
         checked={checked}
         onChange={onToggle}
       />
-      <span className="shrink-0 mt-0.5 text-text-secondary">
-        <OAuthAppIcon appId={entry.appId} alt={entry.displayName} size={14} />
-      </span>
+      <KeyRound size={14} className="text-text-secondary shrink-0 mt-0.5" />
       <div className="flex-1 min-w-0">
         <div className="text-[13px] font-medium text-text truncate">
           {entry.displayName}
