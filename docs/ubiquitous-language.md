@@ -104,6 +104,17 @@ Pod-side operational view of skills. Distinct from the api-server's Skills conte
 | Secret Assignment | The linkage between a Secret and an Agent that makes the secret available to that Agent's egress; stored as the `agent-platform.ai/secret-mode` + `agent-platform.ai/granted-secret-ids` annotations on the Agent ConfigMap |
 | Provider | The external service a secret authenticates against (e.g., Anthropic); for typed secrets the provider determines default routing rules |
 
+## Terms (bounded context)
+
+| Term | Definition |
+|------|-----------|
+| Terms of Use | The legal contract a user must accept before driving Platform through any authenticated surface; text and version sourced from Helm values (`terms.text`, `terms.version`) |
+| Terms Version | A free-form string in Helm values that the operator bumps when a change is material; the gate compares the user's latest accepted version against it to decide re-prompting |
+| Terms Hash | sha256 of the current Terms of Use text, computed at api-server boot; recorded on every Acceptance for proof — never compared by the gate |
+| Acceptance | A per-(user, version) record proving a user accepted a specific Terms Version, written when they POST to `/api/terms/accept`; append-only history in `terms_acceptances` |
+| Acceptance Gate | The api-server middleware on the public port that refuses every request from a sub whose latest Acceptance row doesn't match the current Terms Version, returning 412 with `{ currentVersion, currentHash }` |
+| Stale Acceptance | The state of a sub whose latest Acceptance is for an older Terms Version than the current one; the gate refuses them until they accept again |
+
 ## Platform CLI (bounded context)
 
 | Term | Definition |
