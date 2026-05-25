@@ -12,9 +12,19 @@ USER root
 # producing output, which is why they appeared to work.)
 RUN dnf install -y nodejs24-full-i18n && dnf clean all
 
-# Pi harness
+# Pi harness — versions pinned so rebuilds are reproducible. Bump deliberately
+# and keep the @earendil-works/pi-coding-agent version in sync with the
+# pi-dynamic-providers extension's devDependency
+# (workspace/.pi/agent/extensions/pi-dynamic-providers/package.json) so the
+# extension type-checks against the same fork it actually loads against.
+ARG PI_CODING_AGENT_VERSION=0.75.5
+ARG PI_ACP_VERSION=0.0.27
+ARG PI_MEMORY_VERSION=1.0.2
 RUN --mount=type=cache,target=/root/.npm \
-    npm install -g @earendil-works/pi-coding-agent pi-acp @zhafron/pi-memory \
+    npm install -g \
+      "@earendil-works/pi-coding-agent@${PI_CODING_AGENT_VERSION}" \
+      "pi-acp@${PI_ACP_VERSION}" \
+      "@zhafron/pi-memory@${PI_MEMORY_VERSION}" \
     && chown -R 65532:0 /app
 
 COPY harness-chat.sh /usr/local/bin/harness-chat

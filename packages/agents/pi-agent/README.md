@@ -6,7 +6,7 @@ Platform agent running [pi coding agent](https://github.com/badlogic/pi-mono) wi
 
 | Component | Package | Purpose |
 |---|---|---|
-| Harness | `@mariozechner/pi-coding-agent` + `pi-acp` | pi runtime + ACP bridge to Platform UI |
+| Harness | `@earendil-works/pi-coding-agent` + `pi-acp` | pi runtime fork + ACP bridge to Platform UI |
 | Memory | `@zhafron/pi-memory` | git-free file-based memory, auto-injected at session start |
 
 Default model: `openai / gpt-5.4-mini`. Change in `workspace/.pi/agent/settings.json`.

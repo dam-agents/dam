@@ -21,9 +21,35 @@ trustPolicyExclude:
   # maintainer (paulmillr), GitHub tag matches, restored in 5.0.0 via
   # `trustedPublisher: github`. Benign publisher-side workflow change.
   - 'chokidar@4.0.3'
+  # @mariozechner/clipboard 0.3.6 (2026-05-16) dropped OIDC provenance that
+  # 0.3.0–0.3.5 had — same upstream (mariozechner), benign publisher-side
+  # workflow change. Pulled in transitively by @earendil-works/pi-coding-agent
+  # via the pi-dynamic-providers extension; the platform-specific subpackages
+  # below ride the same version. Re-evaluate when clipboard restores
+  # provenance.
+  - '@mariozechner/clipboard@0.3.6'
+  - '@mariozechner/clipboard-darwin-arm64@0.3.6'
+  - '@mariozechner/clipboard-darwin-x64@0.3.6'
+  - '@mariozechner/clipboard-darwin-universal@0.3.6'
+  - '@mariozechner/clipboard-linux-arm64-gnu@0.3.6'
+  - '@mariozechner/clipboard-linux-arm64-musl@0.3.6'
+  - '@mariozechner/clipboard-linux-riscv64-gnu@0.3.6'
+  - '@mariozechner/clipboard-linux-x64-gnu@0.3.6'
+  - '@mariozechner/clipboard-linux-x64-musl@0.3.6'
+  - '@mariozechner/clipboard-win32-arm64-msvc@0.3.6'
+  - '@mariozechner/clipboard-win32-x64-msvc@0.3.6'
 minimumReleaseAgeExclude:
   # CVE-2026-45736 security fix — released 2026-05-12, inside the 7-day window
   - 'ws@8.20.1'
+  # Pinned in packages/agents/pi-agent/Dockerfile and the pi-dynamic-providers
+  # extension to keep the extension's types aligned with the runtime fork that
+  # actually loads against them (issue #375). The fork ships its core/ai/tui
+  # packages at the same version; bump all four together with the Dockerfile
+  # ARG. Safe to drop from this list once the chosen version ages past 7 days.
+  - '@earendil-works/pi-coding-agent@0.75.5'
+  - '@earendil-works/pi-agent-core@0.75.5'
+  - '@earendil-works/pi-ai@0.75.5'
+  - '@earendil-works/pi-tui@0.75.5'
 allowBuilds:
   # grpc-tools downloads the protoc binary in a postinstall step; needed
   # by `mise run api-server:gen:proto` (ts-proto codegen for ext_authz).

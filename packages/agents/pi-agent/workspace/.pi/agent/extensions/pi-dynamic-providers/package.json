@@ -2,9 +2,9 @@
   "name": "pi-dynamic-providers-extension",
   "private": true,
   "version": "0.0.0",
-  "description": "Local-only types for the pi-dynamic-providers extension. Not installed at runtime; pi-coding-agent is provided globally by the agent image.",
+  "description": "Local-only types for the pi-dynamic-providers extension. Not installed at runtime; @earendil-works/pi-coding-agent is provided globally by the agent image. Keep this version pinned to the same version installed in packages/agents/pi-agent/Dockerfile so the extension type-checks against the runtime it actually loads against.",
   "devDependencies": {
-    "@mariozechner/pi-coding-agent": "^0.71.0",
+    "@earendil-works/pi-coding-agent": "0.75.5",
     "@types/node": "^24.0.0"
   }
 }
