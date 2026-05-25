@@ -4,8 +4,8 @@ import type {
   EgressRuleUpdateInput,
   EgressRuleView,
 } from "api-server-api";
-import { err, type Result } from "../../../result.js";
-import { trpcCall } from "../../shared/trpc/classify.js";
+import { err, ok, type Result } from "../../../result.js";
+import { classifyTrpcError, trpcCall } from "../../shared/trpc/classify.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
 import type {
   AuthRequiredError,
@@ -36,11 +36,7 @@ export interface EgressService {
       TransportError | AuthRequiredError | RuleNotFoundError
     >
   >;
-  revoke(
-    id: string,
-  ): Promise<
-    Result<void, TransportError | AuthRequiredError | RuleNotFoundError>
-  >;
+  revoke(id: string): Promise<Result<void, TransportError | AuthRequiredError>>;
   applyPreset(
     agentId: string,
     preset: EgressPreset,
@@ -73,17 +69,35 @@ export function createEgressService(deps: { trpc: TrpcClient }): EgressService {
           >,
       );
     },
-    async create(_input) {
-      return err({ kind: "transport", reason: "not implemented" });
+    async create(input) {
+      return trpcCall(
+        () =>
+          deps.trpc.egressRules.create.mutate(input) as Promise<EgressRuleView>,
+      );
     },
-    async update(_input) {
-      return err({ kind: "transport", reason: "not implemented" });
+    async update(input) {
+      try {
+        const view = (await deps.trpc.egressRules.update.mutate(
+          input,
+        )) as EgressRuleView;
+        return ok(view);
+      } catch (e) {
+        if ((e as { data?: { code?: string } })?.data?.code === "NOT_FOUND") {
+          return err({ kind: "rule-not-found", id: input.id });
+        }
+        return classifyTrpcError(e);
+      }
     },
-    async revoke(_id) {
-      return err({ kind: "transport", reason: "not implemented" });
+    async revoke(id) {
+      // Server is idempotent on revoke — unknown IDs return without throwing.
+      return trpcCall(async () => {
+        await deps.trpc.egressRules.revoke.mutate({ id });
+      });
     },
-    async applyPreset(_agentId, _preset) {
-      return err({ kind: "transport", reason: "not implemented" });
+    async applyPreset(agentId, preset) {
+      return trpcCall(async () => {
+        await deps.trpc.egressRules.applyPreset.mutate({ agentId, preset });
+      });
     },
   };
 }

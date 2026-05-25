@@ -16,5 +16,8 @@ export const EXIT_AUTH_STATUS_NO_VALID = 4;
 /** Agent ref didn't resolve — zero matches or ambiguous. */
 export const EXIT_AGENT_NOT_RESOLVED = 5;
 
+/** `dam egress update` / `revoke` against an unknown rule ID. */
+export const EXIT_RULE_NOT_FOUND = 6;
+
 /** POSIX convention: 128 + SIGINT(2). Emitted on Ctrl+C during bundle pack/upload. */
 export const EXIT_SIGINT = 130;
