@@ -115,7 +115,7 @@ export function useFilteredAgents(filter: string) {
 
 ## Dependencies
 
-**[CRITICAL] Declare exhaustive dependency arrays** (`react-hooks/exhaustive-deps` lint, once ESLint is set up). When you genuinely need to omit a dep, leave a one-line comment explaining why — not a `// eslint-disable` alone.
+**[CRITICAL] Declare exhaustive dependency arrays** (`react-hooks/exhaustive-deps` lint, once ESLint is set up). If you think you need to omit a dep, the dependency is wrong — restructure (destructure the stable field, lift the value, extract a hook) until exhaustive-deps is satisfied without disabling the rule. Never `// eslint-disable` exhaustive-deps.
 
 **Stable references** for callbacks passed to children: wrap in `useCallback` only when the callback is in a dependency array of a child hook/memo, or the child is memoized. Wrapping every handler is cargo-culted noise.
 

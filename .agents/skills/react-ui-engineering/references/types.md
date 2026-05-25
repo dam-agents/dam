@@ -91,12 +91,12 @@ For errors:
 1. **Type guards** (`isAgent(x)` returns `x is Agent`).
 2. **Zod parsing** at boundaries (`agentSchema.parse(raw)`).
 3. **Discriminated unions** with `match` / `switch` on a `type` field.
-4. **Only then** `as`, with a comment explaining why.
+4. **Only then** `as`.
 
 Allowed `as` patterns:
 - **`as const`** for literal-type narrowing — totally fine.
 - **`as CSSProperties`** when React's type for `style` is stricter than CSS custom properties allow. Fine.
-- **Narrowing after an `if` you can't express in TS** — acceptable with a comment.
+- **Narrowing after an `if` you can't express in TS** — acceptable, but reach for a type guard first.
 
 ```ts
 ✅ const tuple = ["hello", 42] as const;
@@ -180,10 +180,10 @@ See `references/api-layer.md` for the end-to-end error contract.
 
 ## Anti-patterns
 
-- **`any` anywhere except in a temporary migration comment with a `TODO` deadline.**
+- **`any` anywhere.** If you can't type it now, leave it `unknown` and narrow.
 - **`as` used to "shut up the compiler"** — the compiler is telling you something is off.
 - **Non-null assertions (`x!`, `undefined!`)** — same smell as `as`, just narrower. If the value really can't be null, prove it with a guard or refactor the API; if it can, handle it.
-- **`@ts-ignore` / `@ts-expect-error`** without a comment explaining why — if it's needed, it's needed *and* explained.
+- **`@ts-ignore` / `@ts-expect-error`** without the minimum reason in the directive — if it's needed, the reason rides on the disable itself and stays short.
 - **Redundant annotations** (`const name: string = getName()` when `getName` is typed).
 - **Missing types on exported function parameters** — always annotate the public surface.
 - **`type Props = {}`** (empty props) — omit the parameter.

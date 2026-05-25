@@ -181,7 +181,7 @@ const createAgent = useCreateAgent({ onSuccess: () => closeDialog() });
 
 **[CRITICAL] Use `meta.invalidates`.** Do not call `queryClient.invalidateQueries()` by hand inside `onSuccess` — the MutationCache handler does it centrally for every mutation.
 
-If a mutation needs to invalidate something that depends on its *response* (e.g., an id returned by the server), the handler supports functions too — extend the MutationCache `onSuccess` to accept a function form (`invalidates: (data) => [...]`). Or call `queryClient.invalidateQueries` in the mutation's own `onSuccess` when truly dynamic — exception documented with a one-line comment.
+If a mutation needs to invalidate something that depends on its *response* (e.g., an id returned by the server), the handler supports functions too — extend the MutationCache `onSuccess` to accept a function form (`invalidates: (data) => [...]`). Or call `queryClient.invalidateQueries` in the mutation's own `onSuccess` when truly dynamic.
 
 ### Optimistic updates
 

@@ -15,7 +15,7 @@ This skill is the rulebook Claude applies when touching React+TS UI code. It is 
 2. **Separation by lineage** — state is classified by where its source of truth lives (server, UI, local, URL). Each has a designated home. Mixing lineages is the single biggest driver of drift.
 3. **Small surface, small files** — a component or hook that can't be held in working memory is a bug report waiting to happen. Split aggressively along responsibilities.
 4. **Meaningful names** — variables, functions, components, hooks, and types carry intent in their names. `selectedAgentId` over `sel`; `hasUnsavedChanges` over `flag`; `calculateMonthlyTotal` over `calc`; `useFilteredAgents` over `useData`. A well-named identifier removes the need for a comment. Naming is the cheapest documentation you can write.
-5. **No unnecessary comments** — code explains *what* through clear names and structure. Comments explain *why* only when the reason isn't obvious from the code itself: a subtle invariant, a non-obvious constraint, a workaround tied to a specific bug. Keep them brief — one line, usually. If you can rename a variable or restructure a block to remove the need for a comment, do that instead. Never narrate what the next line already says.
+5. **No code comments** — code explains itself through clear names and structure. If you reach for a comment, rename or restructure until you don't need it. The only acceptable exceptions are linter escape hatches (`@ts-expect-error`, `eslint-disable-next-line`) where the directive itself is a comment — those carry the minimum reason needed for the disable to make sense and nothing more.
 6. **Types at boundaries, not assertions** — `any`, `as`, and untyped fetch responses are how large codebases rot. Prefer Zod inference and type guards.
 
 ---
@@ -55,8 +55,7 @@ Each of these is expanded in a reference file. Severity in brackets.
 
 ### Code style (applies everywhere)
 - [HIGH] Names carry intent. Variables, functions, types, and components are named for what they represent, not for their type, position, or abbreviation (`selectedAgentId` not `sel`, `handleSubmit` not `h`, `Agent` not `Data`, `hasPendingChanges` not `dirty`). If you're reaching for a comment to explain a name, rename it.
-- [HIGH] Comments explain *why*, not *what*. Add a brief comment only when code contains something a future reader couldn't infer: a subtle invariant, a workaround for a specific bug, a constraint from an external system. Delete comments that restate the code.
-- [MODERATE] One line is enough for most comments. Multi-paragraph docstrings and block comments are almost always a sign that the code itself should be clearer.
+- [CRITICAL] No code comments. Rename, restructure, or extract until the code reads on its own. The only acceptable exceptions are linter escape hatches (`@ts-expect-error`, `eslint-disable-next-line`) — the directive's reason is the minimum needed to interpret the disable, not narration.
 - [MODERATE] Destructure when a path repeats in a scope. `schedule.status.lastRun`, `schedule.status.nextRun`, `schedule.status.lastResult` → `const { lastRun, nextRun, lastResult } = status;` (after the guard that narrows `status`). Single-use access stays inline — don't destructure for its own sake. See `references/components.md`.
 
 ### Structure & files
@@ -95,7 +94,7 @@ Each of these is expanded in a reference file. Severity in brackets.
 
 ### Types
 - [CRITICAL] No `any` at module boundaries. Use `unknown` + narrowing or proper types. See `references/types.md`.
-- [HIGH] `as` only when a type guard cannot express the narrowing. When you must use `as`, a one-line comment explains why.
+- [HIGH] `as` only when a type guard cannot express the narrowing. If you reach for `as`, try narrowing first; refactor the call site to make the guard expressible. No comment justifying the assertion — if it's the right call, it's the right call without prose.
 - [HIGH] Export types inferred from Zod schemas (`export type Agent = z.infer<typeof agentSchema>`) — single source of truth.
 
 ### Styling
