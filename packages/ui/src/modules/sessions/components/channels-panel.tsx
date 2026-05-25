@@ -1,7 +1,8 @@
 import { Plus, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { useStore } from "../../../store.js";
+import type { AgentView } from "../../../types.js";
 import {
   useConnectSlack,
   useConnectTelegram,
@@ -19,15 +20,43 @@ export function ChannelsPanel() {
   const telegramAvailable = !!availableChannels.telegram;
 
   const selectedAgent = useStore((s) => s.selectedAgent);
+  const agent = agents.find((a) => a.id === selectedAgent);
+
+  if (!slackAvailable && !telegramAvailable) {
+    return (
+      <div className="px-4 py-4 text-[12px] text-text-muted">
+        No channels are configured for this installation.
+      </div>
+    );
+  }
+
+  return (
+    <ChannelsForm
+      key={agent?.id ?? "none"}
+      agent={agent}
+      slackAvailable={slackAvailable}
+      telegramAvailable={telegramAvailable}
+    />
+  );
+}
+
+function ChannelsForm({
+  agent,
+  slackAvailable,
+  telegramAvailable,
+}: {
+  agent: AgentView | undefined;
+  slackAvailable: boolean;
+  telegramAvailable: boolean;
+}) {
+  const slackChannel = agent?.channels.find((c) => c.type === "slack");
+  const telegramChannel = agent?.channels.find((c) => c.type === "telegram");
+
   const connectSlack = useConnectSlack();
   const disconnectSlack = useDisconnectSlack();
   const connectTelegram = useConnectTelegram();
   const disconnectTelegram = useDisconnectTelegram();
   const updateAgent = useUpdateAgent();
-
-  const agent = agents.find((a) => a.id === selectedAgent);
-  const slackChannel = agent?.channels.find((c) => c.type === "slack");
-  const telegramChannel = agent?.channels.find((c) => c.type === "telegram");
 
   const [slackEnabled, setSlackEnabled] = useState(!!slackChannel);
   const [channelId, setChannelId] = useState(
@@ -40,18 +69,6 @@ export function ChannelsPanel() {
   const [userInput, setUserInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
-
-  useEffect(() => {
-    const sc = agent?.channels.find((c) => c.type === "slack");
-    const tc = agent?.channels.find((c) => c.type === "telegram");
-    setSlackEnabled(!!sc);
-    setChannelId(sc?.type === "slack" ? sc.slackChannelId : "");
-    setTelegramEnabled(!!tc);
-    setBotToken("");
-    setEditingBotToken(!tc);
-    setUsers(agent?.allowedUserEmails ?? []);
-    setDirty(false);
-  }, [agent?.id]);
 
   const addUser = () => {
     const v = userInput.trim();
@@ -112,14 +129,6 @@ export function ChannelsPanel() {
       setSaving(false);
     }
   };
-
-  if (!slackAvailable && !telegramAvailable) {
-    return (
-      <div className="px-4 py-4 text-[12px] text-text-muted">
-        No channels are configured for this installation.
-      </div>
-    );
-  }
 
   return (
     <div className="flex flex-col gap-4 p-4 overflow-y-auto">
