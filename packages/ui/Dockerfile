@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/hi/nodejs:22-builder AS builder
+FROM registry.access.redhat.com/hi/nodejs:24-builder AS builder
 
 USER root
 

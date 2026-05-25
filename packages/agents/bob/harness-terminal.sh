@@ -10,15 +10,11 @@
 # project-scoped index, not by UUID, so $HARNESS_SESSION_ID can't
 # map. Each terminal open starts fresh; use --list-sessions inside.
 #
-# Run on Node 24 (see Dockerfile); PATH covers any internal shebang
-# lookups bob does.
-#
 # Tenant / budget / chat-mode flags translated from platform env.
-export PATH="/opt/node24/bin:$PATH"
 export BOBSHELL_NO_RELAUNCH=true
 set --
 [ -n "$BOB_INSTANCE_ID" ] && set -- "$@" --instance-id "$BOB_INSTANCE_ID"
 [ -n "$BOB_TEAM_ID" ]     && set -- "$@" --team-id     "$BOB_TEAM_ID"
 [ -n "$BOB_MAX_COINS" ]   && set -- "$@" --max-coins   "$BOB_MAX_COINS"
 [ -n "$BOB_CHAT_MODE" ]   && set -- "$@" --chat-mode   "$BOB_CHAT_MODE"
-exec /opt/node24/bin/node /usr/local/lib/node_modules/bobshell/bundle/bob.js --approval-mode=auto_edit --auth-method api-key "$@"
+exec node /usr/local/lib/node_modules/bobshell/bundle/bob.js --approval-mode=auto_edit --auth-method api-key "$@"

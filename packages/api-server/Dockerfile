@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/hi/nodejs:22-builder AS builder
+FROM registry.access.redhat.com/hi/nodejs:24-builder AS builder
 
 USER root
 
@@ -25,7 +25,7 @@ COPY packages/db/ packages/db/
 RUN pnpm --filter api-server build \
     && pnpm --filter api-server --prod --legacy deploy /prod
 
-FROM registry.access.redhat.com/hi/nodejs:22 AS runner
+FROM registry.access.redhat.com/hi/nodejs:24 AS runner
 
 COPY --from=builder --chown=65532:0 /prod /app
 COPY --from=builder --chown=65532:0 /app/packages/db/drizzle /app/packages/db/drizzle

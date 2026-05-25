@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/hi/nodejs:22-builder AS base
+FROM registry.access.redhat.com/hi/nodejs:24-builder AS base
 
 USER root
 ENV PATH="/app/node_modules/.bin:$PATH"

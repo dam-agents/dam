@@ -3,14 +3,14 @@ FROM ${BASE_IMAGE}
 
 USER root
 
-# The platform-base nodejs22 package ships without full ICU data, so
+# The platform-base nodejs24 package ships without full ICU data, so
 # `Intl.Segmenter::Create` segfaults inside V8 the moment any code touches it.
 # pi's interactive TUI calls Intl.Segmenter on every keystroke for grapheme
 # handling, so the terminal session crashes immediately. Pulling in the
 # full-i18n companion package supplies the ICU data and resolves the crash.
 # (`pi --print` and `pi-acp` happen to not exercise this path before
 # producing output, which is why they appeared to work.)
-RUN dnf install -y nodejs22-full-i18n && dnf clean all
+RUN dnf install -y nodejs24-full-i18n && dnf clean all
 
 # Pi harness
 RUN --mount=type=cache,target=/root/.npm \
