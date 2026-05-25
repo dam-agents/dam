@@ -1,0 +1,250 @@
+import {
+  and,
+  eq,
+  isNull,
+  lt,
+  lte,
+  sql,
+  type Db,
+  runtimeStateOutbox,
+  runtimeEvents,
+  agents as agentsTable,
+} from "db";
+import type { RuntimeEventKind } from "api-server-api";
+
+/**
+ * Postgres-backed access to `runtime_state_outbox` and `runtime_events`
+ * (ADR-053). Every state-affecting mutation must (1) bump the agent's
+ * version, (2) upsert the outbox row, (3) optionally insert event rows,
+ * all in one transaction — see `bumpAndEnqueue` for the canonical helper.
+ */
+
+export interface OutboxRow {
+  agentId: string;
+  version: number;
+  lastEnqueuedAt: Date;
+  lastAppliedVersion: number;
+  lastAppliedHash: string | null;
+  lastAppliedAt: Date | null;
+}
+
+export interface PendingEventRow {
+  id: string;
+  agentId: string;
+  kind: RuntimeEventKind;
+  payload: unknown;
+  version: number;
+  expiresAt: Date;
+}
+
+export interface OutboxRepo {
+  getRow(agentId: string): Promise<OutboxRow | null>;
+  /**
+   * Atomically: bump `agents.version`, upsert outbox row's `version` +
+   * `lastEnqueuedAt`. Returns the new version. Caller enqueues BullMQ
+   * after commit.
+   */
+  bumpVersion(agentId: string, db?: Db): Promise<number>;
+  /**
+   * Read pending (non-dispatched, non-expired) events for an agent in
+   * ascending version order.
+   */
+  pendingEvents(agentId: string): Promise<PendingEventRow[]>;
+  /**
+   * Worker apply-ack: stamp last_applied_* and dispatched_at for events
+   * with version <= ackedVersion. One transaction.
+   */
+  stampAck(
+    agentId: string,
+    ackedVersion: number,
+    ackedHash: string,
+  ): Promise<void>;
+  /** Cron sweep: rows where lastEnqueuedAt > lastAppliedAt + slop. */
+  listStale(slopMs: number, limit: number): Promise<OutboxRow[]>;
+  /** Cron sweep: delete expired non-dispatched events; returns dropped count. */
+  deleteExpiredEvents(): Promise<number>;
+  insertEvent(input: PendingEventRow & { createdAt?: Date }): Promise<void>;
+}
+
+interface InternalRow {
+  agentId: string;
+  version: number;
+  lastEnqueuedAt: Date;
+  lastAppliedVersion: number;
+  lastAppliedHash: string | null;
+  lastAppliedAt: Date | null;
+}
+
+export function createOutboxRepo(db: Db): OutboxRepo {
+  return {
+    async getRow(agentId): Promise<OutboxRow | null> {
+      const rows = (await db
+        .select()
+        .from(runtimeStateOutbox)
+        .where(eq(runtimeStateOutbox.agentId, agentId))) as InternalRow[];
+      return rows[0] ?? null;
+    },
+
+    async bumpVersion(agentId, tx = db): Promise<number> {
+      // Atomic upsert; idempotent on no-op (no row → insert version=1; row
+      // exists → +1).
+      const result = (await tx.execute(
+        sql`
+          INSERT INTO runtime_state_outbox (agent_id, version, last_enqueued_at)
+          VALUES (${agentId}, 1, now())
+          ON CONFLICT (agent_id) DO UPDATE
+            SET version = runtime_state_outbox.version + 1,
+                last_enqueued_at = now()
+          RETURNING version
+        `,
+      )) as unknown as { version: number }[];
+      return result[0]!.version;
+    },
+
+    async pendingEvents(agentId): Promise<PendingEventRow[]> {
+      const rows = (await db
+        .select()
+        .from(runtimeEvents)
+        .where(
+          and(
+            eq(runtimeEvents.agentId, agentId),
+            isNull(runtimeEvents.dispatchedAt),
+            sql`${runtimeEvents.expiresAt} > now()`,
+          ),
+        )
+        .orderBy(runtimeEvents.version)) as {
+        id: string;
+        agentId: string;
+        kind: string;
+        payload: unknown;
+        version: number;
+        expiresAt: Date;
+      }[];
+      return rows.map((r) => ({
+        id: r.id,
+        agentId: r.agentId,
+        kind: r.kind as RuntimeEventKind,
+        payload: r.payload,
+        version: r.version,
+        expiresAt: r.expiresAt,
+      }));
+    },
+
+    async stampAck(agentId, ackedVersion, ackedHash): Promise<void> {
+      await db.transaction(async (tx) => {
+        await tx
+          .update(runtimeStateOutbox)
+          .set({
+            lastAppliedVersion: ackedVersion,
+            lastAppliedHash: ackedHash,
+            lastAppliedAt: new Date(),
+          })
+          .where(eq(runtimeStateOutbox.agentId, agentId));
+        await tx
+          .update(runtimeEvents)
+          .set({ dispatchedAt: new Date() })
+          .where(
+            and(
+              eq(runtimeEvents.agentId, agentId),
+              lte(runtimeEvents.version, ackedVersion),
+              isNull(runtimeEvents.dispatchedAt),
+            ),
+          );
+      });
+    },
+
+    async listStale(slopMs, limit): Promise<OutboxRow[]> {
+      const cutoff = new Date(Date.now() - slopMs);
+      const rows = (await db
+        .select()
+        .from(runtimeStateOutbox)
+        .where(
+          sql`(${runtimeStateOutbox.lastAppliedAt} IS NULL
+            OR ${runtimeStateOutbox.lastEnqueuedAt} > ${runtimeStateOutbox.lastAppliedAt})
+            AND ${runtimeStateOutbox.lastEnqueuedAt} < ${cutoff}`,
+        )
+        .limit(limit)) as InternalRow[];
+      return rows;
+    },
+
+    async deleteExpiredEvents(): Promise<number> {
+      const result = (await db
+        .delete(runtimeEvents)
+        .where(
+          and(
+            isNull(runtimeEvents.dispatchedAt),
+            lt(runtimeEvents.expiresAt, sql`now()` as unknown as Date),
+          ),
+        )
+        .returning({ id: runtimeEvents.id })) as { id: string }[];
+      return result.length;
+    },
+
+    async insertEvent(input): Promise<void> {
+      await db.insert(runtimeEvents).values({
+        id: input.id,
+        agentId: input.agentId,
+        kind: input.kind,
+        payload: input.payload as object,
+        version: input.version,
+        expiresAt: input.expiresAt,
+      });
+    },
+  };
+}
+
+export interface AgentRuntimeStateRow {
+  id: string;
+  runtimeProtocolVersion: string | null;
+  runtimeCapabilities: unknown;
+  runtimeLastHelloAt: Date | null;
+  runtimeAgentVersion: string | null;
+}
+
+/**
+ * Tiny Postgres view of agents — populated only on `runtime.v1.hello`.
+ * The K8s ConfigMap is the source of truth for spec; this table holds
+ * the runtime-advertised capability metadata.
+ */
+export interface AgentsRuntimeRepo {
+  upsertHello(input: {
+    agentId: string;
+    protocolVersion: string;
+    capabilities: unknown;
+    agentRuntimeVersion: string;
+  }): Promise<void>;
+  get(agentId: string): Promise<AgentRuntimeStateRow | null>;
+}
+
+export function createAgentsRuntimeRepo(db: Db): AgentsRuntimeRepo {
+  return {
+    async upsertHello(input): Promise<void> {
+      await db
+        .insert(agentsTable)
+        .values({
+          id: input.agentId,
+          runtimeProtocolVersion: input.protocolVersion,
+          runtimeCapabilities: input.capabilities as object,
+          runtimeLastHelloAt: new Date(),
+          runtimeAgentVersion: input.agentRuntimeVersion,
+        })
+        .onConflictDoUpdate({
+          target: agentsTable.id,
+          set: {
+            runtimeProtocolVersion: input.protocolVersion,
+            runtimeCapabilities: input.capabilities as object,
+            runtimeLastHelloAt: new Date(),
+            runtimeAgentVersion: input.agentRuntimeVersion,
+          },
+        });
+    },
+
+    async get(agentId): Promise<AgentRuntimeStateRow | null> {
+      const rows = (await db
+        .select()
+        .from(agentsTable)
+        .where(eq(agentsTable.id, agentId))) as AgentRuntimeStateRow[];
+      return rows[0] ?? null;
+    },
+  };
+}
