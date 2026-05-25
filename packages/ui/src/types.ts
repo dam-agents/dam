@@ -93,15 +93,6 @@ export interface LogEntry {
 export type { SessionView } from "api-server-api";
 export { SessionType } from "api-server-api";
 
-export interface DirEntry {
-  name: string;
-  type: "file" | "dir";
-}
-
-export type DirListResult =
-  | { path: string; ok: true; entries: DirEntry[] }
-  | { path: string; ok: false; error: "not-found" | "forbidden" };
-
 export interface TemplateView {
   id: string;
   name: string;

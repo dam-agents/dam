@@ -5,11 +5,11 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { TRPCClientError } from "@trpc/client";
+import type { DirListResult } from "agent-runtime-api";
 
 import { api } from "../../../api.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
-import type { DirListResult } from "../../../types.js";
 import { createAgentTrpc } from "../../agents/agent-trpc.js";
 import { fileKeys } from "./keys.js";
 

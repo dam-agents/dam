@@ -81,7 +81,7 @@ async function listDir(
     return { path: rel, ok: false, error: "forbidden" };
   }
   const abs = safePath(workingDir, rel);
-  if (!abs) return { path: rel, ok: false, error: "not-found" };
+  if (!abs) return { path: rel, ok: false, error: "forbidden" };
   try {
     const ents = await readdir(abs, { withFileTypes: true });
     const entries: DirEntry[] = ents
