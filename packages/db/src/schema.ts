@@ -9,6 +9,7 @@ import {
   primaryKey,
   timestamp,
   boolean,
+  bigint,
 } from "drizzle-orm/pg-core";
 
 export const sessionModeEnum = pgEnum("session_mode", ["chat", "terminal"]);
@@ -219,3 +220,155 @@ export const agentSkillPublishes = pgTable(
   },
   (table) => [index("agent_skill_publishes_agent_idx").on(table.agentId)],
 );
+
+/**
+ * Connection records (ADR-051). A Connection is everything an agent needs to
+ * talk to one external integration: credentials, hosts, config files, MCP
+ * entries, skill installs. Built from a code-declared Connection Template.
+ *
+ * `auth`, `contributions`, and `inputs` are validated structures held as JSON
+ * (discriminated unions and free-form user inputs respectively); the canonical
+ * Zod schemas live in api-server-api.
+ */
+export const connections = pgTable(
+  "connections",
+  {
+    id: text("id").primaryKey(),
+    owner: text("owner").notNull(),
+    templateId: text("template_id").notNull(),
+    name: text("name").notNull(),
+    inputs: jsonb("inputs").notNull(),
+    auth: jsonb("auth").notNull(),
+    contributions: jsonb("contributions").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [index("connections_owner_idx").on(table.owner)],
+);
+
+/**
+ * Per-agent grants of a Connection (ADR-051). The state-builder for an agent
+ * joins `connection_grants` to `connections` to compute the contribution set.
+ */
+export const connectionGrants = pgTable(
+  "connection_grants",
+  {
+    connectionId: text("connection_id").notNull(),
+    agentId: text("agent_id").notNull(),
+    grantedAt: timestamp("granted_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.connectionId, table.agentId] }),
+    index("connection_grants_agent_idx").on(table.agentId),
+  ],
+);
+
+/**
+ * Runtime-channel view of agents (ADR-052). Populated on every `hello` with
+ * the agent's advertised protocol version, capabilities, and image version.
+ * The K8s ConfigMap remains the source of truth for spec; this table is what
+ * the api-server consults for capability filtering on outbound payloads.
+ */
+export const agents = pgTable("agents", {
+  id: text("id").primaryKey(),
+  runtimeProtocolVersion: text("runtime_protocol_version"),
+  runtimeCapabilities: jsonb("runtime_capabilities"),
+  runtimeLastHelloAt: timestamp("runtime_last_hello_at", {
+    withTimezone: true,
+  }),
+  runtimeAgentVersion: text("runtime_agent_version"),
+});
+
+/**
+ * One row per agent, the snapshot delivery state (ADR-052, ADR-053).
+ *
+ * `version` is the per-agent monotonic counter — bumped on every contribution
+ * edit and event insert, sent to the agent on `applyState`, returned as the
+ * ack cursor in `appliedVersion`. The worker stamps `last_applied_*` in the
+ * apply-ack transaction; the cron sweep re-enqueues rows where
+ * `last_enqueued_at > last_applied_at`.
+ */
+export const runtimeStateOutbox = pgTable(
+  "runtime_state_outbox",
+  {
+    agentId: text("agent_id").primaryKey(),
+    version: bigint("version", { mode: "number" }).notNull().default(0),
+    lastEnqueuedAt: timestamp("last_enqueued_at", {
+      withTimezone: true,
+    })
+      .defaultNow()
+      .notNull(),
+    lastAppliedVersion: bigint("last_applied_version", { mode: "number" })
+      .notNull()
+      .default(0),
+    lastAppliedHash: text("last_applied_hash"),
+    lastAppliedAt: timestamp("last_applied_at", { withTimezone: true }),
+  },
+  (table) => [
+    // Stale rows for the cron sweep — those whose enqueue postdates the last
+    // applied stamp (or where nothing has applied yet).
+    index("runtime_state_outbox_stale_idx")
+      .on(table.lastEnqueuedAt)
+      .where(
+        sql`${table.lastAppliedAt} IS NULL OR ${table.lastEnqueuedAt} > ${table.lastAppliedAt}`,
+      ),
+  ],
+);
+
+/**
+ * Pending one-shot directives for the runtime channel (ADR-052). Each row
+ * carries its own `version` slot in the agent's monotonic sequence; the
+ * state-builder reads non-dispatched, non-expired rows when constructing the
+ * `events[]` slice. The worker stamps `dispatched_at` for events with
+ * `version <= appliedVersion` in the apply-ack transaction. The cron sweep
+ * deletes rows past `expires_at` that were never dispatched.
+ */
+export const runtimeEvents = pgTable(
+  "runtime_events",
+  {
+    id: text("id").primaryKey(),
+    agentId: text("agent_id").notNull(),
+    kind: text("kind").notNull(),
+    payload: jsonb("payload").notNull(),
+    version: bigint("version", { mode: "number" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
+  },
+  (table) => [
+    // Pending events for an agent, in version order — the state-builder's
+    // primary read path. Partial index keeps it small.
+    index("runtime_events_agent_pending_idx")
+      .on(table.agentId, table.version)
+      .where(sql`${table.dispatchedAt} IS NULL`),
+    // Expiry sweep — scans pending rows with expired TTLs.
+    index("runtime_events_expiry_idx")
+      .on(table.expiresAt)
+      .where(sql`${table.dispatchedAt} IS NULL`),
+  ],
+);
+
+/**
+ * Side-effect dedupe table for the `trigger` event kind (ADR-052, ADR-053).
+ * Each fired trigger writes one row keyed on `event_id`; redelivery hits the
+ * primary-key constraint and returns the existing `session_id` without
+ * starting a second session.
+ *
+ * The per-kind harness handler owns this table. The runtime-channel worker
+ * never touches it; it only stamps `runtime_events.dispatched_at` on apply-ack.
+ */
+export const triggerDispatches = pgTable("trigger_dispatches", {
+  eventId: text("event_id").primaryKey(),
+  agentId: text("agent_id").notNull(),
+  scheduleId: text("schedule_id").notNull(),
+  sessionId: text("session_id").notNull(),
+  firedAt: timestamp("fired_at", { withTimezone: true }).defaultNow().notNull(),
+});

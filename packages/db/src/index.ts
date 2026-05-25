@@ -11,6 +11,12 @@ export {
   agentSkillPublishes,
   egressRules,
   pendingApprovals,
+  connections,
+  connectionGrants,
+  agents,
+  runtimeStateOutbox,
+  runtimeEvents,
+  triggerDispatches,
 } from "./schema.js";
 export {
   eq,
