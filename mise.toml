@@ -19,6 +19,13 @@ experimental = true
 task.disable_spec_from_run_scripts = true
 raw = true
 
+# GHA runners don't have Node's release signing key in their GPG keyring,
+# so mise's default GPG verify fails on first install of a new Node major
+# (e.g. 24.16.0). SHA256 checksum verify still runs and remains the
+# primary integrity check.
+[settings.node]
+gpg_verify = false
+
 [hooks]
 postinstall = ["{{ mise_bin }} setup"]
 
