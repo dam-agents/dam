@@ -1,5 +1,7 @@
 import { execSync } from "node:child_process";
 import type { TestProject } from "vitest/node";
+import { createTRPCClient, httpBatchLink } from "@trpc/client";
+import type { AppRouter } from "api-server-api";
 import { waitForKeycloak, getToken } from "./auth.js";
 
 const API_URL = "http://localtest.me:5555";
@@ -16,6 +18,19 @@ async function waitForReady(url: string, timeoutMs = 120_000) {
   throw new Error(`API server not ready after ${timeoutMs}ms`);
 }
 
+async function acceptCurrentTerms(token: string) {
+  const client = createTRPCClient<AppRouter>({
+    links: [
+      httpBatchLink({
+        url: `${API_URL}/api/trpc`,
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+    ],
+  });
+  const current = await client.terms.current.query();
+  await client.terms.accept.mutate({ version: current.version });
+}
+
 export async function setup(project: TestProject) {
   console.log("Waiting for Keycloak realm to be ready...");
   await waitForKeycloak();
@@ -25,8 +40,10 @@ export async function setup(project: TestProject) {
 
   console.log("Getting auth token...");
   const token = await getToken();
-  // Provide the token to test workers (globalSetup runs in a separate
-  // process from test files, so module-level state can't be shared).
+
+  console.log("Accepting terms of use...");
+  await acceptCurrentTerms(token);
+
   project.provide("authToken", token);
 
   console.log("Test cluster ready.");
