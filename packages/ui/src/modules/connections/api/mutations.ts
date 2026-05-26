@@ -17,7 +17,7 @@ export function useCreateConnection() {
   return useMutation({
     ...trpc.connections.create.mutationOptions(),
     meta: {
-      invalidates: [["connections"]],
+      invalidates: [trpc.connections.list.queryKey()],
       errorToast: "Couldn't create connection",
     },
   });
@@ -28,7 +28,10 @@ export function useDeleteConnection() {
   return useMutation({
     ...trpc.connections.delete.mutationOptions(),
     meta: {
-      invalidates: [["connections"]],
+      invalidates: [
+        trpc.connections.list.queryKey(),
+        trpc.connections.getAgentConnections.queryKey(),
+      ],
       errorToast: "Couldn't delete connection",
     },
   });
