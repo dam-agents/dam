@@ -63,15 +63,18 @@ export function isViewName(name: string): name is ViewName {
   return VIEW_NAMES_SET.has(name);
 }
 
+// Built once from the static VIEW_NAMES tuple — no runtime input ever flows
+// into sql.raw, so the unsafe primitive is closed over a known-safe set.
+const VIEW_QUERIES = new Map(
+  VIEW_NAMES.map((n) => [n, sql.raw(`SELECT * FROM "${n}"`)] as const),
+);
+
 export function createReportService(db: Db) {
   return {
     async getReport(view: ViewName): Promise<Record<string, unknown>[]> {
-      // view is a ViewName — type-checked + Set-validated at the boundary, so
-      // sql.raw is safe here. Double-quoted identifier handles any reserved
-      // words / unusual characters defensively.
-      const rows = await db.execute<Record<string, unknown>>(
-        sql.raw(`SELECT * FROM "${view}"`),
-      );
+      const query = VIEW_QUERIES.get(view);
+      if (!query) throw new Error(`Unknown usage view: ${view}`);
+      const rows = await db.execute<Record<string, unknown>>(query);
       return rows as unknown as Record<string, unknown>[];
     },
   };
