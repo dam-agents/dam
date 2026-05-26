@@ -9,6 +9,7 @@ import type {
 } from "../infrastructure/oauth-engine.js";
 import type { ConnectionsRepository } from "../infrastructure/connections-repository.js";
 import type { ConnectionTemplateRegistry } from "../domain/connection-template.js";
+import { buildConnectionSdsFields } from "../domain/connection-sds.js";
 import type { SecretStore } from "../../secret-store/index.js";
 
 /**
@@ -83,32 +84,41 @@ export function createOAuthFlowService(deps: {
 
       const tokens = await deps.engine.exchange(pending, code);
 
-      // Write tokens at the SecretRef paths the Connection minted at
-      // create time. We use putField so a refresh-only update doesn't
-      // clobber a sibling field at the same path.
-      await deps.secretStore.putField(
-        pending.ctx.accessTokenRef,
-        tokens.accessToken,
-      );
-      if (tokens.refreshToken && pending.ctx.refreshTokenRef) {
-        await deps.secretStore.putField(
-          pending.ctx.refreshTokenRef,
-          tokens.refreshToken,
-        );
-      }
-
-      // Update the Connection's auth so the refresh loop / status pill
-      // sees the new expiry. Read-modify-write — small enough to be fine
-      // without a row-level lock.
+      // Connection record is needed for its `contributions` — we have to
+      // recompute the per-host SDS files anchored on the new access
+      // token. Read it before writing so a missing/stale row fails the
+      // callback rather than producing a half-populated Secret.
       const conn = await deps.repo.get(
         pending.ctx.connectionId,
         pending.ctx.ownerId,
       );
-      if (
-        conn &&
-        conn.auth.kind === "oauth" &&
-        tokens.expiresAt !== undefined
-      ) {
+      if (!conn) {
+        throw new Error(`connection ${pending.ctx.connectionId} not found`);
+      }
+
+      // Write raw tokens (consumed by the refresh loop's `getField`)
+      // alongside per-host SDS files (read directly by the gateway pod's
+      // Envoy via `path_config_source`). Both must land on the same K8s
+      // Secret in one update so kubelet propagates them together — a
+      // half-written Secret would either crash Envoy's bootstrap (missing
+      // SDS file) or hand Envoy a stale token under a fresh expiry.
+      const sdsFields = buildConnectionSdsFields(
+        conn.contributions,
+        tokens.accessToken,
+      );
+      const fields: Record<string, string> = {
+        access_token: tokens.accessToken,
+        ...sdsFields,
+      };
+      if (tokens.refreshToken && pending.ctx.refreshTokenRef) {
+        fields.refresh_token = tokens.refreshToken;
+      }
+      await deps.secretStore.putFields(pending.ctx.accessTokenRef, fields);
+
+      // Update the Connection's auth so the refresh loop / status pill
+      // sees the new expiry. Read-modify-write — small enough to be fine
+      // without a row-level lock.
+      if (conn.auth.kind === "oauth" && tokens.expiresAt !== undefined) {
         const updatedAuth: ConnectionAuthConfig = {
           ...conn.auth,
           expiresAt: tokens.expiresAt,

@@ -23,6 +23,16 @@ export interface SecretMetadata {
    * `list()` results so cleanup sweeps can filter.
    */
   purpose: string;
+  /**
+   * Adapter-specific extra metadata. The K8s adapter merges these into the
+   * Secret's `metadata.labels` / `metadata.annotations` alongside the
+   * generic owner/managed-by/purpose set. Used by callers (e.g. the
+   * Connections service) to stamp the discriminators the controller's
+   * Secret filter reads (`secret-type=connection`, `connection=<id>`,
+   * `env-mappings`, `injection-hosts`). Other adapters may ignore them.
+   */
+  extraLabels?: Record<string, string>;
+  extraAnnotations?: Record<string, string>;
 }
 
 export interface SecretStore {
@@ -61,6 +71,15 @@ export interface SecretStore {
    * same path. Does NOT change metadata tags — those stay as set by `put`.
    */
   putField(ref: SecretRef, value: string): Promise<void>;
+
+  /**
+   * Patch multiple fields at once. Same semantics as `putField` but for
+   * the case where several derived fields (raw token + per-host SDS files
+   * for a Connection) must land atomically. Preserves any fields not
+   * mentioned, and preserves metadata tags. Errors if the secret does not
+   * exist — callers use `put` to create.
+   */
+  putFields(ref: SecretRef, fields: Record<string, string>): Promise<void>;
 
   /**
    * Read all fields at this path. Returns null if the path doesn't exist.

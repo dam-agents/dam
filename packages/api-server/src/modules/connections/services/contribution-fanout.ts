@@ -21,6 +21,7 @@ import type { RuntimeMutator } from "../../runtime-delivery/index.js";
  * helper handles all three rails uniformly.
  */
 export interface FanOutPort {
+  setConnectionGrants(agentId: string, connectionIds: string[]): Promise<void>;
   bumpSecretsRev(agentId: string): Promise<void>;
   syncEgressHosts(input: {
     agentId: string;
@@ -61,6 +62,11 @@ export function createContributionFanOut(deps: {
     }) {
       const allContribs: Contribution[] = grantedConnections.flatMap(
         (c) => c.contributions,
+      );
+
+      await deps.port.setConnectionGrants(
+        agentId,
+        grantedConnections.map((c) => c.id),
       );
 
       // egress-host rail — collect per granted connection, sync.

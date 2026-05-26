@@ -58,9 +58,11 @@ export function createKubernetesSecretStore(
           [LABEL_MANAGED_BY]: MANAGED_BY_VALUE,
           [LABEL_OWNER]: meta.owner,
           [LABEL_PURPOSE]: sanitizeLabel(meta.purpose),
+          ...(meta.extraLabels ?? {}),
         },
         annotations: {
           [LABEL_PURPOSE]: meta.purpose,
+          ...(meta.extraAnnotations ?? {}),
         },
       },
       type: "Opaque",
@@ -97,6 +99,24 @@ export function createKubernetesSecretStore(
       } else {
         await k8sClient.createSecret(body);
       }
+    },
+
+    async putFields(ref, fields): Promise<void> {
+      ensureOwn(ref);
+      const existing = await k8sClient.getSecret(ref.path);
+      if (!existing) {
+        throw new Error(
+          `putFields: secret ${ref.path} does not exist — call put() first`,
+        );
+      }
+      const data: Record<string, string> = {
+        ...((existing.data ?? {}) as Record<string, string>),
+      };
+      for (const [k, v] of Object.entries(fields)) {
+        data[k] = Buffer.from(v, "utf8").toString("base64");
+      }
+      const body: k8s.V1Secret = { ...existing, data };
+      await k8sClient.replaceSecret(ref.path, body);
     },
 
     async putField(ref, value): Promise<void> {

@@ -161,7 +161,15 @@ async function buildOAuthStatic(
   if (template.id === "github-enterprise") {
     if (!host) throw new Error(`template github-enterprise: missing host`);
     contributions.push({ kind: "env", name: "GH_HOST", placeholder: host });
-    contributions.push({ kind: "egress-host", host: `api.${host}` });
+    // `api.<host>` takes the default `Authorization: Bearer {value}` —
+    // `injection: {}` opts it into the per-host SDS chain so Envoy
+    // rewrites the Authorization header on the wire. See the github.com
+    // template for the symmetric Basic-auth case.
+    contributions.push({
+      kind: "egress-host",
+      host: `api.${host}`,
+      injection: {},
+    });
     contributions.push({
       kind: "egress-host",
       host,

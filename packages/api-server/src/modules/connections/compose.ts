@@ -78,6 +78,13 @@ export function composeConnectionsForOwner(opts: {
   const repo = createConnectionsRepository(opts.db);
 
   const port: FanOutPort = {
+    async setConnectionGrants(agentId, connectionIds): Promise<void> {
+      await opts.agentsRepo.patchAnnotation(
+        agentId,
+        "agent-platform.ai/granted-connection-ids",
+        connectionIds.join(","),
+      );
+    },
     async bumpSecretsRev(agentId): Promise<void> {
       // ADR-040 mechanism: bump an annotation the controller's reconciler
       // watches. The bump value is monotonic-ish (timestamp suffices —

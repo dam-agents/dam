@@ -1,14 +1,17 @@
 import { and, eq, sql, type Db, connections as connectionsTable } from "db";
 import {
   connectionAuthConfigSchema as authConfigSchema,
+  contribution as contributionSchema,
   type Connection,
   type ConnectionAuthConfig,
+  type Contribution,
 } from "api-server-api";
 import type {
   OAuthEngine,
   OAuthProvider,
 } from "../infrastructure/oauth-engine.js";
 import type { ConnectionTemplateRegistry } from "../domain/connection-template.js";
+import { buildConnectionSdsFields } from "../domain/connection-sds.js";
 import type { SecretStore } from "../../secret-store/index.js";
 
 /**
@@ -132,6 +135,14 @@ function parseRow(row: {
 }): Connection | null {
   const auth = authConfigSchema.safeParse(row.auth);
   if (!auth.success) return null;
+  // Contributions drive the per-host SDS file set written alongside the
+  // refreshed access token (see `refreshOne`). A row with a malformed
+  // contribution skips the entry rather than failing the whole refresh.
+  const contributions: Contribution[] = Array.isArray(row.contributions)
+    ? row.contributions
+        .map((c) => contributionSchema.safeParse(c))
+        .flatMap((r) => (r.success ? [r.data] : []))
+    : [];
   return {
     id: row.id,
     ownerId: row.owner,
@@ -139,7 +150,7 @@ function parseRow(row: {
     name: row.name,
     inputs: (row.inputs as Record<string, unknown>) ?? {},
     auth: auth.data,
-    contributions: [],
+    contributions,
   };
 }
 
@@ -184,11 +195,21 @@ async function refreshOne(
 
   const next = await deps.engine.refresh({ provider, refreshToken });
 
-  await deps.secretStore.putField(auth.accessTokenRef, next.accessToken);
+  // Rotate the raw token AND regenerate per-host SDS files in one update,
+  // so kubelet propagates them to the gateway pod's mount together. See
+  // `oauth-flow.completeOAuth` for the same shape.
+  const sdsFields = buildConnectionSdsFields(
+    conn.contributions,
+    next.accessToken,
+  );
+  const fields: Record<string, string> = {
+    access_token: next.accessToken,
+    ...sdsFields,
+  };
   if (next.refreshToken && auth.refreshTokenRef) {
-    // Some providers rotate refresh tokens on every refresh; honor it.
-    await deps.secretStore.putField(auth.refreshTokenRef, next.refreshToken);
+    fields.refresh_token = next.refreshToken;
   }
+  await deps.secretStore.putFields(auth.accessTokenRef, fields);
   // Update Connection.auth.expiresAt. Read-modify-write through the
   // jsonb column.
   const updatedAuth: ConnectionAuthConfig = {

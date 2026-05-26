@@ -11,6 +11,10 @@ import type { ConnectionsRepository } from "../infrastructure/connections-reposi
 import type { ConnectionTemplateRegistry } from "../domain/connection-template.js";
 import { templateToView } from "../domain/connection-template.js";
 import { buildConnection } from "../domain/build-connection.js";
+import {
+  buildConnectionSdsFields,
+  CONNECTION_TOKEN_PLACEHOLDER,
+} from "../domain/connection-sds.js";
 import { discoverMcpAuth } from "../infrastructure/mcp-discovery.js";
 import type { ContributionFanOut } from "./contribution-fanout.js";
 import type { OAuthFlowService } from "./oauth-flow.js";
@@ -201,18 +205,47 @@ export function createConnectionsService(deps: {
         deps.brandName,
       );
 
-      // Write secrets BEFORE persisting the Connection row — a partial
-      // write leaves no Connection record pointing at a half-populated
-      // path.
-      for (const [path, fields] of built.secrets) {
+      const id = newConnectionId();
+      const secretPath = connectionSecretPath(built.auth);
+
+      // Pre-create the connection's K8s Secret BEFORE persisting the
+      // Connection row. Two things matter:
+      //   1. Partial-write safety — a Connection row pointing at a
+      //      half-populated path is worse than no row at all.
+      //   2. Controller-visible metadata. The Secret must carry the
+      //      labels + annotations the controller's per-agent filter reads
+      //      (`secret-type=connection`, `connection=<id>`, `env-mappings`,
+      //      `injection-hosts`). Without these, the controller can't
+      //      resolve the Secret from the agent's `granted-connection-ids`
+      //      annotation and no env / on-wire injection lands. The later
+      //      OAuth callback writes raw token fields via `putField`, which
+      //      preserves the existing metadata.
+      if (secretPath) {
+        // Seed per-host SDS files with placeholder token content so the
+        // gateway pod's Envoy can boot before OAuth completes. Without
+        // them, the bootstrap's `path_config_source` references files
+        // that don't exist and Envoy aborts startup — taking the
+        // co-tenant Anthropic chain down with it. Real tokens overwrite
+        // these on `oauth-flow.completeOAuth`.
+        const placeholderSds = buildConnectionSdsFields(
+          built.contributions,
+          CONNECTION_TOKEN_PLACEHOLDER,
+        );
         await deps.secretStore.put(
-          { storeId: deps.secretStore.storeId, path, field: "" },
-          fields,
-          { owner: deps.ownerId, purpose: `connection:${template.id}` },
+          { storeId: deps.secretStore.storeId, path: secretPath, field: "" },
+          { ...placeholderSds, ...(built.secrets.get(secretPath) ?? {}) },
+          {
+            owner: deps.ownerId,
+            purpose: `connection:${template.id}`,
+            extraLabels: {
+              "agent-platform.ai/secret-type": "connection",
+              "agent-platform.ai/connection": id,
+            },
+            extraAnnotations: connectionSecretAnnotations(built.contributions),
+          },
         );
       }
 
-      const id = newConnectionId();
       await deps.repo.insert({
         id,
         ownerId: deps.ownerId,
@@ -271,4 +304,56 @@ function deriveStatus(conn: Connection): ConnectionView["status"] {
 
 function newConnectionId(): string {
   return `conn-${randomBytes(6).toString("hex")}`;
+}
+
+function connectionSecretPath(auth: Connection["auth"]): string | null {
+  switch (auth.kind) {
+    case "oauth":
+      return auth.accessTokenRef.path;
+    case "header":
+      return auth.valueRef.path;
+    case "none":
+      return null;
+  }
+}
+
+function connectionSecretAnnotations(
+  contributions: Connection["contributions"],
+): Record<string, string> {
+  const envMappings = contributions
+    .filter(
+      (c): c is Extract<Connection["contributions"][number], { kind: "env" }> =>
+        c.kind === "env",
+    )
+    .map((c) => ({ envName: c.name, placeholder: c.placeholder }));
+
+  const injectionHosts = contributions
+    .filter(
+      (
+        c,
+      ): c is Extract<
+        Connection["contributions"][number],
+        { kind: "egress-host" }
+      > => c.kind === "egress-host" && c.injection !== undefined,
+    )
+    .map((c) => ({
+      host: c.host,
+      ...(c.pathPattern ? { pathPattern: c.pathPattern } : {}),
+      ...(c.injection?.headerName
+        ? { headerName: c.injection.headerName }
+        : {}),
+      ...(c.injection?.valueFormat
+        ? { valueFormat: c.injection.valueFormat }
+        : {}),
+      ...(c.injection?.encoding ? { encoding: c.injection.encoding } : {}),
+    }));
+
+  const out: Record<string, string> = {};
+  if (envMappings.length > 0) {
+    out["agent-platform.ai/env-mappings"] = JSON.stringify(envMappings);
+  }
+  if (injectionHosts.length > 0) {
+    out["agent-platform.ai/injection-hosts"] = JSON.stringify(injectionHosts);
+  }
+  return out;
 }

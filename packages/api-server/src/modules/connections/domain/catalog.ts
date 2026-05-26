@@ -191,11 +191,16 @@ function github(creds?: OAuthClientCredentials): OAuthConnectionTemplate {
     tokenEndpointAcceptJson: true,
     contributions: [
       { kind: "env", name: "GH_TOKEN", placeholder: "dummy-placeholder" },
-      { kind: "egress-host", host: "api.github.com" },
+      // api.github.com + raw.githubusercontent.com take the default
+      // `Authorization: Bearer {value}` — `injection: {}` opts them into
+      // the per-host SDS chain so Envoy rewrites the Authorization header
+      // on the wire. Without this they fall to the default passthrough
+      // chain and the agent's placeholder Authorization reaches GitHub
+      // verbatim.
+      { kind: "egress-host", host: "api.github.com", injection: {} },
       // git+HTTPS to github.com uses HTTP Basic with `x-access-token:`,
-      // not the api.github.com Bearer form. The per-host injection
-      // override is what makes the same OAuth token work for both rails
-      // (issue #219).
+      // not the api.github.com Bearer form. Per-host injection override
+      // makes the same OAuth token work for both rails (issue #219).
       {
         kind: "egress-host",
         host: "github.com",
@@ -205,7 +210,11 @@ function github(creds?: OAuthClientCredentials): OAuthConnectionTemplate {
           encoding: "basic-x-access-token",
         },
       },
-      { kind: "egress-host", host: "raw.githubusercontent.com" },
+      {
+        kind: "egress-host",
+        host: "raw.githubusercontent.com",
+        injection: {},
+      },
     ],
   };
 }

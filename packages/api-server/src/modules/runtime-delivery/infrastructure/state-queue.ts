@@ -5,8 +5,10 @@ import IORedis from "ioredis";
  * BullMQ queue + worker for the runtime-channel delivery rail (ADR-053).
  *
  * Single queue `runtime-state`, one job kind, stable jobId per agent
- * (`state:<agentId>`) so a flurry of mutations on the same agent coalesces
+ * (`state-<agentId>`) so a flurry of mutations on the same agent coalesces
  * to one dispatch — BullMQ rejects re-adds of an already-pending id.
+ * The separator is `-`, not `:`: BullMQ ≥ 5.76 rejects custom ids
+ * containing `:` (it clashes with Redis's namespace separator).
  *
  * The platform's Redis is intentionally configured for relaxed durability
  * (ADR-036). Postgres' `runtime_state_outbox` is the source of truth; the
@@ -34,7 +36,7 @@ export function createStateQueue(connection: ConnectionOptions): StateQueue {
         {
           // Stable id → natural coalescing. BullMQ rejects re-adds while a
           // job with this id is pending or active.
-          jobId: `state:${agentId}`,
+          jobId: `state-${agentId}`,
           // Exponential backoff for transport failures. The handler's
           // own logic exits clean on "agent not running"; only thrown
           // errors trigger retries.
