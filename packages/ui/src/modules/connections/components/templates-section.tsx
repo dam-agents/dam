@@ -1,19 +1,13 @@
 import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
-import {
-  ExternalLink,
-  KeyRound,
-  LogIn,
-  Plug,
-  Server,
-  Trash2,
-} from "lucide-react";
-import { useState } from "react";
+import { ExternalLink, LogIn, Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
 
 import { AppStatusPill } from "../../../components/app-status-pill.js";
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useDeleteConnection, useStartOAuth } from "../api/mutations.js";
 import { useAppConnections, useConnectionTemplates } from "../api/queries.js";
 import { TemplateCreateForm } from "../forms/template-create-form.js";
+import { ConnectionIcon } from "./connection-icon.js";
 
 /**
  * Connection-Template-driven section of the Connections view (ADR-051).
@@ -44,6 +38,11 @@ export function ConnectionTemplatesSection() {
   };
 
   const byCategory = groupByCategory(templates.data ?? []);
+  const iconByTemplateId = useMemo(() => {
+    const m = new Map<string, string | undefined>();
+    for (const t of templates.data ?? []) m.set(t.id, t.iconSlug);
+    return m;
+  }, [templates.data]);
 
   return (
     <section className="mb-10">
@@ -72,6 +71,7 @@ export function ConnectionTemplatesSection() {
                   /* tRPC client mints a structurally-equal but nominally
                      distinct ConnectionView — cast. */
                   connection={c as unknown as ConnectionView}
+                  iconSlug={iconByTemplateId.get(c.templateId)}
                   onDelete={() => del.mutate({ id: c.id })}
                   onConnect={() => onConnect(c.id)}
                   connecting={
@@ -135,12 +135,14 @@ export function ConnectionTemplatesSection() {
 
 function ConnectionRow({
   connection,
+  iconSlug,
   onDelete,
   onConnect,
   connecting,
   deleting,
 }: {
   connection: ConnectionView;
+  iconSlug: string | undefined;
   onDelete: () => void;
   onConnect: () => void;
   connecting: boolean;
@@ -155,7 +157,12 @@ function ConnectionRow({
   const installUrl = githubAppInstallUrl(connection);
   return (
     <div className="flex items-center gap-3 rounded-lg border-2 bg-bg px-4 py-3 border-border-light">
-      <Plug size={14} className="text-text-secondary shrink-0" />
+      <ConnectionIcon
+        iconSlug={iconSlug}
+        alt={connection.name}
+        size={16}
+        className="text-text-secondary shrink-0"
+      />
       <div className="flex-1 min-w-0">
         <div className="text-[13px] font-medium text-text truncate">
           {connection.name}
@@ -216,10 +223,14 @@ function githubAppInstallUrl(connection: ConnectionView): string | null {
 }
 
 function IconFor({ template }: { template: ConnectionTemplateView }) {
-  if (template.category === "mcp") {
-    return <Server size={14} className="text-text-secondary mt-0.5 shrink-0" />;
-  }
-  return <KeyRound size={14} className="text-text-secondary mt-0.5 shrink-0" />;
+  return (
+    <ConnectionIcon
+      iconSlug={template.iconSlug}
+      alt={template.name}
+      size={16}
+      className="text-text-secondary mt-0.5 shrink-0"
+    />
+  );
 }
 
 function categoryLabel(c: ConnectionTemplateView["category"]): string {
