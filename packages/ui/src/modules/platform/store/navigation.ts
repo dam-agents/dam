@@ -31,7 +31,17 @@ export const createNavigationSlice: StateCreator<
     if (saved) {
       sessionStorage.removeItem("platform-return-view");
       const parsed = viewSchema.safeParse(saved);
-      if (parsed.success) return parsed.data;
+      if (parsed.success) {
+        const target = viewToPath(parsed.data);
+        if (window.location.pathname !== target) {
+          history.replaceState(
+            null,
+            "",
+            target + window.location.search + window.location.hash,
+          );
+        }
+        return parsed.data;
+      }
       console.warn(
         "[navigation] schema mismatch on platform-return-view, falling back to URL:",
         parsed.error.issues,

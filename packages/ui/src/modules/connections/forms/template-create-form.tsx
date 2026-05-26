@@ -5,13 +5,14 @@ import type {
 } from "api-server-api";
 import { useMemo, useState } from "react";
 
+import { api } from "../../../api.js";
 import {
   DialogBody,
   DialogFooter,
   DialogHeader,
   Modal,
 } from "../../../components/modal.js";
-import { useCreateConnection, useStartOAuth } from "../api/mutations.js";
+import { useCreateConnection } from "../api/mutations.js";
 
 const INPUT_CLASS =
   "w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted";
@@ -45,17 +46,16 @@ export function TemplateCreateForm({
   onCancel: () => void;
 }) {
   const create = useCreateConnection();
-  const startOAuth = useStartOAuth();
 
   const [name, setName] = useState("");
   const [fields, setFields] = useState<Record<string, string>>({});
   const [overrides, setOverrides] = useState<Record<string, boolean>>({});
-  // For MCP-custom templates the user pastes a JSON config block.
   const [mcpConfigJson, setMcpConfigJson] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [authorizing, setAuthorizing] = useState(false);
 
   const needsOAuth = template.authKind === "oauth";
-  const pending = create.isPending || startOAuth.isPending;
+  const pending = create.isPending || authorizing;
   const isMcpCustom = template.id === "custom-mcp-custom";
 
   const inputsByName = useMemo(() => {
@@ -157,16 +157,23 @@ export function TemplateCreateForm({
       setError(payload.error);
       return;
     }
-    try {
-      const result = (await create.mutateAsync(payload)) as { id: string };
-      if (needsOAuth) {
-        const r = (await startOAuth.mutateAsync({
+    if (needsOAuth) {
+      setAuthorizing(true);
+      try {
+        const result = await api.connections.create.mutate(payload);
+        const r = await api.connections.startOAuth.mutate({
           connectionId: result.id,
-        })) as { authUrl: string };
+        });
         sessionStorage.setItem("platform-return-view", "connections");
         window.location.href = r.authUrl;
-        return;
+      } catch (err) {
+        setAuthorizing(false);
+        setError(err instanceof Error ? err.message : String(err));
       }
+      return;
+    }
+    try {
+      const result = await create.mutateAsync(payload);
       onCreated(result.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -258,7 +265,8 @@ export function TemplateCreateForm({
       <DialogFooter>
         <button
           onClick={onCancel}
-          className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
+          disabled={pending}
+          className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm disabled:opacity-40"
         >
           Cancel
         </button>
@@ -267,7 +275,13 @@ export function TemplateCreateForm({
           disabled={pending}
           className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent"
         >
-          {pending ? "…" : needsOAuth ? "Create + Authorize" : "Create"}
+          {authorizing
+            ? "Redirecting…"
+            : pending
+              ? "…"
+              : needsOAuth
+                ? "Create + Authorize"
+                : "Create"}
         </button>
       </DialogFooter>
     </Modal>
