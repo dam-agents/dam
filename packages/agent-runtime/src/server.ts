@@ -57,9 +57,13 @@ const { runtime: acpRuntime, triggerDriver } = composeAcp({
 });
 
 // Runtime channel (ADR-052): supersedes the trigger-files watcher and
-// the pod-files SSE loop. Manifest at $WORK_DIR/runtime-manifest.yaml —
-// every agent image must ship one. Fail-fast on a missing/invalid
-// manifest or on any extension-load failure.
+// the pod-files SSE loop. Manifest lives on the image filesystem
+// outside the user-seeded working tree (NOT under $HOME or $WORK_DIR,
+// which are PV-mounted and seeded only on first boot — image upgrades
+// would otherwise be shadowed by stale state). In prod this resolves
+// to /app/runtime-manifest.yaml (Dockerfile COPY destination); in dev
+// it reads directly from the platform-base source. Fail-fast on a
+// missing/invalid manifest or on any extension-load failure.
 //
 // `trigger` events fire entirely in-process against the `triggerDriver`
 // port from the acp module — no callback to api-server.
@@ -70,7 +74,9 @@ const { runtime: acpRuntime, triggerDriver } = composeAcp({
 // nothing about specific Contribution kinds — the kinds are whatever
 // these plugins bind.
 const runtimeChannel = await composeRuntimeChannel({
-  manifestPath: join(workDir, "runtime-manifest.yaml"),
+  manifestPath: config.PLATFORM_DEV
+    ? join(__dir, "../../platform-base/runtime-manifest.yaml")
+    : join(__dir, "../runtime-manifest.yaml"),
   agentHome: homeDir,
   apiServerUrl: config.API_SERVER_URL,
   agentId: process.env.PLATFORM_AGENT_ID ?? process.env.HOSTNAME ?? "unknown",
