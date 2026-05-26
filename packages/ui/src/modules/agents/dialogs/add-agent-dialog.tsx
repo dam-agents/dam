@@ -219,7 +219,6 @@ export function AddAgentDialog({
   // Join the api-server-driven OAuth app connections with their K8s
   // credential Secrets so the picker can render them in the "Apps"
   // subsection while the grant flows through the secret-access mechanism.
-  // Legacy OAuth-app secret-mirror subsection retired with ADR-051.
   const oauthAppEntries: OAuthAppEntry[] = [];
 
   const pickTemplate = (tmpl: TemplateView) => {
@@ -595,8 +594,6 @@ export function AddAgentDialog({
             <ConnectionsPicker
               loading={loadSecrets}
               secrets={secrets}
-              /* tRPC client mints a structurally-identical but nominally
-                 distinct ConnectionView; same wire shape — cast. */
               apps={apps as unknown as AppConnectionView[]}
               oauthApps={oauthAppEntries}
               selSecrets={selSecretsSet}

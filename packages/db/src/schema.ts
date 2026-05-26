@@ -221,15 +221,6 @@ export const agentSkillPublishes = pgTable(
   (table) => [index("agent_skill_publishes_agent_idx").on(table.agentId)],
 );
 
-/**
- * Connection records (ADR-051). A Connection is everything an agent needs to
- * talk to one external integration: credentials, hosts, config files, MCP
- * entries, skill installs. Built from a code-declared Connection Template.
- *
- * `auth`, `contributions`, and `inputs` are validated structures held as JSON
- * (discriminated unions and free-form user inputs respectively); the canonical
- * Zod schemas live in api-server-api.
- */
 export const connections = pgTable(
   "connections",
   {
@@ -250,10 +241,6 @@ export const connections = pgTable(
   (table) => [index("connections_owner_idx").on(table.owner)],
 );
 
-/**
- * Per-agent grants of a Connection (ADR-051). The state-builder for an agent
- * joins `connection_grants` to `connections` to compute the contribution set.
- */
 export const connectionGrants = pgTable(
   "connection_grants",
   {
@@ -269,12 +256,6 @@ export const connectionGrants = pgTable(
   ],
 );
 
-/**
- * Runtime-channel view of agents (ADR-052). Populated on every `hello` with
- * the agent's advertised protocol version, capabilities, and image version.
- * The K8s ConfigMap remains the source of truth for spec; this table is what
- * the api-server consults for capability filtering on outbound payloads.
- */
 export const agents = pgTable("agents", {
   id: text("id").primaryKey(),
   runtimeProtocolVersion: text("runtime_protocol_version"),
@@ -285,15 +266,6 @@ export const agents = pgTable("agents", {
   runtimeAgentVersion: text("runtime_agent_version"),
 });
 
-/**
- * One row per agent, the snapshot delivery state (ADR-052, ADR-053).
- *
- * `version` is the per-agent monotonic counter — bumped on every contribution
- * edit and event insert, sent to the agent on `applyState`, returned as the
- * ack cursor in `appliedVersion`. The worker stamps `last_applied_*` in the
- * apply-ack transaction; the cron sweep re-enqueues rows where
- * `last_enqueued_at > last_applied_at`.
- */
 export const runtimeStateOutbox = pgTable(
   "runtime_state_outbox",
   {
@@ -311,8 +283,6 @@ export const runtimeStateOutbox = pgTable(
     lastAppliedAt: timestamp("last_applied_at", { withTimezone: true }),
   },
   (table) => [
-    // Stale rows for the cron sweep — those whose enqueue postdates the last
-    // applied stamp (or where nothing has applied yet).
     index("runtime_state_outbox_stale_idx")
       .on(table.lastEnqueuedAt)
       .where(
@@ -321,14 +291,6 @@ export const runtimeStateOutbox = pgTable(
   ],
 );
 
-/**
- * Pending one-shot directives for the runtime channel (ADR-052). Each row
- * carries its own `version` slot in the agent's monotonic sequence; the
- * state-builder reads non-dispatched, non-expired rows when constructing the
- * `events[]` slice. The worker stamps `dispatched_at` for events with
- * `version <= appliedVersion` in the apply-ack transaction. The cron sweep
- * deletes rows past `expires_at` that were never dispatched.
- */
 export const runtimeEvents = pgTable(
   "runtime_events",
   {
@@ -344,33 +306,15 @@ export const runtimeEvents = pgTable(
     dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
   },
   (table) => [
-    // Pending events for an agent, in version order — the state-builder's
-    // primary read path. Partial index keeps it small.
     index("runtime_events_agent_pending_idx")
       .on(table.agentId, table.version)
       .where(sql`${table.dispatchedAt} IS NULL`),
-    // Expiry sweep — scans pending rows with expired TTLs.
     index("runtime_events_expiry_idx")
       .on(table.expiresAt)
       .where(sql`${table.dispatchedAt} IS NULL`),
   ],
 );
 
-/**
- * Per-agent recurring task schedule. Source of truth for what fires when
- * (ADR-053 §"the schedule firing path now belongs to ... an api-server cron").
- * The api-server runs a BullMQ self-rescheduling worker against this table —
- * no more controller-side cron + kubectl-exec path.
- *
- * `spec` is the user-facing wire shape — `scheduleSpecSchema` in
- * api-server-api, a discriminated union over cron + rrule. Held opaquely
- * as jsonb so adding a third recurrence kind is a wire change only.
- *
- * `nextRun` is denormalized: the scheduler computes it on every CRUD +
- * after every fire, so the UI's "next run" pill doesn't have to re-parse
- * the spec. `lastFiredAt` / `lastFiredResult` carry the most recent
- * fire's outcome (success or error message) for the UI's status column.
- */
 export const schedules = pgTable(
   "schedules",
   {
@@ -392,8 +336,6 @@ export const schedules = pgTable(
   },
   (table) => [
     index("schedules_agent_owner_idx").on(table.agentId, table.owner),
-    // Boot scan: read every enabled schedule and restore its BullMQ
-    // self-rescheduling job. Partial index keeps it small.
     index("schedules_enabled_idx")
       .on(table.id)
       .where(sql`${table.enabled} = true`),

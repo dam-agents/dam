@@ -2,12 +2,6 @@ import { brandSchema } from "api-server-api";
 import { z } from "zod";
 import pkg from "../package.json" with { type: "json" };
 
-/**
- * GitHub App slug — operator-supplied, validated at startup so a typo
- * fails fast rather than surfacing as a 400 on the next connect. The
- * GitHub.com rule: 1–39 chars, lowercase letters / digits / single
- * hyphens, no leading, trailing, or consecutive hyphens.
- */
 function isValidAppSlug(s: string): boolean {
   return s.length >= 1 && s.length <= 39 && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(s);
 }
@@ -69,21 +63,9 @@ const configSchema = z.object({
   // for the matching app skips those input fields and the api-server uses
   // the defaults to mint tokens. A single admin-registered OAuth app can
   // serve every user on a deployment.
-  // Operator-supplied OAuth app credentials for premade Connection
-  // Templates (ADR-051). When unset the matching template is omitted
-  // from the catalog.
   defaultGithubClientId: z.string().nullable().default(null),
   defaultGithubClientSecret: z.string().nullable().default(null),
-  /** GitHub App slug for the platform-default github.com client. Only
-   *  meaningful when the configured client is a GitHub App (not an OAuth
-   *  App). Drives the post-authorize "Install on GitHub" prompt. */
   defaultGithubAppSlug: adminAppSlugSchema,
-  /** Operator-supplied GitHub Enterprise client. When `host` is set,
-   *  the GitHub Enterprise Connection Template surfaces in the catalog
-   *  with the host preset and (when clientId/clientSecret are also
-   *  set) the OAuth fields pre-filled. Without the host, the template
-   *  still surfaces but the user enters host + clientId + clientSecret
-   *  themselves. */
   defaultGithubEnterpriseHost: z.string().nullable().default(null),
   defaultGithubEnterpriseClientId: z.string().nullable().default(null),
   defaultGithubEnterpriseClientSecret: z.string().nullable().default(null),

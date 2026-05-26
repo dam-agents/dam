@@ -11,24 +11,10 @@ import { dirname, resolve } from "node:path";
 import { load as parseYaml, dump as stringifyYaml } from "js-yaml";
 import type { FileFormat, MergeMode } from "agent-runtime-api";
 
-/**
- * Internal file-merge utility shared by the built-in `file` and
- * `mcp-entry` plugins (ADR-052). Pure I/O + merge logic; no Plugin
- * coupling. Both plugins assemble their `FileDesired[]` lists from
- * Contributions and hand them here.
- *
- * Atomic on-disk writes via `tmp + rename`. Refuses paths that don't
- * resolve under `agentHome` — defense-in-depth against a buggy
- * api-server payload.
- */
-
 export interface FileDesired {
   format: FileFormat;
   mergeMode: MergeMode;
-  /** Per-contribution payload — interpretation depends on mergeMode. */
   content: unknown;
-  /** Optional key-path prefix the content should merge into. Used by
-   *  the `mcp-entry` plugin to drop entries under `mcpServers.<name>`. */
   keyPath?: string;
 }
 
@@ -38,11 +24,6 @@ export interface FileOpsContext {
 }
 
 export interface FileOps {
-  /**
-   * @param desired Map of absolute-resolved path → null (remove) or
-   *                list of desired fragments (merged inside the impl
-   *                per mergeMode).
-   */
   apply(
     desired: Map<string, FileDesired[] | null>,
     ctx: FileOpsContext,
@@ -95,9 +76,6 @@ export function createFileOps(): FileOps {
 function mergeFragments(existing: string, fragments: FileDesired[]): string {
   if (fragments.length === 0) return existing;
 
-  // All fragments on one path must agree on format + mergeMode. The
-  // contribution-fanout layer is responsible for picking one; if we
-  // ever see inconsistent modes here, it's an api-server bug.
   const firstFormat = fragments[0]!.format;
   const firstMergeMode = fragments[0]!.mergeMode;
   for (const f of fragments) {

@@ -20,22 +20,6 @@ const INPUT_CLASS =
 const TEXTAREA_CLASS =
   "w-full min-h-[120px] rounded-lg border-2 border-border-light bg-bg px-4 py-3 text-[13px] font-mono text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted";
 
-/**
- * Template-driven Connection-create form (ADR-051). Field rendering is
- * driven by `template.inputs` (server-computed from the template's
- * data shape and operator presets). Each input is one of three states:
- *
- *   - `required`     — always visible, gates submit.
- *   - `overridable`  — operator-preset; hidden behind a "Customize"
- *                      toggle. When the toggle is off the form sends
- *                      nothing and the server applies the preset.
- *                      Non-secret presets surface as `presetValue` so
- *                      the user can see what's configured.
- *   - `optional`     — always visible, does NOT gate submit.
- *
- * Submit on OAuth templates auto-handoffs to `connections.startOAuth`
- * and redirects to the provider's authorize URL.
- */
 export function TemplateCreateForm({
   template,
   onCreated,
@@ -69,12 +53,6 @@ export function TemplateCreateForm({
     setFields((prev) => ({ ...prev, [k]: v }));
   const isOverriding = (k: string): boolean => overrides[k] === true;
 
-  /**
-   * Pull the form's value for a field — only when the user actually
-   * wants it on the wire. Required + optional fields go through if
-   * filled; overridable fields go through only when the user toggled
-   * Customize AND typed a value.
-   */
   const submittedValue = (k: string): string | undefined => {
     const input = inputsByName.get(k);
     if (!input) return undefined;
@@ -218,7 +196,6 @@ export function TemplateCreateForm({
             />
           ))}
 
-          {/* MCP-custom: paste-JSON block for the .mcp.json entry. */}
           {isMcpCustom && (
             <label className="block">
               <span className="text-[12px] font-semibold text-text-secondary block mb-1">
@@ -387,8 +364,6 @@ function LabeledInput({
     </label>
   );
 }
-
-// ─── Per-field UI metadata (labels + placeholders) ──────────────────────
 
 const FIELD_LABELS: Record<string, string> = {
   url: "URL",

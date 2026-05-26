@@ -22,13 +22,6 @@ import type { RuntimeMutator } from "../runtime-delivery/index.js";
 import type { AgentsRepository } from "../agents/infrastructure/agents-repository.js";
 import type { ConnectionRulesSync } from "../egress-rules/services/connection-rules-sync.js";
 
-/**
- * Composes the Connections bounded context (ADR-051). One service per
- * authenticated request, scoped to `ownerId` (the JWT sub).
- *
- * The Template catalog + OAuth engine + refresh loop are process-wide
- * and stateless; build once at api-server boot and re-use.
- */
 export interface ConnectionsBootCompose {
   templates: ReturnType<typeof createConnectionTemplateRegistry>;
   oauthEngine: OAuthEngine;
@@ -38,10 +31,6 @@ export interface ConnectionsBootCompose {
 export interface ComposeConnectionsAtBootOpts {
   db: Db;
   secretStore: SecretStore;
-  /** Operator-supplied OAuth client credentials per template family.
-   *  Templates without configured creds are filtered out of the catalog
-   *  so the UI doesn't surface "Connect" buttons for integrations this
-   *  deployment can't authenticate. */
   operatorCredentials?: OperatorCredentials;
 }
 
@@ -86,9 +75,6 @@ export function composeConnectionsForOwner(opts: {
       );
     },
     async bumpSecretsRev(agentId): Promise<void> {
-      // ADR-040 mechanism: bump an annotation the controller's reconciler
-      // watches. The bump value is monotonic-ish (timestamp suffices —
-      // collisions in the same millisecond just no-op the rev change).
       await opts.agentsRepo.patchAnnotation(
         agentId,
         "agent-platform.ai/secrets-rev",

@@ -5,32 +5,13 @@ import type {
   OAuthConnectionTemplate,
 } from "./connection-template.js";
 
-/**
- * Connection Template catalog (ADR-051). Each entry is *data* — one
- * auth-kind per template, declarative defaults + contributions. Adding
- * a new app or provider is one block here.
- *
- * Operator-supplied OAuth credentials (clientId / clientSecret) are
- * injected at compose time; static templates without configured creds
- * are filtered out of the public catalog so the UI doesn't surface
- * "Connect to X" buttons for integrations the deployment can't actually
- * fulfill.
- */
-
-// ─── Operator-supplied OAuth credentials ─────────────────────────────────
-
 export interface OAuthClientCredentials {
   clientId: string;
   clientSecret: string;
-  /** GitHub-only: when the configured client is a GitHub App, the slug
-   *  drives the post-authorize "Install on GitHub" prompt. */
   appSlug?: string;
 }
 
 export interface GitHubEnterpriseCredentials {
-  /** GHE host (e.g. `ghe.example.com`). Required when the operator
-   *  has pre-configured a GHE client; absence means GHE is in the
-   *  catalog but the user supplies host + clientId + clientSecret. */
   host?: string;
   clientId?: string;
   clientSecret?: string;
@@ -38,21 +19,11 @@ export interface GitHubEnterpriseCredentials {
 }
 
 export interface OperatorCredentials {
-  /** github.com OAuth or GitHub App. */
   github?: OAuthClientCredentials;
-  /** GitHub Enterprise. Host + creds are independently optional — the
-   *  template surfaces in the catalog regardless and the UI form fills
-   *  in whatever inputs the operator left blank. */
   githubEnterprise?: GitHubEnterpriseCredentials;
-  /** Shared client for every Google service template (one Cloud project
-   *  hosting one OAuth client serves all the Workspace integrations,
-   *  mirroring the old `credentialFamily: "google"` mechanism). */
   google?: OAuthClientCredentials;
-  /** Spotify dashboard OAuth client. */
   spotify?: OAuthClientCredentials;
 }
-
-// ─── Header-kind templates (provider presets) ────────────────────────────
 
 const ANTHROPIC: HeaderConnectionTemplate = {
   id: "anthropic",
@@ -96,9 +67,6 @@ const OPENAI: HeaderConnectionTemplate = {
   ],
 };
 
-/** IBM LiteLLM ETE proxy. Carries the standard Claude Code model-pin
- *  envs at the configured defaults; per-connection pin overrides are a
- *  follow-up. */
 const IBM_LITELLM: HeaderConnectionTemplate = {
   id: "ibm-litellm",
   name: "IBM LiteLLM ETE Proxy",
@@ -142,7 +110,6 @@ const IBM_LITELLM: HeaderConnectionTemplate = {
   ],
 };
 
-/** Bob shell. Token goes in via `Apikey` (Bearer triggers JWT auth). */
 const BOB: HeaderConnectionTemplate = {
   id: "bob",
   name: "Bob Shell",
@@ -165,8 +132,6 @@ const BOB: HeaderConnectionTemplate = {
   ],
 };
 
-// ─── Static OAuth templates ───────────────────────────────────────────────
-
 function github(creds?: OAuthClientCredentials): OAuthConnectionTemplate {
   return {
     id: "github",
@@ -176,14 +141,8 @@ function github(creds?: OAuthClientCredentials): OAuthConnectionTemplate {
     description: "Read + write GitHub repos, issues, PRs.",
     iconSlug: "github",
     authKind: "oauth",
-    // Operator-supplied defaults if configured; otherwise the user is
-    // asked for clientId + clientSecret at create time.
     ...(creds?.clientId ? { clientId: creds.clientId } : {}),
     ...(creds?.clientSecret ? { clientSecret: creds.clientSecret } : {}),
-    // GitHub App slug surfaces as opaque `extras.appSlug` — the UI keys
-    // on it to show an "Install on GitHub" affordance post-authorize
-    // when the configured OAuth client is a GitHub App rather than an
-    // OAuth App. Off the typed schema by design.
     ...(creds?.appSlug ? { extras: { appSlug: creds.appSlug } } : {}),
     authorizationUrl: "https://github.com/login/oauth/authorize",
     tokenUrl: "https://github.com/login/oauth/access_token",
@@ -191,16 +150,7 @@ function github(creds?: OAuthClientCredentials): OAuthConnectionTemplate {
     tokenEndpointAcceptJson: true,
     contributions: [
       { kind: "env", name: "GH_TOKEN", placeholder: "dummy-placeholder" },
-      // api.github.com + raw.githubusercontent.com take the default
-      // `Authorization: Bearer {value}` — `injection: {}` opts them into
-      // the per-host SDS chain so Envoy rewrites the Authorization header
-      // on the wire. Without this they fall to the default passthrough
-      // chain and the agent's placeholder Authorization reaches GitHub
-      // verbatim.
       { kind: "egress-host", host: "api.github.com", injection: {} },
-      // git+HTTPS to github.com uses HTTP Basic with `x-access-token:`,
-      // not the api.github.com Bearer form. Per-host injection override
-      // makes the same OAuth token work for both rails (issue #219).
       {
         kind: "egress-host",
         host: "github.com",
@@ -219,13 +169,6 @@ function github(creds?: OAuthClientCredentials): OAuthConnectionTemplate {
   };
 }
 
-/**
- * GitHub Enterprise — host-parametrized. Host comes from the operator
- * (config.defaultGithubEnterpriseHost) when configured; otherwise the
- * user supplies it at create time. Authorization / token URLs carry
- * `{host}` placeholders that `buildOAuthStatic` substitutes; the same
- * substitution drives the host-dependent contributions.
- */
 function githubEnterprise(
   creds?: GitHubEnterpriseCredentials,
 ): OAuthConnectionTemplate {
@@ -238,10 +181,6 @@ function githubEnterprise(
       "Connect a GitHub Enterprise host so agents can call its API on your behalf.",
     iconSlug: "github",
     authKind: "oauth",
-    // Operator preset (when set) drops `host` from `requiredInputs` so
-    // the UI form pre-fills it. URLs always carry the `{host}`
-    // placeholder — `buildOAuthStatic` resolves with input.host ??
-    // template.host so a user-supplied override wins consistently.
     ...(creds?.host ? { host: creds.host } : {}),
     ...(creds?.clientId ? { clientId: creds.clientId } : {}),
     ...(creds?.clientSecret ? { clientSecret: creds.clientSecret } : {}),
@@ -250,10 +189,6 @@ function githubEnterprise(
     tokenUrl: "https://{host}/login/oauth/access_token",
     scopes: ["repo", "read:user", "user:email"],
     tokenEndpointAcceptJson: true,
-    // Static contributions intentionally empty — the host-dependent
-    // ones (GH_HOST env, api.<host> + <host> egress) are emitted at
-    // build time from the resolved host. Keeping them dynamic avoids
-    // a template variant per possible host.
     contributions: [
       { kind: "env", name: "GH_TOKEN", placeholder: "dummy-placeholder" },
     ],
@@ -273,8 +208,6 @@ function spotify(creds?: OAuthClientCredentials): OAuthConnectionTemplate {
     ...(creds?.clientSecret ? { clientSecret: creds.clientSecret } : {}),
     authorizationUrl: "https://accounts.spotify.com/authorize",
     tokenUrl: "https://accounts.spotify.com/api/token",
-    // Spotify exposes per-feature scopes; this is a reasonable read+
-    // playback default. The catalog can carve narrower templates later.
     scopes: [
       "user-read-email",
       "user-read-private",
@@ -285,8 +218,6 @@ function spotify(creds?: OAuthClientCredentials): OAuthConnectionTemplate {
     contributions: [{ kind: "egress-host", host: "api.spotify.com" }],
   };
 }
-
-// ─── Google services (one Cloud project, many service templates) ─────────
 
 interface GoogleServiceDef {
   id: string;
@@ -464,10 +395,6 @@ function googleService(
   };
 }
 
-// ─── Custom templates ─────────────────────────────────────────────────────
-
-/** User supplies every field — host / headerName / valueFormat / value.
- *  No template presets. */
 const CUSTOM_HEADER: HeaderConnectionTemplate = {
   id: "custom-header",
   name: "Custom header credential",
@@ -480,8 +407,6 @@ const CUSTOM_HEADER: HeaderConnectionTemplate = {
   contributions: [],
 };
 
-/** User supplies every OAuth field — for Authorization-Code OAuth
- *  providers we don't ship a preset for. */
 const CUSTOM_OAUTH: OAuthConnectionTemplate = {
   id: "custom-oauth",
   name: "Custom OAuth provider",
@@ -494,9 +419,6 @@ const CUSTOM_OAUTH: OAuthConnectionTemplate = {
   contributions: [],
 };
 
-/** Custom MCP server — OAuth via DCR. User supplies a URL; the build
- *  step runs `.well-known` discovery + RFC 7591 dynamic client
- *  registration. */
 const CUSTOM_MCP_OAUTH: OAuthConnectionTemplate = {
   id: "custom-mcp-oauth",
   name: "Custom MCP server (OAuth)",
@@ -510,7 +432,6 @@ const CUSTOM_MCP_OAUTH: OAuthConnectionTemplate = {
   contributions: [],
 };
 
-/** Custom MCP server — no auth. User supplies a URL. */
 const CUSTOM_MCP_NONE: NoneConnectionTemplate = {
   id: "custom-mcp-none",
   name: "Custom MCP server (no auth)",
@@ -522,11 +443,6 @@ const CUSTOM_MCP_NONE: NoneConnectionTemplate = {
   contributions: [],
 };
 
-/** Custom MCP server — Custom Header injection. User pastes the MCP
- *  JSON config block + supplies a header injection config (host +
- *  headerName + valueFormat + value), same as Custom Header. The
- *  Connection emits an mcp-entry Contribution carrying the verbatim
- *  user-pasted JSON alongside the header-auth pieces. */
 const CUSTOM_MCP_CUSTOM: HeaderConnectionTemplate = {
   id: "custom-mcp-custom",
   name: "Custom MCP server (custom)",
@@ -539,29 +455,18 @@ const CUSTOM_MCP_CUSTOM: HeaderConnectionTemplate = {
   contributions: [],
 };
 
-// ─── Catalog assembly ─────────────────────────────────────────────────────
-
-/**
- * Build the catalog. Static OAuth templates (GitHub, Spotify, Google
- * services) are ALWAYS in the catalog; operator config only supplies
- * defaults. When defaults are absent the UI form prompts the user for
- * clientId + clientSecret at create time.
- */
 export function buildCatalog(
   creds: OperatorCredentials = {},
 ): ConnectionTemplate[] {
   return [
-    // Provider presets (header).
     ANTHROPIC,
     OPENAI,
     IBM_LITELLM,
     BOB,
-    // Static OAuth — operator config fills in defaults when present.
     github(creds.github),
     githubEnterprise(creds.githubEnterprise),
     spotify(creds.spotify),
     ...GOOGLE_SERVICES.map((def) => googleService(def, creds.google)),
-    // Custom — always present.
     CUSTOM_OAUTH,
     CUSTOM_HEADER,
     CUSTOM_MCP_OAUTH,

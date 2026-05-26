@@ -9,20 +9,6 @@ import {
 } from "../../modules/connections/services/oauth-flow.js";
 import { createConnectionsRepository } from "../../modules/connections/infrastructure/connections-repository.js";
 
-/**
- * Unified OAuth callback (ADR-051). Every flow the engine started lands
- * here regardless of provider — the `state` parameter resolves back to a
- * pending PendingFlow that carries the Connection id + owner sub.
- *
- * The callback is unauthenticated (the provider's redirect carries no
- * session cookie). Security comes from:
- *   - the `state` parameter being unguessable + single-use,
- *   - the PendingFlow's `ctx.ownerId` being the only thing the handler
- *     uses to identify the user (no header / cookie read).
- *
- * Tokens land in SecretStore via OAuthFlowService.completeOAuth, which
- * also stamps `auth.expiresAt` on the Connection row.
- */
 export interface OAuthCallbackDeps {
   db: Db;
   secretStore: SecretStore;
@@ -50,8 +36,6 @@ export function createOAuthRoutes(deps: OAuthCallbackDeps) {
       );
     }
 
-    // Peek (non-consuming) to discover which owner started this flow. The
-    // OAuthFlowService.completeOAuth path then does the real consume.
     const peeked = deps.engine.peek<OAuthFlowPendingCtx>(state);
     if (!peeked) {
       return c.redirect(`${deps.uiBaseUrl}?oauth=error&message=invalid+state`);
@@ -63,7 +47,6 @@ export function createOAuthRoutes(deps: OAuthCallbackDeps) {
       templates: deps.templates,
       secretStore: deps.secretStore,
       ownerId: peeked.ctx.ownerId,
-      // Unused on completeOAuth path (start path only). Stub.
       callbackUrl: "",
     });
 

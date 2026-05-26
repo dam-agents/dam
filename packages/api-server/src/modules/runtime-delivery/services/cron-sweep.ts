@@ -1,15 +1,6 @@
 import type { OutboxRepo } from "../infrastructure/outbox-repo.js";
 import type { StateQueue } from "../infrastructure/state-queue.js";
 
-/**
- * Per-minute sweep (ADR-053). Two concerns:
- *   1. Outbox staleness — rows where `last_enqueued_at > last_applied_at`
- *      and the enqueue is older than the sweep slop. Re-enqueue. This is
- *      the load-bearing path on Redis/BullMQ loss: rows in Postgres are
- *      truth.
- *   2. Expired events — pending rows past `expires_at`. Delete; counted.
- */
-
 export interface CronSweep {
   start(): void;
   stop(): Promise<void>;
@@ -56,8 +47,6 @@ export function createCronSweep(deps: CronSweepDeps): CronSweep {
 
   return {
     start(): void {
-      // Jittered initial delay so multi-replica sweeps don't slam at the
-      // same instant.
       const initial = Math.floor(Math.random() * intervalMs);
       setTimeout(() => {
         void tick();
@@ -66,7 +55,6 @@ export function createCronSweep(deps: CronSweepDeps): CronSweep {
     },
     async stop(): Promise<void> {
       if (timer) clearInterval(timer);
-      // Wait for any in-flight tick to drain.
       while (running) await new Promise((r) => setTimeout(r, 50));
     },
   };

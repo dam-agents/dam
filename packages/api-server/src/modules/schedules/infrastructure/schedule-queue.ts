@@ -1,16 +1,5 @@
 import { Queue, Worker, type ConnectionOptions } from "bullmq";
 
-/**
- * BullMQ queue + worker for the schedules rail (ADR-053). One queue
- * `schedules`, one job kind `fire`, stable jobId per schedule
- * (`schedule:<id>`) so at most one pending delayed job exists for any
- * given schedule — `sync` exploits BullMQ's "reject re-add by id" to
- * replace a pending job by removing it and re-adding.
- *
- * The handler is injected (see `services/scheduler-runner.ts`); this
- * file owns only the BullMQ transport concerns.
- */
-
 export const SCHEDULES_QUEUE = "schedules";
 
 interface ScheduleJob {
@@ -18,10 +7,7 @@ interface ScheduleJob {
 }
 
 export interface ScheduleQueue {
-  /** Add a delayed job to fire `scheduleId` at `fireAt`. Replaces any
-   *  pending job for the same id. */
   enqueue(scheduleId: string, fireAt: Date, now: Date): Promise<void>;
-  /** Remove any pending job for `scheduleId`. Idempotent. */
   cancel(scheduleId: string): Promise<void>;
   close(): Promise<void>;
 }
@@ -32,8 +18,6 @@ export function createScheduleQueue(
   const queue = new Queue<ScheduleJob>(SCHEDULES_QUEUE, { connection });
   return {
     async enqueue(scheduleId, fireAt, now): Promise<void> {
-      // `remove` is required because BullMQ rejects re-adds of an
-      // already-pending jobId — and `sync` needs replace semantics.
       await queue.remove(`schedule:${scheduleId}`).catch(() => {});
       const delayMs = Math.max(0, fireAt.getTime() - now.getTime());
       await queue.add(
@@ -76,8 +60,6 @@ export function startScheduleWorker(
     async (job) => opts.handler(job.data.scheduleId),
     {
       connection: opts.connection,
-      // One DB tx + one BullMQ enqueue per fire — IO-bound, conservative
-      // ceiling matches the runtime-state worker.
       concurrency: 16,
     },
   );

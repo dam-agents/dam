@@ -49,11 +49,6 @@ function toTrpcError(error: SkillsDomainError): TRPCError {
   }
 }
 
-/**
- * Direct agent-runtime skills routes. `install` and `uninstall` retired
- * in ADR-052 — those flow through `skill-ref` Contributions on the
- * runtime channel. Only the read/scan/publish endpoints remain.
- */
 export const skillsRouter = t.router({
   scan: protectedProcedure
     .input(skillScanInputSchema)

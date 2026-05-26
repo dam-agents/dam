@@ -19,21 +19,6 @@ import { discoverMcpAuth } from "../infrastructure/mcp-discovery.js";
 import type { ContributionFanOut } from "./contribution-fanout.js";
 import type { OAuthFlowService } from "./oauth-flow.js";
 
-/**
- * Owner-scoped Connections service (ADR-051). The user-facing API the UI
- * talks to. Wraps the Connections repository + template registry +
- * SecretStore + contribution fan-out.
- *
- * Per-user scoping: every call is bound to one `ownerId` at compose time
- * (set from the authenticated request's JWT sub). No call accepts owner
- * as an argument; routing through the wrong owner is impossible by
- * construction.
- *
- * Template-driven create: the only way to create a Connection is to
- * project user inputs through `template.build()`. The Connections service
- * doesn't accept raw `auth` or `contributions` from the wire — those are
- * always template-computed.
- */
 export function createConnectionsService(deps: {
   ownerId: string;
   templates: ConnectionTemplateRegistry;
@@ -41,7 +26,6 @@ export function createConnectionsService(deps: {
   secretStore: SecretStore;
   fanOut: ContributionFanOut;
   oauthFlow: OAuthFlowService;
-  /** Public OAuth callback URL, used by DCR for `redirect_uris`. */
   oauthCallbackUrl: string;
   brandName: string;
 }): ConnectionsService {
@@ -57,9 +41,6 @@ export function createConnectionsService(deps: {
         > => c.kind === "egress-host",
       )
       .map((c) => c.host);
-    // OAuth-only fields surfaced for the UI's per-connection card:
-    // `host` labels host-parametrized Connections (GitHub Enterprise);
-    // `appSlug` drives the "Install on GitHub" affordance.
     const oauthExtras =
       conn.auth.kind === "oauth"
         ? {
@@ -73,9 +54,6 @@ export function createConnectionsService(deps: {
       templateId: conn.templateId,
       category: template?.category ?? "other",
       name: conn.name,
-      // Status derives from the auth state. For now: oauth without an
-      // expiresAt is "pending" (token never written); otherwise "active".
-      // OAuth-refresh failure will flip this to "expired" in a follow-up.
       status: deriveStatus(conn),
       authKind: conn.auth.kind,
       contributions: conn.contributions,
@@ -107,17 +85,6 @@ export function createConnectionsService(deps: {
       const conn = await deps.repo.get(id, deps.ownerId);
       if (!conn) return;
 
-      // Find which agents had this granted so we can fan out the post-
-      // delete state to them. We don't know the agent set without reading
-      // the grants table — the repo's delete sweeps grants, so we read
-      // first.
-      // Phase A: skip per-agent re-fanout on delete; the cron sweep + the
-      // agent's next `hello` will pick up the missing contribution. Mark
-      // as a TODO — explicit fan-out is task #8's final piece.
-
-      // Best-effort cleanup of the backing secret. Multiple SecretRefs
-      // could point into one path (oauth has access + refresh fields under
-      // one secret); dedup by path.
       const paths = new Set<string>();
       switch (conn.auth.kind) {
         case "oauth":
@@ -156,9 +123,6 @@ export function createConnectionsService(deps: {
     ): Promise<void> {
       const deduped = Array.from(new Set(connectionIds));
 
-      // Validate every requested connection exists and is owned by the
-      // caller. Reject the whole call on the first miss — partial grants
-      // aren't worth the surprise.
       const owned = await deps.repo.listByOwner(deps.ownerId);
       const ownedById = new Map(owned.map((c) => [c.id, c]));
       for (const id of deduped) {
@@ -167,7 +131,6 @@ export function createConnectionsService(deps: {
         }
       }
 
-      // Diff against current grants; insert + delete the changeset.
       const current = await deps.repo.listAgentGrants(agentId);
       const currentIds = new Set(current.map((c) => c.connectionId));
       const desiredIds = new Set(deduped);
@@ -180,7 +143,6 @@ export function createConnectionsService(deps: {
       for (const id of toGrant) await deps.repo.grant(id, agentId);
       for (const id of toRevoke) await deps.repo.revoke(id, agentId);
 
-      // Fan-out the resulting state to all three rails.
       const grantedConnections = deduped
         .map((id) => ownedById.get(id))
         .filter((c): c is Connection => c !== undefined);
@@ -208,25 +170,7 @@ export function createConnectionsService(deps: {
       const id = newConnectionId();
       const secretPath = connectionSecretPath(built.auth);
 
-      // Pre-create the connection's K8s Secret BEFORE persisting the
-      // Connection row. Two things matter:
-      //   1. Partial-write safety — a Connection row pointing at a
-      //      half-populated path is worse than no row at all.
-      //   2. Controller-visible metadata. The Secret must carry the
-      //      labels + annotations the controller's per-agent filter reads
-      //      (`secret-type=connection`, `connection=<id>`, `env-mappings`,
-      //      `injection-hosts`). Without these, the controller can't
-      //      resolve the Secret from the agent's `granted-connection-ids`
-      //      annotation and no env / on-wire injection lands. The later
-      //      OAuth callback writes raw token fields via `putField`, which
-      //      preserves the existing metadata.
       if (secretPath) {
-        // Seed per-host SDS files with placeholder token content so the
-        // gateway pod's Envoy can boot before OAuth completes. Without
-        // them, the bootstrap's `path_config_source` references files
-        // that don't exist and Envoy aborts startup — taking the
-        // co-tenant Anthropic chain down with it. Real tokens overwrite
-        // these on `oauth-flow.completeOAuth`.
         const placeholderSds = buildConnectionSdsFields(
           built.contributions,
           CONNECTION_TOKEN_PLACEHOLDER,
@@ -251,8 +195,6 @@ export function createConnectionsService(deps: {
         ownerId: deps.ownerId,
         templateId: template.id,
         name: input.name?.trim() || built.defaultName,
-        // Record only the structurally-stable bits of the user's input —
-        // never the secret bytes (those live in SecretStore).
         inputs: stripSecretsFromInputs(input),
         auth: built.auth,
         contributions: built.contributions,
@@ -277,8 +219,6 @@ function stripSecretsFromInputs(input: {
   authKind: "oauth" | "header" | "none";
   [k: string]: unknown;
 }): Record<string, unknown> {
-  // The Connection row records the structurally-stable user input only.
-  // Secrets (header value, OAuth client_secret) live in SecretStore.
   const SECRET_KEYS = ["value", "clientSecret"];
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(input)) {
@@ -291,9 +231,6 @@ function stripSecretsFromInputs(input: {
 function deriveStatus(conn: Connection): ConnectionView["status"] {
   switch (conn.auth.kind) {
     case "oauth":
-      // Without a recorded `expiresAt`, the token has never been written
-      // (created-but-not-connected). After OAuth callback the refresh
-      // service populates expiresAt + tokens.
       return conn.auth.expiresAt ? "active" : "pending";
     case "header":
       return "active";

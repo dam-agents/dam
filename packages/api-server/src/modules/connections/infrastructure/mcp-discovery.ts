@@ -1,21 +1,3 @@
-/**
- * MCP authorization-server discovery (RFC 8414 + RFC 9728) and dynamic
- * client registration (RFC 7591). Used by the Custom MCP OAuth template
- * to materialize a Connection from a user-supplied URL: discover the
- * server's auth metadata, register a client, hand the result to the
- * OAuth flow.
- *
- * Discovery cascade (each tried in order, first success wins):
- *   1. `<base>/.well-known/oauth-protected-resource` (RFC 9728) →
- *      points at an external authorization server URL.
- *   2. `<base>/.well-known/oauth-authorization-server` (RFC 8414) on
- *      the resource itself.
- *   3. `<base>/.well-known/openid-configuration` (OIDC) on the resource.
- *
- * Returns null when nothing OAuthy is published. Callers map that to a
- * no-auth MCP Connection.
- */
-
 export interface DiscoveredMcpAuth {
   authorizationEndpoint: string;
   tokenEndpoint: string;
@@ -41,7 +23,6 @@ export async function discoverMcpAuth(
 ): Promise<DiscoveredMcpAuth | null> {
   const base = `${mcpUrl.protocol}//${mcpUrl.host}`;
 
-  // 1) RFC 9728 — resource points at one or more authorization servers.
   try {
     const res = await fetchImpl(
       `${base}/.well-known/oauth-protected-resource`,
@@ -57,11 +38,8 @@ export async function discoverMcpAuth(
         if (meta) return meta;
       }
     }
-  } catch {
-    // Try next candidate.
-  }
+  } catch {}
 
-  // 2) + 3) RFC 8414 / OIDC on the resource itself.
   return fetchAuthServerMetadata(base, fetchImpl);
 }
 
@@ -90,14 +68,10 @@ async function fetchAuthServerMetadata(
             : {}),
         };
       }
-    } catch {
-      // try next candidate
-    }
+    } catch {}
   }
   return null;
 }
-
-// ─── Dynamic Client Registration (RFC 7591) ──────────────────────────────
 
 export interface DcrResult {
   clientId: string;

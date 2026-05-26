@@ -7,12 +7,6 @@ import type {
 
 type Event = RuntimeEvent;
 
-/**
- * Filter contributions + events by an agent's advertised capabilities
- * (ADR-052). Anything outside the advertised sets is dropped at send time —
- * never silently delivered. The caller is responsible for emitting the
- * `dropped-unsupported` counter.
- */
 export interface AgentCapabilities {
   contributions: ContributionKind[];
   events: RuntimeEventKind[];

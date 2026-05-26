@@ -12,13 +12,6 @@ import {
 } from "db";
 import type { RuntimeEventKind } from "api-server-api";
 
-/**
- * Postgres-backed access to `runtime_state_outbox` and `runtime_events`
- * (ADR-053). Every state-affecting mutation must (1) bump the agent's
- * version, (2) upsert the outbox row, (3) optionally insert event rows,
- * all in one transaction — see `bumpAndEnqueue` for the canonical helper.
- */
-
 export interface OutboxRow {
   agentId: string;
   version: number;
@@ -39,29 +32,14 @@ export interface PendingEventRow {
 
 export interface OutboxRepo {
   getRow(agentId: string): Promise<OutboxRow | null>;
-  /**
-   * Atomically: bump `agents.version`, upsert outbox row's `version` +
-   * `lastEnqueuedAt`. Returns the new version. Caller enqueues BullMQ
-   * after commit.
-   */
   bumpVersion(agentId: string, db?: Db): Promise<number>;
-  /**
-   * Read pending (non-dispatched, non-expired) events for an agent in
-   * ascending version order.
-   */
   pendingEvents(agentId: string): Promise<PendingEventRow[]>;
-  /**
-   * Worker apply-ack: stamp last_applied_* and dispatched_at for events
-   * with version <= ackedVersion. One transaction.
-   */
   stampAck(
     agentId: string,
     ackedVersion: number,
     ackedHash: string,
   ): Promise<void>;
-  /** Cron sweep: rows where lastEnqueuedAt > lastAppliedAt + slop. */
   listStale(slopMs: number, limit: number): Promise<OutboxRow[]>;
-  /** Cron sweep: delete expired non-dispatched events; returns dropped count. */
   deleteExpiredEvents(): Promise<number>;
   insertEvent(input: PendingEventRow & { createdAt?: Date }): Promise<void>;
 }
@@ -86,8 +64,6 @@ export function createOutboxRepo(db: Db): OutboxRepo {
     },
 
     async bumpVersion(agentId, tx = db): Promise<number> {
-      // Atomic upsert; idempotent on no-op (no row → insert version=1; row
-      // exists → +1).
       const result = (await tx.execute(
         sql`
           INSERT INTO runtime_state_outbox (agent_id, version, last_enqueued_at)
@@ -201,11 +177,6 @@ export interface AgentRuntimeStateRow {
   runtimeAgentVersion: string | null;
 }
 
-/**
- * Tiny Postgres view of agents — populated only on `runtime.v1.hello`.
- * The K8s ConfigMap is the source of truth for spec; this table holds
- * the runtime-advertised capability metadata.
- */
 export interface AgentsRuntimeRepo {
   upsertHello(input: {
     agentId: string;

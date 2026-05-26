@@ -1,23 +1,10 @@
 import { createInMemoryChannel } from "../infrastructure/in-memory-channel.js";
 import type { AcpRuntime } from "./acp-runtime.js";
 
-/**
- * Port for in-process trigger dispatch (ADR-052). Other modules in this
- * package (notably `runtime-channel/drivers/trigger-impl`) depend on this
- * abstraction — not on `AcpRuntime` directly — so the module boundary
- * stays loose.
- *
- * `start` provisions a session (new or resumed) and queues a prompt on it.
- * It does NOT wait for the prompt to complete — the agent process keeps
- * processing after the call returns, and the runtime's prompt slot is
- * preserved so the response lands cleanly with no listener.
- */
 export interface TriggerSessionDriver {
   start(opts: {
     task: string;
     mcpServers?: unknown[];
-    /** Resume this session (continuous mode). When omitted a fresh
-     *  session is created and its id returned. */
     resumeSessionId?: string;
   }): Promise<{ sessionId: string }>;
 }
@@ -81,9 +68,6 @@ export function createTriggerSessionDriver(deps: {
       }
 
       function sendFireAndForget(method: string, params: unknown): void {
-        // Allocate an id so the agent treats it as a request (prompts
-        // are request-shaped in ACP), but never read the response —
-        // we close the channel right after.
         const id = nextId++;
         channel.sendToServer(
           JSON.stringify({ jsonrpc: "2.0", id, method, params }),
@@ -105,9 +89,6 @@ export function createTriggerSessionDriver(deps: {
         let sessionId: string;
 
         if (resumeSessionId) {
-          // `session/resume` is mediated entirely by the runtime —
-          // serves from log metadata when hot, cold-bootstraps via
-          // session/load against the agent process otherwise.
           await request("session/resume", {
             sessionId: resumeSessionId,
             cwd: ".",

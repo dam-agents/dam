@@ -15,17 +15,10 @@ import {
   validateTimezone,
 } from "../domain/recurrences.js";
 
-/**
- * User-facing schedules CRUD. Backed by Postgres (`SchedulesRepository`),
- * with every mutation also syncing the BullMQ scheduler runner so the
- * pending delayed job matches the latest spec (ADR-053).
- */
 export function createSchedulesService(deps: {
   repo: SchedulesRepository;
   runner: SchedulerRunner;
   owner: string;
-  /** Optional agent-existence check; when omitted, agentExists checks
-   *  are skipped (e.g. the harness's MCP-side schedule create). */
   agentExists?: (agentId: string) => Promise<boolean>;
 }): SchedulesService {
   async function ensureAgent(agentId: string): Promise<void> {

@@ -4,14 +4,6 @@ import type { SecretRef } from "api-server-api";
 import type { K8sClient } from "../../agents/infrastructure/k8s.js";
 import type { SecretMetadata, SecretStore } from "../services/secret-store.js";
 
-/**
- * K8s Secrets adapter for the SecretStore port. One K8s Secret per
- * SecretRef path; fields map to keys in the Secret's `data` map.
- *
- * Naming + labeling convention is encapsulated here so callers never see
- * K8s-isms. Vault / AWS SM adapters live alongside and follow the same
- * interface — only the on-disk format and IAM model change.
- */
 const LABEL_OWNER = "agent-platform.ai/owner";
 const LABEL_MANAGED_BY = "agent-platform.ai/managed-by";
 const LABEL_PURPOSE = "agent-platform.ai/secret-purpose";
@@ -21,7 +13,6 @@ const NAME_PREFIX = "platform-secret-";
 
 export interface KubernetesSecretStoreOpts {
   k8s: K8sClient;
-  /** Adapter identity. Defaults to `"k8s"`. */
   storeId?: string;
 }
 
@@ -74,8 +65,6 @@ export function createKubernetesSecretStore(
     storeId,
 
     mintRef(meta): SecretRef {
-      // 8-byte nonce so (owner, purpose) can be re-provisioned without
-      // collision (user deletes and re-creates the same Connection).
       const nonce = crypto.randomBytes(8).toString("hex");
       const digest = crypto
         .createHash("sha256")
@@ -121,9 +110,6 @@ export function createKubernetesSecretStore(
 
     async putField(ref, value): Promise<void> {
       ensureOwn(ref);
-      // Read-modify-write to preserve other fields + existing labels.
-      // Adapters that natively support partial PATCH (Vault, AWS SM) skip
-      // the read.
       const existing = await k8sClient.getSecret(ref.path);
       const data: Record<string, string> = {
         ...((existing?.data ?? {}) as Record<string, string>),
@@ -166,7 +152,6 @@ export function createKubernetesSecretStore(
 
     async delete(ref): Promise<void> {
       ensureOwn(ref);
-      // K8sClient swallows 404s on deleteSecret.
       await k8sClient.deleteSecret(ref.path);
     },
 
@@ -183,8 +168,6 @@ export function createKubernetesSecretStore(
       for (const s of secrets) {
         const name = s.metadata?.name;
         if (!name) continue;
-        // Prefer the annotation for purpose (full value, not the
-        // label-safe slug). Fall back to the label if annotation missing.
         const purpose =
           s.metadata?.annotations?.[LABEL_PURPOSE] ??
           s.metadata?.labels?.[LABEL_PURPOSE] ??
@@ -199,11 +182,6 @@ export function createKubernetesSecretStore(
   };
 }
 
-/**
- * K8s label values are constrained to `[A-Za-z0-9._-]{0,63}`. Purposes
- * like `connection:gh-xyz` need to be slugged for the label tag (the full
- * purpose lives in the annotation, which has no charset restriction).
- */
 function sanitizeLabel(value: string): string {
   return value.replace(/[^A-Za-z0-9._-]/g, "-").slice(0, 63);
 }

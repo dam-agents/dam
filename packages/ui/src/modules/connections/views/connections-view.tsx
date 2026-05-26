@@ -9,12 +9,6 @@ import { CreateSecretForm } from "../../secrets/forms/create-secret-form.js";
 import { SecretRow } from "../components/secret-row.js";
 import { ConnectionTemplatesSection } from "../components/templates-section.js";
 
-/**
- * Connections page (ADR-051). Connection Templates are the canonical
- * surface for OAuth apps + MCP servers + bearer-header credentials;
- * legacy provider-preset Secrets keep their own section until that
- * module migrates.
- */
 export function ConnectionsView() {
   const {
     data: secrets = [],
@@ -48,8 +42,6 @@ export function ConnectionsView() {
 
       <ConnectionTemplatesSection />
 
-      {/* Provider Secrets — legacy provider-preset surface. Stays until
-          the secrets module migrates to a Connection Template. */}
       <section>
         <h2 className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em] mb-2">
           Provider Secrets

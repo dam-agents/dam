@@ -5,21 +5,6 @@ import type {
 import type { AgentRuntimeClient } from "../infrastructure/agent-runtime-client.js";
 import type { StateBuilder } from "./state-builder.js";
 
-/**
- * Worker handler — what runs when BullMQ dispatches a `state:<agentId>`
- * job (ADR-053). The handler is a pure transport role: read truth from
- * Postgres, push to the agent, stamp the cursor.
- *
- * Lifecycle decisions:
- *   - No outbox row → no-op (the queue may carry stale jobIds across
- *     deletes/restarts).
- *   - Agent not running → exit clean. The cron sweep re-enqueues; the
- *     agent's own `hello` clears the row on wake.
- *   - applyState throws → re-throw so BullMQ schedules a retry.
- *   - applyState rejects with stale-version → log and clear; another
- *     replica's newer dispatch already won the race.
- */
-
 export interface IsAgentRunning {
   isRunning(agentId: string): boolean;
 }
@@ -29,10 +14,6 @@ export interface WorkerHandlerDeps {
   agentsRuntimeRepo: AgentsRuntimeRepo;
   stateBuilder: StateBuilder;
   agentRunningPort: IsAgentRunning;
-  /**
-   * Per-agent client factory. The pod's URL is derived from the agent id;
-   * one client per call is cheap (it's just an HTTP wrapper).
-   */
   clientFor(agentId: string): AgentRuntimeClient;
   log: (msg: string) => void;
 }
@@ -45,15 +26,11 @@ export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
     if (!row) return;
 
     if (!deps.agentRunningPort.isRunning(agentId)) {
-      // Defer to the sweep + hello catch-up path. Don't throw — BullMQ
-      // retries are reserved for transport failures.
       return;
     }
 
     const runtimeState = await deps.agentsRuntimeRepo.get(agentId);
     if (!runtimeState?.runtimeCapabilities) {
-      // Agent hasn't said hello yet — first thing it'll do on boot. Sweep
-      // will re-enqueue if needed.
       deps.log(`[runtime-worker] ${agentId}: no capabilities yet; deferring`);
       return;
     }
@@ -87,8 +64,6 @@ export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
         events: payload.events,
       });
     } catch (err) {
-      // Stale-version CONFLICT means another replica's newer dispatch
-      // beat us — fine, the winning ack already advanced the cursor.
       const msg = (err as Error).message ?? String(err);
       if (msg.includes("stale apply")) {
         deps.log(

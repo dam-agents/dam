@@ -24,22 +24,6 @@ import type {
   PendingEventRow,
 } from "../infrastructure/outbox-repo.js";
 
-/**
- * Computes the apply payload for one agent (ADR-052 §"State semantics").
- * Same builder is used by the worker (dispatch path) and the hello handler
- * (catch-up path) — one definition of "what should this agent have right
- * now".
- *
- * Reads:
- *  - granted Connections (via `connection_grants` join `connections`) →
- *    flatten `contributions[]` per Connection.
- *  - non-dispatched, non-expired events (via OutboxRepo).
- *  - the agent's advertised capabilities (caller-supplied; usually from
- *    the agents-runtime repo).
- *
- * Filters by capabilities, computes a deterministic hash, returns a payload
- * ready for `applyState`.
- */
 export interface StatePayload {
   contributions: Contribution[];
   hash: string;
@@ -97,9 +81,6 @@ async function readGrantedContributions(
     contributions: unknown;
   }[];
 
-  // Defensive parse — a Connection row's `contributions` is jsonb. We
-  // validate against the schema so a hand-edited row can't poison a
-  // payload.
   const out: Contribution[] = [];
   for (const row of rows) {
     if (!Array.isArray(row.contributions)) continue;
@@ -115,10 +96,6 @@ async function readSkillRefContributions(
   db: Db,
   agentId: string,
 ): Promise<Contribution[]> {
-  // `agent_skills` is the source of truth for which skills should be on
-  // the agent (ADR-052 §"Supersedes ADR-030 in part"). The state-builder
-  // turns each row into a `skill-ref` Contribution so the same desired-
-  // state push that delivers Connection contributions also handles skills.
   const rows = await db
     .select({
       source: agentSkills.source,
@@ -138,8 +115,6 @@ async function readSkillRefContributions(
 }
 
 function toEvent(row: PendingEventRow): Event | null {
-  // Validate through the canonical schema. Lets a malformed row drop with
-  // a log instead of poisoning the payload.
   const candidate = {
     id: row.id,
     kind: row.kind as RuntimeEventKind,

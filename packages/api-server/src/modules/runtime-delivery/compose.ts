@@ -29,19 +29,6 @@ import {
   type RuntimeMutator,
 } from "./services/runtime-mutator.js";
 
-/**
- * Composes the Runtime Delivery bounded context (ADR-053):
- *   - outbox + events repository, agents-runtime repository
- *   - BullMQ state queue + worker
- *   - cron sweep
- *   - hello handler (RuntimeDeliveryService)
- *   - runtime mutator (the canonical commit-and-enqueue helper)
- *
- * Per-kind event handlers (e.g. `trigger`) execute **agent-side** —
- * api-server only inserts the `runtime_events` row and pushes via the
- * state worker. The agent's runtime channel handles the work locally
- * against its in-process ACP runtime.
- */
 export interface RuntimeDeliveryComposition {
   outboxRepo: OutboxRepo;
   agentsRuntimeRepo: AgentsRuntimeRepo;

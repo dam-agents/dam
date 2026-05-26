@@ -95,11 +95,6 @@ function parseHHMM(s: string): number | null {
   return h * 60 + mi;
 }
 
-/**
- * Next occurrence at or after `from` honoring quiet-hours skips (rrule
- * only — cron has no quiet-hours concept on this code path). Caps the
- * RRULE iteration so a pathological "every quiet hour" rule can't spin.
- */
 export function nextFireAt(spec: ScheduleSpec, from: Date): Date | null {
   if (spec.type === "cron") {
     try {
@@ -109,12 +104,11 @@ export function nextFireAt(spec: ScheduleSpec, from: Date): Date | null {
       return null;
     }
   }
-  // rrule
   const rule = RRule.fromString(spec.rrule);
   const enabled = (spec.quietHours ?? []).filter((w) => w.enabled);
   let cursor = from;
   for (let i = 0; i < 1440; i++) {
-    const next = rule.after(cursor, /* inc */ false);
+    const next = rule.after(cursor, false);
     if (!next) return null;
     if (enabled.length === 0 || !isInQuietHours(next, enabled)) return next;
     cursor = next;

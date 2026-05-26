@@ -14,23 +14,9 @@ import type { ConnectionTemplateRegistry } from "../domain/connection-template.j
 import { buildConnectionSdsFields } from "../domain/connection-sds.js";
 import type { SecretStore } from "../../secret-store/index.js";
 
-/**
- * OAuth refresh loop on top of SecretStore (ADR-051). Periodic sweep
- * across all OAuth Connections in the db; for each one whose access
- * token is about to expire (within `refreshSkewSeconds`), call the
- * token endpoint with the stored refresh token, write the new access
- * token via SecretStore.putField, update `auth.expiresAt`.
- *
- * No interaction with K8s: tokens are bytes in SecretStore, expiry is
- * a number on the Postgres row. The gateway's Envoy SDS reads the
- * SecretStore-backed file when it reloads; the refresh loop's putField
- * triggers the K8s adapter's Secret update, which kubelet propagates
- * to the mount.
- */
 export interface OAuthRefreshLoop {
   start(): void;
   stop(): Promise<void>;
-  /** For tests + on-demand triggers. Runs one sweep synchronously. */
   tickOnce(): Promise<{ refreshed: number; failed: number }>;
 }
 
@@ -40,7 +26,6 @@ interface RefreshDeps {
   templates: ConnectionTemplateRegistry;
   secretStore: SecretStore;
   intervalMs?: number;
-  /** Refresh tokens this many seconds before their actual expiry. */
   refreshSkewSeconds?: number;
   log?: (msg: string) => void;
 }
@@ -96,8 +81,6 @@ export function createOAuthRefreshLoop(deps: RefreshDeps): OAuthRefreshLoop {
 }
 
 async function dueConnections(db: Db, skewSec: number): Promise<Connection[]> {
-  // expiresAt absent → never refreshed (no token yet); we skip those.
-  // expiresAt - now <= skew → due for refresh.
   const rows = (await db
     .select()
     .from(connectionsTable)
@@ -135,9 +118,6 @@ function parseRow(row: {
 }): Connection | null {
   const auth = authConfigSchema.safeParse(row.auth);
   if (!auth.success) return null;
-  // Contributions drive the per-host SDS file set written alongside the
-  // refreshed access token (see `refreshOne`). A row with a malformed
-  // contribution skips the entry rather than failing the whole refresh.
   const contributions: Contribution[] = Array.isArray(row.contributions)
     ? row.contributions
         .map((c) => contributionSchema.safeParse(c))
@@ -172,8 +152,6 @@ async function refreshOne(
     throw new Error(`refresh token missing at ${auth.refreshTokenRef.path}`);
   }
 
-  // Build provider from the connection's auth + template's operator-
-  // supplied client secret (or per-Connection secret for DCR templates).
   const template = deps.templates.get(conn.templateId);
   let clientSecret =
     template && template.authKind === "oauth"
@@ -195,9 +173,6 @@ async function refreshOne(
 
   const next = await deps.engine.refresh({ provider, refreshToken });
 
-  // Rotate the raw token AND regenerate per-host SDS files in one update,
-  // so kubelet propagates them to the gateway pod's mount together. See
-  // `oauth-flow.completeOAuth` for the same shape.
   const sdsFields = buildConnectionSdsFields(
     conn.contributions,
     next.accessToken,
@@ -210,8 +185,6 @@ async function refreshOne(
     fields.refresh_token = next.refreshToken;
   }
   await deps.secretStore.putFields(auth.accessTokenRef, fields);
-  // Update Connection.auth.expiresAt. Read-modify-write through the
-  // jsonb column.
   const updatedAuth: ConnectionAuthConfig = {
     ...auth,
     expiresAt: next.expiresAt,

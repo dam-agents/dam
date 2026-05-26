@@ -1,18 +1,6 @@
-/**
- * Generic OAuth 2.1 authorization-code engine with PKCE. The engine owns
- * the dance — generating state + code-verifier, building the authorize
- * URL, exchanging the code for tokens — but is intentionally ignorant of
- * Connection records and the SecretStore. Callers thread their own
- * correlation id (`ctx`) through start/consume so they can recover
- * arbitrary context on callback (Connection id, owner sub, etc.).
- *
- * State for pending flows lives in a Map keyed by the OAuth `state`
- * parameter. A janitor sweeps entries older than 10 minutes.
- */
 import crypto from "node:crypto";
 
 export interface OAuthProvider {
-  /** Stable provider id for logs. */
   id: string;
   authorizationUrl: string;
   tokenEndpoint: string;
@@ -22,8 +10,6 @@ export interface OAuthProvider {
   scopes?: string[];
   /**
    * GitHub's token endpoint returns `application/x-www-form-urlencoded`
-   * unless asked for JSON. MCP servers + most other providers return JSON,
-   * so this is opt-in.
    */
   tokenEndpointAcceptJson?: boolean;
   /** Provider-specific authorize-URL params (e.g. `allow_signup=false`). */
@@ -52,19 +38,9 @@ export interface OAuthEngine {
     redirectUri: string;
     ctx: Ctx;
   }): { authUrl: string; state: string };
-  /**
-   * Non-mutating lookup. Used by the unauthenticated callback handler to
-   * recover the pending flow's owner before consuming. Returns null if no
-   * pending flow matches `state`.
-   */
   peek<Ctx = unknown>(state: string): PendingFlow<Ctx> | null;
   consume<Ctx = unknown>(state: string): PendingFlow<Ctx> | null;
   exchange(pending: PendingFlow, code: string): Promise<TokenSet>;
-  /**
-   * Refresh-token grant. Used by the refresh loop; the token endpoint and
-   * client credentials are looked up by the caller from the Connection's
-   * stored auth.
-   */
   refresh(opts: {
     provider: OAuthProvider;
     refreshToken: string;

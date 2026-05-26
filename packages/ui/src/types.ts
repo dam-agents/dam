@@ -162,8 +162,6 @@ export function isMcpSecret(s: { name: string; type: SecretType }): boolean {
   return !isProviderPresetType(s.type) && s.name.startsWith(MCP_SECRET_PREFIX);
 }
 
-/** User-visible "Secrets" — excludes provider presets (Anthropic, IBM LiteLLM)
- *  and platform-internal MCP OAuth blobs. */
 export function isCustomSecret(s: { name: string; type: SecretType }): boolean {
   return !isProviderPresetType(s.type) && !s.name.startsWith(MCP_SECRET_PREFIX);
 }

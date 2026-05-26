@@ -18,14 +18,6 @@ import {
 } from "./services/scheduler-runner.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
-/**
- * Boot-time wiring (ADR-053): one BullMQ-backed scheduler per replica.
- * Hold the returned `boot` for the lifetime of the process — it owns
- * the BullMQ queue + worker — and call `runner.restoreAll()` once after
- * boot to seed delayed jobs from Postgres. Per-request user-facing
- * services are built via {@link composeSchedulesForOwner} and share
- * the same runner.
- */
 export interface SchedulesBoot {
   repo: SchedulesRepository;
   queue: ScheduleQueue;
@@ -74,9 +66,6 @@ export function composeSchedulesAtBoot(
 export interface ComposeSchedulesForOwnerOpts {
   boot: SchedulesBoot;
   owner: string;
-  /** Optional check for cross-module agent existence — when omitted,
-   *  agent existence is not validated (e.g. the MCP-side service where
-   *  the agentId is the verified principal). */
   agentExists?: (agentId: string) => Promise<boolean>;
 }
 

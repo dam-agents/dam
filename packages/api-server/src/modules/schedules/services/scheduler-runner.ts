@@ -4,30 +4,10 @@ import type { ScheduleQueue } from "../infrastructure/schedule-queue.js";
 import { nextFireAt } from "../domain/recurrences.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 
-/**
- * Self-rescheduling scheduler runner (ADR-053). Pure orchestration — the
- * BullMQ transport lives in `infrastructure/schedule-queue.ts`.
- *
- * Each schedule maps to at most one pending delayed job; on fire the
- * runner:
- *   1. Re-reads the schedule from Postgres (handles concurrent edits).
- *   2. If still enabled: inserts a `runtime_events` row + bumps the
- *      agent's outbox + enqueues runtime-state delivery.
- *   3. Records the fire and enqueues the next occurrence.
- *
- * Schedule CRUD calls `sync(id)` to replace the pending job — single
- * entry point for all repeatable-mutation concerns.
- */
 export interface SchedulerRunner {
-  /** Build the fire-handler that the queue worker invokes. The handler
-   *  is owner-agnostic: authority comes from "this schedule fired". */
   buildFireHandler(): (scheduleId: string) => Promise<void>;
-  /** Register a delayed job for a schedule's next occurrence. Replaces
-   *  any existing pending job for the same id. */
   sync(scheduleId: string): Promise<void>;
-  /** Cancel any pending job for this schedule. */
   cancel(scheduleId: string): Promise<void>;
-  /** Replay every enabled schedule from Postgres into BullMQ on boot. */
   restoreAll(): Promise<void>;
 }
 
@@ -38,8 +18,6 @@ export interface SchedulerRunnerDeps {
   runtimeMutator: RuntimeMutator;
   log?: (msg: string) => void;
   now?: () => Date;
-  /** TTL for a fired trigger event (seconds). The state-builder drops
-   *  events past this. */
   triggerTtlSeconds?: number;
 }
 

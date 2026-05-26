@@ -15,9 +15,6 @@ export function createHarnessRouter(deps: {
   composeSkills: (owner: string) => SkillsService;
   agentHome: string;
   schedulesServiceFor: (owner: string) => SchedulesService;
-  // ADR-052: runtime channel surface on the harness API. Agent calls
-  // `runtime.v1.hello` on boot/wake. Per-kind event work (e.g. trigger)
-  // dispatches agent-side.
   runtimeHello: RuntimeDeliveryService;
 }) {
   const app = new Hono();

@@ -6,16 +6,6 @@ import type {
 } from "agent-runtime-api";
 import { createFileOps, type FileDesired } from "../infrastructure/file-ops.js";
 
-/**
- * Built-in `file` plugin (ADR-052). Binds the `file` Contribution kind
- * to the shared file-ops infrastructure. Per-contribution carries its
- * own `{ path, format, mergeMode, content }`; no binding-level config.
- *
- * Manifest:
- *   drivers:
- *     file:
- *       impl: file
- */
 const IMPL_NAME = "file";
 
 export function createFilePlugin(): Plugin {
@@ -56,9 +46,5 @@ function expandHome(path: string, agentHome: string): string {
   return path.replace(/\$HOME\b/g, agentHome).replace(/\$\{HOME\}/g, agentHome);
 }
 
-// Used by the plugin registry to short-circuit name collisions —
-// extension authors MUST NOT register a plugin under this name.
 export const FILE_PLUGIN_NAME = IMPL_NAME;
-// Re-exported so callers (e.g. tests) can construct the same type that
-// `bind` returns without going through the plugin port.
 export type { Contribution };

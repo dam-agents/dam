@@ -1,14 +1,5 @@
 import { z } from "zod";
 
-/**
- * Wire contract for the unified runtime channel (ADR-052). Carries the agent's
- * desired-state slice (Contributions) and the pending events slice with a
- * single shared monotonic cursor. See docs/architecture/connections.md.
- *
- * The schemas here are the canonical wire shape. Both sides (api-server →
- * `applyState`, agent → `hello`) reference these.
- */
-
 export const contributionKind = z.enum([
   "env",
   "egress-host",
@@ -32,10 +23,6 @@ export type MergeMode = z.infer<typeof mergeMode>;
 export const fileFormat = z.enum(["yaml", "json", "text", "ini"]);
 export type FileFormat = z.infer<typeof fileFormat>;
 
-// `egress-host` is a routing-rail Contribution — api-server consumes it for
-// the egress_rules sync (Envoy ext_authz) and the agent never sees it. We
-// still keep its shape on the wire so the api-server fan-out router can pass
-// a unified Contribution[] through.
 export const hostInjection = z.object({
   headerName: z.string().optional(),
   valueFormat: z.string().optional(),
@@ -114,15 +101,11 @@ export type Capabilities = z.infer<typeof capabilities>;
 
 export const stateSlice = z.object({
   contributions: z.array(contribution),
-  // Deterministic hash over `contributions`. Lets the agent short-circuit
-  // no-op pushes (`appliedHash === incomingHash` → skip reconciliation).
   hash: z.string().min(1),
 });
 export type StateSlice = z.infer<typeof stateSlice>;
 
 export const applyStateInput = z.object({
-  // Per-agent monotonic cursor. Bumped on any contribution edit or event
-  // insert. The agent's `lastAppliedVersion` rejects older pushes.
   version: z.number().int().positive(),
   state: stateSlice,
   events: z.array(event),
@@ -135,8 +118,6 @@ export const applyStateResult = z.object({
 });
 export type ApplyStateResult = z.infer<typeof applyStateResult>;
 
-// Hello is agent → api-server. Defined here for the shared shape; the route
-// itself lives on the harness API (see api-server-api/runtime).
 export const helloInput = z.object({
   lastAppliedVersion: z.number().int().nonnegative().optional(),
   lastAppliedHash: z.string().optional(),
@@ -147,8 +128,6 @@ export const helloInput = z.object({
 export type HelloInput = z.infer<typeof helloInput>;
 
 export const helloResult = z.object({
-  // Present iff the server has a payload the agent diverged from. Absent
-  // means "you're in sync, nothing to apply."
   version: z.number().int().positive().optional(),
   state: stateSlice.optional(),
   events: z.array(event),

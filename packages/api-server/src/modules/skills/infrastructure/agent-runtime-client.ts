@@ -35,12 +35,6 @@ export interface UpstreamGatewayError {
   };
 }
 
-/**
- * Direct tRPC client into the agent-runtime's `skills.*` router. Install
- * and uninstall flow through `skill-ref` Contributions on the runtime
- * channel (ADR-052 §"Supersedes ADR-030 in part") — only the read-style
- * operations and external-write (publish) remain here.
- */
 export interface AgentRuntimeSkillsClient {
   listLocal(agentId: string, skillPaths: string[]): Promise<LocalSkill[]>;
   publish(agentId: string, body: PublishSkillCall): Promise<PublishSkillResult>;

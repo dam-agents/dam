@@ -1,17 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
-/**
- * Continuous-mode binding state (ADR-052): one `scheduleId → sessionId`
- * entry per schedule the agent has run. The trigger handler reads this
- * to decide whether to resume a prior session or create a fresh one.
- *
- * Idempotency on event redelivery is handled by the runtime-channel
- * cursor (`runtime-state.json#lastAppliedVersion`), not here — see
- * `event-loop.ts`. This file is solely the continuous-mode binding.
- *
- * Lives under `$HOME/.platform/trigger-state.json`.
- */
 export interface TriggerState {
   scheduleSessions: Record<string, string>;
 }
@@ -40,8 +29,6 @@ function loadFromDisk(path: string): TriggerState {
     }
     return { scheduleSessions };
   } catch {
-    // Corrupt file → start fresh. Continuous-mode bindings reset
-    // gracefully (next tick creates a new session).
     return { ...INITIAL };
   }
 }

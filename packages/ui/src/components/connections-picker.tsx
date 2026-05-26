@@ -71,8 +71,6 @@ export function ConnectionsPicker({
   const providerSecrets = secrets.filter((s) => isProviderPresetType(s.type));
   const mcpSecrets = secrets.filter((s) => isMcpSecret(s));
   // Generic secrets exclude provider presets (Anthropic, IBM LiteLLM — they
-  // render under "providers") and platform-internal mirrors (MCP secrets —
-  // own subsection).
   const genericSecrets = secrets.filter(
     (s) => s.type === "generic" && !isMcpSecret(s),
   );

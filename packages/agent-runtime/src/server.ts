@@ -56,23 +56,6 @@ const { runtime: acpRuntime, triggerDriver } = composeAcp({
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
 });
 
-// Runtime channel (ADR-052): supersedes the trigger-files watcher and
-// the pod-files SSE loop. Manifest lives on the image filesystem
-// outside the user-seeded working tree (NOT under $HOME or $WORK_DIR,
-// which are PV-mounted and seeded only on first boot — image upgrades
-// would otherwise be shadowed by stale state). In prod this resolves
-// to /app/runtime-manifest.yaml (Dockerfile COPY destination); in dev
-// it reads directly from the platform-base source. Fail-fast on a
-// missing/invalid manifest or on any extension-load failure.
-//
-// `trigger` events fire entirely in-process against the `triggerDriver`
-// port from the acp module — no callback to api-server.
-//
-// `plugins` lists every Plugin the agent image wants registered at
-// boot. Extensions declared in the manifest's `extensions.impls[]` are
-// loaded on top of these. The runtime channel module itself knows
-// nothing about specific Contribution kinds — the kinds are whatever
-// these plugins bind.
 const runtimeChannel = await composeRuntimeChannel({
   manifestPath: config.PLATFORM_DEV
     ? join(__dir, "../../platform-base/runtime-manifest.yaml")
@@ -84,9 +67,6 @@ const runtimeChannel = await composeRuntimeChannel({
   plugins: [
     createFilePlugin(),
     createMcpEntryPlugin(),
-    // `skill-install` plugin owns calling the agent's skills service
-    // for the actual git fetch + extract. The Contribution shape and
-    // the service's input shape match — no adapter needed.
     createSkillInstallPlugin({ install: skillsService.install }),
   ],
 });
@@ -381,10 +361,6 @@ server.listen(config.PORT, () => {
     process.stderr.write(`[import] ${msg}\n`),
   );
 
-  // Runtime channel boot/wake catch-up (ADR-052). Calls `hello` on the
-  // harness API; if anything diverged from this agent's last applied
-  // state, the response re-runs the same applyState path the worker
-  // would have run.
   void runtimeChannel.helloOnBoot({
     agentRuntimeVersion:
       process.env.PLATFORM_AGENT_VERSION ?? "agent-runtime/unknown",

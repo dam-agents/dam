@@ -20,13 +20,8 @@ export interface HarnessApiServerAppDeps {
   db: Db;
   channelManager: ChannelManager;
   seedSources: SkillSourceSeed[];
-  // ADR-052: agent-callable runtime channel routes.
   runtimeHello: RuntimeDeliveryService;
-  // ADR-053: shared BullMQ-backed scheduler. The MCP-side schedule tools
-  // build a per-owner service against this boot composition.
   schedulesBoot: SchedulesBoot;
-  // ADR-052: enqueues runtime channel pushes after agent_skills changes
-  // so the agent's `skill-install` driver reconciles.
   runtimeMutator: RuntimeMutator;
 }
 

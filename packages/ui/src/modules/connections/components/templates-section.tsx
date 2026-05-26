@@ -9,18 +9,6 @@ import { useAppConnections, useConnectionTemplates } from "../api/queries.js";
 import { TemplateCreateForm } from "../forms/template-create-form.js";
 import { ConnectionIcon } from "./connection-icon.js";
 
-/**
- * Connection-Template-driven section of the Connections view (ADR-051).
- * Lists the code-declared templates grouped by `category` and the existing
- * Connections the user has minted. The legacy OAuth / MCP / Secrets
- * sections coexist while their flows migrate to Templates.
- *
- * UX:
- *   - Templates render as "Add" buttons grouped by category.
- *   - Existing connections render as rows with status + delete.
- *   - Click a template button → modal form with template-specific inputs.
- *   - Server creates the Connection in one round-trip; the list refetches.
- */
 export function ConnectionTemplatesSection() {
   const templates = useConnectionTemplates();
   const connections = useAppConnections();
@@ -68,8 +56,6 @@ export function ConnectionTemplatesSection() {
               {(connections.data ?? []).map((c) => (
                 <ConnectionRow
                   key={c.id}
-                  /* tRPC client mints a structurally-equal but nominally
-                     distinct ConnectionView — cast. */
                   connection={c as unknown as ConnectionView}
                   iconSlug={iconByTemplateId.get(c.templateId)}
                   onDelete={() => del.mutate({ id: c.id })}
@@ -148,10 +134,6 @@ function ConnectionRow({
   connecting: boolean;
   deleting: boolean;
 }) {
-  // OAuth Connections in `pending` state haven't completed the auth-code
-  // dance yet — surface a "Connect" button that redirects to the
-  // provider's authorize URL. Other Connections (header / none, or
-  // already-active oauth) skip the button.
   const needsOAuth =
     connection.authKind === "oauth" && connection.status === "pending";
   const installUrl = githubAppInstallUrl(connection);
@@ -205,13 +187,6 @@ function ConnectionRow({
   );
 }
 
-/**
- * GitHub App install URL. Present only when the Connection's auth carries an
- * `appSlug` — i.e. when the configured OAuth client is actually a GitHub
- * App (not an OAuth App). Routes to github.com for the `github` template,
- * to the resolved `host` for `github-enterprise`. Absent for every other
- * Connection.
- */
 function githubAppInstallUrl(connection: ConnectionView): string | null {
   if (!connection.appSlug) return null;
   const host =

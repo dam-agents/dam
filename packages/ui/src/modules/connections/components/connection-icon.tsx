@@ -1,13 +1,5 @@
 import { Cable, KeyRound, Server } from "lucide-react";
 
-/**
- * Per-Connection-Template brand icon (ADR-051). The server stamps each
- * template with an `iconSlug`; the UI joins to either a brand SVG under
- * `/icons/<slug>.svg` (SimpleIcons-style, Apache 2.0) or a Lucide
- * fallback for the sentinel slugs (`key` for custom credentials, `mcp`
- * for MCP servers). Unknown slugs land on a generic `Cable`, distinct
- * from the two sentinels so the gap is visible.
- */
 const SVG_BY_SLUG = new Set([
   "github",
   "github-enterprise",
@@ -55,6 +47,5 @@ export function ConnectionIcon({ iconSlug, alt, size = 16, className }: Props) {
   if (iconSlug === "key") {
     return <KeyRound size={size} aria-label={alt} className={className} />;
   }
-  // Includes `anthropic`, `openai`, `ibm`, `bob` until those SVGs land.
   return <Cable size={size} aria-label={alt} className={className} />;
 }

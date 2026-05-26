@@ -10,35 +10,9 @@ import {
   registerOAuthClient,
 } from "../infrastructure/mcp-discovery.js";
 
-/**
- * Project user input (auth-kind discriminated) + a Connection Template
- * (declarative data) into the Connection record's `auth` + `contributions`
- * + backing secret payload (ADR-051).
- *
- * Layering for OAuth templates:
- *   * Operator-supplied template defaults — `template.clientId` /
- *     `template.clientSecret` / endpoints / scopes.
- *   * User-supplied at create time — `input.clientId` etc.
- *   * User wins (override or fill-in); we throw if any field is still
- *     blank after the merge.
- *   * `template.dynamicRegistration` runs RFC 8414 / 9728 discovery +
- *     RFC 7591 DCR against `input.url` and synthesizes everything at
- *     create time; per-Connection `client_secret` lands in SecretStore
- *     via `clientSecretRef`.
- *
- * Header templates accept an optional `mcpConfig` — when set, the
- * Connection emits an mcp-entry Contribution carrying the user-pasted
- * JSON alongside the header auth + egress-host. Used by the "Custom
- * MCP server (custom)" flow.
- */
 export interface BuildResult {
   auth: ConnectionAuthConfig;
   contributions: Contribution[];
-  /**
-   * Secret bytes to write into the SecretStore at create time. Map of
-   * path → field → value. The Connections service writes these via
-   * SecretStore.put before persisting the Connection row.
-   */
   secrets: Map<string, Record<string, string>>;
   defaultName: string;
 }
@@ -47,9 +21,7 @@ export async function buildConnection(
   template: ConnectionTemplate,
   input: ConnectionCreateInput,
   mintSecretRef: (purpose: string) => SecretRef,
-  /** Public OAuth callback URL — needed for DCR's `redirect_uris`. */
   oauthCallbackUrl: string,
-  /** Display name surfaced as `client_name` during DCR. */
   brandName: string,
 ): Promise<BuildResult> {
   if (input.authKind !== template.authKind) {
@@ -88,8 +60,6 @@ async function buildOAuth(
   oauthCallbackUrl: string,
   brandName: string,
 ): Promise<BuildResult> {
-  // Token-storage path. One Secret per Connection, three fields:
-  // access_token, refresh_token, and (DCR-only) client_secret.
   const secretPath = mintSecretRef(`connection:${template.id}`);
 
   if (template.dynamicRegistration) {
@@ -109,15 +79,10 @@ async function buildOAuthStatic(
   input: Extract<ConnectionCreateInput, { authKind: "oauth" }>,
   secretPath: SecretRef,
 ): Promise<BuildResult> {
-  // Resolve host first — host-parametrized templates (GitHub
-  // Enterprise) carry `{host}` placeholders in their URLs and
-  // contributions. `input.host` wins, falling back to operator-preset
-  // `template.host`.
   const host = input.host ?? template.host;
   const subst = (s: string | undefined): string | undefined =>
     host ? s?.replace(/\{host\}/g, host) : s;
 
-  // Merge user input over template defaults.
   const clientId = input.clientId ?? template.clientId;
   const clientSecret = input.clientSecret ?? template.clientSecret;
   const authorizationUrl =
@@ -140,31 +105,17 @@ async function buildOAuthStatic(
   const secrets = new Map<string, Record<string, string>>();
   let clientSecretRef: SecretRef | undefined;
   if (input.clientSecret) {
-    // User-supplied secret: write to SecretStore, reference per-Connection.
-    // (Operator-default secret stays on the in-memory template — the OAuth
-    // flow reads it from there at runtime.)
     secrets.set(secretPath.path, { client_secret: input.clientSecret });
     clientSecretRef = { ...secretPath, field: "client_secret" };
   }
 
-  // Substitute `{host}` in static contributions when a host is
-  // resolved. Host-parametrized templates rely on this to localize
-  // egress hosts and env placeholders to the resolved deployment.
   const contributions: Contribution[] = template.contributions.map((c) =>
     host ? substituteHostInContribution(c, host) : c,
   );
 
-  // GitHub Enterprise host-dependent contributions (ADR-051): GH_HOST
-  // env (literal host value — gh CLI uses this to direct API calls to
-  // the right server) + api.<host> Bearer egress + <host> Basic egress
-  // for git+HTTPS. Mirrors main's GHE flow.
   if (template.id === "github-enterprise") {
     if (!host) throw new Error(`template github-enterprise: missing host`);
     contributions.push({ kind: "env", name: "GH_HOST", placeholder: host });
-    // `api.<host>` takes the default `Authorization: Bearer {value}` —
-    // `injection: {}` opts it into the per-host SDS chain so Envoy
-    // rewrites the Authorization header on the wire. See the github.com
-    // template for the symmetric Basic-auth case.
     contributions.push({
       kind: "egress-host",
       host: `api.${host}`,
@@ -181,9 +132,6 @@ async function buildOAuthStatic(
     });
   }
 
-  // App slug surfaces as an opaque per-Connection extra so the UI can
-  // surface the post-authorize "Install on GitHub" prompt. User input
-  // wins, falling back to the operator-preset extra on the template.
   const appSlug =
     input.appSlug ??
     (typeof template.extras?.appSlug === "string"
@@ -214,11 +162,6 @@ async function buildOAuthStatic(
     defaultName:
       input.name ?? (host ? `${template.name} (${host})` : template.name),
   };
-
-  // `clientSecret` for the operator-default path stays on the template's
-  // in-memory data; oauth-flow reads it from there at flow time. The
-  // unused destructure above is intentional documentation.
-  // (eslint disable not needed — `clientSecret` is used above.)
 }
 
 function substituteHostInContribution(
@@ -327,8 +270,6 @@ function buildHeader(
   const valueRef = { ...secretPath, field: "value" };
   const contributions: Contribution[] = [...template.contributions];
 
-  // User-supplied host always becomes an egress-host (the template's
-  // static contributions may already include it; dedupe).
   const hasHostContrib = contributions.some(
     (c) => c.kind === "egress-host" && c.host === host,
   );
@@ -336,9 +277,6 @@ function buildHeader(
     contributions.push({ kind: "egress-host", host });
   }
 
-  // Custom MCP (custom mode): user-pasted MCP JSON config rides
-  // alongside the header auth. Verbatim into an mcp-entry Contribution;
-  // the agent's mcp-entry driver writes it to `.mcp.json`.
   if (input.mcpConfig) {
     const cfg = input.mcpConfig as {
       url?: string;

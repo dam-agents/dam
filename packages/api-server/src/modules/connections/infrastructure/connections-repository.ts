@@ -16,11 +16,6 @@ import {
   type Contribution,
 } from "api-server-api";
 
-/**
- * Postgres-backed repository for Connection records + per-agent grants.
- * The Connection's `auth` is stored as jsonb with the SecretRef structure
- * (NOT the credential bytes — those live in SecretStore).
- */
 export interface ConnectionsRepository {
   insert(input: {
     id: string;
@@ -40,7 +35,6 @@ export interface ConnectionsRepository {
 
   delete(id: string, ownerId: string): Promise<void>;
 
-  // Grants ----
   grant(connectionId: string, agentId: string): Promise<void>;
   revoke(connectionId: string, agentId: string): Promise<void>;
   listAgentGrants(
@@ -121,8 +115,6 @@ export function createConnectionsRepository(db: Db): ConnectionsRepository {
     },
 
     async delete(id, ownerId): Promise<void> {
-      // Connection_grants get cascaded by the application — the foreign
-      // key constraint is logical, not enforced at DB level (text columns).
       await db
         .delete(connectionGrantsTable)
         .where(eq(connectionGrantsTable.connectionId, id));

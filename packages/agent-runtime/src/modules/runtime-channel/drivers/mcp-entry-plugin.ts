@@ -8,28 +8,6 @@ import type {
 } from "agent-runtime-api";
 import { createFileOps, type FileDesired } from "../infrastructure/file-ops.js";
 
-/**
- * Built-in `mcp-entry` plugin (ADR-052). Binds the `mcp-entry`
- * Contribution kind to one configured file on disk (Claude Code reads
- * `$HOME/.mcp.json` by default; other harnesses can rebind to a
- * different path).
- *
- * Binding config:
- *   path:      target file (supports $HOME / ${HOME} expansion)
- *   format:    yaml | json | text | ini
- *   mergeMode: overwrite | section-marker | key-targeted | yaml-fill-if-missing
- *   keyPath:   optional dotted prefix the entries land under (default
- *              `mcpServers`).
- *
- * Manifest:
- *   drivers:
- *     mcp-entry:
- *       impl: mcp-entry
- *       path: "$HOME/.mcp.json"
- *       format: json
- *       mergeMode: key-targeted
- *       keyPath: mcpServers
- */
 const IMPL_NAME = "mcp-entry";
 const DEFAULT_KEY_PATH = "mcpServers";
 

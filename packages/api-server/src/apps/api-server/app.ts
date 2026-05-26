@@ -98,7 +98,6 @@ export interface ApiServerAppDeps {
    *  module's per-agent durable state; the orphan-sweeper saga is the
    *  belt-and-suspenders for anything missed here. */
   agentCleanupHooks: readonly AgentCleanupHook[];
-  // ADR-051 / ADR-053: Connections + runtime-delivery shared services.
   secretStores: SecretStoreRegistry;
   runtimeMutator: RuntimeMutator;
   schedulesBoot: SchedulesBoot;
@@ -129,14 +128,6 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   const k8sClient = createK8sClient(api, config.namespace);
   const agentsRepo = createAgentsRepository(k8sClient);
 
-  // Connection Template catalog + OAuth engine + refresh loop — built
-  // once per process. Per-request composition wraps these with owner
-  // identity for the user-facing service. Operator-supplied OAuth
-  // credentials become template defaults; templates always appear in
-  // the catalog and the UI fills in whichever fields the operator left
-  // blank. GitHub Enterprise surfaces in the catalog regardless of
-  // operator config — the user can supply host + clientId + clientSecret
-  // when no operator default exists.
   const connectionsBoot = composeConnectionsAtBoot({
     db,
     secretStore: secretStores.default(),

@@ -19,34 +19,18 @@ export const connectionsRouter = t.router({
     .input(connectionIdInputSchema)
     .query(({ ctx, input }) => ctx.connections.getConnection(input.id)),
 
-  /**
-   * Create a Connection (ADR-051). Input is auth-kind-discriminated and
-   * fully typed; the server projects it through the named template's
-   * defaults + contribution set. The UI never assembles `auth` or
-   * `contributions` itself — those are template-derived.
-   */
   create: t.procedure
     .input(connectionCreateInputSchema)
     .mutation(({ ctx, input }) =>
       ctx.connections.createFromTemplate(input).then((id) => ({ id })),
     ),
 
-  /**
-   * Start the OAuth authorization-code flow for an existing Connection.
-   * Returns the provider's authorize URL; the UI redirects the user and
-   * the provider eventually lands back at `/api/oauth/callback`.
-   */
   startOAuth: t.procedure
     .input(connectionStartOAuthInputSchema)
     .mutation(({ ctx, input }) =>
       ctx.connections.startOAuth(input.connectionId),
     ),
 
-  /**
-   * Discover whether an MCP server publishes OAuth metadata + a DCR
-   * endpoint. UI uses this on the "Custom MCP server" form's URL mode
-   * to pick which template to submit against.
-   */
   discoverMcp: t.procedure
     .input(connectionDiscoverMcpInputSchema)
     .mutation(({ ctx, input }) => ctx.connections.discoverMcp(input)),

@@ -164,9 +164,6 @@ export function ConfigureAgentDialog({
   const assignedSet = useMemo(() => new Set(assigned), [assigned]);
   const appIdsSet = useMemo(() => new Set(assignedAppIds), [assignedAppIds]);
 
-  // Legacy OAuth-app secret-mirror subsection retired with ADR-051. The
-  // unified Connections list covers every flow now; the picker's OAuth
-  // subsection just renders an empty list.
   const oauthAppEntries: OAuthAppEntry[] = [];
 
   const inheritedEnvs = useMemo<InheritedEnv[]>(() => {
@@ -452,9 +449,6 @@ export function ConfigureAgentDialog({
             <ConnectionsPicker
               loading={!ready}
               secrets={secrets}
-              /* tRPC client mints a structurally-identical but nominally
-                 distinct ConnectionView (content?: unknown vs unknown);
-                 same wire shape — cast. */
               apps={apps as unknown as AppConnectionView[]}
               oauthApps={oauthAppEntries}
               selSecrets={assignedSet}

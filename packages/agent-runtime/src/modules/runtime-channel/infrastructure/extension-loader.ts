@@ -6,19 +6,6 @@ import {
 import type { ExtensionImpl } from "../manifest.js";
 import type { PluginRegistry } from "./plugin-registry.js";
 
-/**
- * Resolves each `extensions.impls[]` declared in the manifest by
- * dynamic `import(module)`, verifies the module's
- * `pluginProtocolVersion` matches {@link PLUGIN_PROTOCOL_VERSION}, asserts
- * the named export is a function returning a structurally-correct
- * {@link Plugin}, and registers the result in the runtime channel's
- * plugin registry (ADR-052 §"Per-harness driver model").
- *
- * Every failure is fatal — an extension declared in the manifest must
- * load, or the agent boot stops. That mirrors the existing manifest-
- * validation policy: half-broken extension surfaces are worse than a
- * stuck boot, because they trip silently at first apply.
- */
 export class ExtensionLoadError extends Error {
   constructor(
     message: string,
@@ -30,9 +17,6 @@ export class ExtensionLoadError extends Error {
 }
 
 export interface ExtensionLoader {
-  /** Load every declared extension; register each on `registry`. Throws
-   *  ExtensionLoadError on the first failure with the offending
-   *  manifest entry attached. */
   load(
     impls: readonly ExtensionImpl[],
     registry: PluginRegistry,
@@ -40,10 +24,6 @@ export interface ExtensionLoader {
 }
 
 export function createExtensionLoader(deps?: {
-  /** Test seam — override the dynamic-import implementation. Defaults
-   *  to native `import(spec)` so module specifiers resolve through the
-   *  agent-runtime process's normal Node resolver against the agent
-   *  image's node_modules. */
   importModule?: (spec: string) => Promise<unknown>;
 }): ExtensionLoader {
   const importModule = deps?.importModule ?? ((spec) => import(spec));

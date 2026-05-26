@@ -3,23 +3,10 @@ import { and, asc, eq, type Db, schedules as schedulesTable } from "db";
 import type { Schedule, ScheduleSpec } from "api-server-api";
 import { scheduleSpecSchema } from "api-server-api";
 
-/**
- * Postgres-backed schedules repo (ADR-053). Replaces the K8s ConfigMap
- * store that the controller's old `pkg/scheduler` package watched —
- * schedules now live in `schedules` and the api-server's BullMQ
- * scheduler runs them.
- *
- * `spec` is held as jsonb (the wire shape — `scheduleSpecSchema`); the
- * repo validates on read so a hand-edited row can't poison the
- * scheduler.
- */
 export interface SchedulesRepository {
   list(agentId: string, owner: string): Promise<Schedule[]>;
   get(id: string, owner: string): Promise<Schedule | null>;
-  /** Owner-agnostic lookup — used by the scheduler worker / sync path,
-   *  whose authority is "this schedule fired", not a user identity. */
   getById(id: string): Promise<Schedule | null>;
-  /** Read every enabled schedule across all owners — bootstrap restore. */
   listAllEnabled(): Promise<Schedule[]>;
   create(input: {
     agentId: string;
@@ -35,7 +22,6 @@ export interface SchedulesRepository {
   updateName(id: string, owner: string, name: string): Promise<Schedule | null>;
   delete(id: string, owner: string): Promise<void>;
   toggle(id: string, owner: string): Promise<Schedule | null>;
-  /** Worker hooks — record fire outcome + next-run estimate. */
   recordFire(id: string, result: string, nextRun: Date | null): Promise<void>;
   setNextRun(id: string, nextRun: Date | null): Promise<void>;
 }
@@ -54,8 +40,6 @@ interface InternalRow {
 
 function rowToSchedule(row: InternalRow): Schedule {
   const spec = scheduleSpecSchema.parse(row.spec);
-  // The `enabled` column is the source of truth — sync into the spec so
-  // callers (UI / scheduler) read one shape.
   spec.enabled = row.enabled;
   return {
     id: row.id,

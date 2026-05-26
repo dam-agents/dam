@@ -58,9 +58,6 @@ export interface SkillsServiceDeps {
    *  `system: true` and protected from deletion. */
   seedSources: SkillSourceSeed[];
   runtimeClient: AgentRuntimeSkillsClient;
-  /** Enqueues a runtime-channel push for an agent so its
-   *  `skill-install` driver reconciles after `agent_skills` changes
-   *  (ADR-052 §"Supersedes ADR-030 in part"). */
   runtimeMutator: RuntimeMutator;
   owner: string;
   /** Scan via the provided scanner with a shared TTL cache. The cache key is
@@ -369,11 +366,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     async install(input: SkillInstallInput) {
       await loadRunningInstance(deps, input.agentId);
 
-      // The agent's `skill-install` driver reconciles whatever is in
-      // `agent_skills` for the agent on the next state push. We record
-      // the desired ref here and enqueue the push — the agent installs.
-      // `contentHash` is optional; UI callers pass the scan-time snapshot,
-      // MCP-initiated installs omit it.
       const ref: SkillRef = {
         source: input.source,
         name: input.name,
@@ -396,8 +388,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     async uninstall(input: SkillUninstallInput) {
       await loadRunningInstance(deps, input.agentId);
 
-      // Remove from `agent_skills`; the next state push will exclude
-      // this ref and the agent's reconciler removes the directory.
       await deps.agentSkillsRepo.removeSkill(input.agentId, {
         source: input.source,
         name: input.name,

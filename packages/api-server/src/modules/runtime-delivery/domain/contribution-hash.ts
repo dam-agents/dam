@@ -1,15 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Contribution } from "api-server-api";
 
-/**
- * Deterministic hash over a Contribution snapshot (ADR-052). Used as the
- * `state.hash` field on `applyState` and the `last_applied_hash` ack stamp.
- * Lets the agent short-circuit no-op state pushes and the server detect
- * agent drift on `hello`.
- *
- * Stability comes from canonical key ordering — sorted top-down. Same
- * contribution set ⇒ same hash regardless of insertion order.
- */
 export function contributionHash(contributions: Contribution[]): string {
   const sorted = [...contributions]
     .map(canonicalize)

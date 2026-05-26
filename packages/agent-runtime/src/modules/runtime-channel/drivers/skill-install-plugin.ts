@@ -11,29 +11,6 @@ import type {
   SkillsDomainError,
 } from "agent-runtime-api";
 
-/**
- * Built-in `skill-install` plugin (ADR-052). Binds the `skill-ref`
- * Contribution kind: installs every desired skill into the configured
- * `paths`, then snapshot-reconciles by removing skill directories that
- * aren't in the desired set.
- *
- * Binding config:
- *   paths: absolute or `$HOME`-prefixed list of skill dirs the agent
- *          reads from (the agent harness's search path).
- *
- * Manifest:
- *   drivers:
- *     skill-ref:
- *       impl: skill-install
- *       paths:
- *         - "$HOME/.agents/skills"
- *
- * The actual `install` (git fetch + extract + content-hash) is injected
- * by the runtime-channel composer so this plugin stays free of git /
- * github transport. Idempotency is handled by the underlying
- * installer's content-hash check — installing the same `name@version`
- * is a no-op.
- */
 const IMPL_NAME = "skill-install";
 
 const bindingSchema = z.object({
@@ -41,8 +18,6 @@ const bindingSchema = z.object({
   paths: z.array(z.string().min(1)).min(1),
 });
 
-/** Injected install helper. Returns `ok` on success; failures are
- *  logged by the plugin and other skills in the set continue. */
 export type SkillInstallFn = (
   input: SkillInstallInput,
 ) => Promise<Result<SkillInstallResult, SkillsDomainError>>;
@@ -94,8 +69,6 @@ export function createSkillInstallPlugin(deps: {
           }
         }
 
-        // Snapshot reconciliation: remove any skill directory under
-        // the configured paths that isn't in the desired set.
         for (const root of resolvedPaths) {
           if (!existsSync(root)) continue;
           for (const entry of readdirSync(root)) {

@@ -95,10 +95,6 @@ const k8sClient = createK8sClient(api, config.namespace);
 const agentsRepo = createAgentsRepository(k8sClient);
 const channelSecretStore = createChannelSecretStore(k8sClient);
 
-// ADR-051: cross-cutting SecretStore registry. The K8s adapter is the only
-// implementation today; future deployments register a Vault / AWS SM
-// adapter alongside (or instead) and the api-server's domain code doesn't
-// change. Callers depend on the SecretStore port, not the K8s client.
 const secretStores = createSecretStoreRegistry();
 secretStores.register(createKubernetesSecretStore({ k8s: k8sClient }));
 
@@ -258,9 +254,6 @@ const redisBus = createRedisBus(config.redisUrl, {
   password: config.redisPassword ?? undefined,
 });
 
-// ADR-053: BullMQ connection for the runtime-channel state queue. Held
-// separate from the redis-bus client because BullMQ workers block on
-// BRPOPLPUSH and can't share a connection with pub/sub.
 const bullConnection = createBullConnection(
   config.redisUrl,
   config.redisPassword ?? undefined,
@@ -341,25 +334,14 @@ const agentArtifactsSweeper = createAgentArtifactsSweeper({
 });
 agentArtifactsSweeper.start();
 
-// ADR-052 / ADR-053: Runtime Delivery context. Composed before the user-
-// facing api-server app and the harness API server because both consume
-// pieces of it (runtime mutator + hello). Per-kind event handlers (e.g.
-// trigger) dispatch agent-side — no api-server callback.
 const runtimeDelivery = composeRuntimeDelivery({
   db,
   namespace: config.namespace,
   bullConnection,
-  // Permissive `isRunning` for now — the worker treats stale dispatches as
-  // throws + BullMQ retries; the cron sweep is the durability path. A real
-  // ConfigMap-watch-fed cache is a follow-up optimization.
   agentRunningPort: { isRunning: () => true },
 });
 runtimeDelivery.sweep.start();
 
-// ADR-053: BullMQ-owned scheduler. One queue + worker per replica;
-// every replica calls `restoreAll()` on boot. `setNextRun` writes are
-// idempotent and `queue.add` with a stable jobId rejects re-adds, so
-// concurrent restores converge on one pending job per schedule.
 const schedulesBoot = composeSchedulesAtBoot({
   db,
   bullConnection,
@@ -391,9 +373,6 @@ const { server: apiServer } = startApiServerApp({
   runtimeMutator: runtimeDelivery.runtimeMutator,
   schedulesBoot,
 });
-
-// OAuth access-token refresh now lives on the new SecretStore-backed
-// loop, started inside startApiServerApp via composeConnectionsAtBoot().
 
 const { server: harnessApiServer } = startHarnessApiServerApp({
   config,
