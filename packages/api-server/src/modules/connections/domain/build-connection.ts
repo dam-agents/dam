@@ -9,6 +9,7 @@ import {
   discoverMcpAuth,
   registerOAuthClient,
 } from "../infrastructure/mcp-discovery.js";
+import { buildConnectionSdsFields } from "./connection-sds.js";
 
 export interface BuildResult {
   auth: ConnectionAuthConfig;
@@ -302,6 +303,8 @@ function buildHeader(
     });
   }
 
+  const sdsFields = buildConnectionSdsFields(contributions, input.value);
+
   return {
     auth: {
       kind: "header",
@@ -310,7 +313,7 @@ function buildHeader(
       valueFormat,
     },
     contributions,
-    secrets: new Map([[secretPath.path, { value: input.value }]]),
+    secrets: new Map([[secretPath.path, { value: input.value, ...sdsFields }]]),
     defaultName: input.name ?? template.name,
   };
 }
