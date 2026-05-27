@@ -18,13 +18,13 @@ export function createScheduleQueue(
   const queue = new Queue<ScheduleJob>(SCHEDULES_QUEUE, { connection });
   return {
     async enqueue(scheduleId, fireAt, now): Promise<void> {
-      await queue.remove(`schedule:${scheduleId}`).catch(() => {});
+      await queue.remove(`schedule-${scheduleId}`).catch(() => {});
       const delayMs = Math.max(0, fireAt.getTime() - now.getTime());
       await queue.add(
         "fire",
         { scheduleId },
         {
-          jobId: `schedule:${scheduleId}`,
+          jobId: `schedule-${scheduleId}`,
           delay: delayMs,
           attempts: 3,
           backoff: { type: "exponential", delay: 1_000 },
@@ -34,7 +34,7 @@ export function createScheduleQueue(
       );
     },
     async cancel(scheduleId): Promise<void> {
-      await queue.remove(`schedule:${scheduleId}`).catch(() => {});
+      await queue.remove(`schedule-${scheduleId}`).catch(() => {});
     },
     async close(): Promise<void> {
       await queue.close();
