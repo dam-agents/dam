@@ -34,15 +34,6 @@ export function ConnectionTemplatesSection() {
 
   return (
     <section className="mb-10">
-      <h2 className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em] mb-2">
-        Connection Templates
-      </h2>
-      <p className="text-[12px] text-text-muted mb-4">
-        Code-declared catalog entries (ADR-051). Pick a template to add a new
-        Connection — the server validates inputs and writes credentials to the
-        configured secret store.
-      </p>
-
       {(templates.isPending || connections.isPending) && <ListSkeleton />}
 
       {!templates.isPending &&
