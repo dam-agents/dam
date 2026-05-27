@@ -115,10 +115,10 @@
 /* ── Dark theme ── */
 .dark {
   --c-bg: #0c0a09;
-  --c-surface: #1c1917;
-  --c-surface-raised: #292524;
+  --c-surface: #161616;
+  --c-surface-raised: #262626;
   --c-border: #78716c;
-  --c-border-light: #44403c;
+  --c-border-light: #393939;
   --c-text: #fafaf9;
   --c-text-secondary: #d6d3d1;
   --c-text-muted: #78716c;
@@ -141,25 +141,27 @@
   --s-brutal-accent: 3px 3px 0 #3C92FD;
   color-scheme: dark;
 
-  /* shadcn tokens — dark */
-  --background: #0c0a09;
+  /* shadcn tokens — dark. Surface colors that are pure #ffffff in light
+     mode map to #161616 in dark (carbon-style elevated grey) so the
+     swap reads as a true dark counterpart of the light surface. */
+  --background: #161616;
   --foreground: #fafaf9;
-  --card: #1c1917;
+  --card: #161616;
   --card-foreground: #fafaf9;
-  --popover: #1c1917;
+  --popover: #161616;
   --popover-foreground: #fafaf9;
-  --primary: #3C92FD;
-  --primary-foreground: #0c0a09;
-  --secondary: #292524;
+  --primary: #ffffff;
+  --primary-foreground: #161616;
+  --secondary: #262626;
   --secondary-foreground: #fafaf9;
-  --muted: #292524;
+  --muted: #262626;
   --muted-foreground: #a8a29e;
   --accent-alt: #0f1f3a;
   --accent-alt-foreground: #3C92FD;
   --destructive: #f87171;
-  --destructive-foreground: #fafaf9;
-  --border-ui: #44403c;
-  --input: #44403c;
+  --destructive-foreground: #161616;
+  --border-ui: #393939;
+  --input: #393939;
   --ring: #3C92FD;
 }
 

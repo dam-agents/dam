@@ -497,8 +497,16 @@ function Swatch({
   const [resolved, setResolved] = useState("");
   useEffect(() => {
     const root = document.documentElement;
-    const value = getComputedStyle(root).getPropertyValue(cssVar).trim();
-    setResolved(value);
+    const read = () => {
+      setResolved(getComputedStyle(root).getPropertyValue(cssVar).trim());
+    };
+    read();
+    // Re-read when the `dark` class flips on <html> — covers manual
+    // theme toggles via the style-guide buttons AND prefers-color-scheme
+    // changes that propagate through the global theme apply effect.
+    const observer = new MutationObserver(read);
+    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
   }, [cssVar]);
 
   return (

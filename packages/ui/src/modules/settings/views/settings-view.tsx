@@ -80,7 +80,7 @@ export function SettingsView() {
                       className={cn(
                         "h-9 w-9 rounded-lg flex items-center justify-center",
                         theme === value
-                          ? "bg-primary text-white"
+                          ? "bg-primary text-primary-foreground"
                           : "bg-muted text-foreground/80",
                       )}
                     >

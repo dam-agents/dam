@@ -12,7 +12,11 @@ export type EmptyStatePalette = "aurora" | "sunset" | "forest";
  * the color reads strongest at the top of the card and fades clean to
  * white at the bottom.
  */
-const FADE = "linear-gradient(to bottom, transparent 0%, transparent 25%, white 90%)";
+// Bottom wash — fades to the page background. `var(--background)` flips
+// between #ffffff (light) and #161616 (dark) so the card always merges
+// into whatever surface it's sitting on.
+const FADE =
+  "linear-gradient(to bottom, transparent 0%, transparent 25%, var(--background) 90%)";
 
 // Pulled way down (≈¼ of the login backdrop's animated peaks). The login
 // reads light because its blobs are constantly moving — a static version
