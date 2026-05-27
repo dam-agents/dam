@@ -1,6 +1,11 @@
 import { createDb, runMigrations } from "db";
 import { createApi } from "./modules/agents/infrastructure/k8s.js";
 import {
+  LABEL_TYPE,
+  LABEL_OWNER,
+  TYPE_AGENT,
+} from "./modules/agents/infrastructure/labels.js";
+import {
   composeAgentsModule,
   createAgentsRepository,
   createKeycloakUserDirectory,
@@ -60,8 +65,9 @@ import {
 import {
   composeForksModule,
   startOnForeignReplySaga,
-  startOnSlackTurnRelayedSaga,
+  startOnChannelTurnRelayedSaga,
 } from "./modules/forks/index.js";
+import { composeUsageModule } from "./modules/usage/compose.js";
 import { createK8sForkOrchestrator } from "./modules/forks/infrastructure/k8s-fork-orchestrator.js";
 import { loadConfig } from "./config.js";
 import { startApiServerApp } from "./apps/api-server/app.js";
@@ -83,6 +89,7 @@ import { createAgentArtifactsSweeper } from "./sagas/agent-artifacts-sweeper.js"
 import { createK8sClient as createAgentsK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
 import { createRedisBus } from "./core/redis-bus.js";
+import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
 
 const config = loadConfig();
@@ -94,6 +101,7 @@ const { db, sql } = createDb(config.databaseUrl);
 const k8sClient = createK8sClient(api, config.namespace);
 const agentsRepo = createAgentsRepository(k8sClient);
 const channelSecretStore = createChannelSecretStore(k8sClient);
+const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);
 
 const secretStores = createSecretStoreRegistry();
 secretStores.register(createKubernetesSecretStore({ k8s: k8sClient }));
@@ -113,7 +121,23 @@ const { forks } = composeForksModule({
 });
 
 const onForeignReplySub = startOnForeignReplySaga(forks);
-const onSlackTurnRelayedSub = startOnSlackTurnRelayedSaga(forks);
+const onChannelTurnRelayedSub = startOnChannelTurnRelayedSaga(forks);
+const usage = composeUsageModule({
+  db,
+  subPseudonymizer,
+  activityTrackingEnabled: config.activityTrackingEnabled,
+  inspectorRole: config.keycloakInspectorRole ?? "",
+  listK8sAgents: async () => {
+    const cms = await k8sClient.listConfigMaps(`${LABEL_TYPE}=${TYPE_AGENT}`);
+    return cms
+      .filter((cm) => cm.metadata?.name && cm.metadata?.labels?.[LABEL_OWNER])
+      .map((cm) => ({
+        id: cm.metadata!.name!,
+        owner: cm.metadata!.labels![LABEL_OWNER]!,
+      }));
+  },
+});
+usage.start();
 
 const userDirectory = createKeycloakUserDirectory({
   keycloakUrl: config.keycloakUrl,
@@ -372,6 +396,7 @@ const { server: apiServer } = startApiServerApp({
   secretStores,
   runtimeMutator: runtimeDelivery.runtimeMutator,
   schedulesBoot,
+  mountUsageRoutes: usage.mount,
 });
 
 const { server: harnessApiServer } = startHarnessApiServerApp({
@@ -413,7 +438,8 @@ async function shutdown() {
   channelCleanupSub.unsubscribe();
   skillsCleanupSub.unsubscribe();
   onForeignReplySub.unsubscribe();
-  onSlackTurnRelayedSub.unsubscribe();
+  onChannelTurnRelayedSub.unsubscribe();
+  usage.stop();
   await deliverySweeper.stop();
   await agentArtifactsSweeper.stop();
   await channelManager.stopAll();

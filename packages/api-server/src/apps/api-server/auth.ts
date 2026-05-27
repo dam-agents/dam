@@ -18,6 +18,14 @@ export interface AuthConfig {
   audience?: string;
   /** Realm role required to access the API (e.g. "platform-access"). If unset, all authenticated users are allowed. */
   requiredRole?: string;
+  /** OIDC client ID used by the web UI; matched against JWT `azp` to attribute requests to surface="ui". */
+  uiClientId: string;
+  /** OIDC client ID used by the dam CLI; matched against JWT `azp` to attribute requests to surface="cli". */
+  cliClientId: string;
+  /** Realm role marking a user as core team (used by activity tracking to
+   *  exclude internal traffic from pilot metrics). Empty/unset = nobody is
+   *  flagged core. Read from JWT `realm_access.roles` at verify time. */
+  coreRole?: string;
 }
 
 const PUBLIC_PATHS = new Set([
@@ -33,27 +41,31 @@ const PUBLIC_PATH_PREFIXES = ["/api/brand/"];
 export function createAuth(config: AuthConfig) {
   const JWKS = createRemoteJWKSet(new URL(config.jwksUrl));
 
-  async function verify(token: string): Promise<UserIdentity> {
+  async function verify(
+    token: string,
+  ): Promise<{ user: UserIdentity; azp: string; roles: string[] }> {
     const { payload } = await jwtVerify(token, JWKS, {
       issuer: config.issuerUrl,
       audience: config.audience,
       algorithms: ["RS256"],
     });
 
-    if (config.requiredRole) {
-      const realmAccess = (payload as Record<string, unknown>).realm_access as
-        | { roles?: string[] }
-        | undefined;
-      if (!realmAccess?.roles?.includes(config.requiredRole)) {
-        throw new ForbiddenError(config.requiredRole);
-      }
+    const claims = payload as Record<string, unknown>;
+    const realmAccess = claims.realm_access as { roles?: string[] } | undefined;
+    const roles = realmAccess?.roles ?? [];
+
+    if (config.requiredRole && !roles.includes(config.requiredRole)) {
+      throw new ForbiddenError(config.requiredRole);
     }
 
     return {
-      sub: payload.sub!,
-      preferredUsername:
-        ((payload as Record<string, unknown>).preferred_username as string) ??
-        payload.sub!,
+      user: {
+        sub: payload.sub!,
+        preferredUsername:
+          (claims.preferred_username as string) ?? payload.sub!,
+      },
+      azp: typeof claims.azp === "string" ? claims.azp : "",
+      roles,
     };
   }
 
@@ -71,12 +83,21 @@ export function createAuth(config: AuthConfig) {
 
     try {
       const jwt = authHeader.slice(7);
-      const user = await verify(jwt);
+      const { user, azp, roles } = await verify(jwt);
       c.set("user", user);
+      c.set("roles", roles);
+      const surface =
+        azp === config.uiClientId
+          ? "ui"
+          : azp === config.cliClientId
+            ? "cli"
+            : "other";
+      const isCore = config.coreRole ? roles.includes(config.coreRole) : false;
       emit({
         type: EventType.UserAuthenticated,
         userSub: user.sub,
-        userJwt: jwt,
+        surface,
+        isCore,
       });
       return next();
     } catch (err) {

@@ -191,23 +191,14 @@ export function createAgentsRuntimeRepo(db: Db): AgentsRuntimeRepo {
   return {
     async upsertHello(input): Promise<void> {
       await db
-        .insert(agentsTable)
-        .values({
-          id: input.agentId,
+        .update(agentsTable)
+        .set({
           runtimeProtocolVersion: input.protocolVersion,
           runtimeCapabilities: input.capabilities as object,
           runtimeLastHelloAt: new Date(),
           runtimeAgentVersion: input.agentRuntimeVersion,
         })
-        .onConflictDoUpdate({
-          target: agentsTable.id,
-          set: {
-            runtimeProtocolVersion: input.protocolVersion,
-            runtimeCapabilities: input.capabilities as object,
-            runtimeLastHelloAt: new Date(),
-            runtimeAgentVersion: input.agentRuntimeVersion,
-          },
-        });
+        .where(eq(agentsTable.id, input.agentId));
     },
 
     async get(agentId): Promise<AgentRuntimeStateRow | null> {

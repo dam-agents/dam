@@ -18,6 +18,7 @@ import {
 import { discoverMcpAuth } from "../infrastructure/mcp-discovery.js";
 import type { ContributionFanOut } from "./contribution-fanout.js";
 import type { OAuthFlowService } from "./oauth-flow.js";
+import { emit, EventType } from "../../../events.js";
 
 export function createConnectionsService(deps: {
   ownerId: string;
@@ -104,6 +105,14 @@ export function createConnectionsService(deps: {
       }
 
       await deps.repo.delete(id, deps.ownerId);
+
+      const template = deps.templates.get(conn.templateId);
+      emit({
+        type: EventType.ConnectionRemoved,
+        actorSub: deps.ownerId,
+        connectionKey: conn.id,
+        kind: template?.category === "mcp" ? "mcp" : "oauth_app",
+      });
     },
 
     async getAgentConnections(agentId: string): Promise<AgentConnections> {

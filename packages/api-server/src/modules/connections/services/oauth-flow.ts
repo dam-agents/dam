@@ -11,6 +11,7 @@ import type { ConnectionsRepository } from "../infrastructure/connections-reposi
 import type { ConnectionTemplateRegistry } from "../domain/connection-template.js";
 import { buildConnectionSdsFields } from "../domain/connection-sds.js";
 import type { SecretStore } from "../../secret-store/index.js";
+import { emit, EventType } from "../../../events.js";
 
 export interface OAuthFlowService {
   startOAuth(connectionId: string): Promise<{ authUrl: string }>;
@@ -94,6 +95,14 @@ export function createOAuthFlowService(deps: {
         };
         await deps.repo.updateAuth(conn.id, updatedAuth);
       }
+
+      const template = deps.templates.get(conn.templateId);
+      emit({
+        type: EventType.ConnectionCreated,
+        actorSub: pending.ctx.ownerId,
+        connectionKey: conn.id,
+        kind: template?.category === "mcp" ? "mcp" : "oauth_app",
+      });
 
       return {
         connectionId: pending.ctx.connectionId,

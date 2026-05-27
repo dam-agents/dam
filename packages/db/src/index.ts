@@ -17,6 +17,8 @@ export {
   runtimeStateOutbox,
   runtimeEvents,
   schedules,
+  activityEvents,
+  actorRoles,
 } from "./schema.js";
 export {
   eq,

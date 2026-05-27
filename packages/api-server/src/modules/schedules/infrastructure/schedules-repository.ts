@@ -7,6 +7,7 @@ export interface SchedulesRepository {
   list(agentId: string, owner: string): Promise<Schedule[]>;
   get(id: string, owner: string): Promise<Schedule | null>;
   getById(id: string): Promise<Schedule | null>;
+  getOwnerById(id: string): Promise<string | null>;
   listAllEnabled(): Promise<Schedule[]>;
   create(input: {
     agentId: string;
@@ -86,6 +87,14 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
         .from(schedulesTable)
         .where(eq(schedulesTable.id, id))) as InternalRow[];
       return rows[0] ? rowToSchedule(rows[0]) : null;
+    },
+
+    async getOwnerById(id): Promise<string | null> {
+      const rows = (await db
+        .select({ owner: schedulesTable.owner })
+        .from(schedulesTable)
+        .where(eq(schedulesTable.id, id))) as { owner: string }[];
+      return rows[0]?.owner ?? null;
     },
 
     async listAllEnabled(): Promise<Schedule[]> {

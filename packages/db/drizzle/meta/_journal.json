@@ -103,15 +103,29 @@
     {
       "idx": 14,
       "version": "7",
-      "when": 1779840000000,
-      "tag": "0014_runtime_channel",
+      "when": 1779580800000,
+      "tag": "0014_activity_events",
       "breakpoints": true
     },
     {
       "idx": 15,
       "version": "7",
+      "when": 1779667200000,
+      "tag": "0015_usage_views",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1779840000000,
+      "tag": "0016_runtime_channel",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
       "when": 1779926400000,
-      "tag": "0015_schedules",
+      "tag": "0017_schedules",
       "breakpoints": true
     }
   ]

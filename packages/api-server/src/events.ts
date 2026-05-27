@@ -5,6 +5,8 @@ import { filter } from "rxjs/operators";
 // Domain events — write-side only
 // ---------------------------------------------------------------------------
 
+export type TurnOutcome = "success" | "failure";
+
 export enum EventType {
   UserAuthenticated = "UserAuthenticated",
   AgentCreated = "AgentCreated",
@@ -20,18 +22,27 @@ export enum EventType {
   ForkFailed = "ForkFailed",
   ForkCompleted = "ForkCompleted",
   ForeignReplyReceived = "ForeignReplyReceived",
-  SlackTurnRelayed = "SlackTurnRelayed",
+  ChannelTurnRelayed = "ChannelTurnRelayed",
+  ScheduleFired = "ScheduleFired",
+  ConnectionCreated = "ConnectionCreated",
+  ConnectionRemoved = "ConnectionRemoved",
+  FilesImported = "FilesImported",
 }
 
 export type UserAuthenticated = {
   type: EventType.UserAuthenticated;
   userSub: string;
-  userJwt: string;
+  /** Normalized OIDC client: "ui" | "cli" | "other". Stripped from JWT `azp`. */
+  surface: string;
+  /** Decoded by the auth middleware from JWT `realm_access.roles`. Kept on the
+   *  event so subscribers don't need to re-parse (or hold) the bearer token. */
+  isCore: boolean;
 };
 
 export type AgentCreated = {
   type: EventType.AgentCreated;
   agentId: string;
+  ownerSub: string;
 };
 
 export type AgentUpdated = {
@@ -115,10 +126,52 @@ export type ForeignReplyReceived = {
   };
 };
 
-export type SlackTurnRelayed = {
-  type: EventType.SlackTurnRelayed;
-  replyId: string;
+export type ChannelTurnRelayed = {
+  type: EventType.ChannelTurnRelayed;
+  channel: "slack" | "telegram";
+  agentId: string;
+  /** Null for unauthenticated relays (Telegram: only the owner runs /login, so guest replies have no Keycloak sub). */
+  actorSub: string | null;
+  /** "success" when the ACP turn completed and the reply was posted; "failure"
+   *  on any caught error in the relay path (ACP throw, fork provisioning
+   *  failure, post-back failure). Drives the success/failure breakouts in the
+   *  channel-turn views. */
+  outcome: TurnOutcome;
   forkId?: string;
+};
+
+export type ScheduleFired = {
+  type: EventType.ScheduleFired;
+  scheduleId: string;
+  agentId: string;
+  ownerSub: string;
+  mode: "fresh" | "continuous";
+  sessionId: string | null;
+  outcome: TurnOutcome;
+};
+
+export type ConnectionKind = "oauth_app" | "mcp";
+
+export type ConnectionCreated = {
+  type: EventType.ConnectionCreated;
+  actorSub: string;
+  connectionKey: string;
+  kind: ConnectionKind;
+};
+
+export type ConnectionRemoved = {
+  type: EventType.ConnectionRemoved;
+  actorSub: string;
+  connectionKey: string;
+  kind: ConnectionKind;
+};
+
+export type FilesImported = {
+  type: EventType.FilesImported;
+  actorSub: string;
+  agentId: string;
+  outcome: TurnOutcome;
+  bytes: number;
 };
 
 export type DomainEvent =
@@ -136,7 +189,11 @@ export type DomainEvent =
   | ForkFailed
   | ForkCompleted
   | ForeignReplyReceived
-  | SlackTurnRelayed;
+  | ChannelTurnRelayed
+  | ScheduleFired
+  | ConnectionCreated
+  | ConnectionRemoved
+  | FilesImported;
 
 // ---------------------------------------------------------------------------
 // Event bus

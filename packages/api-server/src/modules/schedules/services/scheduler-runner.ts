@@ -3,6 +3,7 @@ import type { SchedulesRepository } from "../infrastructure/schedules-repository
 import type { ScheduleQueue } from "../infrastructure/schedule-queue.js";
 import { nextFireAt } from "../domain/recurrences.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
+import { emit, EventType } from "../../../events.js";
 
 export interface SchedulerRunner {
   buildFireHandler(): (scheduleId: string) => Promise<void>;
@@ -48,6 +49,7 @@ export function createSchedulerRunner(
     if (sched.spec.sessionMode) payload.sessionMode = sched.spec.sessionMode;
 
     let result: string;
+    let outcome: "success" | "failure";
     try {
       await deps.db.transaction(async (tx) => {
         await deps.runtimeMutator.commitInTx(
@@ -58,9 +60,24 @@ export function createSchedulerRunner(
       });
       await deps.runtimeMutator.enqueueAfterCommit(sched.agentId);
       result = "success";
+      outcome = "success";
     } catch (err) {
       result = (err as Error).message ?? String(err);
+      outcome = "failure";
       log(`fire: schedule ${scheduleId} commit failed: ${result}`);
+    }
+
+    const ownerSub = await deps.repo.getOwnerById(scheduleId);
+    if (ownerSub) {
+      emit({
+        type: EventType.ScheduleFired,
+        scheduleId,
+        agentId: sched.agentId,
+        ownerSub,
+        mode: sched.spec.sessionMode ?? "fresh",
+        sessionId: null,
+        outcome,
+      });
     }
 
     const next = nextFireAt(sched.spec, now());

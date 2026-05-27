@@ -36,13 +36,10 @@ CREATE TABLE "connection_grants" (
 	CONSTRAINT "connection_grants_connection_id_agent_id_pk" PRIMARY KEY ("connection_id","agent_id")
 );
 --> statement-breakpoint
-CREATE TABLE "agents" (
-	"id" text PRIMARY KEY NOT NULL,
-	"runtime_protocol_version" text,
-	"runtime_capabilities" jsonb,
-	"runtime_last_hello_at" timestamp with time zone,
-	"runtime_agent_version" text
-);
+ALTER TABLE "agents" ADD COLUMN "runtime_protocol_version" text;--> statement-breakpoint
+ALTER TABLE "agents" ADD COLUMN "runtime_capabilities" jsonb;--> statement-breakpoint
+ALTER TABLE "agents" ADD COLUMN "runtime_last_hello_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "agents" ADD COLUMN "runtime_agent_version" text;
 --> statement-breakpoint
 CREATE TABLE "runtime_state_outbox" (
 	"agent_id" text PRIMARY KEY NOT NULL,

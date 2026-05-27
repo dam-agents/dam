@@ -167,6 +167,14 @@ keycloak:
   # -- Realm role required to access the API. Users without this role get 403.
   # Leave empty to allow all authenticated users.
   requiredRole: ""
+  # -- Realm role granting read access to the inspector endpoints
+  # (`GET /api/usage`, `GET /api/usage/report`). The chart auto-creates this role
+  # plus an `inspectors` group mapped to it; grant access by adding users to
+  # the group via the Keycloak admin UI. For bulk assignment use `kcadm.sh`
+  # or the Keycloak admin REST API; for SSO-federated installs, map your
+  # upstream group to the `inspectors` group. Set to empty string to disable
+  # usage-data access entirely (the endpoint will not be mounted).
+  inspectorRole: "platform-inspector"
   # -- Confidential client for API server
   apiClientId: platform-api
   apiClientSecret: ""
@@ -287,6 +295,19 @@ apiServer:
   slackAppToken: ""
   # -- Enable the Telegram channel. Each agent can connect its own bot token via the UI.
   telegramEnabled: false
+  # -- Activity tracking saga: when enabled, the api-server captures user
+  # logins and channel turns into the `activity_events` table for the
+  # usage reporting endpoints. Disable to stop all writes (the read
+  # endpoints are independently gated by `keycloak.inspectorRole`).
+  activityTracking:
+    enabled: true
+    # -- HMAC key used to pseudonymize Keycloak `sub` values written to
+    # `activity_events`, `actor_roles`, and `instances.owner_sub` (GDPR
+    # Art. 32 risk reduction). Leave empty to have the chart generate and
+    # persist one in a Secret; rotating breaks every existing row, so it
+    # must remain stable. Provide your own (≥32 chars) for cross-cluster
+    # consistency or compliance audit trails.
+    hmacKey: ""
   # -- Default hold window (seconds) for HITL ext_authz approvals. The held
   # call resolves on user verdict or denies on timeout; the durable
   # pending_approvals row outlives the hold and is consumed by the agent's
