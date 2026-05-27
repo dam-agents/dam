@@ -16,15 +16,28 @@ export function createScheduleQueue(
   connection: ConnectionOptions,
 ): ScheduleQueue {
   const queue = new Queue<ScheduleJob>(SCHEDULES_QUEUE, { connection });
+
+  async function removePending(scheduleId: string): Promise<void> {
+    const [delayed, waiting] = await Promise.all([
+      queue.getDelayed(),
+      queue.getWaiting(),
+    ]);
+    await Promise.all(
+      [...delayed, ...waiting]
+        .filter((job) => job.data?.scheduleId === scheduleId)
+        .map((job) => job.remove().catch(() => {})),
+    );
+  }
+
   return {
     async enqueue(scheduleId, fireAt, now): Promise<void> {
-      await queue.remove(`schedule-${scheduleId}`).catch(() => {});
+      await removePending(scheduleId);
       const delayMs = Math.max(0, fireAt.getTime() - now.getTime());
       await queue.add(
         "fire",
         { scheduleId },
         {
-          jobId: `schedule-${scheduleId}`,
+          jobId: `schedule-${scheduleId}-${fireAt.getTime()}`,
           delay: delayMs,
           attempts: 3,
           backoff: { type: "exponential", delay: 1_000 },
@@ -34,7 +47,7 @@ export function createScheduleQueue(
       );
     },
     async cancel(scheduleId): Promise<void> {
-      await queue.remove(`schedule-${scheduleId}`).catch(() => {});
+      await removePending(scheduleId);
     },
     async close(): Promise<void> {
       await queue.close();

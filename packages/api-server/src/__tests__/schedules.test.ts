@@ -3,13 +3,9 @@ import { TRPCClientError } from "@trpc/client";
 import type { AppRouter } from "api-server-api";
 import { client } from "./helpers/trpc-client.js";
 import {
-  configMapExists,
-  patchConfigMapData,
-  waitForScheduleStatus,
   waitForPodReady,
   dumpPodLogs,
   describePod,
-  describeConfigMap,
   getEvents,
 } from "./helpers/kubectl.js";
 
@@ -146,29 +142,15 @@ describe("schedules: API server CRUD", () => {
       expect(list).toHaveLength(1);
       expect(list[0].name).toBe("health-check");
     });
-
-    it("ConfigMap is removed from cluster", async () => {
-      expect(await configMapExists(cronScheduleId)).toBe(false);
-    });
   });
 
   describe("read schedule status", () => {
-    it("returns status fields after controller writes status.yaml", async () => {
-      const statusYaml = [
-        "lastRun: '2026-04-08T09:00:00Z'",
-        "nextRun: '2026-04-08T09:05:00Z'",
-        "lastResult: success",
-      ].join("\n");
-      await patchConfigMapData(secondCronScheduleId, "status.yaml", statusYaml);
-
+    it("populates nextRun on a freshly created schedule", async () => {
       const sched = await client.schedules.get.query({
         id: secondCronScheduleId,
       });
-      expect(sched.status).toMatchObject({
-        lastResult: "success",
-      });
-      expect(sched.status!.lastRun).toContain("2026-04-08T09:00:00");
-      expect(sched.status!.nextRun).toContain("2026-04-08T09:05:00");
+      expect(sched.status).not.toBeNull();
+      expect(sched.status!.nextRun).toBeTruthy();
     });
 
     it("returns NOT_FOUND for non-existent schedule", async () => {
@@ -183,7 +165,7 @@ describe("schedules: API server CRUD", () => {
   });
 });
 
-describe("e2e: controller reconciliation", () => {
+describe("e2e: cron firing", () => {
   let e2eAgentId: string;
   let e2eScheduleId: string;
 
@@ -214,7 +196,7 @@ describe("e2e: controller reconciliation", () => {
     } catch {}
   });
 
-  it("controller writes status.yaml after cron fires", async () => {
+  it("records lastResult after cron fires", async () => {
     const sched = await client.schedules.createCron.mutate({
       name: "e2e-cron",
       agentId: e2eAgentId,
@@ -224,45 +206,55 @@ describe("e2e: controller reconciliation", () => {
     e2eScheduleId = sched.id;
 
     try {
-      // status.yaml now lands at registration with just `nextRun` (so the UI
-      // has an upcoming-fire time before one happens). Wait specifically for
-      // `lastResult` to appear — that's the signal the cron actually fired.
-      const status = await waitForScheduleStatus(
-        e2eScheduleId,
-        (s) => typeof s.lastResult === "string",
-      );
-
+      const status = await waitForScheduleFire(e2eScheduleId, 120_000);
       expect(status.lastResult).toBe("success");
       expect(status.lastRun).toBeTruthy();
       expect(status.nextRun).toBeTruthy();
     } catch (e) {
       const podName = `${e2eAgentId}-0`;
-      const [ctrlLogs, podInfo, podLogs, podEvents, scheduleCm] =
-        await Promise.all([
-          dumpPodLogs("app.kubernetes.io/component=controller"),
-          describePod(podName),
-          dumpPodLogs(
-            `agent-platform.ai/agent=${e2eAgentId}`,
-            "platform-agents",
-          ),
-          getEvents(podName),
-          describeConfigMap(e2eScheduleId),
-        ]);
+      const [apiLogs, podInfo, podLogs, podEvents, last] = await Promise.all([
+        dumpPodLogs("app.kubernetes.io/component=api-server"),
+        describePod(podName),
+        dumpPodLogs(`agent-platform.ai/agent=${e2eAgentId}`, "platform-agents"),
+        getEvents(podName),
+        client.schedules.get.query({ id: e2eScheduleId }).catch(() => null),
+      ]);
       console.error(
         [
-          "=== Controller Logs ===",
-          ctrlLogs,
+          "=== API Server Logs ===",
+          apiLogs,
           "=== Agent Pod Describe ===",
           podInfo,
           "=== Agent Pod Logs (incl. init) ===",
           podLogs,
           "=== Agent Pod Events ===",
           podEvents,
-          "=== Schedule ConfigMap ===",
-          scheduleCm,
+          "=== Schedule (last fetch) ===",
+          JSON.stringify(last, null, 2),
         ].join("\n"),
       );
       throw e;
     }
   });
 });
+
+async function waitForScheduleFire(
+  scheduleId: string,
+  timeoutMs: number,
+): Promise<{ lastResult: string; lastRun?: string; nextRun?: string }> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const sched = await client.schedules.get.query({ id: scheduleId });
+    if (sched.status?.lastResult) {
+      return sched.status as {
+        lastResult: string;
+        lastRun?: string;
+        nextRun?: string;
+      };
+    }
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+  throw new Error(
+    `Schedule ${scheduleId} did not record a fire within ${timeoutMs}ms`,
+  );
+}

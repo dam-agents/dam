@@ -42,16 +42,17 @@ interface InternalRow {
 function rowToSchedule(row: InternalRow): Schedule {
   const spec = scheduleSpecSchema.parse(row.spec);
   spec.enabled = row.enabled;
+  const status: Schedule["status"] = {
+    ...(row.lastFiredAt ? { lastRun: row.lastFiredAt.toISOString() } : {}),
+    ...(row.nextRun ? { nextRun: row.nextRun.toISOString() } : {}),
+    ...(row.lastFiredResult ? { lastResult: row.lastFiredResult } : {}),
+  };
   return {
     id: row.id,
     agentId: row.agentId,
     name: row.name,
     spec,
-    status: {
-      ...(row.lastFiredAt ? { lastRun: row.lastFiredAt.toISOString() } : {}),
-      ...(row.nextRun ? { nextRun: row.nextRun.toISOString() } : {}),
-      ...(row.lastFiredResult ? { lastResult: row.lastFiredResult } : {}),
-    },
+    ...(Object.keys(status).length > 0 ? { status } : {}),
   };
 }
 
