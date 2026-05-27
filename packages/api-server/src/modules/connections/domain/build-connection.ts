@@ -225,7 +225,12 @@ async function buildOAuthDcr(
 
   const contributions: Contribution[] = [
     ...template.contributions,
-    { kind: "egress-allow", host: url.host },
+    {
+      kind: "egress-inject",
+      host: url.host,
+      headerName: "Authorization",
+      valueFormat: "Bearer {value}",
+    },
     {
       kind: "mcp-entry",
       name: template.id,
