@@ -50,8 +50,12 @@ export function createContributionFanOut(deps: {
       for (const conn of grantedConnections) {
         const hosts = conn.contributions
           .filter(
-            (c): c is Extract<Contribution, { kind: "egress-host" }> =>
-              c.kind === "egress-host",
+            (
+              c,
+            ): c is Extract<
+              Contribution,
+              { kind: "egress-allow" | "egress-inject" }
+            > => c.kind === "egress-allow" || c.kind === "egress-inject",
           )
           .map((c) => ({
             host: c.host,

@@ -117,18 +117,17 @@ async function buildOAuthStatic(
     if (!host) throw new Error(`template github-enterprise: missing host`);
     contributions.push({ kind: "env", name: "GH_HOST", placeholder: host });
     contributions.push({
-      kind: "egress-host",
+      kind: "egress-inject",
       host: `api.${host}`,
-      injection: {},
+      headerName: "Authorization",
+      valueFormat: "Bearer {value}",
     });
     contributions.push({
-      kind: "egress-host",
+      kind: "egress-inject",
       host,
-      injection: {
-        headerName: "Authorization",
-        valueFormat: "Basic {value}",
-        encoding: "basic-x-access-token",
-      },
+      headerName: "Authorization",
+      valueFormat: "Basic {value}",
+      encoding: "basic-x-access-token",
     });
   }
 
@@ -169,7 +168,8 @@ function substituteHostInContribution(
   host: string,
 ): Contribution {
   switch (c.kind) {
-    case "egress-host":
+    case "egress-allow":
+    case "egress-inject":
       return {
         ...c,
         host: c.host.replace(/\{host\}/g, host),
@@ -225,7 +225,7 @@ async function buildOAuthDcr(
 
   const contributions: Contribution[] = [
     ...template.contributions,
-    { kind: "egress-host", host: url.host },
+    { kind: "egress-allow", host: url.host },
     {
       kind: "mcp-entry",
       name: template.id,
@@ -271,10 +271,12 @@ function buildHeader(
   const contributions: Contribution[] = [...template.contributions];
 
   const hasHostContrib = contributions.some(
-    (c) => c.kind === "egress-host" && c.host === host,
+    (c) =>
+      (c.kind === "egress-allow" || c.kind === "egress-inject") &&
+      c.host === host,
   );
   if (!hasHostContrib) {
-    contributions.push({ kind: "egress-host", host });
+    contributions.push({ kind: "egress-allow", host });
   }
 
   if (input.mcpConfig) {
@@ -311,7 +313,7 @@ function buildNone(
 
   if (input.url) {
     const url = new URL(input.url);
-    contributions.push({ kind: "egress-host", host: url.host });
+    contributions.push({ kind: "egress-allow", host: url.host });
     contributions.push({
       kind: "mcp-entry",
       name: template.id,

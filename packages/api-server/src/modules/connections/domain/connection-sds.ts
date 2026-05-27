@@ -1,9 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Contribution } from "api-server-api";
-import {
-  DEFAULT_INJECTION_VALUE_FORMAT,
-  encodeAccessToken,
-} from "./host-injection.js";
+import { encodeAccessToken } from "./host-injection.js";
 
 const PLACEHOLDER_TOKEN = "dummy-placeholder";
 
@@ -30,12 +27,10 @@ export function buildConnectionSdsFields(
 ): Record<string, string> {
   const out: Record<string, string> = {};
   for (const c of contributions) {
-    if (c.kind !== "egress-host" || !c.injection) continue;
-    const headerValue = (
-      c.injection.valueFormat ?? DEFAULT_INJECTION_VALUE_FORMAT
-    ).replaceAll(
+    if (c.kind !== "egress-inject") continue;
+    const headerValue = c.valueFormat.replaceAll(
       "{value}",
-      encodeAccessToken(accessToken, c.injection.encoding),
+      encodeAccessToken(accessToken, c.encoding),
     );
     out[sdsFileKeyForHost(c.host)] = sdsYamlContent(headerValue);
   }

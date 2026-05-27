@@ -17,8 +17,10 @@ function keyFor(c: Contribution): string {
   switch (c.kind) {
     case "env":
       return `env:${c.name}`;
-    case "egress-host":
-      return `egress-host:${c.host}:${c.pathPattern ?? ""}`;
+    case "egress-allow":
+      return `egress-allow:${c.host}:${c.pathPattern ?? ""}`;
+    case "egress-inject":
+      return `egress-inject:${c.host}:${c.pathPattern ?? ""}`;
     case "file":
       return `file:${c.path}`;
     case "mcp-entry":

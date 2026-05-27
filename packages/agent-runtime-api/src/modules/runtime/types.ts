@@ -2,7 +2,8 @@ import { z } from "zod";
 
 export const contributionKind = z.enum([
   "env",
-  "egress-host",
+  "egress-allow",
+  "egress-inject",
   "file",
   "mcp-entry",
   "skill-ref",
@@ -23,24 +24,25 @@ export type MergeMode = z.infer<typeof mergeMode>;
 export const fileFormat = z.enum(["yaml", "json", "text", "ini"]);
 export type FileFormat = z.infer<typeof fileFormat>;
 
-export const hostInjection = z.object({
-  headerName: z.string().optional(),
-  valueFormat: z.string().optional(),
-  encoding: z.literal("basic-x-access-token").optional(),
-});
-export type HostInjection = z.infer<typeof hostInjection>;
-
 export const envContribution = z.object({
   kind: z.literal("env"),
   name: z.string().min(1),
   placeholder: z.string(),
 });
 
-export const egressHostContribution = z.object({
-  kind: z.literal("egress-host"),
+export const egressAllowContribution = z.object({
+  kind: z.literal("egress-allow"),
   host: z.string().min(1),
   pathPattern: z.string().optional(),
-  injection: hostInjection.optional(),
+});
+
+export const egressInjectContribution = z.object({
+  kind: z.literal("egress-inject"),
+  host: z.string().min(1),
+  pathPattern: z.string().optional(),
+  headerName: z.string().min(1),
+  valueFormat: z.string().min(1),
+  encoding: z.literal("basic-x-access-token").optional(),
 });
 
 export const fileContribution = z.object({
@@ -67,7 +69,8 @@ export const skillRefContribution = z.object({
 
 export const contribution = z.discriminatedUnion("kind", [
   envContribution,
-  egressHostContribution,
+  egressAllowContribution,
+  egressInjectContribution,
   fileContribution,
   mcpEntryContribution,
   skillRefContribution,

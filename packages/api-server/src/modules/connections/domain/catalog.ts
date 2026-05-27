@@ -42,7 +42,7 @@ const ANTHROPIC: HeaderConnectionTemplate = {
       name: "ANTHROPIC_API_KEY",
       placeholder: "dummy-placeholder",
     },
-    { kind: "egress-host", host: "api.anthropic.com" },
+    { kind: "egress-allow", host: "api.anthropic.com" },
   ],
 };
 
@@ -60,7 +60,7 @@ const OPENAI: HeaderConnectionTemplate = {
   contributions: [
     { kind: "env", name: "OPENAI_API_KEY", placeholder: "dummy-placeholder" },
     {
-      kind: "egress-host",
+      kind: "egress-allow",
       host: "api.openai.com",
       pathPattern: "/v1/*",
     },
@@ -106,7 +106,7 @@ const IBM_LITELLM: HeaderConnectionTemplate = {
       placeholder: "claude-haiku-4-5",
     },
     { kind: "env", name: "OPENAI_MODEL", placeholder: "gpt-5.5" },
-    { kind: "egress-host", host: "ete-litellm.bx.cloud9.ibm.com" },
+    { kind: "egress-allow", host: "ete-litellm.bx.cloud9.ibm.com" },
   ],
 };
 
@@ -128,7 +128,7 @@ const BOB: HeaderConnectionTemplate = {
       placeholder: "https://api.us-east.bob.ibm.com",
     },
     { kind: "env", name: "BOB_API_KEY", placeholder: "dummy-placeholder" },
-    { kind: "egress-host", host: "api.us-east.bob.ibm.com" },
+    { kind: "egress-allow", host: "api.us-east.bob.ibm.com" },
   ],
 };
 
@@ -150,20 +150,24 @@ function github(creds?: OAuthClientCredentials): OAuthConnectionTemplate {
     tokenEndpointAcceptJson: true,
     contributions: [
       { kind: "env", name: "GH_TOKEN", placeholder: "dummy-placeholder" },
-      { kind: "egress-host", host: "api.github.com", injection: {} },
       {
-        kind: "egress-host",
-        host: "github.com",
-        injection: {
-          headerName: "Authorization",
-          valueFormat: "Basic {value}",
-          encoding: "basic-x-access-token",
-        },
+        kind: "egress-inject",
+        host: "api.github.com",
+        headerName: "Authorization",
+        valueFormat: "Bearer {value}",
       },
       {
-        kind: "egress-host",
+        kind: "egress-inject",
+        host: "github.com",
+        headerName: "Authorization",
+        valueFormat: "Basic {value}",
+        encoding: "basic-x-access-token",
+      },
+      {
+        kind: "egress-inject",
         host: "raw.githubusercontent.com",
-        injection: {},
+        headerName: "Authorization",
+        valueFormat: "Bearer {value}",
       },
     ],
   };
@@ -215,7 +219,7 @@ function spotify(creds?: OAuthClientCredentials): OAuthConnectionTemplate {
       "user-modify-playback-state",
       "user-read-playback-state",
     ],
-    contributions: [{ kind: "egress-host", host: "api.spotify.com" }],
+    contributions: [{ kind: "egress-allow", host: "api.spotify.com" }],
   };
 }
 
@@ -388,7 +392,7 @@ function googleService(
     scopes: [...GOOGLE_BASELINE_SCOPES, ...def.scopes],
     extraAuthParams: { access_type: "offline", prompt: "consent" },
     contributions: def.hosts.map((h) => ({
-      kind: "egress-host",
+      kind: "egress-allow",
       host: h.host,
       ...(h.pathPattern ? { pathPattern: h.pathPattern } : {}),
     })),

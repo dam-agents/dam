@@ -37,8 +37,8 @@ export function createConnectionsService(deps: {
           c,
         ): c is Extract<
           Connection["contributions"][number],
-          { kind: "egress-host" }
-        > => c.kind === "egress-host",
+          { kind: "egress-allow" | "egress-inject" }
+        > => c.kind === "egress-allow" || c.kind === "egress-inject",
       )
       .map((c) => c.host);
     const oauthExtras =
@@ -270,19 +270,15 @@ function connectionSecretAnnotations(
         c,
       ): c is Extract<
         Connection["contributions"][number],
-        { kind: "egress-host" }
-      > => c.kind === "egress-host" && c.injection !== undefined,
+        { kind: "egress-inject" }
+      > => c.kind === "egress-inject",
     )
     .map((c) => ({
       host: c.host,
       ...(c.pathPattern ? { pathPattern: c.pathPattern } : {}),
-      ...(c.injection?.headerName
-        ? { headerName: c.injection.headerName }
-        : {}),
-      ...(c.injection?.valueFormat
-        ? { valueFormat: c.injection.valueFormat }
-        : {}),
-      ...(c.injection?.encoding ? { encoding: c.injection.encoding } : {}),
+      headerName: c.headerName,
+      valueFormat: c.valueFormat,
+      ...(c.encoding ? { encoding: c.encoding } : {}),
     }));
 
   const out: Record<string, string> = {};
