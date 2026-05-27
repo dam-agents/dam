@@ -281,7 +281,12 @@ function buildHeader(
       c.host === host,
   );
   if (!hasHostContrib) {
-    contributions.push({ kind: "egress-allow", host });
+    contributions.push({
+      kind: "egress-inject",
+      host,
+      headerName,
+      valueFormat,
+    });
   }
 
   if (input.mcpConfig) {
