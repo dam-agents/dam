@@ -1,12 +1,11 @@
-import { createHash } from "node:crypto";
 import type { Contribution } from "api-server-api";
 import { encodeAccessToken } from "./host-injection.js";
 
 const PLACEHOLDER_TOKEN = "dummy-placeholder";
 
 export function sdsFileKeyForHost(host: string): string {
-  const hash = createHash("sha1").update(host).digest("hex").slice(0, 8);
-  return `host-${hash}.sds.yaml`;
+  const slug = Buffer.from(host, "utf8").toString("base64url");
+  return `host-${slug}.sds.yaml`;
 }
 
 export function sdsYamlContent(inlineString: string): string {

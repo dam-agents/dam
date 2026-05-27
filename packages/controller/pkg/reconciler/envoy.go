@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha1"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -315,11 +316,9 @@ type connectionHostInjection struct {
 }
 
 // sdsFileKeyForHost mirrors the api-server's `sdsFileKeyForHost`. MUST
-// stay byte-identical — pinned by tests on both sides. SHA-1 is
-// non-cryptographic use.
+// stay byte-identical — pinned by tests on both sides.
 func sdsFileKeyForHost(host string) string {
-	h := sha1.Sum([]byte(host)) // #nosec G401 — non-cryptographic
-	return "host-" + hex.EncodeToString(h[:])[:8] + ".sds.yaml"
+	return "host-" + base64.RawURLEncoding.EncodeToString([]byte(host)) + ".sds.yaml"
 }
 
 // expandConnectionSecret turns a connection Secret into one (host, cred)

@@ -85,7 +85,6 @@ async function buildOAuthStatic(
     host ? s?.replace(/\{host\}/g, host) : s;
 
   const clientId = input.clientId ?? template.clientId;
-  const clientSecret = input.clientSecret ?? template.clientSecret;
   const authorizationUrl = subst(template.authorizationUrl);
   const tokenUrl = subst(template.tokenUrl);
   const scopes = template.scopes ?? [];
