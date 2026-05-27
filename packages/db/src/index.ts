@@ -23,6 +23,8 @@ export {
 export {
   eq,
   and,
+  or,
+  gt,
   inArray,
   asc,
   desc,

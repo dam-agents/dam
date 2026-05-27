@@ -20,7 +20,6 @@ export function createStateQueue(connection: ConnectionOptions): StateQueue {
         "state",
         { agentId },
         {
-          jobId: `state-${agentId}`,
           attempts: 8,
           backoff: { type: "exponential", delay: 1_000 },
           removeOnComplete: { age: 3600, count: 1000 },

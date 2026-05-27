@@ -1,9 +1,11 @@
 import {
   and,
   eq,
+  gt,
   isNull,
   lt,
   lte,
+  or,
   sql,
   type Db,
   runtimeStateOutbox,
@@ -135,9 +137,16 @@ export function createOutboxRepo(db: Db): OutboxRepo {
         .select()
         .from(runtimeStateOutbox)
         .where(
-          sql`(${runtimeStateOutbox.lastAppliedAt} IS NULL
-            OR ${runtimeStateOutbox.lastEnqueuedAt} > ${runtimeStateOutbox.lastAppliedAt})
-            AND ${runtimeStateOutbox.lastEnqueuedAt} < ${cutoff}`,
+          and(
+            or(
+              isNull(runtimeStateOutbox.lastAppliedAt),
+              gt(
+                runtimeStateOutbox.lastEnqueuedAt,
+                runtimeStateOutbox.lastAppliedAt,
+              ),
+            ),
+            lt(runtimeStateOutbox.lastEnqueuedAt, cutoff),
+          ),
         )
         .limit(limit)) as InternalRow[];
       return rows;

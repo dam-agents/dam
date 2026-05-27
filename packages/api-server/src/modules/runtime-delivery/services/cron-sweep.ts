@@ -39,7 +39,10 @@ export function createCronSweep(deps: CronSweepDeps): CronSweep {
         deps.log(`[runtime-sweep] dropped-expired ${dropped} events`);
       }
     } catch (err) {
-      deps.log(`[runtime-sweep] tick failed: ${(err as Error).message}`);
+      const e = err as Error & { cause?: unknown };
+      const cause =
+        e.cause instanceof Error ? e.cause.message : String(e.cause);
+      deps.log(`[runtime-sweep] tick failed: ${e.message} | cause: ${cause}`);
     } finally {
       running = false;
     }
