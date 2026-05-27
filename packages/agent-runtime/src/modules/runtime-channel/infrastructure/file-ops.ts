@@ -1,5 +1,4 @@
 import {
-  chmodSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -316,7 +315,6 @@ function stripTrailingSep(p: string): string {
 function atomicWrite(target: string, content: string): void {
   const dir = dirname(target);
   mkdirSync(dir, { recursive: true });
-  chmodSync(dir, 0o777);
   const tmp = target + ".tmp";
   writeFileSync(tmp, content, { mode: 0o666 });
   try {
