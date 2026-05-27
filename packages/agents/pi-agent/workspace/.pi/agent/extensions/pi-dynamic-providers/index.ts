@@ -13,11 +13,21 @@ declare const process: { env: Record<string, string | undefined> };
 type ProviderSpec = {
 	name: string;
 	envPrefix: string;
+	// If this spec activates and ${envPrefix}_URL matches the shadow's urlEnv,
+	// hide the named provider as a duplicate alias. apiKeyEnv is unset so
+	// built-in providers (whose auth is discovered via pi-ai env-api-keys) are
+	// filtered out of getAvailable() — pi.unregisterProvider() alone only
+	// affects dynamically-registered providers.
+	shadows?: { name: string; urlEnv: string; apiKeyEnv?: string }[];
 };
 
 const SPECS: ProviderSpec[] = [
 	{ name: "rits", envPrefix: "RITS" },
-	{ name: "openai-proxy", envPrefix: "OPENAI_PROXY" },
+	{
+		name: "openai-proxy",
+		envPrefix: "OPENAI_PROXY",
+		shadows: [{ name: "openai", urlEnv: "OPENAI_BASE_URL", apiKeyEnv: "OPENAI_API_KEY" }],
+	},
 ];
 
 export default function register(pi: ExtensionAPI): void {
@@ -93,6 +103,15 @@ export default function register(pi: ExtensionAPI): void {
 		modelsFile.providers[spec.name] = provider;
 		authFile[spec.name] = { type: "api_key", key: apiKey };
 		lastActivated = { name: spec.name, model };
+
+		for (const shadow of spec.shadows ?? []) {
+			const shadowUrl = env(shadow.urlEnv)?.replace(/\/+$/, "");
+			if (!shadowUrl || shadowUrl !== url) continue;
+			pi.unregisterProvider(shadow.name);
+			delete modelsFile.providers[shadow.name];
+			delete authFile[shadow.name];
+			if (shadow.apiKeyEnv) delete process.env[shadow.apiKeyEnv];
+		}
 	}
 
 	if (!lastActivated) return;
