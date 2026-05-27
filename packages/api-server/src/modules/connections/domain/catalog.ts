@@ -411,18 +411,6 @@ const CUSTOM_HEADER: HeaderConnectionTemplate = {
   contributions: [],
 };
 
-const CUSTOM_OAUTH: OAuthConnectionTemplate = {
-  id: "custom-oauth",
-  name: "Custom OAuth provider",
-  category: "other",
-  isCustom: true,
-  description:
-    "Connect any OAuth 2.1 authorization-code provider. Supply the URLs and your client credentials.",
-  iconSlug: "key",
-  authKind: "oauth",
-  contributions: [],
-};
-
 const CUSTOM_MCP_OAUTH: OAuthConnectionTemplate = {
   id: "custom-mcp-oauth",
   name: "Custom MCP server (OAuth)",
@@ -471,7 +459,6 @@ export function buildCatalog(
     githubEnterprise(creds.githubEnterprise),
     spotify(creds.spotify),
     ...GOOGLE_SERVICES.map((def) => googleService(def, creds.google)),
-    CUSTOM_OAUTH,
     CUSTOM_HEADER,
     CUSTOM_MCP_OAUTH,
     CUSTOM_MCP_NONE,

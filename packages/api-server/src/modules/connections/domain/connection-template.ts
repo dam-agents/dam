@@ -131,10 +131,6 @@ function inputsFor(t: ConnectionTemplate): ConnectionTemplateInput[] {
           ? overridable("clientSecret", undefined, { secret: true })
           : required("clientSecret", { secret: true }),
       );
-      if (!t.authorizationUrl) out.push(required("authorizationUrl"));
-      if (!t.tokenUrl) out.push(required("tokenUrl"));
-      if (!t.scopes) out.push(required("scopes"));
-
       if (t.id === "github" || t.id === "github-enterprise") {
         const presetAppSlug =
           typeof t.extras?.appSlug === "string" ? t.extras.appSlug : undefined;

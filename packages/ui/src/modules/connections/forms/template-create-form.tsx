@@ -68,7 +68,6 @@ export function TemplateCreateForm({
     };
     switch (template.authKind) {
       case "oauth": {
-        const scopesStr = submittedValue("scopes");
         return {
           ...common,
           authKind: "oauth",
@@ -79,15 +78,6 @@ export function TemplateCreateForm({
             : {}),
           ...(submittedValue("clientSecret")
             ? { clientSecret: submittedValue("clientSecret")! }
-            : {}),
-          ...(submittedValue("authorizationUrl")
-            ? { authorizationUrl: submittedValue("authorizationUrl")! }
-            : {}),
-          ...(submittedValue("tokenUrl")
-            ? { tokenUrl: submittedValue("tokenUrl")! }
-            : {}),
-          ...(scopesStr
-            ? { scopes: scopesStr.split(/\s+/).filter(Boolean) }
             : {}),
           ...(submittedValue("appSlug")
             ? { appSlug: submittedValue("appSlug")! }
@@ -373,9 +363,6 @@ const FIELD_LABELS: Record<string, string> = {
   value: "Secret value",
   clientId: "Client ID",
   clientSecret: "Client secret",
-  authorizationUrl: "Authorization URL",
-  tokenUrl: "Token URL",
-  scopes: "Scopes (space-separated)",
   appSlug: "GitHub App slug",
 };
 
@@ -387,9 +374,6 @@ const FIELD_PLACEHOLDERS: Record<string, string> = {
   value: "•••••",
   clientId: "Iv1.…",
   clientSecret: "•••••",
-  authorizationUrl: "https://example.com/oauth/authorize",
-  tokenUrl: "https://example.com/oauth/token",
-  scopes: "openid email profile",
   appSlug: "my-platform-app",
 };
 

@@ -86,10 +86,9 @@ async function buildOAuthStatic(
 
   const clientId = input.clientId ?? template.clientId;
   const clientSecret = input.clientSecret ?? template.clientSecret;
-  const authorizationUrl =
-    input.authorizationUrl ?? subst(template.authorizationUrl);
-  const tokenUrl = input.tokenUrl ?? subst(template.tokenUrl);
-  const scopes = input.scopes ?? template.scopes ?? [];
+  const authorizationUrl = subst(template.authorizationUrl);
+  const tokenUrl = subst(template.tokenUrl);
+  const scopes = template.scopes ?? [];
 
   if (!clientId) throw new Error(`template ${template.id}: missing clientId`);
   if (!authorizationUrl || authorizationUrl.includes("{host}")) {

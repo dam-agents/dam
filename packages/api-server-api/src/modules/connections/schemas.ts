@@ -33,9 +33,6 @@ const oauthCreateInput = z.object({
   host: z.string().min(1).optional(),
   clientId: z.string().min(1).optional(),
   clientSecret: z.string().min(1).optional(),
-  authorizationUrl: z.string().url().optional(),
-  tokenUrl: z.string().url().optional(),
-  scopes: z.array(z.string()).optional(),
   appSlug: z.string().min(1).optional(),
 });
 
