@@ -17,9 +17,6 @@ import { useCreateConnection } from "../api/mutations.js";
 const INPUT_CLASS =
   "w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted";
 
-const TEXTAREA_CLASS =
-  "w-full min-h-[120px] rounded-lg border-2 border-border-light bg-bg px-4 py-3 text-[13px] font-mono text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted";
-
 export function TemplateCreateForm({
   template,
   onCreated,
@@ -34,13 +31,11 @@ export function TemplateCreateForm({
   const [name, setName] = useState("");
   const [fields, setFields] = useState<Record<string, string>>({});
   const [overrides, setOverrides] = useState<Record<string, boolean>>({});
-  const [mcpConfigJson, setMcpConfigJson] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [authorizing, setAuthorizing] = useState(false);
 
   const needsOAuth = template.authKind === "oauth";
   const pending = create.isPending || authorizing;
-  const isMcpCustom = template.id === "custom-mcp-custom";
 
   const inputsByName = useMemo(() => {
     const map = new Map<string, ConnectionTemplateInput>();
@@ -87,14 +82,6 @@ export function TemplateCreateForm({
       case "header": {
         const value = submittedValue("value");
         if (!value) return { error: "Secret value is required" };
-        let mcpConfig: Record<string, unknown> | undefined;
-        if (isMcpCustom && mcpConfigJson.trim()) {
-          try {
-            mcpConfig = JSON.parse(mcpConfigJson) as Record<string, unknown>;
-          } catch {
-            return { error: "MCP config must be valid JSON" };
-          }
-        }
         return {
           ...common,
           authKind: "header",
@@ -106,7 +93,6 @@ export function TemplateCreateForm({
             ? { valueFormat: submittedValue("valueFormat")! }
             : {}),
           value,
-          ...(mcpConfig ? { mcpConfig } : {}),
         };
       }
       case "none":
@@ -186,24 +172,6 @@ export function TemplateCreateForm({
             />
           ))}
 
-          {isMcpCustom && (
-            <label className="block">
-              <span className="text-[12px] font-semibold text-text-secondary block mb-1">
-                MCP server JSON config
-              </span>
-              <textarea
-                className={TEXTAREA_CLASS}
-                placeholder={`{\n  "url": "https://mcp.example.com/sse"\n}`}
-                value={mcpConfigJson}
-                onChange={(e) => setMcpConfigJson(e.target.value)}
-              />
-              <span className="text-[11px] text-text-muted block mt-1">
-                Verbatim entry written into the agent's mcp.json. The header
-                credential above is injected by the gateway at egress.
-              </span>
-            </label>
-          )}
-
           {overridable.length > 0 && (
             <OverridableSection
               inputs={overridable}
@@ -216,13 +184,11 @@ export function TemplateCreateForm({
             />
           )}
 
-          {requiredOrOptional.length === 0 &&
-            overridable.length === 0 &&
-            !isMcpCustom && (
-              <p className="text-[12px] text-text-muted">
-                No additional inputs — preconfigured.
-              </p>
-            )}
+          {requiredOrOptional.length === 0 && overridable.length === 0 && (
+            <p className="text-[12px] text-text-muted">
+              No additional inputs — preconfigured.
+            </p>
+          )}
 
           {error && (
             <p className="text-[12px] text-danger leading-relaxed">{error}</p>

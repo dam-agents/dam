@@ -289,19 +289,6 @@ function buildHeader(
     });
   }
 
-  if (input.mcpConfig) {
-    const cfg = input.mcpConfig as {
-      url?: string;
-      headers?: Record<string, string>;
-    };
-    contributions.push({
-      kind: "mcp-entry",
-      name: template.id,
-      url: cfg.url ?? `https://${host}`,
-      headers: cfg.headers ?? { [headerName]: `${valueFormat}` },
-    });
-  }
-
   const sdsFields = buildConnectionSdsFields(contributions, input.value);
 
   return {

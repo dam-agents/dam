@@ -435,18 +435,6 @@ const CUSTOM_MCP_NONE: NoneConnectionTemplate = {
   contributions: [],
 };
 
-const CUSTOM_MCP_CUSTOM: HeaderConnectionTemplate = {
-  id: "custom-mcp-custom",
-  name: "Custom MCP server (custom)",
-  category: "mcp",
-  isCustom: true,
-  description:
-    "MCP server with a user-pasted JSON config and a custom header credential injected on outbound calls.",
-  iconSlug: "mcp",
-  authKind: "header",
-  contributions: [],
-};
-
 export function buildCatalog(
   creds: OperatorCredentials = {},
 ): ConnectionTemplate[] {
@@ -462,6 +450,5 @@ export function buildCatalog(
     CUSTOM_HEADER,
     CUSTOM_MCP_OAUTH,
     CUSTOM_MCP_NONE,
-    CUSTOM_MCP_CUSTOM,
   ];
 }

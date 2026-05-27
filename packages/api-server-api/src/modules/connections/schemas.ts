@@ -43,7 +43,6 @@ const headerCreateInput = z.object({
   headerName: z.string().min(1).optional(),
   valueFormat: z.string().min(1).optional(),
   value: z.string().min(1),
-  mcpConfig: z.record(z.string(), z.unknown()).optional(),
 });
 
 const noneCreateInput = z.object({
