@@ -68,6 +68,7 @@ export function composeSkillsModule(
     seedSources,
     runtimeClient: createAgentRuntimeSkillsClient(namespace),
     runtimeMutator,
+    db,
     owner,
     scanSource: scanWithCache,
     invalidateScan: invalidateScanCache,
