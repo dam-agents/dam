@@ -1,6 +1,9 @@
 import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
+import { PROVIDER_PRESET_TYPES } from "api-server-api";
 import { ExternalLink, LogIn, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
+
+const PROVIDER_PRESET_TEMPLATE_IDS = new Set<string>(PROVIDER_PRESET_TYPES);
 
 import { AppStatusPill } from "../../../components/app-status-pill.js";
 import { ListSkeleton } from "../../../components/list-skeleton.js";
@@ -25,7 +28,10 @@ export function ConnectionTemplatesSection() {
     window.location.href = r.authUrl;
   };
 
-  const byCategory = groupByCategory(templates.data ?? []);
+  const visibleTemplates = (templates.data ?? []).filter(
+    (t) => !PROVIDER_PRESET_TEMPLATE_IDS.has(t.id),
+  );
+  const byCategory = groupByCategory(visibleTemplates);
   const iconByTemplateId = useMemo(() => {
     const m = new Map<string, string | undefined>();
     for (const t of templates.data ?? []) m.set(t.id, t.iconSlug);
