@@ -26,11 +26,10 @@
 
 ## Why DAM?
 
-- **☁️ Persistent Cloud Execution.** Agents continue running even after you disconnect, close your laptop, or lose internet access.
-- **🔐 Zero-Trust Credential Injection.** Credentials are injected at the network layer through an isolated gateway. The agent runtime never directly sees your tokens.
-- **👥 Multiplayer Agents.** Collaborate with shared agents through Slack. Every teammate authenticates independently with their own permissions and credentials.
-- **⏱️ Autonomous Scheduling.** Run agents unattended on recurring schedules for PR reviews, audits, maintenance tasks, reporting, or monitoring workflows.
-- **🖥️ Native Harness Experience.** Use real agent harnesses directly — not simulated wrappers or abstractions.
+- **☁️ Runs in the cloud.** Agents keep running even after you close your laptop or go offline.
+- **🔐 Zero trust credentials.** Credentials are injected securely through an isolated gateway. Agents never see or store your tokens.
+- **👥 Built for teams.** Use shared agents in Slack with individual authentication and permissions for every teammate.
+- **⏱️ Autonomous execution.** Run agents automatically on schedules for reviews, audits, monitoring, reporting, and recurring tasks.
 
 ---
 
