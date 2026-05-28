@@ -33,10 +33,10 @@
 
 | Mode | Description |
 |---|---|
-| **Web UI** | Browser-based chat, terminal streaming, logs, and native agent TUI access |
-| **CLI** | Create, manage, and attach to agents directly from your terminal |
-| **Slack** | Interact with agents collaboratively through Slack threads |
-| **Schedules** | Trigger autonomous agent runs on recurring timers |
+| **Web UI** | Chat with your agent, stream its terminal, and manage files — all from the browser. |
+| **CLI** | Create agents, attach to live sessions, and manage instances from your local terminal. |
+| **Slack** | Message your agent from Slack threads. Teammates interact with their own credentials. |
+| **Schedules** | Run agents on a recurring timer — daily code reviews, nightly audits, continuous monitoring. |
 
 ---
 
