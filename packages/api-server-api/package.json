@@ -6,13 +6,15 @@
   "main": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./router": "./src/router.ts"
+    "./router": "./src/router.ts",
+    "./harness-router": "./src/harness-router.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@trpc/server": "^11.16.0",
+    "agent-runtime-api": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {

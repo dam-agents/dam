@@ -1,25 +1,6 @@
-/**
- * Generic OAuth 2.1 authorization-code engine with PKCE.
- *
- * Reused by both the MCP-server flow (provider config built dynamically from
- * RFC 8414 metadata + RFC 7591 dynamic client registration) and the named-app
- * flow (provider config built statically by the OAuthApp registry — GitHub,
- * GitHub Enterprise, etc.). Token storage is not the engine's job — callers
- * pull the resulting `TokenSet` and write through whichever ports apply.
- *
- * State of in-flight flows lives in a Map keyed by the OAuth `state`
- * parameter. A janitor sweeps entries older than 10 minutes.
- */
 import crypto from "node:crypto";
 
-import type { ConnectionHostInjection } from "../domain/host-injection.js";
-
-export interface OAuthFlowProvider {
-  /**
-   * Stable provider id, primarily used in logs/diagnostics. Storage keying
-   * lives on `OAuthFlowMetadata.connectionKey` because per-flow providers
-   * (MCP, GHE) need a host-derived key, not a static one.
-   */
+export interface OAuthProvider {
   id: string;
   authorizationUrl: string;
   tokenEndpoint: string;
@@ -29,57 +10,18 @@ export interface OAuthFlowProvider {
   scopes?: string[];
   /**
    * GitHub's token endpoint returns `application/x-www-form-urlencoded`
-   * unless asked for JSON. MCP servers and most other providers always
-   * return JSON, so this is opt-in.
    */
   tokenEndpointAcceptJson?: boolean;
   /** Provider-specific authorize-URL params (e.g. `allow_signup=false`). */
   extraAuthParams?: Record<string, string>;
 }
 
-export interface OAuthFlowMetadata {
-  /** Storage key under which the resulting tokens land. */
-  connectionKey: string;
-  /**
-   * Hosts this connection injects on. Non-empty; first entry is the
-   * identity host. The controller fans this into one filter chain per
-   * entry. See `ConnectionHostInjection`.
-   */
-  hosts: readonly ConnectionHostInjection[];
-  /**
-   * Human-readable label saved on the resulting K8s Secret. The static apps
-   * derive this from the descriptor; the Generic app passes the user's
-   * input through so the connections list can show "Linear" instead of
-   * "generic-<hash>".
-   */
-  displayName?: string;
-  /**
-   * Pod env vars to inject into every agent granted access to this
-   * connection's K8s Secret. The placeholder is typically `dummy-placeholder`
-   * — the Envoy sidecar's credential_injector filter rewrites it to the
-   * real token at request time — but for env vars carrying literal config
-   * (e.g. `GH_HOST`) it can be a concrete value. Static apps populate this
-   * from the descriptor; Generic leaves it unset (no provider-specific
-   * tooling convention to enforce).
-   */
-  envMappings?: import("api-server-api").EnvMapping[];
-  /**
-   * GitHub App slug — set when the connection's credentials belong to a
-   * GitHub App (not an OAuth App). Threaded through the engine so the
-   * callback handler can persist it on the resulting K8s Secret without
-   * having to re-look-it-up via the registry.
-   */
-  appSlug?: string;
-}
-
-export interface PendingFlow {
-  provider: OAuthFlowProvider;
-  flow: OAuthFlowMetadata;
+export interface PendingFlow<Ctx = unknown> {
+  provider: OAuthProvider;
+  ctx: Ctx;
   codeVerifier: string;
   redirectUri: string;
   state: string;
-  userJwt: string;
-  userSub: string;
   createdAt: number;
 }
 
@@ -91,23 +33,18 @@ export interface TokenSet {
 }
 
 export interface OAuthEngine {
-  start(opts: {
-    provider: OAuthFlowProvider;
-    flow: OAuthFlowMetadata;
+  start<Ctx>(opts: {
+    provider: OAuthProvider;
     redirectUri: string;
-    userJwt: string;
-    userSub: string;
+    ctx: Ctx;
   }): { authUrl: string; state: string };
-  consume(state: string): PendingFlow | null;
+  peek<Ctx = unknown>(state: string): PendingFlow<Ctx> | null;
+  consume<Ctx = unknown>(state: string): PendingFlow<Ctx> | null;
   exchange(pending: PendingFlow, code: string): Promise<TokenSet>;
-}
-
-function generateCodeVerifier(): string {
-  return crypto.randomBytes(32).toString("base64url");
-}
-
-function generateCodeChallenge(verifier: string): string {
-  return crypto.createHash("sha256").update(verifier).digest("base64url");
+  refresh(opts: {
+    provider: OAuthProvider;
+    refreshToken: string;
+  }): Promise<TokenSet>;
 }
 
 interface TokenEndpointResponse {
@@ -116,14 +53,13 @@ interface TokenEndpointResponse {
   token_type?: string;
   expires_in?: number;
   scope?: string;
+  error?: string;
+  error_description?: string;
 }
 
 export interface CreateOAuthEngineOptions {
-  /** Override for tests. */
   now?: () => number;
-  /** Override for tests. */
   fetchImpl?: typeof fetch;
-  /** Pending-flow TTL. Default 10 minutes. */
   pendingFlowTtlMs?: number;
 }
 
@@ -133,10 +69,8 @@ export function createOAuthEngine(
   const now = opts?.now ?? (() => Date.now());
   const fetchImpl = opts?.fetchImpl ?? fetch;
   const ttlMs = opts?.pendingFlowTtlMs ?? 10 * 60 * 1000;
-  const pendingFlows = new Map<string, PendingFlow>();
+  const pendingFlows = new Map<string, PendingFlow<unknown>>();
 
-  // Lazy janitor — kicks off on first use rather than at module load so
-  // tests don't leak intervals.
   let janitor: ReturnType<typeof setInterval> | null = null;
   function ensureJanitor() {
     if (janitor != null) return;
@@ -149,23 +83,80 @@ export function createOAuthEngine(
     janitor.unref?.();
   }
 
+  async function postTokenEndpoint(
+    provider: OAuthProvider,
+    body: URLSearchParams,
+  ): Promise<TokenSet> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/x-www-form-urlencoded",
+    };
+    if (provider.tokenEndpointAcceptJson)
+      headers["Accept"] = "application/json";
+    const res = await fetchImpl(provider.tokenEndpoint, {
+      method: "POST",
+      headers,
+      body,
+    });
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error(
+        `OAuth token endpoint ${provider.id}: ${res.status} ${txt.slice(0, 500)}`,
+      );
+    }
+    const ct = res.headers.get("content-type") ?? "";
+    let data: Partial<TokenEndpointResponse>;
+    if (ct.includes("application/json")) {
+      data = (await res.json()) as Partial<TokenEndpointResponse>;
+    } else {
+      const text = await res.text();
+      const parsed = new URLSearchParams(text);
+      data = {
+        access_token: parsed.get("access_token") ?? undefined,
+        refresh_token: parsed.get("refresh_token") ?? undefined,
+        expires_in: parsed.get("expires_in")
+          ? Number(parsed.get("expires_in"))
+          : undefined,
+        error: parsed.get("error") ?? undefined,
+        error_description: parsed.get("error_description") ?? undefined,
+      };
+      if (!data.access_token && !data.error) {
+        throw new Error(
+          `OAuth token endpoint ${provider.id} returned non-JSON without access_token: ${text.slice(0, 200)}`,
+        );
+      }
+    }
+    if (!data.access_token) {
+      const detail =
+        data.error_description ?? data.error ?? "no access_token in response";
+      const code = data.error ? `${data.error}: ` : "";
+      throw new Error(
+        `OAuth ${provider.id} rejected by provider — ${code}${detail}`,
+      );
+    }
+    const tokens: TokenSet = { accessToken: data.access_token };
+    if (data.refresh_token) tokens.refreshToken = data.refresh_token;
+    if (data.expires_in)
+      tokens.expiresAt = Math.floor(now() / 1000) + data.expires_in;
+    return tokens;
+  }
+
   return {
-    start({ provider, flow, redirectUri, userJwt, userSub }) {
+    start({ provider, redirectUri, ctx }) {
       ensureJanitor();
-      const codeVerifier = generateCodeVerifier();
-      const codeChallenge = generateCodeChallenge(codeVerifier);
+      const codeVerifier = crypto.randomBytes(32).toString("base64url");
+      const codeChallenge = crypto
+        .createHash("sha256")
+        .update(codeVerifier)
+        .digest("base64url");
       const state = crypto.randomBytes(16).toString("hex");
-      const pending: PendingFlow = {
+      pendingFlows.set(state, {
         provider,
-        flow,
+        ctx,
         codeVerifier,
         redirectUri,
         state,
-        userJwt,
-        userSub,
         createdAt: now(),
-      };
-      pendingFlows.set(state, pending);
+      });
 
       const authUrl = new URL(provider.authorizationUrl);
       authUrl.searchParams.set("response_type", "code");
@@ -174,7 +165,7 @@ export function createOAuthEngine(
       authUrl.searchParams.set("state", state);
       authUrl.searchParams.set("code_challenge", codeChallenge);
       authUrl.searchParams.set("code_challenge_method", "S256");
-      if (provider.scopes && provider.scopes.length > 0) {
+      if (provider.scopes?.length) {
         authUrl.searchParams.set("scope", provider.scopes.join(" "));
       }
       for (const [k, v] of Object.entries(provider.extraAuthParams ?? {})) {
@@ -183,11 +174,15 @@ export function createOAuthEngine(
       return { authUrl: authUrl.toString(), state };
     },
 
-    consume(state) {
+    peek<Ctx = unknown>(state: string): PendingFlow<Ctx> | null {
+      return (pendingFlows.get(state) as PendingFlow<Ctx>) ?? null;
+    },
+
+    consume<Ctx = unknown>(state: string): PendingFlow<Ctx> | null {
       const pending = pendingFlows.get(state);
       if (!pending) return null;
       pendingFlows.delete(state);
-      return pending;
+      return pending as PendingFlow<Ctx>;
     },
 
     async exchange(pending, code) {
@@ -201,80 +196,19 @@ export function createOAuthEngine(
       if (pending.provider.clientSecret) {
         params.set("client_secret", pending.provider.clientSecret);
       }
-      const headers: Record<string, string> = {
-        "Content-Type": "application/x-www-form-urlencoded",
-      };
-      if (pending.provider.tokenEndpointAcceptJson) {
-        headers["Accept"] = "application/json";
-      }
-      const res = await fetchImpl(pending.provider.tokenEndpoint, {
-        method: "POST",
-        headers,
-        body: params,
+      return postTokenEndpoint(pending.provider, params);
+    },
+
+    async refresh({ provider, refreshToken }) {
+      const params = new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+        client_id: provider.clientId,
       });
-      if (!res.ok) {
-        const body = await res.text();
-        throw new Error(
-          `OAuth token exchange failed: ${res.status} ${body.slice(0, 500)}`,
-        );
+      if (provider.clientSecret) {
+        params.set("client_secret", provider.clientSecret);
       }
-      const contentType = res.headers.get("content-type") ?? "";
-      let data: Partial<TokenEndpointResponse> & {
-        error?: string;
-        error_description?: string;
-      };
-      if (contentType.includes("application/json")) {
-        data = (await res.json()) as typeof data;
-      } else {
-        // GitHub falls back to form-encoded if `Accept: application/json` was
-        // not set; tolerate that defensively.
-        const text = await res.text();
-        const parsed = new URLSearchParams(text);
-        const access_token = parsed.get("access_token");
-        const error = parsed.get("error");
-        data = {
-          ...(access_token ? { access_token } : {}),
-          ...(parsed.get("refresh_token")
-            ? { refresh_token: parsed.get("refresh_token")! }
-            : {}),
-          ...(parsed.get("token_type")
-            ? { token_type: parsed.get("token_type")! }
-            : {}),
-          ...(parsed.get("expires_in")
-            ? { expires_in: Number(parsed.get("expires_in")) }
-            : {}),
-          ...(parsed.get("scope") ? { scope: parsed.get("scope")! } : {}),
-          ...(error ? { error } : {}),
-          ...(parsed.get("error_description")
-            ? { error_description: parsed.get("error_description")! }
-            : {}),
-        };
-        if (!access_token && !error) {
-          throw new Error(
-            `OAuth token endpoint returned non-JSON without access_token: ${text.slice(0, 200)}`,
-          );
-        }
-      }
-
-      // GitHub (and some other providers) return HTTP 200 even on errors,
-      // with `{error, error_description, ...}` in the body. Catch it here
-      // before the missing access_token bubbles into a confusing
-      // downstream "expected string, received undefined" when the Secret
-      // is written.
-      if (!data.access_token) {
-        const detail =
-          data.error_description ?? data.error ?? "no access_token in response";
-        const code = data.error ? `${data.error}: ` : "";
-        throw new Error(
-          `OAuth token exchange rejected by provider — ${code}${detail}`,
-        );
-      }
-
-      const tokens: TokenSet = { accessToken: data.access_token };
-      if (data.refresh_token) tokens.refreshToken = data.refresh_token;
-      if (data.expires_in)
-        tokens.expiresAt = Math.floor(now() / 1000) + data.expires_in;
-      return tokens;
+      return postTokenEndpoint(provider, params);
     },
   };
 }

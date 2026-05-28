@@ -14,7 +14,11 @@ import {
 } from "./labels.js";
 
 export function generateK8sName(prefix: string): string {
-  return `${prefix}-${crypto.randomBytes(4).toString("hex")}`;
+  // 8 bytes / 16 hex chars — 64-bit keyspace makes collisions effectively
+  // impossible (birthday probability at 1M IDs ever issued is ~2.7e-8),
+  // so onConflictDoUpdate paths can safely refresh ownership without
+  // worrying about stomping a live unrelated row.
+  return `${prefix}-${crypto.randomBytes(8).toString("hex")}`;
 }
 
 export function specYaml(cm: k8s.V1ConfigMap): unknown {

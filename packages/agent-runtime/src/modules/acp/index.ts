@@ -1,2 +1,1 @@
-// No cross-module domain events are published from this module yet.
-export {};
+export type { TriggerSessionDriver } from "./services/trigger-session-driver.js";

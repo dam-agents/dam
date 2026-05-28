@@ -26,6 +26,7 @@ import {
   AgentRuntimeUpstreamError,
   type AgentRuntimeSkillsClient,
 } from "../infrastructure/agent-runtime-client.js";
+import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import { detectHost } from "../infrastructure/git-host.js";
 import { PublicArchiveNotFoundError } from "../infrastructure/public-archive-scanner.js";
 import { publishSkill as runPublishSkill } from "./publish-service.js";
@@ -57,6 +58,7 @@ export interface SkillsServiceDeps {
    *  `system: true` and protected from deletion. */
   seedSources: SkillSourceSeed[];
   runtimeClient: AgentRuntimeSkillsClient;
+  runtimeMutator: RuntimeMutator;
   owner: string;
   /** Scan via the provided scanner with a shared TTL cache. The cache key is
    *  the gitUrl alone — results are user-independent. */
@@ -362,34 +364,18 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     },
 
     async install(input: SkillInstallInput) {
-      const infra = await loadRunningInstance(deps, input.agentId);
-      const skillPaths = await resolveSkillPaths(deps, infra.id);
+      await loadRunningInstance(deps, input.agentId);
 
-      let result;
-      try {
-        result = await deps.runtimeClient.install(input.agentId, {
-          source: input.source,
-          name: input.name,
-          version: input.version,
-          skillPaths,
-        });
-      } catch (err) {
-        if (err instanceof AgentRuntimeUpstreamError) throw upstreamToTrpc(err);
-        throw err;
-      }
-
-      // Prefer the scan-time contentHash carried by the UI (stable snapshot
-      // of what the user *intended* to install). Fall back to the hash the
-      // agent-runtime returned for MCP-initiated installs that skip the
-      // scan round-trip.
-      const contentHash = input.contentHash ?? result.contentHash;
       const ref: SkillRef = {
         source: input.source,
         name: input.name,
         version: input.version,
-        contentHash,
+        ...(input.contentHash !== undefined
+          ? { contentHash: input.contentHash }
+          : {}),
       };
       await deps.agentSkillsRepo.upsertSkill(input.agentId, ref);
+      await deps.runtimeMutator.enqueueAfterCommit(input.agentId);
       const current = await deps.agentSkillsRepo.listSkills(input.agentId);
       return upsertSkillRef(
         current.filter(
@@ -400,18 +386,13 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     },
 
     async uninstall(input: SkillUninstallInput) {
-      const infra = await loadRunningInstance(deps, input.agentId);
-      const skillPaths = await resolveSkillPaths(deps, infra.id);
-
-      await deps.runtimeClient.uninstall(input.agentId, {
-        name: input.name,
-        skillPaths,
-      });
+      await loadRunningInstance(deps, input.agentId);
 
       await deps.agentSkillsRepo.removeSkill(input.agentId, {
         source: input.source,
         name: input.name,
       });
+      await deps.runtimeMutator.enqueueAfterCommit(input.agentId);
       const current = await deps.agentSkillsRepo.listSkills(input.agentId);
       return removeSkillRef(current, {
         source: input.source,

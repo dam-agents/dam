@@ -55,6 +55,11 @@ RUN chmod +x /usr/local/bin/harness-chat /usr/local/bin/harness-terminal
 COPY packages/platform-base/skills/ /app/working-dir/.agents/skills/
 COPY packages/platform-base/working-dir/.claude.json /app/working-dir/.claude.json
 COPY packages/platform-base/working-dir/.claude/settings.json /app/working-dir/.claude/settings.json
+# ADR-052: runtime-manifest.yaml — every agent image ships one. Lives
+# at /app/runtime-manifest.yaml (outside working-dir/) so the init
+# seed cp -rn ... $HOME doesn't shadow it on the user's PV. Per-image
+# overrides are COPY'd later in derived Dockerfiles.
+COPY packages/platform-base/runtime-manifest.yaml /app/runtime-manifest.yaml
 RUN mkdir -p /app/working-dir/.claude /app/working-dir/.pi/agent \
     && ln -s ../.agents/skills /app/working-dir/.claude/skills \
     && ln -s ../../.agents/skills /app/working-dir/.pi/agent/skills \

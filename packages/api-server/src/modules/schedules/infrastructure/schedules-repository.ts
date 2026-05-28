@@ -1,100 +1,178 @@
-import type { Schedule } from "api-server-api";
+import { randomBytes } from "node:crypto";
+import { and, asc, eq, type Db, schedules as schedulesTable } from "db";
+import type { Schedule, ScheduleSpec } from "api-server-api";
 import { scheduleSpecSchema } from "api-server-api";
-import yaml from "js-yaml";
-import type { K8sClient } from "../../agents/infrastructure/k8s.js";
-import {
-  LABEL_TYPE,
-  TYPE_SCHEDULE,
-  TYPE_AGENT,
-  LABEL_OWNER,
-  LABEL_AGENT_REF,
-  SPEC_KEY,
-} from "../../agents/infrastructure/labels.js";
-import {
-  hasType,
-  isOwnedBy,
-} from "../../agents/infrastructure/configmap-mappers.js";
-import { parseSchedule, buildScheduleConfigMap } from "./configmap-mappers.js";
 
 export interface SchedulesRepository {
   list(agentId: string, owner: string): Promise<Schedule[]>;
   get(id: string, owner: string): Promise<Schedule | null>;
-  create(
-    agentId: string,
-    spec: Record<string, unknown>,
-    owner: string,
-  ): Promise<Schedule>;
-  update(
+  getById(id: string): Promise<Schedule | null>;
+  getOwnerById(id: string): Promise<string | null>;
+  listAllEnabled(): Promise<Schedule[]>;
+  create(input: {
+    agentId: string;
+    owner: string;
+    name: string;
+    spec: ScheduleSpec;
+  }): Promise<Schedule>;
+  updateSpec(
     id: string,
-    patch: Record<string, unknown>,
     owner: string,
+    spec: ScheduleSpec,
   ): Promise<Schedule | null>;
+  updateName(id: string, owner: string, name: string): Promise<Schedule | null>;
   delete(id: string, owner: string): Promise<void>;
   toggle(id: string, owner: string): Promise<Schedule | null>;
-  agentExists(agentId: string, owner: string): Promise<boolean>;
+  recordFire(id: string, result: string, nextRun: Date | null): Promise<void>;
+  setNextRun(id: string, nextRun: Date | null): Promise<void>;
 }
 
-export function createSchedulesRepository(k8s: K8sClient): SchedulesRepository {
-  async function getOwned(id: string, owner: string) {
-    const cm = await k8s.getConfigMap(id);
-    if (!cm || !isOwnedBy(cm, owner)) return null;
-    return cm;
-  }
+interface InternalRow {
+  id: string;
+  agentId: string;
+  owner: string;
+  name: string;
+  spec: unknown;
+  enabled: boolean;
+  nextRun: Date | null;
+  lastFiredAt: Date | null;
+  lastFiredResult: string | null;
+}
 
+function rowToSchedule(row: InternalRow): Schedule {
+  const spec = scheduleSpecSchema.parse(row.spec);
+  spec.enabled = row.enabled;
+  const status: Schedule["status"] = {
+    ...(row.lastFiredAt ? { lastRun: row.lastFiredAt.toISOString() } : {}),
+    ...(row.nextRun ? { nextRun: row.nextRun.toISOString() } : {}),
+    ...(row.lastFiredResult ? { lastResult: row.lastFiredResult } : {}),
+  };
   return {
-    async list(agentId, owner) {
-      const cms = await k8s.listConfigMaps(
-        `${LABEL_TYPE}=${TYPE_SCHEDULE},${LABEL_AGENT_REF}=${agentId},${LABEL_OWNER}=${owner}`,
-      );
-      return cms.map(parseSchedule);
+    id: row.id,
+    agentId: row.agentId,
+    name: row.name,
+    spec,
+    ...(Object.keys(status).length > 0 ? { status } : {}),
+  };
+}
+
+export function createSchedulesRepository(db: Db): SchedulesRepository {
+  return {
+    async list(agentId, owner): Promise<Schedule[]> {
+      const rows = (await db
+        .select()
+        .from(schedulesTable)
+        .where(
+          and(
+            eq(schedulesTable.agentId, agentId),
+            eq(schedulesTable.owner, owner),
+          ),
+        )
+        .orderBy(asc(schedulesTable.createdAt))) as InternalRow[];
+      return rows.map(rowToSchedule);
     },
 
-    async get(id, owner) {
-      const cm = await getOwned(id, owner);
-      if (!cm) return null;
-      return parseSchedule(cm);
+    async get(id, owner): Promise<Schedule | null> {
+      const rows = (await db
+        .select()
+        .from(schedulesTable)
+        .where(
+          and(eq(schedulesTable.id, id), eq(schedulesTable.owner, owner)),
+        )) as InternalRow[];
+      return rows[0] ? rowToSchedule(rows[0]) : null;
     },
 
-    async create(agentId, spec, owner) {
-      const body = buildScheduleConfigMap(agentId, spec, owner);
-      const created = await k8s.createConfigMap(body);
-      return parseSchedule(created);
+    async getById(id): Promise<Schedule | null> {
+      const rows = (await db
+        .select()
+        .from(schedulesTable)
+        .where(eq(schedulesTable.id, id))) as InternalRow[];
+      return rows[0] ? rowToSchedule(rows[0]) : null;
     },
 
-    async update(id, patch, owner) {
-      const cm = await getOwned(id, owner);
-      if (!cm) return null;
-      const current = yaml.load(cm.data?.[SPEC_KEY] ?? "") as Record<
-        string,
-        unknown
-      >;
-      const nextSpec = { ...current, ...patch };
-      cm.data = { ...cm.data, [SPEC_KEY]: yaml.dump(nextSpec) };
-      const updated = await k8s.replaceConfigMap(id, cm);
-      return parseSchedule(updated);
+    async getOwnerById(id): Promise<string | null> {
+      const rows = (await db
+        .select({ owner: schedulesTable.owner })
+        .from(schedulesTable)
+        .where(eq(schedulesTable.id, id))) as { owner: string }[];
+      return rows[0]?.owner ?? null;
     },
 
-    async delete(id, owner) {
-      const cm = await getOwned(id, owner);
-      if (!cm) return;
-      await k8s.deleteConfigMap(id);
+    async listAllEnabled(): Promise<Schedule[]> {
+      const rows = (await db
+        .select()
+        .from(schedulesTable)
+        .where(eq(schedulesTable.enabled, true))) as InternalRow[];
+      return rows.map(rowToSchedule);
     },
 
-    async toggle(id, owner) {
-      const cm = await getOwned(id, owner);
-      if (!cm) return null;
-      const spec = scheduleSpecSchema.parse(
-        yaml.load(cm.data?.[SPEC_KEY] ?? ""),
-      );
-      spec.enabled = !spec.enabled;
-      cm.data = { ...cm.data, [SPEC_KEY]: yaml.dump(spec) };
-      const updated = await k8s.replaceConfigMap(id, cm);
-      return parseSchedule(updated);
+    async create(input): Promise<Schedule> {
+      const id = `sched-${randomBytes(6).toString("hex")}`;
+      await db.insert(schedulesTable).values({
+        id,
+        agentId: input.agentId,
+        owner: input.owner,
+        name: input.name,
+        spec: input.spec,
+        enabled: input.spec.enabled,
+      });
+      const result = await this.get(id, input.owner);
+      if (!result)
+        throw new Error(`create: schedule ${id} not found after insert`);
+      return result;
     },
 
-    async agentExists(agentId, owner) {
-      const cm = await k8s.getConfigMap(agentId);
-      return cm !== null && hasType(cm, TYPE_AGENT) && isOwnedBy(cm, owner);
+    async updateSpec(id, owner, spec): Promise<Schedule | null> {
+      const result = await db
+        .update(schedulesTable)
+        .set({ spec, enabled: spec.enabled, updatedAt: new Date() })
+        .where(and(eq(schedulesTable.id, id), eq(schedulesTable.owner, owner)))
+        .returning();
+      if (result.length === 0) return null;
+      return this.get(id, owner);
+    },
+
+    async updateName(id, owner, name): Promise<Schedule | null> {
+      const result = await db
+        .update(schedulesTable)
+        .set({ name, updatedAt: new Date() })
+        .where(and(eq(schedulesTable.id, id), eq(schedulesTable.owner, owner)))
+        .returning();
+      if (result.length === 0) return null;
+      return this.get(id, owner);
+    },
+
+    async delete(id, owner): Promise<void> {
+      await db
+        .delete(schedulesTable)
+        .where(and(eq(schedulesTable.id, id), eq(schedulesTable.owner, owner)));
+    },
+
+    async toggle(id, owner): Promise<Schedule | null> {
+      const current = await this.get(id, owner);
+      if (!current) return null;
+      const enabled = !current.spec.enabled;
+      const spec: ScheduleSpec = { ...current.spec, enabled };
+      return this.updateSpec(id, owner, spec);
+    },
+
+    async recordFire(id, result, nextRun): Promise<void> {
+      await db
+        .update(schedulesTable)
+        .set({
+          lastFiredAt: new Date(),
+          lastFiredResult: result,
+          nextRun,
+          updatedAt: new Date(),
+        })
+        .where(eq(schedulesTable.id, id));
+    },
+
+    async setNextRun(id, nextRun): Promise<void> {
+      await db
+        .update(schedulesTable)
+        .set({ nextRun, updatedAt: new Date() })
+        .where(eq(schedulesTable.id, id));
     },
   };
 }

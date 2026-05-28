@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const skillInstallInputSchema = z.object({
-  source: z.string().min(1),
+  sourceUrl: z.string().min(1),
   name: z.string().min(1),
   version: z.string().min(1),
   skillPaths: z.array(z.string().min(1)).min(1),

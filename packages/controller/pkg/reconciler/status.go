@@ -16,10 +16,6 @@ func WriteAgentStatus(ctx context.Context, client kubernetes.Interface, namespac
 	return writeStatus(ctx, client, namespace, name, status)
 }
 
-func WriteScheduleStatus(ctx context.Context, client kubernetes.Interface, namespace, name string, status *types.ScheduleStatus) error {
-	return writeStatus(ctx, client, namespace, name, status)
-}
-
 func WriteForkStatus(ctx context.Context, client kubernetes.Interface, namespace, name string, status *types.ForkStatus) error {
 	return writeStatus(ctx, client, namespace, name, status)
 }

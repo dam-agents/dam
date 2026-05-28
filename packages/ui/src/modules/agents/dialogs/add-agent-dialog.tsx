@@ -1,4 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+import type { AppConnectionView } from "api-server-api";
 import {
   File as FileIcon,
   Folder as FolderIcon,
@@ -23,14 +24,8 @@ import {
   Modal,
 } from "../../../components/modal.js";
 import type { EgressPreset, EnvVar, TemplateView } from "../../../types.js";
-import {
-  APP_OAUTH_SECRET_PREFIX,
-  isProviderPresetType,
-} from "../../../types.js";
-import {
-  useAppConnections,
-  useOAuthAppConnections,
-} from "../../connections/api/queries.js";
+import { isProviderPresetType } from "../../../types.js";
+import { useAppConnections } from "../../connections/api/queries.js";
 import {
   type BundleEntry,
   filterImportEntries,
@@ -162,8 +157,6 @@ export function AddAgentDialog({
 
   const { data: secrets = [], isLoading: loadSecrets } = useSecrets();
   const { data: apps = [] } = useAppConnections();
-  const { data: oauthAppConnections = [] } = useOAuthAppConnections();
-
   const {
     register,
     handleSubmit,
@@ -226,24 +219,7 @@ export function AddAgentDialog({
   // Join the api-server-driven OAuth app connections with their K8s
   // credential Secrets so the picker can render them in the "Apps"
   // subsection while the grant flows through the secret-access mechanism.
-  const oauthAppEntries = useMemo<OAuthAppEntry[]>(() => {
-    const secretByName = new Map(secrets.map((s) => [s.name, s]));
-    return oauthAppConnections.flatMap((conn) => {
-      const mirror = secretByName.get(
-        `${APP_OAUTH_SECRET_PREFIX}${conn.connectionId}`,
-      );
-      if (!mirror) return [];
-      return [
-        {
-          secretId: mirror.id,
-          appId: conn.appId,
-          displayName: conn.displayName,
-          hosts: conn.hosts,
-          expired: conn.expired,
-        },
-      ];
-    });
-  }, [oauthAppConnections, secrets]);
+  const oauthAppEntries: OAuthAppEntry[] = [];
 
   const pickTemplate = (tmpl: TemplateView) => {
     setSelectedTemplate(tmpl);
@@ -618,7 +594,7 @@ export function AddAgentDialog({
             <ConnectionsPicker
               loading={loadSecrets}
               secrets={secrets}
-              apps={apps}
+              apps={apps as unknown as AppConnectionView[]}
               oauthApps={oauthAppEntries}
               selSecrets={selSecretsSet}
               selApps={selAppsSet}

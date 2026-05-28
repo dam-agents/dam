@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { TRPCClientError } from "@trpc/client";
 
+import { api } from "../../../api.js";
 import { queryClient } from "../../../query-client.js";
 import { createAgentTrpc } from "../../agents/agent-trpc.js";
 
@@ -239,15 +240,12 @@ export async function uploadMessageAttachment(
 export function useFileUploadMutation(agentId: string | null) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: {
+    mutationFn: (input: {
       path: string;
       contentBase64: string;
       contentType?: string;
       overwrite?: boolean;
-    }) => {
-      const trpc = getAgentTrpc(agentId!);
-      return trpc.files.upload.mutate(input);
-    },
+    }) => api.files.upload.mutate({ agentId: agentId!, ...input }),
     onSuccess: (_data, vars) => {
       if (agentId) invalidateFiles(qc, agentId, vars.path);
     },

@@ -91,7 +91,7 @@ A React + Vite single-page app served by the api-server. It uses tRPC over HTTP 
 
 | Edge | Protocol | Purpose |
 |------|----------|---------|
-| ui → api-server (`<rel>-apiserver`) | tRPC over HTTP | CRUD on templates, agents, schedules, sessions |
+| ui → api-server (`<rel>-apiserver`) | tRPC over HTTP | Resource CRUD and single-file uploads |
 | ui → api-server | WebSocket (ACP, JSON-RPC 2.0) | Live chat session, permission prompts, streaming output; also carries `platform/sessionModeChanged` notifications for cross-client mode sync |
 | ui → api-server | WebSocket (binary terminal frames) | Live terminal session — input / output / resize / exit, see [ADR-037](../adrs/037-remote-terminal.md) |
 | cli → api-server | tRPC over HTTP | Session CRUD + `resolveTerminal`, agent resolution, auth (same tRPC surface the UI uses) |
@@ -99,7 +99,7 @@ A React + Vite single-page app served by the api-server. It uses tRPC over HTTP 
 | api-server → agent-runtime | WebSocket (ACP, JSON-RPC 2.0) | Chat-mode relay target — one hop, no fan-out |
 | api-server → agent-runtime | WebSocket (binary terminal frames) | Terminal-mode relay target — one hop, single client per session |
 | api-server → agent-runtime | HTTP (tRPC proxy) | In-pod file operations surfaced to the UI |
-| ui → api-server → agent-runtime | HTTP (multipart, streamed) | Bundled file import — single streamed roundtrip, no buffering on the relay; per-file merge into `<homeDir>/work` |
+| ui → api-server → agent-runtime, cli → api-server → agent-runtime | HTTP (multipart, streamed) | Bundled file import (UI bulk, CLI `dam import`) |
 | agent-runtime → api-server (`<rel>-apiserver-harness`, via paired gateway → Istio waypoint) | HTTP | MCP tool access, pod-files SSE, `/api/agents/:id/internal/trigger` (ADR-041) |
 | gateway → api-server (`<rel>-extauthz-<id>`) | gRPC | HITL ext_authz Check; per-agent Service pinned by AuthorizationPolicy to the gateway's SA principal (ADR-041) |
 | controller → K8s API | watch / list / write | Resource reconciliation and status writes |

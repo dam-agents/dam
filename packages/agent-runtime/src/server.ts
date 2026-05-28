@@ -2,7 +2,6 @@ import http from "node:http";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { readFileSync, writeFileSync } from "node:fs";
 import headlessPkg from "@xterm/headless";
 const { Terminal: HeadlessTerminal } = headlessPkg;
 import serializePkg from "@xterm/addon-serialize";
@@ -26,10 +25,12 @@ import { composeSkills } from "./modules/skills/index.js";
 import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
 import { createWebSocketChannel } from "./modules/acp/infrastructure/create-websocket-channel.js";
-import { startTriggerWatcher, type TriggerWatcher } from "./trigger-watcher.js";
-import { startPodFilesSync } from "./modules/pod-files/index.js";
-
-let triggerWatcher: TriggerWatcher | undefined;
+import {
+  composeRuntimeChannel,
+  createFilePlugin,
+  createMcpEntryPlugin,
+  createSkillInstallPlugin,
+} from "./modules/runtime-channel/index.js";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const homeDir = config.PLATFORM_DEV
@@ -46,6 +47,29 @@ const skillsService = composeSkills();
 const importHandlers = createImportHandlers(homeDir, workDir, (msg) =>
   process.stderr.write(`[import] ${msg}\n`),
 );
+
+const { runtime: acpRuntime, triggerDriver } = composeAcp({
+  command: config.PLATFORM_DEV
+    ? ["npx", "tsx", join(__dir, "agent.ts")]
+    : ["/usr/local/bin/harness-chat"],
+  workingDir: workDir,
+  log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
+});
+
+const runtimeChannel = await composeRuntimeChannel({
+  manifestPath: config.PLATFORM_DEV
+    ? join(__dir, "../../platform-base/runtime-manifest.yaml")
+    : join(__dir, "../runtime-manifest.yaml"),
+  agentHome: homeDir,
+  apiServerUrl: config.API_SERVER_URL,
+  agentId: process.env.PLATFORM_AGENT_ID ?? process.env.HOSTNAME ?? "unknown",
+  triggerDriver,
+  plugins: [
+    createFilePlugin(),
+    createMcpEntryPlugin(),
+    createSkillInstallPlugin({ install: skillsService.install }),
+  ],
+});
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -68,16 +92,9 @@ const trpcHandler = createHTTPHandler({
   createContext: (): AgentRuntimeContext => ({
     files: filesService,
     skills: skillsService,
+    runtime: runtimeChannel.service,
   }),
   maxBodySize: TRPC_MAX_BODY_SIZE,
-});
-
-const { runtime: acpRuntime } = composeAcp({
-  command: config.PLATFORM_DEV
-    ? ["npx", "tsx", join(__dir, "agent.ts")]
-    : ["/usr/local/bin/harness-chat"],
-  workingDir: workDir,
-  log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
 });
 
 interface PtySlot {
@@ -244,7 +261,6 @@ const server = http.createServer((req, res) => {
       pendingRequests: s.pendingRequestCount,
       queuedPrompts: s.queuedPromptCount,
       agentAlive: s.agentAlive,
-      activeTriggers: triggerWatcher?.activeCount() ?? 0,
       terminalActive: ptySlots.size > 0,
     };
     res
@@ -301,25 +317,6 @@ server.on("upgrade", (req, socket, head) => {
   }
 });
 
-if (config.PLATFORM_MCP_URL) {
-  const mcpPath = join(workDir, ".mcp.json");
-  let mcpConfig: Record<string, unknown> = {};
-  try {
-    mcpConfig = JSON.parse(readFileSync(mcpPath, "utf8"));
-  } catch {}
-  const mcpServers = (mcpConfig.mcpServers ?? {}) as Record<string, unknown>;
-  // No Authorization header: the api-server's harness port identifies the
-  // caller by source IP (NetworkPolicy admits only agent pods, podIpResolver
-  // maps IP → agent label). See ADR-035.
-  mcpServers["platform-outbound"] = {
-    type: "http",
-    url: config.PLATFORM_MCP_URL,
-  };
-  mcpConfig.mcpServers = mcpServers;
-  writeFileSync(mcpPath, JSON.stringify(mcpConfig, null, 2));
-  process.stderr.write(`[mcp] Wrote platform-outbound to ${mcpPath}\n`);
-}
-
 // Configure git to use gh's credential helper. git doesn't know about
 // GH_TOKEN directly, so without this it prompts for a username on private
 // repos. With this, git asks `gh auth git-credential`, gets the sentinel,
@@ -364,19 +361,8 @@ server.listen(config.PORT, () => {
     process.stderr.write(`[import] ${msg}\n`),
   );
 
-  triggerWatcher = startTriggerWatcher({
-    triggersDir: config.TRIGGERS_DIR,
-    apiServerUrl: config.API_SERVER_URL,
-    agentId: process.env.PLATFORM_AGENT_ID ?? process.env.HOSTNAME ?? "unknown",
+  void runtimeChannel.helloOnBoot({
+    agentRuntimeVersion:
+      process.env.PLATFORM_AGENT_VERSION ?? "agent-runtime/unknown",
   });
-
-  // Pod-files sync: opt-in via env. The reconciler sets the URL on agent
-  // pods only — forks deliberately don't get it (they're per-turn jobs and
-  // don't read pod-files state). See 034-pod-files-push.md.
-  if (config.PLATFORM_POD_FILES_EVENTS_URL) {
-    startPodFilesSync({
-      url: config.PLATFORM_POD_FILES_EVENTS_URL,
-      agentHome: homeDir,
-    });
-  }
 });

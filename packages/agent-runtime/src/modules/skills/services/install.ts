@@ -29,7 +29,7 @@ export async function runInstall(
   return deps.repo.withTempDir("platform-skill-", async (tmp) => {
     const fetched = await fetchSourceAtVersion(
       deps,
-      input.source,
+      input.sourceUrl,
       input.version,
       tmp,
     );
@@ -39,7 +39,11 @@ export async function runInstall(
     if (!srcDirRes.ok) {
       // Re-tag with the original source URL — the tmpdir path inside the
       // repo's resolveSkillDirInClone result isn't useful to callers.
-      return err({ kind: "SkillNotFoundInSource", source: input.source, name });
+      return err({
+        kind: "SkillNotFoundInSource",
+        source: input.sourceUrl,
+        name,
+      });
     }
 
     const { contentHash } = await deps.repo.writeFromDir(

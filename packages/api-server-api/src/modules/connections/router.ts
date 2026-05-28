@@ -1,11 +1,43 @@
 import { t } from "../../trpc.js";
 import {
+  connectionCreateInputSchema,
+  connectionDiscoverMcpInputSchema,
   connectionGetAgentConnectionsInputSchema,
+  connectionIdInputSchema,
   connectionSetAgentConnectionsInputSchema,
+  connectionStartOAuthInputSchema,
 } from "./schemas.js";
 
 export const connectionsRouter = t.router({
-  list: t.procedure.query(({ ctx }) => ctx.connections.list()),
+  listTemplates: t.procedure.query(({ ctx }) =>
+    ctx.connections.listTemplates(),
+  ),
+
+  list: t.procedure.query(({ ctx }) => ctx.connections.listConnections()),
+
+  get: t.procedure
+    .input(connectionIdInputSchema)
+    .query(({ ctx, input }) => ctx.connections.getConnection(input.id)),
+
+  create: t.procedure
+    .input(connectionCreateInputSchema)
+    .mutation(({ ctx, input }) =>
+      ctx.connections.createFromTemplate(input).then((id) => ({ id })),
+    ),
+
+  startOAuth: t.procedure
+    .input(connectionStartOAuthInputSchema)
+    .mutation(({ ctx, input }) =>
+      ctx.connections.startOAuth(input.connectionId),
+    ),
+
+  discoverMcp: t.procedure
+    .input(connectionDiscoverMcpInputSchema)
+    .mutation(({ ctx, input }) => ctx.connections.discoverMcp(input)),
+
+  delete: t.procedure
+    .input(connectionIdInputSchema)
+    .mutation(({ ctx, input }) => ctx.connections.deleteConnection(input.id)),
 
   getAgentConnections: t.procedure
     .input(connectionGetAgentConnectionsInputSchema)

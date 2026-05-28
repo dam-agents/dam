@@ -8,11 +8,17 @@ function styleFor(status: Status): {
   label: string;
 } {
   switch (status) {
-    case "connected":
+    case "active":
       return {
         pillClass: "bg-success-light text-success border-success",
         dotClass: "bg-success",
         label: "Connected",
+      };
+    case "pending":
+      return {
+        pillClass: "bg-surface-raised text-text-muted border-border-light",
+        dotClass: "bg-text-muted",
+        label: "Pending",
       };
     case "expired":
       return {
@@ -25,12 +31,6 @@ function styleFor(status: Status): {
         pillClass: "bg-surface-raised text-text-muted border-border-light",
         dotClass: "bg-text-muted",
         label: "Disconnected",
-      };
-    case "unknown":
-      return {
-        pillClass: "bg-surface-raised text-text-muted border-border-light",
-        dotClass: "bg-text-muted",
-        label: "Unknown",
       };
     default:
       return {

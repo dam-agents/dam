@@ -24,7 +24,16 @@
       "protobufjs@<7.5.8": "7.5.8",
       "serialize-javascript@<7.0.5": "7.0.5",
       "ws@8.20.0": "8.20.1"
-    }
+    },
+    "onlyBuiltDependencies": [
+      "@google/genai",
+      "esbuild",
+      "grpc-tools",
+      "koffi",
+      "msgpackr-extract",
+      "protobufjs",
+      "sharp"
+    ]
   },
   "devDependencies": {
     "eslint": "^10.2.0",

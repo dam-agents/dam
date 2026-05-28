@@ -8,8 +8,6 @@ import { Sidebar } from "./components/sidebar.js";
 import { ToastOverlay } from "./components/toast-overlay.js";
 import { ListView } from "./modules/agents/views/list-view.js";
 import { InboxView } from "./modules/approvals/views/inbox-view.js";
-import { fetchOAuthAppConnections } from "./modules/connections/api/fetchers.js";
-import { appInstallUrl } from "./modules/connections/lib/install-url.js";
 import { ConnectionsView } from "./modules/connections/views/connections-view.js";
 import { AgentEgressView } from "./modules/egress-rules/views/agent-egress-view.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
@@ -41,7 +39,6 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     const oauthResult = params.get("oauth");
     if (!oauthResult) return;
-    const connectedApp = params.get("app");
     window.history.replaceState({}, "", window.location.pathname);
     if (oauthResult === "error") {
       useStore.getState().showToast({
@@ -50,39 +47,11 @@ export default function App() {
       });
       return;
     }
-    // GitHub App install nudge: when the just-stored connection carries an
-    // `appSlug`, surface a sticky toast that lets the user install the app
-    // on their GitHub account in a new tab. GitHub Apps see no private data
-    // without an installation, so doing nothing leaves the user confused
-    // when subsequent agent calls 404. We don't force the install (already
-    // installed users would land on a dead-end management page with no
-    // way back); the toast's Cancel button just dismisses.
-    if (oauthResult === "success" && connectedApp) {
-      void (async () => {
-        try {
-          const connections = await fetchOAuthAppConnections();
-          const conn = connections.find((c) => c.connectionId === connectedApp);
-          if (!conn) return;
-          const installUrl = appInstallUrl(conn);
-          if (!installUrl) return;
-          useStore.getState().showToast({
-            kind: "info",
-            ttl: 0,
-            message: `${conn.displayName} connected. Install the GitHub App on your account to grant access to private repos.`,
-            action: {
-              label: "Install",
-              onClick: () =>
-                window.open(installUrl, "_blank", "noopener,noreferrer"),
-            },
-            secondaryAction: { label: "Cancel" },
-          });
-        } catch {
-          // Fetch failure is non-fatal — the connections view will refetch
-          // on its own and still surface the "Install to repository" link
-          // on the new connection row. The toast is a nudge, not the
-          // only path.
-        }
-      })();
+    if (oauthResult === "success") {
+      useStore.getState().showToast({
+        kind: "success",
+        message: "Connection authorized.",
+      });
     }
   }, []);
 
