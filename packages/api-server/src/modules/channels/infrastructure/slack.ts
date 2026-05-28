@@ -175,7 +175,9 @@ export function createSlackWorker(
     try {
       await app.client.chat.postEphemeral({ channel, user, text });
     } catch (err) {
-      process.stderr.write(`[slack] postEphemeral failed: ${formatError(err)}\n`);
+      process.stderr.write(
+        `[slack] postEphemeral failed: ${formatError(err)}\n`,
+      );
     }
   }
 
@@ -257,7 +259,9 @@ export function createSlackWorker(
       );
       outcome = "success";
     } catch (err) {
-      process.stderr.write(`[${instanceName}] ACP error: ${formatError(err)}\n`);
+      process.stderr.write(
+        `[${instanceName}] ACP error: ${formatError(err)}\n`,
+      );
       await app.client.chat.postMessage({
         channel: ctx.channel,
         thread_ts: ctx.threadTs,
@@ -514,10 +518,7 @@ export function createSlackWorker(
     const text = parts.join("\n\n");
 
     if (ctx.images.length === 0) return text;
-    return [
-      { type: "text", text },
-      ...ctx.images.map((i) => i.block),
-    ];
+    return [{ type: "text", text }, ...ctx.images.map((i) => i.block)];
   }
 
   async function handleCommand({ command, ack }: SlackCommandMiddlewareArgs) {
