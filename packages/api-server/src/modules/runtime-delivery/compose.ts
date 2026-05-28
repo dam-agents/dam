@@ -19,6 +19,10 @@ import {
   type StateBuilder,
 } from "./services/state-builder.js";
 import {
+  createBuiltinContributions,
+  type BuiltinContributions,
+} from "./services/builtin-contributions.js";
+import {
   createWorkerHandler,
   type IsAgentRunning,
 } from "./services/worker-handler.js";
@@ -38,6 +42,7 @@ export interface RuntimeDeliveryComposition {
   hello: RuntimeDeliveryService;
   runtimeMutator: RuntimeMutator;
   stateBuilder: StateBuilder;
+  builtin: BuiltinContributions;
 }
 
 export interface ComposeRuntimeDeliveryOpts {
@@ -45,6 +50,10 @@ export interface ComposeRuntimeDeliveryOpts {
   namespace: string;
   bullConnection: ConnectionOptions;
   agentRunningPort: IsAgentRunning;
+  /** Base URL of the api-server harness Service used to render the
+   *  `platform-outbound` builtin MCP entry (e.g.
+   *  `http://<rel>-apiserver-harness.<rel-ns>.svc.cluster.local:4001`). */
+  harnessBaseUrl: string;
   log?: (msg: string) => void;
 }
 
@@ -55,7 +64,10 @@ export function composeRuntimeDelivery(
 
   const outboxRepo = createOutboxRepo(opts.db);
   const agentsRuntimeRepo = createAgentsRuntimeRepo(opts.db);
-  const stateBuilder = createStateBuilder({ db: opts.db, outboxRepo });
+  const builtin = createBuiltinContributions({
+    harnessBaseUrl: opts.harnessBaseUrl,
+  });
+  const stateBuilder = createStateBuilder({ db: opts.db, outboxRepo, builtin });
   const queue = createStateQueue(opts.bullConnection);
 
   const handler = createWorkerHandler({
@@ -91,5 +103,6 @@ export function composeRuntimeDelivery(
     hello,
     runtimeMutator,
     stateBuilder,
+    builtin,
   };
 }

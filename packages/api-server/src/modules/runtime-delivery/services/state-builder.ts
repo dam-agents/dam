@@ -23,6 +23,7 @@ import type {
   OutboxRepo,
   PendingEventRow,
 } from "../infrastructure/outbox-repo.js";
+import type { BuiltinContributions } from "./builtin-contributions.js";
 
 export interface StatePayload {
   contributions: Contribution[];
@@ -42,6 +43,7 @@ export interface StateBuilder {
 export function createStateBuilder(deps: {
   db: Db;
   outboxRepo: OutboxRepo;
+  builtin: BuiltinContributions;
 }): StateBuilder {
   return {
     async build(agentId, capabilities): Promise<StatePayload> {
@@ -49,7 +51,8 @@ export function createStateBuilder(deps: {
         readGrantedContributions(deps.db, agentId),
         readSkillRefContributions(deps.db, agentId),
       ]);
-      const rawContribs = [...granted, ...skills];
+      const builtin = deps.builtin.for(agentId);
+      const rawContribs = [...builtin, ...granted, ...skills];
       const pending = await deps.outboxRepo.pendingEvents(agentId);
       const events = pending.map(toEvent).filter((e): e is Event => e !== null);
       const filtered = filterByCapabilities(capabilities, rawContribs, events);
