@@ -103,7 +103,7 @@ export const IBM_LITELLM_DEFAULT_MODEL_PINS: IbmLitellmModelPins = {
   openaiModel: "gpt-5.5",
 };
 
-const IBM_LITELLM_HOST = "ete-litellm.ai-models.vpc-int.res.ibm.com";
+const IBM_LITELLM_HOST = "ete-litellm.ai-models.vpc.res.ibm.com";
 const IBM_LITELLM_BASE_URL = `https://${IBM_LITELLM_HOST}`;
 
 /**
