@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/dam-square-light.svg" />
-    <source media="(prefers-color-scheme: light)" srcset="docs/assets/dam-square-dark.svg" />
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/dam-light.svg" />
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/dam-dark.svg" />
     <img src="docs/assets/dam-square-dark.svg" width="140" alt="DAM" />
   </picture>
 </p>
