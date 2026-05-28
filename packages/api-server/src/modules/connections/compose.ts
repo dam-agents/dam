@@ -87,7 +87,6 @@ export function composeConnectionsForOwner(opts: {
   };
 
   const fanOut = createContributionFanOut({
-    db: opts.db,
     port,
     runtimeMutator: opts.runtimeMutator,
   });

@@ -93,7 +93,11 @@ export function composeRuntimeDelivery(
     stateBuilder,
   });
 
-  const runtimeMutator = createRuntimeMutator({ outboxRepo, queue });
+  const runtimeMutator = createRuntimeMutator({
+    db: opts.db,
+    outboxRepo,
+    queue,
+  });
 
   return {
     outboxRepo,

@@ -1,6 +1,5 @@
 import crypto from "node:crypto";
 import { TRPCError } from "@trpc/server";
-import type { Db } from "db";
 import type {
   LocalSkill,
   Skill,
@@ -60,12 +59,6 @@ export interface SkillsServiceDeps {
   seedSources: SkillSourceSeed[];
   runtimeClient: AgentRuntimeSkillsClient;
   runtimeMutator: RuntimeMutator;
-  /** Drizzle Db handle, used to wrap outbox `bumpVersion` in a transaction
-   *  on install/uninstall so the resulting applyState carries a strictly
-   *  greater version. Without this, the agent's `applyState` rejects the
-   *  delivery as stale (`incoming version <= lastApplied`) and the
-   *  filesystem changes never land. */
-  db: Db;
   owner: string;
   /** Scan via the provided scanner with a shared TTL cache. The cache key is
    *  the gitUrl alone — results are user-independent. */
@@ -382,12 +375,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
           : {}),
       };
       await deps.agentSkillsRepo.upsertSkill(input.agentId, ref);
-      await deps.db.transaction(async (tx) => {
-        await deps.runtimeMutator.commitInTx(
-          tx as unknown as Db,
-          input.agentId,
-        );
-      });
+      await deps.runtimeMutator.bump(input.agentId, []);
       await deps.runtimeMutator.enqueueAfterCommit(input.agentId);
       const current = await deps.agentSkillsRepo.listSkills(input.agentId);
       return upsertSkillRef(
@@ -405,12 +393,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         source: input.source,
         name: input.name,
       });
-      await deps.db.transaction(async (tx) => {
-        await deps.runtimeMutator.commitInTx(
-          tx as unknown as Db,
-          input.agentId,
-        );
-      });
+      await deps.runtimeMutator.bump(input.agentId, []);
       await deps.runtimeMutator.enqueueAfterCommit(input.agentId);
       const current = await deps.agentSkillsRepo.listSkills(input.agentId);
       return removeSkillRef(current, {

@@ -42,7 +42,6 @@ export function composeSchedulesAtBoot(
   const runner = createSchedulerRunner({
     repo,
     queue,
-    db: opts.db,
     runtimeMutator: opts.runtimeMutator,
     log,
   });

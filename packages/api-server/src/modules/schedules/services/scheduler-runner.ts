@@ -1,4 +1,3 @@
-import type { Db } from "db";
 import type { SchedulesRepository } from "../infrastructure/schedules-repository.js";
 import type { ScheduleQueue } from "../infrastructure/schedule-queue.js";
 import { nextFireAt } from "../domain/recurrences.js";
@@ -15,7 +14,6 @@ export interface SchedulerRunner {
 export interface SchedulerRunnerDeps {
   repo: SchedulesRepository;
   queue: ScheduleQueue;
-  db: Db;
   runtimeMutator: RuntimeMutator;
   log?: (msg: string) => void;
   now?: () => Date;
@@ -51,13 +49,9 @@ export function createSchedulerRunner(
     let result: string;
     let outcome: "success" | "failure";
     try {
-      await deps.db.transaction(async (tx) => {
-        await deps.runtimeMutator.commitInTx(
-          tx as unknown as Db,
-          sched.agentId,
-          [{ id: eventId, kind: "trigger", payload, expiresAt }],
-        );
-      });
+      await deps.runtimeMutator.bump(sched.agentId, [
+        { id: eventId, kind: "trigger", payload, expiresAt },
+      ]);
       await deps.runtimeMutator.enqueueAfterCommit(sched.agentId);
       result = "success";
       outcome = "success";

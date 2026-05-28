@@ -8,6 +8,7 @@ import {
   or,
   sql,
   type Db,
+  type DbTx,
   runtimeStateOutbox,
   runtimeEvents,
   agents as agentsTable,
@@ -34,7 +35,7 @@ export interface PendingEventRow {
 
 export interface OutboxRepo {
   getRow(agentId: string): Promise<OutboxRow | null>;
-  bumpVersion(agentId: string, db?: Db): Promise<number>;
+  bumpVersion(agentId: string, tx?: Db | DbTx): Promise<number>;
   pendingEvents(agentId: string): Promise<PendingEventRow[]>;
   stampAck(
     agentId: string,
@@ -45,7 +46,7 @@ export interface OutboxRepo {
   deleteExpiredEvents(): Promise<number>;
   insertEvent(
     input: PendingEventRow & { createdAt?: Date },
-    db?: Db,
+    tx?: Db | DbTx,
   ): Promise<void>;
 }
 

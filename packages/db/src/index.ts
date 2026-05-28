@@ -1,4 +1,4 @@
-export { createDb, type Db } from "./client.js";
+export { createDb, type Db, type DbTx } from "./client.js";
 export { runMigrations } from "./migrate.js";
 export {
   channels,

@@ -1,4 +1,3 @@
-import type { Db } from "db";
 import type { Connection, Contribution } from "api-server-api";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 
@@ -23,7 +22,6 @@ export interface ContributionFanOut {
 }
 
 export function createContributionFanOut(deps: {
-  db: Db;
   port: FanOutPort;
   runtimeMutator: RuntimeMutator;
 }): ContributionFanOut {
@@ -84,9 +82,7 @@ export function createContributionFanOut(deps: {
       // installed files / env stale with no way back. The agent-side
       // hash-dedupe in `applyState` already short-circuits no-op
       // deliveries, so over-bumping is cheap and the conservative choice.
-      await deps.db.transaction(async (tx) => {
-        await deps.runtimeMutator.commitInTx(tx as unknown as Db, agentId);
-      });
+      await deps.runtimeMutator.bump(agentId, []);
       await deps.runtimeMutator.enqueueAfterCommit(agentId);
     },
   };
