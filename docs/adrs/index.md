@@ -58,6 +58,7 @@ This directory contains ADRs for the Platform project.
 | [051](051-connections-and-contributions.md)   | Connections, Connection Templates, and Contributions — unified configuration model | @jezekra1 |
 | [052](052-runtime-channel.md)                 | Unified runtime channel — state snapshot plus event stream between api-server and agent-runtime | @jezekra1 |
 | [053](053-runtime-outbox-worker.md)           | Transactional outbox + worker for runtime-channel delivery | @jezekra1 |
+| [054](054-keycloak-theme.md)                  | Branded Keycloak login via Keycloakify-built custom image | @kapetr |
 
 ## Drafts
 
