@@ -599,8 +599,6 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       grants,
       connectionRules: createConnectionRulesSyncAdapter(db),
       ownerSub: user.sub,
-      listOwnedAgentSummaries: async () =>
-        (await agents.list()).map((a) => ({ id: a.id, name: a.name })),
     });
     const connections = composeConnectionsForOwner({
       ownerId: user.sub,

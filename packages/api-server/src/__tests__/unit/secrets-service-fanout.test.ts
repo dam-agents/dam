@@ -25,16 +25,6 @@ import type {
   GrantedAgentSummary,
 } from "../../modules/agents/infrastructure/agent-grants-port.js";
 
-interface SyncCall {
-  agentId: string;
-  decidedBy: string;
-  grants: Map<
-    string,
-    { hosts: readonly { host: string; pathPattern?: string }[] }
-  >;
-  ownedSourceIds: ReadonlySet<string>;
-}
-
 function makePort(initial: K8sStoredSecret[]) {
   const store = new Map(initial.map((s) => [s.id, s]));
   const created: {
@@ -128,16 +118,6 @@ function makeGrants(initial: GrantedAgentSummary[] = []) {
     },
   };
   return { port, bumps, secretGrantCalls };
-}
-
-function makeSyncRecorder() {
-  const calls: SyncCall[] = [];
-  return {
-    calls,
-    syncForAgent: async (input: SyncCall) => {
-      calls.push(input);
-    },
-  };
 }
 
 describe("PROVIDERS registry shape", () => {
@@ -294,23 +274,6 @@ describe("secrets-service.create — Anthropic envMappings default (ADR-040)", (
     expect(store.get(view.id)!.hostPattern).toBe(PROVIDERS.openai.hostPattern);
     expect(view.type).toBe("openai");
   });
-
-  it("does not default envMappings for generic secrets", async () => {
-    const { port, created } = makePort([]);
-    const { port: grants } = makeGrants();
-    const svc = createSecretsService({
-      k8sPort: port,
-      grants,
-      ownerSub: "owner-1",
-    });
-    await svc.create({
-      type: "generic",
-      name: "Custom",
-      value: "tok",
-      hostPattern: "api.example.com",
-    });
-    expect(created[0]!.envMappings).toBeUndefined();
-  });
 });
 
 describe("secrets-service.update — fanout (ADR-040)", () => {
@@ -320,68 +283,25 @@ describe("secrets-service.update — fanout (ADR-040)", () => {
   }) {
     const { port, updated } = makePort([opts.secret]);
     const { port: grants, bumps } = makeGrants(opts.granted ?? []);
-    const sync = makeSyncRecorder();
     const svc = createSecretsService({
       k8sPort: port,
       grants,
-      connectionRules: { syncForAgent: sync.syncForAgent },
       ownerSub: "owner-1",
     });
-    return { svc, updated, bumps, syncCalls: sync.calls };
+    return { svc, updated, bumps };
   }
 
   const baseSecret: K8sStoredSecret = {
     id: "secret-x",
     name: "My Secret",
-    type: "generic",
-    hostPattern: "api.example.com",
+    type: "anthropic",
+    hostPattern: "api.anthropic.com",
     envMappings: [{ envName: "FOO", placeholder: "ph" }],
     createdAt: "2026-01-01T00:00:00Z",
   };
 
-  it("host change → calls syncForAgent only; no agent-pod roll (ADR-040 §Fanout: hot)", async () => {
-    const { svc, bumps, syncCalls } = setup({
-      secret: baseSecret,
-      granted: [
-        {
-          agentId: "agent-a",
-          grantedSecretIds: ["secret-x"],
-        },
-        {
-          agentId: "agent-b",
-          grantedSecretIds: ["secret-x"],
-        },
-      ],
-    });
-    await svc.update({ id: "secret-x", hostPattern: "api.new.example" });
-    expect(syncCalls.map((c) => c.agentId).sort()).toEqual([
-      "agent-a",
-      "agent-b",
-    ]);
-    expect(bumps).toHaveLength(0);
-  });
-
-  it("host AND env change → both fanouts run", async () => {
-    const { svc, bumps, syncCalls } = setup({
-      secret: baseSecret,
-      granted: [
-        {
-          agentId: "agent-a",
-          grantedSecretIds: ["secret-x"],
-        },
-      ],
-    });
-    await svc.update({
-      id: "secret-x",
-      hostPattern: "api.new.example",
-      envMappings: [{ envName: "BAR", placeholder: "ph2" }],
-    });
-    expect(syncCalls).toHaveLength(1);
-    expect(bumps).toHaveLength(1);
-  });
-
-  it("envMappings change → bumps secrets-rev only (host fanout skipped)", async () => {
-    const { svc, bumps, syncCalls } = setup({
+  it("envMappings change → bumps secrets-rev", async () => {
+    const { svc, bumps } = setup({
       secret: baseSecret,
       granted: [
         {
@@ -394,13 +314,12 @@ describe("secrets-service.update — fanout (ADR-040)", () => {
       id: "secret-x",
       envMappings: [{ envName: "BAR", placeholder: "ph2" }],
     });
-    expect(syncCalls).toHaveLength(0);
     expect(bumps).toHaveLength(1);
     expect(bumps[0]!.cmName).toBe("agent-a");
   });
 
   it("name-only edit → no fanout", async () => {
-    const { svc, bumps, syncCalls } = setup({
+    const { svc, bumps } = setup({
       secret: baseSecret,
       granted: [
         {
@@ -410,12 +329,11 @@ describe("secrets-service.update — fanout (ADR-040)", () => {
       ],
     });
     await svc.update({ id: "secret-x", name: "Renamed" });
-    expect(syncCalls).toHaveLength(0);
     expect(bumps).toHaveLength(0);
   });
 
   it("no granted agents → no fanout even on render-affecting edit", async () => {
-    const { svc, bumps, syncCalls } = setup({
+    const { svc, bumps } = setup({
       secret: baseSecret,
       granted: [],
     });
@@ -423,66 +341,7 @@ describe("secrets-service.update — fanout (ADR-040)", () => {
       id: "secret-x",
       envMappings: [{ envName: "BAR", placeholder: "ph2" }],
     });
-    expect(syncCalls).toHaveLength(0);
     expect(bumps).toHaveLength(0);
-  });
-});
-
-describe("secrets-service.listGrantedAgents (ADR-040)", () => {
-  it("joins granted agentIds with display names from listOwnedAgentSummaries", async () => {
-    const { port } = makePort([]);
-    const { port: grants } = makeGrants([
-      {
-        agentId: "agent-a",
-        grantedSecretIds: ["secret-x"],
-      },
-      {
-        agentId: "agent-b",
-        grantedSecretIds: ["secret-x"],
-      },
-    ]);
-    const svc = createSecretsService({
-      k8sPort: port,
-      grants,
-      ownerSub: "owner-1",
-      listOwnedAgentSummaries: async () => [
-        { id: "agent-a", name: "Alpha" },
-        { id: "agent-b", name: "Beta" },
-      ],
-    });
-    const result = await svc.listGrantedAgents("secret-x");
-    expect(result).toEqual([
-      { id: "agent-a", name: "Alpha" },
-      { id: "agent-b", name: "Beta" },
-    ]);
-  });
-
-  it("falls back to agentId as name when summary lookup fails", async () => {
-    const { port } = makePort([]);
-    const { port: grants } = makeGrants([
-      {
-        agentId: "agent-a",
-        grantedSecretIds: ["secret-x"],
-      },
-    ]);
-    const svc = createSecretsService({
-      k8sPort: port,
-      grants,
-      ownerSub: "owner-1",
-    });
-    const result = await svc.listGrantedAgents("secret-x");
-    expect(result).toEqual([{ id: "agent-a", name: "agent-a" }]);
-  });
-
-  it("returns empty array when the secret is not granted", async () => {
-    const { port } = makePort([]);
-    const { port: grants } = makeGrants([]);
-    const svc = createSecretsService({
-      k8sPort: port,
-      grants,
-      ownerSub: "owner-1",
-    });
-    expect(await svc.listGrantedAgents("secret-x")).toEqual([]);
   });
 });
 
@@ -555,37 +414,6 @@ describe("secrets-service — extraInjections (twin secrets, e.g. Bob)", () => {
         ...valueUpdates.filter((u) => u.id !== view.id).map((u) => u.id),
       ].sort(),
     );
-  });
-
-  it("update({ hostPattern }) cascades onto twins; envMappings does NOT", async () => {
-    const { port, updated } = makePort([]);
-    const { port: grants } = makeGrants();
-    const svc = createSecretsService({
-      k8sPort: port,
-      grants,
-      ownerSub: "owner-1",
-    });
-    const view = await svc.create({
-      type: "bob",
-      name: "Bob Shell",
-      value: "sk-bob-foo",
-    });
-    const hostBefore = updated.length;
-    await svc.update({
-      id: view.id,
-      hostPattern: "alt.bob.ibm.com",
-      envMappings: [
-        { envName: "BOBSHELL_API_KEY", placeholder: "ph" },
-        { envName: "BOB_SHELL_MODEL", placeholder: "premium-shell" },
-      ],
-    });
-    const cascaded = updated.slice(hostBefore);
-    // Primary update + twin host cascade. The twin must NOT receive
-    // envMappings — twins have none by design.
-    const twinUpdates = cascaded.filter((u) => u.id !== view.id);
-    expect(twinUpdates).toHaveLength(1);
-    expect(twinUpdates[0]!.patch.envMappings).toBeUndefined();
-    expect(twinUpdates[0]!.patch.hostPattern).toBe("alt.bob.ibm.com");
   });
 
   it("delete() removes twins before the primary", async () => {

@@ -620,53 +620,14 @@ describe("secretUpdateInputSchema", () => {
     ).toBe(true);
   });
 
-  it("accepts injectionConfig + value together", () => {
-    const r = secretUpdateInputSchema.safeParse({
-      id: "abc",
-      value: "tok",
-      injectionConfig: {
-        headerName: "Authorization",
-        valueFormat: "Basic {value}",
-      },
-    });
-    expect(r.success).toBe(true);
-  });
-
-  it("rejects an injectionConfig change without value", () => {
-    const r = secretUpdateInputSchema.safeParse({
-      id: "abc",
-      injectionConfig: {
-        headerName: "Authorization",
-        valueFormat: "Basic {value}",
-      },
-    });
-    expect(r.success).toBe(false);
-    if (!r.success) {
-      expect(r.error.issues[0]!.path).toEqual(["value"]);
-      expect(r.error.issues[0]!.message).toMatch(/value is required/);
-    }
-  });
-
-  it("rejects a clear-injectionConfig (null) without value", () => {
-    const r = secretUpdateInputSchema.safeParse({
-      id: "abc",
-      injectionConfig: null,
-    });
-    expect(r.success).toBe(false);
-    if (!r.success) {
-      expect(r.error.issues[0]!.path).toEqual(["value"]);
-    }
-  });
-
-  it("rejects a wildcard hostPattern on update", () => {
-    const r = secretUpdateInputSchema.safeParse({
-      id: "abc",
-      hostPattern: "*.vercel.com",
-    });
-    expect(r.success).toBe(false);
-    if (!r.success) {
-      expect(r.error.issues[0]!.message).toMatch(/wildcard/i);
-    }
+  it("accepts a name + envMappings patch", () => {
+    expect(
+      secretUpdateInputSchema.safeParse({
+        id: "abc",
+        name: "Renamed",
+        envMappings: [{ envName: "FOO", placeholder: "ph" }],
+      }).success,
+    ).toBe(true);
   });
 });
 

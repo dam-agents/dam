@@ -17,7 +17,7 @@ interface Props {
  * Label + input + hint + error scaffold. `children` is whatever input-like
  * element the form needs; the wrapper `<label>` implicitly associates them so
  * no `htmlFor` is required. For inputs that can't live inside a `<label>`
- * (EnvMappingsEditor, file drop zones) open-code the layout with a `<div>`.
+ * (file drop zones) open-code the layout with a `<div>`.
  */
 export function FormField({ label, hint, error, children }: Props) {
   return (

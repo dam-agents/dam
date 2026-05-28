@@ -104,7 +104,6 @@ export {
   secretCreateInputSchema,
   secretDeleteInputSchema,
   secretGetAgentAccessInputSchema,
-  secretListGrantedAgentsInputSchema,
   secretSetAgentAccessInputSchema,
   secretTestAnthropicInputSchema,
   secretUpdateGithubPatInputSchema,
@@ -113,11 +112,9 @@ export {
 export { ENV_NAME_RE } from "./modules/shared.js";
 export {
   DEFAULT_ENV_PLACEHOLDER,
-  DEFAULT_INJECTION_CONFIG,
   isValidEnvName,
   PROVIDERS,
   PROVIDER_PRESET_TYPES,
-  QUERY_PARAM_RE,
   isProviderPresetType,
   IBM_LITELLM_DEFAULT_MODEL_PINS,
   ibmLitellmEnvMappings,

@@ -189,7 +189,6 @@ export {
   bobEnvMappings,
   bobPinsFromEnvMappings,
   DEFAULT_ENV_PLACEHOLDER,
-  DEFAULT_INJECTION_CONFIG,
   IBM_LITELLM_DEFAULT_MODEL_PINS,
   ibmLitellmEnvMappings,
   ibmLitellmPinsFromEnvMappings,
