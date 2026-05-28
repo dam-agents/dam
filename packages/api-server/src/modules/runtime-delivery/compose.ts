@@ -50,10 +50,6 @@ export interface ComposeRuntimeDeliveryOpts {
   namespace: string;
   bullConnection: ConnectionOptions;
   agentRunningPort: IsAgentRunning;
-  /** URL of the api-server harness Service used to render the
-   *  `platform-outbound` builtin MCP entry (e.g.
-   *  `http://<rel>-apiserver-harness.<rel-ns>.svc.cluster.local:4001`).
-   *  Sourced from `PLATFORM_HARNESS_SERVER_URL`, matching the controller. */
   harnessServerUrl: string;
   log?: (msg: string) => void;
 }

@@ -21,11 +21,6 @@ export const connectionSetAgentConnectionsInputSchema = z.object({
   connectionIds: z.array(z.string().min(1)),
 });
 
-/** Connection name doubles as the agent-visible MCP server slug
- *  (e.g. `mcp__<name>__tool`), so it must be a valid identifier:
- *  lowercase ASCII alphanumerics + single hyphens, 1–63 chars, no
- *  leading/trailing/consecutive hyphens. Required — uniqueness is
- *  enforced per-owner at the DB level (see migration 0019). */
 export const connectionNameSchema = z
   .string()
   .min(1, "name is required")

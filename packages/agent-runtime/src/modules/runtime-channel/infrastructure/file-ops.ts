@@ -60,13 +60,6 @@ export function createFileOps(): FileOps {
 
         const existed = existsSync(target);
         let existing = existed ? readFileSync(target, "utf8") : "";
-        // Self-heal a corrupted file. For parse-required merge modes
-        // (key-targeted is the main one — it has to read the structure
-        // to know which keys to replace), an unparseable on-disk file
-        // would otherwise jam every future apply for this path until
-        // someone deletes it by hand. Move the bad content aside for
-        // forensics and treat existing as empty so the platform's
-        // contributions can land.
         if (existing && needsParse(fragments)) {
           const parseErr = probeParse(fragments[0]!.format, existing);
           if (parseErr) {
@@ -143,15 +136,6 @@ function mergeKeyTargeted(
   format: FileFormat,
   fragments: FileDesired[],
 ): string {
-  // Ownership semantics:
-  //   - With keyPath: the platform owns everything under that path
-  //     authoritatively. Replace the subtree with the fragment content
-  //     rather than deep-merging, so a shrink (fewer entries on the next
-  //     apply) actually deletes the missing keys. Anything OUTSIDE the
-  //     keyPath in the existing file is preserved.
-  //   - Without keyPath: the platform owns each top-level key it emits.
-  //     `Object.assign` re-writes those keys; anything not in the
-  //     fragment is preserved.
   const base = (existing ? parse(format, existing) : {}) as Record<
     string,
     unknown
@@ -231,8 +215,6 @@ function parse(format: FileFormat, content: string): unknown {
   }
 }
 
-/** True when at least one fragment uses a merge mode that needs to
- *  read the existing file's structure. Drives the self-heal probe. */
 function needsParse(fragments: FileDesired[]): boolean {
   return fragments.some(
     (f) =>
@@ -240,10 +222,6 @@ function needsParse(fragments: FileDesired[]): boolean {
   );
 }
 
-/** Returns the parser's error message if `content` doesn't parse as
- *  `format`, or null on success. Used as a non-throwing pre-flight so
- *  the caller can decide to recover (move-aside + treat as empty)
- *  rather than fail the whole apply. */
 function probeParse(format: FileFormat, content: string): string | null {
   try {
     parse(format, content);

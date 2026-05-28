@@ -75,13 +75,6 @@ export function createContributionFanOut(deps: {
         await deps.port.bumpSecretsRev(agentId);
       }
 
-      // Bump the outbox unconditionally on every fan-out. Gating on "the
-      // post-change set still has runtime-channel contributions" would
-      // skip the bump on a shrink-to-empty change (e.g. disconnecting the
-      // only MCP-bearing Connection), leaving the agent's .mcp.json /
-      // installed files / env stale with no way back. The agent-side
-      // hash-dedupe in `applyState` already short-circuits no-op
-      // deliveries, so over-bumping is cheap and the conservative choice.
       await deps.runtimeMutator.bump(agentId, []);
       await deps.runtimeMutator.enqueueAfterCommit(agentId);
     },

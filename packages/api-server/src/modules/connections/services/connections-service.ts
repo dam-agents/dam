@@ -88,10 +88,6 @@ export function createConnectionsService(deps: {
       const conn = await deps.repo.get(id, deps.ownerId);
       if (!conn) return;
 
-      // Capture the agents that had this granted BEFORE the cascade so
-      // we can fan-out the removal afterward — otherwise the deletion
-      // doesn't reach the agent and stale entries (e.g. an mcp-entry)
-      // are left behind in `.mcp.json`.
       const affectedAgents = await deps.repo.listAgentsForConnection(id);
 
       const paths = new Set<string>();
@@ -114,9 +110,6 @@ export function createConnectionsService(deps: {
 
       await deps.repo.delete(id, deps.ownerId);
 
-      // Re-run fan-out per affected agent with the post-delete grant
-      // set. Drives the runtime channel (drops the mcp-entry from
-      // `.mcp.json`), egress rules, and secrets-rev updates.
       if (affectedAgents.length > 0) {
         const ownerConnsAfter = await deps.repo.listByOwner(deps.ownerId);
         const allOwnerConnectionIds = new Set(ownerConnsAfter.map((c) => c.id));
@@ -203,12 +196,6 @@ export function createConnectionsService(deps: {
       );
 
       const id = newConnectionId();
-      // The agent's mcp-entry plugin keys `.mcp.json` by contribution
-      // `name` (last write wins). Template-declared and code-pushed
-      // mcp-entry contributions default to `template.id`, so two
-      // Connections from the same template would collide. Re-stamp the
-      // name per-Connection using the user-given (slug-validated, DB-
-      // unique-per-owner) connection name — that's the keyspace.
       const contributions = built.contributions.map(
         (c): Contribution =>
           c.kind === "mcp-entry" ? { ...c, name: input.name } : c,
@@ -246,11 +233,6 @@ export function createConnectionsService(deps: {
           contributions,
         });
       } catch (err) {
-        // Postgres unique-violation on `connections_owner_name_unique_idx`
-        // — surface a clean CONFLICT so the UI can show "pick a different
-        // name" instead of a 500. SQLSTATE 23505 is the unique-violation
-        // class; matching on it (not on the message) survives library
-        // wording changes.
         if (isUniqueViolation(err)) {
           throw new TRPCError({
             code: "CONFLICT",

@@ -17,10 +17,6 @@ export interface ContextEnv {
 }
 
 export interface Dispatcher {
-  /** Returns per-kind failures so the caller can report them up the wire.
-   *  An empty array means every handler ran cleanly. Handlers that
-   *  partially succeed (e.g. installed 1 of 2 skills) report their own
-   *  details via `ctx.log`; only thrown errors land here. */
   apply(contributions: Contribution[]): Promise<DriverFailure[]>;
 }
 

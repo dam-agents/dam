@@ -72,10 +72,6 @@ export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
         return;
       }
       if (msg.includes("apply failed for")) {
-        // Agent dispatcher had one or more driver failures. The agent
-        // refused to advance its state, so we MUST NOT stampAck — let
-        // BullMQ retry the job and the sweep re-enqueue. Re-throw so
-        // both mechanisms kick in.
         deps.log(
           `[runtime-worker] ${agentId}: driver failure on v=${row.version} — not acking, will retry: ${msg}`,
         );

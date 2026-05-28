@@ -29,10 +29,6 @@ export function TemplateCreateForm({
 }) {
   const create = useCreateConnection();
 
-  // Suggest a slug from the template name (e.g. "GitHub" → "github").
-  // User can override; if they create a second connection from the same
-  // template they'll hit the unique constraint and get a CONFLICT error
-  // pointing them at the collision.
   const [name, setName] = useState(() => slugifyTemplateName(template.name));
   const [fields, setFields] = useState<Record<string, string>>({});
   const [overrides, setOverrides] = useState<Record<string, boolean>>({});
@@ -335,8 +331,6 @@ function LabeledInput({
   );
 }
 
-/** Runs the same Zod schema the server uses, so the form surfaces the
- *  same error string the API would return — no drift to keep in sync. */
 function validateConnectionName(name: string): string | null {
   const result = connectionNameSchema.safeParse(name);
   return result.success
@@ -344,11 +338,6 @@ function validateConnectionName(name: string): string | null {
     : (result.error.issues[0]?.message ?? "Invalid name");
 }
 
-/** Turn the template's display name into a connection-name suggestion
- *  that satisfies `connectionNameSchema` ("GitHub" → "github",
- *  "GitHub Enterprise" → "github-enterprise"). Returns empty string if
- *  the template name has nothing usable — the user-facing required
- *  validation will then prompt for a name. */
 function slugifyTemplateName(name: string): string {
   return name
     .toLowerCase()

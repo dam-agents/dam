@@ -41,9 +41,6 @@ export interface ConnectionsRepository {
     agentId: string,
   ): Promise<{ connectionId: string; grantedAt: Date }[]>;
   listConnectionsForAgent(agentId: string): Promise<Connection[]>;
-  /** Agents that currently have this connection granted. Used by
-   *  deleteConnection to fan-out the removal to each affected agent
-   *  before the grant rows cascade away. */
   listAgentsForConnection(connectionId: string): Promise<string[]>;
 }
 

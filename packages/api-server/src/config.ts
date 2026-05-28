@@ -31,12 +31,6 @@ const configSchema = z.object({
   releaseName: z.string().min(1, "PLATFORM_RELEASE_NAME must be set"),
   port: z.coerce.number().default(4000),
   harnessServerPort: z.coerce.number().default(4001),
-  /** URL of the api-server's harness Service as the paired gateway
-   *  pod's Envoy sees it (e.g.
-   *  `http://<rel>-apiserver-harness.<rel-ns>.svc.cluster.local:4001`).
-   *  Used to render the `platform-outbound` builtin MCP entry pushed to
-   *  every agent via the runtime channel. Same env (`PLATFORM_HARNESS_SERVER_URL`)
-   *  and shape the controller consumes — one name across the platform. */
   harnessServerUrl: z.string().url(),
   /** gRPC ext_authz listener — serves both Envoy's HTTP filter (L7,
    *  TLS-terminated chains) and network filter (L4, catch-all). */

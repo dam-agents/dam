@@ -44,13 +44,6 @@ export function createRuntimeChannelService(
         );
         const failures = await deps.dispatcher.apply(input.state.contributions);
         if (failures.length > 0) {
-          // Fail loud: do NOT advance state-store or return success.
-          // The agent's `lastAppliedVersion` stays at the previous value
-          // so the *next* applyState (sweep re-enqueue or fresh state
-          // change) re-runs the dispatcher with the same payload. The
-          // worker on the server side catches this and refuses to stamp
-          // ack, so the outbox row also keeps re-enqueueing until the
-          // failure clears.
           const summary = failures
             .map((f) => `${f.kind}: ${f.message}`)
             .join("; ");

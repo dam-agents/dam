@@ -333,11 +333,6 @@ export const connections = pgTable(
   },
   (table) => [
     index("connections_owner_idx").on(table.owner),
-    // The connection `name` doubles as the user-facing label AND the
-    // `mcp-entry` key the agent writes into `.mcp.json` (and the slug
-    // tools surface as `mcp__<name>__<tool>`). Two connections with
-    // the same name per owner would silently clobber each other in the
-    // agent's file, so the keyspace is enforced at the DB.
     uniqueIndex("connections_owner_name_unique_idx").on(
       table.owner,
       table.name,
