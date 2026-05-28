@@ -22,10 +22,10 @@
 
 ## Why DAM?
 
-- **☁️ Runs in the cloud.** Agents keep running after you close your laptop or go offline.
-- **🔐 Zero trust credentials.** Connect agents to your tools without exposing credentials to the runtime.
-- **👥 Built for teams.** Collaborate with shared agents in Slack using your own accounts and permissions.
-- **⏱️ Runs on schedules.** Automate agents for reviews, audits, monitoring, reporting, and recurring tasks.
+- ☁️ **Runs in the cloud.** Agents keep running after you close your laptop or go offline.
+- 🔐 **Isolated execution.** Each agent runs in an isolated container with all access routed through a policy-enforced gateway.
+- 🔑 **Zero trust credentials.** Connect agents to your tools without exposing credentials to the runtime.
+- 👥 **Built for teams.** Collaborate in Slack and run agents on schedules for recurring workflows.
 
 ---
 
