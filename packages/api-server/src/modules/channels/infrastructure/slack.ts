@@ -51,29 +51,69 @@ export type FetchedImage = {
 
 type FetchedFailure = { name: string; reason: string };
 
+type FetchImagesResult =
+  | { kind: "ok"; images: FetchedImage[]; failures: FetchedFailure[] }
+  | { kind: "cap_exceeded"; totalBytes: number; count: number };
+
+const TOTAL_IMAGE_BYTES_CAP = 30 * 1_000_000;
+const CONCURRENT_IMAGE_FETCH_LIMIT = 10;
+
+function createSemaphore(max: number) {
+  let active = 0;
+  const queue: Array<() => void> = [];
+  return {
+    async acquire(): Promise<() => void> {
+      if (active < max) active++;
+      else await new Promise<void>((r) => queue.push(r));
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        const next = queue.shift();
+        if (next) next();
+        else active--;
+      };
+    },
+  };
+}
+
+const imageFetchSemaphore = createSemaphore(CONCURRENT_IMAGE_FETCH_LIMIT);
+
 async function fetchSlackImages(
   botToken: string,
   files: SlackImageFile[] | undefined,
-): Promise<{ images: FetchedImage[]; failures: FetchedFailure[] }> {
-  const images: FetchedImage[] = [];
-  const failures: FetchedFailure[] = [];
-  for (const f of files ?? []) {
-    if (!f.mimetype?.startsWith("image/")) continue;
-    try {
-      const res = await fetch(f.url_private, {
-        headers: { Authorization: `Bearer ${botToken}` },
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = Buffer.from(await res.arrayBuffer()).toString("base64");
-      images.push({
-        block: { type: "image", data, mimeType: f.mimetype },
-        meta: { name: f.name, size: f.size },
-      });
-    } catch (err) {
-      failures.push({ name: f.name, reason: formatError(err) });
-    }
+): Promise<FetchImagesResult> {
+  const imageFiles = (files ?? []).filter((f) =>
+    f.mimetype?.startsWith("image/"),
+  );
+  const totalBytes = imageFiles.reduce((sum, f) => sum + (f.size ?? 0), 0);
+  if (totalBytes > TOTAL_IMAGE_BYTES_CAP) {
+    return { kind: "cap_exceeded", totalBytes, count: imageFiles.length };
   }
-  return { images, failures };
+
+  const release = await imageFetchSemaphore.acquire();
+  try {
+    const images: FetchedImage[] = [];
+    const failures: FetchedFailure[] = [];
+    for (const f of imageFiles) {
+      try {
+        const res = await fetch(f.url_private, {
+          headers: { Authorization: `Bearer ${botToken}` },
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = Buffer.from(await res.arrayBuffer()).toString("base64");
+        images.push({
+          block: { type: "image", data, mimeType: f.mimetype },
+          meta: { name: f.name, size: f.size },
+        });
+      } catch (err) {
+        failures.push({ name: f.name, reason: formatError(err) });
+      }
+    }
+    return { kind: "ok", images, failures };
+  } finally {
+    release();
+  }
 }
 
 function renderTurnFiles(images: FetchedImage[]): string {
@@ -170,10 +210,25 @@ export function createSlackWorker(
 ): SlackWorker {
   let app: BoltApp | null = null;
 
-  async function ephemeral(channel: string, user: string, text: string) {
-    if (!app) return;
+  async function ephemeral(
+    channel: string,
+    user: string,
+    threadTs: string | undefined,
+    text: string,
+  ) {
+    if (!app) {
+      process.stderr.write(
+        `[slack] ephemeral skipped (app not started): ${text}\n`,
+      );
+      return;
+    }
     try {
-      await app.client.chat.postEphemeral({ channel, user, text });
+      await app.client.chat.postEphemeral({
+        channel,
+        user,
+        ...(threadTs ? { thread_ts: threadTs } : {}),
+        text,
+      });
     } catch (err) {
       process.stderr.write(
         `[slack] postEphemeral failed: ${formatError(err)}\n`,
@@ -206,6 +261,7 @@ export function createSlackWorker(
       ephemeral(
         ctx.channel,
         ctx.slackUserId,
+        ctx.hasThread ? ctx.threadTs : undefined,
         "This agent can't process images yet — answering text only.",
       );
     try {
@@ -348,6 +404,7 @@ export function createSlackWorker(
           handleForkOutcome(outcome, {
             channel: args.channel,
             threadTs: args.threadTs,
+            hasThread: args.hasThread,
             instanceName: args.instanceName,
             slackUserId: args.slackUserId,
             actorSub: args.keycloakSub,
@@ -400,6 +457,7 @@ export function createSlackWorker(
     ctx: {
       channel: string;
       threadTs: string;
+      hasThread: boolean;
       instanceName: string;
       slackUserId: string;
       actorSub: string;
@@ -418,6 +476,7 @@ export function createSlackWorker(
           ephemeral(
             ctx.channel,
             ctx.slackUserId,
+            ctx.hasThread ? ctx.threadTs : undefined,
             "This agent can't process images yet — answering text only.",
           );
         try {
@@ -602,14 +661,27 @@ export function createSlackWorker(
       return;
     }
 
-    const { images, failures } = await fetchSlackImages(
+    const fetchResult = await fetchSlackImages(
       botToken,
       (event as { files?: SlackImageFile[] }).files,
     );
+    if (fetchResult.kind === "cap_exceeded") {
+      const mb = (fetchResult.totalBytes / 1_000_000).toFixed(1);
+      const capMb = (TOTAL_IMAGE_BYTES_CAP / 1_000_000).toFixed(0);
+      await ephemeral(
+        event.channel,
+        slackUserId,
+        event.thread_ts,
+        `Attached images total ${mb} MB, over the ${capMb} MB per-message cap. Send smaller images or fewer at once.`,
+      );
+      return;
+    }
+    const { images, failures } = fetchResult;
     for (const f of failures) {
       await ephemeral(
         event.channel,
         slackUserId,
+        event.thread_ts,
         `Couldn't fetch attached image '${f.name}': ${f.reason}. Try resending.`,
       );
     }
