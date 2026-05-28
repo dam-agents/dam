@@ -1,8 +1,8 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/DAM - Square Light.svg" />
-    <source media="(prefers-color-scheme: light)" srcset="docs/assets/DAM - Square Dark.svg" />
-    <img src="docs/assets/DAM - Square Dark.svg" width="140" alt="DAM" />
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/dam-square-light.svg" />
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/dam-square-dark.svg" />
+    <img src="docs/assets/dam-square-dark.svg" width="140" alt="DAM" />
   </picture>
 </p>
 
