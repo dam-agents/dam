@@ -37,7 +37,7 @@ export function createFileOps(): FileOps {
         const target = resolve(path);
         if (home === "" || !target.startsWith(home + "/")) {
           ctx.log(
-            `[file] refused ${JSON.stringify(path)} — must be under ${ctx.agentHome}`,
+            `[file-ops] refused ${JSON.stringify(path)} — must be under ${ctx.agentHome}`,
           );
           continue;
         }
@@ -46,27 +46,63 @@ export function createFileOps(): FileOps {
           if (existsSync(target)) {
             try {
               unlinkSync(target);
+              ctx.log(`[file-ops] removed ${target}`);
             } catch (err) {
               ctx.log(
-                `[file] failed to remove ${target}: ${(err as Error).message}`,
+                `[file-ops] failed to remove ${target}: ${(err as Error).message}`,
               );
             }
+          } else {
+            ctx.log(`[file-ops] remove ${target}: not present, noop`);
           }
           continue;
         }
 
-        const existing = existsSync(target) ? readFileSync(target, "utf8") : "";
+        const existed = existsSync(target);
+        let existing = existed ? readFileSync(target, "utf8") : "";
+        // Self-heal a corrupted file. For parse-required merge modes
+        // (key-targeted is the main one — it has to read the structure
+        // to know which keys to replace), an unparseable on-disk file
+        // would otherwise jam every future apply for this path until
+        // someone deletes it by hand. Move the bad content aside for
+        // forensics and treat existing as empty so the platform's
+        // contributions can land.
+        if (existing && needsParse(fragments)) {
+          const parseErr = probeParse(fragments[0]!.format, existing);
+          if (parseErr) {
+            const sidecar = `${target}.broken-${Date.now()}`;
+            ctx.log(
+              `[file-ops] ${target}: existing content is unparseable (${parseErr}); moving aside to ${sidecar} and rewriting from contributions`,
+            );
+            try {
+              renameSync(target, sidecar);
+            } catch (err) {
+              ctx.log(
+                `[file-ops] could not move ${target} → ${sidecar}: ${(err as Error).message}; overwriting in place`,
+              );
+            }
+            existing = "";
+          }
+        }
         let merged: string;
         try {
           merged = mergeFragments(existing, fragments);
         } catch (err) {
           ctx.log(
-            `[file] merge failed for ${target}: ${(err as Error).message}`,
+            `[file-ops] merge failed for ${target}: ${(err as Error).message}`,
           );
           continue;
         }
-        if (merged === existing) continue;
+        if (merged === existing) {
+          ctx.log(
+            `[file-ops] ${target}: fragments=${fragments.length} existing=${existing.length}B merged unchanged — skip`,
+          );
+          continue;
+        }
         atomicWrite(target, merged);
+        ctx.log(
+          `[file-ops] ${target}: fragments=${fragments.length} existing=${existing.length}B → merged=${merged.length}B (${existed ? "updated" : "created"})`,
+        );
       }
     },
   };
@@ -107,52 +143,29 @@ function mergeKeyTargeted(
   format: FileFormat,
   fragments: FileDesired[],
 ): string {
+  // Ownership semantics:
+  //   - With keyPath: the platform owns everything under that path
+  //     authoritatively. Replace the subtree with the fragment content
+  //     rather than deep-merging, so a shrink (fewer entries on the next
+  //     apply) actually deletes the missing keys. Anything OUTSIDE the
+  //     keyPath in the existing file is preserved.
+  //   - Without keyPath: the platform owns each top-level key it emits.
+  //     `Object.assign` re-writes those keys; anything not in the
+  //     fragment is preserved.
   const base = (existing ? parse(format, existing) : {}) as Record<
     string,
     unknown
   >;
-  const owned = collectKeyTargetedKeys(fragments);
   const next: Record<string, unknown> = { ...base };
-
-  for (const k of owned.toDrop) {
-    if (k.includes(".")) {
-      removeNestedKey(next, k.split("."));
-    } else {
-      delete next[k];
-    }
-  }
 
   for (const f of fragments) {
     if (f.keyPath) {
-      const segs = f.keyPath.split(".");
-      setNested(next, segs, deepMerge(getNested(next, segs), f.content));
+      setNested(next, f.keyPath.split("."), f.content);
     } else if (f.content && typeof f.content === "object") {
       Object.assign(next, f.content as Record<string, unknown>);
     }
   }
   return serialize(format, next);
-}
-
-interface KeyTargetedAccounting {
-  toDrop: string[];
-}
-
-function collectKeyTargetedKeys(
-  fragments: FileDesired[],
-): KeyTargetedAccounting {
-  const keys = new Set<string>();
-  for (const f of fragments) {
-    if (f.keyPath && f.content && typeof f.content === "object") {
-      for (const k of Object.keys(f.content as Record<string, unknown>)) {
-        keys.add(`${f.keyPath}.${k}`);
-      }
-    } else if (f.content && typeof f.content === "object") {
-      for (const k of Object.keys(f.content as Record<string, unknown>)) {
-        keys.add(k);
-      }
-    }
-  }
-  return { toDrop: Array.from(keys) };
 }
 
 function mergeSectionMarker(
@@ -218,6 +231,28 @@ function parse(format: FileFormat, content: string): unknown {
   }
 }
 
+/** True when at least one fragment uses a merge mode that needs to
+ *  read the existing file's structure. Drives the self-heal probe. */
+function needsParse(fragments: FileDesired[]): boolean {
+  return fragments.some(
+    (f) =>
+      f.mergeMode === "key-targeted" || f.mergeMode === "yaml-fill-if-missing",
+  );
+}
+
+/** Returns the parser's error message if `content` doesn't parse as
+ *  `format`, or null on success. Used as a non-throwing pre-flight so
+ *  the caller can decide to recover (move-aside + treat as empty)
+ *  rather than fail the whole apply. */
+function probeParse(format: FileFormat, content: string): string | null {
+  try {
+    parse(format, content);
+    return null;
+  } catch (err) {
+    return (err as Error).message;
+  }
+}
+
 function serialize(format: FileFormat, value: unknown): string {
   switch (format) {
     case "json":
@@ -264,26 +299,6 @@ function commentSyntax(format: FileFormat): string {
   }
 }
 
-function deepMerge(a: unknown, b: unknown): unknown {
-  if (a && b && typeof a === "object" && typeof b === "object") {
-    const out: Record<string, unknown> = { ...(a as Record<string, unknown>) };
-    for (const [k, v] of Object.entries(b as Record<string, unknown>)) {
-      out[k] = deepMerge(out[k], v);
-    }
-    return out;
-  }
-  return b ?? a;
-}
-
-function getNested(obj: Record<string, unknown>, segs: string[]): unknown {
-  let cur: unknown = obj;
-  for (const s of segs) {
-    if (!cur || typeof cur !== "object") return undefined;
-    cur = (cur as Record<string, unknown>)[s];
-  }
-  return cur;
-}
-
 function setNested(
   obj: Record<string, unknown>,
   segs: string[],
@@ -296,16 +311,6 @@ function setNested(
     cur = cur[s] as Record<string, unknown>;
   }
   cur[segs[segs.length - 1]!] = value;
-}
-
-function removeNestedKey(obj: Record<string, unknown>, segs: string[]): void {
-  let cur = obj;
-  for (let i = 0; i < segs.length - 1; i++) {
-    const s = segs[i]!;
-    if (!cur[s] || typeof cur[s] !== "object") return;
-    cur = cur[s] as Record<string, unknown>;
-  }
-  delete cur[segs[segs.length - 1]!];
 }
 
 function stripTrailingSep(p: string): string {

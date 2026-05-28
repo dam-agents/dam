@@ -67,6 +67,7 @@ export {
   stateSlice,
   applyStateInput,
   applyStateResult,
+  driverFailure,
   helloInput,
   helloResult,
 } from "./modules/runtime/types.js";
@@ -82,6 +83,7 @@ export type {
   StateSlice,
   ApplyStateInput,
   ApplyStateResult,
+  DriverFailure,
   HelloInput,
   HelloResult,
 } from "./modules/runtime/types.js";

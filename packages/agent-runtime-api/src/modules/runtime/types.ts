@@ -115,6 +115,12 @@ export const applyStateInput = z.object({
 });
 export type ApplyStateInput = z.infer<typeof applyStateInput>;
 
+export const driverFailure = z.object({
+  kind: contributionKind,
+  message: z.string().min(1),
+});
+export type DriverFailure = z.infer<typeof driverFailure>;
+
 export const applyStateResult = z.object({
   appliedVersion: z.number().int().nonnegative(),
   appliedHash: z.string().min(1),

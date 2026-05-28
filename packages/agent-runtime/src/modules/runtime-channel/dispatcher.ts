@@ -4,6 +4,7 @@ import type {
   Contribution,
   ContributionKind,
   DispatchContext,
+  DriverFailure,
   KindHandler,
 } from "agent-runtime-api";
 import type { RuntimeManifest } from "./manifest.js";
@@ -16,7 +17,11 @@ export interface ContextEnv {
 }
 
 export interface Dispatcher {
-  apply(contributions: Contribution[]): Promise<void>;
+  /** Returns per-kind failures so the caller can report them up the wire.
+   *  An empty array means every handler ran cleanly. Handlers that
+   *  partially succeed (e.g. installed 1 of 2 skills) report their own
+   *  details via `ctx.log`; only thrown errors land here. */
+  apply(contributions: Contribution[]): Promise<DriverFailure[]>;
 }
 
 export function createDispatcher(deps: {
@@ -57,24 +62,39 @@ export function createDispatcher(deps: {
   }
 
   return {
-    async apply(contributions: Contribution[]): Promise<void> {
+    async apply(contributions: Contribution[]): Promise<DriverFailure[]> {
       const byKind = new Map<ContributionKind, Contribution[]>();
       for (const kind of handlers.keys()) byKind.set(kind, []);
+      let unhandled = 0;
       for (const c of contributions) {
         const list = byKind.get(c.kind);
-        if (!list) continue;
+        if (!list) {
+          unhandled++;
+          continue;
+        }
         list.push(c);
       }
+      if (unhandled > 0) {
+        deps.env.log(
+          `[dispatcher] ${unhandled} contribution(s) had no kind handler — manifest does not bind their kind`,
+        );
+      }
+      const failures: DriverFailure[] = [];
       for (const [kind, { handler, ctx }] of handlers) {
         const list = byKind.get(kind) ?? [];
+        deps.env.log(
+          `[dispatcher] kind=${kind} count=${list.length} — invoking`,
+        );
         try {
           await handler(list, ctx);
+          deps.env.log(`[dispatcher] kind=${kind} done`);
         } catch (err) {
-          deps.env.log(
-            `[runtime] driver ${kind} failed: ${(err as Error).message}`,
-          );
+          const message = (err as Error).message;
+          deps.env.log(`[runtime] driver ${kind} failed: ${message}`);
+          failures.push({ kind, message });
         }
       }
+      return failures;
     },
   };
 }
