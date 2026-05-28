@@ -43,7 +43,10 @@ export interface OutboxRepo {
   ): Promise<void>;
   listStale(slopMs: number, limit: number): Promise<OutboxRow[]>;
   deleteExpiredEvents(): Promise<number>;
-  insertEvent(input: PendingEventRow & { createdAt?: Date }): Promise<void>;
+  insertEvent(
+    input: PendingEventRow & { createdAt?: Date },
+    db?: Db,
+  ): Promise<void>;
 }
 
 interface InternalRow {
@@ -165,8 +168,8 @@ export function createOutboxRepo(db: Db): OutboxRepo {
       return result.length;
     },
 
-    async insertEvent(input): Promise<void> {
-      await db.insert(runtimeEvents).values({
+    async insertEvent(input, tx = db): Promise<void> {
+      await tx.insert(runtimeEvents).values({
         id: input.id,
         agentId: input.agentId,
         kind: input.kind,

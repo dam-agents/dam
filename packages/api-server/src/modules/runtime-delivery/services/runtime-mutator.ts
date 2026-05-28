@@ -24,14 +24,17 @@ export function createRuntimeMutator(deps: {
       const version = await deps.outboxRepo.bumpVersion(agentId, tx);
       if (events && events.length > 0) {
         for (const e of events) {
-          await deps.outboxRepo.insertEvent({
-            id: e.id,
-            agentId,
-            kind: e.kind,
-            payload: e.payload,
-            version,
-            expiresAt: e.expiresAt,
-          });
+          await deps.outboxRepo.insertEvent(
+            {
+              id: e.id,
+              agentId,
+              kind: e.kind,
+              payload: e.payload,
+              version,
+              expiresAt: e.expiresAt,
+            },
+            tx,
+          );
         }
       }
       return version;
