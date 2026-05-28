@@ -55,7 +55,9 @@ Bring your own harness — any runtime compatible with [ACP](https://agentclient
 
 ## Get Started
 
-Head to [ibm.biz/dam-agents](https://ibm.biz/dam-agents), create an instance from a template, and start chatting. See the [documentation](https://ibm.biz/dam-docs) for quickstarts, core concepts, integration guides, and use cases.
+Head to [ibm.biz/dam-agents](https://ibm.biz/dam-agents), create an instance from a template, and start chatting. 
+
+See the [documentation](https://ibm.biz/dam-docs) for quickstarts, core concepts, integration guides, and use cases.
 
 ---
 
