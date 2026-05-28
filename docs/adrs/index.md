@@ -59,6 +59,7 @@ This directory contains ADRs for the Platform project.
 | [052](052-runtime-channel.md)                 | Unified runtime channel — state snapshot plus event stream between api-server and agent-runtime | @jezekra1 |
 | [053](053-runtime-outbox-worker.md)           | Transactional outbox + worker for runtime-channel delivery | @jezekra1 |
 | [054](054-keycloak-theme.md)                  | Branded Keycloak login via Keycloakify-built custom image | @kapetr |
+| [055](055-agent-owned-session-metadata.md)    | Agent-owned session metadata via ACP `_meta`; server sessions become a Redis cache | @jezekra1 |
 
 ## Drafts
 
