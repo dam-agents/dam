@@ -100,12 +100,6 @@ echo "egress-lockdown: gateway-only IPv4 + IPv6 drop applied"
 	}
 }
 
-// buildGatewayHostAlias points `<pairKey>-gateway` at `ip` so HTTPS_PROXY
-// resolves without DNS.
-func buildGatewayHostAlias(pairKey, ip string) corev1.HostAlias {
-	return corev1.HostAlias{IP: ip, Hostnames: []string{GatewayName(pairKey)}}
-}
-
 // ensureGatewayService applies the paired gateway Service and returns the
 // live object (with assigned ClusterIP) in one call — avoids the
 // reconcile-N/N+1 race where a follow-up Get may not see the just-assigned

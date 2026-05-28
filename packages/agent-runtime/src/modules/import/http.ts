@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import http from "node:http";
 import { join } from "node:path";
+import type { ImportBundleResult } from "agent-runtime-api";
 import busboy from "busboy";
 
 import { STAGING_PREFIX } from "./constants.js";
@@ -46,28 +47,41 @@ export function createImportHandlers(
   workDir: string,
   log: (msg: string) => void,
 ) {
-  // Single-flight: agent-runtime serves one instance, so concurrent imports
+  // Single-flight: agent-runtime serves one agent, so concurrent imports
   // mean two simultaneous tarballs racing the same work dir. Reject the
   // second one outright with 409; the api-server proxy surfaces the body.
   let activeImport: Promise<void> | null = null;
 
-  async function handleImport(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  async function handleImport(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): Promise<void> {
     const ct = req.headers["content-type"];
     if (!ct || !ct.startsWith("multipart/form-data")) {
-      res.writeHead(415, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "expected multipart/form-data" }));
+      res
+        .writeHead(415, { "Content-Type": "application/json" })
+        .end(JSON.stringify({ error: "expected multipart/form-data" }));
       return;
     }
     if (activeImport) {
       log(`request rejected (409): another import is already in progress`);
-      res.writeHead(409, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "another import is already in progress for this instance" }));
+      res.writeHead(409, { "Content-Type": "application/json" }).end(
+        JSON.stringify({
+          error: "another import is already in progress for this agent",
+        }),
+      );
       return;
     }
 
     const startedAt = Date.now();
-    log(`request received (content-length=${req.headers["content-length"] ?? "?"})`);
+    log(
+      `request received (content-length=${req.headers["content-length"] ?? "?"})`,
+    );
 
     let resolveActive: () => void = () => {};
-    activeImport = new Promise<void>((r) => { resolveActive = r; });
+    activeImport = new Promise<void>((r) => {
+      resolveActive = r;
+    });
     // The `close` handler's `finally` is the primary path that resets
     // activeImport. Timeout/deadline paths destroy the socket, which may
     // or may not emit `close` on busboy depending on Node's autoDestroy
@@ -82,7 +96,9 @@ export function createImportHandlers(
     };
 
     let staging: string | undefined;
-    let extractPromise: Promise<Awaited<ReturnType<typeof extractBundle>>> | undefined;
+    let extractPromise:
+      | Promise<Awaited<ReturnType<typeof extractBundle>>>
+      | undefined;
     let sawFile = false;
     let finished = false;
 
@@ -90,9 +106,11 @@ export function createImportHandlers(
       if (finished) return;
       finished = true;
       log(`fail ${status}: ${message}`);
-      if (staging) await rm(staging, { recursive: true, force: true }).catch(() => {});
+      if (staging)
+        await rm(staging, { recursive: true, force: true }).catch(() => {});
       try {
-        if (!res.headersSent) res.writeHead(status, { "Content-Type": "application/json" });
+        if (!res.headersSent)
+          res.writeHead(status, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: message }));
       } catch (e) {
         log(`fail: response write threw (${(e as Error).message})`);
@@ -106,14 +124,21 @@ export function createImportHandlers(
     //    while the upload makes no real progress.
     req.setTimeout(UPLOAD_INACTIVITY_MS, () => {
       log(`socket idle for ${UPLOAD_INACTIVITY_MS}ms — aborting`);
-      void fail(408, `upload stalled (no activity for ${UPLOAD_INACTIVITY_MS}ms)`);
-      try { req.destroy(); } catch {}
+      void fail(
+        408,
+        `upload stalled (no activity for ${UPLOAD_INACTIVITY_MS}ms)`,
+      );
+      try {
+        req.destroy();
+      } catch {}
       clearActive();
     });
     const deadlineTimer = setTimeout(() => {
       log(`wall-clock deadline ${UPLOAD_DEADLINE_MS}ms exceeded — aborting`);
       void fail(408, `upload exceeded ${UPLOAD_DEADLINE_MS}ms deadline`);
-      try { req.destroy(); } catch {}
+      try {
+        req.destroy();
+      } catch {}
       clearActive();
     }, UPLOAD_DEADLINE_MS);
     deadlineTimer.unref();
@@ -140,7 +165,9 @@ export function createImportHandlers(
       })();
     });
 
-    bb.on("error", (err: Error) => { void fail(400, `multipart: ${err.message}`); });
+    bb.on("error", (err: Error) => {
+      void fail(400, `multipart: ${err.message}`);
+    });
 
     bb.on("close", async () => {
       log(`busboy close — finalizing`);
@@ -150,7 +177,10 @@ export function createImportHandlers(
         if (!extractPromise) return fail(400, "missing field: bundle");
         const extractResult = await extractPromise;
         if (!extractResult.ok) {
-          return fail(statusForDomainError(extractResult.error), messageForDomainError(extractResult.error));
+          return fail(
+            statusForDomainError(extractResult.error),
+            messageForDomainError(extractResult.error),
+          );
         }
         if (!staging) return fail(500, "internal: staging dir not initialized");
         log(`finalize start (dest=${workDir})`);
@@ -161,18 +191,29 @@ export function createImportHandlers(
         // case the disk is in the right state (finalize ran) but the
         // wire response is taken; don't double-write.
         if (finished) {
-          log(`finalize committed but response already sent (likely timeout race) — skipping 200 write`);
+          log(
+            `finalize committed but response already sent (likely timeout race) — skipping 200 write`,
+          );
           return;
         }
         finished = true;
         const { filesWritten, bytes } = extractResult.value;
-        log(`import ok files=${filesWritten} bytes=${bytes} durationMs=${Date.now() - startedAt}`);
+        log(
+          `import ok files=${filesWritten} bytes=${bytes} durationMs=${Date.now() - startedAt}`,
+        );
         try {
-          res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({
-            filesWritten, bytes, durationMs: Date.now() - startedAt,
-          }));
+          const body: ImportBundleResult = {
+            filesWritten,
+            bytes,
+            durationMs: Date.now() - startedAt,
+          };
+          res
+            .writeHead(200, { "Content-Type": "application/json" })
+            .end(JSON.stringify(body));
         } catch (e) {
-          log(`response write threw on success (${(e as Error).message}) — finalize already committed`);
+          log(
+            `response write threw on success (${(e as Error).message}) — finalize already committed`,
+          );
         }
       } catch (err) {
         log(`bb.close handler caught: ${(err as Error).message}`);

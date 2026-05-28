@@ -6,6 +6,8 @@ import type {
   MissingConfigError,
 } from "./errors.js";
 
+export const SERVER_ENV_VAR = "DAM_SERVER";
+
 export const configSchema = z.object({
   server: z.url({
     protocol: /^https?$/,
@@ -31,10 +33,6 @@ export function parseConfigKey(
   return err({ kind: "invalid-key", input, validKeys: CONFIG_KEYS });
 }
 
-/**
- * Validates a single config value against the schema for its key. Used by
- * `dam config set` to fail fast on bad input before touching the file.
- */
 export function validateValue(
   key: ConfigKey,
   rawValue: string,

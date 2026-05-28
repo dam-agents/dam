@@ -4,15 +4,15 @@ import { api } from "../../../api.js";
 
 export const acpSessionsKeys = {
   all: ["acp-sessions"] as const,
-  instanceLists: (instanceId: string | null) =>
-    [...acpSessionsKeys.all, instanceId] as const,
-  list: (instanceId: string | null, includeChannel: boolean) =>
-    [...acpSessionsKeys.instanceLists(instanceId), { includeChannel }] as const,
+  agentLists: (agentId: string | null) =>
+    [...acpSessionsKeys.all, agentId] as const,
+  list: (agentId: string | null, includeChannel: boolean) =>
+    [...acpSessionsKeys.agentLists(agentId), { includeChannel }] as const,
 };
 
 /**
  * Sessions list with live ACP enrichment (title, updatedAt) overlaid on the
- * platform DB rows. Pass `enabled: false` (e.g. while the instance is waking)
+ * platform DB rows. Pass `enabled: false` (e.g. while the agent is waking)
  * to keep the query in cache without firing requests.
  *
  * `refetchOnMount: "always"` because the title is harness-set after the first
@@ -20,17 +20,18 @@ export const acpSessionsKeys = {
  *
  * meta.errorToast is intentionally vague — sustained outages get the toast
  * once per outage via the global query cache wiring.
+ *
  */
 export function useAcpSessions(
-  instanceId: string | null,
+  agentId: string | null,
   includeChannel: boolean,
   options?: { enabled?: boolean },
 ) {
-  const live = !!instanceId && (options?.enabled ?? true);
+  const live = !!agentId && (options?.enabled ?? true);
   return useQuery({
-    queryKey: acpSessionsKeys.list(instanceId, includeChannel),
+    queryKey: acpSessionsKeys.list(agentId, includeChannel),
     queryFn: live
-      ? () => api.sessions.list.query({ instanceId, includeChannel })
+      ? () => api.sessions.list.query({ agentId, includeChannel })
       : skipToken,
     refetchOnMount: "always",
     staleTime: 5_000,

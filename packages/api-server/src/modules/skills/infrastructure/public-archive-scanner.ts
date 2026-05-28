@@ -34,7 +34,10 @@ export class PublicArchiveNotFoundError extends Error {
 
 const MAX_TARBALL_BYTES = 50 * 1024 * 1024; // 50 MB cap — catalog repos are ~100-500 KB typical.
 
-interface Frontmatter { name?: string; description?: string; }
+interface Frontmatter {
+  name?: string;
+  description?: string;
+}
 
 /** YAML frontmatter parser — handles plain scalars, `>` folded, and `|`
  *  literal block scalars. Duplicated from agent-runtime's scanner to keep
@@ -65,7 +68,8 @@ export function parseFrontmatter(content: string): Frontmatter {
         collected.push(line.replace(/^\s+/, ""));
         j++;
       }
-      while (collected.length > 0 && collected[collected.length - 1] === "") collected.pop();
+      while (collected.length > 0 && collected[collected.length - 1] === "")
+        collected.pop();
       out[key] = folded ? collected.join(" ") : collected.join("\n");
       i = j - 1;
       continue;
@@ -126,7 +130,9 @@ async function findSkillDirs(repoDir: string): Promise<string[]> {
       try {
         await fs.access(path.join(dir, "SKILL.md"));
         found.push(path.relative(repoDir, dir));
-      } catch { /* no SKILL.md → not a skill dir */ }
+      } catch {
+        /* no SKILL.md → not a skill dir */
+      }
     }
     if (found.length > 0) return found;
   }
@@ -138,9 +144,12 @@ async function findSkillDirs(repoDir: string): Promise<string[]> {
  * Throws `PublicArchiveNotFoundError` on 404 so the caller can fall through
  * to the authenticated agent-runtime path.
  */
-export async function scanPublicGithubArchive(gitUrl: string): Promise<Skill[]> {
+export async function scanPublicGithubArchive(
+  gitUrl: string,
+): Promise<Skill[]> {
   const host = detectHost(gitUrl);
-  if (!host) throw new Error(`only GitHub URLs supported for public scan: ${gitUrl}`);
+  if (!host)
+    throw new Error(`only GitHub URLs supported for public scan: ${gitUrl}`);
 
   const archiveUrl = `https://github.com/${host.owner}/${host.repo}/archive/HEAD.tar.gz`;
   const res = await fetch(archiveUrl, { redirect: "follow" });
@@ -154,7 +163,8 @@ export async function scanPublicGithubArchive(gitUrl: string): Promise<Skill[]> 
     // Empty repo (no commits): GitHub responds 200 with the repo HTML page
     // instead of redirecting to a tarball. Treat as "no skills" so the user
     // sees an empty list rather than a scary error.
-    if ((res.headers.get("content-type") ?? "").includes("text/html")) return [];
+    if ((res.headers.get("content-type") ?? "").includes("text/html"))
+      return [];
     throw new Error(`unexpected archive redirect: ${res.url}`);
   }
   const version = shaMatch[1];
@@ -170,15 +180,21 @@ export async function scanPublicGithubArchive(gitUrl: string): Promise<Skill[]> 
     await tar.x({ file: tgz, cwd: tmp });
     await fs.rm(tgz);
 
-    const extracted = (await fs.readdir(tmp, { withFileTypes: true })).filter((e) => e.isDirectory());
-    if (extracted.length === 0) throw new Error("tarball contained no directories");
+    const extracted = (await fs.readdir(tmp, { withFileTypes: true })).filter(
+      (e) => e.isDirectory(),
+    );
+    if (extracted.length === 0)
+      throw new Error("tarball contained no directories");
     const repoDir = path.join(tmp, extracted[0].name);
 
     const skillDirs = await findSkillDirs(repoDir);
     const out = await Promise.all(
       skillDirs.map(async (rel) => {
         const absDir = path.join(repoDir, rel);
-        const content = await fs.readFile(path.join(absDir, "SKILL.md"), "utf8");
+        const content = await fs.readFile(
+          path.join(absDir, "SKILL.md"),
+          "utf8",
+        );
         const fm = parseFrontmatter(content);
         const contentHash = await computeContentHash(absDir);
         return {

@@ -1,10 +1,7 @@
 import { create } from "zustand";
 
+import { type AgentsSlice, createAgentsSlice } from "./modules/agents/store.js";
 import { createFilesSlice, type FilesSlice } from "./modules/files/store.js";
-import {
-  createInstancesSlice,
-  type InstancesSlice,
-} from "./modules/instances/store.js";
 import { pathToState } from "./modules/platform/lib/routes.js";
 import {
   createDialogSlice,
@@ -44,23 +41,22 @@ export type {
 } from "./modules/sessions/store/permissions.js";
 export type { SessionError } from "./modules/sessions/store/sessions.js";
 
-export type PlatformStore =
-  & DialogSlice
-  & ThemeSlice
-  & NavigationSlice
-  & ToastSlice
-  & InstancesSlice
-  & SessionsSlice
-  & SessionConfigSlice
-  & FilesSlice
-  & PermissionsSlice;
+export type PlatformStore = DialogSlice &
+  ThemeSlice &
+  NavigationSlice &
+  ToastSlice &
+  AgentsSlice &
+  SessionsSlice &
+  SessionConfigSlice &
+  FilesSlice &
+  PermissionsSlice;
 
 export const useStore = create<PlatformStore>()((...a) => ({
   ...createDialogSlice(...a),
   ...createThemeSlice(...a),
   ...createNavigationSlice(...a),
   ...createToastSlice(...a),
-  ...createInstancesSlice(...a),
+  ...createAgentsSlice(...a),
   ...createSessionsSlice(...a),
   ...createSessionConfigSlice(...a),
   ...createFilesSlice(...a),

@@ -24,6 +24,7 @@ const ibmLitellmCredentialSchema = z
     modelHaiku: z.string().min(1, "Required"),
     modelSubagent: z.string().min(1, "Required"),
     modelDefault: z.string().min(1, "Required"),
+    modelOpenai: z.string().min(1, "Required"),
   })
   .superRefine((data, ctx) => {
     // Strip whitespace before checking emptiness (Q11=B): paste-from-terminal
@@ -48,7 +49,10 @@ export function IbmLitellmForm({
 }: {
   variant: "wizard" | "edit";
   initialPins?: IbmLitellmModelPins;
-  onSave: (input: { value: string; pins: IbmLitellmModelPins }) => Promise<void>;
+  onSave: (input: {
+    value: string;
+    pins: IbmLitellmModelPins;
+  }) => Promise<void>;
   onCancel?: () => void;
 }) {
   const pins = initialPins ?? IBM_LITELLM_DEFAULT_MODEL_PINS;
@@ -62,6 +66,7 @@ export function IbmLitellmForm({
       modelHaiku: pins.haiku,
       modelSubagent: pins.subagent,
       modelDefault: pins.default,
+      modelOpenai: pins.openaiModel,
     },
   });
   const { errors, isSubmitting, isValid } = formState;
@@ -80,6 +85,7 @@ export function IbmLitellmForm({
         haiku: values.modelHaiku,
         subagent: values.modelSubagent,
         default: values.modelDefault,
+        openaiModel: values.modelOpenai,
       },
     });
   });

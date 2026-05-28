@@ -1,4 +1,11 @@
-import { isRequest, isResponse, parseFrame, type JsonRpcId } from "../domain/frames.js";
+import { buildPlatformTurnEndedNotification } from "api-server-api";
+
+import {
+  isRequest,
+  isResponse,
+  parseFrame,
+  type JsonRpcId,
+} from "../domain/frames.js";
 import type { AgentProcess } from "../infrastructure/agent-process.js";
 import type { ClientChannel } from "../infrastructure/client-channel.js";
 import { rewriteAuthError, rewriteCwd } from "../infrastructure/mappers.js";
@@ -125,7 +132,23 @@ interface SessionLog {
   truncated: boolean;
   /** Cached `session/load` response metadata, captured from the first
    * (cold) bootstrap response. Used to synthesize responses to subsequent
-   * `session/load` requests without forwarding to the agent. */
+   * `session/load` requests without forwarding to the agent.
+   *
+   * Invariant: `metadata !== null` means "the agent has this session live
+   * and our log mirrors what it would replay." When `maybeCloseIdleSession`
+   * tears the session down inside the agent, it MUST reset `metadata` to
+   * null AND clear `entries`, so the next access goes through cold-bootstrap
+   * and rehydrates both sides from disk.
+   *
+   * `null` represents two states: (a) the session was never bootstrapped, or
+   * (b) the most recent cold `session/load` failed — the cache-population
+   * guard in `handleAgentLine` skips writes when the agent's response has
+   * `result === undefined` (i.e. an error frame), so an error leaves
+   * `metadata` null. The bootstrap completion handler relies on exactly
+   * this to detect cold-load failure (`loadFailed = log.metadata === null`)
+   * and relay the agent's error to parked waiters. A future discriminated
+   * union (`{ status: "loaded"; data: unknown } | null`) would let the
+   * type system encode this directly. */
   metadata: unknown | null;
 }
 
@@ -217,7 +240,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   function getOrCreateLog(sessionId: string): SessionLog {
     let log = sessionLogs.get(sessionId);
     if (!log) {
-      log = { entries: [], nextSeq: 1, totalBytes: 0, truncated: false, metadata: null };
+      log = {
+        entries: [],
+        nextSeq: 1,
+        totalBytes: 0,
+        truncated: false,
+        metadata: null,
+      };
       sessionLogs.set(sessionId, log);
     }
     return log;
@@ -244,7 +273,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     return map?.get(sessionId) ?? 0;
   }
 
-  function setCursor(channel: ClientChannel, sessionId: string, seq: number): void {
+  function setCursor(
+    channel: ClientChannel,
+    sessionId: string,
+    seq: number,
+  ): void {
     let map = channelCursors.get(channel);
     if (!map) {
       map = new Map();
@@ -338,7 +371,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   function appendAndFanOut(
     sessionId: string,
     line: string,
-    options?: { skipChannel?: ClientChannel; onlyChannel?: ClientChannel | null },
+    options?: {
+      skipChannel?: ClientChannel;
+      onlyChannel?: ClientChannel | null;
+    },
   ): void {
     const seq = appendToLog(sessionId, line);
     const out = rewriteAuthError(line);
@@ -373,7 +409,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
    * but a fresh channel (after reload) will catch it through the normal
    * catch-up from cursor=0.
    */
-  function appendUserPromptToLog(sessionId: string, prompt: unknown, originator: ClientChannel): void {
+  function appendUserPromptToLog(
+    sessionId: string,
+    prompt: unknown,
+    originator: ClientChannel,
+  ): void {
     if (!Array.isArray(prompt)) return;
     for (const block of prompt) {
       if (!block || typeof block !== "object") continue;
@@ -406,12 +446,18 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     const engaged = hasEngagedChannel(sessionId);
     let hasPending = false;
     for (const req of pendingFromAgent.values()) {
-      if (req.sessionId === sessionId) { hasPending = true; break; }
+      if (req.sessionId === sessionId) {
+        hasPending = true;
+        break;
+      }
     }
     const existing = orphanTimers.get(sessionId);
     const shouldRun = hasPending && !engaged && !agentExited;
     if (shouldRun && !existing) {
-      orphanTimers.set(sessionId, setTimeout(() => expireSession(sessionId), orphanTtlMs));
+      orphanTimers.set(
+        sessionId,
+        setTimeout(() => expireSession(sessionId), orphanTtlMs),
+      );
     } else if (!shouldRun && existing) {
       clearTimeout(existing);
       orphanTimers.delete(sessionId);
@@ -522,24 +568,40 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   }
 
   /**
-   * Close an SDK session when nothing is keeping it alive. Each open session
-   * pins a `claude` CLI subprocess (~300MB RSS) inside the agent pod; leaving
-   * them open after viewers leave accumulates until the pod OOMs.
+   * Tear a session down on both sides of the relay: send `session/close` to
+   * the agent (if it supports it) and drop the runtime's cache + per-channel
+   * cursors. The two halves MUST happen together — otherwise the cache lies
+   * to the UI about a session the agent has forgotten, and the next
+   * `session/prompt` comes back with "Session not found".
    *
-   * "Idle" means: no channel engaged with the session, no active or queued
-   * prompts, no agent→client requests still pending (permission prompts).
-   * The SDK respawns the subprocess on the next resume/load, so closing is
-   * safe — we just trade memory for a brief cold-start when a viewer returns.
+   * Fire-and-forget on the agent side: we don't register the outbound id, so
+   * the agent's response is silently dropped by `handleAgentLine`.
+   */
+  function tearDownSession(sessionId: string): void {
+    if (agent && !agentExited && sessionCloseSupported) {
+      agent.send({
+        jsonrpc: "2.0",
+        id: nextOutboundId++,
+        method: "session/close",
+        params: { sessionId },
+      });
+    }
+    sessionLogs.delete(sessionId);
+    for (const cursors of channelCursors.values()) cursors.delete(sessionId);
+  }
+
+  /**
+   * Refcount-driven reap: when no channel is engaged with the session and no
+   * work is in flight, tear it down to free the ~300MB CLI subprocess the
+   * SDK pins per session. The cold-bootstrap path rehydrates from disk on
+   * the next viewer's `session/resume`.
    *
-   * Fire-and-forget: we don't register the outbound id, so the agent's
-   * response is silently dropped by `handleAgentLine`.
+   * Skipped entirely when the agent doesn't advertise
+   * `sessionCapabilities.close`: we can't tell the agent to drop the session,
+   * so we also keep the cache so future resumes can still serve from memory.
    */
   function maybeCloseIdleSession(sessionId: string): void {
     if (!agent || agentExited) return;
-    // Skip if the agent didn't advertise `sessionCapabilities.close` in its
-    // initialize response. The session lives on inside the agent — keep the
-    // local log + cursors so a future session/resume can serve from cache
-    // without forcing a cold re-bootstrap the agent likely can't satisfy.
     if (!sessionCloseSupported) return;
     if (hasEngagedChannel(sessionId)) return;
     if (activePromptBySession.has(sessionId)) return;
@@ -552,22 +614,19 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (req.sessionId === sessionId) return;
     }
 
-    const id = nextOutboundId++;
-    agent.send({
-      jsonrpc: "2.0",
-      id,
-      method: "session/close",
-      params: { sessionId },
-    });
+    tearDownSession(sessionId);
     deps.log?.(`closing idle session ${sessionId}`);
-    // Drop the log + any lingering cursors for this session. Next load for
-    // this sid will cold-bootstrap via the agent again.
-    sessionLogs.delete(sessionId);
-    for (const cursors of channelCursors.values()) cursors.delete(sessionId);
   }
 
-  function sendErrorResponse(channel: ClientChannel, id: JsonRpcId, message: string): void {
-    sendToChannel(channel, JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32000, message } }));
+  function sendErrorResponse(
+    channel: ClientChannel,
+    id: JsonRpcId,
+    message: string,
+  ): void {
+    sendToChannel(
+      channel,
+      JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32000, message } }),
+    );
   }
 
   // ── Prompt queue ──
@@ -575,7 +634,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   function forwardPromptToAgent(
     a: AgentProcess,
     sessionId: string,
-    entry: { channel: ClientChannel; outboundId: number; originalId: JsonRpcId; frame: unknown },
+    entry: {
+      channel: ClientChannel;
+      outboundId: number;
+      originalId: JsonRpcId;
+      frame: unknown;
+    },
   ): void {
     activePromptBySession.set(sessionId, {
       sessionId,
@@ -610,7 +674,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     log: SessionLog,
   ): void {
     if (log.metadata === null) {
-      throw new Error(`serveLoadFromLog called for ${sessionId} without cached metadata`);
+      throw new Error(
+        `serveLoadFromLog called for ${sessionId} without cached metadata`,
+      );
     }
     catchUp(channel, sessionId);
     engage(channel, sessionId);
@@ -637,12 +703,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     log: SessionLog,
   ): void {
     if (log.metadata === null) {
-      throw new Error(`serveResumeFromLog called for ${sessionId} without cached metadata`);
+      throw new Error(
+        `serveResumeFromLog called for ${sessionId} without cached metadata`,
+      );
     }
     engage(channel, sessionId);
-    const lastSeq = log.entries.length > 0
-      ? log.entries[log.entries.length - 1].seq
-      : 0;
+    const lastSeq =
+      log.entries.length > 0 ? log.entries[log.entries.length - 1].seq : 0;
     setCursor(channel, sessionId, lastSeq);
     const response = JSON.stringify({
       jsonrpc: "2.0",
@@ -705,13 +772,15 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           // authoritative log state: session/new and session/fork start an
           // empty log that the creator's prompts will populate, and
           // session/load populates it via replaySessionHistory.
-          const cacheable = mapping.method === "session/new"
-            || mapping.method === "session/fork"
-            || mapping.method === "session/load";
-          if (cacheable) {
+          const cacheable =
+            mapping.method === "session/new" ||
+            mapping.method === "session/fork" ||
+            mapping.method === "session/load";
+          const result = (frame as { result?: unknown }).result;
+          if (cacheable && result !== undefined) {
             const log = getOrCreateLog(sidForChannel);
             if (log.metadata === null) {
-              log.metadata = (frame as { result?: unknown }).result ?? { sessionId: sidForChannel };
+              log.metadata = result;
             }
           }
         }
@@ -729,8 +798,23 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           const boot = bootstrapBySession.get(sid);
           if (boot) {
             bootstrapBySession.delete(sid);
+            // Error responses leave metadata null (cache-population guard
+            // above requires `result !== undefined`); see SessionLog.metadata
+            // invariant for the full coupling.
+            const loadFailed = log.metadata === null;
             for (const waiter of boot.waiters) {
               if (!waiter.channel.isOpen()) continue;
+              if (loadFailed) {
+                // Relay the agent's error to the waiter under its own id
+                // — we have no cached metadata to synthesize a response,
+                // and a thrown error here would leave the waiter hanging.
+                const out = JSON.stringify({
+                  ...(frame as object),
+                  id: waiter.originalId,
+                });
+                waiter.channel.send(rewriteAuthError(out));
+                continue;
+              }
               if (waiter.kind === "load") {
                 serveLoadFromLog(waiter.channel, waiter.originalId, sid, log);
               } else {
@@ -743,8 +827,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         // Rewrite the response id back to what the originating client used.
         // Skip when the runtime initiated the call (no client to respond to).
         if (mapping.channel && mapping.originalId !== null) {
-          const out = JSON.stringify({ ...(frame as object), id: mapping.originalId });
-          if (mapping.channel.isOpen()) mapping.channel.send(rewriteAuthError(out));
+          const out = JSON.stringify({
+            ...(frame as object),
+            id: mapping.originalId,
+          });
+          if (mapping.channel.isOpen())
+            mapping.channel.send(rewriteAuthError(out));
         }
 
         // If this response completes a queued prompt, advance the session's
@@ -762,11 +850,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             activePromptBySession.delete(sid);
             if (agent && !agentExited) advanceQueue(agent, sid);
           }
-          appendAndFanOut(sid, JSON.stringify({
-            jsonrpc: "2.0",
-            method: "platform/turnEnded",
-            params: { sessionId: sid },
-          }));
+          appendAndFanOut(
+            sid,
+            JSON.stringify(
+              buildPlatformTurnEndedNotification({ sessionId: sid }),
+            ),
+          );
           // Reap the SDK session if the turn finished with nothing left to
           // watch it — e.g. a scheduled trigger fired a prompt with no UI
           // attached. If a queued prompt was just promoted by advanceQueue,
@@ -795,7 +884,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (sessionId) {
       const boot = bootstrapBySession.get(sessionId);
       if (boot) {
-        appendAndFanOut(sessionId, line, { onlyChannel: boot.initiatorChannel });
+        appendAndFanOut(sessionId, line, {
+          onlyChannel: boot.initiatorChannel,
+        });
       } else {
         appendAndFanOut(sessionId, line);
       }
@@ -806,7 +897,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   // ── Client → agent traffic ──
 
-  function handleClientMessage(a: AgentProcess, channel: ClientChannel, data: string): void {
+  function handleClientMessage(
+    a: AgentProcess,
+    channel: ClientChannel,
+    data: string,
+  ): void {
     const frame = parseFrame(data);
     if (!frame) {
       deps.log?.(`dropping non-JSON client message: ${data}`);
@@ -826,9 +921,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }
 
     if (isRequest(frame)) {
-      const method = typeof (frame as { method?: unknown }).method === "string"
-        ? (frame as { method: string }).method
-        : "";
+      const method =
+        typeof (frame as { method?: unknown }).method === "string"
+          ? (frame as { method: string }).method
+          : "";
       const paramsSid = extractParamsSessionId(frame);
 
       // `session/resume` short-circuit: the runtime mediates resume entirely.
@@ -917,7 +1013,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       // we stash it from params to recover it when the response comes back.
       const attachSessionId = method === "session/load" ? paramsSid : null;
 
-      const rewritten = rewriteCwd({ ...frame, id: outboundId }, deps.workingDir);
+      const rewritten = rewriteCwd(
+        { ...frame, id: outboundId },
+        deps.workingDir,
+      );
       outboundIdToClient.set(outboundId, {
         channel,
         originalId: frame.id,
@@ -943,21 +1042,36 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         // never see the user's message. The runtime fans out to everyone
         // including the sender; the sending client's UI reconciles the echo
         // against its optimistic bubble.
-        const promptBlocks = (frame as { params?: { prompt?: unknown } }).params?.prompt;
+        const promptBlocks = (frame as { params?: { prompt?: unknown } }).params
+          ?.prompt;
         appendUserPromptToLog(promptSessionId, promptBlocks, channel);
 
         if (activePromptBySession.has(promptSessionId)) {
           const queue = promptQueueBySession.get(promptSessionId) ?? [];
           if (queue.length >= PROMPT_QUEUE_CAP) {
             outboundIdToClient.delete(outboundId);
-            sendErrorResponse(channel, frame.id, `prompt queue full for session ${promptSessionId}`);
+            sendErrorResponse(
+              channel,
+              frame.id,
+              `prompt queue full for session ${promptSessionId}`,
+            );
             return;
           }
-          queue.push({ channel, outboundId, originalId: frame.id, frame: rewritten });
+          queue.push({
+            channel,
+            outboundId,
+            originalId: frame.id,
+            frame: rewritten,
+          });
           promptQueueBySession.set(promptSessionId, queue);
           return;
         }
-        forwardPromptToAgent(a, promptSessionId, { channel, outboundId, originalId: frame.id, frame: rewritten });
+        forwardPromptToAgent(a, promptSessionId, {
+          channel,
+          outboundId,
+          originalId: frame.id,
+          frame: rewritten,
+        });
         return;
       }
 
@@ -997,22 +1111,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     },
 
     resetSession(sessionId) {
-      if (agent && !agentExited && sessionCloseSupported) {
-        agent.send({
-          jsonrpc: "2.0",
-          id: nextOutboundId++,
-          method: "session/close",
-          params: { sessionId },
-        });
-      }
-      // Always clear client-side state even if the agent didn't accept the close.
-      sessionLogs.delete(sessionId);
-      for (const cursors of channelCursors.values()) cursors.delete(sessionId);
+      tearDownSession(sessionId);
       deps.log?.(`reset session ${sessionId}`);
     },
 
     shutdown() {
-      for (const channel of engagedSessions.keys()) channel.close(1000, "shutdown");
+      for (const channel of engagedSessions.keys())
+        channel.close(1000, "shutdown");
       engagedSessions.clear();
       channelCursors.clear();
       sessionLogs.clear();
@@ -1024,30 +1129,33 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   };
 }
 
+function isNonNullObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+
 function extractSessionCloseSupported(frame: unknown): boolean {
-  if (typeof frame !== "object" || frame === null) return false;
-  const result = (frame as { result?: unknown }).result;
-  if (typeof result !== "object" || result === null) return false;
-  const caps = (result as { agentCapabilities?: unknown }).agentCapabilities;
-  if (typeof caps !== "object" || caps === null) return false;
-  const session = (caps as { sessionCapabilities?: unknown }).sessionCapabilities;
-  if (typeof session !== "object" || session === null) return false;
-  const close = (session as { close?: unknown }).close;
-  return typeof close === "object" && close !== null;
+  if (!isNonNullObject(frame)) return false;
+  const result = frame.result;
+  if (!isNonNullObject(result)) return false;
+  const caps = result.agentCapabilities;
+  if (!isNonNullObject(caps)) return false;
+  const session = caps.sessionCapabilities;
+  if (!isNonNullObject(session)) return false;
+  return isNonNullObject(session.close);
 }
 
 function extractParamsSessionId(frame: unknown): string | null {
-  if (typeof frame !== "object" || frame === null) return null;
-  const f = frame as { params?: unknown };
-  if (typeof f.params !== "object" || f.params === null) return null;
-  const sid = (f.params as { sessionId?: unknown }).sessionId;
+  if (!isNonNullObject(frame)) return null;
+  const params = frame.params;
+  if (!isNonNullObject(params)) return null;
+  const sid = params.sessionId;
   return typeof sid === "string" ? sid : null;
 }
 
 function extractResultSessionId(frame: unknown): string | null {
-  if (typeof frame !== "object" || frame === null) return null;
-  const f = frame as { result?: unknown };
-  if (typeof f.result !== "object" || f.result === null) return null;
-  const sid = (f.result as { sessionId?: unknown }).sessionId;
+  if (!isNonNullObject(frame)) return null;
+  const result = frame.result;
+  if (!isNonNullObject(result)) return null;
+  const sid = result.sessionId;
   return typeof sid === "string" ? sid : null;
 }

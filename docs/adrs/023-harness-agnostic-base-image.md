@@ -56,6 +56,7 @@ The platform contract is two executables at fixed paths ([ADR-037](037-remote-te
 |---|---|---|
 | `example-agent` | Claude Code ACP (default) | `claude` (default) |
 | `google-workspace` | Claude Code ACP (default) | `claude` (default) |
+| `codex` | `codex-acp` | `codex` / `codex resume --last` |
 | `pi-agent` | `pi-acp` | `pi --session $HARNESS_SESSION_ID` |
 
 See `packages/agents/pi-agent/README.md` for pi-specific config (memory scopes, system-prompt conventions, workspace layout).

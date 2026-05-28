@@ -9,7 +9,7 @@ import {
 export type ExtAuthzVerdict = "allow" | "deny";
 
 export interface ExtAuthzGateInput {
-  instanceId: string;
+  agentId: string;
   host: string;
   method: string;
   path: string;
@@ -31,8 +31,10 @@ export interface ExtAuthzGate {
  * keeps approvals from importing from agents- or egress-rules-modules
  * directly.
  */
-export interface InstanceIdentityResolver {
-  resolve(instanceId: string): Promise<{ ownerSub: string; agentId: string } | null>;
+export interface AgentIdentityResolver {
+  resolve(
+    agentId: string,
+  ): Promise<{ ownerSub: string; agentId: string } | null>;
 }
 
 export interface EgressRuleMatcher {
@@ -47,7 +49,7 @@ export interface EgressRuleMatcher {
 export interface CreateExtAuthzGateDeps {
   repo: ApprovalsRepository;
   bus: RedisBus;
-  identityResolver: InstanceIdentityResolver;
+  identityResolver: AgentIdentityResolver;
   ruleMatcher: EgressRuleMatcher;
   /** Bounded synchronous hold; the durable pending row outlives this. */
   holdSeconds: number;
@@ -55,11 +57,16 @@ export interface CreateExtAuthzGateDeps {
 
 export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
   return {
-    async gateRequest({ instanceId, host, method, path }) {
-      const identity = await deps.identityResolver.resolve(instanceId);
+    async gateRequest({ agentId, host, method, path }) {
+      const identity = await deps.identityResolver.resolve(agentId);
       if (!identity) return "deny";
 
-      const matched = await deps.ruleMatcher.match(identity.agentId, host, method, path);
+      const matched = await deps.ruleMatcher.match(
+        identity.agentId,
+        host,
+        method,
+        path,
+      );
       if (matched) return matched.verdict;
 
       // Dedupe retried holds: when the agent's CLI retries (Envoy timeout,
@@ -79,15 +86,19 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
         await deps.repo.insertPending({
           id: pendingId,
           type: "ext_authz",
-          instanceId,
           agentId: identity.agentId,
           ownerSub: identity.ownerSub,
           sessionId: null,
           payload: { kind: "ext_authz", host, method, path },
           expiresAt: new Date(Date.now() + deps.holdSeconds * 1000),
         });
-        const frame = buildExtAuthzSynthFrame({ approvalId: pendingId, host, method, path });
-        void deps.bus.publish(injectChannelOf(instanceId), frame);
+        const frame = buildExtAuthzSynthFrame({
+          approvalId: pendingId,
+          host,
+          method,
+          path,
+        });
+        void deps.bus.publish(injectChannelOf(agentId), frame);
       }
 
       return waitForVerdict(deps, pendingId);
@@ -102,7 +113,8 @@ async function waitForVerdict(
   // Re-read the row up front: a verdict written between INSERT and
   // SUBSCRIBE would otherwise be missed. Postgres is the truth path.
   const initial = await deps.repo.getPending(id);
-  if (initial && initial.status === "resolved") return verdictOf(initial.verdict);
+  if (initial && initial.status === "resolved")
+    return verdictOf(initial.verdict);
 
   return new Promise<ExtAuthzVerdict>((resolve) => {
     let settled = false;

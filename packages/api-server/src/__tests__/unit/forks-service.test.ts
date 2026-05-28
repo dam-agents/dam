@@ -20,11 +20,14 @@ function makeHarness(overrides: {
 } {
   const events: DomainEvent[] = [];
   const calls = { createdForks: [] as string[], deletedForks: [] as string[] };
-  const streams = new Map<string, {
-    push: (s: ForkStatus) => void;
-    close: () => void;
-    iterable: AsyncIterable<ForkStatus>;
-  }>();
+  const streams = new Map<
+    string,
+    {
+      push: (s: ForkStatus) => void;
+      close: () => void;
+      iterable: AsyncIterable<ForkStatus>;
+    }
+  >();
 
   function makeStream(forkId: string): AsyncIterable<ForkStatus> {
     const queue: ForkStatus[] = [];
@@ -46,7 +49,11 @@ function makeHarness(overrides: {
           new Promise<IteratorResult<ForkStatus>>((resolve) => {
             const s = queue.shift();
             if (s) resolve({ value: s, done: false });
-            else if (closed) resolve({ value: undefined as unknown as ForkStatus, done: true });
+            else if (closed)
+              resolve({
+                value: undefined as unknown as ForkStatus,
+                done: true,
+              });
             else resolvers.push(resolve);
           }),
       }),
@@ -97,7 +104,7 @@ describe("ForksService.openFork", () => {
   it("emits ForkReady with replyId + podIP when the orchestrator reports Ready", async () => {
     const h = makeHarness({});
     await h.service.openFork({
-      instanceId: "inst-1",
+      agentId: "inst-1",
       foreignSub: "kc|user-42",
       replyId: "reply-1",
     });
@@ -118,11 +125,12 @@ describe("ForksService.openFork", () => {
   it("emits ForkFailed(OrchestrationFailed) when orchestrator.createFork errors", async () => {
     const h = makeHarness({
       orchestrator: {
-        createFork: async () => err({ kind: "WriteFailed", detail: "apiserver 503" }),
+        createFork: async () =>
+          err({ kind: "WriteFailed", detail: "apiserver 503" }),
       },
     });
     await h.service.openFork({
-      instanceId: "inst-1",
+      agentId: "inst-1",
       foreignSub: "kc|user-42",
       replyId: "reply-1",
     });
@@ -141,12 +149,15 @@ describe("ForksService.openFork", () => {
   it("maps orchestrator status.Failed into ForkFailed carrying the reason", async () => {
     const h = makeHarness({});
     await h.service.openFork({
-      instanceId: "inst-1",
+      agentId: "inst-1",
       foreignSub: "kc|user-42",
       replyId: "reply-1",
     });
     h.statusStream("fork-1", [
-      { phase: "Failed", error: { reason: "PodNotReady", detail: "CrashLoopBackOff" } },
+      {
+        phase: "Failed",
+        error: { reason: "PodNotReady", detail: "CrashLoopBackOff" },
+      },
     ]);
     await h.streamDone();
 
@@ -165,7 +176,7 @@ describe("ForksService.openFork", () => {
     const h = makeHarness({});
     await expect(
       h.service.openFork({
-        instanceId: "inst-1",
+        agentId: "inst-1",
         foreignSub: "",
         replyId: "reply-1",
       }),
@@ -177,7 +188,7 @@ describe("ForksService.closeFork", () => {
   it("deletes the K8s fork and emits ForkCompleted after a Ready fork", async () => {
     const h = makeHarness({});
     await h.service.openFork({
-      instanceId: "inst-1",
+      agentId: "inst-1",
       foreignSub: "kc|user-42",
       replyId: "reply-1",
     });
@@ -188,7 +199,9 @@ describe("ForksService.closeFork", () => {
     await h.service.closeFork("fork-1");
 
     expect(h.calls.deletedForks).toEqual(["fork-1"]);
-    expect(h.events).toEqual([{ type: EventType.ForkCompleted, forkId: "fork-1" }]);
+    expect(h.events).toEqual([
+      { type: EventType.ForkCompleted, forkId: "fork-1" },
+    ]);
   });
 
   it("is a no-op for unknown forkIds", async () => {

@@ -64,9 +64,11 @@ export function createDeliverySweeper(
         const rpcId = row.payload.rpcId;
         if (rpcId === undefined || rpcId === null) continue;
         const optionId = pickOptionId(row.payload.options ?? [], row.verdict);
-        const frame = JSON.stringify(buildAcpPermissionResponse(rpcId, optionId));
+        const frame = JSON.stringify(
+          buildAcpPermissionResponse(rpcId, optionId),
+        );
         try {
-          await deps.wrapperFrameSender.send(row.instanceId, frame);
+          await deps.wrapperFrameSender.send(row.agentId, frame);
           await deps.repo.markDelivered(row.id);
         } catch {
           // Leave for next tick. The expire-overdue pass below bounds how

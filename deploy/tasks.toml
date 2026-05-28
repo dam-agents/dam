@@ -47,29 +47,42 @@ esac
 ["image:controller"]
 description = "Build controller Docker image"
 dir = "{{config_root}}"
-run = 'docker build -t platform-controller:latest packages/controller/'
+run = '''
+#!/usr/bin/env bash
+[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
+docker build -t platform-controller:latest packages/controller/
+'''
 
 ["image:apiserver"]
 description = "Build api-server Docker image"
 dir = "{{config_root}}"
-run = 'docker build -f packages/api-server/Dockerfile -t platform-api-server:latest .'
+run = '''
+#!/usr/bin/env bash
+[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
+docker build -f packages/api-server/Dockerfile -t platform-api-server:latest .
+'''
 
 ["image:ui"]
 description = "Build UI Docker image"
 dir = "{{config_root}}"
-run = 'docker build -f packages/ui/Dockerfile -t platform-ui:latest .'
+run = '''
+#!/usr/bin/env bash
+[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
+docker build -f packages/ui/Dockerfile -t platform-ui:latest .
+'''
 
 ["image:agent"]
-description = "Build agent Docker images (platform-base + claude-code + google-workspace + pi-agent + code-guardian + bob)"
+description = "Build agent Docker images (platform-base + claude-code + codex + google-workspace + pi-agent + bob)"
 dir = "{{config_root}}"
 run = '''
 #!/usr/bin/env bash
 set -eo pipefail
+[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
 docker build -f packages/platform-base/Dockerfile -t platform-base .
 docker build -t platform-claude-code:latest packages/agents/claude-code
+docker build -t platform-codex:latest packages/agents/codex
 docker build -t platform-google-workspace-agent:latest packages/agents/google-workspace
 docker build -t platform-pi-agent:latest packages/agents/pi-agent
-docker build -t platform-code-guardian:latest packages/agents/code-guardian
 docker build -t platform-bob:latest packages/agents/bob
 '''
 
@@ -231,7 +244,16 @@ istio_install_if_missing() {
 }
 
 istio_install_if_missing istio-base istio/base
-istio_install_if_missing istiod istio/istiod --set profile=ambient
+# Pin workload SVID TTL to 30d (issue #283). The default 24h races
+# against lima VM suspend/resume on a sleeping host laptop — when the
+# rotation window slips past expiry, every mesh hop dies until ztunnel
+# is bounced. Bumping the TTL well past a typical dev-cluster lifetime
+# (and well under Istio's 90d MAX_WORKLOAD_CERT_TTL default) takes the
+# rotation race off the critical path for normal dev work; the
+# ztunnel-cert-watchdog CronJob below covers the residual.
+istio_install_if_missing istiod istio/istiod \
+  --set profile=ambient \
+  --set pilot.env.DEFAULT_WORKLOAD_CERT_TTL=720h
 # k3s places CNI dirs at non-upstream paths (/var/lib/rancher/k3s/...).
 # Without these overrides istio-cni-node loops "no networks found in
 # /host/etc/cni/net.d" and ambient redirection never engages.
@@ -243,6 +265,94 @@ istio_install_if_missing ztunnel istio/ztunnel
 kubectl --kubeconfig="$KUBECONFIG" -n istio-system rollout status ds/ztunnel --timeout=120s
 kubectl --kubeconfig="$KUBECONFIG" -n istio-system rollout status ds/istio-cni-node --timeout=120s
 
+# Watchdog: every 10 min, scan ztunnel pod logs for the expired-SVID
+# markers (issue #283) and roll ds/ztunnel if any are present. Belt-and-
+# suspenders against any rotation failure that slips past the 30d
+# DEFAULT_WORKLOAD_CERT_TTL pinned on istiod above (e.g. a cluster left
+# running past TTL, an upstream istio bug). Apply is idempotent on
+# re-runs of cluster:install.
+kubectl --kubeconfig="$KUBECONFIG" apply -f - <<'YAML'
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ztunnel-cert-watchdog
+  namespace: istio-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ztunnel-cert-watchdog
+  namespace: istio-system
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: ["apps"]
+    resources: ["daemonsets"]
+    # list+watch needed by `rollout status` (it watches the ds);
+    # patch is what `rollout restart` does (pod-template annotation).
+    verbs: ["get", "list", "watch", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ztunnel-cert-watchdog
+  namespace: istio-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ztunnel-cert-watchdog
+subjects:
+  - kind: ServiceAccount
+    name: ztunnel-cert-watchdog
+    namespace: istio-system
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ztunnel-cert-watchdog
+  namespace: istio-system
+spec:
+  schedule: "*/10 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 600
+      template:
+        spec:
+          serviceAccountName: ztunnel-cert-watchdog
+          restartPolicy: Never
+          containers:
+            - name: watchdog
+              image: alpine/k8s:1.30.4
+              command:
+                - sh
+                - -c
+                - |
+                  set -eu
+                  TRIGGERED=0
+                  for pod in $(kubectl -n istio-system get pods -l app=ztunnel -o name); do
+                    if kubectl -n istio-system logs --since=15m "$pod" 2>/dev/null \
+                        | grep -qiE 'certificate expired|AlertReceived\(CertificateExpired\)'; then
+                      echo "watchdog: $pod reported expired SVID — rolling ds/ztunnel"
+                      TRIGGERED=1
+                      break
+                    fi
+                  done
+                  if [ "$TRIGGERED" = 1 ]; then
+                    kubectl -n istio-system rollout restart ds/ztunnel
+                    kubectl -n istio-system rollout status ds/ztunnel --timeout=120s
+                  else
+                    echo "watchdog: ztunnel SVIDs healthy"
+                  fi
+YAML
+
 # Release namespace must be ambient so the api-server pod and the
 # Istio-synthesised waypoint Pod participate in mesh mTLS. The helm
 # install below targets the `default` namespace; label it now (the
@@ -250,21 +360,32 @@ kubectl --kubeconfig="$KUBECONFIG" -n istio-system rollout status ds/istio-cni-n
 kubectl --kubeconfig="$KUBECONFIG" label namespace default istio.io/dataplane-mode=ambient --overwrite
 
 # 3. Load images into k3s (built by depends: image:*)
-echo "Loading images into k3s..."
-tar="/tmp/platform-images.tar"
-docker save -o "$tar" platform-controller:latest platform-api-server:latest platform-ui:latest platform-claude-code:latest platform-google-workspace-agent:latest platform-pi-agent:latest platform-code-guardian:latest platform-bob:latest
-if [ -n "${IS_SANDBOX:-}" ]; then
-  docker image prune --all --force >/dev/null 2>&1 || true
-  sudo k3s ctr images import "$tar"
+# SKIP_IMAGE_BUILD also skips the load: image:* tasks already no-op'd, so
+# there's nothing new in docker to ship. Pods keep running their pinned SHAs.
+if [ -n "${SKIP_IMAGE_BUILD:-}" ]; then
+  echo "Skipping image load (SKIP_IMAGE_BUILD set)"
+  NO_RESTART=true
 else
-  limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
-  limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
+  echo "Loading images into k3s..."
+  tar="/tmp/platform-images.tar"
+  docker save -o "$tar" platform-controller:latest platform-api-server:latest platform-ui:latest platform-claude-code:latest platform-codex:latest platform-google-workspace-agent:latest platform-pi-agent:latest platform-bob:latest
+  if [ -n "${IS_SANDBOX:-}" ]; then
+    [ -z "${CI:-}" ] && docker image prune --all --force >/dev/null 2>&1 || true
+    sudo k3s ctr images import "$tar"
+  else
+    limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
+    limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
+  fi
+  rm -f "$tar"
 fi
-rm -f "$tar"
 
 # 4. Helm install or upgrade
 # Dev-cluster defaults (overridable via --set)
-DEV_DEFAULTS=(--set keycloak.admin.password=admin)
+DEV_DEFAULTS=(
+  --set keycloak.admin.password=admin
+  --set terms.version=dev
+  --set "terms.text=Dev placeholder Terms of Use. See ADR-047."
+)
 
 # Detect btrfs-backed clusters (Fedora hosts default to btrfs) and bypass
 # the bundled nfs-ganesha provisioner — it returns EREMOTEIO on every write
@@ -329,6 +450,15 @@ echo "=== Cluster ready ==="
 echo "KUBECONFIG=$KUBECONFIG"
 echo ""
 kubectl --kubeconfig="$KUBECONFIG" get pods
+'''
+
+["cluster:helm"]
+description = "Redeploy chart only (no image rebuild, no image load, no pod restart). Use for values/template/secret changes. Forwards extra args to cluster:install."
+dir = "{{config_root}}"
+raw = true
+run = '''
+#!/usr/bin/env bash
+exec env SKIP_IMAGE_BUILD=1 mise run cluster:install "$@"
 '''
 
 ["cluster:build-apiserver"]
@@ -415,7 +545,7 @@ set -eo pipefail
 
 echo "Loading into k3s..."
 tar="/tmp/platform-agent-images.tar"
-docker save platform-claude-code:latest platform-google-workspace-agent:latest platform-pi-agent:latest platform-code-guardian:latest platform-bob:latest -o "$tar"
+docker save platform-claude-code:latest platform-codex:latest platform-google-workspace-agent:latest platform-pi-agent:latest platform-bob:latest -o "$tar"
 
 if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"

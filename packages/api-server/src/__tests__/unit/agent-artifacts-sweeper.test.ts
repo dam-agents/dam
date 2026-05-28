@@ -5,7 +5,8 @@ import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 
 function fakeK8s(liveAgents: string[]): K8sClient {
   return {
-    listConfigMaps: async () => liveAgents.map((name) => ({ metadata: { name } } as k8s.V1ConfigMap)),
+    listConfigMaps: async () =>
+      liveAgents.map((name) => ({ metadata: { name } }) as k8s.V1ConfigMap),
   } as unknown as K8sClient;
 }
 
@@ -18,13 +19,21 @@ describe("agent-artifacts-sweeper", () => {
       sources: [
         {
           name: "egress",
-          listAgentIds: async () => ["agent-live-1", "agent-orphan-A", "agent-orphan-B"],
-          cleanup: async (id) => { cleaned.push({ source: "egress", id }); },
+          listAgentIds: async () => [
+            "agent-live-1",
+            "agent-orphan-A",
+            "agent-orphan-B",
+          ],
+          cleanup: async (id) => {
+            cleaned.push({ source: "egress", id });
+          },
         },
         {
           name: "approvals",
           listAgentIds: async () => ["agent-live-2", "agent-orphan-A"],
-          cleanup: async (id) => { cleaned.push({ source: "approvals", id }); },
+          cleanup: async (id) => {
+            cleaned.push({ source: "approvals", id });
+          },
         },
       ],
       intervalMs: 30_000,
@@ -54,7 +63,9 @@ describe("agent-artifacts-sweeper", () => {
         {
           name: "egress",
           listAgentIds: async () => ["a", "b", "c", "d", "e"],
-          cleanup: async (id) => { cleaned.push(id); },
+          cleanup: async (id) => {
+            cleaned.push(id);
+          },
         },
       ],
       intervalMs: 30_000,
@@ -66,7 +77,9 @@ describe("agent-artifacts-sweeper", () => {
   });
 
   it("continues to the next source if one source's cleanup throws", async () => {
-    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const stderr = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
     const cleaned: string[] = [];
 
     const sweeper = createAgentArtifactsSweeper({
@@ -75,12 +88,16 @@ describe("agent-artifacts-sweeper", () => {
         {
           name: "egress",
           listAgentIds: async () => ["agent-orphan"],
-          cleanup: async () => { throw new Error("boom"); },
+          cleanup: async () => {
+            throw new Error("boom");
+          },
         },
         {
           name: "approvals",
           listAgentIds: async () => ["agent-orphan"],
-          cleanup: async (id) => { cleaned.push(id); },
+          cleanup: async (id) => {
+            cleaned.push(id);
+          },
         },
       ],
       intervalMs: 30_000,
@@ -101,7 +118,9 @@ describe("agent-artifacts-sweeper", () => {
         {
           name: "egress",
           listAgentIds: async () => ["agent-1"],
-          cleanup: async (id) => { cleaned.push(id); },
+          cleanup: async (id) => {
+            cleaned.push(id);
+          },
         },
       ],
       intervalMs: 30_000,

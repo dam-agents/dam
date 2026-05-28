@@ -1,9 +1,16 @@
 import { TRPCError } from "@trpc/server";
-import { z } from "zod";
 import { protectedProcedure, t } from "../../trpc.js";
+import {
+  fileCreateInputSchema,
+  fileListDirsInputSchema,
+  fileMkdirInputSchema,
+  fileReadInputSchema,
+  fileRemoveInputSchema,
+  fileRenameInputSchema,
+  fileUploadInputSchema,
+  fileWriteInputSchema,
+} from "./schemas.js";
 import type { FilesDomainError } from "./types.js";
-
-const pathSchema = z.string().min(1);
 
 function toTrpcError(error: FilesDomainError): TRPCError {
   switch (error.kind) {
@@ -18,19 +25,27 @@ function toTrpcError(error: FilesDomainError): TRPCError {
         cause: { currentMtimeMs: error.currentMtimeMs },
       });
     case "AlreadyExists":
-      return new TRPCError({ code: "CONFLICT", message: "path already exists" });
+      return new TRPCError({
+        code: "CONFLICT",
+        message: "path already exists",
+      });
     case "PayloadTooLarge":
-      return new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: error.detail });
+      return new TRPCError({
+        code: "PAYLOAD_TOO_LARGE",
+        message: error.detail,
+      });
   }
 }
 
 export const filesRouter = t.router({
-  tree: protectedProcedure.query(({ ctx }) => ({
-    entries: ctx.files.buildTree(),
-  })),
+  listDirs: protectedProcedure
+    .input(fileListDirsInputSchema)
+    .query(async ({ ctx, input }) => ({
+      results: await ctx.files.listDirs(input.paths),
+    })),
 
   read: protectedProcedure
-    .input(z.object({ path: pathSchema }))
+    .input(fileReadInputSchema)
     .query(async ({ ctx, input }) => {
       const result = await ctx.files.readFileSafe(input.path);
       if (!result.ok) throw toTrpcError(result.error);
@@ -38,11 +53,7 @@ export const filesRouter = t.router({
     }),
 
   write: protectedProcedure
-    .input(z.object({
-      path: pathSchema,
-      content: z.string(),
-      expectedMtimeMs: z.number().optional(),
-    }))
+    .input(fileWriteInputSchema)
     .mutation(async ({ ctx, input }) => {
       const result = await ctx.files.writeFileSafe(
         input.path,
@@ -54,7 +65,7 @@ export const filesRouter = t.router({
     }),
 
   create: protectedProcedure
-    .input(z.object({ path: pathSchema, content: z.string() }))
+    .input(fileCreateInputSchema)
     .mutation(async ({ ctx, input }) => {
       const result = await ctx.files.createFileSafe(input.path, input.content);
       if (!result.ok) throw toTrpcError(result.error);
@@ -62,7 +73,7 @@ export const filesRouter = t.router({
     }),
 
   mkdir: protectedProcedure
-    .input(z.object({ path: pathSchema }))
+    .input(fileMkdirInputSchema)
     .mutation(async ({ ctx, input }) => {
       const result = await ctx.files.mkdirSafe(input.path);
       if (!result.ok) throw toTrpcError(result.error);
@@ -70,19 +81,19 @@ export const filesRouter = t.router({
     }),
 
   rename: protectedProcedure
-    .input(z.object({
-      from: pathSchema,
-      to: pathSchema,
-      overwrite: z.boolean().optional(),
-    }))
+    .input(fileRenameInputSchema)
     .mutation(async ({ ctx, input }) => {
-      const result = await ctx.files.renameSafe(input.from, input.to, input.overwrite ?? false);
+      const result = await ctx.files.renameSafe(
+        input.from,
+        input.to,
+        input.overwrite ?? false,
+      );
       if (!result.ok) throw toTrpcError(result.error);
       return { ok: true as const };
     }),
 
   remove: protectedProcedure
-    .input(z.object({ path: pathSchema }))
+    .input(fileRemoveInputSchema)
     .mutation(async ({ ctx, input }) => {
       const result = await ctx.files.deleteSafe(input.path);
       if (!result.ok) throw toTrpcError(result.error);
@@ -90,15 +101,7 @@ export const filesRouter = t.router({
     }),
 
   upload: protectedProcedure
-    .input(z.object({
-      path: pathSchema,
-      contentBase64: z.string(),
-      /** Browser-reported MIME (File.type). Carried in the API for observability
-       *  and forward-compat; server-side reads still detect MIME from magic
-       *  bytes so we don't need to persist this. */
-      contentType: z.string().max(255).optional(),
-      overwrite: z.boolean().optional(),
-    }))
+    .input(fileUploadInputSchema)
     .mutation(async ({ ctx, input }) => {
       const result = await ctx.files.uploadFileSafe(
         input.path,

@@ -1,43 +1,40 @@
 import { useMutation } from "@tanstack/react-query";
 
-import {
-  disconnectApp,
-  disconnectMcp,
-  startAppOAuth,
-  startMcpOAuth,
-} from "./fetchers.js";
-import { mcpConnectionKeys, oauthAppKeys } from "./queries.js";
+import { trpc } from "../../../trpc.js";
 
-export function useStartMcpOAuth() {
+export function useCreateConnection() {
   return useMutation({
-    mutationFn: startMcpOAuth,
-    meta: { errorToast: "Couldn't start MCP connection" },
-  });
-}
-
-export function useDisconnectMcp() {
-  return useMutation({
-    mutationFn: disconnectMcp,
+    ...trpc.connections.create.mutationOptions(),
     meta: {
-      invalidates: [mcpConnectionKeys.list()],
-      errorToast: "Couldn't disconnect MCP server",
+      invalidates: [trpc.connections.list.queryKey()],
+      errorToast: "Couldn't create connection",
     },
   });
 }
 
-export function useStartAppOAuth() {
+export function useDeleteConnection() {
   return useMutation({
-    mutationFn: startAppOAuth,
-    meta: { errorToast: "Couldn't start app connection" },
+    ...trpc.connections.delete.mutationOptions(),
+    meta: {
+      invalidates: [
+        trpc.connections.list.queryKey(),
+        trpc.connections.getAgentConnections.queryKey(),
+      ],
+      errorToast: "Couldn't delete connection",
+    },
   });
 }
 
-export function useDisconnectApp() {
+export function useStartOAuth() {
   return useMutation({
-    mutationFn: disconnectApp,
-    meta: {
-      invalidates: [oauthAppKeys.connections()],
-      errorToast: "Couldn't disconnect app",
-    },
+    ...trpc.connections.startOAuth.mutationOptions(),
+    meta: { errorToast: "Couldn't start OAuth" },
+  });
+}
+
+export function useDiscoverMcp() {
+  return useMutation({
+    ...trpc.connections.discoverMcp.mutationOptions(),
+    meta: { errorToast: "Couldn't reach MCP server" },
   });
 }

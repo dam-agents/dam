@@ -1,13 +1,13 @@
 import type {
-  InstallSkillInput,
-  ListLocalSkillsInput,
-  PublishSkillInput,
-  ReadLocalSkillInput,
+  SkillInstallInput,
+  SkillListLocalInput,
+  SkillPublishInput,
+  SkillReadLocalInput,
   Result,
-  ScanSkillSourceInput,
+  SkillScanInput,
   SkillsDomainError,
   SkillsService,
-  UninstallSkillInput,
+  SkillUninstallInput,
 } from "agent-runtime-api";
 import { ok } from "agent-runtime-api";
 import { makeSkillName, type SkillName } from "../domain/skill-name.js";
@@ -45,43 +45,62 @@ function validateNameAndPaths(
 
 export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
   return {
-    install: (input: InstallSkillInput) => doInstall(deps, input),
-    uninstall: (input: UninstallSkillInput) => doUninstall(deps, input),
-    listLocal: (input: ListLocalSkillsInput) => doListLocal(deps, input),
-    readLocal: (input: ReadLocalSkillInput) => doReadLocal(deps, input),
-    scan: (input: ScanSkillSourceInput) => runScan(deps, input),
-    publish: (input: PublishSkillInput) => doPublish(deps, input),
+    install: (input: SkillInstallInput) => doInstall(deps, input),
+    uninstall: (input: SkillUninstallInput) => doUninstall(deps, input),
+    listLocal: (input: SkillListLocalInput) => doListLocal(deps, input),
+    readLocal: (input: SkillReadLocalInput) => doReadLocal(deps, input),
+    scan: (input: SkillScanInput) => runScan(deps, input),
+    publish: (input: SkillPublishInput) => doPublish(deps, input),
   };
 }
 
-async function doInstall(deps: SkillsServiceDeps, input: InstallSkillInput) {
+async function doInstall(deps: SkillsServiceDeps, input: SkillInstallInput) {
   const validated = validateNameAndPaths(input.name, input.skillPaths);
   if (!validated.ok) return validated;
-  return runInstall(deps, validated.value.name, validated.value.skillPaths, input);
+  return runInstall(
+    deps,
+    validated.value.name,
+    validated.value.skillPaths,
+    input,
+  );
 }
 
-async function doUninstall(deps: SkillsServiceDeps, input: UninstallSkillInput) {
+async function doUninstall(
+  deps: SkillsServiceDeps,
+  input: SkillUninstallInput,
+) {
   const validated = validateNameAndPaths(input.name, input.skillPaths);
   if (!validated.ok) return validated;
   await deps.repo.remove(validated.value.name, validated.value.skillPaths);
   return ok(undefined);
 }
 
-async function doListLocal(deps: SkillsServiceDeps, input: ListLocalSkillsInput) {
+async function doListLocal(
+  deps: SkillsServiceDeps,
+  input: SkillListLocalInput,
+) {
   const skillPaths = makeSkillPaths(input.skillPaths);
   if (!skillPaths.ok) return skillPaths;
   const skills = await deps.repo.listLocal(skillPaths.value);
   return ok(skills);
 }
 
-async function doReadLocal(deps: SkillsServiceDeps, input: ReadLocalSkillInput) {
+async function doReadLocal(
+  deps: SkillsServiceDeps,
+  input: SkillReadLocalInput,
+) {
   const validated = validateNameAndPaths(input.name, input.skillPaths);
   if (!validated.ok) return validated;
   return deps.repo.readLocal(validated.value.name, validated.value.skillPaths);
 }
 
-async function doPublish(deps: SkillsServiceDeps, input: PublishSkillInput) {
+async function doPublish(deps: SkillsServiceDeps, input: SkillPublishInput) {
   const validated = validateNameAndPaths(input.name, input.skillPaths);
   if (!validated.ok) return validated;
-  return runPublish(deps, validated.value.name, validated.value.skillPaths, input);
+  return runPublish(
+    deps,
+    validated.value.name,
+    validated.value.skillPaths,
+    input,
+  );
 }

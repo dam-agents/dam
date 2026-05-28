@@ -7,7 +7,7 @@ Pre-upgrade clean-ups, all no-ops on a fresh install:
    Once the agent namespace flips to ambient, ztunnel encapsulates
    pod-to-pod traffic on HBONE :15008 — but those stale NPs only admit
    the application port (10000, 8080), blocking ambient connectivity for
-   every existing instance until it's recreated. The selector is
+   every existing agent until it's recreated. The selector is
    `agent-platform.ai/pair` AND `!agent-platform.ai/managed-by` so the
    current-shape `<id>-agent-egress` NPs (which carry both labels) are
    left untouched.
@@ -22,7 +22,7 @@ Pre-upgrade clean-ups, all no-ops on a fresh install:
    precision (managed-by + role=gateway).
 
 3. Delete in-flight fork ConfigMaps. Pre-upgrade fork pods carry
-   `serviceAccountName == parentInstanceID`. Newer fork code uses a
+   `serviceAccountName == parentAgentID`. Newer fork code uses a
    per-fork SA distinct from the parent's, so any running fork pair
    fails its mesh-gated harness/ext-authz hops after upgrade until the
    fork is deleted and recreated. Forks are short-lived per-turn Jobs
@@ -141,7 +141,7 @@ spec:
               fi
 
               # 3. In-flight fork ConfigMaps. Pre-current-shape fork pods
-              #    carry serviceAccountName == parentInstanceID; per-fork
+              #    carry serviceAccountName == parentAgentID; per-fork
               #    AuthorizationPolicies admit only the fork SA principal,
               #    so running forks fail their mesh-gated harness/ext-authz
               #    hops after upgrade. Deleting the fork ConfigMap cascade-

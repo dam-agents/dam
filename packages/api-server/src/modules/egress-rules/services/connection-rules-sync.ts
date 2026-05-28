@@ -74,7 +74,9 @@ function normalizePath(p: string | undefined | null): string {
   return p && p.length > 0 ? p : "*";
 }
 
-export function createConnectionRulesSync(deps: CreateConnectionRulesSyncDeps): ConnectionRulesSync {
+export function createConnectionRulesSync(
+  deps: CreateConnectionRulesSyncDeps,
+): ConnectionRulesSync {
   return {
     async syncForAgent({ agentId, decidedBy, grants, ownedSourceIds }) {
       const current = await deps.repo.listConnectionDerivedForAgent(agentId);
@@ -82,20 +84,25 @@ export function createConnectionRulesSync(deps: CreateConnectionRulesSyncDeps): 
       // can target multiple (host, pathPattern) tuples (e.g. Gmail at the
       // modern host plus `www.googleapis.com/gmail/*`), so the triple —
       // not a (connId, host) pair — is the dedup key.
-      const currentByTriple = new Map<string, typeof current[number]>();
+      const currentByTriple = new Map<string, (typeof current)[number]>();
       for (const row of current) {
         const connId = row.source.startsWith(SOURCE_PREFIX)
           ? row.source.slice(SOURCE_PREFIX.length)
           : null;
         if (!connId) continue;
-        currentByTriple.set(tripleKey(connId, row.host, normalizePath(row.pathPattern)), row);
+        currentByTriple.set(
+          tripleKey(connId, row.host, normalizePath(row.pathPattern)),
+          row,
+        );
       }
 
       // Build the desired (connId, host, pathPattern) triple set.
       const desiredTriples = new Set<string>();
       for (const [connId, { hosts }] of grants) {
         for (const rule of hosts) {
-          desiredTriples.add(tripleKey(connId, rule.host, normalizePath(rule.pathPattern)));
+          desiredTriples.add(
+            tripleKey(connId, rule.host, normalizePath(rule.pathPattern)),
+          );
         }
       }
 
@@ -120,8 +127,10 @@ export function createConnectionRulesSync(deps: CreateConnectionRulesSyncDeps): 
         const source = `${SOURCE_PREFIX}${connId}` as const;
         for (const rule of hosts) {
           const pathPattern = normalizePath(rule.pathPattern);
-          if (currentByTriple.has(tripleKey(connId, rule.host, pathPattern))) continue;
-          if (await deps.repo.hasUserOwnedRuleForHost(agentId, rule.host)) continue;
+          if (currentByTriple.has(tripleKey(connId, rule.host, pathPattern)))
+            continue;
+          if (await deps.repo.hasUserOwnedRuleForHost(agentId, rule.host))
+            continue;
           await deps.repo.insertOrPromoteFromPreset({
             id: randomUUID(),
             agentId,

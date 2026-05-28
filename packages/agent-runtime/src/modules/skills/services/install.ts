@@ -1,6 +1,6 @@
 import type {
-  InstallSkillInput,
-  InstallSkillResult,
+  SkillInstallInput,
+  SkillInstallResult,
   Result,
   SkillsDomainError,
 } from "agent-runtime-api";
@@ -24,20 +24,33 @@ export async function runInstall(
   deps: InstallDeps,
   name: SkillName,
   skillPaths: SkillPath[],
-  input: InstallSkillInput,
-): Promise<Result<InstallSkillResult, SkillsDomainError>> {
+  input: SkillInstallInput,
+): Promise<Result<SkillInstallResult, SkillsDomainError>> {
   return deps.repo.withTempDir("platform-skill-", async (tmp) => {
-    const fetched = await fetchSourceAtVersion(deps, input.source, input.version, tmp);
+    const fetched = await fetchSourceAtVersion(
+      deps,
+      input.sourceUrl,
+      input.version,
+      tmp,
+    );
     if (!fetched.ok) return fetched;
 
     const srcDirRes = await deps.repo.resolveSkillDirInClone(tmp, name);
     if (!srcDirRes.ok) {
       // Re-tag with the original source URL — the tmpdir path inside the
       // repo's resolveSkillDirInClone result isn't useful to callers.
-      return err({ kind: "SkillNotFoundInSource", source: input.source, name });
+      return err({
+        kind: "SkillNotFoundInSource",
+        source: input.sourceUrl,
+        name,
+      });
     }
 
-    const { contentHash } = await deps.repo.writeFromDir(name, skillPaths, srcDirRes.value);
+    const { contentHash } = await deps.repo.writeFromDir(
+      name,
+      skillPaths,
+      srcDirRes.value,
+    );
     return ok({ contentHash });
   });
 }
@@ -53,8 +66,14 @@ async function fetchSourceAtVersion(
     // Anonymous-first; on 404 retry with the sentinel so the api-server's
     // upstream-error mapping can surface the structured `app_not_connected`
     // / `access_restricted` CTA body.
-    let bytes = await deps.github.fetchTarball(host, version, { withAuth: false });
-    if (!bytes.ok && bytes.error.kind === "UpstreamGitHubError" && bytes.error.status === 404) {
+    let bytes = await deps.github.fetchTarball(host, version, {
+      withAuth: false,
+    });
+    if (
+      !bytes.ok &&
+      bytes.error.kind === "UpstreamGitHubError" &&
+      bytes.error.status === 404
+    ) {
       bytes = await deps.github.fetchTarball(host, version, { withAuth: true });
     }
     if (!bytes.ok) return bytes;

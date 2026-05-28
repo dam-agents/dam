@@ -1,47 +1,76 @@
 import { createDb, runMigrations } from "db";
 import { createApi } from "./modules/agents/infrastructure/k8s.js";
 import {
-  composeInstancesModule,
-  createInstancesRepository,
+  LABEL_TYPE,
+  LABEL_OWNER,
+  TYPE_AGENT,
+} from "./modules/agents/infrastructure/labels.js";
+import {
+  composeAgentsModule,
+  createAgentsRepository,
   createKeycloakUserDirectory,
   startK8sCleanupSaga,
   startChannelCleanupSaga,
-  deleteChannelsByInstance,
+  deleteChannelsByAgent,
   listChannelsByOwner,
   findBySlackChannelId,
-  findSlackChannelByInstance,
-} from "./modules/instances/index.js";
-import { upsertSession, findByInstanceAndThreadTs, touchSession } from "./modules/sessions/index.js";
+  findSlackChannelByAgent,
+} from "./modules/agents/index.js";
+import { SessionMode, SessionType } from "api-server-api";
 import {
-  createInstanceSkillsRepository,
+  upsertSession,
+  findByInstanceAndThreadTs,
+  touchSession,
+} from "./modules/sessions/index.js";
+import {
+  createAgentSkillsRepository,
   parseSeedSources,
   startSkillsCleanupSaga,
 } from "./modules/skills/index.js";
 import { createK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { createPostgresState } from "@chat-adapter/state-pg";
-import { createSlackWorker, type SlackOAuthPending, type ChannelRegistry } from "./modules/channels/infrastructure/slack.js";
-import { createTelegramWorker, type TelegramOAuthPending } from "./modules/channels/infrastructure/telegram.js";
+import {
+  createSlackWorker,
+  type SlackOAuthPending,
+  type ChannelRegistry,
+} from "./modules/channels/infrastructure/slack.js";
+import {
+  createTelegramWorker,
+  type TelegramOAuthPending,
+} from "./modules/channels/infrastructure/telegram.js";
 import { createChannelManager } from "./modules/channels/services/channel-manager.js";
 import { createChannelSecretStore } from "./modules/channels/infrastructure/channel-secret-store.js";
 import { createIdentityLinkService } from "./modules/channels/services/identity-link-service.js";
 import {
-  findIdentityByExternalUser, upsertIdentityLink, deleteIdentityLink,
+  findIdentityByExternalUser,
+  upsertIdentityLink,
+  deleteIdentityLink,
 } from "./modules/channels/infrastructure/identity-links-repository.js";
 import {
-  isThreadAuthorized, authorizeThread, revokeThread, listAuthorizedThreads,
-  deleteThreadsByInstance,
+  isThreadAuthorized,
+  authorizeThread,
+  revokeThread,
+  listAuthorizedThreads,
+  deleteThreadsByAgent,
+  getAuthorizedBy,
 } from "./modules/channels/infrastructure/telegram-threads-repository.js";
-import { createOAuthRefreshService } from "./modules/connections/services/oauth-refresh-service.js";
-import { createPodFilesBus } from "./modules/pod-files/bus.js";
-import { createPodFilesPublisher } from "./modules/pod-files/publisher.js";
-import { buildPodFilesRegistry } from "./modules/pod-files/registry.js";
-import { createGrantedConnectionsAdapter } from "./modules/pod-files/adapters/granted-connections.js";
+import {
+  composeRuntimeDelivery,
+  createBullConnection,
+} from "./modules/runtime-delivery/index.js";
+import { composeSchedulesAtBoot } from "./modules/schedules/index.js";
+import {
+  createKubernetesSecretStore,
+  createSecretStoreRegistry,
+} from "./modules/secret-store/index.js";
 import {
   composeForksModule,
   startOnForeignReplySaga,
-  startOnSlackTurnRelayedSaga,
+  startOnChannelTurnRelayedSaga,
 } from "./modules/forks/index.js";
+import { composeUsageModule } from "./modules/usage/compose.js";
 import { createK8sForkOrchestrator } from "./modules/forks/infrastructure/k8s-fork-orchestrator.js";
+import { composeTermsModule } from "./modules/terms/index.js";
 import { loadConfig } from "./config.js";
 import { startApiServerApp } from "./apps/api-server/app.js";
 import { startHarnessApiServerApp } from "./apps/harness-api-server/app.js";
@@ -62,6 +91,7 @@ import { createAgentArtifactsSweeper } from "./sagas/agent-artifacts-sweeper.js"
 import { createK8sClient as createAgentsK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
 import { createRedisBus } from "./core/redis-bus.js";
+import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
 
 const config = loadConfig();
@@ -71,16 +101,27 @@ await runMigrations(config.databaseUrl, config.migrationsPath);
 const { db, sql } = createDb(config.databaseUrl);
 
 const k8sClient = createK8sClient(api, config.namespace);
-const instancesRepo = createInstancesRepository(k8sClient);
+const agentsRepo = createAgentsRepository(k8sClient);
 const channelSecretStore = createChannelSecretStore(k8sClient);
+const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);
+
+const secretStores = createSecretStoreRegistry();
+secretStores.register(createKubernetesSecretStore({ k8s: k8sClient }));
+
+const { service: termsService, isAcceptedPort: isTermsAccepted } =
+  composeTermsModule({
+    db,
+    version: config.terms.version,
+    text: config.terms.text,
+  });
 
 const k8sCleanupSub = startK8sCleanupSaga(k8sClient, channelSecretStore);
 const channelCleanupSub = startChannelCleanupSaga(
-  deleteChannelsByInstance(db),
-  deleteThreadsByInstance(db),
+  deleteChannelsByAgent(db),
+  deleteThreadsByAgent(db),
 );
-const skillsCleanupSub = startSkillsCleanupSaga(
-  (instanceId) => createInstanceSkillsRepository(db).deleteByInstance(instanceId),
+const skillsCleanupSub = startSkillsCleanupSaga((agentId) =>
+  createAgentSkillsRepository(db).deleteByAgent(agentId),
 );
 const seedSources = parseSeedSources(config.skillSourcesSeed);
 
@@ -89,7 +130,23 @@ const { forks } = composeForksModule({
 });
 
 const onForeignReplySub = startOnForeignReplySaga(forks);
-const onSlackTurnRelayedSub = startOnSlackTurnRelayedSaga(forks);
+const onChannelTurnRelayedSub = startOnChannelTurnRelayedSaga(forks);
+const usage = composeUsageModule({
+  db,
+  subPseudonymizer,
+  activityTrackingEnabled: config.activityTrackingEnabled,
+  inspectorRole: config.keycloakInspectorRole ?? "",
+  listK8sAgents: async () => {
+    const cms = await k8sClient.listConfigMaps(`${LABEL_TYPE}=${TYPE_AGENT}`);
+    return cms
+      .filter((cm) => cm.metadata?.name && cm.metadata?.labels?.[LABEL_OWNER])
+      .map((cm) => ({
+        id: cm.metadata!.name!,
+        owner: cm.metadata!.labels![LABEL_OWNER]!,
+      }));
+  },
+});
+usage.start();
 
 const userDirectory = createKeycloakUserDirectory({
   keycloakUrl: config.keycloakUrl,
@@ -98,20 +155,44 @@ const userDirectory = createKeycloakUserDirectory({
   clientSecret: config.keycloakApiClientSecret,
 });
 
-const { instances: systemInstances } = composeInstancesModule({
+const { agents: systemAgents } = composeAgentsModule({
   api,
   namespace: config.namespace,
   owner: undefined,
   db,
   userDirectory,
   channelSecretStore,
-  getAgent: async () => null,
+  readTemplateSpec: async () => null,
 });
 const persistSession = upsertSession(db);
-const persistSlackSession: typeof persistSession = (sessionId, instanceId, type, threadTs?) =>
-  persistSession(sessionId, instanceId, type, undefined, threadTs);
-const persistTelegramSession: typeof persistSession = (sessionId, instanceId, type, threadId?) =>
-  persistSession(sessionId, instanceId, type, undefined, threadId);
+const persistSlackSession = (
+  sessionId: string,
+  agentId: string,
+  type: SessionType,
+  threadTs?: string,
+) =>
+  persistSession(
+    sessionId,
+    agentId,
+    SessionMode.Chat,
+    type,
+    undefined,
+    threadTs,
+  );
+const persistTelegramSession = (
+  sessionId: string,
+  agentId: string,
+  type: SessionType,
+  threadId?: string,
+) =>
+  persistSession(
+    sessionId,
+    agentId,
+    SessionMode.Chat,
+    type,
+    undefined,
+    threadId,
+  );
 
 const identityLinkService = createIdentityLinkService({
   findByExternalUser: findIdentityByExternalUser(db),
@@ -122,8 +203,9 @@ const identityLinkService = createIdentityLinkService({
 const pendingSlackOAuthFlows = new Map<string, SlackOAuthPending>();
 const pendingTelegramOAuthFlows = new Map<string, TelegramOAuthPending>();
 
-const slackOauthCallbackUrl = config.slackOauthCallbackUrl
-  ?? `${config.uiBaseUrl}/api/slack/oauth/callback`;
+const slackOauthCallbackUrl =
+  config.slackOauthCallbackUrl ??
+  `${config.uiBaseUrl}/api/slack/oauth/callback`;
 const telegramOauthCallbackUrl = `${config.uiBaseUrl}/api/telegram/oauth/callback`;
 
 const chatSdkState = config.telegramEnabled
@@ -132,87 +214,88 @@ const chatSdkState = config.telegramEnabled
 
 const channelRegistry: ChannelRegistry = {
   resolveInstanceBySlackChannel: async (slackChannelId) =>
-    (await findBySlackChannelId(db)(slackChannelId))?.instanceId ?? null,
-  resolveSlackChannelByInstance: findSlackChannelByInstance(db),
+    (await findBySlackChannelId(db)(slackChannelId))?.agentId ?? null,
+  resolveSlackChannelByInstance: findSlackChannelByAgent(db),
 };
 
-const slackWorker = config.slackBotToken && config.slackAppToken
-  ? createSlackWorker(
-      config.namespace,
-      config.slackBotToken,
-      config.slackAppToken,
-      () => systemInstances,
-      persistSlackSession,
-      identityLinkService,
-      {
-        keycloakExternalUrl: config.keycloakExternalUrl,
-        keycloakUrl: config.keycloakUrl,
-        keycloakRealm: config.keycloakRealm,
-        keycloakClientId: config.keycloakClientId,
-        callbackUrl: slackOauthCallbackUrl,
-      },
-      pendingSlackOAuthFlows,
-      {
-        find: findByInstanceAndThreadTs(db),
-        touch: touchSession(db),
-      },
-      (instanceId) => instancesRepo.getOwner(instanceId),
-      channelRegistry,
-      config.brand.short,
-    )
-  : undefined;
+const slackWorker =
+  config.slackBotToken && config.slackAppToken
+    ? createSlackWorker(
+        config.namespace,
+        config.slackBotToken,
+        config.slackAppToken,
+        () => systemAgents,
+        persistSlackSession,
+        identityLinkService,
+        {
+          keycloakExternalUrl: config.keycloakExternalUrl,
+          keycloakUrl: config.keycloakUrl,
+          keycloakRealm: config.keycloakRealm,
+          keycloakClientId: config.keycloakClientId,
+          callbackUrl: slackOauthCallbackUrl,
+        },
+        pendingSlackOAuthFlows,
+        {
+          find: findByInstanceAndThreadTs(db),
+          touch: touchSession(db),
+        },
+        (agentId) => agentsRepo.getOwner(agentId),
+        channelRegistry,
+        config.brand.short,
+        isTermsAccepted,
+        config.uiBaseUrl,
+      )
+    : undefined;
 
-const telegramWorker = config.telegramEnabled && chatSdkState
-  ? createTelegramWorker(
-      config.namespace,
-      chatSdkState,
-      () => systemInstances,
-      persistTelegramSession,
-      {
-        isAuthorized: isThreadAuthorized(db),
-        authorize: authorizeThread(db),
-        list: listAuthorizedThreads(db),
-        revoke: revokeThread(db),
-      },
-      {
-        keycloakExternalUrl: config.keycloakExternalUrl,
-        keycloakUrl: config.keycloakUrl,
-        keycloakRealm: config.keycloakRealm,
-        keycloakClientId: config.keycloakClientId,
-        callbackUrl: telegramOauthCallbackUrl,
-      },
-      pendingTelegramOAuthFlows,
-      {
-        find: findByInstanceAndThreadTs(db),
-        touch: touchSession(db),
-      },
-    )
-  : undefined;
+const telegramWorker =
+  config.telegramEnabled && chatSdkState
+    ? createTelegramWorker(
+        config.namespace,
+        chatSdkState,
+        () => systemAgents,
+        persistTelegramSession,
+        {
+          isAuthorized: isThreadAuthorized(db),
+          authorize: authorizeThread(db),
+          list: listAuthorizedThreads(db),
+          revoke: revokeThread(db),
+          getAuthorizedBy: getAuthorizedBy(db),
+        },
+        {
+          keycloakExternalUrl: config.keycloakExternalUrl,
+          keycloakUrl: config.keycloakUrl,
+          keycloakRealm: config.keycloakRealm,
+          keycloakClientId: config.keycloakClientId,
+          callbackUrl: telegramOauthCallbackUrl,
+        },
+        pendingTelegramOAuthFlows,
+        {
+          find: findByInstanceAndThreadTs(db),
+          touch: touchSession(db),
+        },
+        isTermsAccepted,
+        config.uiBaseUrl,
+      )
+    : undefined;
 
-const channelManager = createChannelManager({ slackWorker, telegramWorker, channelSecretStore });
-
-// Pod-files plumbing — see 034-pod-files-push. The github-enterprise
-// hosts.yml producer is the first registry entry; future producers (secrets-
-// as-files, schedule-driven config, …) plug into the same publisher and SSE
-// channel without changes elsewhere.
-const podFilesBus = createPodFilesBus();
-const podFilesRegistry = buildPodFilesRegistry({
-  // Agent HOME from the helm chart. Must agree with the controller's mount
-  // path; both read the same chart value.
-  agentHome: config.agentHome,
-  // Resolves an agent's granted connection records against live K8s state
-  // (instance CM annotations for grants, owner-scoped connection Secrets
-  // for the records). Two API calls per snapshot — fine for the SSE-connect
-  // and grant-change cadence.
-  fetchAgentGrantedConnections: createGrantedConnectionsAdapter(k8sClient),
-});
-const podFilesPublisher = createPodFilesPublisher({
-  bus: podFilesBus,
-  registry: podFilesRegistry,
+const channelManager = createChannelManager({
+  slackWorker,
+  telegramWorker,
+  channelSecretStore,
 });
 
-if (!config.redisUrl) throw new Error("REDIS_URL is required (Redis is a platform primitive — see ADR-036)");
-const redisBus = createRedisBus(config.redisUrl, { password: config.redisPassword ?? undefined });
+if (!config.redisUrl)
+  throw new Error(
+    "REDIS_URL is required (Redis is a platform primitive — see ADR-036)",
+  );
+const redisBus = createRedisBus(config.redisUrl, {
+  password: config.redisPassword ?? undefined,
+});
+
+const bullConnection = createBullConnection(
+  config.redisUrl,
+  config.redisPassword ?? undefined,
+);
 
 // Seed list for the `trusted` egress preset (ADR-035).
 // Read once at boot; the helm ConfigMap is the operator-editable source.
@@ -220,25 +303,35 @@ const trustedHosts = loadTrustedHosts(config.trustedHostsPath);
 const presetSeeder = createPresetSeederAdapter(db, trustedHosts);
 
 const wrapperFrameSender = createWrapperFrameSender({
-  resolveWrapperUrl: (instanceId) => `ws://${podBaseUrl(instanceId, config.namespace)}/api/acp`,
+  resolveWrapperUrl: (agentId) =>
+    `ws://${podBaseUrl(agentId, config.namespace)}/api/acp`,
 });
 
 // System-level approvals composition — bound to the bus + cross-module
 // ports for instance identity (agents), rule matching (egress-rules), and
 // wrapper-frame delivery. Relay, gate, and sweeper are long-lived and
 // shared across all owners.
-const { relay: approvalsRelay, gate: extAuthzGate, sweeper: deliverySweeper } = composeApprovalsSystem({
+const {
+  relay: approvalsRelay,
+  gate: extAuthzGate,
+  sweeper: deliverySweeper,
+} = composeApprovalsSystem({
   db,
   bus: redisBus,
   identityResolver: {
-    resolve: async (instanceId) => {
-      const r = await instancesRepo.resolveIdentity(instanceId);
+    resolve: async (agentId) => {
+      const r = await agentsRepo.resolveIdentity(agentId);
       return r ? { ownerSub: r.owner, agentId: r.agentId } : null;
     },
   },
   ruleMatcher: {
     match: async (agentId, host, method, path) => {
-      const matched = await createEgressRuleMatchAdapter(db).match(agentId, host, method, path);
+      const matched = await createEgressRuleMatchAdapter(db).match(
+        agentId,
+        host,
+        method,
+        path,
+      );
       return matched ? { verdict: matched.verdict } : null;
     },
   },
@@ -279,28 +372,59 @@ const agentArtifactsSweeper = createAgentArtifactsSweeper({
 });
 agentArtifactsSweeper.start();
 
+const runtimeDelivery = composeRuntimeDelivery({
+  db,
+  namespace: config.namespace,
+  bullConnection,
+  agentRunningPort: { isRunning: () => true },
+  harnessServerUrl: config.harnessServerUrl,
+});
+runtimeDelivery.sweep.start();
+
+const schedulesBoot = composeSchedulesAtBoot({
+  db,
+  bullConnection,
+  runtimeMutator: runtimeDelivery.runtimeMutator,
+});
+schedulesBoot.runner.restoreAll().catch((err) => {
+  process.stderr.write(
+    `[schedules] restoreAll failed: ${(err as Error).message}\n`,
+  );
+});
+
 const { server: apiServer } = startApiServerApp({
-  config, api, db, channelManager, channelSecretStore, identityLinkService,
-  pendingSlackOAuthFlows, pendingTelegramOAuthFlows, podFilesPublisher, seedSources,
+  config,
+  api,
+  db,
+  channelManager,
+  channelSecretStore,
+  identityLinkService,
+  pendingSlackOAuthFlows,
+  pendingTelegramOAuthFlows,
+  seedSources,
   redisBus,
   approvalsRelay,
   wrapperFrameSender,
   presetSeeder,
   trustedHosts,
   agentCleanupHooks,
+  secretStores,
+  runtimeMutator: runtimeDelivery.runtimeMutator,
+  schedulesBoot,
+  mountUsageRoutes: usage.mount,
+  terms: termsService,
+  isTermsAccepted,
 });
 
-// Re-mints OAuth access tokens from stored refresh tokens before they expire
-// (ADR-033 § "Token provisioning and refresh"). Single-process — multi-replica
-// leader election is a follow-up.
-const oauthRefreshService = createOAuthRefreshService({ k8sClient });
-oauthRefreshService.start();
-
 const { server: harnessApiServer } = startHarnessApiServerApp({
-  config, api, db, channelManager, channelSecretStore,
-  podFilesBus,
-  podFilesSnapshot: podFilesPublisher.compute,
+  config,
+  api,
+  db,
+  channelManager,
   seedSources,
+  runtimeHello: runtimeDelivery.hello,
+  schedulesBoot,
+  runtimeMutator: runtimeDelivery.runtimeMutator,
 });
 
 // ADR-041: instance identity for ext-authz now flows from the per-instance
@@ -319,9 +443,11 @@ const { server: extAuthzGrpcServer } = await startExtAuthzGrpcApp({
   releaseName: config.releaseName,
 });
 
-listChannelsByOwner(db, "")().then((channelsByInstance) => {
-  channelManager.bootstrap(channelsByInstance);
-}).catch(() => {});
+listChannelsByOwner(db, "")()
+  .then((channelsByInstance) => {
+    channelManager.bootstrap(channelsByInstance);
+  })
+  .catch(() => {});
 
 async function shutdown() {
   process.stderr.write("shutting down...\n");
@@ -329,11 +455,15 @@ async function shutdown() {
   channelCleanupSub.unsubscribe();
   skillsCleanupSub.unsubscribe();
   onForeignReplySub.unsubscribe();
-  onSlackTurnRelayedSub.unsubscribe();
-  await oauthRefreshService.stop();
+  onChannelTurnRelayedSub.unsubscribe();
+  usage.stop();
   await deliverySweeper.stop();
   await agentArtifactsSweeper.stop();
   await channelManager.stopAll();
+  await runtimeDelivery.sweep.stop();
+  await runtimeDelivery.worker.close();
+  await runtimeDelivery.queue.close();
+  await schedulesBoot.close();
   await redisBus.close();
   await sql.end();
   extAuthzGrpcServer.tryShutdown(() => {});

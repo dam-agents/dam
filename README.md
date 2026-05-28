@@ -8,7 +8,7 @@
   Isolated by default. Credentialed. Always-on.
 </h3>
 
-Keep your coding agents running when you close the lid. Ship them to your team. Sell them to your customers. DAM gives Claude Code, Codex, Gemini CLI, or pi.dev an isolated Kubernetes pod, a credential-injecting proxy, a scheduler, and a Slack channel.
+Keep your coding agents running when you close the lid. Ship them to your team. Sell them to your customers. DAM gives Claude Code, Codex, Antigravity CLI, or pi.dev an isolated Kubernetes pod, a credential-injecting proxy, a scheduler, and a Slack channel.
 
 ## What you get
 
@@ -20,7 +20,7 @@ Keep your coding agents running when you close the lid. Ship them to your team. 
 
 - **Slack-native channels** — One Slack app, unlimited agents, per-thread routing. Your agents live where your team already works.
 
-- **Bring your own agent** — Claude Code and [pi.dev](https://pi.dev) ship as built-in templates. Codex, Gemini CLI, or anything that speaks [ACP](https://agentclientprotocol.com/get-started/introduction) works too. No lock-in to one vendor's SDK or cloud.
+- **Bring your own agent** — Claude Code and [pi.dev](https://pi.dev) ship as built-in templates. Codex, Antigravity CLI, or anything that speaks [ACP](https://agentclientprotocol.com/get-started/introduction) works too. No lock-in to one vendor's SDK or cloud.
 
 ![DAM UI — agent chatting with Google Drive access](docs/assets/hero.png)
 
@@ -66,3 +66,7 @@ Open [localhost:4444](http://localhost:4444) (login: `dev` / `dev`), create an i
 - **[Security model](docs/strategy/security-model.md)** — the three big risks when running AI agents, how DAM handles each, and what's still unsolved
 - **[Multiplayer](docs/strategy/multi-player.md)** — DAM's multi-user model: what's private to each player, what's shared when you collaborate, and what's install-wide plumbing
 - **[Why DAM exists](PITCH.md)** — the three problems every agent hits in production, how DAM solves each, and a 5-minute walkthrough
+
+## Contributing
+
+- **[Work process](docs/guidelines/work-process.md)** — the proposed ideal flow from idea to merged code

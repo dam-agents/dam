@@ -1,0 +1,14 @@
+{
+  "name": "dev-config",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./eslint": "./eslint.base.js",
+    "./tsconfig": "./tsconfig.base.json"
+  },
+  "dependencies": {
+    "eslint-plugin-unicorn": "^64.0.0",
+    "typescript-eslint": "^8.58.2"
+  }
+}

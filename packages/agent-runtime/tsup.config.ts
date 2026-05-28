@@ -3,7 +3,7 @@ import { defineConfig } from "tsup";
 export default defineConfig({
   entry: ["src/server.ts", "src/agent.ts"],
   format: "esm",
-  target: "node22",
+  target: "node24",
   platform: "node",
   // These contract packages are inlined into dist, which is why they live
   // under devDependencies in package.json — the deployed runtime never

@@ -30,6 +30,19 @@ brand:
   # for the easiest override workflow.
   icon: ""
 
+# -- Terms of Use shown at the api-server acceptance gate. Both fields are
+# required; the chart refuses to install when either is unset. Bump
+# `terms.version` on every material change to re-prompt every user; the
+# server records `sha256(text)` on each Acceptance row as proof binding.
+# See ADR-047.
+terms:
+  # Markdown content rendered at /terms and on the login page. Supply via
+  # `helm install --set-file terms.text=./TERMS.md`.
+  text: ""
+  # Free-form re-prompt trigger (e.g. "2026-05-25", "v1"). Operator
+  # judgment — whitespace edits don't bump this.
+  version: ""
+
 # -- Base domain for the app. UI and API share this host; the ingress
 # splits `/api/*` to the api-server and everything else to the UI. Keycloak
 # lives at `keycloak.{domain}`.
@@ -88,7 +101,7 @@ istio:
   # + Pod from the Gateway resource declared in apiserver/waypoint.yaml.
   waypointName: apiserver-waypoint
 
-# -- Target namespace for agent workloads (instances, templates, schedules)
+# -- Target namespace for agent workloads (agents, templates, schedules, forks)
 agentNamespace: platform-agents
 
 # -- Whether to create the agent namespace (disable if it already exists or is managed externally)
@@ -116,7 +129,7 @@ postgres:
   image: registry.access.redhat.com/hi/postgresql:18
   user: platform
   # password is auto-generated if not set
-  password: ""
+  password: null
   storage: 5Gi
   storageClass: ""
   resources:
@@ -158,7 +171,7 @@ keycloak:
   admin:
     user: admin
     # password is auto-generated if not set
-    password: ""
+    password: null
 
   # -- Realm and OIDC client configuration
   realm: platform
@@ -167,6 +180,14 @@ keycloak:
   # -- Realm role required to access the API. Users without this role get 403.
   # Leave empty to allow all authenticated users.
   requiredRole: ""
+  # -- Realm role granting read access to the inspector endpoints
+  # (`GET /api/usage`, `GET /api/usage/report`). The chart auto-creates this role
+  # plus an `inspectors` group mapped to it; grant access by adding users to
+  # the group via the Keycloak admin UI. For bulk assignment use `kcadm.sh`
+  # or the Keycloak admin REST API; for SSO-federated installs, map your
+  # upstream group to the `inspectors` group. Set to empty string to disable
+  # usage-data access entirely (the endpoint will not be mounted).
+  inspectorRole: "platform-inspector"
   # -- Confidential client for API server
   apiClientId: platform-api
   apiClientSecret: ""
@@ -187,15 +208,15 @@ keycloak:
   # Local dev and e2e tests (via values-local.yaml) enable it.
   testUser:
     enabled: false
-    username: ""
-    password: ""
+    username: null
+    password: null
 
   # -- Database connection (empty host = use shared local postgres)
   db:
     host: ""
     port: 5432
     user: platform
-    password: ""
+    password: null
     database: keycloak
 
   resources:
@@ -285,8 +306,21 @@ apiServer:
   slackBotToken: ""
   # -- Slack app-level token (xapp-...) for Socket Mode. Required alongside slackBotToken.
   slackAppToken: ""
-  # -- Enable the Telegram channel. Each instance can connect its own bot token via the UI.
+  # -- Enable the Telegram channel. Each agent can connect its own bot token via the UI.
   telegramEnabled: false
+  # -- Activity tracking saga: when enabled, the api-server captures user
+  # logins and channel turns into the `activity_events` table for the
+  # usage reporting endpoints. Disable to stop all writes (the read
+  # endpoints are independently gated by `keycloak.inspectorRole`).
+  activityTracking:
+    enabled: true
+    # -- HMAC key used to pseudonymize Keycloak `sub` values written to
+    # `activity_events`, `actor_roles`, and `instances.owner_sub` (GDPR
+    # Art. 32 risk reduction). Leave empty to have the chart generate and
+    # persist one in a Secret; rotating breaks every existing row, so it
+    # must remain stable. Provide your own (≥32 chars) for cross-cluster
+    # consistency or compliance audit trails.
+    hmacKey: ""
   # -- Default hold window (seconds) for HITL ext_authz approvals. The held
   # call resolves on user verdict or denies on timeout; the durable
   # pending_approvals row outlives the hold and is consumed by the agent's
@@ -312,7 +346,7 @@ apiServer:
 
   # -- Ingress NetworkPolicy for the api-server pod.
   # Restricts the agent-facing ports (`harness`, `ext-authz`) to ingress from
-  # pods carrying `agent-platform.ai/instance` (agent + fork pods) in agentNamespace.
+  # pods carrying `agent-platform.ai/agent` (agent + fork pods) in agentNamespace.
   # The HTTP port stays open so the UI / ingress controller can reach it;
   # JWT auth at the application layer protects that one. Disable in
   # environments without NetworkPolicy support (e.g. some bare clusters).
@@ -399,7 +433,7 @@ apiServer:
     host: ""
     port: 5432
     user: platform
-    password: ""
+    password: null
     database: platform
   resources:
     requests:
@@ -436,7 +470,7 @@ controller:
       accessMode: ReadWriteMany      # ReadWriteOnce for single-node dev
 
       # Lifecycle
-      idleTimeout: "1h"              # hibernate idle instances; "0s" disables
+      idleTimeout: "1h"              # hibernate idle agents; "0s" disables
       terminationGracePeriod: 5      # gateway pods have a hardcoded drain
 
       # Pod metadata + scheduling
@@ -471,32 +505,42 @@ controller:
         capabilities:
           drop: ["ALL"]
 
-      # -- Drop the cluster-DNS allow rules from the per-pair agent egress
-      # NetworkPolicy (closes threat T9, DNS exfil). The controller injects
-      # a hostAliases entry for the gateway Service so HTTPS_PROXY still
-      # resolves.
-      disableDns: true
-
-      # -- Kernel-level egress allow-list applied via a privileged init
-      # container (NET_ADMIN/NET_RAW). Locks OUTPUT to loopback +
-      # ESTABLISHED + the paired gateway IP:port. Defense-in-depth on top
-      # of the NetworkPolicy.
-      # NOTE: needs a custom SCC on OpenShift (default SCCs don't grant
-      # NET_ADMIN/NET_RAW + runAsUser=0).
+      # ━━━ EGRESS LOCKDOWN — pick ONE mode ━━━
+      # Two mutually-exclusive layers (the chart validates). Both ride
+      # on top of HTTPS_PROXY (IP-direct), the per-pair NetworkPolicy,
+      # and the namespace deny-all baseline.
+      #
+      #   - iptablesInit: privileged init container, plain OCI runtime.
+      #     Requires netfilter modules in the guest.
+      #
+      #   - npGateInit: unprivileged init container, works on guests
+      #     without netfilter (Kata/CoCo on OpenShift Sandboxed Containers).
       iptablesInit:
         enabled: true
-        # SIG Release distroless-iptables — the same image kube-proxy
-        # uses. Ships /bin/sh (dash) + iptables-wrapper (auto-selects
-        # nft/legacy). Signed, scanned, no package manager, minimal
-        # userland. Pin to a specific version.
+        # SIG Release distroless-iptables — same image kube-proxy uses.
+        # Ships sh + iptables-wrapper; pinned by tag.
         image: registry.k8s.io/build-image/distroless-iptables:v0.9.2
+
+      # -- Userspace init container that blocks the agent's main
+      # container until the egress NetworkPolicy is verifiably enforced.
+      # Pure userspace TCP probe; no caps; works against any guest kernel.
+      npGateInit:
+        enabled: false
+        # busybox provides nc + sh in one image. K8s SIG distroless
+        # variants don't bundle nc. Digest pins the multi-arch manifest
+        # list — resolves to amd64/arm64/etc at pull time. Rotate manually.
+        image: docker.io/library/busybox:1.37@sha256:1487d0af5f52b4ba31c7e465126ee2123fe3f2305d638e7827681e7cf6c83d5e
+        # Hard deadline before the init container fails the pod. OVN-K
+        # typically converges in well under a second; 30s is generous
+        # for cold node churn / controller restart scenarios.
+        timeoutSeconds: 30
       # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     templateDefaults:
       # HOME inside agent containers — set as the `HOME` env var and used at
       # chart render time to substitute any literal `$HOME` in mount paths /
       # skillPaths. Per-template `agentTemplates[i].agentHome` overrides
-      # this for that template's instances. Must match the image's user
+      # this for that template's agents. Must match the image's user
       # HOME or pod-files materialization breaks silently. Also plumbed to
       # api-server for pod-files producers (currently one global value).
       agentHome: /home/agent
@@ -538,7 +582,7 @@ controller:
   envoyPort: 10000
   # -- TLS interception support for the credential injector. The chart
   # provisions a self-signed CA via cert-manager and a CA ClusterIssuer
-  # (`platform-mitm-ca-issuer`) that the controller uses to mint per-instance leaf
+  # (`platform-mitm-ca-issuer`) that the controller uses to mint per-agent leaf
   # certs for Envoy to terminate the agent's TLS and inject credential headers.
   # Requires cert-manager to be installed in the cluster (platform's cluster:install
   # task does this).
@@ -555,7 +599,7 @@ controller:
     # -- CA validity. cert-manager will renew before expiry automatically.
     caDuration: 87600h     # 10y
     caRenewBefore: 720h    # 30d
-    # -- Per-instance leaf cert validity.
+    # -- Per-agent leaf cert validity.
     leafDuration: 2160h    # 90d
     leafRenewBefore: 360h  # 15d
   resources:
@@ -568,7 +612,7 @@ controller:
 
 # -- Agent templates. Each enabled entry renders an agent-template ConfigMap
 # in `agentNamespace`. Fields named identically to `controller.agent.templateDefaults.*`
-# override the chart-wide default for instances created from this template.
+# override the chart-wide default for agents created from this template.
 # `$HOME` in mount paths / skillPaths is substituted at chart render time
 # using this entry's `agentHome` if set, else `templateDefaults.agentHome`.
 agentTemplates:
@@ -581,6 +625,24 @@ agentTemplates:
     storageSize: "5Gi"
     skillPaths:
       - $HOME/.claude/skills/
+
+  - name: codex
+    enabled: true
+    description: "OpenAI Codex coding agent"
+    image:
+      repository: quay.io/dam-agents/codex
+      tag: ""
+    storageSize: "5Gi"
+
+  - name: pi-agent
+    enabled: true
+    description: "Pi coding agent with multi-LLM support"
+    image:
+      repository: quay.io/dam-agents/pi-agent
+      tag: ""
+    storageSize: "5Gi"
+    skillPaths:
+      - $HOME/.pi/agent/skills/
 
   - name: bob
     enabled: true

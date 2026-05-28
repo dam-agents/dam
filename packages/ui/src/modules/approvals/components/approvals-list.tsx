@@ -1,16 +1,13 @@
-import {
-  Checkmark as Check,
-  CheckmarkFilled as CheckCheck,
-  Close as X,
-  Globe,
-  Security as ShieldOff,
-  SettingsAdjust as Settings2,
-} from "@carbon/icons-react";
 import type { ApprovalView } from "api-server-api";
+import {
+  Check,
+  CheckCheck,
+  Globe,
+  Settings2,
+  ShieldOff,
+  X,
+} from "lucide-react";
 import { useMemo } from "react";
-
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
 import {
@@ -28,10 +25,15 @@ const STATUS_LABEL: Record<ApprovalView["status"], string> = {
 };
 
 function isHeldCallStillLive(row: ApprovalView): boolean {
-  return row.status === "pending" && new Date(row.expiresAt).getTime() > Date.now();
+  return (
+    row.status === "pending" && new Date(row.expiresAt).getTime() > Date.now()
+  );
 }
 
-function describePayload(row: ApprovalView): { title: string; subtitle: string } {
+function describePayload(row: ApprovalView): {
+  title: string;
+  subtitle: string;
+} {
   if (row.payload.kind === "ext_authz") {
     return {
       title: `${row.payload.method} ${row.payload.host}`,
@@ -48,13 +50,22 @@ export interface ApprovalsListProps {
   emptyLabel?: string;
 }
 
-export function ApprovalsList({ rows, density = "full", emptyLabel = "Nothing pending" }: ApprovalsListProps) {
+export function ApprovalsList({
+  rows,
+  density = "full",
+  emptyLabel = "Nothing pending",
+}: ApprovalsListProps) {
   const sorted = useMemo(
-    () => [...rows].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)),
+    () =>
+      [...rows].sort(
+        (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt),
+      ),
     [rows],
   );
   if (sorted.length === 0) {
-    return <p className="px-4 py-5 text-[12px] text-muted-foreground">{emptyLabel}</p>;
+    return (
+      <p className="px-4 py-5 text-[12px] text-text-muted">{emptyLabel}</p>
+    );
   }
   return (
     <ul className="flex flex-col">
@@ -65,7 +76,13 @@ export function ApprovalsList({ rows, density = "full", emptyLabel = "Nothing pe
   );
 }
 
-function ApprovalRow({ row, density }: { row: ApprovalView; density: "compact" | "full" }) {
+function ApprovalRow({
+  row,
+  density,
+}: {
+  row: ApprovalView;
+  density: "compact" | "full";
+}) {
   const approveOnce = useApproveOnce();
   const approvePermanent = useApprovePermanent();
   const approveHost = useApproveHost();
@@ -75,11 +92,11 @@ function ApprovalRow({ row, density }: { row: ApprovalView; density: "compact" |
   const { title, subtitle } = describePayload(row);
   const live = isHeldCallStillLive(row);
   const inflight =
-    approveOnce.isPending
-    || approvePermanent.isPending
-    || approveHost.isPending
-    || denyForever.isPending
-    || dismiss.isPending;
+    approveOnce.isPending ||
+    approvePermanent.isPending ||
+    approveHost.isPending ||
+    denyForever.isPending ||
+    dismiss.isPending;
   const expired = row.status === "expired";
   // Allow-once is only meaningful for ext_authz: there's a single in-flight
   // call to release. ACP-native rows don't have a hold to release — the
@@ -92,33 +109,33 @@ function ApprovalRow({ row, density }: { row: ApprovalView; density: "compact" |
   const showHostActions = hostLabel !== null;
 
   return (
-    <li className="border-b border-border px-3 py-3 flex flex-col gap-2">
+    <li className="border-b border-border-light px-3 py-3 flex flex-col gap-2">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[13px] font-medium text-foreground truncate">{title}</span>
+            <span className="text-[13px] font-medium text-text truncate">
+              {title}
+            </span>
             {row.status !== "pending" && (
-              <Badge variant="secondary" className="text-[10px] uppercase tracking-wider px-1.5 py-0.5">
+              <span className="text-[10px] uppercase tracking-wider text-text-muted bg-border-light rounded px-1.5 py-0.5">
                 {STATUS_LABEL[row.status]}
-              </Badge>
+              </span>
             )}
           </div>
           {subtitle && (
-            <p className="text-[11px] text-muted-foreground truncate">{subtitle}</p>
+            <p className="text-[11px] text-text-muted truncate">{subtitle}</p>
           )}
           {density === "full" && (
-            <p className="text-[10px] text-muted-foreground mt-0.5">
-              agent {row.agentId} · instance {row.instanceId.slice(0, 8)}
+            <p className="text-[10px] text-text-muted mt-0.5">
+              agent {row.agentId}
             </p>
           )}
         </div>
       </div>
       {row.status !== "resolved" && (
         <div className="flex flex-wrap gap-1.5">
-          <Button
+          <button
             type="button"
-            variant="outline"
-            size="sm"
             disabled={inflight || allowOnceDisabled}
             onClick={() => approveOnce.mutate({ id: row.id })}
             title={
@@ -126,38 +143,32 @@ function ApprovalRow({ row, density }: { row: ApprovalView; density: "compact" |
                 ? "Original request already failed; pick Allow permanently to allow future retries"
                 : "Allow this single request"
             }
-            className="h-7 text-[11px] hover:text-primary hover:border-primary"
+            className="h-7 inline-flex items-center gap-1 rounded-md border border-border-light px-2 text-[11px] text-text-secondary hover:text-accent hover:border-accent disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             <Check size={11} /> Allow once
-          </Button>
-          <Button
+          </button>
+          <button
             type="button"
-            variant="outline"
-            size="sm"
             disabled={inflight}
             onClick={() => approvePermanent.mutate({ id: row.id })}
             title="Allow this exact path on this host (writes a rule)"
-            className="h-7 text-[11px] hover:text-primary hover:border-primary"
+            className="h-7 inline-flex items-center gap-1 rounded-md border border-border-light px-2 text-[11px] text-text-secondary hover:text-accent hover:border-accent disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             <CheckCheck size={11} /> Allow permanently
-          </Button>
+          </button>
           {showHostActions && (
-            <Button
+            <button
               type="button"
-              variant="outline"
-              size="sm"
               disabled={inflight}
               onClick={() => approveHost.mutate({ id: row.id })}
               title={`Allow all requests to ${hostLabel} (writes a wildcard rule)`}
-              className="h-7 text-[11px] hover:text-primary hover:border-primary"
+              className="h-7 inline-flex items-center gap-1 rounded-md border border-border-light px-2 text-[11px] text-text-secondary hover:text-accent hover:border-accent disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               <Globe size={11} /> Allow {hostLabel}
-            </Button>
+            </button>
           )}
-          <Button
+          <button
             type="button"
-            variant="outline"
-            size="sm"
             disabled={inflight || !live}
             onClick={() => dismiss.mutate({ id: row.id })}
             title={
@@ -165,39 +176,36 @@ function ApprovalRow({ row, density }: { row: ApprovalView; density: "compact" |
                 ? "Original request already failed; nothing to dismiss"
                 : "Deny this single request — re-prompts on the next attempt"
             }
-            className="h-7 text-[11px] hover:text-destructive hover:border-destructive"
+            className="h-7 inline-flex items-center gap-1 rounded-md border border-border-light px-2 text-[11px] text-text-secondary hover:text-danger hover:border-danger disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             <X size={11} /> Dismiss
-          </Button>
-          <Button
+          </button>
+          <button
             type="button"
-            variant="outline"
-            size="sm"
             disabled={inflight}
             onClick={() => denyForever.mutate({ id: row.id })}
             title="Deny this exact path on this host (writes a deny rule)"
-            className="h-7 text-[11px] hover:text-destructive hover:border-destructive"
+            className="h-7 inline-flex items-center gap-1 rounded-md border border-border-light px-2 text-[11px] text-text-secondary hover:text-danger hover:border-danger disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             <ShieldOff size={11} /> Deny forever
-          </Button>
+          </button>
           {showHostActions && (
-            <Button
+            <button
               type="button"
-              variant="ghost"
-              size="sm"
               disabled={inflight}
               onClick={() => navigateToAgentEgress(row.agentId)}
               title="Manage all network access rules for this agent"
-              className="h-7 text-[11px] text-muted-foreground hover:text-foreground"
+              className="h-7 inline-flex items-center gap-1 rounded-md px-2 text-[11px] text-text-muted hover:text-text transition-colors"
             >
               <Settings2 size={11} /> Customize…
-            </Button>
+            </button>
           )}
         </div>
       )}
       {expired && row.type === "ext_authz" && (
-        <p className="text-[11px] text-muted-foreground">
-          The original request already failed. Allow permanently writes a rule that future retries match.
+        <p className="text-[11px] text-text-muted">
+          The original request already failed. Allow permanently writes a rule
+          that future retries match.
         </p>
       )}
     </li>

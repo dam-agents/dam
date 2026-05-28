@@ -5,13 +5,15 @@ import { filter } from "rxjs/operators";
 // Domain events — write-side only
 // ---------------------------------------------------------------------------
 
+export type TurnOutcome = "success" | "failure";
+
 export enum EventType {
   UserAuthenticated = "UserAuthenticated",
-  InstanceCreated = "InstanceCreated",
-  InstanceUpdated = "InstanceUpdated",
-  InstanceDeleted = "InstanceDeleted",
-  InstanceRestarted = "InstanceRestarted",
-  InstanceWoken = "InstanceWoken",
+  AgentCreated = "AgentCreated",
+  AgentUpdated = "AgentUpdated",
+  AgentDeleted = "AgentDeleted",
+  AgentRestarted = "AgentRestarted",
+  AgentWoken = "AgentWoken",
   SlackConnected = "SlackConnected",
   SlackDisconnected = "SlackDisconnected",
   TelegramConnected = "TelegramConnected",
@@ -20,60 +22,68 @@ export enum EventType {
   ForkFailed = "ForkFailed",
   ForkCompleted = "ForkCompleted",
   ForeignReplyReceived = "ForeignReplyReceived",
-  SlackTurnRelayed = "SlackTurnRelayed",
+  ChannelTurnRelayed = "ChannelTurnRelayed",
+  ScheduleFired = "ScheduleFired",
+  ConnectionCreated = "ConnectionCreated",
+  ConnectionRemoved = "ConnectionRemoved",
+  FilesImported = "FilesImported",
 }
 
 export type UserAuthenticated = {
   type: EventType.UserAuthenticated;
   userSub: string;
-  userJwt: string;
+  /** Normalized OIDC client: "ui" | "cli" | "other". Stripped from JWT `azp`. */
+  surface: string;
+  /** Decoded by the auth middleware from JWT `realm_access.roles`. Kept on the
+   *  event so subscribers don't need to re-parse (or hold) the bearer token. */
+  isCore: boolean;
 };
 
-export type InstanceCreated = {
-  type: EventType.InstanceCreated;
-  instanceId: string;
+export type AgentCreated = {
+  type: EventType.AgentCreated;
+  agentId: string;
+  ownerSub: string;
+};
+
+export type AgentUpdated = {
+  type: EventType.AgentUpdated;
   agentId: string;
 };
 
-export type InstanceUpdated = {
-  type: EventType.InstanceUpdated;
-  instanceId: string;
+export type AgentDeleted = {
+  type: EventType.AgentDeleted;
+  agentId: string;
 };
 
-export type InstanceDeleted = {
-  type: EventType.InstanceDeleted;
-  instanceId: string;
+export type AgentRestarted = {
+  type: EventType.AgentRestarted;
+  agentId: string;
 };
 
-export type InstanceRestarted = {
-  type: EventType.InstanceRestarted;
-  instanceId: string;
-};
-
-export type InstanceWoken = {
-  type: EventType.InstanceWoken;
-  instanceId: string;
+export type AgentWoken = {
+  type: EventType.AgentWoken;
+  agentId: string;
 };
 
 export type SlackConnected = {
   type: EventType.SlackConnected;
-  instanceId: string;
+  agentId: string;
   slackChannelId: string;
 };
 
 export type SlackDisconnected = {
   type: EventType.SlackDisconnected;
-  instanceId: string;
+  agentId: string;
 };
 
 export type TelegramConnected = {
   type: EventType.TelegramConnected;
-  instanceId: string;
+  agentId: string;
 };
 
 export type TelegramDisconnected = {
   type: EventType.TelegramDisconnected;
-  instanceId: string;
+  agentId: string;
 };
 
 export type ForkFailureReason =
@@ -105,7 +115,7 @@ export type ForkCompleted = {
 export type ForeignReplyReceived = {
   type: EventType.ForeignReplyReceived;
   replyId: string;
-  instanceId: string;
+  agentId: string;
   foreignSub: string;
   threadTs: string;
   sessionId?: string;
@@ -116,19 +126,61 @@ export type ForeignReplyReceived = {
   };
 };
 
-export type SlackTurnRelayed = {
-  type: EventType.SlackTurnRelayed;
-  replyId: string;
+export type ChannelTurnRelayed = {
+  type: EventType.ChannelTurnRelayed;
+  channel: "slack" | "telegram";
+  agentId: string;
+  /** Null for unauthenticated relays (Telegram: only the owner runs /login, so guest replies have no Keycloak sub). */
+  actorSub: string | null;
+  /** "success" when the ACP turn completed and the reply was posted; "failure"
+   *  on any caught error in the relay path (ACP throw, fork provisioning
+   *  failure, post-back failure). Drives the success/failure breakouts in the
+   *  channel-turn views. */
+  outcome: TurnOutcome;
   forkId?: string;
+};
+
+export type ScheduleFired = {
+  type: EventType.ScheduleFired;
+  scheduleId: string;
+  agentId: string;
+  ownerSub: string;
+  mode: "fresh" | "continuous";
+  sessionId: string | null;
+  outcome: TurnOutcome;
+};
+
+export type ConnectionKind = "oauth_app" | "mcp";
+
+export type ConnectionCreated = {
+  type: EventType.ConnectionCreated;
+  actorSub: string;
+  connectionKey: string;
+  kind: ConnectionKind;
+};
+
+export type ConnectionRemoved = {
+  type: EventType.ConnectionRemoved;
+  actorSub: string;
+  connectionKey: string;
+  kind: ConnectionKind;
+};
+
+export type FilesImported = {
+  type: EventType.FilesImported;
+  actorSub: string;
+  agentId: string;
+  outcome: TurnOutcome;
+  bytes: number;
 };
 
 export type DomainEvent =
   | UserAuthenticated
-  | InstanceCreated
-  | InstanceUpdated
-  | InstanceDeleted
-  | InstanceRestarted
-  | InstanceWoken
+  | AgentCreated
+  | AgentUpdated
+  | AgentDeleted
+  | AgentRestarted
+  | AgentWoken
   | SlackConnected
   | SlackDisconnected
   | TelegramConnected
@@ -137,7 +189,11 @@ export type DomainEvent =
   | ForkFailed
   | ForkCompleted
   | ForeignReplyReceived
-  | SlackTurnRelayed;
+  | ChannelTurnRelayed
+  | ScheduleFired
+  | ConnectionCreated
+  | ConnectionRemoved
+  | FilesImported;
 
 // ---------------------------------------------------------------------------
 // Event bus

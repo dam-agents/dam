@@ -52,8 +52,8 @@ func New(client kubernetes.Interface, namespace string) *Lifecycle {
 	}
 }
 
-// EnsureReady blocks until the instance's pod is Ready, waking it from
-// hibernation if needed. Idempotent; single-flight per instance name; bumps
+// EnsureReady blocks until the agent's pod is Ready, waking it from
+// hibernation if needed. Idempotent; single-flight per agent name; bumps
 // agent-platform.ai/last-activity on every successful completion so any caller
 // implicitly keeps the pod warm.
 //
@@ -62,25 +62,25 @@ func New(client kubernetes.Interface, namespace string) *Lifecycle {
 // desiredState is already "running") and pod Ready is polled up to
 // wakeTimeout. NotFound during polling counts as "not yet" — the reconciler
 // may be mid-scale-up.
-func (l *Lifecycle) EnsureReady(ctx context.Context, instanceName string) error {
-	_, err, _ := l.sf.Do(instanceName, func() (any, error) {
-		return nil, l.ensureReady(ctx, instanceName)
+func (l *Lifecycle) EnsureReady(ctx context.Context, agentName string) error {
+	_, err, _ := l.sf.Do(agentName, func() (any, error) {
+		return nil, l.ensureReady(ctx, agentName)
 	})
 	return err
 }
 
-func (l *Lifecycle) ensureReady(ctx context.Context, instanceName string) error {
-	podName := instanceName + "-0"
+func (l *Lifecycle) ensureReady(ctx context.Context, agentName string) error {
+	podName := agentName + "-0"
 	if ready, err := podIsReady(ctx, l.client, l.namespace, podName); err == nil && ready {
-		return l.bumpLastActivity(ctx, instanceName)
+		return l.bumpLastActivity(ctx, agentName)
 	}
 
-	if err := l.wakeIfHibernated(ctx, instanceName); err != nil {
-		return fmt.Errorf("wake %s: %w", instanceName, err)
+	if err := l.wakeIfHibernated(ctx, agentName); err != nil {
+		return fmt.Errorf("wake %s: %w", agentName, err)
 	}
 
 	if !l.waitForPodReady(ctx, podName) {
-		return fmt.Errorf("instance %s did not become ready within %s", instanceName, l.pollTimeout)
+		return fmt.Errorf("agent %s did not become ready within %s", agentName, l.pollTimeout)
 	}
-	return l.bumpLastActivity(ctx, instanceName)
+	return l.bumpLastActivity(ctx, agentName)
 }

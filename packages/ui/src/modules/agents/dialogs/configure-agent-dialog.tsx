@@ -1,23 +1,11 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { type EgressPreset, isProtectedAgentEnvName } from "api-server-api";
+import {
+  type AppConnectionView,
+  type EgressPreset,
+  isProtectedAgentEnvName,
+} from "api-server-api";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
-
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 
 import {
   ConnectionsPicker,
@@ -25,12 +13,15 @@ import {
 } from "../../../components/connections-picker.js";
 import { sanitizeEnvVars } from "../../../components/env-vars-editor.js";
 import { FormField } from "../../../components/form-field.js";
-import type { AgentView } from "../../../types.js";
-import { APP_OAUTH_SECRET_PREFIX } from "../../../types.js";
+import { HoverTooltip } from "../../../components/hover-tooltip.js";
 import {
-  useAppConnections,
-  useOAuthAppConnections,
-} from "../../connections/api/queries.js";
+  DialogBody,
+  DialogFooter,
+  DialogHeader,
+  Modal,
+} from "../../../components/modal.js";
+import type { AgentView } from "../../../types.js";
+import { useAppConnections } from "../../connections/api/queries.js";
 import {
   useApplyEgressPreset,
   useCreateEgressRule,
@@ -51,7 +42,11 @@ import {
   useUpdateAgent,
 } from "../api/mutations.js";
 import { useAgentAccess, useAgentConnections } from "../api/queries.js";
-import { EnvTab, type InheritedEnv } from "../components/configure-agent/env-tab.js";
+import {
+  EnvTab,
+  type InheritedEnv,
+} from "../components/configure-agent/env-tab.js";
+import { TabButton } from "../components/configure-agent/tab-button.js";
 import {
   configureAgentSchema,
   type ConfigureAgentValues,
@@ -74,7 +69,6 @@ export function ConfigureAgentDialog({
 
   const { data: secrets = [] } = useSecrets();
   const { data: apps = [] } = useAppConnections();
-  const { data: oauthAppConnections = [] } = useOAuthAppConnections();
   const accessQuery = useAgentAccess(agentId);
   const connectionsQuery = useAgentConnections(agentId);
   const { data: egressRules = [] } = useEgressRulesForAgent(agentId);
@@ -94,20 +88,30 @@ export function ConfigureAgentDialog({
   // the rest of the form; closing discards. Tracked outside RHF since
   // none of these correspond to schema fields.
   const [stagedPreset, setStagedPreset] = useState<EgressPreset | null>(null);
-  const [pendingDeletes, setPendingDeletes] = useState<ReadonlySet<string>>(() => new Set());
+  const [pendingDeletes, setPendingDeletes] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const [pendingAdds, setPendingAdds] = useState<readonly PendingAdd[]>([]);
 
-  const { register, control, handleSubmit, watch, getValues, setValue, reset, formState } =
-    useForm<ConfigureAgentValues>({
-      resolver: zodResolver(configureAgentSchema),
-      mode: "onChange",
-      defaultValues: {
-        name: agent.name,
-        assigned: [],
-        assignedAppIds: [],
-        envVars: userInitialEnv,
-      },
-    });
+  const {
+    register,
+    control,
+    handleSubmit,
+    watch,
+    getValues,
+    setValue,
+    reset,
+    formState,
+  } = useForm<ConfigureAgentValues>({
+    resolver: zodResolver(configureAgentSchema),
+    mode: "onChange",
+    defaultValues: {
+      name: agent.name,
+      assigned: [],
+      assignedAppIds: [],
+      envVars: userInitialEnv,
+    },
+  });
   const { errors, isDirty, dirtyFields, isSubmitting } = formState;
   const saving = isSubmitting;
 
@@ -121,10 +125,18 @@ export function ConfigureAgentDialog({
     reset({
       name: agent.name,
       assigned: [...accessQuery.data.secretIds].sort(),
-      assignedAppIds: [...connectionsQuery.data.connectionIds].sort(),
+      assignedAppIds: connectionsQuery.data.connections
+        .map((c) => c.connectionId)
+        .sort(),
       envVars: userInitialEnv,
     });
-  }, [accessQuery.data, connectionsQuery.data, userInitialEnv, agent.name, reset]);
+  }, [
+    accessQuery.data,
+    connectionsQuery.data,
+    userInitialEnv,
+    agent.name,
+    reset,
+  ]);
   const ready = baselinedRef.current;
 
   // ADR-040: grant toggles no longer mutate `envVars`. The controller merges
@@ -152,28 +164,16 @@ export function ConfigureAgentDialog({
   const assignedSet = useMemo(() => new Set(assigned), [assigned]);
   const appIdsSet = useMemo(() => new Set(assignedAppIds), [assignedAppIds]);
 
-  // Join the api-server-driven OAuth app connections with their K8s
-  // credential Secrets so the picker can render them in the "Apps"
-  // subsection while grants flow through the secret-access mechanism.
-  const oauthAppEntries = useMemo<OAuthAppEntry[]>(() => {
-    const secretByName = new Map(secrets.map((s) => [s.name, s]));
-    return oauthAppConnections.flatMap((conn) => {
-      const mirror = secretByName.get(`${APP_OAUTH_SECRET_PREFIX}${conn.connectionId}`);
-      if (!mirror) return [];
-      return [{
-        secretId: mirror.id,
-        appId: conn.appId,
-        displayName: conn.displayName,
-        hostPattern: conn.hostPattern,
-        expired: conn.expired,
-      }];
-    });
-  }, [oauthAppConnections, secrets]);
+  const oauthAppEntries: OAuthAppEntry[] = [];
 
   const inheritedEnvs = useMemo<InheritedEnv[]>(() => {
     const items: InheritedEnv[] = (agent.env ?? [])
       .filter((e) => isProtectedAgentEnvName(e.name))
-      .map((e) => ({ name: e.name, value: e.value, source: "system" as const }));
+      .map((e) => ({
+        name: e.name,
+        value: e.value,
+        source: "system" as const,
+      }));
 
     for (const s of secrets.filter((s) => assignedSet.has(s.id))) {
       for (const m of s.envMappings ?? []) {
@@ -187,12 +187,15 @@ export function ConfigureAgentDialog({
 
     const userEnvNames = new Set(envVars.map((e) => e.name));
     for (const a of apps.filter((a) => appIdsSet.has(a.id))) {
-      for (const m of a.envMappings ?? []) {
-        if (userEnvNames.has(m.envName)) continue;
+      const envContribs = a.contributions.filter(
+        (c): c is Extract<typeof c, { kind: "env" }> => c.kind === "env",
+      );
+      for (const c of envContribs) {
+        if (userEnvNames.has(c.name)) continue;
         items.push({
-          name: m.envName,
-          value: m.placeholder,
-          source: { appLabel: a.label },
+          name: c.name,
+          value: c.placeholder,
+          source: { appLabel: a.name },
         });
       }
     }
@@ -211,8 +214,11 @@ export function ConfigureAgentDialog({
     [accessQuery.data?.secretIds],
   );
   const baselineAppIds = useMemo(
-    () => new Set(connectionsQuery.data?.connectionIds ?? []),
-    [connectionsQuery.data?.connectionIds],
+    () =>
+      new Set(
+        connectionsQuery.data?.connections.map((c) => c.connectionId) ?? [],
+      ),
+    [connectionsQuery.data?.connections],
   );
   const pendingConnectionGrants = useMemo(() => {
     type Grant = { connectionId: string; host: string; label: string };
@@ -230,12 +236,19 @@ export function ConfigureAgentDialog({
       if (baselineAppIds.has(id)) continue;
       const a = apps.find((x) => x.id === id);
       if (!a) continue;
-      for (const host of a.egressHosts ?? []) {
-        out.push({ connectionId: id, host, label: a.label });
+      for (const host of a.hosts) {
+        out.push({ connectionId: id, host, label: a.name });
       }
     }
     return out;
-  }, [assigned, assignedAppIds, baselineSecretIds, baselineAppIds, secrets, apps]);
+  }, [
+    assigned,
+    assignedAppIds,
+    baselineSecretIds,
+    baselineAppIds,
+    secrets,
+    apps,
+  ]);
   const pendingConnectionRevokes = useMemo(() => {
     const next = new Set<string>();
     for (const id of baselineSecretIds) if (!assignedSet.has(id)) next.add(id);
@@ -245,7 +258,7 @@ export function ConfigureAgentDialog({
   const connectionLabels = useMemo(() => {
     const m = new Map<string, string>();
     for (const s of secrets) m.set(s.id, s.name);
-    for (const a of apps) m.set(a.id, a.label);
+    for (const a of apps) m.set(a.id, a.name);
     return m;
   }, [secrets, apps]);
 
@@ -258,12 +271,16 @@ export function ConfigureAgentDialog({
   const togglePendingDelete = (id: string) => {
     setPendingDeletes((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
   const appendPendingAdd = (draft: Omit<PendingAdd, "tempId">) => {
-    setPendingAdds((prev) => [...prev, { ...draft, tempId: crypto.randomUUID() }]);
+    setPendingAdds((prev) => [
+      ...prev,
+      { ...draft, tempId: crypto.randomUUID() },
+    ]);
   };
   const removePendingAdd = (tempId: string) => {
     setPendingAdds((prev) => prev.filter((a) => a.tempId !== tempId));
@@ -281,11 +298,14 @@ export function ConfigureAgentDialog({
           secretIds: values.assigned,
         });
       }
-      const wantsAgentUpdate = Boolean(dirtyFields.envVars) || Boolean(dirtyFields.name);
+      const wantsAgentUpdate =
+        Boolean(dirtyFields.envVars) || Boolean(dirtyFields.name);
       if (wantsAgentUpdate) {
         await updateAgent.mutateAsync({
           id: agentId,
-          ...(dirtyFields.envVars ? { env: sanitizeEnvVars(values.envVars) } : {}),
+          ...(dirtyFields.envVars
+            ? { env: sanitizeEnvVars(values.envVars) }
+            : {}),
           ...(dirtyFields.name ? { name: values.name.trim() } : {}),
         });
       }
@@ -311,8 +331,8 @@ export function ConfigureAgentDialog({
         .filter((a) => a.method !== "*" || a.pathPattern !== "*")
         .map((a) => a.host);
       if (
-        restartingHosts.length > 0
-        && !window.confirm(
+        restartingHosts.length > 0 &&
+        !window.confirm(
           `Saving will restart the agent (~5–15s) so Envoy can MITM ${restartingHosts.length === 1 ? `"${restartingHosts[0]}"` : `${restartingHosts.length} hosts`} for path-level enforcement. Continue?`,
         )
       ) {
@@ -356,180 +376,150 @@ export function ConfigureAgentDialog({
   );
   const effectivePreset = stagedPreset ?? currentPreset;
   const effectivePresetIsAll = effectivePreset === "all";
-  const wildcardHostInScope = stagedHasWildcardAdd || savedWildcardActive || effectivePresetIsAll;
-
-  const egressTabCount = egressRules.length - pendingDeletes.size + pendingAdds.length;
+  const wildcardHostInScope =
+    stagedHasWildcardAdd || savedWildcardActive || effectivePresetIsAll;
 
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-    >
-      <DialogContent className="w-[640px] max-w-[calc(100vw-2rem)] max-h-[85vh] overflow-hidden sm:max-w-[640px] flex flex-col gap-0 p-0">
-        <form onSubmit={onSubmit} className="flex flex-col flex-1 min-h-0">
-          <div className="px-7 pt-7 pb-4 border-b border-border flex flex-col gap-3">
-            <DialogHeader>
-              <DialogTitle>Configure Agent</DialogTitle>
-              <p className="text-[12px] text-muted-foreground mt-1">
-                {agent.templateId ? (
-                  <>
-                    Template:{" "}
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="font-semibold text-foreground/80 border-b border-dotted border-muted-foreground cursor-help">
-                          {agent.templateId}
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent side="right">
-                        <span className="font-mono">{agent.image}</span>
-                      </TooltipContent>
-                    </Tooltip>
-                  </>
-                ) : (
-                  <>
-                    Image:{" "}
-                    <span className="font-mono text-foreground/80 break-all">
-                      {agent.image}
-                    </span>
-                  </>
-                )}
-              </p>
-            </DialogHeader>
-            <FormField label="Name" error={errors.name?.message}>
-              <Input disabled={saving} {...register("name")} />
-            </FormField>
-          </div>
-
-          <Tabs
-            value={tab}
-            onValueChange={(v) => setTab(v as Tab)}
-            className="flex-1 flex flex-col min-h-0"
-          >
-            <div className="px-7 pt-4 border-b border-border">
-              <TabsList className="h-auto bg-transparent p-0 gap-1 rounded-none">
-                <TabsTrigger
-                  value="connections"
-                  className="h-10 px-4 gap-2 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none -mb-[1px]"
-                >
-                  Connections
-                  {connectionsCount > 0 && (
-                    <Badge
-                      variant={tab === "connections" ? "default" : "secondary"}
-                      className="px-1.5 py-0.5 text-[10px] min-w-[18px] justify-center"
-                    >
-                      {connectionsCount}
-                    </Badge>
-                  )}
-                </TabsTrigger>
-                <TabsTrigger
-                  value="env"
-                  className="h-10 px-4 gap-2 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none -mb-[1px]"
-                >
-                  Environment
-                  {envCount > 0 && (
-                    <Badge
-                      variant={tab === "env" ? "default" : "secondary"}
-                      className="px-1.5 py-0.5 text-[10px] min-w-[18px] justify-center"
-                    >
-                      {envCount}
-                    </Badge>
-                  )}
-                </TabsTrigger>
-                {networkTabVisible && (
-                  <TabsTrigger
-                    value="egress"
-                    className="h-10 px-4 gap-2 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none -mb-[1px]"
+    <Modal widthClass="w-[640px]">
+      <form onSubmit={onSubmit} className="contents">
+        <DialogHeader className="flex flex-col gap-3">
+          <div>
+            <h2 className="text-[20px] font-bold text-text">Configure Agent</h2>
+            <p className="text-[12px] text-text-muted mt-1">
+              {agent.templateId ? (
+                <>
+                  Template:{" "}
+                  <HoverTooltip
+                    placement="right"
+                    trigger={
+                      <span className="font-semibold text-text-secondary border-b border-dotted border-text-muted cursor-help">
+                        {agent.templateId}
+                      </span>
+                    }
                   >
-                    Network access
-                    {egressTabCount > 0 && (
-                      <Badge
-                        variant={tab === "egress" ? "default" : "secondary"}
-                        className="px-1.5 py-0.5 text-[10px] min-w-[18px] justify-center"
-                      >
-                        {egressTabCount}
-                      </Badge>
-                    )}
-                  </TabsTrigger>
-                )}
-              </TabsList>
-            </div>
-
-            <div className="flex-1 overflow-y-auto">
-              <TabsContent value="connections" className="px-7 py-5 flex flex-col gap-4 mt-0">
-                <ConnectionsPicker
-                  loading={!ready}
-                  secrets={secrets}
-                  apps={apps}
-                  oauthApps={oauthAppEntries}
-                  selSecrets={assignedSet}
-                  selApps={appIdsSet}
-                  onToggleSecret={toggleSecret}
-                  onToggleApp={toggleApp}
-                />
-              </TabsContent>
-              <TabsContent value="env" className="px-7 py-5 flex flex-col gap-4 mt-0">
-                <Controller
-                  control={control}
-                  name="envVars"
-                  render={({ field }) => (
-                    <EnvTab
-                      inherited={inheritedEnvs}
-                      envVars={field.value}
-                      setEnvVars={field.onChange}
-                      saving={saving}
-                    />
-                  )}
-                />
-              </TabsContent>
-              {networkTabVisible && (
-                <TabsContent value="egress" className="px-7 py-5 flex flex-col gap-4 mt-0">
-                  <AgentEgressEditor
-                    agentId={agentId}
-                    currentPreset={currentPreset}
-                    staged={{
-                      preset: stagedPreset,
-                      setPreset: setStagedPreset,
-                      pendingDeletes,
-                      togglePendingDelete,
-                      pendingAdds,
-                      appendPendingAdd,
-                      removePendingAdd,
-                      pendingConnectionGrants,
-                      pendingConnectionRevokes,
-                      connectionLabels,
-                    }}
-                  />
-                </TabsContent>
+                    <span className="font-mono">{agent.image}</span>
+                  </HoverTooltip>
+                </>
+              ) : (
+                <>
+                  Image:{" "}
+                  <span className="font-mono text-text-secondary break-all">
+                    {agent.image}
+                  </span>
+                </>
               )}
-            </div>
-          </Tabs>
-
-          <div className="px-7 py-4 border-t border-border flex items-center justify-end gap-3">
-            {wildcardHostInScope && (
-              <span
-                role="alert"
-                className="mr-auto inline-flex items-center gap-1.5 text-[12px] text-warning"
-                title="A wildcard host '*' rule is in scope. Any unmatched egress is allowed."
-              >
-                <span aria-hidden="true">⚠</span>
-                Allow everything is on — narrow with deny rules or remove the wildcard.
-              </span>
-            )}
-            <Button type="button" variant="outline" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              disabled={isSubmitDisabled}
-              title={!isDirty ? "Nothing to save" : undefined}
-            >
-              {saving ? "..." : "Save"}
-            </Button>
+            </p>
           </div>
-        </form>
-      </DialogContent>
-    </Dialog>
+          <FormField label="Name" error={errors.name?.message}>
+            <input
+              className="w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted"
+              disabled={saving}
+              {...register("name")}
+            />
+          </FormField>
+        </DialogHeader>
+
+        <div className="px-5 md:px-7 pt-4 flex items-center gap-1 border-b-2 border-border-light">
+          <TabButton
+            active={tab === "connections"}
+            label="Connections"
+            count={connectionsCount}
+            onClick={() => setTab("connections")}
+          />
+          <TabButton
+            active={tab === "env"}
+            label="Environment"
+            count={envCount}
+            onClick={() => setTab("env")}
+          />
+          {networkTabVisible && (
+            <TabButton
+              active={tab === "egress"}
+              label="Network access"
+              count={
+                egressRules.length - pendingDeletes.size + pendingAdds.length
+              }
+              onClick={() => setTab("egress")}
+            />
+          )}
+        </div>
+
+        <DialogBody className="flex flex-col gap-4">
+          {tab === "connections" && (
+            <ConnectionsPicker
+              loading={!ready}
+              secrets={secrets}
+              apps={apps as unknown as AppConnectionView[]}
+              oauthApps={oauthAppEntries}
+              selSecrets={assignedSet}
+              selApps={appIdsSet}
+              onToggleSecret={toggleSecret}
+              onToggleApp={toggleApp}
+            />
+          )}
+          {tab === "env" && (
+            <Controller
+              control={control}
+              name="envVars"
+              render={({ field }) => (
+                <EnvTab
+                  inherited={inheritedEnvs}
+                  envVars={field.value}
+                  setEnvVars={field.onChange}
+                  saving={saving}
+                />
+              )}
+            />
+          )}
+          {tab === "egress" && networkTabVisible && (
+            <AgentEgressEditor
+              agentId={agentId}
+              currentPreset={currentPreset}
+              staged={{
+                preset: stagedPreset,
+                setPreset: setStagedPreset,
+                pendingDeletes,
+                togglePendingDelete,
+                pendingAdds,
+                appendPendingAdd,
+                removePendingAdd,
+                pendingConnectionGrants,
+                pendingConnectionRevokes,
+                connectionLabels,
+              }}
+            />
+          )}
+        </DialogBody>
+
+        <DialogFooter>
+          {wildcardHostInScope && (
+            <span
+              role="alert"
+              className="mr-auto inline-flex items-center gap-1.5 text-[12px] text-warning"
+              title="A wildcard host '*' rule is in scope. Any unmatched egress is allowed."
+            >
+              <span aria-hidden="true">⚠</span>
+              Allow everything is on — narrow with deny rules or remove the
+              wildcard.
+            </span>
+          )}
+          <button
+            type="button"
+            className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent"
+            disabled={isSubmitDisabled}
+            title={!isDirty ? "Nothing to save" : undefined}
+          >
+            {saving ? "..." : "Save"}
+          </button>
+        </DialogFooter>
+      </form>
+    </Modal>
   );
 }

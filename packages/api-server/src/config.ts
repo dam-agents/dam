@@ -1,25 +1,19 @@
-import { z } from "zod/v4";
+import { brandSchema } from "api-server-api";
+import { z } from "zod";
 import pkg from "../package.json" with { type: "json" };
-import { isValidAppSlug } from "./modules/connections/infrastructure/oauth-apps.js";
 
-// Admin-default GitHub App slugs come from Helm values
-// (`apiServer.oauthAppDefaults.{github,githubEnterprise}.appSlug`). Treat
-// empty string as unset so operators can leave the value blank in
-// values.yaml; reject anything else that GitHub itself wouldn't accept,
-// so a typo crashes the api-server pod at startup with a clear error
-// rather than surfacing as a 400 the next time someone tries to connect.
+function isValidAppSlug(s: string): boolean {
+  return s.length >= 1 && s.length <= 39 && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(s);
+}
 const adminAppSlugSchema = z
   .string()
   .nullable()
   .default(null)
   .transform((v) => (v == null || v === "" ? null : v))
-  .refine(
-    (v) => v == null || isValidAppSlug(v),
-    {
-      message:
-        "Admin-default GitHub App slug must be 1–39 lowercase letters, digits, and single hyphens — no leading, trailing, or consecutive hyphens.",
-    },
-  );
+  .refine((v) => v == null || isValidAppSlug(v), {
+    message:
+      "Admin-default GitHub App slug must be 1–39 lowercase letters, digits, and single hyphens — no leading, trailing, or consecutive hyphens.",
+  });
 
 const configSchema = z.object({
   /** Build-time semver from this package's package.json — not env-driven.
@@ -37,6 +31,7 @@ const configSchema = z.object({
   releaseName: z.string().min(1, "PLATFORM_RELEASE_NAME must be set"),
   port: z.coerce.number().default(4000),
   harnessServerPort: z.coerce.number().default(4001),
+  harnessServerUrl: z.string().url(),
   /** gRPC ext_authz listener — serves both Envoy's HTTP filter (L7,
    *  TLS-terminated chains) and network filter (L4, catch-all). */
   extAuthzPort: z.coerce.number().default(4002),
@@ -46,6 +41,12 @@ const configSchema = z.object({
   slackAppToken: z.string().nullable().default(null),
   slackOauthCallbackUrl: z.string().nullable().default(null),
   telegramEnabled: z.coerce.boolean().default(false),
+  activityTrackingEnabled: z.coerce.boolean().default(false),
+  /** HMAC key used to pseudonymize Keycloak `sub` values written to
+   *  `activity_events`, `actor_roles`, and `instances` (GDPR Art. 32).
+   *  Must be stable across restarts — rotating it orphans every existing
+   *  row. The Helm chart auto-generates and persists this in a Secret. */
+  activityHmacKey: z.string().min(1, "ACTIVITY_HMAC_KEY must be set"),
   uiBaseUrl: z.url().default("http://localhost:4444"),
   keycloakUrl: z.url().default("http://platform-keycloak:8080"),
   keycloakExternalUrl: z.url().default("http://keycloak.localhost:4444"),
@@ -59,6 +60,10 @@ const configSchema = z.object({
   keycloakApiClientId: z.string().default("platform-api"),
   keycloakApiClientSecret: z.string().default(""),
   keycloakRequiredRole: z.string().optional(),
+  /** Realm role granting read access to the inspector endpoints
+   *  (`GET /api/usage`, `GET /api/usage/report`). Unset means usage endpoints
+   *  are off entirely. Threaded from `keycloak.inspectorRole` Helm value. */
+  keycloakInspectorRole: z.string().optional(),
   agentHome: z.string().default("/home/agent"),
   /** JSON array of system Skill Sources declared by the cluster admin via
    *  Helm values. Empty/unset means no seed sources. Validated by Zod inside
@@ -71,8 +76,6 @@ const configSchema = z.object({
   // serve every user on a deployment.
   defaultGithubClientId: z.string().nullable().default(null),
   defaultGithubClientSecret: z.string().nullable().default(null),
-  // GitHub App slug — only set when the platform-default app is a GitHub
-  // App (not an OAuth App). Drives the post-authorization install prompt.
   defaultGithubAppSlug: adminAppSlugSchema,
   defaultGithubEnterpriseHost: z.string().nullable().default(null),
   defaultGithubEnterpriseClientId: z.string().nullable().default(null),
@@ -101,27 +104,25 @@ const configSchema = z.object({
    *  controller-default agent PVC. Admins on tighter PVCs (the bundled
    *  `claude-code` template ships with a 5 GiB `homeMountSize`) should
    *  lower this via `MAX_IMPORT_BUNDLE_BYTES`. */
-  maxImportBundleBytes: z.coerce.number().int().positive().default(5 * 1024 * 1024 * 1024),
+  maxImportBundleBytes: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(5 * 1024 * 1024 * 1024),
   /** Brand presented to end users — display name, slash-command identifier,
    *  and theme accent colors. Surfaced to the UI via `GET /api/brand` and
    *  used internally for OAuth client_name, Slack slash command, skill
    *  publish git author, MCP tool descriptions. The internal codename
-   *  ("platform") is permanent; this section is the only knob users see. */
-  brand: z.object({
-    name: z.string().default("Platform"),
-    short: z.string().default("platform"),
-    theme: z.object({
-      light: z.object({
-        accent: z.string().default("#1D6BE1"),
-        accentHover: z.string().default("#1556B8"),
-        accentLight: z.string().default("#eaf2fe"),
-      }),
-      dark: z.object({
-        accent: z.string().default("#3C92FD"),
-        accentHover: z.string().default("#2F88FD"),
-        accentLight: z.string().default("#0f1f3a"),
-      }),
-    }),
+   *  ("platform") is permanent; this section is the only knob users see.
+   *
+   *  Shape comes from `brandSchema` in `api-server-api` so the UI parses
+   *  `GET /api/brand` against the same definition. Defaults live in the
+   *  env-var input-prep block below — not in the schema — so a malformed
+   *  server response cannot silently coerce on the UI side. */
+  brand: brandSchema,
+  terms: z.object({
+    version: z.string().min(1, "terms.version must be set"),
+    text: z.string().min(1, "terms.text must be set"),
   }),
 });
 
@@ -134,6 +135,7 @@ export function loadConfig(): Config {
     releaseName: process.env.PLATFORM_RELEASE_NAME,
     port: process.env.PORT,
     harnessServerPort: process.env.MCP_PORT,
+    harnessServerUrl: process.env.PLATFORM_HARNESS_SERVER_URL,
     extAuthzPort: process.env.EXT_AUTHZ_PORT,
     databaseUrl: process.env.DATABASE_URL,
     migrationsPath: process.env.MIGRATIONS_PATH,
@@ -141,6 +143,8 @@ export function loadConfig(): Config {
     slackAppToken: process.env.SLACK_APP_TOKEN,
     slackOauthCallbackUrl: process.env.SLACK_OAUTH_CALLBACK_URL,
     telegramEnabled: process.env.TELEGRAM_ENABLED,
+    activityTrackingEnabled: process.env.ACTIVITY_TRACKING_ENABLED,
+    activityHmacKey: process.env.ACTIVITY_HMAC_KEY,
     uiBaseUrl: process.env.UI_BASE_URL,
     keycloakUrl: process.env.KEYCLOAK_URL,
     keycloakExternalUrl: process.env.KEYCLOAK_EXTERNAL_URL,
@@ -151,14 +155,17 @@ export function loadConfig(): Config {
     keycloakApiClientId: process.env.KEYCLOAK_API_CLIENT_ID,
     keycloakApiClientSecret: process.env.KEYCLOAK_API_CLIENT_SECRET,
     keycloakRequiredRole: process.env.KEYCLOAK_REQUIRED_ROLE,
+    keycloakInspectorRole: process.env.KEYCLOAK_INSPECTOR_ROLE,
     agentHome: process.env.AGENT_HOME,
     skillSourcesSeed: process.env.SKILL_SOURCES_SEED,
     defaultGithubClientId: process.env.PLATFORM_DEFAULT_GITHUB_CLIENT_ID,
-    defaultGithubClientSecret: process.env.PLATFORM_DEFAULT_GITHUB_CLIENT_SECRET,
+    defaultGithubClientSecret:
+      process.env.PLATFORM_DEFAULT_GITHUB_CLIENT_SECRET,
     defaultGithubAppSlug: process.env.PLATFORM_DEFAULT_GITHUB_APP_SLUG,
     defaultGithubEnterpriseHost: process.env.PLATFORM_DEFAULT_GHE_HOST,
     defaultGithubEnterpriseClientId: process.env.PLATFORM_DEFAULT_GHE_CLIENT_ID,
-    defaultGithubEnterpriseClientSecret: process.env.PLATFORM_DEFAULT_GHE_CLIENT_SECRET,
+    defaultGithubEnterpriseClientSecret:
+      process.env.PLATFORM_DEFAULT_GHE_CLIENT_SECRET,
     defaultGithubEnterpriseAppSlug: process.env.PLATFORM_DEFAULT_GHE_APP_SLUG,
     redisUrl: process.env.REDIS_URL,
     redisPassword: process.env.REDIS_PASSWORD,
@@ -167,20 +174,24 @@ export function loadConfig(): Config {
     trustedHostsPath: process.env.TRUSTED_HOSTS_PATH,
     maxImportBundleBytes: process.env.MAX_IMPORT_BUNDLE_BYTES,
     brand: {
-      name: process.env.BRAND_NAME,
-      short: process.env.BRAND_SHORT,
+      name: process.env.BRAND_NAME ?? "Platform",
+      short: process.env.BRAND_SHORT ?? "platform",
       theme: {
         light: {
-          accent: process.env.BRAND_THEME_LIGHT_ACCENT,
-          accentHover: process.env.BRAND_THEME_LIGHT_ACCENT_HOVER,
-          accentLight: process.env.BRAND_THEME_LIGHT_ACCENT_LIGHT,
+          accent: process.env.BRAND_THEME_LIGHT_ACCENT ?? "#1D6BE1",
+          accentHover: process.env.BRAND_THEME_LIGHT_ACCENT_HOVER ?? "#1556B8",
+          accentLight: process.env.BRAND_THEME_LIGHT_ACCENT_LIGHT ?? "#eaf2fe",
         },
         dark: {
-          accent: process.env.BRAND_THEME_DARK_ACCENT,
-          accentHover: process.env.BRAND_THEME_DARK_ACCENT_HOVER,
-          accentLight: process.env.BRAND_THEME_DARK_ACCENT_LIGHT,
+          accent: process.env.BRAND_THEME_DARK_ACCENT ?? "#3C92FD",
+          accentHover: process.env.BRAND_THEME_DARK_ACCENT_HOVER ?? "#2F88FD",
+          accentLight: process.env.BRAND_THEME_DARK_ACCENT_LIGHT ?? "#0f1f3a",
         },
       },
+    },
+    terms: {
+      version: process.env.TERMS_VERSION,
+      text: process.env.TERMS_TEXT,
     },
   });
 }

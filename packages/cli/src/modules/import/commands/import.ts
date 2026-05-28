@@ -2,18 +2,13 @@ import { openAsBlob } from "node:fs";
 import { Command } from "commander";
 import type { TokenProvider } from "../../auth/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
+import { createAgentResolver, type AgentService } from "../../agent/index.js";
 import {
-  createInstanceResolver,
-  type InstanceService,
-} from "../../instance/index.js";
-import {
-  describeConfigError,
   exitCodeForResolveError,
-  printCompatResolveError,
   printResolveError,
-} from "../../instance/commands/errors.js";
+} from "../../agent/commands/errors.js";
+import { resolveActiveHost } from "../../shared/preflight.js";
 import { confirm } from "../../shared/prompt.js";
-import { createBearerSupplier } from "../../shared/trpc/bearer-supplier.js";
 import {
   type BundleBuilder,
   EXCLUDE_FROM_IMPORT,
@@ -21,19 +16,19 @@ import {
   resolveArgs,
 } from "../infrastructure/bundle-builder.js";
 import {
-  EXIT_IMPORT_BELOW_FLOOR,
-  EXIT_IMPORT_INVALID_INPUT,
-  EXIT_IMPORT_RUNTIME_FAILURE,
-  EXIT_IMPORT_SUCCESS,
-  EXIT_INSTANCE_NOT_RESOLVED,
-} from "./exit-codes.js";
+  EXIT_BELOW_FLOOR,
+  EXIT_INVALID_INPUT,
+  EXIT_RUNTIME_FAILURE,
+  EXIT_SUCCESS,
+  EXIT_AGENT_NOT_RESOLVED,
+} from "../../shared/exit-codes.js";
 
 export interface ImportCommandDeps {
   compatService: CompatService;
   configService: ConfigService;
   tokenProvider: TokenProvider;
-  /** Per-host service factory from the instance module's compose. */
-  createInstanceService: (host: string) => InstanceService;
+  /** Per-host service factory from the agent module's compose. */
+  createAgentService: (host: string) => AgentService;
   bundleBuilder: BundleBuilder;
   serverEnvVar: string;
 }
@@ -46,10 +41,13 @@ interface ImportSuccess {
 
 export function buildImportCommand(deps: ImportCommandDeps): Command {
   const cmd = new Command("import")
-    .description("Import local files or folders into an Instance")
-    .argument("<instance-ref>", "Instance name or ID (`inst-...`)")
+    .description("Import local files or folders into an Agent")
+    .argument("<agent-ref>", "Agent name or ID (`agent-...`)")
     .argument("<path...>", "one or more local files or directories")
-    .option("--server <url>", "override the configured server URL for this call")
+    .option(
+      "--server <url>",
+      "override the configured server URL for this call",
+    )
     .option("-y, --yes", "skip the TTY confirm prompt (required on non-TTY)")
     .option(
       "--json",
@@ -59,7 +57,7 @@ export function buildImportCommand(deps: ImportCommandDeps): Command {
   cmd.addHelpText(
     "after",
     () =>
-      "\nEach <path> becomes a top-level entry under 'work/' on the Instance. " +
+      "\nEach <path> becomes a top-level entry under 'work/' on the Agent. " +
       "Existing entries with the same name are replaced wholesale; other " +
       "entries under 'work/' are untouched.\n\n" +
       "Symlinks anywhere in the imported tree are skipped (not followed).\n\n" +
@@ -75,62 +73,46 @@ export function buildImportCommand(deps: ImportCommandDeps): Command {
     ) => {
       const flag = opts.server ? { server: opts.server } : undefined;
 
-      // Compat pre-flight — same gate every networked verb uses.
-      const compat = await deps.compatService.check({ flag });
-      if (!compat.ok) {
-        printCompatResolveError(compat.error, deps.serverEnvVar);
-        process.exit(EXIT_IMPORT_RUNTIME_FAILURE);
-      }
-      const verdict = compat.value;
-      if (verdict.kind === "below-floor") {
-        process.stderr.write(
-          `error: CLI ${verdict.localCli} is below the server's minimum required version ${verdict.serverMinClient}; upgrade and retry\n`,
-        );
-        process.exit(EXIT_IMPORT_BELOW_FLOOR);
-      }
-      if (verdict.kind === "behind-current") {
-        process.stderr.write(
-          `warning: CLI ${verdict.localCli} is behind server ${verdict.serverVersion}; consider upgrading\n`,
-        );
-      }
-
-      const cfg = await deps.configService.getResolved({ flag });
-      if (!cfg.ok) {
-        process.stderr.write(`error: ${describeConfigError(cfg.error)}\n`);
-        process.exit(EXIT_IMPORT_RUNTIME_FAILURE);
-      }
-      const host = cfg.value.server;
+      const host = await resolveActiveHost(deps, {
+        flag,
+        exitCodes: {
+          runtimeFailure: EXIT_RUNTIME_FAILURE,
+          belowFloor: EXIT_BELOW_FLOOR,
+        },
+      });
 
       // Validate args early — cheap, surfaces user typos before the round-trip.
       const resolved = await resolveArgs(paths);
       if (!resolved.ok) {
         process.stderr.write(`error: ${resolved.error.reason}\n`);
-        process.exit(EXIT_IMPORT_INVALID_INPUT);
+        process.exit(EXIT_INVALID_INPUT);
       }
       const args = resolved.value;
 
-      const svc = deps.createInstanceService(host);
-      const resolver = createInstanceResolver({ instanceService: svc });
+      const svc = deps.createAgentService(host);
+      const resolver = createAgentResolver({ agentService: svc });
       const target = await resolver.resolve(ref);
       if (!target.ok) {
         printResolveError(target.error, host);
         process.exit(exitCodeForResolveError(target.error));
       }
-      const instance = target.value;
+      const agent = target.value;
 
       if (!opts.yes) {
         if (!process.stdin.isTTY) {
           process.stderr.write(
             "error: refusing destructive import on non-TTY; pass --yes\n",
           );
-          process.exit(EXIT_IMPORT_INVALID_INPUT);
+          process.exit(EXIT_INVALID_INPUT);
         }
-        process.stderr.write(`About to import into '${instance.name}' (${instance.id}):\n`);
+        process.stderr.write(
+          `About to import into '${agent.name}' (${agent.id}):\n`,
+        );
         for (const a of args) {
           process.stderr.write(`  ${a.input}\n`);
         }
         process.stderr.write(
-          "This replaces each entry under 'work/' on the instance if present.\n",
+          "This replaces each entry under 'work/' on the agent if present.\n",
         );
         // Longer timeout than `confirm`'s default — users may scan a long path list.
         const okToProceed = await confirm("Continue?", { timeoutMs: 120_000 });
@@ -140,24 +122,24 @@ export function buildImportCommand(deps: ImportCommandDeps): Command {
           } else {
             process.stdout.write("Cancelled.\n");
           }
-          process.exit(EXIT_IMPORT_SUCCESS);
+          process.exit(EXIT_SUCCESS);
         }
       }
 
       const packed = await deps.bundleBuilder.pack(args);
       if (!packed.ok) {
         process.stderr.write(`error: ${packed.error.reason}\n`);
-        process.exit(EXIT_IMPORT_INVALID_INPUT);
+        process.exit(EXIT_INVALID_INPUT);
       }
 
       // Cleanup must run before process.exit — process.exit halts the event
       // loop before pending microtasks, so a finally-block awaiting cleanup
       // would leak the tmpdir on every successful import.
-      let exitCode = EXIT_IMPORT_RUNTIME_FAILURE;
+      let exitCode = EXIT_RUNTIME_FAILURE;
       try {
         exitCode = await uploadAndReport({
           host,
-          instanceId: instance.id,
+          agentId: agent.id,
           packed: packed.value,
           tokenProvider: deps.tokenProvider,
           json: opts.json === true,
@@ -174,36 +156,38 @@ export function buildImportCommand(deps: ImportCommandDeps): Command {
 
 async function uploadAndReport(args: {
   host: string;
-  instanceId: string;
+  agentId: string;
   packed: PackedBundle;
   tokenProvider: TokenProvider;
   json: boolean;
 }): Promise<number> {
-  // Reuse the shared bearer-classifier from the tRPC bridge so the
-  // not-logged-in / session-expired routing stays in one place.
-  const bearer = createBearerSupplier(args.tokenProvider, args.host);
-  let token: string;
-  try {
-    const result = await bearer();
-    if (!result.ok) {
-      process.stderr.write(`error: not authenticated: ${result.error.reason}\n`);
+  const tokenResult = await args.tokenProvider.getValidAccessToken(args.host);
+  if (!tokenResult.ok) {
+    const e = tokenResult.error;
+    if (e.kind === "not-logged-in" || e.kind === "session-expired") {
+      const reason =
+        e.kind === "not-logged-in"
+          ? `not logged in to ${e.host}`
+          : `session expired for ${e.host}`;
+      process.stderr.write(`error: not authenticated: ${reason}\n`);
       process.stderr.write("hint: run `dam auth login` first\n");
-      return EXIT_IMPORT_RUNTIME_FAILURE;
+    } else {
+      process.stderr.write(`error: ${e.reason}\n`);
     }
-    token = result.value;
-  } catch (e) {
-    process.stderr.write(`error: ${(e as Error).message}\n`);
-    return EXIT_IMPORT_RUNTIME_FAILURE;
+    return EXIT_RUNTIME_FAILURE;
   }
+  const token = tokenResult.value;
 
-  const blob = await openAsBlob(args.packed.tmpPath, { type: "application/gzip" });
+  const blob = await openAsBlob(args.packed.tmpPath, {
+    type: "application/gzip",
+  });
   const form = new FormData();
   form.set("bundle", blob, "bundle.tar.gz");
 
   let res: Response;
   try {
     res = await fetch(
-      `${args.host}/api/instances/${encodeURIComponent(args.instanceId)}/import`,
+      `${args.host}/api/agents/${encodeURIComponent(args.agentId)}/import`,
       {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
@@ -211,8 +195,10 @@ async function uploadAndReport(args: {
       },
     );
   } catch (e) {
-    process.stderr.write(`error: cannot reach server: ${(e as Error).message}\n`);
-    return EXIT_IMPORT_RUNTIME_FAILURE;
+    process.stderr.write(
+      `error: cannot reach server: ${(e as Error).message}\n`,
+    );
+    return EXIT_RUNTIME_FAILURE;
   }
 
   const body = await res.text();
@@ -223,7 +209,7 @@ async function uploadAndReport(args: {
       parsed = JSON.parse(body) as ImportSuccess;
     } catch {
       process.stderr.write("error: malformed success response from server\n");
-      return EXIT_IMPORT_RUNTIME_FAILURE;
+      return EXIT_RUNTIME_FAILURE;
     }
     if (args.json) {
       process.stdout.write(`${JSON.stringify(parsed)}\n`);
@@ -232,7 +218,7 @@ async function uploadAndReport(args: {
         `Imported ${parsed.filesWritten} files (${formatBytes(parsed.bytes)}) in ${(parsed.durationMs / 1000).toFixed(1)}s.\n`,
       );
     }
-    return EXIT_IMPORT_SUCCESS;
+    return EXIT_SUCCESS;
   }
 
   const serverMessage = extractServerError(body) ?? res.statusText;
@@ -242,27 +228,27 @@ async function uploadAndReport(args: {
         `error: not authenticated: ${serverMessage}\n` +
           `       run "dam auth login" first\n`,
       );
-      return EXIT_IMPORT_RUNTIME_FAILURE;
+      return EXIT_RUNTIME_FAILURE;
     case 404:
-      process.stderr.write("error: instance no longer exists\n");
-      return EXIT_INSTANCE_NOT_RESOLVED;
+      process.stderr.write("error: agent no longer exists\n");
+      return EXIT_AGENT_NOT_RESOLVED;
     case 409:
       process.stderr.write(
-        "error: another import is already in progress for this instance\n",
+        "error: another import is already in progress for this agent\n",
       );
-      return EXIT_IMPORT_RUNTIME_FAILURE;
+      return EXIT_RUNTIME_FAILURE;
     case 411:
     case 413:
       process.stderr.write(`error: ${serverMessage}\n`);
-      return EXIT_IMPORT_RUNTIME_FAILURE;
+      return EXIT_RUNTIME_FAILURE;
     case 422:
       process.stderr.write(`error: bundle rejected: ${serverMessage}\n`);
-      return EXIT_IMPORT_RUNTIME_FAILURE;
+      return EXIT_RUNTIME_FAILURE;
     default:
       process.stderr.write(
         `error: cannot reach server: HTTP ${res.status} ${serverMessage}\n`,
       );
-      return EXIT_IMPORT_RUNTIME_FAILURE;
+      return EXIT_RUNTIME_FAILURE;
   }
 }
 
@@ -286,4 +272,3 @@ function formatBytes(n: number): string {
   }
   return `${i === 0 ? value.toString() : value.toFixed(1)} ${units[i]}`;
 }
-

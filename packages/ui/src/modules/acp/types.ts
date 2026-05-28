@@ -1,8 +1,14 @@
+import type { SessionUpdate } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
+import {
+  zSessionConfigOption,
+  zSessionModelState,
+  zSessionModeState,
+} from "@agentclientprotocol/sdk/dist/schema/zod.gen.js";
 import type {
-  LoadSessionResponse,
-  NewSessionResponse,
-  SessionUpdate,
-} from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
+  PlatformSessionModeChangedParams,
+  PlatformTurnEndedParams,
+} from "api-server-api";
+import { z } from "zod";
 
 /**
  * SDK `SessionUpdate` plus our two synthetic variants:
@@ -18,18 +24,25 @@ import type {
  */
 export type AcpUpdate =
   | SessionUpdate
-  | { sessionUpdate: "platform_turn_ended"; sessionId?: string }
+  | ({ sessionUpdate: "platform_turn_ended" } & PlatformTurnEndedParams)
   | { sessionUpdate: "platform_clipped_replay" }
-  | { sessionUpdate: "platform_session_mode_changed"; sessionId?: string; mode: string };
+  | ({
+      sessionUpdate: "platform_session_mode_changed";
+    } & PlatformSessionModeChangedParams);
 
 export type UpdateHandler = (update: AcpUpdate) => void;
 
 /**
  * Shape of the per-session config payload we capture from `loadSession` /
  * `newSession` responses and persist to localStorage. SDK responses carry
- * extra `_meta` and `sessionId`; we only need this triple.
+ * extra `_meta` and `sessionId`; we only need this triple. Composes the
+ * SDK's own Zod schemas for each field so the cached value is validated
+ * against the same definitions the SDK uses on the wire.
  */
-export type SessionConfigPayload = Pick<
-  LoadSessionResponse & NewSessionResponse,
-  "modes" | "models" | "configOptions"
->;
+export const sessionConfigPayloadSchema = z.object({
+  modes: zSessionModeState.nullish(),
+  models: zSessionModelState.nullish(),
+  configOptions: z.array(zSessionConfigOption).nullish(),
+});
+
+export type SessionConfigPayload = z.infer<typeof sessionConfigPayloadSchema>;

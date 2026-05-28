@@ -129,12 +129,15 @@ mounts:
 	assert.Contains(t, err.Error(), "valid K8s quantity")
 }
 
-// --- Instance ---
+// --- Agent runtime fields (ADR-046) ---
 
-func TestParseInstanceSpec(t *testing.T) {
-	spec, err := ParseInstanceSpec(`version: agent-platform.ai/v1
+// ParseAgentSpec must accept the merged runtime fields (desiredState, env,
+// secretRef) that formerly lived on InstanceSpec. The merged Agent CM is
+// the sole durable resource per agent.
+func TestParseAgentSpec_RuntimeFields(t *testing.T) {
+	spec, err := ParseAgentSpec(`version: agent-platform.ai/v1
+image: ghcr.io/myorg/claude-code:latest
 desiredState: running
-agentId: claude-code
 env:
   - name: GITHUB_ORG
     value: "team-alpha"
@@ -143,94 +146,24 @@ secretRef: cg-team-alpha-secrets
 	require.NoError(t, err)
 	assert.Equal(t, SpecVersion, spec.Version)
 	assert.Equal(t, "running", spec.DesiredState)
-	assert.Equal(t, "claude-code", spec.AgentName)
 	assert.Equal(t, "cg-team-alpha-secrets", spec.SecretRef)
 	assert.Len(t, spec.Env, 1)
 }
 
-func TestParseInstanceSpec_MissingDesiredState(t *testing.T) {
-	_, err := ParseInstanceSpec(`version: agent-platform.ai/v1
-agentId: foo`)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "desiredState")
-}
-
-func TestParseInstanceSpec_InvalidDesiredState(t *testing.T) {
-	_, err := ParseInstanceSpec(`version: agent-platform.ai/v1
+func TestParseAgentSpec_InvalidDesiredState(t *testing.T) {
+	_, err := ParseAgentSpec(`version: agent-platform.ai/v1
+image: foo
 desiredState: paused`)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "'running' or 'hibernated'")
 }
 
-func TestParseInstanceSpec_MissingVersion(t *testing.T) {
-	_, err := ParseInstanceSpec(`desiredState: running`)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "version is required")
-}
-
-// --- Schedule ---
-
-func TestParseScheduleSpec(t *testing.T) {
-	spec, err := ParseScheduleSpec(`version: agent-platform.ai/v1
-type: cron
-cron: "*/30 * * * *"
-task: ""
-enabled: true
-`)
+func TestParseAgentSpec_DesiredStateOptional(t *testing.T) {
+	// Omitted desiredState is allowed; the reconciler defaults it to "running".
+	spec, err := ParseAgentSpec(`version: agent-platform.ai/v1
+image: foo`)
 	require.NoError(t, err)
-	assert.Equal(t, SpecVersion, spec.Version)
-	assert.Equal(t, "cron", spec.Type)
-	assert.Equal(t, "*/30 * * * *", spec.Cron)
-	assert.True(t, spec.Enabled)
-}
-
-func TestParseScheduleSpec_InvalidCron(t *testing.T) {
-	_, err := ParseScheduleSpec(`version: agent-platform.ai/v1
-cron: "not a cron"
-enabled: true`)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid cron")
-}
-
-func TestParseScheduleSpec_MissingVersion(t *testing.T) {
-	_, err := ParseScheduleSpec(`cron: "* * * * *"
-enabled: true`)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "version is required")
-}
-
-func TestParseScheduleSpecWithSessionMode(t *testing.T) {
-	yaml := `
-version: agent-platform.ai/v1
-type: cron
-cron: "*/5 * * * *"
-task: "check health"
-enabled: true
-sessionMode: continuous
-`
-	spec, err := ParseScheduleSpec(yaml)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if spec.SessionMode != "continuous" {
-		t.Errorf("sessionMode = %q, want %q", spec.SessionMode, "continuous")
-	}
-}
-
-func TestParseScheduleSpecSessionModeDefaults(t *testing.T) {
-	yaml := `
-version: agent-platform.ai/v1
-type: cron
-cron: "*/5 * * * *"
-enabled: true
-`
-	spec, err := ParseScheduleSpec(yaml)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if spec.SessionMode != "" {
-		t.Errorf("sessionMode = %q, want empty (default)", spec.SessionMode)
-	}
+	assert.Empty(t, spec.DesiredState)
 }
 
 // --- Helpers ---
@@ -250,22 +183,16 @@ func TestSanitizeMountName(t *testing.T) {
 	}
 }
 
-func TestNewInstanceStatus(t *testing.T) {
-	s := NewInstanceStatus("running", "")
+func TestNewAgentStatus(t *testing.T) {
+	s := NewAgentStatus("running", "")
 	assert.Equal(t, SpecVersion, s.Version)
 	assert.Equal(t, "running", s.CurrentState)
-}
-
-func TestNewScheduleStatus(t *testing.T) {
-	s := NewScheduleStatus("2026-04-01T14:00:00Z", "2026-04-01T14:30:00Z", "success")
-	assert.Equal(t, SpecVersion, s.Version)
-	assert.Equal(t, "success", s.LastResult)
 }
 
 // --- Fork ---
 
 const fixtureForkYAML = `version: agent-platform.ai/v1
-instance: inst-abc
+agentName: agent-abc
 foreignSub: kc|user-42
 sessionId: sess-1
 `
@@ -274,14 +201,14 @@ func TestParseForkSpec(t *testing.T) {
 	spec, err := ParseForkSpec(fixtureForkYAML)
 	require.NoError(t, err)
 	assert.Equal(t, SpecVersion, spec.Version)
-	assert.Equal(t, "inst-abc", spec.Instance)
+	assert.Equal(t, "agent-abc", spec.AgentName)
 	assert.Equal(t, "kc|user-42", spec.ForeignSub)
 	assert.Equal(t, "sess-1", spec.SessionID)
 }
 
 func TestParseForkSpec_Minimal(t *testing.T) {
 	spec, err := ParseForkSpec(`version: agent-platform.ai/v1
-instance: inst-abc
+agentName: agent-abc
 foreignSub: kc|user-42
 `)
 	require.NoError(t, err)
@@ -290,8 +217,8 @@ foreignSub: kc|user-42
 
 func TestParseForkSpec_MissingRequired(t *testing.T) {
 	cases := map[string]string{
-		"missing instance":   `version: agent-platform.ai/v1` + "\n" + `foreignSub: kc|u`,
-		"missing foreignSub": `version: agent-platform.ai/v1` + "\n" + `instance: inst-abc`,
+		"missing agentName":  `version: agent-platform.ai/v1` + "\n" + `foreignSub: kc|u`,
+		"missing foreignSub": `version: agent-platform.ai/v1` + "\n" + `agentName: agent-abc`,
 	}
 	for name, yaml := range cases {
 		t.Run(name, func(t *testing.T) {

@@ -31,42 +31,74 @@ describe("verdictFor", () => {
   it.each([
     {
       name: "Ok when local matches server and is at/above floor",
-      inputs: { localCli: "1.0.0", serverVersion: "1.0.0", serverMinClient: "0.0.0" },
+      inputs: {
+        localCli: "1.0.0",
+        serverVersion: "1.0.0",
+        serverMinClient: "0.0.0",
+      },
       kind: "ok",
     },
     {
       name: "Ok when local is ahead of server",
-      inputs: { localCli: "2.0.0", serverVersion: "1.0.0", serverMinClient: "0.0.0" },
+      inputs: {
+        localCli: "2.0.0",
+        serverVersion: "1.0.0",
+        serverMinClient: "0.0.0",
+      },
       kind: "ok",
     },
     {
       name: "BehindCurrent when local lags server but is at/above floor",
-      inputs: { localCli: "1.0.0", serverVersion: "1.2.0", serverMinClient: "1.0.0" },
+      inputs: {
+        localCli: "1.0.0",
+        serverVersion: "1.2.0",
+        serverMinClient: "1.0.0",
+      },
       kind: "behind-current",
     },
     {
       name: "BelowFloor when local is below floor (regardless of server version)",
-      inputs: { localCli: "0.0.1", serverVersion: "1.0.0", serverMinClient: "1.0.0" },
+      inputs: {
+        localCli: "0.0.1",
+        serverVersion: "1.0.0",
+        serverMinClient: "1.0.0",
+      },
       kind: "below-floor",
     },
     {
       name: "Ok when local equals floor exactly",
-      inputs: { localCli: "1.0.0", serverVersion: "1.0.0", serverMinClient: "1.0.0" },
+      inputs: {
+        localCli: "1.0.0",
+        serverVersion: "1.0.0",
+        serverMinClient: "1.0.0",
+      },
       kind: "ok",
     },
     {
       name: "BelowFloor takes precedence over BehindCurrent",
-      inputs: { localCli: "0.0.1", serverVersion: "2.0.0", serverMinClient: "1.0.0" },
+      inputs: {
+        localCli: "0.0.1",
+        serverVersion: "2.0.0",
+        serverMinClient: "1.0.0",
+      },
       kind: "below-floor",
     },
     {
       name: "Ok when no floor is advertised and local matches server",
-      inputs: { localCli: "1.0.0", serverVersion: "1.0.0", serverMinClient: undefined },
+      inputs: {
+        localCli: "1.0.0",
+        serverVersion: "1.0.0",
+        serverMinClient: undefined,
+      },
       kind: "ok",
     },
     {
       name: "BehindCurrent when no floor is advertised and local lags server",
-      inputs: { localCli: "1.0.0", serverVersion: "2.0.0", serverMinClient: undefined },
+      inputs: {
+        localCli: "1.0.0",
+        serverVersion: "2.0.0",
+        serverMinClient: undefined,
+      },
       kind: "behind-current",
     },
   ])("$name", ({ inputs, kind }) => {

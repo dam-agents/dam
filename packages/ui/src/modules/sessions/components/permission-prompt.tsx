@@ -7,7 +7,11 @@ import { useStore } from "../../../store.js";
 
 function toolTitle(toolCall: unknown): string {
   if (toolCall && typeof toolCall === "object") {
-    const tc = toolCall as { title?: string; kind?: string; toolCallId?: string };
+    const tc = toolCall as {
+      title?: string;
+      kind?: string;
+      toolCallId?: string;
+    };
     return tc.title ?? tc.kind ?? "this tool call";
   }
   return "this tool call";
@@ -42,7 +46,9 @@ export function PermissionPrompt() {
   const sessionId = useStore((s) => s.sessionId);
   const pendingPermissions = useStore((s) => s.pendingPermissions);
   const resolve = useStore((s) => s.resolvePendingPermission);
-  const pending = sessionId ? pendingPermissions.filter((p) => p.sessionId === sessionId) : [];
+  const pending = sessionId
+    ? pendingPermissions.filter((p) => p.sessionId === sessionId)
+    : [];
   const current = pending[0];
 
   useEffect(() => {
@@ -50,13 +56,21 @@ export function PermissionPrompt() {
     const onKey = (e: KeyboardEvent) => {
       // Ignore when typing elsewhere so digit input doesn't select options.
       const target = e.target as HTMLElement | null;
-      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      )
+        return;
       const num = Number.parseInt(e.key, 10);
       if (Number.isNaN(num)) return;
       if (num < 1 || num > current.options.length) return;
       e.preventDefault();
       const opt = current.options[num - 1];
-      resolve(current.toolCallId, { outcome: { outcome: "selected", optionId: opt.optionId } });
+      resolve(current.toolCallId, {
+        outcome: { outcome: "selected", optionId: opt.optionId },
+      });
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -65,7 +79,9 @@ export function PermissionPrompt() {
   if (!current) return null;
 
   const pick = (opt: PermissionOption) =>
-    resolve(current.toolCallId, { outcome: { outcome: "selected", optionId: opt.optionId } });
+    resolve(current.toolCallId, {
+      outcome: { outcome: "selected", optionId: opt.optionId },
+    });
 
   return (
     <div className="border-t bg-card/50 backdrop-blur-xl px-4 md:px-8 py-3">

@@ -3,9 +3,10 @@ import { composeAgentModule } from "./modules/agent/compose.js";
 import { composeAuthModule } from "./modules/auth/compose.js";
 import { composeChatModule } from "./modules/chat/compose.js";
 import { composeCliModule } from "./modules/cli/compose.js";
+import { composeFileModule } from "./modules/file/compose.js";
 import { composeImportModule } from "./modules/import/compose.js";
-import { composeInstanceModule } from "./modules/instance/compose.js";
 import { composeTemplateModule } from "./modules/template/compose.js";
+import { createTrpcClient } from "./modules/shared/trpc/trpc-client.js";
 
 export interface ComposeOptions {
   /** Override for the production config path (resolved via XDG —
@@ -36,20 +37,13 @@ export function compose(opts: ComposeOptions = {}): Command {
     compatService: cli.services.compatService,
     configService: cli.services.configService,
   });
-  // The instance and template modules are wired after auth so their
-  // bearer-supplier closures can reach `auth.exports.tokenProvider`.
+  const { tokenProvider } = auth.exports;
+  const buildTrpc = (host: string) => createTrpcClient({ host, tokenProvider });
+
   const template = composeTemplateModule({
-    tokenProvider: auth.exports.tokenProvider,
+    buildTrpc,
     configService: cli.services.configService,
     compatService: cli.services.compatService,
-    serverEnvVar: "DAM_SERVER",
-  });
-  const instance = composeInstanceModule({
-    tokenProvider: auth.exports.tokenProvider,
-    configService: cli.services.configService,
-    compatService: cli.services.compatService,
-    serverEnvVar: "DAM_SERVER",
-    templateService: template.exports.createService,
   });
   const agent = composeAgentModule({
     tokenProvider: auth.exports.tokenProvider,
@@ -57,23 +51,28 @@ export function compose(opts: ComposeOptions = {}): Command {
     compatService: cli.services.compatService,
     serverEnvVar: "DAM_SERVER",
     templateService: template.exports.createService,
-    instanceService: instance.exports.createService,
   });
-
   const chat = composeChatModule({
+    buildTrpc,
     compatService: cli.services.compatService,
     configService: cli.services.configService,
-    tokenProvider: auth.exports.tokenProvider,
-    createInstanceService: instance.exports.createService,
-    serverEnvVar: "DAM_SERVER",
+    tokenProvider,
+    createAgentService: agent.exports.createService,
   });
 
   const importModule = composeImportModule({
     tokenProvider: auth.exports.tokenProvider,
     configService: cli.services.configService,
     compatService: cli.services.compatService,
-    createInstanceService: instance.exports.createService,
+    createAgentService: agent.exports.createService,
     serverEnvVar: "DAM_SERVER",
+  });
+
+  const fileModule = composeFileModule({
+    tokenProvider: auth.exports.tokenProvider,
+    configService: cli.services.configService,
+    compatService: cli.services.compatService,
+    createAgentService: agent.exports.createService,
   });
 
   const program = new Command();
@@ -85,10 +84,10 @@ export function compose(opts: ComposeOptions = {}): Command {
   for (const command of cli.commands) program.addCommand(command);
   for (const command of auth.commands) program.addCommand(command);
   for (const command of template.commands) program.addCommand(command);
-  for (const command of instance.commands) program.addCommand(command);
   for (const command of chat.commands) program.addCommand(command);
   for (const command of agent.commands) program.addCommand(command);
   for (const command of importModule.commands) program.addCommand(command);
+  for (const command of fileModule.commands) program.addCommand(command);
 
   return program;
 }

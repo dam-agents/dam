@@ -1,0 +1,205 @@
+name: Daily
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  mend-sca:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      MEND_URL: https://ibmets.whitesourcesoftware.com
+      MEND_EMAIL: eal_apm0047897service_user@ibm.com
+      MEND_USER_KEY: ${{ secrets.MEND_USER_KEY }}
+      MEND_ORGNAME: Enterprise Applications
+      MEND_PRODUCTNAME: EAL_APM0047897
+      MEND_PROJECTNAME: platform-sca
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Mend CLI
+        run: |
+          curl -fsSL https://downloads.mend.io/cli/linux_amd64/mend -o /usr/local/bin/mend
+          chmod +x /usr/local/bin/mend
+
+      - name: Run SCA scan and file issues
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          results=$(mend dep --dir . \
+            --scope "${MEND_ORGNAME}//${MEND_PRODUCTNAME}//${MEND_PROJECTNAME}" \
+            --update --format json --non-interactive)
+
+          mapfile -t findings < <(echo "$results" | jq -c '
+            [.. | objects | select(.vulnerabilities) |
+              .name as $lib | .vulnerabilities[] |
+              { cve: .name, severity: .severity, score: .cvss3_score,
+                description: .description, url: .url,
+                library: $lib, fix: (.topFix.fixResolution // "—") }]
+            | unique_by(.cve + "|" + .library)
+            | .[]')
+
+          if [ "${#findings[@]}" -eq 0 ]; then
+            echo "::notice::Mend SCA: no vulnerabilities detected"
+            exit 0
+          fi
+
+          for finding in "${findings[@]}"; do
+            cve=$(echo "$finding" | jq -r '.cve')
+            severity=$(echo "$finding" | jq -r '.severity')
+            score=$(echo "$finding" | jq -r '.score')
+            description=$(echo "$finding" | jq -r '.description')
+            url=$(echo "$finding" | jq -r '.url')
+            library=$(echo "$finding" | jq -r '.library')
+            fix=$(echo "$finding" | jq -r '.fix')
+
+            title="[${cve}] ${severity} vulnerability in ${library} (SCA)"
+
+            existing=$(gh issue list \
+              --repo "${GITHUB_REPOSITORY}" \
+              --state open \
+              --search "in:title \"${cve}\" \"${library}\"" \
+              --json number \
+              --jq '.[0].number // empty')
+
+            if [ -n "$existing" ]; then
+              gh issue comment "$existing" \
+                --repo "${GITHUB_REPOSITORY}" \
+                --body "Still present. Library: \`${library}\`. Fix: \`${fix}\`."
+              continue
+            fi
+
+            issue_body=$(printf '%s\n' \
+              "**Source:** Mend SCA" \
+              "**CVE:** [\`${cve}\`](${url}) (${severity}, CVSS ${score})" \
+              "**Library:** \`${library}\`" \
+              "**Fix:** \`${fix}\`" \
+              "" \
+              "${description}" \
+              "" \
+              "---" \
+              "See [docs/architecture/security-scanning.md](../blob/main/docs/architecture/security-scanning.md) for the remediation flow.")
+
+            gh issue create \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "$title" \
+              --body "$issue_body" \
+              --label "security,vulnerability"
+          done
+
+  quay-vulnerabilities:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        repo:
+          - api-server
+          - claude-code
+          - controller
+          - google-workspace-agent
+          - pi-agent
+          - platform-base
+          - ui
+    steps:
+      - name: Scan and file issues
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          QUAY_REPO: dam-agents/${{ matrix.repo }}
+          TAG: latest
+        run: |
+          set -euo pipefail
+
+          digest=$(curl -fsSL \
+            "https://quay.io/api/v1/repository/${QUAY_REPO}/tag/?onlyActiveTags=true&filter_tag_name=eq:${TAG}" \
+            | jq -r '.tags[0].manifest_digest // empty')
+
+          if [ -z "$digest" ]; then
+            echo "::notice::No '${TAG}' tag yet for ${QUAY_REPO}"
+            exit 0
+          fi
+
+          security=$(curl -fsSL \
+            "https://quay.io/api/v1/repository/${QUAY_REPO}/manifest/${digest}/security?vulnerabilities=true")
+
+          status=$(echo "$security" | jq -r '.status')
+          if [ "$status" != "scanned" ]; then
+            echo "::notice::Scan not ready for ${QUAY_REPO}@${digest} (status=${status})"
+            exit 0
+          fi
+
+          # Flatten + dedupe vulns by (CVE, package). Filter on severity here
+          # if you want to suppress Low/Medium noise; left wide-open for now
+          # so nothing is hidden by default.
+          mapfile -t findings < <(echo "$security" | jq -c '
+            [.data.Layer.Features[]
+              | . as $f
+              | (.Vulnerabilities // [])[]
+              | { cve: .Name, severity: .Severity, link: .Link,
+                  description: .Description, fixed_by: .FixedBy,
+                  package: $f.Name, version: $f.Version }]
+            | unique_by(.cve + "|" + .package)
+            | .[]')
+
+          if [ "${#findings[@]}" -eq 0 ]; then
+            echo "::notice::Clean scan for ${QUAY_REPO}@${digest}"
+            exit 0
+          fi
+
+          for finding in "${findings[@]}"; do
+            cve=$(echo "$finding" | jq -r '.cve')
+            severity=$(echo "$finding" | jq -r '.severity')
+            link=$(echo "$finding" | jq -r '.link')
+            description=$(echo "$finding" | jq -r '.description')
+            package=$(echo "$finding" | jq -r '.package')
+            version=$(echo "$finding" | jq -r '.version')
+            fixed_by=$(echo "$finding" | jq -r '.fixed_by')
+
+            title="[${cve}] ${severity} vulnerability in ${QUAY_REPO}"
+
+            existing=$(gh issue list \
+              --repo "${GITHUB_REPOSITORY}" \
+              --state open \
+              --search "in:title \"${cve}\" \"${QUAY_REPO}\"" \
+              --json number \
+              --jq '.[0].number // empty')
+
+            comment_body=$(printf '%s\n' \
+              "Still present on tag \`${TAG}\` (manifest \`${digest}\`)." \
+              "Package: \`${package}\` ${version}." \
+              "Fixed by: \`${fixed_by:-—}\`.")
+
+            if [ -n "$existing" ]; then
+              gh issue comment "$existing" \
+                --repo "${GITHUB_REPOSITORY}" \
+                --body "$comment_body"
+              continue
+            fi
+
+            issue_body=$(printf '%s\n' \
+              "**Image:** \`${QUAY_REPO}:${TAG}\` (\`${digest}\`)" \
+              "**CVE:** \`${cve}\` (${severity})" \
+              "**Package:** \`${package}\` ${version}" \
+              "**Fixed by:** \`${fixed_by:-—}\`" \
+              "" \
+              "${description}" \
+              "" \
+              "[View advisory](${link})" \
+              "" \
+              "---" \
+              "See [docs/architecture/security-scanning.md](../blob/main/docs/architecture/security-scanning.md) for the remediation flow.")
+
+            gh issue create \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "$title" \
+              --body "$issue_body" \
+              --label "security,vulnerability"
+          done

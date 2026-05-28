@@ -42,11 +42,19 @@ agentTemplates:
     skillPaths:
       - $HOME/.claude/skills/
 
+  - name: codex
+    enabled: true
+    description: "OpenAI Codex coding agent"
+    image:
+      repository: platform-codex
+      tag: latest
+    storageSize: "5Gi"
+
   - name: google-workspace
     enabled: true
     description: "Google Workspace agent with Drive and Gmail via gws CLI"
     image:
-      repository: quay.io/dam-agents/google-workspace-agent
+      repository: platform-google-workspace-agent
       tag: latest
     storageSize: "2Gi"
     skillPaths:
@@ -56,25 +64,11 @@ agentTemplates:
     enabled: true
     description: "Pi coding agent with multi-LLM support"
     image:
-      repository: quay.io/dam-agents/pi-agent
+      repository: platform-pi-agent
       tag: latest
     storageSize: "2Gi"
     skillPaths:
       - $HOME/.pi/agent/skills/
-
-  - name: code-guardian
-    enabled: true
-    description: "PR code review agent (gh + Claude Code)"
-    image:
-      repository: quay.io/dam-agents/code-guardian
-      tag: latest
-    storageSize: "10Gi"             # larger — clones real repos
-    skillPaths:
-      - $HOME/.claude/skills/
-    # Empty repo = the agent detects via `gh repo view`.
-    env:
-      - name: GITHUB_REPO
-        value: ""
 
   - name: bob
     enabled: true

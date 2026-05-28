@@ -23,7 +23,7 @@ func TestBuildGatewayStatefulSet_Shape(t *testing.T) {
 	assert.Equal(t, "cm-uid-123", string(ss.OwnerReferences[0].UID))
 
 	labels := ss.Spec.Template.Labels
-	assert.Equal(t, "my-instance", labels["agent-platform.ai/instance"])
+	assert.Equal(t, "my-instance", labels["agent-platform.ai/agent"])
 	assert.Equal(t, "my-instance", labels["agent-platform.ai/pair"])
 	assert.Equal(t, "gateway", labels["agent-platform.ai/role"])
 
@@ -109,7 +109,7 @@ func TestBuildForkGatewayPod_Labels(t *testing.T) {
 	// Instance label points at the PARENT instance — ext_authz identity
 	// flows through this label, and forks inherit the parent's egress
 	// rules (ADR-027).
-	assert.Equal(t, "parent-instance", pod.Labels["agent-platform.ai/instance"])
+	assert.Equal(t, "parent-instance", pod.Labels["agent-platform.ai/agent"])
 	// Pair key is the fork name — the fork pair is structurally isolated
 	// from the parent instance pair.
 	assert.Equal(t, "fork-abc", pod.Labels["agent-platform.ai/pair"])
@@ -136,7 +136,7 @@ func TestBuildForkGatewayService(t *testing.T) {
 // between the two would silently break the credential boundary
 // (ADR-038 §Threat Model).
 func TestLabelContract(t *testing.T) {
-	assert.Equal(t, "agent-platform.ai/instance", LabelInstance)
+	assert.Equal(t, "agent-platform.ai/agent", LabelAgent)
 	assert.Equal(t, "agent-platform.ai/pair", LabelPair)
 	assert.Equal(t, "agent-platform.ai/role", LabelRole)
 	assert.Equal(t, "agent", RoleAgent)

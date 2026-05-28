@@ -88,7 +88,7 @@ System sources come from `SKILL_SOURCES_SEED` env; template sources from `templa
 
 **Schema additions:**
 - `platform.ai/type=skill-source` is **not** used. Sources moved to Postgres before merge.
-- `TemplateSpec.skillPaths: string[]` and `AgentSpec.skillPaths: string[]`. Default `["/home/agent/.agents/skills/"]`. Claude-Code-based templates (`example-agent`, `google-workspace`, `code-guardian`) override to `["/home/agent/.claude/skills/"]`. `pi-agent` uses `["/home/agent/.pi/agent/skills/"]`. Resolution at install time: `agent.spec.skillPaths` → `template.spec.skillPaths` → cross-harness default.
+- `TemplateSpec.skillPaths: string[]` and `AgentSpec.skillPaths: string[]`. Default `["/home/agent/.agents/skills/"]`. Claude-Code-based templates (`example-agent`, `google-workspace`) override to `["/home/agent/.claude/skills/"]`. `pi-agent` uses `["/home/agent/.pi/agent/skills/"]`. Resolution at install time: `agent.spec.skillPaths` → `template.spec.skillPaths` → cross-harness default.
 - `TemplateSpec.skillSources: [{name, gitUrl}]` for template-bound sources.
 - `InstanceSpec.skills` is **not** added. (Earlier draft had it; replaced by `instance_skills` table.)
 

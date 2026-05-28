@@ -11,20 +11,17 @@
  * on `<html>` so light/dark themes already wired through `App.css` keep
  * working unchanged.
  */
-export interface Brand {
-  name: string;
-  short: string;
-  theme: {
-    light: { accent: string; accentHover: string; accentLight: string };
-    dark: { accent: string; accentHover: string; accentLight: string };
-  };
-}
+import { type Brand, brandSchema } from "api-server-api";
 
 const FALLBACK: Brand = {
   name: "Platform",
   short: "platform",
   theme: {
-    light: { accent: "#1D6BE1", accentHover: "#1556B8", accentLight: "#eaf2fe" },
+    light: {
+      accent: "#1D6BE1",
+      accentHover: "#1556B8",
+      accentLight: "#eaf2fe",
+    },
     dark: { accent: "#3C92FD", accentHover: "#2F88FD", accentLight: "#0f1f3a" },
   },
 };
@@ -35,7 +32,15 @@ export async function loadBrand(): Promise<Brand> {
   try {
     const res = await fetch("/api/brand", { credentials: "omit" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    cached = (await res.json()) as Brand;
+    const parsed = brandSchema.safeParse(await res.json());
+    if (!parsed.success) {
+      console.warn(
+        "[brand] schema mismatch on /api/brand, using fallback:",
+        parsed.error.issues,
+      );
+      return cached;
+    }
+    cached = parsed.data;
   } catch (err) {
     // Rare path — only fires when the api-server is unreachable on first
     // paint; the bundled fallback keeps the UI usable.
@@ -59,7 +64,8 @@ export function getBrand(): Brand {
  *  out of the declaration the way it could if we appended a `<style>` tag.
  *  Hex/rgb-shape validation runs on top so a malformed value falls back
  *  silently instead of producing an invalid declaration. */
-const COLOR_RE = /^(#[0-9a-fA-F]{3,8}|rgba?\([^)]*\)|hsla?\([^)]*\)|[a-zA-Z]+)$/;
+const COLOR_RE =
+  /^(#[0-9a-fA-F]{3,8}|rgba?\([^)]*\)|hsla?\([^)]*\)|[a-zA-Z]+)$/;
 
 function setSafe(el: HTMLElement, prop: string, value: string): void {
   if (COLOR_RE.test(value)) el.style.setProperty(prop, value);
@@ -68,7 +74,9 @@ function setSafe(el: HTMLElement, prop: string, value: string): void {
 export function applyBrand(brand: Brand): void {
   document.title = brand.name;
 
-  const themeMeta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+  const themeMeta = document.querySelector<HTMLMetaElement>(
+    'meta[name="theme-color"]',
+  );
   if (themeMeta && COLOR_RE.test(brand.theme.light.accent)) {
     themeMeta.content = brand.theme.light.accent;
   }
@@ -76,7 +84,9 @@ export function applyBrand(brand: Brand): void {
   const html = document.documentElement;
 
   function applyActiveTheme() {
-    const t = html.classList.contains("dark") ? brand.theme.dark : brand.theme.light;
+    const t = html.classList.contains("dark")
+      ? brand.theme.dark
+      : brand.theme.light;
     setSafe(html, "--c-accent", t.accent);
     setSafe(html, "--c-accent-hover", t.accentHover);
     setSafe(html, "--c-accent-light", t.accentLight);
@@ -87,9 +97,11 @@ export function applyBrand(brand: Brand): void {
   // Re-apply when the theme store flips the `.dark` class on <html>.
   // Idempotent: re-calling applyBrand replaces the observer instead of
   // stacking, so listeners don't leak across HMR or repeated bootstraps.
-  const prev = (html as { __brandThemeObserver?: MutationObserver }).__brandThemeObserver;
+  const prev = (html as { __brandThemeObserver?: MutationObserver })
+    .__brandThemeObserver;
   prev?.disconnect();
   const obs = new MutationObserver(applyActiveTheme);
   obs.observe(html, { attributes: true, attributeFilter: ["class"] });
-  (html as { __brandThemeObserver?: MutationObserver }).__brandThemeObserver = obs;
+  (html as { __brandThemeObserver?: MutationObserver }).__brandThemeObserver =
+    obs;
 }

@@ -21,15 +21,31 @@ const tabs: { id: Tab; label: string }[] = [
 ];
 
 const themeOptions = [
-  { value: "light" as const, icon: Sun, label: "Light", description: "Light background with dark text" },
-  { value: "dark" as const, icon: Moon, label: "Dark", description: "Dark background with light text" },
-  { value: "system" as const, icon: Monitor, label: "System", description: "Follow your operating system setting" },
+  {
+    value: "light" as const,
+    icon: Sun,
+    label: "Light",
+    description: "Light background with dark text",
+  },
+  {
+    value: "dark" as const,
+    icon: Moon,
+    label: "Dark",
+    description: "Dark background with light text",
+  },
+  {
+    value: "system" as const,
+    icon: Monitor,
+    label: "System",
+    description: "Follow your operating system setting",
+  },
 ];
 
 export function SettingsView() {
   const [activeTab, setActiveTab] = useState<Tab>("account");
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
+  const setView = useStore((s) => s.setView);
   const user = getUser();
 
   return (
@@ -94,7 +110,6 @@ export function SettingsView() {
                 ))}
               </div>
             </div>
-
           </div>
         )}
 

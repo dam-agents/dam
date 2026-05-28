@@ -9,7 +9,7 @@ import { DEFAULT_BRAND_ICON_SVG } from "./default-brand-icon.js";
  *   - `BRAND_ICON_SVG` env var (set by Helm when `brand.icon` is overridden)
  *     is the override. Empty / unset → bundled default.
  *   - `/api/brand/icon.svg`        → raw SVG (image/svg+xml)
- *   - `/api/brand/icon-:size.png`  → square PNG raster at `:size` px,
+ *   - `/api/brand/icon-{size}.png` → square PNG raster at `{size}` px,
  *     produced by sharp. Allowed sizes whitelisted to keep the cache
  *     bounded; the manifest + html links only need 180/192/512.
  *
@@ -27,11 +27,16 @@ interface IconCache {
   rasters: Map<number, Buffer>;
 }
 
-export function mountBrandIconRoutes<E extends Env>(app: Hono<E>, getEnv?: () => string | undefined): void {
+export function mountBrandIconRoutes<E extends Env>(
+  app: Hono<E>,
+  getEnv?: () => string | undefined,
+): void {
   // Resolved once per route call so test overrides (env mutated mid-test)
   // pick up the new value without re-mounting the routes.
   const resolveSvg = (): { svg: string; hash: string } => {
-    const svg = (getEnv?.() ?? process.env.BRAND_ICON_SVG)?.trim() || DEFAULT_BRAND_ICON_SVG;
+    const svg =
+      (getEnv?.() ?? process.env.BRAND_ICON_SVG)?.trim() ||
+      DEFAULT_BRAND_ICON_SVG;
     const hash = createHash("sha256").update(svg).digest("hex").slice(0, 16);
     return { svg, hash };
   };
@@ -49,11 +54,14 @@ export function mountBrandIconRoutes<E extends Env>(app: Hono<E>, getEnv?: () =>
     return c.body(svg);
   });
 
-  app.get("/api/brand/icon-:size.png", async (c) => {
-    const sizeStr = c.req.param("size");
-    const size = Number(sizeStr);
+  app.get("/api/brand/:file{icon-\\d+\\.png$}", async (c) => {
+    const file = c.req.param("file");
+    const size = Number(file.replace("icon-", "").replace(".png", ""));
     if (!ALLOWED_SIZES.has(size)) {
-      return c.json({ error: `size must be one of ${[...ALLOWED_SIZES].join(", ")}` }, 400);
+      return c.json(
+        { error: `size must be one of ${[...ALLOWED_SIZES].join(", ")}` },
+        400,
+      );
     }
     const { svg, hash } = resolveSvg();
     if (c.req.header("if-none-match") === `"${hash}-${size}"`) {
@@ -63,7 +71,10 @@ export function mountBrandIconRoutes<E extends Env>(app: Hono<E>, getEnv?: () =>
     let png = cache.rasters.get(size);
     if (!png) {
       png = await sharp(Buffer.from(svg))
-        .resize(size, size, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
+        .resize(size, size, {
+          fit: "contain",
+          background: { r: 0, g: 0, b: 0, alpha: 0 },
+        })
         .png()
         .toBuffer();
       cache.rasters.set(size, png);

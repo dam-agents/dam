@@ -1,8 +1,10 @@
+import { z } from "zod";
 import type { StateCreator } from "zustand";
 
 import type { PlatformStore } from "../../../store.js";
 
-export type Theme = "light" | "dark" | "system";
+export const themeSchema = z.enum(["light", "dark", "system"]);
+export type Theme = z.infer<typeof themeSchema>;
 
 export interface ThemeSlice {
   theme: Theme;
@@ -10,12 +12,34 @@ export interface ThemeSlice {
 }
 
 function applyTheme(theme: Theme) {
-  const isDark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const isDark =
+    theme === "dark" ||
+    (theme === "system" &&
+      window.matchMedia("(prefers-color-scheme: dark)").matches);
   document.documentElement.classList.toggle("dark", isDark);
 }
 
-export const createThemeSlice: StateCreator<PlatformStore, [], [], ThemeSlice> = (set) => ({
-  theme: (localStorage.getItem("platform-theme") as Theme) || "system",
+function readStoredTheme(): Theme {
+  const raw = localStorage.getItem("platform-theme");
+  if (raw === null) return "system";
+  const parsed = themeSchema.safeParse(raw);
+  if (!parsed.success) {
+    console.warn(
+      "[theme] schema mismatch on platform-theme, defaulting to 'system':",
+      parsed.error.issues,
+    );
+    return "system";
+  }
+  return parsed.data;
+}
+
+export const createThemeSlice: StateCreator<
+  PlatformStore,
+  [],
+  [],
+  ThemeSlice
+> = (set) => ({
+  theme: readStoredTheme(),
   setTheme: (t) => {
     localStorage.setItem("platform-theme", t);
     applyTheme(t);

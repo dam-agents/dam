@@ -14,7 +14,10 @@ export interface CompatService {
   check(opts: {
     flag?: Partial<Config>;
   }): Promise<
-    Result<CompatVerdict, MissingConfigError | MalformedConfigError | ProbeError>
+    Result<
+      CompatVerdict,
+      MissingConfigError | MalformedConfigError | ProbeError
+    >
   >;
 }
 

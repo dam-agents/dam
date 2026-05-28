@@ -211,7 +211,7 @@ The previous `preset = all` "passthrough escape hatch" is replaced by a no-op pr
 
 #### Single rules table, mirroring the env-injection pattern
 
-`egress_rules` gains a `source` column tracking origin: `manual` | `connection:<id>` | `preset:trusted` | `preset:all` | `inbox`. The lifecycle of a row mirrors the env-injection pattern from connections ([connection-env-helpers.ts](../../packages/ui/src/modules/agents/utils/connection-env-helpers.ts)):
+`egress_rules` gains a `source` column tracking origin: `manual` | `connection:<id>` | `preset:trusted` | `preset:all` | `inbox`. The lifecycle of a row mirrors the env-injection pattern from connections (`connection-env-helpers.ts`, removed in ADR-040):
 
 | User action | Rules effect | Envoy/cert effect |
 |---|---|---|

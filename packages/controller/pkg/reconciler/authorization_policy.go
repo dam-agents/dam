@@ -14,15 +14,15 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 )
 
-// Per-instance Istio AuthorizationPolicies. The controller writes two per
-// instance, both in the release namespace:
+// Per-agent Istio AuthorizationPolicies. The controller writes two per
+// agent, both in the release namespace:
 //
 //   1. `<id>-harness-allow`        — admission via the api-server's waypoint
-//                                    Gateway to path `/api/instances/<id>/*`.
-//   2. `<id>-extauthz-allow`       — admission to the per-instance ext-authz
+//                                    Gateway to path `/api/agents/<id>/*`.
+//   2. `<id>-extauthz-allow`       — admission to the per-agent ext-authz
 //                                    Service. ALLOW principal — same SA.
 //
-// Both pin the principal to the instance's SA — but the principal here is
+// Both pin the principal to the agent's SA — but the principal here is
 // the *gateway pod*'s SPIFFE identity. The agent pod is not a mesh
 // participant (no SPIFFE), so all in-cluster identity work happens on the
 // gateway → api-server hops. App handlers can treat URL `:id` (harness) or
@@ -34,9 +34,9 @@ import (
 // Forks (ADR-027) get their **own** per-fork SA — distinct from the parent —
 // paired with two release-namespace policies that scope the fork narrowly
 // to the parent's surface: `BuildForkHarnessAuthorizationPolicy` admits the
-// fork SA only to `/api/instances/<parent>/mcp`, and
+// fork SA only to `/api/agents/<parent>/mcp`, and
 // `BuildForkExtAuthzAuthorizationPolicy` admits it to the parent's
-// per-instance ext-authz Service.
+// per-agent ext-authz Service.
 
 const (
 	istioGroup    = "security.istio.io"
@@ -103,13 +103,13 @@ func ownerRefAsMap(r *metav1.OwnerReference) map[string]interface{} {
 }
 
 // BuildHarnessAuthorizationPolicy admits traffic via the api-server's
-// waypoint Gateway to path `/api/instances/<id>/*` from the matching SA
+// waypoint Gateway to path `/api/agents/<id>/*` from the matching SA
 // principal only. Lives in the *release* namespace alongside the waypoint
 // Gateway it targets.
 //
-// `principalInstanceID` is the instance ID; this is also the URL `:id`
+// `principalAgentID` is the agent ID; this is also the URL `:id`
 // the policy enforces.
-func BuildHarnessAuthorizationPolicy(principalInstanceID string, cfg *config.Config, ownerCM *corev1.ConfigMap) *unstructured.Unstructured {
+func BuildHarnessAuthorizationPolicy(principalAgentID string, cfg *config.Config, ownerCM *corev1.ConfigMap) *unstructured.Unstructured {
 	spec := map[string]interface{}{
 		"targetRefs": []interface{}{
 			map[string]interface{}{
@@ -124,14 +124,14 @@ func BuildHarnessAuthorizationPolicy(principalInstanceID string, cfg *config.Con
 				"from": []interface{}{
 					map[string]interface{}{
 						"source": map[string]interface{}{
-							"principals": []interface{}{cfg.PrincipalFor(principalInstanceID)},
+							"principals": []interface{}{cfg.PrincipalFor(principalAgentID)},
 						},
 					},
 				},
 				"to": []interface{}{
 					map[string]interface{}{
 						"operation": map[string]interface{}{
-							"paths": []interface{}{fmt.Sprintf("/api/instances/%s/*", principalInstanceID)},
+							"paths": []interface{}{fmt.Sprintf("/api/agents/%s/*", principalAgentID)},
 						},
 					},
 				},
@@ -139,23 +139,23 @@ func BuildHarnessAuthorizationPolicy(principalInstanceID string, cfg *config.Con
 		},
 	}
 	labels := map[string]string{
-		LabelInstance:                  principalInstanceID,
+		LabelAgent:                     principalAgentID,
 		"agent-platform.ai/managed-by": "platform-controller",
 		"app.kubernetes.io/component":  "apiserver",
 	}
-	return authzPolicy(principalInstanceID+"-harness-allow", cfg.ReleaseNamespace, ownerCM, labels, spec)
+	return authzPolicy(principalAgentID+"-harness-allow", cfg.ReleaseNamespace, ownerCM, labels, spec)
 }
 
 // BuildForkHarnessAuthorizationPolicy admits the fork's SA principal to a
-// **narrow** path under the parent instance — `/api/instances/<parent>/mcp`
-// only, not the parent's full `/api/instances/<parent>/*` surface. This
+// **narrow** path under the parent agent — `/api/agents/<parent>/mcp`
+// only, not the parent's full `/api/agents/<parent>/*` surface. This
 // preserves the ADR-027 trust boundary: a compromised fork (i.e. a
 // compromised foreign replier) cannot reach pod-files SSE,
-// `/internal/trigger`, or any future per-instance harness endpoint scoped
+// `/internal/trigger`, or any future per-agent harness endpoint scoped
 // to the parent. Lives in the release namespace alongside the parent's
 // harness-allow policy; Istio OR-s ALLOWs from multiple policies on the
 // same waypoint, so this is purely additive.
-func BuildForkHarnessAuthorizationPolicy(forkName, parentInstanceID string, cfg *config.Config, ownerCM *corev1.ConfigMap) *unstructured.Unstructured {
+func BuildForkHarnessAuthorizationPolicy(forkName, parentAgentID string, cfg *config.Config, ownerCM *corev1.ConfigMap) *unstructured.Unstructured {
 	spec := map[string]interface{}{
 		"targetRefs": []interface{}{
 			map[string]interface{}{
@@ -177,7 +177,7 @@ func BuildForkHarnessAuthorizationPolicy(forkName, parentInstanceID string, cfg 
 				"to": []interface{}{
 					map[string]interface{}{
 						"operation": map[string]interface{}{
-							"paths": []interface{}{fmt.Sprintf("/api/instances/%s/mcp", parentInstanceID)},
+							"paths": []interface{}{fmt.Sprintf("/api/agents/%s/mcp", parentAgentID)},
 						},
 					},
 				},
@@ -185,7 +185,7 @@ func BuildForkHarnessAuthorizationPolicy(forkName, parentInstanceID string, cfg 
 		},
 	}
 	labels := map[string]string{
-		LabelInstance:                  parentInstanceID,
+		LabelAgent:                     parentAgentID,
 		"agent-platform.ai/managed-by": "platform-controller",
 		"app.kubernetes.io/component":  "apiserver",
 		ForkLabelForkID:                forkName,
@@ -194,19 +194,19 @@ func BuildForkHarnessAuthorizationPolicy(forkName, parentInstanceID string, cfg 
 }
 
 // BuildForkExtAuthzAuthorizationPolicy admits the fork's SA principal to
-// the **parent**'s per-instance ext-authz Service. Forks dial the
+// the **parent**'s per-agent ext-authz Service. Forks dial the
 // parent's ext-authz endpoint (the parent owner's HITL rules approve
 // the request; the fork's gateway then injects the replier's
 // credential on the wire). The parent's own ext-authz-allow continues
 // to admit the parent SA; Istio OR-s the principal lists across both
 // policies on the same Service.
-func BuildForkExtAuthzAuthorizationPolicy(forkName, parentInstanceID string, cfg *config.Config, ownerCM *corev1.ConfigMap) *unstructured.Unstructured {
+func BuildForkExtAuthzAuthorizationPolicy(forkName, parentAgentID string, cfg *config.Config, ownerCM *corev1.ConfigMap) *unstructured.Unstructured {
 	spec := map[string]interface{}{
 		"targetRefs": []interface{}{
 			map[string]interface{}{
 				"group": "",
 				"kind":  "Service",
-				"name":  cfg.ExtAuthzServiceName(parentInstanceID),
+				"name":  cfg.ExtAuthzServiceName(parentAgentID),
 			},
 		},
 		"action": "ALLOW",
@@ -223,7 +223,7 @@ func BuildForkExtAuthzAuthorizationPolicy(forkName, parentInstanceID string, cfg
 		},
 	}
 	labels := map[string]string{
-		LabelInstance:                  parentInstanceID,
+		LabelAgent:                     parentAgentID,
 		"agent-platform.ai/managed-by": "platform-controller",
 		"app.kubernetes.io/component":  "apiserver",
 		ForkLabelForkID:                forkName,
@@ -231,17 +231,17 @@ func BuildForkExtAuthzAuthorizationPolicy(forkName, parentInstanceID string, cfg
 	return authzPolicy(forkName+"-extauthz-allow", cfg.ReleaseNamespace, ownerCM, labels, spec)
 }
 
-// BuildExtAuthzAuthorizationPolicy admits traffic to the per-instance
+// BuildExtAuthzAuthorizationPolicy admits traffic to the per-agent
 // ext-authz Service from the matching SA principal only. Lives in the
-// release namespace alongside the per-instance ext-authz Service it
+// release namespace alongside the per-agent ext-authz Service it
 // targets.
-func BuildExtAuthzAuthorizationPolicy(instanceName string, cfg *config.Config, ownerCM *corev1.ConfigMap) *unstructured.Unstructured {
+func BuildExtAuthzAuthorizationPolicy(agentName string, cfg *config.Config, ownerCM *corev1.ConfigMap) *unstructured.Unstructured {
 	spec := map[string]interface{}{
 		"targetRefs": []interface{}{
 			map[string]interface{}{
 				"group": "",
 				"kind":  "Service",
-				"name":  cfg.ExtAuthzServiceName(instanceName),
+				"name":  cfg.ExtAuthzServiceName(agentName),
 			},
 		},
 		"action": "ALLOW",
@@ -250,7 +250,7 @@ func BuildExtAuthzAuthorizationPolicy(instanceName string, cfg *config.Config, o
 				"from": []interface{}{
 					map[string]interface{}{
 						"source": map[string]interface{}{
-							"principals": []interface{}{cfg.PrincipalFor(instanceName)},
+							"principals": []interface{}{cfg.PrincipalFor(agentName)},
 						},
 					},
 				},
@@ -258,16 +258,16 @@ func BuildExtAuthzAuthorizationPolicy(instanceName string, cfg *config.Config, o
 		},
 	}
 	labels := map[string]string{
-		LabelInstance:                  instanceName,
+		LabelAgent:                     agentName,
 		"agent-platform.ai/managed-by": "platform-controller",
 		"app.kubernetes.io/component":  "apiserver",
 	}
-	return authzPolicy(instanceName+"-extauthz-allow", cfg.ReleaseNamespace, ownerCM, labels, spec)
+	return authzPolicy(agentName+"-extauthz-allow", cfg.ReleaseNamespace, ownerCM, labels, spec)
 }
 
 // applyAuthorizationPolicy creates or updates an Istio AuthorizationPolicy
 // via the dynamic client. Mirrors the applyCertificate pattern.
-func (r *InstanceReconciler) applyAuthorizationPolicy(ctx context.Context, desired *unstructured.Unstructured) error {
+func (r *AgentReconciler) applyAuthorizationPolicy(ctx context.Context, desired *unstructured.Unstructured) error {
 	if r.dynamic == nil {
 		return fmt.Errorf("dynamic client not configured (AuthorizationPolicy cannot be applied)")
 	}

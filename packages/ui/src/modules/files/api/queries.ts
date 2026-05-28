@@ -1,70 +1,122 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { TRPCClientError } from "@trpc/client";
+import type { DirListResult } from "agent-runtime-api";
 
+import { api } from "../../../api.js";
 import { queryClient } from "../../../query-client.js";
-import { createInstanceTrpc } from "../../instances/instance-trpc.js";
+import { useStore } from "../../../store.js";
+import { createAgentTrpc } from "../../agents/agent-trpc.js";
+import { fileKeys } from "./keys.js";
 
-export const fileKeys = {
-  root: (instanceId: string) => ["files", instanceId] as const,
-  tree: (instanceId: string) => [...fileKeys.root(instanceId), "tree"] as const,
-  content: (instanceId: string, path: string) =>
-    [...fileKeys.root(instanceId), "content", path] as const,
-};
+const EMPTY_EXPANDED: ReadonlySet<string> = new Set();
 
-// Per-instance tRPC clients are cheap but creating a new one per refetch is
-// wasteful churn. Cache by instanceId so each polled query reuses the same
+// Per-agent tRPC clients are cheap but creating a new one per refetch is
+// wasteful churn. Cache by agentId so each polled query reuses the same
 // client for its lifetime.
-const clientCache = new Map<string, ReturnType<typeof createInstanceTrpc>>();
-function getInstanceTrpc(instanceId: string) {
-  let client = clientCache.get(instanceId);
+const clientCache = new Map<string, ReturnType<typeof createAgentTrpc>>();
+function getAgentTrpc(agentId: string) {
+  let client = clientCache.get(agentId);
   if (!client) {
-    client = createInstanceTrpc(instanceId);
-    clientCache.set(instanceId, client);
+    client = createAgentTrpc(agentId);
+    clientCache.set(agentId, client);
   }
   return client;
 }
 
-interface FileContent {
+export interface FileContent {
   path: string;
   content: string;
   binary?: boolean;
   mimeType?: string;
   mtimeMs?: number;
+  tooLarge?: boolean;
 }
 
-export function useFileTreeQuery(instanceId: string | null) {
+interface ListDirsResponse {
+  results: DirListResult[];
+}
+
+function useExpandedDirs(agentId: string | null): ReadonlySet<string> {
+  return useStore((s) =>
+    agentId ? (s.expandedDirs[agentId] ?? EMPTY_EXPANDED) : EMPTY_EXPANDED,
+  );
+}
+
+/** Sorted, deduped paths to fetch. The sort makes the query key stable
+ *  across renders so React Query treats `{a, b}` and `{b, a}` as the same
+ *  entry instead of churning two cache rows. */
+function paramsForExpanded(expanded: ReadonlySet<string>): string[] {
+  return ["", ...expanded].sort();
+}
+
+/** Subscribe to one directory's slice of the batched poll. The sorted paths
+ *  set is part of the key (ADR-049), so an expand/collapse swaps to a new
+ *  entry and React Query refetches without any explicit invalidation. Returns null
+ *  until the slice is present; null is the right answer for "the user just
+ *  expanded this dir and the next poll hasn't arrived yet". */
+export function useDirSnapshot(agentId: string | null, path: string) {
+  const expanded = useExpandedDirs(agentId);
+  const paths = paramsForExpanded(expanded);
   return useQuery({
-    queryKey: fileKeys.tree(instanceId ?? "_none"),
-    queryFn: async () => {
-      const trpc = getInstanceTrpc(instanceId!);
-      const result = await trpc.files.tree.query();
-      return result.entries;
+    queryKey: fileKeys.treeForPaths(agentId ?? "_none", paths),
+    queryFn: async (): Promise<ListDirsResponse> => {
+      const trpc = getAgentTrpc(agentId!);
+      return trpc.files.listDirs.query({ paths });
     },
-    enabled: !!instanceId,
+    enabled: !!agentId,
     refetchInterval: 2000,
     staleTime: 2000,
+    placeholderData: keepPreviousData,
+    select: (data) => data.results.find((r) => r.path === path) ?? null,
     meta: { errorToast: "Couldn't refresh file tree" },
   });
 }
 
-export function useFileContentQuery(instanceId: string | null, path: string | null) {
+export function useFileContentQuery(
+  agentId: string | null,
+  path: string | null,
+) {
   return useQuery({
-    queryKey: fileKeys.content(instanceId ?? "_none", path ?? "_none"),
-    queryFn: async () => {
-      const trpc = getInstanceTrpc(instanceId!);
-      const result = await trpc.files.read.query({ path: path! });
-      return {
-        path: result.path,
-        content: result.content ?? "",
-        binary: result.binary,
-        mimeType: result.mimeType,
-        mtimeMs: result.mtimeMs,
-      } satisfies FileContent;
-    },
-    enabled: !!instanceId && !!path,
+    queryKey: fileKeys.content(agentId ?? "_none", path ?? "_none"),
+    queryFn: async () => readFileContent(agentId!, path!),
+    enabled: !!agentId && !!path,
     refetchInterval: 2000,
     staleTime: 2000,
+    // No retry — transient errors resolve on the next 2 s poll tick, and we
+    // don't want React Query to mask NOT_FOUND with a delayed close-on-error.
     retry: 0,
   });
+}
+
+async function readFileContent(
+  agentId: string,
+  path: string,
+): Promise<FileContent> {
+  const trpc = getAgentTrpc(agentId);
+  try {
+    const result = await trpc.files.read.query({ path });
+    return {
+      path: result.path,
+      content: result.content,
+      binary: result.binary,
+      mimeType: result.mimeType,
+      mtimeMs: result.mtimeMs,
+    };
+  } catch (e) {
+    // Convert the transport-layer "too large" error back into a typed
+    // placeholder so the viewer can render its "file too large" state.
+    // The query-cache close-on-error path is reserved for genuinely
+    // gone files (rename, delete, NOT_FOUND).
+    if (e instanceof TRPCClientError && e.data?.code === "PAYLOAD_TOO_LARGE") {
+      return { path, content: "", binary: true, tooLarge: true };
+    }
+    throw e;
+  }
 }
 
 /**
@@ -72,99 +124,109 @@ export function useFileContentQuery(instanceId: string | null, path: string | nu
  * cache so the subsequent useFileContentQuery subscription reuses the result
  * instead of refetching.
  */
-export async function fetchFileContent(instanceId: string, path: string): Promise<FileContent> {
+export async function fetchFileContent(
+  agentId: string,
+  path: string,
+): Promise<FileContent> {
   return queryClient.fetchQuery({
-    queryKey: fileKeys.content(instanceId, path),
-    queryFn: async () => {
-      const trpc = getInstanceTrpc(instanceId);
-      const result = await trpc.files.read.query({ path });
-      return {
-        path: result.path,
-        content: result.content ?? "",
-        binary: result.binary,
-        mimeType: result.mimeType,
-        mtimeMs: result.mtimeMs,
-      };
-    },
+    queryKey: fileKeys.content(agentId, path),
+    queryFn: async () => readFileContent(agentId, path),
   });
 }
 
-function invalidateFiles(qc: ReturnType<typeof useQueryClient>, instanceId: string, path?: string) {
-  qc.invalidateQueries({ queryKey: fileKeys.tree(instanceId) });
-  if (path) qc.invalidateQueries({ queryKey: fileKeys.content(instanceId, path) });
+function invalidateFiles(
+  qc: ReturnType<typeof useQueryClient>,
+  agentId: string,
+  path?: string,
+) {
+  qc.invalidateQueries({ queryKey: fileKeys.tree(agentId) });
+  if (path) qc.invalidateQueries({ queryKey: fileKeys.content(agentId, path) });
 }
 
-export function useFileWriteMutation(instanceId: string | null) {
+export function useFileWriteMutation(agentId: string | null) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { path: string; content: string; expectedMtimeMs?: number }) => {
-      const trpc = getInstanceTrpc(instanceId!);
+    mutationFn: async (input: {
+      path: string;
+      content: string;
+      expectedMtimeMs?: number;
+    }) => {
+      const trpc = getAgentTrpc(agentId!);
       return trpc.files.write.mutate(input);
     },
     onSuccess: (_data, vars) => {
-      if (instanceId) invalidateFiles(qc, instanceId, vars.path);
+      if (agentId) invalidateFiles(qc, agentId, vars.path);
     },
   });
 }
 
-export function useFileCreateMutation(instanceId: string | null) {
+export function useFileCreateMutation(agentId: string | null) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: { path: string; content?: string }) => {
-      const trpc = getInstanceTrpc(instanceId!);
-      return trpc.files.create.mutate({ path: input.path, content: input.content ?? "" });
+      const trpc = getAgentTrpc(agentId!);
+      return trpc.files.create.mutate({
+        path: input.path,
+        content: input.content ?? "",
+      });
     },
     onSuccess: (_data, vars) => {
-      if (instanceId) invalidateFiles(qc, instanceId, vars.path);
+      if (agentId) invalidateFiles(qc, agentId, vars.path);
     },
   });
 }
 
-export function useFolderCreateMutation(instanceId: string | null) {
+export function useFolderCreateMutation(agentId: string | null) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: { path: string }) => {
-      const trpc = getInstanceTrpc(instanceId!);
+      const trpc = getAgentTrpc(agentId!);
       return trpc.files.mkdir.mutate(input);
     },
     onSuccess: () => {
-      if (instanceId) invalidateFiles(qc, instanceId);
+      if (agentId) invalidateFiles(qc, agentId);
     },
   });
 }
 
-export function useFileRenameMutation(instanceId: string | null) {
+export function useFileRenameMutation(agentId: string | null) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { from: string; to: string; overwrite?: boolean }) => {
-      const trpc = getInstanceTrpc(instanceId!);
+    mutationFn: async (input: {
+      from: string;
+      to: string;
+      overwrite?: boolean;
+    }) => {
+      const trpc = getAgentTrpc(agentId!);
       return trpc.files.rename.mutate(input);
     },
     onSuccess: (_data, vars) => {
-      if (instanceId) {
-        invalidateFiles(qc, instanceId, vars.from);
-        qc.invalidateQueries({ queryKey: fileKeys.content(instanceId, vars.to) });
+      if (agentId) {
+        invalidateFiles(qc, agentId, vars.from);
+        qc.invalidateQueries({
+          queryKey: fileKeys.content(agentId, vars.to),
+        });
       }
     },
   });
 }
 
-export function useFileDeleteMutation(instanceId: string | null) {
+export function useFileDeleteMutation(agentId: string | null) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: { path: string }) => {
-      const trpc = getInstanceTrpc(instanceId!);
+      const trpc = getAgentTrpc(agentId!);
       return trpc.files.remove.mutate(input);
     },
     onSuccess: (_data, vars) => {
-      if (instanceId) invalidateFiles(qc, instanceId, vars.path);
+      if (agentId) invalidateFiles(qc, agentId, vars.path);
     },
   });
 }
 
-/** Mirrors the MAX_FILE_SIZE cap in agent-runtime/src/modules/files.ts.
- *  Exported so callers (tree-panel upload button, chat composer) can reject
- *  oversized files before sending and surface a consistent message. */
+// Client-side pre-flight cap so oversized uploads fail in the UI before
+// hitting the wire. Server-side enforcement lives in agent-runtime and
+// surfaces as PAYLOAD_TOO_LARGE — this value can drift up to but not past it.
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 const MESSAGE_UPLOAD_ROOT = ".uploads";
@@ -182,11 +244,11 @@ function sanitizeSegment(s: string): string {
  * `resource_link` URI.
  */
 export async function uploadMessageAttachment(
-  instanceId: string,
+  agentId: string,
   sessionId: string,
   attachment: { name: string; data: string; mimeType: string },
 ): Promise<{ absolutePath: string; relPath: string }> {
-  const trpc = getInstanceTrpc(instanceId);
+  const trpc = getAgentTrpc(agentId);
   const sid = sanitizeSegment(sessionId);
   const safeName = sanitizeSegment(attachment.name || "file");
   const unique = crypto.randomUUID().slice(0, 8);
@@ -203,20 +265,17 @@ export async function uploadMessageAttachment(
   return { absolutePath, relPath };
 }
 
-export function useFileUploadMutation(instanceId: string | null) {
+export function useFileUploadMutation(agentId: string | null) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: {
+    mutationFn: (input: {
       path: string;
       contentBase64: string;
       contentType?: string;
       overwrite?: boolean;
-    }) => {
-      const trpc = getInstanceTrpc(instanceId!);
-      return trpc.files.upload.mutate(input);
-    },
+    }) => api.files.upload.mutate({ agentId: agentId!, ...input }),
     onSuccess: (_data, vars) => {
-      if (instanceId) invalidateFiles(qc, instanceId, vars.path);
+      if (agentId) invalidateFiles(qc, agentId, vars.path);
     },
   });
 }

@@ -1,4 +1,7 @@
 {
   "theme": "dark",
-  "enableAllProjectMcpServers": true
+  "enableAllProjectMcpServers": true,
+  "permissions": {
+    "defaultMode": "auto"
+  }
 }

@@ -29,11 +29,15 @@ export async function confirm(
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
   try {
-    const answer = await rl.question(`${question} (y/N): `, { signal: ac.signal });
+    const answer = await rl.question(`${question} (y/N): `, {
+      signal: ac.signal,
+    });
     return /^y(es)?$/i.test(answer.trim());
   } catch (e) {
     if ((e as { name?: string }).name === "AbortError") {
-      process.stderr.write(`\n(no response within ${timeoutMs / 1000}s — assuming No)\n`);
+      process.stderr.write(
+        `\n(no response within ${timeoutMs / 1000}s — assuming No)\n`,
+      );
       return false;
     }
     throw e;

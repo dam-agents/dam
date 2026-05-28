@@ -3,7 +3,7 @@ In-cluster NFS server + external provisioner — opt-in.
 
 Ships an RWX-capable StorageClass (`platform-rwx` by default) so dev clusters
 (k3s-on-lima, kind, minikube) whose default provisioner is RWO-only can
-satisfy the agent instance PVC's ReadWriteMany access mode. The agent PVC
+satisfy the agent PVC's ReadWriteMany access mode. The agent PVC
 needs RWX because per-turn foreign-user "fork" pods (ADR DRAFT — Slack
 per-turn user impersonation) mount the same /home/agent volume as the
 main pod concurrently.

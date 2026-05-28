@@ -17,7 +17,7 @@ Today the platform fans them out through different pipes:
   ([`connection-rules-sync.ts`](../../packages/api-server/src/modules/egress-rules/services/connection-rules-sync.ts))
   → rows in Postgres `egress_rules` → ext_authz reads them live.
 - **Envs** — the **browser** computes a diff via
-  [`envsToAddOnGrant` / `envsAfterUngrant`](../../packages/ui/src/modules/agents/utils/connection-env-helpers.ts)
+  `envsToAddOnGrant` / `envsAfterUngrant` (formerly `connection-env-helpers.ts`, removed by this ADR)
   and patches the agent ConfigMap's `spec.env` directly. The api-server
   never learns "env X on agent Y came from secret Z."
 

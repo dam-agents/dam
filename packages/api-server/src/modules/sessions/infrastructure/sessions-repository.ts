@@ -2,12 +2,12 @@ import type { Db } from "db";
 import { sessions, eq, and, desc, sql } from "db";
 import { SessionMode, SessionType } from "api-server-api";
 
-export function listSessionsByInstance(db: Db) {
-  return async (instanceId: string) => {
+export function listSessionsByAgent(db: Db) {
+  return async (agentId: string) => {
     return db
       .select()
       .from(sessions)
-      .where(eq(sessions.instanceId, instanceId))
+      .where(eq(sessions.agentId, agentId))
       .orderBy(desc(sessions.createdAt));
   };
 }
@@ -27,7 +27,12 @@ export function findActiveByScheduleId(db: Db) {
     const rows = await db
       .select()
       .from(sessions)
-      .where(and(eq(sessions.scheduleId, scheduleId), eq(sessions.scheduleActive, true)))
+      .where(
+        and(
+          eq(sessions.scheduleId, scheduleId),
+          eq(sessions.scheduleActive, true),
+        ),
+      )
       .orderBy(desc(sessions.createdAt))
       .limit(1);
     return rows[0] ?? null;
@@ -44,11 +49,13 @@ export function deactivateByScheduleId(db: Db) {
 }
 
 export function findByInstanceAndThreadTs(db: Db) {
-  return async (instanceId: string, threadTs: string) => {
+  return async (agentId: string, threadTs: string) => {
     const rows = await db
       .select()
       .from(sessions)
-      .where(and(eq(sessions.instanceId, instanceId), eq(sessions.threadTs, threadTs)))
+      .where(
+        and(eq(sessions.agentId, agentId), eq(sessions.threadTs, threadTs)),
+      )
       .limit(1);
     return rows[0] ?? null;
   };
@@ -57,7 +64,7 @@ export function findByInstanceAndThreadTs(db: Db) {
 export function upsertSession(db: Db) {
   return async (
     sessionId: string,
-    instanceId: string,
+    agentId: string,
     mode: SessionMode,
     type: SessionType = SessionType.Regular,
     scheduleId?: string,
@@ -65,24 +72,30 @@ export function upsertSession(db: Db) {
   ) => {
     await db
       .insert(sessions)
-      .values({ sessionId, instanceId, type, scheduleId, threadTs, mode })
+      .values({ sessionId, agentId, type, scheduleId, threadTs, mode })
       .onConflictDoNothing();
   };
 }
 
 export function getSessionMode(db: Db) {
   return async (sessionId: string): Promise<string | null> => {
-    const rows = await db.select({ mode: sessions.mode }).from(sessions).where(eq(sessions.sessionId, sessionId)).limit(1);
+    const rows = await db
+      .select({ mode: sessions.mode })
+      .from(sessions)
+      .where(eq(sessions.sessionId, sessionId))
+      .limit(1);
     return rows[0]?.mode ?? null;
   };
 }
 
 export function setSessionMode(db: Db) {
-  return async (sessionId: string, instanceId: string, mode: SessionMode) => {
+  return async (sessionId: string, agentId: string, mode: SessionMode) => {
     await db
       .update(sessions)
       .set({ mode })
-      .where(and(eq(sessions.sessionId, sessionId), eq(sessions.instanceId, instanceId)));
+      .where(
+        and(eq(sessions.sessionId, sessionId), eq(sessions.agentId, agentId)),
+      );
   };
 }
 
@@ -96,7 +109,11 @@ export function touchSession(db: Db) {
 }
 
 export function deleteSession(db: Db) {
-  return async (sessionId: string, instanceId: string) => {
-    await db.delete(sessions).where(and(eq(sessions.sessionId, sessionId), eq(sessions.instanceId, instanceId)));
+  return async (sessionId: string, agentId: string) => {
+    await db
+      .delete(sessions)
+      .where(
+        and(eq(sessions.sessionId, sessionId), eq(sessions.agentId, agentId)),
+      );
   };
 }

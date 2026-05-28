@@ -17,9 +17,14 @@ export async function retry<T>(
       if (!shouldRetry(err)) throw err;
       lastErr = err;
       if (i < attempts - 1) {
-        await new Promise((r) => setTimeout(r, backoffMs * (0.9 + Math.random() * 0.2)));
+        await new Promise((r) =>
+          setTimeout(r, backoffMs * (0.9 + Math.random() * 0.2)),
+        );
       }
     }
   }
-  throw new Error(`retry(${fn.name || "?"}): failed after ${attempts} attempts`, { cause: lastErr });
+  throw new Error(
+    `retry(${fn.name || "?"}): failed after ${attempts} attempts`,
+    { cause: lastErr },
+  );
 }

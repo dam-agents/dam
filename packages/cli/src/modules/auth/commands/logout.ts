@@ -2,9 +2,9 @@ import { Command } from "commander";
 import type { ConfigService } from "../../cli/index.js";
 import type { AuthService, LogoutError } from "../services/auth-service.js";
 import {
-  EXIT_AUTH_INVALID_INPUT,
-  EXIT_AUTH_RUNTIME_FAILURE,
-} from "./exit-codes.js";
+  EXIT_INVALID_INPUT,
+  EXIT_RUNTIME_FAILURE,
+} from "../../shared/exit-codes.js";
 
 export interface LogoutCommandDeps {
   authService: AuthService;
@@ -13,8 +13,13 @@ export interface LogoutCommandDeps {
 
 export function buildLogoutCommand(deps: LogoutCommandDeps): Command {
   return new Command("logout")
-    .description("Clear local credentials and best-effort revoke the refresh token")
-    .option("--server <url>", "host to log out of; defaults to the active server")
+    .description(
+      "Clear local credentials and best-effort revoke the refresh token",
+    )
+    .option(
+      "--server <url>",
+      "host to log out of; defaults to the active server",
+    )
     .action(async (opts: { server?: string }) => {
       let host = opts.server;
       if (!host) {
@@ -29,7 +34,7 @@ export function buildLogoutCommand(deps: LogoutCommandDeps): Command {
               "error: no server configured; pass `--server <url>` or run `dam config set server <url>`\n",
             );
           }
-          process.exit(EXIT_AUTH_INVALID_INPUT);
+          process.exit(EXIT_INVALID_INPUT);
         }
         host = resolved.value.server;
       }
@@ -37,7 +42,7 @@ export function buildLogoutCommand(deps: LogoutCommandDeps): Command {
       const result = await deps.authService.logout(host);
       if (!result.ok) {
         printLogoutError(result.error);
-        process.exit(EXIT_AUTH_RUNTIME_FAILURE);
+        process.exit(EXIT_RUNTIME_FAILURE);
       }
 
       if (result.value.alreadyLoggedOut) {
@@ -56,7 +61,9 @@ export function buildLogoutCommand(deps: LogoutCommandDeps): Command {
 function printLogoutError(e: LogoutError): void {
   switch (e.kind) {
     case "auth-store":
-      process.stderr.write(`error: failed to update credential store: ${e.detail}\n`);
+      process.stderr.write(
+        `error: failed to update credential store: ${e.detail}\n`,
+      );
       return;
   }
 }

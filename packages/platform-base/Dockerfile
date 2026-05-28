@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/hi/nodejs:22-builder AS base
+FROM registry.access.redhat.com/hi/nodejs:24-builder AS base
 
 USER root
 ENV PATH="/app/node_modules/.bin:$PATH"
@@ -11,13 +11,16 @@ COPY scripts/install-pnpm.sh /usr/local/bin/install-pnpm
 COPY package.json ./
 RUN install-pnpm
 
-COPY pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
+COPY pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY packages/dev-config/package.json packages/dev-config/
 COPY packages/agent-runtime/package.json packages/agent-runtime/
 COPY packages/agent-runtime-api/package.json packages/agent-runtime-api/
 COPY packages/api-server-api/package.json packages/api-server-api/
 
-RUN pnpm install --frozen-lockfile --filter agent-runtime...
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm-store \
+    PNPM_STORE_DIR=/pnpm-store pnpm install --frozen-lockfile --filter agent-runtime...
 
+COPY packages/dev-config/ packages/dev-config/
 COPY packages/agent-runtime-api/ packages/agent-runtime-api/
 COPY packages/api-server-api/ packages/api-server-api/
 COPY packages/agent-runtime/ packages/agent-runtime/
@@ -52,6 +55,11 @@ RUN chmod +x /usr/local/bin/harness-chat /usr/local/bin/harness-terminal
 COPY packages/platform-base/skills/ /app/working-dir/.agents/skills/
 COPY packages/platform-base/working-dir/.claude.json /app/working-dir/.claude.json
 COPY packages/platform-base/working-dir/.claude/settings.json /app/working-dir/.claude/settings.json
+# ADR-052: runtime-manifest.yaml — every agent image ships one. Lives
+# at /app/runtime-manifest.yaml (outside working-dir/) so the init
+# seed cp -rn ... $HOME doesn't shadow it on the user's PV. Per-image
+# overrides are COPY'd later in derived Dockerfiles.
+COPY packages/platform-base/runtime-manifest.yaml /app/runtime-manifest.yaml
 RUN mkdir -p /app/working-dir/.claude /app/working-dir/.pi/agent \
     && ln -s ../.agents/skills /app/working-dir/.claude/skills \
     && ln -s ../../.agents/skills /app/working-dir/.pi/agent/skills \

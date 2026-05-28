@@ -1,4 +1,12 @@
-export type RuleVerdict = "allow" | "deny";
+import type { z } from "zod";
+import type {
+  egressPresetSchema,
+  egressRuleCreateInputSchema,
+  egressRuleUpdateInputSchema,
+  ruleVerdictSchema,
+} from "./schemas.js";
+
+export type RuleVerdict = z.infer<typeof ruleVerdictSchema>;
 
 /**
  * Bulk-seeding preset chosen at agent creation. Each preset writes 0..N
@@ -12,7 +20,7 @@ export type RuleVerdict = "allow" | "deny";
  * - `all` — single wildcard rule the L4 gate matches for every SNI.
  *   Development escape hatch with a UI warning.
  */
-export type EgressPreset = "none" | "trusted" | "all";
+export type EgressPreset = z.infer<typeof egressPresetSchema>;
 
 /**
  * Origin of a rule row. User edits/deletes flip non-`manual` rows to
@@ -39,20 +47,8 @@ export interface EgressRuleView {
   source: EgressRuleSource;
 }
 
-export interface CreateEgressRuleInput {
-  agentId: string;
-  host: string;
-  method: string;
-  pathPattern: string;
-  verdict: RuleVerdict;
-}
-
-export interface UpdateEgressRuleInput {
-  id: string;
-  method: string;
-  pathPattern: string;
-  verdict: RuleVerdict;
-}
+export type EgressRuleCreateInput = z.infer<typeof egressRuleCreateInputSchema>;
+export type EgressRuleUpdateInput = z.infer<typeof egressRuleUpdateInputSchema>;
 
 export interface EgressRulesService {
   listForAgent(agentId: string): Promise<EgressRuleView[]>;
@@ -66,11 +62,11 @@ export interface EgressRulesService {
    *  the trusted preset would produce without having to apply it first. */
   trustedHosts(): Promise<readonly string[]>;
   /** Always writes `source = 'manual'`. */
-  create(input: CreateEgressRuleInput): Promise<EgressRuleView>;
+  create(input: EgressRuleCreateInput): Promise<EgressRuleView>;
   /** Flips `source` to `'manual'` even if the row was previously
    *  connection- or preset-derived. Mirrors how connection-injected envs
    *  become user-owned on edit. */
-  update(input: UpdateEgressRuleInput): Promise<EgressRuleView>;
+  update(input: EgressRuleUpdateInput): Promise<EgressRuleView>;
   revoke(id: string): Promise<void>;
   /** Bulk-adds rules for `preset` to an existing agent. Idempotent against
    *  rows already present. Does NOT remove rules; the user manages deletes

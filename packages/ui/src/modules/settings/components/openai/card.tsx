@@ -14,7 +14,9 @@ export function OpenAICard({ secret }: { secret?: SecretView }) {
     return (
       <OpenAIConnected
         secret={secret}
-        onRemove={() => actions.remove(secret.id, `Remove ${NAME} API key?`, "Remove Key")}
+        onRemove={() =>
+          actions.remove(secret.id, `Remove ${NAME} API key?`, "Remove Key")
+        }
         onSave={({ value }) => actions.update({ id: secret.id, value })}
       />
     );
@@ -23,7 +25,9 @@ export function OpenAICard({ secret }: { secret?: SecretView }) {
   return (
     <OpenAIForm
       variant="wizard"
-      onSave={({ value }) => actions.create({ type: "openai", name: NAME, value })}
+      onSave={({ value }) =>
+        actions.create({ type: "openai", name: NAME, value })
+      }
     />
   );
 }

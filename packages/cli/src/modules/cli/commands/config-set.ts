@@ -2,7 +2,10 @@ import { Command } from "commander";
 import { parseConfigKey } from "../domain/config.js";
 import type { DomainError } from "../domain/errors.js";
 import type { ConfigService } from "../services/config-service.js";
-import { EXIT_INVALID_INPUT, EXIT_RUNTIME_FAILURE } from "./exit-codes.js";
+import {
+  EXIT_INVALID_INPUT,
+  EXIT_RUNTIME_FAILURE,
+} from "../../shared/exit-codes.js";
 
 export interface ConfigSetCommandDeps {
   service: ConfigService;

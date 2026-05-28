@@ -14,20 +14,16 @@ import { Button } from "@/components/ui/button";
 import { HighlightedCode } from "../../../components/highlighted-code.js";
 import { Markdown } from "../../../components/markdown.js";
 import { useStore } from "../../../store.js";
-import { fetchFileContent, useFileWriteMutation } from "../api/queries.js";
+import {
+  fetchFileContent,
+  type FileContent,
+  useFileWriteMutation,
+} from "../api/queries.js";
 import { useUnsavedGuard } from "../hooks/use-unsaved-guard.js";
 import { CodeEditor } from "./code-editor.js";
 
-interface OpenFile {
-  path: string;
-  content: string;
-  binary?: boolean;
-  mimeType?: string;
-  mtimeMs?: number;
-}
-
 interface Props {
-  file: OpenFile;
+  file: FileContent;
   onClose: () => void;
   onOpenFile: (path: string) => void;
 }
@@ -38,11 +34,21 @@ function hexDump(base64: string): string {
   const maxBytes = Math.min(raw.length, 1024);
   for (let off = 0; off < maxBytes; off += 16) {
     const slice = raw.slice(off, Math.min(off + 16, maxBytes));
-    const hex = Array.from(slice).map(c => c.charCodeAt(0).toString(16).padStart(2, "0")).join(" ");
-    const ascii = Array.from(slice).map(c => { const code = c.charCodeAt(0); return code >= 0x20 && code < 0x7f ? c : "."; }).join("");
-    lines.push(`${off.toString(16).padStart(8, "0")}  ${hex.padEnd(47)}  ${ascii}`);
+    const hex = Array.from(slice)
+      .map((c) => c.charCodeAt(0).toString(16).padStart(2, "0"))
+      .join(" ");
+    const ascii = Array.from(slice)
+      .map((c) => {
+        const code = c.charCodeAt(0);
+        return code >= 0x20 && code < 0x7f ? c : ".";
+      })
+      .join("");
+    lines.push(
+      `${off.toString(16).padStart(8, "0")}  ${hex.padEnd(47)}  ${ascii}`,
+    );
   }
-  if (raw.length > maxBytes) lines.push(`... ${raw.length - maxBytes} more bytes`);
+  if (raw.length > maxBytes)
+    lines.push(`... ${raw.length - maxBytes} more bytes`);
   return lines.join("\n");
 }
 
@@ -58,7 +64,7 @@ function isImageMime(mime: string | undefined): boolean {
 }
 
 export function FileViewer({ file, onClose, onOpenFile }: Props) {
-  const { path, content, binary, mimeType: mime } = file;
+  const { path, content, binary, mimeType: mime, tooLarge } = file;
   const isMarkdown = mime === "text/markdown";
   const isSvg = mime === "image/svg+xml";
   const isBinaryImage = binary && content && isImageMime(mime) && !isSvg;
@@ -67,20 +73,25 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
   const filename = path.split("/").pop();
   const editable = !binary && hasContent;
 
-  const selectedInstance = useStore(s => s.selectedInstance);
-  const setOpenFileDirty = useStore(s => s.setOpenFileDirty);
-  const showToast = useStore(s => s.showToast);
-  const showConfirm = useStore(s => s.showConfirm);
+  const selectedAgent = useStore((s) => s.selectedAgent);
+  const setOpenFileDirty = useStore((s) => s.setOpenFileDirty);
+  const showToast = useStore((s) => s.showToast);
+  const showConfirm = useStore((s) => s.showConfirm);
 
   const [renderMd, setRenderMd] = useState(true);
   const [renderSvg, setRenderSvg] = useState(true);
   const [editMode, setEditMode] = useState(false);
   const [draft, setDraft] = useState(content);
-  const [baseMtimeMs, setBaseMtimeMs] = useState<number | undefined>(file.mtimeMs);
+  const [baseMtimeMs, setBaseMtimeMs] = useState<number | undefined>(
+    file.mtimeMs,
+  );
 
   const dirty = editMode && draft !== content;
   useUnsavedGuard(dirty);
-  useEffect(() => { setOpenFileDirty(dirty); return () => setOpenFileDirty(false); }, [dirty, setOpenFileDirty]);
+  useEffect(() => {
+    setOpenFileDirty(dirty);
+    return () => setOpenFileDirty(false);
+  }, [dirty, setOpenFileDirty]);
 
   // Reset draft / baseline when the user switches files or the cache delivers
   // fresh content (e.g., after a save or external change).
@@ -91,10 +102,10 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
     }
   }, [content, file.mtimeMs, editMode, path]);
 
-  const writeMutation = useFileWriteMutation(selectedInstance);
+  const writeMutation = useFileWriteMutation(selectedAgent);
 
   const save = useCallback(async () => {
-    if (!selectedInstance || !editable) return;
+    if (!selectedAgent || !editable) return;
     try {
       const res = await writeMutation.mutateAsync({
         path,
@@ -113,7 +124,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
         );
         if (!ok) {
           // Refresh from disk and leave draft intact so the user can merge.
-          const fresh = await fetchFileContent(selectedInstance, path);
+          const fresh = await fetchFileContent(selectedAgent, path);
           setBaseMtimeMs(fresh.mtimeMs);
           return;
         }
@@ -123,17 +134,32 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
           setEditMode(false);
           showToast({ kind: "success", message: `Saved ${path}` });
         } catch (err2) {
-          showToast({ kind: "error", message: err2 instanceof Error ? err2.message : "Save failed" });
+          showToast({
+            kind: "error",
+            message: err2 instanceof Error ? err2.message : "Save failed",
+          });
         }
         return;
       }
       showToast({ kind: "error", message: msg });
     }
-  }, [selectedInstance, editable, writeMutation, path, draft, baseMtimeMs, showToast, showConfirm]);
+  }, [
+    selectedAgent,
+    editable,
+    writeMutation,
+    path,
+    draft,
+    baseMtimeMs,
+    showToast,
+    showConfirm,
+  ]);
 
   const cancelEdit = useCallback(async () => {
     if (dirty) {
-      const ok = await showConfirm("Discard unsaved changes?", "Unsaved changes");
+      const ok = await showConfirm(
+        "Discard unsaved changes?",
+        "Unsaved changes",
+      );
       if (!ok) return;
     }
     setDraft(content);
@@ -249,7 +275,11 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
           </Button>
         )}
       </div>
-      <div className={editMode ? "flex-1 overflow-hidden p-2" : "flex-1 overflow-auto p-4"}>
+      <div
+        className={
+          editMode ? "flex-1 overflow-hidden p-2" : "flex-1 overflow-auto p-4"
+        }
+      >
         {editMode ? (
           <CodeEditor
             value={draft}
@@ -274,7 +304,9 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
         ) : binary && !content ? (
           <div className="py-12 text-center text-[13px] text-muted-foreground">
             <p>File too large to preview</p>
-            <p className="mt-1 text-[11px]">Files over 10 MB cannot be displayed</p>
+            <p className="mt-1 text-[11px]">
+              Files over 10 MB cannot be displayed
+            </p>
           </div>
         ) : binary ? (
           <div>

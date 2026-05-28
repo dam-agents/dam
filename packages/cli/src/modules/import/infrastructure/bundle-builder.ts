@@ -6,7 +6,7 @@ import { pipeline } from "node:stream/promises";
 import { createGzip } from "node:zlib";
 import { pack as tarPack } from "tar-stream";
 import { err, ok, type Result } from "../../../result.js";
-import { EXIT_IMPORT_SIGINT } from "../commands/exit-codes.js";
+import { EXIT_SIGINT } from "../../shared/exit-codes.js";
 
 /** Mirror of packages/ui/src/modules/files/api/import-bundle.ts EXCLUDE_FROM_IMPORT. */
 export const EXCLUDE_FROM_IMPORT = new Set([
@@ -36,11 +36,13 @@ export type BundleError = {
 };
 
 export interface BundleBuilder {
-  pack(args: readonly ResolvedArg[]): Promise<Result<PackedBundle, BundleError>>;
+  pack(
+    args: readonly ResolvedArg[],
+  ): Promise<Result<PackedBundle, BundleError>>;
 }
 
 /** Validate raw user paths once, up-front: stat, classify, collision-check,
- *  top-level exclusion-check. Cheap; runs before instance resolution. */
+ *  top-level exclusion-check. Cheap; runs before agent resolution. */
 export async function resolveArgs(
   paths: readonly string[],
 ): Promise<Result<ResolvedArg[], BundleError>> {
@@ -67,7 +69,10 @@ export async function resolveArgs(
     try {
       st = await lstat(abs);
     } catch (e) {
-      return err({ kind: "bundle-failed", reason: `'${input}': ${(e as Error).message}` });
+      return err({
+        kind: "bundle-failed",
+        reason: `'${input}': ${(e as Error).message}`,
+      });
     }
     if (st.isSymbolicLink()) {
       return err({
@@ -104,7 +109,7 @@ export function createBundleBuilder(): BundleBuilder {
         } catch {
           // best effort — process is exiting
         }
-        process.exit(EXIT_IMPORT_SIGINT);
+        process.exit(EXIT_SIGINT);
       };
       process.once("SIGINT", onSigint);
 
@@ -126,7 +131,10 @@ export function createBundleBuilder(): BundleBuilder {
   };
 }
 
-async function writeBundle(args: readonly ResolvedArg[], tmpPath: string): Promise<void> {
+async function writeBundle(
+  args: readonly ResolvedArg[],
+  tmpPath: string,
+): Promise<void> {
   const pack = tarPack();
   const sink = createWriteStream(tmpPath);
   const pipeDone = pipeline(pack, createGzip(), sink);
@@ -146,7 +154,11 @@ async function writeBundle(args: readonly ResolvedArg[], tmpPath: string): Promi
   }
 }
 
-async function emit(pack: ReturnType<typeof tarPack>, abs: string, name: string): Promise<void> {
+async function emit(
+  pack: ReturnType<typeof tarPack>,
+  abs: string,
+  name: string,
+): Promise<void> {
   let st;
   try {
     st = await lstat(abs);
@@ -158,8 +170,9 @@ async function emit(pack: ReturnType<typeof tarPack>, abs: string, name: string)
 
   if (st.isDirectory()) {
     await new Promise<void>((res, rej) => {
-      pack.entry({ name: `${name}/`, type: "directory", mode: 0o777 }, (e: Error | null | undefined) =>
-        e ? rej(e) : res(),
+      pack.entry(
+        { name: `${name}/`, type: "directory", mode: 0o777 },
+        (e: Error | null | undefined) => (e ? rej(e) : res()),
       );
     });
     const children = await readdir(abs);

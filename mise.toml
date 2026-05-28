@@ -1,5 +1,5 @@
 [tools]
-nodejs = "22"
+nodejs = "24"
 
 # Go
 go = "1.24"
@@ -12,6 +12,7 @@ kubeconform = "latest"
 # misc
 fd = "latest"
 yq = "latest"
+gum = "latest"
 
 [settings]
 experimental = true
@@ -24,11 +25,14 @@ postinstall = ["{{ mise_bin }} setup"]
 [task_config]
 includes = [
     "./tasks.toml",
-    "packages/ui/tasks.toml",
-    "packages/controller/tasks.toml",
-    "packages/api-server/tasks.toml",
     "packages/agent-runtime/tasks.toml",
+    "packages/agent-runtime-api/tasks.toml",
+    "packages/api-server/tasks.toml",
+    "packages/api-server-api/tasks.toml",
     "packages/cli/tasks.toml",
+    "packages/controller/tasks.toml",
+    "packages/db/tasks.toml",
+    "packages/ui/tasks.toml",
     "deploy/helm/tasks.toml",
     "deploy/tasks.toml",
 ]

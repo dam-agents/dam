@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   parseEnvFlag,
-  validateInstanceName,
-} from "../modules/instance/commands/create-helpers.js";
+  validateAgentName,
+} from "../modules/agent/commands/create-helpers.js";
 
 describe("parseEnvFlag", () => {
   it("parses KEY=VAL into a single EnvVar", () => {
@@ -23,12 +23,18 @@ describe("parseEnvFlag", () => {
 
   it("rejects entries without an equals sign", () => {
     const r = parseEnvFlag(["KEY"]);
-    expect(r).toEqual({ ok: false, error: { kind: "missing-equals", input: "KEY" } });
+    expect(r).toEqual({
+      ok: false,
+      error: { kind: "missing-equals", input: "KEY" },
+    });
   });
 
   it("rejects names that don't match [A-Z_][A-Z0-9_]*", () => {
     const r = parseEnvFlag(["123KEY=foo"]);
-    expect(r).toEqual({ ok: false, error: { kind: "invalid-name", key: "123KEY" } });
+    expect(r).toEqual({
+      ok: false,
+      error: { kind: "invalid-name", key: "123KEY" },
+    });
   });
 
   it("splits on the first `=` so the value may contain more", () => {
@@ -56,20 +62,23 @@ describe("parseEnvFlag", () => {
   });
 });
 
-describe("validateInstanceName", () => {
+describe("validateAgentName", () => {
   it("accepts a normal name", () => {
-    expect(validateInstanceName("foo").ok).toBe(true);
+    expect(validateAgentName("foo").ok).toBe(true);
   });
 
-  it("accepts names that merely contain `inst-` (only the literal prefix is reserved)", () => {
-    expect(validateInstanceName("instance-foo").ok).toBe(true);
+  it("accepts names that merely contain `agent-` (only the literal prefix is reserved)", () => {
+    expect(validateAgentName("my-agent-foo").ok).toBe(true);
   });
 
-  it("rejects names starting with `inst-`", () => {
-    expect(validateInstanceName("inst-foo")).toEqual({ ok: false, error: "reserved-prefix" });
+  it("rejects names starting with `agent-`", () => {
+    expect(validateAgentName("agent-foo")).toEqual({
+      ok: false,
+      error: "reserved-prefix",
+    });
   });
 
   it("rejects the empty string", () => {
-    expect(validateInstanceName("")).toEqual({ ok: false, error: "empty" });
+    expect(validateAgentName("")).toEqual({ ok: false, error: "empty" });
   });
 });

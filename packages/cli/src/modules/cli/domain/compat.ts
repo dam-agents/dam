@@ -102,7 +102,10 @@ function parseSemver(v: string): ParsedSemver {
   };
 }
 
-function cmpNum3(a: [number, number, number], b: [number, number, number]): -1 | 0 | 1 {
+function cmpNum3(
+  a: [number, number, number],
+  b: [number, number, number],
+): -1 | 0 | 1 {
   for (let i = 0; i < 3; i++) {
     if (a[i]! < b[i]!) return -1;
     if (a[i]! > b[i]!) return 1;

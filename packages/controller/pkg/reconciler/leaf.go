@@ -54,7 +54,7 @@ func BuildEnvoyLeafCertificate(instanceName string, cfg *config.Config, ownerCM 
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      EnvoyLeafSecretName(instanceName),
 			Namespace: cfg.Namespace,
-			Labels:    map[string]string{"agent-platform.ai/instance": instanceName},
+			Labels:    map[string]string{LabelAgent: instanceName},
 			OwnerReferences: []metav1.OwnerReference{
 				*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
 			},

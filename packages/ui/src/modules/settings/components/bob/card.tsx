@@ -1,4 +1,8 @@
-import { bobEnvMappings, PROVIDERS, type SecretView } from "../../../../types.js";
+import {
+  bobEnvMappings,
+  PROVIDERS,
+  type SecretView,
+} from "../../../../types.js";
 import { useProviderActions } from "../use-provider-actions.js";
 import { BobConnected } from "./connected.js";
 import { BobForm } from "./form.js";
@@ -15,7 +19,9 @@ export function BobCard({ secret }: { secret?: SecretView }) {
     return (
       <BobConnected
         secret={secret}
-        onRemove={() => actions.remove(secret.id, `Remove ${NAME} API key?`, "Remove Key")}
+        onRemove={() =>
+          actions.remove(secret.id, `Remove ${NAME} API key?`, "Remove Key")
+        }
         onSave={({ value, pins }) =>
           actions.update({
             id: secret.id,

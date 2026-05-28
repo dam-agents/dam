@@ -18,14 +18,17 @@ import (
 
 const ns = "test-agents"
 
-func instanceCM(name, desiredState string) *corev1.ConfigMap {
+// agentCM builds a merged Agent ConfigMap (ADR-046). Lifecycle tests need
+// the bare minimum that ParseAgentSpec accepts plus the runtime fields the
+// wake path mutates.
+func agentCM(name, desiredState string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name, Namespace: ns,
-			Labels: map[string]string{"agent-platform.ai/type": "agent-instance"},
+			Labels: map[string]string{"agent-platform.ai/type": "agent"},
 		},
 		Data: map[string]string{
-			"spec.yaml": "version: agent-platform.ai/v1\ndesiredState: " + desiredState + "\n",
+			"spec.yaml": "version: agent-platform.ai/v1\nimage: foo\ndesiredState: " + desiredState + "\n",
 		},
 	}
 }
@@ -57,7 +60,7 @@ func shortPoll(l *Lifecycle) *Lifecycle {
 }
 
 func TestEnsureReady_PodAlreadyReady(t *testing.T) {
-	client := fake.NewSimpleClientset(instanceCM("my-instance", "running"), readyPod("my-instance"))
+	client := fake.NewSimpleClientset(agentCM("my-instance", "running"), readyPod("my-instance"))
 	var updates int32
 	client.PrependReactor("update", "configmaps", func(k8stesting.Action) (bool, runtime.Object, error) {
 		atomic.AddInt32(&updates, 1)
@@ -74,7 +77,7 @@ func TestEnsureReady_PodAlreadyReady(t *testing.T) {
 }
 
 func TestEnsureReady_Hibernated_WakesAndWaits(t *testing.T) {
-	client := fake.NewSimpleClientset(instanceCM("my-instance", "hibernated"))
+	client := fake.NewSimpleClientset(agentCM("my-instance", "hibernated"))
 	l := shortPoll(New(client, ns))
 	// Simulate reconciler creating the pod a bit after wake.
 	go func() {
@@ -92,7 +95,7 @@ func TestEnsureReady_Hibernated_WakesAndWaits(t *testing.T) {
 func TestEnsureReady_PodAbsent_ThenAppearsReady(t *testing.T) {
 	// desiredState=running but pod hasn't been created yet — the race this
 	// whole primitive exists to handle.
-	client := fake.NewSimpleClientset(instanceCM("my-instance", "running"))
+	client := fake.NewSimpleClientset(agentCM("my-instance", "running"))
 	l := shortPoll(New(client, ns))
 	go func() {
 		time.Sleep(20 * time.Millisecond)
@@ -103,7 +106,7 @@ func TestEnsureReady_PodAbsent_ThenAppearsReady(t *testing.T) {
 }
 
 func TestEnsureReady_TimeoutWhenPodNeverReady(t *testing.T) {
-	client := fake.NewSimpleClientset(instanceCM("my-instance", "running"), notReadyPod("my-instance"))
+	client := fake.NewSimpleClientset(agentCM("my-instance", "running"), notReadyPod("my-instance"))
 	l := shortPoll(New(client, ns))
 
 	err := l.EnsureReady(context.Background(), "my-instance")
@@ -112,7 +115,7 @@ func TestEnsureReady_TimeoutWhenPodNeverReady(t *testing.T) {
 }
 
 func TestEnsureReady_Concurrent_SingleFlight(t *testing.T) {
-	client := fake.NewSimpleClientset(instanceCM("my-instance", "hibernated"))
+	client := fake.NewSimpleClientset(agentCM("my-instance", "hibernated"))
 	var cmUpdates int32
 	client.PrependReactor("update", "configmaps", func(k8stesting.Action) (bool, runtime.Object, error) {
 		atomic.AddInt32(&cmUpdates, 1)
@@ -147,8 +150,8 @@ func TestEnsureReady_Concurrent_SingleFlight(t *testing.T) {
 
 func TestEnsureReady_ConcurrentDifferentInstances_NoCrossBlock(t *testing.T) {
 	client := fake.NewSimpleClientset(
-		instanceCM("a", "hibernated"),
-		instanceCM("b", "hibernated"),
+		agentCM("a", "hibernated"),
+		agentCM("b", "hibernated"),
 		readyPod("a"),
 		readyPod("b"),
 	)
@@ -211,7 +214,7 @@ func TestPollUntilReady_ContextCancelled(t *testing.T) {
 // --- wakeIfHibernated ---
 
 func TestWakeIfHibernated_WakesInstance(t *testing.T) {
-	client := fake.NewSimpleClientset(instanceCM("my-instance", "hibernated"))
+	client := fake.NewSimpleClientset(agentCM("my-instance", "hibernated"))
 	l := New(client, ns)
 	require.NoError(t, l.wakeIfHibernated(context.Background(), "my-instance"))
 
@@ -221,7 +224,7 @@ func TestWakeIfHibernated_WakesInstance(t *testing.T) {
 }
 
 func TestWakeIfHibernated_NoopWhenRunning(t *testing.T) {
-	client := fake.NewSimpleClientset(instanceCM("my-instance", "running"))
+	client := fake.NewSimpleClientset(agentCM("my-instance", "running"))
 	l := New(client, ns)
 	require.NoError(t, l.wakeIfHibernated(context.Background(), "my-instance"))
 

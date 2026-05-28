@@ -6,7 +6,7 @@ import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
-import { useAgents } from "../../agents/api/queries.js";
+import { useAgentsList } from "../../agents/api/queries.js";
 import { AgentEgressEditor } from "../components/agent-egress-editor.js";
 
 /**
@@ -17,7 +17,7 @@ import { AgentEgressEditor } from "../components/agent-egress-editor.js";
 export function AgentEgressView() {
   const agentId = useStore((s) => s.agentId);
   const setView = useStore((s) => s.setView);
-  const { data: agents = [] } = useAgents();
+  const agents = useAgentsList();
 
   const agent = useMemo(
     () => agents.find((a) => a.id === agentId) ?? null,

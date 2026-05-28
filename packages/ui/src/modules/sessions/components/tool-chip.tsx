@@ -26,7 +26,8 @@ function stripFences(text: string): string {
 const statusIcon = (status: string) => {
   if (status === "completed") return <Check size={12} className="shrink-0" />;
   if (status === "failed") return <X size={12} className="shrink-0" />;
-  if (status === "in_progress" || status === "running") return <Loader size={11} className="anim-spin shrink-0" />;
+  if (status === "in_progress" || status === "running")
+    return <Loader size={11} className="anim-spin shrink-0" />;
   return null;
 };
 
@@ -44,7 +45,11 @@ export function ToolChip({ chip }: { chip: T }) {
         onClick={hasContent ? () => setOpen(o => !o) : undefined}
       >
         {hasContent ? (
-          open ? <ChevronDown size={12} className="shrink-0" /> : <ChevronRight size={12} className="shrink-0" />
+          open ? (
+            <ChevronDown size={12} className="shrink-0" />
+          ) : (
+            <ChevronRight size={12} className="shrink-0" />
+          )
         ) : null}
         {statusIcon(chip.status)}
         <span className="font-semibold truncate">{chip.title}</span>

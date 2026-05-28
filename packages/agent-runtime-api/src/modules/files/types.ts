@@ -1,11 +1,20 @@
 import type { Result } from "../../result.js";
 
+export interface DirEntry {
+  name: string;
+  type: "file" | "dir";
+}
+
+export type DirListResult =
+  | { path: string; ok: true; entries: DirEntry[] }
+  | { path: string; ok: false; error: "not-found" | "forbidden" };
+
 export interface FileReadResult {
   path: string;
-  content?: string;
-  binary?: boolean;
-  mimeType?: string;
-  mtimeMs?: number;
+  content: string;
+  binary: boolean;
+  mimeType: string;
+  mtimeMs: number;
 }
 
 export interface FileWriteOk {
@@ -23,8 +32,13 @@ export type FilesDomainError =
   | { kind: "PayloadTooLarge"; detail: string };
 
 export interface FilesService {
-  buildTree: () => { path: string; type: "file" | "dir" }[];
-  readFileSafe: (rel: string) => Promise<Result<FileReadResult, FilesDomainError>>;
+  /** Snapshot a set of directories in one call. Each path's outcome is
+   *  reported independently — one missing dir does not abort the batch.
+   *  Empty string lists the working-directory root. */
+  listDirs: (paths: string[]) => Promise<DirListResult[]>;
+  readFileSafe: (
+    rel: string,
+  ) => Promise<Result<FileReadResult, FilesDomainError>>;
   /** Overwrite an existing file. Errors with Conflict when expectedMtimeMs is
    *  provided and the file was modified in the meantime. */
   writeFileSafe: (
@@ -34,7 +48,10 @@ export interface FilesService {
   ) => Promise<Result<FileWriteOk, FilesDomainError>>;
   /** Create a new file. Errors with AlreadyExists when the path is taken.
    *  Auto-creates missing parent directories. */
-  createFileSafe: (rel: string, content: string) => Promise<Result<FileWriteOk, FilesDomainError>>;
+  createFileSafe: (
+    rel: string,
+    content: string,
+  ) => Promise<Result<FileWriteOk, FilesDomainError>>;
   /** Create a directory (recursive mkdir). */
   mkdirSafe: (rel: string) => Promise<Result<{ ok: true }, FilesDomainError>>;
   /** Move/rename a file or directory. Errors with AlreadyExists when the

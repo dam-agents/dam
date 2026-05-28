@@ -235,9 +235,10 @@ export function AddAgentDialog({
       // If we were in pass-through mode, the user is now building a
       // multi-file import — fold the raw bundle in as a regular file so
       // it's still included.
-      const base = importRawBundle && prev.length === 0
-        ? [{ path: importRawBundle.name, file: importRawBundle }]
-        : prev;
+      const base =
+        importRawBundle && prev.length === 0
+          ? [{ path: importRawBundle.name, file: importRawBundle }]
+          : prev;
       const seen = new Set(base.map((e) => e.path));
       const merged = [...base];
       for (const e of kept) {
@@ -282,11 +283,11 @@ export function AddAgentDialog({
   // the folder wrapper.
   const handleIncoming = (incoming: BundleEntry[]) => {
     if (
-      incoming.length === 1
-      && isTarballName(incoming[0].path)
-      && !incoming[0].path.includes("/")
-      && importEntries.length === 0
-      && !importRawBundle
+      incoming.length === 1 &&
+      isTarballName(incoming[0].path) &&
+      !incoming[0].path.includes("/") &&
+      importEntries.length === 0 &&
+      !importRawBundle
     ) {
       setImportRawBundle(incoming[0].file);
       setImportDropped(0);
@@ -343,7 +344,13 @@ export function AddAgentDialog({
   } = useForm<AddAgentValues>({
     resolver: zodResolver(addAgentSchema),
     mode: "onChange",
-    defaultValues: { name: "", description: "", selSecrets: [], selApps: [], egressPreset: "trusted" },
+    defaultValues: {
+      name: "",
+      description: "",
+      selSecrets: [],
+      selApps: [],
+      egressPreset: "trusted",
+    },
   });
   const { errors, isSubmitting, isValid } = formState;
 
@@ -387,20 +394,7 @@ export function AddAgentDialog({
   // Join the api-server-driven OAuth app connections with their K8s
   // credential Secrets so the picker can render them in the "Apps"
   // subsection while the grant flows through the secret-access mechanism.
-  const oauthAppEntries = useMemo<OAuthAppEntry[]>(() => {
-    const secretByName = new Map(secrets.map((s) => [s.name, s]));
-    return oauthAppConnections.flatMap((conn) => {
-      const mirror = secretByName.get(`${APP_OAUTH_SECRET_PREFIX}${conn.connectionId}`);
-      if (!mirror) return [];
-      return [{
-        secretId: mirror.id,
-        appId: conn.appId,
-        displayName: conn.displayName,
-        hostPattern: conn.hostPattern,
-        expired: conn.expired,
-      }];
-    });
-  }, [oauthAppConnections, secrets]);
+  const oauthAppEntries: OAuthAppEntry[] = [];
 
   const pickTemplate = (tmpl: TemplateView) => {
     setSelectedTemplate(tmpl);
@@ -819,7 +813,9 @@ export function AddAgentDialog({
                   if (!files || files.length === 0) return;
                   handleIncoming(
                     Array.from(files).map((f) => ({
-                      path: (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name,
+                      path:
+                        (f as File & { webkitRelativePath?: string })
+                          .webkitRelativePath || f.name,
                       file: f,
                     })),
                   );
@@ -854,7 +850,8 @@ export function AddAgentDialog({
                   }
                 }}
                 onDragLeave={(e) => {
-                  if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+                  if (e.currentTarget.contains(e.relatedTarget as Node | null))
+                    return;
                   setDropActive(false);
                 }}
                 onDrop={(e) => {
@@ -957,7 +954,9 @@ export function AddAgentDialog({
                       ) : (
                         <FileIcon size={12} className="text-muted-foreground shrink-0" />
                       )}
-                      <span className="font-mono truncate" title={g.name}>{g.name}</span>
+                      <span className="font-mono truncate" title={g.name}>
+                        {g.name}
+                      </span>
                       {g.isFolder && (
                         <span className="text-muted-foreground shrink-0">({g.count})</span>
                       )}
@@ -996,7 +995,7 @@ export function AddAgentDialog({
             <ConnectionsPicker
               loading={loadSecrets}
               secrets={secrets}
-              apps={apps}
+              apps={apps as unknown as AppConnectionView[]}
               oauthApps={oauthAppEntries}
               selSecrets={selSecretsSet}
               selApps={selAppsSet}

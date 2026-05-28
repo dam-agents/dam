@@ -1,4 +1,8 @@
-import type { AcpPermissionOption, AcpPermissionOptionKind, ApprovalVerdict } from "api-server-api";
+import type {
+  AcpPermissionOption,
+  AcpPermissionOptionKind,
+  ApprovalVerdict,
+} from "api-server-api";
 
 /** Pick the harness's option id matching the inbox action. Falls back when
  *  the harness omits `kind` or doesn't carry the exact match — better to
@@ -8,10 +12,13 @@ export function pickOptionId(
   verdict: ApprovalVerdict,
 ): string | null {
   const want: AcpPermissionOptionKind =
-    verdict === "deny" ? "reject_always" :
-    verdict === "deny_once" ? "reject_once" :
-    verdict === "allow" ? "allow_always" :
-    "allow_once";
+    verdict === "deny"
+      ? "reject_always"
+      : verdict === "deny_once"
+        ? "reject_once"
+        : verdict === "allow"
+          ? "allow_always"
+          : "allow_once";
   const direct = options.find((o) => o.kind === want);
   if (direct) return direct.optionId;
   const isAllow = verdict === "allow" || verdict === "allow_once";
@@ -26,7 +33,11 @@ export function pickOptionId(
 export interface WrapperResponseFrame {
   jsonrpc: "2.0";
   id: number | string;
-  result: { outcome: { outcome: "selected"; optionId: string } | { outcome: "cancelled" } };
+  result: {
+    outcome:
+      | { outcome: "selected"; optionId: string }
+      | { outcome: "cancelled" };
+  };
 }
 
 export function buildAcpPermissionResponse(

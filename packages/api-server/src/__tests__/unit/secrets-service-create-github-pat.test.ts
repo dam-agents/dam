@@ -32,7 +32,9 @@ function makePort(opts: { failSecondCreate?: boolean } = {}) {
         hostPattern: input.hostPattern,
         ...(input.pathPattern ? { pathPattern: input.pathPattern } : {}),
         ...(input.envMappings ? { envMappings: input.envMappings } : {}),
-        ...(input.injectionConfig ? { injectionConfig: input.injectionConfig } : {}),
+        ...(input.injectionConfig
+          ? { injectionConfig: input.injectionConfig }
+          : {}),
         ...(input.authMode ? { authMode: input.authMode } : {}),
         createdAt: new Date().toISOString(),
       });
@@ -67,9 +69,16 @@ describe("secrets-service.createGithubPat", () => {
   it("creates two generic secrets with matching name and returns both ids", async () => {
     const { port, created, store } = makePort();
     const { port: grants } = makeGrants();
-    const svc = createSecretsService({ k8sPort: port, grants, ownerSub: "owner-1" });
+    const svc = createSecretsService({
+      k8sPort: port,
+      grants,
+      ownerSub: "owner-1",
+    });
 
-    const result = await svc.createGithubPat({ name: "guido", token: "ghp_test123" });
+    const result = await svc.createGithubPat({
+      name: "guido",
+      token: "ghp_test123",
+    });
 
     expect(result.name).toBe("guido");
     expect(result.apiSecretId).toBeTruthy();
@@ -86,17 +95,25 @@ describe("secrets-service.createGithubPat", () => {
       name: "guido",
       value: "ghp_test123",
       hostPattern: "api.github.com",
-      injectionConfig: { headerName: "Authorization", valueFormat: "Bearer {value}" },
+      injectionConfig: {
+        headerName: "Authorization",
+        valueFormat: "Bearer {value}",
+      },
       envMappings: [{ envName: "GH_TOKEN", placeholder: "dummy-placeholder" }],
     });
 
-    const expectedBasic = Buffer.from("x-access-token:ghp_test123").toString("base64");
+    const expectedBasic = Buffer.from("x-access-token:ghp_test123").toString(
+      "base64",
+    );
     expect(gitCall).toMatchObject({
       type: "generic",
       name: "guido",
       value: expectedBasic,
       hostPattern: "github.com",
-      injectionConfig: { headerName: "Authorization", valueFormat: "Basic {value}" },
+      injectionConfig: {
+        headerName: "Authorization",
+        valueFormat: "Basic {value}",
+      },
     });
     expect(gitCall.envMappings).toBeUndefined();
 
@@ -105,9 +122,15 @@ describe("secrets-service.createGithubPat", () => {
   });
 
   it("rolls back the first secret if the second create fails", async () => {
-    const { port, created, deleted, store } = makePort({ failSecondCreate: true });
+    const { port, created, deleted, store } = makePort({
+      failSecondCreate: true,
+    });
     const { port: grants } = makeGrants();
-    const svc = createSecretsService({ k8sPort: port, grants, ownerSub: "owner-1" });
+    const svc = createSecretsService({
+      k8sPort: port,
+      grants,
+      ownerSub: "owner-1",
+    });
 
     await expect(
       svc.createGithubPat({ name: "guido", token: "ghp_test123" }),

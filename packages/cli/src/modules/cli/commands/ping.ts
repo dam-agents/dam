@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { SERVER_ENV_VAR } from "../domain/config.js";
 import type {
   MalformedConfigError,
   MissingConfigError,
@@ -7,21 +8,14 @@ import type {
 import type { CompatService } from "../services/compat-service.js";
 import type { ConfigService } from "../services/config-service.js";
 import {
-  EXIT_COMPAT_BELOW_FLOOR,
+  EXIT_BELOW_FLOOR,
   EXIT_RUNTIME_FAILURE,
-} from "./exit-codes.js";
+} from "../../shared/exit-codes.js";
 
-export interface PingCommandDeps {
+export function buildPingCommand(deps: {
   service: CompatService;
-  /** Used to resolve the Active Host up-front so probe failures can carry
-   *  it in the user-facing message. */
   configService: ConfigService;
-  /** Env var name for the server URL — surfaced verbatim in the
-   *  `no server configured` setup hint. */
-  serverEnvVar: string;
-}
-
-export function buildPingCommand(deps: PingCommandDeps): Command {
+}): Command {
   return new Command("ping")
     .description("Reach the configured Platform server and check compatibility")
     .option(
@@ -31,20 +25,16 @@ export function buildPingCommand(deps: PingCommandDeps): Command {
     .action(async (opts: { server?: string }) => {
       const flag = opts.server ? { server: opts.server } : undefined;
 
-      // Resolve the host first so probe failures can include it.
-      // missing-config / malformed-config short-circuit before we hit the
-      // wire; they don't have a host anyway.
       const cfg = await deps.configService.getResolved({ flag });
       if (!cfg.ok) {
-        printResolveError(cfg.error, "", deps.serverEnvVar);
+        printResolveError(cfg.error, "");
         process.exit(EXIT_RUNTIME_FAILURE);
       }
       const host = cfg.value.server;
 
       const result = await deps.service.check({ flag });
-
       if (!result.ok) {
-        printResolveError(result.error, host, deps.serverEnvVar);
+        printResolveError(result.error, host);
         process.exit(EXIT_RUNTIME_FAILURE);
       }
 
@@ -63,7 +53,7 @@ export function buildPingCommand(deps: PingCommandDeps): Command {
           process.stderr.write(
             `error: CLI ${verdict.localCli} is below the server's minimum required version ${verdict.serverMinClient}; upgrade and retry\n`,
           );
-          process.exit(EXIT_COMPAT_BELOW_FLOOR);
+          process.exit(EXIT_BELOW_FLOOR);
       }
     });
 }
@@ -71,32 +61,27 @@ export function buildPingCommand(deps: PingCommandDeps): Command {
 function printResolveError(
   e: MissingConfigError | MalformedConfigError | ProbeError,
   host: string,
-  serverEnvVar: string,
 ): void {
   switch (e.kind) {
     case "missing-config":
       process.stderr.write(
-        `error: no server configured; run \`dam config set server <url>\` or set \`${serverEnvVar}\`\n`,
+        `error: no server configured; run \`dam config set server <url>\` or set \`${SERVER_ENV_VAR}\`\n`,
       );
       return;
     case "malformed-config":
       process.stderr.write(`error: ${e.reason}\n`);
       return;
-    case "probe-error":
-      process.stderr.write(`error: ${describeProbeError(e, host)}\n`);
+    case "probe-error": {
+      const desc =
+        e.code === "network"
+          ? `cannot reach server \`${host}\`: ${e.message}`
+          : e.code === "timeout"
+            ? `server \`${host}\` did not respond in time: ${e.message}`
+            : e.code === "non-ok-status"
+              ? `server \`${host}\` returned ${e.message}`
+              : `server \`${host}\` returned unexpected response: ${e.message}`;
+      process.stderr.write(`error: ${desc}\n`);
       return;
-  }
-}
-
-function describeProbeError(e: ProbeError, host: string): string {
-  switch (e.code) {
-    case "network":
-      return `cannot reach server \`${host}\`: ${e.message}`;
-    case "timeout":
-      return `server \`${host}\` did not respond in time: ${e.message}`;
-    case "non-ok-status":
-      return `server \`${host}\` returned ${e.message}`;
-    case "malformed-response":
-      return `server \`${host}\` returned unexpected response: ${e.message}`;
+    }
   }
 }

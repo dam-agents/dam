@@ -1,5 +1,6 @@
 import { CronExpressionParser } from "cron-parser";
 import rrulePkg from "rrule";
+import type { ScheduleSpec } from "api-server-api";
 
 // rrule@2.8.1 ships CJS as its Node entry (`main`) with no `exports` map,
 // so Node ESM can't pull named bindings directly — destructure the default.
@@ -46,7 +47,10 @@ interface QuietWindow {
  * i.e. one day of minute-granularity occurrences). Uses rule.all with
  * early-exit instead of a rule.after loop, which is O(N²) in rrule.js.
  */
-export function validateHasVisibleOccurrence(rruleExpr: string, windows: QuietWindow[]): void {
+export function validateHasVisibleOccurrence(
+  rruleExpr: string,
+  windows: QuietWindow[],
+): void {
   const enabled = windows.filter((w) => w.enabled);
   if (enabled.length === 0) return;
   const rule = RRule.fromString(rruleExpr);
@@ -60,7 +64,9 @@ export function validateHasVisibleOccurrence(rruleExpr: string, windows: QuietWi
     return true;
   });
   if (!visible) {
-    throw new Error("quiet hours cover every scheduled occurrence — this schedule would never fire");
+    throw new Error(
+      "quiet hours cover every scheduled occurrence — this schedule would never fire",
+    );
   }
 }
 
@@ -87,4 +93,25 @@ function parseHHMM(s: string): number | null {
   const mi = Number(match[2]);
   if (h < 0 || h > 23 || mi < 0 || mi > 59) return null;
   return h * 60 + mi;
+}
+
+export function nextFireAt(spec: ScheduleSpec, from: Date): Date | null {
+  if (spec.type === "cron") {
+    try {
+      const cron = CronExpressionParser.parse(spec.cron, { currentDate: from });
+      return cron.next().toDate();
+    } catch {
+      return null;
+    }
+  }
+  const rule = RRule.fromString(spec.rrule);
+  const enabled = (spec.quietHours ?? []).filter((w) => w.enabled);
+  let cursor = from;
+  for (let i = 0; i < 1440; i++) {
+    const next = rule.after(cursor, false);
+    if (!next) return null;
+    if (enabled.length === 0 || !isInQuietHours(next, enabled)) return next;
+    cursor = next;
+  }
+  return null;
 }

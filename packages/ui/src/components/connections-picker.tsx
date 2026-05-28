@@ -14,7 +14,6 @@ import { OAuthAppIcon } from "../modules/connections/components/oauth-app-icon.j
 import { AnthropicIcon } from "../modules/settings/components/brand-icons.js";
 import type { SecretView } from "../types.js";
 import {
-  APP_OAUTH_SECRET_PREFIX,
   isMcpSecret,
   isProviderPresetType,
   mcpHostnameFromSecretName,
@@ -24,16 +23,16 @@ import { HoverTooltip } from "./hover-tooltip.js";
 
 /**
  * One row in the picker's "OAuth Apps" subsection. Joins the
- * api-server-managed app connection (host, displayName, expiry, appId for
- * the brand icon) with the K8s credential Secret's id (the grant target —
- * agents see the token via the Envoy sidecar's `Authorization: Bearer`
- * injection on `hostPattern`).
+ * api-server-managed app connection (hosts, displayName, expiry, appId
+ * for the brand icon) with the K8s credential Secret's id (the grant
+ * target — agents see the token via Envoy injection on every host).
  */
 export interface OAuthAppEntry {
   secretId: string;
   appId: string;
   displayName: string;
-  hostPattern: string;
+  /** Non-empty; rendered comma-joined under the displayName. */
+  hosts: string[];
   expired: boolean;
 }
 
@@ -49,7 +48,9 @@ export function ConnectionsHeader() {
           />
         }
       >
-        Pick the providers, MCP servers, secrets, and apps this agent can use. Credentials are injected at request time, so the agent never sees the raw secret values.
+        Pick the providers, MCP servers, secrets, and apps this agent can use.
+        Credentials are injected at request time, so the agent never sees the
+        raw secret values.
       </HoverTooltip>
     </span>
   );
@@ -81,13 +82,8 @@ export function ConnectionsPicker({
   const providerSecrets = secrets.filter((s) => isProviderPresetType(s.type));
   const mcpSecrets = secrets.filter((s) => isMcpSecret(s));
   // Generic secrets exclude provider presets (Anthropic, IBM LiteLLM — they
-  // render under "providers") and platform-internal mirrors (MCP secrets,
-  // app-OAuth token mirrors — own subsections).
   const genericSecrets = secrets.filter(
-    (s) =>
-      s.type === "generic" &&
-      !isMcpSecret(s) &&
-      !s.name.startsWith(APP_OAUTH_SECRET_PREFIX),
+    (s) => s.type === "generic" && !isMcpSecret(s),
   );
 
   // Assigned app-ids that are no longer in the live `apps` list. Can happen
@@ -136,9 +132,10 @@ export function ConnectionsPicker({
             ))}
             {providerSecrets.filter((s) => selSecrets.has(s.id)).length > 1 && (
               <div className="text-[11px] text-warning font-medium px-1 pt-1">
-                Granting more than one Anthropic-family provider to a single agent
-                produces undefined behavior — only one set of <code className="font-mono">ANTHROPIC_*</code>{" "}
-                env vars actually wins at runtime.
+                Granting more than one Anthropic-family provider to a single
+                agent produces undefined behavior — only one set of{" "}
+                <code className="font-mono">ANTHROPIC_*</code> env vars actually
+                wins at runtime.
               </div>
             )}
           </Section>
@@ -171,7 +168,9 @@ export function ConnectionsPicker({
           </Section>
         )}
 
-        {(apps.length > 0 || staleAppIds.length > 0 || oauthApps.length > 0) && (
+        {(apps.length > 0 ||
+          staleAppIds.length > 0 ||
+          oauthApps.length > 0) && (
           <Section title="Apps">
             {oauthApps.map((entry) => (
               <OAuthAppItemRow
@@ -184,10 +183,15 @@ export function ConnectionsPicker({
             {apps.map((a) => (
               <AppItemRow
                 key={a.id}
-                label={a.label}
-                identity={a.identity}
+                label={a.name}
+                identity={undefined}
                 status={a.status}
-                envNames={a.envMappings?.map((m) => m.envName) ?? []}
+                envNames={a.contributions
+                  .filter(
+                    (c): c is Extract<typeof c, { kind: "env" }> =>
+                      c.kind === "env",
+                  )
+                  .map((c) => c.name)}
                 checked={selApps.has(a.id)}
                 onToggle={() => onToggleApp(a.id)}
               />
@@ -271,7 +275,9 @@ function SecretItemRow({
 }) {
   const headerName = secret.injectionConfig?.headerName;
   const customHeader =
-    headerName && headerName.toLowerCase() !== "authorization" ? headerName : null;
+    headerName && headerName.toLowerCase() !== "authorization"
+      ? headerName
+      : null;
   const envNames = secret.envMappings?.map((m) => m.envName) ?? [];
   return (
     <label

@@ -17,7 +17,10 @@ describe("textTool wrapper", () => {
     const res = await textTool(
       "fallback",
       async () => {
-        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "instance is hibernated" });
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "instance is hibernated",
+        });
       },
       () => "ok",
     );
@@ -30,7 +33,10 @@ describe("textTool wrapper", () => {
     const res = await textTool(
       "fallback",
       async () => {
-        throw new TRPCError({ code: "NOT_FOUND", message: "skill source \"ghost\" not found" });
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: 'skill source "ghost" not found',
+        });
       },
       () => "ok",
     );

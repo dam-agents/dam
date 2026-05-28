@@ -1,4 +1,9 @@
-import type { EnvMapping, EnvVar, InjectionConfig, SecretType } from "api-server-api";
+import type {
+  EnvMapping,
+  EnvVar,
+  InjectionConfig,
+  SecretType,
+} from "api-server-api";
 import { isProviderPresetType } from "api-server-api";
 
 export type Role = "user" | "assistant";
@@ -49,7 +54,12 @@ export interface UploadedFilePart extends FilePart {
 
 export type Attachment = ImagePart | UploadedFilePart;
 
-export type MessagePart = TextPart | ThoughtPart | ImagePart | FilePart | ToolChip;
+export type MessagePart =
+  | TextPart
+  | ThoughtPart
+  | ImagePart
+  | FilePart
+  | ToolChip;
 
 export interface Message {
   id: string;
@@ -83,17 +93,19 @@ export interface LogEntry {
 export type { SessionView } from "api-server-api";
 export { SessionType } from "api-server-api";
 
-export interface TreeEntry {
-  path: string;
-  type: "file" | "dir";
-}
-
 export interface TemplateView {
   id: string;
   name: string;
   image: string;
   description?: string;
 }
+
+export type AgentState =
+  | "starting"
+  | "running"
+  | "hibernating"
+  | "hibernated"
+  | "error";
 
 export interface AgentView {
   id: string;
@@ -102,23 +114,12 @@ export interface AgentView {
   image: string;
   description?: string;
   env?: EnvVar[];
-}
-
-export type InstanceState =
-  | "starting"
-  | "running"
-  | "hibernating"
-  | "hibernated"
-  | "error";
-
-export interface InstanceView {
-  id: string;
-  name: string;
-  agentId: string;
-  description?: string;
-  state: InstanceState;
+  state: AgentState;
   error?: string;
-  channels: ({ type: "slack"; slackChannelId: string } | { type: "telegram" })[];
+  channels: (
+    | { type: "slack"; slackChannelId: string }
+    | { type: "telegram" }
+  )[];
   allowedUserEmails: string[];
 }
 
@@ -131,7 +132,7 @@ export interface QuietWindowView {
 export interface Schedule {
   id: string;
   name: string;
-  instanceId: string;
+  agentId: string;
   type: "cron" | "rrule";
   cron: string | null;
   rrule: string | null;
@@ -152,21 +153,12 @@ export interface Schedule {
 /** Prefix used for MCP OAuth secrets stored as K8s credential Secrets. */
 export const MCP_SECRET_PREFIX = "__mcp:";
 
-/** Prefix used for app-OAuth tokens stored as K8s credential Secrets by the api-server. */
-export const APP_OAUTH_SECRET_PREFIX = "__oauth:";
-
 export function isMcpSecret(s: { name: string; type: SecretType }): boolean {
   return !isProviderPresetType(s.type) && s.name.startsWith(MCP_SECRET_PREFIX);
 }
 
-/** User-visible "Secrets" — excludes provider presets (Anthropic, IBM LiteLLM)
- *  and platform-internal mirrors (MCP OAuth blobs and app-OAuth token mirrors). */
 export function isCustomSecret(s: { name: string; type: SecretType }): boolean {
-  return (
-    !isProviderPresetType(s.type) &&
-    !s.name.startsWith(MCP_SECRET_PREFIX) &&
-    !s.name.startsWith(APP_OAUTH_SECRET_PREFIX)
-  );
+  return !isProviderPresetType(s.type) && !s.name.startsWith(MCP_SECRET_PREFIX);
 }
 
 export function mcpHostnameFromSecretName(name: string): string {
@@ -192,7 +184,6 @@ export {
   bobEnvMappings,
   bobPinsFromEnvMappings,
   DEFAULT_ENV_PLACEHOLDER,
-  DEFAULT_INJECTION_CONFIG,
   IBM_LITELLM_DEFAULT_MODEL_PINS,
   ibmLitellmEnvMappings,
   ibmLitellmPinsFromEnvMappings,

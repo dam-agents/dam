@@ -1,15 +1,18 @@
-import {
-  ClientSideConnection,
-} from "@agentclientprotocol/sdk/dist/acp.js";
+import { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
 import type { AnyMessage } from "@agentclientprotocol/sdk/dist/jsonrpc.js";
 import type {
   RequestPermissionRequest,
   SessionNotification,
 } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
+import {
+  platformSessionModeChangedParamsSchema,
+  platformTurnEndedParamsSchema,
+} from "api-server-api";
 
 import { getAccessToken } from "../../auth.js";
-import { type PermissionOutcome,useStore } from "../../store.js";
+import { type PermissionOutcome, useStore } from "../../store.js";
+import { withCloseRace } from "./close-race.js";
 import type { UpdateHandler } from "./types.js";
 
 const WS_CONNECT_TIMEOUT_MS = 120_000;
@@ -17,7 +20,10 @@ const WS_CONNECT_TIMEOUT_MS = 120_000;
 function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(url);
-    const timer = setTimeout(() => { ws.close(); reject(new Error("WebSocket connect timeout")); }, WS_CONNECT_TIMEOUT_MS);
+    const timer = setTimeout(() => {
+      ws.close();
+      reject(new Error("WebSocket connect timeout"));
+    }, WS_CONNECT_TIMEOUT_MS);
     ws.onopen = () => {
       clearTimeout(timer);
       const readable = new ReadableStream<AnyMessage>({
@@ -49,10 +55,10 @@ function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
   });
 }
 
-async function wsUrl(instanceId: string): Promise<string> {
+async function wsUrl(agentId: string): Promise<string> {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const token = await getAccessToken();
-  return `${proto}//${location.host}/api/instances/${instanceId}/acp?token=${encodeURIComponent(token)}`;
+  return `${proto}//${location.host}/api/agents/${agentId}/acp?token=${encodeURIComponent(token)}`;
 }
 
 /**
@@ -69,7 +75,9 @@ async function wsUrl(instanceId: string): Promise<string> {
  *  wrapper isn't awaiting a response on this synthetic id). */
 const SYNTH_EGRESS_PREFIX = "_egress:";
 
-function awaitPermission(params: RequestPermissionRequest): Promise<PermissionOutcome> {
+function awaitPermission(
+  params: RequestPermissionRequest,
+): Promise<PermissionOutcome> {
   if (params.sessionId.startsWith(SYNTH_EGRESS_PREFIX)) {
     // v1: handled exclusively by the inbox UI. Return a never-resolving
     // promise so the SDK doesn't synthesize a response back to the wrapper —
@@ -89,11 +97,11 @@ function awaitPermission(params: RequestPermissionRequest): Promise<PermissionOu
 }
 
 export async function openConnection(
-  instanceId: string,
+  agentId: string,
   onUpdate: UpdateHandler,
 ): Promise<{ connection: ClientSideConnection; ws: WebSocket }> {
-  const { stream, ws } = await wsStream(await wsUrl(instanceId));
-  const connection = new ClientSideConnection(
+  const { stream, ws } = await wsStream(await wsUrl(agentId));
+  const raw = new ClientSideConnection(
     () => ({
       async requestPermission(params: RequestPermissionRequest) {
         return awaitPermission(params);
@@ -113,16 +121,33 @@ export async function openConnection(
       // same `onUpdate` channel as a synthetic `sessionUpdate`.
       async extNotification(method: string, params: Record<string, unknown>) {
         if (method === "platform/turnEnded") {
-          const sessionId = typeof params?.sessionId === "string" ? params.sessionId : undefined;
-          onUpdate({ sessionUpdate: "platform_turn_ended", sessionId });
+          const parsed = platformTurnEndedParamsSchema.safeParse(params);
+          if (!parsed.success) {
+            console.warn(
+              "[acp] platform/turnEnded schema mismatch:",
+              parsed.error.issues,
+            );
+            return;
+          }
+          onUpdate({ sessionUpdate: "platform_turn_ended", ...parsed.data });
         } else if (method === "platform/sessionModeChanged") {
-          const sessionId = typeof params?.sessionId === "string" ? params.sessionId : undefined;
-          const mode = typeof params?.mode === "string" ? params.mode : "chat";
-          onUpdate({ sessionUpdate: "platform_session_mode_changed", sessionId, mode });
+          const parsed =
+            platformSessionModeChangedParamsSchema.safeParse(params);
+          if (!parsed.success) {
+            console.warn(
+              "[acp] platform/sessionModeChanged schema mismatch:",
+              parsed.error.issues,
+            );
+            return;
+          }
+          onUpdate({
+            sessionUpdate: "platform_session_mode_changed",
+            ...parsed.data,
+          });
         }
       },
     }),
     stream,
   );
-  return { connection, ws };
+  return { connection: withCloseRace(raw), ws };
 }

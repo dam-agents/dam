@@ -29,25 +29,29 @@ func portInt32(p int) int32 {
 // ADR-038 paired-pod labels. `LabelPair` identifies the two pods of a single
 // agent/gateway pair; `LabelRole` distinguishes the roles inside the pair.
 //
-// Pair scope is *per orchestration unit*, not per instance: long-lived
-// instances use the instance name as the pair key, but forks use the fork
-// name (each fork has its own paired gateway, the parent's gateway is not
-// shared). The `LabelInstance` label still identifies the parent instance
-// for ext_authz / pod-IP resolver purposes — for long-lived pods it equals
-// the pair key, for fork pods it points at the parent instance so traffic
-// resolves under the parent's egress rules (ADR-027).
+// Pair scope is *per orchestration unit*, not per agent: long-lived agents
+// use the agent name as the pair key, but forks use the fork name (each
+// fork has its own paired gateway, the parent's gateway is not shared).
+// The `LabelAgent` label still identifies the parent agent for ext_authz /
+// pod-IP resolver purposes — for long-lived pods it equals the pair key,
+// for fork pods it points at the parent agent so traffic resolves under
+// the parent's egress rules (ADR-027).
 const (
-	LabelInstance = "agent-platform.ai/instance"
-	LabelPair     = "agent-platform.ai/pair"
-	LabelRole     = "agent-platform.ai/role"
-	RoleAgent     = "agent"
-	RoleGateway   = "gateway"
+	// LabelAgent points at the durable Agent ConfigMap. After ADR-046
+	// collapsed Instance into Agent, this replaces the former
+	// `agent-platform.ai/agent` label.
+	LabelAgent  = "agent-platform.ai/agent"
+	LabelPair   = "agent-platform.ai/pair"
+	LabelRole   = "agent-platform.ai/role"
+	RoleAgent   = "agent"
+	RoleGateway = "gateway"
 )
 
-// agentProxyAddr is the agent's HTTPS_PROXY value: the paired gateway pod's
-// Service DNS. Service-form is stable across gateway pod restarts (ADR-038).
-func agentProxyAddr(instanceName string, cfg *config.Config) string {
-	return fmt.Sprintf("http://%s:%d", GatewayName(instanceName), cfg.EnvoyPort)
+// agentProxyAddr is the agent's HTTPS_PROXY value — IP-direct, no DNS.
+// The agent/fork reconcilers requeue until the gateway ClusterIP is
+// assigned, so this never sees an empty IP at steady state.
+func agentProxyAddr(cfg *config.Config, gatewayClusterIP string) string {
+	return fmt.Sprintf("http://%s:%d", gatewayClusterIP, cfg.EnvoyPort)
 }
 
 // BuildAgentStatefulSet renders the agent half of the paired pod set
@@ -58,11 +62,13 @@ func agentProxyAddr(instanceName string, cfg *config.Config) string {
 // surfaced as an env var and pod annotation; no Secret material is mounted
 // into the agent pod.
 //
-// `gatewayClusterIP` is injected into `hostAliases` when `DisableDNS` is on,
-// so `HTTPS_PROXY=http://<pair>-gateway:<port>` resolves without DNS. Empty
-// when the controller doesn't have the IP yet — caller is expected to
-// fail-closed in that case.
-func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec *types.AgentSpec, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret, gatewayClusterIP string) *appsv1.StatefulSet {
+// `gatewayClusterIP` is the paired gateway Service's assigned ClusterIP,
+// used directly as the HTTPS_PROXY target. The caller requeues when
+// it's not yet assigned.
+//
+// ADR-046: there is no separate InstanceSpec anymore — the merged AgentSpec
+// carries `DesiredState`, `SecretRef`, and the single user-owned env list.
+func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret, gatewayClusterIP string) *appsv1.StatefulSet {
 	base := cfg.AgentBase
 	defaults := cfg.AgentTemplateDefaults
 
@@ -85,14 +91,14 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 	}
 
 	replicas := int32(1)
-	if instance.DesiredState == "hibernated" {
+	if agentSpec.DesiredState == "hibernated" {
 		replicas = 0
 	}
 
 	labels := map[string]string{
-		LabelInstance: name,
-		LabelPair:     name,
-		LabelRole:     RoleAgent,
+		LabelAgent: name,
+		LabelPair:  name,
+		LabelRole:  RoleAgent,
 	}
 	// Agent pods are deliberately NOT mesh participants. In ambient mode,
 	// istio-cni iptables rewrites every outbound to ztunnel:15008 before
@@ -114,7 +120,7 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 
 	caCertPath := "/etc/platform/ca/ca.crt"
 
-	proxyAddr := agentProxyAddr(name, cfg)
+	proxyAddr := agentProxyAddr(cfg, gatewayClusterIP)
 
 	// The agent container holds zero platform credentials. Inbound calls to
 	// agent-runtime's tRPC are gated by the api-server's mesh
@@ -138,35 +144,33 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 		{Name: "GIT_SSL_CAINFO", Value: caCertPath},
 		{Name: "NODE_USE_ENV_PROXY", Value: "1"},
 		{Name: "GIT_HTTP_PROXY_AUTHMETHOD", Value: "basic"},
-		{Name: "ADK_INSTANCE_ID", Value: name},
+		{Name: "PLATFORM_AGENT_ID", Value: name},
 		{Name: "API_SERVER_URL", Value: cfg.APIServerURL()},
 		{Name: "HOME", Value: agentHome},
-		{Name: "PLATFORM_MCP_URL", Value: fmt.Sprintf("%s/api/instances/%s/mcp", cfg.HarnessServerURL, name)},
+		{Name: "PLATFORM_MCP_URL", Value: fmt.Sprintf("%s/api/agents/%s/mcp", cfg.HarnessServerURL, name)},
 		// agent-runtime opens this SSE stream and materializes pod-files
 		// (gh hosts.yml today; more producers later) directly under HOME.
 		// Forks deliberately do NOT receive this env — see fork_resources.go.
-		{Name: "PLATFORM_POD_FILES_EVENTS_URL", Value: fmt.Sprintf("%s/api/instances/%s/pod-files/events", cfg.HarnessServerURL, name)},
+		{Name: "PLATFORM_POD_FILES_EVENTS_URL", Value: fmt.Sprintf("%s/api/agents/%s/pod-files/events", cfg.HarnessServerURL, name)},
 	}
 
 	// Order matters: K8s resolves duplicate env names by keeping the last
-	// occurrence, so credential placeholders < template < instance — user
-	// overrides win. The placeholders only need to satisfy the harness's
-	// "is this env set?" check; Envoy in the paired gateway overwrites the
-	// header on the wire.
+	// occurrence, so credential placeholders < agent env — user overrides
+	// win. The placeholders only need to satisfy the harness's "is this env
+	// set?" check; Envoy in the paired gateway overwrites the header on the
+	// wire. ADR-046 collapsed the former template + instance env layers
+	// into the single Agent env list.
 	env = append(env, credentialEnvVars(credentialSecrets)...)
 	for _, e := range specEnv {
-		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
-	}
-	for _, e := range instance.Env {
 		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
 	}
 
 	// EnvFrom secretRef
 	var envFrom []corev1.EnvFromSource
-	if instance.SecretRef != "" {
+	if agentSpec.SecretRef != "" {
 		envFrom = append(envFrom, corev1.EnvFromSource{
 			SecretRef: &corev1.SecretEnvSource{
-				LocalObjectReference: corev1.LocalObjectReference{Name: instance.SecretRef},
+				LocalObjectReference: corev1.LocalObjectReference{Name: agentSpec.SecretRef},
 			},
 		})
 	}
@@ -205,7 +209,7 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 			pvcs = append(pvcs, corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:   volName,
-					Labels: map[string]string{LabelInstance: name},
+					Labels: map[string]string{LabelAgent: name},
 				},
 				Spec: pvcSpec,
 			})
@@ -263,8 +267,16 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 	}
 	var initContainers []corev1.Container
 	// Egress-lockdown runs before the user init so the allow-list is in
-	// place by the time anything dials the network.
+	// place by the time anything dials the network. Two flavors: the
+	// kernel-level iptables init (works on plain OCI runtimes; needs
+	// netfilter modules in the guest, which Kata/CoCo strips) and the
+	// userspace NP-readiness gate (works everywhere — no caps, no
+	// kernel modules; verifies the NetworkPolicy is in force before
+	// releasing the workload). Whichever the chart enables fires here.
 	if ic := buildIptablesInitContainer(cfg, gatewayClusterIP); ic != nil {
+		initContainers = append(initContainers, *ic)
+	}
+	if ic := buildNPGateInitContainer(cfg, gatewayClusterIP); ic != nil {
 		initContainers = append(initContainers, *ic)
 	}
 	if initScript != "" {
@@ -288,7 +300,7 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 	// wrapper scripts and operators can detect missing auth without making
 	// a 401-eliciting request first.
 	ghAvail := "false"
-	if hasGitHubCredential(credentialSecrets) {
+	if hasGHTokenEnv(credentialSecrets) {
 		ghAvail = "true"
 	}
 	env = append(env, corev1.EnvVar{Name: "PLATFORM_GH_TOKEN_AVAILABLE", Value: ghAvail})
@@ -364,11 +376,6 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 	}
 	applyAgentBaseMeta(&podMeta, base)
 
-	var hostAliases []corev1.HostAlias
-	if base.DisableDNS && gatewayClusterIP != "" {
-		hostAliases = append(hostAliases, buildGatewayHostAlias(name, gatewayClusterIP))
-	}
-
 	podSpec := corev1.PodSpec{
 		// Agent pod opts out of ambient mesh
 		// (`istio.io/dataplane-mode: none` pod label above); it has no
@@ -385,7 +392,6 @@ func BuildAgentStatefulSet(name string, instance *types.InstanceSpec, agentSpec 
 		ShareProcessNamespace:         shareProcessNS,
 		Containers:                    containers,
 		Volumes:                       volumes,
-		HostAliases:                   hostAliases,
 	}
 	applyAgentBaseScheduling(&podSpec, base)
 
@@ -420,7 +426,7 @@ func BuildAgentService(name string, cfg *config.Config, ownerCM *corev1.ConfigMa
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: cfg.Namespace,
-			Labels:    map[string]string{LabelInstance: name, LabelPair: name, LabelRole: RoleAgent},
+			Labels:    map[string]string{LabelAgent: name, LabelPair: name, LabelRole: RoleAgent},
 			OwnerReferences: []metav1.OwnerReference{
 				*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
 			},

@@ -34,7 +34,8 @@ export function InboxBell({ collapsed }: InboxBellProps) {
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node))
+        setOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -79,7 +80,11 @@ export function InboxBell({ collapsed }: InboxBellProps) {
             </span>
           </div>
           <div className="max-h-[320px] overflow-y-auto">
-            <ApprovalsList rows={compactRows} density="compact" emptyLabel="Nothing pending" />
+            <ApprovalsList
+              rows={compactRows}
+              density="compact"
+              emptyLabel="Nothing pending"
+            />
           </div>
           <Button
             type="button"

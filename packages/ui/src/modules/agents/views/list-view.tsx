@@ -1,218 +1,229 @@
 import {
-  Add as Plus,
-  Password as KeyRound,
+  KeyRound,
   Play,
-  Renew as RotateCw,
-  TrashCan as Trash2,
-} from "@carbon/icons-react";
+  Plus,
+  RefreshCw,
+  RotateCw,
+  Trash2,
+} from "lucide-react";
 import { useMemo, useState } from "react";
-
-import { EmptyState } from "@/components/empty-state";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 
 import { StatusBadge } from "../../../components/status-indicator.js";
 import { useStore } from "../../../store.js";
-import { useWakeInstance } from "../../instances/api/mutations.js";
-import { useInstances } from "../../instances/api/queries.js";
-import { useRestartInstance, useSyncRestartingInstances } from "../../instances/hooks/use-restart-instance.js";
 import { useTemplates } from "../../templates/api/queries.js";
-import { useCreateAgent, useDeleteAgent } from "../api/mutations.js";
+import {
+  useCreateAgent,
+  useDeleteAgent,
+  useWakeAgent,
+} from "../api/mutations.js";
 import { useAgents } from "../api/queries.js";
 import { AddAgentDialog } from "../dialogs/add-agent-dialog.js";
 import { ConfigureAgentDialog } from "../dialogs/configure-agent-dialog.js";
+import {
+  useRestartAgent,
+  useSyncRestartingAgents,
+} from "../hooks/use-restart-agent.js";
 import { resolveAgentDisplay } from "../utils/agent-resolver.js";
 
 export function ListView() {
-  const { data: templates = [] } = useTemplates();
+  const { data: templates = [], refetch: refetchTemplates } = useTemplates();
   const {
-    data: agents = [],
+    data: agentsData,
+    refetch: refetchAgents,
     isSuccess: agentsLoaded,
   } = useAgents();
-  const {
-    data: instancesData,
-    isSuccess: instancesLoaded,
-  } = useInstances();
-  const instances = instancesData?.list ?? [];
-  const restartingInstances = useStore(s => s.restartingInstances);
-  useSyncRestartingInstances();
+  const agents = agentsData?.list ?? [];
+  const restartingAgents = useStore((s) => s.restartingAgents);
+  useSyncRestartingAgents();
 
   const createAgent = useCreateAgent();
   const deleteAgent = useDeleteAgent();
-  const { restart: restartInstance } = useRestartInstance();
-  const wakeInstance = useWakeInstance();
+  const { restart: restartAgent } = useRestartAgent();
+  const wakeAgent = useWakeAgent();
 
-  const selectInstance = useStore(s => s.selectInstance);
-  const setView = useStore(s => s.setView);
-  const showConfirm = useStore(s => s.showConfirm);
+  const selectAgent = useStore((s) => s.selectAgent);
+  const setView = useStore((s) => s.setView);
+  const showConfirm = useStore((s) => s.showConfirm);
 
   const [showAddAgent, setShowAddAgent] = useState(false);
   const [configAgentId, setConfigAgentId] = useState<string | null>(null);
 
-  const initialLoaded = agentsLoaded && instancesLoaded;
+  const initialLoaded = agentsLoaded;
   const busyAgent = createAgent.isPending;
 
   const restartingIds = useMemo(
-    () => new Set(restartingInstances.keys()),
-    [restartingInstances],
+    () => new Set(restartingAgents.keys()),
+    [restartingAgents],
   );
 
-  const configAgent = configAgentId ? agents.find(a => a.id === configAgentId) ?? null : null;
+  const configAgent = configAgentId
+    ? (agents.find((a) => a.id === configAgentId) ?? null)
+    : null;
 
   return (
     <>
-      <div className="w-full max-w-2xl">
-        {/* Page header — only renders once at least one agent exists. On
-            the empty state the EmptyState card's own title ("Add your
-            first agent") carries the page heading, so the redundant h1
-            stays hidden until there's content to label. */}
-        {initialLoaded && agents.length > 0 && (
-          <div className="flex items-center gap-3 mb-8">
-            <h1 className="text-[20px] md:text-[24px] font-bold text-foreground">Agents</h1>
-            <div className="ml-auto flex items-center gap-2 md:gap-3">
-              <Button
-                id="tour-add-agent"
-                onClick={() => setShowAddAgent(true)}
-                disabled={busyAgent}
-              >
-                <Plus /> <span className="hidden sm:inline">Add</span> Agent
-              </Button>
-            </div>
+      <div>
+        {/* Page header */}
+        <div className="flex items-center gap-3 mb-8">
+          <h1 className="text-[20px] md:text-[24px] font-bold text-text">
+            Agents
+          </h1>
+          <div className="ml-auto flex items-center gap-2 md:gap-3">
+            <button
+              onClick={() => {
+                refetchTemplates();
+                refetchAgents();
+              }}
+              className="btn-brutal h-9 w-9 rounded-lg border-2 border-border bg-surface flex items-center justify-center text-text-secondary hover:text-accent hover:border-accent shadow-brutal-sm"
+            >
+              <RefreshCw size={14} />
+            </button>
+            <button
+              onClick={() => setShowAddAgent(true)}
+              disabled={busyAgent}
+              className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-3 md:px-5 text-[13px] font-semibold text-white disabled:opacity-40 flex items-center gap-1.5 shadow-brutal-accent"
+            >
+              <Plus size={14} /> <span className="hidden sm:inline">Add</span>{" "}
+              Agent
+            </button>
           </div>
-        )}
+        </div>
 
         {/* Skeleton during initial load — only when we expect agents */}
         {!initialLoaded && agents.length > 0 && (
           <div className="flex flex-col gap-6">
-            <Card className="h-[88px] anim-pulse" />
-            <Card className="h-[88px] anim-pulse" />
+            <div className="rounded-xl border-2 border-border-light bg-surface h-[88px] anim-pulse" />
+            <div className="rounded-xl border-2 border-border-light bg-surface h-[88px] anim-pulse" />
           </div>
         )}
 
-        {/* Rich empty state coaches first-run users on what an agent is and
-            what they can do once one's spun up. The "Set up provider" path
-            shows when no provider is configured yet, since agents need one
-            to reach a model. */}
+        {/* Empty state — consistent placeholder when no agents exist */}
         {initialLoaded && agents.length === 0 && !busyAgent && (
-          <EmptyState
-            palette="aurora"
-            title="Add your first agent"
-            description={
-              <>
-                Agents are AI harnesses — Claude Code, Codex, Gemini CLI — that
-                run headless in the cloud. They keep working between sessions,
-                so you can close your laptop, come back later, and pick up
-                where the agent left off.
-              </>
-            }
-            bullets={[
-              <>
-                <span className="font-semibold">Persistent</span> — keeps state
-                and context across sessions.
-              </>,
-              <>
-                <span className="font-semibold">Network-isolated</span> — only
-                reaches hosts you allow, with credentials injected at the
-                gateway.
-              </>,
-              <>
-                <span className="font-semibold">Schedulable</span> — trigger an
-                agent on a cron and let it work while you're away.
-              </>,
-            ]}
-            action={
-              <Button onClick={() => setShowAddAgent(true)} disabled={busyAgent}>
-                <Plus /> Add Agent
-              </Button>
-            }
-          />
+          <div className="rounded-xl border-2 border-border-light bg-surface px-6 py-8 text-center text-[14px] text-text-muted anim-in">
+            No agents yet
+          </div>
         )}
 
-        {/* One row per agent — the 1:N agent→instance cardinality is hidden. */}
+        {/* One row per agent. */}
         <div className="flex flex-col gap-6">
-          {initialLoaded && agents.map(agent => {
-            const display = resolveAgentDisplay(agent, instances, restartingIds);
-            const inst = display.instance;
-            const onOpen = () => { if (inst && display.clickable) selectInstance(inst.id); };
-            return (
-              <Card
-                key={agent.id}
-                onClick={onOpen}
-                className={`overflow-hidden anim-in transition-shadow ${display.clickable ? "group cursor-pointer hover:not-has-[button:hover]:shadow-md" : ""}`}
-              >
-                <div className="px-4 md:px-6 py-4 md:py-5">
-                  <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-3 mb-2 flex-wrap">
-                        <h2 className="text-[16px] md:text-[17px] font-bold text-foreground transition-colors [.group:hover:not(:has(button:hover))_&]:text-primary">{agent.name}</h2>
-                        <StatusBadge state={display.state} />
+          {initialLoaded &&
+            agents.map((agent) => {
+              const display = resolveAgentDisplay(agent, restartingIds);
+              const onOpen = () => {
+                if (display.clickable) selectAgent(agent.id);
+              };
+              return (
+                <div
+                  key={agent.id}
+                  onClick={onOpen}
+                  className={`rounded-xl border-2 border-border bg-surface overflow-hidden anim-in shadow-brutal transition-shadow ${display.clickable ? "group cursor-pointer hover:not-has-[button:hover]:shadow-[4px_4px_0_#292524]" : ""}`}
+                >
+                  <div className="px-4 md:px-6 py-4 md:py-5">
+                    <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-3 mb-2 flex-wrap">
+                          <h2 className="text-[16px] md:text-[17px] font-bold text-text transition-colors [.group:hover:not(:has(button:hover))_&]:text-accent">
+                            {agent.name}
+                          </h2>
+                          <StatusBadge state={display.state} />
+                        </div>
+                        {agent.description && (
+                          <p className="text-[13px] text-text-secondary">
+                            {agent.description}
+                          </p>
+                        )}
                       </div>
-                      {agent.description && (
-                        <p className="text-[13px] text-foreground/80">{agent.description}</p>
-                      )}
-                    </div>
 
-                    <div className="flex items-center gap-2 shrink-0 flex-wrap" onClick={(e) => e.stopPropagation()}>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          if (!inst) return;
-                          if (display.powerAction === "start") wakeInstance.mutate({ id: inst.id });
-                          else if (display.powerAction === "restart") restartInstance(inst.id);
-                        }}
-                        disabled={display.powerAction === null}
-                        title={display.powerAction === "start" ? "Wake the hibernated agent" : "Restart the agent pod"}
+                      <div
+                        className="flex items-center gap-2 shrink-0 flex-wrap"
+                        onClick={(e) => e.stopPropagation()}
                       >
-                        {display.powerAction === "start"
-                          ? (<><Play /> Start</>)
-                          : (<><RotateCw /> Restart</>)}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setConfigAgentId(agent.id)}
-                        title="Configure agent credentials and env vars"
-                      >
-                        <KeyRound /> Configure
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={async () => {
-                          const msg = (
-                            <div className="space-y-2">
-                              <p>Delete agent <strong className="text-foreground">"{agent.name}"</strong>?</p>
-                              <p className="text-destructive">
-                                This will also delete <strong>all persistent data</strong>.
-                              </p>
-                              <p className="text-muted-foreground text-[12px]">This cannot be undone.</p>
-                            </div>
-                          );
-                          if (!await showConfirm(msg, "Delete Agent")) return;
-                          deleteAgent.mutate({ id: agent.id });
-                        }}
-                        disabled={deleteAgent.isPending && deleteAgent.variables?.id === agent.id}
-                        className="text-muted-foreground hover:text-destructive"
-                        title="Delete agent"
-                      >
-                        <Trash2 />
-                      </Button>
+                        <button
+                          onClick={() => {
+                            if (display.powerAction === "start")
+                              wakeAgent.mutate({ id: agent.id });
+                            else if (display.powerAction === "restart")
+                              restartAgent(agent.id);
+                          }}
+                          disabled={display.powerAction === null}
+                          className="btn-brutal h-8 rounded-lg border-2 border-border bg-surface px-3.5 text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent disabled:opacity-40 disabled:hover:text-text-secondary disabled:hover:border-border flex items-center gap-1 shadow-brutal-sm"
+                          title={
+                            display.powerAction === "start"
+                              ? "Wake the hibernated agent"
+                              : "Restart the agent pod"
+                          }
+                        >
+                          {display.powerAction === "start" ? (
+                            <>
+                              <Play size={12} /> Start
+                            </>
+                          ) : (
+                            <>
+                              <RotateCw size={12} /> Restart
+                            </>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => setConfigAgentId(agent.id)}
+                          className="btn-brutal h-8 rounded-lg border-2 border-border bg-surface px-3.5 text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center gap-1 shadow-brutal-sm"
+                          title="Configure agent credentials and env vars"
+                        >
+                          <KeyRound size={12} /> Configure
+                        </button>
+                        <button
+                          onClick={async () => {
+                            const msg = (
+                              <div className="space-y-2">
+                                <p>
+                                  Delete agent{" "}
+                                  <strong className="text-text">
+                                    "{agent.name}"
+                                  </strong>
+                                  ?
+                                </p>
+                                <p className="text-danger">
+                                  This will also delete{" "}
+                                  <strong>all persistent data</strong>.
+                                </p>
+                                <p className="text-text-muted text-[12px]">
+                                  This cannot be undone.
+                                </p>
+                              </div>
+                            );
+                            if (!(await showConfirm(msg, "Delete Agent")))
+                              return;
+                            deleteAgent.mutate({ id: agent.id });
+                          }}
+                          disabled={
+                            deleteAgent.isPending &&
+                            deleteAgent.variables?.id === agent.id
+                          }
+                          className="btn-brutal h-8 w-8 rounded-lg border-2 border-border-light bg-surface flex items-center justify-center text-text-muted hover:text-danger hover:border-danger disabled:opacity-40 shadow-brutal-sm"
+                          title="Delete agent"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </Card>
-            );
-          })}
+              );
+            })}
         </div>
       </div>
 
       {showAddAgent && (
         <AddAgentDialog
           templates={templates}
-          onSubmit={async (input) => { setShowAddAgent(false); await createAgent.mutateAsync(input); }}
+          onSubmit={async (input) => {
+            setShowAddAgent(false);
+            await createAgent.mutateAsync(input);
+          }}
           onCancel={() => setShowAddAgent(false)}
-          onGoToProviders={() => { setShowAddAgent(false); setView("providers"); }}
+          onGoToProviders={() => {
+            setShowAddAgent(false);
+            setView("providers");
+          }}
         />
       )}
       {configAgent && (

@@ -1,4 +1,11 @@
-import { chmod, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  readFile,
+  rename,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { dirname } from "node:path";
 import { parse, stringify, type TomlTable } from "smol-toml";
 import { z } from "zod";
@@ -25,7 +32,10 @@ export interface AuthStore {
       AuthStoreReadError | MalformedAuthStoreError
     >
   >;
-  write(host: HostUrl, value: HostAuth): Promise<Result<void, AuthStoreWriteError>>;
+  write(
+    host: HostUrl,
+    value: HostAuth,
+  ): Promise<Result<void, AuthStoreWriteError>>;
   remove(host: HostUrl): Promise<Result<void, AuthStoreWriteError>>;
 }
 
@@ -41,9 +51,11 @@ const hostEntrySchema = z.object({
   expires_at: z.union([z.string().min(1), z.date()]),
 });
 
-const fileSchema = z.object({
-  hosts: z.record(z.string(), hostEntrySchema).optional(),
-}).passthrough();
+const fileSchema = z
+  .object({
+    hosts: z.record(z.string(), hostEntrySchema).optional(),
+  })
+  .passthrough();
 
 const FILE_MODE = 0o600;
 
@@ -60,9 +72,8 @@ function errnoCode(e: unknown): string | undefined {
 function toHostAuth(
   raw: z.infer<typeof hostEntrySchema>,
 ): Result<HostAuth, MalformedAuthStoreError> {
-  const expiresAt = raw.expires_at instanceof Date
-    ? raw.expires_at
-    : new Date(raw.expires_at);
+  const expiresAt =
+    raw.expires_at instanceof Date ? raw.expires_at : new Date(raw.expires_at);
   if (Number.isNaN(expiresAt.getTime())) {
     return err({
       kind: "malformed-auth-store",
@@ -185,10 +196,11 @@ export function createTomlAuthStore(filePath: string): AuthStore {
         });
       }
       const existing = raw.value;
-      const existingHosts =
-        (existing.hosts && typeof existing.hosts === "object"
-          ? existing.hosts as TomlTable
-          : {}) as TomlTable;
+      const existingHosts = (
+        existing.hosts && typeof existing.hosts === "object"
+          ? (existing.hosts as TomlTable)
+          : {}
+      ) as TomlTable;
       const mergedHosts: TomlTable = {
         ...existingHosts,
         [host]: fromHostAuth(value),
@@ -207,10 +219,11 @@ export function createTomlAuthStore(filePath: string): AuthStore {
         });
       }
       const existing = raw.value;
-      const existingHosts =
-        (existing.hosts && typeof existing.hosts === "object"
-          ? existing.hosts as TomlTable
-          : {}) as TomlTable;
+      const existingHosts = (
+        existing.hosts && typeof existing.hosts === "object"
+          ? (existing.hosts as TomlTable)
+          : {}
+      ) as TomlTable;
       if (!(host in existingHosts)) return ok(undefined);
       const { [host]: _removed, ...remainingHosts } = existingHosts;
       const merged: TomlTable = { ...existing, hosts: remainingHosts };

@@ -1,3 +1,6 @@
+import { z } from "zod";
+import type { terminalStrategySchema } from "./schemas.js";
+
 export const SessionType = {
   Regular: "regular",
   ChannelSlack: "channel_slack",
@@ -7,16 +10,16 @@ export const SessionType = {
 
 export type SessionType = (typeof SessionType)[keyof typeof SessionType];
 
-export const SessionMode = {
-  Chat: "chat",
-  Terminal: "terminal",
-} as const;
+export enum SessionMode {
+  Chat = "chat",
+  Terminal = "terminal",
+}
 
-export type SessionMode = (typeof SessionMode)[keyof typeof SessionMode];
+export const sessionModeSchema = z.enum(SessionMode);
 
 export interface SessionView {
   sessionId: string;
-  instanceId: string;
+  agentId: string;
   type: SessionType;
   mode: SessionMode;
   createdAt: string;
@@ -25,12 +28,32 @@ export interface SessionView {
   updatedAt?: string | null;
 }
 
+export type TerminalStrategy = z.infer<typeof terminalStrategySchema>;
+
+export type SessionResolution =
+  | { kind: "ready"; sessionId: string; terminalPath: string }
+  | { kind: "confirm-mode-switch"; sessionId: string; currentMode: SessionMode }
+  | { kind: "no-terminal-session" }
+  | { kind: "multiple-terminal-sessions"; sessionIds: string[] }
+  | { kind: "session-not-found"; sessionId: string };
+
 export interface SessionsService {
-  list(instanceId: string, includeChannel?: boolean): Promise<SessionView[]>;
-  create(sessionId: string, instanceId: string, mode: SessionMode, type?: SessionType, scheduleId?: string): Promise<void>;
-  setMode(sessionId: string, instanceId: string, mode: SessionMode): Promise<void>;
-  delete(sessionId: string, instanceId: string): Promise<void>;
+  list(agentId: string, includeChannel?: boolean): Promise<SessionView[]>;
+  create(
+    sessionId: string,
+    agentId: string,
+    mode: SessionMode,
+    type?: SessionType,
+    scheduleId?: string,
+  ): Promise<void>;
+  setMode(sessionId: string, agentId: string, mode: SessionMode): Promise<void>;
+  delete(sessionId: string, agentId: string): Promise<void>;
   listByScheduleId(scheduleId: string): Promise<SessionView[]>;
   findByScheduleId(scheduleId: string): Promise<SessionView | null>;
   resetByScheduleId(scheduleId: string): Promise<void>;
+  resolveTerminal(
+    agentId: string,
+    strategy: TerminalStrategy,
+    opts?: { reset?: boolean; force?: boolean },
+  ): Promise<SessionResolution>;
 }

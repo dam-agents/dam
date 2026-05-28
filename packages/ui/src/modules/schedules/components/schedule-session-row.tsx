@@ -7,7 +7,9 @@ interface Props {
 
 export function ScheduleSessionRow({ session, onResume }: Props) {
   const displayName = session.title || session.sessionId.slice(0, 12);
-  const createdAt = new Date(session.updatedAt ?? session.createdAt).toLocaleString();
+  const createdAt = new Date(
+    session.updatedAt ?? session.createdAt,
+  ).toLocaleString();
 
   return (
     <div

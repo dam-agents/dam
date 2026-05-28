@@ -22,7 +22,7 @@ Prior ADRs constrain parts of the stack: ADR-009 (TypeScript + tRPC for type-saf
 
 **Pre-PoC prototype is not preserved as-is.** The rebuilt UI starts with proper architecture. Useful pieces (tRPC clients, ACP connection logic) may carry forward; the monolithic component structure and hand-rolled CSS will not.
 
-**PoC scope.** Driven by the Red Hat Summit demo (2026-05-11). The PoC delivers chat and the minimum dashboard needed to run the Code Guardian demo end-to-end: agent catalog, agent creation, chat (including inline approval cards for human-in-the-loop decisions), workspace browsing, schedule/heartbeat visibility, logs, and read-only external channel status. Standalone approval queue, debug mode, and multi-user RBAC are deferred. Detailed scope is tracked in the UI spec (`docs/specs/ui/`).
+**PoC scope.** Driven by the Red Hat Summit demo (2026-05-11). The PoC delivers chat and the minimum dashboard needed to run the demo end-to-end: agent catalog, agent creation, chat (including inline approval cards for human-in-the-loop decisions), workspace browsing, schedule/heartbeat visibility, logs, and read-only external channel status. Standalone approval queue, debug mode, and multi-user RBAC are deferred. Detailed scope is tracked in the UI spec (`docs/specs/ui/`).
 
 **Lightweight test setup.** A testing framework is configured from the start but coverage must not slow delivery.
 

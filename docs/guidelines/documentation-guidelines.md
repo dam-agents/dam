@@ -14,7 +14,7 @@ Docs are split into a few kinds. Pick the right one before writing — putting t
 
 ## Vocabulary
 
-Use the ubiquitous language defined in [`tseng/vocabulary.md`](../../tseng/vocabulary.md). Terms there (Template, Agent, Instance, Session, Channel, Fork, Secret, …) are scoped to bounded contexts — match that scoping in docs. Docs do not introduce new domain terms; code does, and docs follow.
+Use the ubiquitous language defined in [`tseng/vocabulary.md`](../../tseng/vocabulary.md). Terms there (Template, Agent, Session, Channel, Fork, Secret, …) are scoped to bounded contexts — match that scoping in docs. Docs do not introduce new domain terms; code does, and docs follow.
 
 ## Architecture Documentation Guidelines
 

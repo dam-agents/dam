@@ -1,15 +1,24 @@
 /**
  * Generic helpers shared across modules that read/write platform ConfigMaps.
- * Per-module parsers (parseTemplate, parseAgent, parseInfraInstance,
- * parseSchedule) live in each module's own infrastructure folder.
+ * Per-module parsers (parseTemplate, parseInfraAgent, parseSchedule) live
+ * in each module's own infrastructure folder.
  */
 import type * as k8s from "@kubernetes/client-node";
 import yaml from "js-yaml";
 import crypto from "node:crypto";
-import { LABEL_TYPE, LABEL_OWNER, SPEC_KEY, LAST_ACTIVITY_KEY } from "./labels.js";
+import {
+  LABEL_TYPE,
+  LABEL_OWNER,
+  SPEC_KEY,
+  LAST_ACTIVITY_KEY,
+} from "./labels.js";
 
 export function generateK8sName(prefix: string): string {
-  return `${prefix}-${crypto.randomBytes(4).toString("hex")}`;
+  // 8 bytes / 16 hex chars — 64-bit keyspace makes collisions effectively
+  // impossible (birthday probability at 1M IDs ever issued is ~2.7e-8),
+  // so onConflictDoUpdate paths can safely refresh ownership without
+  // worrying about stomping a live unrelated row.
+  return `${prefix}-${crypto.randomBytes(8).toString("hex")}`;
 }
 
 export function specYaml(cm: k8s.V1ConfigMap): unknown {
@@ -17,8 +26,12 @@ export function specYaml(cm: k8s.V1ConfigMap): unknown {
 }
 
 export function displayName(cm: k8s.V1ConfigMap): string {
-  const spec = specYaml(cm) as { name?: string } | null;
-  return spec?.name ?? cm.metadata!.name!;
+  const spec = specYaml(cm);
+  if (spec != null && typeof spec === "object" && "name" in spec) {
+    const name = (spec as { name: unknown }).name;
+    if (typeof name === "string") return name;
+  }
+  return cm.metadata!.name!;
 }
 
 export function isOwnedBy(cm: k8s.V1ConfigMap, owner: string): boolean {

@@ -1,10 +1,17 @@
 import { describe, it, expect } from "vitest";
-import { parseFrame, isRequest, isResponse } from "../../modules/acp/domain/frames.js";
+import {
+  parseFrame,
+  isRequest,
+  isResponse,
+} from "../../modules/acp/domain/frames.js";
 
 describe("frames", () => {
   describe("parseFrame", () => {
     it("parses valid JSON", () => {
-      expect(parseFrame('{"id":1,"method":"x"}')).toEqual({ id: 1, method: "x" });
+      expect(parseFrame('{"id":1,"method":"x"}')).toEqual({
+        id: 1,
+        method: "x",
+      });
     });
 
     it("returns null for invalid JSON", () => {
@@ -40,7 +47,9 @@ describe("frames", () => {
     });
 
     it("rejects requests (has method)", () => {
-      expect(isResponse({ id: 1, method: "x", result: {} } as never)).toBe(false);
+      expect(isResponse({ id: 1, method: "x", result: {} } as never)).toBe(
+        false,
+      );
     });
 
     it("rejects frames missing both result and error", () => {

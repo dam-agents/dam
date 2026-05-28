@@ -1,4 +1,18 @@
-export type SecretType = "anthropic" | "ibm-litellm" | "openai" | "bob" | "generic";
+import type { z } from "zod";
+import { ENV_NAME_RE } from "../shared.js";
+import type {
+  secretCreateGithubPatInputSchema,
+  secretCreateInputSchema,
+  secretUpdateGithubPatInputSchema,
+  secretUpdateInputSchema,
+} from "./schemas.js";
+
+export type SecretType =
+  | "anthropic"
+  | "ibm-litellm"
+  | "openai"
+  | "bob"
+  | "generic";
 
 /**
  * SecretTypes that have a {@link PROVIDERS} registry entry — the providers
@@ -23,16 +37,9 @@ export interface EnvMapping {
 
 export const DEFAULT_ENV_PLACEHOLDER = "dummy-placeholder";
 
-export const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
-
 export function isValidEnvName(name: string): boolean {
   return name.length > 0 && ENV_NAME_RE.test(name);
 }
-
-// RFC 3986 unreserved set — the only characters guaranteed safe in a URL
-// query parameter name without percent-encoding. Shared by the Zod schema
-// and both UI forms; keep them in sync.
-export const QUERY_PARAM_RE = /^[A-Za-z0-9._~-]+$/;
 
 /**
  * How the Envoy sidecar injects a generic secret into matching outbound
@@ -59,12 +66,6 @@ export interface InjectionConfig {
   queryParamName?: string;
 }
 
-/** Default used when the user doesn't override it: `Authorization: Bearer <value>`. */
-export const DEFAULT_INJECTION_CONFIG: InjectionConfig = {
-  headerName: "Authorization",
-  valueFormat: "Bearer {value}",
-};
-
 /**
  * IBM LiteLLM model pins. The IBM LiteLLM preset's default env-var bundle
  * pins all five Claude model env vars to AWS-hosted Claude IDs; the form's
@@ -78,6 +79,8 @@ export interface IbmLitellmModelPins {
   subagent: string;
   /** `ANTHROPIC_MODEL` — fallback when no `ANTHROPIC_DEFAULT_*_MODEL` matches. */
   default: string;
+  /** `OPENAI_MODEL` — model ID for Codex and other OpenAI-compatible agents. */
+  openaiModel: string;
 }
 
 export const IBM_LITELLM_DEFAULT_MODEL_PINS: IbmLitellmModelPins = {
@@ -86,9 +89,10 @@ export const IBM_LITELLM_DEFAULT_MODEL_PINS: IbmLitellmModelPins = {
   haiku: "aws/claude-haiku-4-5",
   subagent: "aws/claude-opus-4-6",
   default: "aws/claude-opus-4-6",
+  openaiModel: "gpt-5.5",
 };
 
-const IBM_LITELLM_HOST = "ete-litellm.ai-models.vpc-int.res.ibm.com";
+const IBM_LITELLM_HOST = "ete-litellm.ai-models.vpc.res.ibm.com";
 const IBM_LITELLM_BASE_URL = `https://${IBM_LITELLM_HOST}`;
 
 /**
@@ -97,9 +101,9 @@ const IBM_LITELLM_BASE_URL = `https://${IBM_LITELLM_HOST}`;
  * advanced disclosure; the default bundle (with `IBM_LITELLM_DEFAULT_MODEL_PINS`)
  * is what the registry stores.
  *
- * 13 entries: 1 credential placeholder, 1 endpoint pin, 2 behavior flags,
- * 5 Claude Code model pins, 4 pi-agent `openai-proxy` SPECS overrides
- * (`pi-dynamic-providers/index.ts`).
+ * 16 entries: 1 credential placeholder, 1 endpoint pin, 2 behavior flags,
+ * 5 Claude Code model pins, 4 pi-agent `openai-proxy` overrides
+ * (`pi-dynamic-providers/index.ts`), 3 Codex/OpenAI-compatible env vars.
  */
 export function ibmLitellmEnvMappings(
   pins: IbmLitellmModelPins = IBM_LITELLM_DEFAULT_MODEL_PINS,
@@ -118,6 +122,9 @@ export function ibmLitellmEnvMappings(
     { envName: "OPENAI_PROXY_MODEL", placeholder: pins.opus },
     { envName: "OPENAI_PROXY_CONTEXT_WINDOW", placeholder: "200000" },
     { envName: "OPENAI_PROXY_MAX_TOKENS", placeholder: "8192" },
+    { envName: "OPENAI_API_KEY", placeholder: DEFAULT_ENV_PLACEHOLDER },
+    { envName: "OPENAI_BASE_URL", placeholder: IBM_LITELLM_BASE_URL },
+    { envName: "OPENAI_MODEL", placeholder: pins.openaiModel },
   ];
 }
 
@@ -132,26 +139,37 @@ export function ibmLitellmPinsFromEnvMappings(
   const lookup = (name: string) =>
     envMappings?.find((m) => m.envName === name)?.placeholder;
   return {
-    opus: lookup("ANTHROPIC_DEFAULT_OPUS_MODEL") ?? IBM_LITELLM_DEFAULT_MODEL_PINS.opus,
-    sonnet: lookup("ANTHROPIC_DEFAULT_SONNET_MODEL") ?? IBM_LITELLM_DEFAULT_MODEL_PINS.sonnet,
-    haiku: lookup("ANTHROPIC_DEFAULT_HAIKU_MODEL") ?? IBM_LITELLM_DEFAULT_MODEL_PINS.haiku,
-    subagent: lookup("CLAUDE_CODE_SUBAGENT_MODEL") ?? IBM_LITELLM_DEFAULT_MODEL_PINS.subagent,
-    default: lookup("ANTHROPIC_MODEL") ?? IBM_LITELLM_DEFAULT_MODEL_PINS.default,
+    opus:
+      lookup("ANTHROPIC_DEFAULT_OPUS_MODEL") ??
+      IBM_LITELLM_DEFAULT_MODEL_PINS.opus,
+    sonnet:
+      lookup("ANTHROPIC_DEFAULT_SONNET_MODEL") ??
+      IBM_LITELLM_DEFAULT_MODEL_PINS.sonnet,
+    haiku:
+      lookup("ANTHROPIC_DEFAULT_HAIKU_MODEL") ??
+      IBM_LITELLM_DEFAULT_MODEL_PINS.haiku,
+    subagent:
+      lookup("CLAUDE_CODE_SUBAGENT_MODEL") ??
+      IBM_LITELLM_DEFAULT_MODEL_PINS.subagent,
+    default:
+      lookup("ANTHROPIC_MODEL") ?? IBM_LITELLM_DEFAULT_MODEL_PINS.default,
+    openaiModel:
+      lookup("OPENAI_MODEL") ?? IBM_LITELLM_DEFAULT_MODEL_PINS.openaiModel,
   };
 }
 
 export interface BobModelPins {
   model?: string;
-  instanceId?: string;
+  agentId?: string;
   teamId?: string;
   maxCoins?: string;
   chatMode?: string;
 }
 
-// api.us-east must stay uncredentialed (401 on a real token) — that
-// host is in trustedHosts, not here.
-const BOB_HOST = "prod.ibm-bob-staging.cloud.ibm.com";
-const BOB_PLACEHOLDER = "sk-placeholder";
+// Bob CLI silently downgrades to the legacy `prod.ibm-bob-staging` backend
+// when BOBSHELL_API_KEY starts with `sk-`/`pk-`; the placeholder must not.
+const BOB_HOST = "api.us-east.bob.ibm.com";
+const BOB_PLACEHOLDER = "dummy-placeholder";
 
 export function bobEnvMappings(pins: BobModelPins = {}): EnvMapping[] {
   const out: EnvMapping[] = [
@@ -162,7 +180,7 @@ export function bobEnvMappings(pins: BobModelPins = {}): EnvMapping[] {
     if (trimmed) out.push({ envName, placeholder: trimmed });
   };
   push("BOB_SHELL_MODEL", pins.model);
-  push("BOB_INSTANCE_ID", pins.instanceId);
+  push("BOB_INSTANCE_ID", pins.agentId);
   push("BOB_TEAM_ID", pins.teamId);
   push("BOB_MAX_COINS", pins.maxCoins);
   push("BOB_CHAT_MODE", pins.chatMode);
@@ -176,12 +194,12 @@ export function bobPinsFromEnvMappings(
     envMappings?.find((m) => m.envName === name)?.placeholder;
   const pins: BobModelPins = {};
   const model = lookup("BOB_SHELL_MODEL");
-  const instanceId = lookup("BOB_INSTANCE_ID");
+  const agentId = lookup("BOB_INSTANCE_ID");
   const teamId = lookup("BOB_TEAM_ID");
   const maxCoins = lookup("BOB_MAX_COINS");
   const chatMode = lookup("BOB_CHAT_MODE");
   if (model) pins.model = model;
-  if (instanceId) pins.instanceId = instanceId;
+  if (agentId) pins.agentId = agentId;
   if (teamId) pins.teamId = teamId;
   if (maxCoins) pins.maxCoins = maxCoins;
   if (chatMode) pins.chatMode = chatMode;
@@ -241,7 +259,10 @@ export const PROVIDERS = {
         label: "OAuth Token",
         // Claude Code SDK reads CLAUDE_CODE_OAUTH_TOKEN; sends Bearer.
         defaultEnvMappings: [
-          { envName: "CLAUDE_CODE_OAUTH_TOKEN", placeholder: DEFAULT_ENV_PLACEHOLDER },
+          {
+            envName: "CLAUDE_CODE_OAUTH_TOKEN",
+            placeholder: DEFAULT_ENV_PLACEHOLDER,
+          },
         ],
       },
       {
@@ -249,7 +270,10 @@ export const PROVIDERS = {
         label: "API Key",
         // @anthropic-ai/sdk reads ANTHROPIC_API_KEY; sends x-api-key.
         defaultEnvMappings: [
-          { envName: "ANTHROPIC_API_KEY", placeholder: DEFAULT_ENV_PLACEHOLDER },
+          {
+            envName: "ANTHROPIC_API_KEY",
+            placeholder: DEFAULT_ENV_PLACEHOLDER,
+          },
         ],
         injection: { headerName: "x-api-key", valueFormat: "{value}" },
       },
@@ -294,16 +318,27 @@ export const PROVIDERS = {
         key: "api-key",
         label: "API Key",
         defaultEnvMappings: bobEnvMappings(),
-        extraInjections: [{ headerName: "X-Bobshell-Internal", queryParamName: "key" }],
+        // Opaque api-keys go in under `Apikey`; `Bearer` triggers JWT auth.
+        injection: {
+          headerName: "Authorization",
+          valueFormat: "Apikey {value}",
+        },
+        extraInjections: [
+          { headerName: "X-Bobshell-Internal", queryParamName: "key" },
+        ],
       },
     ],
   },
 } satisfies Record<ProviderPresetType, ProviderPreset>;
 
 /** Iteration helper — every provider id that has a {@link PROVIDERS} entry. */
-export const PROVIDER_PRESET_TYPES = Object.keys(PROVIDERS) as readonly ProviderPresetType[];
+export const PROVIDER_PRESET_TYPES = Object.keys(
+  PROVIDERS,
+) as readonly ProviderPresetType[];
 
-export function isProviderPresetType(type: SecretType): type is ProviderPresetType {
+export function isProviderPresetType(
+  type: SecretType,
+): type is ProviderPresetType {
   return type in PROVIDERS;
 }
 
@@ -319,28 +354,8 @@ export interface SecretView {
   envMappings?: EnvMapping[];
 }
 
-export interface CreateSecretInput {
-  type: SecretType;
-  name: string;
-  value: string;
-  hostPattern?: string;
-  pathPattern?: string;
-  injectionConfig?: InjectionConfig;
-  envMappings?: EnvMapping[];
-}
-
-export interface UpdateSecretInput {
-  id: string;
-  name?: string;
-  value?: string;
-  /** Only permitted on generic secrets. */
-  hostPattern?: string;
-  /** `null` clears the path pattern; `undefined` leaves it unchanged. */
-  pathPattern?: string | null;
-  /** `null` resets to the default; `undefined` leaves it unchanged. */
-  injectionConfig?: InjectionConfig | null;
-  envMappings?: EnvMapping[];
-}
+export type SecretCreateInput = z.infer<typeof secretCreateInputSchema>;
+export type SecretUpdateInput = z.infer<typeof secretUpdateInputSchema>;
 
 export interface AgentAccess {
   secretIds: string[];
@@ -352,10 +367,9 @@ export interface AgentAccess {
  * one for `api.github.com` (Bearer / `GH_TOKEN`) and one for `github.com`
  * (Basic, with the value pre-wrapped as `base64("x-access-token:" + token)`).
  */
-export interface CreateGithubPatInput {
-  name: string;
-  token: string;
-}
+export type SecretCreateGithubPatInput = z.infer<
+  typeof secretCreateGithubPatInputSchema
+>;
 
 export interface CreateGithubPatOutput {
   name: string;
@@ -369,34 +383,26 @@ export interface CreateGithubPatOutput {
  * auth value server-side so callers send `{apiSecretId, gitSecretId,
  * token}` only.
  */
-export interface UpdateGithubPatInput {
-  apiSecretId: string;
-  gitSecretId: string;
-  token: string;
-}
+export type SecretUpdateGithubPatInput = z.infer<
+  typeof secretUpdateGithubPatInputSchema
+>;
 
 export interface UpdateGithubPatOutput {
   apiSecretId: string;
   gitSecretId: string;
 }
 
-/** Minimal agent shape returned by `listGrantedAgents` — used by the UI's
- *  env-affecting edit confirmation to show which agents will roll. */
-export interface GrantedAgentSummary {
-  id: string;
-  name: string;
-}
-
 export interface SecretsService {
   list(): Promise<SecretView[]>;
-  create(input: CreateSecretInput): Promise<SecretView>;
-  createGithubPat(input: CreateGithubPatInput): Promise<CreateGithubPatOutput>;
-  updateGithubPat(input: UpdateGithubPatInput): Promise<UpdateGithubPatOutput>;
-  update(input: UpdateSecretInput): Promise<void>;
+  create(input: SecretCreateInput): Promise<SecretView>;
+  createGithubPat(
+    input: SecretCreateGithubPatInput,
+  ): Promise<CreateGithubPatOutput>;
+  updateGithubPat(
+    input: SecretUpdateGithubPatInput,
+  ): Promise<UpdateGithubPatOutput>;
+  update(input: SecretUpdateInput): Promise<void>;
   delete(id: string): Promise<void>;
   getAgentAccess(agentId: string): Promise<AgentAccess>;
   setAgentAccess(agentId: string, access: AgentAccess): Promise<void>;
-  /** Agents that currently have this secret in their granted set. Empty
-   *  when the secret is not granted to any agent. (ADR-040) */
-  listGrantedAgents(secretId: string): Promise<GrantedAgentSummary[]>;
 }

@@ -27,12 +27,19 @@ export function AnthropicForm({
   onSave: (input: { mode: Mode; value: string }) => Promise<void>;
   onCancel?: () => void;
 }) {
-  const { register, handleSubmit, control, watch, getValues, trigger, formState } =
-    useForm<AnthropicCredentialValues>({
-      resolver: zodResolver(anthropicCredentialSchema),
-      mode: "onChange",
-      defaultValues: { mode: initialMode, value: "" },
-    });
+  const {
+    register,
+    handleSubmit,
+    control,
+    watch,
+    getValues,
+    trigger,
+    formState,
+  } = useForm<AnthropicCredentialValues>({
+    resolver: zodResolver(anthropicCredentialSchema),
+    mode: "onChange",
+    defaultValues: { mode: initialMode, value: "" },
+  });
   const { errors, isSubmitting, isValid } = formState;
 
   const [testResult, setTestResult] = useState<
@@ -71,10 +78,13 @@ export function AnthropicForm({
     try {
       const result = await testAnthropic.mutateAsync({
         value: sanitized,
-        envName: mode === "api-key" ? "ANTHROPIC_API_KEY" : "CLAUDE_CODE_OAUTH_TOKEN",
+        envName:
+          mode === "api-key" ? "ANTHROPIC_API_KEY" : "CLAUDE_CODE_OAUTH_TOKEN",
       });
       if (token !== testTokenRef.current) return;
-      setTestResult(result.ok ? { ok: true } : { ok: false, message: result.message });
+      setTestResult(
+        result.ok ? { ok: true } : { ok: false, message: result.message },
+      );
     } catch {
       if (token !== testTokenRef.current) return;
       setTestResult({ ok: false, message: "Could not verify credential." });
@@ -170,7 +180,11 @@ function QuickSetupHint() {
           className="h-5 w-5 rounded inline-flex items-center justify-center text-muted-foreground hover:text-primary"
           title="Copy command"
         >
-          {copied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
+          {copied ? (
+            <Check size={12} className="text-success" />
+          ) : (
+            <Copy size={12} />
+          )}
         </button>
       </span>{" "}
       on your own machine (with Claude Code installed) to generate a token.
@@ -178,7 +192,13 @@ function QuickSetupHint() {
   );
 }
 
-function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {
+function ModeToggle({
+  mode,
+  onChange,
+}: {
+  mode: Mode;
+  onChange: (m: Mode) => void;
+}) {
   return (
     <div className="flex items-center gap-1 border-b">
       {MODE_KEYS.map((m) => {

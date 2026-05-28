@@ -1,12 +1,12 @@
-/** Bob Shell is single-mode (Bearer API token). Length-1 shape kept for
- *  symmetry with `anthropic/modes.ts` and `ibm-litellm/modes.ts`. */
+/** Bob Shell is single-mode (Apikey scheme on api.us-east). Length-1 shape
+ *  kept for symmetry with `anthropic/modes.ts` and `ibm-litellm/modes.ts`. */
 export const MODE_KEYS = ["api-key"] as const;
 export type Mode = (typeof MODE_KEYS)[number];
 
 export const MODES = {
   "api-key": {
     label: "API Key",
-    placeholder: "sk-…",
+    placeholder: "bob_prod_bob-apikey_…",
   },
 } as const satisfies Record<Mode, { label: string; placeholder: string }>;
 

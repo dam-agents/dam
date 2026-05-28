@@ -14,84 +14,106 @@ import {
   useConnectTelegram,
   useDisconnectSlack,
   useDisconnectTelegram,
-  useUpdateInstance,
-} from "../../instances/api/mutations.js";
-import { useInstances } from "../../instances/api/queries.js";
+  useUpdateAgent,
+} from "../../agents/api/mutations.js";
+import { useAgents } from "../../agents/api/queries.js";
 
 export function ChannelsPanel() {
-  const { data: instancesData } = useInstances();
-  const instances = instancesData?.list ?? [];
-  const availableChannels = instancesData?.availableChannels ?? {};
+  const { data: agentsData } = useAgents();
+  const agents = agentsData?.list ?? [];
+  const availableChannels = agentsData?.availableChannels ?? {};
   const slackAvailable = !!availableChannels.slack;
   const telegramAvailable = !!availableChannels.telegram;
 
-  const selectedInstance = useStore(s => s.selectedInstance);
+  const selectedAgent = useStore((s) => s.selectedAgent);
   const connectSlack = useConnectSlack();
   const disconnectSlack = useDisconnectSlack();
   const connectTelegram = useConnectTelegram();
   const disconnectTelegram = useDisconnectTelegram();
-  const updateInstance = useUpdateInstance();
+  const updateAgent = useUpdateAgent();
 
-  const inst = instances.find(i => i.id === selectedInstance);
-  const slackChannel = inst?.channels.find(c => c.type === "slack");
-  const telegramChannel = inst?.channels.find(c => c.type === "telegram");
+  const agent = agents.find((a) => a.id === selectedAgent);
+  const slackChannel = agent?.channels.find((c) => c.type === "slack");
+  const telegramChannel = agent?.channels.find((c) => c.type === "telegram");
 
   const [slackEnabled, setSlackEnabled] = useState(!!slackChannel);
-  const [channelId, setChannelId] = useState(slackChannel?.type === "slack" ? slackChannel.slackChannelId : "");
+  const [channelId, setChannelId] = useState(
+    slackChannel?.type === "slack" ? slackChannel.slackChannelId : "",
+  );
   const [telegramEnabled, setTelegramEnabled] = useState(!!telegramChannel);
   const [botToken, setBotToken] = useState("");
   const [editingBotToken, setEditingBotToken] = useState(!telegramChannel);
-  const [users, setUsers] = useState<string[]>(inst?.allowedUserEmails ?? []);
+  const [users, setUsers] = useState<string[]>(agent?.allowedUserEmails ?? []);
   const [userInput, setUserInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
-    const sc = inst?.channels.find(c => c.type === "slack");
-    const tc = inst?.channels.find(c => c.type === "telegram");
+    const sc = agent?.channels.find((c) => c.type === "slack");
+    const tc = agent?.channels.find((c) => c.type === "telegram");
     setSlackEnabled(!!sc);
     setChannelId(sc?.type === "slack" ? sc.slackChannelId : "");
     setTelegramEnabled(!!tc);
     setBotToken("");
     setEditingBotToken(!tc);
-    setUsers(inst?.allowedUserEmails ?? []);
+    setUsers(agent?.allowedUserEmails ?? []);
     setDirty(false);
-  }, [inst?.id]);
+  }, [agent?.id]);
 
   const addUser = () => {
     const v = userInput.trim();
     if (!v || users.includes(v)) return;
-    setUsers(prev => [...prev, v]);
+    setUsers((prev) => [...prev, v]);
     setUserInput("");
     setDirty(true);
   };
 
   const removeUser = (u: string) => {
-    setUsers(prev => prev.filter(x => x !== u));
+    setUsers((prev) => prev.filter((x) => x !== u));
     setDirty(true);
   };
 
   const save = async () => {
-    if (!inst) return;
+    if (!agent) return;
     setSaving(true);
     try {
       if (slackEnabled && !slackChannel && channelId.trim()) {
-        await connectSlack.mutateAsync({ id: inst.id, slackChannelId: channelId.trim() });
+        await connectSlack.mutateAsync({
+          id: agent.id,
+          slackChannelId: channelId.trim(),
+        });
       } else if (!slackEnabled && slackChannel) {
-        await disconnectSlack.mutateAsync({ id: inst.id });
-      } else if (slackEnabled && slackChannel && slackChannel.type === "slack" && channelId.trim() !== slackChannel.slackChannelId) {
-        await disconnectSlack.mutateAsync({ id: inst.id });
-        await connectSlack.mutateAsync({ id: inst.id, slackChannelId: channelId.trim() });
+        await disconnectSlack.mutateAsync({ id: agent.id });
+      } else if (
+        slackEnabled &&
+        slackChannel &&
+        slackChannel.type === "slack" &&
+        channelId.trim() !== slackChannel.slackChannelId
+      ) {
+        await disconnectSlack.mutateAsync({ id: agent.id });
+        await connectSlack.mutateAsync({
+          id: agent.id,
+          slackChannelId: channelId.trim(),
+        });
       }
       if (telegramEnabled && !telegramChannel && botToken.trim()) {
-        await connectTelegram.mutateAsync({ id: inst.id, botToken: botToken.trim() });
+        await connectTelegram.mutateAsync({
+          id: agent.id,
+          botToken: botToken.trim(),
+        });
       } else if (!telegramEnabled && telegramChannel) {
-        await disconnectTelegram.mutateAsync({ id: inst.id });
+        await disconnectTelegram.mutateAsync({ id: agent.id });
       } else if (telegramEnabled && telegramChannel && botToken.trim()) {
-        await disconnectTelegram.mutateAsync({ id: inst.id });
-        await connectTelegram.mutateAsync({ id: inst.id, botToken: botToken.trim() });
+        await disconnectTelegram.mutateAsync({ id: agent.id });
+        await connectTelegram.mutateAsync({
+          id: agent.id,
+          botToken: botToken.trim(),
+        });
       }
-      await updateInstance.mutateAsync({ id: inst.id, allowedUserEmails: users });
+      await updateAgent.mutateAsync({
+        id: agent.id,
+        allowedUserEmails: users,
+      });
       setDirty(false);
     } finally {
       setSaving(false);
@@ -127,7 +149,10 @@ export function ChannelsPanel() {
                 <Input
                   type="text"
                   value={channelId}
-                  onChange={e => { setChannelId(e.target.value); setDirty(true); }}
+                  onChange={(e) => {
+                    setChannelId(e.target.value);
+                    setDirty(true);
+                  }}
                   placeholder="C0..."
                   className="h-8 text-[13px]"
                 />
@@ -152,8 +177,10 @@ export function ChannelsPanel() {
                   <Input
                     type="email"
                     value={userInput}
-                    onChange={e => setUserInput(e.target.value)}
-                    onKeyDown={e => e.key === "Enter" && (e.preventDefault(), addUser())}
+                    onChange={(e) => setUserInput(e.target.value)}
+                    onKeyDown={(e) =>
+                      e.key === "Enter" && (e.preventDefault(), addUser())
+                    }
                     placeholder="user@example.com"
                     className="flex-1 h-7 text-[12px]"
                   />
@@ -198,7 +225,10 @@ export function ChannelsPanel() {
                   <Input
                     type="password"
                     value={botToken}
-                    onChange={e => { setBotToken(e.target.value); setDirty(true); }}
+                    onChange={(e) => {
+                      setBotToken(e.target.value);
+                      setDirty(true);
+                    }}
                     placeholder="123456:ABC-..."
                     className="h-8 text-[13px]"
                   />

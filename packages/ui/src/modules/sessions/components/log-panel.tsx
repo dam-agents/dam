@@ -14,19 +14,21 @@ const badgeStyle: Record<string, string> = {
 };
 
 export function LogPanel() {
-  const log = useStore(s => s.log);
+  const log = useStore((s) => s.log);
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
 
   useEffect(() => {
-    if (isAtBottomRef.current) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (isAtBottomRef.current)
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [log]);
 
   const onScroll = useCallback(() => {
     const el = containerRef.current;
     if (!el) return;
-    isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    isAtBottomRef.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight < 120;
   }, []);
 
   return (

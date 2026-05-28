@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 import { useStore } from "../store.js";
+import { useBodyScrollLock, useFocusTrap } from "./modal.js";
 
 export function DialogOverlay() {
   const dialog = useStore((s) => s.dialog);

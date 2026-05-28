@@ -57,13 +57,11 @@ export interface LoginInput {
   persistServer?: HostUrl;
   /** Side-channel for the command layer to print the user-code line
    *  before polling begins. */
-  onPromptUser?: (
-    info: {
-      userCode: string;
-      verificationUri: string;
-      openedBrowser: boolean;
-    },
-  ) => void;
+  onPromptUser?: (info: {
+    userCode: string;
+    verificationUri: string;
+    openedBrowser: boolean;
+  }) => void;
 }
 
 export interface LogoutOk {
@@ -113,11 +111,9 @@ export type PreflightReason =
   | "missing-device-endpoint"
   | "discovery-failed";
 
-export type LogoutError =
-  | { kind: "auth-store"; detail: string };
+export type LogoutError = { kind: "auth-store"; detail: string };
 
-export type StatusError =
-  | { kind: "auth-store"; detail: string };
+export type StatusError = { kind: "auth-store"; detail: string };
 
 export interface AuthService {
   login(input: LoginInput): Promise<Result<LoginOk, LoginError>>;
@@ -160,7 +156,10 @@ function decodeJwtPayload(jwt: string): Record<string, unknown> | null {
   }
 }
 
-function stringField(payload: Record<string, unknown> | null, key: string): string | undefined {
+function stringField(
+  payload: Record<string, unknown> | null,
+  key: string,
+): string | undefined {
   const v = payload?.[key];
   return typeof v === "string" && v.length > 0 ? v : undefined;
 }
@@ -236,7 +235,11 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
       });
       if (!compat.ok) {
         const desc = describeCompatError(compat.error);
-        return err({ kind: "preflight", reason: desc.reason, detail: desc.detail });
+        return err({
+          kind: "preflight",
+          reason: desc.reason,
+          detail: desc.detail,
+        });
       }
       const warnings: string[] = [];
       switch (compat.value.kind) {
@@ -259,14 +262,22 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
       const cfg = await deps.authConfigProbe.probe(input.host);
       if (!cfg.ok) {
         const desc = describeAuthConfigError(cfg.error);
-        return err({ kind: "preflight", reason: desc.reason, detail: desc.detail });
+        return err({
+          kind: "preflight",
+          reason: desc.reason,
+          detail: desc.detail,
+        });
       }
 
       // 3. OIDC discovery.
       const oidc = await deps.oidcDiscovery.discover(cfg.value.issuer);
       if (!oidc.ok) {
         const desc = describeOidcError(oidc.error);
-        return err({ kind: "preflight", reason: desc.reason, detail: desc.detail });
+        return err({
+          kind: "preflight",
+          reason: desc.reason,
+          detail: desc.detail,
+        });
       }
 
       // 4. Device authorization request.
@@ -275,7 +286,10 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
         clientId: cfg.value.cliClientId,
       });
       if (!auth.ok) {
-        return err({ kind: "transport", detail: describeDeviceFlowError(auth.error) });
+        return err({
+          kind: "transport",
+          detail: describeDeviceFlowError(auth.error),
+        });
       }
 
       // 5. Prompt the user. The command layer is responsible for the
@@ -470,11 +484,11 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
       }
 
       const activeEntry = entries.find((e) => e.isActive);
-      const activeHostValid = activeEntry !== undefined && (
-        activeEntry.source === "env" ||
-        (activeEntry.expiresAt !== undefined &&
-          activeEntry.expiresAt.getTime() > now().getTime())
-      );
+      const activeHostValid =
+        activeEntry !== undefined &&
+        (activeEntry.source === "env" ||
+          (activeEntry.expiresAt !== undefined &&
+            activeEntry.expiresAt.getTime() > now().getTime()));
 
       return ok({ activeHost, entries, activeHostValid });
     },

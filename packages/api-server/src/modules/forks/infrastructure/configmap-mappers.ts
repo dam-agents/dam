@@ -1,10 +1,11 @@
 import type * as k8s from "@kubernetes/client-node";
 import yaml from "js-yaml";
+import { z } from "zod";
 import type { ForkFailureReason } from "../../../events.js";
 import type { ForkSpec, ForkStatus } from "../domain/fork.js";
 import {
   LABEL_FORK_ID,
-  LABEL_INSTANCE_REF,
+  LABEL_AGENT_REF,
   LABEL_TYPE,
   SPEC_KEY,
   SPEC_VERSION,
@@ -14,18 +15,25 @@ import {
 
 interface ForkSpecYaml {
   version: string;
-  instance: string;
+  agentName: string;
   foreignSub: string;
   sessionId?: string;
 }
 
-interface ForkStatusYaml {
-  version?: string;
-  phase?: string;
-  jobName?: string;
-  podIP?: string;
-  error?: { reason?: string; detail?: string };
-}
+const forkStatusYamlSchema = z
+  .object({
+    version: z.string().optional(),
+    phase: z.string().optional(),
+    jobName: z.string().optional(),
+    podIP: z.string().optional(),
+    error: z
+      .object({
+        reason: z.string().optional(),
+        detail: z.string().optional(),
+      })
+      .optional(),
+  })
+  .nullable();
 
 export function buildForkConfigMap(args: {
   forkId: string;
@@ -33,7 +41,7 @@ export function buildForkConfigMap(args: {
 }): k8s.V1ConfigMap {
   const body: ForkSpecYaml = {
     version: SPEC_VERSION,
-    instance: args.spec.instanceId,
+    agentName: args.spec.agentId,
     foreignSub: args.spec.foreignSub,
   };
   if (args.spec.sessionId !== undefined) body.sessionId = args.spec.sessionId;
@@ -43,7 +51,7 @@ export function buildForkConfigMap(args: {
       name: args.forkId,
       labels: {
         [LABEL_TYPE]: TYPE_AGENT_FORK,
-        [LABEL_INSTANCE_REF]: args.spec.instanceId,
+        [LABEL_AGENT_REF]: args.spec.agentId,
         [LABEL_FORK_ID]: args.forkId,
       },
     },
@@ -54,7 +62,7 @@ export function buildForkConfigMap(args: {
 export function parseForkStatus(cm: k8s.V1ConfigMap): ForkStatus | null {
   const raw = cm.data?.[STATUS_KEY];
   if (!raw) return null;
-  const parsed = yaml.load(raw) as ForkStatusYaml | null;
+  const parsed = forkStatusYamlSchema.parse(yaml.load(raw));
   if (!parsed || !parsed.phase) return null;
   const phase = normalisePhase(parsed.phase);
   if (!phase) return null;
@@ -63,9 +71,13 @@ export function parseForkStatus(cm: k8s.V1ConfigMap): ForkStatus | null {
   if (parsed.error?.reason) {
     const reason = normaliseReason(parsed.error.reason);
     if (reason) {
-      (status as { error?: { reason: ForkFailureReason; detail?: string } }).error = {
+      (
+        status as { error?: { reason: ForkFailureReason; detail?: string } }
+      ).error = {
         reason,
-        ...(parsed.error.detail !== undefined ? { detail: parsed.error.detail } : {}),
+        ...(parsed.error.detail !== undefined
+          ? { detail: parsed.error.detail }
+          : {}),
       };
     }
   }

@@ -1,13 +1,3 @@
-import {
-  Add as Plus,
-  ChevronDown,
-  ChevronRight,
-  Close as X,
-  Launch as ExternalLink,
-  Renew as RefreshCw,
-  Share as Share2,
-  View as Eye,
-} from "@carbon/icons-react";
 import type {
   LocalSkill,
   Skill,
@@ -15,13 +5,18 @@ import type {
   SkillRef,
   SkillSource,
 } from "api-server-api";
+import {
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  Eye,
+  Plus,
+  RefreshCw,
+  Share2,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { z } from "zod";
 
 import { api } from "../../../api.js";
 import { ACTION_FAILED, runAction } from "../../../lib/query-helpers.js";
@@ -31,12 +26,21 @@ import { useStore } from "../../../store.js";
  *  browser, not per instance — catalog preferences apply everywhere. */
 const COLLAPSED_STORAGE_KEY = "platform:skills:collapsed";
 
+const collapsedStorageSchema = z.array(z.string());
+
 function loadCollapsed(): Set<string> {
   try {
     const raw = localStorage.getItem(COLLAPSED_STORAGE_KEY);
     if (!raw) return new Set();
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? new Set(parsed) : new Set();
+    const parsed = collapsedStorageSchema.safeParse(JSON.parse(raw));
+    if (!parsed.success) {
+      console.warn(
+        "[skills-panel] schema mismatch on collapsed-skills, resetting:",
+        parsed.error.issues,
+      );
+      return new Set();
+    }
+    return new Set(parsed.data);
   } catch {
     return new Set();
   }
@@ -60,7 +64,7 @@ function isCuratedSource(src: SkillSource): boolean {
 }
 
 interface SkillsPanelProps {
-  instanceId: string | null;
+  agentId: string | null;
   isRunning: boolean;
   /** Opens a file in the Files tab. Threaded from useFileTree via ChatView. */
   onOpenFile?: (path: string) => void;
@@ -69,7 +73,9 @@ interface SkillsPanelProps {
 const skillKey = (source: string, name: string) => `${source}::${name}`;
 
 function localSkillMdPath(skill: LocalSkill): string {
-  const base = skill.skillPath.endsWith("/") ? skill.skillPath : `${skill.skillPath}/`;
+  const base = skill.skillPath.endsWith("/")
+    ? skill.skillPath
+    : `${skill.skillPath}/`;
   return `${base}${skill.name}/SKILL.md`;
 }
 
@@ -92,7 +98,10 @@ function skillSourceUrl(
   compareFrom?: string,
 ): string {
   const base = source.replace(/\.git$/, "").replace(/\/$/, "");
-  const isGitLike = /(github|gitlab)\.com|bitbucket\.org/.test(base);
+  const isGitLike =
+    /^(?:https?:\/\/)?(?:www\.)?(?:github\.com|gitlab\.com|bitbucket\.org)(?::\d+)?(?:\/|$)/.test(
+      base,
+    );
   if (!isGitLike) return base;
   if (compareFrom) {
     return `${base}/compare/${compareFrom}...${version}`;
@@ -100,13 +109,23 @@ function skillSourceUrl(
   return `${base}/blob/${version}/skills/${name}/SKILL.md`;
 }
 
-export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelProps) {
+export function SkillsPanel({
+  agentId,
+  isRunning,
+  onOpenFile,
+}: SkillsPanelProps) {
   const showConfirm = useStore((s) => s.showConfirm);
 
   const [sources, setSources] = useState<SkillSource[]>([]);
-  const [skillsBySource, setSkillsBySource] = useState<Record<string, Skill[]>>({});
-  const [loadingBySource, setLoadingBySource] = useState<Record<string, boolean>>({});
-  const [errorBySource, setErrorBySource] = useState<Record<string, string | null>>({});
+  const [skillsBySource, setSkillsBySource] = useState<Record<string, Skill[]>>(
+    {},
+  );
+  const [loadingBySource, setLoadingBySource] = useState<
+    Record<string, boolean>
+  >({});
+  const [errorBySource, setErrorBySource] = useState<
+    Record<string, string | null>
+  >({});
   const [installed, setInstalled] = useState<SkillRef[]>([]);
   const [localSkills, setLocalSkills] = useState<LocalSkill[]>([]);
   const [publishes, setPublishes] = useState<SkillPublishRecord[]>([]);
@@ -115,7 +134,11 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
   const [addForm, setAddForm] = useState({ name: "", gitUrl: "" });
   const [addBusy, setAddBusy] = useState(false);
   const [publishFor, setPublishFor] = useState<LocalSkill | null>(null);
-  const [publishForm, setPublishForm] = useState({ sourceId: "", title: "", body: "" });
+  const [publishForm, setPublishForm] = useState({
+    sourceId: "",
+    title: "",
+    body: "",
+  });
   const [publishBusy, setPublishBusy] = useState(false);
   const showToast = useStore((s) => s.showToast);
 
@@ -126,12 +149,15 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
    * This keeps the persisted value minimal and means brand-new sources
    * automatically honour the right default without pre-seeding storage.
    */
-  const [collapseOverrides, setCollapseOverrides] = useState<Set<string>>(loadCollapsed);
+  const [collapseOverrides, setCollapseOverrides] =
+    useState<Set<string>>(loadCollapsed);
 
   const isCollapsed = useCallback(
     (src: SkillSource): boolean => {
       const defaultCollapsed = isCuratedSource(src);
-      return collapseOverrides.has(src.id) ? !defaultCollapsed : defaultCollapsed;
+      return collapseOverrides.has(src.id)
+        ? !defaultCollapsed
+        : defaultCollapsed;
     },
     [collapseOverrides],
   );
@@ -146,33 +172,43 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
     });
   }, []);
 
-  const loadSkills = useCallback(async (sourceId: string) => {
-    // Public GitHub sources are scanned directly from the api-server, so no
-    // running instance is required. Private sources need the agent pod to
-    // delegate to — the server surfaces a PRECONDITION_FAILED in that case
-    // and we render it the same way any other per-source error renders.
-    if (!instanceId) return;
-    setLoadingBySource((l) => ({ ...l, [sourceId]: true }));
-    setErrorBySource((e) => ({ ...e, [sourceId]: null }));
-    try {
-      const list = await api.skills.listSkills.query({ sourceId, instanceId });
-      setSkillsBySource((s) => ({ ...s, [sourceId]: list }));
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to load skills";
-      setErrorBySource((e) => ({ ...e, [sourceId]: msg }));
-      setSkillsBySource((s) => ({ ...s, [sourceId]: [] }));
-    } finally {
-      setLoadingBySource((l) => ({ ...l, [sourceId]: false }));
-    }
-  }, [instanceId]);
+  const loadSkills = useCallback(
+    async (sourceId: string) => {
+      // Public GitHub sources are scanned directly from the api-server, so no
+      // running agent is required. Private sources need the agent pod to
+      // delegate to — the server surfaces a PRECONDITION_FAILED in that case
+      // and we render it the same way any other per-source error renders.
+      if (!agentId) return;
+      setLoadingBySource((l) => ({ ...l, [sourceId]: true }));
+      setErrorBySource((e) => ({ ...e, [sourceId]: null }));
+      try {
+        const list = await api.skills.list.query({
+          sourceId,
+          agentId,
+        });
+        setSkillsBySource((s) => ({ ...s, [sourceId]: list }));
+      } catch (err) {
+        const msg =
+          err instanceof Error ? err.message : "Failed to load skills";
+        setErrorBySource((e) => ({ ...e, [sourceId]: msg }));
+        setSkillsBySource((s) => ({ ...s, [sourceId]: [] }));
+      } finally {
+        setLoadingBySource((l) => ({ ...l, [sourceId]: false }));
+      }
+    },
+    [agentId],
+  );
 
-  const refreshSource = useCallback(async (sourceId: string) => {
-    const ok = await runAction(
-      () => api.skills.sources.refresh.mutate({ id: sourceId }),
-      "Failed to refresh source",
-    );
-    if (ok !== ACTION_FAILED) await loadSkills(sourceId);
-  }, [loadSkills]);
+  const refreshSource = useCallback(
+    async (sourceId: string) => {
+      const ok = await runAction(
+        () => api.skills.sources.refresh.mutate({ id: sourceId }),
+        "Failed to refresh source",
+      );
+      if (ok !== ACTION_FAILED) await loadSkills(sourceId);
+    },
+    [loadSkills],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -184,7 +220,7 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
     // deleted out-of-band), and persists the cleanup — so manual file
     // deletions stop showing as "installed" the moment the panel polls.
     const refreshInstalled = async () => {
-      if (!instanceId) {
+      if (!agentId) {
         if (!cancelled) {
           setInstalled([]);
           setLocalSkills([]);
@@ -193,7 +229,7 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
         return;
       }
       try {
-        const state = await api.skills.state.query({ instanceId });
+        const state = await api.skills.state.query({ agentId });
         if (!cancelled) {
           setInstalled(state.installed);
           setLocalSkills(state.standalone);
@@ -204,10 +240,10 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
 
     (async () => {
       try {
-        // Pass instanceId so the backend composes user + platform + agent
+        // Pass agentId so the backend composes user + platform + agent
         // (template-seeded) sources into a single ordered list.
         const srcs = await api.skills.sources.list.query(
-          instanceId ? { instanceId } : undefined,
+          agentId ? { agentId } : undefined,
         );
         if (!cancelled) setSources(srcs);
       } catch {
@@ -219,8 +255,11 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
     // Poll so agent-initiated installs (via MCP tool calls in chat) show up
     // without a manual refresh. Matches SchedulesPanel's cadence.
     const iv = setInterval(refreshInstalled, 5000);
-    return () => { cancelled = true; clearInterval(iv); };
-  }, [instanceId]);
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+    };
+  }, [agentId]);
 
   useEffect(() => {
     // Only fetch for expanded sources. A collapsed row is invisible, so
@@ -243,20 +282,25 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
     installed.find((s) => s.source === source && s.name === name);
 
   const toggle = async (skill: Skill) => {
-    if (!instanceId || !isRunning) return;
+    if (!agentId || !isRunning) return;
     const key = skillKey(skill.source, skill.name);
     setBusyRow(key);
     const currentlyInstalled = isInstalled(skill.source, skill.name);
     const result = await runAction(
-      () => currentlyInstalled
-        ? api.skills.uninstall.mutate({ instanceId, source: skill.source, name: skill.name })
-        : api.skills.install.mutate({
-            instanceId,
-            source: skill.source,
-            name: skill.name,
-            version: skill.version,
-            contentHash: skill.contentHash,
-          }),
+      () =>
+        currentlyInstalled
+          ? api.skills.uninstall.mutate({
+              agentId,
+              source: skill.source,
+              name: skill.name,
+            })
+          : api.skills.install.mutate({
+              agentId,
+              source: skill.source,
+              name: skill.name,
+              version: skill.version,
+              contentHash: skill.contentHash,
+            }),
       `Failed to ${currentlyInstalled ? "uninstall" : "install"} ${skill.name}`,
     );
     if (result !== ACTION_FAILED) setInstalled(result);
@@ -264,17 +308,18 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
   };
 
   const updateDrift = async (skill: Skill) => {
-    if (!instanceId || !isRunning) return;
+    if (!agentId || !isRunning) return;
     const key = skillKey(skill.source, skill.name);
     setBusyRow(key);
     const result = await runAction(
-      () => api.skills.install.mutate({
-        instanceId,
-        source: skill.source,
-        name: skill.name,
-        version: skill.version,
-        contentHash: skill.contentHash,
-      }),
+      () =>
+        api.skills.install.mutate({
+          agentId,
+          source: skill.source,
+          name: skill.name,
+          version: skill.version,
+          contentHash: skill.contentHash,
+        }),
       `Failed to update ${skill.name}`,
     );
     if (result !== ACTION_FAILED) setInstalled(result);
@@ -285,10 +330,11 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
     if (!addForm.name.trim() || !addForm.gitUrl.trim()) return;
     setAddBusy(true);
     const result = await runAction(
-      () => api.skills.sources.create.mutate({
-        name: addForm.name.trim(),
-        gitUrl: addForm.gitUrl.trim(),
-      }),
+      () =>
+        api.skills.sources.create.mutate({
+          name: addForm.name.trim(),
+          gitUrl: addForm.gitUrl.trim(),
+        }),
       "Failed to add source",
     );
     setAddBusy(false);
@@ -325,11 +371,11 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
   };
 
   const publish = async () => {
-    if (!instanceId || !publishFor) return;
+    if (!agentId || !publishFor) return;
     setPublishBusy(true);
     try {
       const result = await api.skills.publish.mutate({
-        instanceId,
+        agentId,
         sourceId: publishForm.sourceId,
         name: publishFor.name,
         title: publishForm.title.trim() || undefined,
@@ -338,7 +384,10 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
       showToast({
         kind: "success",
         message: `Published ${publishFor.name}`,
-        action: { label: "View PR", onClick: () => window.open(result.prUrl, "_blank") },
+        action: {
+          label: "View PR",
+          onClick: () => window.open(result.prUrl, "_blank"),
+        },
         ttl: 10_000,
       });
       setPublishFor(null);
@@ -351,13 +400,18 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
       // in the error message when an upstream surfaces a structured error
       // (not connected / agent access not granted). Parse it out so the
       // toast's action button takes the user straight to the right fix.
-      const rawMessage = err instanceof Error ? err.message : `Failed to publish ${publishFor.name}`;
+      const rawMessage =
+        err instanceof Error
+          ? err.message
+          : `Failed to publish ${publishFor.name}`;
       const cta = rawMessage.match(/platform-cta:(\S+)/)?.[1];
       const message = rawMessage.replace(/\nplatform-cta:\S+/, "").trim();
       showToast({
         kind: "error",
         message,
-        action: cta ? { label: "Fix it", onClick: () => window.open(cta, "_blank") } : undefined,
+        action: cta
+          ? { label: "Fix it", onClick: () => window.open(cta, "_blank") }
+          : undefined,
         ttl: 15_000,
       });
     } finally {
@@ -367,7 +421,7 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
 
   const deleteSource = async (src: SkillSource) => {
     const ok = await showConfirm(
-      `Remove source "${src.name}"? Installed skills stay on running instances.`,
+      `Remove source "${src.name}"? Installed skills stay on running agents.`,
       "Remove Source",
     );
     if (!ok) return;
@@ -385,63 +439,77 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
     }
   };
 
+  const inp =
+    "w-full h-8 rounded-md border-2 border-border-light bg-surface px-3 text-[12px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)]";
+
   return (
     <div className="flex flex-col">
-      {!isRunning && instanceId && (
-        <div className="px-4 py-2 border-b border-border text-[11px] text-muted-foreground bg-warning-light">
-          Start the instance to manage skills.
+      {!isRunning && agentId && (
+        <div className="px-4 py-2 border-b border-border-light text-[11px] text-text-muted bg-warning-light">
+          Start the agent to manage skills.
         </div>
       )}
 
       {localSkills.length > 0 && (
-        <div className="border-b border-border">
-          <div className="flex items-center gap-2 px-4 py-2.5 bg-muted">
-            <span className="text-[12px] font-bold text-foreground flex-1 truncate">Standalone</span>
+        <div className="border-b border-border-light">
+          <div className="flex items-center gap-2 px-4 py-2.5 bg-surface-raised">
+            <span className="text-[12px] font-bold text-text flex-1 truncate">
+              Standalone
+            </span>
           </div>
           {publishFor && (
-            <div className="flex flex-col gap-3 border-b border-border p-4 anim-in bg-card">
-              <div className="text-[11px] text-muted-foreground">
-                Publishing <span className="font-mono text-foreground">{publishFor.name}</span> as a pull request.
+            <div className="flex flex-col gap-3 border-b border-border-light p-4 anim-in bg-surface">
+              <div className="text-[11px] text-text-muted">
+                Publishing{" "}
+                <span className="font-mono text-text">{publishFor.name}</span>{" "}
+                as a pull request.
               </div>
               <select
-                className="w-full h-8 rounded-md border-2 border-border bg-card px-3 text-[12px] text-foreground outline-none focus:border-primary"
+                className={inp}
                 value={publishForm.sourceId}
-                onChange={(e) => setPublishForm((f) => ({ ...f, sourceId: e.target.value }))}
+                onChange={(e) =>
+                  setPublishForm((f) => ({ ...f, sourceId: e.target.value }))
+                }
               >
                 {publishableSources.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name} ({s.gitUrl.replace(/^https:\/\/(github|gitlab)\.com\//, "")})</option>
+                  <option key={s.id} value={s.id}>
+                    {s.name} (
+                    {s.gitUrl.replace(/^https:\/\/(github|gitlab)\.com\//, "")})
+                  </option>
                 ))}
               </select>
-              <Input
-                className="h-8 text-[12px]"
+              <input
+                className={inp}
                 placeholder="Pull request title"
                 value={publishForm.title}
-                onChange={(e) => setPublishForm((f) => ({ ...f, title: e.target.value }))}
+                onChange={(e) =>
+                  setPublishForm((f) => ({ ...f, title: e.target.value }))
+                }
               />
-              <Textarea
-                className="text-[12px] min-h-[60px]"
+              <textarea
+                className="w-full rounded-md border-2 border-border-light bg-surface px-3 py-2 text-[12px] text-text outline-none transition-all focus:border-accent resize-y min-h-[60px]"
                 placeholder="Pull request body (optional)"
                 value={publishForm.body}
-                onChange={(e) => setPublishForm((f) => ({ ...f, body: e.target.value }))}
+                onChange={(e) =>
+                  setPublishForm((f) => ({ ...f, body: e.target.value }))
+                }
                 rows={3}
               />
               <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 px-3 text-[11px] font-semibold"
+                <button
+                  className="h-7 rounded-md border-2 border-border-light px-3 text-[11px] font-semibold text-text-muted hover:text-text transition-colors"
                   onClick={() => setPublishFor(null)}
                 >
                   Cancel
-                </Button>
-                <Button
-                  size="sm"
-                  className="h-7 px-3.5 text-[11px] font-bold"
+                </button>
+                <button
+                  className="btn-brutal h-7 rounded-md border-2 border-accent-hover bg-accent px-3.5 text-[11px] font-bold text-white disabled:opacity-40"
+                  style={{ boxShadow: "var(--shadow-brutal-accent)" }}
                   disabled={publishBusy || !publishForm.sourceId}
                   onClick={publish}
                 >
                   {publishBusy ? "Publishing…" : "Publish"}
-                </Button>
+                </button>
               </div>
             </div>
           )}
@@ -449,11 +517,13 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
           {localSkills.map((skill) => (
             <div
               key={`${skill.skillPath}::${skill.name}`}
-              className="flex items-start gap-3 border-b border-border last:border-b-0 px-4 py-3"
+              className="flex items-start gap-3 border-b border-border-light last:border-b-0 px-4 py-3"
             >
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-[13px] font-medium text-foreground truncate">{skill.name}</span>
+                  <span className="text-[13px] font-medium text-text truncate">
+                    {skill.name}
+                  </span>
                   {(() => {
                     const pub = latestPublishByName.get(skill.name);
                     if (!pub) return null;
@@ -470,22 +540,18 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
                     );
                   })()}
                   {onOpenFile && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
+                    <button
                       type="button"
-                      className="h-5 w-5 text-muted-foreground hover:text-primary shrink-0"
+                      className="text-text-muted hover:text-accent transition-colors shrink-0"
                       title="View SKILL.md in Files"
                       onClick={() => onOpenFile(localSkillMdPath(skill))}
                     >
                       <Eye size={11} />
-                    </Button>
+                    </button>
                   )}
-                  <Button
-                    variant="ghost"
-                    size="icon"
+                  <button
                     type="button"
-                    className="h-5 w-5 text-muted-foreground hover:text-primary shrink-0 disabled:opacity-40"
+                    className="text-text-muted hover:text-accent transition-colors shrink-0 disabled:opacity-40 disabled:hover:text-text-muted"
                     title={
                       publishableSources.length === 0
                         ? "Add a GitHub source first to publish there"
@@ -495,10 +561,13 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
                     onClick={() => openPublish(skill)}
                   >
                     <Share2 size={11} />
-                  </Button>
+                  </button>
                 </div>
                 {skill.description && (
-                  <div className="mt-0.5 text-[11px] text-muted-foreground line-clamp-2" title={skill.description}>
+                  <div
+                    className="mt-0.5 text-[11px] text-text-muted line-clamp-2"
+                    title={skill.description}
+                  >
                     {skill.description}
                   </div>
                 )}
@@ -509,53 +578,60 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
       )}
 
       <div className="px-3 py-2.5 shrink-0">
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full h-7 text-[11px] font-semibold text-foreground/80 hover:text-primary hover:border-primary gap-1"
-          onClick={() => { setAddForm({ name: "", gitUrl: "" }); setShowAdd(true); }}
+        <button
+          className="w-full h-7 rounded-md border border-border-light text-[11px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center justify-center gap-1 transition-colors"
+          onClick={() => {
+            setAddForm({ name: "", gitUrl: "" });
+            setShowAdd(true);
+          }}
         >
           <Plus size={12} /> Add Source
-        </Button>
+        </button>
       </div>
 
       {showAdd && (
-        <div className="flex flex-col gap-3 border-b border-border p-4 anim-in">
-          <Input
-            className="h-8 text-[12px]"
+        <div className="flex flex-col gap-3 border-b border-border-light p-4 anim-in">
+          <input
+            className={inp}
             placeholder='Name (e.g. "Apocohq Skills")'
             value={addForm.name}
-            onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))}
+            onChange={(e) =>
+              setAddForm((f) => ({ ...f, name: e.target.value }))
+            }
           />
-          <Input
-            className="h-8 text-[12px] font-mono"
+          <input
+            className={`${inp} font-mono`}
             placeholder="https://github.com/apocohq/skills"
             value={addForm.gitUrl}
-            onChange={(e) => setAddForm((f) => ({ ...f, gitUrl: e.target.value }))}
+            onChange={(e) =>
+              setAddForm((f) => ({ ...f, gitUrl: e.target.value }))
+            }
           />
           <div className="flex justify-end gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 px-3 text-[11px] font-semibold"
+            <button
+              className="h-7 rounded-md border-2 border-border-light px-3 text-[11px] font-semibold text-text-muted hover:text-text transition-colors"
               onClick={() => setShowAdd(false)}
             >
               Cancel
-            </Button>
-            <Button
-              size="sm"
-              className="h-7 px-3.5 text-[11px] font-bold"
-              disabled={addBusy || !addForm.name.trim() || !addForm.gitUrl.trim()}
+            </button>
+            <button
+              className="btn-brutal h-7 rounded-md border-2 border-accent-hover bg-accent px-3.5 text-[11px] font-bold text-white disabled:opacity-40"
+              style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+              disabled={
+                addBusy || !addForm.name.trim() || !addForm.gitUrl.trim()
+              }
               onClick={addSource}
             >
               {addBusy ? "..." : "Add"}
-            </Button>
+            </button>
           </div>
         </div>
       )}
 
       {sources.length === 0 && !showAdd && (
-        <p className="px-4 py-5 text-[12px] text-muted-foreground">No sources. Add a public git repo with skills.</p>
+        <p className="px-4 py-5 text-[12px] text-text-muted">
+          No sources. Add a public git repo with skills.
+        </p>
       )}
 
       {sources.map((src) => {
@@ -564,47 +640,55 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
         const error = errorBySource[src.id];
         const collapsed = isCollapsed(src);
         return (
-          <div key={src.id} className="border-b border-border">
+          <div key={src.id} className="border-b border-border-light">
             {/* Whole header is the click target for collapse/expand. Nested
                 buttons (refresh, delete) stop propagation so they don't
                 accidentally toggle the section. */}
             <button
               type="button"
               onClick={() => toggleCollapsed(src.id)}
-              className="w-full flex items-center gap-2 px-4 py-2.5 bg-muted hover:bg-border transition-colors text-left"
+              className="w-full flex items-center gap-2 px-4 py-2.5 bg-surface-raised hover:bg-[var(--color-border-light)] transition-colors text-left"
               aria-expanded={!collapsed}
               aria-label={`${collapsed ? "Expand" : "Collapse"} ${src.name}`}
             >
-              {collapsed
-                ? <ChevronRight size={14} className="text-muted-foreground shrink-0" />
-                : <ChevronDown size={14} className="text-muted-foreground shrink-0" />}
-              <span className="text-[12px] font-bold text-foreground flex-1 truncate">{src.name}</span>
+              {collapsed ? (
+                <ChevronRight size={14} className="text-text-muted shrink-0" />
+              ) : (
+                <ChevronDown size={14} className="text-text-muted shrink-0" />
+              )}
+              <span className="text-[12px] font-bold text-text flex-1 truncate">
+                {src.name}
+              </span>
               {src.system && (
-                <Badge
-                  variant="outline"
+                <span
                   className="text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 bg-info-light text-info border-info"
                   title="Configured by the cluster admin, visible to every user"
                 >
                   Platform
-                </Badge>
+                </span>
               )}
               {src.fromTemplate && (
-                <Badge
-                  variant="outline"
+                <span
                   className="text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 bg-template-light text-template border-template"
                   title={`Included with the ${src.fromTemplate.templateName} agent template`}
                 >
                   Agent
-                </Badge>
+                </span>
               )}
-              <span className="text-[11px] text-muted-foreground truncate max-w-[200px]" title={src.gitUrl}>
+              <span
+                className="text-[11px] text-text-muted truncate max-w-[200px]"
+                title={src.gitUrl}
+              >
                 {src.gitUrl.replace(/^https:\/\/github\.com\//, "")}
               </span>
               <span
                 role="button"
                 tabIndex={0}
-                className={`text-muted-foreground hover:text-primary transition-colors ${loading ? "anim-spin" : ""} ${loading ? "pointer-events-none opacity-50" : ""}`}
-                onClick={(e) => { e.stopPropagation(); if (!loading) void refreshSource(src.id); }}
+                className={`text-text-muted hover:text-accent transition-colors ${loading ? "anim-spin" : ""} ${loading ? "pointer-events-none opacity-50" : ""}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!loading) void refreshSource(src.id);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
@@ -620,8 +704,11 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
                 <span
                   role="button"
                   tabIndex={0}
-                  className="text-muted-foreground hover:text-destructive transition-colors"
-                  onClick={(e) => { e.stopPropagation(); void deleteSource(src); }}
+                  className="text-text-muted hover:text-danger transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void deleteSource(src);
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
@@ -637,108 +724,127 @@ export function SkillsPanel({ instanceId, isRunning, onOpenFile }: SkillsPanelPr
             </button>
 
             {!collapsed && loading && (
-              <div className="px-4 py-3 text-[11px] text-muted-foreground">Loading skills...</div>
+              <div className="px-4 py-3 text-[11px] text-text-muted">
+                Loading skills...
+              </div>
             )}
 
-            {!collapsed && error && (() => {
-              // publish/scan services encode a call-to-action URL as
-              // `\nplatform-cta:<url>` in the tRPC error message when an
-              // upstream surfaces a structured error (not connected /
-              // agent access not granted / repo not in OAuth App's
-              // allowed list). Split it out so the banner offers a
-              // direct link to the fix.
-              const cta = error.match(/platform-cta:(\S+)/)?.[1];
-              const message = error.replace(/\nplatform-cta:\S+/, "").trim();
-              return (
-                <div className="px-4 py-2 text-[11px] text-destructive bg-destructive/10 flex items-center gap-2">
-                  <span className="flex-1">{message}</span>
-                  {cta && (
-                    <a
-                      href={cta}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-semibold underline hover:opacity-80 shrink-0"
-                    >
-                      Fix it →
-                    </a>
-                  )}
-                </div>
-              );
-            })()}
-
-            {!collapsed && !loading && !error && list.length === 0 && (
-              <p className="px-4 py-3 text-[11px] text-muted-foreground">No skills in this source.</p>
-            )}
-
-            {!collapsed && list.map((skill) => {
-              const installed = installedRef(skill.source, skill.name);
-              const isInst = installed !== undefined;
-              // Drift = contents changed. contentHash is missing only for
-              // skills installed before this field existed — we skip drift
-              // until the next install/update fills it in.
-              const hasDrift =
-                isInst &&
-                installed.contentHash !== undefined &&
-                installed.contentHash !== skill.contentHash;
-              const key = skillKey(skill.source, skill.name);
-              const rowBusy = busyRow === key;
-              const disabled = !instanceId || !isRunning || rowBusy;
-
-              return (
-                <label
-                  key={key}
-                  className={`flex items-start gap-3 border-b border-border last:border-b-0 px-4 py-3 transition-colors ${isInst ? "bg-primary/10" : ""} ${disabled ? "opacity-60" : "cursor-pointer hover:bg-muted"}`}
-                >
-                  <Checkbox
-                    className="mt-0.5"
-                    checked={isInst}
-                    disabled={disabled}
-                    onCheckedChange={() => toggle(skill)}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[13px] font-medium text-foreground truncate">{skill.name}</span>
+            {!collapsed &&
+              error &&
+              (() => {
+                // publish/scan services encode a call-to-action URL as
+                // `\nplatform-cta:<url>` in the tRPC error message when an
+                // upstream surfaces a structured error (not connected /
+                // agent access not granted / repo not in OAuth App's
+                // allowed list). Split it out so the banner offers a
+                // direct link to the fix.
+                const cta = error.match(/platform-cta:(\S+)/)?.[1];
+                const message = error.replace(/\nplatform-cta:\S+/, "").trim();
+                return (
+                  <div className="px-4 py-2 text-[11px] text-danger bg-danger-light flex items-center gap-2">
+                    <span className="flex-1">{message}</span>
+                    {cta && (
                       <a
-                        href={skillSourceUrl(
-                          skill.source,
-                          skill.version,
-                          skill.name,
-                          hasDrift ? installed?.version : undefined,
-                        )}
+                        href={cta}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-muted-foreground hover:text-primary transition-colors shrink-0"
-                        title={hasDrift ? "View changes since installed version" : "View SKILL.md at the pinned commit"}
-                        onClick={(e) => e.stopPropagation()}
+                        className="font-semibold underline hover:opacity-80 shrink-0"
                       >
-                        <ExternalLink size={11} />
+                        Fix it →
                       </a>
-                      {hasDrift && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-auto flex items-center gap-1 text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 bg-info-light text-info border-info hover:opacity-80 disabled:opacity-40"
-                          title={`Skill contents changed since install (installed ${installed?.version.slice(0, 8)} → ${skill.version.slice(0, 8)})`}
-                          disabled={disabled}
-                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); updateDrift(skill); }}
-                        >
-                          <RefreshCw size={10} /> Update
-                        </Button>
-                      )}
-                      {rowBusy && (
-                        <span className="w-3 h-3 rounded-full border-2 border-border border-t-primary anim-spin shrink-0" />
-                      )}
-                    </div>
-                    {skill.description && (
-                      <div className="mt-0.5 text-[11px] text-muted-foreground line-clamp-2" title={skill.description}>
-                        {skill.description}
-                      </div>
                     )}
                   </div>
-                </label>
-              );
-            })}
+                );
+              })()}
+
+            {!collapsed && !loading && !error && list.length === 0 && (
+              <p className="px-4 py-3 text-[11px] text-text-muted">
+                No skills in this source.
+              </p>
+            )}
+
+            {!collapsed &&
+              list.map((skill) => {
+                const installed = installedRef(skill.source, skill.name);
+                const isInst = installed !== undefined;
+                // Drift = contents changed. contentHash is missing only for
+                // skills installed before this field existed — we skip drift
+                // until the next install/update fills it in.
+                const hasDrift =
+                  isInst &&
+                  installed.contentHash !== undefined &&
+                  installed.contentHash !== skill.contentHash;
+                const key = skillKey(skill.source, skill.name);
+                const rowBusy = busyRow === key;
+                const disabled = !agentId || !isRunning || rowBusy;
+
+                return (
+                  <label
+                    key={key}
+                    className={`flex items-start gap-3 border-b border-border-light last:border-b-0 px-4 py-3 transition-colors ${isInst ? "bg-accent-light" : ""} ${disabled ? "opacity-60" : "cursor-pointer hover:bg-surface-raised"}`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="accent-[var(--color-accent)] w-4 h-4 mt-0.5"
+                      checked={isInst}
+                      disabled={disabled}
+                      onChange={() => toggle(skill)}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[13px] font-medium text-text truncate">
+                          {skill.name}
+                        </span>
+                        <a
+                          href={skillSourceUrl(
+                            skill.source,
+                            skill.version,
+                            skill.name,
+                            hasDrift ? installed?.version : undefined,
+                          )}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-text-muted hover:text-accent transition-colors shrink-0"
+                          title={
+                            hasDrift
+                              ? "View changes since installed version"
+                              : "View SKILL.md at the pinned commit"
+                          }
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <ExternalLink size={11} />
+                        </a>
+                        {hasDrift && (
+                          <button
+                            type="button"
+                            className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 bg-info-light text-info border-info hover:opacity-80 disabled:opacity-40"
+                            title={`Skill contents changed since install (installed ${installed?.version.slice(0, 8)} → ${skill.version.slice(0, 8)})`}
+                            disabled={disabled}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              updateDrift(skill);
+                            }}
+                          >
+                            <RefreshCw size={10} /> Update
+                          </button>
+                        )}
+                        {rowBusy && (
+                          <span className="w-3 h-3 rounded-full border-2 border-border-light border-t-accent anim-spin shrink-0" />
+                        )}
+                      </div>
+                      {skill.description && (
+                        <div
+                          className="mt-0.5 text-[11px] text-text-muted line-clamp-2"
+                          title={skill.description}
+                        >
+                          {skill.description}
+                        </div>
+                      )}
+                    </div>
+                  </label>
+                );
+              })}
           </div>
         );
       })}

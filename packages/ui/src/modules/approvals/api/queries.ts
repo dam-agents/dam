@@ -7,8 +7,8 @@ const REFETCH_INTERVAL_MS = 2000;
 export const approvalsKeys = {
   all: ["approvals"] as const,
   forOwner: () => [...approvalsKeys.all, "owner"] as const,
-  forInstance: (instanceId: string | null) =>
-    [...approvalsKeys.all, "instance", instanceId] as const,
+  forAgent: (agentId: string | null) =>
+    [...approvalsKeys.all, "agent", agentId] as const,
 };
 
 /** Owner-wide pending approvals. Polled — Redis pub/sub fans the synth
@@ -24,14 +24,14 @@ export function useApprovalsForOwner() {
   });
 }
 
-export function useApprovalsForInstance(instanceId: string | null) {
+export function useApprovalsForAgent(agentId: string | null) {
   return useQuery({
-    queryKey: approvalsKeys.forInstance(instanceId),
-    queryFn: instanceId
-      ? () => api.approvals.listForInstance.query({ instanceId })
+    queryKey: approvalsKeys.forAgent(agentId),
+    queryFn: agentId
+      ? () => api.approvals.listForInstance.query({ agentId })
       : skipToken,
     refetchInterval: REFETCH_INTERVAL_MS,
     staleTime: REFETCH_INTERVAL_MS,
-    meta: { errorToast: "Couldn't load instance approvals" },
+    meta: { errorToast: "Couldn't load agent approvals" },
   });
 }

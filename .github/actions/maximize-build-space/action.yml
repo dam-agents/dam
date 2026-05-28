@@ -79,38 +79,52 @@ runs:
 
     - name: Maximize build disk space
       shell: bash
+      env:
+        INPUT_BUILD_MOUNT_PATH: ${{ inputs.build-mount-path }}
+        INPUT_ROOT_RESERVE_MB: ${{ inputs.root-reserve-mb }}
+        INPUT_TEMP_RESERVE_MB: ${{ inputs.temp-reserve-mb }}
+        INPUT_SWAP_SIZE_MB: ${{ inputs.swap-size-mb }}
+        INPUT_OVERPROVISION_LVM: ${{ inputs.overprovision-lvm }}
+        INPUT_PV_LOOP_PATH: ${{ inputs.pv-loop-path }}
+        INPUT_TMP_PV_LOOP_PATH: ${{ inputs.tmp-pv-loop-path }}
+        INPUT_REMOVE_DOTNET: ${{ inputs.remove-dotnet }}
+        INPUT_REMOVE_ANDROID: ${{ inputs.remove-android }}
+        INPUT_REMOVE_HASKELL: ${{ inputs.remove-haskell }}
+        INPUT_REMOVE_CODEQL: ${{ inputs.remove-codeql }}
+        INPUT_REMOVE_DOCKER_IMAGES: ${{ inputs.remove-docker-images }}
+        INPUT_BUILD_MOUNT_PATH_OWNERSHIP: ${{ inputs.build-mount-path-ownership }}
       run: |
           set -euo pipefail
 
-          BUILD_MOUNT_PATH="${{ inputs.build-mount-path }}"
+          BUILD_MOUNT_PATH="${INPUT_BUILD_MOUNT_PATH}"
           if [[ -z "${BUILD_MOUNT_PATH}" ]]; then
             BUILD_MOUNT_PATH="${GITHUB_WORKSPACE}"
           fi
 
           echo "Arguments:"
           echo
-          echo "  Root reserve:      ${{ inputs.root-reserve-mb }} MiB"
-          echo "  Temp reserve:      ${{ inputs.temp-reserve-mb }} MiB"
-          echo "  Swap space:        ${{ inputs.swap-size-mb }} MiB"
-          echo "  Overprovision LVM: ${{ inputs.overprovision-lvm }}"
+          echo "  Root reserve:      ${INPUT_ROOT_RESERVE_MB} MiB"
+          echo "  Temp reserve:      ${INPUT_TEMP_RESERVE_MB} MiB"
+          echo "  Swap space:        ${INPUT_SWAP_SIZE_MB} MiB"
+          echo "  Overprovision LVM: ${INPUT_OVERPROVISION_LVM}"
           echo "  Mount path:        ${BUILD_MOUNT_PATH}"
-          echo "  Root PV loop path: ${{ inputs.pv-loop-path }}"
-          echo "  Temp PV loop path: ${{ inputs.tmp-pv-loop-path }}"
+          echo "  Root PV loop path: ${INPUT_PV_LOOP_PATH}"
+          echo "  Temp PV loop path: ${INPUT_TMP_PV_LOOP_PATH}"
 
           echo -n "  Removing:     "
-          if [[ ${{ inputs.remove-dotnet }} == 'true' ]]; then
+          if [[ "${INPUT_REMOVE_DOTNET}" == 'true' ]]; then
             echo -n "dotnet "
           fi
-          if [[ ${{ inputs.remove-android }} == 'true' ]]; then
+          if [[ "${INPUT_REMOVE_ANDROID}" == 'true' ]]; then
             echo -n "android "
           fi
-          if [[ ${{ inputs.remove-haskell }} == 'true' ]]; then
+          if [[ "${INPUT_REMOVE_HASKELL}" == 'true' ]]; then
             echo -n "haskell "
           fi
-          if [[ ${{ inputs.remove-codeql }} == 'true' ]]; then
+          if [[ "${INPUT_REMOVE_CODEQL}" == 'true' ]]; then
             echo -n "codeql "
           fi
-          if [[ ${{ inputs.remove-docker-images }} == 'true' ]]; then
+          if [[ "${INPUT_REMOVE_DOCKER_IMAGES}" == 'true' ]]; then
             echo -n "docker "
           fi
           echo
@@ -123,19 +137,19 @@ runs:
           sudo find "${BUILD_MOUNT_PATH}" -maxdepth 0 ! -empty -exec echo 'WARNING: directory [{}] is not empty, data loss might occur. Content:' \; -exec ls -al "{}" \;
 
           echo "Removing unwanted software... "
-          if [[ ${{ inputs.remove-dotnet }} == 'true' ]]; then
+          if [[ "${INPUT_REMOVE_DOTNET}" == 'true' ]]; then
             sudo rm -rf /usr/share/dotnet
           fi
-          if [[ ${{ inputs.remove-android }} == 'true' ]]; then
+          if [[ "${INPUT_REMOVE_ANDROID}" == 'true' ]]; then
             sudo rm -rf /usr/local/lib/android
           fi
-          if [[ ${{ inputs.remove-haskell }} == 'true' ]]; then
+          if [[ "${INPUT_REMOVE_HASKELL}" == 'true' ]]; then
             sudo rm -rf /opt/ghc
           fi
-          if [[ ${{ inputs.remove-codeql }} == 'true' ]]; then
+          if [[ "${INPUT_REMOVE_CODEQL}" == 'true' ]]; then
             sudo rm -rf /opt/hostedtoolcache/CodeQL
           fi
-          if [[ ${{ inputs.remove-docker-images }} == 'true' ]]; then
+          if [[ "${INPUT_REMOVE_DOCKER_IMAGES}" == 'true' ]]; then
             sudo docker image prune --all --force
           fi
           echo "... done"
@@ -151,28 +165,26 @@ runs:
           echo "Creating LVM Volume."
           echo "  Creating LVM PV on root fs."
           # create loop pv image on root fs
-          ROOT_RESERVE_KB=$(expr ${{ inputs.root-reserve-mb }} \* 1024)
+          ROOT_RESERVE_KB=$(expr "${INPUT_ROOT_RESERVE_MB}" \* 1024)
           ROOT_FREE_KB=$(df --block-size=1024 --output=avail / | tail -1)
           ROOT_LVM_SIZE_KB=$(expr $ROOT_FREE_KB - $ROOT_RESERVE_KB)
           ROOT_LVM_SIZE_BYTES=$(expr $ROOT_LVM_SIZE_KB \* 1024)
-          sudo touch "${{ inputs.pv-loop-path }}" && sudo fallocate -z -l "${ROOT_LVM_SIZE_BYTES}" "${{ inputs.pv-loop-path }}"
-          export ROOT_LOOP_DEV=$(sudo losetup --find --show "${{ inputs.pv-loop-path }}")
+          sudo touch "${INPUT_PV_LOOP_PATH}" && sudo fallocate -z -l "${ROOT_LVM_SIZE_BYTES}" "${INPUT_PV_LOOP_PATH}"
+          export ROOT_LOOP_DEV=$(sudo losetup --find --show "${INPUT_PV_LOOP_PATH}")
           sudo pvcreate -f "${ROOT_LOOP_DEV}"
-
-
 
           # create volume group from these pvs
           # create pv on temp disk if it is on a different filesystem than root
           TMP_LOOP_DEV=""
-          
+
           if mountpoint -q /mnt; then
             echo "  /mnt is a mountpoint. Creating LVM PV on temp fs."
-            TMP_RESERVE_KB=$(expr ${{ inputs.temp-reserve-mb }} \* 1024)
+            TMP_RESERVE_KB=$(expr "${INPUT_TEMP_RESERVE_MB}" \* 1024)
             TMP_FREE_KB=$(df --block-size=1024 --output=avail /mnt | tail -1)
             TMP_LVM_SIZE_KB=$(expr $TMP_FREE_KB - $TMP_RESERVE_KB)
             TMP_LVM_SIZE_BYTES=$(expr $TMP_LVM_SIZE_KB \* 1024)
-            sudo touch "${{ inputs.tmp-pv-loop-path }}" && sudo fallocate -z -l "${TMP_LVM_SIZE_BYTES}" "${{ inputs.tmp-pv-loop-path }}"
-            export TMP_LOOP_DEV=$(sudo losetup --find --show "${{ inputs.tmp-pv-loop-path }}")
+            sudo touch "${INPUT_TMP_PV_LOOP_PATH}" && sudo fallocate -z -l "${TMP_LVM_SIZE_BYTES}" "${INPUT_TMP_PV_LOOP_PATH}"
+            export TMP_LOOP_DEV=$(sudo losetup --find --show "${INPUT_TMP_PV_LOOP_PATH}")
             sudo pvcreate -f "${TMP_LOOP_DEV}"
           else
             echo "  /mnt is NOT a mountpoint. Skipping LVM PV on temp fs."
@@ -187,20 +199,20 @@ runs:
 
           echo "Recreating swap"
           # create and activate swap
-          sudo lvcreate -L "${{ inputs.swap-size-mb }}M" -n swap "${VG_NAME}"
+          sudo lvcreate -L "${INPUT_SWAP_SIZE_MB}M" -n swap "${VG_NAME}"
           sudo mkswap "/dev/mapper/${VG_NAME}-swap"
           sudo swapon "/dev/mapper/${VG_NAME}-swap"
 
           echo "Creating build volume"
           # create and mount build volume
           sudo lvcreate -l 100%FREE -n buildlv "${VG_NAME}"
-          if [[ ${{ inputs.overprovision-lvm }} == 'true' ]]; then
+          if [[ "${INPUT_OVERPROVISION_LVM}" == 'true' ]]; then
             sudo mkfs.ext4 -m0 "/dev/mapper/${VG_NAME}-buildlv"
           else
             sudo mkfs.ext4 -Enodiscard -m0 "/dev/mapper/${VG_NAME}-buildlv"
           fi
           sudo mount "/dev/mapper/${VG_NAME}-buildlv" "${BUILD_MOUNT_PATH}"
-          sudo chown -R "${{ inputs.build-mount-path-ownership }}" "${BUILD_MOUNT_PATH}"
+          sudo chown -R "${INPUT_BUILD_MOUNT_PATH_OWNERSHIP}" "${BUILD_MOUNT_PATH}"
 
           # if build mount path is a parent of $GITHUB_WORKSPACE, and has been deleted, recreate it
           if [[ ! -d "${GITHUB_WORKSPACE}" ]]; then

@@ -29,10 +29,17 @@ export interface GithubPatPair {
 const API_HOST = "api.github.com";
 const GIT_HOST = "github.com";
 
-export function groupGithubPats(secrets: readonly SecretLike[]): GithubPatPair[] {
+export function groupGithubPats(
+  secrets: readonly SecretLike[],
+): GithubPatPair[] {
   const byName = new Map<string, { api: string[]; git: string[] }>();
   for (const s of secrets) {
-    const slot = s.hostPattern === API_HOST ? "api" : s.hostPattern === GIT_HOST ? "git" : null;
+    const slot =
+      s.hostPattern === API_HOST
+        ? "api"
+        : s.hostPattern === GIT_HOST
+          ? "git"
+          : null;
     if (!slot) continue;
     let group = byName.get(s.name);
     if (!group) {
@@ -45,7 +52,11 @@ export function groupGithubPats(secrets: readonly SecretLike[]): GithubPatPair[]
   const pairs: GithubPatPair[] = [];
   for (const [name, group] of byName) {
     if (group.api.length === 1 && group.git.length === 1) {
-      pairs.push({ name, apiSecretId: group.api[0]!, gitSecretId: group.git[0]! });
+      pairs.push({
+        name,
+        apiSecretId: group.api[0]!,
+        gitSecretId: group.git[0]!,
+      });
     }
   }
   pairs.sort((a, b) => a.name.localeCompare(b.name));

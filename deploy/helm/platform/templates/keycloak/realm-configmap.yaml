@@ -97,15 +97,34 @@ data:
           ]
         }
       ],
-      {{- if .Values.keycloak.requiredRole }}
+      {{- if or .Values.keycloak.requiredRole .Values.keycloak.inspectorRole }}
       "roles": {
         "realm": [
+          {{- $first := true }}
+          {{- if .Values.keycloak.requiredRole }}
           {
             "name": {{ .Values.keycloak.requiredRole | quote }},
             "description": {{ printf "Grants access to the %s platform" .Values.brand.name | quote }}
           }
+          {{- $first = false }}
+          {{- end }}
+          {{- if .Values.keycloak.inspectorRole }}
+          {{- if not $first }},{{ end }}
+          {
+            "name": {{ .Values.keycloak.inspectorRole | quote }},
+            "description": {{ printf "Grants read access to %s usage and adoption data" .Values.brand.name | quote }}
+          }
+          {{- end }}
         ]
       },
+      {{- end }}
+      {{- if .Values.keycloak.inspectorRole }}
+      "groups": [
+        {
+          "name": "inspectors",
+          "realmRoles": [{{ .Values.keycloak.inspectorRole | quote }}]
+        }
+      ],
       {{- end }}
       "users": [
         {{- if .Values.keycloak.testUser.enabled }}
@@ -125,6 +144,9 @@ data:
           ]
           {{- if .Values.keycloak.requiredRole }}
           ,"realmRoles": [{{ .Values.keycloak.requiredRole | quote }}]
+          {{- end }}
+          {{- if .Values.keycloak.inspectorRole }}
+          ,"groups": ["/inspectors"]
           {{- end }}
         }
         {{- end }}

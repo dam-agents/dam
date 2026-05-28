@@ -6,7 +6,7 @@ Platform agent running [Bob Shell](https://internal.bob.ibm.com/docs/shell) — 
 
 | Component | Source | Purpose |
 |---|---|---|
-| Harness | `bobshell` (IBM internal S3 distribution) | Bob CLI in `--experimental-acp` mode + native TUI |
+| Harness | `bobshell` (installed from `bob.ibm.com/download/bobshell.sh`) | Bob CLI in `--experimental-acp` mode + native TUI |
 | ACP bridge | `bob-acp-shim.mjs` (verbatim from upstream Bob) | Translates Bob's session/update events into the shape the platform UI expects; auto-approves `session/request_permission` (Bob's ACP doesn't actually issue per-tool HITL requests for built-in tools — see autonomy posture below) |
 | Storage | `/home/agent` PVC (ADR-027) | Bob's session index lives under `~/.bob/`; survives pod restarts |
 
@@ -14,11 +14,11 @@ Platform agent running [Bob Shell](https://internal.bob.ibm.com/docs/shell) — 
 
 Bob expects `BOBSHELL_API_KEY` in the pod env. On the platform the agent only ever sees a **placeholder** — the real key is materialized at the Envoy sidecar, never in the agent container.
 
-1. **Open Settings → Providers → Bob Shell** and paste your Bob API key. The provider preset creates a secret pinned to `prod.ibm-bob-staging.cloud.ibm.com` (the host Bob's bundle uses for `/v1/model/info`, `/key/info`, `/chat/completions` etc.) with the default `Authorization: Bearer {value}` injection plus a twin entry on the same host that handles the `?key=` URL parameter Bob appends to several admin endpoints. `BOBSHELL_API_KEY` is seeded as `sk-placeholder` — the literal content is irrelevant because Envoy overwrites the wire value, but the prefix matches what Bob displays in its outbound-request logs. The Advanced disclosure lets you set the default model and tenant-scoping flags (see below) — those flow as additional env-mappings rather than free-form env vars in the agent dialog.
+1. **Open Settings → Providers → Bob Shell** and paste your Bob API key. The provider preset creates a secret pinned to `api.us-east.bob.ibm.com` (the host Bob's bundle uses for `/v1/model/info`, `/key/info`, `/chat/completions` etc. with the current opaque api-key format) with `Authorization: Apikey {value}` injection plus a twin entry on the same host that handles the `?key=` URL parameter Bob appends to several admin endpoints. `BOBSHELL_API_KEY` is seeded as `dummy-placeholder` — the literal content is irrelevant because Envoy overwrites the wire value, but it must not start with `sk-`/`pk-` or Bob's bundle would silently downgrade to the legacy `prod.ibm-bob-staging.cloud.ibm.com` backend (which only accepts JWT keys). The Advanced disclosure lets you set the default model and tenant-scoping flags (see below) — those flow as additional env-mappings rather than free-form env vars in the agent dialog.
 
 2. **Grant the secret to the Bob agent instance** from Configure Agent → Secrets. The next pod restart picks up `BOBSHELL_API_KEY` and any pinned `BOB_*` envs along with the Envoy filter chain.
 
-The flow per request: Bob's `fetch()` sets `Authorization: Bearer sk-dummy` and tunnels through `HTTPS_PROXY` → Envoy terminates TLS using the platform CA → `credential_injector` rewrites the header to the real `Bearer sk-…` from the K8s Secret → upstream sees the valid token. See [`docs/architecture/security-and-credentials.md`](../../../docs/architecture/security-and-credentials.md) and [ADR-033](../../../docs/adrs/033-envoy-credential-gateway.md).
+The flow per request: Bob's `fetch()` sets `Authorization: Apikey dummy-placeholder` and tunnels through `HTTPS_PROXY` → Envoy terminates TLS using the platform CA → `credential_injector` rewrites the header to `Apikey bob_prod_…` from the K8s Secret → upstream sees the valid token. See [`docs/architecture/security-and-credentials.md`](../../../docs/architecture/security-and-credentials.md) and [ADR-033](../../../docs/adrs/033-envoy-credential-gateway.md).
 
 ### Endpoints that read the key from the URL
 

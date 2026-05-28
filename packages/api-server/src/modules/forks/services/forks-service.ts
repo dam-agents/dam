@@ -16,7 +16,7 @@ import {
 import type { ForkOrchestratorPort } from "../infrastructure/ports.js";
 
 export interface OpenForkInput {
-  instanceId: string;
+  agentId: string;
   foreignSub: string;
   replyId: string;
   sessionId?: string;
@@ -33,10 +33,18 @@ export function createForksService(deps: {
   generateForkId?: () => string;
 }): ForksService {
   const emit = deps.emit ?? defaultEmit;
-  const generateForkId = deps.generateForkId ?? randomUUID;
+  // Prefix UUIDs with `fork-` so derived K8s names (`<forkId>-gateway`
+  // Service, fork Pod, etc.) always start with an alphabetic character —
+  // DNS-1035 rejects labels that start with a digit, and randomUUID() can
+  // produce one (e.g. "041213f3-..." → "041213f3-...-gateway" fails apply).
+  const generateForkId = deps.generateForkId ?? (() => `fork-${randomUUID()}`);
   const open = new Map<string, Fork>();
 
-  function emitFailed(fork: Fork, reason: ForkFailureReason, detail?: string): void {
+  function emitFailed(
+    fork: Fork,
+    reason: ForkFailureReason,
+    detail?: string,
+  ): void {
     const next = markFailed(fork, reason, detail);
     if (!next.ok) return;
     open.delete(fork.forkId);
@@ -86,9 +94,11 @@ export function createForksService(deps: {
         forkId,
         replyId: input.replyId,
         spec: {
-          instanceId: input.instanceId,
+          agentId: input.agentId,
           foreignSub: toForeignSub(input.foreignSub),
-          ...(input.sessionId !== undefined ? { sessionId: input.sessionId } : {}),
+          ...(input.sessionId !== undefined
+            ? { sessionId: input.sessionId }
+            : {}),
         },
       });
       open.set(forkId, fork);
@@ -99,7 +109,9 @@ export function createForksService(deps: {
       });
       if (!created.ok) {
         const detail =
-          created.error.kind === "WriteFailed" ? created.error.detail : created.error.kind;
+          created.error.kind === "WriteFailed"
+            ? created.error.detail
+            : created.error.kind;
         emitFailed(fork, "OrchestrationFailed", detail);
         return;
       }

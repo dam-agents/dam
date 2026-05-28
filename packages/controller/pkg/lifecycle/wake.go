@@ -17,16 +17,16 @@ const (
 	lastActivityAnnotation = "agent-platform.ai/last-activity"
 )
 
-// wakeIfHibernated flips the instance's desiredState from "hibernated" to
+// wakeIfHibernated flips the agent's desiredState from "hibernated" to
 // "running" if currently hibernated. No-op if desiredState is anything else.
 // Uses K8s optimistic-concurrency retry to handle racing writers.
-func (l *Lifecycle) wakeIfHibernated(ctx context.Context, instanceName string) error {
+func (l *Lifecycle) wakeIfHibernated(ctx context.Context, agentName string) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		cm, err := l.client.CoreV1().ConfigMaps(l.namespace).Get(ctx, instanceName, metav1.GetOptions{})
+		cm, err := l.client.CoreV1().ConfigMaps(l.namespace).Get(ctx, agentName, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
-		spec, err := types.ParseInstanceSpec(cm.Data["spec.yaml"])
+		spec, err := types.ParseAgentSpec(cm.Data["spec.yaml"])
 		if err != nil {
 			return err
 		}
@@ -51,9 +51,9 @@ func (l *Lifecycle) wakeIfHibernated(ctx context.Context, instanceName string) e
 // bumpLastActivity updates agent-platform.ai/last-activity to now. Called on every
 // successful EnsureReady, so any caller (schedule fire, UI WS open, channel
 // message) keeps the pod warm and delays the idle-checker's hibernation.
-func (l *Lifecycle) bumpLastActivity(ctx context.Context, instanceName string) error {
+func (l *Lifecycle) bumpLastActivity(ctx context.Context, agentName string) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		cm, err := l.client.CoreV1().ConfigMaps(l.namespace).Get(ctx, instanceName, metav1.GetOptions{})
+		cm, err := l.client.CoreV1().ConfigMaps(l.namespace).Get(ctx, agentName, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}

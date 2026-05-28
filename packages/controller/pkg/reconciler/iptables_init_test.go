@@ -8,7 +8,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/kagenti/platform/packages/controller/pkg/config"
-	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
 func TestBuildIptablesInitContainer_DisabledReturnsNil(t *testing.T) {
@@ -111,8 +110,7 @@ func TestBuildIptablesInitContainer_AllowListScript(t *testing.T) {
 func TestBuildAgentStatefulSet_IptablesInitRunsFirst(t *testing.T) {
 	cfg := *testConfig
 	cfg.AgentBase.IptablesInit = &config.AgentIptablesInit{Enabled: true, Image: "registry.k8s.io/build-image/distroless-iptables:v0.9.2"}
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, &cfg, testOwnerCM, nil, "10.96.42.42")
+	ss := BuildAgentStatefulSet("my-instance", testAgent, &cfg, testOwnerCM, nil, "10.96.42.42")
 
 	ics := ss.Spec.Template.Spec.InitContainers
 	require.Len(t, ics, 2, "egress-lockdown + user init")
@@ -135,49 +133,18 @@ func TestBuildAgentStatefulSet_IptablesInitRunsFirst(t *testing.T) {
 func TestBuildAgentStatefulSet_IptablesInitSkippedWithoutGatewayIP(t *testing.T) {
 	cfg := *testConfig
 	cfg.AgentBase.IptablesInit = &config.AgentIptablesInit{Enabled: true, Image: "registry.k8s.io/build-image/distroless-iptables:v0.9.2"}
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, &cfg, testOwnerCM, nil, "")
+	ss := BuildAgentStatefulSet("my-instance", testAgent, &cfg, testOwnerCM, nil, "")
 
 	for _, ic := range ss.Spec.Template.Spec.InitContainers {
 		assert.NotEqual(t, "egress-lockdown", ic.Name, "lockdown must skip until gateway IP is known")
 	}
 }
 
-// With disableDns: true AND a known gateway ClusterIP, the agent pod must
-// carry a hostAliases entry mapping the gateway Service name to the IP.
-// This is how HTTPS_PROXY=http://<pair>-gateway:<port> keeps resolving
-// without admitting DNS in the NetworkPolicy.
-func TestBuildAgentStatefulSet_HostAliasesWhenDNSDisabled(t *testing.T) {
+// hostAliases is no longer used — HTTPS_PROXY is IP-direct so there's no
+// hostname to override. Pod render must not carry stale hostAliases under
+// any code path.
+func TestBuildAgentStatefulSet_NoHostAliases(t *testing.T) {
 	cfg := *testConfig
-	cfg.AgentBase.DisableDNS = true
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, &cfg, testOwnerCM, nil, "10.96.42.42")
-
-	aliases := ss.Spec.Template.Spec.HostAliases
-	require.Len(t, aliases, 1)
-	assert.Equal(t, "10.96.42.42", aliases[0].IP)
-	assert.Contains(t, aliases[0].Hostnames, "my-instance-gateway")
-}
-
-// disableDns: true with an unknown gateway ClusterIP (first reconcile race):
-// the controller must NOT block on it — the pod renders without
-// hostAliases and the next reconcile fills it in. The pod will fail to
-// reach the gateway in that window; that's the documented behavior.
-func TestBuildAgentStatefulSet_NoHostAliasesWhenClusterIPUnknown(t *testing.T) {
-	cfg := *testConfig
-	cfg.AgentBase.DisableDNS = true
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, &cfg, testOwnerCM, nil, "")
-	assert.Empty(t, ss.Spec.Template.Spec.HostAliases)
-}
-
-// disableDns: false — the default-before-PoC shape. No hostAliases regardless
-// of whether a ClusterIP was passed (DNS is doing the resolution).
-func TestBuildAgentStatefulSet_NoHostAliasesWhenDNSEnabled(t *testing.T) {
-	cfg := *testConfig
-	cfg.AgentBase.DisableDNS = false
-	instance := &types.InstanceSpec{DesiredState: "running"}
-	ss := BuildAgentStatefulSet("my-instance", instance, testAgent, &cfg, testOwnerCM, nil, "10.96.42.42")
-	assert.Empty(t, ss.Spec.Template.Spec.HostAliases,
-		"hostAliases only when DNS is disabled — otherwise rely on cluster DNS")
+	ss := BuildAgentStatefulSet("my-instance", testAgent, &cfg, testOwnerCM, nil, "10.96.42.42")
+	assert.Empty(t, ss.Spec.Template.Spec.HostAliases, "no hostAliases — proxy URL is IP-direct")
 }

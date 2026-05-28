@@ -3,7 +3,7 @@
 ---
 # Public Service. ADR-041: carries only the public HTTP/tRPC port; harness
 # moves to the -harness Service (waypoint-fronted) and ext-authz moves to
-# per-instance Services rendered by the controller. This Service therefore
+# per-agent Services rendered by the controller. This Service therefore
 # never carries the istio.io/use-waypoint label — browser traffic continues
 # to authenticate via Keycloak JWT, no mesh hop needed.
 apiVersion: v1
@@ -28,7 +28,7 @@ spec:
 # Harness Service (ADR-041). The `istio.io/use-waypoint` LABEL (NOT
 # annotation — Istio 1.21+ silently ignores the annotation form) routes
 # inbound traffic via the waypoint Gateway declared in waypoint.yaml. The
-# waypoint terminates HBONE and applies per-instance AuthorizationPolicies
+# waypoint terminates HBONE and applies per-agent AuthorizationPolicies
 # (rendered by the controller) before forwarding to the api-server pod.
 # A request that reaches the api-server has already been admitted against
 # the URL `:id`; handlers can treat `:id` as authenticated.
@@ -63,7 +63,10 @@ metadata:
 spec:
   replicas: 1
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app.kubernetes.io/component: apiserver
@@ -76,6 +79,7 @@ spec:
     spec:
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
       serviceAccountName: {{ include "platform.apiserver.serviceAccountName" . }}
+      terminationGracePeriodSeconds: 45
       containers:
         - name: apiserver
           image: "{{ .Values.apiServer.image.repository }}:{{ .Values.apiServer.image.tag | default .Chart.AppVersion }}"
@@ -87,6 +91,10 @@ spec:
               name: harness
             - containerPort: {{ .Values.apiServer.extAuthzPort }}
               name: ext-authz
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "5"]
           env:
             - name: POSTGRES_PASSWORD
               valueFrom:
@@ -97,7 +105,7 @@ spec:
               value: {{ include "platform.apiserver.postgres.dsn" . | quote }}
             - name: NAMESPACE
               value: {{ .Values.agentNamespace | quote }}
-            # ADR-041: api-server parses instance ID out of the per-instance
+            # ADR-041: api-server parses agent ID out of the per-agent
             # ext-authz Service hostname Envoy dialled. The release name is
             # the prefix.
             - name: PLATFORM_RELEASE_NAME
@@ -106,6 +114,8 @@ spec:
               value: {{ .Values.apiServer.port | quote }}
             - name: MCP_PORT
               value: {{ .Values.apiServer.harnessServerPort | quote }}
+            - name: PLATFORM_HARNESS_SERVER_URL
+              value: "http://{{ include "platform.fullname" . }}-apiserver-harness.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.apiServer.harnessServerPort }}"
             - name: EXT_AUTHZ_PORT
               value: {{ .Values.apiServer.extAuthzPort | quote }}
             - name: UI_BASE_URL
@@ -126,6 +136,15 @@ spec:
             - name: TELEGRAM_ENABLED
               value: "true"
             {{- end }}
+            {{- if .Values.apiServer.activityTracking.enabled }}
+            - name: ACTIVITY_TRACKING_ENABLED
+              value: "true"
+            {{- end }}
+            - name: ACTIVITY_HMAC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.fullname" . }}-apiserver-activity
+                  key: ACTIVITY_HMAC_KEY
             {{- if .Values.keycloak.enabled }}
             - name: KEYCLOAK_URL
               value: "http://{{ include "platform.keycloak.fullname" . }}:{{ .Values.keycloak.port }}"
@@ -149,6 +168,10 @@ spec:
             {{- if .Values.keycloak.requiredRole }}
             - name: KEYCLOAK_REQUIRED_ROLE
               value: {{ .Values.keycloak.requiredRole | quote }}
+            {{- end }}
+            {{- if .Values.keycloak.inspectorRole }}
+            - name: KEYCLOAK_INSPECTOR_ROLE
+              value: {{ .Values.keycloak.inspectorRole | quote }}
             {{- end }}
             {{- end }}
             - name: AGENT_HOME
@@ -228,6 +251,10 @@ spec:
             - name: BRAND_ICON_SVG
               value: {{ .Values.brand.icon | quote }}
             {{- end }}
+            - name: TERMS_VERSION
+              value: {{ .Values.terms.version | quote }}
+            - name: TERMS_TEXT
+              value: {{ .Values.terms.text | quote }}
           volumeMounts:
             - name: trusted-hosts
               mountPath: /etc/platform/trusted-hosts

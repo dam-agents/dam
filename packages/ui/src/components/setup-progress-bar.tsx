@@ -11,8 +11,8 @@ import {
   stepLabels,
   type StepStatus,
 } from "../lib/onboarding.js";
-import { useAgents } from "../modules/agents/api/queries.js";
-import { useAppConnections, useMcpConnections } from "../modules/connections/api/queries.js";
+import { useAgents, useAgentsList } from "../modules/agents/api/queries.js";
+import { useAppConnections } from "../modules/connections/api/queries.js";
 import { useSecrets } from "../modules/secrets/api/queries.js";
 import { useStore } from "../store.js";
 import { isCustomSecret, isProviderPresetType } from "../types.js";
@@ -24,24 +24,23 @@ export function SetupProgressBar() {
   // Gate on every signal the bar reads being loaded — otherwise the bar briefly
   // flashes the wrong state (e.g. step 2 pending for a user who already has
   // connections) while the initial fetches are in flight.
-  const onOnboardingView = view === "list" || view === "providers" || view === "connections";
-  const { data: agents = [], isSuccess: agentsLoaded } = useAgents();
-  const { data: secrets = [], isSuccess: secretsLoaded } = useSecrets({ enabled: onOnboardingView });
-  const { data: appConnections = [], isSuccess: appConnectionsLoaded } = useAppConnections({ enabled: onOnboardingView });
-  const { data: mcpConnections = [], isSuccess: mcpConnectionsLoaded } = useMcpConnections({ enabled: onOnboardingView });
-  const fullyLoaded =
-    agentsLoaded &&
-    secretsLoaded &&
-    appConnectionsLoaded &&
-    mcpConnectionsLoaded;
+  const onOnboardingView =
+    view === "list" || view === "providers" || view === "connections";
+  const { isSuccess: agentsLoaded } = useAgents();
+  const agents = useAgentsList();
+  const { data: secrets = [], isSuccess: secretsLoaded } = useSecrets({
+    enabled: onOnboardingView,
+  });
+  const { data: appConnections = [], isSuccess: appConnectionsLoaded } =
+    useAppConnections({ enabled: onOnboardingView });
+  const fullyLoaded = agentsLoaded && secretsLoaded && appConnectionsLoaded;
   const shouldRender = onOnboardingView && fullyLoaded && agents.length === 0;
 
   if (!shouldRender) return null;
 
   const hasProvider = secrets.some((s) => isProviderPresetType(s.type));
   const hasConnections =
-    appConnections.some((c) => c.status === "connected") ||
-    mcpConnections.some((c) => !c.expired) ||
+    appConnections.some((c) => c.status === "active") ||
     secrets.some(isCustomSecret);
 
   const state = computeOnboardingState({
@@ -56,7 +55,13 @@ export function SetupProgressBar() {
   const nextIndex = STEP_KEYS.indexOf(nextStep);
 
   const handlePillClick = (key: StepKey) => {
-    setView(key === "provider" ? "providers" : key === "connections" ? "connections" : "list");
+    setView(
+      key === "provider"
+        ? "providers"
+        : key === "connections"
+          ? "connections"
+          : "list",
+    );
   };
 
   return (

@@ -34,7 +34,7 @@ const DAYS_ISO: { iso: number; label: string }[] = [
 type QuietRow = { startTime: string; endTime: string; enabled: boolean };
 
 interface Props {
-  instanceId: string;
+  agentId: string;
   /** When set, the form is in edit mode — prefills from the schedule and
    *  calls `updateRRule` on submit. When omitted, the form creates a new
    *  schedule via `createRRule`. */
@@ -43,7 +43,12 @@ interface Props {
   onSaved: () => void;
 }
 
-export function CreateScheduleForm({ instanceId, existing, onCancel, onSaved }: Props) {
+export function CreateScheduleForm({
+  agentId,
+  existing,
+  onCancel,
+  onSaved,
+}: Props) {
   const createSchedule = useCreateSchedule();
   const updateSchedule = useUpdateSchedule();
   const mutation = existing ? updateSchedule : createSchedule;
@@ -57,8 +62,12 @@ export function CreateScheduleForm({ instanceId, existing, onCancel, onSaved }: 
 
   const [name, setName] = useState(existing?.name ?? "");
   const [task, setTask] = useState(existing?.task ?? "");
-  const [sessionMode, setSessionMode] = useState<"fresh" | "continuous">(existing?.sessionMode ?? "fresh");
-  const [timezone, setTimezone] = useState(existing?.timezone ?? detectTimezone());
+  const [sessionMode, setSessionMode] = useState<"fresh" | "continuous">(
+    existing?.sessionMode ?? "fresh",
+  );
+  const [timezone, setTimezone] = useState(
+    existing?.timezone ?? detectTimezone(),
+  );
 
   const [kind, setKind] = useState<FrequencyPreset["kind"]>(initialPreset.kind);
   // Interval is held as the raw input text so the user can clear/retype
@@ -70,44 +79,63 @@ export function CreateScheduleForm({ instanceId, existing, onCancel, onSaved }: 
       : "30",
   );
   const interval = Math.max(1, Number.parseInt(intervalText, 10) || 1);
-  const [hour, setHour] = useState(initialPreset.kind === "daily" ? initialPreset.hour : 9);
-  const [minute, setMinute] = useState(initialPreset.kind === "daily" ? initialPreset.minute : 0);
+  const [hour, setHour] = useState(
+    initialPreset.kind === "daily" ? initialPreset.hour : 9,
+  );
+  const [minute, setMinute] = useState(
+    initialPreset.kind === "daily" ? initialPreset.minute : 0,
+  );
   const [days, setDays] = useState<number[]>(
     initialPreset.kind === "custom" ? [...ALL_DAYS] : initialPreset.days,
   );
   const [customRRule, setCustomRRule] = useState(
     initialPreset.kind === "custom"
       ? initialPreset.rrule
-      : existing?.rrule ?? "FREQ=WEEKLY;BYDAY=MO,WE;BYHOUR=7;BYMINUTE=30",
+      : (existing?.rrule ?? "FREQ=WEEKLY;BYDAY=MO,WE;BYHOUR=7;BYMINUTE=30"),
   );
 
-  const [quietHours, setQuietHours] = useState<QuietRow[]>(existing?.quietHours ?? []);
+  const [quietHours, setQuietHours] = useState<QuietRow[]>(
+    existing?.quietHours ?? [],
+  );
 
   const preset: FrequencyPreset = useMemo(() => {
     switch (kind) {
-      case "minutely": return { kind, interval, days };
-      case "hourly":   return { kind, interval, days };
-      case "daily":    return { kind, hour, minute, days };
-      case "custom":   return { kind, rrule: customRRule };
+      case "minutely":
+        return { kind, interval, days };
+      case "hourly":
+        return { kind, interval, days };
+      case "daily":
+        return { kind, hour, minute, days };
+      case "custom":
+        return { kind, rrule: customRRule };
     }
   }, [kind, interval, hour, minute, days, customRRule]);
 
   const { rruleBody, rruleSummary, rruleError } = useMemo(() => {
     try {
       const body = buildRRule(preset);
-      return { rruleBody: body, rruleSummary: rruleToText(body), rruleError: null as string | null };
+      return {
+        rruleBody: body,
+        rruleSummary: rruleToText(body),
+        rruleError: null as string | null,
+      };
     } catch (e) {
-      return { rruleBody: "", rruleSummary: "", rruleError: (e as Error).message };
+      return {
+        rruleBody: "",
+        rruleSummary: "",
+        rruleError: (e as Error).message,
+      };
     }
   }, [preset]);
 
   const nameError = name.trim().length === 0 ? "Required" : null;
   const taskError = task.trim().length === 0 ? "Required" : null;
   const tzError = timezone.trim().length === 0 ? "Required" : null;
-  const quietHoursError = quietHours.some(q => q.startTime === q.endTime)
+  const quietHoursError = quietHours.some((q) => q.startTime === q.endTime)
     ? "start and end must differ"
     : null;
-  const daysError = kind !== "custom" && days.length === 0 ? "Pick at least one day" : null;
+  const daysError =
+    kind !== "custom" && days.length === 0 ? "Pick at least one day" : null;
 
   // Catch the footgun where every scheduled tick falls inside a quiet
   // window — the goroutine would spin its iteration cap and never fire.
@@ -120,22 +148,39 @@ export function CreateScheduleForm({ instanceId, existing, onCancel, onSaved }: 
       : "Quiet hours cover every scheduled occurrence — this schedule would never fire.";
   }, [rruleBody, rruleError, quietHours, quietHoursError]);
 
-  const isValid = !nameError && !taskError && !tzError && !rruleError && !quietHoursError && !daysError && !unreachableError && rruleBody.length > 0;
+  const isValid =
+    !nameError &&
+    !taskError &&
+    !tzError &&
+    !rruleError &&
+    !quietHoursError &&
+    !daysError &&
+    !unreachableError &&
+    rruleBody.length > 0;
 
   function toggleDay(iso: number) {
-    setDays(prev => prev.includes(iso) ? prev.filter(d => d !== iso) : [...prev, iso].sort());
+    setDays((prev) =>
+      prev.includes(iso)
+        ? prev.filter((d) => d !== iso)
+        : [...prev, iso].sort(),
+    );
   }
 
   function addQuietHour() {
-    setQuietHours(prev => [...prev, { startTime: "22:00", endTime: "06:00", enabled: true }]);
+    setQuietHours((prev) => [
+      ...prev,
+      { startTime: "22:00", endTime: "06:00", enabled: true },
+    ]);
   }
 
   function updateQuietHour(idx: number, patch: Partial<QuietRow>) {
-    setQuietHours(prev => prev.map((q, i) => i === idx ? { ...q, ...patch } : q));
+    setQuietHours((prev) =>
+      prev.map((q, i) => (i === idx ? { ...q, ...patch } : q)),
+    );
   }
 
   function removeQuietHour(idx: number) {
-    setQuietHours(prev => prev.filter((_, i) => i !== idx));
+    setQuietHours((prev) => prev.filter((_, i) => i !== idx));
   }
 
   function onSubmit(e: React.FormEvent) {
@@ -150,9 +195,12 @@ export function CreateScheduleForm({ instanceId, existing, onCancel, onSaved }: 
       sessionMode,
     };
     if (existing) {
-      updateSchedule.mutate({ id: existing.id, ...common }, { onSuccess: onSaved });
+      updateSchedule.mutate(
+        { id: existing.id, ...common },
+        { onSuccess: onSaved },
+      );
     } else {
-      createSchedule.mutate({ instanceId, ...common }, { onSuccess: onSaved });
+      createSchedule.mutate({ agentId, ...common }, { onSuccess: onSaved });
     }
   }
 
@@ -169,14 +217,18 @@ export function CreateScheduleForm({ instanceId, existing, onCancel, onSaved }: 
       <div className="flex flex-col gap-2">
         <Label className="text-[11px] font-semibold text-foreground/80">Run</Label>
         <div className="flex flex-wrap gap-1">
-          {(["minutely", "hourly", "daily", "custom"] as const).map(k => (
+          {(["minutely", "hourly", "daily", "custom"] as const).map((k) => (
             <button
               key={k}
               type="button"
               className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 capitalize ${kind === k ? "bg-primary text-primary-foreground border-primary" : "bg-card text-muted-foreground border-border"}`}
               onClick={() => setKind(k)}
             >
-              {k === "minutely" ? "Every N min" : k === "hourly" ? "Every N hr" : k}
+              {k === "minutely"
+                ? "Every N min"
+                : k === "hourly"
+                  ? "Every N hr"
+                  : k}
             </button>
           ))}
         </div>
@@ -189,7 +241,7 @@ export function CreateScheduleForm({ instanceId, existing, onCancel, onSaved }: 
               min={1}
               className="h-8 w-20 text-[12px]"
               value={intervalText}
-              onChange={e => setIntervalText(e.target.value)}
+              onChange={(e) => setIntervalText(e.target.value)}
               onBlur={() => setIntervalText(String(interval))}
             />
             <span>{kind === "minutely" ? "minutes" : "hours"}</span>
@@ -203,7 +255,7 @@ export function CreateScheduleForm({ instanceId, existing, onCancel, onSaved }: 
               type="time"
               className="h-8 w-[7.5rem] text-[12px]"
               value={`${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`}
-              onChange={e => {
+              onChange={(e) => {
                 const [h, m] = e.target.value.split(":").map(Number);
                 setHour(h ?? 0);
                 setMinute(m ?? 0);
@@ -216,7 +268,7 @@ export function CreateScheduleForm({ instanceId, existing, onCancel, onSaved }: 
           <div className="flex flex-col gap-1">
             <span className="text-[11px] text-muted-foreground">on</span>
             <div className="flex flex-wrap gap-1">
-              {DAYS_ISO.map(d => (
+              {DAYS_ISO.map((d) => (
                 <button
                   key={d.iso}
                   type="button"
@@ -236,7 +288,7 @@ export function CreateScheduleForm({ instanceId, existing, onCancel, onSaved }: 
             className="h-8 text-[12px] font-mono"
             placeholder="FREQ=WEEKLY;BYDAY=MO,WE;BYHOUR=7;BYMINUTE=30"
             value={customRRule}
-            onChange={e => setCustomRRule(e.target.value)}
+            onChange={(e) => setCustomRRule(e.target.value)}
           />
         )}
 
@@ -274,14 +326,18 @@ export function CreateScheduleForm({ instanceId, existing, onCancel, onSaved }: 
               type="time"
               className="h-8 w-[7.5rem] text-[12px]"
               value={q.startTime}
-              onChange={e => updateQuietHour(idx, { startTime: e.target.value })}
+              onChange={(e) =>
+                updateQuietHour(idx, { startTime: e.target.value })
+              }
             />
             <span className="text-[12px] text-muted-foreground">→</span>
             <Input
               type="time"
               className="h-8 w-[7.5rem] text-[12px]"
               value={q.endTime}
-              onChange={e => updateQuietHour(idx, { endTime: e.target.value })}
+              onChange={(e) =>
+                updateQuietHour(idx, { endTime: e.target.value })
+              }
             />
             <button
               type="button"
@@ -311,7 +367,7 @@ export function CreateScheduleForm({ instanceId, existing, onCancel, onSaved }: 
           placeholder="Task prompt"
           rows={2}
           value={task}
-          onChange={e => setTask(e.target.value)}
+          onChange={(e) => setTask(e.target.value)}
         />
         <FormError message={taskError ?? undefined} />
       </div>

@@ -4,7 +4,15 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from "vitest";
 
 const exec = promisify(execFile);
 
@@ -72,10 +80,10 @@ describe("dam config set (integration)", () => {
   });
 
   it("rejects an invalid URL with non-zero exit and helpful stderr", async () => {
-    const r = await runDam(
-      ["config", "set", "server", "not-a-url"],
-      { HOME: home, PATH: process.env.PATH ?? "" },
-    );
+    const r = await runDam(["config", "set", "server", "not-a-url"], {
+      HOME: home,
+      PATH: process.env.PATH ?? "",
+    });
 
     expect(r.exitCode).not.toBe(0);
     expect(r.stderr).toContain("invalid value for `server`");
@@ -90,10 +98,10 @@ describe("dam config set (integration)", () => {
     ["file:///etc/passwd", "file"],
     ["ftp://example.test/x", "ftp"],
   ])("rejects non-http(s) URL %s", async (input) => {
-    const r = await runDam(
-      ["config", "set", "server", input],
-      { HOME: home, PATH: process.env.PATH ?? "" },
-    );
+    const r = await runDam(["config", "set", "server", input], {
+      HOME: home,
+      PATH: process.env.PATH ?? "",
+    });
 
     expect(r.exitCode).not.toBe(0);
     expect(r.stderr).toContain("must be an http(s) URL");
@@ -101,10 +109,10 @@ describe("dam config set (integration)", () => {
   });
 
   it("rejects an unknown key with non-zero exit and helpful stderr", async () => {
-    const r = await runDam(
-      ["config", "set", "unknown-key", "anything"],
-      { HOME: home, PATH: process.env.PATH ?? "" },
-    );
+    const r = await runDam(["config", "set", "unknown-key", "anything"], {
+      HOME: home,
+      PATH: process.env.PATH ?? "",
+    });
 
     expect(r.exitCode).not.toBe(0);
     expect(r.stderr).toContain("unknown config key `unknown-key`");
@@ -139,10 +147,10 @@ describe("dam config set (integration)", () => {
       "utf-8",
     );
 
-    const r = await runDam(
-      ["config", "set", "server", "https://new.test"],
-      { HOME: home, PATH: process.env.PATH ?? "" },
-    );
+    const r = await runDam(["config", "set", "server", "https://new.test"], {
+      HOME: home,
+      PATH: process.env.PATH ?? "",
+    });
 
     expect(r.exitCode).toBe(0);
     const contents = await readFile(configPath, "utf-8");

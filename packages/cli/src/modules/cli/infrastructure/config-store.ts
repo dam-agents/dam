@@ -3,10 +3,7 @@ import { dirname } from "node:path";
 import { parse, stringify, type TomlTable } from "smol-toml";
 import { configSchema, type Config } from "../domain/config.js";
 import { err, ok, type Result } from "../../../result.js";
-import type {
-  FileWriteError,
-  MalformedConfigError,
-} from "../domain/errors.js";
+import type { FileWriteError, MalformedConfigError } from "../domain/errors.js";
 
 export interface ConfigStore {
   read(): Promise<Result<Partial<Config>, MalformedConfigError>>;

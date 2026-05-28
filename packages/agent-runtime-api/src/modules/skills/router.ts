@@ -1,30 +1,40 @@
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, t } from "../../trpc.js";
 import {
-  installSkillInput,
-  listLocalSkillsInput,
-  publishSkillInput,
-  readLocalSkillInput,
-  scanSkillSourceInput,
-  uninstallSkillInput,
-  type SkillsDomainError,
-} from "./types.js";
+  skillListLocalInputSchema,
+  skillPublishInputSchema,
+  skillReadLocalInputSchema,
+  skillScanInputSchema,
+} from "./schemas.js";
+import type { SkillsDomainError } from "./types.js";
 
 function toTrpcError(error: SkillsDomainError): TRPCError {
   switch (error.kind) {
     case "InvalidSkillName":
-      return new TRPCError({ code: "BAD_REQUEST", message: `invalid skill name: ${error.reason}` });
+      return new TRPCError({
+        code: "BAD_REQUEST",
+        message: `invalid skill name: ${error.reason}`,
+      });
     case "InvalidSkillPath":
-      return new TRPCError({ code: "BAD_REQUEST", message: `invalid skill path: ${error.reason}` });
+      return new TRPCError({
+        code: "BAD_REQUEST",
+        message: `invalid skill path: ${error.reason}`,
+      });
     case "SkillNotFound":
-      return new TRPCError({ code: "NOT_FOUND", message: `skill ${JSON.stringify(error.name)} not found` });
+      return new TRPCError({
+        code: "NOT_FOUND",
+        message: `skill ${JSON.stringify(error.name)} not found`,
+      });
     case "SkillNotFoundInSource":
       return new TRPCError({
         code: "NOT_FOUND",
         message: `skill ${JSON.stringify(error.name)} not found in source ${error.source}`,
       });
     case "PayloadTooLarge":
-      return new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: error.detail });
+      return new TRPCError({
+        code: "PAYLOAD_TOO_LARGE",
+        message: error.detail,
+      });
     case "SourceFetchFailed":
       return new TRPCError({
         code: "BAD_GATEWAY",
@@ -40,24 +50,8 @@ function toTrpcError(error: SkillsDomainError): TRPCError {
 }
 
 export const skillsRouter = t.router({
-  install: protectedProcedure
-    .input(installSkillInput)
-    .mutation(async ({ ctx, input }) => {
-      const result = await ctx.skills.install(input);
-      if (!result.ok) throw toTrpcError(result.error);
-      return result.value;
-    }),
-
-  uninstall: protectedProcedure
-    .input(uninstallSkillInput)
-    .mutation(async ({ ctx, input }) => {
-      const result = await ctx.skills.uninstall(input);
-      if (!result.ok) throw toTrpcError(result.error);
-      return { ok: true as const };
-    }),
-
   scan: protectedProcedure
-    .input(scanSkillSourceInput)
+    .input(skillScanInputSchema)
     .mutation(async ({ ctx, input }) => {
       const result = await ctx.skills.scan(input);
       if (!result.ok) throw toTrpcError(result.error);
@@ -65,7 +59,7 @@ export const skillsRouter = t.router({
     }),
 
   publish: protectedProcedure
-    .input(publishSkillInput)
+    .input(skillPublishInputSchema)
     .mutation(async ({ ctx, input }) => {
       const result = await ctx.skills.publish(input);
       if (!result.ok) throw toTrpcError(result.error);
@@ -73,7 +67,7 @@ export const skillsRouter = t.router({
     }),
 
   listLocal: protectedProcedure
-    .input(listLocalSkillsInput)
+    .input(skillListLocalInputSchema)
     .query(async ({ ctx, input }) => {
       const result = await ctx.skills.listLocal(input);
       if (!result.ok) throw toTrpcError(result.error);
@@ -81,7 +75,7 @@ export const skillsRouter = t.router({
     }),
 
   readLocal: protectedProcedure
-    .input(readLocalSkillInput)
+    .input(skillReadLocalInputSchema)
     .query(async ({ ctx, input }) => {
       const result = await ctx.skills.readLocal(input);
       if (!result.ok) throw toTrpcError(result.error);

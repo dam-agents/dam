@@ -52,11 +52,22 @@ export function ScheduleCard({
   onEdit,
   onResumeSession,
 }: Props) {
-  const { id, name, type, cron, rrule, timezone, quietHours, enabled, sessionMode, createdBy, status } = schedule;
-  const scheduleSummary = type === "rrule" && rrule
-    ? rruleToText(rrule)
-    : cron ?? "";
-  const activeQuietHours = quietHours.filter(q => q.enabled).length;
+  const {
+    id,
+    name,
+    type,
+    cron,
+    rrule,
+    timezone,
+    quietHours,
+    enabled,
+    sessionMode,
+    createdBy,
+    status,
+  } = schedule;
+  const scheduleSummary =
+    type === "rrule" && rrule ? rruleToText(rrule) : (cron ?? "");
+  const activeQuietHours = quietHours.filter((q) => q.enabled).length;
   const lastResult = status?.lastResult ?? "";
   const resultClass = lastResult === "success" ? "text-success" : "text-destructive";
   const showConfirm = useStore(s => s.showConfirm);
@@ -78,10 +89,12 @@ export function ScheduleCard({
 
   const handleResetSession = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (await showConfirm(
-      `Reset session for "${name}"? The next tick will start a fresh conversation.`,
-      "Reset Session",
-    )) {
+    if (
+      await showConfirm(
+        `Reset session for "${name}"? The next tick will start a fresh conversation.`,
+        "Reset Session",
+      )
+    ) {
       resetScheduleSession.mutate({ scheduleId: id });
     }
   };
@@ -156,8 +169,12 @@ export function ScheduleCard({
         {(status || timezone) && (
           <div className="flex flex-wrap gap-3 text-[11px] text-muted-foreground pl-5">
             {timezone && <span>{timezone}</span>}
-            {status?.lastRun && <span>last: {new Date(status.lastRun).toLocaleString()}</span>}
-            {status?.nextRun && <span>next: {new Date(status.nextRun).toLocaleString()}</span>}
+            {status?.lastRun && (
+              <span>last: {new Date(status.lastRun).toLocaleString()}</span>
+            )}
+            {status?.nextRun && (
+              <span>next: {new Date(status.nextRun).toLocaleString()}</span>
+            )}
             {lastResult && <span className={resultClass}>{lastResult}</span>}
           </div>
         )}
@@ -168,7 +185,7 @@ export function ScheduleCard({
           {sessions.length === 0 && (
             <p className="px-4 py-3 text-[11px] text-muted-foreground pl-9">No sessions yet</p>
           )}
-          {sessions.map(session => (
+          {sessions.map((session) => (
             <ScheduleSessionRow
               key={session.sessionId}
               session={session}

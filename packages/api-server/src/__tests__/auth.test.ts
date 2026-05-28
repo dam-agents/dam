@@ -11,6 +11,12 @@ describe("auth: public endpoints", () => {
     expect(await res.json()).toEqual({ status: "ok" });
   });
 
+  it("/api/brand/icon-192.png returns 200 without token", async () => {
+    const res = await fetch(`${API_BASE}/api/brand/icon-192.png`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("image/png");
+  });
+
   it("/api/auth/config returns issuer, clientId and cliClientId without token", async () => {
     const res = await fetch(`${API_BASE}/api/auth/config`);
     expect(res.status).toBe(200);
@@ -34,9 +40,7 @@ describe("auth: protected endpoints reject unauthenticated requests", () => {
   });
 
   it("tRPC client throws without token", async () => {
-    await expect(
-      noAuthClient.templates.list.query(),
-    ).rejects.toThrow();
+    await expect(noAuthClient.templates.list.query()).rejects.toThrow();
   });
 
   it("MCP connections returns 401 without token", async () => {
@@ -69,9 +73,7 @@ describe("auth: authenticated requests succeed", () => {
   it("token contains expected audience", async () => {
     const token = await getToken();
     const [, payloadB64] = token.split(".");
-    const payload = JSON.parse(
-      Buffer.from(payloadB64, "base64url").toString(),
-    );
+    const payload = JSON.parse(Buffer.from(payloadB64, "base64url").toString());
     expect(payload.aud).toContain("platform-api");
     expect(payload.preferred_username).toBe("dev");
   });
@@ -80,30 +82,21 @@ describe("auth: authenticated requests succeed", () => {
 describe("auth: resource ownership", () => {
   const INSTANCE_NAME = "auth-test-inst";
 
-  it("instances are scoped to the authenticated user", async () => {
-    // Create an agent and instance as dev user
+  it("agents are scoped to the authenticated user", async () => {
     const agent = await client.agents.create.mutate({
-      name: "auth-test-agent",
+      name: INSTANCE_NAME,
       image: "alpine:latest",
     });
 
-    await client.instances.create.mutate({
-      name: INSTANCE_NAME,
-      agentId: agent.id,
-    });
-
-    // dev user can see their own instance
-    const instances = await client.instances.list.query();
-    const found = instances.find((i) => i.name === INSTANCE_NAME);
+    const agents = await client.agents.list.query();
+    const found = agents.find((i) => i.name === INSTANCE_NAME);
     expect(found).toBeDefined();
 
-    // Cleanup
     if (found) {
-      await client.instances.delete.mutate({ id: found.id });
+      await client.agents.delete.mutate({ id: found.id });
     }
 
-    // Verify deleted
-    const after = await client.instances.list.query();
+    const after = await client.agents.list.query();
     expect(after.find((i) => i.name === INSTANCE_NAME)).toBeUndefined();
 
     try {

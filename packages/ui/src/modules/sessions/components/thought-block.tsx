@@ -9,7 +9,13 @@ import { Button } from "@/components/ui/button";
 
 import { Markdown } from "../../../components/markdown.js";
 
-export function ThoughtBlock({ text, streaming }: { text: string; streaming: boolean }) {
+export function ThoughtBlock({
+  text,
+  streaming,
+}: {
+  text: string;
+  streaming: boolean;
+}) {
   const [open, setOpen] = useState(true);
   const userToggled = useRef(false);
 
@@ -30,7 +36,11 @@ export function ThoughtBlock({ text, streaming }: { text: string; streaming: boo
         className="h-auto gap-1.5 py-1 px-2 text-muted-foreground cursor-pointer"
         onClick={toggle}
       >
-        {open ? <ChevronDown size={12} className="shrink-0" /> : <ChevronRight size={12} className="shrink-0" />}
+        {open ? (
+          <ChevronDown size={12} className="shrink-0" />
+        ) : (
+          <ChevronRight size={12} className="shrink-0" />
+        )}
         <Brain size={12} className="shrink-0" />
         <span className="font-semibold">Thinking</span>
       </Button>

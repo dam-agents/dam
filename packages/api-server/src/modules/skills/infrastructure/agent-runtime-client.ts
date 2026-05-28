@@ -3,18 +3,6 @@ import type { AppRouter } from "agent-runtime-api";
 import type { LocalSkill, Skill } from "api-server-api";
 import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
 
-export interface InstallSkillCall {
-  source: string;
-  name: string;
-  version: string;
-  skillPaths: string[];
-}
-
-export interface UninstallSkillCall {
-  name: string;
-  skillPaths: string[];
-}
-
 export interface PublishSkillCall {
   name: string;
   skillPaths: string[];
@@ -47,20 +35,17 @@ export interface UpstreamGatewayError {
   };
 }
 
-export interface InstallSkillResult {
-  contentHash: string;
-}
-
 export interface AgentRuntimeSkillsClient {
-  install(instanceId: string, body: InstallSkillCall): Promise<InstallSkillResult>;
-  uninstall(instanceId: string, body: UninstallSkillCall): Promise<void>;
-  listLocal(instanceId: string, skillPaths: string[]): Promise<LocalSkill[]>;
-  publish(instanceId: string, body: PublishSkillCall): Promise<PublishSkillResult>;
-  scan(instanceId: string, source: string): Promise<Skill[]>;
+  listLocal(agentId: string, skillPaths: string[]): Promise<LocalSkill[]>;
+  publish(agentId: string, body: PublishSkillCall): Promise<PublishSkillResult>;
+  scan(agentId: string, source: string): Promise<Skill[]>;
 }
 
 export class AgentRuntimeUpstreamError extends Error {
-  constructor(message: string, public readonly upstream: UpstreamGatewayError) {
+  constructor(
+    message: string,
+    public readonly upstream: UpstreamGatewayError,
+  ) {
     super(message);
     this.name = "AgentRuntimeUpstreamError";
   }
@@ -69,11 +54,11 @@ export class AgentRuntimeUpstreamError extends Error {
 // Auth on the api-server → agent-runtime hop is enforced at the kernel by
 // the agent pod's NetworkPolicy (ingress admitted only from the api-server
 // pod). No Bearer header is sent.
-function makeClient(instanceId: string, namespace: string) {
+function makeClient(agentId: string, namespace: string) {
   return createTRPCClient<AppRouter>({
     links: [
       httpBatchLink({
-        url: `http://${podBaseUrl(instanceId, namespace)}/api/trpc`,
+        url: `http://${podBaseUrl(agentId, namespace)}/api/trpc`,
       }),
     ],
   });
@@ -94,7 +79,10 @@ function isUpstreamGatewayError(value: unknown): value is UpstreamGatewayError {
  * AgentRuntimeUpstreamError so callers can extract the CTA URL. Other tRPC
  * errors propagate as plain Error.
  */
-async function runWithUpstreamMapping<T>(label: string, fn: () => Promise<T>): Promise<T> {
+async function runWithUpstreamMapping<T>(
+  label: string,
+  fn: () => Promise<T>,
+): Promise<T> {
   try {
     return await fn();
   } catch (e) {
@@ -110,31 +98,28 @@ async function runWithUpstreamMapping<T>(label: string, fn: () => Promise<T>): P
   }
 }
 
-export function createAgentRuntimeSkillsClient(namespace: string): AgentRuntimeSkillsClient {
+export function createAgentRuntimeSkillsClient(
+  namespace: string,
+): AgentRuntimeSkillsClient {
   return {
-    install: (instanceId, body) =>
-      runWithUpstreamMapping(`agent-runtime install ${instanceId}`, async () => {
-        return makeClient(instanceId, namespace).skills.install.mutate(body);
-      }),
-    uninstall: (instanceId, body) =>
-      runWithUpstreamMapping(`agent-runtime uninstall ${instanceId}`, async () => {
-        await makeClient(instanceId, namespace).skills.uninstall.mutate(body);
-      }),
-    listLocal: async (instanceId, skillPaths) => {
+    listLocal: async (agentId, skillPaths) => {
       const { skills } = await runWithUpstreamMapping(
-        `agent-runtime listLocal ${instanceId}`,
-        () => makeClient(instanceId, namespace).skills.listLocal.query({ skillPaths }),
+        `agent-runtime listLocal ${agentId}`,
+        () =>
+          makeClient(agentId, namespace).skills.listLocal.query({
+            skillPaths,
+          }),
       );
       return skills;
     },
-    publish: (instanceId, body) =>
-      runWithUpstreamMapping(`agent-runtime publish ${instanceId}`, () =>
-        makeClient(instanceId, namespace).skills.publish.mutate(body),
+    publish: (agentId, body) =>
+      runWithUpstreamMapping(`agent-runtime publish ${agentId}`, () =>
+        makeClient(agentId, namespace).skills.publish.mutate(body),
       ),
-    scan: async (instanceId, source) => {
+    scan: async (agentId, source) => {
       const { skills } = await runWithUpstreamMapping(
-        `agent-runtime scan ${instanceId}`,
-        () => makeClient(instanceId, namespace).skills.scan.mutate({ source }),
+        `agent-runtime scan ${agentId}`,
+        () => makeClient(agentId, namespace).skills.scan.mutate({ source }),
       );
       return skills as Skill[];
     },

@@ -27,7 +27,7 @@ func NewIdleChecker(client kubernetes.Interface, cfg *config.Config) *IdleChecke
 	return &IdleChecker{client: client, config: cfg}
 }
 
-// RunLoop periodically scans running instances and hibernates idle ones.
+// RunLoop periodically scans running agents and hibernates idle ones.
 // It blocks until ctx is cancelled.
 func (c *IdleChecker) RunLoop(ctx context.Context) {
 	timeout := c.config.AgentBase.IdleTimeout.AsDuration()
@@ -65,21 +65,21 @@ func (c *IdleChecker) checkInterval() time.Duration {
 
 func (c *IdleChecker) check(ctx context.Context) {
 	cms, err := c.client.CoreV1().ConfigMaps(c.config.Namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: "agent-platform.ai/type=agent-instance",
+		LabelSelector: "agent-platform.ai/type=agent",
 	})
 	if err != nil {
-		slog.Error("idle checker: listing instances", "error", err)
+		slog.Error("idle checker: listing agents", "error", err)
 		return
 	}
 
 	now := time.Now().UTC()
 	for _, cm := range cms.Items {
-		spec, err := types.ParseInstanceSpec(cm.Data["spec.yaml"])
+		spec, err := types.ParseAgentSpec(cm.Data["spec.yaml"])
 		if err != nil || spec.DesiredState != "running" {
 			continue
 		}
 
-		// Skip instances with an active session
+		// Skip agents with an active session
 		if cm.Annotations["agent-platform.ai/active-session"] == "true" {
 			continue
 		}
@@ -91,7 +91,7 @@ func (c *IdleChecker) check(ctx context.Context) {
 
 		t, err := time.Parse(time.RFC3339, lastActivity)
 		if err != nil {
-			slog.Warn("idle checker: invalid last-activity", "instance", cm.Name, "value", lastActivity)
+			slog.Warn("idle checker: invalid last-activity", "agent", cm.Name, "value", lastActivity)
 			continue
 		}
 
@@ -101,21 +101,21 @@ func (c *IdleChecker) check(ctx context.Context) {
 
 		// Probe the pod — if it has active sessions or triggers, skip hibernation
 		if c.podIsBusy(cm.Name) {
-			slog.Info("idle checker: skipping busy instance", "instance", cm.Name)
+			slog.Info("idle checker: skipping busy agent", "agent", cm.Name)
 			continue
 		}
 
-		slog.Info("hibernating idle instance", "instance", cm.Name, "idle", now.Sub(t).Round(time.Second))
+		slog.Info("hibernating idle agent", "agent", cm.Name, "idle", now.Sub(t).Round(time.Second))
 		if err := c.hibernate(ctx, cm.Name); err != nil {
-			slog.Error("idle checker: hibernating", "instance", cm.Name, "error", err)
+			slog.Error("idle checker: hibernating", "agent", cm.Name, "error", err)
 		}
 	}
 }
 
 // podIsBusy probes the agent runtime's /api/status endpoint to check for active sessions or triggers.
 // Returns false (not busy) on any error — allows hibernation if the pod is unreachable.
-func (c *IdleChecker) podIsBusy(instanceName string) bool {
-	url := fmt.Sprintf("http://%s-0.%s.%s.svc:8080/api/status", instanceName, instanceName, c.config.Namespace)
+func (c *IdleChecker) podIsBusy(agentName string) bool {
+	url := fmt.Sprintf("http://%s-0.%s.%s.svc:8080/api/status", agentName, agentName, c.config.Namespace)
 	client := &http.Client{Timeout: 3 * time.Second}
 	resp, err := client.Get(url)
 	if err != nil {
@@ -143,7 +143,7 @@ func (c *IdleChecker) hibernate(ctx context.Context, name string) error {
 		if err != nil {
 			return err
 		}
-		freshSpec, err := types.ParseInstanceSpec(fresh.Data["spec.yaml"])
+		freshSpec, err := types.ParseAgentSpec(fresh.Data["spec.yaml"])
 		if err != nil {
 			return err
 		}

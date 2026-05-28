@@ -34,13 +34,12 @@ func runningInstanceCM(name, lastActivity string, annotations map[string]string)
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name, Namespace: "test-agents",
 			Labels: map[string]string{
-				"agent-platform.ai/type":     "agent-instance",
-				"agent-platform.ai/agent": "claude-code",
+				"agent-platform.ai/type": "agent",
 			},
 			Annotations: annotations,
 		},
 		Data: map[string]string{
-			"spec.yaml": "version: agent-platform.ai/v1\ndesiredState: running\nagentId: claude-code\n",
+			"spec.yaml": "version: agent-platform.ai/v1\nimage: foo\ndesiredState: running\n",
 		},
 	}
 }
@@ -101,7 +100,7 @@ func TestIdleChecker_SkipsNoLastActivity(t *testing.T) {
 func TestIdleChecker_SkipsAlreadyHibernated(t *testing.T) {
 	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
 	cm := runningInstanceCM("hibernated-agent", staleTime, nil)
-	cm.Data["spec.yaml"] = "version: agent-platform.ai/v1\ndesiredState: hibernated\nagentId: claude-code\n"
+	cm.Data["spec.yaml"] = "version: agent-platform.ai/v1\nimage: foo\ndesiredState: hibernated\n"
 	client := fake.NewSimpleClientset(cm)
 	checker := NewIdleChecker(client, idleCheckerCfg(1*time.Hour))
 

@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
-import { z } from "zod";
 import { t } from "../../trpc.js";
+import { templateGetInputSchema } from "./schemas.js";
 import type { Template } from "./types.js";
 
 function toView(tmpl: Template) {
@@ -19,7 +19,7 @@ export const templatesRouter = t.router({
   }),
 
   get: t.procedure
-    .input(z.object({ id: z.string().min(1) }))
+    .input(templateGetInputSchema)
     .query(async ({ ctx, input }) => {
       const tmpl = await ctx.templates.get(input.id);
       if (!tmpl) throw new TRPCError({ code: "NOT_FOUND" });

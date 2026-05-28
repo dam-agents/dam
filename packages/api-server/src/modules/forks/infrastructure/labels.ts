@@ -1,5 +1,5 @@
 export const LABEL_TYPE = "agent-platform.ai/type";
-export const LABEL_INSTANCE_REF = "agent-platform.ai/instance";
+export const LABEL_AGENT_REF = "agent-platform.ai/agent";
 export const LABEL_FORK_ID = "agent-platform.ai/fork-id";
 
 export const TYPE_AGENT_FORK = "agent-fork";

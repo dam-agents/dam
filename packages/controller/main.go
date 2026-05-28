@@ -8,12 +8,6 @@ import (
 	"syscall"
 	"time"
 
-	// Embed the IANA tzdata database in the binary so time.LoadLocation works
-	// for arbitrary zones (e.g. "Europe/Prague") inside the minimal container
-	// image, which doesn't ship /usr/share/zoneinfo. Schedules set their own
-	// timezone, so UTC-only wouldn't be enough.
-	_ "time/tzdata"
-
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/dynamic"
@@ -27,7 +21,6 @@ import (
 
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 	"github.com/kagenti/platform/packages/controller/pkg/reconciler"
-	"github.com/kagenti/platform/packages/controller/pkg/scheduler"
 )
 
 func main() {
@@ -73,7 +66,7 @@ func main() {
 		ReleaseOnCancel: true,
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(ctx context.Context) {
-				run(ctx, client, dynClient, restCfg, cfg)
+				run(ctx, client, dynClient, cfg)
 			},
 			OnStoppedLeading: func() {
 				slog.Info("lost leadership")
@@ -82,7 +75,7 @@ func main() {
 	})
 }
 
-func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Interface, restCfg *rest.Config, cfg *config.Config) {
+func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Interface, cfg *config.Config) {
 	slog.Info("started leading", "namespace", cfg.Namespace)
 
 	factory := informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second,
@@ -94,20 +87,18 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 
 	cmInformer := factory.Core().V1().ConfigMaps()
 	agentResolver := reconciler.NewAgentResolver(cmInformer.Lister().ConfigMaps(cfg.Namespace))
-	instanceReconciler := reconciler.NewInstanceReconciler(client, cfg, agentResolver).WithDynamicClient(dynClient)
+	agentReconciler := reconciler.NewAgentReconciler(client, cfg).WithDynamicClient(dynClient)
 	forkReconciler := reconciler.NewForkReconciler(client, cfg, agentResolver).WithDynamicClient(dynClient)
-
-	sched := scheduler.New(client, cfg).WithRESTConfig(restCfg)
-	sched.Start()
-	defer sched.Stop()
 
 	idleChecker := reconciler.NewIdleChecker(client, cfg)
 	go idleChecker.RunLoop(ctx)
 
-	// Periodic GC for PVCs whose instance ConfigMap has been removed
+	// Periodic GC for resources whose agent ConfigMap has been removed
 	// out-of-band (issue #244). The Delete event handler covers the
 	// happy path; this catches crashes mid-delete and direct kubectl removals.
-	go runOrphanPVCSweep(ctx, instanceReconciler, 10*time.Minute)
+	// Leaf TLS Secrets are also reaped here so historical leaks (from before
+	// owner-references were added) are eventually cleaned up.
+	go runOrphanSweep(ctx, agentReconciler, 10*time.Minute)
 
 	queue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]())
 	defer queue.ShutDown()
@@ -135,10 +126,8 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 			}
 			cmType := cm.Labels["agent-platform.ai/type"]
 			switch cmType {
-			case "agent-instance":
-				instanceReconciler.Delete(ctx, cm.Name)
-			case "agent-schedule":
-				sched.RemoveSchedule(cm.Name)
+			case "agent":
+				agentReconciler.Delete(ctx, cm.Name)
 			case "agent-fork":
 				forkReconciler.Delete(ctx, cm.Name)
 			}
@@ -169,19 +158,12 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 
 			cmType := cm.Labels["agent-platform.ai/type"]
 			switch cmType {
-			case "agent-instance":
-				if err := instanceReconciler.Reconcile(ctx, cm); err != nil {
-					slog.Error("reconcile instance", "name", name, "error", err)
+			case "agent":
+				if err := agentReconciler.Reconcile(ctx, cm); err != nil {
+					slog.Error("reconcile agent", "name", name, "error", err)
 					queue.AddRateLimited(key)
 					return
 				}
-			case "agent-schedule":
-				if err := sched.SyncSchedule(cm); err != nil {
-					slog.Error("sync schedule", "name", name, "error", err)
-					queue.AddRateLimited(key)
-					return
-				}
-				slog.Info("synced schedule", "name", name)
 			case "agent-fork":
 				if err := forkReconciler.Reconcile(ctx, cm); err != nil {
 					slog.Error("reconcile fork", "name", name, "error", err)
@@ -194,8 +176,12 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	}
 }
 
-func runOrphanPVCSweep(ctx context.Context, r *reconciler.InstanceReconciler, interval time.Duration) {
-	r.ReconcileOrphanPVCs(ctx)
+func runOrphanSweep(ctx context.Context, r *reconciler.AgentReconciler, interval time.Duration) {
+	sweep := func() {
+		r.ReconcileOrphanPVCs(ctx)
+		r.ReconcileOrphanLeafSecrets(ctx)
+	}
+	sweep()
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	for {
@@ -203,7 +189,7 @@ func runOrphanPVCSweep(ctx context.Context, r *reconciler.InstanceReconciler, in
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			r.ReconcileOrphanPVCs(ctx)
+			sweep()
 		}
 	}
 }

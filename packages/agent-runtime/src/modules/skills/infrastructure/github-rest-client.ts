@@ -1,4 +1,8 @@
-import type { GitHubErrorBody, Result, SkillsDomainError } from "agent-runtime-api";
+import type {
+  GitHubErrorBody,
+  Result,
+  SkillsDomainError,
+} from "agent-runtime-api";
 import { err, ok } from "agent-runtime-api";
 
 const GITHUB_API = "https://api.github.com";
@@ -13,8 +17,13 @@ export interface DetectedOwnerRepo {
  * cross-package dependency. Only GitHub is recognized; other hosts skip the
  * pre-flight and fall through to an anonymous clone.
  */
-export function detectGithubOwnerRepo(gitUrl: string): DetectedOwnerRepo | null {
-  const trimmed = gitUrl.replace(/\/+$/, "").replace(/\.git$/, "").replace(/\/+$/, "");
+export function detectGithubOwnerRepo(
+  gitUrl: string,
+): DetectedOwnerRepo | null {
+  const trimmed = gitUrl
+    .replace(/\/+$/, "")
+    .replace(/\.git$/, "")
+    .replace(/\/+$/, "");
   const m = /^https:\/\/github\.com\/([^/]+)\/([^/]+)$/.exec(trimmed);
   return m ? { owner: m[1], repo: m[2] } : null;
 }
@@ -53,7 +62,9 @@ export interface GithubFetchOpts {
  * service can do anonymous-first, retry-with-sentinel-on-404.
  */
 export interface GitHubRestClient {
-  getRepo: (host: DetectedOwnerRepo) => Promise<Result<RepoInfo, SkillsDomainError>>;
+  getRepo: (
+    host: DetectedOwnerRepo,
+  ) => Promise<Result<RepoInfo, SkillsDomainError>>;
   getRef: (
     host: DetectedOwnerRepo,
     ref: string,
@@ -113,7 +124,10 @@ export interface GitHubRestClient {
 export function createGitHubRestClient(): GitHubRestClient {
   return {
     async getRepo(host) {
-      const r = await ghJson<{ default_branch: string }>("GET", `/repos/${host.owner}/${host.repo}`);
+      const r = await ghJson<{ default_branch: string }>(
+        "GET",
+        `/repos/${host.owner}/${host.repo}`,
+      );
       if (!r.ok) return r;
       return ok({ defaultBranch: r.value.default_branch });
     },
@@ -170,7 +184,11 @@ export function createGitHubRestClient(): GitHubRestClient {
       return ok({ sha: r.value.sha });
     },
     async createRef(host, body) {
-      return await ghJson<unknown>("POST", `/repos/${host.owner}/${host.repo}/git/refs`, body);
+      return await ghJson<unknown>(
+        "POST",
+        `/repos/${host.owner}/${host.repo}/git/refs`,
+        body,
+      );
     },
     async createPullRequest(host, body) {
       const r = await ghJson<{ html_url: string }>(
@@ -184,7 +202,10 @@ export function createGitHubRestClient(): GitHubRestClient {
   };
 }
 
-function ghHeaders(withAuth: boolean, hasBody: boolean): Record<string, string> {
+function ghHeaders(
+  withAuth: boolean,
+  hasBody: boolean,
+): Record<string, string> {
   const token = process.env.GH_TOKEN ?? "dummy-placeholder";
   return {
     Accept: "application/vnd.github+json",
@@ -249,7 +270,13 @@ function toUpstreamError(
   body: unknown,
 ): SkillsDomainError {
   const parsedBody: GitHubErrorBody = isErrorBody(body) ? body : {};
-  return { kind: "UpstreamGitHubError", method, path, status, body: parsedBody };
+  return {
+    kind: "UpstreamGitHubError",
+    method,
+    path,
+    status,
+    body: parsedBody,
+  };
 }
 
 function isErrorBody(value: unknown): value is GitHubErrorBody {
@@ -258,6 +285,9 @@ function isErrorBody(value: unknown): value is GitHubErrorBody {
 
 /** Helper: extract the `status` from an UpstreamGitHubError so services can
  *  branch on 404-vs-other for the "anonymous → retry with auth" pattern. */
-export function isUpstreamStatus(error: SkillsDomainError, status: number): boolean {
+export function isUpstreamStatus(
+  error: SkillsDomainError,
+  status: number,
+): boolean {
   return error.kind === "UpstreamGitHubError" && error.status === status;
 }

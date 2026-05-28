@@ -16,7 +16,10 @@ export function IbmLitellmConnected({
 }: {
   secret: SecretView;
   onRemove: () => Promise<void>;
-  onSave: (input: { value: string; pins: IbmLitellmModelPins }) => Promise<void>;
+  onSave: (input: {
+    value: string;
+    pins: IbmLitellmModelPins;
+  }) => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
   const currentPins = ibmLitellmPinsFromEnvMappings(secret.envMappings);
