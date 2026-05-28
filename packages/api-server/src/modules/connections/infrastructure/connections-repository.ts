@@ -41,6 +41,10 @@ export interface ConnectionsRepository {
     agentId: string,
   ): Promise<{ connectionId: string; grantedAt: Date }[]>;
   listConnectionsForAgent(agentId: string): Promise<Connection[]>;
+  /** Agents that currently have this connection granted. Used by
+   *  deleteConnection to fan-out the removal to each affected agent
+   *  before the grant rows cascade away. */
+  listAgentsForConnection(connectionId: string): Promise<string[]>;
 }
 
 interface InternalConnectionRow {
@@ -175,6 +179,16 @@ export function createConnectionsRepository(db: Db): ConnectionsRepository {
           ),
         )) as InternalConnectionRow[];
       return rows.map(rowToConnection);
+    },
+
+    async listAgentsForConnection(connectionId): Promise<string[]> {
+      const rows = (await db
+        .select({ agentId: connectionGrantsTable.agentId })
+        .from(connectionGrantsTable)
+        .where(eq(connectionGrantsTable.connectionId, connectionId))) as {
+        agentId: string;
+      }[];
+      return rows.map((r) => r.agentId);
     },
   };
 }

@@ -88,6 +88,12 @@ export function createConnectionsService(deps: {
       const conn = await deps.repo.get(id, deps.ownerId);
       if (!conn) return;
 
+      // Capture the agents that had this granted BEFORE the cascade so
+      // we can fan-out the removal afterward — otherwise the deletion
+      // doesn't reach the agent and stale entries (e.g. an mcp-entry)
+      // are left behind in `.mcp.json`.
+      const affectedAgents = await deps.repo.listAgentsForConnection(id);
+
       const paths = new Set<string>();
       switch (conn.auth.kind) {
         case "oauth":
@@ -107,6 +113,24 @@ export function createConnectionsService(deps: {
       }
 
       await deps.repo.delete(id, deps.ownerId);
+
+      // Re-run fan-out per affected agent with the post-delete grant
+      // set. Drives the runtime channel (drops the mcp-entry from
+      // `.mcp.json`), egress rules, and secrets-rev updates.
+      if (affectedAgents.length > 0) {
+        const ownerConnsAfter = await deps.repo.listByOwner(deps.ownerId);
+        const allOwnerConnectionIds = new Set(ownerConnsAfter.map((c) => c.id));
+        for (const agentId of affectedAgents) {
+          const grantedConnections =
+            await deps.repo.listConnectionsForAgent(agentId);
+          await deps.fanOut.apply({
+            agentId,
+            ownerId: deps.ownerId,
+            grantedConnections,
+            allOwnerConnectionIds,
+          });
+        }
+      }
 
       const template = deps.templates.get(conn.templateId);
       emit({
