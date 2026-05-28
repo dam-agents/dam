@@ -1,7 +1,7 @@
-import { Checkmark } from "@carbon/icons-react";
+import { Add as Plus, Checkmark, Code, DocumentAdd, Extensions, Folder, Globe, Password as Lock } from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as SelectPrimitive from "@radix-ui/react-select";
-import { File as FileIcon, Folder as FolderIcon, FolderUp, Upload, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, File as FileIcon, Folder as FolderIcon, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 
@@ -32,28 +32,137 @@ import {
   ConnectionsPicker,
   type OAuthAppEntry,
 } from "../../../components/connections-picker.js";
+import type { EmptyStatePalette } from "../../../components/empty-state.js";
 import { FormField } from "../../../components/form-field.js";
 import { HoverTooltip } from "../../../components/hover-tooltip.js";
 import type { EgressPreset, EnvVar, TemplateView } from "../../../types.js";
 import {
   APP_OAUTH_SECRET_PREFIX,
+  isCustomSecret,
+  isMcpSecret,
   isProviderPresetType,
+  mcpHostnameFromSecretName,
   PROVIDER_PRESET_TYPES,
   type ProviderPresetType,
   PROVIDERS,
 } from "../../../types.js";
+import type { OAuthAppDescriptor } from "../../connections/api/fetchers.js";
 import {
   useAppConnections,
   useOAuthAppConnections,
+  useOAuthApps,
 } from "../../connections/api/queries.js";
+import { OAuthAppIcon } from "../../connections/components/oauth-app-icon.js";
+import { AddMcpForm } from "../../connections/forms/add-mcp-form.js";
+import { ConnectAppForm } from "../../connections/forms/connect-app-form.js";
 import { type BundleEntry, filterImportEntries, isTarballName, walkDataTransfer } from "../../files/api/import-bundle.js";
 import { useSecrets } from "../../secrets/api/queries.js";
+import { CreateSecretForm } from "../../secrets/forms/create-secret-form.js";
 import { PROVIDER_CARDS } from "../../settings/components/provider-cards.js";
 import { PROVIDER_DESCRIPTIONS } from "../../settings/components/provider-chooser-dialog.js";
 import { CardIcon } from "../../settings/components/shared/card-icon.js";
 import { addAgentSchema, type AddAgentValues } from "../forms/add-agent-schema.js";
 
-type Step = "pick" | "configure";
+// Wizard steps. The scratch lane uses a single consolidated "setup"
+// step that bundles name + description + harness + starting source +
+// network into one screen (per the wireframe), then proceeds to
+// connections → skills → submit. The template and custom lanes still
+// use the older provider → basics → connections → skills → network
+// progression — they'll be folded into the same shape later.
+type Step =
+  | "pick"
+  | "provider"
+  | "basics"
+  | "setup"
+  | "connections"
+  | "skills"
+  | "network";
+
+// Three top-level starting paths surfaced after the provider is set.
+// `null` shows the lane picker; choosing a lane reveals that lane's
+// sub-picker (harness select / template catalog / custom image URL).
+type Lane = "scratch" | "template" | "custom";
+
+// Where the agent's initial workspace contents come from. Both options
+// surface in the prototype even though the controller currently only
+// honours local uploads — picking GitHub captures the repo URL into
+// state for the spec, but submission silently drops it. Devs reviewing
+// this prototype will see the intended shape end-to-end.
+type StartingSource = "local" | "github";
+
+// Until the api-server-api Template type carries prerequisite
+// metadata, surface the meeting's "users need to know what an
+// opinionated template requires *before* picking" insight via this
+// hardcoded map keyed off template name. Replace with template.prereqs
+// the moment that field exists on the contract.
+const TEMPLATE_PREREQS: Record<string, string[]> = {
+  "Google Workspace": ["Google OAuth (Gmail, Drive, Calendar)"],
+  "Code Guardian": ["GitHub OAuth"],
+};
+
+const lookupPrereqs = (templateName: string): string[] => {
+  for (const key of Object.keys(TEMPLATE_PREREQS)) {
+    if (templateName.toLowerCase().includes(key.toLowerCase())) {
+      return TEMPLATE_PREREQS[key];
+    }
+  }
+  return [];
+};
+
+// Hardcoded skill catalog. The agent-runtime doesn't yet expose a
+// skills enumeration, so this drives the wireframe-faithful Skills
+// step on the prototype. Categories mirror the natural groupings the
+// meeting transcript referenced (browsing, code, comms, data) and
+// each entry is plausible based on the templates already shipping.
+type SkillItem = {
+  id: string;
+  name: string;
+  description: string;
+};
+type SkillCategory = {
+  key: string;
+  label: string;
+  items: SkillItem[];
+};
+const SKILL_CATALOG: SkillCategory[] = [
+  {
+    key: "code",
+    label: "Code & files",
+    items: [
+      { id: "python-repl", name: "Python REPL", description: "Execute Python code in a sandbox." },
+      { id: "node-repl", name: "Node.js REPL", description: "Execute JavaScript / TypeScript snippets." },
+      { id: "shell", name: "Shell", description: "Run shell commands inside the agent's workspace." },
+      { id: "file-edit", name: "File editor", description: "Patch and create files in the agent's workspace." },
+    ],
+  },
+  {
+    key: "web",
+    label: "Search & web",
+    items: [
+      { id: "web-search", name: "Web search", description: "Query the web for fresh, citable results." },
+      { id: "browser", name: "Headless browser", description: "Drive a Playwright session for click-throughs and scraping." },
+      { id: "doc-search", name: "Doc search", description: "Search across the internal docs index." },
+    ],
+  },
+  {
+    key: "comms",
+    label: "Communication",
+    items: [
+      { id: "gmail", name: "Gmail", description: "Read and send mail. Requires the Google connection." },
+      { id: "slack", name: "Slack", description: "Post to channels and read history. Requires the Slack connection." },
+      { id: "calendar", name: "Calendar", description: "Read and create events. Requires the Google connection." },
+    ],
+  },
+  {
+    key: "data",
+    label: "Data",
+    items: [
+      { id: "postgres", name: "Postgres", description: "Query a configured Postgres database." },
+      { id: "bigquery", name: "BigQuery", description: "Run BigQuery jobs against your warehouse." },
+      { id: "github-ops", name: "GitHub operations", description: "Open PRs, comment, manage issues. Requires the GitHub connection." },
+    ],
+  },
+];
 
 export function AddAgentDialog({
   templates,
@@ -78,6 +187,7 @@ export function AddAgentDialog({
   onGoToProviders: () => void;
 }) {
   const [step, setStep] = useState<Step>("pick");
+  const [lane, setLane] = useState<Lane | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateView | null>(
     null,
   );
@@ -97,6 +207,25 @@ export function AddAgentDialog({
   // expose both numbers and they reconcile.
   const [importDropped, setImportDropped] = useState(0);
   const [dropActive, setDropActive] = useState(false);
+  // Starting-source toggle. Local files is the working path; GitHub
+  // repo is rendered for wireframe completeness but disabled until the
+  // controller learns to clone at boot. The field stays mounted (and
+  // shows as "Coming soon") so users discover the future direction.
+  const [startingSource, setStartingSource] = useState<StartingSource>("local");
+  const [gitRepoUrl, setGitRepoUrl] = useState("");
+  // Selected skill IDs from the prototype skill catalog. Held as a
+  // Set for O(1) toggle; not submitted (the agent-runtime has no
+  // skills field yet). The catalog is hardcoded above; this just
+  // captures the user's intent for the wireframe walkthrough.
+  const [selectedSkills, setSelectedSkills] = useState<Set<string>>(new Set());
+  const toggleSkill = (id: string) => {
+    setSelectedSkills((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
   const importFolderInputRef = useRef<HTMLInputElement | null>(null);
   const importFileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -169,6 +298,38 @@ export function AddAgentDialog({
   const { data: secrets = [], isLoading: loadSecrets } = useSecrets();
   const { data: apps = [] } = useAppConnections();
   const { data: oauthAppConnections = [] } = useOAuthAppConnections();
+  const { data: oauthApps = [] } = useOAuthApps();
+  // GitHub-from-dropzone OAuth flow. Click the GitHub button in the
+  // local-files dropzone → render ConnectAppForm in a sub-dialog (the
+  // exact same UI the connections page uses, so credentials, callback
+  // URL guidance, and default-app behaviour all stay consistent).
+  const [connectingGitHub, setConnectingGitHub] = useState<OAuthAppDescriptor | null>(null);
+  const githubDescriptor = useMemo(
+    () => oauthApps.find((a) => a.id === "github"),
+    [oauthApps],
+  );
+
+  // Sub-dialog state for the scratch lane's connections step. Mirrors
+  // the connections page's pattern (ConnectAppForm / AddMcpForm /
+  // CreateSecretForm) so users can create + grant new connections
+  // without leaving the agent creation flow.
+  const [connectingApp, setConnectingApp] = useState<OAuthAppDescriptor | null>(null);
+  const [showAddMcp, setShowAddMcp] = useState(false);
+  const [showAddSecret, setShowAddSecret] = useState(false);
+
+  // Apps the scratch lane can still surface as "Connect": the multi-instance
+  // ones plus any single-instance ones that aren't connected yet.
+  const connectedAppIds = useMemo(
+    () => new Set(oauthAppConnections.map((c) => c.appId)),
+    [oauthAppConnections],
+  );
+  const availableToConnect = useMemo(
+    () =>
+      oauthApps.filter(
+        (app) => app.cardinality === "multiple" || !connectedAppIds.has(app.id),
+      ),
+    [oauthApps, connectedAppIds],
+  );
 
   const {
     register,
@@ -249,7 +410,7 @@ export function AddAgentDialog({
     // setValue defaults to skipping it and the user might submit without ever
     // typing in the field.
     trigger();
-    setStep("configure");
+    setStep("provider");
   };
 
   const pickCustom = () => {
@@ -259,7 +420,67 @@ export function AddAgentDialog({
     setValue("name", "");
     setValue("description", "");
     trigger();
-    setStep("configure");
+    setStep("provider");
+  };
+
+  // Wizard nav. `next` validates the leaving step's required fields
+  // before advancing; `back` is unconditional and rewinds to the prior
+  // step (or all the way back to the lane picker from the first
+  // post-lane step).
+  const goNext = async () => {
+    if (step === "provider") {
+      setStep("basics");
+    } else if (step === "setup") {
+      const ok = await trigger(["name"]);
+      if (!ok) return;
+      setStep("connections");
+    } else if (step === "basics") {
+      const ok = await trigger(["name"]);
+      if (!ok) return;
+      setStep("connections");
+    } else if (step === "connections") {
+      setStep("skills");
+    } else if (step === "skills") {
+      // Scratch flow ends at skills (Create agent button is rendered
+      // there). Other lanes still walk through the network step.
+      if (lane !== "scratch") setStep("network");
+    }
+  };
+  const goBack = () => {
+    if (step === "provider") {
+      setStep("pick");
+      setLane(null);
+    } else if (step === "setup") {
+      setStep("pick");
+      setLane(null);
+      setSelectedTemplate(null);
+    } else if (step === "basics") {
+      setStep("provider");
+    } else if (step === "connections") {
+      setStep(lane === "scratch" ? "setup" : "basics");
+    } else if (step === "skills") {
+      setStep("connections");
+    } else if (step === "network") {
+      setStep("skills");
+    }
+  };
+
+  // Lane pick handler. Scratch jumps straight to the consolidated
+  // setup step with the first available template auto-selected as the
+  // default harness — the user picks the harness via segmented buttons
+  // on that step rather than a separate card list.
+  const handleLanePick = (l: Lane) => {
+    setLane(l);
+    if (l === "scratch") {
+      if (templates.length > 0) {
+        setSelectedTemplate(templates[0]);
+      }
+      setStep("setup");
+    }
+  };
+
+  const pickHarness = (tmpl: TemplateView) => {
+    setSelectedTemplate(tmpl);
   };
 
   const submitForm = handleSubmit((values) => {
@@ -322,151 +543,268 @@ export function AddAgentDialog({
     setValue("selSecrets", next.sort(), { shouldDirty: true, shouldValidate: true });
   };
 
-  // Gate the template/custom-image pick on having a provider in hand —
-  // either previously configured (and selected) or just-saved through the
-  // inline chooser.
-  const hasProviderReady = providerSecrets.length > 0 && selectedProviderSecretId != null;
-
   return (
     <Dialog open onOpenChange={(o) => !o && onCancel()}>
       <DialogContent className="max-w-[560px] max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Add Agent</DialogTitle>
-          <DialogDescription>
-            Pick the provider this agent will use, then choose a template
-            or supply a custom image.
-          </DialogDescription>
+          {step === "pick" && lane === null && (
+            <DialogDescription>
+              Choose how you want to start
+            </DialogDescription>
+          )}
         </DialogHeader>
 
-        {/* No outer <form> here — the provider setup card renders its own
-            <form>, and nested forms in HTML get flattened (a submit on the
-            inner form bubbles up and submits the outer one, dismissing the
-            agent dialog). The configure-step fields below get their own
-            <form> so submission stays scoped. */}
+        {/* Lane picker → wizard. The provider chooser used to live at
+            the top of the dialog; it now sits in its own wizard step
+            (with a Skip-for-now affordance) so the lane decision can
+            be made first and provider isn't a blocking gate. */}
 
-        {/* Provider — always at the top. Required before template/image
-            pick: an agent without a provider can't reach a model. When
-            the user already has providers configured, this is a dropdown
-            to select which one this agent should use; otherwise it
-            renders the chooser inline so they can set one up here. */}
-        <ProviderPickerSection
-            providerSecrets={providerSecrets}
-            configuredTypes={configuredProviderTypes}
-            picked={pickedProvider}
-            onPick={setPickedProvider}
-            selectedProviderSecretId={selectedProviderSecretId}
-            onSelectProviderSecret={setSelectedProviderSecret}
-          />
-
-          {/* Image — same slot in both states. Renders the picker when
-              nothing's been chosen yet; collapses to a single read-only
-              row once the user picks, with a "Change" button to revisit
-              the picker without rearranging anything else. */}
           {step === "pick" ? (
-            hasProviderReady ? (
-              <>
-                {templates.length > 0 && (
-                  <FormField label="Template">
-                    <Select
-                      value=""
-                      onValueChange={(id) => {
-                        const tmpl = templates.find((t) => t.id === id);
-                        if (tmpl) pickTemplate(tmpl);
-                      }}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Pick a template…" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {templates.map((tmpl) => (
-                          <SelectItem key={tmpl.id} value={tmpl.id}>
-                            <span className="flex flex-col">
-                              <span className="text-[14px] font-medium">{tmpl.name}</span>
-                              {tmpl.description && (
-                                <span className="text-[12px] text-muted-foreground">{tmpl.description}</span>
-                              )}
-                            </span>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </FormField>
-                )}
-
-                <FormField label="Or use a custom image">
-                  <div className="flex gap-2">
-                    <Input
-                      value={customImage}
-                      onChange={(e) => setCustomImage(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          pickCustom();
-                        }
-                      }}
-                      placeholder="ghcr.io/org/agent:latest"
-                    />
-                    <Button
-                      type="button"
-                      onClick={pickCustom}
-                      disabled={!customImage.trim()}
-                      className="shrink-0"
-                    >
-                      Use
-                    </Button>
+            lane === null ? (
+              <LanePicker onPick={handleLanePick} />
+            ) : lane === "scratch" ? (
+              <LaneFrame
+                title="Pick a harness"
+                description="Vanilla Claude Code, Pi, or Bob — the agent starts with no skills, no repo, just the harness ready to go."
+                onBack={() => setLane(null)}
+              >
+                {templates.length > 0 ? (
+                  <div className="flex flex-col gap-2">
+                    {templates.map((tmpl) => (
+                      <TemplateRowCard
+                        key={tmpl.id}
+                        template={tmpl}
+                        prereqs={[]}
+                        onPick={() => pickTemplate(tmpl)}
+                      />
+                    ))}
                   </div>
-                </FormField>
-              </>
+                ) : (
+                  <p className="text-[12px] text-muted-foreground">
+                    No harnesses available. Check your cluster's agent
+                    template configuration.
+                  </p>
+                )}
+              </LaneFrame>
+            ) : lane === "template" ? (
+              <LaneFrame
+                title="Browse templates"
+                description="Pre-configured agents with skills, connections, and prompts wired in. Required connections are listed up-front so you know what to wire in before you commit."
+                onBack={() => setLane(null)}
+              >
+                {templates.length > 0 ? (
+                  <div className="flex flex-col gap-2">
+                    {templates.map((tmpl) => (
+                      <TemplateRowCard
+                        key={tmpl.id}
+                        template={tmpl}
+                        prereqs={lookupPrereqs(tmpl.name)}
+                        onPick={() => pickTemplate(tmpl)}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[12px] text-muted-foreground">
+                    Template catalog is empty. Add opinionated templates
+                    to your cluster's agent template config to surface them
+                    here.
+                  </p>
+                )}
+              </LaneFrame>
             ) : (
-              <p className="text-[12px] text-muted-foreground">
-                Add a provider above to continue.
-              </p>
-            )
-          ) : (
-            <FormField label="Image">
-              <div className="flex items-center gap-2 rounded-lg border bg-background px-4 py-2.5">
-                <span className="text-[13px] text-foreground flex-1 min-w-0 truncate">
-                  {selectedTemplate ? (
-                    <HoverTooltip
-                      placement="right"
-                      trigger={
-                        <span className="font-semibold border-b border-dotted border-muted-foreground cursor-help">
-                          {selectedTemplate.name}
-                        </span>
+              <LaneFrame
+                title="Custom image"
+                description="Bring your own ACP-compatible agent image — for harnesses you've built or specialized runtimes that need bundled CLIs."
+                onBack={() => setLane(null)}
+              >
+                <div className="flex gap-2">
+                  <Input
+                    value={customImage}
+                    onChange={(e) => setCustomImage(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        pickCustom();
                       }
-                    >
-                      <span className="font-mono">{selectedTemplate.image}</span>
-                    </HoverTooltip>
-                  ) : (
-                    <span className="font-mono break-all">{customImage}</span>
-                  )}
-                </span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setStep("pick")}
-                >
-                  Change
-                </Button>
-              </div>
-            </FormField>
+                    }}
+                    placeholder="ghcr.io/org/agent:latest"
+                    autoFocus
+                  />
+                  <Button
+                    type="button"
+                    onClick={pickCustom}
+                    disabled={!customImage.trim()}
+                    className="shrink-0"
+                  >
+                    Use
+                  </Button>
+                </div>
+              </LaneFrame>
+            )
+          ) : step === "setup" ? null : (
+            <>
+              {/* Persistent image readout — shown on every non-pick,
+                  non-setup step so the user can always see what they're
+                  configuring against. The setup step has its own
+                  harness picker, so the readout would be redundant
+                  there. */}
+              <FormField label="Image">
+                <div className="flex items-center gap-2 rounded-lg border bg-background px-4 py-2.5">
+                  <span className="text-[13px] text-foreground flex-1 min-w-0 truncate">
+                    {selectedTemplate ? (
+                      <HoverTooltip
+                        placement="right"
+                        trigger={
+                          <span className="font-semibold border-b border-dotted border-muted-foreground cursor-help">
+                            {selectedTemplate.name}
+                          </span>
+                        }
+                      >
+                        <span className="font-mono">{selectedTemplate.image}</span>
+                      </HoverTooltip>
+                    ) : (
+                      <span className="font-mono break-all">{customImage}</span>
+                    )}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setStep("pick");
+                      setLane(null);
+                    }}
+                  >
+                    Change
+                  </Button>
+                </div>
+              </FormField>
+            </>
           )}
 
-          {/* Configuration fields appear below once an image is chosen.
-              The fields above stay put — only this block grows in. The
-              <form> wrapper is scoped to just these fields so a save in
-              the provider's setup form (rendered above this block) doesn't
-              bubble up and submit the agent. */}
-          {step === "configure" && (
+          {/* Provider step — sits OUTSIDE the agent form because the
+              inline provider setup card renders its own nested <form>,
+              and HTML doesn't allow form nesting. Skip-for-now is a
+              first-class affordance: the wireframe lets users defer
+              this until they actually need to reach a model. */}
+          {step === "provider" && (
+            <fieldset className="flex flex-col gap-3 anim-in">
+              <ProviderPickerSection
+                providerSecrets={providerSecrets}
+                configuredTypes={configuredProviderTypes}
+                picked={pickedProvider}
+                onPick={setPickedProvider}
+                selectedProviderSecretId={selectedProviderSecretId}
+                onSelectProviderSecret={setSelectedProviderSecret}
+              />
+              {!selectedProviderSecretId && !pickedProvider && (
+                <p className="text-[12px] text-muted-foreground leading-relaxed">
+                  Don't have one yet? Click <span className="font-semibold text-foreground">Skip for now</span> —
+                  the agent will be created without a provider and can't
+                  reach a model until you wire one up later from the
+                  Providers page.
+                </p>
+              )}
+            </fieldset>
+          )}
+
+          {/* Single <form> wrapping the wizard's input steps.
+              Sections render conditionally per step but the underlying
+              react-hook-form state is shared, so values persist as the
+              user moves Back/Next. The form is scoped here so a save in
+              the provider's setup form (rendered on the provider step
+              above) doesn't bubble up and submit the agent. */}
+          {(step === "setup" || step === "basics" || step === "connections" || step === "skills" || step === "network") && (
             <form onSubmit={submitForm} className="contents">
+            {(step === "basics" || step === "setup") && (
+              <>
             <FormField label="Name" error={errors.name?.message}>
               <Input placeholder="my-agent" autoFocus {...register("name")} />
             </FormField>
-            <FormField label="Description">
-              <Input placeholder="Optional" {...register("description")} />
+            <FormField label="Description (optional)">
+              <Input placeholder="What does this agent do?" {...register("description")} />
             </FormField>
 
+            {step === "setup" && (
+              <FormField label="Harness">
+                {templates.length > 0 ? (
+                  <Select
+                    value={selectedTemplate?.id ?? ""}
+                    onValueChange={(id) => {
+                      const tmpl = templates.find((t) => t.id === id);
+                      if (tmpl) pickHarness(tmpl);
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Pick a harness" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {templates.map((tmpl) => (
+                        <SelectItem key={tmpl.id} value={tmpl.id}>
+                          {tmpl.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <p className="text-[12px] text-muted-foreground">
+                    No harnesses available. Check your cluster's agent template configuration.
+                  </p>
+                )}
+              </FormField>
+            )}
+
+            {step === "basics" && (
+            <FormField label="Starting source">
+              <RadioGroup
+                value={startingSource}
+                onValueChange={(v) => setStartingSource(v as StartingSource)}
+                className="flex flex-col gap-1.5"
+              >
+                <Label
+                  htmlFor="src-local"
+                  className={cn(
+                    "flex items-start gap-2 cursor-pointer rounded-lg border bg-background px-4 py-2.5",
+                    startingSource === "local" && "border-primary",
+                  )}
+                >
+                  <RadioGroupItem value="local" id="src-local" className="mt-0.5" />
+                  <span className="flex flex-col gap-0.5">
+                    <span className="text-[13px] font-semibold text-foreground">Upload local files</span>
+                    <span className="text-[12px] text-muted-foreground">Drop a folder, files, or a <code className="font-mono">.tar.gz</code> bundle to seed the agent's workspace.</span>
+                  </span>
+                </Label>
+                <Label
+                  htmlFor="src-github"
+                  className={cn(
+                    "flex items-start gap-2 cursor-pointer rounded-lg border bg-background px-4 py-2.5",
+                    startingSource === "github" && "border-primary",
+                  )}
+                >
+                  <RadioGroupItem value="github" id="src-github" className="mt-0.5" />
+                  <span className="flex flex-col gap-0.5">
+                    <span className="text-[13px] font-semibold text-foreground">Clone a GitHub repo</span>
+                    <span className="text-[12px] text-muted-foreground">Agent boots with your repo cloned into <code className="font-mono">/workspace</code>, credentials sourced from a connection.</span>
+                  </span>
+                </Label>
+              </RadioGroup>
+              {startingSource === "github" && (
+                <div className="mt-2 flex flex-col gap-1.5">
+                  <Input
+                    value={gitRepoUrl}
+                    onChange={(e) => setGitRepoUrl(e.target.value)}
+                    placeholder="https://github.com/org/repo"
+                  />
+                  <span className="text-[11px] text-muted-foreground italic">
+                    Prototype: the URL is captured but the controller doesn't yet clone — devs, see the related issue.
+                  </span>
+                </div>
+              )}
+            </FormField>
+            )}
+
+            {((step === "basics" && startingSource === "local") || step === "setup") && (
             <FormField label="Import local context (optional)">
               <input
                 ref={importFolderInputRef}
@@ -575,7 +913,7 @@ export function AddAgentDialog({
                     size="sm"
                     onClick={() => importFolderInputRef.current?.click()}
                   >
-                    <FolderUp size={14} /> Choose folder
+                    <Folder size={14} /> Choose folder
                   </Button>
                   <Button
                     type="button"
@@ -585,6 +923,16 @@ export function AddAgentDialog({
                   >
                     <FileIcon size={14} /> Choose files
                   </Button>
+                  {step === "setup" && githubDescriptor && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setConnectingGitHub(githubDescriptor)}
+                    >
+                      <OAuthAppIcon appId="github" alt="GitHub" size={14} /> GitHub
+                    </Button>
+                  )}
                   {(importRawBundle || importEntries.length > 0) && (
                     <Button
                       type="button"
@@ -595,9 +943,6 @@ export function AddAgentDialog({
                       Clear
                     </Button>
                   )}
-                </div>
-                <div className="text-[11px] text-muted-foreground italic">
-                  Tip: drag-and-drop supports a mix of folders and files in one go.
                 </div>
               </div>
               {importGroups.length > 0 && (
@@ -629,8 +974,25 @@ export function AddAgentDialog({
                 </div>
               )}
             </FormField>
+            )}
+              </>
+            )}
 
+            {step === "connections" && lane === "scratch" && (
+              <ScratchConnectionsStep
+                oauthAppEntries={oauthAppEntries}
+                availableToConnect={availableToConnect}
+                mcpSecrets={secrets.filter(isMcpSecret)}
+                customSecrets={secrets.filter(isCustomSecret)}
+                selSecretsSet={selSecretsSet}
+                onToggleSecret={toggleSecret}
+                onConnectApp={setConnectingApp}
+                onAddMcp={() => setShowAddMcp(true)}
+                onAddSecret={() => setShowAddSecret(true)}
+              />
+            )}
 
+            {step === "connections" && lane !== "scratch" && (
             <ConnectionsPicker
               loading={loadSecrets}
               secrets={secrets}
@@ -642,7 +1004,17 @@ export function AddAgentDialog({
               onToggleApp={toggleApp}
               onGoToProviders={onGoToProviders}
             />
+            )}
 
+            {step === "skills" && (
+              <SkillsPicker
+                selected={selectedSkills}
+                onToggle={toggleSkill}
+                template={selectedTemplate}
+              />
+            )}
+
+            {(step === "network" || step === "setup") && (
             <fieldset className="flex flex-col gap-2">
               <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.05em]">
                 Network access
@@ -694,26 +1066,68 @@ export function AddAgentDialog({
                 </Label>
               </RadioGroup>
             </fieldset>
+            )}
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={onCancel}>
-                Cancel
+              <Button type="button" variant="outline" onClick={goBack}>
+                <ArrowLeft size={14} />
+                {step === "basics" ? "Change image" : "Back"}
               </Button>
-              <Button type="submit" disabled={isSubmitting || !isValid}>
-                Create Agent
-              </Button>
+              {step === "network" || (step === "skills" && lane === "scratch") ? (
+                <Button type="submit" disabled={isSubmitting || !isValid}>
+                  Create agent
+                </Button>
+              ) : (
+                <Button type="button" onClick={goNext}>
+                  {step === "setup" ? "Continue" : "Next"} <ArrowRight size={14} />
+                </Button>
+              )}
             </DialogFooter>
             </form>
           )}
 
-          {step !== "configure" && (
+          {step === "provider" && (
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={onCancel}>
-                Cancel
+              <Button type="button" variant="outline" onClick={goBack}>
+                <ArrowLeft size={14} /> Back
+              </Button>
+              <Button
+                type="button"
+                onClick={goNext}
+                variant={selectedProviderSecretId ? "default" : "outline"}
+              >
+                {selectedProviderSecretId ? (
+                  <>Next <ArrowRight size={14} /></>
+                ) : (
+                  <>Skip for now <ArrowRight size={14} /></>
+                )}
               </Button>
             </DialogFooter>
           )}
       </DialogContent>
+      {connectingGitHub && (
+        <ConnectAppForm
+          app={connectingGitHub}
+          onCancel={() => setConnectingGitHub(null)}
+        />
+      )}
+      {connectingApp && (
+        <ConnectAppForm
+          app={connectingApp}
+          onCancel={() => setConnectingApp(null)}
+        />
+      )}
+      {showAddMcp && (
+        <AddMcpForm
+          onCancel={() => setShowAddMcp(false)}
+        />
+      )}
+      {showAddSecret && (
+        <CreateSecretForm
+          onCancel={() => setShowAddSecret(false)}
+          onCreated={() => setShowAddSecret(false)}
+        />
+      )}
     </Dialog>
   );
 }
@@ -872,5 +1286,526 @@ function ProviderRowItem({
         </span>
       )}
     </SelectPrimitive.Item>
+  );
+}
+
+/**
+ * Single browseable card for the scratch / template lanes. Replaces
+ * the previous dropdown Select so prereqs and descriptions are
+ * visible up-front (the meeting flagged "users need to know what an
+ * opinionated template requires before picking" — pills hidden behind
+ * a Select trigger broke that). Hover reveals the chevron + soft
+ * surface tint; the whole card is the click target.
+ */
+function TemplateRowCard({
+  template,
+  prereqs,
+  onPick,
+}: {
+  template: TemplateView;
+  prereqs: string[];
+  onPick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onPick}
+      className={cn(
+        "group flex flex-col gap-1.5 rounded-lg border bg-background px-4 py-3 text-left",
+        "transition-colors hover:border-foreground/30 hover:bg-muted/30",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+      )}
+    >
+      <span className="flex items-center gap-2">
+        <span className="text-[14px] font-semibold text-foreground">
+          {template.name}
+        </span>
+        <ArrowRight
+          size={14}
+          className="text-muted-foreground ml-auto transition-transform group-hover:translate-x-0.5"
+          aria-hidden
+        />
+      </span>
+      {template.description && (
+        <span className="text-[12px] text-muted-foreground leading-snug">
+          {template.description}
+        </span>
+      )}
+      {prereqs.length > 0 && (
+        <span className="flex flex-wrap items-center gap-1 mt-1">
+          <span className="text-[10px] font-bold uppercase tracking-[0.05em] text-muted-foreground">
+            Requires
+          </span>
+          {prereqs.map((p) => (
+            <span
+              key={p}
+              className="text-[11px] rounded-full border bg-muted/40 px-2 py-0.5 text-foreground/80"
+            >
+              {p}
+            </span>
+          ))}
+        </span>
+      )}
+    </button>
+  );
+}
+
+/**
+ * Skills picker. Categorised list of toggleable skill items driven
+ * by the hardcoded {@link SKILL_CATALOG}. The wireframe shows skills
+ * as a first-class wizard step with grouped checkboxes, so the
+ * prototype renders that shape directly even though the agent-runtime
+ * has no skills enumeration yet — selected IDs are captured in state
+ * but not submitted. Devs reviewing the prototype see the intended
+ * picker UX end-to-end; the real catalog comes from the runtime later.
+ */
+function SkillsPicker({
+  selected,
+  onToggle,
+  template,
+}: {
+  selected: Set<string>;
+  onToggle: (id: string) => void;
+  template: TemplateView | null;
+}) {
+  return (
+    <fieldset className="flex flex-col gap-3 anim-in">
+      <div className="flex flex-col gap-1">
+        <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.05em]">
+          Skills
+        </span>
+        <p className="text-[12px] text-muted-foreground leading-relaxed">
+          {template ? (
+            <>
+              <span className="font-semibold text-foreground">
+                {template.name}
+              </span>{" "}
+              ships with its bundled skills wired in. Add anything else this
+              agent needs.
+            </>
+          ) : (
+            "Pick the skills your agent should have. CLIs and credentials are layered in at boot."
+          )}
+        </p>
+      </div>
+      <div className="flex flex-col gap-4">
+        {SKILL_CATALOG.map((category) => (
+          <div key={category.key} className="flex flex-col gap-1.5">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+              {category.label}
+            </span>
+            <div className="flex flex-col gap-1.5">
+              {category.items.map((item) => {
+                const checked = selected.has(item.id);
+                return (
+                  <Label
+                    key={item.id}
+                    htmlFor={`skill-${item.id}`}
+                    className={cn(
+                      "flex items-start gap-2.5 rounded-lg border bg-background px-3 py-2.5 cursor-pointer transition-colors",
+                      checked
+                        ? "border-primary bg-primary/5"
+                        : "hover:border-foreground/30 hover:bg-muted/30",
+                    )}
+                  >
+                    <input
+                      id={`skill-${item.id}`}
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => onToggle(item.id)}
+                      className="mt-0.5 h-4 w-4 shrink-0 rounded border-input accent-primary"
+                    />
+                    <span className="flex flex-col gap-0.5 min-w-0">
+                      <span className="text-[13px] font-semibold text-foreground">
+                        {item.name}
+                      </span>
+                      <span className="text-[12px] text-muted-foreground leading-snug">
+                        {item.description}
+                      </span>
+                    </span>
+                  </Label>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
+/**
+ * Connections step for the scratch lane. Mirrors the connections page
+ * (OAuth apps + MCP servers + secrets, each connectable inline) so a
+ * user setting up a fresh agent can both create and grant new
+ * connections without leaving the dialog. Granted = the connection's
+ * underlying secret is selected on the agent's `selSecrets` list.
+ */
+function ScratchConnectionsStep({
+  oauthAppEntries,
+  availableToConnect,
+  mcpSecrets,
+  customSecrets,
+  selSecretsSet,
+  onToggleSecret,
+  onConnectApp,
+  onAddMcp,
+  onAddSecret,
+}: {
+  oauthAppEntries: OAuthAppEntry[];
+  availableToConnect: OAuthAppDescriptor[];
+  mcpSecrets: { id: string; name: string }[];
+  customSecrets: { id: string; name: string; hostPattern: string; pathPattern?: string }[];
+  selSecretsSet: Set<string>;
+  onToggleSecret: (id: string) => void;
+  onConnectApp: (app: OAuthAppDescriptor) => void;
+  onAddMcp: () => void;
+  onAddSecret: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-5 anim-in">
+      <div className="flex flex-col gap-1">
+        <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.05em]">
+          Connections (optional)
+        </span>
+        <p className="text-[12px] text-muted-foreground leading-relaxed">
+          Pick which credentials, MCP servers, and apps this agent can
+          reach. Connect new ones inline — they'll be available
+          platform-wide when you're done.
+        </p>
+      </div>
+
+      {/* Apps */}
+      <ConnectionsSection title="Apps">
+        {oauthAppEntries.map((entry) => (
+          <ConnectedRow
+            key={entry.secretId}
+            icon={
+              <span className="text-foreground/80">
+                <OAuthAppIcon appId={entry.appId} alt={entry.displayName} size={16} />
+              </span>
+            }
+            label={entry.displayName}
+            detail={entry.hostPattern}
+            granted={selSecretsSet.has(entry.secretId)}
+            expired={entry.expired}
+            onToggleGrant={() => onToggleSecret(entry.secretId)}
+          />
+        ))}
+        {availableToConnect.map((app) => (
+          <AvailableRow
+            key={app.id}
+            icon={
+              <span className="text-foreground/80">
+                <OAuthAppIcon appId={app.id} alt={app.displayName} size={16} />
+              </span>
+            }
+            label={app.displayName}
+            description={app.description}
+            onConnect={() => onConnectApp(app)}
+          />
+        ))}
+      </ConnectionsSection>
+
+      {/* MCP Servers */}
+      <ConnectionsSection title="MCP Servers">
+        {mcpSecrets.map((s) => (
+          <ConnectedRow
+            key={s.id}
+            icon={<Globe size={16} className="text-foreground/80" />}
+            label={mcpHostnameFromSecretName(s.name)}
+            granted={selSecretsSet.has(s.id)}
+            onToggleGrant={() => onToggleSecret(s.id)}
+          />
+        ))}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="self-start"
+          onClick={onAddMcp}
+        >
+          <Plus size={14} /> Add MCP server
+        </Button>
+      </ConnectionsSection>
+
+      {/* Secrets */}
+      <ConnectionsSection title="Secrets">
+        {customSecrets.map((s) => (
+          <ConnectedRow
+            key={s.id}
+            icon={<Lock size={16} className="text-foreground/80" />}
+            label={s.name}
+            detail={
+              s.pathPattern ? `${s.hostPattern}${s.pathPattern}` : s.hostPattern
+            }
+            granted={selSecretsSet.has(s.id)}
+            onToggleGrant={() => onToggleSecret(s.id)}
+          />
+        ))}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="self-start"
+          onClick={onAddSecret}
+        >
+          <Plus size={14} /> Add Secret
+        </Button>
+      </ConnectionsSection>
+    </div>
+  );
+}
+
+function ConnectionsSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.05em]">
+        {title}
+      </div>
+      <div className="flex flex-col gap-2">{children}</div>
+    </div>
+  );
+}
+
+/** Already-connected resource — a checkbox toggles the agent's grant. */
+function ConnectedRow({
+  icon,
+  label,
+  detail,
+  granted,
+  expired,
+  onToggleGrant,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  detail?: string;
+  granted: boolean;
+  expired?: boolean;
+  onToggleGrant: () => void;
+}) {
+  return (
+    <label
+      className={cn(
+        "flex items-center gap-3 rounded-lg border bg-background px-4 py-3 cursor-pointer transition-colors hover:border-primary",
+        granted ? "border-primary bg-primary/10" : "border-border",
+      )}
+    >
+      <input
+        type="checkbox"
+        checked={granted}
+        onChange={onToggleGrant}
+        className="h-4 w-4 shrink-0 rounded border-input accent-primary"
+      />
+      <span className="shrink-0">{icon}</span>
+      <div className="flex-1 min-w-0">
+        <div className="text-[13px] font-medium text-foreground truncate">{label}</div>
+        {detail && (
+          <div className="text-[11px] font-mono text-muted-foreground truncate">
+            {detail}
+          </div>
+        )}
+      </div>
+      <Badge
+        variant={expired ? "destructive" : "secondary"}
+        className="shrink-0 uppercase tracking-[0.03em]"
+      >
+        {expired ? "Expired" : "Connected"}
+      </Badge>
+    </label>
+  );
+}
+
+/** Available-to-connect OAuth app — Connect button kicks off the OAuth flow. */
+function AvailableRow({
+  icon,
+  label,
+  description,
+  onConnect,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  description?: string;
+  onConnect: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-border bg-background px-4 py-3">
+      <span className="shrink-0">{icon}</span>
+      <div className="flex-1 min-w-0">
+        <div className="text-[13px] font-medium text-foreground truncate">{label}</div>
+        {description && (
+          <div className="text-[11px] text-muted-foreground truncate">
+            {description}
+          </div>
+        )}
+      </div>
+      <Button type="button" variant="outline" size="sm" onClick={onConnect}>
+        Connect
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * 3-lane starting-path picker. Frames agent creation as three distinct
+ * journeys (vanilla harness / opinionated template / bring-your-own
+ * image) instead of a flat list that mixes them. Colors echo the rich
+ * empty-state palettes (aurora / sunset / forest) so the lanes read
+ * consistently with the surrounding empty-state vocabulary.
+ */
+function LanePicker({ onPick }: { onPick: (lane: Lane) => void }) {
+  return (
+    <div className="flex flex-col gap-2 anim-in">
+      <LaneCard
+        lane="scratch"
+        palette="aurora"
+        icon={<DocumentAdd size={20} />}
+        title="Start from scratch"
+        description="Start with a simple harness, and build from there."
+        onClick={() => onPick("scratch")}
+      />
+      <LaneCard
+        lane="template"
+        palette="sunset"
+        icon={<Extensions size={20} />}
+        title="Start from a template"
+        description="Pre-configured agent with skills, prompts, and connections"
+        onClick={() => onPick("template")}
+      />
+      <LaneCard
+        lane="custom"
+        palette="forest"
+        icon={<Code size={20} />}
+        title="Custom image"
+        badge="Advanced"
+        description="Bring your own ACP-compatible image — for harnesses you've built yourself."
+        onClick={() => onPick("custom")}
+      />
+    </div>
+  );
+}
+
+/**
+ * Single lane row. The icon square uses a soft pastel gradient drawn
+ * from the IBM Carbon color tokens at the 20-level (the same family
+ * the empty-state cards and login backdrop sample, just at full
+ * opacity instead of layered low-opacity blobs over white). Icons
+ * render black on top — Carbon 20-tones have ample contrast with
+ * black at the 40px square scale.
+ */
+// Carbon 10-level tones — the lightest tints in the palette, the same
+// "barely-there" feel as the empty-state card backdrops. The empty-
+// state's multi-blob recipe doesn't scale down to a 40px square, so
+// we use a soft two-stop linear gradient between two adjacent 10-level
+// hues from the same family instead. Reads as mostly one pale color,
+// which is fine — the goal is a whisper of palette identity, not a
+// statement.
+const LANE_ICON_GRADIENT: Record<EmptyStatePalette, string> = {
+  // Carbon Blue-10 → Purple-10
+  aurora: "linear-gradient(135deg, #edf5ff 0%, #f6f2ff 100%)",
+  // Carbon Orange-10 → Magenta-10
+  sunset: "linear-gradient(135deg, #fff2e8 0%, #fff0f7 100%)",
+  // Carbon Cyan-10 → Teal-10
+  forest: "linear-gradient(135deg, #e5f6ff 0%, #d9fbfb 100%)",
+};
+
+function LaneCard({
+  palette,
+  icon,
+  title,
+  badge,
+  description,
+  onClick,
+}: {
+  lane: Lane;
+  palette: EmptyStatePalette;
+  icon: React.ReactNode;
+  title: string;
+  badge?: string;
+  description: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "group flex items-center gap-3 rounded-lg border bg-background px-3 py-3 text-left",
+        "transition-colors hover:border-foreground/30 hover:bg-muted/30",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+      )}
+    >
+      <span
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-black"
+        style={{ background: LANE_ICON_GRADIENT[palette] }}
+        aria-hidden
+      >
+        {icon}
+      </span>
+      <span className="flex-1 min-w-0 flex flex-col gap-0.5">
+        <span className="flex items-center gap-2">
+          <span className="text-[14px] font-semibold text-foreground">
+            {title}
+          </span>
+          {badge && (
+            <span className="text-[10px] font-bold uppercase tracking-[0.05em] text-muted-foreground">
+              {badge}
+            </span>
+          )}
+        </span>
+        <span className="text-[12px] text-muted-foreground leading-snug">
+          {description}
+        </span>
+      </span>
+      <ArrowRight
+        size={16}
+        className="text-muted-foreground shrink-0 transition-transform group-hover:translate-x-0.5"
+        aria-hidden
+      />
+    </button>
+  );
+}
+
+/**
+ * Shared frame for a chosen lane's sub-picker. Provides the back link
+ * to the lane picker plus a small headline + description that explains
+ * what the user is selecting in this lane.
+ */
+function LaneFrame({
+  title,
+  description,
+  onBack,
+  children,
+}: {
+  title: string;
+  description: string;
+  onBack: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-3 anim-in">
+      <button
+        type="button"
+        onClick={onBack}
+        className="self-start inline-flex items-center gap-1 text-[12px] text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <ArrowLeft size={12} /> Choose a different starting path
+      </button>
+      <div className="flex flex-col gap-1">
+        <span className="text-[14px] font-semibold text-foreground">
+          {title}
+        </span>
+        <span className="text-[12px] text-muted-foreground leading-snug">
+          {description}
+        </span>
+      </div>
+      {children}
+    </div>
   );
 }
