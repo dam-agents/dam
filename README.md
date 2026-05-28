@@ -25,7 +25,7 @@
 - **☁️ Runs in the cloud.** Agents keep running after you close your laptop or go offline.
 - **🔐 Zero trust credentials.** Connect agents to your tools without exposing credentials to the runtime.
 - **👥 Built for teams.** Collaborate with shared agents in Slack using your own accounts and permissions.
-- **⏱️ Autonomous execution.** Run agents on schedules for reviews, audits, monitoring, reporting, and recurring tasks.
+- **⏱️ Runs on schedules.** Automate agents for reviews, audits, monitoring, reporting, and recurring tasks.
 
 ---
 
