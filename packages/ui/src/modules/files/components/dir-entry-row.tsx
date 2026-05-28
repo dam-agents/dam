@@ -1,29 +1,27 @@
 import type { DirEntry } from "agent-runtime-api";
 import { Fragment } from "react";
 
+import { DirContents } from "./dir-contents.js";
 import { FileRow } from "./file-row.js";
 import { useFilesPanel } from "./files-panel-controller.js";
 import { InlineNameRow } from "./inline-name-row.js";
 
 interface Props {
   entry: DirEntry;
-  fullPath: string;
+  parentPath: string;
   depth: number;
-  isExpanded: boolean;
-  isRenaming: boolean;
-  renderChildren: () => JSX.Element | null;
 }
 
-export function DirEntryRow({
-  entry,
-  fullPath,
-  depth,
-  isExpanded,
-  isRenaming,
-  renderChildren,
-}: Props) {
+function joinPath(parent: string, name: string): string {
+  return parent ? `${parent}/${name}` : name;
+}
+
+export function DirEntryRow({ entry, parentPath, depth }: Props) {
   const panel = useFilesPanel();
+  const fullPath = joinPath(parentPath, entry.name);
   const isDir = entry.type === "dir";
+  const isExpanded = isDir && panel.expandedDirs.has(fullPath);
+  const isRenaming = panel.renamingPath === fullPath;
 
   return (
     <Fragment>
@@ -47,7 +45,7 @@ export function DirEntryRow({
           menuActive={panel.menu?.path === fullPath}
         />
       )}
-      {isExpanded && renderChildren()}
+      {isExpanded && <DirContents path={fullPath} depth={depth + 1} />}
       {panel.pendingNew && panel.pendingNew.dir === fullPath && (
         <InlineNameRow
           kind={panel.pendingNew.kind}

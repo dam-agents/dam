@@ -7,10 +7,6 @@ interface Props {
   depth: number;
 }
 
-function joinPath(parent: string, name: string): string {
-  return parent ? `${parent}/${name}` : name;
-}
-
 /** Renders one directory's immediate children. Recurses for any child dir
  *  the user has expanded. Lifecycle = render lifecycle: collapsing a parent
  *  unmounts every `<DirContents>` underneath, which lets React Query garbage
@@ -23,25 +19,14 @@ export function DirContents({ path, depth }: Props) {
 
   return (
     <>
-      {snapshot.entries.map((entry) => {
-        const fullPath = joinPath(path, entry.name);
-        const isExpanded =
-          entry.type === "dir" && panel.expandedDirs.has(fullPath);
-        const isRenaming = panel.renamingPath === fullPath;
-        return (
-          <DirEntryRow
-            key={fullPath}
-            entry={entry}
-            fullPath={fullPath}
-            depth={depth}
-            isExpanded={isExpanded}
-            isRenaming={isRenaming}
-            renderChildren={() => (
-              <DirContents path={fullPath} depth={depth + 1} />
-            )}
-          />
-        );
-      })}
+      {snapshot.entries.map((entry) => (
+        <DirEntryRow
+          key={entry.name}
+          entry={entry}
+          parentPath={path}
+          depth={depth}
+        />
+      ))}
     </>
   );
 }
