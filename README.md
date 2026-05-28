@@ -2,17 +2,13 @@
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/dam-light.svg" />
     <source media="(prefers-color-scheme: light)" srcset="docs/assets/dam-dark.svg" />
-    <img src="docs/assets/dam-square-dark.svg" width="180" alt="DAM" />
+    <img src="docs/assets/dam-square-dark.svg" width="150" alt="DAM" />
   </picture>
 </p>
-<br>
-<p align="center">
-  <strong>Run autonomous AI agent harnesses in the cloud — securely, continuously, and collaboratively.</strong>
-</p>
 
-<p align="center">
-  Deploy headless agents like Claude Code, Codex, and ACP-compatible runtimes with persistent cloud execution, zero-trust credential injection, scheduled workflows, and multiplayer collaboration through Slack.
-</p>
+<h3 align="center">
+  Run agent harnesses like Claude Code headless in the cloud.
+</h3>
 
 <p align="center">
   <a href="https://ibm.biz/dam-docs"><strong>Documentation</strong></a>
@@ -26,14 +22,14 @@
 
 ## Why DAM?
 
-- **☁️ Runs in the cloud.** Agents keep running even after you close your laptop or go offline.
-- **🔐 Zero trust credentials.** Credentials are injected securely through an isolated gateway. Agents never see or store your tokens.
-- **👥 Built for teams.** Use shared agents in Slack with individual authentication and permissions for every teammate.
-- **⏱️ Autonomous execution.** Run agents automatically on schedules for reviews, audits, monitoring, reporting, and recurring tasks.
+- **☁️ Runs in the cloud.** Agents keep running after you close your laptop or go offline.
+- **🔐 Zero trust credentials.** Connect agents to your tools without exposing credentials to the runtime.
+- **👥 Built for teams.** Collaborate with shared agents in Slack using your own accounts and permissions.
+- **⏱️ Autonomous execution.** Run agents on schedules for reviews, audits, monitoring, reporting, and recurring tasks.
 
 ---
 
-## Modes of Interaction
+## Ways to Use DAM
 
 | Mode | Description |
 |---|---|
