@@ -1,4 +1,3 @@
-import type { McpServer } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "../../../api.js";
@@ -25,7 +24,6 @@ import { useAcpUpdateHandler } from "./use-acp-update-handler.js";
  */
 export function useAcpSession(
   selectedAgent: string | null,
-  selectedMcpServers: McpServer[],
   textareaRef: React.RefObject<HTMLTextAreaElement | null>,
 ) {
   const sessionId = useStore((s) => s.sessionId);
@@ -53,7 +51,6 @@ export function useAcpSession(
 
   const { loadHistory } = useAcpHistory(
     selectedAgent,
-    selectedMcpServers,
     captureSessionConfig,
     handleConfigUpdate,
   );
@@ -64,7 +61,6 @@ export function useAcpSession(
     clear: clearEngagement,
   } = useAcpSessionEngagement(
     selectedAgent,
-    selectedMcpServers,
     captureSessionConfig,
     applySavedPreferences,
   );

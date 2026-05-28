@@ -36,7 +36,6 @@ import { Terminal } from "../components/terminal.js";
 import { ThoughtBlock } from "../components/thought-block.js";
 import { ToolChip } from "../components/tool-chip.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
-import { useMcpPicker } from "../hooks/use-mcp-picker.js";
 
 export function ChatView() {
   const selectedAgent = useStore((s) => s.selectedAgent);
@@ -81,15 +80,6 @@ export function ChatView() {
 
   // ── Hooks ──
   const {
-    mcpOptions,
-    enabledMcps,
-    toggleMcp,
-    selectAllMcps,
-    clearAllMcps,
-    selectedMcpServers,
-  } = useMcpPicker(selectedAgent);
-
-  const {
     ensureConnection,
     resetSession,
     resumeSession,
@@ -98,7 +88,7 @@ export function ChatView() {
     busy,
     engagedSessionIdRef,
     loadingSession,
-  } = useAcpSession(selectedAgent, selectedMcpServers, textareaRef);
+  } = useAcpSession(selectedAgent, textareaRef);
 
   const { openFileHandler } = useFileTree(selectedAgent);
 
@@ -294,12 +284,6 @@ export function ChatView() {
           className={`flex flex-1 flex-col overflow-hidden ${rightTab === "configuration" ? "" : "hidden"}`}
         >
           <ConfigurationPanel
-            mcpOptions={mcpOptions}
-            enabledMcps={enabledMcps}
-            onToggleMcp={toggleMcp}
-            onSelectAllMcps={selectAllMcps}
-            onClearAllMcps={clearAllMcps}
-            hasActiveSession={!!sessionId}
             onResumeSession={mobileResumeSession}
             agentId={selectedAgent}
             agentRunning={

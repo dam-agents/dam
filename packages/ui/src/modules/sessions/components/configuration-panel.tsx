@@ -3,7 +3,6 @@ import { useState } from "react";
 
 import { SchedulesPanel } from "../../schedules/components/schedules-panel.js";
 import { ChannelsPanel } from "./channels-panel.js";
-import { type McpOption, McpsPanel } from "./mcps-panel.js";
 import { SkillsPanel } from "./skills-panel.js";
 
 function Section({
@@ -31,23 +30,11 @@ function Section({
 }
 
 export function ConfigurationPanel({
-  mcpOptions,
-  enabledMcps,
-  onToggleMcp,
-  onSelectAllMcps,
-  onClearAllMcps,
-  hasActiveSession,
   onResumeSession,
   agentId,
   agentRunning,
   onOpenFile,
 }: {
-  mcpOptions: McpOption[];
-  enabledMcps: Set<string>;
-  onToggleMcp: (hostname: string) => void;
-  onSelectAllMcps: () => void;
-  onClearAllMcps: () => void;
-  hasActiveSession: boolean;
   /** Called when the user clicks a past run under a schedule card. */
   onResumeSession?: (sessionId: string) => void;
   agentId: string | null;
@@ -62,17 +49,6 @@ export function ConfigurationPanel({
 
       <Section title="Channels">
         <ChannelsPanel />
-      </Section>
-
-      <Section title="MCP Servers">
-        <McpsPanel
-          options={mcpOptions}
-          enabled={enabledMcps}
-          onToggle={onToggleMcp}
-          onSelectAll={onSelectAllMcps}
-          onClearAll={onClearAllMcps}
-          hasActiveSession={hasActiveSession}
-        />
       </Section>
 
       <Section title="Skills">
