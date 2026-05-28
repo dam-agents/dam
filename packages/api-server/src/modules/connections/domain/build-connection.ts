@@ -15,7 +15,6 @@ export interface BuildResult {
   auth: ConnectionAuthConfig;
   contributions: Contribution[];
   secrets: Map<string, Record<string, string>>;
-  defaultName: string;
 }
 
 export async function buildConnection(
@@ -157,8 +156,6 @@ async function buildOAuthStatic(
     },
     contributions,
     secrets,
-    defaultName:
-      input.name ?? (host ? `${template.name} (${host})` : template.name),
   };
 }
 
@@ -253,7 +250,6 @@ async function buildOAuthDcr(
     },
     contributions,
     secrets,
-    defaultName: input.name ?? url.host,
   };
 }
 
@@ -299,7 +295,6 @@ function buildHeader(
     },
     contributions,
     secrets: new Map([[secretPath.path, { value: input.value, ...sdsFields }]]),
-    defaultName: input.name ?? template.name,
   };
 }
 
@@ -323,6 +318,5 @@ function buildNone(
     auth: { kind: "none" },
     contributions,
     secrets: new Map(),
-    defaultName: input.name ?? template.name,
   };
 }

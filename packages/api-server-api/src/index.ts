@@ -156,6 +156,7 @@ export {
   connectionCreateInputSchema,
   connectionDiscoverMcpInputSchema,
   connectionGetAgentConnectionsInputSchema,
+  connectionNameSchema,
   connectionSetAgentConnectionsInputSchema,
 } from "./modules/connections/schemas.js";
 export type { ConnectionCreateInput } from "./modules/connections/schemas.js";

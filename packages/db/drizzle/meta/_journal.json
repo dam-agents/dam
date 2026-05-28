@@ -134,6 +134,13 @@
       "when": 1780531200000,
       "tag": "0018_terms_acceptances",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1780617600000,
+      "tag": "0019_connections_unique_name",
+      "breakpoints": true
     }
   ]
 }

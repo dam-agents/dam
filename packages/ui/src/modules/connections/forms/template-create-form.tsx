@@ -1,7 +1,8 @@
-import type {
-  ConnectionCreateInput,
-  ConnectionTemplateInput,
-  ConnectionTemplateView,
+import {
+  type ConnectionCreateInput,
+  connectionNameSchema,
+  type ConnectionTemplateInput,
+  type ConnectionTemplateView,
 } from "api-server-api";
 import { useMemo, useState } from "react";
 
@@ -28,7 +29,11 @@ export function TemplateCreateForm({
 }) {
   const create = useCreateConnection();
 
-  const [name, setName] = useState("");
+  // Suggest a slug from the template name (e.g. "GitHub" → "github").
+  // User can override; if they create a second connection from the same
+  // template they'll hit the unique constraint and get a CONFLICT error
+  // pointing them at the collision.
+  const [name, setName] = useState(() => slugifyTemplateName(template.name));
   const [fields, setFields] = useState<Record<string, string>>({});
   const [overrides, setOverrides] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
@@ -57,9 +62,12 @@ export function TemplateCreateForm({
   };
 
   const buildPayload = (): ConnectionCreateInput | { error: string } => {
+    const trimmed = name.trim();
+    const nameError = validateConnectionName(trimmed);
+    if (nameError) return { error: nameError };
     const common = {
       templateId: template.id,
-      ...(name.trim() ? { name: name.trim() } : {}),
+      name: trimmed,
     };
     switch (template.authKind) {
       case "oauth": {
@@ -152,10 +160,11 @@ export function TemplateCreateForm({
       <DialogBody>
         <div className="flex flex-col gap-4">
           <LabeledInput
-            label="Display name (optional)"
-            placeholder="My connection"
+            label="Name"
+            placeholder="my-connection"
             value={name}
             onChange={setName}
+            help="Lowercase letters, digits, and single hyphens (e.g. my-mcp-server). Doubles as the MCP slug."
           />
 
           {requiredOrOptional.map((input) => (
@@ -298,12 +307,14 @@ function LabeledInput({
   type,
   value,
   onChange,
+  help,
 }: {
   label: string;
   placeholder?: string;
   type?: "text" | "password";
   value: string;
   onChange: (v: string) => void;
+  help?: string;
 }) {
   return (
     <label className="block">
@@ -317,8 +328,33 @@ function LabeledInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
       />
+      {help && (
+        <span className="text-[11px] text-text-muted block mt-1">{help}</span>
+      )}
     </label>
   );
+}
+
+/** Runs the same Zod schema the server uses, so the form surfaces the
+ *  same error string the API would return — no drift to keep in sync. */
+function validateConnectionName(name: string): string | null {
+  const result = connectionNameSchema.safeParse(name);
+  return result.success
+    ? null
+    : (result.error.issues[0]?.message ?? "Invalid name");
+}
+
+/** Turn the template's display name into a connection-name suggestion
+ *  that satisfies `connectionNameSchema` ("GitHub" → "github",
+ *  "GitHub Enterprise" → "github-enterprise"). Returns empty string if
+ *  the template name has nothing usable — the user-facing required
+ *  validation will then prompt for a name. */
+function slugifyTemplateName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 63);
 }
 
 const FIELD_LABELS: Record<string, string> = {
