@@ -1,5 +1,6 @@
 import { Subject, type Observable } from "rxjs";
 import { filter } from "rxjs/operators";
+import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 
 // ---------------------------------------------------------------------------
 // Domain events — write-side only
@@ -119,7 +120,7 @@ export type ForeignReplyReceived = {
   foreignSub: string;
   threadTs: string;
   sessionId?: string;
-  prompt: string;
+  prompt: string | ContentBlock[];
   slackContext: {
     channelId: string;
     userSlackId: string;

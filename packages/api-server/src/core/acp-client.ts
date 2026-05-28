@@ -2,6 +2,10 @@ import { WebSocket } from "ws";
 import { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
 import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
 import type { AnyMessage } from "@agentclientprotocol/sdk/dist/jsonrpc.js";
+import type {
+  ContentBlock,
+  InitializeResponse,
+} from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import { podBaseUrl } from "../modules/agents/infrastructure/k8s.js";
 
 const TIMEOUT_MS = 120_000;
@@ -58,7 +62,10 @@ type SessionAttach =
   | { resumeSessionId: string }
   | { onSessionCreated: (sessionId: string) => Promise<void> };
 
-export type SendPromptOpts = SessionAttach;
+export type SendPromptOpts = SessionAttach & {
+  /** Called when image blocks are stripped because the agent lacks image support. */
+  onImagesDropped?: () => Promise<void> | void;
+};
 
 export type TriggerSessionOpts = {
   prompt: string;
@@ -67,7 +74,10 @@ export type TriggerSessionOpts = {
 
 export interface AcpClient {
   listSessions(): Promise<AcpSessionInfo[]>;
-  sendPrompt(prompt: string, opts: SendPromptOpts): Promise<string>;
+  sendPrompt(
+    prompt: string | ContentBlock[],
+    opts: SendPromptOpts,
+  ): Promise<string>;
   triggerSession(opts: TriggerSessionOpts): Promise<TriggerSessionResult>;
 }
 
@@ -75,7 +85,10 @@ async function withAcpConnection<T>(
   url: string,
   clientName: string,
   handlers: { sessionUpdate?: (params: any) => Promise<void> },
-  fn: (connection: ClientSideConnection) => Promise<T>,
+  fn: (
+    connection: ClientSideConnection,
+    init: InitializeResponse,
+  ) => Promise<T>,
 ): Promise<T> {
   const { stream, ws } = await wsStream(url);
 
@@ -122,13 +135,13 @@ async function withAcpConnection<T>(
 
   try {
     ac.signal.addEventListener("abort", cleanup, { once: true });
-    await connection.initialize({
+    const init = await connection.initialize({
       protocolVersion: 1,
       clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
       clientInfo: { name: clientName, version: "1.0.0" },
     });
     return await Promise.race([
-      fn(connection),
+      fn(connection, init),
       new Promise<never>((_, reject) => {
         if (ac.signal.aborted) {
           reject(
@@ -218,7 +231,7 @@ function createAcpClientForUrl(url: string): AcpClient {
     },
 
     async sendPrompt(
-      prompt: string,
+      prompt: string | ContentBlock[],
       sendOpts: SendPromptOpts,
     ): Promise<string> {
       const responseChunks: string[] = [];
@@ -236,7 +249,7 @@ function createAcpClientForUrl(url: string): AcpClient {
             }
           },
         },
-        async (connection) => {
+        async (connection, init) => {
           let sessionId: string;
           if ("resumeSessionId" in sendOpts) {
             // loadSession (not unstable_resumeSession) survives the agent-runtime's
@@ -256,10 +269,23 @@ function createAcpClientForUrl(url: string): AcpClient {
             sessionId = s.sessionId;
             await sendOpts.onSessionCreated(sessionId);
           }
-          await connection.prompt({
-            sessionId,
-            prompt: [{ type: "text", text: prompt }],
-          });
+
+          const blocks: ContentBlock[] =
+            typeof prompt === "string"
+              ? [{ type: "text", text: prompt }]
+              : prompt;
+          const supportsImages =
+            init.agentCapabilities?.promptCapabilities?.image === true;
+          const hasImages = blocks.some((b) => b.type === "image");
+          const finalBlocks =
+            hasImages && !supportsImages
+              ? blocks.filter((b) => b.type !== "image")
+              : blocks;
+          if (hasImages && !supportsImages) {
+            await sendOpts.onImagesDropped?.();
+          }
+
+          await connection.prompt({ sessionId, prompt: finalBlocks });
         },
       );
 
@@ -273,7 +299,7 @@ function createAcpClientForUrl(url: string): AcpClient {
         url,
         "platform-trigger",
         {},
-        async (connection) => {
+        async (connection, _init) => {
           let sessionId: string;
           const mcpServers = (triggerOpts.mcpServers ?? []) as any[];
 

@@ -40,7 +40,7 @@ Users can also author skills in the Files panel and publish them upstream as pul
 
 Platform runs a single Slack app (Socket Mode) for the entire installation. Multiple instances can share a channel — the bot routes messages per thread.
 
-1. [Create a Slack app](https://api.slack.com/apps) with Socket Mode enabled and bot/user token scopes: `app_mentions:read`, `channels:history`, `chat:write`, `files:write`, `reactions:write`, `commands`, `users:read`. (`files:write` powers outbound file attachments via the `send_channel_message` MCP tool — existing installations must add it and have admins re-approve.)
+1. [Create a Slack app](https://api.slack.com/apps) with Socket Mode enabled and bot/user token scopes: `app_mentions:read`, `channels:history`, `chat:write`, `files:read`, `files:write`, `reactions:write`, `commands`, `users:read`. (`files:write` powers outbound file attachments via the `send_channel_message` MCP tool; `files:read` lets the worker download user-attached images so the agent can see them. Existing installations must add both and have admins re-approve.)
 2. Add slash command `/platform` pointing to your app.
 3. Generate an app-level token (`xapp-...`) with `connections:write` scope. Deploy with both tokens:
 
