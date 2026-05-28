@@ -2,46 +2,61 @@
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/dam-light.svg" />
     <source media="(prefers-color-scheme: light)" srcset="docs/assets/dam-dark.svg" />
-    <img src="docs/assets/dam-square-dark.svg" width="140" alt="DAM" />
+    <img src="docs/assets/dam-square-dark.svg" width="180" alt="DAM" />
   </picture>
 </p>
-
+<br>
 <p align="center">
-  <strong>Run AI agents in the cloud, on a schedule, connected to your tools.</strong>
+  <strong>Run autonomous AI agent harnesses in the cloud — securely, continuously, and collaboratively.</strong>
 </p>
 
 <p align="center">
-  <a href="https://ibm.biz/dam-docs">Documentation</a> ·
-  <a href="https://ibm.biz/dam-agents">Launch DAM</a> ·
-  <a href="https://ibm.biz/dam-waitlist">Join the Waitlist</a>
+  Deploy headless agents like Claude Code, Codex, and ACP-compatible runtimes with persistent cloud execution, zero-trust credential injection, scheduled workflows, and multiplayer collaboration through Slack.
+</p>
+
+<p align="center">
+  <a href="https://ibm.biz/dam-docs"><strong>Documentation</strong></a>
+  ·
+  <a href="https://ibm.biz/dam-agents"><strong>Launch DAM</strong></a>
+  ·
+  <a href="https://ibm.biz/dam-waitlist"><strong>Join the Waitlist</strong></a>
 </p>
 
 ---
 
-Your agent runs on cloud infrastructure — close your laptop, shut it down, it keeps working. Tokens are injected at the network layer by a separate gateway; the agent process never sees them. Your whole team interacts with shared agents via Slack, each person authenticated individually.
-
 ## Why DAM?
 
-- **Always-on compute** — Your agent runs on cloud infrastructure. Close your laptop, shut it down, it keeps working.
-- **Zero-trust credentials** — Tokens are injected at the network layer by a separate gateway. The agent process never sees them.
-- **Multiplayer** — Your whole team interacts with shared agents via Slack — each person authenticated individually.
-- **Unattended execution** — Agents run on a schedule with no human in the loop. Daily PR reviews, nightly audits, whatever you need.
+- **☁️ Persistent Cloud Execution.** Agents continue running even after you disconnect, close your laptop, or lose internet access.
+- **🔐 Zero-Trust Credential Injection.** Credentials are injected at the network layer through an isolated gateway. The agent runtime never directly sees your tokens.
+- **👥 Multiplayer Agents.** Collaborate with shared agents through Slack. Every teammate authenticates independently with their own permissions and credentials.
+- **⏱️ Autonomous Scheduling.** Run agents unattended on recurring schedules for PR reviews, audits, maintenance tasks, reporting, or monitoring workflows.
+- **🖥️ Native Harness Experience.** Use real agent harnesses directly — not simulated wrappers or abstractions.
+
+---
 
 ## Modes of Interaction
 
-- **Web UI** — Browser-based chat and a full terminal view — quick tasks, file browsing, or the native agent TUI.
-- **CLI** — Create and manage agents from your local terminal, then attach directly to interactive sessions.
-- **Slack** — Message your agent from Slack threads. Teammates join with their own credentials.
-- **Schedules** — Agents run autonomously on a timer — no human in the loop.
+| Mode | Description |
+|---|---|
+| **Web UI** | Browser-based chat, terminal streaming, logs, and native agent TUI access |
+| **CLI** | Create, manage, and attach to agents directly from your terminal |
+| **Slack** | Interact with agents collaboratively through Slack threads |
+| **Schedules** | Trigger autonomous agent runs on recurring timers |
 
-## Available Agent Harnesses
+---
 
-- **Claude Code** — General-purpose coding: write, debug, refactor, review.
-- **Pi Agent** — Multi-model coding (GPT-4, Mistral, Gemini, etc.)
-- **Bob** — IBM's general-purpose AI shell with tenant scoping.
-- **Codex** — OpenAI-powered coding with any compatible endpoint.
+## Supported Agent Harnesses
 
-Bring your own harness — anything that speaks [ACP](https://agentclientprotocol.com/get-started/introduction) works.
+| Harness | Description |
+|---|---|
+| **Claude Code** | General-purpose coding, debugging, refactoring, and review |
+| **Pi Agent** | Multi-model coding across GPT-4, Gemini, Mistral, and more |
+| **Bob** | IBM's general-purpose AI shell with tenant scoping |
+| **Codex** | OpenAI-powered coding with compatible endpoints |
+
+Bring your own harness — any runtime compatible with [ACP](https://agentclientprotocol.com/get-started/introduction) can run on DAM.
+
+---
 
 ## Get Started
 
@@ -52,18 +67,32 @@ Head to [ibm.biz/dam-agents](https://ibm.biz/dam-agents), create an instance fro
 <details>
 <summary><strong>Developing DAM locally</strong></summary>
 
-For contributors working on the platform itself.
+For contributors working on the DAM platform itself.
 
-**Prerequisites:** [mise](https://mise.jdx.dev), a Docker-compatible runtime (Docker Desktop, Rancher Desktop, etc.), macOS or Linux.
+### Prerequisites
+
+- [mise](https://mise.jdx.dev)
+- Docker-compatible runtime (Docker Desktop, Rancher Desktop, etc.)
+- macOS or Linux
+
+### Local Setup
 
 ```sh
 git clone https://github.com/dam-agents/dam && cd dam
-mise install                # install toolchain + deps
-mise run cluster:install    # create local k3s cluster + deploy DAM
+
+mise install
+mise run cluster:install
+````
+
+Open [localhost:4444](http://localhost:4444) and log in with:
+
+```txt
+username: dev
+password: dev
 ```
 
-Open [localhost:4444](http://localhost:4444) (login: `dev` / `dev`), create an instance from a template, and start chatting.
+Create an instance from a template and start chatting with your agent.
 
-See [work process](docs/guidelines/work-process.md) for the contributor flow from idea to merged code.
+See [work process](docs/guidelines/work-process.md) for the contributor workflow.
 
 </details>
