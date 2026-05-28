@@ -1,6 +1,4 @@
-import {
-  CircleDash as Circle,
-} from "@carbon/icons-react";
+import { CircleDash as Circle } from "@carbon/icons-react";
 import * as RadioGroupPrimitive from "@radix-ui/react-radio-group";
 import * as React from "react";
 
@@ -11,7 +9,11 @@ const RadioGroup = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof RadioGroupPrimitive.Root>
 >(({ className, ...props }, ref) => {
   return (
-    <RadioGroupPrimitive.Root className={cn("grid gap-2", className)} {...props} ref={ref} />
+    <RadioGroupPrimitive.Root
+      className={cn("grid gap-2", className)}
+      {...props}
+      ref={ref}
+    />
   );
 });
 RadioGroup.displayName = RadioGroupPrimitive.Root.displayName;

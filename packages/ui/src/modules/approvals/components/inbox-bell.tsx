@@ -1,6 +1,4 @@
-import {
-  Email as Inbox,
-} from "@carbon/icons-react";
+import { Email as Inbox } from "@carbon/icons-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";

@@ -11,7 +11,9 @@ export function InboxView() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-baseline justify-between">
-        <h1 className="text-[20px] font-extrabold tracking-[-0.02em] text-foreground">Inbox</h1>
+        <h1 className="text-[20px] font-extrabold tracking-[-0.02em] text-foreground">
+          Inbox
+        </h1>
         <span className="text-[11px] text-muted-foreground">
           {isLoading ? "loading…" : `${pendingCount} pending`}
         </span>
@@ -22,7 +24,11 @@ export function InboxView() {
         don't prompt again.
       </p>
       <Card className="overflow-hidden p-0">
-        <ApprovalsList rows={rows} density="full" emptyLabel="Nothing pending" />
+        <ApprovalsList
+          rows={rows}
+          density="full"
+          emptyLabel="Nothing pending"
+        />
       </Card>
     </div>
   );

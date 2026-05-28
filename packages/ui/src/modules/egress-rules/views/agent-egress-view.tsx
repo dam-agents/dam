@@ -1,6 +1,4 @@
-import {
-  ArrowLeft,
-} from "@carbon/icons-react";
+import { ArrowLeft } from "@carbon/icons-react";
 import { useMemo } from "react";
 
 import { Button } from "@/components/ui/button";

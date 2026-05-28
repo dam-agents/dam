@@ -42,7 +42,7 @@ export function ToolChip({ chip }: { chip: T }) {
         variant="outline"
         size="sm"
         className={`h-auto gap-1.5 py-1 px-2 font-medium ${color} max-w-full ${hasContent ? "cursor-pointer" : "cursor-default"}`}
-        onClick={hasContent ? () => setOpen(o => !o) : undefined}
+        onClick={hasContent ? () => setOpen((o) => !o) : undefined}
       >
         {hasContent ? (
           open ? (
@@ -56,11 +56,16 @@ export function ToolChip({ chip }: { chip: T }) {
       </Button>
       {open && chip.content && (
         <div className="mt-1 rounded-lg bg-muted border border-border overflow-hidden">
-          {chip.content.map((c, i) => (
+          {chip.content.map((c, i) =>
             c.text ? (
-              <pre key={i} className="px-3 py-1.5 text-[11px] font-mono text-foreground/80 whitespace-pre-wrap break-words overflow-x-auto w-full leading-[1.5]">{stripFences(c.text)}</pre>
-            ) : null
-          ))}
+              <pre
+                key={i}
+                className="px-3 py-1.5 text-[11px] font-mono text-foreground/80 whitespace-pre-wrap break-words overflow-x-auto w-full leading-[1.5]"
+              >
+                {stripFences(c.text)}
+              </pre>
+            ) : null,
+          )}
         </div>
       )}
     </div>

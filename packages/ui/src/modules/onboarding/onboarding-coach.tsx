@@ -12,10 +12,13 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../store.js";
-import { useAgents } from "../agents/api/queries.js";
+import { useAgents, useAgentsList } from "../agents/api/queries.js";
 import { useAppConnections } from "../connections/api/queries.js";
 import { useSecrets } from "../secrets/api/queries.js";
-import { setOnboardingActive, useOnboardingActive } from "./onboarding-state.js";
+import {
+  setOnboardingActive,
+  useOnboardingActive,
+} from "./onboarding-state.js";
 
 const STEPS = [
   {
@@ -23,7 +26,8 @@ const STEPS = [
     view: "providers" as const,
     title: "Add your first provider",
     body: "Pick a provider below and paste in an API key. Your agents need this to reach an AI model — it stays encrypted in the cluster and is never shown to the agent itself.",
-    nextHint: "Once you've added a key, head to Agents to spin up your first one.",
+    nextHint:
+      "Once you've added a key, head to Agents to spin up your first one.",
     nextView: "list" as const,
     nextLabel: "Go to Agents",
   },
@@ -31,8 +35,9 @@ const STEPS = [
     key: "agent" as const,
     view: "list" as const,
     title: "Create your first agent",
-    body: "Click \"Add Agent\" up top. Pick a template (like Claude Code), give it a name, and it'll spin up in the cloud — staying alive between sessions so you can close your laptop and come back later.",
-    nextHint: "After your agent is up, swing by Connections to wire in tools like GitHub.",
+    body: 'Click "Add Agent" up top. Pick a template (like Claude Code), give it a name, and it\'ll spin up in the cloud — staying alive between sessions so you can close your laptop and come back later.',
+    nextHint:
+      "After your agent is up, swing by Connections to wire in tools like GitHub.",
     nextView: "connections" as const,
     nextLabel: "Go to Connections",
   },
@@ -54,7 +59,8 @@ export function OnboardingCoach() {
   const showToast = useStore((s) => s.showToast);
 
   const { data: secrets = [], isSuccess: secretsLoaded } = useSecrets();
-  const { data: agents = [], isSuccess: agentsLoaded } = useAgents();
+  const { isSuccess: agentsLoaded } = useAgents();
+  const agents = useAgentsList();
   const { data: connections = [], isSuccess: connectionsLoaded } =
     useAppConnections();
 
@@ -71,7 +77,8 @@ export function OnboardingCoach() {
     if (active && ready && allDone) {
       showToast({
         kind: "success",
-        message: "🎉 All set — your provider, agent, and connection are wired up.",
+        message:
+          "🎉 All set — your provider, agent, and connection are wired up.",
       });
       setOnboardingActive(false);
     }

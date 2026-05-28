@@ -45,7 +45,6 @@ export function SettingsView() {
   const [activeTab, setActiveTab] = useState<Tab>("account");
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
-  const setView = useStore((s) => s.setView);
   const user = getUser();
 
   return (
@@ -81,33 +80,39 @@ export function SettingsView() {
             <div className="mb-8">
               <h3 className="text-[14px] font-semibold mb-3">Theme</h3>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {themeOptions.map(({ value, icon: Icon, label, description }) => (
-                  <button
-                    key={value}
-                    onClick={() => setTheme(value)}
-                    className={cn(
-                      "flex flex-col items-start gap-2 p-4 rounded-xl border-2 transition-all",
-                      theme === value
-                        ? "border-primary bg-primary/10 shadow-sm"
-                        : "border-border hover:border-muted-foreground bg-card",
-                    )}
-                  >
-                    <div
+                {themeOptions.map(
+                  ({ value, icon: Icon, label, description }) => (
+                    <button
+                      key={value}
+                      onClick={() => setTheme(value)}
                       className={cn(
-                        "h-9 w-9 rounded-lg flex items-center justify-center",
+                        "flex flex-col items-start gap-2 p-4 rounded-xl border-2 transition-all",
                         theme === value
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted text-foreground/80",
+                          ? "border-primary bg-primary/10 shadow-sm"
+                          : "border-border hover:border-muted-foreground bg-card",
                       )}
                     >
-                      <Icon size={18} />
-                    </div>
-                    <div>
-                      <div className="text-[14px] font-semibold text-foreground">{label}</div>
-                      <div className="text-[12px] text-muted-foreground mt-0.5">{description}</div>
-                    </div>
-                  </button>
-                ))}
+                      <div
+                        className={cn(
+                          "h-9 w-9 rounded-lg flex items-center justify-center",
+                          theme === value
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted text-foreground/80",
+                        )}
+                      >
+                        <Icon size={18} />
+                      </div>
+                      <div>
+                        <div className="text-[14px] font-semibold text-foreground">
+                          {label}
+                        </div>
+                        <div className="text-[12px] text-muted-foreground mt-0.5">
+                          {description}
+                        </div>
+                      </div>
+                    </button>
+                  ),
+                )}
               </div>
             </div>
           </div>
@@ -122,13 +127,19 @@ export function SettingsView() {
 
             <Card className="flex items-center gap-4 p-4">
               <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-[16px]">
-                {(user?.profile.preferred_username ?? user?.profile.sub ?? "?")[0].toUpperCase()}
+                {(user?.profile.preferred_username ??
+                  user?.profile.sub ??
+                  "?")[0].toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-[14px] font-medium text-foreground truncate">
-                  {user?.profile.preferred_username ?? user?.profile.sub ?? "Unknown"}
+                  {user?.profile.preferred_username ??
+                    user?.profile.sub ??
+                    "Unknown"}
                 </div>
-                <div className="text-[12px] text-muted-foreground">Signed in</div>
+                <div className="text-[12px] text-muted-foreground">
+                  Signed in
+                </div>
               </div>
               <Button
                 variant="ghost"

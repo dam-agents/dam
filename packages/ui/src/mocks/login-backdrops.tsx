@@ -48,10 +48,42 @@ interface BlobSpec {
 }
 
 const BLOBS: BlobSpec[] = [
-  { top: "-12%", right: "5%", width: "55%", blur: 75, duration: 14, keyframe: "blob-a", colorKey: "a" },
-  { top: "20%", right: "-12%", width: "52%", blur: 85, duration: 17, keyframe: "blob-b", colorKey: "b" },
-  { top: "50%", right: "28%", width: "48%", blur: 90, duration: 20, keyframe: "blob-c", colorKey: "c" },
-  { top: "72%", right: "-8%", width: "44%", blur: 80, duration: 24, keyframe: "blob-d", colorKey: "d" },
+  {
+    top: "-12%",
+    right: "5%",
+    width: "55%",
+    blur: 75,
+    duration: 14,
+    keyframe: "blob-a",
+    colorKey: "a",
+  },
+  {
+    top: "20%",
+    right: "-12%",
+    width: "52%",
+    blur: 85,
+    duration: 17,
+    keyframe: "blob-b",
+    colorKey: "b",
+  },
+  {
+    top: "50%",
+    right: "28%",
+    width: "48%",
+    blur: 90,
+    duration: 20,
+    keyframe: "blob-c",
+    colorKey: "c",
+  },
+  {
+    top: "72%",
+    right: "-8%",
+    width: "44%",
+    blur: 80,
+    duration: 24,
+    keyframe: "blob-d",
+    colorKey: "d",
+  },
 ];
 
 function GradientBackdrop({ palette }: { palette: BlobPalette }) {
@@ -100,9 +132,15 @@ function GradientBackdrop({ palette }: { palette: BlobPalette }) {
   );
 }
 
-export const AuroraBackdrop = () => <GradientBackdrop palette={PALETTES.aurora} />;
-export const SunsetBackdrop = () => <GradientBackdrop palette={PALETTES.sunset} />;
-export const ForestBackdrop = () => <GradientBackdrop palette={PALETTES.forest} />;
+export const AuroraBackdrop = () => (
+  <GradientBackdrop palette={PALETTES.aurora} />
+);
+export const SunsetBackdrop = () => (
+  <GradientBackdrop palette={PALETTES.sunset} />
+);
+export const ForestBackdrop = () => (
+  <GradientBackdrop palette={PALETTES.forest} />
+);
 
 // ============================================================
 // Animated-dot backdrops — black dots representing agents
@@ -118,7 +156,12 @@ function CanvasBackdrop({
   setup,
 }: {
   setup: (ctx: CanvasRenderingContext2D, w: number, h: number) => void;
-  draw: (ctx: CanvasRenderingContext2D, w: number, h: number, t: number) => void;
+  draw: (
+    ctx: CanvasRenderingContext2D,
+    w: number,
+    h: number,
+    t: number,
+  ) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 

@@ -1,14 +1,12 @@
-import {
-  Globe,
-} from "@carbon/icons-react";
+import { Globe } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 
 export interface McpOption {
-  id: string;          // K8s credential Secret id
-  hostname: string;    // display label + session key
-  assigned: boolean;   // agent has this secret assigned
+  id: string; // K8s credential Secret id
+  hostname: string; // display label + session key
+  assigned: boolean; // agent has this secret assigned
 }
 
 /**
@@ -43,18 +41,34 @@ export function McpsPanel({
     <div className="flex flex-1 flex-col overflow-y-auto">
       <div className="px-4 py-3 border-b-2 border-border shrink-0 flex items-center text-[11px] text-muted-foreground">
         <span>
-          <strong className="text-foreground">{enabled.size}</strong> of {options.length} enabled
+          <strong className="text-foreground">{enabled.size}</strong> of{" "}
+          {options.length} enabled
         </span>
         <span className="ml-auto flex gap-3">
-          <Button variant="link" size="sm" className="h-auto p-0 font-semibold text-muted-foreground hover:text-primary" onClick={onSelectAll}>All</Button>
+          <Button
+            variant="link"
+            size="sm"
+            className="h-auto p-0 font-semibold text-muted-foreground hover:text-primary"
+            onClick={onSelectAll}
+          >
+            All
+          </Button>
           <span>·</span>
-          <Button variant="link" size="sm" className="h-auto p-0 font-semibold text-muted-foreground hover:text-primary" onClick={onClearAll}>None</Button>
+          <Button
+            variant="link"
+            size="sm"
+            className="h-auto p-0 font-semibold text-muted-foreground hover:text-primary"
+            onClick={onClearAll}
+          >
+            None
+          </Button>
         </span>
       </div>
 
       {hasActiveSession && (
         <div className="px-4 py-2 border-b-2 border-border text-[11px] text-muted-foreground bg-warning-light">
-          Changes apply to new sessions — the current session keeps its original selection.
+          Changes apply to new sessions — the current session keeps its original
+          selection.
         </div>
       )}
 
@@ -68,7 +82,9 @@ export function McpsPanel({
             onCheckedChange={() => onToggle(o.hostname)}
           />
           <Globe size={14} className="text-info shrink-0" />
-          <span className="text-[13px] font-medium text-foreground truncate">{o.hostname}</span>
+          <span className="text-[13px] font-medium text-foreground truncate">
+            {o.hostname}
+          </span>
         </label>
       ))}
     </div>

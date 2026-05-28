@@ -72,7 +72,11 @@ export function FileRowMenu({ isDir, x, y, onClose, onAction }: Props) {
       ref={ref}
       role="menu"
       className="fixed z-50 min-w-[160px] rounded-md border border-border bg-popover text-popover-foreground shadow-md py-1 text-[12px]"
-      style={pos ? { left: pos.left, top: pos.top } : { left: x, top: y, visibility: "hidden" }}
+      style={
+        pos
+          ? { left: pos.left, top: pos.top }
+          : { left: x, top: y, visibility: "hidden" }
+      }
       onClick={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.preventDefault()}
     >

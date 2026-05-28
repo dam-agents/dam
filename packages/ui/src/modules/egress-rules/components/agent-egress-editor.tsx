@@ -319,7 +319,12 @@ export function AgentEgressEditor({
           <Field label="Verdict" widthClass="w-[100px]">
             <select
               value={draft.verdict}
-              onChange={(e) => setDraft({ ...draft, verdict: e.target.value as "allow" | "deny" })}
+              onChange={(e) =>
+                setDraft({
+                  ...draft,
+                  verdict: e.target.value as "allow" | "deny",
+                })
+              }
               className="w-full h-7 px-2 rounded border border-input bg-background text-[12px] text-foreground"
             >
               <option value="allow">allow</option>
@@ -345,8 +350,12 @@ export function AgentEgressEditor({
         </div>
 
         {isLoading ? (
-          <p className="px-4 py-5 text-[12px] text-muted-foreground">loading…</p>
-        ) : serverRules.length === 0 && stagedAddCount === 0 && previewRows.length === 0 ? (
+          <p className="px-4 py-5 text-[12px] text-muted-foreground">
+            loading…
+          </p>
+        ) : serverRules.length === 0 &&
+          stagedAddCount === 0 &&
+          previewRows.length === 0 ? (
           <p className="px-4 py-5 text-[12px] text-muted-foreground">
             No rules yet. Every outbound request will surface in the inbox.
           </p>
@@ -397,15 +406,22 @@ export function AgentEgressEditor({
               ))}
           </ul>
         )}
-        {stagedMode && (stagedAddCount > 0 || stagedDeleteCount > 0 || presetPending) && (
-          <p className="px-3 py-2 text-[11px] text-muted-foreground border-t border-border bg-background/40">
-            Pending: {[
-              presetPending && `apply preset ${staged.preset}`,
-              stagedAddCount > 0 && `${stagedAddCount} new rule${stagedAddCount === 1 ? "" : "s"}`,
-              stagedDeleteCount > 0 && `${stagedDeleteCount} delete${stagedDeleteCount === 1 ? "" : "s"}`,
-            ].filter(Boolean).join(" · ")}. Save to commit.
-          </p>
-        )}
+        {stagedMode &&
+          (stagedAddCount > 0 || stagedDeleteCount > 0 || presetPending) && (
+            <p className="px-3 py-2 text-[11px] text-muted-foreground border-t border-border bg-background/40">
+              Pending:{" "}
+              {[
+                presetPending && `apply preset ${staged.preset}`,
+                stagedAddCount > 0 &&
+                  `${stagedAddCount} new rule${stagedAddCount === 1 ? "" : "s"}`,
+                stagedDeleteCount > 0 &&
+                  `${stagedDeleteCount} delete${stagedDeleteCount === 1 ? "" : "s"}`,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+              . Save to commit.
+            </p>
+          )}
       </Card>
     </div>
   );
@@ -422,7 +438,9 @@ function Field({
 }) {
   return (
     <label className={`flex flex-col gap-1 ${widthClass}`}>
-      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</span>
+      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+        {label}
+      </span>
       {children}
     </label>
   );
@@ -458,13 +476,21 @@ function RuleRow({
   const sourceLabel = sourceLabelOverride ?? formatSource(rule.source);
   const dim = pendingDelete ? "opacity-40 line-through" : "";
   return (
-    <li className={`border-b border-border px-3 py-2 flex items-center gap-2 text-[12px] ${dim}`}>
-      <span className={`uppercase tracking-wider text-[10px] rounded border px-1.5 py-0.5 ${verdictTone}`}>
+    <li
+      className={`border-b border-border px-3 py-2 flex items-center gap-2 text-[12px] ${dim}`}
+    >
+      <span
+        className={`uppercase tracking-wider text-[10px] rounded border px-1.5 py-0.5 ${verdictTone}`}
+      >
         {rule.verdict}
       </span>
-      <span className="font-mono text-[11px] text-muted-foreground w-[60px]">{rule.method}</span>
+      <span className="font-mono text-[11px] text-muted-foreground w-[60px]">
+        {rule.method}
+      </span>
       <span className="font-medium truncate">{rule.host}</span>
-      <span className="font-mono text-[11px] text-muted-foreground truncate">{rule.pathPattern}</span>
+      <span className="font-mono text-[11px] text-muted-foreground truncate">
+        {rule.pathPattern}
+      </span>
       {sourceLabel && (
         <span
           title={`source: ${rule.source}`}
@@ -506,12 +532,18 @@ function PendingAddRow({
       : "text-destructive border-destructive/40";
   return (
     <li className="border-b border-border px-3 py-2 flex items-center gap-2 text-[12px] bg-primary/10">
-      <span className={`uppercase tracking-wider text-[10px] rounded border px-1.5 py-0.5 ${verdictTone}`}>
+      <span
+        className={`uppercase tracking-wider text-[10px] rounded border px-1.5 py-0.5 ${verdictTone}`}
+      >
         {add.verdict}
       </span>
-      <span className="font-mono text-[11px] text-muted-foreground w-[60px]">{add.method}</span>
+      <span className="font-mono text-[11px] text-muted-foreground w-[60px]">
+        {add.method}
+      </span>
       <span className="font-medium truncate">{add.host}</span>
-      <span className="font-mono text-[11px] text-muted-foreground truncate">{add.pathPattern}</span>
+      <span className="font-mono text-[11px] text-muted-foreground truncate">
+        {add.pathPattern}
+      </span>
       <span className="text-[10px] text-primary rounded border border-primary/40 px-1.5 py-0.5">
         new
       </span>
@@ -574,9 +606,13 @@ function PreviewPresetRow({ row }: { row: PreviewRow }) {
       <span className="uppercase tracking-wider text-[10px] rounded border px-1.5 py-0.5 text-primary border-primary/40">
         allow
       </span>
-      <span className="font-mono text-[11px] text-muted-foreground w-[60px]">{row.method}</span>
+      <span className="font-mono text-[11px] text-muted-foreground w-[60px]">
+        {row.method}
+      </span>
       <span className="font-medium truncate">{row.host}</span>
-      <span className="font-mono text-[11px] text-muted-foreground truncate">{row.pathPattern}</span>
+      <span className="font-mono text-[11px] text-muted-foreground truncate">
+        {row.pathPattern}
+      </span>
       <span
         title={`Preview — ${row.sourceBadge} (saved on commit)`}
         className="text-[10px] text-muted-foreground rounded border border-border px-1.5 py-0.5"

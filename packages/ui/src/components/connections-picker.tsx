@@ -99,23 +99,26 @@ export function ConnectionsPicker({
       {loading && (
         <span className="text-[12px] text-muted-foreground">Loading...</span>
       )}
-      {!loading && secrets.length === 0 && apps.length === 0 && staleAppIds.length === 0 && (
-        <span className="text-[12px] text-muted-foreground">
-          No connections yet.
-          {onGoToProviders && (
-            <>
-              {" "}
-              <Button
-                variant="link"
-                className="h-auto p-0 text-[12px] font-semibold"
-                onClick={onGoToProviders}
-              >
-                Add one
-              </Button>
-            </>
-          )}
-        </span>
-      )}
+      {!loading &&
+        secrets.length === 0 &&
+        apps.length === 0 &&
+        staleAppIds.length === 0 && (
+          <span className="text-[12px] text-muted-foreground">
+            No connections yet.
+            {onGoToProviders && (
+              <>
+                {" "}
+                <Button
+                  variant="link"
+                  className="h-auto p-0 text-[12px] font-semibold"
+                  onClick={onGoToProviders}
+                >
+                  Add one
+                </Button>
+              </>
+            )}
+          </span>
+        )}
 
       <div className="flex flex-col gap-4">
         {providerSecrets.length > 0 && (
@@ -249,7 +252,9 @@ function ItemRow({
   tone?: "primary" | "muted";
 }) {
   const checkedBg =
-    tone === "muted" ? "border-border bg-muted" : "border-primary bg-primary/10";
+    tone === "muted"
+      ? "border-border bg-muted"
+      : "border-primary bg-primary/10";
   return (
     <label
       className={`flex items-center gap-3 rounded-lg border bg-background px-4 py-3 cursor-pointer transition-colors hover:border-primary ${
@@ -258,7 +263,9 @@ function ItemRow({
     >
       <Checkbox checked={checked} onCheckedChange={onToggle} />
       {icon}
-      <span className="text-[13px] font-medium text-foreground flex-1">{label}</span>
+      <span className="text-[13px] font-medium text-foreground flex-1">
+        {label}
+      </span>
       {trailing}
     </label>
   );
@@ -285,7 +292,11 @@ function SecretItemRow({
         checked ? "border-primary bg-primary/10" : "border-border"
       }`}
     >
-      <Checkbox checked={checked} onCheckedChange={onToggle} className="mt-0.5" />
+      <Checkbox
+        checked={checked}
+        onCheckedChange={onToggle}
+        className="mt-0.5"
+      />
       <Lock size={14} className="text-foreground/80 shrink-0 mt-0.5" />
       <div className="flex-1 min-w-0">
         <div className="text-[13px] font-medium text-foreground truncate">
@@ -333,16 +344,27 @@ function OAuthAppItemRow({
         checked ? "border-primary bg-primary/10" : "border-border"
       }`}
     >
-      <Checkbox checked={checked} onCheckedChange={onToggle} className="mt-0.5" />
+      <Checkbox
+        checked={checked}
+        onCheckedChange={onToggle}
+        className="mt-0.5"
+      />
       <span className="shrink-0 mt-0.5 text-foreground/80">
         <OAuthAppIcon appId={entry.appId} alt={entry.displayName} size={14} />
       </span>
       <div className="flex-1 min-w-0">
-        <div className="text-[13px] font-medium text-foreground truncate">{entry.displayName}</div>
-        <div className="text-[11px] font-mono text-muted-foreground truncate">{entry.hostPattern}</div>
+        <div className="text-[13px] font-medium text-foreground truncate">
+          {entry.displayName}
+        </div>
+        <div className="text-[11px] font-mono text-muted-foreground truncate">
+          {entry.hosts.join(", ")}
+        </div>
       </div>
       {entry.expired && (
-        <Badge variant="destructive" className="shrink-0 uppercase tracking-[0.03em]">
+        <Badge
+          variant="destructive"
+          className="shrink-0 uppercase tracking-[0.03em]"
+        >
           Expired
         </Badge>
       )}
@@ -371,10 +393,16 @@ function AppItemRow({
         checked ? "border-primary bg-primary/10" : "border-border"
       }`}
     >
-      <Checkbox checked={checked} onCheckedChange={onToggle} className="mt-0.5" />
+      <Checkbox
+        checked={checked}
+        onCheckedChange={onToggle}
+        className="mt-0.5"
+      />
       <KeyRound size={14} className="text-foreground/80 shrink-0 mt-0.5" />
       <div className="flex-1 min-w-0">
-        <div className="text-[13px] font-medium text-foreground truncate">{label}</div>
+        <div className="text-[13px] font-medium text-foreground truncate">
+          {label}
+        </div>
         {identity && (
           <div className="text-[11px] font-mono text-muted-foreground truncate">
             {identity}

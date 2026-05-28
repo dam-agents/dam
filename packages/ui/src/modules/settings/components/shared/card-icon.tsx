@@ -3,11 +3,7 @@ import { Bee } from "@carbon/icons-react";
 import { cn } from "@/lib/utils";
 
 import type { ProviderPresetType } from "../../../../types.js";
-import {
-  AnthropicIcon,
-  LiteLLMIcon,
-  OpenAIIcon,
-} from "../brand-icons.js";
+import { AnthropicIcon, LiteLLMIcon, OpenAIIcon } from "../brand-icons.js";
 
 /**
  * Per-provider brand mark — a small (40×40) tile with the provider's
@@ -18,7 +14,11 @@ import {
  */
 const STYLES: Record<
   ProviderPresetType,
-  { Icon: React.ComponentType<{ className?: string }>; bg: string; iconClass: string }
+  {
+    Icon: React.ComponentType<{ className?: string }>;
+    bg: string;
+    iconClass: string;
+  }
 > = {
   anthropic: {
     Icon: AnthropicIcon,
@@ -68,9 +68,7 @@ export function CardIcon({
         className={cn(
           style.iconClass,
           small &&
-            (provider === "ibm-litellm"
-              ? "!text-[16px]"
-              : "!w-3.5 !h-3.5"),
+            (provider === "ibm-litellm" ? "!text-[16px]" : "!w-3.5 !h-3.5"),
         )}
       />
     </div>

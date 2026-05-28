@@ -97,7 +97,9 @@ export function AnthropicForm({
         <div className="flex items-center gap-3">
           <CardIcon provider="anthropic" />
           <div className="flex-1 min-w-0">
-            <div className="text-[15px] font-bold text-foreground">Anthropic</div>
+            <div className="text-[15px] font-bold text-foreground">
+              Anthropic
+            </div>
             <div className="text-[12px] text-muted-foreground">
               {isEdit
                 ? "Pick mode and paste a new credential to replace the existing one."
@@ -114,7 +116,9 @@ export function AnthropicForm({
         <Controller
           control={control}
           name="mode"
-          render={({ field }) => <ModeToggle mode={field.value} onChange={field.onChange} />}
+          render={({ field }) => (
+            <ModeToggle mode={field.value} onChange={field.onChange} />
+          )}
         />
 
         {mode === "oauth" && <QuickSetupHint />}
@@ -146,16 +150,22 @@ export function AnthropicForm({
 
         {/* Mismatch errors live on the value field; "Required" is suppressed
             until the user actually types so the form doesn't yell on first paint. */}
-        {errors.value && value.length > 0 && errors.value.message !== "Required" && (
-          <div className="text-[12px] font-medium text-destructive">{errors.value.message}</div>
-        )}
+        {errors.value &&
+          value.length > 0 &&
+          errors.value.message !== "Required" && (
+            <div className="text-[12px] font-medium text-destructive">
+              {errors.value.message}
+            </div>
+          )}
         {!errors.value && testResult?.ok && (
           <div className="text-[12px] font-medium text-success flex items-center gap-1.5">
             <Check size={13} /> Credential is valid.
           </div>
         )}
         {!errors.value && testResult && !testResult.ok && (
-          <div className="text-[12px] font-medium text-destructive">{testResult.message}</div>
+          <div className="text-[12px] font-medium text-destructive">
+            {testResult.message}
+          </div>
         )}
       </form>
     </Card>
@@ -173,7 +183,9 @@ function QuickSetupHint() {
     <div className="text-[13px] text-foreground/80">
       Run{" "}
       <span className="inline-flex items-center gap-1.5 align-middle">
-        <code className="font-mono font-semibold text-primary">claude setup-token</code>
+        <code className="font-mono font-semibold text-primary">
+          claude setup-token
+        </code>
         <button
           type="button"
           onClick={copy}

@@ -1,10 +1,4 @@
-import {
-  Bot,
-  Connect,
-  Menu,
-  Model,
-  Settings,
-} from "@carbon/icons-react";
+import { Bot, Connect, Menu, Model, Settings } from "@carbon/icons-react";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -25,7 +19,9 @@ export function Sidebar() {
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
 
-  const [collapsed, setCollapsed] = useState(() => localStorage.getItem(STORAGE_KEY) === "true");
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem(STORAGE_KEY) === "true",
+  );
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, String(collapsed));
@@ -86,7 +82,9 @@ export function Sidebar() {
               )}
             >
               <Icon className="shrink-0" />
-              {!collapsed && <span className="text-sm font-medium">{label}</span>}
+              {!collapsed && (
+                <span className="text-sm font-medium">{label}</span>
+              )}
             </Button>
           );
         })}

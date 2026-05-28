@@ -21,7 +21,7 @@ import {
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../store.js";
-import { useAgents } from "../agents/api/queries.js";
+import { useAgents, useAgentsList } from "../agents/api/queries.js";
 import { useAppConnections } from "../connections/api/queries.js";
 import type { View } from "../platform/lib/routes.js";
 import { useSecrets } from "../secrets/api/queries.js";
@@ -35,10 +35,16 @@ const FEATURES: {
   icon: React.ComponentType<{ className?: string }>;
   text: string;
 }[] = [
-  { icon: Cloud, text: "Close your laptop. Your agent keeps running in the cloud." },
+  {
+    icon: Cloud,
+    text: "Close your laptop. Your agent keeps running in the cloud.",
+  },
   { icon: Security, text: "Credentials stay hidden — even from the agent." },
   { icon: Group, text: "Collaborate securely with individual credentials." },
-  { icon: EventSchedule, text: "Define a schedule once; execution runs automatically." },
+  {
+    icon: EventSchedule,
+    text: "Define a schedule once; execution runs automatically.",
+  },
 ];
 
 /**
@@ -56,7 +62,8 @@ const FEATURES: {
  */
 export function WelcomeTour() {
   const setView = useStore((s) => s.setView);
-  const { data: agents = [], isSuccess: agentsLoaded } = useAgents();
+  const { isSuccess: agentsLoaded } = useAgents();
+  const agents = useAgentsList();
   const { data: secrets = [], isSuccess: secretsLoaded } = useSecrets();
   const { data: connections = [], isSuccess: connectionsLoaded } =
     useAppConnections();
@@ -99,9 +106,8 @@ export function WelcomeTour() {
               Welcome to DAM
             </DialogTitle>
             <DialogDescription className="text-[15px] leading-relaxed max-w-lg">
-              Run agent harnesses like Claude Code headless in the cloud, on
-              a schedule, connected to your tools — without exposing your
-              tokens.
+              Run agent harnesses like Claude Code headless in the cloud, on a
+              schedule, connected to your tools — without exposing your tokens.
             </DialogDescription>
           </DialogHeader>
         </div>
@@ -117,7 +123,9 @@ export function WelcomeTour() {
                 <span className="h-12 w-12 rounded-xl bg-info-light text-info flex items-center justify-center shrink-0">
                   <f.icon className="h-6 w-6" />
                 </span>
-                <span className="text-[13.5px] leading-snug pt-2.5">{f.text}</span>
+                <span className="text-[13.5px] leading-snug pt-2.5">
+                  {f.text}
+                </span>
               </li>
             ))}
           </ul>
@@ -187,7 +195,10 @@ export function SetupChecklist({
       <div className="flex items-start justify-between gap-3 px-4 pt-3 pb-2 border-b">
         <div className="min-w-0 flex items-start gap-2">
           {allDone ? (
-            <span className="text-[18px] leading-none mt-[1px] shrink-0" aria-hidden>
+            <span
+              className="text-[18px] leading-none mt-[1px] shrink-0"
+              aria-hidden
+            >
               🎉
             </span>
           ) : null}
@@ -216,45 +227,45 @@ export function SetupChecklist({
         {items.map((item, idx) => {
           const active = view === item.view;
           return (
-          <li key={item.key}>
-            <button
-              type="button"
-              onClick={() => setView(item.view)}
-              className={cn(
-                "w-full flex items-center gap-3 p-2 rounded-lg text-left hover:bg-muted active:bg-muted focus-visible:bg-muted focus-visible:outline-none transition-colors",
-                active && "bg-muted",
-              )}
-            >
-              <span
+            <li key={item.key}>
+              <button
+                type="button"
+                onClick={() => setView(item.view)}
                 className={cn(
-                  "h-8 w-8 rounded-full flex items-center justify-center shrink-0",
-                  item.done
-                    ? "bg-success-light text-success"
-                    : "bg-info-light text-info",
+                  "w-full flex items-center gap-3 p-2 rounded-lg text-left hover:bg-muted active:bg-muted focus-visible:bg-muted focus-visible:outline-none transition-colors",
+                  active && "bg-muted",
                 )}
               >
-                {item.done ? (
-                  <Check className="h-4 w-4" />
-                ) : (
-                  <span className="text-xs font-semibold">{idx + 1}</span>
-                )}
-              </span>
-              <span className="flex-1 min-w-0">
                 <span
                   className={cn(
-                    "block text-sm font-medium truncate",
-                    item.done && "line-through text-muted-foreground",
+                    "h-8 w-8 rounded-full flex items-center justify-center shrink-0",
+                    item.done
+                      ? "bg-success-light text-success"
+                      : "bg-info-light text-info",
                   )}
                 >
-                  {item.label}
+                  {item.done ? (
+                    <Check className="h-4 w-4" />
+                  ) : (
+                    <span className="text-xs font-semibold">{idx + 1}</span>
+                  )}
                 </span>
-                <span className="block text-xs text-muted-foreground leading-snug">
-                  {item.description}
+                <span className="flex-1 min-w-0">
+                  <span
+                    className={cn(
+                      "block text-sm font-medium truncate",
+                      item.done && "line-through text-muted-foreground",
+                    )}
+                  >
+                    {item.label}
+                  </span>
+                  <span className="block text-xs text-muted-foreground leading-snug">
+                    {item.description}
+                  </span>
                 </span>
-              </span>
-              <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
-            </button>
-          </li>
+                <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+              </button>
+            </li>
           );
         })}
       </ul>

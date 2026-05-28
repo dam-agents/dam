@@ -11,16 +11,36 @@ function styleFor(status: Status): {
   label: string;
 } {
   switch (status) {
-    case "connected":
-      return { className: "bg-success-light text-success border-success", dotClass: "bg-success", label: "Connected" };
+    case "active":
+      return {
+        className: "bg-success-light text-success border-success",
+        dotClass: "bg-success",
+        label: "Connected",
+      };
     case "expired":
-      return { className: "bg-destructive/10 text-destructive border-destructive", dotClass: "bg-destructive", label: "Expired" };
+      return {
+        className: "bg-destructive/10 text-destructive border-destructive",
+        dotClass: "bg-destructive",
+        label: "Expired",
+      };
     case "disconnected":
-      return { className: "bg-muted text-muted-foreground border-border", dotClass: "bg-muted-foreground", label: "Disconnected" };
-    case "unknown":
-      return { className: "bg-muted text-muted-foreground border-border", dotClass: "bg-muted-foreground", label: "Unknown" };
+      return {
+        className: "bg-muted text-muted-foreground border-border",
+        dotClass: "bg-muted-foreground",
+        label: "Disconnected",
+      };
+    case "pending":
+      return {
+        className: "bg-muted text-muted-foreground border-border",
+        dotClass: "bg-muted-foreground",
+        label: "Pending",
+      };
     default:
-      return { className: "bg-muted text-muted-foreground border-border", dotClass: "bg-muted-foreground", label: "Unresolved" };
+      return {
+        className: "bg-muted text-muted-foreground border-border",
+        dotClass: "bg-muted-foreground",
+        label: "Unresolved",
+      };
   }
 }
 
@@ -41,7 +61,9 @@ export function AppStatusPill({
         className,
       )}
     >
-      <span className={cn("inline-block w-2 h-2 rounded-full shrink-0", dotClass)} />
+      <span
+        className={cn("inline-block w-2 h-2 rounded-full shrink-0", dotClass)}
+      />
       {label}
     </Badge>
   );

@@ -1,7 +1,4 @@
-import {
-  Add as Plus,
-  Close as X,
-} from "@carbon/icons-react";
+import { Add as Plus, Close as X } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -39,15 +36,24 @@ export function InstanceSettingsDialog({
     setInput("");
   };
 
-  const removeUser = (email: string) => setUsers(users.filter(u => u !== email));
+  const removeUser = (email: string) =>
+    setUsers(users.filter((u) => u !== email));
 
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) onCancel(); }}>
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onCancel();
+      }}
+    >
       <DialogContent className="sm:max-w-[460px] gap-5">
         <DialogHeader>
           <DialogTitle className="text-[20px]">Instance Settings</DialogTitle>
           <p className="text-[12px] text-muted-foreground">
-            Instance: <span className="font-semibold text-foreground/80">{instanceName}</span>
+            Instance:{" "}
+            <span className="font-semibold text-foreground/80">
+              {instanceName}
+            </span>
           </p>
         </DialogHeader>
 
@@ -57,11 +63,14 @@ export function InstanceSettingsDialog({
               Allowed Users
             </span>
             <span className="text-[11px] text-muted-foreground">
-              {users.length === 0 ? "unrestricted" : `${users.length} user${users.length !== 1 ? "s" : ""}`}
+              {users.length === 0
+                ? "unrestricted"
+                : `${users.length} user${users.length !== 1 ? "s" : ""}`}
             </span>
           </div>
           <p className="text-[12px] text-muted-foreground -mt-1">
-            User emails that can interact via Slack. Leave empty for unrestricted access.
+            User emails that can interact via Slack. Leave empty for
+            unrestricted access.
           </p>
 
           <div className="flex gap-2">
@@ -69,8 +78,8 @@ export function InstanceSettingsDialog({
               type="email"
               className="flex-1 font-mono"
               value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && addUser()}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && addUser()}
               placeholder="user@example.com"
               autoFocus
             />
@@ -88,12 +97,14 @@ export function InstanceSettingsDialog({
 
           {users.length > 0 && (
             <div className="flex flex-col gap-1.5">
-              {users.map(email => (
+              {users.map((email) => (
                 <div
                   key={email}
                   className="flex items-center gap-2 rounded-lg border border-border bg-background px-4 py-2"
                 >
-                  <span className="flex-1 text-[13px] font-mono text-foreground truncate">{email}</span>
+                  <span className="flex-1 text-[13px] font-mono text-foreground truncate">
+                    {email}
+                  </span>
                   <button
                     type="button"
                     onClick={() => removeUser(email)}

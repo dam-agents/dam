@@ -18,7 +18,9 @@ export function ComingSoonCard({
           {icon}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-[14px] font-semibold text-foreground mb-0.5">{name}</div>
+          <div className="text-[14px] font-semibold text-foreground mb-0.5">
+            {name}
+          </div>
           <div className="text-[12px] text-muted-foreground">{description}</div>
         </div>
       </div>

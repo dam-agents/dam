@@ -1,7 +1,4 @@
-import {
-  Document as FileText,
-  Folder,
-} from "@carbon/icons-react";
+import { Document as FileText, Folder } from "@carbon/icons-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Input } from "@/components/ui/input";

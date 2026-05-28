@@ -1,6 +1,4 @@
-import {
-  Checkmark as Check,
-} from "@carbon/icons-react";
+import { Checkmark as Check } from "@carbon/icons-react";
 import * as CheckboxPrimitive from "@radix-ui/react-checkbox";
 import * as React from "react";
 

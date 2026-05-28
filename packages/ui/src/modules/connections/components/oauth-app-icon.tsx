@@ -1,6 +1,4 @@
-import {
-  Link as Cable,
-} from "@carbon/icons-react";
+import { Link as Cable } from "@carbon/icons-react";
 
 /**
  * Per-app brand icon. Known app ids resolve to a brand SVG under

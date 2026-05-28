@@ -58,7 +58,9 @@ export function OpenAIForm({
         <div className="flex items-center gap-3">
           <CardIcon provider="openai" />
           <div className="flex-1 min-w-0">
-            <div className="text-[15px] font-bold text-foreground">{OPENAI_DISPLAY_NAME}</div>
+            <div className="text-[15px] font-bold text-foreground">
+              {OPENAI_DISPLAY_NAME}
+            </div>
             <div className="text-[12px] text-muted-foreground">
               {isEdit
                 ? "Paste a new API key to replace the existing one."
@@ -87,9 +89,13 @@ export function OpenAIForm({
           </Button>
         </div>
 
-        {errors.value && value.length > 0 && errors.value.message !== "Required" && (
-          <div className="text-[12px] font-medium text-destructive">{errors.value.message}</div>
-        )}
+        {errors.value &&
+          value.length > 0 &&
+          errors.value.message !== "Required" && (
+            <div className="text-[12px] font-medium text-destructive">
+              {errors.value.message}
+            </div>
+          )}
       </form>
     </Card>
   );

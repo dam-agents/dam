@@ -1,7 +1,4 @@
-import {
-  Checkmark as Check,
-  ChevronRight,
-} from "@carbon/icons-react";
+import { Checkmark as Check, ChevronRight } from "@carbon/icons-react";
 
 import {
   computeOnboardingState,
@@ -140,7 +137,9 @@ function StepPill({
       >
         {done ? <Check className="h-3 w-3" strokeWidth={3} /> : index + 1}
       </span>
-      <span className={`text-xs font-semibold truncate ${done ? "text-muted-foreground" : "text-foreground/80"}`}>
+      <span
+        className={`text-xs font-semibold truncate ${done ? "text-muted-foreground" : "text-foreground/80"}`}
+      >
         {label}
       </span>
     </button>

@@ -1,9 +1,4 @@
-import {
-  Bot,
-  Connect,
-  Model,
-  Settings,
-} from "@carbon/icons-react";
+import { Bot, Connect, Model, Settings } from "@carbon/icons-react";
 
 import { cn } from "@/lib/utils";
 

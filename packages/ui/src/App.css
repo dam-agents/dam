@@ -87,7 +87,7 @@
   --c-template-light: #f5f3ff;
   --s-brutal: 3px 3px 0 #292524;
   --s-brutal-sm: 2px 2px 0 #292524;
-  --s-brutal-accent: 3px 3px 0 #1D6BE1;
+  --s-brutal-accent: 3px 3px 0 #1d6be1;
 
   /* shadcn tokens — mapped to brand palette above */
   --radius: 0.5rem;
@@ -104,7 +104,7 @@
   --muted: #f2f4f8;
   --muted-foreground: #4d5358;
   --accent-alt: #eaf2fe;
-  --accent-alt-foreground: #1556B8;
+  --accent-alt-foreground: #1556b8;
   --destructive: #dc2626;
   --destructive-foreground: #ffffff;
   --border-ui: #dde1e6;
@@ -157,16 +157,21 @@
   --muted: #262626;
   --muted-foreground: #a8a29e;
   --accent-alt: #0f1f3a;
-  --accent-alt-foreground: #3C92FD;
+  --accent-alt-foreground: #3c92fd;
   --destructive: #f87171;
   --destructive-foreground: #161616;
   --border-ui: #393939;
   --input: #393939;
-  --ring: #3C92FD;
+  --ring: #3c92fd;
 }
 
 @layer base {
-  *, *::before, *::after { box-sizing: border-box; border-color: var(--color-border); }
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    border-color: var(--color-border);
+  }
 
   html,
   body,

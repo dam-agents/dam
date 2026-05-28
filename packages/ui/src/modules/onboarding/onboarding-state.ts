@@ -13,9 +13,10 @@ const KEY = "platform-onboarding-active";
 // Mock mode: designer iterating → reset on reload.
 const PERSIST = import.meta.env.VITE_USE_MOCKS !== "true";
 
-let _active = PERSIST && typeof localStorage !== "undefined"
-  ? localStorage.getItem(KEY) === "true"
-  : false;
+let _active =
+  PERSIST && typeof localStorage !== "undefined"
+    ? localStorage.getItem(KEY) === "true"
+    : false;
 
 const subs = new Set<() => void>();
 

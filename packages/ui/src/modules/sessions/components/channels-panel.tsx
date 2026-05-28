@@ -1,8 +1,5 @@
-import {
-  Add as Plus,
-  Close as X,
-} from "@carbon/icons-react";
-import { useEffect,useState } from "react";
+import { Add as Plus, Close as X } from "@carbon/icons-react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -132,20 +129,29 @@ export function ChannelsPanel() {
     <div className="flex flex-col gap-4 p-4 overflow-y-auto">
       {slackAvailable && (
         <fieldset className="rounded-lg border-2 border-input p-4 flex flex-col gap-3">
-          <legend className="text-[12px] font-bold uppercase tracking-[0.05em] text-foreground/80 px-1">Slack</legend>
+          <legend className="text-[12px] font-bold uppercase tracking-[0.05em] text-foreground/80 px-1">
+            Slack
+          </legend>
 
           <label className="flex items-center gap-2 cursor-pointer">
             <Checkbox
               checked={slackEnabled}
-              onCheckedChange={(v) => { setSlackEnabled(!!v); setDirty(true); }}
+              onCheckedChange={(v) => {
+                setSlackEnabled(!!v);
+                setDirty(true);
+              }}
             />
-            <span className="text-[13px] font-semibold text-foreground">Enabled</span>
+            <span className="text-[13px] font-semibold text-foreground">
+              Enabled
+            </span>
           </label>
 
           {slackEnabled && (
             <>
               <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-muted-foreground">Channel ID</label>
+                <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-muted-foreground">
+                  Channel ID
+                </label>
                 <Input
                   type="text"
                   value={channelId}
@@ -159,15 +165,29 @@ export function ChannelsPanel() {
               </div>
 
               <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-muted-foreground">Allowed users</label>
+                <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-muted-foreground">
+                  Allowed users
+                </label>
                 {users.length === 0 && (
-                  <span className="text-[12px] text-muted-foreground italic">Unrestricted — any linked Slack user can interact</span>
+                  <span className="text-[12px] text-muted-foreground italic">
+                    Unrestricted — any linked Slack user can interact
+                  </span>
                 )}
                 <div className="flex flex-col gap-1">
-                  {users.map(u => (
-                    <div key={u} className="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1">
-                      <span className="flex-1 text-[12px] font-mono text-foreground truncate">{u}</span>
-                      <Button variant="ghost" size="icon" onClick={() => removeUser(u)} className="h-5 w-5 text-muted-foreground hover:text-destructive shrink-0">
+                  {users.map((u) => (
+                    <div
+                      key={u}
+                      className="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1"
+                    >
+                      <span className="flex-1 text-[12px] font-mono text-foreground truncate">
+                        {u}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeUser(u)}
+                        className="h-5 w-5 text-muted-foreground hover:text-destructive shrink-0"
+                      >
                         <X size={12} />
                       </Button>
                     </div>
@@ -202,7 +222,9 @@ export function ChannelsPanel() {
 
       {telegramAvailable && (
         <fieldset className="rounded-lg border-2 border-input p-4 flex flex-col gap-3">
-          <legend className="text-[12px] font-bold uppercase tracking-[0.05em] text-foreground/80 px-1">Telegram</legend>
+          <legend className="text-[12px] font-bold uppercase tracking-[0.05em] text-foreground/80 px-1">
+            Telegram
+          </legend>
 
           <label className="flex items-center gap-2 cursor-pointer">
             <Checkbox
@@ -214,12 +236,16 @@ export function ChannelsPanel() {
                 setDirty(true);
               }}
             />
-            <span className="text-[13px] font-semibold text-foreground">Enabled</span>
+            <span className="text-[13px] font-semibold text-foreground">
+              Enabled
+            </span>
           </label>
 
           {telegramEnabled && (
             <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-muted-foreground">Bot token</label>
+              <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-muted-foreground">
+                Bot token
+              </label>
               {editingBotToken ? (
                 <>
                   <Input
@@ -233,12 +259,15 @@ export function ChannelsPanel() {
                     className="h-8 text-[13px]"
                   />
                   <span className="text-[11px] text-muted-foreground mt-1">
-                    Create a bot with @BotFather in Telegram and paste the token here.
+                    Create a bot with @BotFather in Telegram and paste the token
+                    here.
                   </span>
                 </>
               ) : (
                 <div className="flex items-center gap-2">
-                  <span className="flex-1 text-[13px] text-muted-foreground font-mono">••••••••</span>
+                  <span className="flex-1 text-[13px] text-muted-foreground font-mono">
+                    ••••••••
+                  </span>
                   <Button
                     type="button"
                     variant="outline"

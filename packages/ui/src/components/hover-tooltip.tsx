@@ -1,6 +1,11 @@
 import type { ReactNode } from "react";
 
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 export function HoverTooltip({
   trigger,
@@ -17,7 +22,10 @@ export function HoverTooltip({
         <TooltipTrigger asChild>
           <span className="inline-flex">{trigger}</span>
         </TooltipTrigger>
-        <TooltipContent side={placement} className="max-w-xs text-xs leading-relaxed">
+        <TooltipContent
+          side={placement}
+          className="max-w-xs text-xs leading-relaxed"
+        >
           {children}
         </TooltipContent>
       </Tooltip>

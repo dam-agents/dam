@@ -64,7 +64,7 @@ function isImageMime(mime: string | undefined): boolean {
 }
 
 export function FileViewer({ file, onClose, onOpenFile }: Props) {
-  const { path, content, binary, mimeType: mime, tooLarge } = file;
+  const { path, content, binary, mimeType: mime } = file;
   const isMarkdown = mime === "text/markdown";
   const isSvg = mime === "image/svg+xml";
   const isBinaryImage = binary && content && isImageMime(mime) && !isSvg;
@@ -204,7 +204,12 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
         >
           <ArrowLeft size={12} /> Back
         </Button>
-        <span className="text-[12px] font-mono text-foreground/80 truncate flex-1" title={path}>{pathLabel}</span>
+        <span
+          className="text-[12px] font-mono text-foreground/80 truncate flex-1"
+          title={path}
+        >
+          {pathLabel}
+        </span>
         {editable && !editMode && (
           <Button
             variant="ghost"
@@ -255,7 +260,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
             variant="ghost"
             size="sm"
             className={`h-auto px-2 py-0.5 text-[11px] font-semibold ${renderSvg ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground/80"}`}
-            onClick={() => setRenderSvg(p => !p)}
+            onClick={() => setRenderSvg((p) => !p)}
             title={renderSvg ? "Show raw SVG" : "Render SVG"}
           >
             {renderSvg ? <Code size={11} /> : <Eye size={11} />}
@@ -267,7 +272,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
             variant="ghost"
             size="sm"
             className={`h-auto px-2 py-0.5 text-[11px] font-semibold ${renderMd ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground/80"}`}
-            onClick={() => setRenderMd(p => !p)}
+            onClick={() => setRenderMd((p) => !p)}
             title={renderMd ? "Show raw" : "Render markdown"}
           >
             {renderMd ? <Code size={11} /> : <Eye size={11} />}
@@ -311,11 +316,22 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
         ) : binary ? (
           <div>
             <div className="mb-2 flex items-baseline gap-2">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">Binary file — hex dump</p>
-              {mime && <p className="text-[11px] font-mono text-muted-foreground">{mime}</p>}
+              <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
+                Binary file — hex dump
+              </p>
+              {mime && (
+                <p className="text-[11px] font-mono text-muted-foreground">
+                  {mime}
+                </p>
+              )}
             </div>
-            <p className="mb-3 text-[11px] text-muted-foreground">This file is not directly viewable. The first bytes are shown below.</p>
-            <pre className="text-[11px] font-mono leading-[1.6] text-foreground/80 whitespace-pre overflow-x-auto">{hexDump(content)}</pre>
+            <p className="mb-3 text-[11px] text-muted-foreground">
+              This file is not directly viewable. The first bytes are shown
+              below.
+            </p>
+            <pre className="text-[11px] font-mono leading-[1.6] text-foreground/80 whitespace-pre overflow-x-auto">
+              {hexDump(content)}
+            </pre>
           </div>
         ) : isSvg && renderSvg ? (
           <div className="flex items-center justify-center">

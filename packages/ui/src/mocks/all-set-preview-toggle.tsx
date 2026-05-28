@@ -2,9 +2,7 @@
  * Dev-only floating toggle that opens the SetupChecklist's "all set"
  * celebratory state. Renders nothing in production builds. See ./README.md.
  */
-import {
-  Trophy,
-} from "@carbon/icons-react";
+import { Trophy } from "@carbon/icons-react";
 import { lazy, Suspense, useState } from "react";
 
 import { Button } from "@/components/ui/button";

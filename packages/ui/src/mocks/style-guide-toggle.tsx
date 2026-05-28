@@ -2,14 +2,14 @@
  * Dev-only floating toggle that opens the style guide overlay. Renders
  * nothing when `VITE_USE_MOCKS` is off. See ./README.md for removal.
  */
-import {
-  ColorPalette as Palette,
-} from "@carbon/icons-react";
+import { ColorPalette as Palette } from "@carbon/icons-react";
 import { lazy, Suspense, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
-const StyleGuide = lazy(() => import("./style-guide.js").then((m) => ({ default: m.StyleGuide })));
+const StyleGuide = lazy(() =>
+  import("./style-guide.js").then((m) => ({ default: m.StyleGuide })),
+);
 
 export function StyleGuideToggle() {
   const [open, setOpen] = useState(false);

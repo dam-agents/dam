@@ -5,7 +5,15 @@ import {
   Send as SendIcon,
   Stop as Square,
 } from "@carbon/icons-react";
-import { type KeyboardEvent, type ReactNode, type RefObject,useCallback, useEffect, useRef, useState } from "react";
+import {
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -54,9 +62,18 @@ function BusyIndicator() {
   return (
     <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
       <span className="inline-flex gap-0.5">
-        <span className="w-1 h-1 rounded-full bg-primary anim-pulse" style={{ animationDelay: "0ms" }} />
-        <span className="w-1 h-1 rounded-full bg-primary anim-pulse" style={{ animationDelay: "200ms" }} />
-        <span className="w-1 h-1 rounded-full bg-primary anim-pulse" style={{ animationDelay: "400ms" }} />
+        <span
+          className="w-1 h-1 rounded-full bg-primary anim-pulse"
+          style={{ animationDelay: "0ms" }}
+        />
+        <span
+          className="w-1 h-1 rounded-full bg-primary anim-pulse"
+          style={{ animationDelay: "200ms" }}
+        />
+        <span
+          className="w-1 h-1 rounded-full bg-primary anim-pulse"
+          style={{ animationDelay: "400ms" }}
+        />
       </span>
       {verb}…
     </span>
@@ -198,7 +215,9 @@ export function ChatInput({
   return (
     <div
       className={`border-t bg-card/50 backdrop-blur-xl px-4 md:px-8 py-3 transition-colors ${dragOver ? "border-primary bg-primary/10" : "border-border"}`}
-      onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
     >
       <div className="mx-auto max-w-[760px] flex flex-col gap-1.5">
         <input
@@ -216,7 +235,9 @@ export function ChatInput({
             variant="outline"
             size="icon"
             className="h-[44px] w-[44px] text-muted-foreground hover:text-primary hover:border-primary shrink-0 disabled:opacity-40"
-            onClick={() => fileInputRef.current?.click()} disabled={loadingSession} title="Attach file"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={loadingSession}
+            title="Attach file"
           >
             <Paperclip size={16} />
           </Button>
@@ -234,7 +255,10 @@ export function ChatInput({
               <Textarea
                 ref={textareaRef}
                 className="w-full bg-transparent border-0 px-4 py-2 text-[14px] text-foreground resize-none min-h-0 max-h-[50vh] overflow-hidden placeholder:text-muted-foreground disabled:opacity-40 focus-visible:ring-0 focus-visible:ring-offset-0"
-                value={input} onChange={e => setInput(e.target.value)} onKeyDown={onKeyDown} onPaste={onPaste}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={onKeyDown}
+                onPaste={onPaste}
                 placeholder={placeholder}
                 rows={1}
                 disabled={loadingSession}
@@ -244,7 +268,10 @@ export function ChatInput({
             <Textarea
               ref={textareaRef}
               className="flex-1 rounded-lg border border-border bg-background px-4 py-3 text-[14px] text-foreground resize-none min-h-[44px] max-h-[50vh] overflow-hidden transition-all focus-visible:border-primary focus-visible:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-muted-foreground disabled:opacity-40"
-              value={input} onChange={e => setInput(e.target.value)} onKeyDown={onKeyDown} onPaste={onPaste}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={onKeyDown}
+              onPaste={onPaste}
               placeholder={placeholder}
               rows={1}
               disabled={loadingSession}
@@ -255,7 +282,8 @@ export function ChatInput({
               variant="destructive"
               size="icon"
               className="h-[44px] w-[44px] shrink-0"
-              onClick={onStop} title="Stop"
+              onClick={onStop}
+              title="Stop"
             >
               <Square size={16} />
             </Button>
@@ -264,7 +292,9 @@ export function ChatInput({
             <Button
               size="icon"
               className="h-[44px] w-[44px] disabled:opacity-40 shrink-0"
-              onClick={send} disabled={sendDisabled || loadingSession} title={isComputing ? "Queue" : "Send"}
+              onClick={send}
+              disabled={sendDisabled || loadingSession}
+              title={isComputing ? "Queue" : "Send"}
             >
               <SendIcon size={16} />
             </Button>
@@ -297,7 +327,9 @@ function AttachmentChip({
       ) : (
         <div className="h-14 px-3 rounded-md border border-border bg-muted flex items-center gap-2">
           <FileIcon size={14} className="text-muted-foreground shrink-0" />
-          <span className="text-[11px] text-foreground/80 truncate max-w-[120px]">{attachment.name}</span>
+          <span className="text-[11px] text-foreground/80 truncate max-w-[120px]">
+            {attachment.name}
+          </span>
         </div>
       )}
       <Button

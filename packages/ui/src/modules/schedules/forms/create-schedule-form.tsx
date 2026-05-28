@@ -1,6 +1,4 @@
-import {
-  TrashCan as Trash2,
-} from "@carbon/icons-react";
+import { TrashCan as Trash2 } from "@carbon/icons-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -210,12 +208,19 @@ export function CreateScheduleForm({
       onSubmit={onSubmit}
     >
       <div>
-        <Input className="h-8 text-[12px]" placeholder="Name" value={name} onChange={e => setName(e.target.value)} />
+        <Input
+          className="h-8 text-[12px]"
+          placeholder="Name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
         <FormError message={nameError ?? undefined} />
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label className="text-[11px] font-semibold text-foreground/80">Run</Label>
+        <Label className="text-[11px] font-semibold text-foreground/80">
+          Run
+        </Label>
         <div className="flex flex-wrap gap-1">
           {(["minutely", "hourly", "daily", "custom"] as const).map((k) => (
             <button
@@ -292,20 +297,35 @@ export function CreateScheduleForm({
           />
         )}
 
-        {rruleError
-          ? <FormError message={rruleError} />
-          : rruleSummary && <p className="text-[11px] text-muted-foreground italic">{rruleSummary}</p>}
+        {rruleError ? (
+          <FormError message={rruleError} />
+        ) : (
+          rruleSummary && (
+            <p className="text-[11px] text-muted-foreground italic">
+              {rruleSummary}
+            </p>
+          )
+        )}
       </div>
 
       <div>
-        <Label className="text-[11px] font-semibold text-foreground/80">Timezone</Label>
-        <Input className="h-8 text-[12px]" value={timezone} onChange={e => setTimezone(e.target.value)} placeholder="Europe/Prague" />
+        <Label className="text-[11px] font-semibold text-foreground/80">
+          Timezone
+        </Label>
+        <Input
+          className="h-8 text-[12px]"
+          value={timezone}
+          onChange={(e) => setTimezone(e.target.value)}
+          placeholder="Europe/Prague"
+        />
         <FormError message={tzError ?? undefined} />
       </div>
 
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
-          <Label className="text-[11px] font-semibold text-foreground/80">Quiet hours</Label>
+          <Label className="text-[11px] font-semibold text-foreground/80">
+            Quiet hours
+          </Label>
           <button
             type="button"
             onClick={addQuietHour}
@@ -315,10 +335,13 @@ export function CreateScheduleForm({
           </button>
         </div>
         <p className="text-[11px] text-muted-foreground italic -mt-1">
-          Runs inside the window are suppressed; start time is inside, end time is outside (e.g. 22:00→06:00 skips the 22:00 tick, fires at 06:00).
+          Runs inside the window are suppressed; start time is inside, end time
+          is outside (e.g. 22:00→06:00 skips the 22:00 tick, fires at 06:00).
         </p>
         {quietHours.length === 0 && (
-          <p className="text-[11px] text-muted-foreground italic">None — schedule fires on every occurrence.</p>
+          <p className="text-[11px] text-muted-foreground italic">
+            None — schedule fires on every occurrence.
+          </p>
         )}
         {quietHours.map((q, idx) => (
           <div key={idx} className="flex items-center gap-2">
@@ -373,8 +396,10 @@ export function CreateScheduleForm({
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="text-[11px] font-semibold text-foreground/80">Session:</span>
-        {(["fresh", "continuous"] as const).map(mode => (
+        <span className="text-[11px] font-semibold text-foreground/80">
+          Session:
+        </span>
+        {(["fresh", "continuous"] as const).map((mode) => (
           <button
             key={mode}
             type="button"

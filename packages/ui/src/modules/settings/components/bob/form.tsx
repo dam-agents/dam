@@ -112,7 +112,7 @@ export function BobForm({
       }`}
     >
       <div className="flex items-center gap-3">
-        <CardIcon variant={isEdit ? "accent" : "warning"} />
+        <CardIcon provider="bob" />
         <div className="flex-1 min-w-0">
           <div className="text-[15px] font-bold text-text">Bob Shell</div>
           <div className="text-[12px] text-text-muted">

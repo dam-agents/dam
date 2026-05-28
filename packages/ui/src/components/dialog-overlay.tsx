@@ -1,6 +1,4 @@
-import {
-  Warning as AlertTriangle,
-} from "@carbon/icons-react";
+import { Warning as AlertTriangle } from "@carbon/icons-react";
 
 import {
   AlertDialog,
@@ -14,14 +12,16 @@ import {
 } from "@/components/ui/alert-dialog";
 
 import { useStore } from "../store.js";
-import { useBodyScrollLock, useFocusTrap } from "./modal.js";
 
 export function DialogOverlay() {
   const dialog = useStore((s) => s.dialog);
   const closeDialog = useStore((s) => s.closeDialog);
 
   return (
-    <AlertDialog open={!!dialog} onOpenChange={(open) => !open && closeDialog(false)}>
+    <AlertDialog
+      open={!!dialog}
+      onOpenChange={(open) => !open && closeDialog(false)}
+    >
       <AlertDialogContent>
         <AlertDialogHeader>
           <div className="flex items-start gap-3">
@@ -30,13 +30,17 @@ export function DialogOverlay() {
             </div>
             <div className="flex-1 min-w-0">
               <AlertDialogTitle>{dialog?.title}</AlertDialogTitle>
-              <AlertDialogDescription className="pt-1">{dialog?.message}</AlertDialogDescription>
+              <AlertDialogDescription className="pt-1">
+                {dialog?.message}
+              </AlertDialogDescription>
             </div>
           </div>
         </AlertDialogHeader>
         <AlertDialogFooter>
           {dialog?.type === "confirm" && (
-            <AlertDialogCancel onClick={() => closeDialog(false)}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => closeDialog(false)}>
+              Cancel
+            </AlertDialogCancel>
           )}
           <AlertDialogAction onClick={() => closeDialog(true)} autoFocus>
             {dialog?.type === "confirm" ? "Confirm" : "OK"}

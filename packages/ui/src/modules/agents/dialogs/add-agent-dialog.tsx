@@ -1,7 +1,24 @@
-import { Add as Plus, Checkmark, Code, DocumentAdd, Extensions, Folder, Globe, Password as Lock } from "@carbon/icons-react";
+import {
+  Add as Plus,
+  Checkmark,
+  Code,
+  DocumentAdd,
+  Extensions,
+  Folder,
+  Globe,
+  Password as Lock,
+} from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as SelectPrimitive from "@radix-ui/react-select";
-import { ArrowLeft, ArrowRight, File as FileIcon, Folder as FolderIcon, Upload, X } from "lucide-react";
+import type { AppConnectionView } from "api-server-api";
+import {
+  ArrowLeft,
+  ArrowRight,
+  File as FileIcon,
+  Folder as FolderIcon,
+  Upload,
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 
@@ -37,7 +54,6 @@ import { FormField } from "../../../components/form-field.js";
 import { HoverTooltip } from "../../../components/hover-tooltip.js";
 import type { EgressPreset, EnvVar, TemplateView } from "../../../types.js";
 import {
-  APP_OAUTH_SECRET_PREFIX,
   isCustomSecret,
   isMcpSecret,
   isProviderPresetType,
@@ -46,22 +62,34 @@ import {
   type ProviderPresetType,
   PROVIDERS,
 } from "../../../types.js";
-import type { OAuthAppDescriptor } from "../../connections/api/fetchers.js";
-import {
-  useAppConnections,
-  useOAuthAppConnections,
-  useOAuthApps,
-} from "../../connections/api/queries.js";
+import { useAppConnections } from "../../connections/api/queries.js";
 import { OAuthAppIcon } from "../../connections/components/oauth-app-icon.js";
-import { AddMcpForm } from "../../connections/forms/add-mcp-form.js";
-import { ConnectAppForm } from "../../connections/forms/connect-app-form.js";
-import { type BundleEntry, filterImportEntries, isTarballName, walkDataTransfer } from "../../files/api/import-bundle.js";
+import {
+  type BundleEntry,
+  filterImportEntries,
+  isTarballName,
+  walkDataTransfer,
+} from "../../files/api/import-bundle.js";
 import { useSecrets } from "../../secrets/api/queries.js";
-import { CreateSecretForm } from "../../secrets/forms/create-secret-form.js";
 import { PROVIDER_CARDS } from "../../settings/components/provider-cards.js";
 import { PROVIDER_DESCRIPTIONS } from "../../settings/components/provider-chooser-dialog.js";
 import { CardIcon } from "../../settings/components/shared/card-icon.js";
-import { addAgentSchema, type AddAgentValues } from "../forms/add-agent-schema.js";
+import {
+  addAgentSchema,
+  type AddAgentValues,
+} from "../forms/add-agent-schema.js";
+
+// Placeholder shape for the unconnected-OAuth-apps picker. The design
+// renders an "available to connect" rail using this; pre-merge it was
+// fed by useOAuthApps. With the new connections contract that data
+// model has shifted to templates — devs will rewire this when they
+// pick up the design. Keeping the shape so the UI compiles.
+type OAuthAppDescriptor = {
+  id: string;
+  displayName: string;
+  description: string;
+  cardinality: "single" | "multiple";
+};
 
 // Wizard steps. The scratch lane uses a single consolidated "setup"
 // step that bundles name + description + harness + starting source +
@@ -129,37 +157,92 @@ const SKILL_CATALOG: SkillCategory[] = [
     key: "code",
     label: "Code & files",
     items: [
-      { id: "python-repl", name: "Python REPL", description: "Execute Python code in a sandbox." },
-      { id: "node-repl", name: "Node.js REPL", description: "Execute JavaScript / TypeScript snippets." },
-      { id: "shell", name: "Shell", description: "Run shell commands inside the agent's workspace." },
-      { id: "file-edit", name: "File editor", description: "Patch and create files in the agent's workspace." },
+      {
+        id: "python-repl",
+        name: "Python REPL",
+        description: "Execute Python code in a sandbox.",
+      },
+      {
+        id: "node-repl",
+        name: "Node.js REPL",
+        description: "Execute JavaScript / TypeScript snippets.",
+      },
+      {
+        id: "shell",
+        name: "Shell",
+        description: "Run shell commands inside the agent's workspace.",
+      },
+      {
+        id: "file-edit",
+        name: "File editor",
+        description: "Patch and create files in the agent's workspace.",
+      },
     ],
   },
   {
     key: "web",
     label: "Search & web",
     items: [
-      { id: "web-search", name: "Web search", description: "Query the web for fresh, citable results." },
-      { id: "browser", name: "Headless browser", description: "Drive a Playwright session for click-throughs and scraping." },
-      { id: "doc-search", name: "Doc search", description: "Search across the internal docs index." },
+      {
+        id: "web-search",
+        name: "Web search",
+        description: "Query the web for fresh, citable results.",
+      },
+      {
+        id: "browser",
+        name: "Headless browser",
+        description:
+          "Drive a Playwright session for click-throughs and scraping.",
+      },
+      {
+        id: "doc-search",
+        name: "Doc search",
+        description: "Search across the internal docs index.",
+      },
     ],
   },
   {
     key: "comms",
     label: "Communication",
     items: [
-      { id: "gmail", name: "Gmail", description: "Read and send mail. Requires the Google connection." },
-      { id: "slack", name: "Slack", description: "Post to channels and read history. Requires the Slack connection." },
-      { id: "calendar", name: "Calendar", description: "Read and create events. Requires the Google connection." },
+      {
+        id: "gmail",
+        name: "Gmail",
+        description: "Read and send mail. Requires the Google connection.",
+      },
+      {
+        id: "slack",
+        name: "Slack",
+        description:
+          "Post to channels and read history. Requires the Slack connection.",
+      },
+      {
+        id: "calendar",
+        name: "Calendar",
+        description: "Read and create events. Requires the Google connection.",
+      },
     ],
   },
   {
     key: "data",
     label: "Data",
     items: [
-      { id: "postgres", name: "Postgres", description: "Query a configured Postgres database." },
-      { id: "bigquery", name: "BigQuery", description: "Run BigQuery jobs against your warehouse." },
-      { id: "github-ops", name: "GitHub operations", description: "Open PRs, comment, manage issues. Requires the GitHub connection." },
+      {
+        id: "postgres",
+        name: "Postgres",
+        description: "Query a configured Postgres database.",
+      },
+      {
+        id: "bigquery",
+        name: "BigQuery",
+        description: "Run BigQuery jobs against your warehouse.",
+      },
+      {
+        id: "github-ops",
+        name: "GitHub operations",
+        description:
+          "Open PRs, comment, manage issues. Requires the GitHub connection.",
+      },
     ],
   },
 ];
@@ -298,39 +381,22 @@ export function AddAgentDialog({
 
   const { data: secrets = [], isLoading: loadSecrets } = useSecrets();
   const { data: apps = [] } = useAppConnections();
-  const { data: oauthAppConnections = [] } = useOAuthAppConnections();
-  const { data: oauthApps = [] } = useOAuthApps();
-  // GitHub-from-dropzone OAuth flow. Click the GitHub button in the
-  // local-files dropzone → render ConnectAppForm in a sub-dialog (the
-  // exact same UI the connections page uses, so credentials, callback
-  // URL guidance, and default-app behaviour all stay consistent).
-  const [connectingGitHub, setConnectingGitHub] = useState<OAuthAppDescriptor | null>(null);
-  const githubDescriptor = useMemo(
-    () => oauthApps.find((a) => a.id === "github"),
-    [oauthApps],
-  );
 
-  // Sub-dialog state for the scratch lane's connections step. Mirrors
-  // the connections page's pattern (ConnectAppForm / AddMcpForm /
-  // CreateSecretForm) so users can create + grant new connections
-  // without leaving the agent creation flow.
-  const [connectingApp, setConnectingApp] = useState<OAuthAppDescriptor | null>(null);
-  const [showAddMcp, setShowAddMcp] = useState(false);
-  const [showAddSecret, setShowAddSecret] = useState(false);
-
-  // Apps the scratch lane can still surface as "Connect": the multi-instance
-  // ones plus any single-instance ones that aren't connected yet.
-  const connectedAppIds = useMemo(
-    () => new Set(oauthAppConnections.map((c) => c.appId)),
-    [oauthAppConnections],
-  );
-  const availableToConnect = useMemo(
-    () =>
-      oauthApps.filter(
-        (app) => app.cardinality === "multiple" || !connectedAppIds.has(app.id),
-      ),
-    [oauthApps, connectedAppIds],
-  );
+  // OAuth-app discovery flows ("Connect GitHub" from the dropzone, the
+  // scratch lane's "available apps to connect" rail, and the inline
+  // ConnectAppForm / AddMcpForm / CreateSecretForm sub-dialogs) were
+  // built against the old useOAuthApps / useOAuthAppConnections
+  // contract. Main has since unified everything onto connection
+  // templates — these stubs keep the UI compiling so devs can rewire
+  // them to the new contract on handoff.
+  const githubDescriptor: OAuthAppDescriptor | undefined = undefined;
+  const availableToConnect: OAuthAppDescriptor[] = [];
+  const noopApp: (app: OAuthAppDescriptor) => void = () => {};
+  const noopBool: (v: boolean) => void = () => {};
+  const setConnectingGitHub = noopApp;
+  const setConnectingApp = noopApp;
+  const setShowAddMcp = noopBool;
+  const setShowAddSecret = noopBool;
 
   const {
     register,
@@ -501,10 +567,7 @@ export function AddAgentDialog({
 
   const providerSecrets = secrets.filter((s) => isProviderPresetType(s.type));
   const configuredProviderTypes = useMemo(
-    () =>
-      new Set(
-        providerSecrets.map((s) => s.type as ProviderPresetType),
-      ),
+    () => new Set(providerSecrets.map((s) => s.type as ProviderPresetType)),
     // Identity reuse — the Set rebuilds only when the provider list itself changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [providerSecrets.map((s) => s.id).join("|")],
@@ -515,7 +578,8 @@ export function AddAgentDialog({
   // After the user saves a key, the secret list refetches; this effect
   // notices the type now has a configured secret and closes the setup
   // card.
-  const [pickedProvider, setPickedProvider] = useState<ProviderPresetType | null>(null);
+  const [pickedProvider, setPickedProvider] =
+    useState<ProviderPresetType | null>(null);
 
   useEffect(() => {
     if (pickedProvider && configuredProviderTypes.has(pickedProvider)) {
@@ -531,10 +595,15 @@ export function AddAgentDialog({
   const selectedProviderSecretId =
     providerSecrets.find((p) => selSecretsArr.includes(p.id))?.id ?? null;
   const setSelectedProviderSecret = (secretId: string) => {
-    const otherProviderIds = providerSecrets.map((p) => p.id).filter((id) => id !== secretId);
+    const otherProviderIds = providerSecrets
+      .map((p) => p.id)
+      .filter((id) => id !== secretId);
     const next = selSecretsArr.filter((id) => !otherProviderIds.includes(id));
     if (!next.includes(secretId)) next.push(secretId);
-    setValue("selSecrets", next.sort(), { shouldDirty: true, shouldValidate: true });
+    setValue("selSecrets", next.sort(), {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
   };
 
   return (
@@ -543,9 +612,7 @@ export function AddAgentDialog({
         <DialogHeader>
           <DialogTitle>Add Agent</DialogTitle>
           {step === "pick" && lane === null && (
-            <DialogDescription>
-              Choose how you want to start
-            </DialogDescription>
+            <DialogDescription>Choose how you want to start</DialogDescription>
           )}
         </DialogHeader>
 
@@ -554,426 +621,516 @@ export function AddAgentDialog({
             (with a Skip-for-now affordance) so the lane decision can
             be made first and provider isn't a blocking gate. */}
 
-          {step === "pick" ? (
-            lane === null ? (
-              <LanePicker onPick={handleLanePick} />
-            ) : lane === "scratch" ? (
-              <LaneFrame
-                title="Pick a harness"
-                description="Vanilla Claude Code, Pi, or Bob — the agent starts with no skills, no repo, just the harness ready to go."
-                onBack={() => setLane(null)}
-              >
-                {templates.length > 0 ? (
-                  <div className="flex flex-col gap-2">
-                    {templates.map((tmpl) => (
-                      <TemplateRowCard
-                        key={tmpl.id}
-                        template={tmpl}
-                        prereqs={[]}
-                        onPick={() => pickTemplate(tmpl)}
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-[12px] text-muted-foreground">
-                    No harnesses available. Check your cluster's agent
-                    template configuration.
-                  </p>
-                )}
-              </LaneFrame>
-            ) : lane === "template" ? (
-              <LaneFrame
-                title="Browse templates"
-                description="Pre-configured agents with skills, connections, and prompts wired in. Required connections are listed up-front so you know what to wire in before you commit."
-                onBack={() => setLane(null)}
-              >
-                {templates.length > 0 ? (
-                  <div className="flex flex-col gap-2">
-                    {templates.map((tmpl) => (
-                      <TemplateRowCard
-                        key={tmpl.id}
-                        template={tmpl}
-                        prereqs={lookupPrereqs(tmpl.name)}
-                        onPick={() => pickTemplate(tmpl)}
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-[12px] text-muted-foreground">
-                    Template catalog is empty. Add opinionated templates
-                    to your cluster's agent template config to surface them
-                    here.
-                  </p>
-                )}
-              </LaneFrame>
-            ) : (
-              <LaneFrame
-                title="Custom image"
-                description="Bring your own ACP-compatible agent image — for harnesses you've built or specialized runtimes that need bundled CLIs."
-                onBack={() => setLane(null)}
-              >
-                <div className="flex gap-2">
-                  <Input
-                    value={customImage}
-                    onChange={(e) => setCustomImage(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        pickCustom();
-                      }
-                    }}
-                    placeholder="ghcr.io/org/agent:latest"
-                    autoFocus
-                  />
-                  <Button
-                    type="button"
-                    onClick={pickCustom}
-                    disabled={!customImage.trim()}
-                    className="shrink-0"
-                  >
-                    Use
-                  </Button>
+        {step === "pick" ? (
+          lane === null ? (
+            <LanePicker onPick={handleLanePick} />
+          ) : lane === "scratch" ? (
+            <LaneFrame
+              title="Pick a harness"
+              description="Vanilla Claude Code, Pi, or Bob — the agent starts with no skills, no repo, just the harness ready to go."
+              onBack={() => setLane(null)}
+            >
+              {templates.length > 0 ? (
+                <div className="flex flex-col gap-2">
+                  {templates.map((tmpl) => (
+                    <TemplateRowCard
+                      key={tmpl.id}
+                      template={tmpl}
+                      prereqs={[]}
+                      onPick={() => pickTemplate(tmpl)}
+                    />
+                  ))}
                 </div>
-              </LaneFrame>
-            )
-          ) : step === "setup" ? null : (
-            <>
-              {/* Persistent image readout — shown on every non-pick,
+              ) : (
+                <p className="text-[12px] text-muted-foreground">
+                  No harnesses available. Check your cluster's agent template
+                  configuration.
+                </p>
+              )}
+            </LaneFrame>
+          ) : lane === "template" ? (
+            <LaneFrame
+              title="Browse templates"
+              description="Pre-configured agents with skills, connections, and prompts wired in. Required connections are listed up-front so you know what to wire in before you commit."
+              onBack={() => setLane(null)}
+            >
+              {templates.length > 0 ? (
+                <div className="flex flex-col gap-2">
+                  {templates.map((tmpl) => (
+                    <TemplateRowCard
+                      key={tmpl.id}
+                      template={tmpl}
+                      prereqs={lookupPrereqs(tmpl.name)}
+                      onPick={() => pickTemplate(tmpl)}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[12px] text-muted-foreground">
+                  Template catalog is empty. Add opinionated templates to your
+                  cluster's agent template config to surface them here.
+                </p>
+              )}
+            </LaneFrame>
+          ) : (
+            <LaneFrame
+              title="Custom image"
+              description="Bring your own ACP-compatible agent image — for harnesses you've built or specialized runtimes that need bundled CLIs."
+              onBack={() => setLane(null)}
+            >
+              <div className="flex gap-2">
+                <Input
+                  value={customImage}
+                  onChange={(e) => setCustomImage(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      pickCustom();
+                    }
+                  }}
+                  placeholder="ghcr.io/org/agent:latest"
+                  autoFocus
+                />
+                <Button
+                  type="button"
+                  onClick={pickCustom}
+                  disabled={!customImage.trim()}
+                  className="shrink-0"
+                >
+                  Use
+                </Button>
+              </div>
+            </LaneFrame>
+          )
+        ) : step === "setup" ? null : (
+          <>
+            {/* Persistent image readout — shown on every non-pick,
                   non-setup step so the user can always see what they're
                   configuring against. The setup step has its own
                   harness picker, so the readout would be redundant
                   there. */}
-              <FormField label="Image">
-                <div className="flex items-center gap-2 rounded-lg border bg-background px-4 py-2.5">
-                  <span className="text-[13px] text-foreground flex-1 min-w-0 truncate">
-                    {selectedTemplate ? (
-                      <HoverTooltip
-                        placement="right"
-                        trigger={
-                          <span className="font-semibold border-b border-dotted border-muted-foreground cursor-help">
-                            {selectedTemplate.name}
-                          </span>
-                        }
-                      >
-                        <span className="font-mono">{selectedTemplate.image}</span>
-                      </HoverTooltip>
-                    ) : (
-                      <span className="font-mono break-all">{customImage}</span>
-                    )}
-                  </span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setStep("pick");
-                      setLane(null);
-                    }}
-                  >
-                    Change
-                  </Button>
-                </div>
-              </FormField>
-            </>
-          )}
+            <FormField label="Image">
+              <div className="flex items-center gap-2 rounded-lg border bg-background px-4 py-2.5">
+                <span className="text-[13px] text-foreground flex-1 min-w-0 truncate">
+                  {selectedTemplate ? (
+                    <HoverTooltip
+                      placement="right"
+                      trigger={
+                        <span className="font-semibold border-b border-dotted border-muted-foreground cursor-help">
+                          {selectedTemplate.name}
+                        </span>
+                      }
+                    >
+                      <span className="font-mono">
+                        {selectedTemplate.image}
+                      </span>
+                    </HoverTooltip>
+                  ) : (
+                    <span className="font-mono break-all">{customImage}</span>
+                  )}
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setStep("pick");
+                    setLane(null);
+                  }}
+                >
+                  Change
+                </Button>
+              </div>
+            </FormField>
+          </>
+        )}
 
-          {/* Provider step — sits OUTSIDE the agent form because the
+        {/* Provider step — sits OUTSIDE the agent form because the
               inline provider setup card renders its own nested <form>,
               and HTML doesn't allow form nesting. Skip-for-now is a
               first-class affordance: the wireframe lets users defer
               this until they actually need to reach a model. */}
-          {step === "provider" && (
-            <fieldset className="flex flex-col gap-3 anim-in">
-              <ProviderPickerSection
-                providerSecrets={providerSecrets}
-                configuredTypes={configuredProviderTypes}
-                picked={pickedProvider}
-                onPick={setPickedProvider}
-                selectedProviderSecretId={selectedProviderSecretId}
-                onSelectProviderSecret={setSelectedProviderSecret}
-              />
-              {!selectedProviderSecretId && !pickedProvider && (
-                <p className="text-[12px] text-muted-foreground leading-relaxed">
-                  Don't have one yet? Click <span className="font-semibold text-foreground">Skip for now</span> —
-                  the agent will be created without a provider and can't
-                  reach a model until you wire one up later from the
-                  Providers page.
-                </p>
-              )}
-            </fieldset>
-          )}
+        {step === "provider" && (
+          <fieldset className="flex flex-col gap-3 anim-in">
+            <ProviderPickerSection
+              providerSecrets={providerSecrets}
+              configuredTypes={configuredProviderTypes}
+              picked={pickedProvider}
+              onPick={setPickedProvider}
+              selectedProviderSecretId={selectedProviderSecretId}
+              onSelectProviderSecret={setSelectedProviderSecret}
+            />
+            {!selectedProviderSecretId && !pickedProvider && (
+              <p className="text-[12px] text-muted-foreground leading-relaxed">
+                Don't have one yet? Click{" "}
+                <span className="font-semibold text-foreground">
+                  Skip for now
+                </span>{" "}
+                — the agent will be created without a provider and can't reach a
+                model until you wire one up later from the Providers page.
+              </p>
+            )}
+          </fieldset>
+        )}
 
-          {/* Single <form> wrapping the wizard's input steps.
+        {/* Single <form> wrapping the wizard's input steps.
               Sections render conditionally per step but the underlying
               react-hook-form state is shared, so values persist as the
               user moves Back/Next. The form is scoped here so a save in
               the provider's setup form (rendered on the provider step
               above) doesn't bubble up and submit the agent. */}
-          {(step === "setup" || step === "basics" || step === "connections" || step === "skills" || step === "network") && (
-            <form onSubmit={submitForm} className="contents">
+        {(step === "setup" ||
+          step === "basics" ||
+          step === "connections" ||
+          step === "skills" ||
+          step === "network") && (
+          <form onSubmit={submitForm} className="contents">
             {(step === "basics" || step === "setup") && (
               <>
-            <FormField label="Name" error={errors.name?.message}>
-              <Input placeholder="my-agent" autoFocus {...register("name")} />
-            </FormField>
-            <FormField label="Description (optional)">
-              <Input placeholder="What does this agent do?" {...register("description")} />
-            </FormField>
-
-            {step === "setup" && (
-              <FormField label="Harness">
-                {templates.length > 0 ? (
-                  <Select
-                    value={selectedTemplate?.id ?? ""}
-                    onValueChange={(id) => {
-                      const tmpl = templates.find((t) => t.id === id);
-                      if (tmpl) pickHarness(tmpl);
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Pick a harness" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {templates.map((tmpl) => (
-                        <SelectItem key={tmpl.id} value={tmpl.id}>
-                          {tmpl.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <p className="text-[12px] text-muted-foreground">
-                    No harnesses available. Check your cluster's agent template configuration.
-                  </p>
-                )}
-              </FormField>
-            )}
-
-            {step === "basics" && (
-            <FormField label="Starting source">
-              <RadioGroup
-                value={startingSource}
-                onValueChange={(v) => setStartingSource(v as StartingSource)}
-                className="flex flex-col gap-1.5"
-              >
-                <Label
-                  htmlFor="src-local"
-                  className={cn(
-                    "flex items-start gap-2 cursor-pointer rounded-lg border bg-background px-4 py-2.5",
-                    startingSource === "local" && "border-primary",
-                  )}
-                >
-                  <RadioGroupItem value="local" id="src-local" className="mt-0.5" />
-                  <span className="flex flex-col gap-0.5">
-                    <span className="text-[13px] font-semibold text-foreground">Upload local files</span>
-                    <span className="text-[12px] text-muted-foreground">Drop a folder, files, or a <code className="font-mono">.tar.gz</code> bundle to seed the agent's workspace.</span>
-                  </span>
-                </Label>
-                <Label
-                  htmlFor="src-github"
-                  className={cn(
-                    "flex items-start gap-2 cursor-pointer rounded-lg border bg-background px-4 py-2.5",
-                    startingSource === "github" && "border-primary",
-                  )}
-                >
-                  <RadioGroupItem value="github" id="src-github" className="mt-0.5" />
-                  <span className="flex flex-col gap-0.5">
-                    <span className="text-[13px] font-semibold text-foreground">Clone a GitHub repo</span>
-                    <span className="text-[12px] text-muted-foreground">Agent boots with your repo cloned into <code className="font-mono">/workspace</code>, credentials sourced from a connection.</span>
-                  </span>
-                </Label>
-              </RadioGroup>
-              {startingSource === "github" && (
-                <div className="mt-2 flex flex-col gap-1.5">
+                <FormField label="Name" error={errors.name?.message}>
                   <Input
-                    value={gitRepoUrl}
-                    onChange={(e) => setGitRepoUrl(e.target.value)}
-                    placeholder="https://github.com/org/repo"
+                    placeholder="my-agent"
+                    autoFocus
+                    {...register("name")}
                   />
-                  <span className="text-[11px] text-muted-foreground italic">
-                    Prototype: the URL is captured but the controller doesn't yet clone — devs, see the related issue.
-                  </span>
-                </div>
-              )}
-            </FormField>
-            )}
+                </FormField>
+                <FormField label="Description (optional)">
+                  <Input
+                    placeholder="What does this agent do?"
+                    {...register("description")}
+                  />
+                </FormField>
 
-            {((step === "basics" && startingSource === "local") || step === "setup") && (
-            <FormField label="Import local context (optional)">
-              <input
-                ref={importFolderInputRef}
-                type="file"
-                multiple
-                // @ts-expect-error -- non-standard but supported by Chromium-based + Safari + Firefox
-                webkitdirectory=""
-                directory=""
-                className="hidden"
-                onChange={(e) => {
-                  const files = e.target.files;
-                  if (!files || files.length === 0) return;
-                  handleIncoming(
-                    Array.from(files).map((f) => ({
-                      path:
-                        (f as File & { webkitRelativePath?: string })
-                          .webkitRelativePath || f.name,
-                      file: f,
-                    })),
-                  );
-                  e.target.value = "";
-                }}
-              />
-              <input
-                ref={importFileInputRef}
-                type="file"
-                multiple
-                className="hidden"
-                onChange={(e) => {
-                  const files = e.target.files;
-                  if (!files || files.length === 0) return;
-                  handleIncoming(
-                    Array.from(files).map((f) => ({ path: f.name, file: f })),
-                  );
-                  e.target.value = "";
-                }}
-              />
-              <div
-                onDragEnter={(e) => {
-                  if (e.dataTransfer?.types?.includes("Files")) {
-                    e.preventDefault();
-                    setDropActive(true);
-                  }
-                }}
-                onDragOver={(e) => {
-                  if (e.dataTransfer?.types?.includes("Files")) {
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = "copy";
-                  }
-                }}
-                onDragLeave={(e) => {
-                  if (e.currentTarget.contains(e.relatedTarget as Node | null))
-                    return;
-                  setDropActive(false);
-                }}
-                onDrop={(e) => {
-                  if (!e.dataTransfer) return;
-                  e.preventDefault();
-                  setDropActive(false);
-                  const items = e.dataTransfer.items;
-                  if (items && items.length > 0) {
-                    void (async () => {
-                      const entries = await walkDataTransfer(items);
-                      handleIncoming(entries);
-                    })();
-                  }
-                }}
-                className={cn(
-                  "rounded-lg border border-dashed px-4 py-6 transition-colors flex flex-col items-center gap-3 text-center",
-                  dropActive
-                    ? "border-primary bg-primary/5"
-                    : "border-border hover:border-foreground/30",
+                {step === "setup" && (
+                  <FormField label="Harness">
+                    {templates.length > 0 ? (
+                      <Select
+                        value={selectedTemplate?.id ?? ""}
+                        onValueChange={(id) => {
+                          const tmpl = templates.find((t) => t.id === id);
+                          if (tmpl) pickHarness(tmpl);
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Pick a harness" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {templates.map((tmpl) => (
+                            <SelectItem key={tmpl.id} value={tmpl.id}>
+                              {tmpl.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <p className="text-[12px] text-muted-foreground">
+                        No harnesses available. Check your cluster's agent
+                        template configuration.
+                      </p>
+                    )}
+                  </FormField>
                 )}
-              >
-                {importRawBundle ? (
-                  <>
-                    <FileIcon size={24} className="text-muted-foreground" />
-                    <div className="text-[13px] text-foreground">
-                      <code className="font-mono">{importRawBundle.name}</code>
-                    </div>
-                  </>
-                ) : importEntries.length > 0 ? (
-                  <>
-                    <Upload size={24} className="text-muted-foreground" />
-                    <div className="text-[13px] text-foreground">
-                      <span className="font-semibold">{importEntries.length + importDropped}</span> file{importEntries.length + importDropped === 1 ? "" : "s"} selected ·{" "}
-                      <span className="text-foreground/80">{importEntries.length} to import</span>
-                      {importDropped > 0 && (
+
+                {step === "basics" && (
+                  <FormField label="Starting source">
+                    <RadioGroup
+                      value={startingSource}
+                      onValueChange={(v) =>
+                        setStartingSource(v as StartingSource)
+                      }
+                      className="flex flex-col gap-1.5"
+                    >
+                      <Label
+                        htmlFor="src-local"
+                        className={cn(
+                          "flex items-start gap-2 cursor-pointer rounded-lg border bg-background px-4 py-2.5",
+                          startingSource === "local" && "border-primary",
+                        )}
+                      >
+                        <RadioGroupItem
+                          value="local"
+                          id="src-local"
+                          className="mt-0.5"
+                        />
+                        <span className="flex flex-col gap-0.5">
+                          <span className="text-[13px] font-semibold text-foreground">
+                            Upload local files
+                          </span>
+                          <span className="text-[12px] text-muted-foreground">
+                            Drop a folder, files, or a{" "}
+                            <code className="font-mono">.tar.gz</code> bundle to
+                            seed the agent's workspace.
+                          </span>
+                        </span>
+                      </Label>
+                      <Label
+                        htmlFor="src-github"
+                        className={cn(
+                          "flex items-start gap-2 cursor-pointer rounded-lg border bg-background px-4 py-2.5",
+                          startingSource === "github" && "border-primary",
+                        )}
+                      >
+                        <RadioGroupItem
+                          value="github"
+                          id="src-github"
+                          className="mt-0.5"
+                        />
+                        <span className="flex flex-col gap-0.5">
+                          <span className="text-[13px] font-semibold text-foreground">
+                            Clone a GitHub repo
+                          </span>
+                          <span className="text-[12px] text-muted-foreground">
+                            Agent boots with your repo cloned into{" "}
+                            <code className="font-mono">/workspace</code>,
+                            credentials sourced from a connection.
+                          </span>
+                        </span>
+                      </Label>
+                    </RadioGroup>
+                    {startingSource === "github" && (
+                      <div className="mt-2 flex flex-col gap-1.5">
+                        <Input
+                          value={gitRepoUrl}
+                          onChange={(e) => setGitRepoUrl(e.target.value)}
+                          placeholder="https://github.com/org/repo"
+                        />
+                        <span className="text-[11px] text-muted-foreground italic">
+                          Prototype: the URL is captured but the controller
+                          doesn't yet clone — devs, see the related issue.
+                        </span>
+                      </div>
+                    )}
+                  </FormField>
+                )}
+
+                {((step === "basics" && startingSource === "local") ||
+                  step === "setup") && (
+                  <FormField label="Import local context (optional)">
+                    <input
+                      ref={importFolderInputRef}
+                      type="file"
+                      multiple
+                      // @ts-expect-error -- non-standard but supported by Chromium-based + Safari + Firefox
+                      webkitdirectory=""
+                      directory=""
+                      className="hidden"
+                      onChange={(e) => {
+                        const files = e.target.files;
+                        if (!files || files.length === 0) return;
+                        handleIncoming(
+                          Array.from(files).map((f) => ({
+                            path:
+                              (f as File & { webkitRelativePath?: string })
+                                .webkitRelativePath || f.name,
+                            file: f,
+                          })),
+                        );
+                        e.target.value = "";
+                      }}
+                    />
+                    <input
+                      ref={importFileInputRef}
+                      type="file"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        const files = e.target.files;
+                        if (!files || files.length === 0) return;
+                        handleIncoming(
+                          Array.from(files).map((f) => ({
+                            path: f.name,
+                            file: f,
+                          })),
+                        );
+                        e.target.value = "";
+                      }}
+                    />
+                    <div
+                      onDragEnter={(e) => {
+                        if (e.dataTransfer?.types?.includes("Files")) {
+                          e.preventDefault();
+                          setDropActive(true);
+                        }
+                      }}
+                      onDragOver={(e) => {
+                        if (e.dataTransfer?.types?.includes("Files")) {
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = "copy";
+                        }
+                      }}
+                      onDragLeave={(e) => {
+                        if (
+                          e.currentTarget.contains(
+                            e.relatedTarget as Node | null,
+                          )
+                        )
+                          return;
+                        setDropActive(false);
+                      }}
+                      onDrop={(e) => {
+                        if (!e.dataTransfer) return;
+                        e.preventDefault();
+                        setDropActive(false);
+                        const items = e.dataTransfer.items;
+                        if (items && items.length > 0) {
+                          void (async () => {
+                            const entries = await walkDataTransfer(items);
+                            handleIncoming(entries);
+                          })();
+                        }
+                      }}
+                      className={cn(
+                        "rounded-lg border border-dashed px-4 py-6 transition-colors flex flex-col items-center gap-3 text-center",
+                        dropActive
+                          ? "border-primary bg-primary/5"
+                          : "border-border hover:border-foreground/30",
+                      )}
+                    >
+                      {importRawBundle ? (
                         <>
-                          {" "}·{" "}
-                          <span className="text-muted-foreground">{importDropped} filtered (<code className="font-mono">node_modules</code>, <code className="font-mono">.venv</code>, etc.)</span>
+                          <FileIcon
+                            size={24}
+                            className="text-muted-foreground"
+                          />
+                          <div className="text-[13px] text-foreground">
+                            <code className="font-mono">
+                              {importRawBundle.name}
+                            </code>
+                          </div>
+                        </>
+                      ) : importEntries.length > 0 ? (
+                        <>
+                          <Upload size={24} className="text-muted-foreground" />
+                          <div className="text-[13px] text-foreground">
+                            <span className="font-semibold">
+                              {importEntries.length + importDropped}
+                            </span>{" "}
+                            file
+                            {importEntries.length + importDropped === 1
+                              ? ""
+                              : "s"}{" "}
+                            selected ·{" "}
+                            <span className="text-foreground/80">
+                              {importEntries.length} to import
+                            </span>
+                            {importDropped > 0 && (
+                              <>
+                                {" "}
+                                ·{" "}
+                                <span className="text-muted-foreground">
+                                  {importDropped} filtered (
+                                  <code className="font-mono">
+                                    node_modules
+                                  </code>
+                                  , <code className="font-mono">.venv</code>,
+                                  etc.)
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <Upload size={28} className="text-muted-foreground" />
+                          <div className="text-[13px] text-foreground">
+                            Drop a folder or files here
+                          </div>
+                          <div className="text-[11px] text-muted-foreground">
+                            <code className="font-mono">.tar.gz</code> bundles
+                            pass through verbatim
+                          </div>
                         </>
                       )}
+                      <div className="flex items-center gap-2 flex-wrap justify-center">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => importFolderInputRef.current?.click()}
+                        >
+                          <Folder size={14} /> Choose folder
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => importFileInputRef.current?.click()}
+                        >
+                          <FileIcon size={14} /> Choose files
+                        </Button>
+                        {step === "setup" && githubDescriptor && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              setConnectingGitHub(githubDescriptor)
+                            }
+                          >
+                            <OAuthAppIcon
+                              appId="github"
+                              alt="GitHub"
+                              size={14}
+                            />{" "}
+                            GitHub
+                          </Button>
+                        )}
+                        {(importRawBundle || importEntries.length > 0) && (
+                          <Button
+                            type="button"
+                            variant="link"
+                            size="sm"
+                            onClick={() => {
+                              setImportEntries([]);
+                              setImportRawBundle(null);
+                              setImportDropped(0);
+                            }}
+                          >
+                            Clear
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                  </>
-                ) : (
-                  <>
-                    <Upload size={28} className="text-muted-foreground" />
-                    <div className="text-[13px] text-foreground">Drop a folder or files here</div>
-                    <div className="text-[11px] text-muted-foreground">
-                      <code className="font-mono">.tar.gz</code> bundles pass through verbatim
-                    </div>
-                  </>
+                    {importGroups.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {importGroups.map((g) => (
+                          <span
+                            key={g.name}
+                            className="inline-flex items-center gap-1.5 rounded-md border bg-background px-2 py-1 text-[12px] text-foreground max-w-full"
+                          >
+                            {g.isFolder ? (
+                              <FolderIcon
+                                size={12}
+                                className="text-muted-foreground shrink-0"
+                              />
+                            ) : (
+                              <FileIcon
+                                size={12}
+                                className="text-muted-foreground shrink-0"
+                              />
+                            )}
+                            <span className="font-mono truncate" title={g.name}>
+                              {g.name}
+                            </span>
+                            {g.isFolder && (
+                              <span className="text-muted-foreground shrink-0">
+                                ({g.count})
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => removeGroup(g.name)}
+                              className="text-muted-foreground hover:text-foreground shrink-0"
+                              aria-label={`Remove ${g.name}`}
+                            >
+                              <X size={12} />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </FormField>
                 )}
-                <div className="flex items-center gap-2 flex-wrap justify-center">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => importFolderInputRef.current?.click()}
-                  >
-                    <Folder size={14} /> Choose folder
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => importFileInputRef.current?.click()}
-                  >
-                    <FileIcon size={14} /> Choose files
-                  </Button>
-                  {step === "setup" && githubDescriptor && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setConnectingGitHub(githubDescriptor)}
-                    >
-                      <OAuthAppIcon appId="github" alt="GitHub" size={14} /> GitHub
-                    </Button>
-                  )}
-                  {(importRawBundle || importEntries.length > 0) && (
-                    <Button
-                      type="button"
-                      variant="link"
-                      size="sm"
-                      onClick={() => { setImportEntries([]); setImportRawBundle(null); setImportDropped(0); }}
-                    >
-                      Clear
-                    </Button>
-                  )}
-                </div>
-              </div>
-              {importGroups.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {importGroups.map((g) => (
-                    <span
-                      key={g.name}
-                      className="inline-flex items-center gap-1.5 rounded-md border bg-background px-2 py-1 text-[12px] text-foreground max-w-full"
-                    >
-                      {g.isFolder ? (
-                        <FolderIcon size={12} className="text-muted-foreground shrink-0" />
-                      ) : (
-                        <FileIcon size={12} className="text-muted-foreground shrink-0" />
-                      )}
-                      <span className="font-mono truncate" title={g.name}>
-                        {g.name}
-                      </span>
-                      {g.isFolder && (
-                        <span className="text-muted-foreground shrink-0">({g.count})</span>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => removeGroup(g.name)}
-                        className="text-muted-foreground hover:text-foreground shrink-0"
-                        aria-label={`Remove ${g.name}`}
-                      >
-                        <X size={12} />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-            </FormField>
-            )}
               </>
             )}
 
@@ -992,17 +1149,17 @@ export function AddAgentDialog({
             )}
 
             {step === "connections" && lane !== "scratch" && (
-            <ConnectionsPicker
-              loading={loadSecrets}
-              secrets={secrets}
-              apps={apps as unknown as AppConnectionView[]}
-              oauthApps={oauthAppEntries}
-              selSecrets={selSecretsSet}
-              selApps={selAppsSet}
-              onToggleSecret={toggleSecret}
-              onToggleApp={toggleApp}
-              onGoToProviders={onGoToProviders}
-            />
+              <ConnectionsPicker
+                loading={loadSecrets}
+                secrets={secrets}
+                apps={apps as unknown as AppConnectionView[]}
+                oauthApps={oauthAppEntries}
+                selSecrets={selSecretsSet}
+                selApps={selAppsSet}
+                onToggleSecret={toggleSecret}
+                onToggleApp={toggleApp}
+                onGoToProviders={onGoToProviders}
+              />
             )}
 
             {step === "skills" && (
@@ -1014,57 +1171,81 @@ export function AddAgentDialog({
             )}
 
             {(step === "network" || step === "setup") && (
-            <fieldset className="flex flex-col gap-2">
-              <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.05em]">
-                Network access
-              </span>
-              <p className="text-[12px] text-muted-foreground">
-                Initial set of hosts the agent can reach. Anything not covered
-                surfaces in the inbox; you can change this later from the
-                agent's Network access tab.
-              </p>
-              <RadioGroup
-                value={watch("egressPreset")}
-                onValueChange={(v) =>
-                  setValue("egressPreset", v as EgressPreset, {
-                    shouldDirty: true,
-                    shouldValidate: true,
-                  })
-                }
-                className="flex flex-col gap-1.5"
-              >
-                <Label
-                  htmlFor="egress-trusted"
-                  className="flex items-start gap-2 cursor-pointer rounded-lg border bg-background px-4 py-2.5"
+              <fieldset className="flex flex-col gap-2">
+                <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.05em]">
+                  Network access
+                </span>
+                <p className="text-[12px] text-muted-foreground">
+                  Initial set of hosts the agent can reach. Anything not covered
+                  surfaces in the inbox; you can change this later from the
+                  agent's Network access tab.
+                </p>
+                <RadioGroup
+                  value={watch("egressPreset")}
+                  onValueChange={(v) =>
+                    setValue("egressPreset", v as EgressPreset, {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    })
+                  }
+                  className="flex flex-col gap-1.5"
                 >
-                  <RadioGroupItem value="trusted" id="egress-trusted" className="mt-0.5" />
-                  <span className="flex flex-col gap-0.5">
-                    <span className="text-[13px] font-semibold text-foreground">Trusted defaults (recommended)</span>
-                    <span className="text-[12px] text-muted-foreground">npm, PyPI, GitHub, package mirrors, Anthropic</span>
-                  </span>
-                </Label>
-                <Label
-                  htmlFor="egress-none"
-                  className="flex items-start gap-2 cursor-pointer rounded-lg border bg-background px-4 py-2.5"
-                >
-                  <RadioGroupItem value="none" id="egress-none" className="mt-0.5" />
-                  <span className="flex flex-col gap-0.5">
-                    <span className="text-[13px] font-semibold text-foreground">Strict default-deny</span>
-                    <span className="text-[12px] text-muted-foreground">Every host hits the inbox until you approve</span>
-                  </span>
-                </Label>
-                <Label
-                  htmlFor="egress-all"
-                  className="flex items-start gap-2 cursor-pointer rounded-lg border border-warning/40 bg-background px-4 py-2.5"
-                >
-                  <RadioGroupItem value="all" id="egress-all" className="mt-0.5" />
-                  <span className="flex flex-col gap-0.5">
-                    <span className="text-[13px] font-semibold text-foreground">Allow everything</span>
-                    <span className="text-[12px] text-muted-foreground">Development escape hatch — no inbox prompts</span>
-                  </span>
-                </Label>
-              </RadioGroup>
-            </fieldset>
+                  <Label
+                    htmlFor="egress-trusted"
+                    className="flex items-start gap-2 cursor-pointer rounded-lg border bg-background px-4 py-2.5"
+                  >
+                    <RadioGroupItem
+                      value="trusted"
+                      id="egress-trusted"
+                      className="mt-0.5"
+                    />
+                    <span className="flex flex-col gap-0.5">
+                      <span className="text-[13px] font-semibold text-foreground">
+                        Trusted defaults (recommended)
+                      </span>
+                      <span className="text-[12px] text-muted-foreground">
+                        npm, PyPI, GitHub, package mirrors, Anthropic
+                      </span>
+                    </span>
+                  </Label>
+                  <Label
+                    htmlFor="egress-none"
+                    className="flex items-start gap-2 cursor-pointer rounded-lg border bg-background px-4 py-2.5"
+                  >
+                    <RadioGroupItem
+                      value="none"
+                      id="egress-none"
+                      className="mt-0.5"
+                    />
+                    <span className="flex flex-col gap-0.5">
+                      <span className="text-[13px] font-semibold text-foreground">
+                        Strict default-deny
+                      </span>
+                      <span className="text-[12px] text-muted-foreground">
+                        Every host hits the inbox until you approve
+                      </span>
+                    </span>
+                  </Label>
+                  <Label
+                    htmlFor="egress-all"
+                    className="flex items-start gap-2 cursor-pointer rounded-lg border border-warning/40 bg-background px-4 py-2.5"
+                  >
+                    <RadioGroupItem
+                      value="all"
+                      id="egress-all"
+                      className="mt-0.5"
+                    />
+                    <span className="flex flex-col gap-0.5">
+                      <span className="text-[13px] font-semibold text-foreground">
+                        Allow everything
+                      </span>
+                      <span className="text-[12px] text-muted-foreground">
+                        Development escape hatch — no inbox prompts
+                      </span>
+                    </span>
+                  </Label>
+                </RadioGroup>
+              </fieldset>
             )}
 
             <DialogFooter>
@@ -1072,61 +1253,44 @@ export function AddAgentDialog({
                 <ArrowLeft size={14} />
                 {step === "basics" ? "Change image" : "Back"}
               </Button>
-              {step === "network" || (step === "skills" && lane === "scratch") ? (
+              {step === "network" ||
+              (step === "skills" && lane === "scratch") ? (
                 <Button type="submit" disabled={isSubmitting || !isValid}>
                   Create agent
                 </Button>
               ) : (
                 <Button type="button" onClick={goNext}>
-                  {step === "setup" ? "Continue" : "Next"} <ArrowRight size={14} />
+                  {step === "setup" ? "Continue" : "Next"}{" "}
+                  <ArrowRight size={14} />
                 </Button>
               )}
             </DialogFooter>
-            </form>
-          )}
+          </form>
+        )}
 
-          {step === "provider" && (
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={goBack}>
-                <ArrowLeft size={14} /> Back
-              </Button>
-              <Button
-                type="button"
-                onClick={goNext}
-                variant={selectedProviderSecretId ? "default" : "outline"}
-              >
-                {selectedProviderSecretId ? (
-                  <>Next <ArrowRight size={14} /></>
-                ) : (
-                  <>Skip for now <ArrowRight size={14} /></>
-                )}
-              </Button>
-            </DialogFooter>
-          )}
+        {step === "provider" && (
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={goBack}>
+              <ArrowLeft size={14} /> Back
+            </Button>
+            <Button
+              type="button"
+              onClick={goNext}
+              variant={selectedProviderSecretId ? "default" : "outline"}
+            >
+              {selectedProviderSecretId ? (
+                <>
+                  Next <ArrowRight size={14} />
+                </>
+              ) : (
+                <>
+                  Skip for now <ArrowRight size={14} />
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        )}
       </DialogContent>
-      {connectingGitHub && (
-        <ConnectAppForm
-          app={connectingGitHub}
-          onCancel={() => setConnectingGitHub(null)}
-        />
-      )}
-      {connectingApp && (
-        <ConnectAppForm
-          app={connectingApp}
-          onCancel={() => setConnectingApp(null)}
-        />
-      )}
-      {showAddMcp && (
-        <AddMcpForm
-          onCancel={() => setShowAddMcp(false)}
-        />
-      )}
-      {showAddSecret && (
-        <CreateSecretForm
-          onCancel={() => setShowAddSecret(false)}
-          onCreated={() => setShowAddSecret(false)}
-        />
-      )}
     </Dialog>
   );
 }
@@ -1152,7 +1316,9 @@ function ProviderPickerSection({
   onSelectProviderSecret: (secretId: string) => void;
 }) {
   const PickedCard = picked ? PROVIDER_CARDS[picked] : null;
-  const available = PROVIDER_PRESET_TYPES.filter((t) => !configuredTypes.has(t));
+  const available = PROVIDER_PRESET_TYPES.filter(
+    (t) => !configuredTypes.has(t),
+  );
 
   const handlePick = (value: string) => {
     if (value.startsWith(SETUP_VALUE_PREFIX)) {
@@ -1196,7 +1362,9 @@ function ProviderPickerSection({
                   value={s.id}
                   iconProvider={presetType}
                   title={meta?.displayName ?? s.name}
-                  description={presetType ? PROVIDER_DESCRIPTIONS[presetType] : undefined}
+                  description={
+                    presetType ? PROVIDER_DESCRIPTIONS[presetType] : undefined
+                  }
                   badge={
                     <Badge variant="secondary" className="gap-1">
                       <Checkmark className="h-3 w-3" /> Connected
@@ -1454,7 +1622,12 @@ function ScratchConnectionsStep({
   oauthAppEntries: OAuthAppEntry[];
   availableToConnect: OAuthAppDescriptor[];
   mcpSecrets: { id: string; name: string }[];
-  customSecrets: { id: string; name: string; hostPattern: string; pathPattern?: string }[];
+  customSecrets: {
+    id: string;
+    name: string;
+    hostPattern: string;
+    pathPattern?: string;
+  }[];
   selSecretsSet: Set<string>;
   onToggleSecret: (id: string) => void;
   onConnectApp: (app: OAuthAppDescriptor) => void;
@@ -1468,9 +1641,9 @@ function ScratchConnectionsStep({
           Connections (optional)
         </span>
         <p className="text-[12px] text-muted-foreground leading-relaxed">
-          Pick which credentials, MCP servers, and apps this agent can
-          reach. Connect new ones inline — they'll be available
-          platform-wide when you're done.
+          Pick which credentials, MCP servers, and apps this agent can reach.
+          Connect new ones inline — they'll be available platform-wide when
+          you're done.
         </p>
       </div>
 
@@ -1481,11 +1654,15 @@ function ScratchConnectionsStep({
             key={entry.secretId}
             icon={
               <span className="text-foreground/80">
-                <OAuthAppIcon appId={entry.appId} alt={entry.displayName} size={16} />
+                <OAuthAppIcon
+                  appId={entry.appId}
+                  alt={entry.displayName}
+                  size={16}
+                />
               </span>
             }
             label={entry.displayName}
-            detail={entry.hostPattern}
+            detail={entry.hosts.join(", ")}
             granted={selSecretsSet.has(entry.secretId)}
             expired={entry.expired}
             onToggleGrant={() => onToggleSecret(entry.secretId)}
@@ -1604,7 +1781,9 @@ function ConnectedRow({
       />
       <span className="shrink-0">{icon}</span>
       <div className="flex-1 min-w-0">
-        <div className="text-[13px] font-medium text-foreground truncate">{label}</div>
+        <div className="text-[13px] font-medium text-foreground truncate">
+          {label}
+        </div>
         {detail && (
           <div className="text-[11px] font-mono text-muted-foreground truncate">
             {detail}
@@ -1637,7 +1816,9 @@ function AvailableRow({
     <div className="flex items-center gap-3 rounded-lg border border-border bg-background px-4 py-3">
       <span className="shrink-0">{icon}</span>
       <div className="flex-1 min-w-0">
-        <div className="text-[13px] font-medium text-foreground truncate">{label}</div>
+        <div className="text-[13px] font-medium text-foreground truncate">
+          {label}
+        </div>
         {description && (
           <div className="text-[11px] text-muted-foreground truncate">
             {description}

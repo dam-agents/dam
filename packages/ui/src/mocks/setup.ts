@@ -20,7 +20,11 @@ const MOCK_BRAND: MockBrand = {
   name: "Platform (Mock)",
   short: "platform",
   theme: {
-    light: { accent: "#1D6BE1", accentHover: "#1556B8", accentLight: "#eaf2fe" },
+    light: {
+      accent: "#1D6BE1",
+      accentHover: "#1556B8",
+      accentLight: "#eaf2fe",
+    },
     dark: { accent: "#3C92FD", accentHover: "#2F88FD", accentLight: "#0f1f3a" },
   },
 };
@@ -115,7 +119,9 @@ function handleTrpcBatch(path: string): Response {
 }
 
 function handleMockRequest(url: string): Response | null {
-  const pathname = url.startsWith("http") ? new URL(url).pathname : url.split("?")[0];
+  const pathname = url.startsWith("http")
+    ? new URL(url).pathname
+    : url.split("?")[0];
 
   if (pathname === "/api/auth/config") {
     return jsonResponse({ issuer: MOCK_ISSUER, clientId: MOCK_CLIENT_ID });
@@ -153,5 +159,7 @@ export async function setupMocks(): Promise<void> {
     return originalFetch(input, init);
   };
 
-  console.info("[mocks] UI design-preview mocks active — packages/ui/src/mocks/README.md");
+  console.info(
+    "[mocks] UI design-preview mocks active — packages/ui/src/mocks/README.md",
+  );
 }

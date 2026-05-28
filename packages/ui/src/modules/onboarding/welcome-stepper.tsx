@@ -1,14 +1,11 @@
-import {
-  ArrowRight,
-  Checkmark as Check,
-} from "@carbon/icons-react";
+import { ArrowRight, Checkmark as Check } from "@carbon/icons-react";
 import { Fragment } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../store.js";
-import { useAgents } from "../agents/api/queries.js";
+import { useAgents, useAgentsList } from "../agents/api/queries.js";
 import { useSecrets } from "../secrets/api/queries.js";
 
 type ViewKey = "providers" | "list" | "connections";
@@ -23,7 +20,12 @@ interface Step {
 const STEPS: Step[] = [
   { key: "provider", label: "Set up a provider", view: "providers" },
   { key: "agent", label: "Create an agent", view: "list" },
-  { key: "connections", label: "Add connections", view: "connections", optional: true },
+  {
+    key: "connections",
+    label: "Add connections",
+    view: "connections",
+    optional: true,
+  },
 ];
 
 /**
@@ -33,7 +35,8 @@ const STEPS: Step[] = [
  * weight. Hides once the user has both a provider and at least one agent.
  */
 export function WelcomeStepper() {
-  const { data: agents = [], isSuccess: agentsLoaded } = useAgents();
+  const { isSuccess: agentsLoaded } = useAgents();
+  const agents = useAgentsList();
   const { data: secrets = [], isSuccess: secretsLoaded } = useSecrets();
   const currentView = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
@@ -50,7 +53,9 @@ export function WelcomeStepper() {
 
   const currentStepIdx = STEPS.findIndex((s) => s.view === currentView);
   const onStepPage = currentStepIdx >= 0 && !isDone(STEPS[currentStepIdx].key);
-  const firstIncompleteIdx = STEPS.findIndex((s) => !isDone(s.key) && !s.optional);
+  const firstIncompleteIdx = STEPS.findIndex(
+    (s) => !isDone(s.key) && !s.optional,
+  );
   const displayedIdx = onStepPage
     ? currentStepIdx
     : firstIncompleteIdx < 0
@@ -77,7 +82,10 @@ export function WelcomeStepper() {
           <span className="text-sm font-semibold text-foreground">
             {displayedStep.label}
             {displayedStep.optional && (
-              <span className="text-muted-foreground font-normal"> (optional)</span>
+              <span className="text-muted-foreground font-normal">
+                {" "}
+                (optional)
+              </span>
             )}
           </span>
         </div>
@@ -103,13 +111,21 @@ export function WelcomeStepper() {
                         : "border border-border text-muted-foreground hover:border-template hover:text-template",
                   )}
                 >
-                  {done ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : i + 1}
+                  {done ? (
+                    <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                  ) : (
+                    i + 1
+                  )}
                 </button>
                 {i < STEPS.length - 1 && (
                   <div
                     className={cn(
                       "h-px w-3 md:w-4 shrink-0",
-                      done && nextDone ? "bg-template" : done ? "bg-template/60" : "bg-border",
+                      done && nextDone
+                        ? "bg-template"
+                        : done
+                          ? "bg-template/60"
+                          : "bg-border",
                     )}
                   />
                 )}

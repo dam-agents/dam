@@ -87,7 +87,8 @@ export function PermissionPrompt() {
     <div className="border-t bg-card/50 backdrop-blur-xl px-4 md:px-8 py-3">
       <div className="mx-auto max-w-[760px] rounded-lg border-2 border-primary bg-background p-3.5 flex flex-col gap-2 shadow-sm">
         <div className="text-[14px] font-bold text-foreground break-all">
-          Allow <span className="text-primary">{toolTitle(current.toolCall)}</span>?
+          Allow{" "}
+          <span className="text-primary">{toolTitle(current.toolCall)}</span>?
         </div>
         <div className="flex flex-col gap-1.5">
           {current.options.map((opt, i) => (
@@ -97,14 +98,17 @@ export function PermissionPrompt() {
               onClick={() => pick(opt)}
               className={`h-auto justify-start gap-3 rounded-md border-2 border-border bg-card px-3 py-2 text-left text-[13px] text-foreground ${optionAccent(opt.kind)}`}
             >
-              <span className="text-muted-foreground font-mono text-[11px] w-4 shrink-0">{i + 1}</span>
+              <span className="text-muted-foreground font-mono text-[11px] w-4 shrink-0">
+                {i + 1}
+              </span>
               <span className="flex-1">{opt.name}</span>
             </Button>
           ))}
         </div>
         {pending.length > 1 && (
           <div className="text-[11px] text-muted-foreground">
-            {pending.length - 1} more request{pending.length - 1 === 1 ? "" : "s"} queued
+            {pending.length - 1} more request
+            {pending.length - 1 === 1 ? "" : "s"} queued
           </div>
         )}
       </div>

@@ -136,7 +136,10 @@ export function ProviderChooserDialog({
             cluster and never visible to the agent runtime.
           </DialogDescription>
         </DialogHeader>
-        <ProviderChooserList configuredTypes={configuredTypes} onPick={onPick} />
+        <ProviderChooserList
+          configuredTypes={configuredTypes}
+          onPick={onPick}
+        />
       </DialogContent>
     </Dialog>
   );

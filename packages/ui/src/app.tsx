@@ -1,6 +1,5 @@
 import { useEffect } from "react";
 
-import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
 import { MobileNav } from "./components/mobile-nav.js";
 import { OfflineBanner } from "./components/offline-banner.js";
@@ -16,7 +15,6 @@ import { WelcomeTour } from "./modules/onboarding/welcome-tour.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { ProvidersView } from "./modules/settings/views/providers-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
-import { TermsView } from "./modules/terms/views/terms-view.js";
 import { useStore } from "./store.js";
 
 export default function App() {
@@ -94,7 +92,16 @@ export default function App() {
   }, []);
 
   // Chat view is full-screen (has its own layout)
-  if (view === "chat") return <><ChatView /><DialogOverlay /><ToastOverlay /><OfflineBanner /><StyleGuideToggle /></>;
+  if (view === "chat")
+    return (
+      <>
+        <ChatView />
+        <DialogOverlay />
+        <ToastOverlay />
+        <OfflineBanner />
+        <StyleGuideToggle />
+      </>
+    );
 
   // All non-chat views share the sidebar shell
   return (
@@ -103,12 +110,19 @@ export default function App() {
         <Sidebar />
         <main className="relative z-10 flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-[960px] px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10">
-            {view === "settings" ? <SettingsView />
-              : view === "providers" ? <ProvidersView />
-              : view === "connections" ? <ConnectionsView />
-              : view === "inbox" ? <InboxView />
-              : view === "agent-egress" ? <AgentEgressView />
-              : <ListView />}
+            {view === "settings" ? (
+              <SettingsView />
+            ) : view === "providers" ? (
+              <ProvidersView />
+            ) : view === "connections" ? (
+              <ConnectionsView />
+            ) : view === "inbox" ? (
+              <InboxView />
+            ) : view === "agent-egress" ? (
+              <AgentEgressView />
+            ) : (
+              <ListView />
+            )}
           </div>
         </main>
       </div>

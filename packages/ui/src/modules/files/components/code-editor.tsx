@@ -148,5 +148,10 @@ export function CodeEditor({ value, path, onChange, onSave, readOnly }: Props) {
     });
   }, [readOnly]);
 
-  return <div ref={hostRef} className="h-full min-h-[200px] border border-border rounded overflow-hidden" />;
+  return (
+    <div
+      ref={hostRef}
+      className="h-full min-h-[200px] border border-border rounded overflow-hidden"
+    />
+  );
 }

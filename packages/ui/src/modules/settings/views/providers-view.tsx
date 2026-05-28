@@ -3,11 +3,7 @@ import { useEffect, useState } from "react";
 
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
 import {
   PROVIDER_PRESET_TYPES,
@@ -19,10 +15,7 @@ import { PROVIDER_CARDS } from "../components/provider-cards.js";
 import { ProviderChooserDialog } from "../components/provider-chooser-dialog.js";
 
 export function ProvidersView() {
-  const {
-    data: secrets = [],
-    isPending,
-  } = useSecrets();
+  const { data: secrets = [], isPending } = useSecrets();
 
   // Index by SecretType so each Card receives its own (or undefined for the
   // wizard flow). One pass over the secrets list, then constant lookups.
@@ -95,25 +88,25 @@ export function ProvidersView() {
           title="Set up a provider"
           description={
             <>
-              Agents need an API key from a provider — Anthropic, OpenAI,
-              IBM LiteLLM, or Bob Shell — to reach a model. Keys are stored
-              as K8s Secrets and injected by the credential gateway at
-              request time, so the agent runtime never sees the raw value.
+              Agents need an API key from a provider — Anthropic, OpenAI, IBM
+              LiteLLM, or Bob Shell — to reach a model. Keys are stored as K8s
+              Secrets and injected by the credential gateway at request time, so
+              the agent runtime never sees the raw value.
             </>
           }
           bullets={[
             <>
-              <span className="font-semibold">Pick a preset</span> — start
-              with Anthropic for Claude Code agents.
+              <span className="font-semibold">Pick a preset</span> — start with
+              Anthropic for Claude Code agents.
             </>,
             <>
-              <span className="font-semibold">Paste your key</span> —
-              encrypted at rest and routed via the per-instance Envoy
-              gateway, never written to a pod env.
+              <span className="font-semibold">Paste your key</span> — encrypted
+              at rest and routed via the per-instance Envoy gateway, never
+              written to a pod env.
             </>,
             <>
-              <span className="font-semibold">Add as many as you need</span>{" "}
-              — each agent picks one provider, and different agents can use
+              <span className="font-semibold">Add as many as you need</span> —
+              each agent picks one provider, and different agents can use
               different ones.
             </>,
           ]}

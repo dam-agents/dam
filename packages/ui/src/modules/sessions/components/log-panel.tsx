@@ -32,12 +32,25 @@ export function LogPanel() {
   }, []);
 
   return (
-    <div ref={containerRef} onScroll={onScroll} className="flex flex-1 flex-col overflow-y-auto">
-      {log.length === 0 && <p className="px-4 py-5 text-[12px] text-muted-foreground">No events yet</p>}
-      {log.map(e => (
-        <div key={e.id} className="flex flex-col gap-1 border-b border-border px-4 py-3">
+    <div
+      ref={containerRef}
+      onScroll={onScroll}
+      className="flex flex-1 flex-col overflow-y-auto"
+    >
+      {log.length === 0 && (
+        <p className="px-4 py-5 text-[12px] text-muted-foreground">
+          No events yet
+        </p>
+      )}
+      {log.map((e) => (
+        <div
+          key={e.id}
+          className="flex flex-col gap-1 border-b border-border px-4 py-3"
+        >
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-mono text-muted-foreground">{e.ts}</span>
+            <span className="text-[11px] font-mono text-muted-foreground">
+              {e.ts}
+            </span>
             <Badge
               variant="outline"
               className={`text-[10px] font-bold uppercase tracking-[0.05em] border-2 rounded-full px-2 py-0.5 ${badgeStyle[e.type] ?? "bg-background text-muted-foreground border-border"}`}
@@ -45,7 +58,9 @@ export function LogPanel() {
               {e.type}
             </Badge>
           </div>
-          <pre className="text-[11px] font-mono text-muted-foreground whitespace-pre-wrap break-all leading-[1.5] max-h-[100px] overflow-y-auto">{JSON.stringify(e.payload, null, 2)}</pre>
+          <pre className="text-[11px] font-mono text-muted-foreground whitespace-pre-wrap break-all leading-[1.5] max-h-[100px] overflow-y-auto">
+            {JSON.stringify(e.payload, null, 2)}
+          </pre>
         </div>
       ))}
       <div ref={bottomRef} />

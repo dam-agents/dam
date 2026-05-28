@@ -96,7 +96,9 @@ export function IbmLitellmForm({
         <div className="flex items-center gap-3">
           <CardIcon provider="ibm-litellm" />
           <div className="flex-1 min-w-0">
-            <div className="text-[15px] font-bold text-foreground">IBM LiteLLM ETE Proxy</div>
+            <div className="text-[15px] font-bold text-foreground">
+              IBM LiteLLM ETE Proxy
+            </div>
             <div className="text-[12px] text-muted-foreground">
               {isEdit
                 ? "Paste a new token to replace the existing one. Model overrides apply to both Claude Code and pi-agent."
@@ -125,16 +127,24 @@ export function IbmLitellmForm({
           </Button>
         </div>
 
-        {errors.value && value.length > 0 && errors.value.message !== "Required" && (
-          <div className="text-[12px] font-medium text-destructive">{errors.value.message}</div>
-        )}
+        {errors.value &&
+          value.length > 0 &&
+          errors.value.message !== "Required" && (
+            <div className="text-[12px] font-medium text-destructive">
+              {errors.value.message}
+            </div>
+          )}
 
         <button
           type="button"
           onClick={() => setAdvancedOpen((o) => !o)}
           className="flex items-center gap-1.5 text-[12px] font-semibold text-muted-foreground hover:text-foreground -mt-1 self-start"
         >
-          {advancedOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+          {advancedOpen ? (
+            <ChevronDown size={13} />
+          ) : (
+            <ChevronRight size={13} />
+          )}
           Advanced — model overrides
         </button>
 
@@ -190,7 +200,9 @@ function ModelField({
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-[12px] font-semibold text-foreground/80">{label}</label>
+      <label className="text-[12px] font-semibold text-foreground/80">
+        {label}
+      </label>
       <Input
         type="text"
         className="font-mono text-[13px]"
@@ -200,7 +212,9 @@ function ModelField({
         {...register}
       />
       <div className="text-[11px] text-muted-foreground">{hint}</div>
-      {error && <div className="text-[11px] font-medium text-destructive">{error}</div>}
+      {error && (
+        <div className="text-[11px] font-medium text-destructive">{error}</div>
+      )}
     </div>
   );
 }

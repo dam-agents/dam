@@ -2,9 +2,7 @@
  * Dev-only floating toggle that opens the login-page mockup. Renders nothing
  * when `VITE_USE_MOCKS` is off. See ./README.md.
  */
-import {
-  Login as LogIn,
-} from "@carbon/icons-react";
+import { Login as LogIn } from "@carbon/icons-react";
 import { lazy, Suspense, useState } from "react";
 
 import { Button } from "@/components/ui/button";

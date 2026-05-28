@@ -1,6 +1,4 @@
-import {
-  WifiOff,
-} from "@carbon/icons-react";
+import { WifiOff } from "@carbon/icons-react";
 
 import { useOnline } from "../hooks/use-online.js";
 
@@ -11,7 +9,9 @@ export function OfflineBanner() {
     <div className="fixed bottom-14 left-0 right-0 z-[60] flex h-11 items-center justify-center gap-2 border-t border-warning bg-warning-light px-5 text-sm font-semibold text-warning md:bottom-0">
       <WifiOff className="h-3.5 w-3.5" />
       <span className="sm:hidden">Offline — retrying when back</span>
-      <span className="hidden sm:inline">You're offline — updates will resume when your connection returns.</span>
+      <span className="hidden sm:inline">
+        You're offline — updates will resume when your connection returns.
+      </span>
     </div>
   );
 }
