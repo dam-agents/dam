@@ -1,12 +1,23 @@
-# DAM
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/DAM - Square Light.svg" />
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/DAM - Square Dark.svg" />
+    <img src="docs/assets/DAM - Square Dark.svg" width="140" alt="DAM" />
+  </picture>
+</p>
 
 <p align="center">
-  <img src="docs/assets/icon.svg" width="120" alt="icon" />
+  <strong>Run AI agents in the cloud, on a schedule, connected to your tools.</strong>
 </p>
-<h3 align="center">
-  Run your own background agents on Kubernetes.<br/>
-  Isolated by default. Credentialed. Always-on.
-</h3>
+
+<p align="center">
+  <a href="docs/configuration.md">Configuration</a> ·
+  <a href="docs/architecture.md">Architecture</a> ·
+  <a href="docs/strategy/security-model.md">Security</a> ·
+  <a href="PITCH.md">Why DAM?</a>
+</p>
+
+---
 
 Keep your coding agents running when you close the lid. Ship them to your team. Sell them to your customers. DAM gives Claude Code, Codex, Antigravity CLI, or pi.dev an isolated Kubernetes pod, a credential-injecting proxy, a scheduler, and a Slack channel.
 
