@@ -55,10 +55,17 @@ export function createMcpEntryPlugin(): Plugin {
             ...(c.headers ? { headers: c.headers } : {}),
           };
         }
+        const names = Object.keys(entries);
+        ctx.log(
+          `desired entries (${names.length}): ${names.length === 0 ? "<none>" : names.join(", ")}`,
+        );
         const content: Record<string, unknown> = keyPath
           ? entries
           : { [effectiveKey]: entries };
         const targetPath = expandHome(path, ctx.agentHome);
+        ctx.log(
+          `writing → ${targetPath} (format=${format}, mergeMode=${mergeMode}, keyPath=${keyPath ?? "<root>"})`,
+        );
         const desired = new Map<string, FileDesired[]>([
           [
             targetPath,

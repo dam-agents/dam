@@ -47,6 +47,18 @@ export function createSkillInstallPlugin(deps: {
           expandHome(p, ctx.agentHome),
         );
         const resolvedPaths = skillPaths.map((p) => resolve(p));
+        const skillRefs = contributions.filter((c) => c.kind === "skill-ref");
+        ctx.log(
+          `wanted (${skillRefs.length}): ${
+            skillRefs.length === 0
+              ? "<none>"
+              : skillRefs
+                  .map((c) =>
+                    c.kind === "skill-ref" ? `${c.name}@${c.version}` : "",
+                  )
+                  .join(", ")
+          }; targets: ${resolvedPaths.join(", ") || "<none>"}`,
+        );
         const wantedDirs = new Set<string>();
 
         for (const c of contributions) {
@@ -57,20 +69,29 @@ export function createSkillInstallPlugin(deps: {
             version: c.version,
             skillPaths,
           };
+          ctx.log(
+            `install ${c.name}@${c.version} from ${c.sourceUrl} into ${skillPaths.length} path(s)`,
+          );
           const result = await deps.install(installInput);
           if (!result.ok) {
             ctx.log(
-              `[skill-install] ${c.name}@${c.version} from ${c.sourceUrl}: install failed (${result.error.kind})`,
+              `${c.name}@${c.version} from ${c.sourceUrl}: install failed (${result.error.kind})`,
             );
             continue;
           }
+          ctx.log(`${c.name}@${c.version}: install ok`);
           for (const root of resolvedPaths) {
             wantedDirs.add(join(root, c.name));
           }
         }
 
         for (const root of resolvedPaths) {
-          if (!existsSync(root)) continue;
+          if (!existsSync(root)) {
+            ctx.log(`root missing, nothing to sweep: ${root}`);
+            continue;
+          }
+          let kept = 0;
+          let removed = 0;
           for (const entry of readdirSync(root)) {
             const p = join(root, entry);
             try {
@@ -78,16 +99,19 @@ export function createSkillInstallPlugin(deps: {
             } catch {
               continue;
             }
-            if (wantedDirs.has(p)) continue;
+            if (wantedDirs.has(p)) {
+              kept++;
+              continue;
+            }
             try {
               rmSync(p, { recursive: true, force: true });
-              ctx.log(`[skill-install] removed ${p}`);
+              ctx.log(`removed ${p}`);
+              removed++;
             } catch (err) {
-              ctx.log(
-                `[skill-install] failed to remove ${p}: ${(err as Error).message}`,
-              );
+              ctx.log(`failed to remove ${p}: ${(err as Error).message}`);
             }
           }
+          ctx.log(`sweep ${root}: kept=${kept} removed=${removed}`);
         }
       };
     },

@@ -15,6 +15,9 @@ export async function runHello(opts: {
   log: (msg: string) => void;
 }): Promise<void> {
   const local = opts.stateStore.read();
+  opts.log(
+    `[runtime] hello → local v=${local.lastAppliedVersion} hash=${(local.lastAppliedHash ?? "<none>").slice(0, 8)} capabilities={contributions:${opts.capabilities.contributions.join("|")}, events:${opts.capabilities.events.join("|")}}`,
+  );
   let result;
   try {
     result = await opts.client.runtime.v1.hello.mutate({
@@ -32,10 +35,17 @@ export async function runHello(opts: {
   if (!result.version || !result.state) {
     if (result.events.length > 0) {
       opts.log(`[runtime] hello returned events without a version; skipping`);
+    } else {
+      opts.log(
+        `[runtime] hello: server has no state to push (outbox empty or already in sync)`,
+      );
     }
     return;
   }
 
+  opts.log(
+    `[runtime] hello returned v=${result.version} hash=${result.state.hash.slice(0, 8)} contribs=${result.state.contributions.length} events=${result.events.length}; applying`,
+  );
   try {
     const apply: ApplyStateInput = {
       version: result.version,
