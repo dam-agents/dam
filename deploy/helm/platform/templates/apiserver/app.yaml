@@ -117,8 +117,9 @@ spec:
             # Used by runtime-delivery's builtin-contributions to render
             # the per-agent `platform-outbound` MCP entry. Must match the
             # `:authority` the paired gateway pod's Envoy is configured
-            # to passthrough (envoy.go HarnessAuthority).
-            - name: PLATFORM_HARNESS_BASE_URL
+            # to passthrough (envoy.go HarnessAuthority). Same env name
+            # the controller already consumes — single source of truth.
+            - name: PLATFORM_HARNESS_SERVER_URL
               value: "http://{{ include "platform.fullname" . }}-apiserver-harness.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.apiServer.harnessServerPort }}"
             - name: EXT_AUTHZ_PORT
               value: {{ .Values.apiServer.extAuthzPort | quote }}

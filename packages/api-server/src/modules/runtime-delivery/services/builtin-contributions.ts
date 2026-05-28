@@ -5,10 +5,11 @@ export interface BuiltinContributions {
 }
 
 export interface BuiltinContributionsOpts {
-  /** Base URL of the api-server harness Service that the paired gateway
+  /** URL of the api-server harness Service that the paired gateway
    *  pod's Envoy is configured to passthrough. Used to render the
-   *  per-agent `platform-outbound` MCP entry. */
-  harnessBaseUrl: string;
+   *  per-agent `platform-outbound` MCP entry. Sourced from
+   *  `PLATFORM_HARNESS_SERVER_URL`, matching the controller. */
+  harnessServerUrl: string;
 }
 
 /**
@@ -23,7 +24,7 @@ export interface BuiltinContributionsOpts {
 export function createBuiltinContributions(
   opts: BuiltinContributionsOpts,
 ): BuiltinContributions {
-  const base = opts.harnessBaseUrl.replace(/\/+$/, "");
+  const base = opts.harnessServerUrl.replace(/\/+$/, "");
   return {
     for(agentId: string): Contribution[] {
       return [

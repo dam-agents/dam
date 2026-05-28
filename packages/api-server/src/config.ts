@@ -31,13 +31,13 @@ const configSchema = z.object({
   releaseName: z.string().min(1, "PLATFORM_RELEASE_NAME must be set"),
   port: z.coerce.number().default(4000),
   harnessServerPort: z.coerce.number().default(4001),
-  /** Base URL of the api-server's harness Service as the paired gateway
+  /** URL of the api-server's harness Service as the paired gateway
    *  pod's Envoy sees it (e.g.
    *  `http://<rel>-apiserver-harness.<rel-ns>.svc.cluster.local:4001`).
    *  Used to render the `platform-outbound` builtin MCP entry pushed to
-   *  every agent via the runtime channel. Same shape the controller
-   *  injects into agent pods as `PLATFORM_MCP_URL`'s base. */
-  harnessBaseUrl: z.string().url(),
+   *  every agent via the runtime channel. Same env (`PLATFORM_HARNESS_SERVER_URL`)
+   *  and shape the controller consumes — one name across the platform. */
+  harnessServerUrl: z.string().url(),
   /** gRPC ext_authz listener — serves both Envoy's HTTP filter (L7,
    *  TLS-terminated chains) and network filter (L4, catch-all). */
   extAuthzPort: z.coerce.number().default(4002),
@@ -141,7 +141,7 @@ export function loadConfig(): Config {
     releaseName: process.env.PLATFORM_RELEASE_NAME,
     port: process.env.PORT,
     harnessServerPort: process.env.MCP_PORT,
-    harnessBaseUrl: process.env.PLATFORM_HARNESS_BASE_URL,
+    harnessServerUrl: process.env.PLATFORM_HARNESS_SERVER_URL,
     extAuthzPort: process.env.EXT_AUTHZ_PORT,
     databaseUrl: process.env.DATABASE_URL,
     migrationsPath: process.env.MIGRATIONS_PATH,

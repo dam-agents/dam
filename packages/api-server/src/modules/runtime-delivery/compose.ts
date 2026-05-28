@@ -50,10 +50,11 @@ export interface ComposeRuntimeDeliveryOpts {
   namespace: string;
   bullConnection: ConnectionOptions;
   agentRunningPort: IsAgentRunning;
-  /** Base URL of the api-server harness Service used to render the
+  /** URL of the api-server harness Service used to render the
    *  `platform-outbound` builtin MCP entry (e.g.
-   *  `http://<rel>-apiserver-harness.<rel-ns>.svc.cluster.local:4001`). */
-  harnessBaseUrl: string;
+   *  `http://<rel>-apiserver-harness.<rel-ns>.svc.cluster.local:4001`).
+   *  Sourced from `PLATFORM_HARNESS_SERVER_URL`, matching the controller. */
+  harnessServerUrl: string;
   log?: (msg: string) => void;
 }
 
@@ -65,7 +66,7 @@ export function composeRuntimeDelivery(
   const outboxRepo = createOutboxRepo(opts.db);
   const agentsRuntimeRepo = createAgentsRuntimeRepo(opts.db);
   const builtin = createBuiltinContributions({
-    harnessBaseUrl: opts.harnessBaseUrl,
+    harnessServerUrl: opts.harnessServerUrl,
   });
   const stateBuilder = createStateBuilder({ db: opts.db, outboxRepo, builtin });
   const queue = createStateQueue(opts.bullConnection);
