@@ -44,10 +44,10 @@
 
 | Harness | Description |
 |---|---|
-| **Claude Code** | General-purpose coding, debugging, refactoring, and review |
-| **Pi Agent** | Multi-model coding across GPT-4, Gemini, Mistral, and more |
-| **Bob** | IBM's AI coding tool |
-| **Codex** | OpenAI-powered coding with compatible endpoints |
+| **Claude Code** | General-purpose coding, debugging, refactoring, and review. |
+| **Pi Agent** | Multi-model coding across GPT-4, Gemini, Mistral, and more. |
+| **Bob** | IBM's general-purpose coding tool. |
+| **Codex** | OpenAI-powered coding with compatible endpoints. |
 
 Bring your own harness — any runtime compatible with [ACP](https://agentclientprotocol.com/get-started/introduction) can run on DAM.
 
