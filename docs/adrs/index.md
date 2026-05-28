@@ -19,7 +19,7 @@ This directory contains ADRs for the Platform project.
 | [011](011-skills-claude-marketplace.md)       | Skills via Claude plugin marketplace — superseded by ADR-030 | @pilartomas |
 | [012](012-runtime-lifetime.md)                | Runtime lifetime — single-use Jobs | @JanPokorny |
 | [013](013-ui-approach.md)                     | UI approach — chat-primary, dashboard for inspection | @PetrBulanek |
-| [014](014-integration-testing.md)             | E2E integration testing against dedicated k3s cluster | @tomkis |
+| [014](014-integration-testing.md)             | E2E integration testing against dedicated k3s cluster — superseded by ADR-055 | @tomkis |
 | [015](015-multi-user-auth.md)                 | Multi-user auth via Keycloak + OneCLI fork with token exchange | @tomkis |
 | [016](016-messenger-integration.md)           | Messenger integration handled by API Server | @tomkis |
 | [017](017-db-backed-sessions.md)              | DB-backed ACP sessions for metadata | @tomkis |
@@ -59,6 +59,7 @@ This directory contains ADRs for the Platform project.
 | [052](052-runtime-channel.md)                 | Unified runtime channel — state snapshot plus event stream between api-server and agent-runtime | @jezekra1 |
 | [053](053-runtime-outbox-worker.md)           | Transactional outbox + worker for runtime-channel delivery | @jezekra1 |
 | [054](054-keycloak-theme.md)                  | Branded Keycloak login via Keycloakify-built custom image | @kapetr |
+| [055](055-browser-driven-e2e.md)              | Browser-driven E2E tracer with values-gated test affordances | @tomkis |
 
 ## Drafts
 
