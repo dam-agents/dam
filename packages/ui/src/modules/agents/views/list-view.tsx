@@ -99,25 +99,26 @@ export function ListView() {
             title="Add your first agent"
             description={
               <>
-                Agents are AI harnesses — Claude Code, Codex, Gemini CLI — that
-                run headless in the cloud. They keep working between sessions,
-                so you can close your laptop, come back later, and pick up where
-                the agent left off.
+                An agent is a running AI assistant with its own persistent
+                workspace, credential access, and configuration.
               </>
             }
             bullets={[
               <>
-                <span className="font-semibold">Persistent</span> — keeps state
-                and context across sessions.
+                <span className="font-semibold">Compute pod</span> — an isolated
+                Linux environment running the AI harness.
               </>,
               <>
-                <span className="font-semibold">Network-isolated</span> — only
-                reaches hosts you allow, with credentials injected at the
-                gateway.
+                <span className="font-semibold">Persistent workspace</span> —
+                survives restarts and hibernation.
               </>,
               <>
-                <span className="font-semibold">Schedulable</span> — trigger an
-                agent on a cron and let it work while you're away.
+                <span className="font-semibold">Credential gateway</span> — a
+                paired security pod that injects your tokens on the wire.
+              </>,
+              <>
+                <span className="font-semibold">Network isolation</span> — the
+                agent can only reach services you explicitly allow.
               </>,
             ]}
             action={

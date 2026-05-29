@@ -50,10 +50,6 @@ import {
 import { cn } from "@/lib/utils";
 
 import { api } from "../../../api.js";
-import {
-  ConnectionsPicker,
-  type OAuthAppEntry,
-} from "../../../components/connections-picker.js";
 import type { EmptyStatePalette } from "../../../components/empty-state.js";
 import { FormField } from "../../../components/form-field.js";
 import { HoverTooltip } from "../../../components/hover-tooltip.js";
@@ -78,8 +74,6 @@ import {
 } from "../../files/api/import-bundle.js";
 import { useSecrets } from "../../secrets/api/queries.js";
 import { PROVIDER_CARDS } from "../../settings/components/provider-cards.js";
-import { PROVIDER_DESCRIPTIONS } from "../../settings/components/provider-chooser-dialog.js";
-import { CardIcon } from "../../settings/components/shared/card-icon.js";
 import {
   addAgentSchema,
   type AddAgentValues,
@@ -98,8 +92,7 @@ type Step =
   | "browse"
   | "setup"
   | "connections"
-  | "skills"
-  | "network";
+  | "skills";
 
 // Three top-level starting paths surfaced after the provider is set.
 // `null` shows the lane picker; choosing a lane reveals that lane's
@@ -117,6 +110,7 @@ export function AddAgentDialog({
   templates,
   onSubmit,
   onCancel,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   onGoToProviders,
 }: {
   templates: TemplateView[];
@@ -141,6 +135,9 @@ export function AddAgentDialog({
   // ("pick") frames the three starting paths.
   const [step, setStep] = useState<Step>("provider");
   const [lane, setLane] = useState<Lane | null>(null);
+  const [pendingLane, setPendingLane] = useState<Lane | null>(null);
+  const [pendingAgentTemplate, setPendingAgentTemplate] =
+    useState<AgentTemplate | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateView | null>(
     null,
   );
@@ -248,7 +245,7 @@ export function AddAgentDialog({
     appendEntries(incoming);
   };
 
-  const { data: secrets = [], isLoading: loadSecrets } = useSecrets();
+  const { data: secrets = [] } = useSecrets();
   const { data: apps = [] } = useAppConnections();
   const { data: connectionTemplates = [] } = useConnectionTemplates();
   // Prefer the real backend template when available (lets the OAuth
@@ -332,40 +329,8 @@ export function AddAgentDialog({
       : [...current, id].sort();
     setValue("selSecrets", next, { shouldDirty: true, shouldValidate: true });
   };
-  const toggleApp = (id: string) => {
-    const current = getValues("selApps");
-    const next = current.includes(id)
-      ? current.filter((x) => x !== id)
-      : [...current, id].sort();
-    setValue("selApps", next, { shouldDirty: true });
-  };
-
   const selSecrets = watch("selSecrets");
-  const selApps = watch("selApps");
   const selSecretsSet = useMemo(() => new Set(selSecrets), [selSecrets]);
-  const selAppsSet = useMemo(() => new Set(selApps), [selApps]);
-
-  // Template lane's connections step gates Continue on every required
-  // connection being in `active` status — i.e. the user actually
-  // completed OAuth, not just opened the popup. `pending` records
-  // (handshake started, never returned) explicitly don't count, same
-  // filter the connections page applies. Scratch / custom lanes have
-  // no required connections, so they pass straight through.
-  const requiredMet = useMemo(() => {
-    if (lane !== "template") return true;
-    const ids = selectedAgentTemplate?.requiredConnectionIds ?? [];
-    if (ids.length === 0) return true;
-    return ids.every((tid) =>
-      (apps as unknown as AppConnectionView[]).some(
-        (c) => c.templateId === tid && c.status === "active",
-      ),
-    );
-  }, [lane, selectedAgentTemplate, apps]);
-
-  // Join the api-server-driven OAuth app connections with their K8s
-  // credential Secrets so the picker can render them in the "Apps"
-  // subsection while the grant flows through the secret-access mechanism.
-  const oauthAppEntries: OAuthAppEntry[] = [];
 
   const pickTemplate = (tmpl: TemplateView) => {
     setSelectedTemplate(tmpl);
@@ -385,7 +350,7 @@ export function AddAgentDialog({
     setValue("name", "");
     setValue("description", "");
     trigger();
-    setStep("basics");
+    setStep("setup");
   };
 
   // Wizard nav. `next` validates the leaving step's required fields
@@ -410,9 +375,7 @@ export function AddAgentDialog({
     } else if (step === "connections") {
       setStep("skills");
     } else if (step === "skills") {
-      // Scratch and template lanes end at skills (Create agent button
-      // renders there). Custom-image lane still walks through network.
-      if (lane === "custom") setStep("network");
+      // All lanes end at skills — Create agent button renders there.
     }
   };
   const goBack = () => {
@@ -439,17 +402,10 @@ export function AddAgentDialog({
         setLane(null);
         setSelectedTemplate(null);
       }
-    } else if (step === "basics") {
-      // Custom lane only — return to the lane picker (provider was
-      // already handled at the top of the wizard).
-      setStep("pick");
-      setLane(null);
     } else if (step === "connections") {
-      setStep(lane === "scratch" || lane === "template" ? "setup" : "basics");
+      setStep("setup");
     } else if (step === "skills") {
       setStep("connections");
-    } else if (step === "network") {
-      setStep("skills");
     }
   };
 
@@ -503,8 +459,7 @@ export function AddAgentDialog({
     // from Enter pressed in an inner input. We only want submit to fire from
     // the final step's "Create agent" click — anything earlier is a bug, and
     // silently swallowing it preserves the user's place in the wizard.
-    const finalStep: Step = lane === "custom" ? "network" : "skills";
-    if (step !== finalStep) return;
+    if (step !== "skills") return;
     // ADR-040: env contributions from granted secrets/apps are merged at
     // pod-render time by the controller. Don't pre-stamp them onto the
     // agent spec.
@@ -575,15 +530,17 @@ export function AddAgentDialog({
             <DialogTitle>
               {step === "provider"
                 ? "Pick a provider"
-                : step === "browse"
-                  ? "Browse template catalog"
-                  : step === "connections" &&
-                      (lane === "scratch" || lane === "template")
-                    ? "Add connections"
-                    : step === "skills" &&
-                        (lane === "scratch" || lane === "template")
-                      ? "Add skills"
-                      : "Add Agent"}
+                : step === "pick" && lane === "custom"
+                  ? "Custom image"
+                  : step === "browse"
+                    ? "Browse template catalog"
+                    : step === "connections"
+                      ? "Add connections"
+                      : step === "skills"
+                        ? "Add skills"
+                        : step === "setup"
+                          ? "Set up your agent"
+                          : "Add Agent"}
             </DialogTitle>
             {step === "provider" && (
               <DialogDescription>
@@ -596,20 +553,24 @@ export function AddAgentDialog({
                 Choose how you want to start
               </DialogDescription>
             )}
-            {step === "connections" &&
-              (lane === "scratch" || lane === "template") && (
-                <DialogDescription>
-                  Pick which credentials, apps, and MCP servers this agent can
-                  reach
-                </DialogDescription>
-              )}
-            {step === "skills" &&
-              (lane === "scratch" || lane === "template") && (
-                <DialogDescription>
-                  Pick which skills this agent should ship with — or add a new
-                  source.
-                </DialogDescription>
-              )}
+            {step === "pick" && lane === "custom" && (
+              <DialogDescription>
+                Bring your own ACP-compatible agent image — for harnesses
+                you've built or specialized runtimes that need bundled CLIs.
+              </DialogDescription>
+            )}
+            {step === "connections" && (
+              <DialogDescription>
+                Pick which credentials, apps, and MCP servers this agent can
+                reach
+              </DialogDescription>
+            )}
+            {step === "skills" && (
+              <DialogDescription>
+                Pick which skills this agent should ship with — or add a new
+                source.
+              </DialogDescription>
+            )}
           </DialogHeader>
 
           {/* Lane picker → wizard. The provider chooser used to live at
@@ -620,10 +581,19 @@ export function AddAgentDialog({
           {step === "pick" ? (
             lane === null ? (
               <>
-                <LanePicker onPick={handleLanePick} />
+                <LanePicker selected={pendingLane} onSelect={setPendingLane} />
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={goBack}>
                     <ArrowLeft size={14} /> Back
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={!pendingLane}
+                    onClick={() => {
+                      if (pendingLane) handleLanePick(pendingLane);
+                    }}
+                  >
+                    Continue <ArrowRight size={14} />
                   </Button>
                 </DialogFooter>
               </>
@@ -652,40 +622,44 @@ export function AddAgentDialog({
                 )}
               </LaneFrame>
             ) : lane === "template" ? null : (
-              <LaneFrame
-                title="Custom image"
-                description="Bring your own ACP-compatible agent image — for harnesses you've built or specialized runtimes that need bundled CLIs."
-                onBack={() => setLane(null)}
-              >
-                <div className="flex gap-2">
-                  <Input
-                    value={customImage}
-                    onChange={(e) => setCustomImage(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        pickCustom();
-                      }
+              <>
+                <Input
+                  value={customImage}
+                  onChange={(e) => setCustomImage(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      pickCustom();
+                    }
+                  }}
+                  placeholder="ghcr.io/org/agent:latest"
+                  autoFocus
+                />
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setLane(null);
+                      setCustomImage("");
                     }}
-                    placeholder="ghcr.io/org/agent:latest"
-                    autoFocus
-                  />
+                  >
+                    <ArrowLeft size={14} /> Back
+                  </Button>
                   <Button
                     type="button"
                     onClick={pickCustom}
                     disabled={!customImage.trim()}
-                    className="shrink-0"
                   >
-                    Use
+                    Continue <ArrowRight size={14} />
                   </Button>
-                </div>
-              </LaneFrame>
+                </DialogFooter>
+              </>
             )
           ) : step === "provider" ||
             step === "browse" ||
             step === "setup" ||
-            ((lane === "scratch" || lane === "template") &&
-              (step === "connections" || step === "skills")) ? null : (
+            (step === "connections" || step === "skills") ? null : (
             <>
               {/* Persistent image readout — shown on most non-pick,
                   non-setup steps so the user can always see what
@@ -735,11 +709,24 @@ export function AddAgentDialog({
               submit; advancing to setup is what mounts the form. */}
           {step === "browse" && (
             <>
-              <BrowseTemplatesStep onPick={pickAgentTemplate} />
+              <BrowseTemplatesStep
+                selected={pendingAgentTemplate}
+                onSelect={setPendingAgentTemplate}
+              />
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={goBack}>
                   <ArrowLeft size={14} />
                   Back
+                </Button>
+                <Button
+                  type="button"
+                  disabled={!pendingAgentTemplate}
+                  onClick={() => {
+                    if (pendingAgentTemplate)
+                      pickAgentTemplate(pendingAgentTemplate);
+                  }}
+                >
+                  Continue <ArrowRight size={14} />
                 </Button>
               </DialogFooter>
             </>
@@ -771,22 +758,10 @@ export function AddAgentDialog({
           {(step === "setup" ||
             step === "basics" ||
             step === "connections" ||
-            step === "skills" ||
-            step === "network") && (
+            step === "skills") && (
             <form onSubmit={submitForm} className="contents">
               {(step === "basics" || step === "setup") && (
                 <>
-                  {step === "setup" &&
-                    lane === "template" &&
-                    selectedAgentTemplate && (
-                      <p className="text-[12px] text-muted-foreground leading-relaxed -mb-1">
-                        Pre-filled from{" "}
-                        <span className="font-semibold text-foreground">
-                          {selectedAgentTemplate.name}
-                        </span>{" "}
-                        template — edit anything.
-                      </p>
-                    )}
                   <FormField label="Name" error={errors.name?.message}>
                     <Input
                       placeholder="my-agent"
@@ -987,7 +962,7 @@ export function AddAgentDialog({
                         className={cn(
                           "rounded-lg border border-dashed px-4 py-6 transition-colors flex flex-col items-center gap-3 text-center",
                           dropActive
-                            ? "border-primary bg-primary/5"
+                            ? "border-foreground"
                             : "border-border hover:border-foreground/30",
                         )}
                       >
@@ -1061,8 +1036,7 @@ export function AddAgentDialog({
                 </>
               )}
 
-              {step === "connections" &&
-                (lane === "scratch" || lane === "template") && (
+              {step === "connections" && (
                   <ScratchConnectionsStep
                     templates={connectionTemplates}
                     connections={apps as unknown as AppConnectionView[]}
@@ -1073,22 +1047,6 @@ export function AddAgentDialog({
                         ? (selectedAgentTemplate?.requiredConnectionIds ?? [])
                         : []
                     }
-                  />
-                )}
-
-              {step === "connections" &&
-                lane !== "scratch" &&
-                lane !== "template" && (
-                  <ConnectionsPicker
-                    loading={loadSecrets}
-                    secrets={secrets}
-                    apps={apps as unknown as AppConnectionView[]}
-                    oauthApps={oauthAppEntries}
-                    selSecrets={selSecretsSet}
-                    selApps={selAppsSet}
-                    onToggleSecret={toggleSecret}
-                    onToggleApp={toggleApp}
-                    onGoToProviders={onGoToProviders}
                   />
                 )}
 
@@ -1109,7 +1067,7 @@ export function AddAgentDialog({
                 />
               )}
 
-              {(step === "network" || step === "setup") && (
+              {step === "setup" && (
                 <fieldset className="flex flex-col gap-2">
                   <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.05em]">
                     Network access
@@ -1199,9 +1157,7 @@ export function AddAgentDialog({
                     now-submit Create button and the wizard skipped Skills
                     entirely. Routing both branches through onClick keeps the
                     submit gated behind the wizard's own state machine. */}
-                {step === "network" ||
-                (step === "skills" &&
-                  (lane === "scratch" || lane === "template")) ? (
+                {step === "skills" ? (
                   <Button
                     type="button"
                     onClick={() => void submitForm()}
@@ -1210,22 +1166,7 @@ export function AddAgentDialog({
                     Create agent
                   </Button>
                 ) : (
-                  <Button
-                    type="button"
-                    onClick={goNext}
-                    disabled={
-                      step === "connections" &&
-                      lane === "template" &&
-                      !requiredMet
-                    }
-                    title={
-                      step === "connections" &&
-                      lane === "template" &&
-                      !requiredMet
-                        ? "Connect required apps to continue"
-                        : undefined
-                    }
-                  >
+                  <Button type="button" onClick={goNext}>
                     {step === "setup" ? "Continue" : "Next"}{" "}
                     <ArrowRight size={14} />
                   </Button>
@@ -1295,83 +1236,59 @@ function ProviderPickerSection({
 }) {
   const PickedCard = picked ? PROVIDER_CARDS[picked] : null;
 
+  const handleValueChange = (value: string) => {
+    const existing = providerSecrets.find((s) => s.id === value);
+    if (existing) {
+      onSelectProviderSecret(existing.id);
+      onPick(null);
+    } else if ((PROVIDER_PRESET_TYPES as readonly string[]).includes(value)) {
+      onPick(value as ProviderPresetType);
+    }
+  };
+
+  const selectedValue =
+    selectedProviderSecretId ??
+    (picked && !providerSecrets.find((s) => s.type === picked) ? picked : "");
+
   return (
     <div className="flex flex-col gap-3">
-      <ul className="flex flex-col gap-2">
-        {PROVIDER_PRESET_TYPES.map((id) => {
-          const meta = PROVIDERS[id];
-          const existing = providerSecrets.find((s) => s.type === id);
-          const configured = !!existing;
-          const isSelected =
-            configured && existing.id === selectedProviderSecretId;
-          const isPicked = picked === id;
-
-          const handleClick = () => {
-            if (configured) {
-              onSelectProviderSecret(existing.id);
-              if (picked) onPick(null);
-            } else {
-              onPick(id);
-            }
-          };
-
-          return (
-            <li key={id}>
-              <button
-                type="button"
-                onClick={handleClick}
-                aria-pressed={isSelected || isPicked}
-                className={cn(
-                  "w-full flex items-center gap-3 rounded-xl border bg-background px-4 py-3 text-left transition-colors",
-                  isSelected || isPicked
-                    ? "border-primary bg-primary/5"
-                    : "hover:border-foreground/30 hover:bg-muted/30",
-                )}
-              >
-                <CardIcon provider={id} />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[14px] font-semibold text-foreground">
-                      {meta.displayName}
-                    </span>
-                    {configured && (
-                      <Badge variant="secondary" className="gap-1">
+      <Select value={selectedValue} onValueChange={handleValueChange}>
+        <SelectTrigger>
+          <SelectValue placeholder="Select a provider" />
+        </SelectTrigger>
+        <SelectContent>
+          {providerSecrets.length > 0 && (
+            <>
+              {providerSecrets.map((s) => {
+                const meta =
+                  PROVIDERS[s.type as ProviderPresetType] ?? undefined;
+                return (
+                  <SelectItem key={s.id} value={s.id}>
+                    <span className="flex items-center gap-2">
+                      <span>{meta?.displayName ?? s.name}</span>
+                      <Badge variant="secondary" className="gap-1 text-[10px]">
                         <Checkmark className="h-3 w-3" /> Connected
                       </Badge>
-                    )}
-                  </div>
-                  <div className="text-[12px] text-muted-foreground leading-snug mt-0.5">
-                    {PROVIDER_DESCRIPTIONS[id]}
-                  </div>
-                </div>
-                {isSelected && (
-                  <Checkmark className="h-5 w-5 shrink-0 text-primary" />
-                )}
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+                    </span>
+                  </SelectItem>
+                );
+              })}
+            </>
+          )}
+          {PROVIDER_PRESET_TYPES.filter(
+            (id) => !providerSecrets.some((s) => s.type === id),
+          ).map((id) => (
+            <SelectItem key={id} value={id}>
+              {PROVIDERS[id].displayName}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
 
       {PickedCard && (
-        <Card className="bg-primary/5 p-4 flex flex-col gap-3 anim-in">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] font-bold uppercase tracking-[0.05em] text-primary">
-              Adding {PROVIDERS[picked!].displayName}
-            </span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6"
-              onClick={() => onPick(null)}
-              aria-label="Cancel adding provider"
-            >
-              <X size={14} />
-            </Button>
-          </div>
+        <div className="flex flex-col gap-3 anim-in">
           <PickedCard secret={undefined} />
-        </Card>
+        </div>
       )}
     </div>
   );
@@ -1494,60 +1411,14 @@ const AGENT_TEMPLATES: ReadonlyArray<AgentTemplate> = [
     harnessHint: "claude-code",
     defaultName: "gw-agent",
     defaultDescription: "Triages inbox, agenda, and drive activity.",
-    requiredConnectionIds: ["gmail"],
-    optionalConnectionIds: ["github", "google-drive", "google-calendar"],
+    requiredConnectionIds: ["gmail", "google-drive"],
+    optionalConnectionIds: ["github", "google-calendar"],
     preselectedSkills: ["gmail-triage", "calendar-agenda", "drive-manage"],
     bundledSkills: [
       {
         name: "inbox-summary",
         description:
           "Scan + categorize inbox, identify action items, surface unread threads worth answering.",
-      },
-    ],
-  },
-  {
-    id: "code-guardian",
-    name: "Code Guardian",
-    description: "Review tool — flags style + safety issues on PRs.",
-    readmeUrl:
-      "https://github.com/anthropics/agent-templates/tree/main/code-guardian",
-    harnessHint: "claude-code",
-    defaultName: "code-guardian",
-    defaultDescription: "Reviews open PRs and posts style + safety findings.",
-    requiredConnectionIds: ["github"],
-    optionalConnectionIds: [],
-    preselectedSkills: ["pr-review", "style-check"],
-    bundledSkills: [
-      {
-        name: "pr-review",
-        description:
-          "Walks PR diffs, flags risky changes and suggests improvements.",
-      },
-      {
-        name: "style-check",
-        description:
-          "Checks code style, naming, and lint consistency before approval.",
-      },
-    ],
-  },
-  {
-    id: "linear-triage",
-    name: "Linear triage",
-    description: "Auto-label + assign new Linear issues.",
-    readmeUrl:
-      "https://github.com/anthropics/agent-templates/tree/main/linear-triage",
-    harnessHint: "claude-code",
-    defaultName: "linear-triage",
-    defaultDescription:
-      "Watches Linear for new issues and routes them to the right team.",
-    requiredConnectionIds: ["linear"],
-    optionalConnectionIds: [],
-    preselectedSkills: ["triage-linear"],
-    bundledSkills: [
-      {
-        name: "triage-linear",
-        description:
-          "Classifies new Linear issues by area and assigns them to the right owner.",
       },
     ],
   },
@@ -1560,28 +1431,29 @@ const AGENT_TEMPLATES: ReadonlyArray<AgentTemplate> = [
  * advances to setup.
  */
 function BrowseTemplatesStep({
-  onPick,
+  selected,
+  onSelect,
 }: {
-  onPick: (tmpl: AgentTemplate) => void;
+  selected: AgentTemplate | null;
+  onSelect: (tmpl: AgentTemplate) => void;
 }) {
   return (
     <fieldset className="flex flex-col gap-3 anim-in">
-      <p className="text-[12px] text-muted-foreground leading-relaxed">
-        Pulled from GitHub. Click any title to view its README.
-      </p>
       <div className="flex flex-col gap-2">
         {AGENT_TEMPLATES.map((tmpl) => {
+          const isSelected = selected?.id === tmpl.id;
           const requiredCount = tmpl.requiredConnectionIds.length;
           const bundledCount = tmpl.bundledSkills.length;
           return (
             <button
               key={tmpl.id}
               type="button"
-              onClick={() => onPick(tmpl)}
+              onClick={() => onSelect(tmpl)}
               className={cn(
                 "group flex items-start gap-3 rounded-lg border bg-background px-4 py-3 text-left",
                 "transition-colors hover:border-foreground/30 hover:bg-muted/30",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                isSelected && "border-foreground",
               )}
             >
               <span className="flex-1 min-w-0 flex flex-col gap-1">
@@ -1617,11 +1489,6 @@ function BrowseTemplatesStep({
                   )}
                 </span>
               </span>
-              <ArrowRight
-                size={14}
-                className="text-muted-foreground shrink-0 mt-1.5 transition-transform group-hover:translate-x-0.5"
-                aria-hidden
-              />
             </button>
           );
         })}
@@ -1644,54 +1511,28 @@ const BUNDLED_SKILLS: ReadonlyArray<{ name: string; description: string }> = [
   },
 ];
 
-function BundledSkillsCard() {
-  return (
-    <ReadOnlySkillsCard
-      heading="Bundled with this agent"
-      badge="Auto-installed"
-      skills={BUNDLED_SKILLS}
-    />
-  );
-}
-
-/**
- * Read-only, pre-checked skills card. Used both for platform-base
- * bundled skills (rendered for every lane) and for template-specific
- * "Your skills" entries that ship with an opinionated agent template.
- * Visually consistent so the user sees one card style for "skills you
- * don't need to pick — they're already coming with you."
- */
-function ReadOnlySkillsCard({
-  heading,
-  badge,
+function BundledSkillsList({
   skills,
+  heading,
 }: {
-  heading: string;
-  badge: string;
   skills: ReadonlyArray<{ name: string; description: string }>;
+  heading: string;
 }) {
+  if (skills.length === 0) return null;
   return (
-    <Card className="overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-2.5 bg-muted/20">
-        <span className="text-[13px] font-semibold text-foreground flex-1">
-          {heading}
-        </span>
-        <Badge variant="secondary" className="shrink-0">
-          {badge}
-        </Badge>
-      </div>
-      <div className="border-t flex flex-col">
+    <div className="flex flex-col gap-2">
+      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.05em]">
+        {heading}
+      </span>
+      <div className="flex flex-col gap-1.5">
         {skills.map((skill) => (
-          <div
-            key={skill.name}
-            className="flex items-start gap-2.5 px-4 py-2.5 border-t first:border-t-0"
-          >
+          <div key={skill.name} className="flex items-start gap-2.5 py-1">
             <Checkmark
-              size={16}
+              size={14}
               className="mt-0.5 shrink-0 text-muted-foreground"
             />
             <span className="flex flex-col gap-0.5 min-w-0">
-              <span className="text-[13px] font-semibold text-foreground">
+              <span className="text-[13px] font-medium text-foreground">
                 {skill.name}
               </span>
               <span className="text-[12px] text-muted-foreground leading-snug">
@@ -1701,7 +1542,7 @@ function ReadOnlySkillsCard({
           </div>
         ))}
       </div>
-    </Card>
+    </div>
   );
 }
 
@@ -1874,91 +1715,56 @@ function SkillsCatalogStep({
     }
   };
 
+  const allBundled = [
+    ...templateBundledSkills,
+    ...BUNDLED_SKILLS,
+  ];
+
   return (
-    <fieldset className="flex flex-col gap-4 anim-in">
-      {templateBundledSkills.length > 0 && (
-        <ReadOnlySkillsCard
-          heading="Your skills"
-          badge="From template"
-          skills={templateBundledSkills}
-        />
-      )}
-      {/* Bundled skills ship inside the platform-base image and are
-          installed automatically at agent boot — they're already on
-          disk by the time the user sees the running agent's config in
-          the chat UI. Surface them here at create time as read-only
-          entries so the wizard previews the full picture rather than
-          only the user-installable catalog. Keep this list in sync
-          with packages/platform-base/skills/. */}
-      <BundledSkillsCard />
+    <fieldset className="flex flex-col gap-5 anim-in">
+      <BundledSkillsList
+        heading="Bundled with this agent"
+        skills={allBundled}
+      />
+
       {loadingSources ? (
         <p className="text-[12px] text-muted-foreground">Loading skills…</p>
-      ) : sources.length === 0 && !showAdd ? (
-        <p className="text-[13px] text-muted-foreground">
-          No skill sources yet
-        </p>
-      ) : (
-        <div className="flex flex-col gap-2">
+      ) : sources.length === 0 && !showAdd ? null : (
+        <div className="flex flex-col gap-3">
           {sources.map((src) => {
             const isCollapsed = collapsed.has(src.id);
             const list = skillsBySource[src.id] ?? [];
             const loading = !!loadingBySource[src.id];
             const error = errorBySource[src.id];
             return (
-              <Card key={src.id} className="overflow-hidden">
+              <div key={src.id} className="flex flex-col gap-1.5">
                 <button
                   type="button"
                   onClick={() => toggleCollapse(src.id)}
-                  className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-muted/30 transition-colors"
+                  className="flex items-center gap-1.5 text-[12px] font-semibold text-muted-foreground hover:text-foreground self-start"
                   aria-expanded={!isCollapsed}
                 >
                   {isCollapsed ? (
-                    <ChevronRight
-                      size={14}
-                      className="text-muted-foreground shrink-0"
-                    />
+                    <ChevronRight size={13} />
                   ) : (
-                    <ChevronDown
-                      size={14}
-                      className="text-muted-foreground shrink-0"
-                    />
+                    <ChevronDown size={13} />
                   )}
-                  <span className="text-[13px] font-semibold text-foreground flex-1 truncate">
-                    {src.name}
-                  </span>
-                  {src.system && (
-                    <Badge variant="secondary" className="shrink-0">
-                      Platform
-                    </Badge>
-                  )}
-                  {src.fromTemplate && (
-                    <Badge variant="secondary" className="shrink-0">
-                      Agent
-                    </Badge>
-                  )}
-                  <span
-                    className="text-[11px] text-muted-foreground truncate max-w-[180px] font-mono"
-                    title={src.gitUrl}
-                  >
-                    {src.gitUrl.replace(/^https:\/\/github\.com\//, "")}
-                  </span>
+                  {src.name}
                 </button>
                 {!isCollapsed && (
-                  <div className="border-t flex flex-col">
+                  <div className="flex flex-col gap-1.5 pl-1">
                     {loading && (
-                      <div className="px-4 py-3 text-[12px] text-muted-foreground">
+                      <p className="text-[12px] text-muted-foreground">
                         Scanning skills…
-                      </div>
+                      </p>
                     )}
                     {!loading && error && (
-                      <div className="px-4 py-3 text-[12px] text-destructive bg-destructive/5">
-                        {error}
-                      </div>
+                      <p className="text-[12px] text-destructive">{error}</p>
                     )}
                     {!loading && !error && list.length === 0 && (
-                      <div className="px-4 py-3 text-[12px] text-muted-foreground">
+                      <p className="text-[12px] text-muted-foreground">
                         No skills in this source.
-                      </div>
+                      </p>
                     )}
                     {!loading &&
                       !error &&
@@ -1969,10 +1775,7 @@ function SkillsCatalogStep({
                           <Label
                             key={key}
                             htmlFor={`skill-${key}`}
-                            className={cn(
-                              "flex items-start gap-2.5 px-4 py-2.5 cursor-pointer transition-colors border-t first:border-t-0",
-                              checked ? "bg-primary/5" : "hover:bg-muted/30",
-                            )}
+                            className="flex items-start gap-2.5 py-1.5 cursor-pointer"
                           >
                             <input
                               id={`skill-${key}`}
@@ -1982,7 +1785,7 @@ function SkillsCatalogStep({
                               className="mt-0.5 h-4 w-4 shrink-0 rounded border-input accent-primary"
                             />
                             <span className="flex flex-col gap-0.5 min-w-0">
-                              <span className="text-[13px] font-semibold text-foreground">
+                              <span className="text-[13px] font-medium text-foreground">
                                 {skill.name}
                               </span>
                               {skill.description && (
@@ -1996,7 +1799,7 @@ function SkillsCatalogStep({
                       })}
                   </div>
                 )}
-              </Card>
+              </div>
             );
           })}
         </div>
@@ -2270,9 +2073,6 @@ function RequiredTemplateRow({
           </span>
         )}
       </span>
-      <Badge variant="secondary" className="shrink-0">
-        Required
-      </Badge>
       <Button type="button" size="sm" onClick={onConnect}>
         Connect
       </Button>
@@ -2469,7 +2269,13 @@ function ImportFileRow({
  * empty-state palettes (aurora / sunset / forest) so the lanes read
  * consistently with the surrounding empty-state vocabulary.
  */
-function LanePicker({ onPick }: { onPick: (lane: Lane) => void }) {
+function LanePicker({
+  selected,
+  onSelect,
+}: {
+  selected: Lane | null;
+  onSelect: (lane: Lane) => void;
+}) {
   return (
     <div className="flex flex-col gap-2 anim-in">
       <LaneCard
@@ -2478,7 +2284,8 @@ function LanePicker({ onPick }: { onPick: (lane: Lane) => void }) {
         icon={<DocumentAdd size={20} />}
         title="Start from scratch"
         description="Start with a simple harness, and build from there."
-        onClick={() => onPick("scratch")}
+        selected={selected === "scratch"}
+        onClick={() => onSelect("scratch")}
       />
       <LaneCard
         lane="template"
@@ -2486,7 +2293,8 @@ function LanePicker({ onPick }: { onPick: (lane: Lane) => void }) {
         icon={<Extensions size={20} />}
         title="Start from a template"
         description="Pre-configured agent with skills, prompts, and connections"
-        onClick={() => onPick("template")}
+        selected={selected === "template"}
+        onClick={() => onSelect("template")}
       />
       <LaneCard
         lane="custom"
@@ -2495,7 +2303,8 @@ function LanePicker({ onPick }: { onPick: (lane: Lane) => void }) {
         title="Custom image"
         badge="Advanced"
         description="Bring your own ACP-compatible image — for harnesses you've built yourself."
-        onClick={() => onPick("custom")}
+        selected={selected === "custom"}
+        onClick={() => onSelect("custom")}
       />
     </div>
   );
@@ -2507,11 +2316,22 @@ function LanePicker({ onPick }: { onPick: (lane: Lane) => void }) {
  * palette identity. `palette` is retained on the type for symmetry
  * with the empty states but no longer drives the swatch color.
  */
+const LANE_ICON_GRADIENT: Record<EmptyStatePalette, string> = {
+  aurora:
+    "linear-gradient(135deg, rgba(120, 169, 255, 0.35), rgba(190, 149, 255, 0.35))",
+  sunset:
+    "linear-gradient(135deg, rgba(255, 174, 107, 0.35), rgba(255, 131, 137, 0.35))",
+  forest:
+    "linear-gradient(135deg, rgba(130, 207, 255, 0.35), rgba(8, 189, 186, 0.35))",
+};
+
 function LaneCard({
+  palette,
   icon,
   title,
   badge,
   description,
+  selected,
   onClick,
 }: {
   lane: Lane;
@@ -2520,6 +2340,7 @@ function LaneCard({
   title: string;
   badge?: string;
   description: string;
+  selected?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -2530,10 +2351,12 @@ function LaneCard({
         "group flex items-center gap-3 rounded-lg border bg-background px-3 py-3 text-left",
         "transition-colors hover:border-foreground/30 hover:bg-muted/30",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        selected && "border-foreground",
       )}
     >
       <span
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-secondary text-secondary-foreground"
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-foreground"
+        style={{ background: LANE_ICON_GRADIENT[palette] }}
         aria-hidden
       >
         {icon}
@@ -2553,11 +2376,6 @@ function LaneCard({
           {description}
         </span>
       </span>
-      <ArrowRight
-        size={16}
-        className="text-muted-foreground shrink-0 transition-transform group-hover:translate-x-0.5"
-        aria-hidden
-      />
     </button>
   );
 }

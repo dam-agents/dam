@@ -1,7 +1,6 @@
-import { Bot, Connect, Model, Settings } from "@carbon/icons-react";
 import { useEffect, useState } from "react";
 
-import { DamSquareLogo } from "@/components/brand-logo";
+import { DamSquareLogo, DamSquareLogoDark } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -11,9 +10,9 @@ import { useStore } from "../store.js";
 const STORAGE_KEY = "platform-sidebar-collapsed";
 
 const navItems = [
-  { view: "list" as const, label: "Agents", icon: Bot },
-  { view: "providers" as const, label: "Providers", icon: Model },
-  { view: "connections" as const, label: "Connections", icon: Connect },
+  { view: "list" as const, label: "Agents" },
+  { view: "providers" as const, label: "Providers" },
+  { view: "connections" as const, label: "Connections" },
 ] as const;
 
 export function Sidebar() {
@@ -35,26 +34,32 @@ export function Sidebar() {
         collapsed ? "w-[52px]" : "w-[200px]",
       )}
     >
-      {/* Brand row — square DAM mark sits at the same x-offset as the
-          nav icons below. Click toggles collapse; the brand wordmark
-          retired with the hamburger to keep the row icon-only. */}
-      <div className="flex items-center h-12 px-2">
-        <Button
-          variant="ghost"
+      {/* Brand row — DAM mark click toggles collapse. The viewBox on
+          DamSquareLogo is cropped tightly around the letters so the
+          rendered DAM dominates whatever pixel size the row gives it. */}
+      {/* Plain <button> instead of the shadcn <Button> wrapper — that
+          component's `[&_svg]:size-4` rule force-shrinks any SVG inside
+          it to 16px regardless of the className put on the SVG. The
+          18px left offset matches the x-position of the nav items'
+          text below (row px-2 + button px-2.5). */}
+      <div className="flex items-center h-14 pl-[18px]">
+        <button
+          type="button"
           onClick={() => setCollapsed((c) => !c)}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className="h-9 w-9 px-0 shrink-0 justify-center hover:bg-transparent"
+          className="shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <DamSquareLogo className="h-6 w-6 rounded-sm" />
-        </Button>
+          <DamSquareLogo className="h-8 w-8 block dark:hidden" />
+          <DamSquareLogoDark className="h-8 w-8 hidden dark:block" />
+        </button>
       </div>
 
-      {/* Nav items — icon + label rows. Always left-aligned so icons
-          stay anchored at the same x-offset; the label just hides on
-          collapse and the sidebar shrinks around the icon. */}
+      {/* Nav items — labels only on desktop. Icons live in the mobile
+          nav component; on this sidebar the row vocabulary is purely
+          textual. */}
       <div className="flex flex-col gap-0.5 mt-2 px-2">
-        {navItems.map(({ view: v, label, icon: Icon }) => {
+        {navItems.map(({ view: v, label }) => {
           const active = view === v;
           return (
             <Button
@@ -63,12 +68,8 @@ export function Sidebar() {
               variant="ghost"
               onClick={() => setView(v)}
               title={collapsed ? label : undefined}
-              className={cn(
-                "h-9 justify-start gap-2.5 px-2.5",
-                active && "bg-muted",
-              )}
+              className={cn("h-9 justify-start px-2.5", active && "bg-muted")}
             >
-              <Icon className="shrink-0" />
               {!collapsed && (
                 <span className="text-sm font-medium">{label}</span>
               )}
@@ -87,11 +88,10 @@ export function Sidebar() {
           onClick={() => setView("settings")}
           title={collapsed ? "Settings" : undefined}
           className={cn(
-            "h-9 justify-start gap-2.5 px-2.5",
+            "h-9 justify-start px-2.5",
             view === "settings" && "bg-muted",
           )}
         >
-          <Settings className="shrink-0" />
           {!collapsed && <span className="text-sm font-medium">Settings</span>}
         </Button>
       </div>

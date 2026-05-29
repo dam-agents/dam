@@ -95,7 +95,7 @@
   --foreground: #121619;
   --card: #ffffff;
   --card-foreground: #121619;
-  --popover: #f2f4f8;
+  --popover: #ffffff;
   --popover-foreground: #121619;
   --primary: #000000;
   --primary-foreground: #ffffff;
@@ -162,7 +162,7 @@
   --destructive-foreground: #161616;
   --border-ui: #393939;
   --input: #393939;
-  --ring: #3c92fd;
+  --ring: #ffffff;
 }
 
 @layer base {
