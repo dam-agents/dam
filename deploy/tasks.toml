@@ -84,7 +84,7 @@ docker build -t platform-codex:latest packages/agents/codex
 docker build -t platform-google-workspace-agent:latest packages/agents/google-workspace
 docker build -t platform-pi-agent:latest packages/agents/pi-agent
 docker build -t platform-bob:latest packages/agents/bob
-docker build -f e2e/agents/mock/Dockerfile -t platform-mock:latest .
+docker build -f packages/e2e/agents/mock/Dockerfile -t platform-mock:latest .
 '''
 
 # -- Cluster lifecycle (k3s via lima) --
