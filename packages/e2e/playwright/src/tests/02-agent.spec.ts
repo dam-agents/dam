@@ -1,101 +1,69 @@
 import { expect, test } from "@playwright/test";
 
 import { baseUrl } from "../config.js";
+import {
+  gotoAgentDetail,
+  reloadUntilAgentVisible,
+  sendMessageToAgent,
+  setMockAgentReply,
+  waitForAgentRunning,
+} from "../lib/agents.js";
 import { createApiClient } from "../lib/api-client.js";
 import { getAccessToken } from "../lib/auth.js";
 
+const harnessName = "mock";
 const agentName = "e2e-mock";
 const scriptedReply = "scripted-reply-from-e2e";
 const userPrompt = "hello-from-playwright";
 
-test("drive mock agent: setScript → prompt → assert reply + received", async ({
+test("user can create a mock agent and exchange messages with it", async ({
   page,
 }) => {
   const token = await getAccessToken();
   const api = createApiClient(token);
 
-  const existing = (await api.agents.list.query()).find(
-    (a) => a.name === agentName,
-  );
-  if (existing) {
-    await api.agents.delete.mutate({ id: existing.id });
-    await expect
-      .poll(
-        async () =>
-          (await api.agents.list.query()).find((a) => a.name === agentName),
-        { timeout: 30_000, message: `agent ${agentName} not cleaned up` },
-      )
-      .toBeUndefined();
-  }
-
-  await page.goto(baseUrl);
-  await expect(page.getByTestId("app-sidebar")).toBeVisible();
-
-  await page.getByRole("button", { name: /add agent/i }).click();
-  await page.getByText("mock", { exact: true }).click();
-
-  await page.getByPlaceholder("my-agent").fill(agentName);
-  await page.getByRole("button", { name: /create agent/i }).click();
-
-  let agentId = "";
-  await expect
-    .poll(
-      async () => {
-        const list = await api.agents.list.query();
-        const found = list.find((a) => a.name === agentName);
-        if (found) agentId = found.id;
-        return Boolean(found);
-      },
-      { timeout: 30_000, message: `agent ${agentName} not in list` },
-    )
-    .toBe(true);
-
-  await expect
-    .poll(
-      async () => {
-        const agent = await api.agents.get.query({ id: agentId });
-        return agent.state;
-      },
-      {
-        timeout: 180_000,
-        intervals: [2_000],
-        message: `agent ${agentId} did not reach running state`,
-      },
-    )
-    .toBe("running");
-
-  await api.e2e.setScript.mutate({
-    agentId,
-    script: {
-      entries: [
-        {
-          sessionUpdate: {
-            sessionUpdate: "agent_message_chunk",
-            content: { type: "text", text: scriptedReply },
-          },
-        },
-      ],
-      stopReason: "end_turn",
-    },
+  await test.step("assert clean slate", async () => {
+    const existing = (await api.agents.list.query()).find(
+      (a) => a.name === agentName,
+    );
+    expect(
+      existing,
+      `agent ${agentName} already exists - expected clean slate`,
+    ).toBeUndefined();
   });
 
-  await page.reload();
-  await expect(page.getByTestId("app-sidebar")).toBeVisible();
-  await expect(page.getByText("Running")).toBeVisible();
+  await test.step("open app", async () => {
+    await page.goto(baseUrl);
+    await expect(page.getByTestId("app-sidebar")).toBeVisible();
+  });
 
-  await page.getByRole("heading", { name: agentName }).click();
-  await expect(page).toHaveURL(
-    new RegExp(`/chat/${encodeURIComponent(agentId)}`),
-  );
+  const agentId = await test.step("create mock agent", async () => {
+    await page.getByRole("button", { name: /add agent/i }).click();
+    await page.getByText(harnessName, { exact: true }).click();
 
-  const input = page.getByPlaceholder(/message agent/i);
-  await expect(input).toBeVisible();
-  await input.fill(userPrompt);
-  await input.press("Enter");
+    await page.getByPlaceholder("my-agent").fill(agentName);
+    await page.getByRole("button", { name: /create agent/i }).click();
 
-  await expect(page.getByText(scriptedReply)).toBeVisible({ timeout: 30_000 });
+    const id = await waitForAgentRunning(api, agentName);
 
-  const { prompts } = await api.e2e.getReceivedPrompts.query({ agentId });
-  expect(prompts.length).toBeGreaterThan(0);
-  expect(JSON.stringify(prompts)).toContain(userPrompt);
+    await reloadUntilAgentVisible(page);
+
+    return id;
+  });
+
+  await test.step("send message to agent", async () => {
+    await setMockAgentReply(api, agentId, scriptedReply);
+
+    await gotoAgentDetail(page, agentName, agentId);
+
+    await sendMessageToAgent(page, userPrompt);
+
+    await expect(page.getByText(scriptedReply)).toBeVisible({
+      timeout: 30_000,
+    });
+
+    const { prompts } = await api.e2e.getReceivedPrompts.query({ agentId });
+    expect(prompts.length).toBeGreaterThan(0);
+    expect(JSON.stringify(prompts)).toContain(userPrompt);
+  });
 });
