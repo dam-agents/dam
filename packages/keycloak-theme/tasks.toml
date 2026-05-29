@@ -1,0 +1,71 @@
+["keycloak-theme:setup"]
+dir = "{{config_root}}"
+depends = ["common:setup:pnpm"]
+
+["keycloak-theme:gen"]
+description = "Generate kc.gen.tsx from current keycloakify config"
+dir = "{{config_root}}/packages/keycloak-theme"
+depends = ["keycloak-theme:setup"]
+run = "pnpm exec keycloakify update-kc-gen"
+sources = ["vite.config.ts", "package.json"]
+outputs = ["src/kc.gen.tsx"]
+
+["keycloak-theme:dev"]
+description = "Vite dev server with mocked kcContext (uncomment block in src/main.tsx to preview a page)"
+dir = "{{config_root}}/packages/keycloak-theme"
+depends = ["keycloak-theme:gen"]
+run = "pnpm exec vite"
+
+["keycloak-theme:build:jar"]
+description = "Build the theme JAR (update-kc-gen + tsc + vite build + keycloakify build)"
+dir = "{{config_root}}/packages/keycloak-theme"
+depends = ["keycloak-theme:setup"]
+sources = ["src/**/*", "public/**/*", "vite.config.ts", "package.json"]
+outputs = ["dist_keycloak/**/*"]
+run = "pnpm run build:jar"
+
+["keycloak-theme:run"]
+description = "Boot Keycloak in Docker with the theme JAR loaded (full-fidelity preview)"
+dir = "{{config_root}}/packages/keycloak-theme"
+depends = ["keycloak-theme:gen"]
+run = "pnpm exec keycloakify start-keycloak -p ./"
+
+["keycloak-theme:eject-page"]
+description = "Eject a Keycloak page into src/login/pages/ to customize it"
+dir = "{{config_root}}/packages/keycloak-theme"
+depends = ["keycloak-theme:setup"]
+run = "pnpm exec keycloakify eject-page"
+
+["keycloak-theme:check"]
+depends = ["keycloak-theme:check:*"]
+
+["keycloak-theme:check:tsc"]
+dir = "{{config_root}}/packages/keycloak-theme"
+depends = ["keycloak-theme:gen"]
+run = "pnpm exec tsc --noEmit"
+sources = ["src/**/*.ts", "src/**/*.tsx", "tsconfig.json", "../dev-config/tsconfig.base.json"]
+
+["keycloak-theme:check:lint"]
+dir = "{{config_root}}/packages/keycloak-theme"
+depends = ["keycloak-theme:gen"]
+run = "pnpm exec eslint ."
+sources = ["src/**/*.ts", "src/**/*.tsx", "eslint.config.js", "../dev-config/eslint.base.js"]
+
+["keycloak-theme:check:format"]
+dir = "{{config_root}}/packages/keycloak-theme"
+depends = ["keycloak-theme:setup"]
+run = "pnpm exec prettier --check 'src/**/*.{ts,tsx,css}'"
+sources = ["src/**/*.ts", "src/**/*.tsx", "src/**/*.css", "../../.prettierrc"]
+
+["keycloak-theme:fix"]
+depends = ["keycloak-theme:fix:*"]
+
+["keycloak-theme:fix:lint"]
+dir = "{{config_root}}/packages/keycloak-theme"
+depends = ["keycloak-theme:gen"]
+run = "pnpm exec eslint --fix ."
+
+["keycloak-theme:fix:format"]
+dir = "{{config_root}}/packages/keycloak-theme"
+depends = ["keycloak-theme:setup"]
+run = "pnpm exec prettier --write 'src/**/*.{ts,tsx,css}'"

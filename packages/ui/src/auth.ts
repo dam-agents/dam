@@ -1,10 +1,22 @@
 import { type AuthConfig, authConfigSchema } from "api-server-api";
 import { type User, UserManager, WebStorageStateStore } from "oidc-client-ts";
 
+import { readStoredTheme } from "./modules/platform/store/theme.js";
+
 let userManager: UserManager;
 let currentUser: User | null = null;
 
 let cachedAuthConfig: AuthConfig | null = null;
+
+/**
+ * The Keycloak theme runs on a different host than the UI so it can't read
+ * localStorage directly. We hand the current preference off as an OIDC
+ * extra query param (`kc_theme`); the theme picks it up pre-hydration and
+ * applies `.dark` on <html> without a light/dark flash. See ADR-054.
+ */
+function signinExtraParams(): Record<string, string> {
+  return { kc_theme: readStoredTheme() };
+}
 
 async function fetchAuthConfig(): Promise<AuthConfig> {
   const res = await fetch("/api/auth/config");
@@ -65,7 +77,7 @@ export async function initAuth(): Promise<User | null> {
     "platform-auth-return",
     window.location.pathname + window.location.search,
   );
-  await userManager.signinRedirect();
+  await userManager.signinRedirect({ extraQueryParams: signinExtraParams() });
   return null;
 }
 
@@ -83,7 +95,7 @@ export async function getAccessToken(): Promise<string> {
     return renewed!.access_token;
   } catch {
     // Silent renew failed — redirect to login
-    await userManager.signinRedirect();
+    await userManager.signinRedirect({ extraQueryParams: signinExtraParams() });
     throw new Error("Session expired");
   }
 }

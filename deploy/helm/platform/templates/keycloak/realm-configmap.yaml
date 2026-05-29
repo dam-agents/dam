@@ -14,6 +14,7 @@ data:
     {
       "realm": {{ .Values.keycloak.realm | quote }},
       "enabled": true,
+      "loginTheme": "platform",
       "sslRequired": {{ if eq .Values.scheme "https" }}"external"{{ else }}"none"{{ end }},
       "registrationAllowed": false,
       "loginWithEmailAllowed": true,

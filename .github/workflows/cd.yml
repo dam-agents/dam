@@ -47,6 +47,9 @@ jobs:
           - component: platform-base
             dockerfile: packages/platform-base/Dockerfile
             context: .
+          - component: keycloak
+            dockerfile: packages/keycloak-theme/Dockerfile
+            context: .
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
@@ -56,6 +59,14 @@ jobs:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_PASSWORD }}
+      # The Keycloak image bakes a Keycloakify-built theme JAR; building the
+      # JAR requires Java + Maven via mise, which the docker builder image
+      # doesn't carry. Build it on the runner first, then docker/build-push
+      # COPYs the pre-built artifact.
+      - if: matrix.component == 'keycloak'
+        uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+      - if: matrix.component == 'keycloak'
+        run: mise run setup && mise run keycloak-theme:build:jar
       - id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:

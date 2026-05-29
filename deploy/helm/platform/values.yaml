@@ -162,7 +162,13 @@ redis:
 # -- Keycloak (OIDC identity provider)
 keycloak:
   enabled: true
-  image: quay.io/keycloak/keycloak:26.5.4
+  # The Keycloak image is a first-party build (ADR-054) that bakes the
+  # Keycloakify theme JAR on top of upstream Keycloak. The upstream
+  # version is pinned in `packages/keycloak-theme/Dockerfile`.
+  image:
+    repository: quay.io/dam-agents/keycloak
+    tag: "" # defaults to .Chart.AppVersion
+    pullPolicy: IfNotPresent
   configCliImage: adorsys/keycloak-config-cli:latest-26.5.4
   provisionImage: curlimages/curl:8.19.0
   port: 8080

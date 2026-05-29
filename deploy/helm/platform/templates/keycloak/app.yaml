@@ -56,7 +56,8 @@ spec:
               done
       containers:
         - name: keycloak
-          image: {{ .Values.keycloak.image }}
+          image: "{{ .Values.keycloak.image.repository }}:{{ .Values.keycloak.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.keycloak.image.pullPolicy | default "IfNotPresent" }}
           args: [{{ if eq .Values.scheme "https" }}"start"{{ else }}"start-dev"{{ end }}, "--features=token-exchange,admin-fine-grained-authz:v1"]
           ports:
             - containerPort: {{ .Values.keycloak.port }}

@@ -86,6 +86,17 @@ docker build -t platform-pi-agent:latest packages/agents/pi-agent
 docker build -t platform-bob:latest packages/agents/bob
 '''
 
+["image:keycloak"]
+description = "Build keycloak Docker image (theme JAR baked in)"
+dir = "{{config_root}}"
+depends = ["keycloak-theme:build:jar"]
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
+docker build -f packages/keycloak-theme/Dockerfile -t platform-keycloak:latest .
+'''
+
 # -- Cluster lifecycle (k3s via lima) --
 #
 # When IS_SANDBOX is set, it is assumed we are already _inside_ a VM.
@@ -98,7 +109,7 @@ docker build -t platform-bob:latest packages/agents/bob
 
 ["cluster:install"]
 description = "Create k3s cluster, build images, install cert-manager + Platform chart. Options: --vm-name=NAME --lima-template=PATH --helm-values=PATH --set=key=val --no-restart"
-depends = ["image:controller", "image:apiserver", "image:ui", "image:agent"]
+depends = ["image:controller", "image:apiserver", "image:ui", "image:agent", "image:keycloak"]
 dir = "{{config_root}}"
 raw = true
 run = '''
@@ -368,7 +379,7 @@ if [ -n "${SKIP_IMAGE_BUILD:-}" ]; then
 else
   echo "Loading images into k3s..."
   tar="/tmp/platform-images.tar"
-  docker save -o "$tar" platform-controller:latest platform-api-server:latest platform-ui:latest platform-claude-code:latest platform-codex:latest platform-google-workspace-agent:latest platform-pi-agent:latest platform-bob:latest
+  docker save -o "$tar" platform-controller:latest platform-api-server:latest platform-ui:latest platform-keycloak:latest platform-claude-code:latest platform-codex:latest platform-google-workspace-agent:latest platform-pi-agent:latest platform-bob:latest
   if [ -n "${IS_SANDBOX:-}" ]; then
     [ -z "${CI:-}" ] && docker image prune --all --force >/dev/null 2>&1 || true
     sudo k3s ctr images import "$tar"
@@ -421,7 +432,7 @@ if [ "$NO_RESTART" = true ]; then
   echo "Skipping pod restart (--no-restart)"
 else
   echo "Restarting pods..."
-  kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-controller platform-apiserver platform-ui
+  kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-controller platform-apiserver platform-ui platform-keycloak
   # Agent pods are managed by the controller (StatefulSets in platform-agents) and
   # pin :latest too — delete them so they come back on the freshly loaded image.
   kubectl --kubeconfig="$KUBECONFIG" delete pods -n platform-agents --all --ignore-not-found
@@ -573,6 +584,41 @@ else
 fi
 
 echo "Done. Agent pods will restart with new image."
+'''
+
+["cluster:build-keycloak"]
+description = "Build and load keycloak image into k3s, restart keycloak pod"
+depends = ["image:keycloak"]
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+
+echo "Loading into k3s..."
+tar="/tmp/platform-keycloak.tar"
+docker save platform-keycloak:latest -o "$tar"
+
+if [ -n "${IS_SANDBOX:-}" ]; then
+  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+  sudo k3s ctr images import "$tar"
+else
+  LIMA_INSTANCE="platform-k3s"
+  KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
+  limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
+  limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
+fi
+rm -f "$tar"
+
+echo "Restarting keycloak pod..."
+kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-keycloak
+kubectl --kubeconfig="$KUBECONFIG" rollout status deployment platform-keycloak --timeout=180s
+
+PRUNE_DANGLING='sudo k3s crictl images 2>/dev/null | sed -nE "s/^<none>[[:space:]]+<none>[[:space:]]+([^[:space:]]+).*/\\1/p" | xargs -r sudo k3s crictl rmi >/dev/null 2>&1 || true'
+if [ -n "${IS_SANDBOX:-}" ]; then
+  bash -c "$PRUNE_DANGLING"
+else
+  limactl shell "$LIMA_INSTANCE" bash -c "$PRUNE_DANGLING"
+fi
 '''
 
 ["cluster:kubectl"]

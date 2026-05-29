@@ -4,6 +4,10 @@ nodejs = "24"
 # Go
 go = "1.24"
 
+# Java + Maven — required by keycloakify to package the theme JAR (packages/keycloak-theme)
+java = "21"
+maven = "latest"
+
 # Kubernetes
 helm = "latest"
 kubeconform = "latest"
@@ -32,6 +36,7 @@ includes = [
     "packages/cli/tasks.toml",
     "packages/controller/tasks.toml",
     "packages/db/tasks.toml",
+    "packages/keycloak-theme/tasks.toml",
     "packages/ui/tasks.toml",
     "deploy/helm/tasks.toml",
     "deploy/tasks.toml",
