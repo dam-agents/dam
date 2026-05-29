@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-05-21
+Last verified: 2026-05-29
 
 ## Motivated by
 
@@ -132,6 +132,40 @@ user agent flow:
 There is no token exchange — credential storage is K8s-native and label-
 scoped, so the api-server enforces ownership directly when reading and
 writing.
+
+## Keycloak event logging
+
+Keycloak is also an audit event source. It emits login and admin events
+to pod stdout via its built-in `jboss-logging` event listener, so they
+ride the same cluster log pipeline as every other pod log out to the
+external log service. The listener's level is set through Keycloak's
+per-listener SPI knobs rather than a broad `org.keycloak` log-category
+override: successes surface at `info`, errors at `warn`. Production pods
+emit structured JSON; local dev overrides the console format to plain
+text for a readable `cluster:logs`.
+
+Persistence is split by event class:
+
+- **Login events** (LOGIN, LOGOUT, LOGIN_ERROR, token refresh, account
+  changes, …) are *not* written to the Keycloak database. The listener
+  fires independently of DB-store gating, so the events still reach
+  stdout; the external log service is the source of truth for the
+  authentication audit trail, and Postgres is spared the high-volume
+  write.
+- **Admin events** (any change made through the admin REST API or
+  console) fire on the same listener, so their metadata — who acted, on
+  which resource, from where — reaches stdout and the external log
+  service alongside login events. That metadata is also recorded to
+  Postgres (low volume), but the full request body is *not*
+  (`adminEventsDetailsEnabled` is off): stored bodies would otherwise
+  capture sensitive payloads — plaintext credentials on user-create /
+  user-update flows — and Keycloak retains admin events indefinitely with
+  no built-in expiration. The log line never carries the request body, so
+  the external log pipeline, not the Keycloak database, is the audit
+  source of truth.
+
+The event knobs, log format, and realm import live in the Keycloak Helm
+values under [`deploy/helm/platform/`](../../deploy/helm/platform/).
 
 ## Resource ownership
 

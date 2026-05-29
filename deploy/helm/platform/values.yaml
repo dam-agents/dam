@@ -208,10 +208,13 @@ keycloak:
   # pipeline to whatever external log service is collecting pod logs.
   #
   # Login events are NOT persisted to the Keycloak DB (eventsEnabled: false
-  # in the realm import) — pod logs are the source of truth. Admin events
-  # ARE persisted (low volume, useful as a break-glass audit surface in
-  # the admin console under `Events → Admin events`); set
-  # `adminEventsEnabled: false` in the realm import to drop that too.
+  # in the realm import) — pod logs are the source of truth. Admin-event
+  # metadata IS persisted (low volume), but request-body detail is NOT
+  # (adminEventsDetailsEnabled: false in the realm import): those bodies can
+  # carry plaintext credentials on user-create/update and Keycloak keeps
+  # them indefinitely (no built-in expiration), while the log pipeline is
+  # the audit source of truth regardless. Set `adminEventsEnabled: false`
+  # in the realm import to stop admin events firing on the listener too.
   #
   # The listener emits successes at `debug` and errors at `warn` by
   # default. We raise success-level to `info` so successful logins appear
@@ -226,10 +229,12 @@ keycloak:
 
   # -- Keycloak logging output.
   log:
-    # -- Console output format. `default` is human-readable plain text;
-    # `json` is structured one-record-per-line, friendlier for external
-    # log aggregators (Loki / ELK / Datadog). Local dev overrides this
-    # to `default` in `values-local.yaml` for readable `kubectl logs`.
+    # -- Console output format. Only `default` and `json` are valid;
+    # Keycloak rejects any other value at startup. `default` is
+    # human-readable plain text; `json` is structured one-record-per-line,
+    # friendlier for external log aggregators (Loki / ELK / Datadog).
+    # Local dev overrides this to `default` in `values-local.yaml` for
+    # readable `kubectl logs`.
     consoleOutput: "json"
 
   # -- Test user bootstrapped via realm import.
