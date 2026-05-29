@@ -1,3 +1,8 @@
+["e2e-playwright:run"]
+dir = "{{config_root}}/packages/e2e/playwright"
+depends = ["common:setup:pnpm"]
+run = "pnpm exec playwright test"
+
 ["e2e-playwright:check"]
 depends = ["e2e-playwright:check:*"]
 
