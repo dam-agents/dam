@@ -31,6 +31,7 @@ import {
   type KeycloakOAuthConfig,
 } from "./identity-oauth.js";
 import { formatError } from "../../../core/format-error.js";
+import { securityLog } from "../../../core/security-log.js";
 
 type BoltApp = InstanceType<typeof App>;
 
@@ -640,6 +641,16 @@ export function createSlackWorker(
 
     const keycloakSub = await identityLinks.resolve("slack", slackUserId);
     if (!keycloakSub) {
+      // An unlinked (unauthenticated) Slack user probing to drive an agent.
+      securityLog("warn", "channel.authz_deny", {
+        category: "channel",
+        actor: null,
+        actorKind: "external",
+        surface: "slack",
+        decision: "deny",
+        reason: "unlinked",
+        detail: { slackUserId, channelId: event.channel },
+      });
       await app.client.chat.postEphemeral({
         channel: event.channel,
         user: slackUserId,
@@ -718,6 +729,18 @@ export function createSlackWorker(
     ]);
     const isOwner = ownerSub !== null && ownerSub === args.keycloakSub;
     if (!isOwner && !isAllowed) {
+      // A linked user who is neither owner nor on the allow-list tried to
+      // drive the agent.
+      securityLog("warn", "channel.authz_deny", {
+        category: "channel",
+        actor: args.keycloakSub,
+        actorKind: "user",
+        surface: "slack",
+        agentId: args.instanceName,
+        decision: "deny",
+        reason: "not-allowed",
+        detail: { slackUserId: args.slackUserId, channelId: args.channel },
+      });
       await app.client.chat.postEphemeral({
         channel: args.channel,
         user: args.slackUserId,
@@ -725,6 +748,16 @@ export function createSlackWorker(
       });
       return;
     }
+    // Authorized to drive — record who and on what basis.
+    securityLog("info", "channel.authz", {
+      category: "channel",
+      actor: args.keycloakSub,
+      actorKind: "user",
+      surface: "slack",
+      agentId: args.instanceName,
+      decision: "allow",
+      detail: { basis: isOwner ? "owner" : "allowlist" },
+    });
 
     if (!(await isTermsAccepted(args.keycloakSub))) {
       await app.client.chat.postEphemeral({

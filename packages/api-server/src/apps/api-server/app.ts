@@ -51,7 +51,8 @@ import { getSessionMode } from "../../modules/sessions/infrastructure/sessions-r
 import { createOAuthRoutes } from "./oauth.js";
 import { mountBrandIconRoutes } from "./brand-icon.js";
 import type { Config } from "../../config.js";
-import { createAuth, ForbiddenError } from "./auth.js";
+import { createAuth, ForbiddenError, clientIp } from "./auth.js";
+import { securityLog } from "../../core/security-log.js";
 import { createTermsGate } from "./terms-gate.js";
 import type { IsAcceptedPort } from "../../modules/terms/compose.js";
 import { createK8sSecretsPort } from "./../../modules/secrets/infrastructure/k8s-secrets-port.js";
@@ -331,6 +332,18 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     const user = c.get("user");
     const agentId = c.req.param("id")!;
     if (!(await verifyOwner(agentId, user.sub))) {
+      // The 404 is otherwise indistinguishable from a genuinely missing
+      // agent — log the cross-tenant access attempt.
+      securityLog("warn", "authz.owner_mismatch", {
+        category: "authz",
+        actor: user.sub,
+        actorKind: "user",
+        agentId,
+        decision: "deny",
+        reason: "not-owner",
+        sourceIp: clientIp(c),
+        detail: { surface: "trpc-proxy" },
+      });
       return c.json({ error: "not found" }, 404);
     }
 
@@ -402,6 +415,16 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     const user = c.get("user");
     const agentId = c.req.param("id")!;
     if (!(await verifyOwner(agentId, user.sub))) {
+      securityLog("warn", "authz.owner_mismatch", {
+        category: "authz",
+        actor: user.sub,
+        actorKind: "user",
+        agentId,
+        decision: "deny",
+        reason: "not-owner",
+        sourceIp: clientIp(c),
+        detail: { surface: "import" },
+      });
       return c.json({ error: "not found" }, 404);
     }
     // Hard byte ceiling at the proxy boundary. Requires Content-Length so
@@ -738,8 +761,30 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       return;
     }
 
+    // `relayKind` and `agentId` identify the target credentialed pod; the
+    // token rides in the query string and must NEVER be logged (only the
+    // pathname, which carries no secret).
+    const relayKind = match[2]!; // "acp" | "terminal"
+    const agentId = decodeURIComponent(match[1]!);
+    const fwd = req.headers["x-forwarded-for"];
+    const sourceIp =
+      (typeof fwd === "string" ? fwd.split(",")[0]!.trim() : undefined) ??
+      req.socket.remoteAddress ??
+      undefined;
+
     const token = url.searchParams.get("token");
     if (!token) {
+      securityLog("warn", "ws.authn_deny", {
+        category: "authn",
+        actor: null,
+        actorKind: "external",
+        surface: "ws",
+        agentId,
+        decision: "deny",
+        reason: "missing-token",
+        sourceIp,
+        detail: { relay: relayKind },
+      });
       socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
       socket.destroy();
       return;
@@ -749,27 +794,77 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     try {
       user = (await auth.verify(token)).user;
     } catch (err) {
-      const status =
-        err instanceof ForbiddenError ? "403 Forbidden" : "401 Unauthorized";
-      socket.write(`HTTP/1.1 ${status}\r\n\r\n`);
+      const forbidden = err instanceof ForbiddenError;
+      securityLog("warn", forbidden ? "ws.authz_deny" : "ws.authn_deny", {
+        category: forbidden ? "authz" : "authn",
+        actor: forbidden ? err.sub : null,
+        actorKind: forbidden ? "user" : "external",
+        surface: "ws",
+        agentId,
+        decision: "deny",
+        reason: forbidden
+          ? "missing-required-role"
+          : err instanceof Error
+            ? err.name
+            : "verify-failed",
+        sourceIp,
+        detail: { relay: relayKind },
+      });
+      socket.write(
+        `HTTP/1.1 ${forbidden ? "403 Forbidden" : "401 Unauthorized"}\r\n\r\n`,
+      );
       socket.destroy();
       return;
     }
 
-    const agentId = decodeURIComponent(match[1]);
     if (!(await verifyOwner(agentId, user.sub))) {
+      securityLog("warn", "ws.owner_mismatch", {
+        category: "authz",
+        actor: user.sub,
+        actorKind: "user",
+        surface: "ws",
+        agentId,
+        decision: "deny",
+        reason: "not-owner",
+        sourceIp,
+        detail: { relay: relayKind },
+      });
       socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
       socket.destroy();
       return;
     }
 
     if (!(await isTermsAccepted(user.sub))) {
+      securityLog("warn", "ws.terms_block", {
+        category: "authz",
+        actor: user.sub,
+        actorKind: "user",
+        surface: "ws",
+        agentId,
+        decision: "deny",
+        reason: "terms-not-accepted",
+        sourceIp,
+        detail: { relay: relayKind },
+      });
       socket.write("HTTP/1.1 412 Precondition Failed\r\n\r\n");
       socket.destroy();
       return;
     }
 
-    const relay = match[2] === "acp" ? acpRelay : terminalRelay;
+    // Success: a human (or token-bearer) is attaching to a credentialed pod —
+    // an interactive shell (terminal) or prompt channel (acp). High-value
+    // forensic event in its own right.
+    securityLog("info", "relay.attach", {
+      category: "privileged",
+      actor: user.sub,
+      actorKind: "user",
+      surface: "ws",
+      agentId,
+      result: "success",
+      sourceIp,
+      detail: { relay: relayKind },
+    });
+    const relay = relayKind === "acp" ? acpRelay : terminalRelay;
     relay.handleUpgrade(req, socket, head, agentId);
   });
 

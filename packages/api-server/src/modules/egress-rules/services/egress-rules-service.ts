@@ -10,6 +10,7 @@ import type { EgressRulesRepository } from "../infrastructure/egress-rules-repos
 import type { EgressRuleRow } from "../domain/types.js";
 import type { K8sAllowOnlySecretsPort } from "../infrastructure/k8s-allow-only-secrets-port.js";
 import type { PresetSeeder } from "./preset-seeder.js";
+import { securityLog } from "../../../core/security-log.js";
 
 export interface CreateEgressRulesServiceDeps {
   repo: EgressRulesRepository;
@@ -69,6 +70,15 @@ export function createEgressRulesService(
 
     async create(input: EgressRuleCreateInput) {
       if (!(await deps.isAgentOwnedBy(input.agentId, deps.ownerSub))) {
+        securityLog("warn", "authz.owner_mismatch", {
+          category: "authz",
+          actor: deps.ownerSub,
+          actorKind: "user",
+          agentId: input.agentId,
+          decision: "deny",
+          reason: "not-owner",
+          detail: { surface: "egress-rule.create" },
+        });
         throw new Error("agent not found");
       }
       const row = await deps.repo.insert({
@@ -80,6 +90,25 @@ export function createEgressRulesService(
         verdict: input.verdict,
         decidedBy: deps.ownerSub,
         source: "manual",
+      });
+      securityLog("info", "egress_rule.create", {
+        category: "authz-list",
+        actor: deps.ownerSub,
+        actorKind: "user",
+        agentId: input.agentId,
+        target: input.host,
+        decision: input.verdict,
+        detail: {
+          method: input.method,
+          pathPattern: input.pathPattern,
+          ruleId: row.id,
+          source: "manual",
+          ...(input.host === "*" &&
+          input.method === "*" &&
+          input.pathPattern === "*"
+            ? { unrestricted: true }
+            : {}),
+        },
       });
       // Path-specific rules need MITM so the L7 ext_authz handler can see
       // method/path. The allow-only Secret is the controller's signal to
@@ -97,6 +126,17 @@ export function createEgressRulesService(
     async update(input: EgressRuleUpdateInput) {
       const rule = await deps.repo.getById(input.id);
       if (!rule || !(await deps.isAgentOwnedBy(rule.agentId, deps.ownerSub))) {
+        if (rule) {
+          securityLog("warn", "authz.owner_mismatch", {
+            category: "authz",
+            actor: deps.ownerSub,
+            actorKind: "user",
+            agentId: rule.agentId,
+            decision: "deny",
+            reason: "not-owner",
+            detail: { surface: "egress-rule.update", ruleId: input.id },
+          });
+        }
         throw new Error("egress rule not found");
       }
       const updated = await deps.repo.updatePromoteToManual({
@@ -107,6 +147,20 @@ export function createEgressRulesService(
         decidedBy: deps.ownerSub,
       });
       if (!updated) throw new Error("egress rule not found");
+      securityLog("info", "egress_rule.update", {
+        category: "authz-list",
+        actor: deps.ownerSub,
+        actorKind: "user",
+        agentId: updated.agentId,
+        target: updated.host,
+        decision: input.verdict,
+        detail: {
+          ruleId: input.id,
+          method: input.method,
+          pathPattern: input.pathPattern,
+          priorVerdict: rule.verdict,
+        },
+      });
       // The user may have just narrowed `(host, *, *)` to `(host, GET, /v1/x)`,
       // which promotes the host to L7 if it wasn't already. Same idempotent
       // ensure as create.
@@ -124,10 +178,31 @@ export function createEgressRulesService(
       if (!rule || !(await deps.isAgentOwnedBy(rule.agentId, deps.ownerSub)))
         return;
       await deps.repo.revoke(id);
+      securityLog("info", "egress_rule.revoke", {
+        category: "authz-list",
+        actor: deps.ownerSub,
+        actorKind: "user",
+        agentId: rule.agentId,
+        target: rule.host,
+        detail: {
+          ruleId: id,
+          method: rule.method,
+          pathPattern: rule.pathPattern,
+        },
+      });
     },
 
     async applyPreset(agentId: string, preset: EgressPreset) {
       if (!(await deps.isAgentOwnedBy(agentId, deps.ownerSub))) {
+        securityLog("warn", "authz.owner_mismatch", {
+          category: "authz",
+          actor: deps.ownerSub,
+          actorKind: "user",
+          agentId,
+          decision: "deny",
+          reason: "not-owner",
+          detail: { surface: "egress-rule.preset" },
+        });
         throw new Error("agent not found");
       }
       if (!deps.presetSeeder) return;
@@ -135,6 +210,15 @@ export function createEgressRulesService(
       // ones, so switching presets replaces rather than piles up. Manual
       // and connection-derived rows are untouched.
       await deps.presetSeeder.seed(agentId, preset, deps.ownerSub);
+      // The `all` preset seeds host:* method:* path:* — a single row that
+      // removes every egress restriction; flag it explicitly.
+      securityLog("info", "egress_rule.preset", {
+        category: "authz-list",
+        actor: deps.ownerSub,
+        actorKind: "user",
+        agentId,
+        detail: { preset, ...(preset === "all" ? { unrestricted: true } : {}) },
+      });
     },
   };
 }

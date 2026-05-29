@@ -69,10 +69,12 @@ import {
   startOnChannelTurnRelayedSaga,
 } from "./modules/forks/index.js";
 import { composeUsageModule } from "./modules/usage/compose.js";
+import { composeAuditModule } from "./modules/audit/index.js";
 import { createK8sForkOrchestrator } from "./modules/forks/infrastructure/k8s-fork-orchestrator.js";
 import { composeE2eModule } from "./modules/e2e/compose.js";
 import { composeTermsModule } from "./modules/terms/index.js";
 import { loadConfig } from "./config.js";
+import { configureLogger } from "./core/logger.js";
 import { startApiServerApp } from "./apps/api-server/app.js";
 import { startHarnessApiServerApp } from "./apps/harness-api-server/app.js";
 import { startExtAuthzGrpcApp } from "./apps/ext-authz/grpc.js";
@@ -96,6 +98,7 @@ import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
 
 const config = loadConfig();
+configureLogger({ level: config.logLevel });
 
 const { api } = createApi(config.namespace);
 await runMigrations(config.databaseUrl, config.migrationsPath);
@@ -152,6 +155,12 @@ const usage = composeUsageModule({
   },
 });
 usage.start();
+
+// Security audit trail (bus-driven half). Denials and call-site-only
+// mutations log directly at their sites; this covers the actor-bearing
+// success/observation events on the domain bus.
+const audit = composeAuditModule();
+audit.start();
 
 const userDirectory = createKeycloakUserDirectory({
   keycloakUrl: config.keycloakUrl,
@@ -465,6 +474,7 @@ async function shutdown() {
   onForeignReplySub.unsubscribe();
   onChannelTurnRelayedSub.unsubscribe();
   usage.stop();
+  audit.stop();
   await deliverySweeper.stop();
   await agentArtifactsSweeper.stop();
   await channelManager.stopAll();

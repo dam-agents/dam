@@ -22,6 +22,7 @@ import {
 import type { AgentSkillsRepository } from "../infrastructure/agent-skills-repository.js";
 import type { SkillSourceSeed } from "../infrastructure/seed-sources.js";
 import { seedToSkillSource } from "../infrastructure/seed-sources.js";
+import { securityLog } from "../../../core/security-log.js";
 import {
   AgentRuntimeUpstreamError,
   type AgentRuntimeSkillsClient,
@@ -377,6 +378,18 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       await deps.agentSkillsRepo.upsertSkill(input.agentId, ref);
       await deps.runtimeMutator.bump(input.agentId, []);
       await deps.runtimeMutator.enqueueAfterCommit(input.agentId);
+      // Supply-chain: code fetched from an arbitrary git URL onto the agent's
+      // PV (often agent-driven via MCP). "what did this agent install, from
+      // where" must be answerable post-incident.
+      securityLog("info", "skill.install", {
+        category: "privileged",
+        actor: deps.owner,
+        actorKind: "user",
+        agentId: input.agentId,
+        target: input.source,
+        result: "success",
+        detail: { name: input.name, version: input.version },
+      });
       const current = await deps.agentSkillsRepo.listSkills(input.agentId);
       return upsertSkillRef(
         current.filter(
@@ -395,6 +408,15 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       });
       await deps.runtimeMutator.bump(input.agentId, []);
       await deps.runtimeMutator.enqueueAfterCommit(input.agentId);
+      securityLog("info", "skill.uninstall", {
+        category: "privileged",
+        actor: deps.owner,
+        actorKind: "user",
+        agentId: input.agentId,
+        target: input.source,
+        result: "success",
+        detail: { name: input.name },
+      });
       const current = await deps.agentSkillsRepo.listSkills(input.agentId);
       return removeSkillRef(current, {
         source: input.source,

@@ -26,6 +26,7 @@ import type {
 } from "./../infrastructure/k8s-secrets-port.js";
 import type { AgentGrantsPort } from "../../agents/infrastructure/agent-grants-port.js";
 import { hostPatternFor, pathPatternFor } from "../domain/types.js";
+import { securityLog } from "../../../core/security-log.js";
 
 interface InternalSecretCreate {
   type: SecretType;
@@ -261,19 +262,30 @@ export function createSecretsService(deps: {
         try {
           await deps.k8sPort.deleteSecret(twinId);
         } catch (cleanupErr) {
-          console.warn(
-            `secrets-service: orphan twin K8s Secret ${twinId} (primary ${id}, type ${input.type}) — manual cleanup required:`,
-            cleanupErr instanceof Error ? cleanupErr.message : cleanupErr,
-          );
+          securityLog("error", "secret.orphan_cleanup_failed", {
+            category: "credential",
+            actor: deps.ownerSub ?? null,
+            actorKind: "user",
+            target: twinId,
+            result: "failure",
+            reason:
+              cleanupErr instanceof Error ? cleanupErr.message : "unknown",
+            detail: { primarySecretId: id, type: input.type, role: "twin" },
+          });
         }
       }
       try {
         await deps.k8sPort.deleteSecret(id);
       } catch (cleanupErr) {
-        console.warn(
-          `secrets-service: orphan primary K8s Secret ${id} (type ${input.type}) — manual cleanup required:`,
-          cleanupErr instanceof Error ? cleanupErr.message : cleanupErr,
-        );
+        securityLog("error", "secret.orphan_cleanup_failed", {
+          category: "credential",
+          actor: deps.ownerSub ?? null,
+          actorKind: "user",
+          target: id,
+          result: "failure",
+          reason: cleanupErr instanceof Error ? cleanupErr.message : "unknown",
+          detail: { type: input.type, role: "primary" },
+        });
       }
       throw err;
     }
@@ -289,6 +301,20 @@ export function createSecretsService(deps: {
       view.injectionConfig = input.injectionConfig;
     }
     if (envMappings?.length) view.envMappings = envMappings;
+    // A credential stored at rest — record who, what kind, and where it
+    // injects. NEVER the value.
+    securityLog("info", "secret.create", {
+      category: "credential",
+      actor: deps.ownerSub ?? null,
+      actorKind: "user",
+      target: id,
+      result: "success",
+      detail: {
+        type: input.type,
+        hostPattern,
+        twins: createdTwinIds.length,
+      },
+    });
     return view;
   }
 
@@ -406,10 +432,34 @@ export function createSecretsService(deps: {
             : {}),
         ...(rotation ? { authMode: rotation.authMode } : {}),
       });
-      if (!result) throw new TRPCError({ code: "NOT_FOUND" });
+      if (!result) {
+        securityLog("warn", "secret.update_notfound", {
+          category: "credential",
+          actor: deps.ownerSub ?? null,
+          actorKind: "user",
+          target: id,
+          result: "failure",
+          reason: "not-found",
+        });
+        throw new TRPCError({ code: "NOT_FOUND" });
+      }
       const { before, after } = result;
 
       const valueChanged = patch.value !== undefined;
+      // Rotation/timestamp forensics most wants after a suspected leak — log
+      // metadata only (what changed), never the value.
+      securityLog("info", "secret.update", {
+        category: "credential",
+        actor: deps.ownerSub ?? null,
+        actorKind: "user",
+        target: id,
+        result: "success",
+        detail: {
+          valueChanged,
+          nameChanged: patch.name !== undefined,
+          authModeRotated: rotation !== null,
+        },
+      });
       const envChanged = envMappingsChanged(before, after);
       if (valueChanged) {
         const allSecretsForTwins = await deps.k8sPort.listSecrets();
@@ -449,6 +499,15 @@ export function createSecretsService(deps: {
         await deps.k8sPort.deleteSecret(twinId);
       }
       await deps.k8sPort.deleteSecret(id);
+      // Proves when a credential was revoked/destroyed.
+      securityLog("info", "secret.delete", {
+        category: "credential",
+        actor: deps.ownerSub ?? null,
+        actorKind: "user",
+        target: id,
+        result: "success",
+        detail: { twins: twinIds.length },
+      });
     },
 
     async getAgentAccess(agentId: string) {
@@ -480,6 +539,15 @@ export function createSecretsService(deps: {
         ...primaries.flatMap((id) => twinsByPrimary.get(id) ?? []),
       ];
       await deps.grants.setSecretGrants(agentId, expanded);
+      // Central to "which agent could use credential X at time T".
+      securityLog("info", "secret.grants_set", {
+        category: "authz-list",
+        actor: deps.ownerSub ?? null,
+        actorKind: "user",
+        agentId,
+        result: "success",
+        detail: { primarySecretIds: primaries, expandedCount: expanded.length },
+      });
 
       if (deps.connectionRules && deps.ownerSub) {
         const ownedSourceIds = new Set(allSecrets.map((s) => s.id));

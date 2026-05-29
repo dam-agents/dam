@@ -35,6 +35,7 @@
     "jose": "^6.0.11",
     "js-yaml": "^4.1.0",
     "mock-agent-api": "workspace:*",
+    "pino": "~9.11.0",
     "rrule": "^2.8.1",
     "rxjs": "^7.8.2",
     "sharp": "^0.34.5",

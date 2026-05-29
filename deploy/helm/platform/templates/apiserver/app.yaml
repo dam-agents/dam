@@ -112,6 +112,8 @@ spec:
               value: {{ include "platform.fullname" . | quote }}
             - name: PORT
               value: {{ .Values.apiServer.port | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.apiServer.logLevel | quote }}
             - name: MCP_PORT
               value: {{ .Values.apiServer.harnessServerPort | quote }}
             - name: PLATFORM_HARNESS_SERVER_URL

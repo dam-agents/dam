@@ -26,6 +26,7 @@ import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import { ok, err } from "../../../core/result.js";
 import type { UnitOfWork, Tx } from "../../../core/unit-of-work.js";
 import { emit, EventType } from "../../../events.js";
+import { securityLog } from "../../../core/security-log.js";
 
 /**
  * Port consumed by `create()` to seed `egress_rules` for a brand-new agent
@@ -140,6 +141,14 @@ export function createAgentsService(deps: {
       ];
       const orphans = psqlAgentIds.filter((id) => !infraIds.has(id));
       if (orphans.length > 0) {
+        // Clearing an authorization list as a side-effect of a read — flag it
+        // so a transient K8s read returning empty can't silently mass-purge.
+        securityLog("warn", "agent.allowed_users.orphan_purge", {
+          category: "authz-list",
+          actor: deps.owner ?? null,
+          actorKind: "user",
+          detail: { agentIds: orphans },
+        });
         await Promise.all([
           deps.deleteChannelsByAgentIds(orphans),
           deps.deleteAllowedUsersByAgentIds(orphans),
@@ -208,6 +217,14 @@ export function createAgentsService(deps: {
       if (emails.length > 0) {
         const subs = await emailsToSubs(emails);
         await deps.setAllowedUsers(infra.id, subs);
+        securityLog("info", "agent.allowed_users_set", {
+          category: "authz-list",
+          actor: owner || null,
+          actorKind: "user",
+          agentId: infra.id,
+          result: "success",
+          detail: { added: subs, removed: [], resultUnrestricted: false },
+        });
       }
 
       // Bulk-seed the requested preset (default `trusted`). `none` is a
@@ -225,6 +242,22 @@ export function createAgentsService(deps: {
       await deps.runtimeMutator.bump(infra.id, []);
 
       const agent = assembleAgent(infra, [], emails);
+      // Records the agent's initial security posture (preset, secret ref,
+      // allow-list size, env key names — never env values).
+      securityLog("info", "agent.create", {
+        category: "resource",
+        actor: owner || null,
+        actorKind: "user",
+        agentId: agent.id,
+        result: "success",
+        detail: {
+          ...(templateId ? { templateId } : {}),
+          egressPreset: input.egressPreset ?? "trusted",
+          allowedUserCount: emails.length,
+          secretRefSet: input.secretRef !== undefined,
+          envKeys: (input.env ?? []).map((e) => e.name),
+        },
+      });
       emit({
         type: EventType.AgentCreated,
         agentId: agent.id,
@@ -248,9 +281,42 @@ export function createAgentsService(deps: {
       const infra = await deps.repo.updateSpec(input.id, deps.owner, patch);
       if (!infra) return null;
 
+      if (input.env !== undefined || input.secretRef !== undefined) {
+        // Env and secretRef control what credentials the pod receives — log
+        // key names only, never values.
+        securityLog("info", "agent.update", {
+          category: "resource",
+          actor: deps.owner ?? null,
+          actorKind: "user",
+          agentId: input.id,
+          result: "success",
+          detail: {
+            secretRefChanged: input.secretRef !== undefined,
+            ...(env !== undefined ? { envKeys: env.map((e) => e.name) } : {}),
+          },
+        });
+      }
+
       if (input.allowedUserEmails !== undefined) {
+        // Diff against the prior list so an attacker silently inserting their
+        // own sub (or emptying the list to make it unrestricted) is visible.
+        const prior = await deps.listAllowedUsersByAgent(input.id);
         const subs = await emailsToSubs(input.allowedUserEmails);
+        const priorSet = new Set(prior);
+        const nextSet = new Set(subs);
         await deps.setAllowedUsers(input.id, subs);
+        securityLog("info", "agent.allowed_users_set", {
+          category: "authz-list",
+          actor: deps.owner ?? null,
+          actorKind: "user",
+          agentId: input.id,
+          result: "success",
+          detail: {
+            added: subs.filter((s) => !priorSet.has(s)),
+            removed: prior.filter((s) => !nextSet.has(s)),
+            resultUnrestricted: subs.length === 0,
+          },
+        });
       }
 
       emit({ type: EventType.AgentUpdated, agentId: input.id });
@@ -268,28 +334,66 @@ export function createAgentsService(deps: {
         try {
           await hook(id);
         } catch (err) {
-          process.stderr.write(
-            `agents.delete cleanup hook failed for ${id}: ${err instanceof Error ? err.message : err}\n`,
-          );
+          securityLog("warn", "agent.delete.cleanup_failed", {
+            category: "resource",
+            actor: deps.owner ?? null,
+            actorKind: "user",
+            agentId: id,
+            result: "failure",
+            reason: err instanceof Error ? err.message : "unknown",
+          });
         }
       }
+      // Destructive (cascades PVC/secret/egress-rule cleanup); the actor is
+      // absent from the AgentDeleted event, so log it here.
+      securityLog("info", "agent.delete", {
+        category: "resource",
+        actor: deps.owner ?? null,
+        actorKind: "user",
+        agentId: id,
+        result: "success",
+      });
       emit({ type: EventType.AgentDeleted, agentId: id });
     },
 
     async restart(id) {
       const restarted = await deps.repo.restart(id, deps.owner);
       if (restarted) {
+        securityLog("info", "agent.restart", {
+          category: "privileged",
+          actor: deps.owner ?? null,
+          actorKind: "user",
+          agentId: id,
+          result: "success",
+        });
         emit({ type: EventType.AgentRestarted, agentId: id });
       }
       return restarted;
     },
 
     async wake(id) {
-      if (deps.owner && !(await deps.repo.isOwnedBy(id, deps.owner)))
+      if (deps.owner && !(await deps.repo.isOwnedBy(id, deps.owner))) {
+        securityLog("warn", "authz.owner_mismatch", {
+          category: "authz",
+          actor: deps.owner,
+          actorKind: "user",
+          agentId: id,
+          decision: "deny",
+          reason: "not-owner",
+          detail: { surface: "agent.wake" },
+        });
         return null;
+      }
       const infra = await deps.repo.wake(id);
       if (!infra) return null;
       if (infra.desiredState === "running") {
+        securityLog("info", "agent.wake", {
+          category: "privileged",
+          actor: deps.owner ?? null,
+          actorKind: "user",
+          agentId: id,
+          result: "success",
+        });
         emit({ type: EventType.AgentWoken, agentId: id });
       }
       return project(infra);

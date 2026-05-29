@@ -18,6 +18,7 @@ import type {
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
 import { resolveAgent } from "./agent-auth.js";
+import { securityLog } from "../../core/security-log.js";
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
 
@@ -165,6 +166,7 @@ export function createMcpSession(
     },
     async ({ channel, text, chatId, attachment }) => {
       let resolved: ChannelAttachment | undefined;
+      let attachmentAudit: Record<string, unknown> | undefined;
       if (attachment) {
         const resolvedPath = resolveWorkspacePath(attachment.path, agentHome);
         let file: { content: string; binary: boolean; mimeType?: string };
@@ -198,6 +200,14 @@ export function createMcpSession(
             : {}),
           ...(attachment.title ? { title: attachment.title } : {}),
         };
+        // Capture the requested (possibly absolute) and resolved source path
+        // so file-exfil-via-channel is investigable — an agent can attach an
+        // absolute pod path, not just a workspace file.
+        attachmentAudit = {
+          requestedPath: attachment.path,
+          resolvedPath,
+          bytes: data.length,
+        };
       }
       const result = await deps.channelManager.postMessage(
         agentId,
@@ -208,6 +218,23 @@ export function createMcpSession(
           ...(resolved ? { attachment: resolved } : {}),
         },
       );
+      const failed = "error" in result;
+      // Autonomous egress to an external channel under the agent identity, no
+      // human in the loop. Never log the message text.
+      securityLog(failed ? "warn" : "info", "channel.outbound", {
+        category: "channel",
+        actor: agentId,
+        actorKind: "agent",
+        surface: channel,
+        agentId,
+        result: failed ? "failure" : "success",
+        detail: {
+          ...(chatId ? { conversationId: chatId } : {}),
+          hasAttachment: attachmentAudit !== undefined,
+          ...(attachmentAudit ? { attachment: attachmentAudit } : {}),
+          textLength: text.length,
+        },
+      });
       if ("error" in result) return errorResult(result.error);
       return textResult("Message sent");
     },
@@ -477,6 +504,17 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     // resolve is just a label lookup for owner / agentId.
     const verified = await resolveAgent(deps.k8s, agentId);
     if (!verified) {
+      // Backstop for the waypoint guarantee: an agent id that resolves to no
+      // K8s agent means the mesh principal and cluster state diverged.
+      securityLog("warn", "mcp.resolve_fail", {
+        category: "authn",
+        actor: agentId,
+        actorKind: "agent",
+        surface: "mcp",
+        agentId,
+        decision: "deny",
+        reason: "agent-unresolved",
+      });
       return c.json({ error: "not found" }, 404);
     }
 
@@ -485,6 +523,18 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     if (sessionId && sessions.has(sessionId)) {
       const session = sessions.get(sessionId)!;
       if (session.agentId !== agentId) {
+        // A session id minted for one agent reused against another — a
+        // session-hijack signal.
+        securityLog("warn", "mcp.session_mismatch", {
+          category: "authn",
+          actor: agentId,
+          actorKind: "agent",
+          surface: "mcp",
+          agentId,
+          decision: "deny",
+          reason: "session-agent-mismatch",
+          detail: { sessionAgentId: session.agentId },
+        });
         return c.json({ error: "not found" }, 404);
       }
       session.lastActivity = Date.now();

@@ -21,6 +21,7 @@ import { discoverMcpAuth } from "../infrastructure/mcp-discovery.js";
 import type { ContributionFanOut } from "./contribution-fanout.js";
 import type { OAuthFlowService } from "./oauth-flow.js";
 import { emit, EventType } from "../../../events.js";
+import { securityLog } from "../../../core/security-log.js";
 
 export function createConnectionsService(deps: {
   ownerId: string;
@@ -126,6 +127,19 @@ export function createConnectionsService(deps: {
       }
 
       const template = deps.templates.get(conn.templateId);
+      securityLog("info", "connection.delete", {
+        category: "credential",
+        actor: deps.ownerId,
+        actorKind: "user",
+        target: conn.id,
+        result: "success",
+        detail: {
+          templateId: conn.templateId,
+          authKind: conn.auth.kind,
+          secretsDeleted: paths.size,
+          affectedAgents: affectedAgents.length,
+        },
+      });
       emit({
         type: EventType.ConnectionRemoved,
         actorSub: deps.ownerId,
@@ -155,6 +169,16 @@ export function createConnectionsService(deps: {
       const ownedById = new Map(owned.map((c) => [c.id, c]));
       for (const id of deduped) {
         if (!ownedById.has(id)) {
+          securityLog("warn", "authz.owner_mismatch", {
+            category: "authz",
+            actor: deps.ownerId,
+            actorKind: "user",
+            agentId,
+            decision: "deny",
+            reason: "connection-not-owned",
+            target: id,
+            detail: { surface: "connection.grants_set" },
+          });
           throw new Error(`connection ${id} not owned by caller`);
         }
       }
@@ -170,6 +194,18 @@ export function createConnectionsService(deps: {
 
       for (const id of toGrant) await deps.repo.grant(id, agentId);
       for (const id of toRevoke) await deps.repo.revoke(id, agentId);
+
+      if (toGrant.length > 0 || toRevoke.length > 0) {
+        // Links "credential granted" to "agent that may inject it".
+        securityLog("info", "connection.grants_set", {
+          category: "authz-list",
+          actor: deps.ownerId,
+          actorKind: "user",
+          agentId,
+          result: "success",
+          detail: { granted: toGrant, revoked: toRevoke },
+        });
+      }
 
       const grantedConnections = deduped
         .map((id) => ownedById.get(id))
@@ -241,6 +277,16 @@ export function createConnectionsService(deps: {
         }
         throw err;
       }
+      // Header-auth connections store a credential at rest here with no
+      // ConnectionCreated event (that fires only on OAuth-callback completion).
+      securityLog("info", "connection.create", {
+        category: "credential",
+        actor: deps.ownerId,
+        actorKind: "user",
+        target: id,
+        result: "success",
+        detail: { templateId: template.id, authKind: built.auth.kind },
+      });
       return id;
     },
 

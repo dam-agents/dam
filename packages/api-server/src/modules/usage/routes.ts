@@ -10,6 +10,7 @@ import {
   type ViewName,
 } from "./services/report-service.js";
 import { renderHtmlReport, type ViewResult } from "./html-report.js";
+import { securityLog } from "../../core/security-log.js";
 
 export type UsageRoutesDeps = {
   service: ReportService;
@@ -28,9 +29,29 @@ export function createUsageRoutes(deps: UsageRoutesDeps) {
   const inspectorOnly = async (c: Context<AppEnv>, next: Next) => {
     const roles = c.get("roles") ?? [];
     if (!roles.includes(deps.inspectorRole)) {
+      // Attempt to read the most privileged cross-tenant surface without the
+      // role.
+      securityLog("warn", "usage.inspect.deny", {
+        category: "privileged",
+        actor: c.get("user")?.sub ?? null,
+        actorKind: "user",
+        decision: "deny",
+        reason: "missing-inspector-role",
+        target: c.req.path,
+      });
       if (c.req.path === "/api/usage/report") return c.text("forbidden", 403);
       return c.json({ error: "forbidden" }, 403);
     }
+    // Successful privileged read of cross-tenant activity — recorded on STDOUT,
+    // distinct from the pseudonymized activity_events it reads.
+    securityLog("info", "usage.inspect", {
+      category: "privileged",
+      actor: c.get("user")?.sub ?? null,
+      actorKind: "user",
+      result: "success",
+      target: c.req.path,
+      ...(c.req.query("view") ? { detail: { view: c.req.query("view") } } : {}),
+    });
     await next();
   };
   routes.use("/api/usage", inspectorOnly);

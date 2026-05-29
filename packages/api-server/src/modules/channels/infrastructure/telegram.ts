@@ -10,6 +10,7 @@ import type {
 } from "../stored-channel.js";
 import type { PostMessageOptions } from "../services/channel-manager.js";
 import { createAcpClient } from "../../../core/acp-client.js";
+import { securityLog } from "../../../core/security-log.js";
 import {
   buildAuthorizeUrl,
   generatePkce,
@@ -230,6 +231,16 @@ export function createTelegramWorker(
           telegramUserId,
         );
         if (!isAdmin) {
+          securityLog("warn", "channel.authz_deny", {
+            category: "channel",
+            actor: null,
+            actorKind: "external",
+            surface: "telegram",
+            agentId: instanceName,
+            decision: "deny",
+            reason: "not-group-admin",
+            detail: { telegramUserId, threadId: thread.id, command: "login" },
+          });
           await thread.post("Only group admins can /login.");
           return;
         }
@@ -269,6 +280,16 @@ export function createTelegramWorker(
           telegramUserId,
         );
         if (!isAdmin) {
+          securityLog("warn", "channel.authz_deny", {
+            category: "channel",
+            actor: null,
+            actorKind: "external",
+            surface: "telegram",
+            agentId: instanceName,
+            decision: "deny",
+            reason: "not-group-admin",
+            detail: { telegramUserId, threadId: thread.id, command: "logout" },
+          });
           await thread.post("Only group admins can /logout.");
           return;
         }
@@ -280,6 +301,15 @@ export function createTelegramWorker(
         return;
       }
       await threads.revoke(instanceName, thread.id);
+      securityLog("info", "channel.thread_revoked", {
+        category: "authz-list",
+        actor: null,
+        actorKind: "external",
+        surface: "telegram",
+        agentId: instanceName,
+        result: "success",
+        detail: { threadId: thread.id, byTelegramUserId: telegramUserId },
+      });
       await thread.post(
         "Conversation revoked. Send /login to authorize again.",
       );
@@ -320,6 +350,22 @@ export function createTelegramWorker(
 
       const authorized = await threads.isAuthorized(instanceName, thread.id);
       if (!authorized) {
+        // An unauthorized conversation attempting to drive the agent. Repeated
+        // hits from the same thread are the probing signal.
+        securityLog("warn", "channel.inbound.unauthorized", {
+          category: "channel",
+          actor: null,
+          actorKind: "external",
+          surface: "telegram",
+          agentId: instanceName,
+          decision: "deny",
+          reason: "thread-not-authorized",
+          detail: {
+            telegramUserId: message.author.userId,
+            threadId: thread.id,
+            isDM: thread.isDM,
+          },
+        });
         // Only prompt for /login in DMs. Staying silent in groups avoids
         // spamming unauthorized group chats that the bot happens to be in.
         if (thread.isDM) {

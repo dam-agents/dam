@@ -14,6 +14,7 @@ import {
   validateRRule,
   validateTimezone,
 } from "../domain/recurrences.js";
+import { securityLog } from "../../../core/security-log.js";
 
 export function createSchedulesService(deps: {
   repo: SchedulesRepository;
@@ -50,6 +51,22 @@ export function createSchedulesService(deps: {
         spec,
       });
       await deps.runner.sync(schedule.id);
+      // An agent self-scheduling recurring executions (createdBy='agent') is
+      // especially notable.
+      securityLog("info", "schedule.create", {
+        category: "privileged",
+        actor: deps.owner,
+        actorKind: createdBy === "agent" ? "agent" : "user",
+        agentId: input.agentId,
+        target: schedule.id,
+        result: "success",
+        detail: {
+          createdBy,
+          type: "cron",
+          cron: input.cron,
+          ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
+        },
+      });
       return schedule;
     },
 
@@ -78,6 +95,19 @@ export function createSchedulesService(deps: {
         spec,
       });
       await deps.runner.sync(schedule.id);
+      securityLog("info", "schedule.create", {
+        category: "privileged",
+        actor: deps.owner,
+        actorKind: "user",
+        agentId: input.agentId,
+        target: schedule.id,
+        result: "success",
+        detail: {
+          createdBy: "user",
+          type: "rrule",
+          ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
+        },
+      });
       return schedule;
     },
 
@@ -105,6 +135,13 @@ export function createSchedulesService(deps: {
     async delete(id) {
       await deps.runner.cancel(id);
       await deps.repo.delete(id, deps.owner);
+      securityLog("info", "schedule.delete", {
+        category: "privileged",
+        actor: deps.owner,
+        actorKind: "user",
+        target: id,
+        result: "success",
+      });
     },
 
     async toggle(id) {
@@ -115,6 +152,15 @@ export function createSchedulesService(deps: {
       } else {
         await deps.runner.cancel(id);
       }
+      securityLog("info", "schedule.toggle", {
+        category: "privileged",
+        actor: deps.owner,
+        actorKind: "user",
+        agentId: next.agentId,
+        target: id,
+        result: "success",
+        detail: { enabled: next.spec.enabled },
+      });
       return next;
     },
   };

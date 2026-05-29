@@ -61,6 +61,7 @@ This directory contains ADRs for the Platform project.
 | [054](054-keycloak-theme.md)                  | Branded Keycloak login via Keycloakify-built custom image | @kapetr |
 | [055](055-agent-owned-session-metadata.md)    | Agent-owned session metadata via ACP `_meta`; server sessions become a Redis cache | @jezekra1 |
 | [056](056-browser-driven-e2e.md)              | Browser-driven E2E tracer with values-gated test affordances | @tomkis |
+| [057](057-structured-logging.md)              | Structured logging for the api-server — Pino, JSON to stdout, security audit trail as first consumer | @pilartomas |
 
 ## Drafts
 

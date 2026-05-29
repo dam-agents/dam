@@ -1,12 +1,25 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
-import type { MiddlewareHandler } from "hono";
+import type { Context, MiddlewareHandler } from "hono";
 import type { UserIdentity } from "api-server-api";
 import { emit, EventType } from "../../events.js";
+import { securityLog } from "../../core/security-log.js";
 
 export class ForbiddenError extends Error {
-  constructor(public readonly requiredRole: string) {
+  constructor(
+    public readonly requiredRole: string,
+    /** Decoded subject of the rejected token — carried so the 403 can be
+     *  audited against a known principal. */
+    public readonly sub: string,
+  ) {
     super(`Missing required role: ${requiredRole}`);
   }
+}
+
+/** Best-effort client IP behind Traefik/Istio (first `X-Forwarded-For` hop). */
+export function clientIp(c: Context): string | undefined {
+  const fwd = c.req.header("x-forwarded-for");
+  if (fwd) return fwd.split(",")[0]!.trim();
+  return c.req.header("x-real-ip") ?? undefined;
 }
 
 export interface AuthConfig {
@@ -56,7 +69,7 @@ export function createAuth(config: AuthConfig) {
     const roles = realmAccess?.roles ?? [];
 
     if (config.requiredRole && !roles.includes(config.requiredRole)) {
-      throw new ForbiddenError(config.requiredRole);
+      throw new ForbiddenError(config.requiredRole, payload.sub!);
     }
 
     return {
@@ -79,6 +92,15 @@ export function createAuth(config: AuthConfig) {
 
     const authHeader = c.req.header("authorization");
     if (!authHeader?.startsWith("Bearer ")) {
+      securityLog("warn", "authn.deny", {
+        category: "authn",
+        actor: null,
+        actorKind: "external",
+        result: "failure",
+        reason: "missing-bearer",
+        target: c.req.path,
+        sourceIp: clientIp(c),
+      });
       return c.json({ error: "unauthorized" }, 401);
     }
 
@@ -103,6 +125,18 @@ export function createAuth(config: AuthConfig) {
       return next();
     } catch (err) {
       if (err instanceof ForbiddenError) {
+        // Known principal denied for lack of a required role — the most
+        // forensically interesting authz event.
+        securityLog("warn", "authz.deny", {
+          category: "authz",
+          actor: err.sub,
+          actorKind: "user",
+          result: "failure",
+          reason: "missing-required-role",
+          target: c.req.path,
+          sourceIp: clientIp(c),
+          detail: { requiredRole: err.requiredRole },
+        });
         return c.json(
           {
             error: "forbidden",
@@ -111,6 +145,18 @@ export function createAuth(config: AuthConfig) {
           403,
         );
       }
+      // Token present but invalid — log the verify-error class (never the
+      // token itself): expired/bad-signature/wrong-audience are replay and
+      // tampering signals.
+      securityLog("warn", "authn.deny", {
+        category: "authn",
+        actor: null,
+        actorKind: "external",
+        result: "failure",
+        reason: err instanceof Error ? err.name : "verify-failed",
+        target: c.req.path,
+        sourceIp: clientIp(c),
+      });
       return c.json({ error: "unauthorized" }, 401);
     }
   };

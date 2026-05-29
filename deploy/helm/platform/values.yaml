@@ -335,6 +335,13 @@ apiServer:
     pullPolicy: IfNotPresent
   port: 4000
   harnessServerPort: 4001
+  # -- Minimum severity emitted by the structured logger
+  # (`error`|`warn`|`info`|`debug`). The security audit trail is logged at
+  # common levels (denials → warn, allowed/successful actions → info), so the
+  # default `info` keeps the full trail on; raise to `warn` to keep only
+  # denials/failures, or `error` to silence the trail. There is no separate
+  # audit on/off switch — visibility is governed here as usual.
+  logLevel: info
   # -- ext_authz gRPC listener for the Envoy sidecar's HITL gate
   # (ADR-035). Single endpoint: Envoy's HTTP filter (L7,
   # TLS-terminated chains) and network filter (L4, catch-all chain) both

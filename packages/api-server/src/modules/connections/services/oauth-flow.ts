@@ -12,6 +12,7 @@ import type { ConnectionTemplateRegistry } from "../domain/connection-template.j
 import { buildConnectionSdsFields } from "../domain/connection-sds.js";
 import type { SecretStore } from "../../secret-store/index.js";
 import { emit, EventType } from "../../../events.js";
+import { securityLog } from "../../../core/security-log.js";
 
 export interface OAuthFlowService {
   startOAuth(connectionId: string): Promise<{ authUrl: string }>;
@@ -97,6 +98,21 @@ export function createOAuthFlowService(deps: {
       }
 
       const template = deps.templates.get(conn.templateId);
+      // Long-lived credentials minted via the public, unauthenticated callback
+      // — record the mint (never the tokens).
+      securityLog("info", "oauth.token_mint", {
+        category: "credential",
+        actor: pending.ctx.ownerId,
+        actorKind: "user",
+        target: conn.id,
+        result: "success",
+        detail: {
+          templateId: conn.templateId,
+          hasRefresh: Boolean(
+            tokens.refreshToken && pending.ctx.refreshTokenRef,
+          ),
+        },
+      });
       emit({
         type: EventType.ConnectionCreated,
         actorSub: pending.ctx.ownerId,
