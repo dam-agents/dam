@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -39,6 +39,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -535,6 +536,29 @@ export function StyleGuide({ onClose }: { onClose: () => void }) {
               </AlertDialogContent>
             </AlertDialog>
 
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive">Open destructive alert</Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Remove this thing?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This permanently deletes the record and any data associated
+                    with it. This cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    className={buttonVariants({ variant: "destructive" })}
+                  >
+                    Remove
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+
             <Popover>
               <PopoverTrigger asChild>
                 <Button variant="outline">
@@ -580,6 +604,13 @@ export function StyleGuide({ onClose }: { onClose: () => void }) {
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
+        </Section>
+
+        <Section
+          title="Confirm dialogs"
+          subtitle="Standard + destructive — use ConfirmDialog for any are-you-sure flow. Ad-hoc destructive prompts can render it directly; the global DialogOverlay drives it from the store via showConfirm(message, title, { kind: 'destructive' })."
+        >
+          <ConfirmDialogPlayground />
         </Section>
 
         <Section title="Tabs" subtitle="Horizontal tab navigation">
@@ -672,6 +703,40 @@ function VariantRow({
         {label}
       </span>
       <div className="flex flex-wrap items-center gap-2">{children}</div>
+    </div>
+  );
+}
+
+function ConfirmDialogPlayground() {
+  const [defaultOpen, setDefaultOpen] = useState(false);
+  const [destructiveOpen, setDestructiveOpen] = useState(false);
+  return (
+    <div className="flex flex-wrap gap-3">
+      <Button variant="outline" onClick={() => setDefaultOpen(true)}>
+        Open default confirm
+      </Button>
+      <Button variant="outline" onClick={() => setDestructiveOpen(true)}>
+        Open destructive confirm
+      </Button>
+      <ConfirmDialog
+        open={defaultOpen}
+        onOpenChange={setDefaultOpen}
+        title="Save changes?"
+        description="Your edits will be persisted and visible to anyone on this account."
+        confirmLabel="Save"
+        onConfirm={() => setDefaultOpen(false)}
+        onCancel={() => setDefaultOpen(false)}
+      />
+      <ConfirmDialog
+        open={destructiveOpen}
+        onOpenChange={setDestructiveOpen}
+        kind="destructive"
+        title="Remove Provider?"
+        description="Are you sure you want to remove this provider? Any agent currently using this provider will no longer work as expected."
+        confirmLabel="Remove provider"
+        onConfirm={() => setDestructiveOpen(false)}
+        onCancel={() => setDestructiveOpen(false)}
+      />
     </div>
   );
 }

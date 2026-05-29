@@ -15,6 +15,7 @@ import { WelcomeTour } from "./modules/onboarding/welcome-tour.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { ProvidersView } from "./modules/settings/views/providers-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
+import { TermsView } from "./modules/terms/views/terms-view.js";
 import { useStore } from "./store.js";
 
 export default function App() {
@@ -100,6 +101,18 @@ export default function App() {
         <ToastOverlay />
         <OfflineBanner />
         <StyleGuideToggle />
+      </>
+    );
+
+  // Terms view is full-screen and bypasses the sidebar shell so its only
+  // outgoing tRPC calls hit terms.* (which the api-server's terms gate
+  // exempts from the 412). Otherwise other queries fan out, get 412'd, and
+  // bounce the user right back to /terms in a loop.
+  if (view === "terms")
+    return (
+      <>
+        <TermsView />
+        <ToastOverlay />
       </>
     );
 

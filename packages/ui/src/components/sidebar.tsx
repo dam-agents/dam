@@ -1,6 +1,7 @@
-import { Bot, Connect, Menu, Model, Settings } from "@carbon/icons-react";
+import { Bot, Connect, Model, Settings } from "@carbon/icons-react";
 import { useEffect, useState } from "react";
 
+import { DamSquareLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -34,33 +35,19 @@ export function Sidebar() {
         collapsed ? "w-[52px]" : "w-[200px]",
       )}
     >
-      {/* Brand row — hamburger always lives at the same x-offset as the
-          nav icons below; brand text fades out when collapsed but the
-          hamburger stays put so nothing visually shifts during the
-          width transition. */}
+      {/* Brand row — square DAM mark sits at the same x-offset as the
+          nav icons below. Click toggles collapse; the brand wordmark
+          retired with the hamburger to keep the row icon-only. */}
       <div className="flex items-center h-12 px-2">
         <Button
           variant="ghost"
           onClick={() => setCollapsed((c) => !c)}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className="h-9 px-2.5 shrink-0 justify-start hover:bg-transparent"
+          className="h-9 w-9 px-0 shrink-0 justify-center hover:bg-transparent"
         >
-          <Menu className="shrink-0" />
+          <DamSquareLogo className="h-6 w-6 rounded-sm" />
         </Button>
-        {!collapsed && (
-          <Button
-            variant="ghost"
-            onClick={() => setView("list")}
-            className="h-9 px-0 justify-start flex-1 hover:bg-transparent"
-            title="Home"
-          >
-            <span className="text-sm text-foreground">
-              <span className="font-normal">IBM Research </span>
-              <span className="font-semibold">DAM</span>
-            </span>
-          </Button>
-        )}
       </div>
 
       {/* Nav items — icon + label rows. Always left-aligned so icons

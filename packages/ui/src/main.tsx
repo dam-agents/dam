@@ -9,10 +9,16 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 
 import { initAuth } from "./auth.js";
 import { applyBrand, loadBrand } from "./brand.js";
+import { broadcastAndCloseIfOAuthPopup } from "./modules/connections/lib/oauth-popup.js";
 import { preflightTermsGate } from "./modules/terms/lib/preflight.js";
 import { queryClient } from "./query-client.js";
 
 async function main() {
+  // If we're the OAuth popup window, hand the result back to the parent tab
+  // and close. Done before anything else so the user doesn't see a flash of
+  // login/SPA UI on the way out.
+  if (broadcastAndCloseIfOAuthPopup()) return;
+
   // === Mock mode — packages/ui/src/mocks/. Safe to delete this block + folder. ===
   if (import.meta.env.VITE_USE_MOCKS === "true") {
     const { setupMocks } = await import("./mocks/setup.js");

@@ -95,12 +95,12 @@
   --foreground: #121619;
   --card: #ffffff;
   --card-foreground: #121619;
-  --popover: #ffffff;
+  --popover: #f2f4f8;
   --popover-foreground: #121619;
   --primary: #000000;
   --primary-foreground: #ffffff;
   --secondary: #f2f4f8;
-  --secondary-foreground: #1c1917;
+  --secondary-foreground: #161616;
   --muted: #f2f4f8;
   --muted-foreground: #4d5358;
   --accent-alt: #eaf2fe;

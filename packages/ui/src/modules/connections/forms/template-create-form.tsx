@@ -1,3 +1,4 @@
+import { ChevronDown as ChevronDownIcon } from "@carbon/icons-react";
 import {
   type ConnectionCreateInput,
   connectionNameSchema,
@@ -6,17 +7,25 @@ import {
 } from "api-server-api";
 import { useMemo, useState } from "react";
 
-import { api } from "../../../api.js";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
-  DialogBody,
+  Dialog,
+  DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
-  Modal,
-} from "../../../components/modal.js";
-import { useCreateConnection } from "../api/mutations.js";
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 
-const INPUT_CLASS =
-  "w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted";
+import { api } from "../../../api.js";
+import { queryClient } from "../../../query-client.js";
+import { trpc } from "../../../trpc.js";
+import { useCreateConnection } from "../api/mutations.js";
+import { openOAuthPopup } from "../lib/oauth-popup.js";
 
 export function TemplateCreateForm({
   template,
@@ -122,8 +131,19 @@ export function TemplateCreateForm({
         const r = await api.connections.startOAuth.mutate({
           connectionId: result.id,
         });
-        sessionStorage.setItem("platform-return-view", "connections");
-        window.location.href = r.authUrl;
+        // Open OAuth in a popup so the parent tab (and any in-progress agent
+        // creation modal underneath) survives the round-trip. The popup
+        // broadcasts back via BroadcastChannel — see oauth-popup.ts.
+        const oauthResult = await openOAuthPopup(r.authUrl);
+        setAuthorizing(false);
+        if (oauthResult.status === "error") {
+          setError(oauthResult.message ?? "OAuth failed");
+          return;
+        }
+        await queryClient.invalidateQueries({
+          queryKey: trpc.connections.list.queryKey(),
+        });
+        onCreated(result.id);
       } catch (err) {
         setAuthorizing(false);
         setError(err instanceof Error ? err.message : String(err));
@@ -144,23 +164,21 @@ export function TemplateCreateForm({
   const overridable = template.inputs.filter((i) => i.state === "overridable");
 
   return (
-    <Modal widthClass="w-[480px]">
-      <DialogHeader>
-        <h2 className="text-[20px] font-bold text-text">Add {template.name}</h2>
-        {template.description && (
-          <p className="text-[13px] text-text-secondary mt-1">
-            {template.description}
-          </p>
-        )}
-      </DialogHeader>
-      <DialogBody>
+    <Dialog open onOpenChange={(o) => !o && !pending && onCancel()}>
+      <DialogContent className="max-w-[480px]">
+        <DialogHeader>
+          <DialogTitle>Add {template.name}</DialogTitle>
+          {template.description && (
+            <DialogDescription>{template.description}</DialogDescription>
+          )}
+        </DialogHeader>
+
         <div className="flex flex-col gap-4">
           <LabeledInput
             label="Name"
             placeholder="my-connection"
             value={name}
             onChange={setName}
-            help="Lowercase letters, digits, and single hyphens (e.g. my-mcp-server). Doubles as the MCP slug."
           />
 
           {requiredOrOptional.map((input) => (
@@ -190,39 +208,39 @@ export function TemplateCreateForm({
           )}
 
           {requiredOrOptional.length === 0 && overridable.length === 0 && (
-            <p className="text-[12px] text-text-muted">
+            <p className="text-[12px] text-muted-foreground">
               No additional inputs — preconfigured.
             </p>
           )}
 
           {error && (
-            <p className="text-[12px] text-danger leading-relaxed">{error}</p>
+            <p className="text-[12px] text-destructive leading-relaxed">
+              {error}
+            </p>
           )}
         </div>
-      </DialogBody>
-      <DialogFooter>
-        <button
-          onClick={onCancel}
-          disabled={pending}
-          className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm disabled:opacity-40"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={submit}
-          disabled={pending}
-          className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent"
-        >
-          {authorizing
-            ? "Redirecting…"
-            : pending
-              ? "…"
-              : needsOAuth
-                ? "Create + Authorize"
-                : "Create"}
-        </button>
-      </DialogFooter>
-    </Modal>
+
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onCancel}
+            disabled={pending}
+          >
+            Cancel
+          </Button>
+          <Button type="button" onClick={submit} disabled={pending}>
+            {authorizing
+              ? "Authorizing…"
+              : pending
+                ? "…"
+                : needsOAuth
+                  ? "Create + Authorize"
+                  : "Create"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -239,17 +257,26 @@ function OverridableSection({
   setF: (k: string, v: string) => void;
   setOverride: (k: string, v: boolean) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  // Default to expanded so the customized-defaults are visible up-front —
+  // the meeting flagged that hiding them behind a chevron made users miss
+  // they could override clientId / clientSecret / appSlug for GitHub.
+  const [expanded, setExpanded] = useState(true);
   return (
-    <div className="rounded-lg border-2 border-dashed border-border-light p-3">
+    <div className="rounded-lg border border-dashed p-3">
       <button
         type="button"
-        className="text-[12px] font-semibold text-text-secondary hover:text-text"
+        className="text-[12px] font-semibold text-foreground hover:text-primary inline-flex items-center gap-1"
         onClick={() => setExpanded((v) => !v)}
       >
-        {expanded ? "▼" : "▶"} Customize defaults ({inputs.length})
+        <ChevronDownIcon
+          className={cn(
+            "h-3 w-3 transition-transform",
+            !expanded && "-rotate-90",
+          )}
+        />{" "}
+        Customize defaults ({inputs.length})
       </button>
-      <p className="text-[11px] text-text-muted mt-1">
+      <p className="text-[11px] text-muted-foreground mt-1">
         These values are pre-configured by your administrator. Leave as-is to
         use the defaults.
       </p>
@@ -258,30 +285,28 @@ function OverridableSection({
           {inputs.map((input) => {
             const overriding = overrides[input.name] === true;
             return (
-              <div key={input.name}>
-                <label className="flex items-center gap-2 mb-1">
-                  <input
-                    type="checkbox"
+              <div key={input.name} className="flex flex-col gap-1.5">
+                <Label className="flex items-center gap-2 cursor-pointer">
+                  <Checkbox
                     checked={overriding}
-                    onChange={(e) => setOverride(input.name, e.target.checked)}
+                    onCheckedChange={(v) => setOverride(input.name, v === true)}
                   />
-                  <span className="text-[12px] font-semibold text-text-secondary">
+                  <span className="text-[12px] font-semibold text-foreground">
                     Override {labelFor(input.name).toLowerCase()}
                   </span>
-                </label>
+                </Label>
                 {!overriding && input.presetValue && (
-                  <p className="text-[11px] font-mono text-text-muted pl-6">
+                  <p className="text-[11px] font-mono text-muted-foreground pl-6">
                     Preset: {input.presetValue}
                   </p>
                 )}
                 {!overriding && !input.presetValue && input.secret && (
-                  <p className="text-[11px] text-text-muted pl-6">
+                  <p className="text-[11px] text-muted-foreground pl-6">
                     Preset value hidden.
                   </p>
                 )}
                 {overriding && (
-                  <input
-                    className={INPUT_CLASS}
+                  <Input
                     type={input.secret ? "password" : "text"}
                     placeholder={placeholderFor(input.name)}
                     value={fields[input.name] ?? ""}
@@ -313,21 +338,20 @@ function LabeledInput({
   help?: string;
 }) {
   return (
-    <label className="block">
-      <span className="text-[12px] font-semibold text-text-secondary block mb-1">
+    <div className="flex flex-col gap-1.5">
+      <Label className="text-[12px] font-semibold text-foreground">
         {label}
-      </span>
-      <input
-        className={INPUT_CLASS}
+      </Label>
+      <Input
         type={type ?? "text"}
         placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
       />
       {help && (
-        <span className="text-[11px] text-text-muted block mt-1">{help}</span>
+        <span className="text-[11px] text-muted-foreground">{help}</span>
       )}
-    </label>
+    </div>
   );
 }
 

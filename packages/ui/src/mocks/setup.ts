@@ -39,6 +39,31 @@ const TRPC_RESPONSES: Record<string, unknown> = {
   "agents.list": [],
   "secrets.list": [],
   "connections.list": [],
+  "connections.listTemplates": [
+    {
+      id: "github",
+      name: "GitHub",
+      category: "app",
+      description: "Read + write GitHub repos, issues, PRs.",
+      iconSlug: "github",
+      authKind: "oauth",
+      isCustom: false,
+      // Mirrors what the real backend emits when Helm has clientId /
+      // clientSecret / appSlug configured — see inputsFor() in
+      // packages/api-server/src/modules/connections/domain/connection-template.ts.
+      // Without these, the "Customize defaults" section in TemplateCreateForm
+      // would render empty in design-preview mode.
+      inputs: [
+        {
+          name: "clientId",
+          state: "overridable",
+          presetValue: "Iv1.mock-client-id",
+        },
+        { name: "clientSecret", state: "overridable", secret: true },
+        { name: "appSlug", state: "overridable", presetValue: "platform-mock" },
+      ],
+    },
+  ],
   "templates.list": [],
   "instances.list": [],
   "channels.available": [],
@@ -51,6 +76,12 @@ const TRPC_RESPONSES: Record<string, unknown> = {
   "approvals.listForInstance": [],
   "skills.listSkills": [],
   "skills.state": { installed: [], publishable: [] },
+  // Used by the from-scratch agent-creation skills step. Empty by default
+  // so the wizard renders the "No skill sources yet" empty card; without
+  // these the tRPC mock returns null and SkillsCatalogStep crashes on
+  // `sources.length`, making the step look missing.
+  "skills.sources.list": [],
+  "skills.list": [],
   "secrets.getAgentAccess": { secretIds: [] },
   "connections.getAgentConnections": { connectionIds: [] },
 };

@@ -28,9 +28,17 @@ export function useProviderActions() {
   const deleteSecret = useDeleteSecret();
 
   return {
-    /** Confirm with the user, then delete the secret. No-op on cancel. */
-    async remove(id: string, confirmMessage: string, confirmButton: string) {
-      if (!(await showConfirm(confirmMessage, confirmButton))) return;
+    /** Confirm with the user, then delete the secret. No-op on cancel.
+     *  Uses the destructive confirm variant — removing a provider breaks
+     *  any agent currently using it, so the dialog leans on the
+     *  destructive token to telegraph that. */
+    async remove(id: string) {
+      const ok = await showConfirm(
+        "Are you sure you want to remove this provider? Any agent currently using this provider will no longer work as expected.",
+        "Remove Provider?",
+        { kind: "destructive", confirmLabel: "Remove provider" },
+      );
+      if (!ok) return;
       deleteSecret.mutate({ id });
     },
 
