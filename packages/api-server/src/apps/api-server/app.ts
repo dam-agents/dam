@@ -8,6 +8,7 @@ import type {
   ApiContext,
   AuthConfig,
   Brand,
+  E2eService,
   TermsService,
   UserIdentity,
 } from "api-server-api";
@@ -112,6 +113,7 @@ export interface ApiServerAppDeps {
   ) => void;
   terms: TermsService;
   isTermsAccepted: IsAcceptedPort;
+  e2e: E2eService;
 }
 
 export function startApiServerApp(deps: ApiServerAppDeps) {
@@ -136,6 +138,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     schedulesBoot,
     terms,
     isTermsAccepted,
+    e2e,
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
@@ -662,7 +665,9 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         egressRules,
         files,
         terms,
+        e2e,
         user,
+        e2eEnabled: config.e2eEnabled,
       }),
     });
   });

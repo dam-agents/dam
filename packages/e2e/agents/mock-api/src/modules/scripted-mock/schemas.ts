@@ -18,7 +18,7 @@ export const receivedPromptSchema = z
   .object({
     sessionId: z.string(),
     receivedAt: z.string(),
-    prompt: z.unknown(),
+    prompt: z.unknown().optional(),
   })
   .strict();
 

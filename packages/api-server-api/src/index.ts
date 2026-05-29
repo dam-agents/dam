@@ -335,6 +335,13 @@ export {
 export { authConfigSchema } from "./modules/auth/types.js";
 export type { AuthConfig } from "./modules/auth/types.js";
 
+// E2E
+export type { E2eService } from "./modules/e2e/types.js";
+export {
+  e2eAgentIdInputSchema,
+  e2eSetScriptInputSchema,
+} from "./modules/e2e/schemas.js";
+
 export { secretRef } from "./modules/secret-store/types.js";
 export type { SecretRef } from "./modules/secret-store/types.js";
 

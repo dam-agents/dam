@@ -15,6 +15,7 @@
   "dependencies": {
     "@trpc/server": "^11.16.0",
     "agent-runtime-api": "workspace:*",
+    "mock-agent-api": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {

@@ -70,6 +70,7 @@ import {
 } from "./modules/forks/index.js";
 import { composeUsageModule } from "./modules/usage/compose.js";
 import { createK8sForkOrchestrator } from "./modules/forks/infrastructure/k8s-fork-orchestrator.js";
+import { composeE2eModule } from "./modules/e2e/compose.js";
 import { composeTermsModule } from "./modules/terms/index.js";
 import { loadConfig } from "./config.js";
 import { startApiServerApp } from "./apps/api-server/app.js";
@@ -114,6 +115,10 @@ const { service: termsService, isAcceptedPort: isTermsAccepted } =
     version: config.terms.version,
     text: config.terms.text,
   });
+
+const { service: e2eService } = composeE2eModule({
+  namespace: config.namespace,
+});
 
 const k8sCleanupSub = startK8sCleanupSaga(k8sClient, channelSecretStore);
 const channelCleanupSub = startChannelCleanupSaga(
@@ -414,6 +419,7 @@ const { server: apiServer } = startApiServerApp({
   mountUsageRoutes: usage.mount,
   terms: termsService,
   isTermsAccepted,
+  e2e: e2eService,
 });
 
 const { server: harnessApiServer } = startHarnessApiServerApp({
