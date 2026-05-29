@@ -89,7 +89,11 @@ export function buildCreateCommand(deps: {
             "This rule requires path-level enforcement (non-wildcard method/path) and will restart the agent (~5–15s).\n",
           );
           if (!(await confirm("Continue?"))) {
-            process.stderr.write("Cancelled.\n");
+            if (opts.json) {
+              process.stdout.write(`${JSON.stringify({ cancelled: true })}\n`);
+            } else {
+              process.stdout.write("Cancelled.\n");
+            }
             process.exit(EXIT_SUCCESS);
           }
         }

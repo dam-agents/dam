@@ -88,7 +88,11 @@ export function buildApplyPresetCommand(deps: {
             "Preset 'all' allows the agent to reach any host — this is a development escape hatch and bypasses the inbox entirely.\n",
           );
           if (!(await confirm("Continue?"))) {
-            process.stderr.write("Cancelled.\n");
+            if (opts.json) {
+              process.stdout.write(`${JSON.stringify({ cancelled: true })}\n`);
+            } else {
+              process.stdout.write("Cancelled.\n");
+            }
             process.exit(EXIT_SUCCESS);
           }
         }
