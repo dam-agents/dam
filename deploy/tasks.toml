@@ -371,10 +371,11 @@ YAML
 kubectl --kubeconfig="$KUBECONFIG" label namespace default istio.io/dataplane-mode=ambient --overwrite
 
 # 3. Load images into k3s (built by depends: image:*)
-# SKIP_IMAGE_BUILD also skips the load: image:* tasks already no-op'd, so
-# there's nothing new in docker to ship. Pods keep running their pinned SHAs.
-if [ -n "${SKIP_IMAGE_BUILD:-}" ]; then
-  echo "Skipping image load (SKIP_IMAGE_BUILD set)"
+# SKIP_IMAGE_LOAD skips the docker→containerd transfer. cluster:helm sets it
+# (no fresh images in docker); CI sets SKIP_IMAGE_BUILD only (buildx pre-loaded
+# the runner's docker daemon, but k3s containerd is still empty).
+if [ -n "${SKIP_IMAGE_LOAD:-}" ]; then
+  echo "Skipping image load (SKIP_IMAGE_LOAD set)"
   NO_RESTART=true
 else
   echo "Loading images into k3s..."
@@ -469,7 +470,7 @@ dir = "{{config_root}}"
 raw = true
 run = '''
 #!/usr/bin/env bash
-exec env SKIP_IMAGE_BUILD=1 mise run cluster:install "$@"
+exec env SKIP_IMAGE_BUILD=1 SKIP_IMAGE_LOAD=1 mise run cluster:install "$@"
 '''
 
 ["cluster:build-apiserver"]
