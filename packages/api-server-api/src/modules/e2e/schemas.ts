@@ -29,3 +29,14 @@ export const getReceivedPromptsResultSchema = z
   .strict();
 
 export const resetResultSchema = z.object({ ok: z.literal(true) }).strict();
+
+export const e2eAgentIdInputSchema = z
+  .object({ agentId: z.string().min(1) })
+  .strict();
+
+export const e2eSetScriptInputSchema = z
+  .object({
+    agentId: z.string().min(1),
+    script: setScriptInputSchema,
+  })
+  .strict();

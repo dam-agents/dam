@@ -5,12 +5,6 @@ console.info = console.error;
 console.warn = console.error;
 console.debug = console.error;
 
-const controlPort = Number.parseInt(
-  process.env.MOCK_CONTROL_PORT ?? "8081",
-  10,
-);
-const controlHost = process.env.MOCK_CONTROL_HOST ?? "0.0.0.0";
-
 const composition = composeScriptedMock();
 
 const defaultReply = process.env.MOCK_DEFAULT_REPLY;
@@ -28,8 +22,5 @@ if (defaultReply) {
   });
 }
 
-await composition.start({ controlPort, controlHost });
-process.stderr.write(
-  `[mock-agent] control listening on http://${controlHost}:${controlPort}/api/trpc\n`,
-);
+process.stderr.write("[mock-agent] tRPC control dispatch on stdio ready\n");
 process.stdin.resume();
