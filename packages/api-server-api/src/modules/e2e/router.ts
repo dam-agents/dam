@@ -1,10 +1,11 @@
 import { TRPCError } from "@trpc/server";
+import { t } from "../../trpc.js";
 import {
+  e2eAgentIdInputSchema,
+  e2eSetScriptInputSchema,
   getReceivedPromptsResultSchema,
   resetResultSchema,
-} from "mock-agent-api";
-import { t } from "../../trpc.js";
-import { e2eAgentIdInputSchema, e2eSetScriptInputSchema } from "./schemas.js";
+} from "./schemas.js";
 
 function gate(ctx: { e2eEnabled: boolean }): void {
   if (!ctx.e2eEnabled) throw new TRPCError({ code: "NOT_FOUND" });

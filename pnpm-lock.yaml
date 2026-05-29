@@ -265,9 +265,6 @@ importers:
       agent-runtime-api:
         specifier: workspace:*
         version: link:../agent-runtime-api
-      mock-agent-api:
-        specifier: workspace:*
-        version: link:../e2e/agents/mock-api
       zod:
         specifier: ^4.4.3
         version: 4.4.3
