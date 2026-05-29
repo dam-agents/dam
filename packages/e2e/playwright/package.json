@@ -1,0 +1,17 @@
+{
+  "name": "e2e-playwright",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.50.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "dev-config": "workspace:*",
+    "typescript": "^6.0.2"
+  }
+}
