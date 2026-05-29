@@ -14,6 +14,20 @@ test("drive mock agent: setScript → prompt → assert reply + received", async
   const token = await getAccessToken();
   const api = createApiClient(token);
 
+  const existing = (await api.agents.list.query()).find(
+    (a) => a.name === agentName,
+  );
+  if (existing) {
+    await api.agents.delete.mutate({ id: existing.id });
+    await expect
+      .poll(
+        async () =>
+          (await api.agents.list.query()).find((a) => a.name === agentName),
+        { timeout: 30_000, message: `agent ${agentName} not cleaned up` },
+      )
+      .toBeUndefined();
+  }
+
   await page.goto(baseUrl);
   await expect(page.getByTestId("app-sidebar")).toBeVisible();
 
@@ -66,9 +80,12 @@ test("drive mock agent: setScript → prompt → assert reply + received", async
   });
 
   await page.getByRole("heading", { name: agentName }).click();
-  await page.waitForURL(new RegExp(`/chat/${encodeURIComponent(agentId)}`));
+  await expect(page).toHaveURL(
+    new RegExp(`/chat/${encodeURIComponent(agentId)}`),
+  );
 
   const input = page.getByPlaceholder(/message agent/i);
+  await expect(input).toBeVisible();
   await input.fill(userPrompt);
   await input.press("Enter");
 
