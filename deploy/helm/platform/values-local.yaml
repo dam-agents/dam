@@ -85,6 +85,17 @@ agentTemplates:
         cpu: "2"
         memory: "4Gi"
 
+  - name: mock
+    enabled: true
+    description: "Scripted mock agent (E2E test fixture)"
+    image:
+      repository: platform-mock
+      tag: latest
+    storageSize: "1Gi"
+    env:
+      - name: MOCK_DEFAULT_REPLY
+        value: "Hello from the mock agent."
+
 # Local dev convenience: route requests with any Host header (including
 # IP literals like 127.0.0.1) to the app, so the cluster is reachable
 # however the developer happens to address it.

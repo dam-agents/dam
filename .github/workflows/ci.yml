@@ -124,6 +124,7 @@ jobs:
           docker build -t platform-google-workspace-agent:latest packages/agents/google-workspace
           docker build -t platform-pi-agent:latest packages/agents/pi-agent
           docker build -t platform-bob:latest packages/agents/bob
+          docker build -f e2e/agents/mock/Dockerfile -t platform-mock:latest .
 
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
       - run: mise run setup
