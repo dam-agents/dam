@@ -15,7 +15,7 @@ import {
   EXIT_SUCCESS,
 } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
-import { confirm } from "../../shared/prompt.js";
+import { confirm, exitCancelled } from "../../shared/prompt.js";
 import type { EgressService } from "../services/egress-service.js";
 
 export function buildApplyPresetCommand(deps: {
@@ -87,14 +87,7 @@ export function buildApplyPresetCommand(deps: {
           process.stderr.write(
             "Preset 'all' allows the agent to reach any host — this is a development escape hatch and bypasses the inbox entirely.\n",
           );
-          if (!(await confirm("Continue?"))) {
-            if (opts.json) {
-              process.stdout.write(`${JSON.stringify({ cancelled: true })}\n`);
-            } else {
-              process.stdout.write("Cancelled.\n");
-            }
-            process.exit(EXIT_SUCCESS);
-          }
+          if (!(await confirm("Continue?"))) exitCancelled(opts);
         }
 
         const result = await deps

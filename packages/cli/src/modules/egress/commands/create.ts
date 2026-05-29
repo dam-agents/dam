@@ -15,7 +15,7 @@ import {
   EXIT_SUCCESS,
 } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
-import { confirm } from "../../shared/prompt.js";
+import { confirm, exitCancelled } from "../../shared/prompt.js";
 import type { EgressService } from "../services/egress-service.js";
 
 export function buildCreateCommand(deps: {
@@ -88,14 +88,7 @@ export function buildCreateCommand(deps: {
           process.stderr.write(
             "This rule requires path-level enforcement (non-wildcard method/path) and will restart the agent (~5–15s).\n",
           );
-          if (!(await confirm("Continue?"))) {
-            if (opts.json) {
-              process.stdout.write(`${JSON.stringify({ cancelled: true })}\n`);
-            } else {
-              process.stdout.write("Cancelled.\n");
-            }
-            process.exit(EXIT_SUCCESS);
-          }
+          if (!(await confirm("Continue?"))) exitCancelled(opts);
         }
 
         const result = await deps.createEgressService(host).create({

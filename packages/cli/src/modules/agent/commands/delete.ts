@@ -8,7 +8,7 @@ import {
   printResolveError,
   printServiceError,
 } from "./errors.js";
-import { confirm } from "../../shared/prompt.js";
+import { confirm, exitCancelled } from "../../shared/prompt.js";
 import {
   EXIT_BELOW_FLOOR,
   EXIT_INVALID_INPUT,
@@ -81,14 +81,7 @@ async function runDelete(
     const proceed = await confirm(
       `Delete agent "${agent.name}"? This destroys all persistent data and cannot be undone.`,
     );
-    if (!proceed) {
-      if (opts.json) {
-        process.stdout.write(`${JSON.stringify({ cancelled: true })}\n`);
-      } else {
-        process.stdout.write("Cancelled.\n");
-      }
-      process.exit(EXIT_SUCCESS);
-    }
+    if (!proceed) exitCancelled(opts);
   }
 
   // Per ADR-046, Agent is the single resource — no separate Instance to
