@@ -79,6 +79,10 @@ test("drive mock agent: setScript → prompt → assert reply + received", async
     },
   });
 
+  await page.reload();
+  await expect(page.getByTestId("app-sidebar")).toBeVisible();
+  await expect(page.getByText("Running")).toBeVisible();
+
   await page.getByRole("heading", { name: agentName }).click();
   await expect(page).toHaveURL(
     new RegExp(`/chat/${encodeURIComponent(agentId)}`),
