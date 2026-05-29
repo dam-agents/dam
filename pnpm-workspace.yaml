@@ -1,5 +1,7 @@
 packages:
   - "packages/*"
+  - "e2e/agents/mock"
+  - "e2e/agents/mock-api"
   - "packages/agents/pi-agent/workspace/.pi/agent/extensions/*"
 minimumReleaseAge: 10080 # 7 days (in minutes)
 trustPolicy: no-downgrade

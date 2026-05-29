@@ -1,0 +1,22 @@
+{
+  "name": "mock-agent-api",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./router": "./src/router.ts"
+  },
+  "dependencies": {
+    "@trpc/server": "^11.16.0",
+    "zod": "^4.4.3"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "dev-config": "workspace:*",
+    "typescript": "^6.0.2"
+  }
+}

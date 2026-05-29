@@ -33,6 +33,8 @@ includes = [
     "packages/controller/tasks.toml",
     "packages/db/tasks.toml",
     "packages/ui/tasks.toml",
+    "e2e/agents/mock/tasks.toml",
+    "e2e/agents/mock-api/tasks.toml",
     "deploy/helm/tasks.toml",
     "deploy/tasks.toml",
 ]
