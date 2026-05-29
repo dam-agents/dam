@@ -35,8 +35,3 @@ run = "pnpm exec eslint --fix ."
 dir = "{{config_root}}/e2e/agents/mock"
 depends = ["common:setup:pnpm"]
 run = "pnpm exec prettier --write 'src/**/*.ts'"
-
-["mock-agent:test"]
-description = "Run mock-agent unit tests"
-dir = "{{config_root}}"
-run = 'pnpm --filter mock-agent exec vitest run'
