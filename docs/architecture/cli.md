@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-06-01
+Last verified: 2026-06-02
 
 ## Motivated by
 
@@ -9,6 +9,7 @@ Last verified: 2026-06-01
 - [#73 — Import local project context into agent workspace](https://github.com/dam-agents/dam/issues/73) — the `dam import` verb that uploads local files and folders into an Agent.
 - [#254 — Granular file ops over the agent-runtime proxy](https://github.com/dam-agents/dam/issues/254) — the `dam file` group (`get`, `put`, `list`) for single-file workspace operations.
 - [ADR-046 — Eliminate Instance, collapse into Agent](../adrs/046-eliminate-instance.md) — the CLI addresses Agents (not Instances); a single `dam agent` group covers the lifecycle.
+- [ADR-035 — Unified HITL UX](../adrs/035-unified-hitl-ux.md) — the per-Agent egress pre-approvals that the `dam egress` group lists and mutates ([#345](https://github.com/dam-agents/dam/issues/345), a P0 sub-issue of [#329](https://github.com/dam-agents/dam/issues/329)).
 
 ## Overview
 
