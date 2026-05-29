@@ -1,4 +1,5 @@
 import { createInMemoryChannel } from "../infrastructure/in-memory-channel.js";
+import type { PlatformSessionMeta } from "../infrastructure/session-metadata-store.js";
 import type { AcpRuntime } from "./acp-runtime.js";
 
 export interface TriggerSessionDriver {
@@ -6,6 +7,7 @@ export interface TriggerSessionDriver {
     task: string;
     mcpServers?: unknown[];
     resumeSessionId?: string;
+    platformMeta?: PlatformSessionMeta;
   }): Promise<{ sessionId: string }>;
 }
 
@@ -19,7 +21,7 @@ export function createTriggerSessionDriver(deps: {
   acpRuntime: AcpRuntime;
 }): TriggerSessionDriver {
   return {
-    async start({ task, mcpServers, resumeSessionId }) {
+    async start({ task, mcpServers, resumeSessionId, platformMeta }) {
       const channel = createInMemoryChannel();
       let nextId = 1;
       const pending = new Map<number, (frame: JsonRpcResponseFrame) => void>();
@@ -99,6 +101,7 @@ export function createTriggerSessionDriver(deps: {
           const res = await request<{ sessionId: string }>("session/new", {
             cwd: ".",
             mcpServers: mcp,
+            ...(platformMeta && { _meta: { platform: platformMeta } }),
           });
           sessionId = res.sessionId;
         }

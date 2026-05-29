@@ -10,7 +10,7 @@ export const contributionKind = z.enum([
 ]);
 export type ContributionKind = z.infer<typeof contributionKind>;
 
-export const eventKind = z.enum(["trigger"]);
+export const eventKind = z.enum(["trigger", "schedule-reset"]);
 export type EventKind = z.infer<typeof eventKind>;
 
 export const mergeMode = z.enum([
@@ -93,7 +93,25 @@ export const triggerEvent = z.object({
   payload: triggerEventPayload,
 });
 
-export const event = z.discriminatedUnion("kind", [triggerEvent]);
+export const scheduleResetEventPayload = z.object({
+  scheduleId: z.string().min(1),
+});
+export type ScheduleResetEventPayload = z.infer<
+  typeof scheduleResetEventPayload
+>;
+
+export const scheduleResetEvent = z.object({
+  id: z.string().min(1),
+  kind: z.literal("schedule-reset"),
+  version: z.number().int().nonnegative(),
+  expiresAt: z.string().datetime({ offset: true }),
+  payload: scheduleResetEventPayload,
+});
+
+export const event = z.discriminatedUnion("kind", [
+  triggerEvent,
+  scheduleResetEvent,
+]);
 export type Event = z.infer<typeof event>;
 
 export const capabilities = z.object({

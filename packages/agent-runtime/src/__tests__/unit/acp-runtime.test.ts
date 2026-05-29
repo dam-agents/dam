@@ -2,6 +2,10 @@ import { describe, it, expect, vi } from "vitest";
 import { createAcpRuntime } from "../../modules/acp/services/acp-runtime.js";
 import type { AgentProcess } from "../../modules/acp/infrastructure/agent-process.js";
 import type { ClientChannel } from "../../modules/acp/infrastructure/client-channel.js";
+import type {
+  SessionMetaEntry,
+  SessionMetadataStore,
+} from "../../modules/acp/infrastructure/session-metadata-store.js";
 
 interface FakeAgent {
   agent: AgentProcess;
@@ -2001,5 +2005,290 @@ describe("createAcpRuntime", () => {
     expect(
       fa.sent.filter((f: any) => f.method === "session/close"),
     ).toHaveLength(0);
+  });
+});
+
+// ── ADR-055: platform `_meta` round-trip ──
+
+function makeFakeStore(): {
+  store: SessionMetadataStore;
+  sessions: Map<string, SessionMetaEntry>;
+} {
+  const sessions = new Map<string, SessionMetaEntry>();
+  const tombstones = new Set<string>();
+  return {
+    sessions,
+    store: {
+      get: (id) => sessions.get(id),
+      set: (id, meta) => {
+        const existing = sessions.get(id);
+        sessions.set(id, {
+          meta,
+          createdAt: existing?.createdAt ?? "2026-01-01T00:00:00Z",
+        });
+      },
+      all: () => Object.fromEntries(sessions),
+      tombstone: (id) => {
+        sessions.delete(id);
+        tombstones.add(id);
+      },
+      isTombstoned: (id) => tombstones.has(id),
+    },
+  };
+}
+
+const deleteSessionRequest = (id: number, sessionId = SID) =>
+  JSON.stringify({
+    jsonrpc: "2.0",
+    id,
+    method: "platform/deleteSession",
+    params: { sessionId },
+  });
+
+const newSessionRequestWithMeta = (id: number, platform: object) =>
+  JSON.stringify({
+    jsonrpc: "2.0",
+    id,
+    method: "session/new",
+    params: { cwd: ".", _meta: { platform, systemPrompt: "keep-me" } },
+  });
+
+const listSessionsResponse = (outId: number, sessions: object[]) =>
+  JSON.stringify({ jsonrpc: "2.0", id: outId, result: { sessions } });
+
+function lastSent(c: { sent: string[] }): any {
+  return JSON.parse(c.sent[c.sent.length - 1]);
+}
+
+describe("createAcpRuntime — platform _meta round-trip (ADR-055)", () => {
+  it("captures _meta.platform on session/new and strips it before forwarding", () => {
+    const fa = makeFakeAgent();
+    const { store, sessions } = makeFakeStore();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      sessionMetadata: store,
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+
+    c.pushMessage(
+      newSessionRequestWithMeta(1, { type: "schedule", scheduleId: "sch-1" }),
+    );
+
+    const forwarded = fa.sent[0] as any;
+    expect(forwarded.method).toBe("session/new");
+    expect(forwarded.params._meta).toEqual({ systemPrompt: "keep-me" });
+    expect(forwarded.params._meta.platform).toBeUndefined();
+
+    // On response, the metadata is recorded against the new sessionId.
+    fa.pushLine(newSessionResponse(outboundId(fa.sent[0])));
+    expect(sessions.get(SID)).toEqual({
+      meta: { type: "schedule", scheduleId: "sch-1" },
+      createdAt: "2026-01-01T00:00:00Z",
+    });
+  });
+
+  it("records an empty entry for a session/new with no platform _meta", () => {
+    const fa = makeFakeAgent();
+    const { store, sessions } = makeFakeStore();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      sessionMetadata: store,
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+
+    c.pushMessage(newSessionRequest(1));
+    fa.pushLine(newSessionResponse(outboundId(fa.sent[0])));
+
+    expect(sessions.get(SID)).toEqual({
+      meta: {},
+      createdAt: "2026-01-01T00:00:00Z",
+    });
+  });
+
+  it("injects _meta.platform into session/list for known sessions", () => {
+    const fa = makeFakeAgent();
+    const { store, sessions } = makeFakeStore();
+    sessions.set(SID, {
+      meta: { mode: "chat", type: "regular" },
+      createdAt: "2026-01-01T00:00:00Z",
+    });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      sessionMetadata: store,
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+
+    c.pushMessage(listSessionsRequest(1));
+    fa.pushLine(
+      listSessionsResponse(outboundId(fa.sent[0]), [
+        { sessionId: SID, title: "Hello", updatedAt: "2026-03-03T00:00:00Z" },
+      ]),
+    );
+
+    const resp = lastSent(c);
+    expect(resp.result.sessions[0]._meta.platform).toEqual({
+      mode: "chat",
+      type: "regular",
+      createdAt: "2026-01-01T00:00:00Z",
+    });
+    expect(resp.result.sessions[0].title).toBe("Hello");
+  });
+
+  it("leaves harness-only (no store entry) sessions unenriched in the list", () => {
+    const fa = makeFakeAgent();
+    const { store } = makeFakeStore();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      sessionMetadata: store,
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+
+    c.pushMessage(listSessionsRequest(1));
+    fa.pushLine(
+      listSessionsResponse(outboundId(fa.sent[0]), [
+        { sessionId: "tui-1", title: "terminal", updatedAt: null },
+      ]),
+    );
+
+    const resp = lastSent(c);
+    expect(resp.result.sessions).toHaveLength(1);
+    expect(resp.result.sessions[0]._meta).toBeUndefined();
+  });
+
+  it("appends store-only sessions (created, never prompted) to the list", () => {
+    const fa = makeFakeAgent();
+    const { store, sessions } = makeFakeStore();
+    sessions.set("created-only", {
+      meta: { mode: "chat", scheduleId: "sch-9" },
+      createdAt: "2026-01-01T00:00:00Z",
+    });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      sessionMetadata: store,
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+
+    c.pushMessage(listSessionsRequest(1));
+    fa.pushLine(
+      listSessionsResponse(outboundId(fa.sent[0]), [
+        { sessionId: SID, title: "On disk", updatedAt: "2026-03-03T00:00:00Z" },
+      ]),
+    );
+
+    const resp = lastSent(c);
+    const created = resp.result.sessions.find(
+      (s: any) => s.sessionId === "created-only",
+    );
+    expect(created).toEqual({
+      sessionId: "created-only",
+      title: null,
+      updatedAt: null,
+      _meta: {
+        platform: {
+          mode: "chat",
+          scheduleId: "sch-9",
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+      },
+    });
+  });
+
+  it("passes session/list through unchanged when no metadata store is configured", () => {
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+
+    c.pushMessage(listSessionsRequest(1));
+    fa.pushLine(
+      listSessionsResponse(outboundId(fa.sent[0]), [
+        { sessionId: SID, title: "x", updatedAt: null },
+      ]),
+    );
+
+    const resp = lastSent(c);
+    expect(resp.result.sessions).toEqual([
+      { sessionId: SID, title: "x", updatedAt: null },
+    ]);
+  });
+
+  it("platform/deleteSession tombstones and filters the session from the list", () => {
+    const fa = makeFakeAgent();
+    const { store, sessions } = makeFakeStore();
+    sessions.set(SID, {
+      meta: { mode: "chat" },
+      createdAt: "2026-01-01T00:00:00Z",
+    });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      sessionMetadata: store,
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+
+    c.pushMessage(deleteSessionRequest(1, SID));
+
+    // Answered synthetically; never forwarded to the agent.
+    expect(lastSent(c)).toEqual({ jsonrpc: "2.0", id: 1, result: {} });
+    expect(fa.sent).toHaveLength(0);
+    expect(store.isTombstoned(SID)).toBe(true);
+
+    // Even though the harness still lists it, enrichment filters it out.
+    c.pushMessage(listSessionsRequest(2));
+    fa.pushLine(
+      listSessionsResponse(outboundId(fa.sent[0]), [
+        { sessionId: SID, title: "x", updatedAt: null },
+      ]),
+    );
+    expect(lastSent(c).result.sessions).toEqual([]);
+  });
+
+  it("session/resume _meta.platform.mode updates mode, preserving other fields", () => {
+    const fa = makeFakeAgent();
+    const { store, sessions } = makeFakeStore();
+    sessions.set(SID, {
+      meta: { type: "regular", mode: "chat", scheduleId: "sch-1" },
+      createdAt: "2026-01-01T00:00:00Z",
+    });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      sessionMetadata: store,
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+
+    c.pushMessage(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "session/resume",
+        params: {
+          sessionId: SID,
+          cwd: ".",
+          _meta: { platform: { mode: "terminal" } },
+        },
+      }),
+    );
+
+    expect(sessions.get(SID)?.meta).toEqual({
+      type: "regular",
+      mode: "terminal",
+      scheduleId: "sch-1",
+    });
   });
 });

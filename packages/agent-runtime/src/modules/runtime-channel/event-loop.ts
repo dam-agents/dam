@@ -47,5 +47,8 @@ async function invokeHandler(
     case "trigger":
       await triggerImpl.handle(e.payload);
       return;
+    case "schedule-reset":
+      triggerImpl.reset(e.payload.scheduleId);
+      return;
   }
 }

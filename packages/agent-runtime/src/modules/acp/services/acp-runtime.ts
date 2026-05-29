@@ -9,6 +9,12 @@ import {
 import type { AgentProcess } from "../infrastructure/agent-process.js";
 import type { ClientChannel } from "../infrastructure/client-channel.js";
 import { rewriteAuthError, rewriteCwd } from "../infrastructure/mappers.js";
+import {
+  platformSessionMetaSchema,
+  type PlatformSessionMeta,
+  type SessionMetaEntry,
+  type SessionMetadataStore,
+} from "../infrastructure/session-metadata-store.js";
 
 /** Maximum prompts queued per session before we reject with an error. */
 const PROMPT_QUEUE_CAP = 32;
@@ -68,6 +74,8 @@ export interface AcpRuntimeDeps {
   orphanTtlMs?: number;
   /** Override the log size cap — exposed for tests. */
   logBytesCap?: number;
+  /** Owns the `_meta.platform.*` round-trip (ADR-055); skipped when omitted. */
+  sessionMetadata?: SessionMetadataStore;
 }
 
 interface ActivePrompt {
@@ -106,6 +114,8 @@ interface OutboundMapping {
    * (session/load). Used to cache metadata on response and to fan out to
    * bootstrap waiters. */
   attachSessionId: string | null;
+  /** Captured on `session/new`, applied once the response carries the sessionId. */
+  platformMeta: PlatformSessionMeta | null;
 }
 
 interface PendingAgentRequest {
@@ -783,6 +793,15 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
               log.metadata = result;
             }
           }
+          // Record every session/new: a missing entry marks a harness-minted
+          // session (TUI /clear), which decodes as terminal downstream.
+          if (
+            mapping.method === "session/new" &&
+            sidFromResult &&
+            deps.sessionMetadata
+          ) {
+            deps.sessionMetadata.set(sidFromResult, mapping.platformMeta ?? {});
+          }
         }
 
         // `session/load` cold-bootstrap response: serve any waiters that
@@ -827,8 +846,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         // Rewrite the response id back to what the originating client used.
         // Skip when the runtime initiated the call (no client to respond to).
         if (mapping.channel && mapping.originalId !== null) {
+          const responseFrame =
+            mapping.method === "session/list" && deps.sessionMetadata
+              ? injectPlatformMetaIntoList(frame, deps.sessionMetadata)
+              : (frame as object);
           const out = JSON.stringify({
-            ...(frame as object),
+            ...responseFrame,
             id: mapping.originalId,
           });
           if (mapping.channel.isOpen())
@@ -927,6 +950,19 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           : "";
       const paramsSid = extractParamsSessionId(frame);
 
+      // `platform/deleteSession` ExtRequest (ADR-055): soft delete — tombstone
+      // in the metadata store so `session/list` enrichment hides it even while
+      // the harness still lists the on-disk JSONL. Answered synthetically; the
+      // vanilla harness has no delete capability, so it never forwards.
+      if (method === "platform/deleteSession" && paramsSid) {
+        deps.sessionMetadata?.tombstone(paramsSid);
+        sendToChannel(
+          channel,
+          JSON.stringify({ jsonrpc: "2.0", id: frame.id, result: {} }),
+        );
+        return;
+      }
+
       // `session/resume` short-circuit: the runtime mediates resume entirely.
       // Many harnesses (pi-acp) don't implement `unstable_resumeSession` at
       // all, and even harnesses that do can't resume against a freshly-
@@ -942,6 +978,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       //             but reach no client. On completion, all resume waiters
       //             are served via `serveResumeFromLog`.
       if (method === "session/resume" && paramsSid) {
+        // setMode (ADR-055): a resume may carry `_meta.platform` (e.g. a new
+        // mode) — merge it into the stored entry, preserving fields it omits.
+        const incomingMeta = extractPlatformMeta(frame);
+        if (incomingMeta && deps.sessionMetadata) {
+          const current = deps.sessionMetadata.get(paramsSid)?.meta ?? {};
+          deps.sessionMetadata.set(paramsSid, { ...current, ...incomingMeta });
+        }
         // Engage immediately so the channel receives pending agent requests
         // for the session and has its cursor advanced silently during a
         // cold-bootstrap window. `serveResumeFromLog` will call `engage`
@@ -971,6 +1014,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           method: "session/load",
           promptSessionId: null,
           attachSessionId: paramsSid,
+          platformMeta: null,
         });
         const loadFrame = {
           jsonrpc: "2.0",
@@ -1013,8 +1057,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       // we stash it from params to recover it when the response comes back.
       const attachSessionId = method === "session/load" ? paramsSid : null;
 
+      const platformMeta =
+        method === "session/new" ? extractPlatformMeta(frame) : null;
+      const forwardFrame =
+        platformMeta !== null ? stripPlatformMeta(frame) : frame;
+
       const rewritten = rewriteCwd(
-        { ...frame, id: outboundId },
+        { ...forwardFrame, id: outboundId },
         deps.workingDir,
       );
       outboundIdToClient.set(outboundId, {
@@ -1023,6 +1072,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         method,
         promptSessionId,
         attachSessionId,
+        platformMeta,
       });
 
       // Mark a cold bootstrap in flight so concurrent loads of the same sid
@@ -1131,6 +1181,79 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
 function isNonNullObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
+}
+
+function extractPlatformMeta(frame: unknown): PlatformSessionMeta | null {
+  if (!isNonNullObject(frame)) return null;
+  const params = frame.params;
+  if (!isNonNullObject(params)) return null;
+  const meta = params._meta;
+  if (!isNonNullObject(meta) || !("platform" in meta)) return null;
+  const parsed = platformSessionMetaSchema.safeParse(meta.platform);
+  return parsed.success ? parsed.data : null;
+}
+
+function stripPlatformMeta(frame: unknown): object {
+  if (!isNonNullObject(frame)) return frame as object;
+  const params = frame.params;
+  if (!isNonNullObject(params)) return frame as object;
+  const meta = params._meta;
+  if (!isNonNullObject(meta)) return frame as object;
+  const { platform: _platform, ...restMeta } = meta;
+  const nextParams: Record<string, unknown> = { ...params };
+  if (Object.keys(restMeta).length > 0) nextParams._meta = restMeta;
+  else delete nextParams._meta;
+  return { ...frame, params: nextParams };
+}
+
+// createdAt rides inside _meta.platform so it round-trips to the server.
+function withPlatformMeta(
+  session: Record<string, unknown>,
+  entry: SessionMetaEntry,
+): Record<string, unknown> {
+  const existingMeta = isNonNullObject(session._meta) ? session._meta : {};
+  return {
+    ...session,
+    _meta: {
+      ...existingMeta,
+      platform: { ...entry.meta, createdAt: entry.createdAt },
+    },
+  };
+}
+
+/** Appends store-only sessions (created, not yet prompted); a session with no
+ * entry passes through unenriched (terminal default). */
+function injectPlatformMetaIntoList(
+  frame: unknown,
+  store: SessionMetadataStore,
+): object {
+  if (!isNonNullObject(frame)) return frame as object;
+  const result = frame.result;
+  if (!isNonNullObject(result)) return frame as object;
+  const listed = Array.isArray(result.sessions) ? result.sessions : [];
+  const seen = new Set<string>();
+  const enriched = listed
+    .filter(
+      (s) =>
+        !(
+          isNonNullObject(s) &&
+          typeof s.sessionId === "string" &&
+          store.isTombstoned(s.sessionId)
+        ),
+    )
+    .map((s) => {
+      if (!isNonNullObject(s) || typeof s.sessionId !== "string") return s;
+      seen.add(s.sessionId);
+      const entry = store.get(s.sessionId);
+      return entry ? withPlatformMeta(s, entry) : s;
+    });
+  for (const [sessionId, entry] of Object.entries(store.all())) {
+    if (seen.has(sessionId)) continue;
+    enriched.push(
+      withPlatformMeta({ sessionId, title: null, updatedAt: null }, entry),
+    );
+  }
+  return { ...frame, result: { ...result, sessions: enriched } };
 }
 
 function extractSessionCloseSupported(frame: unknown): boolean {

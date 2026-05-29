@@ -19,6 +19,7 @@ import {
   encodeDataFrame,
   encodeExit,
 } from "api-server-api";
+import { createFileDocumentStoreBackend } from "./core/document-store.js";
 import { createFilesService } from "./modules/files.js";
 import { createImportHandlers, sweepStaging } from "./modules/import/index.js";
 import { composeSkills } from "./modules/skills/index.js";
@@ -48,11 +49,14 @@ const importHandlers = createImportHandlers(homeDir, workDir, (msg) =>
   process.stderr.write(`[import] ${msg}\n`),
 );
 
+const stateBackend = createFileDocumentStoreBackend(homeDir);
+
 const { runtime: acpRuntime, triggerDriver } = composeAcp({
   command: config.PLATFORM_DEV
     ? ["npx", "tsx", join(__dir, "agent.ts")]
     : ["/usr/local/bin/harness-chat"],
   workingDir: workDir,
+  stateBackend,
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
 });
 
@@ -61,6 +65,7 @@ const runtimeChannel = await composeRuntimeChannel({
     ? join(__dir, "../../platform-base/runtime-manifest.yaml")
     : join(__dir, "../runtime-manifest.yaml"),
   agentHome: homeDir,
+  stateBackend,
   apiServerUrl: config.API_SERVER_URL,
   agentId: process.env.PLATFORM_AGENT_ID ?? process.env.HOSTNAME ?? "unknown",
   triggerDriver,

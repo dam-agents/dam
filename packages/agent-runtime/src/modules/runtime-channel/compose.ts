@@ -5,6 +5,7 @@ import type {
   Plugin,
   RuntimeChannelService,
 } from "agent-runtime-api";
+import type { DocumentStoreBackend } from "../../core/document-store.js";
 import { loadManifest, type RuntimeManifest } from "./manifest.js";
 import { createStateStore } from "./state-store.js";
 import { createTriggerStateStore } from "./infrastructure/trigger-state-store.js";
@@ -26,6 +27,7 @@ export interface RuntimeChannelComposition {
 export interface ComposeRuntimeChannelOpts {
   manifestPath: string;
   agentHome: string;
+  stateBackend: DocumentStoreBackend;
   apiServerUrl: string;
   agentId: string;
   triggerDriver: TriggerSessionDriver;
@@ -40,12 +42,8 @@ export async function composeRuntimeChannel(
 
   const manifest = loadManifest(opts.manifestPath);
 
-  const stateStore = createStateStore(
-    join(opts.agentHome, ".platform/runtime-state.json"),
-  );
-  const triggerStateStore = createTriggerStateStore(
-    join(opts.agentHome, ".platform/trigger-state.json"),
-  );
+  const stateStore = createStateStore(opts.stateBackend);
+  const triggerStateStore = createTriggerStateStore(opts.stateBackend);
 
   const registry = createPluginRegistry();
   for (const plugin of opts.plugins) registry.register(plugin);
@@ -75,7 +73,7 @@ export async function composeRuntimeChannel(
   const contributionKinds = Object.keys(
     manifest.drivers,
   ) as readonly ContributionKind[];
-  const eventKinds: readonly EventKind[] = ["trigger"];
+  const eventKinds: readonly EventKind[] = ["trigger", "schedule-reset"];
 
   const service = createRuntimeChannelService({
     dispatcher,
