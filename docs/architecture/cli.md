@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-06-02
+Last verified: 2026-06-03
 
 ## Motivated by
 
@@ -10,10 +10,11 @@ Last verified: 2026-06-02
 - [#254 — Granular file ops over the agent-runtime proxy](https://github.com/dam-agents/dam/issues/254) — the `dam file` group (`get`, `put`, `list`) for single-file workspace operations.
 - [ADR-046 — Eliminate Instance, collapse into Agent](../adrs/046-eliminate-instance.md) — the CLI addresses Agents (not Instances); a single `dam agent` group covers the lifecycle.
 - [ADR-035 — Unified HITL UX](../adrs/035-unified-hitl-ux.md) — the per-Agent network access pre-approvals that the `dam network` group lists and mutates ([#345](https://github.com/dam-agents/dam/issues/345), a P0 sub-issue of [#329](https://github.com/dam-agents/dam/issues/329)).
+- [#344 — Manage OAuth connections from the CLI](https://github.com/dam-agents/dam/issues/344) — the `dam connection` group that lists, grants, revokes, and disconnects Connections (OAuth apps and MCP servers) for an Agent (a P0 sub-issue of [#329](https://github.com/dam-agents/dam/issues/329)); the connection/contribution model is [ADR-051](../adrs/051-connections-and-contributions.md), credential injection is [ADR-033](../adrs/033-envoy-credential-gateway.md).
 
 ## Overview
 
-The `dam` CLI is a TypeScript Node package that users install on their own machine and point at a configured Platform deployment. It never runs inside the cluster. The current surface: `dam --version`, `dam --help` (built-in flags); `dam config set`; `dam ping`; `dam version`; the `dam auth` group (`login`, `logout`, `status`); the `dam agent` group (`list` [default], `get`, `create`, `create-interactive`, `delete`, `restart`); `dam chat`; `dam session list`; `dam template list`; `dam import`; the `dam file` group (`get`, `put`, `list`); and the `dam network` group (`list`, `create`, `update`, `revoke`, `preset`, `apply-preset`, `trusted-hosts`). Command groups are singular to align with `gh`, `git`, and `docker` conventions.
+The `dam` CLI is a TypeScript Node package that users install on their own machine and point at a configured Platform deployment. It never runs inside the cluster. The current surface: `dam --version`, `dam --help` (built-in flags); `dam config set`; `dam ping`; `dam version`; the `dam auth` group (`login`, `logout`, `status`); the `dam agent` group (`list` [default], `get`, `create`, `create-interactive`, `delete`, `restart`); `dam chat`; `dam session list`; `dam template list`; `dam import`; the `dam file` group (`get`, `put`, `list`); the `dam network` group (`list`, `create`, `update`, `revoke`, `preset`, `apply-preset`, `trusted-hosts`); and the `dam connection` group (`list`, `disconnect`, `grant`, `revoke`). Command groups are singular to align with `gh`, `git`, and `docker` conventions.
 
 The CLI shares types directly with the api-server via a shared contract package, so server-side type changes reach the CLI without codegen or manual mirroring. Most routes are reached through plain HTTP calls against the api-server's tRPC endpoints; the `dam chat` verb additionally opens a WebSocket to the terminal relay for the interactive PTY session. The auth probes (`/api/auth/config`, OIDC discovery) stay as raw `fetch` because they are not tRPC.
 
@@ -167,3 +168,19 @@ Two pieces of non-obvious behavior the CLI surfaces:
 `update` against an unknown rule ID exits `EXIT_RULE_NOT_FOUND` (6) — the contract change in `egress-rules-service.ts` converts the plain `Error("egress rule not found")` to `TRPCError({ code: "NOT_FOUND" })` so the CLI can classify the error via `data.code`.
 
 The `source` field is rendered via the shared `formatEgressRuleSource` helper in [packages/api-server-api/src/modules/egress-rules/format.ts](../../packages/api-server-api/src/modules/egress-rules/format.ts) so the CLI and UI use identical labels.
+
+## Connections
+
+`dam connection` brings the CLI to parity with the UI for managing **Connections** — the stored credentials and contributions an Agent uses to reach authenticated external APIs and MCP servers (the concept is owned by [connections.md](connections.md) / [ADR-051](../adrs/051-connections-and-contributions.md); credential injection is [ADR-033](../adrs/033-envoy-credential-gateway.md)). The CLI is a thin client over the `connections.*` tRPC procedures. Four commands:
+
+- `dam connection list [<agent>]` — without an Agent, a five-column table (`ID NAME CATEGORY STATUS HOSTS`) of every team connection — apps and MCP servers alike — sorted by `(category, name, id)`; with an Agent, only that Agent's granted connections. `--json` emits the raw `ConnectionView[]`.
+- `dam connection grant <agent> --connection <id>…` — grant one or more connections to an Agent. Additive.
+- `dam connection revoke <agent> --connection <id>…` — revoke one or more connections from an Agent. Idempotent.
+- `dam connection disconnect <id>` — delete a team connection and its stored credential.
+
+Everything is tRPC (`connections.list`, `getAgentConnections`, `setAgentConnections`, `delete`) — there is no REST surface and no service state beyond the per-host client. Two pieces of non-obvious behavior:
+
+- **Grant/revoke are read-merge-set.** `connections.setAgentConnections` is a full replace, so the CLI reads the Agent's current grants (`getAgentConnections`), unions in (grant) or subtracts out (revoke) the requested ids, and writes the whole set back — letting the server re-fan-out each connection's contributions (env vars + egress injection) for the correct final set. `grant` rejects ids absent from the team list up front (`EXIT_INVALID_INPUT`) so a dead grant is never stored; `revoke` skips that check because removing an ungranted id is a harmless no-op. `disconnect` is idempotent server-side — deleting an unknown id still succeeds.
+- **Stale grants are surfaced, not hidden.** `list <agent>` intersects the Agent's granted ids with the team list; any granted id that no longer resolves to a live connection is reported on stderr rather than rendered as a fabricated row.
+
+Creating connections (`connect` / the OAuth authorization flow) is out of scope for the CLI today — it needs a browser round-trip and per-template input forms with no completion signal the CLI can poll; deferred to a follow-up. Listing, granting, revoking, and disconnecting connections created in the web UI is fully supported.
