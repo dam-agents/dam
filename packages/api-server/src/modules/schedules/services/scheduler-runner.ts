@@ -8,6 +8,7 @@ export interface SchedulerRunner {
   buildFireHandler(): (scheduleId: string) => Promise<void>;
   sync(scheduleId: string): Promise<void>;
   cancel(scheduleId: string): Promise<void>;
+  resetSession(scheduleId: string): Promise<void>;
   restoreAll(): Promise<void>;
 }
 
@@ -98,6 +99,25 @@ export function createSchedulerRunner(
     async cancel(scheduleId: string): Promise<void> {
       await deps.queue.cancel(scheduleId);
       await deps.repo.setNextRun(scheduleId, null);
+    },
+
+    // Tell the agent to clear this schedule's session binding. Durable like a
+    // fire: delivered over the runtime outbox so it lands even if the pod is
+    // currently scaled to zero (the agent applies it on wake).
+    async resetSession(scheduleId: string): Promise<void> {
+      const sched = await deps.repo.getById(scheduleId);
+      if (!sched) return;
+      const eventId = `reset:${scheduleId}:${now().getTime()}`;
+      const expiresAt = new Date(now().getTime() + ttlSec * 1000);
+      await deps.runtimeMutator.bump(sched.agentId, [
+        {
+          id: eventId,
+          kind: "schedule-reset",
+          payload: { scheduleId },
+          expiresAt,
+        },
+      ]);
+      await deps.runtimeMutator.enqueueAfterCommit(sched.agentId);
     },
 
     async restoreAll(): Promise<void> {

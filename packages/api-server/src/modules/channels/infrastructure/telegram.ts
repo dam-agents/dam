@@ -121,28 +121,28 @@ export function createTelegramWorker(
   namespace: string,
   state: StateAdapter,
   agents: () => AgentsService,
-  persistSession: (
-    sessionId: string,
-    agentId: string,
-    type: SessionType,
-    threadId?: string,
-  ) => Promise<void>,
   threads: TelegramThreadsRepo,
   oauthConfig: KeycloakOAuthConfig,
   pendingOAuthFlows: Map<string, TelegramOAuthPending>,
-  threadSessions: {
-    find: (
-      agentId: string,
-      threadId: string,
-    ) => Promise<{ sessionId: string } | null>;
-    touch: (sessionId: string) => Promise<void>;
-  },
   isTermsAccepted: (sub: string) => Promise<boolean>,
   uiBaseUrl: string,
   emit: (event: DomainEvent) => void = defaultEmit,
 ): TelegramWorker {
   const bots = new Map<string, InstanceBot>();
   const lastThread = new Map<string, Thread>();
+
+  // The thread's session carries this threadId in `_meta.platform.threadTs`
+  // (ADR-055) — resolved off the agent, no server store.
+  async function findThreadSession(instanceName: string, threadId: string) {
+    const acp = createAcpClient({ namespace, instanceName });
+    const sessions = await acp.listSessions().catch((err) => {
+      process.stderr.write(
+        `[telegram:${instanceName}] listSessions failed: ${err}\n`,
+      );
+      return [];
+    });
+    return sessions.find((s) => s.platform?.threadTs === threadId) ?? null;
+  }
 
   async function relayToInstance(
     instanceName: string,
@@ -169,11 +169,10 @@ export function createTelegramWorker(
       await agents().ensureReady(instanceName);
       const acp = createAcpClient({ namespace, instanceName });
 
-      const existing = await threadSessions.find(instanceName, thread.id);
+      const existing = await findThreadSession(instanceName, thread.id);
       if (existing) {
         try {
           await acp.sendPrompt(text, { resumeSessionId: existing.sessionId });
-          await threadSessions.touch(existing.sessionId);
           outcome = "success";
           return;
         } catch (err) {
@@ -183,13 +182,10 @@ export function createTelegramWorker(
         }
       }
       await acp.sendPrompt(freshPrompt, {
-        onSessionCreated: (sid) =>
-          persistSession(
-            sid,
-            instanceName,
-            SessionType.ChannelTelegram,
-            thread.id,
-          ),
+        platformMeta: {
+          type: SessionType.ChannelTelegram,
+          threadTs: thread.id,
+        },
       });
       outcome = "success";
     } catch (err) {

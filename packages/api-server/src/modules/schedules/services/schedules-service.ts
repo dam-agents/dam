@@ -163,5 +163,11 @@ export function createSchedulesService(deps: {
       });
       return next;
     },
+
+    async resetSession(id) {
+      const sched = await deps.repo.get(id, deps.owner);
+      if (!sched) return;
+      await deps.runner.resetSession(id);
+    },
   };
 }

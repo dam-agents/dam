@@ -1,4 +1,5 @@
 import { WebSocket } from "ws";
+import { z } from "zod";
 import { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
 import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
 import type { AnyMessage } from "@agentclientprotocol/sdk/dist/jsonrpc.js";
@@ -45,11 +46,30 @@ function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
   });
 }
 
+export interface PlatformSessionMeta {
+  mode?: string;
+  type?: string;
+  scheduleId?: string;
+  threadTs?: string;
+  createdAt?: string;
+}
+
 export interface AcpSessionInfo {
   sessionId: string;
   title?: string | null;
   updatedAt?: string | null;
+  /** Platform metadata round-tripped via `_meta.platform` (ADR-055); null for
+   * harness-internally-minted sessions (e.g. TUI `/clear`). */
+  platform?: PlatformSessionMeta | null;
 }
+
+const platformSessionMetaSchema = z.object({
+  mode: z.string().optional(),
+  type: z.string().optional(),
+  scheduleId: z.string().optional(),
+  threadTs: z.string().optional(),
+  createdAt: z.string().optional(),
+});
 
 export interface TriggerSessionResult {
   sessionId: string;
@@ -62,7 +82,12 @@ type SessionAttach =
   | { resumeSessionId: string }
   | { onSessionCreated: (sessionId: string) => Promise<void> };
 
-export type SendPromptOpts = SessionAttach & {
+/** Resume an existing session, or start a new one stamping `_meta.platform`
+ *  so the agent records it (ADR-055) — no server-side persist needed. */
+export type SendPromptOpts = (
+  | { resumeSessionId: string }
+  | { platformMeta?: PlatformSessionMeta }
+) & {
   /** Called when image blocks are stripped because the agent lacks image support. */
   onImagesDropped?: () => Promise<void> | void;
 };
@@ -184,14 +209,10 @@ export function createForkAcpClient(opts: { podIP: string }): AcpClient {
 
 function createAcpClientForUrl(url: string): AcpClient {
   return {
+    // Throws on connection/RPC failure; callers (the repository and the
+    // channel workers) catch and treat an unreachable agent as "no sessions".
     async listSessions(): Promise<AcpSessionInfo[]> {
-      let stream: Stream;
-      let ws: WebSocket;
-      try {
-        ({ stream, ws } = await wsStream(url));
-      } catch {
-        return [];
-      }
+      const { stream, ws } = await wsStream(url);
 
       const connection = new ClientSideConnection(
         () => ({
@@ -217,9 +238,17 @@ function createAcpClientForUrl(url: string): AcpClient {
           clientInfo: { name: "platform-sessions", version: "1.0.0" },
         });
         const r = await connection.listSessions({ cwd: "." });
-        return (r.sessions ?? []) as AcpSessionInfo[];
-      } catch {
-        return [];
+        return (r.sessions ?? []).map((s: any): AcpSessionInfo => {
+          const parsed = platformSessionMetaSchema.safeParse(
+            s?._meta?.platform,
+          );
+          return {
+            sessionId: s.sessionId,
+            title: s.title ?? null,
+            updatedAt: s.updatedAt ?? null,
+            platform: parsed.success ? parsed.data : null,
+          };
+        });
       } finally {
         if (
           ws.readyState === WebSocket.OPEN ||
@@ -265,9 +294,14 @@ function createAcpClientForUrl(url: string): AcpClient {
             responseChunks.length = 0;
             sessionId = sendOpts.resumeSessionId;
           } else {
-            const s = await connection.newSession({ cwd: ".", mcpServers: [] });
+            const s = await connection.newSession({
+              cwd: ".",
+              mcpServers: [],
+              ...(sendOpts.platformMeta && {
+                _meta: { platform: sendOpts.platformMeta },
+              }),
+            } as Parameters<typeof connection.newSession>[0]);
             sessionId = s.sessionId;
-            await sendOpts.onSessionCreated(sessionId);
           }
 
           const blocks: ContentBlock[] =

@@ -12,7 +12,6 @@ import type {
   TermsService,
   UserIdentity,
 } from "api-server-api";
-import { buildPlatformSessionModeChangedNotification } from "api-server-api";
 import type { CoreV1Api } from "@kubernetes/client-node";
 import type { Db } from "db";
 import type { SkillSourceSeed } from "../../modules/skills/index.js";
@@ -30,9 +29,6 @@ import {
   composeSchedulesForOwner,
   type SchedulesBoot,
 } from "../../modules/schedules/index.js";
-import { composeSessionsModule } from "../../modules/sessions/index.js";
-import { upsertSession } from "../../modules/sessions/infrastructure/sessions-repository.js";
-import { SessionMode, SessionType } from "api-server-api";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
 import { composeFilesModule } from "../../modules/files/files-service.js";
 import { createSlackOAuthRoutes } from "../../modules/channels/infrastructure/slack-oauth.js";
@@ -47,7 +43,6 @@ import {
 } from "../../modules/channels/infrastructure/telegram-threads-repository.js";
 import { createAcpRelay } from "./acp-relay.js";
 import { createTerminalRelay } from "./terminal-relay.js";
-import { getSessionMode } from "../../modules/sessions/infrastructure/sessions-repository.js";
 import { createOAuthRoutes } from "./oauth.js";
 import { mountBrandIconRoutes } from "./brand-icon.js";
 import type { Config } from "../../config.js";
@@ -605,23 +600,10 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       cleanupHooks: agentCleanupHooks,
       runtimeMutator,
     });
-    const { schedules, isOwnedSchedule } = composeSchedulesForOwner({
+    const { schedules } = composeSchedulesForOwner({
       boot: schedulesBoot,
       owner: user.sub,
       agentExists: async (agentId) => (await agents.get(agentId)) !== null,
-    });
-    const { sessions } = composeSessionsModule({
-      db,
-      namespace: config.namespace,
-      isOwnedAgent,
-      isOwnedSchedule,
-      closeTerminalSession: terminalRelay.closeSession,
-      notifyModeChange: (agentId, sessionId, mode) => {
-        const frame = JSON.stringify(
-          buildPlatformSessionModeChangedNotification({ sessionId, mode }),
-        );
-        redisBus.publish(injectChannelOf(agentId), frame).catch(() => {});
-      },
     });
     const skills = composeSkillsModule(
       api,
@@ -680,7 +662,6 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         templates,
         agents,
         schedules,
-        sessions,
         secrets,
         channels: { available: channelManager.availableChannels() },
         connections,
@@ -696,7 +677,6 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     });
   });
 
-  const persistAcpSession = upsertSession(db);
   const acpRelay = createAcpRelay(
     config.namespace,
     agentsRepo,
@@ -707,18 +687,9 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
           .resolveIdentity(id)
           .then((r) => (r ? { ownerSub: r.owner, agentId: r.agentId } : null)),
     },
-    (sessionId, agentId) =>
-      persistAcpSession(
-        sessionId,
-        agentId,
-        SessionMode.Chat,
-        SessionType.Regular,
-      ),
   );
 
-  const terminalRelay = createTerminalRelay(config.namespace, agentsRepo, {
-    getSessionMode: getSessionMode(db),
-  });
+  const terminalRelay = createTerminalRelay(config.namespace, agentsRepo);
 
   const server = serve({ fetch: app.fetch, port: config.port }, () => {
     process.stderr.write(

@@ -16,12 +16,6 @@ import {
   findBySlackChannelId,
   findSlackChannelByAgent,
 } from "./modules/agents/index.js";
-import { SessionMode, SessionType } from "api-server-api";
-import {
-  upsertSession,
-  findByInstanceAndThreadTs,
-  touchSession,
-} from "./modules/sessions/index.js";
 import {
   createAgentSkillsRepository,
   parseSeedSources,
@@ -202,34 +196,9 @@ const { agents: systemAgents } = composeAgentsModule({
   readTemplateSpec: async () => null,
   runtimeMutator: runtimeDelivery.runtimeMutator,
 });
-const persistSession = upsertSession(db);
-const persistSlackSession = (
-  sessionId: string,
-  agentId: string,
-  type: SessionType,
-  threadTs?: string,
-) =>
-  persistSession(
-    sessionId,
-    agentId,
-    SessionMode.Chat,
-    type,
-    undefined,
-    threadTs,
-  );
-const persistTelegramSession = (
-  sessionId: string,
-  agentId: string,
-  type: SessionType,
-  threadId?: string,
-) =>
-  persistSession(
-    sessionId,
-    agentId,
-    SessionMode.Chat,
-    type,
-    undefined,
-    threadId,
+if (!config.redisUrl)
+  throw new Error(
+    "REDIS_URL is required (Redis is a platform primitive — see ADR-036)",
   );
 
 const identityLinkService = createIdentityLinkService({
@@ -263,7 +232,6 @@ const slackWorker =
         config.slackBotToken,
         config.slackAppToken,
         () => systemAgents,
-        persistSlackSession,
         identityLinkService,
         {
           keycloakExternalUrl: config.keycloakExternalUrl,
@@ -273,10 +241,6 @@ const slackWorker =
           callbackUrl: slackOauthCallbackUrl,
         },
         pendingSlackOAuthFlows,
-        {
-          find: findByInstanceAndThreadTs(db),
-          touch: touchSession(db),
-        },
         (agentId) => agentsRepo.getOwner(agentId),
         channelRegistry,
         config.brand.short,
@@ -291,7 +255,6 @@ const telegramWorker =
         config.namespace,
         chatSdkState,
         () => systemAgents,
-        persistTelegramSession,
         {
           isAuthorized: isThreadAuthorized(db),
           authorize: authorizeThread(db),
@@ -307,10 +270,6 @@ const telegramWorker =
           callbackUrl: telegramOauthCallbackUrl,
         },
         pendingTelegramOAuthFlows,
-        {
-          find: findByInstanceAndThreadTs(db),
-          touch: touchSession(db),
-        },
         isTermsAccepted,
         config.uiBaseUrl,
       )

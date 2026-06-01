@@ -64,6 +64,10 @@ export const scheduleToggleInputSchema = z.object({
   id: z.string().min(1),
 });
 
+export const scheduleResetSessionInputSchema = z.object({
+  id: z.string().min(1),
+});
+
 // Loose schema for parsing quiet-hours windows stored in ConfigMaps.
 // Looser than the user-input `quietWindowSchema` (no HH:MM regex) so
 // existing ConfigMap data parses even if it predates the stricter rules.

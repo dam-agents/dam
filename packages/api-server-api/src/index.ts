@@ -55,6 +55,7 @@ export { agentSpecSchema } from "./modules/agents/schemas.js";
 export {
   scheduleSpecSchema,
   scheduleStatusSchema,
+  scheduleResetSessionInputSchema,
 } from "./modules/schedules/schemas.js";
 export type {
   Schedule,
@@ -166,22 +167,7 @@ export {
   SessionMode,
   sessionModeSchema,
 } from "./modules/sessions/types.js";
-export type {
-  SessionView,
-  SessionResolution,
-  TerminalStrategy,
-  SessionsService as SessionsApiService,
-} from "./modules/sessions/types.js";
-export {
-  sessionCreateInputSchema,
-  sessionDeleteInputSchema,
-  sessionListByScheduleIdInputSchema,
-  sessionListInputSchema,
-  sessionResetByScheduleIdInputSchema,
-  sessionResolveTerminalInputSchema,
-  sessionSetModeInputSchema,
-  terminalStrategySchema,
-} from "./modules/sessions/schemas.js";
+export type { SessionView } from "./modules/sessions/types.js";
 
 export {
   OP_INPUT,
@@ -299,16 +285,11 @@ export {
 export {
   platformTurnEndedNotificationSchema,
   platformTurnEndedParamsSchema,
-  platformSessionModeChangedNotificationSchema,
-  platformSessionModeChangedParamsSchema,
   buildPlatformTurnEndedNotification,
-  buildPlatformSessionModeChangedNotification,
 } from "./modules/acp/types.js";
 export type {
   PlatformTurnEndedNotification,
   PlatformTurnEndedParams,
-  PlatformSessionModeChangedNotification,
-  PlatformSessionModeChangedParams,
 } from "./modules/acp/types.js";
 
 // Brand

@@ -24,9 +24,6 @@ export interface TerminalRelay {
 export function createTerminalRelay(
   namespace: string,
   repo: AgentsRepository,
-  deps?: {
-    getSessionMode?: (sessionId: string) => Promise<string | null>;
-  },
 ): TerminalRelay {
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
   const lastActivity = new Map<string, number>();
@@ -59,14 +56,8 @@ export function createTerminalRelay(
     const sessionId = url.searchParams.get("sessionId") ?? "default";
     const reset = url.searchParams.get("reset") === "1";
 
-    if (deps?.getSessionMode) {
-      const mode = await deps.getSessionMode(sessionId).catch(() => null);
-      if (mode && mode !== "terminal") {
-        socket.write("HTTP/1.1 409 Conflict\r\n\r\n");
-        socket.destroy();
-        return;
-      }
-    }
+    // Session mode is agent-owned metadata (ADR-055); the PTY runs the harness
+    // TUI against this session id regardless. The UI confirms the mode switch.
 
     wss.handleUpgrade(req, socket, head, (client) => {
       client.on("error", () => {
