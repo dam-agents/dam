@@ -1,12 +1,12 @@
 # Persistence
 
-Last verified: 2026-05-20
+Last verified: 2026-06-01
 
 ## Motivated by
 
 - [ADR-001 — Ephemeral containers + persistent workspace volumes](../adrs/001-ephemeral-containers.md) — agents are stateless processes; their state lives on PVCs that outlive the pod
 - [ADR-006 — ConfigMaps over CRDs](../adrs/006-configmaps-over-crds.md) — domain resources are namespace-scoped ConfigMaps with a single-writer-per-key split
-- [ADR-017 — DB-backed ACP sessions](../adrs/017-db-backed-sessions.md) — Postgres holds session metadata so the UI works even when pods are hibernated
+- [ADR-055 — Agent-owned session metadata](../adrs/055-agent-owned-session-metadata.md) — sessions are owned by the agent and carried over ACP `_meta.platform`; Postgres holds no session state (supersedes [ADR-017](../adrs/017-db-backed-sessions.md))
 - [ADR-046 — Eliminate Instance, collapse into Agent](../adrs/046-eliminate-instance.md) — the merged `agent` ConfigMap is the sole resource per Agent and carries both `spec.yaml` and `status.yaml`
 - [ADR-8 — Usage tracking with pseudonymized identifiers](../adrs/048-usage-tracking.md) — append-only activity log + agent mirror table, with HMAC-pseudonymized `sub` values at the write boundary
 
@@ -16,7 +16,7 @@ Platform persists state on three durable substrates, split cleanly between the p
 
 **Platform-owned** (the agent never touches these):
 
-- **Postgres** — application state the api-server owns end-to-end. Sole writer: api-server; the controller never reads from or writes to Postgres. Holds anything that has to be queryable when no agent pod is running (sessions, channel bindings, identity links, allow-listed users) plus any other api-server-only domain resource.
+- **Postgres** — application state the api-server owns end-to-end. Sole writer: api-server; the controller never reads from or writes to Postgres. Holds anything that has to be queryable when no agent pod is running (channel bindings, identity links, allow-listed users) plus any other api-server-only domain resource. Session metadata is *not* here — it is agent-owned ([ADR-055](../adrs/055-agent-owned-session-metadata.md)).
 - **ConfigMaps** — resource state the controller reconciles into running infrastructure (templates, agents, schedules, forks), with a `spec.yaml` / `status.yaml` ownership split. Sole writer of `spec.yaml`: api-server. Sole writer of `status.yaml`: controller.
 
 **Agent-owned**:
@@ -63,7 +63,6 @@ flowchart LR
 
 Postgres carries application state the api-server owns end-to-end — anything that has to be queryable when no agent pod is running, plus any domain resource the controller does not reconcile.
 
-- **session metadata** ([ADR-017](../adrs/017-db-backed-sessions.md)) — Platform enriches each ACP session with metadata the protocol does not carry: a source-type discriminator (UI-initiated vs. channel-initiated vs. schedule-driven), the owning Agent, the linked schedule when applicable, and creation time. The DB is the source of truth for these enrichments; the agent runtime owns the conversation itself. The sessions list reads enrichments straight from the DB and overlays live ACP data (title, last update) only when the pod is running. A row is written when the session is first prompted — chat sessions by the ACP relay, channel and schedule sessions by their respective adapters — so sessions created but never used leave no metadata behind.
 - **channel routing** — bindings between external chat surfaces and the Agent/session they map to. Owned by [channels](channels.md).
 - **identity and auth** — links between channel-side identities and platform users, plus the auth allow-list. Owned by [security-and-credentials](security-and-credentials.md).
 - **skills catalog** — connected sources, per-Agent install records, and publish history. Owned by [skills](skills.md).
@@ -100,7 +99,7 @@ Each `agent` reconciles into a StatefulSet whose `volumeClaimTemplates` are deri
 The default Claude Code template persists the workspace and `$HOME`. Together these hold:
 
 - the **workspace** itself — git checkouts, tool caches (`node_modules`, `.venv`, mise), and any artifacts the agent has produced.
-- **`$HOME`** — agent memory, skills, MCP server caches, and the harness's on-disk session store. The session store is the cold-start source for `session/load` after a pod restart.
+- **`$HOME`** — agent memory, skills, MCP server caches, and the harness's on-disk session store. The session store is the cold-start source for `session/load` after a pod restart. The agent-runtime's `.platform/` directory lives here too, holding the **session-metadata state file** — the platform's sole source of truth for per-session mode, type, `scheduleId`, `threadTs`, and `createdAt`, surfaced over ACP `_meta.platform` ([ADR-055](../adrs/055-agent-owned-session-metadata.md)) — alongside the trigger-binding and runtime-channel state files.
 - **`.triggers/`** — pending trigger payloads. The controller delivers each payload via `kubectl exec` into the *running* pod, which writes the file onto its mounted PVC; the controller itself never mounts the volume. The pod must therefore be awake before delivery, and the schedule loop wakes it first if it is hibernated (see [agent-lifecycle](agent-lifecycle.md)).
 - **`.import-staging-*/`** — transient extraction directories used by the bundled file-import path before entries are merged into `<homeDir>/work`. Orphaned staging dirs from crashed imports are reclaimed by an agent-runtime boot sweeper; see [platform-topology](platform-topology.md).
 

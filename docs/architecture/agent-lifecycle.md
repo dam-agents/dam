@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-05-19
+Last verified: 2026-06-01
 
 ## Motivated by
 
@@ -127,7 +127,7 @@ When a session goes idle — no engaged channel, no active or queued prompt, no 
 
 Terminal-mode sessions ([ADR-037](../adrs/037-remote-terminal.md)) follow a different model from the chat path above. agent-runtime accepts at most one WebSocket per `sessionId` on `/api/terminal`, allocates a PTY, spawns `harness-terminal` attached to it, and pipes raw bytes both ways through a small binary frame protocol (`OP_INPUT` / `OP_OUTPUT` / `OP_RESIZE` / `OP_EXIT`). A headless xterm tracks scrollback so that a tab refresh within 30 seconds of disconnect reattaches to the same PTY and replays the serialized buffer; after the grace window, the PTY is killed. There is no append-only log, no fan-out, and no `session/resume` — terminal sessions belong to one viewer at a time, and the harness's own on-disk session store is the only durable record (e.g. `~/.claude/projects/.../<HARNESS_SESSION_ID>.jsonl`).
 
-Switching a session's mode (e.g. chat → terminal) is coordinated across three layers: the api-server's terminal relay closes the active terminal WebSocket for the session, agent-runtime's `resetSession` sends `session/close` to the harness and clears the in-memory log and cursors, and the api-server publishes a `platform/sessionModeChanged` JSON-RPC notification on the Agent's Redis inject channel. Every connected ACP client (UI tabs, CLI) receives the notification and can react — the UI reconciles its sidebar mode and either shows a "Disconnected" overlay (external terminal switch) or resumes the session (external chat switch); the CLI surfaces the same notification path through the ACP connection it holds.
+Switching a session's mode (e.g. chat → terminal) is metadata-only ([ADR-055](../adrs/055-agent-owned-session-metadata.md)): the switching client persists the new mode over ACP (`session/resume` carrying `_meta.platform.mode`), which the runtime merges into its session-metadata store. The running harness is unaffected — mode is a UI hint about which surface (chat vs. terminal PTY) to render. There is no cross-client notification; other clients reflect the change on their next `session/list`. The `--reset` / terminal-reset path is independent: it closes the terminal WebSocket and calls agent-runtime's `resetSession`, which sends `session/close` to the harness and clears the in-memory log and cursors.
 
 Beyond ACP frames, agent-runtime also serves a Bearer-authenticated tRPC surface on the harness port for skill install / uninstall / scan / publish / listLocal. The api-server is the sole caller; skill files land on the PVC under the configured Skill Paths and are picked up by the harness on the next session start (no hot-reload). See [skills](skills.md).
 

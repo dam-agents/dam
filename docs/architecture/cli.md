@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-05-21
+Last verified: 2026-06-01
 
 ## Motivated by
 
@@ -107,11 +107,11 @@ The post-success hint points at `dam chat <name>`. Interrupting at any prompt be
 
 Three session strategies:
 
-- **New** (default) — creates a new terminal-mode session via the sessions API, then connects.
+- **New** (default) — mints a fresh session id locally and connects; the PTY creates the session on attach. It surfaces in `session/list` with no `_meta` and decodes as terminal.
 - **Continue** (`--continue`) — finds the most recent terminal-mode session for the agent. Errors if zero or more than one terminal session exists.
 - **Resume** (`--resume <session-id>`) — targets a specific session by ID. If the target session is in chat mode, the CLI prompts the user to confirm a mode switch to terminal before proceeding; declining exits cleanly.
 
-Strategy resolution happens server-side: the CLI calls a single `sessions.resolveTerminal` tRPC mutation with the strategy and receives back either a ready result (session ID + relative WebSocket path) or a decision prompt (`confirm-mode-switch`, `no-terminal-session`, etc.). This keeps the CLI a thin orchestrator — it never lists sessions to decide which one to connect to, and the URL construction for the terminal relay lives entirely in the api-server.
+Strategy resolution happens **client-side** ([ADR-055](../adrs/055-agent-owned-session-metadata.md)): sessions are agent-owned, so the CLI lists them over its own ACP connection to the api-server relay (decoding `_meta.platform`) and resolves the strategy locally — minting an id for `new`, matching terminal-mode sessions for `continue`, looking up the id for `resume` — then builds the terminal-relay URL itself. A confirmed chat→terminal switch is persisted over ACP (`session/resume` carrying `_meta.platform.mode`). There is no server-side session endpoint.
 
 The `--reset` flag can combine with any strategy — it tells the api-server's terminal relay to kill the existing PTY and spawn a fresh one, which also triggers `resetSession` on the agent-runtime to close the agent-side ACP session and clear its log.
 
@@ -119,7 +119,7 @@ On disconnect, the CLI prints the session ID and a ready-to-paste `dam chat --re
 
 `dam session list <agent>` lists all sessions for an agent, showing session ID, mode, type, and creation time. The `--json` flag emits raw JSON for scripted consumption.
 
-The chat module uses the same tRPC client infrastructure as the rest of the CLI (`@trpc/client` with `httpBatchLink` and bearer auth), composing a per-host `SessionsPort` for session CRUD and terminal resolution. The terminal bridge owns the raw TTY ↔ WebSocket lifecycle — it receives a server-provided `terminalPath` and constructs the full WebSocket URL locally, sending the auth token via an `Authorization: Bearer` header. Both are injected through the module's compose root alongside the shared Token Provider and Agent Resolver seams.
+The chat module composes a per-host `SessionsPort` backed by a small ACP client (`@agentclientprotocol/sdk` over the relay WebSocket) that lists sessions and persists mode changes; agent resolution and auth still use the shared tRPC client. The terminal bridge owns the raw TTY ↔ WebSocket lifecycle — it receives the `terminalPath` the port built and constructs the full WebSocket URL locally, sending the auth token as a `token` query parameter. Both are injected through the module's compose root alongside the shared Token Provider and Agent Resolver seams.
 
 ## Import
 

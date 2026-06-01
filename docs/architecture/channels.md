@@ -28,7 +28,7 @@ Inbound traffic and outbound traffic take different paths. Inbound is push from 
 Two cross-cutting concerns are owned elsewhere and only summarized here:
 
 - **Foreign replier fork.** Slack's two-tier access (channel membership + per-Agent allowed users) admits multiple authorized users into one thread. Owner replies relay to the main pod; replies from any other authorized user fork into a per-turn paired pod set — a fork agent Job and a fork gateway Pod, each with its own NetworkPolicy — whose gateway mounts the replier's K8s credential Secrets ([ADR-027](../adrs/027-slack-user-impersonation.md), [ADR-038](../adrs/038-paired-gateway-pod.md)). The pair spec, the foreign-credential selection, and the shared-PVC mechanics are covered on [security-and-credentials](security-and-credentials.md). Channels just see "main pod or fork pod" at the relay step.
-- **Thread-session binding substrate.** The thread-to-session map lives in the sessions DB ([ADR-025](../adrs/025-thread-session.md)); see [persistence](persistence.md) for the storage shape.
+- **Thread-session binding.** A thread maps to one resumable session ([ADR-025](../adrs/025-thread-session.md)). The binding is the session's own `_meta.platform.threadTs`, resolved by listing sessions over ACP and matching — there is no server-side session store ([ADR-055](../adrs/055-agent-owned-session-metadata.md)).
 
 ## Topology
 
@@ -50,7 +50,6 @@ flowchart LR
   end
 
   subgraph DB[Postgres]
-    SES[(sessions:<br/>thread↔session)]
     LNK[(identity_links<br/>provider=slack)]
   end
 
@@ -61,8 +60,7 @@ flowchart LR
   CM --> SW
   SW --> IL
   IL --> LNK
-  SW <--> SES
-  SW -- ACP frames --> REL
+  SW -- ACP session/list + relay frames --> REL
   REL <--> POD
   POD -- send_channel_message --> MCP
   MCP --> CM
@@ -89,7 +87,6 @@ flowchart LR
   end
 
   subgraph DB[Postgres]
-    SES[(sessions:<br/>thread↔session)]
     AUT[(telegram_threads)]
   end
 
@@ -100,8 +97,7 @@ flowchart LR
   CM --> TW
   TW -- read token --> SEC
   TW <--> AUT
-  TW <--> SES
-  TW -- ACP frames --> REL
+  TW -- ACP session/list + relay frames --> REL
   REL <--> POD
   POD -- send_channel_message --> MCP
   MCP --> CM
@@ -138,21 +134,19 @@ sequenceDiagram
   participant U as Channel user
   participant M as Messenger API
   participant W as Worker<br/>(Slack/Telegram)
-  participant DB as sessions DB
   participant API as api-server relay
   participant POD as agent pod<br/>(main or fork)
 
   U->>M: post message in thread
   M-->>W: event delivery<br/>(Socket Mode / long-poll)
   W->>W: identity / auth checks
-  W->>DB: lookup (agentId, threadKey)
-  alt thread bound to existing session
-    DB-->>W: sessionId
-    W->>API: ACP session/prompt<br/>(resume sessionId)
+  W->>API: ACP session/list
+  API-->>W: sessions + _meta.platform<br/>(wakes pod if hibernated)
+  alt a session's _meta.platform.threadTs matches
+    W->>API: ACP session/prompt<br/>(resume matched sessionId)
   else first message in thread
-    W->>API: ACP session/new
+    W->>API: ACP session/new<br/>(_meta.platform: type, threadTs)
     API-->>W: sessionId
-    W->>DB: persist (sessionId, type, threadKey)
     W->>API: ACP session/prompt<br/>(thread history as context)
   end
   API->>POD: relay frames<br/>(wake if hibernated)
@@ -166,8 +160,8 @@ A few observations the diagram glosses over:
 
 - **Identity gates differ per adapter.** Slack runs the linked-identity check, the per-Agent allowed-users check, and the owner-vs-foreign decision (the latter selects whether the relay targets the main pod or a fork Job per [ADR-027](../adrs/027-slack-user-impersonation.md)). Telegram runs the per-thread `/login` check; there is no foreign fork because there is no workspace identity to fork under.
 - **Wake is implicit.** The relay step is the same `ACP relay → wake-if-hibernated → forward` path used by the UI. Channels do not call lifecycle endpoints directly; routing an ACP frame is what wakes the pod ([agent-lifecycle](agent-lifecycle.md), §Wake).
-- **Resume vs. new is decided by the DB lookup, not by ADR-018's original "every message is new" rule.** [ADR-025](../adrs/025-thread-session.md) supersedes [ADR-018 §6](../adrs/018-slack-integration.md): the worker always tries to resume on a thread it has seen before. If `unstable_resumeSession` fails (PVC lost, session expired), the worker falls back to creating a new session with thread history injected from the messenger API — degrading to pre-feature behavior for that thread, no regression.
-- **`threadKey` is adapter-specific.** Slack uses `thread_ts`; Telegram uses chat id. The sessions DB keys on `(agentId, threadKey)` with a partial unique index ([persistence](persistence.md)).
+- **Resume vs. new is decided by the ACP session list, not by ADR-018's original "every message is new" rule.** [ADR-025](../adrs/025-thread-session.md) supersedes [ADR-018 §6](../adrs/018-slack-integration.md); [ADR-055](../adrs/055-agent-owned-session-metadata.md) moves the binding onto the session itself: the worker lists sessions over ACP and resumes the one whose `_meta.platform.threadTs` matches. If `unstable_resumeSession` fails (PVC lost, session expired), the worker falls back to creating a new session with thread history injected from the messenger API — degrading to pre-feature behavior for that thread, no regression.
+- **`threadKey` is adapter-specific.** Slack uses `thread_ts`; Telegram uses chat id. It is carried on the session as `_meta.platform.threadTs` and matched in-process against the ACP session list ([ADR-055](../adrs/055-agent-owned-session-metadata.md)); there is no longer a DB uniqueness guard, so two concurrent first messages in a brand-new thread can mint two sessions for the same key.
 - **Turn relays emit `ChannelTurnRelayed`.** Both Slack and Telegram workers emit a `ChannelTurnRelayed` event on the in-process bus after the ACP turn finishes, carrying `channel`, `agentId`, `actorSub` (the relaying user's Keycloak `sub`, or `null` on Telegram where there is no workspace identity), and `outcome` (`"success" | "failure"`). The usage subsystem consumes this for activity tracking ([usage-tracking](usage-tracking.md)); the forks subsystem also subscribes to drive paired-pod teardown on Slack ([ADR-027](../adrs/027-slack-user-impersonation.md)).
 
 ## Outbound — agent to channel
@@ -230,9 +224,8 @@ See [ADR-029](../adrs/029-per-instance-channels.md). The short version is that p
 
 ## Persistence touchpoints
 
-Channels touch three stores; the substrate details live on [persistence](persistence.md):
+Channels touch two stores; the substrate details live on [persistence](persistence.md):
 
-- **`sessions` (Postgres).** Thread-to-session mapping with `(agentId, threadKey, sessionType)`. Slack and Telegram both write here; the relay reads here on every inbound message to decide resume-vs-new.
 - **Identity-link tables (Postgres).** `identity_links` keyed on `(provider, external_user_id)` mapping to `keycloak_sub` — Slack populates it today, but the `provider` column makes the table reusable for any future workspace channel ([ADR-018 §2](../adrs/018-slack-integration.md)). `telegram_threads` records per-conversation authorization for Telegram ([ADR-029](../adrs/029-per-instance-channels.md)). Different shapes by design — Slack has a workspace, Telegram does not.
 - **Channel Secrets (k8s).** `platform-channel-telegram-<agentId>` per Telegram-connected Agent. Slack has none — its tokens live in api-server env from Helm values.
 

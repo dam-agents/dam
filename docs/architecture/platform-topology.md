@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-05-21
+Last verified: 2026-06-01
 
 ## Motivated by
 
@@ -64,7 +64,7 @@ The api-server proxies all ACP traffic to agent pods; clients never dial pods di
 
 The public port also accepts streamed bundled file imports per agent and proxies them to the target agent-runtime without buffering — ownership-checked and size-capped at the proxy boundary.
 
-When a session's mode changes (chat → terminal or vice versa), the api-server closes the active terminal WebSocket for the affected session, resets the agent-runtime's ACP session state, and publishes a `platform/sessionModeChanged` notification via Redis pub/sub on the agent's inject channel. Every connected ACP client receives the notification, allowing cross-tab (and cross-client, including the CLI) mode synchronization without polling.
+A session's mode is agent-owned metadata ([ADR-055](../adrs/055-agent-owned-session-metadata.md)): the client switching modes persists it over ACP (`session/resume` carrying `_meta.platform.mode`), and other clients observe it on their next `session/list`. There is no server-side mode-change side effect and no cross-client broadcast — mode is a hint about which surface to render, and the running harness is unaffected.
 
 ### agent-runtime
 
@@ -92,10 +92,10 @@ A React + Vite single-page app served by the api-server. It uses tRPC over HTTP 
 | Edge | Protocol | Purpose |
 |------|----------|---------|
 | ui → api-server (`<rel>-apiserver`) | tRPC over HTTP | Resource CRUD and single-file uploads |
-| ui → api-server | WebSocket (ACP, JSON-RPC 2.0) | Live chat session, permission prompts, streaming output; also carries `platform/sessionModeChanged` notifications for cross-client mode sync |
+| ui → api-server | WebSocket (ACP, JSON-RPC 2.0) | Live chat session, permission prompts, streaming output; also carries session list/create/delete and mode changes, all over ACP (sessions are agent-owned, [ADR-055](../adrs/055-agent-owned-session-metadata.md)) |
 | ui → api-server | WebSocket (binary terminal frames) | Live terminal session — input / output / resize / exit, see [ADR-037](../adrs/037-remote-terminal.md) |
-| cli → api-server | tRPC over HTTP | Session CRUD + `resolveTerminal`, agent resolution, auth (same tRPC surface the UI uses) |
-| cli → api-server | WebSocket (binary terminal frames) | `dam chat` terminal attach — same frame protocol as the UI terminal path; server-provided `terminalPath` from `resolveTerminal` |
+| cli → api-server | tRPC over HTTP | Agent resolution, auth (same tRPC surface the UI uses). Session CRUD is removed — sessions are agent-owned over ACP ([ADR-055](../adrs/055-agent-owned-session-metadata.md)); the CLI's terminal-resolution path still references the dropped `sessions.*` procedures and is pending migration |
+| cli → api-server | WebSocket (binary terminal frames) | `dam chat` terminal attach — same frame protocol as the UI terminal path |
 | api-server → agent-runtime | WebSocket (ACP, JSON-RPC 2.0) | Chat-mode relay target — one hop, no fan-out |
 | api-server → agent-runtime | WebSocket (binary terminal frames) | Terminal-mode relay target — one hop, single client per session |
 | api-server → agent-runtime | HTTP (tRPC proxy) | In-pod file operations surfaced to the UI |
