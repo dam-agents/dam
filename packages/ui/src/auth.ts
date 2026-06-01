@@ -71,6 +71,8 @@ export async function initAuth(): Promise<User | null> {
 
 /** Returns a valid access token, refreshing if needed. */
 export async function getAccessToken(): Promise<string> {
+  if (import.meta.env.VITE_USE_MOCKS === "true") return "mock-access-token";
+
   const user = await userManager.getUser();
   if (user && !user.expired) {
     return user.access_token;
@@ -90,6 +92,23 @@ export async function getAccessToken(): Promise<string> {
 
 /** Returns the current authenticated user (or null before initAuth). */
 export function getUser(): User | null {
+  if (import.meta.env.VITE_USE_MOCKS === "true") {
+    return {
+      access_token: "mock-access-token",
+      token_type: "Bearer",
+      scope: "openid profile",
+      expired: false,
+      profile: {
+        sub: "mock-designer",
+        name: "Designer",
+        preferred_username: "designer",
+        iss: "http://mock-oidc.local",
+        aud: "mock-client",
+        exp: Math.floor(Date.now() / 1000) + 86400,
+        iat: Math.floor(Date.now() / 1000),
+      },
+    } as unknown as User;
+  }
   return currentUser;
 }
 

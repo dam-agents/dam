@@ -1411,7 +1411,7 @@ const AGENT_TEMPLATES: ReadonlyArray<AgentTemplate> = [
     harnessHint: "claude-code",
     defaultName: "gw-agent",
     defaultDescription: "Triages inbox, agenda, and drive activity.",
-    requiredConnectionIds: ["gmail", "google-drive"],
+    requiredConnectionIds: ["google-gmail", "google-drive"],
     optionalConnectionIds: ["github", "google-calendar"],
     preselectedSkills: ["gmail-triage", "calendar-agenda", "drive-manage"],
     bundledSkills: [

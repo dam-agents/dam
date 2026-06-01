@@ -96,13 +96,22 @@ export function ProvidersView() {
           }
           bullets={[
             <>
-              <span className="font-semibold">Pick a preset</span> — start with
-              Anthropic for Claude Code agents.
+              <span className="font-semibold">IBM LiteLLM</span> — access
+              multiple models through one key. Get yours{" "}
+              <Button variant="link" asChild className="h-auto p-0 text-[inherit]">
+                <a
+                  href="https://ete-litellm.ai-models.vpc.res.ibm.com/ui/"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  here
+                </a>
+              </Button>
+              .
             </>,
             <>
-              <span className="font-semibold">Paste your key</span> — encrypted
-              at rest and routed via the per-instance Envoy gateway, never
-              written to a pod env.
+              <span className="font-semibold">Direct providers</span> — connect
+              to Anthropic, OpenAI, and others with your own key.
             </>,
             <>
               <span className="font-semibold">Add as many as you need</span> —

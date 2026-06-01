@@ -135,26 +135,23 @@ export function ConnectionsView() {
           description={
             <>
               Connections are the services and credentials your agents can reach
-              — GitHub for code, Google Workspace for docs, MCP servers for live
-              tools, or any custom OAuth or token-based API. Credentials are
-              injected into outbound requests at the gateway, so the agent
-              runtime never sees raw values.
+              — GitHub for code, MCP servers for extended capabilities, or any
+              other API. Credentials are injected into outbound requests at the
+              gateway, so the agent runtime never sees raw values.
             </>
           }
           bullets={[
             <>
-              <span className="font-semibold">OAuth apps</span> — GitHub, Slack,
-              Google Workspace and more. One-click sign-in.
+              <span className="font-semibold">OAuth apps</span> — GitHub,
+              Google, Spotify, and more. One-click sign-in.
             </>,
             <>
-              <span className="font-semibold">MCP servers</span> — remote tool
-              servers that expose live capabilities to the agent during a
-              session.
+              <span className="font-semibold">MCP servers</span> — extend what
+              the agent can do with remote tool servers.
             </>,
             <>
-              <span className="font-semibold">Custom credentials</span> — bearer
-              tokens or API keys injected on a host pattern for any API not on
-              the OAuth list.
+              <span className="font-semibold">Custom credentials</span> —
+              bearer tokens or API keys injected on a host pattern.
             </>,
           ]}
           action={

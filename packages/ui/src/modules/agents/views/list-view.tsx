@@ -105,8 +105,8 @@ export function ListView() {
             }
             bullets={[
               <>
-                <span className="font-semibold">Compute pod</span> — an isolated
-                Linux environment running the AI harness.
+                <span className="font-semibold">Isolated pod</span> — each agent
+                runs in its own container.
               </>,
               <>
                 <span className="font-semibold">Persistent workspace</span> —
@@ -117,7 +117,7 @@ export function ListView() {
                 paired security pod that injects your tokens on the wire.
               </>,
               <>
-                <span className="font-semibold">Network isolation</span> — the
+                <span className="font-semibold">Network access</span> — the
                 agent can only reach services you explicitly allow.
               </>,
             ]}
