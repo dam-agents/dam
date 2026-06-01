@@ -1,41 +1,44 @@
 import type { AppConnectionView } from "api-server-api";
 
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
+
 type Status = AppConnectionView["status"] | undefined;
 
 function styleFor(status: Status): {
-  pillClass: string;
+  className: string;
   dotClass: string;
   label: string;
 } {
   switch (status) {
     case "active":
       return {
-        pillClass: "bg-success-light text-success border-success",
+        className: "bg-success-light text-success border-success",
         dotClass: "bg-success",
         label: "Connected",
       };
-    case "pending":
-      return {
-        pillClass: "bg-surface-raised text-text-muted border-border-light",
-        dotClass: "bg-text-muted",
-        label: "Pending",
-      };
     case "expired":
       return {
-        pillClass: "bg-danger-light text-danger border-danger",
-        dotClass: "bg-danger",
+        className: "bg-destructive/10 text-destructive border-destructive",
+        dotClass: "bg-destructive",
         label: "Expired",
       };
     case "disconnected":
       return {
-        pillClass: "bg-surface-raised text-text-muted border-border-light",
-        dotClass: "bg-text-muted",
+        className: "bg-muted text-muted-foreground border-border",
+        dotClass: "bg-muted-foreground",
         label: "Disconnected",
+      };
+    case "pending":
+      return {
+        className: "bg-muted text-muted-foreground border-border",
+        dotClass: "bg-muted-foreground",
+        label: "Pending",
       };
     default:
       return {
-        pillClass: "bg-surface-raised text-text-muted border-border-light",
-        dotClass: "bg-text-muted",
+        className: "bg-muted text-muted-foreground border-border",
+        dotClass: "bg-muted-foreground",
         label: "Unresolved",
       };
   }
@@ -48,16 +51,20 @@ export function AppStatusPill({
   status: Status;
   size?: "sm" | "md";
 }) {
-  const { pillClass, dotClass, label } = styleFor(status);
-  const textSize = size === "md" ? "text-[11px]" : "text-[10px]";
+  const { className, dotClass, label } = styleFor(status);
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 ${textSize} font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 shrink-0 ${pillClass}`}
+    <Badge
+      variant="outline"
+      className={cn(
+        "gap-1.5 font-semibold uppercase tracking-wide shrink-0",
+        size === "md" ? "text-[11px] px-2.5" : "text-[10px] px-2",
+        className,
+      )}
     >
       <span
-        className={`inline-block w-2 h-2 rounded-full shrink-0 ${dotClass}`}
+        className={cn("inline-block w-2 h-2 rounded-full shrink-0", dotClass)}
       />
       {label}
-    </span>
+    </Badge>
   );
 }

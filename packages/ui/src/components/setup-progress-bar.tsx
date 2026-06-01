@@ -1,4 +1,4 @@
-import { Check, ChevronRight } from "lucide-react";
+import { Checkmark as Check, ChevronRight } from "@carbon/icons-react";
 
 import {
   computeOnboardingState,
@@ -63,12 +63,12 @@ export function SetupProgressBar() {
 
   return (
     <div
-      className="safe-top sticky top-0 z-20 border-b-2 border-border-light bg-bg/95 backdrop-blur-xl"
+      className="safe-top sticky top-0 z-20 border-b bg-background/95 backdrop-blur-xl"
       role="navigation"
       aria-label="Onboarding progress"
     >
       <div className="mx-auto w-full max-w-[960px] px-4 md:px-[5%] py-2 md:py-3 flex flex-col md:flex-row md:items-center gap-1 md:gap-4">
-        <div className="shrink-0 text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted">
+        <div className="shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Get started
         </div>
 
@@ -95,13 +95,13 @@ export function SetupProgressBar() {
         <button
           type="button"
           onClick={() => handlePillClick(nextStep)}
-          className="md:hidden -mx-2 flex items-center gap-2 min-w-0 text-left rounded-lg px-2 py-2 min-h-[44px] active:bg-surface-raised"
+          className="md:hidden -mx-2 flex items-center gap-2 min-w-0 text-left rounded-md px-2 py-2 min-h-[44px] active:bg-muted"
           aria-label={`Go to step ${nextIndex + 1}: ${stepLabels[nextStep]}`}
         >
-          <span className="min-w-0 flex-1 text-[13px] font-semibold text-text truncate">
+          <span className="min-w-0 flex-1 text-sm font-semibold text-foreground truncate">
             Step {nextIndex + 1} of {STEP_KEYS.length}: {stepLabels[nextStep]}
           </span>
-          <ChevronRight size={16} className="shrink-0 text-text-muted" />
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
         </button>
       </div>
     </div>
@@ -128,23 +128,19 @@ function StepPill({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`btn-brutal flex items-center gap-2 rounded-lg border-2 px-2.5 py-1 min-w-0 transition-colors border-border-light ${
-        done ? "bg-surface-raised" : "bg-surface"
-      } ${interactive ? "hover:border-accent" : ""} ${disabled ? "cursor-default opacity-80" : ""}`}
+      className={`flex items-center gap-2 rounded-md border px-2.5 py-1 min-w-0 transition-colors ${
+        done ? "bg-muted" : "bg-card"
+      } ${interactive ? "hover:border-primary" : ""} ${disabled ? "cursor-default opacity-80" : ""}`}
     >
       <span
-        className={`w-5 h-5 shrink-0 rounded-md flex items-center justify-center text-[11px] font-bold ${
-          done
-            ? "bg-surface-raised text-success"
-            : "bg-border-light text-text-secondary"
+        className={`w-5 h-5 shrink-0 rounded flex items-center justify-center text-[11px] font-bold ${
+          done ? "bg-card text-success" : "bg-muted text-foreground/80"
         }`}
       >
-        {done ? <Check size={12} strokeWidth={3} /> : index + 1}
+        {done ? <Check className="h-3 w-3" strokeWidth={3} /> : index + 1}
       </span>
       <span
-        className={`text-[12px] font-semibold truncate ${
-          done ? "text-text-muted" : "text-text-secondary"
-        }`}
+        className={`text-xs font-semibold truncate ${done ? "text-muted-foreground" : "text-foreground/80"}`}
       >
         {label}
       </span>
