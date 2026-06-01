@@ -43,7 +43,7 @@ agentTemplates:
       - $HOME/.claude/skills/
 
   - name: codex
-    enabled: true
+    enabled: false
     description: "OpenAI Codex coding agent"
     image:
       repository: platform-codex
