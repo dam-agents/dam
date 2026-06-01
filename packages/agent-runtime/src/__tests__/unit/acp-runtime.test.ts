@@ -2163,9 +2163,11 @@ describe("createAcpRuntime — platform _meta round-trip (ADR-055)", () => {
     expect(resp.result.sessions[0]._meta).toBeUndefined();
   });
 
-  it("appends store-only sessions (created, never prompted) to the list", () => {
+  it("does not invent store-only sessions absent from the harness list (ground truth)", () => {
     const fa = makeFakeAgent();
     const { store, sessions } = makeFakeStore();
+    // In the store (e.g. a created-but-never-prompted session or the config
+    // probe) but NOT in the harness's on-disk list.
     sessions.set("created-only", {
       meta: { mode: "chat", scheduleId: "sch-9" },
       createdAt: "2026-01-01T00:00:00Z",
@@ -2186,21 +2188,13 @@ describe("createAcpRuntime — platform _meta round-trip (ADR-055)", () => {
     );
 
     const resp = lastSent(c);
-    const created = resp.result.sessions.find(
-      (s: any) => s.sessionId === "created-only",
-    );
-    expect(created).toEqual({
-      sessionId: "created-only",
-      title: null,
-      updatedAt: null,
-      _meta: {
-        platform: {
-          mode: "chat",
-          scheduleId: "sch-9",
-          createdAt: "2026-01-01T00:00:00Z",
-        },
-      },
-    });
+    // Only the harness-listed session survives; the store-only entry is not
+    // surfaced as a ghost.
+    expect(resp.result.sessions).toHaveLength(1);
+    expect(resp.result.sessions[0].sessionId).toBe(SID);
+    expect(
+      resp.result.sessions.find((s: any) => s.sessionId === "created-only"),
+    ).toBeUndefined();
   });
 
   it("passes session/list through unchanged when no metadata store is configured", () => {

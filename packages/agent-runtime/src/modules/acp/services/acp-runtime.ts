@@ -1221,8 +1221,12 @@ function withPlatformMeta(
   };
 }
 
-/** Appends store-only sessions (created, not yet prompted); a session with no
- * entry passes through unenriched (terminal default). */
+/** Enrich the harness's session list with `_meta.platform` from the store. The
+ * harness list is the ground truth for session existence — entries that live
+ * only in the store (e.g. a session created via `session/new` but never
+ * prompted, so never written to disk, or the UI's config-probe) are NOT
+ * invented into the list. A listed session with no store entry passes through
+ * unenriched (terminal default); tombstoned sessions are dropped. */
 function injectPlatformMetaIntoList(
   frame: unknown,
   store: SessionMetadataStore,
@@ -1231,7 +1235,6 @@ function injectPlatformMetaIntoList(
   const result = frame.result;
   if (!isNonNullObject(result)) return frame as object;
   const listed = Array.isArray(result.sessions) ? result.sessions : [];
-  const seen = new Set<string>();
   const enriched = listed
     .filter(
       (s) =>
@@ -1243,16 +1246,9 @@ function injectPlatformMetaIntoList(
     )
     .map((s) => {
       if (!isNonNullObject(s) || typeof s.sessionId !== "string") return s;
-      seen.add(s.sessionId);
       const entry = store.get(s.sessionId);
       return entry ? withPlatformMeta(s, entry) : s;
     });
-  for (const [sessionId, entry] of Object.entries(store.all())) {
-    if (seen.has(sessionId)) continue;
-    enriched.push(
-      withPlatformMeta({ sessionId, title: null, updatedAt: null }, entry),
-    );
-  }
   return { ...frame, result: { ...result, sessions: enriched } };
 }
 
