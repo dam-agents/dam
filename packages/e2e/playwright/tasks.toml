@@ -1,18 +1,32 @@
-["e2e-playwright:run"]
+["e2e-playwright:install-browsers"]
+description = "Download the Chromium binary Playwright drives (+ OS libs on Linux)"
 dir = "{{config_root}}/packages/e2e/playwright"
 depends = ["common:setup:pnpm"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+if [ "$(uname)" = "Linux" ]; then
+  pnpm exec playwright install --with-deps chromium
+else
+  pnpm exec playwright install chromium
+fi
+'''
+
+["e2e-playwright:run"]
+dir = "{{config_root}}/packages/e2e/playwright"
+depends = ["common:setup:pnpm", "e2e-playwright:install-browsers"]
 run = "pnpm exec playwright test"
 
 ["e2e-playwright:run-headed"]
 description = "Run Playwright with a visible browser window"
 dir = "{{config_root}}/packages/e2e/playwright"
-depends = ["common:setup:pnpm"]
+depends = ["common:setup:pnpm", "e2e-playwright:install-browsers"]
 run = "pnpm exec playwright test --headed"
 
 ["e2e-playwright:run-ui"]
 description = "Open Playwright UI mode (time-travel debugger, watch mode)"
 dir = "{{config_root}}/packages/e2e/playwright"
-depends = ["common:setup:pnpm"]
+depends = ["common:setup:pnpm", "e2e-playwright:install-browsers"]
 run = "pnpm exec playwright test --ui"
 
 ["e2e-playwright:check"]
