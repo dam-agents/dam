@@ -5,6 +5,8 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
+import { TooltipProvider } from "@/components/ui/tooltip";
+
 import { initAuth } from "./auth.js";
 import { applyBrand, loadBrand } from "./brand.js";
 import { preflightTermsGate } from "./modules/terms/lib/preflight.js";
@@ -23,7 +25,9 @@ async function main() {
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>
-        <App />
+        <TooltipProvider delayDuration={200}>
+          <App />
+        </TooltipProvider>
       </QueryClientProvider>
     </StrictMode>,
   );
