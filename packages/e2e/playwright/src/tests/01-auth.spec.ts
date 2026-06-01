@@ -12,14 +12,22 @@ test("login via Keycloak and accept terms", async ({ page }) => {
   await page.locator("#password").fill(testUser.password);
   await page.locator("#kc-login").click();
 
-  await page.waitForURL((url) => url.origin === baseUrl);
-  if (page.url() === `${baseUrl}/terms`) {
-    await page
-      .getByRole("button", { name: /I accept the Terms of Use/ })
-      .click();
+  await page.waitForURL(
+    (url) => url.origin === baseUrl && !url.pathname.startsWith("/auth/callback"),
+  );
+
+  const termsButton = page.getByRole("button", {
+    name: /I accept the Terms of Use/,
+  });
+  const appSidebar = page.getByTestId("app-sidebar");
+
+  await expect(termsButton.or(appSidebar)).toBeVisible();
+
+  if (await termsButton.isVisible()) {
+    await termsButton.click();
     await page.waitForURL(`${baseUrl}/`);
   }
-  await expect(page.getByTestId("app-sidebar")).toBeVisible();
+  await expect(appSidebar).toBeVisible();
 
   await page.context().storageState({ path: storageStatePath });
 });
