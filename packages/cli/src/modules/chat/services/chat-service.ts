@@ -1,4 +1,4 @@
-import type { SessionView, TerminalStrategy } from "api-server-api";
+import type { SessionView } from "api-server-api";
 import { err, ok, type Result } from "../../../result.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { TokenProvider } from "../../auth/index.js";
@@ -7,7 +7,7 @@ import {
   type AgentService,
   type ResolveError,
 } from "../../agent/index.js";
-import type { SessionsPort } from "./sessions-service.js";
+import type { SessionsPort, TerminalStrategy } from "./sessions-service.js";
 import {
   connectTerminalBridge,
   type BridgeResult,
@@ -43,7 +43,7 @@ export function createChatService(deps: {
   configService: ConfigService;
   tokenProvider: TokenProvider;
   createAgentService: (host: string) => AgentService;
-  createSessionsPort: (host: string) => SessionsPort;
+  createSessionsPort: (host: string, token: string) => SessionsPort;
   confirmModeSwitch: () => Promise<boolean>;
   isTty: boolean;
 }): ChatService {
@@ -90,7 +90,7 @@ export function createChatService(deps: {
       host,
       token: tok.value,
       agentId: resolved.value.id,
-      sessions: deps.createSessionsPort(host),
+      sessions: deps.createSessionsPort(host, tok.value),
     });
   }
 

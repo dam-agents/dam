@@ -1,7 +1,7 @@
-import type { TerminalStrategy } from "api-server-api";
 import { Command } from "commander";
 import { SERVER_ENV_VAR } from "../../cli/index.js";
 import type { ChatError, ChatService } from "../services/chat-service.js";
+import type { TerminalStrategy } from "../services/sessions-service.js";
 import {
   EXIT_AGENT_NOT_RESOLVED,
   EXIT_BELOW_FLOOR,

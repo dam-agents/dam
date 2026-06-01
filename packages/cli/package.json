@@ -32,6 +32,7 @@
     "prepack": "pnpm build"
   },
   "devDependencies": {
+    "@agentclientprotocol/sdk": "^0.17.1",
     "@clack/prompts": "1.3.0",
     "@trpc/client": "^11.16.0",
     "@trpc/server": "^11.16.0",

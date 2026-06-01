@@ -53,7 +53,6 @@ export function compose(opts: ComposeOptions = {}): Command {
     templateService: template.exports.createService,
   });
   const chat = composeChatModule({
-    buildTrpc,
     compatService: cli.services.compatService,
     configService: cli.services.configService,
     tokenProvider,
