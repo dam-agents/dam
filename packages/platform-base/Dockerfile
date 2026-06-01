@@ -5,11 +5,6 @@ ENV PATH="/app/node_modules/.bin:$PATH"
 
 RUN dnf install -y git tar gzip && dnf clean all
 
-FROM registry.access.redhat.com/hi/go:1.25-builder AS np-gate-builder
-WORKDIR /src
-COPY packages/platform-base/np-gate/ ./
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /np-gate .
-
 FROM base AS builder
 
 COPY scripts/install-pnpm.sh /usr/local/bin/install-pnpm
@@ -78,8 +73,6 @@ COPY --from=builder /app/packages/agent-runtime/dist/ ./dist/
 COPY packages/platform-base/harness-chat.sh /usr/local/bin/harness-chat
 COPY packages/platform-base/harness-terminal.sh /usr/local/bin/harness-terminal
 RUN chmod +x /usr/local/bin/harness-chat /usr/local/bin/harness-terminal
-
-COPY --from=np-gate-builder /np-gate /usr/local/bin/np-gate
 
 COPY packages/platform-base/skills/ /app/working-dir/.agents/skills/
 COPY packages/platform-base/working-dir/.claude.json /app/working-dir/.claude.json

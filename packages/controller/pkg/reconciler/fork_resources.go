@@ -198,7 +198,7 @@ func BuildForkAgentJob(
 	if ic := buildIptablesInitContainer(cfg, gatewayClusterIP); ic != nil {
 		initContainers = append(initContainers, *ic)
 	}
-	if ic := buildNPGateInitContainer(cfg, agentSpec.Image, gatewayClusterIP); ic != nil {
+	if ic := buildNPGateInitContainer(cfg, gatewayClusterIP); ic != nil {
 		initContainers = append(initContainers, *ic)
 	}
 	if initScript != "" {

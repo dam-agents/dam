@@ -13,58 +13,43 @@ import (
 func TestBuildNPGateInitContainer_DisabledReturnsNil(t *testing.T) {
 	cfg := *testConfig
 	cfg.AgentBase.NPGateInit = nil
-	assert.Nil(t, buildNPGateInitContainer(&cfg, "agent:img", "10.96.42.42"))
+	assert.Nil(t, buildNPGateInitContainer(&cfg, "10.96.42.42"))
 
-	cfg.AgentBase.NPGateInit = &config.AgentNPGateInit{Enabled: false, Image: "busybox"}
-	assert.Nil(t, buildNPGateInitContainer(&cfg, "agent:img", "10.96.42.42"))
+	cfg.AgentBase.NPGateInit = &config.AgentNPGateInit{Enabled: false, Image: "registry.access.redhat.com/hi/curl:8.20-builder"}
+	assert.Nil(t, buildNPGateInitContainer(&cfg, "10.96.42.42"))
 }
 
-// With no override image the gate reuses the agent image (which ships the
-// probe via platform-base); with neither set there's no image to run.
-func TestBuildNPGateInitContainer_ImageFallback(t *testing.T) {
+func TestBuildNPGateInitContainer_EmptyImageReturnsNil(t *testing.T) {
 	cfg := *testConfig
 	cfg.AgentBase.NPGateInit = &config.AgentNPGateInit{Enabled: true}
-
-	ic := buildNPGateInitContainer(&cfg, "quay.io/dam-agents/claude-code:v1", "10.96.42.42")
-	require.NotNil(t, ic)
-	assert.Equal(t, "quay.io/dam-agents/claude-code:v1", ic.Image, "empty override falls back to the agent image")
-
-	assert.Nil(t, buildNPGateInitContainer(&cfg, "", "10.96.42.42"),
-		"no override and no agent image — nothing to run")
-}
-
-// An explicit override image wins over the agent image.
-func TestBuildNPGateInitContainer_OverrideImageWins(t *testing.T) {
-	cfg := *testConfig
-	cfg.AgentBase.NPGateInit = &config.AgentNPGateInit{Enabled: true, Image: "custom/np-gate:1.0"}
-
-	ic := buildNPGateInitContainer(&cfg, "agent:img", "10.96.42.42")
-	require.NotNil(t, ic)
-	assert.Equal(t, "custom/np-gate:1.0", ic.Image)
+	assert.Nil(t, buildNPGateInitContainer(&cfg, "10.96.42.42"), "no image configured — chart sets a default")
 }
 
 // Without a gateway ClusterIP the positive-probe target is unknown.
 // Skip — the reconciler requeues until the IP is assigned.
 func TestBuildNPGateInitContainer_NoGatewayIPReturnsNil(t *testing.T) {
 	cfg := *testConfig
-	cfg.AgentBase.NPGateInit = &config.AgentNPGateInit{Enabled: true}
-	assert.Nil(t, buildNPGateInitContainer(&cfg, "agent:img", ""), "no gateway IP yet — re-attach on next reconcile")
+	cfg.AgentBase.NPGateInit = &config.AgentNPGateInit{Enabled: true, Image: "registry.access.redhat.com/hi/curl:8.20-builder"}
+	assert.Nil(t, buildNPGateInitContainer(&cfg, ""), "no gateway IP yet — re-attach on next reconcile")
 }
 
 func TestBuildNPGateInitContainer_NoCapsUnprivileged(t *testing.T) {
 	cfg := *testConfig
-	cfg.AgentBase.NPGateInit = &config.AgentNPGateInit{Enabled: true}
+	cfg.AgentBase.NPGateInit = &config.AgentNPGateInit{Enabled: true, Image: "registry.access.redhat.com/hi/curl:8.20-builder"}
 
-	ic := buildNPGateInitContainer(&cfg, "agent:img", "10.96.42.42")
+	ic := buildNPGateInitContainer(&cfg, "10.96.42.42")
 	require.NotNil(t, ic)
 	assert.Equal(t, "np-gate", ic.Name)
+	assert.Equal(t, "registry.access.redhat.com/hi/curl:8.20-builder", ic.Image)
 	require.NotNil(t, ic.SecurityContext)
-	// Pure userspace TCP probe — no caps, no root, no writable rootfs.
-	// Same security floor as a normal unprivileged sidecar.
+	// Pure userspace probe — no caps, no root, no writable rootfs. Pin a
+	// non-root uid so RunAsNonRoot admission passes whatever the image's USER.
 	require.NotNil(t, ic.SecurityContext.RunAsNonRoot)
 	assert.True(t, *ic.SecurityContext.RunAsNonRoot, "np-gate must run unprivileged")
+	require.NotNil(t, ic.SecurityContext.RunAsUser)
+	assert.NotZero(t, *ic.SecurityContext.RunAsUser, "explicit non-root uid")
 	require.NotNil(t, ic.SecurityContext.ReadOnlyRootFilesystem)
-	assert.True(t, *ic.SecurityContext.ReadOnlyRootFilesystem, "static probe needs no writable rootfs")
+	assert.True(t, *ic.SecurityContext.ReadOnlyRootFilesystem)
 	require.NotNil(t, ic.SecurityContext.Capabilities)
 	assert.Contains(t, ic.SecurityContext.Capabilities.Drop, corev1.Capability("ALL"))
 	assert.Empty(t, ic.SecurityContext.Capabilities.Add, "no capabilities — pure TCP probe")
@@ -74,24 +59,35 @@ func TestBuildNPGateInitContainer_ProbeShape(t *testing.T) {
 	cfg := *testConfig
 	cfg.AgentBase.NPGateInit = &config.AgentNPGateInit{
 		Enabled:        true,
+		Image:          "registry.access.redhat.com/hi/curl:8.20-builder",
 		TimeoutSeconds: 30,
 	}
 
-	ic := buildNPGateInitContainer(&cfg, "agent:img", "10.96.42.42")
+	ic := buildNPGateInitContainer(&cfg, "10.96.42.42")
 	require.NotNil(t, ic)
+	require.GreaterOrEqual(t, len(ic.Command), 3)
+	assert.Equal(t, "/bin/sh", ic.Command[0])
+	script := ic.Command[2]
 
-	// Runs the static probe binary directly — no shell, no `nc`.
-	assert.Equal(t, []string{npGateBinaryPath}, ic.Command)
+	// Probe shape: curl connect-test against kube-apiserver (must be DROPped)
+	// and the gateway (must be reachable), read from %{time_connect}. Both
+	// conditions must hold before exit 0; fail-closed on the deadline.
+	assert.Contains(t, script, `--connect-timeout 2`)
+	assert.Contains(t, script, `%{time_connect}`)
+	assert.Contains(t, script, `connected "${KUBERNETES_SERVICE_HOST}" "${KUBERNETES_SERVICE_PORT}"`,
+		"negative probe against kube-apiserver (kubelet-injected env)")
+	assert.Contains(t, script, `connected "${GATEWAY_IP}" "${ENVOY_PORT}"`, "positive probe against the paired gateway")
+	assert.Contains(t, script, "exit 1", "fail-closed on timeout — NP didn't converge")
+	assert.Contains(t, script, "exit 0", "release the workload when both probes match expectation")
 
 	envMap := map[string]string{}
 	for _, e := range ic.Env {
 		envMap[e.Name] = e.Value
 	}
-	assert.Equal(t, "10.96.42.42", envMap["GATEWAY_IP"], "positive-probe target (paired gateway)")
-	assert.Equal(t, "30", envMap["TIMEOUT_SECONDS"], "fail-closed deadline")
+	assert.Equal(t, "10.96.42.42", envMap["GATEWAY_IP"])
+	assert.Equal(t, "30", envMap["TIMEOUT_SECONDS"])
 	assert.NotEmpty(t, envMap["ENVOY_PORT"])
-	// kube-apiserver (the negative-probe target) isn't plumbed via our env
-	// block — kubelet injects it into every pod.
+	// kube-apiserver isn't plumbed via our env block — kubelet does it.
 	_, kubeHostSet := envMap["KUBERNETES_SERVICE_HOST"]
 	_, kubePortSet := envMap["KUBERNETES_SERVICE_PORT"]
 	assert.False(t, kubeHostSet, "KUBERNETES_SERVICE_HOST comes from kubelet, not the controller")
