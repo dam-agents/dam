@@ -1,0 +1,37 @@
+["mock-agent:check"]
+depends = ["mock-agent:check:*"]
+
+["mock-agent:check:tsc"]
+dir = "{{config_root}}/packages/e2e/agents/mock"
+depends = ["mock-agent:setup"]
+run = "pnpm exec tsc --noEmit"
+sources = ["src/**/*.ts", "tsconfig.json", "../../../dev-config/tsconfig.base.json"]
+
+["mock-agent:check:lint"]
+dir = "{{config_root}}/packages/e2e/agents/mock"
+depends = ["common:setup:pnpm"]
+run = "pnpm exec eslint ."
+sources = ["src/**/*.ts", "eslint.config.js", "../../../dev-config/eslint.base.js"]
+
+["mock-agent:check:format"]
+dir = "{{config_root}}/packages/e2e/agents/mock"
+depends = ["common:setup:pnpm"]
+run = "pnpm exec prettier --check 'src/**/*.ts'"
+sources = ["src/**/*.ts", "../../../../.prettierrc"]
+
+["mock-agent:setup"]
+dir = "{{config_root}}"
+depends = ["common:setup:pnpm"]
+
+["mock-agent:fix"]
+depends = ["mock-agent:fix:*"]
+
+["mock-agent:fix:lint"]
+dir = "{{config_root}}/packages/e2e/agents/mock"
+depends = ["common:setup:pnpm"]
+run = "pnpm exec eslint --fix ."
+
+["mock-agent:fix:format"]
+dir = "{{config_root}}/packages/e2e/agents/mock"
+depends = ["common:setup:pnpm"]
+run = "pnpm exec prettier --write 'src/**/*.ts'"

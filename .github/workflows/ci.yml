@@ -8,37 +8,12 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  paths:
-    runs-on: ubuntu-latest
-    outputs:
-      e2e: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.e2e == 'true' }}
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
-        id: filter
-        with:
-          filters: |
-            e2e:
-              - 'packages/api-server/**'
-              - 'packages/api-server-api/**'
-              - 'packages/db/**'
-              - 'packages/controller/**'
-              - 'packages/agent-runtime/**'
-              - 'packages/agent-runtime-api/**'
-              - 'packages/platform-base/**'
-              - 'packages/keycloak-theme/**'
-              - 'deploy/helm/**'
-              - 'deploy/tasks.toml'
-              - 'deploy/lima-k3s-test.yaml'
-              - '.github/workflows/ci.yml'
-
   check:
     name: mise check
     runs-on: ubuntu-latest
@@ -61,8 +36,6 @@ jobs:
 
   e2e:
     name: mise e2e
-    needs: [paths]
-    if: needs.paths.outputs.e2e == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -128,6 +101,7 @@ jobs:
           docker build -t platform-google-workspace-agent:latest packages/agents/google-workspace
           docker build -t platform-pi-agent:latest packages/agents/pi-agent
           docker build -t platform-bob:latest packages/agents/bob
+          docker build -f packages/e2e/agents/mock/Dockerfile -t platform-mock:latest .
 
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
       - run: mise run setup
@@ -138,3 +112,14 @@ jobs:
       - run: mise run e2e
         env:
           SKIP_IMAGE_BUILD: "1"
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-report
+          path: |
+            packages/e2e/playwright/playwright-report/
+            packages/e2e/playwright/test-results/
+          retention-days: 7
+          if-no-files-found: ignore

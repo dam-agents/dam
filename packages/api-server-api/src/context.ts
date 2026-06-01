@@ -2,6 +2,7 @@ import type { AgentsService } from "./modules/agents/types.js";
 import type { ApprovalsService } from "./modules/approvals/types.js";
 import type { ChannelsService } from "./modules/channels/types.js";
 import type { ConnectionsService } from "./modules/connections/types.js";
+import type { E2eService } from "./modules/e2e/types.js";
 import type { EgressRulesService } from "./modules/egress-rules/types.js";
 import type { FilesService } from "./modules/files/router.js";
 import type { SchedulesService } from "./modules/schedules/types.js";
@@ -29,5 +30,7 @@ export interface ApiContext {
   egressRules: EgressRulesService;
   files: FilesService;
   terms: TermsService;
+  e2e: E2eService;
   user: UserIdentity;
+  e2eEnabled: boolean;
 }

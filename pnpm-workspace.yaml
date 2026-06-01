@@ -1,5 +1,8 @@
 packages:
   - "packages/*"
+  - "packages/e2e/agents/mock"
+  - "packages/e2e/agents/mock-api"
+  - "packages/e2e/playwright"
   - "packages/agents/pi-agent/workspace/.pi/agent/extensions/*"
 minimumReleaseAge: 10080 # 7 days (in minutes)
 trustPolicy: no-downgrade
@@ -21,6 +24,13 @@ trustPolicyExclude:
   # maintainer (paulmillr), GitHub tag matches, restored in 5.0.0 via
   # `trustedPublisher: github`. Benign publisher-side workflow change.
   - 'chokidar@4.0.3'
+  # tinyexec@1.2.2 downgraded from trusted-publisher (1.1.1) to provenance-
+  # attestation. Same upstream (tinylibs), no open advisories. Pulled in
+  # transitively by vitest. Only surfaces in `pnpm deploy --legacy` paths
+  # (platform-base Dockerfile) because legacy deploy bypasses the lockfile
+  # and re-resolves to latest. Normal pnpm install pins 1.1.1 via the
+  # lockfile and is unaffected.
+  - 'tinyexec@1.2.2'
   # @mariozechner/clipboard 0.3.6 (2026-05-16) dropped OIDC provenance that
   # 0.3.0–0.3.5 had — same upstream (mariozechner), benign publisher-side
   # workflow change. Pulled in transitively by @earendil-works/pi-coding-agent

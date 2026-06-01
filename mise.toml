@@ -44,6 +44,9 @@ includes = [
     "packages/keycloak-theme/tasks.toml",
     "packages/platform-base/tasks.toml",
     "packages/ui/tasks.toml",
+    "packages/e2e/agents/mock/tasks.toml",
+    "packages/e2e/agents/mock-api/tasks.toml",
+    "packages/e2e/playwright/tasks.toml",
     "deploy/helm/tasks.toml",
     "deploy/tasks.toml",
 ]

@@ -375,10 +375,11 @@ YAML
 # chart's validate-istio.yaml asserts this label is present).
 kubectl --kubeconfig="$KUBECONFIG" label namespace default istio.io/dataplane-mode=ambient --overwrite
 
-# 3. Load images into k3s (built by depends: image:*)
-# SKIP_IMAGE_LOAD skips the docker→containerd transfer. cluster:helm sets it
-# (no fresh images in docker); CI sets SKIP_IMAGE_BUILD only (buildx pre-loaded
-# the runner's docker daemon, but k3s containerd is still empty).
+# 3. Load images into k3s (built by depends: image:*, or out-of-band in CI).
+# SKIP_IMAGE_LOAD skips the containerd import — cluster:helm reuses the SHAs
+# already loaded, so pods keep their pinned images. SKIP_IMAGE_BUILD alone (CI)
+# does NOT skip the load: buildx built the images out-of-band into the docker
+# daemon, and they still have to be imported into k3s's separate containerd.
 if [ -n "${SKIP_IMAGE_LOAD:-}" ]; then
   echo "Skipping image load (SKIP_IMAGE_LOAD set)"
   NO_RESTART=true
@@ -396,13 +397,23 @@ else
   AGENT_IMAGES=()
   while IFS=$'\t' read -r name image; do
     { [ -z "$name" ] || [ "$name" = "---" ]; } && continue
-    if [ ! -d "packages/agents/$name" ]; then
-      echo "WARN: no packages/agents/$name build task for '$name' ($image) — skipping" >&2
-      continue
+    if [ -d "packages/agents/$name" ]; then
+      [ -n "${AGENT_TASKS[*]}" ] && AGENT_TASKS+=(":::")
+      AGENT_TASKS+=("agents:$name:image")
+      AGENT_IMAGES+=("$image")
+    elif [ -d "packages/e2e/agents/$name" ]; then
+      # e2e fixture agents (the scripted mock) live outside packages/agents/* and
+      # have no agents:*:image task — build straight from their Dockerfile, root
+      # context so the platform-base FROM resolves. Honors SKIP_IMAGE_BUILD like
+      # the per-agent tasks; in CI the image is already in the daemon.
+      if [ -z "${SKIP_IMAGE_BUILD:-}" ]; then
+        {{ mise_bin }} run platform-base:image
+        docker build -f "packages/e2e/agents/$name/Dockerfile" -t "$image" .
+      fi
+      AGENT_IMAGES+=("$image")
+    else
+      echo "WARN: no build task for '$name' ($image) — skipping" >&2
     fi
-    [ -n "${AGENT_TASKS[*]}" ] && AGENT_TASKS+=(":::")
-    AGENT_TASKS+=("agents:$name:image")
-    AGENT_IMAGES+=("$image")
   done <<< "$AGENTS_RENDERED"
   [ -n "${AGENT_TASKS[*]}" ] && {{ mise_bin }} run "${AGENT_TASKS[@]}"
 

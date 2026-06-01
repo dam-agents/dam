@@ -702,6 +702,23 @@ agentTemplates:
         cpu: "2"
         memory: "4Gi"
 
+  # Test-only mock agent (ADR-056). Scripted ACP emitter; receives prompts
+  # into an in-pod buffer and emits a pre-set sequence of session/update
+  # frames in response. Default off — flipped on by the e2e/local install.
+  - name: mock
+    enabled: false
+    description: "Scripted mock agent (E2E test fixture)"
+    image:
+      repository: quay.io/dam-agents/mock
+      tag: ""
+    storageSize: "1Gi"
+
+# -- E2E test affordances (ADR-056). Gated test-only surface: the api-server
+# registers a control tRPC namespace that drives the mock Agent harness over
+# the existing ACP relay. Default off — flipped on by the e2e/local install.
+e2e:
+  enabled: false
+
 # -- Platform-wide skill sources (shared catalog visible to all users).
 # Rendered into the api-server pod as SKILL_SOURCES_SEED. The same
 # `{name, gitUrl}` shape works for per-template sources under
