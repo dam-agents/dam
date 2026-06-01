@@ -71,10 +71,10 @@ run = '''
 docker build -f packages/ui/Dockerfile -t platform-ui:latest .
 '''
 
-# Fans out to every agent's own image:agent:<name> task (in packages/agents/*).
+# Fans out to every agent's own agents:<name>:image task (in packages/agents/*).
 ["image:agent"]
 description = "Build platform-base + all agent images"
-depends = ["image:agent:*"]
+depends = ["agents:*:image"]
 
 ["image:keycloak"]
 description = "Build keycloak Docker image (theme JAR baked in)"
@@ -400,7 +400,7 @@ else
       continue
     fi
     [ -n "${AGENT_TASKS[*]}" ] && AGENT_TASKS+=(":::")
-    AGENT_TASKS+=("image:agent:$name")
+    AGENT_TASKS+=("agents:$name:image")
     AGENT_IMAGES+=("$image")
   done <<< "$AGENTS_RENDERED"
   [ -n "${AGENT_TASKS[*]}" ] && {{ mise_bin }} run "${AGENT_TASKS[@]}"
@@ -593,7 +593,7 @@ while IFS=$'\t' read -r name image; do
     continue
   fi
   [ -n "${AGENT_TASKS[*]}" ] && AGENT_TASKS+=(":::")
-  AGENT_TASKS+=("image:agent:$name")
+  AGENT_TASKS+=("agents:$name:image")
   AGENT_IMAGES+=("$image")
 done <<< "$DEPLOYED_AGENTS"
 

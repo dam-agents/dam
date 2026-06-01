@@ -1,4 +1,4 @@
-["image:platform-base"]
+["platform-base:image"]
 description = "Build the platform-base image (shared base layer for every agent image)"
 dir = "{{config_root}}"
 run = '''
