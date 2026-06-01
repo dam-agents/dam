@@ -41,6 +41,7 @@ const configSchema = z.object({
   slackAppToken: z.string().nullable().default(null),
   slackOauthCallbackUrl: z.string().nullable().default(null),
   telegramEnabled: z.coerce.boolean().default(false),
+  e2eEnabled: z.coerce.boolean().default(false),
   activityTrackingEnabled: z.coerce.boolean().default(false),
   /** HMAC key used to pseudonymize Keycloak `sub` values written to
    *  `activity_events`, `actor_roles`, and `instances` (GDPR Art. 32).
@@ -143,6 +144,7 @@ export function loadConfig(): Config {
     slackAppToken: process.env.SLACK_APP_TOKEN,
     slackOauthCallbackUrl: process.env.SLACK_OAUTH_CALLBACK_URL,
     telegramEnabled: process.env.TELEGRAM_ENABLED,
+    e2eEnabled: process.env.E2E_ENABLED,
     activityTrackingEnabled: process.env.ACTIVITY_TRACKING_ENABLED,
     activityHmacKey: process.env.ACTIVITY_HMAC_KEY,
     uiBaseUrl: process.env.UI_BASE_URL,

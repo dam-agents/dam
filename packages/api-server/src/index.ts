@@ -70,6 +70,7 @@ import {
 } from "./modules/forks/index.js";
 import { composeUsageModule } from "./modules/usage/compose.js";
 import { createK8sForkOrchestrator } from "./modules/forks/infrastructure/k8s-fork-orchestrator.js";
+import { composeE2eModule } from "./modules/e2e/compose.js";
 import { composeTermsModule } from "./modules/terms/index.js";
 import { loadConfig } from "./config.js";
 import { startApiServerApp } from "./apps/api-server/app.js";
@@ -115,6 +116,10 @@ const { service: termsService, isAcceptedPort: isTermsAccepted } =
     text: config.terms.text,
   });
 
+const { service: e2eService } = composeE2eModule({
+  namespace: config.namespace,
+});
+
 const k8sCleanupSub = startK8sCleanupSaga(k8sClient, channelSecretStore);
 const channelCleanupSub = startChannelCleanupSaga(
   deleteChannelsByAgent(db),
@@ -155,6 +160,29 @@ const userDirectory = createKeycloakUserDirectory({
   clientSecret: config.keycloakApiClientSecret,
 });
 
+if (!config.redisUrl)
+  throw new Error(
+    "REDIS_URL is required (Redis is a platform primitive — see ADR-036)",
+  );
+const redisBus = createRedisBus(config.redisUrl, {
+  password: config.redisPassword ?? undefined,
+});
+
+const bullConnection = createBullConnection(
+  config.redisUrl,
+  config.redisPassword ?? undefined,
+);
+
+// Composed before the system-agents reader so runtimeMutator is a required agents dep (#421).
+const runtimeDelivery = composeRuntimeDelivery({
+  db,
+  namespace: config.namespace,
+  bullConnection,
+  agentRunningPort: { isRunning: () => true },
+  harnessServerUrl: config.harnessServerUrl,
+});
+runtimeDelivery.sweep.start();
+
 const { agents: systemAgents } = composeAgentsModule({
   api,
   namespace: config.namespace,
@@ -163,6 +191,7 @@ const { agents: systemAgents } = composeAgentsModule({
   userDirectory,
   channelSecretStore,
   readTemplateSpec: async () => null,
+  runtimeMutator: runtimeDelivery.runtimeMutator,
 });
 const persistSession = upsertSession(db);
 const persistSlackSession = (
@@ -284,19 +313,6 @@ const channelManager = createChannelManager({
   channelSecretStore,
 });
 
-if (!config.redisUrl)
-  throw new Error(
-    "REDIS_URL is required (Redis is a platform primitive — see ADR-036)",
-  );
-const redisBus = createRedisBus(config.redisUrl, {
-  password: config.redisPassword ?? undefined,
-});
-
-const bullConnection = createBullConnection(
-  config.redisUrl,
-  config.redisPassword ?? undefined,
-);
-
 // Seed list for the `trusted` egress preset (ADR-035).
 // Read once at boot; the helm ConfigMap is the operator-editable source.
 const trustedHosts = loadTrustedHosts(config.trustedHostsPath);
@@ -372,15 +388,6 @@ const agentArtifactsSweeper = createAgentArtifactsSweeper({
 });
 agentArtifactsSweeper.start();
 
-const runtimeDelivery = composeRuntimeDelivery({
-  db,
-  namespace: config.namespace,
-  bullConnection,
-  agentRunningPort: { isRunning: () => true },
-  harnessServerUrl: config.harnessServerUrl,
-});
-runtimeDelivery.sweep.start();
-
 const schedulesBoot = composeSchedulesAtBoot({
   db,
   bullConnection,
@@ -414,6 +421,7 @@ const { server: apiServer } = startApiServerApp({
   mountUsageRoutes: usage.mount,
   terms: termsService,
   isTermsAccepted,
+  e2e: e2eService,
 });
 
 const { server: harnessApiServer } = startHarnessApiServerApp({

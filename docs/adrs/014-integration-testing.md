@@ -1,7 +1,7 @@
 # ADR-014: E2E integration testing against dedicated k3s cluster
 
 **Date:** 2026-04-08
-**Status:** Accepted
+**Status:** Superseded by ADR-056
 **Owner:** @tomkis
 
 ## Context

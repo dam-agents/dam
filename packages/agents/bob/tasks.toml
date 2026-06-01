@@ -1,0 +1,9 @@
+["agents:bob:image"]
+description = "Build the bob agent image"
+dir = "{{config_root}}"
+depends = ["platform-base:image"]
+run = '''
+#!/usr/bin/env bash
+[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
+docker build -t platform-bob:latest packages/agents/bob
+'''

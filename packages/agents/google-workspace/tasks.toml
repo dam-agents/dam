@@ -1,0 +1,9 @@
+["agents:google-workspace:image"]
+description = "Build the google-workspace agent image"
+dir = "{{config_root}}"
+depends = ["platform-base:image"]
+run = '''
+#!/usr/bin/env bash
+[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
+docker build -t platform-google-workspace-agent:latest packages/agents/google-workspace
+'''

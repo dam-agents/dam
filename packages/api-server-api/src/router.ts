@@ -3,6 +3,7 @@ import { agentsRouter } from "./modules/agents/router.js";
 import { approvalsRouter } from "./modules/approvals/router.js";
 import { channelsRouter } from "./modules/channels/router.js";
 import { connectionsRouter } from "./modules/connections/router.js";
+import { e2eRouter } from "./modules/e2e/router.js";
 import { egressRulesRouter } from "./modules/egress-rules/router.js";
 import { filesRouter } from "./modules/files/router.js";
 import { schedulesRouter } from "./modules/schedules/router.js";
@@ -25,6 +26,7 @@ export const appRouter = t.router({
   egressRules: egressRulesRouter,
   files: filesRouter,
   terms: termsRouter,
+  e2e: e2eRouter,
 });
 
 export type AppRouter = typeof appRouter;

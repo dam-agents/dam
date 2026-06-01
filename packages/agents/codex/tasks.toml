@@ -1,0 +1,9 @@
+["agents:codex:image"]
+description = "Build the codex agent image"
+dir = "{{config_root}}"
+depends = ["platform-base:image"]
+run = '''
+#!/usr/bin/env bash
+[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
+docker build -t platform-codex:latest packages/agents/codex
+'''

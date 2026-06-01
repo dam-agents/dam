@@ -1,0 +1,7 @@
+{
+  "extends": "dev-config/tsconfig",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["src", "playwright.config.ts"]
+}

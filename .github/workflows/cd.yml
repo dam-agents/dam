@@ -97,6 +97,9 @@ jobs:
           - component: claude-code
             dockerfile: packages/agents/claude-code/Dockerfile
             context: packages/agents/claude-code
+          - component: codex
+            dockerfile: packages/agents/codex/Dockerfile
+            context: packages/agents/codex
           - component: google-workspace-agent
             dockerfile: packages/agents/google-workspace/Dockerfile
             context: packages/agents/google-workspace
