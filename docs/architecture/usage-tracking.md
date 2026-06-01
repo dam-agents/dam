@@ -79,7 +79,7 @@ The subsystem owns:
 
 The subsystem reads from but does not own:
 
-- **Other Postgres tables** (`sessions`, `pending_approvals`, `agent_skills`, `egress_rules`) — selected views project read-only summaries over them. Schema changes there can require view rewrites; view rewrites never require changes to the source tables.
+- **Other Postgres tables** (`pending_approvals`, `agent_skills`, `egress_rules`) — selected views project read-only summaries over them. Schema changes there can require view rewrites; view rewrites never require changes to the source tables. (Session-derived views were retired when sessions became agent-owned — see ADR-055.)
 
 The subsystem produces no events of its own and exposes no domain operations to other modules — it is a sink for the event bus and a reader for SQL.
 

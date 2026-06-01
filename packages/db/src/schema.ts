@@ -12,8 +12,6 @@ import {
   bigint,
 } from "drizzle-orm/pg-core";
 
-export const sessionModeEnum = pgEnum("session_mode", ["chat", "terminal"]);
-
 /** Outcome of a recorded activity. Constrained at the DB so a typo or a
  *  forgotten field surfaces as a constraint violation, not as a row that
  *  silently miscounts in the usage views. */
@@ -150,29 +148,8 @@ export const pendingApprovals = pgTable(
   ],
 );
 
-export const sessions = pgTable(
-  "sessions",
-  {
-    sessionId: text("session_id").primaryKey(),
-    agentId: text("agent_id").notNull(),
-    type: text("type").notNull().default("regular"),
-    mode: sessionModeEnum("mode").notNull(),
-    scheduleId: text("schedule_id"),
-    scheduleActive: boolean("schedule_active").default(true).notNull(),
-    threadTs: text("thread_ts"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [
-    uniqueIndex("sessions_agent_thread_idx")
-      .on(table.agentId, table.threadTs)
-      .where(sql`${table.threadTs} IS NOT NULL`),
-  ],
-);
+// Sessions are agent-owned (ADR-055): the agent's on-disk store is the source
+// of truth, surfaced over ACP `_meta`. The server keeps no session table.
 
 export const skillSources = pgTable(
   "skill_sources",

@@ -16,12 +16,8 @@ export const VIEW_NAMES = [
   "usage_channel_turns_by_agent",
   "usage_channel_turns_by_day_7d",
   "usage_channel_top_agents_30d",
-  // Sessions
-  "usage_sessions_by_type_30d",
-  "usage_sessions_by_mode_30d",
-  "usage_active_agents_7d",
-  "usage_sessions_by_agent_30d",
-  "usage_session_active_span",
+  // Schedules — sourced from activity_events (the session-derived session
+  // views retired with the sessions table; sessions are agent-owned, ADR-055).
   "usage_schedule_fires_by_schedule",
   "usage_schedule_fires_by_agent",
   // Approvals
