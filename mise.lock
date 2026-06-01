@@ -128,6 +128,10 @@ url = "https://get.helm.sh/helm-v4.1.4-windows-amd64.tar.gz"
 version = "21.0.2"
 backend = "core:java"
 
+[tools.java."platforms.linux-arm64"]
+checksum = "sha256:08db1392a48d4eb5ea5315cf8f18b89dbaf36cda663ba882cf03c704c9257ec2"
+url = "https://download.java.net/java/GA/jdk21.0.2/f2283984656d49d69e91c558476027ac/13/GPL/openjdk-21.0.2_linux-aarch64_bin.tar.gz"
+
 [tools.java."platforms.macos-arm64"]
 checksum = "sha256:b3d588e16ec1e0ef9805d8a696591bd518a5cea62567da8f53b5ce32d11d22e4"
 url = "https://download.java.net/java/GA/jdk21.0.2/f2283984656d49d69e91c558476027ac/13/GPL/openjdk-21.0.2_macos-aarch64_bin.tar.gz"
@@ -171,6 +175,7 @@ backend = "aqua:lima-vm/lima"
 [tools.lima."platforms.linux-arm64"]
 checksum = "sha256:8b806c81f38ad7ea8104f196b414e243726cad1dfa6aa52843608d55df8c5290"
 url = "https://github.com/lima-vm/lima/releases/download/v2.1.0/lima-2.1.0-Linux-aarch64.tar.gz"
+provenance = "github-attestations"
 
 [tools.lima."platforms.linux-arm64-musl"]
 checksum = "sha256:8b806c81f38ad7ea8104f196b414e243726cad1dfa6aa52843608d55df8c5290"
@@ -197,6 +202,7 @@ version = "3.9.16"
 backend = "aqua:apache/maven"
 
 [tools.maven."platforms.linux-arm64"]
+checksum = "blake3:edb2f6835f26d5b83b16d5d9bff5a1c32035c583e76cf2a208897386f5774256"
 url = "https://archive.apache.org/dist/maven/maven-3/3.9.16/binaries/apache-maven-3.9.16-bin.tar.gz"
 
 [tools.maven."platforms.linux-arm64-musl"]

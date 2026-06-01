@@ -154,8 +154,16 @@ data:
           {{- if .Values.keycloak.inspectorRole }}
           ,"groups": ["/inspectors"]
           {{- end }}
-        }
+        },
         {{- end }}
+        {
+          "username": {{ printf "service-account-%s" (lower .Values.keycloak.apiClientId) | quote }},
+          "enabled": true,
+          "serviceAccountClientId": {{ .Values.keycloak.apiClientId | quote }},
+          "clientRoles": {
+            "realm-management": ["view-users"]
+          }
+        }
       ]
     }
 {{- end }}

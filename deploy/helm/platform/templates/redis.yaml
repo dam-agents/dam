@@ -74,12 +74,9 @@ spec:
           # AOF appendfsync everysec — relaxed durability matches the platform
           # rule that Redis is allowed to lose recent ephemeral data on restart
           # (see ADR-036).
-          # Shell wrapper because the official `redis` image does NOT expand
-          # env vars in `args`. We need `$REDIS_PASSWORD` interpolated into
-          # `--requirepass`, so we exec redis-server through `sh -c`.
           command: ["sh", "-c"]
           args:
-            - 'exec redis-server --appendonly yes --appendfsync everysec --requirepass "$REDIS_PASSWORD"'
+            - 'exec valkey-server --appendonly yes --appendfsync everysec --requirepass "$REDIS_PASSWORD"'
           env:
             - name: REDIS_PASSWORD
               valueFrom:
@@ -94,13 +91,13 @@ spec:
             exec:
               # `--no-auth-warning` keeps the probe log clean; the server
               # would otherwise emit a noisy NOAUTH warning per check.
-              command: ["sh", "-c", 'redis-cli -a "$REDIS_PASSWORD" --no-auth-warning ping']
+              command: ["sh", "-c", 'valkey-cli -a "$REDIS_PASSWORD" --no-auth-warning ping']
             initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 3
           livenessProbe:
             exec:
-              command: ["sh", "-c", 'redis-cli -a "$REDIS_PASSWORD" --no-auth-warning ping']
+              command: ["sh", "-c", 'valkey-cli -a "$REDIS_PASSWORD" --no-auth-warning ping']
             initialDelaySeconds: 15
             periodSeconds: 15
             timeoutSeconds: 3

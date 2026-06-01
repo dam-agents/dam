@@ -22,7 +22,13 @@ dir = "{{config_root}}/packages/keycloak-theme"
 depends = ["keycloak-theme:setup"]
 sources = ["src/**/*", "public/**/*", "vite.config.ts", "package.json"]
 outputs = ["dist_keycloak/**/*"]
-run = "pnpm run build:jar"
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+export XDG_CACHE_HOME="$PWD/node_modules/.cache"
+export KEYCLOAKIFY_USE_DEFAULT_MAVEN_REPO=true
+pnpm run build:jar
+'''
 
 ["keycloak-theme:run"]
 description = "Boot Keycloak in Docker with the theme JAR loaded (full-fidelity preview)"

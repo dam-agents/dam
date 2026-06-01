@@ -68,9 +68,9 @@ scheme: http
 # `ingress.tls[].hosts` with the override hostnames — see the note on
 # `ingress.tls` below.
 urls:
-  ui: ""        # default: {scheme}://{domain}{:port}
-  api: ""       # back-compat fallback for urls.ui; same host
-  keycloak: ""  # default: {scheme}://keycloak.{domain}{:port}
+  ui: "" # default: {scheme}://{domain}{:port}
+  api: "" # back-compat fallback for urls.ui; same host
+  keycloak: "" # default: {scheme}://keycloak.{domain}{:port}
 
 # -- Pull secrets for all pods managed by this chart.
 # Agent pods (managed by the controller) also inherit these secrets.
@@ -147,7 +147,7 @@ postgres:
 # the source of truth for anything durable).
 redis:
   enabled: true
-  image: redis:8.6
+  image: registry.access.redhat.com/hi/valkey:9.0
   port: 6379
   storage: 1Gi
   storageClass: ""
@@ -169,8 +169,7 @@ keycloak:
     repository: quay.io/dam-agents/keycloak
     tag: "" # defaults to .Chart.AppVersion
     pullPolicy: IfNotPresent
-  configCliImage: adorsys/keycloak-config-cli:latest-26.5.4
-  provisionImage: curlimages/curl:8.19.0
+  configCliImage: quay.io/adorsys/keycloak-config-cli:latest-26.5.4
   port: 8080
 
   # -- Admin credentials (for Keycloak admin console)
@@ -502,16 +501,16 @@ controller:
   agent:
     base:
       # Cluster details (immutable per-agent)
-      imagePullSecrets: []           # must exist in agentNamespace
+      imagePullSecrets: [] # must exist in agentNamespace
       # storageClass must support ReadWriteMany so per-turn fork pods can
       # mount /home/agent concurrently with the long-lived pod. Empty =
       # cluster default. Set to "platform-rwx" for the bundled NFS provisioner.
       storageClass: ""
-      accessMode: ReadWriteMany      # ReadWriteOnce for single-node dev
+      accessMode: ReadWriteMany # ReadWriteOnce for single-node dev
 
       # Lifecycle
-      idleTimeout: "1h"              # hibernate idle agents; "0s" disables
-      terminationGracePeriod: 5      # gateway pods have a hardcoded drain
+      idleTimeout: "1h" # hibernate idle agents; "0s" disables
+      terminationGracePeriod: 5 # gateway pods have a hardcoded drain
 
       # Pod metadata + scheduling
       extraLabels: {}
@@ -521,7 +520,7 @@ controller:
       affinity: {}
       topologySpreadConstraints: []
       priorityClassName: ""
-      runtimeClassName: ""           # e.g. "kata" for sandboxed runtimes
+      runtimeClassName: "" # e.g. "kata" for sandboxed runtimes
 
       # Probes (each sub-field overrides the controller's built-in probe).
       # Gated by top-level `probes.enabled`.
@@ -563,13 +562,14 @@ controller:
 
       # -- Userspace init container that blocks the agent's main
       # container until the egress NetworkPolicy is verifiably enforced.
-      # Pure userspace TCP probe; no caps; works against any guest kernel.
+      # Runs the static `np-gate` probe
       npGateInit:
         enabled: false
-        # busybox provides nc + sh in one image. K8s SIG distroless
-        # variants don't bundle nc. Digest pins the multi-arch manifest
-        # list — resolves to amd64/arm64/etc at pull time. Rotate manually.
-        image: docker.io/library/busybox:1.37@sha256:1487d0af5f52b4ba31c7e465126ee2123fe3f2305d638e7827681e7cf6c83d5e
+        # The probe ships in platform-base, so every agent image carries it
+        # at /usr/local/bin/np-gate. Leave empty to reuse the agent's own
+        # image (no extra pull). Set only to override with a different image,
+        # which MUST provide the probe at that same path.
+        image: ""
         # Hard deadline before the init container fails the pod. OVN-K
         # typically converges in well under a second; 30s is generous
         # for cold node churn / controller restart scenarios.
@@ -637,11 +637,11 @@ controller:
     caSecretNamespace: cert-manager
     caSecretName: platform-mitm-ca
     # -- CA validity. cert-manager will renew before expiry automatically.
-    caDuration: 87600h     # 10y
-    caRenewBefore: 720h    # 30d
+    caDuration: 87600h # 10y
+    caRenewBefore: 720h # 30d
     # -- Per-agent leaf cert validity.
-    leafDuration: 2160h    # 90d
-    leafRenewBefore: 360h  # 15d
+    leafDuration: 2160h # 90d
+    leafRenewBefore: 360h # 15d
   resources:
     requests:
       cpu: 100m
