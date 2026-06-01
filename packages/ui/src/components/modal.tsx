@@ -8,7 +8,7 @@ interface ModalProps {
 }
 
 /**
- * Centered overlay modal with brutal styling. Closes only via explicit
+ * Centered overlay modal. Closes only via explicit
  * actions in the modal body — backdrop clicks and Escape are ignored so
  * users can't lose in-progress form state by accident.
  *
@@ -40,8 +40,7 @@ export function Modal({ widthClass = "w-[560px]", children }: ModalProps) {
           role="dialog"
           aria-modal="true"
           aria-labelledby={labelId}
-          className={`${widthClass} max-h-[95dvh] md:max-h-[85vh] overflow-hidden rounded-xl border-2 border-border bg-surface flex flex-col anim-scale-in`}
-          style={{ boxShadow: "var(--shadow-brutal)" }}
+          className={`${widthClass} max-h-[95dvh] md:max-h-[85vh] overflow-hidden rounded-xl border border-border bg-surface flex flex-col anim-scale-in shadow-xl`}
         >
           {children}
         </div>

@@ -68,9 +68,8 @@ function ToastRow({
   const isError = toast.kind === "error";
   return (
     <div
-      className={`pointer-events-auto rounded-lg border-2 ${c.border} p-3 flex items-start gap-2.5 anim-scale-in`}
+      className={`pointer-events-auto rounded-lg border-2 ${c.border} p-3 flex items-start gap-2.5 anim-scale-in shadow-lg`}
       style={{
-        boxShadow: "var(--shadow-brutal-sm)",
         // Solid tinted bg — the theme's *-light tokens are alpha in dark mode,
         // which bled through whatever the toast floated over. color-mix keeps
         // the tint identity while staying fully opaque.

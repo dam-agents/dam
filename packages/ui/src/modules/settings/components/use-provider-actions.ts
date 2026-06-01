@@ -32,10 +32,10 @@ export function useProviderActions() {
      *  Uses the destructive confirm variant — removing a provider breaks
      *  any agent currently using it, so the dialog leans on the
      *  destructive token to telegraph that. */
-    async remove(id: string) {
+    async remove(id: string, displayName: string) {
       const ok = await showConfirm(
-        "Are you sure you want to remove this provider? Any agent currently using this provider will no longer work as expected.",
-        "Remove Provider?",
+        `Are you sure you want to remove ${displayName}? Any agent currently using this provider will no longer work as expected.`,
+        `Remove ${displayName}?`,
         { kind: "destructive", confirmLabel: "Remove provider" },
       );
       if (!ok) return;

@@ -48,7 +48,8 @@ export function InboxBell({ collapsed }: InboxBellProps) {
         onClick={() => setOpen((o) => !o)}
         title={collapsed ? "Inbox" : undefined}
         className={cn(
-          "flex items-center gap-2.5 rounded-lg transition-colors h-9 w-full justify-start px-2.5",
+          "flex items-center gap-2.5 rounded-lg transition-colors h-9 w-full overflow-hidden",
+          collapsed ? "justify-center px-0" : "justify-start px-2.5",
           active
             ? "text-primary bg-primary/10"
             : "text-foreground/80 hover:text-foreground hover:bg-muted",
@@ -65,7 +66,11 @@ export function InboxBell({ collapsed }: InboxBellProps) {
             </Badge>
           )}
         </span>
-        {!collapsed && <span className="text-[14px] font-medium">Inbox</span>}
+        {!collapsed && (
+          <span className="text-[14px] font-medium whitespace-nowrap">
+            Inbox
+          </span>
+        )}
       </button>
       {open && (
         <div className="absolute left-full ml-2 bottom-0 z-40 w-[320px] rounded-lg border border-input bg-card shadow-sm overflow-hidden anim-scale-in">

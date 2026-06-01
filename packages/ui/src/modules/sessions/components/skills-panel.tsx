@@ -18,6 +18,8 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { z } from "zod";
 
+import { Button } from "@/components/ui/button";
+
 import { api } from "../../../api.js";
 import { ACTION_FAILED, runAction } from "../../../lib/query-helpers.js";
 import { useStore } from "../../../store.js";
@@ -496,20 +498,22 @@ export function SkillsPanel({
                 rows={3}
               />
               <div className="flex justify-end gap-2">
-                <button
-                  className="h-7 rounded-md border-2 border-border-light px-3 text-[11px] font-semibold text-text-muted hover:text-text transition-colors"
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-[11px]"
                   onClick={() => setPublishFor(null)}
                 >
                   Cancel
-                </button>
-                <button
-                  className="btn-brutal h-7 rounded-md border-2 border-accent-hover bg-accent px-3.5 text-[11px] font-bold text-white disabled:opacity-40"
-                  style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+                </Button>
+                <Button
+                  size="sm"
+                  className="h-7 text-[11px]"
                   disabled={publishBusy || !publishForm.sourceId}
                   onClick={publish}
                 >
                   {publishBusy ? "Publishing…" : "Publish"}
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -608,22 +612,24 @@ export function SkillsPanel({
             }
           />
           <div className="flex justify-end gap-2">
-            <button
-              className="h-7 rounded-md border-2 border-border-light px-3 text-[11px] font-semibold text-text-muted hover:text-text transition-colors"
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-[11px]"
               onClick={() => setShowAdd(false)}
             >
               Cancel
-            </button>
-            <button
-              className="btn-brutal h-7 rounded-md border-2 border-accent-hover bg-accent px-3.5 text-[11px] font-bold text-white disabled:opacity-40"
-              style={{ boxShadow: "var(--shadow-brutal-accent)" }}
+            </Button>
+            <Button
+              size="sm"
+              className="h-7 text-[11px]"
               disabled={
                 addBusy || !addForm.name.trim() || !addForm.gitUrl.trim()
               }
               onClick={addSource}
             >
               {addBusy ? "..." : "Add"}
-            </button>
+            </Button>
           </div>
         </div>
       )}

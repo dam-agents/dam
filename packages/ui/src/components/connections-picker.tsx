@@ -1,8 +1,8 @@
 import {
+  Application,
   Globe,
   Information as Info,
-  Password as KeyRound,
-  Password as Lock,
+  Password,
 } from "@carbon/icons-react";
 import type { AppConnectionView } from "api-server-api";
 
@@ -297,7 +297,7 @@ function SecretItemRow({
         onCheckedChange={onToggle}
         className="mt-0.5"
       />
-      <Lock size={14} className="text-foreground/80 shrink-0 mt-0.5" />
+      <Password size={14} className="text-foreground/80 shrink-0 mt-0.5" />
       <div className="flex-1 min-w-0">
         <div className="text-[13px] font-medium text-foreground truncate">
           {secret.name}
@@ -398,7 +398,7 @@ function AppItemRow({
         onCheckedChange={onToggle}
         className="mt-0.5"
       />
-      <KeyRound size={14} className="text-foreground/80 shrink-0 mt-0.5" />
+      <Application size={14} className="text-foreground/80 shrink-0 mt-0.5" />
       <div className="flex-1 min-w-0">
         <div className="text-[13px] font-medium text-foreground truncate">
           {label}

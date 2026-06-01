@@ -8,6 +8,7 @@ import {
   type ProviderPresetType,
 } from "../../../types.js";
 import { useSecrets } from "../../secrets/api/queries.js";
+import { GoogleIcon } from "../components/brand-icons.js";
 import { ComingSoonCard } from "../components/coming-soon-card.js";
 import { PROVIDER_CARDS } from "../components/provider-cards.js";
 
@@ -62,6 +63,7 @@ export function ProvidersView() {
           <ComingSoonCard
             name="Google"
             description="Powers Gemini CLI agents"
+            icon={<GoogleIcon className="w-5 h-5" />}
           />
         </div>
       </section>

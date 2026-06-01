@@ -7,6 +7,8 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 
+import { Button } from "@/components/ui/button";
+
 import {
   ConnectionsPicker,
   type OAuthAppEntry,
@@ -503,21 +505,16 @@ export function ConfigureAgentDialog({
               wildcard.
             </span>
           )}
-          <button
-            type="button"
-            className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
-            onClick={onClose}
-          >
+          <Button type="button" variant="outline" onClick={onClose}>
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             type="submit"
-            className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent"
             disabled={isSubmitDisabled}
             title={!isDirty ? "Nothing to save" : undefined}
           >
             {saving ? "..." : "Save"}
-          </button>
+          </Button>
         </DialogFooter>
       </form>
     </Modal>

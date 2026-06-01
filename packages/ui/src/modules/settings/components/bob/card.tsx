@@ -19,7 +19,7 @@ export function BobCard({ secret }: { secret?: SecretView }) {
     return (
       <BobConnected
         secret={secret}
-        onRemove={() => actions.remove(secret.id)}
+        onRemove={() => actions.remove(secret.id, NAME)}
         onSave={({ value, pins }) =>
           actions.update({
             id: secret.id,

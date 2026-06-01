@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { Button } from "@/components/ui/button";
+
 import { api } from "../../../api.js";
 import { Markdown } from "../../../components/markdown.js";
 import { ResizeHandle } from "../../../components/resize-handle.js";
@@ -663,7 +665,7 @@ function SessionErrorCard({
         ? "Can't reach the agent"
         : "Failed to load session";
   return (
-    <div className="my-4 rounded-xl border-2 border-danger bg-danger-light p-5 flex flex-col gap-3 anim-in shadow-brutal-sm">
+    <div className="my-4 rounded-xl border-2 border-danger bg-danger-light p-5 flex flex-col gap-3 anim-in">
       <div className="flex items-start gap-3">
         <AlertCircle size={20} className="text-danger shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
@@ -674,19 +676,13 @@ function SessionErrorCard({
         </div>
       </div>
       <div className="flex items-center gap-2 flex-wrap">
-        <button
-          onClick={onBack}
-          className="btn-brutal h-8 rounded-lg border-2 border-border bg-surface px-3 text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center gap-1.5 shadow-brutal-sm"
-        >
+        <Button variant="outline" size="sm" onClick={onBack}>
           <ArrowLeft size={12} /> Back to sessions
-        </button>
+        </Button>
         {error.kind === "not-found" && (
-          <button
-            onClick={onDelete}
-            className="btn-brutal h-8 rounded-lg border-2 border-danger bg-danger-light px-3 text-[12px] font-semibold text-danger hover:bg-danger hover:text-white flex items-center gap-1.5 shadow-brutal-sm"
-          >
+          <Button variant="destructive" size="sm" onClick={onDelete}>
             <Trash2 size={12} /> Delete orphaned session
-          </button>
+          </Button>
         )}
       </div>
     </div>
@@ -702,7 +698,7 @@ function SendErrorCard({
 }) {
   return (
     <div
-      className="rounded-xl border-2 border-danger bg-danger-light px-4 py-3 flex items-start gap-2.5 max-w-[620px] shadow-brutal-sm"
+      className="rounded-xl border-2 border-danger bg-danger-light px-4 py-3 flex items-start gap-2.5 max-w-[620px]"
       role="alert"
     >
       <AlertCircle size={16} className="text-danger shrink-0 mt-0.5" />
@@ -711,12 +707,14 @@ function SendErrorCard({
           <span className="font-bold text-danger">Send failed:</span> {error}
         </div>
         {onRetry && (
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             onClick={onRetry}
-            className="btn-brutal self-start h-7 rounded-md border-2 border-danger bg-surface px-3 text-[12px] font-bold text-danger hover:bg-danger hover:text-white flex items-center gap-1.5 shadow-brutal-sm"
+            className="self-start"
           >
             <RefreshCw size={11} /> Retry
-          </button>
+          </Button>
         )}
       </div>
     </div>

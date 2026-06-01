@@ -29,9 +29,6 @@
   --color-info-light: var(--c-info-light);
   --color-template: var(--c-template);
   --color-template-light: var(--c-template-light);
-  --shadow-brutal: var(--s-brutal);
-  --shadow-brutal-sm: var(--s-brutal-sm);
-  --shadow-brutal-accent: var(--s-brutal-accent);
   --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 
@@ -85,9 +82,6 @@
   --c-info-light: #f2f4f8;
   --c-template: #7c3aed;
   --c-template-light: #f5f3ff;
-  --s-brutal: 3px 3px 0 #292524;
-  --s-brutal-sm: 2px 2px 0 #292524;
-  --s-brutal-accent: 3px 3px 0 #1d6be1;
 
   /* shadcn tokens — mapped to brand palette above */
   --radius: 0.5rem;
@@ -136,9 +130,6 @@
   --c-info-light: #0f1f3a;
   --c-template: #a78bfa;
   --c-template-light: #1f1438;
-  --s-brutal: 3px 3px 0 #000000;
-  --s-brutal-sm: 2px 2px 0 #000000;
-  --s-brutal-accent: 3px 3px 0 #3c92fd;
   color-scheme: dark;
 
   /* shadcn tokens — dark. Surface colors that are pure #ffffff in light
@@ -168,17 +159,12 @@
 /* ── Dark-mode card elevation ──
    Card surfaces (`--card`) share the same value as `--background` in dark
    mode, so the default downward dark shadow is invisible and borderless
-   cards melt into the page. Invert the shadcn shadow utilities to a soft
-   light lift in dark mode so cards read as raised without adding a border. */
-.dark .shadow,
-.dark .shadow-sm {
-  box-shadow: 0 1px 2px 0 rgb(255 255 255 / 0.07);
-}
-.dark .shadow-md {
-  box-shadow: 0 2px 6px 0 rgb(255 255 255 / 0.09);
-}
-.dark .shadow-lg {
-  box-shadow: 0 4px 12px 0 rgb(255 255 255 / 0.1);
+   cards melt into the page. Give the Card a soft light lift so it reads as
+   raised without a border. Scoped to `[data-slot="card"]` so the shared
+   shadow utilities on bordered overlays (modal, tooltip, sonner, popovers,
+   menus) keep their own styling instead of picking up a white halo. */
+.dark [data-slot="card"] {
+  box-shadow: 0 2px 5px 0 rgb(255 255 255 / 0.12);
 }
 
 @layer base {
@@ -389,18 +375,6 @@
   opacity: 0.04;
 }
 
-/* ── Brutalist button interaction ── */
-.btn-brutal {
-  transition: all 0.15s ease;
-}
-.btn-brutal:hover:not(:disabled) {
-  transform: translate(-1px, -1px);
-}
-.btn-brutal:active:not(:disabled) {
-  transform: translate(1px, 1px);
-  box-shadow: 0 0 0 var(--c-border) !important;
-}
-
 /* ── Markdown / Prose ── */
 .prose {
   font-size: 15px;
@@ -454,12 +428,11 @@
 }
 .prose pre {
   background: var(--c-surface-raised) !important;
-  border: 2px solid var(--c-border);
+  border: 1px solid var(--border-ui);
   border-radius: 12px;
   padding: 1em 1.15em;
   overflow-x: auto;
   margin: 0.65em 0;
-  box-shadow: var(--s-brutal-sm);
 }
 .prose pre code {
   background: none;
@@ -504,10 +477,9 @@
   border-spacing: 0;
   margin: 0.65em 0;
   font-size: 0.93em;
-  border: 2px solid var(--c-border);
+  border: 1px solid var(--border-ui);
   border-radius: 12px;
   overflow: hidden;
-  box-shadow: var(--s-brutal-sm);
 }
 .prose th {
   background: var(--c-surface-raised);
