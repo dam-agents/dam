@@ -13,7 +13,114 @@ depends = ["*:fix"]
 depends = ["*:test"]
 
 ["e2e"]
-depends = ["*:e2e"]
+description = "Run Playwright e2e: spin up fresh test cluster, run specs, tear down. Options: --headed"
+dir = "{{config_root}}"
+raw = true
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+
+PLAYWRIGHT_TASK="e2e-playwright:run"
+for arg in "$@"; do
+  case "$arg" in
+    --headed) PLAYWRIGHT_TASK="e2e-playwright:run-headed" ;;
+  esac
+done
+
+VM_NAME="platform-k3s-test"
+if [ -n "${IS_SANDBOX:-}" ]; then
+  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+else
+  KUBECONFIG="$HOME/.lima/$VM_NAME/copied-from-guest/kubeconfig.yaml"
+fi
+
+export E2E_MOCK_ONLY=1
+
+cleanup() {
+  local exit_code=$?
+  if [ $exit_code -ne 0 ] && [ -f "$KUBECONFIG" ]; then
+    echo ""
+    echo "=== FAILURE: dumping cluster diagnostics ==="
+    echo ""
+    echo "--- Nodes ---"
+    kubectl --kubeconfig="$KUBECONFIG" get nodes -o wide 2>&1 || true
+    echo ""
+    echo "--- Pods (all namespaces) ---"
+    kubectl --kubeconfig="$KUBECONFIG" get pods -A -o wide 2>&1 || true
+    echo ""
+    echo "--- Events (recent, all namespaces) ---"
+    kubectl --kubeconfig="$KUBECONFIG" get events -A --sort-by=.lastTimestamp 2>&1 | tail -50 || true
+    echo ""
+    echo "--- Describe not-ready pods ---"
+    kubectl --kubeconfig="$KUBECONFIG" get pods -A -o json 2>/dev/null \
+      | jq -r '.items[] | select(.status.phase != "Running" or ([.status.containerStatuses[]?.ready] | all | not)) | "\(.metadata.namespace) \(.metadata.name)"' \
+      | while read -r ns name; do
+          echo "### $ns/$name ###"
+          kubectl --kubeconfig="$KUBECONFIG" describe pod -n "$ns" "$name" 2>&1 || true
+          echo ""
+        done
+    echo ""
+    echo "--- Logs from Platform pods ---"
+    for ns in default platform-agents; do
+      for pod in $(kubectl --kubeconfig="$KUBECONFIG" get pods -n "$ns" -o name 2>/dev/null); do
+        echo "### $ns/$pod (current) ###"
+        kubectl --kubeconfig="$KUBECONFIG" logs -n "$ns" "$pod" --all-containers --tail=200 2>&1 || true
+        echo "### $ns/$pod (previous) ###"
+        kubectl --kubeconfig="$KUBECONFIG" logs -n "$ns" "$pod" --all-containers --tail=200 --previous 2>&1 || true
+        echo ""
+      done
+    done
+    echo "=== End diagnostics ==="
+  fi
+
+  echo ""
+  echo "=== Tearing down test cluster ==="
+  mise run cluster:delete -- --vm-name="$VM_NAME" --force || true
+
+  exit $exit_code
+}
+trap cleanup EXIT
+
+# Skip pre-nuke in sandbox/CI — the runner starts clean. Locally, a prior
+# run may have died before teardown fired, leaving a half-provisioned VM.
+if [ -z "${IS_SANDBOX:-}" ]; then
+  echo "Nuking any pre-existing test cluster..."
+  mise run cluster:delete -- --vm-name="$VM_NAME" --force
+fi
+
+INSTALL_ARGS=(
+  --lima-template=deploy/lima-k3s-test.yaml
+  --helm-values=deploy/helm/platform/values-e2e.yaml
+  --set=domain=localhost
+  --set=port=5555
+  --set=controller.agent.templateDefaults.storageSize=1Gi
+  --no-restart
+)
+# domain=localhost (NOT localtest.me): Chromium treats *.localhost as a
+# secure context per the URL spec, so window.crypto.subtle is available
+# and oidc-client-ts can generate PKCE state in signinRedirect(). On
+# *.localtest.me the page is NOT secure-context, crypto.subtle is undefined,
+# the OIDC redirect throws silently, and the SPA hangs on a blank screen.
+if [ -z "${IS_SANDBOX:-}" ]; then
+  INSTALL_ARGS+=(--vm-name="$VM_NAME")
+fi
+mise run cluster:install -- "${INSTALL_ARGS[@]}"
+
+# Targeted apiserver rollout: on a fresh cluster the apiserver pod starts in
+# parallel with postgres and loses a race against postgres's init-databases.sh
+# (creates keycloak + platform DBs, then restarts postgres). The Drizzle
+# migration's CREATE SCHEMA dies with ECONNRESET and the pod crash-loops.
+# Bouncing just apiserver after postgres is settled lets the second pod
+# generation migrate cleanly. UI/controller don't share this race, and
+# restarting the UI introduces a transient Traefik-endpoint 502 window that
+# breaks Playwright's first asset fetch — leave them alone.
+mise run cluster:kubectl -- rollout restart deployment platform-apiserver
+mise run cluster:kubectl -- rollout status deployment platform-apiserver --timeout=5m
+
+PLATFORM_BASE_URL="http://localhost:5555" \
+PLATFORM_KEYCLOAK_URL="http://keycloak.localhost:5555" \
+  mise run "$PLAYWRIGHT_TASK"
+'''
 
 # -- Git hooks --
 
