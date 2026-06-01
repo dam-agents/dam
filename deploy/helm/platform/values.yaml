@@ -617,7 +617,10 @@ controller:
 
   replicas: 1
   # -- Image for the Envoy credential-injector sidecar (ADR-033).
-  envoyImage: envoyproxy/envoy:distroless-v1.37.2
+  # Envoy publishes only to Docker Hub; pulled via mirror.gcr.io (Google's
+  # pull-through cache, higher anonymous rate limits) — byte-identical to
+  # envoyproxy/envoy:distroless-v1.37.2 (same manifest digest).
+  envoyImage: mirror.gcr.io/envoyproxy/envoy:distroless-v1.37.2
   # -- Port the Envoy sidecar listens on inside the agent pod (proxy on 127.0.0.1).
   envoyPort: 10000
   # -- TLS interception support for the credential injector. The chart

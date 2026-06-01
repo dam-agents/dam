@@ -74,7 +74,7 @@ spec:
             - name: PLATFORM_RELEASE_DOMAIN
               value: "svc.cluster.local"
             - name: ENVOY_IMAGE
-              value: {{ .Values.controller.envoyImage | default "envoyproxy/envoy:distroless-v1.37.2" | quote }}
+              value: {{ .Values.controller.envoyImage | default "mirror.gcr.io/envoyproxy/envoy:distroless-v1.37.2" | quote }}
             - name: ENVOY_PORT
               value: {{ .Values.controller.envoyPort | default 10000 | quote }}
             - name: AGENT_HOME

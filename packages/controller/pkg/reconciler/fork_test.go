@@ -38,7 +38,7 @@ func setupForkReconciler(t *testing.T, agents map[string]*corev1.ConfigMap, obje
 		ReleaseNamespace:   "default",
 		ReleaseName:        "platform",
 		HarnessServerPort:  4001,
-		EnvoyImage:         "envoyproxy/envoy:distroless-v1.37.2",
+		EnvoyImage:         "mirror.gcr.io/envoyproxy/envoy:distroless-v1.37.2",
 		EnvoyPort:          10000,
 		IstioTrustDomain:   "cluster.local",
 		IstioWaypointName:  "apiserver-waypoint",
