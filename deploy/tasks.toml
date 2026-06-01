@@ -72,13 +72,17 @@ docker build -f packages/ui/Dockerfile -t platform-ui:latest .
 '''
 
 ["image:agent"]
-description = "Build agent Docker images (platform-base + claude-code + codex + google-workspace + pi-agent + bob + mock)"
+description = "Build agent Docker images (platform-base + claude-code + codex + google-workspace + pi-agent + bob + mock). E2E_MOCK_ONLY=1 builds platform-base + mock only."
 dir = "{{config_root}}"
 run = '''
 #!/usr/bin/env bash
 set -eo pipefail
 [ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
 docker build -f packages/platform-base/Dockerfile -t platform-base .
+if [ -n "${E2E_MOCK_ONLY:-}" ]; then
+  docker build -f packages/e2e/agents/mock/Dockerfile -t platform-mock:latest .
+  exit 0
+fi
 docker build -t platform-claude-code:latest packages/agents/claude-code
 docker build -t platform-codex:latest packages/agents/codex
 docker build -t platform-google-workspace-agent:latest packages/agents/google-workspace
@@ -369,7 +373,13 @@ if [ -n "${SKIP_IMAGE_BUILD:-}" ]; then
 else
   echo "Loading images into k3s..."
   tar="/tmp/platform-images.tar"
-  docker save -o "$tar" platform-controller:latest platform-api-server:latest platform-ui:latest platform-claude-code:latest platform-codex:latest platform-google-workspace-agent:latest platform-pi-agent:latest platform-bob:latest platform-mock:latest
+  IMAGES_TO_LOAD=(platform-controller:latest platform-api-server:latest platform-ui:latest)
+  if [ -n "${E2E_MOCK_ONLY:-}" ]; then
+    IMAGES_TO_LOAD+=(platform-mock:latest)
+  else
+    IMAGES_TO_LOAD+=(platform-claude-code:latest platform-codex:latest platform-google-workspace-agent:latest platform-pi-agent:latest platform-bob:latest platform-mock:latest)
+  fi
+  docker save -o "$tar" "${IMAGES_TO_LOAD[@]}"
   if [ -n "${IS_SANDBOX:-}" ]; then
     [ -z "${CI:-}" ] && docker image prune --all --force >/dev/null 2>&1 || true
     sudo k3s ctr images import "$tar"
