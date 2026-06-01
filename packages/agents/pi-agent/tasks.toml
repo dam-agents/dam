@@ -1,0 +1,9 @@
+["image:agent:pi-agent"]
+description = "Build the pi-agent agent image"
+dir = "{{config_root}}"
+depends = ["image:platform-base"]
+run = '''
+#!/usr/bin/env bash
+[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
+docker build -t platform-pi-agent:latest packages/agents/pi-agent
+'''
