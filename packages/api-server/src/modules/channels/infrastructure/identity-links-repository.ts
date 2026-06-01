@@ -5,7 +5,6 @@ export interface IdentityLink {
   provider: string;
   externalUserId: string;
   keycloakSub: string;
-  refreshToken: string | null;
 }
 
 export function findIdentityByExternalUser(db: Db) {
@@ -28,7 +27,6 @@ export function findIdentityByExternalUser(db: Db) {
       provider: rows[0].provider,
       externalUserId: rows[0].externalUserId,
       keycloakSub: rows[0].keycloakSub,
-      refreshToken: rows[0].refreshToken,
     };
   };
 }
@@ -38,14 +36,13 @@ export function upsertIdentityLink(db: Db) {
     provider: string,
     externalUserId: string,
     keycloakSub: string,
-    refreshToken: string | null,
   ): Promise<void> => {
     await db
       .insert(identityLinks)
-      .values({ provider, externalUserId, keycloakSub, refreshToken })
+      .values({ provider, externalUserId, keycloakSub })
       .onConflictDoUpdate({
         target: [identityLinks.provider, identityLinks.externalUserId],
-        set: { keycloakSub, refreshToken },
+        set: { keycloakSub },
       });
   };
 }

@@ -148,6 +148,13 @@
       "when": 1780704000000,
       "tag": "0020_drop_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1780790400000,
+      "tag": "0021_drop_identity_link_refresh_token",
+      "breakpoints": true
     }
   ]
 }

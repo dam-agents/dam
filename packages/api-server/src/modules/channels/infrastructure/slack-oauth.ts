@@ -73,7 +73,6 @@ export function createSlackOAuthRoutes(deps: {
       "slack",
       pending.slackUserId,
       result.keycloakSub,
-      result.refreshToken,
     );
     // The primary "who got bound to which Keycloak account" record.
     securityLog("info", "identity.link", {
@@ -84,7 +83,6 @@ export function createSlackOAuthRoutes(deps: {
       result: "success",
       detail: {
         externalUserId: pending.slackUserId,
-        hasRefresh: Boolean(result.refreshToken),
       },
     });
 

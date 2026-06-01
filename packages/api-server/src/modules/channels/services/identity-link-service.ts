@@ -6,7 +6,6 @@ export interface IdentityLinkService {
     provider: string,
     externalUserId: string,
     keycloakSub: string,
-    refreshToken: string | null,
   ): Promise<void>;
   unlink(provider: string, externalUserId: string): Promise<void>;
 }
@@ -20,7 +19,6 @@ export function createIdentityLinkService(deps: {
     provider: string,
     externalUserId: string,
     keycloakSub: string,
-    refreshToken: string | null,
   ) => Promise<void>;
   delete: (provider: string, externalUserId: string) => Promise<void>;
 }): IdentityLinkService {
@@ -30,8 +28,8 @@ export function createIdentityLinkService(deps: {
       return link?.keycloakSub ?? null;
     },
 
-    async link(provider, externalUserId, keycloakSub, refreshToken) {
-      await deps.upsert(provider, externalUserId, keycloakSub, refreshToken);
+    async link(provider, externalUserId, keycloakSub) {
+      await deps.upsert(provider, externalUserId, keycloakSub);
     },
 
     async unlink(provider, externalUserId) {
