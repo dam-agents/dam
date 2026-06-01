@@ -13,7 +13,8 @@ test("login via Keycloak and accept terms", async ({ page }) => {
   await page.locator("#kc-login").click();
 
   await page.waitForURL(
-    (url) => url.origin === baseUrl && !url.pathname.startsWith("/auth/callback"),
+    (url) =>
+      url.origin === baseUrl && !url.pathname.startsWith("/auth/callback"),
   );
 
   const termsButton = page.getByRole("button", {
