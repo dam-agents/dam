@@ -81,7 +81,7 @@ export function useDeleteSchedule() {
 
 export function useResetScheduleSession() {
   return useMutation({
-    ...trpc.sessions.resetByScheduleId.mutationOptions(),
+    ...trpc.schedules.resetSession.mutationOptions(),
     meta: {
       ...invalidatesScheduleList,
       errorToast: "Failed to reset schedule session",

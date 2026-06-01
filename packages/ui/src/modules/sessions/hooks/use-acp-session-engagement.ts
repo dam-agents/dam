@@ -61,9 +61,14 @@ export function useAcpSessionEngagement(
         engagedSessionIdRef.current = sid;
         await applySavedPreferences(conn, sid, resp);
       } else {
+        // Stamp platform metadata (ADR-055) so the session records as a regular
+        // chat session rather than decoding as terminal-by-default.
         const s = await conn.newSession({
           cwd: ".",
           mcpServers: [],
+          _meta: {
+            platform: { mode: SessionMode.Chat, type: SessionType.Regular },
+          },
         });
         captureSessionConfig(s);
         setSessionId(s.sessionId);

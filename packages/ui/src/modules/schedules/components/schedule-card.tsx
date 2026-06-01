@@ -96,7 +96,7 @@ export function ScheduleCard({
         "Reset Session",
       )
     ) {
-      resetScheduleSession.mutate({ scheduleId: id });
+      resetScheduleSession.mutate({ id });
     }
   };
 

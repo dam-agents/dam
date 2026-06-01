@@ -1,11 +1,11 @@
 import type { SessionMode } from "api-server-api";
 import type { StateCreator } from "zustand";
 
-import { api } from "../../../api.js";
 import { ACTION_FAILED, runAction } from "../../../lib/query-helpers.js";
 import { queryClient } from "../../../query-client.js";
 import type { PlatformStore } from "../../../store.js";
 import type { LogEntry, Message } from "../../../types.js";
+import { deleteAgentSession } from "../api/acp-session-ops.js";
 import { acpSessionsKeys } from "../api/queries.js";
 
 /** A resume-time failure that blocks showing the session chat. Rendered inline. */
@@ -105,7 +105,7 @@ export const createSessionsSlice: StateCreator<
     const agentId = get().selectedAgent;
     if (!agentId) return;
     const ok = await runAction(
-      () => api.sessions.delete.mutate({ sessionId, agentId }),
+      () => deleteAgentSession(agentId, sessionId),
       "Failed to delete session",
     );
     if (ok === ACTION_FAILED) return;

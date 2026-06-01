@@ -5,10 +5,7 @@ import type {
   SessionNotification,
 } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
-import {
-  platformSessionModeChangedParamsSchema,
-  platformTurnEndedParamsSchema,
-} from "api-server-api";
+import { platformTurnEndedParamsSchema } from "api-server-api";
 
 import { getAccessToken } from "../../auth.js";
 import { type PermissionOutcome, useStore } from "../../store.js";
@@ -130,20 +127,6 @@ export async function openConnection(
             return;
           }
           onUpdate({ sessionUpdate: "platform_turn_ended", ...parsed.data });
-        } else if (method === "platform/sessionModeChanged") {
-          const parsed =
-            platformSessionModeChangedParamsSchema.safeParse(params);
-          if (!parsed.success) {
-            console.warn(
-              "[acp] platform/sessionModeChanged schema mismatch:",
-              parsed.error.issues,
-            );
-            return;
-          }
-          onUpdate({
-            sessionUpdate: "platform_session_mode_changed",
-            ...parsed.data,
-          });
         }
       },
     }),

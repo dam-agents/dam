@@ -4,10 +4,7 @@ import {
   zSessionModelState,
   zSessionModeState,
 } from "@agentclientprotocol/sdk/dist/schema/zod.gen.js";
-import type {
-  PlatformSessionModeChangedParams,
-  PlatformTurnEndedParams,
-} from "api-server-api";
+import type { PlatformTurnEndedParams } from "api-server-api";
 import { z } from "zod";
 
 /**
@@ -25,10 +22,7 @@ import { z } from "zod";
 export type AcpUpdate =
   | SessionUpdate
   | ({ sessionUpdate: "platform_turn_ended" } & PlatformTurnEndedParams)
-  | { sessionUpdate: "platform_clipped_replay" }
-  | ({
-      sessionUpdate: "platform_session_mode_changed";
-    } & PlatformSessionModeChangedParams);
+  | { sessionUpdate: "platform_clipped_replay" };
 
 export type UpdateHandler = (update: AcpUpdate) => void;
 

@@ -1,12 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { api } from "../../../api.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import { hasStreamingAssistant } from "../../acp/session-projection.js";
-import type { AcpUpdate } from "../../acp/types.js";
 import { classifyResumeError, extractErrorMessage } from "../../acp/utils.js";
 import { useAgentsList } from "../../agents/api/queries.js";
+import {
+  deleteAgentSession,
+  listAgentSessions,
+} from "../api/acp-session-ops.js";
 import { acpSessionsKeys } from "../api/queries.js";
 import { useAcpConfigCache } from "./use-acp-config-cache.js";
 import { useAcpConnection } from "./use-acp-connection.js";
@@ -44,7 +47,6 @@ export function useAcpSession(
   const agentRunState = useAgentsList().find(
     (a) => a.id === selectedAgent,
   )?.state;
-  const modeChangeRef = useRef<((u: AcpUpdate) => void) | null>(null);
 
   const { captureSessionConfig, handleConfigUpdate, applySavedPreferences } =
     useAcpConfigCache(selectedAgent, sessionId, agentRunState);
@@ -65,19 +67,7 @@ export function useAcpSession(
     applySavedPreferences,
   );
 
-  const handleUpdate = useCallback(
-    (update: AcpUpdate) => {
-      if (update.sessionUpdate === "platform_session_mode_changed") {
-        modeChangeRef.current?.(update);
-        queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
-        return;
-      }
-      handleConfigUpdate(update);
-    },
-    [handleConfigUpdate],
-  );
-
-  const makeUpdateHandler = useAcpUpdateHandler(handleUpdate);
+  const makeUpdateHandler = useAcpUpdateHandler(handleConfigUpdate);
 
   const {
     ensureLive,
@@ -130,10 +120,7 @@ export function useAcpSession(
         setMessages(fresh);
 
         try {
-          const sessions = await api.sessions.list.query({
-            agentId: selectedAgent,
-            includeChannel: false,
-          });
+          const sessions = await listAgentSessions(selectedAgent);
           const match = sessions.find((s) => s.sessionId === sid);
           if (match?.mode && match.mode !== useStore.getState().sessionMode) {
             useStore.getState().setSessionMode(match.mode);
@@ -144,10 +131,7 @@ export function useAcpSession(
         const kind = classifyResumeError(e);
         if (kind === "not-found" && opts?.expectNotFound) {
           setLoadingSession(false);
-          await api.sessions.delete.mutate({
-            sessionId: sid,
-            agentId: selectedAgent,
-          });
+          await deleteAgentSession(selectedAgent, sid);
           queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
           resetSession();
           return;
@@ -170,17 +154,6 @@ export function useAcpSession(
       setSessionId,
     ],
   );
-
-  modeChangeRef.current = (update) => {
-    if (update.sessionUpdate !== "platform_session_mode_changed") return;
-    const s = useStore.getState();
-    if (update.sessionId !== s.sessionId) return;
-    const wasExternal = s.sessionMode !== update.mode;
-    s.setSessionMode(update.mode);
-    if (!wasExternal) return;
-    if (update.mode === "terminal") s.setTerminalPaused(true);
-    if (update.mode === "chat") resumeSession(update.sessionId);
-  };
 
   const { sendPrompt, stopAgent } = useAcpPrompt(
     selectedAgent,

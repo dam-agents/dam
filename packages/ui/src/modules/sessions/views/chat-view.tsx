@@ -14,7 +14,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
-import { api } from "../../../api.js";
 import { Markdown } from "../../../components/markdown.js";
 import { ResizeHandle } from "../../../components/resize-handle.js";
 import { StatusBadge } from "../../../components/status-indicator.js";
@@ -27,6 +26,7 @@ import { useAgents } from "../../agents/api/queries.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
 import { prefetchSchedules } from "../../schedules/api/queries.js";
+import { setSessionMode as applySessionMode } from "../api/acp-session-ops.js";
 import { acpSessionsKeys } from "../api/queries.js";
 import { ChatInput } from "../components/chat-input.js";
 import { ConfigurationPanel } from "../components/configuration-panel.js";
@@ -175,17 +175,12 @@ export function ChatView() {
         ? SessionMode.Chat
         : SessionMode.Terminal;
 
-    // Blank chat → terminal: spawn a fresh terminal session with no confirmation.
+    // Blank chat → terminal: spawn a fresh terminal session with no
+    // confirmation. The PTY creates it (ADR-055) — no server registration; it
+    // surfaces in session/list with no `_meta` and decodes as terminal.
     if (!sessionId && messages.length === 0) {
       if (target === SessionMode.Terminal) {
-        const newSessionId = crypto.randomUUID();
-        await api.sessions.create.mutate({
-          sessionId: newSessionId,
-          agentId: selectedAgent,
-          mode: SessionMode.Terminal,
-        });
-        queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
-        setSessionId(newSessionId);
+        setSessionId(crypto.randomUUID());
       }
       setSessionMode(target);
       return;
@@ -208,11 +203,7 @@ export function ChatView() {
     if (sessionId) {
       if (target !== SessionMode.Terminal) setSessionMode(target);
       try {
-        await api.sessions.setMode.mutate({
-          sessionId,
-          agentId: selectedAgent,
-          mode: target,
-        });
+        await applySessionMode(selectedAgent, sessionId, target);
         queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
       } catch {
         setSessionMode(sessionMode);

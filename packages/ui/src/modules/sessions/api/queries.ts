@@ -1,6 +1,7 @@
 import { skipToken, useQuery } from "@tanstack/react-query";
+import { SessionType } from "api-server-api";
 
-import { api } from "../../../api.js";
+import { listAgentSessions } from "./acp-session-ops.js";
 
 export const acpSessionsKeys = {
   all: ["acp-sessions"] as const,
@@ -11,16 +12,14 @@ export const acpSessionsKeys = {
 };
 
 /**
- * Sessions list with live ACP enrichment (title, updatedAt) overlaid on the
- * platform DB rows. Pass `enabled: false` (e.g. while the agent is waking)
- * to keep the query in cache without firing requests.
+ * Sessions list, read straight off the agent over ACP `session/list` (ADR-055)
+ * and decoded from `_meta.platform`. Schedule sessions are excluded from the
+ * main list; channel sessions are included only when asked. Pass
+ * `enabled: false` (e.g. while the agent is waking) to keep the query in cache
+ * without firing requests.
  *
  * `refetchOnMount: "always"` because the title is harness-set after the first
  * turn — a returning user must see the updated title without a manual refresh.
- *
- * meta.errorToast is intentionally vague — sustained outages get the toast
- * once per outage via the global query cache wiring.
- *
  */
 export function useAcpSessions(
   agentId: string | null,
@@ -31,7 +30,13 @@ export function useAcpSessions(
   return useQuery({
     queryKey: acpSessionsKeys.list(agentId, includeChannel),
     queryFn: live
-      ? () => api.sessions.list.query({ agentId, includeChannel })
+      ? async () => {
+          const sessions = await listAgentSessions(agentId);
+          const allowed: string[] = [SessionType.Regular];
+          if (includeChannel)
+            allowed.push(SessionType.ChannelSlack, SessionType.ChannelTelegram);
+          return sessions.filter((s) => allowed.includes(s.type));
+        }
       : skipToken,
     refetchOnMount: "always",
     staleTime: 5_000,

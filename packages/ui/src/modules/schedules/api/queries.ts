@@ -2,6 +2,7 @@ import { skipToken, useQuery } from "@tanstack/react-query";
 
 import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
+import { listAgentSessions } from "../../sessions/api/acp-session-ops.js";
 
 export function prefetchSchedules(agentId: string) {
   return queryClient.prefetchQuery({
@@ -19,11 +20,21 @@ export function useSchedules(agentId: string | null) {
   });
 }
 
-export function useScheduleSessions(scheduleId: string | null) {
+/** A schedule's sessions, read straight off the owning agent over ACP and
+ *  filtered by `scheduleId` (ADR-055) — the server has no session list. */
+export function useScheduleSessions(
+  agentId: string | null,
+  scheduleId: string | null,
+) {
   return useQuery({
-    ...trpc.sessions.listByScheduleId.queryOptions(
-      scheduleId ? { scheduleId } : skipToken,
-    ),
+    queryKey: ["schedule-sessions", agentId, scheduleId] as const,
+    queryFn:
+      agentId && scheduleId
+        ? async () => {
+            const sessions = await listAgentSessions(agentId);
+            return sessions.filter((s) => s.scheduleId === scheduleId);
+          }
+        : skipToken,
     // Single-shot on expand; the list-level poll is authoritative for status.
     retry: 0,
     staleTime: 30_000,
