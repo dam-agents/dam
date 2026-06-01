@@ -95,10 +95,15 @@ export function createOAuthFlowService(deps: {
       }
       await deps.secretStore.putFields(pending.ctx.accessTokenRef, fields);
 
-      if (conn.auth.kind === "oauth" && tokens.expiresAt !== undefined) {
+      if (conn.auth.kind === "oauth") {
+        // Completion marker for status derivation — written on every
+        // successful exchange, even when the provider returns no expiry.
         const updatedAuth: ConnectionAuthConfig = {
           ...conn.auth,
-          expiresAt: tokens.expiresAt,
+          connectedAt: Math.floor(Date.now() / 1000),
+          ...(tokens.expiresAt !== undefined
+            ? { expiresAt: tokens.expiresAt }
+            : {}),
         };
         await deps.repo.updateAuth(conn.id, updatedAuth);
       }

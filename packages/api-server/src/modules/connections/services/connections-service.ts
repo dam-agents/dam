@@ -58,6 +58,13 @@ export function createConnectionsService(deps: {
         ? {
             ...(conn.auth.host ? { host: conn.auth.host } : {}),
             ...(conn.auth.appSlug ? { appSlug: conn.auth.appSlug } : {}),
+            ...(conn.auth.connectedAt
+              ? {
+                  connectedAt: new Date(
+                    conn.auth.connectedAt * 1000,
+                  ).toISOString(),
+                }
+              : {}),
           }
         : {};
     return {
@@ -389,7 +396,11 @@ function stripSecretsFromInputs(input: {
 function deriveStatus(conn: Connection): ConnectionView["status"] {
   switch (conn.auth.kind) {
     case "oauth":
-      return conn.auth.expiresAt ? "active" : "pending";
+      // `expiresAt` stays in the OR for back-compat: connections created
+      // before `connectedAt` existed have an expiry but no marker.
+      return conn.auth.connectedAt || conn.auth.expiresAt
+        ? "active"
+        : "pending";
     case "header":
       return "active";
     case "none":

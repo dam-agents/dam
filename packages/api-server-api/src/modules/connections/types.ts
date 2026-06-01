@@ -16,6 +16,7 @@ export const oauthAuth = z.object({
   authorizationUrl: z.string().url(),
   clientSecretRef: secretRef.optional(),
   expiresAt: z.number().int().optional(),
+  connectedAt: z.number().int().optional(),
   tokenEndpointAcceptJson: z.boolean().optional(),
   extraAuthParams: z.record(z.string(), z.string()).optional(),
   host: z.string().min(1).optional(),
