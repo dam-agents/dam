@@ -3,6 +3,10 @@ import { Check, Copy, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+
 import { useTestAnthropic } from "../../../secrets/api/mutations.js";
 import { CardIcon } from "../shared/card-icon.js";
 import { IconButton } from "../shared/icon-button.js";
@@ -88,90 +92,83 @@ export function AnthropicForm({
   };
 
   return (
-    <form
-      onSubmit={onSubmit}
-      className={`rounded-xl border-2 p-5 anim-in flex flex-col gap-4 ${
-        isEdit
-          ? "border-accent bg-accent-light shadow-brutal-accent"
-          : "border-warning bg-warning-light shadow-brutal"
-      }`}
-    >
-      <div className="flex items-center gap-3">
-        <CardIcon variant={isEdit ? "accent" : "warning"} />
-        <div className="flex-1 min-w-0">
-          <div className="text-[15px] font-bold text-text">Anthropic</div>
-          <div className="text-[12px] text-text-muted">
-            {isEdit
-              ? "Pick mode and paste a new credential to replace the existing one."
-              : "Required for Claude Code agents. Pick the mode that matches your credential."}
+    <Card className="anim-in">
+      <form onSubmit={onSubmit} className="flex flex-col gap-4 p-5">
+        <div className="flex items-center gap-3">
+          <CardIcon provider="anthropic" />
+          <div className="flex-1 min-w-0">
+            <div className="text-[15px] font-bold text-foreground">
+              Anthropic
+            </div>
+            <div className="text-[12px] text-muted-foreground">
+              {isEdit
+                ? "Pick mode and paste a new credential to replace the existing one."
+                : "Required for Claude Code agents. Pick the mode that matches your credential."}
+            </div>
           </div>
+          {onCancel && (
+            <IconButton onClick={onCancel} title="Cancel" hoverTone="neutral">
+              <X size={13} />
+            </IconButton>
+          )}
         </div>
-        {onCancel && (
-          <IconButton onClick={onCancel} title="Cancel" hoverTone="neutral">
-            <X size={13} />
-          </IconButton>
-        )}
-      </div>
 
-      <Controller
-        control={control}
-        name="mode"
-        render={({ field }) => (
-          <ModeToggle mode={field.value} onChange={field.onChange} />
-        )}
-      />
-
-      {mode === "oauth" && <QuickSetupHint />}
-
-      <div className="flex gap-3">
-        <input
-          className="w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted"
-          type="password"
-          autoComplete="off"
-          data-1p-ignore
-          data-lpignore="true"
-          data-form-type="other"
-          placeholder={MODES[mode].placeholder}
-          {...register("value")}
+        <Controller
+          control={control}
+          name="mode"
+          render={({ field }) => (
+            <ModeToggle mode={field.value} onChange={field.onChange} />
+          )}
         />
-        <button
-          type="button"
-          className="btn-brutal h-10 rounded-lg border-2 border-border bg-surface px-4 text-[13px] font-semibold text-text-secondary hover:text-accent hover:border-accent disabled:opacity-40 shrink-0 shadow-brutal-sm"
-          onClick={test}
-          disabled={submitDisabled}
-          title="Verify the credential with Anthropic"
-        >
-          {testing ? "..." : "Test"}
-        </button>
-        <button
-          type="submit"
-          className="btn-brutal h-10 rounded-lg border-2 border-accent-hover bg-accent px-6 text-[13px] font-semibold text-white disabled:opacity-40 shrink-0 shadow-brutal-accent"
-          disabled={submitDisabled}
-        >
-          {isSubmitting ? "..." : isEdit ? "Replace" : "Save"}
-        </button>
-      </div>
 
-      {/* Mismatch errors live on the value field; "Required" is suppressed
-          until the user actually types so the form doesn't yell on first paint. */}
-      {errors.value &&
-        value.length > 0 &&
-        errors.value.message !== "Required" && (
-          <div className="text-[12px] font-medium text-danger">
-            {errors.value.message}
+        {mode === "oauth" && <QuickSetupHint />}
+
+        <div className="flex gap-3">
+          <Input
+            type="password"
+            autoComplete="off"
+            data-1p-ignore
+            data-lpignore="true"
+            data-form-type="other"
+            placeholder={MODES[mode].placeholder}
+            {...register("value")}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            onClick={test}
+            disabled={submitDisabled}
+            title="Verify the credential with Anthropic"
+            className="shrink-0"
+          >
+            {testing ? "..." : "Test"}
+          </Button>
+          <Button type="submit" disabled={submitDisabled} className="shrink-0">
+            {isSubmitting ? "..." : isEdit ? "Replace" : "Save"}
+          </Button>
+        </div>
+
+        {/* Mismatch errors live on the value field; "Required" is suppressed
+            until the user actually types so the form doesn't yell on first paint. */}
+        {errors.value &&
+          value.length > 0 &&
+          errors.value.message !== "Required" && (
+            <div className="text-[12px] font-medium text-destructive">
+              {errors.value.message}
+            </div>
+          )}
+        {!errors.value && testResult?.ok && (
+          <div className="text-[12px] font-medium text-success flex items-center gap-1.5">
+            <Check size={13} /> Credential is valid.
           </div>
         )}
-      {!errors.value && testResult?.ok && (
-        <div className="text-[12px] font-medium text-success flex items-center gap-1.5">
-          <Check size={13} /> Credential is valid.
-        </div>
-      )}
-      {!errors.value && testResult && !testResult.ok && (
-        <div className="text-[12px] font-medium text-danger">
-          {testResult.message}
-        </div>
-      )}
-    </form>
+        {!errors.value && testResult && !testResult.ok && (
+          <div className="text-[12px] font-medium text-destructive">
+            {testResult.message}
+          </div>
+        )}
+      </form>
+    </Card>
   );
 }
 
@@ -183,16 +180,16 @@ function QuickSetupHint() {
     setTimeout(() => setCopied(false), 2000);
   };
   return (
-    <div className="text-[13px] text-text-secondary">
+    <div className="text-[13px] text-foreground/80">
       Run{" "}
       <span className="inline-flex items-center gap-1.5 align-middle">
-        <code className="font-mono font-semibold text-accent">
+        <code className="font-mono font-semibold text-primary">
           claude setup-token
         </code>
         <button
           type="button"
           onClick={copy}
-          className="h-5 w-5 rounded inline-flex items-center justify-center text-text-muted hover:text-accent"
+          className="h-5 w-5 rounded inline-flex items-center justify-center text-muted-foreground hover:text-primary"
           title="Copy command"
         >
           {copied ? (
@@ -215,7 +212,7 @@ function ModeToggle({
   onChange: (m: Mode) => void;
 }) {
   return (
-    <div className="flex items-center gap-1 border-b-2 border-border-light">
+    <div className="flex items-center gap-1 border-b">
       {MODE_KEYS.map((m) => {
         const active = mode === m;
         return (
@@ -223,10 +220,10 @@ function ModeToggle({
             key={m}
             type="button"
             onClick={() => onChange(m)}
-            className={`h-10 px-4 text-[13px] font-semibold border-b-2 -mb-[2px] transition-colors ${
+            className={`h-10 px-4 text-[13px] font-semibold border-b-2 -mb-[1px] transition-colors ${
               active
-                ? "text-accent border-accent"
-                : "text-text-muted border-transparent hover:text-text"
+                ? "text-primary border-primary"
+                : "text-muted-foreground border-transparent hover:text-foreground"
             }`}
           >
             {MODES[m].label}

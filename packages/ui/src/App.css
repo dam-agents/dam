@@ -165,6 +165,22 @@
   --ring: #ffffff;
 }
 
+/* ── Dark-mode card elevation ──
+   Card surfaces (`--card`) share the same value as `--background` in dark
+   mode, so the default downward dark shadow is invisible and borderless
+   cards melt into the page. Invert the shadcn shadow utilities to a soft
+   light lift in dark mode so cards read as raised without adding a border. */
+.dark .shadow,
+.dark .shadow-sm {
+  box-shadow: 0 1px 2px 0 rgb(255 255 255 / 0.07);
+}
+.dark .shadow-md {
+  box-shadow: 0 2px 6px 0 rgb(255 255 255 / 0.09);
+}
+.dark .shadow-lg {
+  box-shadow: 0 4px 12px 0 rgb(255 255 255 / 0.1);
+}
+
 @layer base {
   *,
   *::before,

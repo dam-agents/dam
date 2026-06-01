@@ -1,9 +1,15 @@
+import {
+  Launch as ExternalLink,
+  Login as LogIn,
+  TrashCan as Trash2,
+} from "@carbon/icons-react";
 import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
 import { PROVIDER_PRESET_TYPES } from "api-server-api";
-import { ExternalLink, LogIn, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 
 const PROVIDER_PRESET_TEMPLATE_IDS = new Set<string>(PROVIDER_PRESET_TYPES);
+
+import { Button } from "@/components/ui/button";
 
 import { AppStatusPill } from "../../../components/app-status-pill.js";
 import { ListSkeleton } from "../../../components/list-skeleton.js";
@@ -46,7 +52,7 @@ export function ConnectionTemplatesSection() {
         !connections.isPending &&
         (connections.data ?? []).length > 0 && (
           <div className="mb-6">
-            <div className="text-[10px] font-bold text-text-muted uppercase tracking-[0.05em] mb-2">
+            <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.05em] mb-2">
               Your Connections
             </div>
             <div className="flex flex-col gap-2">
@@ -75,7 +81,7 @@ export function ConnectionTemplatesSection() {
             if (list.length === 0) return null;
             return (
               <div key={cat}>
-                <div className="text-[10px] font-bold text-text-muted uppercase tracking-[0.05em] mb-2">
+                <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.05em] mb-2">
                   {categoryLabel(cat)}
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -83,15 +89,15 @@ export function ConnectionTemplatesSection() {
                     <button
                       key={t.id}
                       onClick={() => setCreating(t)}
-                      className="btn-brutal h-auto py-3 px-4 rounded-lg border-2 border-border-light bg-surface text-left flex items-start gap-3 hover:border-accent transition-colors"
+                      className="h-auto py-3 px-4 rounded-lg border bg-card text-left flex items-start gap-3 hover:border-primary transition-colors"
                     >
                       <IconFor template={t} />
                       <div className="flex-1 min-w-0">
-                        <div className="text-[13px] font-semibold text-text">
+                        <div className="text-[13px] font-semibold text-foreground">
                           {t.name}
                         </div>
                         {t.description && (
-                          <div className="text-[11px] text-text-muted mt-0.5 truncate">
+                          <div className="text-[11px] text-muted-foreground mt-0.5 truncate">
                             {t.description}
                           </div>
                         )}
@@ -135,51 +141,54 @@ function ConnectionRow({
     connection.authKind === "oauth" && connection.status === "pending";
   const installUrl = githubAppInstallUrl(connection);
   return (
-    <div className="flex items-center gap-3 rounded-lg border-2 bg-bg px-4 py-3 border-border-light">
+    <div className="flex items-center gap-3 rounded-lg border bg-background px-4 py-3">
       <ConnectionIcon
         iconSlug={iconSlug}
         alt={connection.name}
         size={16}
-        className="text-text-secondary shrink-0"
+        className="text-foreground/80 shrink-0"
       />
       <div className="flex-1 min-w-0">
-        <div className="text-[13px] font-medium text-text truncate">
+        <div className="text-[13px] font-medium text-foreground truncate">
           {connection.name}
         </div>
-        <div className="text-[11px] text-text-muted truncate">
+        <div className="text-[11px] text-muted-foreground truncate">
           {connection.hosts.join(", ") || connection.templateId}
         </div>
       </div>
       <AppStatusPill status={connection.status} />
       {needsOAuth && (
-        <button
+        <Button
+          size="sm"
           onClick={onConnect}
           disabled={connecting}
-          className="btn-brutal h-8 rounded-lg border-2 border-accent-hover bg-accent px-3 text-[12px] font-bold text-white shadow-brutal-accent disabled:opacity-50 flex items-center gap-1"
           title="Authorize this connection"
         >
-          <LogIn size={12} /> Connect
-        </button>
+          <LogIn /> Connect
+        </Button>
       )}
       {installUrl && connection.status === "active" && (
-        <a
-          href={installUrl}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="btn-brutal h-8 rounded-lg border-2 border-border bg-surface px-3 text-[12px] font-bold text-text shadow-brutal-sm flex items-center gap-1"
+        <Button
+          asChild
+          variant="outline"
+          size="sm"
           title="Install the GitHub App on the repositories this connection should reach. Required for GitHub App credentials (no effect for OAuth Apps)."
         >
-          <ExternalLink size={12} /> Install on GitHub
-        </a>
+          <a href={installUrl} target="_blank" rel="noreferrer noopener">
+            <ExternalLink /> Install on GitHub
+          </a>
+        </Button>
       )}
-      <button
+      <Button
+        variant="outline"
+        size="icon"
         onClick={onDelete}
         disabled={deleting}
-        className="h-8 w-8 rounded-lg border-2 border-border bg-surface flex items-center justify-center text-text-secondary hover:text-danger hover:border-danger btn-brutal shadow-brutal-sm disabled:opacity-50"
+        className="h-8 w-8 text-foreground/80 hover:text-destructive hover:border-destructive"
         title="Delete connection"
       >
-        <Trash2 size={13} />
-      </button>
+        <Trash2 />
+      </Button>
     </div>
   );
 }
@@ -200,7 +209,7 @@ function IconFor({ template }: { template: ConnectionTemplateView }) {
       iconSlug={template.iconSlug}
       alt={template.name}
       size={16}
-      className="text-text-secondary mt-0.5 shrink-0"
+      className="text-foreground/80 mt-0.5 shrink-0"
     />
   );
 }

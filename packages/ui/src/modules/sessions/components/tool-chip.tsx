@@ -1,14 +1,22 @@
-import { Check, ChevronDown, ChevronRight, Loader, X } from "lucide-react";
+import {
+  Checkmark as Check,
+  ChevronDown,
+  ChevronRight,
+  Close as X,
+  Renew as Loader,
+} from "@carbon/icons-react";
 import { useState } from "react";
+
+import { Button } from "@/components/ui/button";
 
 import type { ToolChip as T } from "../../../types.js";
 
 const statusColor: Record<string, string> = {
-  pending: "text-text-muted",
+  pending: "text-muted-foreground",
   in_progress: "text-warning",
   running: "text-warning",
   completed: "text-success",
-  failed: "text-danger",
+  failed: "text-destructive",
 };
 
 function stripFences(text: string): string {
@@ -30,8 +38,10 @@ export function ToolChip({ chip }: { chip: T }) {
 
   return (
     <div className="text-[12px] max-w-full">
-      <button
-        className={`flex items-center gap-1.5 py-1 px-2 rounded-md border border-border-light bg-surface font-medium ${color} max-w-full ${hasContent ? "cursor-pointer hover:bg-surface-raised" : ""}`}
+      <Button
+        variant="outline"
+        size="sm"
+        className={`h-auto gap-1.5 py-1 px-2 font-medium ${color} max-w-full ${hasContent ? "cursor-pointer" : "cursor-default"}`}
         onClick={hasContent ? () => setOpen((o) => !o) : undefined}
       >
         {hasContent ? (
@@ -43,14 +53,14 @@ export function ToolChip({ chip }: { chip: T }) {
         ) : null}
         {statusIcon(chip.status)}
         <span className="font-semibold truncate">{chip.title}</span>
-      </button>
+      </Button>
       {open && chip.content && (
-        <div className="mt-1 rounded-lg bg-surface-raised border border-border-light overflow-hidden">
+        <div className="mt-1 rounded-lg bg-muted border border-border overflow-hidden">
           {chip.content.map((c, i) =>
             c.text ? (
               <pre
                 key={i}
-                className="px-3 py-1.5 text-[11px] font-mono text-text-secondary whitespace-pre-wrap break-words overflow-x-auto w-full leading-[1.5]"
+                className="px-3 py-1.5 text-[11px] font-mono text-foreground/80 whitespace-pre-wrap break-words overflow-x-auto w-full leading-[1.5]"
               >
                 {stripFences(c.text)}
               </pre>

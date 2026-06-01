@@ -1,5 +1,7 @@
 import { useEffect } from "react";
 
+import { Button } from "@/components/ui/button";
+
 import type { PermissionOption } from "../../../store.js";
 import { useStore } from "../../../store.js";
 
@@ -17,12 +19,12 @@ function toolTitle(toolCall: unknown): string {
 
 function optionAccent(kind?: string): string {
   if (kind === "allow_always" || kind === "allow_once") {
-    return "hover:border-accent hover:text-accent";
+    return "hover:border-primary hover:text-primary";
   }
   if (kind === "reject_always" || kind === "reject_once") {
-    return "hover:border-danger hover:text-danger";
+    return "hover:border-destructive hover:text-destructive";
   }
-  return "hover:border-accent hover:text-accent";
+  return "hover:border-primary hover:text-primary";
 }
 
 /**
@@ -82,28 +84,29 @@ export function PermissionPrompt() {
     });
 
   return (
-    <div className="border-t bg-surface/50 backdrop-blur-xl px-4 md:px-8 py-3">
-      <div className="mx-auto max-w-[760px] rounded-lg border-2 border-accent bg-bg p-3.5 flex flex-col gap-2 shadow-brutal-accent">
-        <div className="text-[14px] font-bold text-text break-all">
+    <div className="border-t bg-card/50 backdrop-blur-xl px-4 md:px-8 py-3">
+      <div className="mx-auto max-w-[760px] rounded-lg border-2 border-primary bg-background p-3.5 flex flex-col gap-2 shadow-sm">
+        <div className="text-[14px] font-bold text-foreground break-all">
           Allow{" "}
-          <span className="text-accent">{toolTitle(current.toolCall)}</span>?
+          <span className="text-primary">{toolTitle(current.toolCall)}</span>?
         </div>
         <div className="flex flex-col gap-1.5">
           {current.options.map((opt, i) => (
-            <button
+            <Button
               key={opt.optionId}
+              variant="outline"
               onClick={() => pick(opt)}
-              className={`flex items-center gap-3 rounded-md border-2 border-border-light bg-surface px-3 py-2 text-left text-[13px] text-text transition-colors ${optionAccent(opt.kind)}`}
+              className={`h-auto justify-start gap-3 rounded-md border-2 border-border bg-card px-3 py-2 text-left text-[13px] text-foreground ${optionAccent(opt.kind)}`}
             >
-              <span className="text-text-muted font-mono text-[11px] w-4 shrink-0">
+              <span className="text-muted-foreground font-mono text-[11px] w-4 shrink-0">
                 {i + 1}
               </span>
               <span className="flex-1">{opt.name}</span>
-            </button>
+            </Button>
           ))}
         </div>
         {pending.length > 1 && (
-          <div className="text-[11px] text-text-muted">
+          <div className="text-[11px] text-muted-foreground">
             {pending.length - 1} more request
             {pending.length - 1 === 1 ? "" : "s"} queued
           </div>

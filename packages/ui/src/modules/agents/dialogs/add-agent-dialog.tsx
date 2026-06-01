@@ -1,15 +1,18 @@
+import {
+  Close as X,
+  Document as FileIcon,
+  Folder as FolderIcon,
+  FolderAdd as FolderUp,
+  Upload,
+  Warning,
+} from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { AppConnectionView } from "api-server-api";
-import {
-  File as FileIcon,
-  Folder as FolderIcon,
-  FolderUp,
-  Sparkles,
-  Upload,
-  X,
-} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 import {
   ConnectionsPicker,
@@ -39,9 +42,6 @@ import {
 } from "../forms/add-agent-schema.js";
 
 type Step = "pick" | "configure";
-
-const INPUT_CLASS =
-  "w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted";
 
 export function AddAgentDialog({
   templates,
@@ -271,26 +271,26 @@ export function AddAgentDialog({
       {step === "pick" ? (
         <>
           <DialogHeader>
-            <h2 className="text-[20px] font-bold text-text">Add Agent</h2>
+            <h2 className="text-[20px] font-bold text-foreground">Add Agent</h2>
           </DialogHeader>
 
           <DialogBody className="flex flex-col gap-5">
             {templates.length > 0 && (
               <div className="flex flex-col gap-2">
-                <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">
+                <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.05em]">
                   From Template
                 </span>
                 {templates.map((tmpl) => (
                   <button
                     key={tmpl.id}
                     onClick={() => pickTemplate(tmpl)}
-                    className="flex flex-col gap-1 rounded-lg border-2 border-border-light bg-bg px-4 py-3 text-left transition-colors hover:border-accent hover:bg-accent-light min-w-0"
+                    className="flex flex-col gap-1 rounded-lg border bg-background px-4 py-3 text-left transition-colors hover:border-primary hover:bg-primary/10 min-w-0"
                   >
-                    <div className="text-[14px] font-semibold text-text truncate w-full">
+                    <div className="text-[14px] font-semibold text-foreground truncate w-full">
                       {tmpl.name}
                     </div>
                     {tmpl.description && (
-                      <div className="text-[12px] text-text-muted truncate w-full">
+                      <div className="text-[12px] text-muted-foreground truncate w-full">
                         {tmpl.description}
                       </div>
                     )}
@@ -300,51 +300,48 @@ export function AddAgentDialog({
             )}
 
             <div className="flex flex-col gap-2">
-              <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">
+              <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.05em]">
                 Custom Image
               </span>
               <div className="flex gap-2">
-                <input
-                  className={INPUT_CLASS}
+                <Input
                   value={customImage}
                   onChange={(e) => setCustomImage(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && pickCustom()}
                   placeholder="ghcr.io/org/agent:latest"
                 />
-                <button
+                <Button
                   type="button"
-                  className="btn-brutal h-10 rounded-lg border-2 border-accent-hover bg-accent px-4 text-[13px] font-bold text-white disabled:opacity-40 shrink-0 shadow-brutal-accent"
+                  className="shrink-0"
                   onClick={pickCustom}
                   disabled={!customImage.trim()}
                 >
                   Use
-                </button>
+                </Button>
               </div>
             </div>
           </DialogBody>
 
           <DialogFooter>
-            <button
-              type="button"
-              className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
-              onClick={onCancel}
-            >
+            <Button type="button" variant="outline" onClick={onCancel}>
               Cancel
-            </button>
+            </Button>
           </DialogFooter>
         </>
       ) : (
         <form onSubmit={submitForm} className="contents">
           <DialogHeader>
-            <h2 className="text-[20px] font-bold text-text">Configure Agent</h2>
-            <p className="text-[12px] text-text-muted mt-1">
+            <h2 className="text-[20px] font-bold text-foreground">
+              Configure Agent
+            </h2>
+            <p className="text-[12px] text-muted-foreground mt-1">
               {selectedTemplate ? (
                 <>
                   Template:{" "}
                   <HoverTooltip
                     placement="right"
                     trigger={
-                      <span className="font-semibold text-text-secondary border-b border-dotted border-text-muted cursor-help">
+                      <span className="font-semibold text-foreground/80 border-b border-dotted border-muted-foreground cursor-help">
                         {selectedTemplate.name}
                       </span>
                     }
@@ -355,7 +352,7 @@ export function AddAgentDialog({
               ) : (
                 <>
                   Image:{" "}
-                  <span className="font-mono text-text-secondary break-all">
+                  <span className="font-mono text-foreground/80 break-all">
                     {customImage}
                   </span>
                 </>
@@ -365,19 +362,10 @@ export function AddAgentDialog({
 
           <DialogBody className="flex flex-col gap-5">
             <FormField label="Name" error={errors.name?.message}>
-              <input
-                className={INPUT_CLASS}
-                placeholder="my-agent"
-                autoFocus
-                {...register("name")}
-              />
+              <Input placeholder="my-agent" autoFocus {...register("name")} />
             </FormField>
             <FormField label="Description">
-              <input
-                className={INPUT_CLASS}
-                placeholder="Optional"
-                {...register("description")}
-              />
+              <Input placeholder="Optional" {...register("description")} />
             </FormField>
 
             <FormField label="Import local context (optional)">
@@ -449,21 +437,21 @@ export function AddAgentDialog({
                 }}
                 className={`rounded-lg border-2 border-dashed px-4 py-6 transition-colors flex flex-col items-center gap-3 text-center ${
                   dropActive
-                    ? "border-accent bg-accent-light"
-                    : "border-border hover:border-border-light bg-bg/50"
+                    ? "border-primary bg-primary/10"
+                    : "border-border hover:border-input bg-background/50"
                 }`}
               >
                 {importRawBundle ? (
                   <>
-                    <FileIcon size={24} className="text-text-muted" />
-                    <div className="text-[13px] text-text">
+                    <FileIcon size={24} className="text-muted-foreground" />
+                    <div className="text-[13px] text-foreground">
                       <code className="font-mono">{importRawBundle.name}</code>
                     </div>
                   </>
                 ) : importEntries.length > 0 ? (
                   <>
-                    <Upload size={24} className="text-text-muted" />
-                    <div className="text-[13px] text-text">
+                    <Upload size={24} className="text-muted-foreground" />
+                    <div className="text-[13px] text-foreground">
                       <span className="font-semibold">
                         {importEntries.length + importDropped}
                       </span>{" "}
@@ -472,14 +460,14 @@ export function AddAgentDialog({
                         ? ""
                         : "s"}{" "}
                       selected ·{" "}
-                      <span className="text-text-secondary">
+                      <span className="text-foreground/80">
                         {importEntries.length} to import
                       </span>
                       {importDropped > 0 && (
                         <>
                           {" "}
                           ·{" "}
-                          <span className="text-text-muted">
+                          <span className="text-muted-foreground">
                             {importDropped} filtered (
                             <code className="font-mono">node_modules</code>,{" "}
                             <code className="font-mono">.venv</code>, etc.)
@@ -490,31 +478,33 @@ export function AddAgentDialog({
                   </>
                 ) : (
                   <>
-                    <Upload size={28} className="text-text-muted" />
-                    <div className="text-[13px] text-text">
+                    <Upload size={28} className="text-muted-foreground" />
+                    <div className="text-[13px] text-foreground">
                       Drop a folder or files here
                     </div>
-                    <div className="text-[11px] text-text-muted">
+                    <div className="text-[11px] text-muted-foreground">
                       <code className="font-mono">.tar.gz</code> bundles pass
                       through verbatim
                     </div>
                   </>
                 )}
                 <div className="flex items-center gap-2 flex-wrap justify-center">
-                  <button
+                  <Button
                     type="button"
+                    variant="outline"
+                    size="sm"
                     onClick={() => importFolderInputRef.current?.click()}
-                    className="btn-brutal h-9 rounded-lg border-2 border-border bg-bg px-3 text-[13px] font-semibold text-text shadow-brutal-sm flex items-center gap-1.5"
                   >
-                    <FolderUp size={14} /> Choose folder
-                  </button>
-                  <button
+                    <FolderUp /> Choose folder
+                  </Button>
+                  <Button
                     type="button"
+                    variant="outline"
+                    size="sm"
                     onClick={() => importFileInputRef.current?.click()}
-                    className="btn-brutal h-9 rounded-lg border-2 border-border bg-bg px-3 text-[13px] font-semibold text-text shadow-brutal-sm flex items-center gap-1.5"
                   >
-                    <FileIcon size={14} /> Choose files
-                  </button>
+                    <FileIcon /> Choose files
+                  </Button>
                   {(importRawBundle || importEntries.length > 0) && (
                     <button
                       type="button"
@@ -523,13 +513,13 @@ export function AddAgentDialog({
                         setImportRawBundle(null);
                         setImportDropped(0);
                       }}
-                      className="text-[12px] text-text-muted hover:text-text underline"
+                      className="text-[12px] text-muted-foreground hover:text-foreground underline"
                     >
                       Clear
                     </button>
                   )}
                 </div>
-                <div className="text-[11px] text-text-muted italic">
+                <div className="text-[11px] text-muted-foreground italic">
                   Tip: drag-and-drop supports a mix of folders and files in one
                   go.
                 </div>
@@ -539,31 +529,31 @@ export function AddAgentDialog({
                   {importGroups.map((g) => (
                     <span
                       key={g.name}
-                      className="inline-flex items-center gap-1.5 rounded-md border-2 border-border-light bg-bg px-2 py-1 text-[12px] text-text max-w-full"
+                      className="inline-flex items-center gap-1.5 rounded-md border bg-background px-2 py-1 text-[12px] text-foreground max-w-full"
                     >
                       {g.isFolder ? (
                         <FolderIcon
                           size={12}
-                          className="text-text-muted shrink-0"
+                          className="text-muted-foreground shrink-0"
                         />
                       ) : (
                         <FileIcon
                           size={12}
-                          className="text-text-muted shrink-0"
+                          className="text-muted-foreground shrink-0"
                         />
                       )}
                       <span className="font-mono truncate" title={g.name}>
                         {g.name}
                       </span>
                       {g.isFolder && (
-                        <span className="text-text-muted shrink-0">
+                        <span className="text-muted-foreground shrink-0">
                           ({g.count})
                         </span>
                       )}
                       <button
                         type="button"
                         onClick={() => removeGroup(g.name)}
-                        className="text-text-muted hover:text-text shrink-0"
+                        className="text-muted-foreground hover:text-foreground shrink-0"
                         aria-label={`Remove ${g.name}`}
                       >
                         <X size={12} />
@@ -576,13 +566,13 @@ export function AddAgentDialog({
 
             {!loadSecrets && providerSecrets.length === 0 && (
               <div className="rounded-lg border-2 border-warning bg-warning-light px-4 py-3 flex items-center gap-3">
-                <Sparkles size={16} className="text-warning shrink-0" />
-                <p className="text-[12px] text-text-secondary">
+                <Warning size={16} className="text-warning shrink-0" />
+                <p className="text-[12px] text-foreground/80">
                   No provider configured, so this agent won't be able to reach
                   an AI model.{" "}
                   <button
                     type="button"
-                    className="text-accent font-semibold hover:underline"
+                    className="text-primary font-semibold hover:underline"
                     onClick={onGoToProviders}
                   >
                     Set one up
@@ -604,59 +594,59 @@ export function AddAgentDialog({
             />
 
             <fieldset className="flex flex-col gap-2">
-              <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">
+              <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.05em]">
                 Network access
               </span>
-              <p className="text-[12px] text-text-muted">
+              <p className="text-[12px] text-muted-foreground">
                 Initial set of hosts the agent can reach. Anything not covered
                 surfaces in the inbox; you can change this later from the
                 agent's Network access tab.
               </p>
               <div className="flex flex-col gap-1.5">
-                <label className="flex items-start gap-2 cursor-pointer rounded-lg border-2 border-border-light bg-bg px-4 py-2.5">
+                <label className="flex items-start gap-2 cursor-pointer rounded-lg border bg-background px-4 py-2.5">
                   <input
                     type="radio"
                     value="trusted"
-                    className="mt-0.5 w-4 h-4 accent-[var(--color-accent)]"
+                    className="mt-0.5 w-4 h-4 accent-primary"
                     {...register("egressPreset")}
                   />
                   <span className="flex flex-col gap-0.5">
-                    <span className="text-[13px] font-semibold text-text">
+                    <span className="text-[13px] font-semibold text-foreground">
                       Trusted defaults (recommended)
                     </span>
-                    <span className="text-[12px] text-text-muted">
+                    <span className="text-[12px] text-muted-foreground">
                       npm, PyPI, GitHub, package mirrors, Anthropic
                     </span>
                   </span>
                 </label>
-                <label className="flex items-start gap-2 cursor-pointer rounded-lg border-2 border-border-light bg-bg px-4 py-2.5">
+                <label className="flex items-start gap-2 cursor-pointer rounded-lg border bg-background px-4 py-2.5">
                   <input
                     type="radio"
                     value="none"
-                    className="mt-0.5 w-4 h-4 accent-[var(--color-accent)]"
+                    className="mt-0.5 w-4 h-4 accent-primary"
                     {...register("egressPreset")}
                   />
                   <span className="flex flex-col gap-0.5">
-                    <span className="text-[13px] font-semibold text-text">
+                    <span className="text-[13px] font-semibold text-foreground">
                       Strict default-deny
                     </span>
-                    <span className="text-[12px] text-text-muted">
+                    <span className="text-[12px] text-muted-foreground">
                       Every host hits the inbox until you approve
                     </span>
                   </span>
                 </label>
-                <label className="flex items-start gap-2 cursor-pointer rounded-lg border-2 border-warning/40 bg-bg px-4 py-2.5">
+                <label className="flex items-start gap-2 cursor-pointer rounded-lg border border-warning/40 bg-background px-4 py-2.5">
                   <input
                     type="radio"
                     value="all"
-                    className="mt-0.5 w-4 h-4 accent-[var(--color-accent)]"
+                    className="mt-0.5 w-4 h-4 accent-primary"
                     {...register("egressPreset")}
                   />
                   <span className="flex flex-col gap-0.5">
-                    <span className="text-[13px] font-semibold text-text">
+                    <span className="text-[13px] font-semibold text-foreground">
                       Allow everything
                     </span>
-                    <span className="text-[12px] text-text-muted">
+                    <span className="text-[12px] text-muted-foreground">
                       Development escape hatch — no inbox prompts
                     </span>
                   </span>
@@ -666,20 +656,20 @@ export function AddAgentDialog({
           </DialogBody>
 
           <DialogFooter>
-            <button
+            <Button
               type="button"
-              className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm"
+              variant="outline"
               onClick={() => setStep("pick")}
             >
               Back
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
-              className={`btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent ${!isValid ? "opacity-40" : ""}`}
+              className={!isValid ? "opacity-40" : ""}
               disabled={isSubmitting}
             >
               Create Agent
-            </button>
+            </Button>
           </DialogFooter>
         </form>
       )}

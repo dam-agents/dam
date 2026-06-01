@@ -151,7 +151,7 @@ export function CodeEditor({ value, path, onChange, onSave, readOnly }: Props) {
   return (
     <div
       ref={hostRef}
-      className="h-full min-h-[200px] border border-border-light rounded overflow-hidden"
+      className="h-full min-h-[200px] border border-border rounded overflow-hidden"
     />
   );
 }

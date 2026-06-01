@@ -6,6 +6,10 @@ import {
 } from "api-server-api";
 import { useMemo, useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+
 import { api } from "../../../api.js";
 import {
   DialogBody,
@@ -14,9 +18,6 @@ import {
   Modal,
 } from "../../../components/modal.js";
 import { useCreateConnection } from "../api/mutations.js";
-
-const INPUT_CLASS =
-  "w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted";
 
 export function TemplateCreateForm({
   template,
@@ -146,9 +147,11 @@ export function TemplateCreateForm({
   return (
     <Modal widthClass="w-[480px]">
       <DialogHeader>
-        <h2 className="text-[20px] font-bold text-text">Add {template.name}</h2>
+        <h2 className="text-[20px] font-bold text-foreground">
+          Add {template.name}
+        </h2>
         {template.description && (
-          <p className="text-[13px] text-text-secondary mt-1">
+          <p className="text-[13px] text-foreground/80 mt-1">
             {template.description}
           </p>
         )}
@@ -190,29 +193,23 @@ export function TemplateCreateForm({
           )}
 
           {requiredOrOptional.length === 0 && overridable.length === 0 && (
-            <p className="text-[12px] text-text-muted">
+            <p className="text-[12px] text-muted-foreground">
               No additional inputs — preconfigured.
             </p>
           )}
 
           {error && (
-            <p className="text-[12px] text-danger leading-relaxed">{error}</p>
+            <p className="text-[12px] text-destructive leading-relaxed">
+              {error}
+            </p>
           )}
         </div>
       </DialogBody>
       <DialogFooter>
-        <button
-          onClick={onCancel}
-          disabled={pending}
-          className="btn-brutal h-9 rounded-lg border-2 border-border px-5 text-[13px] font-semibold text-text-secondary hover:text-text shadow-brutal-sm disabled:opacity-40"
-        >
+        <Button variant="outline" onClick={onCancel} disabled={pending}>
           Cancel
-        </button>
-        <button
-          onClick={submit}
-          disabled={pending}
-          className="btn-brutal h-9 rounded-lg border-2 border-accent-hover bg-accent px-5 text-[13px] font-bold text-white disabled:opacity-40 shadow-brutal-accent"
-        >
+        </Button>
+        <Button onClick={submit} disabled={pending}>
           {authorizing
             ? "Redirecting…"
             : pending
@@ -220,7 +217,7 @@ export function TemplateCreateForm({
               : needsOAuth
                 ? "Create + Authorize"
                 : "Create"}
-        </button>
+        </Button>
       </DialogFooter>
     </Modal>
   );
@@ -241,15 +238,15 @@ function OverridableSection({
 }) {
   const [expanded, setExpanded] = useState(false);
   return (
-    <div className="rounded-lg border-2 border-dashed border-border-light p-3">
+    <div className="rounded-lg border border-dashed border-border p-3">
       <button
         type="button"
-        className="text-[12px] font-semibold text-text-secondary hover:text-text"
+        className="text-[12px] font-semibold text-foreground/80 hover:text-foreground"
         onClick={() => setExpanded((v) => !v)}
       >
         {expanded ? "▼" : "▶"} Customize defaults ({inputs.length})
       </button>
-      <p className="text-[11px] text-text-muted mt-1">
+      <p className="text-[11px] text-muted-foreground mt-1">
         These values are pre-configured by your administrator. Leave as-is to
         use the defaults.
       </p>
@@ -260,28 +257,26 @@ function OverridableSection({
             return (
               <div key={input.name}>
                 <label className="flex items-center gap-2 mb-1">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={overriding}
-                    onChange={(e) => setOverride(input.name, e.target.checked)}
+                    onCheckedChange={(c) => setOverride(input.name, c === true)}
                   />
-                  <span className="text-[12px] font-semibold text-text-secondary">
+                  <span className="text-[12px] font-semibold text-foreground/80">
                     Override {labelFor(input.name).toLowerCase()}
                   </span>
                 </label>
                 {!overriding && input.presetValue && (
-                  <p className="text-[11px] font-mono text-text-muted pl-6">
+                  <p className="text-[11px] font-mono text-muted-foreground pl-6">
                     Preset: {input.presetValue}
                   </p>
                 )}
                 {!overriding && !input.presetValue && input.secret && (
-                  <p className="text-[11px] text-text-muted pl-6">
+                  <p className="text-[11px] text-muted-foreground pl-6">
                     Preset value hidden.
                   </p>
                 )}
                 {overriding && (
-                  <input
-                    className={INPUT_CLASS}
+                  <Input
                     type={input.secret ? "password" : "text"}
                     placeholder={placeholderFor(input.name)}
                     value={fields[input.name] ?? ""}
@@ -314,18 +309,19 @@ function LabeledInput({
 }) {
   return (
     <label className="block">
-      <span className="text-[12px] font-semibold text-text-secondary block mb-1">
+      <span className="text-[12px] font-semibold text-foreground/80 block mb-1">
         {label}
       </span>
-      <input
-        className={INPUT_CLASS}
+      <Input
         type={type ?? "text"}
         placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
       />
       {help && (
-        <span className="text-[11px] text-text-muted block mt-1">{help}</span>
+        <span className="text-[11px] text-muted-foreground block mt-1">
+          {help}
+        </span>
       )}
     </label>
   );

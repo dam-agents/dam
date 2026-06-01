@@ -1,5 +1,14 @@
-import { LogOut, Monitor, Moon, Sun } from "lucide-react";
+import {
+  Asleep as Moon,
+  Light as Sun,
+  Logout as LogOut,
+  Screen as Monitor,
+} from "@carbon/icons-react";
 import { useState } from "react";
+
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 import { getUser, logout } from "../../../auth.js";
 import { useStore } from "../../../store.js";
@@ -47,7 +56,12 @@ export function SettingsView() {
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`px-3 py-2 text-[14px] font-medium rounded-lg text-left transition-colors ${activeTab === tab.id ? "text-accent bg-accent-light" : "text-text-secondary hover:text-text hover:bg-surface-raised"}`}
+            className={cn(
+              "px-3 py-2 text-[14px] font-medium rounded-lg text-left transition-colors",
+              activeTab === tab.id
+                ? "text-primary bg-primary/10"
+                : "text-foreground/80 hover:text-foreground hover:bg-muted",
+            )}
           >
             {tab.label}
           </button>
@@ -59,7 +73,7 @@ export function SettingsView() {
         {activeTab === "appearance" && (
           <div className="anim-in">
             <h2 className="text-[18px] font-bold mb-1">Appearance</h2>
-            <p className="text-[14px] text-text-secondary mb-6">
+            <p className="text-[14px] text-foreground/80 mb-6">
               Customize the look and feel of the interface.
             </p>
 
@@ -72,18 +86,28 @@ export function SettingsView() {
                     <button
                       key={value}
                       onClick={() => setTheme(value)}
-                      className={`flex flex-col items-start gap-2 p-4 rounded-xl border-2 transition-all ${theme === value ? "border-accent bg-accent-light shadow-brutal-sm" : "border-border-light hover:border-text-muted bg-surface"}`}
+                      className={cn(
+                        "flex flex-col items-start gap-2 p-4 rounded-xl border-2 transition-all",
+                        theme === value
+                          ? "border-primary bg-primary/10 shadow-sm"
+                          : "border-border hover:border-muted-foreground bg-card",
+                      )}
                     >
                       <div
-                        className={`h-9 w-9 rounded-lg flex items-center justify-center ${theme === value ? "bg-accent text-white" : "bg-surface-raised text-text-secondary"}`}
+                        className={cn(
+                          "h-9 w-9 rounded-lg flex items-center justify-center",
+                          theme === value
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted text-foreground/80",
+                        )}
                       >
                         <Icon size={18} />
                       </div>
                       <div>
-                        <div className="text-[14px] font-semibold text-text">
+                        <div className="text-[14px] font-semibold text-foreground">
                           {label}
                         </div>
-                        <div className="text-[12px] text-text-muted mt-0.5">
+                        <div className="text-[12px] text-muted-foreground mt-0.5">
                           {description}
                         </div>
                       </div>
@@ -98,37 +122,40 @@ export function SettingsView() {
         {activeTab === "account" && (
           <div className="anim-in">
             <h2 className="text-[18px] font-bold mb-1">Account</h2>
-            <p className="text-[14px] text-text-secondary mb-6">
+            <p className="text-[14px] text-foreground/80 mb-6">
               Manage your account and session.
             </p>
 
-            <div className="flex items-center gap-4 p-4 rounded-xl border-2 border-border-light bg-surface">
-              <div className="h-10 w-10 rounded-full bg-accent-light flex items-center justify-center text-accent font-bold text-[16px]">
+            <Card className="flex items-center gap-4 p-4">
+              <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-[16px]">
                 {(user?.profile.preferred_username ??
                   user?.profile.sub ??
                   "?")[0].toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-[14px] font-medium text-text truncate">
+                <div className="text-[14px] font-medium text-foreground truncate">
                   {user?.profile.preferred_username ??
                     user?.profile.sub ??
                     "Unknown"}
                 </div>
-                <div className="text-[12px] text-text-muted">Signed in</div>
+                <div className="text-[12px] text-muted-foreground">
+                  Signed in
+                </div>
               </div>
-              <button
+              <Button
+                variant="ghost"
                 onClick={() => logout()}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium text-text-secondary hover:text-danger rounded-lg hover:bg-danger-light transition-colors"
+                className="text-foreground/80 hover:text-destructive hover:bg-destructive/10"
               >
                 <LogOut size={14} />
                 Log out
-              </button>
-            </div>
+              </Button>
+            </Card>
 
             <div className="mt-6">
               <button
                 onClick={() => setView("terms")}
-                className="text-[13px] font-medium text-text-secondary hover:text-text underline underline-offset-2"
+                className="text-[13px] font-medium text-foreground/80 hover:text-foreground underline underline-offset-2"
               >
                 View Terms of Use
               </button>

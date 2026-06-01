@@ -4,6 +4,10 @@ import { useState } from "react";
 import { useForm, type UseFormRegisterReturn } from "react-hook-form";
 import { z } from "zod";
 
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+
 import {
   IBM_LITELLM_DEFAULT_MODEL_PINS,
   type IbmLitellmModelPins,
@@ -87,111 +91,99 @@ export function IbmLitellmForm({
   });
 
   return (
-    <form
-      onSubmit={onSubmit}
-      className={`rounded-xl border-2 p-5 anim-in flex flex-col gap-4 ${
-        isEdit
-          ? "border-accent bg-accent-light shadow-brutal-accent"
-          : "border-warning bg-warning-light shadow-brutal"
-      }`}
-    >
-      <div className="flex items-center gap-3">
-        <CardIcon variant={isEdit ? "accent" : "warning"} />
-        <div className="flex-1 min-w-0">
-          <div className="text-[15px] font-bold text-text">
-            IBM LiteLLM ETE Proxy
+    <Card className="anim-in">
+      <form onSubmit={onSubmit} className="flex flex-col gap-4 p-5">
+        <div className="flex items-center gap-3">
+          <CardIcon provider="ibm-litellm" />
+          <div className="flex-1 min-w-0">
+            <div className="text-[15px] font-bold text-foreground">
+              IBM LiteLLM ETE Proxy
+            </div>
+            <div className="text-[12px] text-muted-foreground">
+              {isEdit
+                ? "Paste a new token to replace the existing one. Model overrides apply to both Claude Code and pi-agent."
+                : "Routes Claude Code and pi-agent through IBM's internal LiteLLM proxy. Paste your LiteLLM API token."}
+            </div>
           </div>
-          <div className="text-[12px] text-text-muted">
-            {isEdit
-              ? "Paste a new token to replace the existing one. Model overrides apply to both Claude Code and pi-agent."
-              : "Routes Claude Code and pi-agent through IBM's internal LiteLLM proxy. Paste your LiteLLM API token."}
-          </div>
+          {onCancel && (
+            <IconButton onClick={onCancel} title="Cancel" hoverTone="neutral">
+              <X size={13} />
+            </IconButton>
+          )}
         </div>
-        {onCancel && (
-          <IconButton onClick={onCancel} title="Cancel" hoverTone="neutral">
-            <X size={13} />
-          </IconButton>
-        )}
-      </div>
 
-      <div className="flex gap-3">
-        <input
-          className="w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted"
-          type="password"
-          autoComplete="off"
-          data-1p-ignore
-          data-lpignore="true"
-          data-form-type="other"
-          placeholder={MODES["api-key"].placeholder}
-          {...register("value")}
-        />
+        <div className="flex gap-3">
+          <Input
+            type="password"
+            autoComplete="off"
+            data-1p-ignore
+            data-lpignore="true"
+            data-form-type="other"
+            placeholder={MODES["api-key"].placeholder}
+            {...register("value")}
+          />
+          <Button type="submit" disabled={submitDisabled} className="shrink-0">
+            {isSubmitting ? "..." : isEdit ? "Replace" : "Save"}
+          </Button>
+        </div>
+
+        {errors.value &&
+          value.length > 0 &&
+          errors.value.message !== "Required" && (
+            <div className="text-[12px] font-medium text-destructive">
+              {errors.value.message}
+            </div>
+          )}
+
         <button
-          type="submit"
-          className="btn-brutal h-10 rounded-lg border-2 border-accent-hover bg-accent px-6 text-[13px] font-semibold text-white disabled:opacity-40 shrink-0 shadow-brutal-accent"
-          disabled={submitDisabled}
+          type="button"
+          onClick={() => setAdvancedOpen((o) => !o)}
+          className="flex items-center gap-1.5 text-[12px] font-semibold text-muted-foreground hover:text-foreground -mt-1 self-start"
         >
-          {isSubmitting ? "..." : isEdit ? "Replace" : "Save"}
+          {advancedOpen ? (
+            <ChevronDown size={13} />
+          ) : (
+            <ChevronRight size={13} />
+          )}
+          Advanced — model overrides
         </button>
-      </div>
 
-      {errors.value &&
-        value.length > 0 &&
-        errors.value.message !== "Required" && (
-          <div className="text-[12px] font-medium text-danger">
-            {errors.value.message}
+        {advancedOpen && (
+          <div className="grid grid-cols-1 gap-3">
+            <ModelField
+              label="Opus model"
+              hint="ANTHROPIC_DEFAULT_OPUS_MODEL — also drives OPENAI_PROXY_MODEL for pi-agent."
+              error={errors.modelOpus?.message}
+              register={register("modelOpus")}
+            />
+            <ModelField
+              label="Sonnet model"
+              hint="ANTHROPIC_DEFAULT_SONNET_MODEL"
+              error={errors.modelSonnet?.message}
+              register={register("modelSonnet")}
+            />
+            <ModelField
+              label="Haiku model"
+              hint="ANTHROPIC_DEFAULT_HAIKU_MODEL"
+              error={errors.modelHaiku?.message}
+              register={register("modelHaiku")}
+            />
+            <ModelField
+              label="Subagent model"
+              hint="CLAUDE_CODE_SUBAGENT_MODEL"
+              error={errors.modelSubagent?.message}
+              register={register("modelSubagent")}
+            />
+            <ModelField
+              label="Default model"
+              hint="ANTHROPIC_MODEL — fallback when no DEFAULT_*_MODEL matches."
+              error={errors.modelDefault?.message}
+              register={register("modelDefault")}
+            />
           </div>
         )}
-
-      <button
-        type="button"
-        onClick={() => setAdvancedOpen((o) => !o)}
-        className="flex items-center gap-1.5 text-[12px] font-semibold text-text-muted hover:text-text -mt-1 self-start"
-      >
-        {advancedOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-        Advanced — model overrides
-      </button>
-
-      {advancedOpen && (
-        <div className="grid grid-cols-1 gap-3">
-          <ModelField
-            label="Opus model"
-            hint="ANTHROPIC_DEFAULT_OPUS_MODEL — also drives OPENAI_PROXY_MODEL for pi-agent."
-            error={errors.modelOpus?.message}
-            register={register("modelOpus")}
-          />
-          <ModelField
-            label="Sonnet model"
-            hint="ANTHROPIC_DEFAULT_SONNET_MODEL"
-            error={errors.modelSonnet?.message}
-            register={register("modelSonnet")}
-          />
-          <ModelField
-            label="Haiku model"
-            hint="ANTHROPIC_DEFAULT_HAIKU_MODEL"
-            error={errors.modelHaiku?.message}
-            register={register("modelHaiku")}
-          />
-          <ModelField
-            label="Subagent model"
-            hint="CLAUDE_CODE_SUBAGENT_MODEL"
-            error={errors.modelSubagent?.message}
-            register={register("modelSubagent")}
-          />
-          <ModelField
-            label="Default model"
-            hint="ANTHROPIC_MODEL — fallback when no DEFAULT_*_MODEL matches."
-            error={errors.modelDefault?.message}
-            register={register("modelDefault")}
-          />
-          <ModelField
-            label="OpenAI model"
-            hint="OPENAI_MODEL — model ID for Codex and other OpenAI-compatible agents."
-            error={errors.modelOpenai?.message}
-            register={register("modelOpenai")}
-          />
-        </div>
-      )}
-    </form>
+      </form>
+    </Card>
   );
 }
 
@@ -208,20 +200,20 @@ function ModelField({
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-[12px] font-semibold text-text-secondary">
+      <label className="text-[12px] font-semibold text-foreground/80">
         {label}
       </label>
-      <input
-        className="h-9 rounded-lg border-2 border-border-light bg-bg px-3 text-[13px] font-mono text-text outline-none focus:border-accent"
+      <Input
         type="text"
+        className="font-mono text-[13px]"
         autoComplete="off"
         data-1p-ignore
         data-lpignore="true"
         {...register}
       />
-      <div className="text-[11px] text-text-muted">{hint}</div>
+      <div className="text-[11px] text-muted-foreground">{hint}</div>
       {error && (
-        <div className="text-[11px] font-medium text-danger">{error}</div>
+        <div className="text-[11px] font-medium text-destructive">{error}</div>
       )}
     </div>
   );
