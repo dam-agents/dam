@@ -1,6 +1,6 @@
 # Logging
 
-Last verified: 2026-05-29
+Last verified: 2026-06-01
 
 ## Motivated by
 
@@ -31,14 +31,14 @@ The logger's first and primary consumer is a **security audit trail**: a structu
 
 Two disjoint mechanisms feed the one logger:
 
-- **Bus saga** ([`modules/audit`](../../packages/api-server/src/modules/audit)) — subscribes the in-process domain event bus for the success/observation events that already carry a real actor: `UserAuthenticated`, `ChannelTurnRelayed`, `ScheduleFired`, `FilesImported`, `ForeignReplyReceived` (cross-identity turn, prompt omitted), and the `Fork*` events. It mirrors the usage `persist-activity` saga shape.
+- **Bus saga** ([`modules/audit`](../../packages/api-server/src/modules/audit)) — subscribes the in-process domain event bus for the discrete success/observation events that already carry a real actor: `ChannelTurnRelayed`, `ScheduleFired`, `FilesImported`, `ForeignReplyReceived` (cross-identity turn, prompt omitted), and the `Fork*` events. It mirrors the usage `persist-activity` saga shape, but only for events that occur at most once per action — it deliberately does **not** subscribe `UserAuthenticated`, which fires on every authenticated request (the usage saga consumes that one, collapsing it to a single row per day).
 - **Direct calls** at every decision/denial/mutation site not on the bus — the majority, and all denials. Each site logs at the application/service layer or the transport edge, where the actor is in scope; never in the pure domain layer.
 
 ## Coverage
 
 | Surface | Representative events |
 |---|---|
-| Auth edge | `authn.deny` (bad/missing token), `authz.deny` (missing role) |
+| Auth edge | `authn.deny` (bad/missing token), `authz.deny` (missing role). Successful logins are not logged here — the api-server only ever sees already-issued tokens on per-request verification; Keycloak's authentication-event log is the authoritative record of logins. |
 | HTTP / WS edge | `authz.owner_mismatch` (cross-tenant agent access), `ws.authn_deny` / `ws.owner_mismatch` / `ws.terms_block`, `relay.attach` (terminal/ACP attach to a credentialed pod) |
 | Credentialed egress (HITL) | `egress.decision` (every allow/deny/expired), `egress.hold`; identity-unresolved and ext-authz transport denials |
 | Approvals | `approval.verdict` (approve/deny once/permanent/host) |

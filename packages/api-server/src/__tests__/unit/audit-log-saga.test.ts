@@ -78,7 +78,7 @@ describe("audit-log saga", () => {
     expect(rec.result).toBe("failure");
   });
 
-  it("normalizes an unexpected auth surface to 'other'", () => {
+  it("does not log auth.login: per-request UserAuthenticated is intentionally ignored", () => {
     const h = harness();
     active = h.sub;
     emit({
@@ -87,10 +87,9 @@ describe("audit-log saga", () => {
       surface: "other",
       isCore: false,
     });
-    const rec = h.records()[0]!;
-    expect(rec.msg).toBe("auth.login");
-    expect(rec.surface).toBe("other");
-    expect(rec.actor).toBe("kc-2");
+    // The usage saga consumes this per-request event; the audit trail must not,
+    // or an open UI's polling would flood it. Real logins live in Keycloak.
+    expect(h.records()).toHaveLength(0);
   });
 
   it("flags a credential-mint fork failure as a credential event", () => {

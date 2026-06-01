@@ -4,7 +4,6 @@ import {
   ofType,
   EventType,
   type DomainEvent,
-  type UserAuthenticated,
   type ChannelTurnRelayed,
   type ScheduleFired,
   type FilesImported,
@@ -56,15 +55,13 @@ export function startAuditLogSaga(): Subscription {
     );
   }
 
-  on<UserAuthenticated>(EventType.UserAuthenticated, (e) =>
-    securityLog("info", "auth.login", {
-      category: "authn",
-      actor: e.userSub,
-      actorKind: "user",
-      surface: e.surface === "ui" || e.surface === "cli" ? e.surface : "other",
-      result: "success",
-    }),
-  );
+  // NB: `UserAuthenticated` is deliberately NOT logged here. It fires on every
+  // authenticated `/api/*` request (auth.ts middleware), not once per login —
+  // the usage saga subscribes it precisely because it wants that per-request
+  // signal, and collapses it to one row/day. A successful login is recorded
+  // authoritatively by Keycloak's own authentication-event log; mirroring it
+  // per-request here only floods the trail. Denied auth still surfaces here as
+  // `authn.deny` / `authz.deny`, logged directly at the edge in auth.ts.
 
   on<ChannelTurnRelayed>(EventType.ChannelTurnRelayed, (e) =>
     securityLog(e.outcome === "failure" ? "warn" : "info", "channel.turn", {
