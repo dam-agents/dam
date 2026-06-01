@@ -22,6 +22,7 @@ import {
 import type { KeycloakUserDirectory } from "../infrastructure/keycloak-user-directory.js";
 import { isSlackChannelUniqueViolation } from "../infrastructure/channel-bindings-repository.js";
 import type { ChannelSecretStore } from "../../channels/infrastructure/channel-secret-store.js";
+import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import { ok, err } from "../../../core/result.js";
 import type { UnitOfWork, Tx } from "../../../core/unit-of-work.js";
 import { emit, EventType } from "../../../events.js";
@@ -71,6 +72,7 @@ export function createAgentsService(deps: {
   /** Run after a successful K8s delete. Each module that owns per-agent
    *  Postgres state contributes one hook. */
   cleanupHooks?: readonly AgentCleanupHook[];
+  runtimeMutator: RuntimeMutator;
   // --- Runtime / channels / allowed-users dependencies (formerly Instance) ---
   listChannelsByOwner: () => Promise<Map<string, ChannelConfig[]>>;
   listChannelsByAgent: (agentId: string) => Promise<ChannelConfig[]>;
@@ -218,6 +220,9 @@ export function createAgentsService(deps: {
           owner,
         );
       }
+
+      // Bump so the built-in platform connection ships from creation (#421).
+      await deps.runtimeMutator.bump(infra.id, []);
 
       const agent = assembleAgent(infra, [], emails);
       emit({
