@@ -93,7 +93,7 @@ export function buildListCommand(deps: {
           }
           if (result.value.length === 0) {
             process.stderr.write(
-              "No connections. Create one in the web UI (CLI connect is not yet supported).\n",
+              "No connections. Create one with `dam connection connect <app-id>` or in the web UI.\n",
             );
             process.exit(EXIT_SUCCESS);
           }

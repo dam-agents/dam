@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { composeAgentModule } from "./modules/agent/compose.js";
 import { composeAuthModule } from "./modules/auth/compose.js";
+import { createBrowserOpener } from "./modules/auth/index.js";
 import { composeChatModule } from "./modules/chat/compose.js";
 import { composeCliModule } from "./modules/cli/compose.js";
 import { composeConnectionModule } from "./modules/connection/compose.js";
@@ -88,6 +89,7 @@ export function compose(opts: ComposeOptions = {}): Command {
     configService: cli.services.configService,
     compatService: cli.services.compatService,
     createAgentService: agent.exports.createService,
+    browserOpener: createBrowserOpener(),
   });
 
   const program = new Command();

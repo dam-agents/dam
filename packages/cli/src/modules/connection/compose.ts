@@ -1,11 +1,12 @@
 import { Command } from "commander";
 import type { AgentService } from "../agent/index.js";
-import type { TokenProvider } from "../auth/index.js";
+import type { BrowserOpener, TokenProvider } from "../auth/index.js";
 import type { CompatService, ConfigService } from "../cli/index.js";
 import {
   createTrpcClient,
   type TrpcClient,
 } from "../shared/trpc/trpc-client.js";
+import { buildConnectCommand } from "./commands/connect.js";
 import { buildDisconnectCommand } from "./commands/disconnect.js";
 import { buildGrantCommand } from "./commands/grant.js";
 import { buildListCommand } from "./commands/list.js";
@@ -21,6 +22,8 @@ export interface ConnectionModuleOptions {
   compatService: CompatService;
   /** Per-host factory the resolver inside agent-scoped commands consumes. */
   createAgentService: (host: string) => AgentService;
+  /** Opens the system browser for the OAuth authorize step of `connect`. */
+  browserOpener: BrowserOpener;
 }
 
 export interface ConnectionModule {
@@ -48,6 +51,14 @@ export function composeConnectionModule(
     "Manage OAuth connections and agent connection grants",
   );
   parent.addCommand(buildListCommand(agentScoped));
+  parent.addCommand(
+    buildConnectCommand({
+      compatService: opts.compatService,
+      configService: opts.configService,
+      createConnectionService: createService,
+      browserOpener: opts.browserOpener,
+    }),
+  );
   parent.addCommand(
     buildDisconnectCommand({
       compatService: opts.compatService,

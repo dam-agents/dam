@@ -17,3 +17,5 @@ export type {
   RefreshFailedError,
   RefreshTransientError,
 } from "./domain/errors.js";
+export { createBrowserOpener } from "./infrastructure/browser-opener.js";
+export type { BrowserOpener } from "./infrastructure/browser-opener.js";
