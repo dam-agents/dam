@@ -18,6 +18,7 @@ export default defineConfig({
   // Ship a self-contained dist/bin.js. Node-builtins stay external; runtime
   // deps fold into the bundle so `node dist/bin.js` works from anywhere.
   noExternal: [
+    "@agentclientprotocol/sdk",
     "@clack/prompts",
     "@trpc/client",
     "@trpc/server",

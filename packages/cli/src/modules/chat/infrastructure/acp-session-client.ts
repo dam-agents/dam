@@ -11,6 +11,8 @@ import { WebSocket } from "ws";
  * and a mode change rides `session/resume` with `_meta.platform.mode`.
  */
 
+const TIMEOUT_MS = 120_000;
+
 interface PlatformMeta {
   mode?: string;
   type?: string;
@@ -92,6 +94,16 @@ async function withConnection<T>(
   fn: (conn: ClientSideConnection) => Promise<T>,
 ): Promise<T> {
   const { stream, ws } = await wsStream(url);
+
+  // A relay that accepts the socket but whose agent never answers would hang
+  // the CLI forever; abort after TIMEOUT_MS of inactivity (cf. api-server).
+  const ac = new AbortController();
+  let timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
+  const resetTimeout = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
+  };
+
   const connection = new ClientSideConnection(
     () => ({
       // Never answer a permission request. `list` can't trigger one; a
@@ -102,7 +114,9 @@ async function withConnection<T>(
       requestPermission() {
         return new Promise<never>(() => {});
       },
-      async sessionUpdate() {},
+      async sessionUpdate() {
+        resetTimeout();
+      },
       async writeTextFile() {
         return {};
       },
@@ -113,19 +127,39 @@ async function withConnection<T>(
     }),
     stream,
   );
-  try {
-    await connection.initialize({
-      protocolVersion: 1,
-      clientCapabilities: {},
-      clientInfo: { name: "platform-cli-sessions", version: "1.0.0" },
-    });
-    return await fn(connection);
-  } finally {
+
+  const cleanup = () => {
+    clearTimeout(timer);
     if (
       ws.readyState === WebSocket.OPEN ||
       ws.readyState === WebSocket.CONNECTING
     )
       ws.close();
+  };
+
+  try {
+    ac.signal.addEventListener("abort", cleanup, { once: true });
+    await connection.initialize({
+      protocolVersion: 1,
+      clientCapabilities: {},
+      clientInfo: { name: "platform-cli-sessions", version: "1.0.0" },
+    });
+    return await Promise.race([
+      fn(connection),
+      new Promise<never>((_, reject) => {
+        const fail = () =>
+          reject(
+            new Error(
+              `ACP connection timed out after ${TIMEOUT_MS / 1000}s of inactivity`,
+            ),
+          );
+        if (ac.signal.aborted) fail();
+        else ac.signal.addEventListener("abort", fail, { once: true });
+      }),
+    ]);
+  } finally {
+    ac.signal.removeEventListener("abort", cleanup);
+    cleanup();
   }
 }
 
