@@ -14,6 +14,7 @@ import {
   EXIT_SUCCESS,
 } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
+import { resolveConnectionRef } from "../domain/connection-ref.js";
 import type { ConnectionService } from "../services/connection-service.js";
 
 const collect = (v: string, acc: string[]): string[] => [...acc, v];
@@ -28,8 +29,8 @@ export function buildGrantCommand(deps: {
     .description("Grant one or more connections to an Agent")
     .argument("<agent>", "Agent Ref — name or 'agent-…' ID")
     .option(
-      "--connection <id>",
-      "connection id to grant (repeatable)",
+      "--connection <id-or-name>",
+      "connection id or unique name to grant (repeatable)",
       collect,
       [] as string[],
     )
@@ -51,7 +52,9 @@ export function buildGrantCommand(deps: {
       ) => {
         const requested = opts.connection;
         if (requested.length === 0) {
-          process.stderr.write("error: pass at least one --connection <id>\n");
+          process.stderr.write(
+            "error: pass at least one --connection <id-or-name>\n",
+          );
           process.exit(EXIT_INVALID_INPUT);
         }
 
@@ -74,26 +77,31 @@ export function buildGrantCommand(deps: {
 
         const svc = deps.createConnectionService(host);
 
-        // Reject unknown ids up front — a dead grant the server can't turn
-        // into an egress rule would otherwise be stored silently.
+        // Resolve each ref (id or name) up front — a dead grant the server
+        // can't turn into an egress rule would otherwise be stored silently.
         const allRes = await svc.list();
         if (!allRes.ok) {
           printServiceError(allRes.error, host);
           process.exit(EXIT_RUNTIME_FAILURE);
         }
-        const known = new Set(allRes.value.map((c) => c.id));
-        const unknown = requested.filter((id) => !known.has(id));
+        const connectionIds: string[] = [];
+        const unknown: string[] = [];
+        for (const r of requested) {
+          const match = resolveConnectionRef(allRes.value, r);
+          if (match) connectionIds.push(match.id);
+          else unknown.push(r);
+        }
         if (unknown.length > 0) {
           process.stderr.write(
-            `error: unknown connection id(s): ${unknown.join(", ")}\n`,
+            `error: unknown connection id or name: ${unknown.join(", ")}\n`,
           );
           process.stderr.write(
-            "hint: run `dam connection list` to see valid ids\n",
+            "hint: run `dam connection list` to see ids and names\n",
           );
           process.exit(EXIT_INVALID_INPUT);
         }
 
-        const res = await svc.grant(resolved.value.id, requested);
+        const res = await svc.grant(resolved.value.id, connectionIds);
         if (!res.ok) {
           printServiceError(res.error, host);
           process.exit(EXIT_RUNTIME_FAILURE);

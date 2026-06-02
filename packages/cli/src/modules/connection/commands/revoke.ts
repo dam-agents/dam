@@ -14,6 +14,10 @@ import {
   EXIT_SUCCESS,
 } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
+import {
+  CONNECTION_ID_PREFIX,
+  resolveConnectionRef,
+} from "../domain/connection-ref.js";
 import type { ConnectionService } from "../services/connection-service.js";
 
 const collect = (v: string, acc: string[]): string[] => [...acc, v];
@@ -30,8 +34,8 @@ export function buildRevokeCommand(deps: {
     )
     .argument("<agent>", "Agent Ref — name or 'agent-…' ID")
     .option(
-      "--connection <id>",
-      "connection id to revoke (repeatable)",
+      "--connection <id-or-name>",
+      "connection id or unique name to revoke (repeatable)",
       collect,
       [] as string[],
     )
@@ -53,7 +57,9 @@ export function buildRevokeCommand(deps: {
       ) => {
         const requested = opts.connection;
         if (requested.length === 0) {
-          process.stderr.write("error: pass at least one --connection <id>\n");
+          process.stderr.write(
+            "error: pass at least one --connection <id-or-name>\n",
+          );
           process.exit(EXIT_INVALID_INPUT);
         }
 
@@ -74,9 +80,36 @@ export function buildRevokeCommand(deps: {
           process.exit(exitCodeForResolveError(resolved.error));
         }
 
-        const res = await deps
-          .createConnectionService(host)
-          .revoke(resolved.value.id, requested);
+        const svc = deps.createConnectionService(host);
+
+        // Resolve names to ids, but let a raw `conn-…` id pass through even if
+        // it's no longer in the team list — that's how a stale grant (a
+        // granted connection since deleted) gets cleaned up. Only an unknown
+        // *name* is an error.
+        const allRes = await svc.list();
+        if (!allRes.ok) {
+          printServiceError(allRes.error, host);
+          process.exit(EXIT_RUNTIME_FAILURE);
+        }
+        const connectionIds: string[] = [];
+        const unknown: string[] = [];
+        for (const r of requested) {
+          const match = resolveConnectionRef(allRes.value, r);
+          if (match) connectionIds.push(match.id);
+          else if (r.startsWith(CONNECTION_ID_PREFIX)) connectionIds.push(r);
+          else unknown.push(r);
+        }
+        if (unknown.length > 0) {
+          process.stderr.write(
+            `error: unknown connection name: ${unknown.join(", ")}\n`,
+          );
+          process.stderr.write(
+            "hint: run `dam connection list` to see ids and names\n",
+          );
+          process.exit(EXIT_INVALID_INPUT);
+        }
+
+        const res = await svc.revoke(resolved.value.id, connectionIds);
         if (!res.ok) {
           printServiceError(res.error, host);
           process.exit(EXIT_RUNTIME_FAILURE);
