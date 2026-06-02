@@ -24,7 +24,7 @@ export function buildListCommand(deps: {
   createEgressService: (host: string) => EgressService;
 }): Command {
   return new Command("list")
-    .description("List egress rules for an Agent")
+    .description("List network access rules for an Agent")
     .argument("<agent>", "Agent Ref — name or 'agent-…' ID")
     .option(
       "--server <url>",
@@ -33,7 +33,7 @@ export function buildListCommand(deps: {
     .option("--json", "emit raw JSON instead of the default table")
     .addHelpText(
       "after",
-      "\nExamples:\n  dam egress list my-agent\n  dam egress list agent-abc123 --json\n",
+      "\nExamples:\n  dam network list my-agent\n  dam network list agent-abc123 --json\n",
     )
     .action(async (ref: string, opts: { server?: string; json?: boolean }) => {
       const host = await resolveActiveHost(deps, {
@@ -68,7 +68,7 @@ export function buildListCommand(deps: {
 
       if (result.value.length === 0) {
         process.stderr.write(
-          `No egress rules. Add one with \`dam egress create ${ref} --host <h>\` or apply a preset with \`dam egress apply-preset ${ref} --preset trusted\`.\n`,
+          `No network access rules. Add one with \`dam network create ${ref} --host <h>\` or apply a preset with \`dam network apply-preset ${ref} --preset trusted\`.\n`,
         );
         process.exit(EXIT_SUCCESS);
       }

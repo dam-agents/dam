@@ -50,8 +50,8 @@ export function composeEgressModule(opts: EgressModuleOptions): EgressModule {
     createEgressService: createService,
   };
 
-  const parent = new Command("egress").description(
-    "Manage per-Agent egress rules (the pre-approvals that let an Agent reach external hosts)",
+  const parent = new Command("network").description(
+    "Manage per-Agent network access rules (the pre-approvals that let an Agent reach external hosts)",
   );
   parent.addCommand(buildListCommand(agentScoped));
   parent.addCommand(buildCreateCommand(agentScoped));

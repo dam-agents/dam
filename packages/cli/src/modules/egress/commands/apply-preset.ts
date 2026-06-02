@@ -43,8 +43,8 @@ export function buildApplyPresetCommand(deps: {
     .addHelpText(
       "after",
       "\nExamples:\n" +
-        "  dam egress apply-preset my-agent --preset trusted\n" +
-        "  dam egress apply-preset my-agent --preset all --yes\n",
+        "  dam network apply-preset my-agent --preset trusted\n" +
+        "  dam network apply-preset my-agent --preset all --yes\n",
     )
     .action(
       async (
@@ -108,7 +108,7 @@ export function buildApplyPresetCommand(deps: {
           );
         } else {
           process.stdout.write(
-            `✓ Applied preset '${opts.preset}' to ${ref}. Run \`dam egress list ${ref}\` to see the resulting rules.\n`,
+            `✓ Applied preset '${opts.preset}' to ${ref}. Run \`dam network list ${ref}\` to see the resulting rules.\n`,
           );
         }
         process.exit(EXIT_SUCCESS);

@@ -15,8 +15,10 @@ export function buildRevokeCommand(deps: {
   createEgressService: (host: string) => EgressService;
 }): Command {
   return new Command("revoke")
-    .description("Delete an egress rule. Idempotent — unknown IDs exit 0.")
-    .argument("<rule-id>", "Rule UUID (copy from `dam egress list`)")
+    .description(
+      "Delete a network access rule. Idempotent — unknown IDs exit 0.",
+    )
+    .argument("<rule-id>", "Rule UUID (copy from `dam network list`)")
     .option(
       "--server <url>",
       "override the configured server URL for this call",
@@ -24,7 +26,7 @@ export function buildRevokeCommand(deps: {
     .option("--json", "emit { ok, id } as JSON")
     .addHelpText(
       "after",
-      "\nExamples:\n  dam egress revoke 3f2a8c0e-2b91-4d6a-9c1b-7e8a1f0a2b3c\n",
+      "\nExamples:\n  dam network revoke 3f2a8c0e-2b91-4d6a-9c1b-7e8a1f0a2b3c\n",
     )
     .action(async (id: string, opts: { server?: string; json?: boolean }) => {
       const host = await resolveActiveHost(deps, {

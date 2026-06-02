@@ -25,7 +25,7 @@ export function buildCreateCommand(deps: {
   createEgressService: (host: string) => EgressService;
 }): Command {
   return new Command("create")
-    .description("Add an egress rule to an Agent")
+    .description("Add a network access rule to an Agent")
     .argument("<agent>", "Agent Ref — name or 'agent-…' ID")
     .requiredOption("--host <h>", "host the rule applies to")
     .option("--method <m>", "HTTP method; default '*'", "*")
@@ -44,8 +44,8 @@ export function buildCreateCommand(deps: {
     .addHelpText(
       "after",
       "\nExamples:\n" +
-        "  dam egress create my-agent --host api.example.com\n" +
-        "  dam egress create my-agent --host api.example.com --method GET --path /v1/* --yes\n",
+        "  dam network create my-agent --host api.example.com\n" +
+        "  dam network create my-agent --host api.example.com --method GET --path /v1/* --yes\n",
     )
     .action(
       async (

@@ -22,7 +22,7 @@ export function buildPresetCommand(deps: {
   createEgressService: (host: string) => EgressService;
 }): Command {
   return new Command("preset")
-    .description("Show the Agent's current effective egress preset")
+    .description("Show the Agent's current effective network access preset")
     .argument("<agent>", "Agent Ref — name or 'agent-…' ID")
     .option(
       "--server <url>",
@@ -31,7 +31,7 @@ export function buildPresetCommand(deps: {
     .option("--json", "emit JSON `{ preset }` instead of a bare string")
     .addHelpText(
       "after",
-      "\nExamples:\n  dam egress preset my-agent\n  dam egress preset my-agent --json\n",
+      "\nExamples:\n  dam network preset my-agent\n  dam network preset my-agent --json\n",
     )
     .action(async (ref: string, opts: { server?: string; json?: boolean }) => {
       const host = await resolveActiveHost(deps, {

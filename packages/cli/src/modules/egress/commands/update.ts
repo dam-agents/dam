@@ -20,9 +20,9 @@ export function buildUpdateCommand(deps: {
 }): Command {
   return new Command("update")
     .description(
-      "Update an egress rule; flips source to 'manual'. Partial — pass only the fields you want to change.",
+      "Update a network access rule; flips source to 'manual'. Partial — pass only the fields you want to change.",
     )
-    .argument("<rule-id>", "Rule UUID (copy from `dam egress list`)")
+    .argument("<rule-id>", "Rule UUID (copy from `dam network list`)")
     .option("--method <m>", "new HTTP method")
     .option("--path <p>", "new path pattern")
     .addOption(
@@ -37,8 +37,8 @@ export function buildUpdateCommand(deps: {
     .addHelpText(
       "after",
       "\nExamples:\n" +
-        "  dam egress update 3f2a8c0e-... --verdict deny\n" +
-        "  dam egress update 3f2a8c0e-... --method GET --path /v1/* --yes\n",
+        "  dam network update 3f2a8c0e-... --verdict deny\n" +
+        "  dam network update 3f2a8c0e-... --method GET --path /v1/* --yes\n",
     )
     .action(
       async (
@@ -99,7 +99,7 @@ export function buildUpdateCommand(deps: {
         if (!result.ok) {
           if (result.error.kind === "rule-not-found") {
             process.stderr.write(
-              `error: egress rule not found: ${result.error.id}\n`,
+              `error: network access rule not found: ${result.error.id}\n`,
             );
             process.exit(EXIT_RULE_NOT_FOUND);
           }

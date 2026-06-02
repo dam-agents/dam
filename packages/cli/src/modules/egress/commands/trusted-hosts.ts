@@ -23,7 +23,7 @@ export function buildTrustedHostsCommand(deps: {
     .option("--json", "emit raw JSON instead of one host per line")
     .addHelpText(
       "after",
-      "\nExamples:\n  dam egress trusted-hosts\n  dam egress trusted-hosts --json\n",
+      "\nExamples:\n  dam network trusted-hosts\n  dam network trusted-hosts --json\n",
     )
     .action(async (opts: { server?: string; json?: boolean }) => {
       const host = await resolveActiveHost(deps, {
