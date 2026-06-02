@@ -61,6 +61,7 @@ export function SessionsSidebar({
         <button
           className={`ml-auto h-6 w-6 rounded-md border border-border-light flex items-center justify-center text-text-muted hover:text-accent hover:border-accent transition-colors`}
           onClick={() => refetch()}
+          data-testid="sessions-refresh"
         >
           <span className={loading ? "anim-spin" : ""}>
             <RefreshCw size={11} />

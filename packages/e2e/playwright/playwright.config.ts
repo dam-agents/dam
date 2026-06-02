@@ -34,5 +34,12 @@ export default defineConfig({
       dependencies: ["agent"],
       use: { ...devices["Desktop Chrome"], storageState },
     },
+    {
+      name: "sessions",
+      testMatch: /04-.*\.spec\.ts$/,
+      // Reuses the mock agent created by the "agent" project.
+      dependencies: ["agent"],
+      use: { ...devices["Desktop Chrome"], storageState },
+    },
   ],
 });

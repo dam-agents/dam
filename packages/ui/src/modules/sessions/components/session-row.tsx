@@ -73,6 +73,7 @@ export function SessionRow({
 
   return (
     <div
+      data-testid={`session-row-${s.sessionId}`}
       className={`group relative flex items-center gap-1 px-4 py-3 cursor-pointer border-b border-border-light transition-colors hover:bg-accent-light select-none ${active ? "bg-accent-light border-l-[3px] border-l-accent" : ""}`}
       onClick={handleClick}
       onTouchStart={startPress}

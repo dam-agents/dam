@@ -48,15 +48,23 @@ export function startAcpService(deps: AcpServiceDeps): void {
           respond(id, {});
           return;
         }
+        case "session/list":
+          respond(id, {
+            sessions: [...knownSessions].map((sid) => ({
+              sessionId: sid,
+              title: null,
+              updatedAt: now().toISOString(),
+            })),
+          });
+          return;
         case "session/prompt":
           await handlePrompt(id, params);
           return;
-        case "session/close": {
-          const sid = extractSessionId(params);
-          if (sid) knownSessions.delete(sid);
+        case "session/close":
+          // Keep the session listed (like the real harness, where on-disk
+          // sessions outlive a closed handle) so session/list stays stable.
           respond(id, null);
           return;
-        }
         case "session/cancel":
           respond(id, null);
           return;
