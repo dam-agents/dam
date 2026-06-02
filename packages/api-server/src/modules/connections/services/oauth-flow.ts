@@ -10,6 +10,7 @@ import type {
 import type { ConnectionsRepository } from "../infrastructure/connections-repository.js";
 import type { ConnectionTemplateRegistry } from "../domain/connection-template.js";
 import { buildConnectionSdsFields } from "../domain/connection-sds.js";
+import { applyCallbackAlias } from "../domain/oauth-callback-url.js";
 import type { SecretStore } from "../../secret-store/index.js";
 import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
@@ -47,9 +48,14 @@ export function createOAuthFlowService(deps: {
         );
       }
       const provider = await buildProvider(conn, conn.auth, deps);
+      const template = deps.templates.get(conn.templateId);
+      const alias =
+        template?.authKind === "oauth"
+          ? template.localhostCallbackAlias
+          : undefined;
       const { authUrl } = deps.engine.start<OAuthFlowPendingCtx>({
         provider,
-        redirectUri: deps.callbackUrl,
+        redirectUri: applyCallbackAlias(deps.callbackUrl, alias),
         ctx: {
           connectionId,
           ownerId: deps.ownerId,

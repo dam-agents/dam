@@ -4,6 +4,7 @@ import {
   type ConnectionTemplateInput,
   type ConnectionTemplateView,
 } from "api-server-api";
+import { Check, Copy, ExternalLink } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -44,6 +45,14 @@ export function TemplateCreateForm({
     for (const i of template.inputs) map.set(i.name, i);
     return map;
   }, [template.inputs]);
+
+  const bringYourOwnApp =
+    needsOAuth && inputsByName.get("clientId")?.state === "required";
+
+  const extraStr = (k: string): string | undefined => {
+    const v = template.extras?.[k];
+    return typeof v === "string" ? v : undefined;
+  };
 
   const f = (k: string): string => fields[k] ?? "";
   const setF = (k: string, v: string) =>
@@ -166,6 +175,13 @@ export function TemplateCreateForm({
             help="Lowercase letters, digits, and single hyphens (e.g. my-mcp-server). Doubles as the MCP slug."
           />
 
+          {bringYourOwnApp && (
+            <OAuthAppHint
+              callbackUrl={extraStr("callbackUrl")}
+              setupUrl={extraStr("setupUrl")}
+            />
+          )}
+
           {requiredOrOptional.map((input) => (
             <LabeledInput
               key={input.name}
@@ -220,6 +236,70 @@ export function TemplateCreateForm({
         </Button>
       </DialogFooter>
     </Modal>
+  );
+}
+
+function OAuthAppHint({
+  callbackUrl,
+  setupUrl,
+}: {
+  callbackUrl?: string;
+  setupUrl?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  if (!callbackUrl && !setupUrl) return null;
+
+  const copy = () => {
+    if (!callbackUrl) return;
+    navigator.clipboard.writeText(callbackUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="rounded-lg border border-border bg-muted/40 p-3 flex flex-col gap-2">
+      <p className="text-[12px] text-foreground/80">
+        Register an OAuth app at the provider, then paste its client credentials
+        below.
+        {setupUrl && (
+          <>
+            {" "}
+            <a
+              href={setupUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 font-semibold text-primary hover:underline"
+            >
+              Create an app <ExternalLink size={11} />
+            </a>
+          </>
+        )}
+      </p>
+      {callbackUrl && (
+        <div>
+          <span className="text-[11px] text-muted-foreground block mb-1">
+            Add this exact redirect URI to your app:
+          </span>
+          <div className="flex items-center gap-1.5">
+            <code className="text-[11px] font-mono text-foreground/90 break-all">
+              {callbackUrl}
+            </code>
+            <button
+              type="button"
+              onClick={copy}
+              className="h-5 w-5 shrink-0 rounded inline-flex items-center justify-center text-muted-foreground hover:text-primary"
+              title="Copy redirect URI"
+            >
+              {copied ? (
+                <Check size={12} className="text-success" />
+              ) : (
+                <Copy size={12} />
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

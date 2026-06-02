@@ -4,6 +4,7 @@ import type {
   ConnectionTemplateInput,
   ConnectionTemplateView,
 } from "api-server-api";
+import { applyCallbackAlias } from "./oauth-callback-url.js";
 
 export type ConnectionTemplate =
   | OAuthConnectionTemplate
@@ -32,6 +33,8 @@ export interface OAuthConnectionTemplate extends TemplateCommon {
   tokenEndpointAcceptJson?: boolean;
   extraAuthParams?: Record<string, string>;
   dynamicRegistration?: boolean;
+  setupUrl?: string;
+  localhostCallbackAlias?: string;
 }
 
 export interface HeaderConnectionTemplate extends TemplateCommon {
@@ -70,7 +73,19 @@ export function createConnectionTemplateRegistry(
   };
 }
 
-export function templateToView(t: ConnectionTemplate): ConnectionTemplateView {
+export function templateToView(
+  t: ConnectionTemplate,
+  oauthCallbackUrl: string,
+): ConnectionTemplateView {
+  const showsCallbackUrl = t.authKind === "oauth" && !t.dynamicRegistration;
+  const alias = t.authKind === "oauth" ? t.localhostCallbackAlias : undefined;
+  const extras = {
+    ...t.extras,
+    ...(t.authKind === "oauth" && t.setupUrl ? { setupUrl: t.setupUrl } : {}),
+    ...(showsCallbackUrl
+      ? { callbackUrl: applyCallbackAlias(oauthCallbackUrl, alias) }
+      : {}),
+  };
   return {
     id: t.id,
     name: t.name,
@@ -80,7 +95,7 @@ export function templateToView(t: ConnectionTemplate): ConnectionTemplateView {
     ...(t.iconSlug ? { iconSlug: t.iconSlug } : {}),
     authKind: t.authKind,
     inputs: inputsFor(t),
-    ...(t.extras ? { extras: t.extras } : {}),
+    ...(Object.keys(extras).length > 0 ? { extras } : {}),
   };
 }
 

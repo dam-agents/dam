@@ -68,7 +68,9 @@ export function createConnectionsService(deps: {
 
   return {
     async listTemplates(): Promise<ConnectionTemplateView[]> {
-      return deps.templates.list().map(templateToView);
+      return deps.templates
+        .list()
+        .map((t) => templateToView(t, deps.oauthCallbackUrl));
     },
 
     async listConnections(): Promise<ConnectionView[]> {
