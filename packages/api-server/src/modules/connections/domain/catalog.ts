@@ -390,6 +390,7 @@ function googleService(
     description: def.description,
     iconSlug: def.iconSlug ?? def.id,
     authKind: "oauth",
+    credentialFamily: "google",
     setupUrl: "https://console.cloud.google.com/apis/credentials",
     ...(creds?.clientId ? { clientId: creds.clientId } : {}),
     ...(creds?.clientSecret ? { clientSecret: creds.clientSecret } : {}),

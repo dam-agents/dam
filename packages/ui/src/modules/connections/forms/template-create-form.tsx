@@ -54,6 +54,10 @@ export function TemplateCreateForm({
     return typeof v === "string" ? v : undefined;
   };
 
+  // Overridable client creds can come from an operator preset or be reused
+  // from a sibling connection in the same credential family — the copy differs.
+  const credentialsFromFamily = template.extras?.credentialsFromFamily === true;
+
   const f = (k: string): string => fields[k] ?? "";
   const setF = (k: string, v: string) =>
     setFields((prev) => ({ ...prev, [k]: v }));
@@ -201,6 +205,7 @@ export function TemplateCreateForm({
               inputs={overridable}
               fields={fields}
               overrides={overrides}
+              fromFamily={credentialsFromFamily}
               setF={setF}
               setOverride={(k, v) =>
                 setOverrides((prev) => ({ ...prev, [k]: v }))
@@ -307,12 +312,14 @@ function OverridableSection({
   inputs,
   fields,
   overrides,
+  fromFamily,
   setF,
   setOverride,
 }: {
   inputs: ConnectionTemplateInput[];
   fields: Record<string, string>;
   overrides: Record<string, boolean>;
+  fromFamily?: boolean;
   setF: (k: string, v: string) => void;
   setOverride: (k: string, v: boolean) => void;
 }) {
@@ -327,8 +334,9 @@ function OverridableSection({
         {expanded ? "▼" : "▶"} Customize defaults ({inputs.length})
       </button>
       <p className="text-[11px] text-muted-foreground mt-1">
-        These values are pre-configured by your administrator. Leave as-is to
-        use the defaults.
+        {fromFamily
+          ? "Reused from another connection you've already set up. Leave as-is to share the same app, or override to use a different one."
+          : "These values are pre-configured by your administrator. Leave as-is to use the defaults."}
       </p>
       {expanded && (
         <div className="mt-3 flex flex-col gap-3">

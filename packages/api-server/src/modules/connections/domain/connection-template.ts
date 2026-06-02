@@ -35,6 +35,7 @@ export interface OAuthConnectionTemplate extends TemplateCommon {
   dynamicRegistration?: boolean;
   setupUrl?: string;
   localhostCallbackAlias?: string;
+  credentialFamily?: string;
 }
 
 export interface HeaderConnectionTemplate extends TemplateCommon {
@@ -73,9 +74,25 @@ export function createConnectionTemplateRegistry(
   };
 }
 
+/** Client credentials a family sibling already registered, surfaced as an
+ *  overridable preset on the other family members. */
+export interface FamilyCredsPreset {
+  clientId: string;
+  hasSecret: boolean;
+}
+
+/** An OAuth template in a credential family with no operator-baked client id
+ *  of its own — it inherits credentials from a connected family sibling. */
+export function inheritsFamily(
+  t: ConnectionTemplate,
+): t is OAuthConnectionTemplate {
+  return t.authKind === "oauth" && !!t.credentialFamily && !t.clientId;
+}
+
 export function templateToView(
   t: ConnectionTemplate,
   oauthCallbackUrl: string,
+  familyPreset?: FamilyCredsPreset,
 ): ConnectionTemplateView {
   const showsCallbackUrl = t.authKind === "oauth" && !t.dynamicRegistration;
   const alias = t.authKind === "oauth" ? t.localhostCallbackAlias : undefined;
@@ -85,6 +102,7 @@ export function templateToView(
     ...(showsCallbackUrl
       ? { callbackUrl: applyCallbackAlias(oauthCallbackUrl, alias) }
       : {}),
+    ...(familyPreset ? { credentialsFromFamily: true } : {}),
   };
   return {
     id: t.id,
@@ -94,12 +112,15 @@ export function templateToView(
     ...(t.description ? { description: t.description } : {}),
     ...(t.iconSlug ? { iconSlug: t.iconSlug } : {}),
     authKind: t.authKind,
-    inputs: inputsFor(t),
+    inputs: inputsFor(t, familyPreset),
     ...(Object.keys(extras).length > 0 ? { extras } : {}),
   };
 }
 
-function inputsFor(t: ConnectionTemplate): ConnectionTemplateInput[] {
+function inputsFor(
+  t: ConnectionTemplate,
+  familyPreset?: FamilyCredsPreset,
+): ConnectionTemplateInput[] {
   const overridable = (
     name: string,
     presetValue?: string,
@@ -138,11 +159,15 @@ function inputsFor(t: ConnectionTemplate): ConnectionTemplateInput[] {
       if (urlsHavePlaceholder) {
         out.push(t.host ? overridable("host", t.host) : required("host"));
       }
+      // A family sibling's creds (familyPreset) stand in when this template
+      // has no operator-baked client id, surfacing both as overridable.
+      const clientId = t.clientId ?? familyPreset?.clientId;
       out.push(
-        t.clientId ? overridable("clientId", t.clientId) : required("clientId"),
+        clientId ? overridable("clientId", clientId) : required("clientId"),
       );
+      const hasSecret = !!t.clientSecret || (familyPreset?.hasSecret ?? false);
       out.push(
-        t.clientSecret
+        hasSecret
           ? overridable("clientSecret", undefined, { secret: true })
           : required("clientSecret", { secret: true }),
       );

@@ -3,15 +3,23 @@ import { TRPCError } from "@trpc/server";
 import type {
   AgentConnections,
   Connection,
+  ConnectionCreateInput,
   ConnectionsService,
   ConnectionTemplateView,
   ConnectionView,
   Contribution,
+  SecretRef,
 } from "api-server-api";
 import type { SecretStore } from "../../secret-store/index.js";
 import type { ConnectionsRepository } from "../infrastructure/connections-repository.js";
-import type { ConnectionTemplateRegistry } from "../domain/connection-template.js";
-import { templateToView } from "../domain/connection-template.js";
+import type {
+  ConnectionTemplate,
+  ConnectionTemplateRegistry,
+} from "../domain/connection-template.js";
+import {
+  inheritsFamily,
+  templateToView,
+} from "../domain/connection-template.js";
 import { buildConnection } from "../domain/build-connection.js";
 import {
   buildConnectionSdsFields,
@@ -66,11 +74,70 @@ export function createConnectionsService(deps: {
     };
   }
 
+  // Client creds the user already registered on a sibling connection, keyed
+  // by `credentialFamily` (e.g. all Google services share one Google Cloud
+  // client). First stored creds per family wins.
+  async function familyClientCreds(): Promise<
+    Map<string, { clientId: string; clientSecretRef?: SecretRef }>
+  > {
+    const out = new Map<
+      string,
+      { clientId: string; clientSecretRef?: SecretRef }
+    >();
+    const conns = await deps.repo.listByOwner(deps.ownerId);
+    for (const conn of conns) {
+      if (conn.auth.kind !== "oauth" || !conn.auth.clientId) continue;
+      const t = deps.templates.get(conn.templateId);
+      const family = t?.authKind === "oauth" ? t.credentialFamily : undefined;
+      if (!family || out.has(family)) continue;
+      out.set(family, {
+        clientId: conn.auth.clientId,
+        ...(conn.auth.clientSecretRef
+          ? { clientSecretRef: conn.auth.clientSecretRef }
+          : {}),
+      });
+    }
+    return out;
+  }
+
+  async function applyFamilyCreds(
+    template: ConnectionTemplate,
+    input: ConnectionCreateInput,
+  ): Promise<ConnectionCreateInput> {
+    if (
+      input.authKind !== "oauth" ||
+      !inheritsFamily(template) ||
+      input.clientId
+    ) {
+      return input;
+    }
+    const creds = (await familyClientCreds()).get(template.credentialFamily!);
+    if (!creds) return input;
+    const clientSecret =
+      !input.clientSecret && creds.clientSecretRef
+        ? await deps.secretStore.getField(creds.clientSecretRef)
+        : input.clientSecret;
+    return {
+      ...input,
+      clientId: creds.clientId,
+      ...(clientSecret ? { clientSecret } : {}),
+    };
+  }
+
   return {
     async listTemplates(): Promise<ConnectionTemplateView[]> {
-      return deps.templates
-        .list()
-        .map((t) => templateToView(t, deps.oauthCallbackUrl));
+      const templates = deps.templates.list();
+      const family = templates.some(inheritsFamily)
+        ? await familyClientCreds()
+        : null;
+      return templates.map((t) => {
+        const creds =
+          family && inheritsFamily(t) ? family.get(t.credentialFamily!) : null;
+        const preset = creds
+          ? { clientId: creds.clientId, hasSecret: !!creds.clientSecretRef }
+          : undefined;
+        return templateToView(t, deps.oauthCallbackUrl, preset);
+      });
     },
 
     async listConnections(): Promise<ConnectionView[]> {
@@ -225,9 +292,10 @@ export function createConnectionsService(deps: {
       if (!template) {
         throw new Error(`unknown template ${input.templateId}`);
       }
+      const effectiveInput = await applyFamilyCreds(template, input);
       const built = await buildConnection(
         template,
-        input,
+        effectiveInput,
         (purpose) => deps.secretStore.mintRef({ owner: deps.ownerId, purpose }),
         deps.oauthCallbackUrl,
         deps.brandName,
