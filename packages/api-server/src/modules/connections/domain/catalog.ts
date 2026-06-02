@@ -222,7 +222,14 @@ function spotify(creds?: OAuthClientCredentials): OAuthConnectionTemplate {
       "user-modify-playback-state",
       "user-read-playback-state",
     ],
-    contributions: [{ kind: "egress-allow", host: "api.spotify.com" }],
+    contributions: [
+      {
+        kind: "egress-inject",
+        host: "api.spotify.com",
+        headerName: "Authorization",
+        valueFormat: "Bearer {value}",
+      },
+    ],
   };
 }
 
