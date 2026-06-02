@@ -15,24 +15,16 @@ export default defineConfig({
   platform: "node",
   splitting: false,
   clean: true,
-  // Ship a self-contained dist/bin.js. Node-builtins stay external; runtime
-  // deps fold into the bundle so `node dist/bin.js` works from anywhere.
-  noExternal: [
-    "@agentclientprotocol/sdk",
-    "@clack/prompts",
-    "@trpc/client",
-    "@trpc/server",
-    "api-server-api",
-    "commander",
-    "open",
-    "smol-toml",
-    "tar-stream",
-    "ws",
-    "zod",
-  ],
-  // CJS deps (commander) use dynamic `require()` of node builtins; ESM
-  // doesn't expose `require` by default, so synthesize one at the top of
-  // the bundle. Without this, `node dist/bin.js` throws on first call.
+  // Ship a self-contained dist/bin.js: the contract packages (api-server-api,
+  // agent-runtime-api) are private and never published, so everything except
+  // Node builtins must fold into the bundle. Bundle-everything is more robust
+  // than a hand-maintained list, which silently relied on each dep sitting in
+  // devDependencies (tsup externalizes only `dependencies`/`peerDependencies`).
+  noExternal: [/.*/],
+  // commander is bundled as CJS and calls `require()` at runtime; ESM output
+  // has no `require`, so synthesize one. Without this, `node dist/bin.js`
+  // throws "Dynamic require of 'events'" on first call. (This also lets ws's
+  // optional native-addon requires fail gracefully into its JS fallback.)
   banner: {
     js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);",
   },
