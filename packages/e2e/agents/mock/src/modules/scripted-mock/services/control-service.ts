@@ -13,6 +13,7 @@ export function createScriptedMockService(
     setScript(input: SetScriptInput) {
       state.scriptEntries = input.entries;
       state.scriptStopReason = input.stopReason;
+      state.scriptFiles = input.files ?? [];
       return { ok: true as const };
     },
     getReceivedPrompts(): GetReceivedPromptsResult {
@@ -21,6 +22,7 @@ export function createScriptedMockService(
     reset() {
       state.scriptEntries = [];
       state.scriptStopReason = "end_turn";
+      state.scriptFiles = [];
       state.receivedPrompts = [];
       return { ok: true as const };
     },

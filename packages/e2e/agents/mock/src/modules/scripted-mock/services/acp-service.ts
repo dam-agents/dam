@@ -2,11 +2,12 @@ import { randomUUID } from "node:crypto";
 import { isRequest, parseFrame, type JsonRpcId } from "../domain/frames.js";
 import type { MockState } from "../domain/state.js";
 import { recordPrompt } from "./control-service.js";
-import type { AcpChannel } from "./ports.js";
+import type { AcpChannel, WorkspaceWriter } from "./ports.js";
 
 export interface AcpServiceDeps {
   channel: AcpChannel;
   state: MockState;
+  workspace: WorkspaceWriter;
   now?: () => Date;
   sleep?: (ms: number) => Promise<void>;
   newSessionId?: () => string;
@@ -83,6 +84,10 @@ export function startAcpService(deps: AcpServiceDeps): void {
       receivedAt: now().toISOString(),
       prompt: promptPayload,
     });
+
+    for (const file of deps.state.scriptFiles) {
+      await deps.workspace.writeFile(file.path, file.content);
+    }
 
     for (const entry of deps.state.scriptEntries) {
       if (entry.delayMs && entry.delayMs > 0) await sleep(entry.delayMs);

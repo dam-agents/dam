@@ -5,6 +5,7 @@ import { startAcpService } from "./services/acp-service.js";
 import { createTrpcDispatch } from "./services/trpc-dispatch.js";
 import type { AcpChannel } from "./services/ports.js";
 import { createStdioChannel } from "./infrastructure/stdio-channel.js";
+import { createWorkspaceWriter } from "./infrastructure/workspace-writer.js";
 
 export interface ScriptedMockComposition {
   scriptedMock: ScriptedMockService;
@@ -33,7 +34,11 @@ export function composeScriptedMock(): ScriptedMockComposition {
     },
   };
 
-  startAcpService({ channel: acpChannel, state });
+  startAcpService({
+    channel: acpChannel,
+    state,
+    workspace: createWorkspaceWriter(process.cwd()),
+  });
 
   return { scriptedMock };
 }

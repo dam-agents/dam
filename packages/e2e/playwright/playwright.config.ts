@@ -28,5 +28,11 @@ export default defineConfig({
       dependencies: ["auth"],
       use: { ...devices["Desktop Chrome"], storageState },
     },
+    {
+      name: "lifecycle",
+      testMatch: /03-.*\.spec\.ts$/,
+      dependencies: ["agent"],
+      use: { ...devices["Desktop Chrome"], storageState },
+    },
   ],
 });

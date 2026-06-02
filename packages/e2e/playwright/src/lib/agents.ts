@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 import type { ApiClient } from "./api-client.js";
 
@@ -83,4 +83,41 @@ export async function setMockAgentReply(
       stopReason: "end_turn",
     },
   });
+}
+
+export async function setMockReplyWithFiles(
+  api: ApiClient,
+  agentId: string,
+  reply: string,
+  files: { path: string; content: string }[],
+): Promise<void> {
+  await api.e2e.setScript.mutate({
+    agentId,
+    script: {
+      entries: [
+        {
+          sessionUpdate: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: reply },
+          },
+        },
+      ],
+      files,
+      stopReason: "end_turn",
+    },
+  });
+}
+
+export function agentNameHeading(page: Page, agentName: string): Locator {
+  return page.getByRole("heading", { name: agentName, exact: true });
+}
+
+export function agentCardStatus(
+  page: Page,
+  agentName: string,
+  label: string,
+): Locator {
+  return agentNameHeading(page, agentName)
+    .locator("..")
+    .getByText(label, { exact: true });
 }

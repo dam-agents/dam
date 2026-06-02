@@ -6,6 +6,7 @@ export {
   receivedPromptSchema,
   resetResultSchema,
   scriptEntrySchema,
+  scriptFileSchema,
   setScriptInputSchema,
 } from "./modules/scripted-mock/schemas.js";
 export type {
@@ -14,5 +15,6 @@ export type {
   ResetResult,
   ScriptEntry,
   ScriptedMockService,
+  ScriptFile,
   SetScriptInput,
 } from "./modules/scripted-mock/types.js";

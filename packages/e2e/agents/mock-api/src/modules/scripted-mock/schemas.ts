@@ -7,9 +7,17 @@ export const scriptEntrySchema = z
   })
   .strict();
 
+export const scriptFileSchema = z
+  .object({
+    path: z.string().min(1),
+    content: z.string(),
+  })
+  .strict();
+
 export const setScriptInputSchema = z
   .object({
     entries: z.array(scriptEntrySchema),
+    files: z.array(scriptFileSchema).optional(),
     stopReason: z.string().default("end_turn"),
   })
   .strict();
