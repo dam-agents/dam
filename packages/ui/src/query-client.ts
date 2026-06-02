@@ -7,7 +7,7 @@ import {
 } from "@tanstack/react-query";
 
 import { getApiHealthSnapshot, subscribeApiHealth } from "./lib/api-health.js";
-import { emitToast } from "./lib/toast-sink.js";
+import { emitToast } from "./lib/toast.js";
 
 declare module "@tanstack/react-query" {
   interface Register {

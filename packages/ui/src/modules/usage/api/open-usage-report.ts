@@ -1,5 +1,5 @@
 import { authFetch } from "../../../auth.js";
-import { useStore } from "../../../store.js";
+import { emitToast } from "../../../lib/toast.js";
 
 /** Fetch the api-server's pre-rendered HTML usage report and open it in a
  *  new tab via a Blob URL. A plain `<a href>` can't send the Bearer header,
@@ -10,7 +10,7 @@ export async function openUsageReport(): Promise<void> {
   try {
     const res = await authFetch("/api/usage/report");
     if (!res.ok) {
-      useStore.getState().showToast({
+      emitToast({
         kind: "error",
         message: `Usage report failed: ${res.status}`,
       });
@@ -25,7 +25,7 @@ export async function openUsageReport(): Promise<void> {
     // doesn't affect what it shows — it only frees the in-memory blob.
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
   } catch (err) {
-    useStore.getState().showToast({
+    emitToast({
       kind: "error",
       message: err instanceof Error ? err.message : String(err),
     });

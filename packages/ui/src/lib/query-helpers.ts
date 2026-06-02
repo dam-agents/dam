@@ -1,4 +1,4 @@
-import { emitToast } from "./toast-sink.js";
+import { emitToast } from "./toast.js";
 
 /**
  * Sentinel returned from `runAction` on failure. Distinct from `undefined` so

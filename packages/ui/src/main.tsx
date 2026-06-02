@@ -5,6 +5,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
+import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 import { initAuth } from "./auth.js";
@@ -27,6 +28,7 @@ async function main() {
       <QueryClientProvider client={queryClient}>
         <TooltipProvider delayDuration={200}>
           <App />
+          <Toaster />
         </TooltipProvider>
       </QueryClientProvider>
     </StrictMode>,

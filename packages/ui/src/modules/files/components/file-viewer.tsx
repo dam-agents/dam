@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 
 import { HighlightedCode } from "../../../components/highlighted-code.js";
 import { Markdown } from "../../../components/markdown.js";
+import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import {
   fetchFileContent,
@@ -75,7 +76,6 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
 
   const selectedAgent = useStore((s) => s.selectedAgent);
   const setOpenFileDirty = useStore((s) => s.setOpenFileDirty);
-  const showToast = useStore((s) => s.showToast);
   const showConfirm = useStore((s) => s.showConfirm);
 
   const [renderMd, setRenderMd] = useState(true);
@@ -114,7 +114,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
       });
       setBaseMtimeMs(res.mtimeMs);
       setEditMode(false);
-      showToast({ kind: "success", message: `Saved ${path}` });
+      emitToast({ kind: "success", message: `Saved ${path}` });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Save failed";
       if (/conflict|changed on disk/i.test(msg)) {
@@ -132,16 +132,16 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
           const res = await writeMutation.mutateAsync({ path, content: draft });
           setBaseMtimeMs(res.mtimeMs);
           setEditMode(false);
-          showToast({ kind: "success", message: `Saved ${path}` });
+          emitToast({ kind: "success", message: `Saved ${path}` });
         } catch (err2) {
-          showToast({
+          emitToast({
             kind: "error",
             message: err2 instanceof Error ? err2.message : "Save failed",
           });
         }
         return;
       }
-      showToast({ kind: "error", message: msg });
+      emitToast({ kind: "error", message: msg });
     }
   }, [
     selectedAgent,
@@ -150,7 +150,6 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
     path,
     draft,
     baseMtimeMs,
-    showToast,
     showConfirm,
   ]);
 

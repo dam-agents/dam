@@ -1,7 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 
 import { api } from "../../../api.js";
-import { emitToast } from "../../../lib/toast-sink.js";
+import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
 import type { EgressPreset, EnvVar } from "../../../types.js";

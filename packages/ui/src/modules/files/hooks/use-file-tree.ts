@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 
+import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import { fetchFileContent } from "../api/queries.js";
 
@@ -13,7 +14,6 @@ export function useFileTree(selectedAgent: string | null) {
   const openFileDirty = useStore((s) => s.openFileDirty);
   const setOpenFilePath = useStore((s) => s.setOpenFilePath);
   const setRightTab = useStore((s) => s.setRightTab);
-  const showToast = useStore((s) => s.showToast);
   const showConfirm = useStore((s) => s.showConfirm);
 
   const openFileHandler = useCallback(
@@ -44,7 +44,7 @@ export function useFileTree(selectedAgent: string | null) {
         setOpenFilePath(path);
         setRightTab("files");
       } catch (err) {
-        showToast({
+        emitToast({
           kind: "error",
           message:
             err instanceof Error && err.message
@@ -59,7 +59,6 @@ export function useFileTree(selectedAgent: string | null) {
       openFileDirty,
       setOpenFilePath,
       setRightTab,
-      showToast,
       showConfirm,
     ],
   );

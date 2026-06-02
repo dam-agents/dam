@@ -20,7 +20,7 @@ import { Textarea } from "@/components/ui/textarea";
 
 import { useAutoResize } from "../../../hooks/use-auto-resize.js";
 import { isMobile } from "../../../lib/breakpoints.js";
-import { useStore } from "../../../store.js";
+import { emitToast } from "../../../lib/toast.js";
 import type { Attachment } from "../../../types.js";
 import { MAX_UPLOAD_BYTES } from "../../files/api/queries.js";
 
@@ -101,50 +101,46 @@ export function ChatInput({
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const showToast = useStore((s) => s.showToast);
 
   useAutoResize(textareaRef, input);
 
-  const addFiles = useCallback(
-    (files: FileList | File[]) => {
-      for (const file of Array.from(files)) {
-        // Mirror the server-side 10 MB cap so oversized files never get
-        // base64-encoded into memory just to fail on upload.
-        if (file.size > MAX_UPLOAD_BYTES) {
-          showToast({
-            kind: "error",
-            message: `${file.name} exceeds 10 MB — skipped`,
-          });
-          continue;
-        }
-        const reader = new FileReader();
-        reader.onload = () => {
-          const dataUrl = reader.result as string;
-          const base64 = dataUrl.split(",")[1];
-          if (!base64) return;
-          if (IMAGE_MIME.includes(file.type)) {
-            setAttachments((prev) => [
-              ...prev,
-              { kind: "image", data: base64, mimeType: file.type },
-            ]);
-          } else {
-            setAttachments((prev) => [
-              ...prev,
-              {
-                kind: "file",
-                name: file.name,
-                data: base64,
-                mimeType: file.type || "application/octet-stream",
-                size: file.size,
-              },
-            ]);
-          }
-        };
-        reader.readAsDataURL(file);
+  const addFiles = useCallback((files: FileList | File[]) => {
+    for (const file of Array.from(files)) {
+      // Mirror the server-side 10 MB cap so oversized files never get
+      // base64-encoded into memory just to fail on upload.
+      if (file.size > MAX_UPLOAD_BYTES) {
+        emitToast({
+          kind: "error",
+          message: `${file.name} exceeds 10 MB — skipped`,
+        });
+        continue;
       }
-    },
-    [showToast],
-  );
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        const base64 = dataUrl.split(",")[1];
+        if (!base64) return;
+        if (IMAGE_MIME.includes(file.type)) {
+          setAttachments((prev) => [
+            ...prev,
+            { kind: "image", data: base64, mimeType: file.type },
+          ]);
+        } else {
+          setAttachments((prev) => [
+            ...prev,
+            {
+              kind: "file",
+              name: file.name,
+              data: base64,
+              mimeType: file.type || "application/octet-stream",
+              size: file.size,
+            },
+          ]);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  }, []);
 
   const removeAttachment = useCallback((index: number) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index));

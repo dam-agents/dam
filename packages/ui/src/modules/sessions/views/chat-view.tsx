@@ -18,6 +18,7 @@ import { Markdown } from "../../../components/markdown.js";
 import { ResizeHandle } from "../../../components/resize-handle.js";
 import { StatusBadge } from "../../../components/status-indicator.js";
 import { isMobile } from "../../../lib/breakpoints.js";
+import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
 import type { SessionError } from "../../../store.js";
 import { useStore } from "../../../store.js";
@@ -208,7 +209,7 @@ export function ChatView() {
       } catch {
         setSessionMode(sessionMode);
         if (target === SessionMode.Terminal) setTerminalPaused(false);
-        useStore.getState().showToast({
+        emitToast({
           kind: "error",
           message: "Failed to switch session mode",
         });

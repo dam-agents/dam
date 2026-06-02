@@ -5,7 +5,7 @@ import { DialogOverlay } from "./components/dialog-overlay.js";
 import { MobileNav } from "./components/mobile-nav.js";
 import { SetupProgressBar } from "./components/setup-progress-bar.js";
 import { Sidebar } from "./components/sidebar.js";
-import { ToastOverlay } from "./components/toast-overlay.js";
+import { emitToast } from "./lib/toast.js";
 import { ListView } from "./modules/agents/views/list-view.js";
 import { InboxView } from "./modules/approvals/views/inbox-view.js";
 import { ConnectionsView } from "./modules/connections/views/connections-view.js";
@@ -42,14 +42,14 @@ export default function App() {
     if (!oauthResult) return;
     window.history.replaceState({}, "", window.location.pathname);
     if (oauthResult === "error") {
-      useStore.getState().showToast({
+      emitToast({
         kind: "error",
         message: `OAuth failed: ${params.get("message") ?? "Unknown error"}`,
       });
       return;
     }
     if (oauthResult === "success") {
-      useStore.getState().showToast({
+      emitToast({
         kind: "success",
         message: "Connection authorized.",
       });
@@ -96,7 +96,6 @@ export default function App() {
       <>
         <ChatView />
         <DialogOverlay />
-        <ToastOverlay />
         <ConnectionBanner />
       </>
     );
@@ -105,7 +104,6 @@ export default function App() {
     return (
       <>
         <TermsView />
-        <ToastOverlay />
       </>
     );
 
@@ -135,7 +133,6 @@ export default function App() {
       </div>
       <MobileNav />
       <DialogOverlay />
-      <ToastOverlay />
       <ConnectionBanner />
     </div>
   );

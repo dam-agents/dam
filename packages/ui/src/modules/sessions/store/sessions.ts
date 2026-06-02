@@ -2,6 +2,7 @@ import type { SessionMode } from "api-server-api";
 import type { StateCreator } from "zustand";
 
 import { ACTION_FAILED, runAction } from "../../../lib/query-helpers.js";
+import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
 import type { PlatformStore } from "../../../store.js";
 import type { LogEntry, Message } from "../../../types.js";
@@ -111,6 +112,6 @@ export const createSessionsSlice: StateCreator<
     if (ok === ACTION_FAILED) return;
     if (get().sessionId === sessionId) get().resetChatContext();
     queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
-    get().showToast({ kind: "success", message: "Session deleted" });
+    emitToast({ kind: "success", message: "Session deleted" });
   },
 });

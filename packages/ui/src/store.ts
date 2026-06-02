@@ -16,10 +16,6 @@ import {
   type ThemeSlice,
 } from "./modules/platform/store/theme.js";
 import {
-  createToastSlice,
-  type ToastSlice,
-} from "./modules/platform/store/toast.js";
-import {
   createPermissionsSlice,
   type PermissionsSlice,
 } from "./modules/sessions/store/permissions.js";
@@ -33,7 +29,6 @@ import {
 } from "./modules/sessions/store/sessions.js";
 
 export type { DialogState } from "./modules/platform/store/dialog.js";
-export type { Toast, ToastKind } from "./modules/platform/store/toast.js";
 export type {
   PendingPermission,
   PermissionOption,
@@ -44,7 +39,6 @@ export type { SessionError } from "./modules/sessions/store/sessions.js";
 export type PlatformStore = DialogSlice &
   ThemeSlice &
   NavigationSlice &
-  ToastSlice &
   AgentsSlice &
   SessionsSlice &
   SessionConfigSlice &
@@ -55,7 +49,6 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createDialogSlice(...a),
   ...createThemeSlice(...a),
   ...createNavigationSlice(...a),
-  ...createToastSlice(...a),
   ...createAgentsSlice(...a),
   ...createSessionsSlice(...a),
   ...createSessionConfigSlice(...a),

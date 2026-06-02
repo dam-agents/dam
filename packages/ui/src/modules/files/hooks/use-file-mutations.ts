@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 
+import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import { type BundleEntry, importBundle } from "../api/import-bundle.js";
 import {
@@ -57,7 +58,6 @@ async function fileToBase64(file: File): Promise<string> {
 
 export function useFileMutations(agentId: string | null) {
   const showConfirm = useStore((s) => s.showConfirm);
-  const showToast = useStore((s) => s.showToast);
   const openFilePath = useStore((s) => s.openFilePath);
   const setOpenFilePath = useStore((s) => s.setOpenFilePath);
   const renameExpandedDir = useStore((s) => s.renameExpandedDir);
@@ -77,19 +77,19 @@ export function useFileMutations(agentId: string | null) {
       try {
         if (kind === "file") {
           await createFile.mutateAsync({ path, content: "" });
-          showToast({ kind: "success", message: `Created ${path}` });
+          emitToast({ kind: "success", message: `Created ${path}` });
         } else {
           await createFolder.mutateAsync({ path });
-          showToast({ kind: "success", message: `Created ${path}/` });
+          emitToast({ kind: "success", message: `Created ${path}/` });
         }
       } catch (err) {
-        showToast({
+        emitToast({
           kind: "error",
           message: errorMessage(err, "Create failed"),
         });
       }
     },
-    [createFile, createFolder, showToast],
+    [createFile, createFolder],
   );
 
   const renameEntry = useCallback(
@@ -107,7 +107,7 @@ export function useFileMutations(agentId: string | null) {
         await tryRename(false);
       } catch (err) {
         if (!isConflictError(err)) {
-          showToast({
+          emitToast({
             kind: "error",
             message: errorMessage(err, "Rename failed"),
           });
@@ -121,7 +121,7 @@ export function useFileMutations(agentId: string | null) {
         try {
           await tryRename(true);
         } catch (err2) {
-          showToast({
+          emitToast({
             kind: "error",
             message: errorMessage(err2, "Rename failed"),
           });
@@ -135,7 +135,6 @@ export function useFileMutations(agentId: string | null) {
       openFilePath,
       setOpenFilePath,
       showConfirm,
-      showToast,
     ],
   );
 
@@ -156,9 +155,9 @@ export function useFileMutations(agentId: string | null) {
         ) {
           setOpenFilePath(null);
         }
-        showToast({ kind: "success", message: `Deleted ${path}` });
+        emitToast({ kind: "success", message: `Deleted ${path}` });
       } catch (err) {
-        showToast({
+        emitToast({
           kind: "error",
           message: errorMessage(err, "Delete failed"),
         });
@@ -171,7 +170,6 @@ export function useFileMutations(agentId: string | null) {
       openFilePath,
       setOpenFilePath,
       showConfirm,
-      showToast,
     ],
   );
 
@@ -213,7 +211,7 @@ export function useFileMutations(agentId: string | null) {
 
       for (const file of list) {
         if (file.size > MAX_UPLOAD_BYTES) {
-          showToast({
+          emitToast({
             kind: "error",
             message: `${file.name} exceeds 10 MB — skipped`,
           });
@@ -227,16 +225,16 @@ export function useFileMutations(agentId: string | null) {
           const contentType = file.type || undefined;
           const written = await uploadOne(path, contentBase64, contentType);
           if (written)
-            showToast({ kind: "success", message: `Uploaded ${path}` });
+            emitToast({ kind: "success", message: `Uploaded ${path}` });
         } catch (err) {
-          showToast({
+          emitToast({
             kind: "error",
             message: errorMessage(err, `Upload failed: ${path}`),
           });
         }
       }
     },
-    [uploadMutation, showConfirm, showToast],
+    [uploadMutation, showConfirm],
   );
 
   const uploadBundle = useCallback(
@@ -244,18 +242,18 @@ export function useFileMutations(agentId: string | null) {
       if (!agentId || entries.length === 0) return;
       try {
         await importBundle({ agentId, entries });
-        showToast({
+        emitToast({
           kind: "success",
           message: `Imported ${entries.length} file${entries.length === 1 ? "" : "s"}`,
         });
       } catch (err) {
-        showToast({
+        emitToast({
           kind: "error",
           message: errorMessage(err, "Import failed"),
         });
       }
     },
-    [agentId, showToast],
+    [agentId],
   );
 
   return {
