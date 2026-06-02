@@ -232,6 +232,7 @@ interface GoogleServiceDef {
   description: string;
   scopes: string[];
   hosts: { host: string; pathPattern?: string }[];
+  iconSlug?: string;
 }
 
 const GOOGLE_BASELINE_SCOPES = ["openid", "email", "profile"];
@@ -240,6 +241,7 @@ const GOOGLE_SERVICES: GoogleServiceDef[] = [
   {
     id: "google-gmail",
     name: "Gmail",
+    iconSlug: "gmail",
     description: "Read, compose, and send emails via Gmail.",
     scopes: [
       "https://www.googleapis.com/auth/gmail.readonly",
@@ -386,7 +388,7 @@ function googleService(
     category: "app",
     isCustom: false,
     description: def.description,
-    iconSlug: def.id,
+    iconSlug: def.iconSlug ?? def.id,
     authKind: "oauth",
     setupUrl: "https://console.cloud.google.com/apis/credentials",
     ...(creds?.clientId ? { clientId: creds.clientId } : {}),
