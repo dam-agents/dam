@@ -207,6 +207,9 @@ function inputsFor(
         );
       }
       out.push(required("value", { secret: true }));
+      // Custom credential can also be exposed to the agent as an env var
+      // (placeholder in-pod; Envoy injects the real value on egress).
+      if (t.isCustom) out.push(optional("envName"));
       return out;
     }
     case "none":

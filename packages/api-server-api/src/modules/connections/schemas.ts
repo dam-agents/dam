@@ -51,6 +51,13 @@ const headerCreateInput = z.object({
   host: z.string().min(1).optional(),
   headerName: z.string().min(1).optional(),
   valueFormat: z.string().min(1).optional(),
+  envName: z
+    .string()
+    .regex(
+      /^[A-Za-z_][A-Za-z0-9_]*$/,
+      "env var name must be letters, digits, and underscores (not starting with a digit)",
+    )
+    .optional(),
   value: z.string().min(1),
 });
 

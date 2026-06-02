@@ -117,6 +117,9 @@ export function TemplateCreateForm({
           ...(submittedValue("valueFormat")
             ? { valueFormat: submittedValue("valueFormat")! }
             : {}),
+          ...(submittedValue("envName")
+            ? { envName: submittedValue("envName")! }
+            : {}),
           value,
         };
       }
@@ -446,6 +449,7 @@ const FIELD_LABELS: Record<string, string> = {
   clientId: "Client ID",
   clientSecret: "Client secret",
   appSlug: "GitHub App slug",
+  envName: "Environment variable",
 };
 
 const FIELD_PLACEHOLDERS: Record<string, string> = {
@@ -457,6 +461,7 @@ const FIELD_PLACEHOLDERS: Record<string, string> = {
   clientId: "Iv1.…",
   clientSecret: "•••••",
   appSlug: "my-platform-app",
+  envName: "MY_API_KEY",
 };
 
 function labelFor(key: string): string {

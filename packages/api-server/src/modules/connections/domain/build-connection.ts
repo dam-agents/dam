@@ -9,7 +9,10 @@ import {
   discoverMcpAuth,
   registerOAuthClient,
 } from "../infrastructure/mcp-discovery.js";
-import { buildConnectionSdsFields } from "./connection-sds.js";
+import {
+  buildConnectionSdsFields,
+  CONNECTION_TOKEN_PLACEHOLDER,
+} from "./connection-sds.js";
 
 export interface BuildResult {
   auth: ConnectionAuthConfig;
@@ -281,6 +284,14 @@ function buildHeader(
       host,
       headerName,
       valueFormat,
+    });
+  }
+
+  if (input.envName) {
+    contributions.push({
+      kind: "env",
+      name: input.envName,
+      placeholder: CONNECTION_TOKEN_PLACEHOLDER,
     });
   }
 
