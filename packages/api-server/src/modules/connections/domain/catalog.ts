@@ -315,6 +315,18 @@ const GOOGLE_SERVICES: GoogleServiceDef[] = [
     hosts: [{ host: "forms.googleapis.com" }],
   },
   {
+    id: "google-health",
+    name: "Google Health",
+    description:
+      "Access activity, sleep, and health metrics from Fitbit and connected devices.",
+    scopes: [
+      "https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly",
+      "https://www.googleapis.com/auth/googlehealth.sleep.readonly",
+      "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly",
+    ],
+    hosts: [{ host: "health.googleapis.com" }],
+  },
+  {
     id: "google-meet",
     name: "Google Meet",
     description: "Create and manage meetings.",
