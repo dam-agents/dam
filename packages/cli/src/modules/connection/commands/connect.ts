@@ -24,6 +24,7 @@ const DEFAULT_TIMEOUT_SECONDS = 300;
 
 interface ConnectOpts {
   name?: string;
+  auth?: string;
   url?: string;
   host?: string;
   clientId?: string;
@@ -45,11 +46,18 @@ export function buildConnectCommand(deps: {
   browserOpener: BrowserOpener;
 }): Command {
   return new Command("connect")
-    .description("Create a connection from a provider template")
-    .argument("<app-id>", "template id — see `dam template list` / the web UI")
+    .description("Create a connection from a provider template or MCP server")
+    .argument(
+      "<provider-or-url>",
+      "a provider template id (`dam template list` / the web UI) or an MCP server URL (https://…)",
+    )
     .option(
       "--name <name>",
-      "connection name (default: slug of the template name)",
+      "connection name (default: slug of the template name, or the MCP server host)",
+    )
+    .option(
+      "--auth <mode>",
+      "MCP auth mode: oauth | none (default: auto-detect from the server)",
     )
     .option("--url <url>", "input: url")
     .option("--host <host>", "input: host")
@@ -75,9 +83,11 @@ export function buildConnectCommand(deps: {
       "\nExamples:\n" +
         "  dam connection connect github\n" +
         "  dam connection connect github --no-browser\n" +
-        "  dam connection connect my-api --header-name X-API-Key --value sk-…\n",
+        "  dam connection connect my-api --header-name X-API-Key --value sk-…\n" +
+        "  dam connection connect https://mcp.example.com\n" +
+        "  dam connection connect https://mcp.example.com --auth none\n",
     )
-    .action(async (appId: string, opts: ConnectOpts) => {
+    .action(async (providerOrUrl: string, opts: ConnectOpts) => {
       const json = opts.json ?? false;
 
       const timeoutSeconds = parseTimeout(opts.timeout);
@@ -85,6 +95,8 @@ export function buildConnectCommand(deps: {
         process.stderr.write("error: --timeout must be a positive integer\n");
         process.exit(EXIT_INVALID_INPUT);
       }
+
+      const authOverride = parseAuthMode(opts.auth);
 
       const host = await resolveActiveHost(deps, {
         flag: opts.server ? { server: opts.server } : undefined,
@@ -100,31 +112,29 @@ export function buildConnectCommand(deps: {
         printServiceError(templatesRes.error, host);
         process.exit(EXIT_RUNTIME_FAILURE);
       }
-      const template = templatesRes.value.find((t) => t.id === appId);
-      if (!template) {
-        const ids = templatesRes.value
-          .map((t) => t.id)
-          .sort((a, b) => a.localeCompare(b));
-        process.stderr.write(`error: unknown app-id '${appId}'\n`);
-        process.stderr.write(`available: ${ids.join(", ")}\n`);
-        process.exit(EXIT_INVALID_INPUT);
-      }
-      if (template.category === "mcp") {
-        process.stderr.write(
-          "error: MCP connections are not supported by `connect` yet\n",
-        );
-        process.exit(EXIT_INVALID_INPUT);
-      }
+      const templates = templatesRes.value;
 
-      const name = (opts.name ?? slugifyTemplateName(template.name)).trim();
-      const nameCheck = connectionNameSchema.safeParse(name);
-      if (!nameCheck.success) {
-        const msg = nameCheck.error.issues[0]?.message ?? "invalid name";
-        process.stderr.write(`error: ${msg}\n`);
-        process.exit(EXIT_INVALID_INPUT);
-      }
-
-      const values = await collectInputs(template, opts, json);
+      // A positional that parses as an http(s) URL is an MCP server; catalog
+      // template ids are slugs (`github`, `custom-header`, …) and never contain
+      // `://`, so the discriminator is unambiguous.
+      const mcpUrl = parseHttpUrl(providerOrUrl);
+      const { template, name, values } = mcpUrl
+        ? await resolveMcpTemplate({
+            svc,
+            url: providerOrUrl,
+            mcpUrl,
+            templates,
+            opts,
+            authOverride,
+            json,
+            host,
+          })
+        : await resolveSlugTemplate({
+            templates,
+            appId: providerOrUrl,
+            opts,
+            json,
+          });
 
       const payload = buildPayload(template, name, values);
       if ("error" in payload) {
@@ -189,6 +199,111 @@ export function buildConnectCommand(deps: {
       });
       process.exit(EXIT_SUCCESS);
     });
+}
+
+interface ResolvedConnection {
+  template: ConnectionTemplateView;
+  name: string;
+  values: Record<string, string>;
+}
+
+async function resolveSlugTemplate(args: {
+  templates: readonly ConnectionTemplateView[];
+  appId: string;
+  opts: ConnectOpts;
+  json: boolean;
+}): Promise<ResolvedConnection> {
+  const { templates, appId, opts, json } = args;
+  const template = templates.find((t) => t.id === appId);
+  if (!template) {
+    const ids = templates.map((t) => t.id).sort((a, b) => a.localeCompare(b));
+    process.stderr.write(`error: unknown provider id '${appId}'\n`);
+    process.stderr.write(`available: ${ids.join(", ")}\n`);
+    process.exit(EXIT_INVALID_INPUT);
+  }
+  if (template.category === "mcp") {
+    process.stderr.write(
+      "error: to connect an MCP server, pass its URL:\n" +
+        "  dam connection connect https://your-mcp-server\n",
+    );
+    process.exit(EXIT_INVALID_INPUT);
+  }
+
+  const name = (opts.name ?? slugifyTemplateName(template.name)).trim();
+  validateName(name);
+  const values = await collectInputs(template, opts, json);
+  return { template, name, values };
+}
+
+async function resolveMcpTemplate(args: {
+  svc: ConnectionService;
+  url: string;
+  mcpUrl: URL;
+  templates: readonly ConnectionTemplateView[];
+  opts: ConnectOpts;
+  authOverride: "oauth" | "none" | undefined;
+  json: boolean;
+  host: string;
+}): Promise<ResolvedConnection> {
+  const { svc, url, mcpUrl, templates, opts, authOverride, json, host } = args;
+
+  let auth = authOverride;
+  if (!auth) {
+    const res = await svc.discoverMcp(url);
+    if (!res.ok) {
+      printServiceError(res.error, host);
+      process.exit(EXIT_RUNTIME_FAILURE);
+    }
+    auth = res.value.auth;
+  }
+
+  const templateId = auth === "oauth" ? "custom-mcp-oauth" : "custom-mcp-none";
+  const template = templates.find((t) => t.id === templateId);
+  if (!template) {
+    process.stderr.write(
+      `error: built-in template '${templateId}' is missing from the catalog\n`,
+    );
+    process.exit(EXIT_RUNTIME_FAILURE);
+  }
+
+  const name = await resolveMcpName(mcpUrl, opts, json);
+  validateName(name);
+  return { template, name, values: { url } };
+}
+
+async function resolveMcpName(
+  url: URL,
+  opts: ConnectOpts,
+  json: boolean,
+): Promise<string> {
+  if (opts.name !== undefined) return opts.name.trim();
+  const derived = deriveMcpName(url);
+  if (!process.stdin.isTTY) {
+    if (!derived) {
+      process.stderr.write(
+        "error: couldn't derive a name from the URL — pass --name\n",
+      );
+      process.exit(EXIT_INVALID_INPUT);
+    }
+    return derived;
+  }
+  const answer = await text({
+    message: "Connection name",
+    initialValue: derived,
+    placeholder: derived || "my-mcp-server",
+    validate: (v) => (v && v.trim().length > 0 ? undefined : "Required"),
+  });
+  if (isCancel(answer)) exitCancelled({ json });
+  return String(answer).trim();
+}
+
+function validateName(name: string): void {
+  const nameCheck = connectionNameSchema.safeParse(name);
+  if (!nameCheck.success) {
+    const msg = nameCheck.error.issues[0]?.message ?? "invalid name";
+    process.stderr.write(`error: ${msg}\n`);
+    process.exit(EXIT_INVALID_INPUT);
+  }
 }
 
 async function collectInputs(
@@ -331,6 +446,30 @@ function slugifyTemplateName(templateName: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 63);
+}
+
+function parseAuthMode(raw: string | undefined): "oauth" | "none" | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === "oauth" || raw === "none") return raw;
+  process.stderr.write("error: --auth must be 'oauth' or 'none'\n");
+  process.exit(EXIT_INVALID_INPUT);
+}
+
+function parseHttpUrl(s: string): URL | null {
+  try {
+    const u = new URL(s);
+    return u.protocol === "http:" || u.protocol === "https:" ? u : null;
+  } catch {
+    return null;
+  }
+}
+
+// Strip a leading mcp./api./www. label, take the first remaining DNS label,
+// and slugify to connectionNameSchema (e.g. mcp.notion.com -> "notion").
+function deriveMcpName(url: URL): string {
+  const host = url.hostname.replace(/^(mcp|api|www)\./, "");
+  const label = host.split(".")[0] ?? host;
+  return slugifyTemplateName(label);
 }
 
 function camelToKebab(s: string): string {

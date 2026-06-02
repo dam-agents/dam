@@ -23,6 +23,8 @@ export interface ConnectionService {
   ): Promise<ConnResult<{ id: string }>>;
   /** Begin the browser OAuth flow for a connection; returns the authorize URL. */
   startOAuth(connectionId: string): Promise<ConnResult<{ authUrl: string }>>;
+  /** Probe an MCP server URL for its auth requirement. */
+  discoverMcp(url: string): Promise<ConnResult<{ auth: "oauth" | "none" }>>;
   /** A single connection by id, or null if the caller doesn't own it. */
   getConnection(id: string): Promise<ConnResult<ConnectionView | null>>;
   /** Connection ids currently granted to an agent. */
@@ -79,6 +81,9 @@ export function createConnectionService(deps: {
       return trpcCall(() =>
         deps.trpc.connections.startOAuth.mutate({ connectionId }),
       );
+    },
+    async discoverMcp(url) {
+      return trpcCall(() => deps.trpc.connections.discoverMcp.mutate({ url }));
     },
     async getConnection(id) {
       return trpcCall(
