@@ -9,6 +9,10 @@ import Template from "./Template.js";
 const Login = lazy(() => import("./pages/Login.js"));
 const Error = lazy(() => import("./pages/Error.js"));
 const Info = lazy(() => import("./pages/Info.js"));
+const LoginOauth2DeviceVerifyUserCode = lazy(
+  () => import("./pages/LoginOauth2DeviceVerifyUserCode.js"),
+);
+const LoginOauthGrant = lazy(() => import("./pages/LoginOauthGrant.js"));
 
 const doMakeUserConfirmPassword = true;
 
@@ -40,6 +44,24 @@ export default function KcPage({ kcContext }: { kcContext: KcContext }) {
           case "info.ftl":
             return (
               <Info
+                kcContext={kcContext}
+                i18n={i18n}
+                doUseDefaultCss={false}
+                Template={Template}
+              />
+            );
+          case "login-oauth2-device-verify-user-code.ftl":
+            return (
+              <LoginOauth2DeviceVerifyUserCode
+                kcContext={kcContext}
+                i18n={i18n}
+                doUseDefaultCss={false}
+                Template={Template}
+              />
+            );
+          case "login-oauth-grant.ftl":
+            return (
+              <LoginOauthGrant
                 kcContext={kcContext}
                 i18n={i18n}
                 doUseDefaultCss={false}
