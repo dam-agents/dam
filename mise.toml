@@ -2,7 +2,9 @@
 nodejs = "24"
 
 # Go
-go = "1.24"
+go = "1.25"
+"go:honnef.co/go/tools/cmd/staticcheck" = "latest"
+"go:golang.org/x/vuln/cmd/govulncheck" = "latest"
 
 # Java + Maven — required by keycloakify to package the theme JAR (packages/keycloak-theme)
 java = "21"

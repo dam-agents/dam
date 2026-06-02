@@ -9,6 +9,9 @@ depends = ["*:check"]
 ["fix"]
 depends = ["*:fix"]
 
+["scan"]
+depends = ["*:scan"]
+
 ["test"]
 depends = ["*:test"]
 

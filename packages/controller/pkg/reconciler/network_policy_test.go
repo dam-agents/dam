@@ -87,4 +87,3 @@ func TestBuildAgentEgressNetworkPolicy_ManagedByLabel(t *testing.T) {
 	assert.Equal(t, "platform-controller", np.Labels["agent-platform.ai/managed-by"])
 	assert.Equal(t, "my-instance", np.Labels[LabelAgent])
 }
-

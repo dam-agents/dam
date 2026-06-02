@@ -17,6 +17,20 @@ Findings surface in **GitHub → Security → Code scanning**. PRs that introduc
 
 `mise run check` runs on every commit in CI:
 
-- **TypeScript strict-mode type checking** — eliminates entire classes of type-confusion bugs.
+**TypeScript** (api-server, agent-runtime, UI, CLI):
+
+- **Strict-mode type checking** — eliminates entire classes of type-confusion bugs.
 - **ESLint** — catches suspicious patterns and common mistakes.
-- **Prettier** — enforces consistent formatting (prevents obfuscation via whitespace).
+- **Prettier** — enforces consistent formatting.
+
+**Go** (controller):
+
+- **gofmt** — enforces canonical formatting.
+- **go vet** — catches suspicious constructs the compiler doesn't flag.
+- **staticcheck** — extended static analysis (unused code, deprecated APIs, correctness bugs).
+
+## Vulnerability scanning
+
+`mise run scan` runs on every PR in CI and daily via `daily.yml`:
+
+- **govulncheck** — checks the Go controller's compiled call graph against the Go vulnerability database.

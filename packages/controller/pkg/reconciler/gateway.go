@@ -226,4 +226,3 @@ func BuildForkGatewayService(forkName string, cfg *config.Config, ownerCM *corev
 		},
 	}
 }
-

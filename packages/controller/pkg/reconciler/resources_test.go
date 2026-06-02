@@ -70,8 +70,6 @@ var testOwnerCM = &corev1.ConfigMap{
 	},
 }
 
-func boolPtr(b bool) *bool { return &b }
-
 func credSecret(name, host string) corev1.Secret {
 	ann := map[string]string{
 		"agent-platform.ai/host-pattern":          host,

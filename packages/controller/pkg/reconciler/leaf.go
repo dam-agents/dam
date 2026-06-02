@@ -62,7 +62,7 @@ func BuildEnvoyLeafCertificate(instanceName string, cfg *config.Config, ownerCM 
 		Spec: cmv1.CertificateSpec{
 			SecretName: EnvoyLeafSecretName(instanceName),
 			DNSNames:   hosts,
-			IssuerRef: cmmetav1.ObjectReference{
+			IssuerRef: cmmetav1.IssuerReference{
 				Name:  cfg.EnvoyMitmCAIssuer,
 				Kind:  "ClusterIssuer",
 				Group: "cert-manager.io",

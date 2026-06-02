@@ -50,4 +50,3 @@ func TestWriteAgentStatus_NotFound(t *testing.T) {
 	err := WriteAgentStatus(context.Background(), client, "test-agents", "missing", status)
 	assert.Error(t, err)
 }
-

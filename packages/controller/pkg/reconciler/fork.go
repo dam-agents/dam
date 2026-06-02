@@ -7,6 +7,7 @@ import (
 	"time"
 
 	cmv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
+	"gopkg.in/yaml.v3"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -16,7 +17,6 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
-	"gopkg.in/yaml.v3"
 
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 	"github.com/kagenti/platform/packages/controller/pkg/types"
@@ -280,17 +280,6 @@ func (r *ForkReconciler) applyPod(ctx context.Context, desired *corev1.Pod) erro
 	_, err := r.client.CoreV1().Pods(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
 	if errors.IsNotFound(err) {
 		_, err = r.client.CoreV1().Pods(desired.Namespace).Create(ctx, desired, metav1.CreateOptions{})
-		return err
-	}
-	return err
-}
-
-// applyService mirrors `AgentReconciler.applyService` for fork-scoped
-// gateway Services.
-func (r *ForkReconciler) applyService(ctx context.Context, desired *corev1.Service) error {
-	_, err := r.client.CoreV1().Services(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
-	if errors.IsNotFound(err) {
-		_, err = r.client.CoreV1().Services(desired.Namespace).Create(ctx, desired, metav1.CreateOptions{})
 		return err
 	}
 	return err

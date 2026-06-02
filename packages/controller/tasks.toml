@@ -6,9 +6,26 @@ sources = ["go.mod", "go.sum"]
 ["controller:check"]
 depends = ["controller:check:*"]
 
+["controller:check:fmt"]
+dir = "{{config_root}}/packages/controller"
+run = """
+unformatted=$(gofmt -s -l .)
+if [ -n "$unformatted" ]; then
+  echo "Files not formatted:" >&2
+  echo "$unformatted" >&2
+  exit 1
+fi
+"""
+sources = ["**/*.go"]
+
 ["controller:check:vet"]
 dir = "{{config_root}}/packages/controller"
 run = "go vet ./..."
+sources = ["**/*.go", "go.mod", "go.sum"]
+
+["controller:check:staticcheck"]
+dir = "{{config_root}}/packages/controller"
+run = "staticcheck ./..."
 sources = ["**/*.go", "go.mod", "go.sum"]
 
 ["controller:check:build"]
@@ -17,11 +34,23 @@ run = "go build -o dist/ ./..."
 sources = ["**/*.go", "go.mod", "go.sum"]
 
 ["controller:fix"]
-run = "echo 'No fix tasks for controller yet'"
+depends = ["controller:fix:*"]
+
+["controller:fix:fmt"]
+dir = "{{config_root}}/packages/controller"
+run = "gofmt -s -w ."
 
 ["controller:test"]
 dir = "{{config_root}}/packages/controller"
 run = "go test ./..."
+
+["controller:scan"]
+depends = ["controller:scan:*"]
+
+["controller:scan:vuln"]
+dir = "{{config_root}}/packages/controller"
+run = "govulncheck ./..."
+sources = ["**/*.go", "go.mod", "go.sum"]
 
 ["controller:build"]
 dir = "{{config_root}}/packages/controller"
