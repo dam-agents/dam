@@ -110,7 +110,7 @@ spec:
         - name: kubectl
           # alpine/k8s ships kubectl + a shell on alpine. Bitnami's
           # `bitnami/kubectl` was retired from Docker Hub mid-2025.
-          image: alpine/k8s:1.30.4
+          image: mirror.gcr.io/alpine/k8s:1.30.4
           command:
             - sh
             - -c

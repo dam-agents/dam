@@ -16,7 +16,7 @@ fi
 description = 'Open a subshell with env for local cluster'
 quiet = true
 raw = true
-run = '''                                                                                                                                                                                                                                                                                                                                                                                              
+run = '''
 #!/usr/bin/env bash
 
 export KUBECONFIG="$(mise run cluster:kubeconfig)"
@@ -346,7 +346,7 @@ spec:
           restartPolicy: Never
           containers:
             - name: watchdog
-              image: alpine/k8s:1.30.4
+              image: mirror.gcr.io/alpine/k8s:1.30.4
               command:
                 - sh
                 - -c
