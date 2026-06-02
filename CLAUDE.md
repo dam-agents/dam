@@ -30,16 +30,32 @@ mise run ui:run             # start UI dev server
 ### Cluster lifecycle (k3s via lima)
 
 ```sh
-mise run cluster:install      # create k3s VM, build images, install cert-manager + Platform chart (or upgrade if already installed)
-mise run cluster:build-agent  # rebuild agent image only, restart agent pods
-mise run cluster:status       # show pods and cluster state
-mise run cluster:logs         # show api-server pod logs
-mise run cluster:stop         # stop k3s VM (preserves data)
-mise run cluster:uninstall    # helm uninstall + cleanup PVCs
-mise run cluster:delete       # destroy k3s VM entirely
+mise run cluster:install         # create k3s VM, build images, install cert-manager + Platform chart (or upgrade if already installed)
+mise run cluster:build-apiserver # rebuild api-server image only, restart apiserver pod
+mise run cluster:build-ui        # rebuild UI image only, restart UI pod
+mise run cluster:build-controller# rebuild controller image only, restart controller pod
+mise run cluster:build-agent     # rebuild agent image only, restart agent pods
+mise run cluster:build-keycloak  # rebuild keycloak image only, restart keycloak pod
+mise run cluster:status          # show pods and cluster state
+mise run cluster:logs            # show api-server pod logs
+mise run cluster:stop            # stop k3s VM (preserves data)
+mise run cluster:uninstall       # helm uninstall + cleanup PVCs
+mise run cluster:delete          # destroy k3s VM entirely
 ```
 
+The `cluster:build-*` tasks honor a `LIMA_INSTANCE` env var (default `platform-k3s`); set it to target a different VM (e.g. the e2e cluster).
+
 Services are available at `*.localhost:4444` automatically (Traefik on port 4444, auto-forwarded by lima). `*.localtest.me:4444` also works as an alias.
+
+### E2E tests (Playwright)
+
+```sh
+mise run e2e          # full from-scratch run: nuke test VM, install fresh cluster, run specs, tear down (CI path)
+mise run e2e:loop     # fast rerun against a warm test cluster: bootstrap once if missing, optionally rebuild components, wipe data, run specs. Options: --headed --rebuild=apiserver,ui,controller,keycloak,mock-agent
+mise run e2e:reset    # data wipe only: drop+recreate platform DB, delete agents (CMs/sts/pods/PVCs), clear stored Playwright auth. Leaves the cluster running
+```
+
+`e2e:loop` runs on a dedicated persistent `platform-k3s-test` VM that it never deletes, so reruns skip VM/Istio/cert-manager/Keycloak provisioning. Running `mise run e2e` nukes that VM (shared name); the next `e2e:loop` bootstraps a fresh one. `e2e:loop` does not heal a wedged cluster — if the warm cluster is broken, it fails loud; use `mise run e2e` or `cluster:fix-certs`. Use `e2e:loop` for iteration, `e2e` after helm/realm/infra changes.
 
 ### Cluster debugging (pre-approved in .claude/settings.json)
 

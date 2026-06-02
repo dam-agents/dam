@@ -238,6 +238,24 @@ else
   echo "Gateway API CRDs already installed"
 fi
 
+# k3s bundles Traefik (chart v39+), whose `traefik-crd` chart also ships the
+# Gateway API CRDs. We install those out-of-band above (for Istio) via plain
+# `kubectl apply`, so they carry no Helm ownership metadata — and the
+# `traefik-crd` Helm job then dies with "invalid ownership metadata" and
+# Traefik never installs, leaving nothing on the ingress port. Stamp the
+# ownership the `traefik-crd` release expects so it adopts them on its next
+# reconcile. Idempotent, and covers both install orders (whichever of the k3s
+# Traefik bootstrap vs. this CRD apply wins the race).
+echo "Stamping Helm ownership on Gateway API CRDs (so k3s traefik-crd can adopt them)..."
+for crd in gatewayclasses gateways grpcroutes httproutes referencegrants; do
+  kubectl --kubeconfig="$KUBECONFIG" label crd "$crd.gateway.networking.k8s.io" \
+    app.kubernetes.io/managed-by=Helm --overwrite >/dev/null 2>&1 || true
+  kubectl --kubeconfig="$KUBECONFIG" annotate crd "$crd.gateway.networking.k8s.io" \
+    meta.helm.sh/release-name=traefik-crd --overwrite >/dev/null 2>&1 || true
+  kubectl --kubeconfig="$KUBECONFIG" annotate crd "$crd.gateway.networking.k8s.io" \
+    meta.helm.sh/release-namespace=kube-system --overwrite >/dev/null 2>&1 || true
+done
+
 echo "Ensuring Istio ambient mesh ($ISTIO_VERSION)..."
 helm repo add istio https://istio-release.storage.googleapis.com/charts >/dev/null 2>&1 || true
 helm repo update istio >/dev/null
@@ -517,7 +535,7 @@ if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
   sudo k3s ctr images import "$tar"
 else
-  LIMA_INSTANCE="platform-k3s"
+  LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
   KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
   limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
   limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
@@ -527,6 +545,43 @@ rm -f "$tar"
 echo "Restarting apiserver pod..."
 kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-apiserver
 kubectl --kubeconfig="$KUBECONFIG" rollout status deployment platform-apiserver --timeout=60s
+
+PRUNE_DANGLING='sudo k3s crictl images 2>/dev/null | sed -nE "s/^<none>[[:space:]]+<none>[[:space:]]+([^[:space:]]+).*/\\1/p" | xargs -r sudo k3s crictl rmi >/dev/null 2>&1 || true'
+if [ -n "${IS_SANDBOX:-}" ]; then
+  bash -c "$PRUNE_DANGLING"
+else
+  limactl shell "$LIMA_INSTANCE" bash -c "$PRUNE_DANGLING"
+fi
+
+echo "Done."
+'''
+
+["cluster:build-controller"]
+description = "Build and load controller image into k3s, restart controller pod"
+depends = ["image:controller"]
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+
+echo "Loading into k3s..."
+tar="/tmp/platform-controller.tar"
+docker save platform-controller:latest -o "$tar"
+
+if [ -n "${IS_SANDBOX:-}" ]; then
+  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+  sudo k3s ctr images import "$tar"
+else
+  LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
+  KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
+  limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
+  limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
+fi
+rm -f "$tar"
+
+echo "Restarting controller pod..."
+kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-controller
+kubectl --kubeconfig="$KUBECONFIG" rollout status deployment platform-controller --timeout=60s
 
 PRUNE_DANGLING='sudo k3s crictl images 2>/dev/null | sed -nE "s/^<none>[[:space:]]+<none>[[:space:]]+([^[:space:]]+).*/\\1/p" | xargs -r sudo k3s crictl rmi >/dev/null 2>&1 || true'
 if [ -n "${IS_SANDBOX:-}" ]; then
@@ -554,7 +609,7 @@ if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
   sudo k3s ctr images import "$tar"
 else
-  LIMA_INSTANCE="platform-k3s"
+  LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
   KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
   limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
   limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
@@ -585,7 +640,7 @@ set -eo pipefail
 if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
 else
-  LIMA_INSTANCE="platform-k3s"
+  LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
   KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
 fi
 
@@ -660,7 +715,7 @@ if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
   sudo k3s ctr images import "$tar"
 else
-  LIMA_INSTANCE="platform-k3s"
+  LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
   KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
   limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
   limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
@@ -804,7 +859,7 @@ if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
   RUN_IN_VM="sudo"
 else
-  LIMA_INSTANCE="platform-k3s"
+  LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
   KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
   RUN_IN_VM="limactl shell $LIMA_INSTANCE sudo"
 fi

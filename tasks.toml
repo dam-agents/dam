@@ -34,8 +34,6 @@ else
   KUBECONFIG="$HOME/.lima/$VM_NAME/copied-from-guest/kubeconfig.yaml"
 fi
 
-export E2E_MOCK_ONLY=1
-
 cleanup() {
   local exit_code=$?
   if [ $exit_code -ne 0 ] && [ -f "$KUBECONFIG" ]; then
@@ -88,6 +86,33 @@ if [ -z "${IS_SANDBOX:-}" ]; then
   mise run cluster:delete -- --vm-name="$VM_NAME" --force
 fi
 
+# Provision a fresh e2e cluster. Install args + the apiserver race-fix live in
+# e2e:install, shared with e2e:loop so the two never drift.
+E2E_VM_NAME="$VM_NAME" mise run e2e:install
+
+PLATFORM_BASE_URL="http://localhost:5555" \
+PLATFORM_KEYCLOAK_URL="http://keycloak.localhost:5555" \
+  mise run "$PLAYWRIGHT_TASK"
+'''
+
+["e2e:install"]
+hide = true
+description = "Provision/upgrade the e2e test cluster (mock-only agents, e2e control API on). Shared by `e2e` and `e2e:loop`. VM via E2E_VM_NAME (default platform-k3s-test)."
+dir = "{{config_root}}"
+raw = true
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+
+VM_NAME="${E2E_VM_NAME:-platform-k3s-test}"
+if [ -n "${IS_SANDBOX:-}" ]; then
+  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+else
+  KUBECONFIG="$HOME/.lima/$VM_NAME/copied-from-guest/kubeconfig.yaml"
+fi
+
+export E2E_MOCK_ONLY=1
+
 INSTALL_ARGS=(
   --lima-template=deploy/lima-k3s-test.yaml
   --helm-values=deploy/helm/platform/values-e2e.yaml
@@ -116,7 +141,145 @@ mise run cluster:install -- "${INSTALL_ARGS[@]}"
 # breaks Playwright's first asset fetch — leave them alone.
 kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-apiserver
 kubectl --kubeconfig="$KUBECONFIG" rollout status deployment platform-apiserver --timeout=5m
+'''
 
+["e2e:reset"]
+description = "Wipe e2e cluster data without reinstalling: drop+recreate the platform DB, delete agents (ConfigMaps/StatefulSets/pods/PVCs), clear stored Playwright auth. Leaves the cluster running. VM via E2E_VM_NAME (default platform-k3s-test)."
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+
+VM_NAME="${E2E_VM_NAME:-platform-k3s-test}"
+if [ -n "${IS_SANDBOX:-}" ]; then
+  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+else
+  KUBECONFIG="$HOME/.lima/$VM_NAME/copied-from-guest/kubeconfig.yaml"
+fi
+KCTL=(kubectl --kubeconfig="$KUBECONFIG")
+
+# 1. Delete agents. Drop the durable ConfigMaps first so the controller stops
+# reconciling them, then sweep the StatefulSets/pods it owns plus the PVCs k8s
+# retains (StatefulSet volumeClaimTemplates are never GC'd with their owner).
+# Templates (agent-template) are helm-managed — leave them.
+echo "Deleting agents in platform-agents..."
+"${KCTL[@]}" -n platform-agents delete configmap \
+  -l 'agent-platform.ai/type in (agent,agent-fork,agent-schedule,channel-secret)' \
+  --ignore-not-found
+"${KCTL[@]}" -n platform-agents delete statefulset --all --ignore-not-found --wait=true --timeout=60s
+"${KCTL[@]}" -n platform-agents delete pod --all --ignore-not-found --force --grace-period=0 2>/dev/null || true
+"${KCTL[@]}" -n platform-agents delete pvc --all --ignore-not-found --wait=true --timeout=60s
+
+# 2. Drop + recreate the platform DB. apiserver must be disconnected first
+# (DROP DATABASE refuses while a session is attached); scale it to 0, drop with
+# FORCE to evict any stragglers, recreate empty, then scale back. The new pod
+# reruns the Drizzle migrations from zero on boot. Postgres stays up the whole
+# time, so the fresh-cluster apiserver-vs-init race never applies here.
+echo "Dropping + recreating the platform database..."
+"${KCTL[@]}" scale deployment platform-apiserver --replicas=0
+"${KCTL[@]}" wait --for=delete pod -l app.kubernetes.io/component=apiserver --timeout=60s 2>/dev/null || true
+"${KCTL[@]}" exec platform-postgres-0 -- bash -c \
+  'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 \
+     -c "DROP DATABASE IF EXISTS platform WITH (FORCE);" \
+     -c "CREATE DATABASE platform;"'
+"${KCTL[@]}" scale deployment platform-apiserver --replicas=1
+"${KCTL[@]}" wait --for=condition=Available deployment/platform-apiserver --timeout=120s
+
+# 3. Clear stored Playwright auth so 01-auth re-runs the login + terms flow
+# (terms acceptance lived in the platform DB we just dropped; a fresh browser
+# context with no cookie makes Keycloak prompt for credentials again).
+echo "Clearing stored Playwright auth..."
+rm -f packages/e2e/playwright/.auth/user.json
+
+echo "e2e data reset complete."
+'''
+
+["e2e:loop"]
+description = "Fast e2e rerun against the warm test cluster (no VM recreate): optionally rebuild components, wipe data, run specs. Options: --headed --rebuild=apiserver,ui,controller,keycloak,mock-agent"
+dir = "{{config_root}}"
+raw = true
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+
+VM_NAME="platform-k3s-test"
+export E2E_VM_NAME="$VM_NAME"
+if [ -n "${IS_SANDBOX:-}" ]; then
+  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+else
+  KUBECONFIG="$HOME/.lima/$VM_NAME/copied-from-guest/kubeconfig.yaml"
+fi
+
+PLAYWRIGHT_TASK="e2e-playwright:run"
+REBUILD=""
+REBUILD_SET=false
+for arg in "$@"; do
+  case "$arg" in
+    --headed) PLAYWRIGHT_TASK="e2e-playwright:run-headed" ;;
+    --rebuild=*) REBUILD="${arg#--rebuild=}"; REBUILD_SET=true ;;
+  esac
+done
+
+# 1. Ensure a warm cluster exists. Bootstrap once if it's missing; never try to
+# heal a broken one — fail loud and let the operator decide.
+NEEDS_BOOTSTRAP=false
+if [ -z "${IS_SANDBOX:-}" ] && ! limactl list -q 2>/dev/null | grep -qx "$VM_NAME"; then
+  NEEDS_BOOTSTRAP=true
+elif ! kubectl --kubeconfig="$KUBECONFIG" get deployment platform-apiserver >/dev/null 2>&1; then
+  NEEDS_BOOTSTRAP=true
+fi
+if [ "$NEEDS_BOOTSTRAP" = true ]; then
+  echo "No warm e2e cluster found — bootstrapping once (slow, ~minutes)..."
+  mise run e2e:install
+fi
+
+# 2. Optional rebuild. Interactive prompt unless --rebuild was passed. Default
+# none: just reset data and rerun. The build tasks honor LIMA_INSTANCE so they
+# target the test VM rather than the dev cluster.
+if [ "$REBUILD_SET" = false ] && [ -t 0 ]; then
+  read -r -p "Rebuild which? [apiserver,ui,controller,keycloak,mock-agent] (default: none): " REBUILD || true
+fi
+if [ -n "$REBUILD" ]; then
+  export LIMA_INSTANCE="$VM_NAME"
+  IFS=',' read -ra COMPONENTS <<< "$REBUILD"
+  for c in "${COMPONENTS[@]}"; do
+    c="${c//[[:space:]]/}"
+    case "$c" in
+      "") ;;
+      apiserver)              mise run cluster:build-apiserver ;;
+      ui)                     mise run cluster:build-ui ;;
+      controller)             mise run cluster:build-controller ;;
+      keycloak)               mise run cluster:build-keycloak ;;
+      mock-agent|mock|agent)  mise run cluster:build-agent ;;
+      *) echo "WARN: unknown component '$c' — skipping" >&2 ;;
+    esac
+  done
+fi
+
+# 3. Wipe data to the specs' expected preconditions.
+mise run e2e:reset
+
+# 3b. Readiness gate. The warm cluster must actually serve on :5555 (Traefik /
+# ingress up) or the specs fail with an opaque ERR_CONNECTION_REFUSED. Poll
+# briefly — covers a just-bootstrapped Traefik still coming up or a UI rebuild
+# blip — then fail loud rather than auto-heal a wedged cluster.
+echo "Waiting for the cluster to serve on http://localhost:5555 ..."
+READY=false
+for _ in $(seq 1 30); do
+  if curl -fsS -o /dev/null --max-time 3 http://localhost:5555/ 2>/dev/null; then
+    READY=true; break
+  fi
+  sleep 3
+done
+if [ "$READY" != true ]; then
+  echo "ERROR: warm e2e cluster is up but not routing on http://localhost:5555." >&2
+  echo "Traefik/ingress likely failed to install. e2e:loop does not auto-heal —" >&2
+  echo "reprovision with 'mise run e2e', or check 'mise run cluster:fix-certs'." >&2
+  exit 1
+fi
+
+# 4. Run the specs against the warm cluster. No teardown — the cluster stays up
+# for the next loop.
 PLATFORM_BASE_URL="http://localhost:5555" \
 PLATFORM_KEYCLOAK_URL="http://keycloak.localhost:5555" \
   mise run "$PLAYWRIGHT_TASK"
