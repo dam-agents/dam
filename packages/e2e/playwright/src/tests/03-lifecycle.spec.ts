@@ -82,7 +82,7 @@ test("agent is not openable until ready, then chats and writes files", async ({
     );
 
     // File browser is empty for the freshly-created file before the prompt.
-    await page.getByRole("button", { name: "files" }).click();
+    await page.getByRole("button", { name: "files", exact: true }).click();
     await page.getByText("work", { exact: true }).click();
     await expect(page.getByText(createdFile, { exact: true })).toHaveCount(0);
 

@@ -114,8 +114,8 @@ mise run cluster:install -- "${INSTALL_ARGS[@]}"
 # generation migrate cleanly. UI/controller don't share this race, and
 # restarting the UI introduces a transient Traefik-endpoint 502 window that
 # breaks Playwright's first asset fetch — leave them alone.
-mise run cluster:kubectl -- rollout restart deployment platform-apiserver
-mise run cluster:kubectl -- rollout status deployment platform-apiserver --timeout=5m
+kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-apiserver
+kubectl --kubeconfig="$KUBECONFIG" rollout status deployment platform-apiserver --timeout=5m
 
 PLATFORM_BASE_URL="http://localhost:5555" \
 PLATFORM_KEYCLOAK_URL="http://keycloak.localhost:5555" \
