@@ -27,18 +27,20 @@ export function createOAuthRoutes(deps: OAuthCallbackDeps) {
 
     if (providerError) {
       return c.redirect(
-        `${deps.uiBaseUrl}?oauth=error&message=${encodeURIComponent(providerError)}`,
+        `${deps.uiBaseUrl}/connections?oauth=error&message=${encodeURIComponent(providerError)}`,
       );
     }
     if (!code || !state) {
       return c.redirect(
-        `${deps.uiBaseUrl}?oauth=error&message=missing+parameters`,
+        `${deps.uiBaseUrl}/connections?oauth=error&message=missing+parameters`,
       );
     }
 
     const peeked = deps.engine.peek<OAuthFlowPendingCtx>(state);
     if (!peeked) {
-      return c.redirect(`${deps.uiBaseUrl}?oauth=error&message=invalid+state`);
+      return c.redirect(
+        `${deps.uiBaseUrl}/connections?oauth=error&message=invalid+state`,
+      );
     }
 
     const flow = createOAuthFlowService({
@@ -55,11 +57,11 @@ export function createOAuthRoutes(deps: OAuthCallbackDeps) {
       const params = new URLSearchParams();
       params.set("oauth", "success");
       params.set("connection", result.connectionId);
-      return c.redirect(`${deps.uiBaseUrl}?${params.toString()}`);
+      return c.redirect(`${deps.uiBaseUrl}/connections?${params.toString()}`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
       return c.redirect(
-        `${deps.uiBaseUrl}?oauth=error&message=${encodeURIComponent(msg)}`,
+        `${deps.uiBaseUrl}/connections?oauth=error&message=${encodeURIComponent(msg)}`,
       );
     }
   });
