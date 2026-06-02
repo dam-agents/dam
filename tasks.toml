@@ -188,8 +188,21 @@ echo "Git hooks installed."
 
 # -- Common --
 
+["common:scan"]
+depends = ["common:scan:*"]
+
+["common:scan:npm-audit"]
+description = "Check npm dependencies for known vulnerabilities"
+dir = "{{config_root}}"
+run = "pnpm audit --prod"
+
 ["common:check"]
 depends = ["common:check:*"]
+
+["common:check:zizmor"]
+description = "Static security analysis for GitHub Actions workflows"
+dir = "{{config_root}}"
+run = "zizmor --min-confidence medium .github/workflows/"
 
 ["common:check:lockfile-age"]
 description = "Verify no lockfile dependency is newer than 7 days"

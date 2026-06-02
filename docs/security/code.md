@@ -28,3 +28,9 @@ Findings surface in **GitHub → Security → Code scanning**. PRs that introduc
 - **gofmt** — enforces canonical formatting.
 - **go vet** — catches suspicious constructs the compiler doesn't flag.
 - **staticcheck** — extended static analysis (unused code, deprecated APIs, correctness bugs).
+
+## Workflow hardening
+
+`mise run check` also runs:
+
+- **zizmor** — static security analysis for GitHub Actions workflows (credential persistence, excessive permissions, template injection, cache poisoning).

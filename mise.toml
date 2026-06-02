@@ -15,6 +15,9 @@ helm = "latest"
 kubeconform = "latest"
 "lima" = "2"
 
+# Security scanning
+"zizmor" = "latest"
+
 # misc
 fd = "latest"
 yq = "latest"
