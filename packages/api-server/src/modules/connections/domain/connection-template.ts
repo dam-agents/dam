@@ -133,10 +133,13 @@ function inputsFor(
   });
   const required = (
     name: string,
-    opts: { secret?: boolean } = {},
+    opts: { secret?: boolean; presetValue?: string } = {},
   ): ConnectionTemplateInput => ({
     name,
     state: "required",
+    ...(opts.presetValue !== undefined && !opts.secret
+      ? { presetValue: opts.presetValue }
+      : {}),
     ...(opts.secret ? { secret: true } : {}),
   });
   const optional = (
@@ -184,17 +187,25 @@ function inputsFor(
     }
     case "header": {
       const out: ConnectionTemplateInput[] = [];
-      out.push(t.host ? overridable("host", t.host) : required("host"));
-      out.push(
-        t.headerName
-          ? overridable("headerName", t.headerName)
-          : required("headerName"),
-      );
-      out.push(
-        t.valueFormat
-          ? overridable("valueFormat", t.valueFormat)
-          : required("valueFormat"),
-      );
+      if (t.isCustom) {
+        // Custom credential: visible pre-filled inputs, not the operator
+        // "Customize defaults" accordion.
+        out.push(required("host", { presetValue: t.host }));
+        out.push(required("headerName", { presetValue: t.headerName }));
+        out.push(required("valueFormat", { presetValue: t.valueFormat }));
+      } else {
+        out.push(t.host ? overridable("host", t.host) : required("host"));
+        out.push(
+          t.headerName
+            ? overridable("headerName", t.headerName)
+            : required("headerName"),
+        );
+        out.push(
+          t.valueFormat
+            ? overridable("valueFormat", t.valueFormat)
+            : required("valueFormat"),
+        );
+      }
       out.push(required("value", { secret: true }));
       return out;
     }

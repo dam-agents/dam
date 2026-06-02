@@ -415,6 +415,8 @@ const CUSTOM_HEADER: HeaderConnectionTemplate = {
     "Inject a header (API key, PAT, bearer) on outbound calls to a host.",
   iconSlug: "key",
   authKind: "header",
+  headerName: "Authorization",
+  valueFormat: "Bearer {value}",
   contributions: [],
 };
 

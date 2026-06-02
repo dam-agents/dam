@@ -32,7 +32,14 @@ export function TemplateCreateForm({
   const create = useCreateConnection();
 
   const [name, setName] = useState(() => slugifyTemplateName(template.name));
-  const [fields, setFields] = useState<Record<string, string>>({});
+  const [fields, setFields] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    for (const i of template.inputs) {
+      if (i.presetValue !== undefined && !i.secret)
+        init[i.name] = i.presetValue;
+    }
+    return init;
+  });
   const [overrides, setOverrides] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
   const [authorizing, setAuthorizing] = useState(false);
