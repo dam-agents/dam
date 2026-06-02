@@ -411,9 +411,11 @@ function googleService(
     scopes: [...GOOGLE_BASELINE_SCOPES, ...def.scopes],
     extraAuthParams: { access_type: "offline", prompt: "consent" },
     contributions: def.hosts.map((h) => ({
-      kind: "egress-allow",
+      kind: "egress-inject",
       host: h.host,
       ...(h.pathPattern ? { pathPattern: h.pathPattern } : {}),
+      headerName: "Authorization",
+      valueFormat: "Bearer {value}",
     })),
   };
 }
