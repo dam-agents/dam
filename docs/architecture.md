@@ -65,7 +65,10 @@ Each page describes how the accepted ADRs are realized in the current system. AD
 - [connections](architecture/connections.md) — unified Connection / Contribution model, runtime channel between api-server and agent-runtime, transactional outbox + worker delivery, agent-side driver model.
 - [usage-tracking](architecture/usage-tracking.md) — append-only activity log in Postgres, SQL views as the read interface, HMAC-pseudonymized identifiers, inspector-role gating.
 - [logging](architecture/logging.md) — Pino structured logging to stdout, and the real-identity security audit trail built on it (the forensic counterpart to pseudonymized usage-tracking).
-- [security-scanning](architecture/security-scanning.md) — Quay image scanning with auto-filed issues, CodeQL SAST, Dependabot, and the remediation flow.
+- [supply-chain](security/supply-chain.md) — how each external dependency type is scanned for CVEs and defended against supply-chain attacks.
+- [code](security/code.md) — CodeQL SAST and pre-commit hardening.
+- [secrets](security/secrets.md) — GitHub secret storage, scanning, and push protection.
+- [gaps](security/gaps.md) — known security gaps tracked as future work.
 
 ## Strategy
 

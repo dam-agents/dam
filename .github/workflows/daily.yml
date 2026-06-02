@@ -86,7 +86,7 @@ jobs:
               "${description}" \
               "" \
               "---" \
-              "See [docs/architecture/security-scanning.md](../blob/main/docs/architecture/security-scanning.md) for the remediation flow.")
+              "See [docs/security/supply-chain.md](../blob/main/docs/security/supply-chain.md) for the remediation flow.")
 
             gh issue create \
               --repo "${GITHUB_REPOSITORY}" \
@@ -195,7 +195,7 @@ jobs:
               "[View advisory](${link})" \
               "" \
               "---" \
-              "See [docs/architecture/security-scanning.md](../blob/main/docs/architecture/security-scanning.md) for the remediation flow.")
+              "See [docs/security/supply-chain.md](../blob/main/docs/security/supply-chain.md) for the remediation flow.")
 
             gh issue create \
               --repo "${GITHUB_REPOSITORY}" \
