@@ -66,8 +66,6 @@ jobs:
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           sudo docker image prune --all --force
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-
-      # Build images with GHA layer cache (mount caches in Dockerfiles help within-run)
       - name: Build controller image
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
@@ -124,10 +122,7 @@ jobs:
 
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
       - run: mise run setup
-      # Keycloak image bakes the Keycloakify theme JAR — build it via mise
-      # so the keycloak-theme:build:jar dep runs first, then docker build
-      # lands platform-keycloak:latest in the daemon for cluster:install.
-      - run: mise run image:keycloak
+      - run: mise run keycloak-theme:image
       - run: mise run e2e
         env:
           SKIP_IMAGE_BUILD: "1"
