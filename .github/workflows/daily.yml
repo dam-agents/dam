@@ -314,6 +314,9 @@ jobs:
           QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
           QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
           TASK: ${{ matrix.task }}
+          # Scan the image built from this commit (cd.yml tags every main push
+          # with the full SHA), not :latest — which only moves on release tags.
+          SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
 
@@ -321,8 +324,8 @@ jobs:
             echo "${QUAY_PASSWORD}" | docker login quay.io -u "${QUAY_USERNAME}" --password-stdin
           fi
 
-          report=$(mise run "$TASK" --json --tag=latest) || {
-            echo "::notice::Trivy scan skipped for ${TASK} (image may not be published yet); see log"
+          report=$(mise run "$TASK" --json --tag="$SHA") || {
+            echo "::notice::Trivy scan skipped for ${TASK} (no image for ${SHA} yet — CD may still be building); see log"
             exit 0
           }
 
@@ -371,7 +374,7 @@ jobs:
 
             issue_body=$(printf '%s\n' \
               "**Source:** Trivy (\`${TASK}\`)" \
-              "**Image:** \`quay.io/dam-agents/${component}:latest\`" \
+              "**Image:** \`${image}\`" \
               "**CVE:** [\`${id}\`](${url}) (${severity})" \
               "**Package:** \`${pkg}\` ${installed}" \
               "**Fixed in:** \`${fixed:-—}\`" \
