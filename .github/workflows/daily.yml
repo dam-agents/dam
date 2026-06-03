@@ -298,6 +298,7 @@ jobs:
           QUAY_OAUTH_TOKEN: ${{ secrets.QUAY_OAUTH_TOKEN }}
         run: |
           set -euo pipefail
+          set -x  # TEMP(debug): trace which branch each leg takes; remove once understood
 
           if [ -z "${QUAY_OAUTH_TOKEN:-}" ]; then
             echo "::warning::QUAY_OAUTH_TOKEN not set; skipping Quay scan for ${QUAY_REPO}"
