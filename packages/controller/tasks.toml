@@ -47,10 +47,19 @@ run = "go test ./..."
 ["controller:scan"]
 depends = ["controller:scan:*"]
 
-["controller:scan:vuln"]
+["controller:scan:govulncheck"]
+description = "Check the Go call graph against the vuln DB"
 dir = "{{config_root}}/packages/controller"
-run = "govulncheck ./..."
 sources = ["**/*.go", "go.mod", "go.sum"]
+usage = 'flag "--json" help="Emit govulncheck streaming JSON instead of text"'
+run = '''
+#!/usr/bin/env bash
+set -uo pipefail
+if [[ "${usage_json:-false}" == "true" ]]; then
+  exec govulncheck -format json ./...
+fi
+exec govulncheck ./...
+'''
 
 ["controller:build"]
 dir = "{{config_root}}/packages/controller"

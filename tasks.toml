@@ -355,9 +355,16 @@ echo "Git hooks installed."
 depends = ["common:scan:*"]
 
 ["common:scan:npm-audit"]
-description = "Check npm dependencies for known vulnerabilities"
 dir = "{{config_root}}"
-run = "pnpm audit --prod"
+usage = 'flag "--json" help="Emit pnpm audit JSON instead of text"'
+run = '''
+#!/usr/bin/env bash
+set -uo pipefail
+if [[ "${usage_json:-false}" == "true" ]]; then
+  exec pnpm audit --prod --json
+fi
+exec pnpm audit --prod
+'''
 
 ["common:check"]
 depends = ["common:check:*"]

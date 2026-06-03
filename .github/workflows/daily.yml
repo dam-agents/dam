@@ -9,17 +9,178 @@ permissions:
   contents: read
 
 jobs:
-  scan:
-    name: mise scan
+  go-vuln:
+    name: mise controller:scan:govulncheck
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
-      - run: mise run setup
-      - run: mise run scan
+      - run: mise run controller:setup
+
+      - name: Scan and file issues
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # JSON mode always exits 0; findings come from the stream, not the code.
+          results=$(mise run controller:scan:govulncheck --json) || true
+
+          # Keep only symbol-level (actually called) findings, joined with their
+          # OSV definition, one issue per advisory id.
+          mapfile -t findings < <(printf '%s' "$results" | jq -c -s '
+            (reduce .[] as $m ({}; if $m.osv then . + {($m.osv.id): $m.osv} else . end)) as $defs
+            | [ .[]
+                | select(.finding != null and .finding.trace[0].function != null)
+                | .finding as $f
+                | { id: $f.osv,
+                    fixed: ($f.fixed_version // ""),
+                    package: ($f.trace[0].package // $f.trace[0].module),
+                    summary: ($defs[$f.osv].summary // ""),
+                    details: ($defs[$f.osv].details // ""),
+                    aliases: (($defs[$f.osv].aliases // []) | join(", ")) }]
+            | unique_by(.id)
+            | .[]')
+
+          if [ "${#findings[@]}" -eq 0 ]; then
+            echo "::notice::govulncheck: no called vulnerabilities detected"
+            exit 0
+          fi
+
+          for finding in "${findings[@]}"; do
+            id=$(echo "$finding" | jq -r '.id')
+            fixed=$(echo "$finding" | jq -r '.fixed')
+            package=$(echo "$finding" | jq -r '.package')
+            summary=$(echo "$finding" | jq -r '.summary')
+            details=$(echo "$finding" | jq -r '.details')
+            aliases=$(echo "$finding" | jq -r '.aliases')
+            url="https://pkg.go.dev/vuln/${id}"
+
+            title="[${id}] vulnerability in ${package} (govulncheck)"
+
+            existing=$(gh issue list \
+              --repo "${GITHUB_REPOSITORY}" \
+              --state open \
+              --search "in:title \"${id}\" \"${package}\"" \
+              --json number \
+              --jq '.[0].number // empty')
+
+            if [ -n "$existing" ]; then
+              gh issue comment "$existing" \
+                --repo "${GITHUB_REPOSITORY}" \
+                --body "Still present. Package: \`${package}\`. Fixed in: \`${fixed:-—}\`."
+              continue
+            fi
+
+            issue_body=$(printf '%s\n' \
+              "**Source:** govulncheck (Go call-graph analysis)" \
+              "**ID:** [\`${id}\`](${url})${aliases:+ (aliases: ${aliases})}" \
+              "**Package:** \`${package}\`" \
+              "**Fixed in:** \`${fixed:-—}\`" \
+              "" \
+              "${summary}" \
+              "" \
+              "${details}" \
+              "" \
+              "---" \
+              "See [docs/security/supply-chain.md](../blob/main/docs/security/supply-chain.md) for the remediation flow.")
+
+            gh issue create \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "$title" \
+              --body "$issue_body" \
+              --label "security,vulnerability"
+          done
+
+  npm-audit:
+    name: mise common:scan:npm-audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+      - run: mise run common:setup:pnpm
+      - name: Scan and file issues
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          results=$(mise run common:scan:npm-audit --json) || true
+          mapfile -t findings < <(printf '%s' "$results" | jq -c '
+            [ (.advisories // {}) | to_entries[] | .value
+              | { id: (((.cves // []) | first) // .github_advisory_id // (.id | tostring)),
+                  module: .module_name,
+                  severity: (.severity // "unknown"),
+                  title: (.title // ""),
+                  url: (.url // ""),
+                  patched: (.patched_versions // ""),
+                  recommendation: (.recommendation // ""),
+                  overview: (.overview // "") }]
+            | unique_by(.id + "|" + .module)
+            | .[]')
+
+          if [ "${#findings[@]}" -eq 0 ]; then
+            echo "::notice::pnpm audit: no vulnerabilities detected"
+            exit 0
+          fi
+
+          for finding in "${findings[@]}"; do
+            id=$(echo "$finding" | jq -r '.id')
+            module=$(echo "$finding" | jq -r '.module')
+            severity=$(echo "$finding" | jq -r '.severity')
+            title_text=$(echo "$finding" | jq -r '.title')
+            url=$(echo "$finding" | jq -r '.url')
+            patched=$(echo "$finding" | jq -r '.patched')
+            recommendation=$(echo "$finding" | jq -r '.recommendation')
+            overview=$(echo "$finding" | jq -r '.overview')
+
+            title="[${id}] ${severity} vulnerability in ${module} (pnpm audit)"
+
+            existing=$(gh issue list \
+              --repo "${GITHUB_REPOSITORY}" \
+              --state open \
+              --search "in:title \"${id}\" \"${module}\"" \
+              --json number \
+              --jq '.[0].number // empty')
+
+            if [ -n "$existing" ]; then
+              gh issue comment "$existing" \
+                --repo "${GITHUB_REPOSITORY}" \
+                --body "Still present. Package: \`${module}\`. Patched: \`${patched:-—}\`."
+              continue
+            fi
+
+            issue_body=$(printf '%s\n' \
+              "**Source:** pnpm audit (npm advisory database)" \
+              "**Advisory:** [\`${id}\`](${url}) (${severity})" \
+              "**Package:** \`${module}\`" \
+              "**Patched versions:** \`${patched:-—}\`" \
+              "**Recommendation:** ${recommendation:-—}" \
+              "" \
+              "**${title_text}**" \
+              "" \
+              "${overview}" \
+              "" \
+              "---" \
+              "See [docs/security/supply-chain.md](../blob/main/docs/security/supply-chain.md) for the remediation flow.")
+
+            gh issue create \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "$title" \
+              --body "$issue_body" \
+              --label "security,vulnerability"
+          done
 
   mend-sca:
     runs-on: ubuntu-latest
@@ -134,10 +295,18 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           QUAY_REPO: dam-agents/${{ matrix.repo }}
           TAG: latest
+          QUAY_OAUTH_TOKEN: ${{ secrets.QUAY_OAUTH_TOKEN }}
         run: |
           set -euo pipefail
 
-          digest=$(curl -fsSL \
+          if [ -z "${QUAY_OAUTH_TOKEN:-}" ]; then
+            echo "::warning::QUAY_OAUTH_TOKEN not set; skipping Quay scan for ${QUAY_REPO}"
+            exit 0
+          fi
+
+          auth=(-H "Authorization: Bearer ${QUAY_OAUTH_TOKEN}")
+
+          digest=$(curl -fsSL "${auth[@]}" \
             "https://quay.io/api/v1/repository/${QUAY_REPO}/tag/?onlyActiveTags=true&filter_tag_name=eq:${TAG}" \
             | jq -r '.tags[0].manifest_digest // empty')
 
@@ -146,7 +315,7 @@ jobs:
             exit 0
           fi
 
-          security=$(curl -fsSL \
+          security=$(curl -fsSL "${auth[@]}" \
             "https://quay.io/api/v1/repository/${QUAY_REPO}/manifest/${digest}/security?vulnerabilities=true")
 
           status=$(echo "$security" | jq -r '.status')
