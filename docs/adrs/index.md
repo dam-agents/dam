@@ -11,7 +11,7 @@ This directory contains ADRs for the Platform project.
 | [003](003-k8s-from-the-start.md)              | Kubernetes from the start — k3s for local dev, K8s for production | @jezekra1 |
 | [004](004-acp-over-a2a.md)                    | ACP over A2A for the experiment | @tomkis |
 | [005](005-credential-gateway.md)              | Gateway pattern for credentials — agent never sees tokens | @pilartomas |
-| [006](006-configmaps-over-crds.md)            | ConfigMaps over CRDs — namespace-scoped resource model | @jezekra1 |
+| [006](006-configmaps-over-crds.md)            | ConfigMaps over CRDs — namespace-scoped resource model — superseded by ADR-058 | @jezekra1 |
 | [007](007-acp-relay.md)                       | ACP traffic always proxied through the API Server | @tomkis |
 | [008](008-trigger-files.md)                   | Controller-owned cron with exec-based trigger delivery | @jezekra1 |
 | [009](009-go-and-typescript.md)               | Go for Controller, TypeScript for API Server | @jezekra1 |
@@ -37,7 +37,7 @@ This directory contains ADRs for the Platform project.
 | [029](029-per-instance-channels.md)           | Per-instance messenger channels — secrets in k8s Secrets, per-thread authorization | @pilartomas |
 | [030](030-skills-marketplace.md)              | Skills — connectable sources and install | @PetrBulanek |
 | [031](031-schedule-rrule-quiet-hours.md)      | Schedules use RRULE for includes and structured quiet hours for exclusions | @jezekra1 |
-| [032](032-pod-reachability-primitive.md)      | Centralized pod-reachability primitive; observed pod Ready is the truth | @janjeliga |
+| [032](032-pod-reachability-primitive.md)      | Centralized pod-reachability primitive; observed pod Ready is the truth — superseded by ADR-059 | @janjeliga |
 | [033](033-envoy-credential-gateway.md)        | Envoy-based credential gateway with ext_authz HITL — drop OneCLI | @pilartomas |
 | [035](035-unified-hitl-ux.md)                 | Unified HITL UX — verdict authority outside the agent pod | @jezekra1 |
 | [036](036-redis-platform-primitive.md)        | Redis as a platform primitive — pub/sub, queues, cache | @jezekra1 |
@@ -62,6 +62,8 @@ This directory contains ADRs for the Platform project.
 | [055](055-agent-owned-session-metadata.md)    | Agent-owned session metadata via ACP `_meta`; no server-side session store | @jezekra1 |
 | [056](056-browser-driven-e2e.md)              | Browser-driven E2E tracer with values-gated test affordances | @tomkis |
 | [057](057-structured-logging.md)              | Structured logging for the api-server — Pino, JSON to stdout, security audit trail as first consumer | @pilartomas |
+| [058](058-crds-over-configmaps.md)            | CRDs over ConfigMaps — reconciled resources become custom resources | @jezekra1 |
+| [059](059-agent-readiness-status.md)          | Agent readiness is controller-computed status — agent ∧ gateway | @jezekra1 |
 
 ## Drafts
 
