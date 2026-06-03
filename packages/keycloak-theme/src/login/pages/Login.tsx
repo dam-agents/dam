@@ -8,7 +8,7 @@ import { Label } from "../../components/label.js";
 import { SocialProviderButton } from "../components/social-provider-button.js";
 import type { I18n } from "../i18n.js";
 import type { KcContext } from "../KcContext.js";
-import { APP_NAME } from "../Template.js";
+import { BRAND_FALLBACK } from "../Template.js";
 
 export default function Login(
   props: PageProps<Extract<KcContext, { pageId: "login.ftl" }>, I18n>,
@@ -34,7 +34,7 @@ export default function Login(
       doUseDefaultCss={doUseDefaultCss}
       classes={classes}
       displayMessage={!usernameError}
-      headerNode={`Sign in to ${realm.displayName || APP_NAME}`}
+      headerNode={`Sign in to ${realm.displayName || BRAND_FALLBACK}`}
     >
       {realm.password && (
         <form
