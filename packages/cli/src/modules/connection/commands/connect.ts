@@ -49,7 +49,7 @@ export function buildConnectCommand(deps: {
     .description("Create a connection from a provider template or MCP server")
     .argument(
       "<provider-or-url>",
-      "a provider template id (`dam template list` / the web UI) or an MCP server URL (https://…)",
+      "a provider template id (see `dam connection templates`) or an MCP server URL (https://…)",
     )
     .option(
       "--name <name>",
@@ -216,9 +216,10 @@ async function resolveSlugTemplate(args: {
   const { templates, appId, opts, json } = args;
   const template = templates.find((t) => t.id === appId);
   if (!template) {
-    const ids = templates.map((t) => t.id).sort((a, b) => a.localeCompare(b));
     process.stderr.write(`error: unknown provider id '${appId}'\n`);
-    process.stderr.write(`available: ${ids.join(", ")}\n`);
+    process.stderr.write(
+      "hint: run `dam connection templates` to see the available providers\n",
+    );
     process.exit(EXIT_INVALID_INPUT);
   }
   if (template.category === "mcp") {

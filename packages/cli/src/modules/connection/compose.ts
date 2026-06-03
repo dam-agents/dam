@@ -11,6 +11,7 @@ import { buildDisconnectCommand } from "./commands/disconnect.js";
 import { buildGrantCommand } from "./commands/grant.js";
 import { buildListCommand } from "./commands/list.js";
 import { buildRevokeCommand } from "./commands/revoke.js";
+import { buildTemplatesCommand } from "./commands/templates.js";
 import {
   createConnectionService,
   type ConnectionService,
@@ -51,6 +52,13 @@ export function composeConnectionModule(
     "Manage OAuth connections and agent connection grants",
   );
   parent.addCommand(buildListCommand(agentScoped));
+  parent.addCommand(
+    buildTemplatesCommand({
+      compatService: opts.compatService,
+      configService: opts.configService,
+      createConnectionService: createService,
+    }),
+  );
   parent.addCommand(
     buildConnectCommand({
       compatService: opts.compatService,

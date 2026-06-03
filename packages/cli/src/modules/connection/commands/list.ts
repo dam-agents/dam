@@ -93,7 +93,7 @@ export function buildListCommand(deps: {
           }
           if (result.value.length === 0) {
             process.stderr.write(
-              "No connections. Create one with `dam connection connect <app-id>` or in the web UI.\n",
+              "No connections. See `dam connection templates` for options, then `dam connection connect <id>`.\n",
             );
             process.exit(EXIT_SUCCESS);
           }
