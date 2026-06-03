@@ -68,7 +68,7 @@ jobs:
       - if: matrix.component == 'keycloak'
         uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
       - if: matrix.component == 'keycloak'
-        run: mise run setup && mise run keycloak-theme:build:jar
+        run: mise run setup && mise run keycloak-theme:build
       - id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:

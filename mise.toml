@@ -17,6 +17,7 @@ kubeconform = "latest"
 
 # Security scanning
 "zizmor" = "latest"
+"trivy" = "latest"
 
 # misc
 fd = "latest"
@@ -34,24 +35,25 @@ postinstall = ["{{ mise_bin }} setup"]
 [task_config]
 includes = [
     "./tasks.toml",
-    "packages/agent-runtime/tasks.toml",
+    "deploy/helm/tasks.toml",
+    "deploy/tasks.toml",
     "packages/agent-runtime-api/tasks.toml",
+    "packages/agent-runtime/tasks.toml",
     "packages/agents/bob/tasks.toml",
     "packages/agents/claude-code/tasks.toml",
     "packages/agents/codex/tasks.toml",
     "packages/agents/google-workspace/tasks.toml",
     "packages/agents/pi-agent/tasks.toml",
-    "packages/api-server/tasks.toml",
+    "packages/agents/tasks.toml",
     "packages/api-server-api/tasks.toml",
+    "packages/api-server/tasks.toml",
     "packages/cli/tasks.toml",
     "packages/controller/tasks.toml",
     "packages/db/tasks.toml",
+    "packages/e2e/agents/mock-api/tasks.toml",
+    "packages/e2e/agents/mock/tasks.toml",
+    "packages/e2e/playwright/tasks.toml",
     "packages/keycloak-theme/tasks.toml",
     "packages/platform-base/tasks.toml",
     "packages/ui/tasks.toml",
-    "packages/e2e/agents/mock/tasks.toml",
-    "packages/e2e/agents/mock-api/tasks.toml",
-    "packages/e2e/playwright/tasks.toml",
-    "deploy/helm/tasks.toml",
-    "deploy/tasks.toml",
 ]

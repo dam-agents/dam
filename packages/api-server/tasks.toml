@@ -49,3 +49,26 @@ node_modules/.bin/grpc_tools_node_protoc \
 description = "Run api-server unit tests"
 dir = "{{config_root}}"
 run = 'pnpm --filter api-server exec vitest run --config vitest.unit.config.ts'
+
+["api-server:image"]
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
+docker build -f packages/api-server/Dockerfile -t platform-api-server:latest .
+'''
+
+["api-server:scan:trivy"]
+dir = "{{config_root}}"
+usage = 'flag "--tag <tag>" help="Scan quay.io/dam-agents/api-server:<tag> instead of building locally"'
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+if [ -n "${usage_tag:-}" ]; then
+  image="quay.io/dam-agents/api-server:${usage_tag}"
+else
+  {{ mise_bin }} run api-server:image
+  image="platform-api-server:latest"
+fi
+exec trivy image --quiet --format json "$image"
+'''

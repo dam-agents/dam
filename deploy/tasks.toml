@@ -42,51 +42,6 @@ esac
 '''
 
 
-# -- Image builds (docker only, no k3s interaction) --
-
-["image:controller"]
-description = "Build controller Docker image"
-dir = "{{config_root}}"
-run = '''
-#!/usr/bin/env bash
-[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
-docker build -t platform-controller:latest packages/controller/
-'''
-
-["image:apiserver"]
-description = "Build api-server Docker image"
-dir = "{{config_root}}"
-run = '''
-#!/usr/bin/env bash
-[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
-docker build -f packages/api-server/Dockerfile -t platform-api-server:latest .
-'''
-
-["image:ui"]
-description = "Build UI Docker image"
-dir = "{{config_root}}"
-run = '''
-#!/usr/bin/env bash
-[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
-docker build -f packages/ui/Dockerfile -t platform-ui:latest .
-'''
-
-# Fans out to every agent's own agents:<name>:image task (in packages/agents/*).
-["image:agent"]
-description = "Build platform-base + all agent images"
-depends = ["agents:*:image"]
-
-["image:keycloak"]
-description = "Build keycloak Docker image (theme JAR baked in)"
-dir = "{{config_root}}"
-depends = ["keycloak-theme:build:jar"]
-run = '''
-#!/usr/bin/env bash
-set -eo pipefail
-[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
-docker build -f packages/keycloak-theme/Dockerfile -t platform-keycloak:latest .
-'''
-
 # -- Cluster lifecycle (k3s via lima) --
 #
 # When IS_SANDBOX is set, it is assumed we are already _inside_ a VM.
@@ -99,9 +54,7 @@ docker build -f packages/keycloak-theme/Dockerfile -t platform-keycloak:latest .
 
 ["cluster:install"]
 description = "Create k3s cluster, build images, install cert-manager + Platform chart. Options: --vm-name=NAME --lima-template=PATH --helm-values=PATH --set=key=val --no-restart"
-# Agent images aren't a depends — the body builds only the enabled ones, which
-# depends on --set/--helm-values that a depends can't see.
-depends = ["image:controller", "image:apiserver", "image:ui", "image:keycloak"]
+depends = ["controller:image", "api-server:image", "ui:image", "keycloak-theme:image"]
 dir = "{{config_root}}"
 raw = true
 run = '''
@@ -521,7 +474,7 @@ exec env SKIP_IMAGE_BUILD=1 SKIP_IMAGE_LOAD=1 mise run cluster:install "$@"
 
 ["cluster:build-apiserver"]
 description = "Build and load API server image into k3s, restart apiserver pod"
-depends = ["image:apiserver"]
+depends = ["api-server:image"]
 dir = "{{config_root}}"
 run = '''
 #!/usr/bin/env bash
@@ -558,7 +511,7 @@ echo "Done."
 
 ["cluster:build-controller"]
 description = "Build and load controller image into k3s, restart controller pod"
-depends = ["image:controller"]
+depends = ["controller:image"]
 dir = "{{config_root}}"
 run = '''
 #!/usr/bin/env bash
@@ -595,7 +548,7 @@ echo "Done."
 
 ["cluster:build-ui"]
 description = "Build and load UI image into k3s, restart UI pod"
-depends = ["image:ui"]
+depends = ["ui:image"]
 dir = "{{config_root}}"
 run = '''
 #!/usr/bin/env bash
@@ -701,7 +654,7 @@ echo "Done. Agent pods will restart with new image."
 
 ["cluster:build-keycloak"]
 description = "Build and load keycloak image into k3s, restart keycloak pod"
-depends = ["image:keycloak"]
+depends = ["keycloak-theme:image"]
 dir = "{{config_root}}"
 run = '''
 #!/usr/bin/env bash

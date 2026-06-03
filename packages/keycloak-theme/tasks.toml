@@ -16,7 +16,7 @@ dir = "{{config_root}}/packages/keycloak-theme"
 depends = ["keycloak-theme:gen"]
 run = "pnpm exec vite"
 
-["keycloak-theme:build:jar"]
+["keycloak-theme:build"]
 description = "Build the theme JAR (update-kc-gen + tsc + vite build + keycloakify build)"
 dir = "{{config_root}}/packages/keycloak-theme"
 depends = ["keycloak-theme:setup"]
@@ -75,3 +75,28 @@ run = "pnpm exec eslint --fix ."
 dir = "{{config_root}}/packages/keycloak-theme"
 depends = ["keycloak-theme:setup"]
 run = "pnpm exec prettier --write 'src/**/*.{ts,tsx,css}'"
+
+["keycloak-theme:image"]
+dir = "{{config_root}}"
+depends = ["keycloak-theme:build"]
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
+docker build -f packages/keycloak-theme/Dockerfile -t platform-keycloak:latest .
+'''
+
+["keycloak-theme:scan:trivy"]
+dir = "{{config_root}}"
+usage = 'flag "--tag <tag>" help="Scan quay.io/dam-agents/keycloak:<tag> instead of building locally"'
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+if [ -n "${usage_tag:-}" ]; then
+  image="quay.io/dam-agents/keycloak:${usage_tag}"
+else
+  {{ mise_bin }} run keycloak-theme:image
+  image="platform-keycloak:latest"
+fi
+exec trivy image --quiet --format json "$image"
+'''

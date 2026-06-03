@@ -73,7 +73,7 @@ See `packages/agents/pi-agent/README.md` for pi-specific config (memory scopes, 
 
 ## Consequences
 
-- **Rebuild coupling.** Every agent image must be rebuilt when `platform-base` (and thus the bundled agent-runtime) changes. `mise run image:agent` builds `platform-base` + all three agents in one pass.
+- **Rebuild coupling.** Every agent image must be rebuilt when `platform-base` (and thus the bundled agent-runtime) changes. `mise run agents:image` builds `platform-base` + all three agents in one pass.
 - **Harness contract is narrow.** The platform assumes the harness speaks ACP over stdio and respects the trigger-file convention (ADR-008). Anything outside that — memory formats, skill registries, tool auth — is the harness's business.
 - **Low barrier for new agents.** Adding a new harness is: Dockerfile that extends `platform-base`, `npm install -g <harness>`, drop `harness-chat.sh` / `harness-terminal.sh`, optionally seed `workspace/`. Example PRs: `feat(agent-runtime): add codex-ready agent image` (502366e), `feat(agents): add pi-agent with @zhafron/pi-memory` (4f7cfd0).
 - **Helm chart plumbs image + template per agent.** Each agent has a Helm values block (`pi-agent` at `deploy/helm/platform/values.yaml`, template at `deploy/helm/platform/templates/pi-agent-template.yaml`). Adding an agent requires a chart change — acceptable cost.
@@ -89,4 +89,4 @@ See `packages/agents/pi-agent/README.md` for pi-specific config (memory scopes, 
 - `packages/agents/{example-agent,google-workspace,pi-agent}/Dockerfile` — the per-harness recipe in practice.
 - `packages/agents/pi-agent/{harness-chat.sh,harness-terminal.sh}` — pi-specific overrides.
 - `packages/agents/pi-agent/README.md` — agent-specific documentation pattern (memory scopes, system-prompt conventions).
-- `tasks.toml` → `image:agent` — multi-agent build orchestration.
+- `packages/agents/tasks.toml` → `agents:image` — multi-agent build orchestration.

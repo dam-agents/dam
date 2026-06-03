@@ -7,3 +7,18 @@ run = '''
 [ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
 docker build -t platform-pi-agent:latest packages/agents/pi-agent
 '''
+
+["agents:pi-agent:scan:trivy"]
+dir = "{{config_root}}"
+usage = 'flag "--tag <tag>" help="Scan quay.io/dam-agents/pi-agent:<tag> instead of building locally"'
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+if [ -n "${usage_tag:-}" ]; then
+  image="quay.io/dam-agents/pi-agent:${usage_tag}"
+else
+  {{ mise_bin }} run agents:pi-agent:image
+  image="platform-pi-agent:latest"
+fi
+exec trivy image --quiet --format json "$image"
+'''

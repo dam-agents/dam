@@ -45,7 +45,7 @@ dir = "{{config_root}}/packages/controller"
 run = "go test ./..."
 
 ["controller:scan"]
-depends = ["controller:scan:*"]
+depends = ["controller:scan:govulncheck"]
 
 ["controller:scan:govulncheck"]
 description = "Check the Go call graph against the vuln DB"
@@ -59,6 +59,29 @@ if [[ "${usage_json:-false}" == "true" ]]; then
   exec govulncheck -format json ./...
 fi
 exec govulncheck ./...
+'''
+
+["controller:image"]
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
+docker build -t platform-controller:latest packages/controller/
+'''
+
+["controller:scan:trivy"]
+dir = "{{config_root}}"
+usage = 'flag "--tag <tag>" help="Scan quay.io/dam-agents/controller:<tag> instead of building locally"'
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+if [ -n "${usage_tag:-}" ]; then
+  image="quay.io/dam-agents/controller:${usage_tag}"
+else
+  {{ mise_bin }} run controller:image
+  image="platform-controller:latest"
+fi
+exec trivy image --quiet --format json "$image"
 '''
 
 ["controller:build"]

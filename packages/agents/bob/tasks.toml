@@ -7,3 +7,18 @@ run = '''
 [ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
 docker build -t platform-bob:latest packages/agents/bob
 '''
+
+["agents:bob:scan:trivy"]
+dir = "{{config_root}}"
+usage = 'flag "--tag <tag>" help="Scan quay.io/dam-agents/bob:<tag> instead of building locally"'
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+if [ -n "${usage_tag:-}" ]; then
+  image="quay.io/dam-agents/bob:${usage_tag}"
+else
+  {{ mise_bin }} run agents:bob:image
+  image="platform-bob:latest"
+fi
+exec trivy image --quiet --format json "$image"
+'''
