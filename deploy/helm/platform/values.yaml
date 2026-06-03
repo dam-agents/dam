@@ -5,13 +5,17 @@
 # ("agent-platform.ai/...") are permanent and unrelated to brand; this
 # section is the only knob users see.
 brand:
-  # Display name shown in the UI title bar, PWA manifest, OAuth dynamic
-  # client_name, and skill-publish git author.
-  name: Dam
+  # Display name shown in the PWA manifest, OAuth dynamic client_name,
+  # skill-publish git author, and the Keycloak realm display name (sign-in
+  # heading + tab title).
+  name: DAM
   # Lowercase identifier (DNS/URL-safe). Used for the Slack slash command
   # (`/<short> login`), GitHub publish branch prefix, and git-author email
   # local-part.
   short: dam
+  # Marketing tagline shown as the browser tab title in the web app (the
+  # `name` expansion). Empty string falls back to `name`.
+  tagline: "Deploy Agents Massively"
   # UI theme — applied at runtime as CSS custom properties so a brand
   # change requires no UI rebuild.
   theme:

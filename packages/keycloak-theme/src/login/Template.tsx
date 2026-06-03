@@ -9,7 +9,7 @@ import { useApplyThemeScript } from "./hooks/use-apply-theme-script.js";
 import type { I18n } from "./i18n.js";
 import type { KcContext } from "./KcContext.js";
 
-const APP_NAME = import.meta.env.VITE_APP_NAME ?? "Dam";
+const APP_NAME = import.meta.env.VITE_APP_NAME ?? "DAM";
 
 export default function Template(props: TemplateProps<KcContext, I18n>) {
   const {
@@ -29,8 +29,8 @@ export default function Template(props: TemplateProps<KcContext, I18n>) {
 
   useEffect(() => {
     document.title =
-      documentTitle ?? msgStr("loginTitle", realm.displayName || realm.name);
-  }, [documentTitle, msgStr, realm.displayName, realm.name]);
+      documentTitle ?? msgStr("loginTitle", realm.displayName || APP_NAME);
+  }, [documentTitle, msgStr, realm.displayName]);
 
   useSetClassName({ qualifiedName: "html", className: "" });
   useSetClassName({ qualifiedName: "body", className: "" });

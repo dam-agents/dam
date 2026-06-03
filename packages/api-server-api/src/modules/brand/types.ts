@@ -3,6 +3,7 @@ import { z } from "zod";
 export const brandSchema = z.object({
   name: z.string(),
   short: z.string(),
+  tagline: z.string(),
   theme: z.object({
     light: z.object({
       accent: z.string(),

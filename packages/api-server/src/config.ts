@@ -185,6 +185,7 @@ export function loadConfig(): Config {
     brand: {
       name: process.env.BRAND_NAME ?? "Platform",
       short: process.env.BRAND_SHORT ?? "platform",
+      tagline: process.env.BRAND_TAGLINE ?? "",
       theme: {
         light: {
           accent: process.env.BRAND_THEME_LIGHT_ACCENT ?? "#1D6BE1",

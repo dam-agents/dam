@@ -34,7 +34,7 @@ export default function Login(
       doUseDefaultCss={doUseDefaultCss}
       classes={classes}
       displayMessage={!usernameError}
-      headerNode={`Sign in to ${APP_NAME}`}
+      headerNode={`Sign in to ${realm.displayName || APP_NAME}`}
     >
       {realm.password && (
         <form

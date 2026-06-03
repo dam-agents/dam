@@ -13,6 +13,7 @@ data:
   platform-realm.json: |-
     {
       "realm": {{ .Values.keycloak.realm | quote }},
+      "displayName": {{ .Values.brand.name | quote }},
       "enabled": true,
       "loginTheme": "platform",
       "sslRequired": {{ if eq .Values.scheme "https" }}"external"{{ else }}"none"{{ end }},
