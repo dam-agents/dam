@@ -95,15 +95,9 @@ export async function ensureManagedSshHost(opts: {
     `\\n*${escapeRe(start)}[\\s\\S]*?${escapeRe(end)}\\n*`,
     "g",
   );
-  const stripped = damExisting.replace(re, "\n").replace(/^\n+/, "");
-  const sep = stripped && !stripped.endsWith("\n") ? "\n" : "";
-  await writeFile(
-    damConfig,
-    `${stripped}${sep}${stripped ? "\n" : ""}${block}\n`,
-    {
-      mode: 0o600,
-    },
-  );
+  const stripped = damExisting.replace(re, "\n").replace(/^\n+/, "").trimEnd();
+  const body = stripped ? `${stripped}\n\n${block}\n` : `${block}\n`;
+  await writeFile(damConfig, body, { mode: 0o600 });
 
   // Pull dam's config into the user's via one idempotent `Include`. It must
   // precede any `Host` block to apply globally, so prepend it.

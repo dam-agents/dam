@@ -21,10 +21,11 @@ export function createSshRelay(
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
   const open = new Map<string, number>();
   const mark = (id: string, delta: number) => {
-    const n = (open.get(id) ?? 0) + delta;
+    const before = open.get(id) ?? 0;
+    const n = before + delta;
     if (n > 0) open.set(id, n);
     else open.delete(id);
-    if (n === delta || n === 0)
+    if (before === 0 || n === 0)
       repo
         .patchAnnotation(id, ACTIVE_SESSION_KEY, n > 0 ? "true" : "")
         .catch(() => {});

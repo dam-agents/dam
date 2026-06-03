@@ -135,9 +135,10 @@ export function createSshService(homeDir: string): SshService {
       try {
         existing = await readFile(authorizedKeys, "utf8");
       } catch {}
+      const body = keyBody(key);
       const present = existing
         .split("\n")
-        .some((l) => l.trim() && keyBody(l) === keyBody(key));
+        .some((l) => l.trim() && keyBody(l) === body);
       if (!present) {
         const sep = existing && !existing.endsWith("\n") ? "\n" : "";
         await writeFile(authorizedKeys, existing + sep + key + "\n", {

@@ -64,20 +64,12 @@ export function buildSshCommand(deps: SshDeps): Command {
         },
       ) => {
         if (opts.proxy) {
-          if (opts.mode || opts.exec) {
-            process.stderr.write(
-              "error: --proxy cannot be combined with --mode/--exec\n",
-            );
-            process.exit(EXIT_RUNTIME_FAILURE);
-          }
+          if (opts.mode || opts.exec)
+            die("--proxy cannot be combined with --mode/--exec");
           return runProxy(deps, agentRef, opts.server);
         }
-        const target = resolveLaunchTarget(opts.mode, opts.exec);
-        if (!target.ok) {
-          process.stderr.write(`error: ${target.error}\n`);
-          process.exit(EXIT_RUNTIME_FAILURE);
-        }
-        return runLaunch(deps, agentRef, opts.server, target.mode, target.exec);
+        const { mode, exec } = resolveLaunchTarget(opts.mode, opts.exec);
+        return runLaunch(deps, agentRef, opts.server, mode, exec);
       },
     );
 }
@@ -85,23 +77,19 @@ export function buildSshCommand(deps: SshDeps): Command {
 function resolveLaunchTarget(
   modeFlag: string | undefined,
   execFlag: string | undefined,
-): { ok: true; mode: LaunchMode; exec: string } | { ok: false; error: string } {
+): { mode: LaunchMode; exec: string } {
   if (modeFlag && !MODES.includes(modeFlag as LaunchMode))
-    return {
-      ok: false,
-      error: `invalid --mode "${modeFlag}"; expected one of ${MODES.join(", ")}`,
-    };
+    die(`invalid --mode "${modeFlag}"; expected one of ${MODES.join(", ")}`);
   const mode = modeFlag as LaunchMode | undefined;
-  if (mode) return { ok: true, mode, exec: execFlag ?? mode };
-  if (!execFlag) return { ok: true, mode: "ssh", exec: "ssh" };
+  if (mode) return { mode, exec: execFlag ?? mode };
+  if (!execFlag) return { mode: "ssh", exec: "ssh" };
   const base = execFlag.split(/[/\\]/).pop()!.toLowerCase();
   const inferred = MODES.find((m) => base.includes(m));
   if (!inferred)
-    return {
-      ok: false,
-      error: `could not infer --mode from --exec "${execFlag}"; pass --mode explicitly`,
-    };
-  return { ok: true, mode: inferred, exec: execFlag };
+    die(
+      `could not infer --mode from --exec "${execFlag}"; pass --mode explicitly`,
+    );
+  return { mode: inferred, exec: execFlag };
 }
 
 async function runProxy(
@@ -113,16 +101,14 @@ async function runProxy(
     flag: serverFlag ? { server: serverFlag } : undefined,
     exitCodes: { runtimeFailure: EXIT_RUNTIME_FAILURE },
   });
-  const agent = await resolveAgent(deps, host, agentRef);
   const paths = sshPaths();
-  const publicKey = await orExit(ensureKeyPair(paths), (e) => e.message);
-  const tok = await deps.tokenProvider.getValidAccessToken(host);
-  if (!tok.ok) {
-    process.stderr.write(
-      `error: not authenticated (${tok.error.kind}); run \`dam auth login\` first\n`,
-    );
-    process.exit(EXIT_RUNTIME_FAILURE);
-  }
+  const [agent, publicKey, tok] = await Promise.all([
+    resolveAgent(deps, host, agentRef),
+    orExit(ensureKeyPair(paths), (e) => e.message),
+    deps.tokenProvider.getValidAccessToken(host),
+  ]);
+  if (!tok.ok)
+    die(`not authenticated (${tok.error.kind}); run \`dam auth login\` first`);
   await orExit(
     createAgentTrpcClient({
       host,
@@ -156,9 +142,11 @@ async function runLaunch(
       belowFloor: EXIT_BELOW_FLOOR,
     },
   });
-  await resolveAgent(deps, host, agentRef); // early "not found" before handoff
   const paths = sshPaths();
-  await orExit(ensureKeyPair(paths), (e) => e.message);
+  await Promise.all([
+    resolveAgent(deps, host, agentRef), // early "not found" before handoff
+    orExit(ensureKeyPair(paths), (e) => e.message),
+  ]);
 
   const label = `\`${exec}\``;
   if (mode === "ssh")
@@ -187,12 +175,16 @@ async function resolveAgent(
   return resolved.value;
 }
 
+function die(msg: string): never {
+  process.stderr.write(`error: ${msg}\n`);
+  process.exit(EXIT_RUNTIME_FAILURE);
+}
+
 async function orExit<T>(p: Promise<T>, msg: (e: Error) => string): Promise<T> {
   try {
     return await p;
   } catch (e) {
-    process.stderr.write(`error: ${msg(e as Error)}\n`);
-    process.exit(EXIT_RUNTIME_FAILURE);
+    die(msg(e as Error));
   }
 }
 
