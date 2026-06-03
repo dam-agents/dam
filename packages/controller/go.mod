@@ -2,6 +2,8 @@ module github.com/kagenti/platform/packages/controller
 
 go 1.25.0
 
+toolchain go1.25.11
+
 require (
 	github.com/cert-manager/cert-manager v1.20.2
 	github.com/stretchr/testify v1.11.1

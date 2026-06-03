@@ -3,8 +3,11 @@ FROM ${BASE_IMAGE}
 
 USER root
 
+# claude-agent-acp pulls @anthropic-ai/sdk transitively; override it to a patched
+# release (CVE-2026-41686). Set before install so npm resolves the nested dep to it.
 RUN --mount=type=cache,target=/root/.npm \
-    npm install @agentclientprotocol/claude-agent-acp \
+    npm pkg set "overrides.@anthropic-ai/sdk"=">=0.100.1" \
+    && npm install @agentclientprotocol/claude-agent-acp \
     && npm install -g @anthropic-ai/claude-code @googleworkspace/cli@0.22.5 \
     && chown -R 65532:0 /app
 

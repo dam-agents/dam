@@ -5,6 +5,24 @@ ENV PATH="/app/node_modules/.bin:$PATH"
 
 RUN dnf install -y git tar gzip && dnf clean all
 
+ARG NPM_VERSION=11.16.0
+RUN npm install -g "npm@${NPM_VERSION}" && rm -rf /usr/lib/node_modules_24/npm
+
+# gh's release binaries lag upstream: 2.93.0 ships Go 1.26.3 and pins in-toto
+# 0.9.0 (GHSA-pmwq-pjrm-6p5r). Build from source with a patched Go toolchain and
+# a bumped in-toto so the binary is CVE-clean.
+FROM --platform=$BUILDPLATFORM registry.access.redhat.com/hi/go:1.25-builder AS gh-builder
+ARG GH_VERSION=2.93.0
+ARG INTOTO_VERSION=0.11.0
+ARG TARGETOS
+ARG TARGETARCH
+ENV GOTOOLCHAIN=go1.26.4 GOFLAGS=-trimpath CGO_ENABLED=0
+RUN git clone --depth 1 -b "v${GH_VERSION}" https://github.com/cli/cli /src
+WORKDIR /src
+RUN go get "github.com/in-toto/in-toto-golang@v${INTOTO_VERSION}" && go mod tidy
+RUN GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
+    go build -ldflags "-X github.com/cli/cli/v2/internal/build.Version=${GH_VERSION}" -o /gh ./cmd/gh
+
 FROM base AS builder
 
 COPY scripts/install-pnpm.sh /usr/local/bin/install-pnpm
@@ -56,10 +74,7 @@ RUN npm_config_inject_workspace_packages=true \
 # -builder base: agent images extending this need dnf+npm install at build time.
 FROM base AS runner
 
-ARG TARGETARCH
-ARG GH_VERSION=2.89.0
-RUN curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${TARGETARCH}.tar.gz" \
-    | tar -xz --strip-components=1 -C /usr/local
+COPY --from=gh-builder /gh /usr/local/bin/gh
 
 COPY --from=builder /deploy/package.json ./
 COPY --from=builder /deploy/node_modules ./node_modules

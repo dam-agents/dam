@@ -1,2 +1,5 @@
 ["agents:image"]
 depends = ["agents:*:image"]
+
+["agents:scan"]
+depends = ["agents:*:scan"]

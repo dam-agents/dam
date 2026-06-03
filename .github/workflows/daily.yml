@@ -321,7 +321,7 @@ jobs:
             echo "${QUAY_PASSWORD}" | docker login quay.io -u "${QUAY_USERNAME}" --password-stdin
           fi
 
-          report=$(mise run "$TASK" --tag=latest) || {
+          report=$(mise run "$TASK" --json --tag=latest) || {
             echo "::notice::Trivy scan skipped for ${TASK} (image may not be published yet); see log"
             exit 0
           }

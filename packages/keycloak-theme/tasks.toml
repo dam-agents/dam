@@ -86,9 +86,16 @@ set -eo pipefail
 docker build -f packages/keycloak-theme/Dockerfile -t platform-keycloak:latest .
 '''
 
+["keycloak-theme:scan"]
+depends = ["keycloak-theme:scan:*"]
+
 ["keycloak-theme:scan:trivy"]
 dir = "{{config_root}}"
-usage = 'flag "--tag <tag>" help="Scan quay.io/dam-agents/keycloak:<tag> instead of building locally"'
+raw = true
+usage = '''
+flag "--json" help="Emit Trivy JSON (exit 0) instead of failing on findings"
+flag "--tag <tag>" help="Scan quay.io/dam-agents/keycloak:<tag> instead of building locally"
+'''
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
@@ -98,5 +105,8 @@ else
   {{ mise_bin }} run keycloak-theme:image
   image="platform-keycloak:latest"
 fi
-exec trivy image --quiet --format json "$image"
+if [[ "${usage_json:-false}" == "true" ]]; then
+  exec trivy image --quiet --format json "$image"
+fi
+exec trivy image --quiet --exit-code 1 "$image"
 '''

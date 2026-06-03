@@ -1,4 +1,4 @@
-FROM quay.io/keycloak/keycloak:26.5.4@sha256:ae8efb0d218d8921334b03a2dbee7069a0b868240691c50a3ffc9f42fabba8b4
+FROM quay.io/keycloak/keycloak:26.6.2-2@sha256:f9ba7b2af90db8dc749a57ca9aedca51e840cb9224441ab546a968da941da900
 
 COPY packages/keycloak-theme/dist_keycloak/keycloak-theme-for-kc-all-other-versions.jar \
     /opt/keycloak/providers/keycloak-theme.jar
