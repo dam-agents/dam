@@ -315,8 +315,24 @@ jobs:
             exit 0
           fi
 
+          scan_digest="$digest"
+          manifest=$(curl -fsSL "${auth[@]}" \
+            "https://quay.io/api/v1/repository/${QUAY_REPO}/manifest/${digest}")
+          if [ "$(echo "$manifest" | jq -r '.is_manifest_list')" = "true" ]; then
+            scan_digest=$(echo "$manifest" | jq -r '
+              ((.manifest_data // "") | try fromjson catch {}) as $idx
+              | ($idx.manifests // []) as $m
+              | ( [ $m[] | select(.platform.os == "linux" and .platform.architecture == "amd64") | .digest ]
+                  + [ $m[] | select(.platform.os == "linux" and ((.platform.architecture // "unknown") != "unknown")) | .digest ] )
+              | .[0] // empty')
+            if [ -z "$scan_digest" ]; then
+              echo "::notice::No scannable linux child manifest for ${QUAY_REPO}@${digest}"
+              exit 0
+            fi
+          fi
+
           security=$(curl -fsSL "${auth[@]}" \
-            "https://quay.io/api/v1/repository/${QUAY_REPO}/manifest/${digest}/security?vulnerabilities=true")
+            "https://quay.io/api/v1/repository/${QUAY_REPO}/manifest/${scan_digest}/security?vulnerabilities=true")
 
           status=$(echo "$security" | jq -r '.status')
           if [ "$status" != "scanned" ]; then
