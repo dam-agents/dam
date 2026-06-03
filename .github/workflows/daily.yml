@@ -306,18 +306,33 @@ jobs:
 
           auth=(-H "Authorization: Bearer ${QUAY_OAUTH_TOKEN}")
 
-          digest=$(curl -fsSL "${auth[@]}" \
-            "https://quay.io/api/v1/repository/${QUAY_REPO}/tag/?onlyActiveTags=true&filter_tag_name=eq:${TAG}" \
-            | jq -r '.tags[0].manifest_digest // empty')
+          api() {
+            local url="$1" resp code body
+            resp=$(curl -sSL -w $'\n%{http_code}' "${auth[@]}" "$url") || {
+              echo "::warning::curl transport error for ${url}"; return 1; }
+            code=${resp##*$'\n'}
+            body=${resp%$'\n'*}
+            if [ "${code:-000}" -lt 200 ] || [ "${code:-000}" -ge 300 ]; then
+              echo "::warning::HTTP ${code} from ${url} :: ${body:0:300}"
+              return 1
+            fi
+            printf '%s' "$body"
+          }
+
+          tag_json=$(api "https://quay.io/api/v1/repository/${QUAY_REPO}/tag/?onlyActiveTags=true&filter_tag_name=eq:${TAG}") || exit 0
+          digest=$(echo "$tag_json" | jq -r '.tags[0].manifest_digest // empty')
 
           if [ -z "$digest" ]; then
             echo "::notice::No '${TAG}' tag yet for ${QUAY_REPO}"
             exit 0
           fi
 
+          # Clair scans concrete (per-arch) manifests, not manifest lists — a list
+          # digest 404s on /security. Resolve multi-arch tags to their linux/amd64
+          # child (any real linux arch as fallback); skip the unknown/unknown
+          # attestation manifests. Single-arch tags are used as-is.
           scan_digest="$digest"
-          manifest=$(curl -fsSL "${auth[@]}" \
-            "https://quay.io/api/v1/repository/${QUAY_REPO}/manifest/${digest}")
+          manifest=$(api "https://quay.io/api/v1/repository/${QUAY_REPO}/manifest/${digest}") || exit 0
           if [ "$(echo "$manifest" | jq -r '.is_manifest_list')" = "true" ]; then
             scan_digest=$(echo "$manifest" | jq -r '
               ((.manifest_data // "") | try fromjson catch {}) as $idx
@@ -331,8 +346,7 @@ jobs:
             fi
           fi
 
-          security=$(curl -fsSL "${auth[@]}" \
-            "https://quay.io/api/v1/repository/${QUAY_REPO}/manifest/${scan_digest}/security?vulnerabilities=true")
+          security=$(api "https://quay.io/api/v1/repository/${QUAY_REPO}/manifest/${scan_digest}/security?vulnerabilities=true") || exit 0
 
           status=$(echo "$security" | jq -r '.status')
           if [ "$status" != "scanned" ]; then
