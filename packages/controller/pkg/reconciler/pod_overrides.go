@@ -55,6 +55,14 @@ func applyAgentBaseScheduling(spec *corev1.PodSpec, base config.AgentBase) {
 		rc := base.RuntimeClassName
 		spec.RuntimeClassName = &rc
 	}
+	if base.DNSConfig != nil {
+		// dnsPolicy stays ClusterFirst (the pod default); these options are
+		// merged on top of the generated resolv.conf. ndots:1 keeps the agent
+		// reachable to external MCP hosts whose FQDN has fewer dots than the
+		// default ndots:5, which would otherwise be expanded against
+		// node-inherited search domains first and hijacked by a wildcard.
+		spec.DNSConfig = base.DNSConfig
+	}
 }
 
 // configMountsToTypes / configEnvToTypes shuttle the chart-side fallback

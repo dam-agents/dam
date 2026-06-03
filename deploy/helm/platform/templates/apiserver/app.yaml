@@ -80,6 +80,17 @@ spec:
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
       serviceAccountName: {{ include "platform.apiserver.serviceAccountName" . }}
       terminationGracePeriodSeconds: 45
+      # ndots:1 so external hostnames (e.g. an MCP server's domain during
+      # OAuth/DCR discovery in connections.create) resolve absolute-first.
+      # The default ndots:5 expands sub-5-dot FQDNs against node-inherited
+      # search domains first; a wildcard under one of those (seen with
+      # corporate VPN search domains leaking into the node's resolv.conf) then
+      # captures the lookup and discovery silently times out. dnsPolicy stays
+      # ClusterFirst — in-cluster service resolution is unaffected.
+      dnsConfig:
+        options:
+          - name: ndots
+            value: "1"
       containers:
         - name: apiserver
           image: "{{ .Values.apiServer.image.repository }}:{{ .Values.apiServer.image.tag | default .Chart.AppVersion }}"

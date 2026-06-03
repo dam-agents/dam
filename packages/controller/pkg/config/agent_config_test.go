@@ -22,6 +22,9 @@ func TestAgentBase_JSONRoundTrip(t *testing.T) {
 		IdleTimeout:            Duration(3600 * 1_000_000_000), // 1h
 		TerminationGracePeriod: 5,
 		RuntimeClassName:       "kata",
+		DNSConfig: &corev1.PodDNSConfig{
+			Options: []corev1.PodDNSConfigOption{{Name: "ndots", Value: ptr("1")}},
+		},
 		ContainerSecurityContext: &corev1.SecurityContext{
 			Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
 		},
@@ -37,9 +40,16 @@ func TestAgentBase_JSONRoundTrip(t *testing.T) {
 	assert.Equal(t, "1h0m0s", out.IdleTimeout.AsDuration().String())
 	assert.Equal(t, int64(5), out.TerminationGracePeriod)
 	assert.Equal(t, "kata", out.RuntimeClassName)
+	require.NotNil(t, out.DNSConfig)
+	require.Len(t, out.DNSConfig.Options, 1)
+	assert.Equal(t, "ndots", out.DNSConfig.Options[0].Name)
+	require.NotNil(t, out.DNSConfig.Options[0].Value)
+	assert.Equal(t, "1", *out.DNSConfig.Options[0].Value)
 	require.NotNil(t, out.ContainerSecurityContext)
 	assert.Equal(t, []corev1.Capability{"ALL"}, out.ContainerSecurityContext.Capabilities.Drop)
 }
+
+func ptr[T any](v T) *T { return &v }
 
 func TestAgentTemplateDefaults_JSONRoundTrip(t *testing.T) {
 	in := AgentTemplateDefaults{

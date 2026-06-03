@@ -48,6 +48,9 @@ func fullAgentBase() config.AgentBase {
 		}},
 		PriorityClassName: "platform-agent",
 		RuntimeClassName:  "kata",
+		DNSConfig: &corev1.PodDNSConfig{
+			Options: []corev1.PodDNSConfigOption{{Name: "ndots", Value: ptrStr("1")}},
+		},
 		Probes: &config.AgentProbes{
 			Startup: &corev1.Probe{
 				ProbeHandler:     corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/custom-startup", Port: intstr.FromString("acp")}},
@@ -89,7 +92,14 @@ func TestApplyAgentBaseScheduling_StampsAllFields(t *testing.T) {
 	assert.Equal(t, "platform-agent", spec.PriorityClassName)
 	require.NotNil(t, spec.RuntimeClassName)
 	assert.Equal(t, "kata", *spec.RuntimeClassName)
+	require.NotNil(t, spec.DNSConfig)
+	require.Len(t, spec.DNSConfig.Options, 1)
+	assert.Equal(t, "ndots", spec.DNSConfig.Options[0].Name)
+	require.NotNil(t, spec.DNSConfig.Options[0].Value)
+	assert.Equal(t, "1", *spec.DNSConfig.Options[0].Value)
 }
+
+func ptrStr(s string) *string { return &s }
 
 // $HOME substitution lives in the chart (agent-templates.yaml + the
 // controller/deployment.yaml AGENT_TEMPLATE_DEFAULTS replace). The
@@ -115,6 +125,9 @@ func TestBuildAgentStatefulSet_AgentBase_FullSurface(t *testing.T) {
 	assert.Equal(t, "platform-agent", spec.PriorityClassName)
 	require.NotNil(t, spec.RuntimeClassName)
 	assert.Equal(t, "kata", *spec.RuntimeClassName)
+	require.NotNil(t, spec.DNSConfig)
+	require.Len(t, spec.DNSConfig.Options, 1)
+	assert.Equal(t, "ndots", spec.DNSConfig.Options[0].Name)
 
 	agent := spec.Containers[0]
 	require.NotNil(t, agent.SecurityContext)

@@ -533,6 +533,18 @@ controller:
       priorityClassName: ""
       runtimeClassName: "" # e.g. "kata" for sandboxed runtimes
 
+      # Merged into the agent / fork pod's resolv.conf (dnsPolicy stays the
+      # ClusterFirst default). ndots:1 makes external MCP hostnames resolve
+      # absolute-first: the default ndots:5 expands a sub-5-dot FQDN against
+      # node-inherited search domains first, and a wildcard under one of them
+      # (e.g. corporate VPN search domains leaking into the node's resolv.conf)
+      # silently captures the lookup so the agent can't reach the MCP server.
+      # Set to {} to keep the node/cluster default ndots.
+      dnsConfig:
+        options:
+          - name: ndots
+            value: "1"
+
       # Probes (each sub-field overrides the controller's built-in probe).
       # Gated by top-level `probes.enabled`.
       probes: {}

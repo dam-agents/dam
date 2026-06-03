@@ -68,6 +68,13 @@ type AgentBase struct {
 	PriorityClassName         string                            `json:"priorityClassName,omitempty"`
 	RuntimeClassName          string                            `json:"runtimeClassName,omitempty"`
 
+	// DNSConfig is merged into the agent / fork pod's resolv.conf (verbatim,
+	// alongside the default dnsPolicy: ClusterFirst). The chart ships an
+	// `ndots:1` option so external MCP hostnames resolve absolute-first
+	// instead of being captured by node-inherited search domains — see the
+	// values.yaml comment for the failure mode this guards against.
+	DNSConfig *corev1.PodDNSConfig `json:"dnsConfig,omitempty"`
+
 	// Probes — per-probe overrides; the master switch is Config.AgentProbesEnabled.
 	Probes *AgentProbes `json:"probes,omitempty"`
 
