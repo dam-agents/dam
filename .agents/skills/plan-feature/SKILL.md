@@ -33,13 +33,27 @@ context lives once in the README; each sub-issue carries only what is specific t
 - Explore the codebase to ground the plan in real files, modules, and seams. Use the `Explore`
   agent for breadth.
 
-### 2. Grill
+### 2. Grill — mandatory gate
 
-Invoke `/grill-with-adr` with the user to resolve every unknown that affects the plan — scope,
-boundaries, edge cases, where things live, naming. It pressure-tests vocabulary and architecture
-against the domain model and files or amends an ADR when a decision warrants it. Walk down each
-branch of the decision tree until you reach a solid, shared understanding. Do not skip this; the
-quality of the plan depends on it.
+**This is a hard gate. You MUST run a grilling session and get the user's explicit sign-off
+before step 3. Create nothing under `docs/plan/` until then — no decomposition outline, no
+files.** This holds even when the plan feels obvious: a short session confirming shared
+understanding is the floor, never a step to skip.
+
+Invoke `/grill-with-adr` to run it — that skill is the canonical procedure. But the gate does
+**not** depend on the nested call landing: if it doesn't fire, run the session yourself, one
+question at a time, recommending an answer to each. Either way the session must:
+
+- Resolve scope, boundaries, edge cases, where things live, and naming — walking each branch of
+  the decision tree. Prefer exploring the codebase over asking whenever a question is answerable
+  there.
+- Challenge the plan's vocabulary against [`docs/ubiquitous-language.md`](../../../docs/ubiquitous-language.md),
+  sharpen fuzzy terms to canonical ones, and cross-reference claims against the code.
+- File or amend an ADR (via `/adr`) — sparingly, only when a decision is hard to reverse,
+  surprising without context, and the result of a real trade-off.
+
+**Exit condition:** every branch of the decision tree is resolved and the user confirms they're
+satisfied. Only then proceed to step 3.
 
 ### 3. Decompose and get sign-off
 
