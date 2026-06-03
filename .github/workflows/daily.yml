@@ -314,8 +314,6 @@ jobs:
           QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
           QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
           TASK: ${{ matrix.task }}
-          # Scan the image built from this commit (cd.yml tags every main push
-          # with the full SHA), not :latest — which only moves on release tags.
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
