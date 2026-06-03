@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-06-01
+Last verified: 2026-06-03
 
 ## Motivated by
 
@@ -14,6 +14,7 @@ Last verified: 2026-06-01
 - [ADR-027 — Slack user impersonation](../adrs/027-slack-user-impersonation.md) — channel-driven sessions carry per-user identity; channels never reach management endpoints
 - [ADR-031 — Schedules use RRULE for includes and quiet hours for exclusions](../adrs/031-schedule-rrule-quiet-hours.md) — recurrence semantics and suppression model
 - [ADR-032 — Centralized pod-reachability primitive](../adrs/032-pod-reachability-primitive.md) — observed pod `Ready` is the source of truth; every wake path routes through one primitive
+- [ADR-058 — Unified apply path + Contributions-Settled gate](../adrs/058-unified-apply-path-and-contributions-settled-gate.md) — the api-server's `ensureReady` widens from pod-Ready to `podReady ∧ currentState=running ∧ contributionsSettled`
 - [ADR-046 — Eliminate Instance, collapse into Agent](../adrs/046-eliminate-instance.md) — Agent is the durable runnable resource; there is no separate Instance concept
 
 ## Overview
@@ -85,6 +86,9 @@ Connector state that doesn't fit the env model (per-host CLI configs, allowlists
 ### Wake
 
 Every caller that sends work to a pod — the controller's schedule loop, the api-server's ACP relay, channel adapters — routes through a single reachability primitive ([ADR-032](../adrs/032-pod-reachability-primitive.md)). The primitive's contract: **observed pod `Ready` is the authoritative answer to "can I call this pod?"** `spec.desiredState` is user intent (running vs. hibernated) and continues to drive the reconciler, but it is no longer read as a reachability signal by callers. The primitive flips `desiredState` to `running` if needed, single-flights concurrent waits per Agent, bumps the `platform.ai/last-activity` annotation on every successful call (so any caller implicitly keeps the pod warm), and is implemented in parallel in Go (controller) and TypeScript (api-server).
+
+
+Per [ADR-058](../adrs/058-unified-apply-path-and-contributions-settled-gate.md), the api-server's connect-driven wake widens the readiness condition beyond pod `Ready`: it also waits for `currentState=running` and for the agent's current desired Contributions to have *settled* (`runtime_state_outbox.last_settled_version >= version`), so a relayed frame never lands before configuration has been applied. "Settled" means the reconcile cycle terminated, not that every driver succeeded — a degraded agent (failed installs retrying in the background) is still reachable, surfaced via its `contributionFailures`. A fresh agent created with files also withholds "running" until that import lands (`pendingImport`). Pod-reachability stays the composable base (`ensureReachable`): the file-import path waits only on a reachable, non-terminating pod — not on `applyState` — while message delivery waits on the full conjunction. Import is roll-robust by *reaction*: the bundle lives with the client, so when a pod rolls mid-transfer the import-proxy returns a retryable `503` and the client re-POSTs (the agent's finalize is idempotent), letting any roll cause self-heal rather than anticipating an env-roll; a failed import surfaces as the `importError` badge and never wedges "starting". The controller's schedule-driven wake (Go) continues to gate on pod `Ready` alone.
 
 Two paths trigger a wake:
 

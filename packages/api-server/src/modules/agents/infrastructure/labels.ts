@@ -55,3 +55,15 @@ export const ANN_GRANTED_CONNECTION_IDS =
 // rows). `injectionConfig` (ADR-028) currently has no fanout; if a future
 // change wires it through this rev, update this comment then.
 export const ANN_SECRETS_REV = "agent-platform.ai/secrets-rev";
+
+// In-progress file import (value = ISO timestamp; gates "running", TTL'd as a crash backstop). Cleared on success; "" / absent = none.
+export const ANN_PENDING_IMPORT = "agent-platform.ai/pending-import";
+
+// Failed file import (value = reason); drives the degraded `importError` badge. Mirrors create-error; "" / absent = no failure.
+export const ANN_IMPORT_ERROR = "agent-platform.ai/import-error";
+
+// Set by the api-server when create fails after the CM exists (value = reason); surfaces the red Error pill. See ADR-058.
+export const ANN_CREATE_ERROR = "agent-platform.ai/create-error";
+
+// Pod uid converged on since boot; while it matches the live pod, later applies/imports apply silently and don't re-gate "running". See ADR-058.
+export const ANN_CONVERGED_POD = "agent-platform.ai/converged-pod";

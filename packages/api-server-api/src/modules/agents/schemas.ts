@@ -27,6 +27,8 @@ export const agentCreateInputSchema = z
     secretRef: z.string().optional(),
     allowedUserEmails: z.array(z.email()).optional(),
     egressPreset: egressPresetSchema.optional(),
+    // Caller will follow create with a file import; gates "running" until it lands (ADR-058).
+    pendingImport: z.boolean().optional(),
   })
   .refine((d) => d.templateId !== undefined || d.image !== undefined, {
     message: "Either templateId or image is required",

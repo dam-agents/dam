@@ -62,6 +62,7 @@ This directory contains ADRs for the Platform project.
 | [055](055-agent-owned-session-metadata.md)    | Agent-owned session metadata via ACP `_meta`; no server-side session store | @jezekra1 |
 | [056](056-browser-driven-e2e.md)              | Browser-driven E2E tracer with values-gated test affordances | @tomkis |
 | [057](057-structured-logging.md)              | Structured logging for the api-server — Pino, JSON to stdout, security audit trail as first consumer | @pilartomas |
+| [058](058-unified-apply-path-and-contributions-settled-gate.md) | Unified runtime-channel apply path + Contributions-Settled readiness gate | @janjeliga |
 
 ## Drafts
 

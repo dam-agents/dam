@@ -3,12 +3,12 @@ import { join } from "node:path";
 
 import { STAGING_PREFIX } from "./constants.js";
 
-const MAX_AGE_MS = 60 * 60 * 1000;
+const MAX_AGE_MS = 10 * 60 * 1000;
 
 /**
- * Remove leftover `.import-staging-*` directories under `homeDir` that
- * are older than 1 hour. Called once at agent-runtime boot to recover
- * from crashes between extract and rename.
+ * Remove leftover `.import-staging-*` directories under `homeDir` older than
+ * 10 minutes. Boot-only (no import is in flight at boot), so the age is just a
+ * clock-skew guard; these are orphans from a previous pod's crashed import.
  *
  * Best-effort: errors are logged but do not abort boot.
  */

@@ -1,4 +1,7 @@
-import type { OutboxRepo } from "../infrastructure/outbox-repo.js";
+import {
+  DEFAULT_MAX_APPLY_ATTEMPTS,
+  type OutboxRepo,
+} from "../infrastructure/outbox-repo.js";
 import type { StateQueue } from "../infrastructure/state-queue.js";
 
 export interface CronSweep {
@@ -11,13 +14,13 @@ export interface CronSweepDeps {
   queue: StateQueue;
   log: (msg: string) => void;
   intervalMs?: number;
-  slopMs?: number;
+  maxApplyAttempts?: number;
   batchSize?: number;
 }
 
 export function createCronSweep(deps: CronSweepDeps): CronSweep {
   const intervalMs = deps.intervalMs ?? 60_000;
-  const slopMs = deps.slopMs ?? 60_000;
+  const maxApplyAttempts = deps.maxApplyAttempts ?? DEFAULT_MAX_APPLY_ATTEMPTS;
   const batchSize = deps.batchSize ?? 100;
   let timer: ReturnType<typeof setInterval> | null = null;
   let running = false;
@@ -26,12 +29,17 @@ export function createCronSweep(deps: CronSweepDeps): CronSweep {
     if (running) return;
     running = true;
     try {
-      const stale = await deps.outboxRepo.listStale(slopMs, batchSize);
-      for (const row of stale) {
+      const retryable = await deps.outboxRepo.listRetryable(
+        maxApplyAttempts,
+        batchSize,
+      );
+      for (const row of retryable) {
         await deps.queue.enqueue(row.agentId);
       }
-      if (stale.length > 0) {
-        deps.log(`[runtime-sweep] re-enqueued ${stale.length} stale rows`);
+      if (retryable.length > 0) {
+        deps.log(
+          `[runtime-sweep] re-enqueued ${retryable.length} pending rows`,
+        );
       }
 
       const dropped = await deps.outboxRepo.deleteExpiredEvents();

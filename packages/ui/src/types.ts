@@ -116,6 +116,10 @@ export interface AgentView {
   env?: EnvVar[];
   state: AgentState;
   error?: string;
+  /** Contributions that failed to install on the last settle; empty when healthy. */
+  contributionFailures: { kind: string; message: string }[];
+  /** Reason the most recent file import failed; null/absent when clean or in progress. */
+  importError?: string | null;
   channels: (
     | { type: "slack"; slackChannelId: string }
     | { type: "telegram" }

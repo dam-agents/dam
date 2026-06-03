@@ -5,7 +5,7 @@ import {
   agentCardStatus,
   agentNameHeading,
   sendMessageToAgent,
-  setMockReplyWithFiles,
+  setMockAgentReply,
   waitForAgentRunning,
 } from "../lib/agents.js";
 import { createApiClient } from "../lib/api-client.js";
@@ -15,14 +15,16 @@ const harnessName = "mock";
 const agentName = "e2e-lifecycle";
 const scriptedReply = "scripted-reply-from-lifecycle";
 const userPrompt = "hello-from-lifecycle";
-const createdFile = "lifecycle-output.md";
-const createdFileContent = "written by the lifecycle mock on prompt";
+// Imported via the real create-flow bundle (not mock-written) — proves the import landed.
+const importedFile = "imported-context.md";
+const importedContent = "imported via the e2e create-flow bundle";
 
-// Red spec for issue #168: gate opening on readiness. Documents the desired
-// not-ready -> ready -> interactive flow, all without a page reload. Expected
-// to fail until the gating behavior ships; the sleeping/offline lock is a
-// separate flow and out of scope here.
-test("agent is not openable until ready, then chats and writes files", async ({
+// Issue #168 / ADR-058: a create-time import gates "running" until it lands + contributions settle. Real pipeline, no reload; sleeping-lock is out of scope.
+// Failure paths (fatal reject / give-up → importError badge) and mid-transfer pod-roll
+// recovery (503 → client re-POST) are verified by cluster/manual test: deterministically
+// injecting them needs an import failure-injection hook (or a lowered import cap) the mock
+// harness lacks, and faking them would assert the mock's logic, not the platform's.
+test("agent is not openable until import lands + contributions settle, then chats", async ({
   page,
 }) => {
   const token = await getAccessToken();
@@ -43,11 +45,21 @@ test("agent is not openable until ready, then chats and writes files", async ({
     await expect(page.getByTestId("app-sidebar")).toBeVisible();
   });
 
-  await test.step("create mock agent", async () => {
+  await test.step("create mock agent with a real file import", async () => {
     await page.getByRole("button", { name: /add agent/i }).click();
     await page.getByText(harnessName, { exact: true }).click();
 
     await page.getByPlaceholder("my-agent").fill(agentName);
+
+    // The plain (non-directory) hidden file input; the create flow uploads it via the import-proxy.
+    await page
+      .locator('input[type="file"]:not([webkitdirectory])')
+      .setInputFiles({
+        name: importedFile,
+        mimeType: "text/markdown",
+        buffer: Buffer.from(importedContent),
+      });
+
     await page.getByRole("button", { name: /create agent/i }).click();
   });
 
@@ -64,6 +76,7 @@ test("agent is not openable until ready, then chats and writes files", async ({
   });
 
   await test.step("agent becomes openable once running, without reload", async () => {
+    // Reaching "Running" proves the import landed and the built-in contribution settled (applyState).
     await expect(agentCardStatus(page, agentName, "Running")).toBeVisible({
       timeout: 180_000,
     });
@@ -71,36 +84,40 @@ test("agent is not openable until ready, then chats and writes files", async ({
 
   const agentId = await waitForAgentRunning(api, agentName);
 
-  await test.step("open agent and exchange a message", async () => {
-    await setMockReplyWithFiles(api, agentId, scriptedReply, [
-      { path: createdFile, content: createdFileContent },
-    ]);
+  await test.step("settled cleanly — no degraded contributions, no import error", async () => {
+    const agent = await api.agents.get.query({ id: agentId });
+    expect(
+      agent.contributionFailures,
+      `agent settled with failures: ${JSON.stringify(agent.contributionFailures)}`,
+    ).toEqual([]);
+    // A successful import clears the marker → no importError badge; proves the
+    // success path doesn't false-badge (the inverse of the fatal/give-up path).
+    expect(
+      agent.importError,
+      `import marked failed after a clean import: ${agent.importError}`,
+    ).toBeFalsy();
+  });
 
+  await test.step("open agent; imported file is present in the tree", async () => {
     await agentNameHeading(page, agentName).click();
     await expect(page).toHaveURL(
       new RegExp(`/chat/${encodeURIComponent(agentId)}`),
     );
 
-    // File browser is empty for the freshly-created file before the prompt.
+    // Imported files land under <homeDir>/work, same as the harness working dir.
     await page.getByRole("button", { name: "files", exact: true }).click();
     await page.getByText("work", { exact: true }).click();
-    await expect(page.getByText(createdFile, { exact: true })).toHaveCount(0);
+    await expect(page.getByText(importedFile, { exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
+  });
 
+  await test.step("interactivity: a chat round-trip works", async () => {
+    await setMockAgentReply(api, agentId, scriptedReply);
     await sendMessageToAgent(page, userPrompt);
-
     await expect(page.getByText(scriptedReply)).toBeVisible({
       timeout: 30_000,
     });
-
-    // The prompt made the mock write the file into its working dir; it now
-    // shows up in the tree (already-expanded `work`) on the next poll.
-    await expect(page.getByText(createdFile, { exact: true })).toBeVisible({
-      timeout: 30_000,
-    });
-
-    const { prompts } = await api.e2e.getReceivedPrompts.query({ agentId });
-    expect(prompts.length).toBeGreaterThan(0);
-    expect(JSON.stringify(prompts)).toContain(userPrompt);
   });
 
   // No teardown: leave the agent in place.

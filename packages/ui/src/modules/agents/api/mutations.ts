@@ -54,17 +54,14 @@ export function useCreateAgent() {
       importRawBundle: rawBundle,
       ...input
     }: CreateAgentInput) => {
-      // Step order is tuned for fastest user-visible feedback:
-      //   1. agents.create + invalidate → tile appears with runtime state
-      //   2. buildBundle (lazy Blob, microseconds) + upload
-      //   3. setAgentAccess / setAgentConnections
-      // Import goes BEFORE access/connection mutations: those rewrite the
-      // agent ConfigMap's grant annotations, which the controller applies
-      // by deleting and recreating the pod — running the import after them
-      // races with the pod swap and surfaces as "agent unreachable". The
-      // PVC outlives the pod so files land regardless of when the pod
-      // comes back. Raw bundle wins when both are provided.
-      const agent = await api.agents.create.mutate({ ...input, egressPreset });
+      // Declared at create so the agent gates "running" until the import lands (ADR-058).
+      const pendingImport =
+        rawBundle != null || (importEntries?.length ?? 0) > 0;
+      const agent = await api.agents.create.mutate({
+        ...input,
+        egressPreset,
+        pendingImport,
+      });
       void queryClient.invalidateQueries({
         queryKey: trpc.agents.list.queryKey(),
       });
@@ -72,6 +69,26 @@ export function useCreateAgent() {
         queryKey: agentsKeys.listWithChannels(),
       });
 
+      if (secretIds !== undefined) {
+        await withRetry(() =>
+          api.secrets.setAgentAccess.mutate({
+            agentId: agent.id,
+            secretIds,
+          }),
+        );
+      }
+      if (appConnectionIds?.length) {
+        await withRetry(() =>
+          api.connections.setAgentConnections.mutate({
+            agentId: agent.id,
+            connectionIds: appConnectionIds,
+          }),
+        );
+      }
+
+      // Import LAST: the grant/connection mutations above bump `secrets-rev` → pod
+      // roll, and `ensureImportable` only waits for that roll once the bumps have
+      // landed (ADR-058). Importing first raced the roll → "unreachable". Raw bundle wins.
       let preparedBundle: { blob: Blob; label: string } | undefined;
       if (rawBundle != null) {
         preparedBundle = { blob: rawBundle, label: rawBundle.name };
@@ -101,22 +118,6 @@ export function useCreateAgent() {
         }
       }
 
-      if (secretIds !== undefined) {
-        await withRetry(() =>
-          api.secrets.setAgentAccess.mutate({
-            agentId: agent.id,
-            secretIds,
-          }),
-        );
-      }
-      if (appConnectionIds?.length) {
-        await withRetry(() =>
-          api.connections.setAgentConnections.mutate({
-            agentId: agent.id,
-            connectionIds: appConnectionIds,
-          }),
-        );
-      }
       return agent;
     },
     meta: {

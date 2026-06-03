@@ -13,6 +13,7 @@ import { createHarnessRouter } from "./harness-router.js";
 import type { Config } from "../../config.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
+import type { ContributionsSettledPort } from "../../modules/agents/index.js";
 
 export interface HarnessApiServerAppDeps {
   config: Config;
@@ -23,6 +24,7 @@ export interface HarnessApiServerAppDeps {
   runtimeHello: RuntimeDeliveryService;
   schedulesBoot: SchedulesBoot;
   runtimeMutator: RuntimeMutator;
+  contributionsSettled: ContributionsSettledPort;
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
@@ -35,6 +37,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     runtimeHello,
     schedulesBoot,
     runtimeMutator,
+    contributionsSettled,
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
@@ -53,6 +56,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         seedSources,
         config.brand.name,
         runtimeMutator,
+        contributionsSettled,
       ),
     schedulesServiceFor: (owner) =>
       composeSchedulesForOwner({ boot: schedulesBoot, owner }).schedules,

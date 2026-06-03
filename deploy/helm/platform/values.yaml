@@ -517,7 +517,7 @@ controller:
 
       # Lifecycle
       idleTimeout: "1h" # hibernate idle agents; "0s" disables
-      terminationGracePeriod: 5 # gateway pods have a hardcoded drain
+      terminationGracePeriod: 30 # SIGKILL deadline; should exceed the runtime's 25s drain backstop so in-flight applyState can finish or refuse cleanly
 
       # Pod metadata + scheduling
       extraLabels: {}

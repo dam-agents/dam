@@ -1,4 +1,3 @@
-import { TRPCError } from "@trpc/server";
 import type {
   ApplyStateInput,
   ApplyStateResult,
@@ -13,6 +12,8 @@ export interface ApplyStateDeps {
   dispatcher: Dispatcher;
   stateStore: StateStore;
   triggerImpl: TriggerImpl;
+  /** True once the pod is shutting down; a draining pod refuses applies so they retry on the live replacement. */
+  isDraining: () => boolean;
   log: (msg: string) => void;
 }
 
@@ -21,6 +22,11 @@ export function createRuntimeChannelService(
 ): RuntimeChannelService {
   return {
     async applyState(input: ApplyStateInput): Promise<ApplyStateResult> {
+      // Refuse cleanly while draining so the apply never half-lands on a dying pod; the worker retries on the replacement.
+      if (deps.isDraining()) {
+        deps.log(`[applyState] draining — refusing v=${input.version}`);
+        return { status: "draining" };
+      }
       const local = deps.stateStore.read();
       const kindCounts = countByKind(input.state.contributions);
       const eventCounts = countEventKinds(input.events);
@@ -30,12 +36,9 @@ export function createRuntimeChannelService(
 
       if (input.version <= local.lastAppliedVersion) {
         deps.log(
-          `[applyState] stale — incoming v=${input.version} <= local v=${local.lastAppliedVersion}; rejecting`,
+          `[applyState] stale — incoming v=${input.version} <= local v=${local.lastAppliedVersion}`,
         );
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: `stale apply: incoming version=${input.version} <= lastApplied=${local.lastAppliedVersion}`,
-        });
+        return { status: "stale", appliedVersion: local.lastAppliedVersion };
       }
 
       if (input.state.hash !== local.lastAppliedHash) {
@@ -48,12 +51,15 @@ export function createRuntimeChannelService(
             .map((f) => `${f.kind}: ${f.message}`)
             .join("; ");
           deps.log(
-            `[applyState] driver failure(s) — refusing to advance state. failures: ${summary}`,
+            `[applyState] driver failure(s) — settling without advancing applied state; returning failures: ${summary}`,
           );
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: `apply failed for ${failures.length} driver(s): ${summary}`,
-          });
+          // Leave the cursor/hash behind so the retry re-dispatches; events stay pending until a clean settle.
+          return {
+            status: "ok",
+            appliedVersion: local.lastAppliedVersion,
+            appliedHash: local.lastAppliedHash,
+            failures,
+          };
         }
       } else {
         deps.log(`[applyState] hash unchanged; skipping dispatch`);
@@ -76,8 +82,10 @@ export function createRuntimeChannelService(
       );
 
       return {
+        status: "ok",
         appliedVersion: next.lastAppliedVersion,
         appliedHash: next.lastAppliedHash,
+        failures: [],
       };
     },
   };

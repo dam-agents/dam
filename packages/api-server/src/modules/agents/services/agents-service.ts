@@ -211,59 +211,75 @@ export function createAgentsService(deps: {
       // user can hibernate explicitly.
       spec.desiredState = spec.desiredState ?? "running";
       const owner = deps.owner ?? "";
-      const infra = await deps.repo.create(spec, owner, templateId);
+      const infra = await deps.repo.create(
+        spec,
+        owner,
+        templateId,
+        input.pendingImport,
+      );
 
-      const emails = input.allowedUserEmails ?? [];
-      if (emails.length > 0) {
-        const subs = await emailsToSubs(emails);
-        await deps.setAllowedUsers(infra.id, subs);
-        securityLog("info", "agent.allowed_users_set", {
-          category: "authz-list",
+      try {
+        const emails = input.allowedUserEmails ?? [];
+        if (emails.length > 0) {
+          const subs = await emailsToSubs(emails);
+          await deps.setAllowedUsers(infra.id, subs);
+          securityLog("info", "agent.allowed_users_set", {
+            category: "authz-list",
+            actor: owner || null,
+            actorKind: "user",
+            agentId: infra.id,
+            result: "success",
+            detail: { added: subs, removed: [], resultUnrestricted: false },
+          });
+        }
+
+        // Bulk-seed the requested preset (default `trusted`). `none` is a
+        // no-op; the trusted host list is captured at boot, so reseeding on
+        // retry is idempotent against the lookup index.
+        if (deps.presetSeeder) {
+          await deps.presetSeeder.seed(
+            infra.id,
+            input.egressPreset ?? "trusted",
+            owner,
+          );
+        }
+
+        // Bump so the built-in platform connection ships from creation (#421).
+        await deps.runtimeMutator.bump(infra.id, []);
+
+        const agent = assembleAgent(infra, [], emails);
+        // Records the agent's initial security posture (preset, secret ref,
+        // allow-list size, env key names — never env values).
+        securityLog("info", "agent.create", {
+          category: "resource",
           actor: owner || null,
           actorKind: "user",
-          agentId: infra.id,
+          agentId: agent.id,
           result: "success",
-          detail: { added: subs, removed: [], resultUnrestricted: false },
+          detail: {
+            ...(templateId ? { templateId } : {}),
+            egressPreset: input.egressPreset ?? "trusted",
+            allowedUserCount: emails.length,
+            secretRefSet: input.secretRef !== undefined,
+            envKeys: (input.env ?? []).map((e) => e.name),
+          },
         });
+        emit({
+          type: EventType.AgentCreated,
+          agentId: agent.id,
+          ownerSub: owner,
+        });
+        return agent;
+      } catch (err) {
+        // CM exists; surface as the error pill + clear the import gate in one write, not a silent zombie.
+        await deps.repo
+          .markCreateFailed(
+            infra.id,
+            err instanceof Error ? err.message : String(err),
+          )
+          .catch(() => {});
+        throw err;
       }
-
-      // Bulk-seed the requested preset (default `trusted`). `none` is a
-      // no-op; the trusted host list is captured at boot, so reseeding on
-      // retry is idempotent against the lookup index.
-      if (deps.presetSeeder) {
-        await deps.presetSeeder.seed(
-          infra.id,
-          input.egressPreset ?? "trusted",
-          owner,
-        );
-      }
-
-      // Bump so the built-in platform connection ships from creation (#421).
-      await deps.runtimeMutator.bump(infra.id, []);
-
-      const agent = assembleAgent(infra, [], emails);
-      // Records the agent's initial security posture (preset, secret ref,
-      // allow-list size, env key names — never env values).
-      securityLog("info", "agent.create", {
-        category: "resource",
-        actor: owner || null,
-        actorKind: "user",
-        agentId: agent.id,
-        result: "success",
-        detail: {
-          ...(templateId ? { templateId } : {}),
-          egressPreset: input.egressPreset ?? "trusted",
-          allowedUserCount: emails.length,
-          secretRefSet: input.secretRef !== undefined,
-          envKeys: (input.env ?? []).map((e) => e.name),
-        },
-      });
-      emit({
-        type: EventType.AgentCreated,
-        agentId: agent.id,
-        ownerSub: owner,
-      });
-      return agent;
     },
 
     async update(input: AgentUpdateInput) {

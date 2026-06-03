@@ -76,7 +76,11 @@ export function createContributionFanOut(deps: {
       }
 
       await deps.runtimeMutator.bump(agentId, []);
-      await deps.runtimeMutator.enqueueAfterCommit(agentId);
+
+      // env triggers a pod roll; let the new pod's hello drive the worker.
+      if (!hasEnvContribs) {
+        await deps.runtimeMutator.enqueueAfterCommit(agentId);
+      }
     },
   };
 }

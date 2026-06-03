@@ -24,6 +24,8 @@ function toView(agent: Agent) {
     env: agent.spec.env,
     state: agent.state,
     error: agent.error,
+    contributionFailures: agent.contributionFailures,
+    importError: agent.importError ?? null,
     channels: agent.channels,
     allowedUserEmails: agent.allowedUserEmails,
   };

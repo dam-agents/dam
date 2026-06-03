@@ -6,6 +6,7 @@ export type {
 export {
   createAgentsRepository,
   type AgentsRepository,
+  type ContributionsSettledPort,
 } from "./infrastructure/agents-repository.js";
 export {
   createKeycloakUserDirectory,

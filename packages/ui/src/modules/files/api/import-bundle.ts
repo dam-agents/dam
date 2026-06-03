@@ -211,36 +211,48 @@ export type ImportBundleArgs = {
   entries: BundleEntry[];
 };
 
+const MAX_IMPORT_ATTEMPTS = 5;
+const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function postBundle(
   agentId: string,
   bundle: Blob,
   filename: string,
 ): Promise<ImportBundleResult> {
-  const form = new FormData();
-  form.set("bundle", bundle, filename);
-  const res = await authFetch(
-    `/api/agents/${encodeURIComponent(agentId)}/import`,
-    {
-      method: "POST",
-      body: form,
-    },
-  );
-  if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText);
-    throw new Error(text || res.statusText);
-  }
-  const parsed = importBundleResultSchema.safeParse(await res.json());
-  if (!parsed.success) {
-    console.warn(
-      "[import-bundle] schema mismatch on import response:",
-      parsed.error.issues,
+  // The bundle lives here in the client, so the api-server stays stateless: on a
+  // 503 (pod rolled mid-transfer / transient) we re-POST the same bytes — the
+  // agent's finalize is idempotent. The final attempt carries `?final=1` so the
+  // server records an explicit failure (instant badge), not via its crash-net TTL.
+  for (let attempt = 1; attempt <= MAX_IMPORT_ATTEMPTS; attempt++) {
+    const isFinal = attempt === MAX_IMPORT_ATTEMPTS;
+    const form = new FormData();
+    form.set("bundle", bundle, filename);
+    const res = await authFetch(
+      `/api/agents/${encodeURIComponent(agentId)}/import${isFinal ? "?final=1" : ""}`,
+      { method: "POST", body: form },
     );
-    // Degraded-but-valid response. Callers display these counts in a success
-    // toast — zeros surface "upload completed, stats unavailable" rather
-    // than crashing on undefined fields.
-    return { filesWritten: 0, bytes: 0, durationMs: 0 };
+    if (res.ok) {
+      const parsed = importBundleResultSchema.safeParse(await res.json());
+      if (!parsed.success) {
+        console.warn(
+          "[import-bundle] schema mismatch on import response:",
+          parsed.error.issues,
+        );
+        // Degraded-but-valid response. Callers display these counts in a success
+        // toast — zeros surface "upload completed, stats unavailable" rather
+        // than crashing on undefined fields.
+        return { filesWritten: 0, bytes: 0, durationMs: 0 };
+      }
+      return parsed.data;
+    }
+    const text = await res.text().catch(() => res.statusText);
+    // 503 = retryable (pod rolling / unreachable); anything else is fatal.
+    if (res.status !== 503 || isFinal) {
+      throw new Error(text || res.statusText);
+    }
+    await delay(Math.min(1000 * 2 ** (attempt - 1), 16_000));
   }
-  return parsed.data;
+  throw new Error("import failed after retries");
 }
 
 export async function importBundle({

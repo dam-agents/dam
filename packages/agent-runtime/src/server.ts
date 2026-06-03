@@ -60,6 +60,9 @@ const { runtime: acpRuntime, triggerDriver } = composeAcp({
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
 });
 
+// Flipped on SIGTERM so applyState refuses cleanly while the pod drains.
+let draining = false;
+
 const runtimeChannel = await composeRuntimeChannel({
   manifestPath: config.PLATFORM_DEV
     ? join(__dir, "../../platform-base/runtime-manifest.yaml")
@@ -74,6 +77,7 @@ const runtimeChannel = await composeRuntimeChannel({
     createMcpEntryPlugin(),
     createSkillInstallPlugin({ install: skillsService.install }),
   ],
+  isDraining: () => draining,
 });
 
 const CORS = {
@@ -371,3 +375,17 @@ server.listen(config.PORT, () => {
       process.env.PLATFORM_AGENT_VERSION ?? "agent-runtime/unknown",
   });
 });
+
+// SIGTERM drain: refuse new applies, stop accepting connections, let in-flight ones
+// finish, then exit. closeIdleConnections frees pooled keep-alives; the 25s timer (just
+// under the 30s pod grace) backstops a stuck request — a cut apply replays safely.
+for (const sig of ["SIGTERM", "SIGINT"] as const) {
+  process.on(sig, () => {
+    if (draining) return;
+    draining = true;
+    process.stderr.write(`[runtime] ${sig} — draining; closing server\n`);
+    server.close(() => process.exit(0));
+    server.closeIdleConnections?.();
+    setTimeout(() => process.exit(0), 25_000).unref();
+  });
+}

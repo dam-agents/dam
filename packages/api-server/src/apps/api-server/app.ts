@@ -20,9 +20,15 @@ import {
   podBaseUrl,
 } from "../../modules/agents/infrastructure/k8s.js";
 import {
+  ANN_PENDING_IMPORT,
+  ANN_IMPORT_ERROR,
+} from "../../modules/agents/infrastructure/labels.js";
+import { pollUntilReady } from "../../modules/agents/infrastructure/poll-until-ready.js";
+import {
   composeAgentsModule,
   createAgentsRepository,
   createKeycloakUserDirectory,
+  type ContributionsSettledPort,
 } from "../../modules/agents/index.js";
 import { composeTemplatesModule } from "../../modules/templates/index.js";
 import {
@@ -103,6 +109,7 @@ export interface ApiServerAppDeps {
   agentCleanupHooks: readonly AgentCleanupHook[];
   secretStores: SecretStoreRegistry;
   runtimeMutator: RuntimeMutator;
+  contributionsSettled: ContributionsSettledPort;
   schedulesBoot: SchedulesBoot;
   mountUsageRoutes: (
     app: Hono<{ Variables: { user: UserIdentity; roles: string[] } }>,
@@ -131,6 +138,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     agentCleanupHooks,
     secretStores,
     runtimeMutator,
+    contributionsSettled,
     schedulesBoot,
     terms,
     isTermsAccepted,
@@ -138,7 +146,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
-  const agentsRepo = createAgentsRepository(k8sClient);
+  const agentsRepo = createAgentsRepository(k8sClient, contributionsSettled);
 
   const connectionsBoot = composeConnectionsAtBoot({
     db,
@@ -403,6 +411,22 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     "upgrade",
     "expect",
   ]);
+  // Reachability preflight: the api-server→pod mesh route can lag kubelet-Ready
+  // on a freshly-rolled pod. fetch resolving (any status) proves the path is live;
+  // a reject is a connection error → retry (300ms→2s backoff, 15s budget).
+  const awaitImportPathLive = (agentId: string): Promise<boolean> => {
+    const url = `http://${podBaseUrl(agentId, config.namespace)}/healthz`;
+    return pollUntilReady(
+      () =>
+        fetch(url, { signal: AbortSignal.timeout(2_000) }).then(
+          () => true,
+          () => false,
+        ),
+      300,
+      2_000,
+      15_000,
+    );
+  };
   type ImportCtx = Context<{
     Variables: { user: UserIdentity; roles: string[] };
   }>;
@@ -437,10 +461,13 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     if (!Number.isFinite(length) || length < 0) {
       return c.json({ error: "invalid Content-Length" }, 400);
     }
-    let emitted = false;
-    const fireEmit = (outcome: TurnOutcome) => {
-      if (emitted) return;
-      emitted = true;
+    // Per-attempt marker state machine (single-shot). The bundle lives with the
+    // client, so the api-server stays stateless: on a roll/transient failure it
+    // returns a retryable 503 and the client re-POSTs (idempotent finalize on the
+    // agent). Failure is explicit (fatal 4xx / give-up) — never inferred from the TTL.
+    const isFinal = c.req.query("final") === "1";
+    let settled = false;
+    const emitOutcome = (outcome: TurnOutcome) =>
       emit({
         type: EventType.FilesImported,
         actorSub: user.sub,
@@ -448,9 +475,45 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         outcome,
         bytes: length,
       });
+    // Set the failure reason → the degraded badge; `importPending` flips false on its own.
+    const markFailed = (reason: string) =>
+      void agentsRepo
+        .patchAnnotation(agentId, ANN_IMPORT_ERROR, reason)
+        .catch(() => {});
+    const onSuccess = () => {
+      if (settled) return;
+      settled = true;
+      // Clear both markers → "running" can proceed with no stale badge.
+      void agentsRepo
+        .patchAnnotations(agentId, {
+          [ANN_PENDING_IMPORT]: "",
+          [ANN_IMPORT_ERROR]: "",
+        })
+        .catch(() => {});
+      emitOutcome("success");
     };
+    const onFatal = (reason: string) => {
+      if (settled) return;
+      settled = true;
+      markFailed(reason); // won't succeed on retry
+      emitOutcome("failure");
+    };
+    // Transient: leave the fresh in-progress marker so the agent stays "starting"
+    // and the client retries — unless this is the client's final attempt, recorded
+    // as an explicit failure (instant badge instead of waiting on the crash-net TTL).
+    const onRetryable = (reason: string) => {
+      if (settled) return;
+      settled = true;
+      if (isFinal) {
+        markFailed(reason);
+        emitOutcome("failure");
+      }
+    };
+
     if (length > config.maxImportBundleBytes) {
-      fireEmit("failure");
+      onFatal(
+        `bundle exceeds maximum size of ${config.maxImportBundleBytes} bytes`,
+      );
       return c.json(
         {
           error: `bundle exceeds maximum size of ${config.maxImportBundleBytes} bytes`,
@@ -458,14 +521,35 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         413,
       );
     }
+
+    // Mark this attempt in progress (awaited so any terminal marker below wins the
+    // race): gates "running", and clears a prior error so a retry or re-import
+    // re-enters "starting".
+    await agentsRepo
+      .patchAnnotations(agentId, {
+        [ANN_PENDING_IMPORT]: new Date().toISOString(),
+        [ANN_IMPORT_ERROR]: "",
+      })
+      .catch(() => {});
+
     try {
-      await agentsRepo.ensureReady(agentId);
+      // Only needs the pod reachable + not terminating — the retry (client re-POST
+      // on 503) handles any roll, so we react to one rather than anticipate it.
+      await agentsRepo.ensureImportable(agentId);
     } catch (err) {
       process.stderr.write(
-        `[import-proxy] ensureReady failed for ${agentId}: ${(err as Error).message}\n`,
+        `[import-proxy] ensureImportable failed for ${agentId}: ${(err as Error).message}\n`,
       );
-      fireEmit("failure");
-      return c.json({ error: "instance unreachable" }, 502);
+      onRetryable("instance unreachable");
+      return c.json({ error: "instance unreachable; retry" }, 503);
+    }
+    // Gate on the actual api-server→pod path being live before the upload.
+    if (!(await awaitImportPathLive(agentId))) {
+      process.stderr.write(
+        `[import-proxy] path not reachable for ${agentId} after preflight\n`,
+      );
+      onRetryable("instance unreachable");
+      return c.json({ error: "instance unreachable; retry" }, 503);
     }
     const upstreamUrl = new URL(
       `http://${podBaseUrl(agentId, config.namespace)}/api/import`,
@@ -500,41 +584,54 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
           headers: outHeaders,
         },
         (upstreamRes) => {
-          const responseHeaders = new Headers();
-          for (const [name, value] of Object.entries(upstreamRes.headers)) {
-            if (value === undefined) continue;
-            if (!PROXY_RESPONSE_HEADER_ALLOWLIST.has(name.toLowerCase()))
-              continue;
-            responseHeaders.set(
-              name,
-              Array.isArray(value) ? value.join(", ") : value,
-            );
-          }
           const status = upstreamRes.statusCode ?? 502;
-          fireEmit(status >= 200 && status < 300 ? "success" : "failure");
-          // toWeb gives a Web ReadableStream backed by the IncomingMessage —
-          // Hono streams this back to the client without buffering.
-          const body = Readable.toWeb(
-            upstreamRes,
-          ) as ReadableStream<Uint8Array>;
-          resolveOnce(
-            new Response(body, {
-              status,
-              headers: responseHeaders,
-            }),
-          );
+          if (status >= 200 && status < 300) {
+            onSuccess();
+            const responseHeaders = new Headers();
+            for (const [name, value] of Object.entries(upstreamRes.headers)) {
+              if (value === undefined) continue;
+              if (!PROXY_RESPONSE_HEADER_ALLOWLIST.has(name.toLowerCase()))
+                continue;
+              responseHeaders.set(
+                name,
+                Array.isArray(value) ? value.join(", ") : value,
+              );
+            }
+            // toWeb gives a Web ReadableStream backed by the IncomingMessage —
+            // Hono streams this back to the client without buffering.
+            const body = Readable.toWeb(
+              upstreamRes,
+            ) as ReadableStream<Uint8Array>;
+            resolveOnce(
+              new Response(body, { status, headers: responseHeaders }),
+            );
+            return;
+          }
+          upstreamRes.resume(); // discard the error body
+          if (status === 409 || status >= 500) {
+            // Import already in flight / agent hiccup — transient, client retries.
+            onRetryable(`agent returned ${status}`);
+            resolveOnce(
+              c.json({ error: "import temporarily unavailable; retry" }, 503),
+            );
+          } else {
+            // Agent rejected the bundle (e.g. validation) — fatal, do not retry.
+            onFatal(`agent rejected import (${status})`);
+            resolveOnce(c.json({ error: "import rejected" }, 422));
+          }
         },
       );
       upstreamReq.on("error", () => {
-        fireEmit("failure");
-        resolveOnce(c.json({ error: "instance unreachable" }, 502));
+        // Connection reset — typically the pod rolled mid-transfer; client retries.
+        onRetryable("connection reset");
+        resolveOnce(c.json({ error: "instance unreachable; retry" }, 503));
       });
       upstreamReq.on("close", () => {
-        // Backstop: if the upstream socket closed without ever emitting
-        // either `response` or `error` (Node sometimes does this on
-        // mid-request aborts), the Promise would otherwise hang.
-        fireEmit("failure");
-        resolveOnce(c.json({ error: "instance closed connection" }, 502));
+        // Socket closed without a response (mid-request abort) — retry.
+        onRetryable("connection closed");
+        resolveOnce(
+          c.json({ error: "instance closed connection; retry" }, 503),
+        );
       });
 
       // Pipe incoming request body straight into the upstream socket.
@@ -564,7 +661,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         try {
           upstreamReq.destroy();
         } catch {}
-        fireEmit("failure");
+        onFatal(`bundle exceeds maximum size of ${cap} bytes`);
         resolveOnce(
           c.json({ error: `bundle exceeds maximum size of ${cap} bytes` }, 413),
         );
@@ -599,6 +696,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       presetSeeder,
       cleanupHooks: agentCleanupHooks,
       runtimeMutator,
+      contributionsSettled,
     });
     const { schedules } = composeSchedulesForOwner({
       boot: schedulesBoot,
@@ -613,6 +711,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       seedSources,
       config.brand.name,
       runtimeMutator,
+      contributionsSettled,
     );
     const grants = createAgentGrantsPort(k8sClient, user.sub);
     const secrets = createSecretsService({
@@ -652,7 +751,12 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       bus: redisBus,
       wrapperFrameSender,
     });
-    const files = composeFilesModule(api, config.namespace, user.sub);
+    const files = composeFilesModule(
+      api,
+      config.namespace,
+      user.sub,
+      contributionsSettled,
+    );
 
     return fetchRequestHandler({
       endpoint: "/api/trpc",

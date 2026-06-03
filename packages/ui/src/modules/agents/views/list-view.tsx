@@ -19,6 +19,8 @@ import {
   useWakeAgent,
 } from "../api/mutations.js";
 import { useAgents } from "../api/queries.js";
+import { ContributionFailuresBadge } from "../components/contribution-failures-badge.js";
+import { ImportErrorBadge } from "../components/import-error-badge.js";
 import { AddAgentDialog } from "../dialogs/add-agent-dialog.js";
 import { ConfigureAgentDialog } from "../dialogs/configure-agent-dialog.js";
 import {
@@ -125,6 +127,10 @@ export function ListView() {
                             {agent.name}
                           </h2>
                           <StatusBadge state={display.state} />
+                          <ContributionFailuresBadge
+                            failures={agent.contributionFailures}
+                          />
+                          <ImportErrorBadge importError={agent.importError} />
                         </div>
                         {agent.description && (
                           <p className="text-[13px] text-foreground/80">

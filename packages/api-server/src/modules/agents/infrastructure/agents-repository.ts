@@ -7,6 +7,9 @@ import {
   LABEL_ROLE,
   ROLE_AGENT,
   LAST_ACTIVITY_KEY,
+  ANN_PENDING_IMPORT,
+  ANN_CREATE_ERROR,
+  ANN_CONVERGED_POD,
 } from "./labels.js";
 import {
   isOwnedBy,
@@ -18,7 +21,9 @@ import {
 import {
   parseInfraAgent,
   buildAgentConfigMap,
+  SETTLED_DEFAULT,
   type InfraAgent,
+  type ContributionsStatus,
 } from "./agents-configmap-mappers.js";
 import {
   pollUntilReady,
@@ -44,6 +49,12 @@ async function retryOnConflict<T>(fn: () => Promise<T>): Promise<T> {
   throw lastErr;
 }
 
+/** Port: outbox-derived contribution status — has the current version settled, and what failed? */
+export interface ContributionsSettledPort {
+  status(agentId: string): Promise<ContributionsStatus>;
+  statusMany(agentIds: string[]): Promise<Map<string, ContributionsStatus>>;
+}
+
 export interface AgentsRepository {
   list(owner?: string): Promise<InfraAgent[]>;
   get(id: string, owner?: string): Promise<InfraAgent | null>;
@@ -51,6 +62,7 @@ export interface AgentsRepository {
     spec: Record<string, unknown>,
     owner: string,
     templateId?: string,
+    pendingImport?: boolean,
   ): Promise<InfraAgent>;
   updateSpec(
     id: string,
@@ -69,26 +81,48 @@ export interface AgentsRepository {
     id: string,
   ): Promise<{ owner: string; agentId: string } | null>;
   patchAnnotation(id: string, key: string, value: string): Promise<void>;
+  /** Atomic multi-key annotation patch (one read-modify-write); "" clears a key. */
+  patchAnnotations(id: string, entries: Record<string, string>): Promise<void>;
+  /** One atomic write for a failed create: stamp the error, clear the import gate, hibernate. */
+  markCreateFailed(id: string, reason: string): Promise<void>;
   wakeIfHibernated(id: string): Promise<boolean>;
   isPodReady(id: string): Promise<boolean>;
-  /**
-   * Make the agent's pod reachable. Idempotent; single-flight per id;
-   * bumps `agent-platform.ai/last-activity` on every successful completion
-   * so any caller implicitly keeps the pod warm.
-   *
-   * The observed pod Ready condition is the authoritative signal — not
-   * `desiredState`. See ADR-032.
-   */
+  /** Block until podReady ∧ ¬terminating ∧ currentState=running ∧ contributionsSettled ∧ ¬importPending. */
   ensureReady(id: string): Promise<void>;
+  /** Block until the pod can safely receive a file import: podReady ∧ ¬terminating.
+   *  Roll-robustness comes from the import-proxy's retry, not from anticipating env-rolls. */
+  ensureImportable(id: string): Promise<void>;
 }
 
-export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
+export function createAgentsRepository(
+  k8s: K8sClient,
+  contributions: ContributionsSettledPort,
+): AgentsRepository {
   // Single-flight per agent id. Concurrent callers for the same id share
   // one in-flight wake+wait+bump; callers for different ids don't block each
   // other. Correctness does not depend on this (K8s optimistic concurrency
   // already serializes concurrent ConfigMap updates) — it keeps API load
   // sane under bursty call patterns.
   const inflight = new Map<string, Promise<void>>();
+
+  // DB-resilient status reads: a transient outbox-DB error must not 500 a
+  // k8s-backed list/get or abort a wake. Unknown ⇒ treat as settled.
+  const safeStatus = async (id: string): Promise<ContributionsStatus> => {
+    try {
+      return await contributions.status(id);
+    } catch {
+      return SETTLED_DEFAULT;
+    }
+  };
+  const safeStatusMany = async (
+    ids: string[],
+  ): Promise<Map<string, ContributionsStatus>> => {
+    try {
+      return await contributions.statusMany(ids);
+    } catch {
+      return new Map();
+    }
+  };
 
   // Strategic-merge-patch — no read-modify-write, no resourceVersion, no
   // 409 conflict possible. Mirrors the intent of the Go controller's
@@ -100,6 +134,82 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
         annotations: { [LAST_ACTIVITY_KEY]: new Date().toISOString() },
       },
     });
+  }
+
+  // Fully converged on the live pod — the moment we record so later incremental applies/imports don't re-gate readiness.
+  const isConverged = (a: InfraAgent): boolean =>
+    a.podReady &&
+    !a.terminating &&
+    a.currentState === "running" &&
+    a.contributionsSettled &&
+    !a.importPending;
+
+  // Stamp the converged-since-boot marker (keyed to pod uid) once, when first observed converged. Best-effort; next read retries.
+  const markConvergedIfNeeded = async (a: InfraAgent): Promise<void> => {
+    if (!a.podUid || a.warm || !isConverged(a)) return;
+    await k8s
+      .patchConfigMap(a.id, {
+        metadata: { annotations: { [ANN_CONVERGED_POD]: a.podUid } },
+      })
+      .catch(() => {});
+  };
+
+  // One read of all gate inputs: the agent projected from its CM + live pod
+  // (both podReady and `terminating` are derived from the pod).
+  const readState = async (id: string): Promise<InfraAgent | null> => {
+    const [pod, cm, status] = await Promise.all([
+      k8s.getPod(`${id}-0`),
+      k8s.getConfigMap(id),
+      safeStatus(id),
+    ]);
+    return cm ? parseInfraAgent(cm, pod ?? undefined, status) : null;
+  };
+
+  // Wake-if-needed, then poll `ready` to true (or timeout). Single-flighted per
+  // `key`, bumps last-activity on success. `deadlineMs` is shared across a
+  // composed call so reachable+extras stay within one budget, not 2×.
+  async function ensureCondition(
+    id: string,
+    key: string,
+    ready: () => Promise<boolean>,
+    diag: () => Promise<string>,
+    deadlineMs: number,
+  ): Promise<void> {
+    const existing = inflight.get(key);
+    if (existing) return existing;
+    const work = (async () => {
+      if (await ready()) {
+        await bumpLastActivity(id);
+        return;
+      }
+      await repo.wakeIfHibernated(id);
+      const ok = await pollUntilReady(
+        ready,
+        WAKE_POLL_INITIAL_MS,
+        WAKE_POLL_MAX_MS,
+        Math.max(0, deadlineMs - Date.now()),
+      );
+      if (!ok) throw new Error(await diag());
+      await bumpLastActivity(id);
+    })().finally(() => inflight.delete(key));
+    inflight.set(key, work);
+    return work;
+  }
+
+  /** ADR-032 reachability: the pod is up enough to receive a call. */
+  async function ensureReachable(
+    id: string,
+    deadlineMs: number,
+  ): Promise<void> {
+    const diag = async () =>
+      `agent ${id} did not become reachable within ${WAKE_TIMEOUT_MS / 1000}s`;
+    return ensureCondition(
+      id,
+      `reach:${id}`,
+      () => repo.isPodReady(id),
+      diag,
+      deadlineMs,
+    );
   }
 
   const repo: AgentsRepository = {
@@ -120,9 +230,21 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
         const agentId = podName.endsWith("-0") ? podName.slice(0, -2) : podName;
         podMap.set(agentId, pod);
       }
-      return configMaps.map((cm) =>
-        parseInfraAgent(cm, podMap.get(cm.metadata!.name!)),
-      );
+      const agentIds = configMaps
+        .map((cm) => cm.metadata?.name)
+        .filter((n): n is string => typeof n === "string");
+      const statusMap = await safeStatusMany(agentIds);
+      const agents = configMaps.map((cm) => {
+        const id = cm.metadata!.name!;
+        return parseInfraAgent(
+          cm,
+          podMap.get(id),
+          statusMap.get(id) ?? SETTLED_DEFAULT,
+        );
+      });
+      // Record convergence for any agent first observed warm (no-op otherwise).
+      await Promise.all(agents.map(markConvergedIfNeeded));
+      return agents;
     },
 
     async get(id, owner?) {
@@ -130,12 +252,17 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
       if (!cm) return null;
       if (!hasType(cm, TYPE_AGENT)) return null;
       if (owner && !isOwnedBy(cm, owner)) return null;
-      const pod = await k8s.getPod(`${id}-0`);
-      return parseInfraAgent(cm, pod ?? undefined);
+      const [pod, status] = await Promise.all([
+        k8s.getPod(`${id}-0`),
+        safeStatus(id),
+      ]);
+      const infra = parseInfraAgent(cm, pod ?? undefined, status);
+      await markConvergedIfNeeded(infra);
+      return infra;
     },
 
-    async create(spec, owner, templateId?) {
-      const body = buildAgentConfigMap(spec, owner, templateId);
+    async create(spec, owner, templateId?, pendingImport?) {
+      const body = buildAgentConfigMap(spec, owner, templateId, pendingImport);
       const created = await k8s.createConfigMap(body);
       return parseInfraAgent(created);
     },
@@ -181,15 +308,21 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
       if (!cm || !hasType(cm, TYPE_AGENT)) return null;
       const infra = parseInfraAgent(cm);
       if (infra.desiredState !== "hibernated") {
-        const pod = await k8s.getPod(`${id}-0`);
-        return parseInfraAgent(cm, pod ?? undefined);
+        const [pod, status] = await Promise.all([
+          k8s.getPod(`${id}-0`),
+          safeStatus(id),
+        ]);
+        return parseInfraAgent(cm, pod ?? undefined, status);
       }
       const woken = setDesiredState(cm, "running");
       await k8s.replaceConfigMap(cm.metadata!.name!, woken);
       const reread = await k8s.getConfigMap(id);
       if (!reread) return null;
-      const pod = await k8s.getPod(`${id}-0`);
-      return parseInfraAgent(reread, pod ?? undefined);
+      const [pod, status] = await Promise.all([
+        k8s.getPod(`${id}-0`),
+        safeStatus(id),
+      ]);
+      return parseInfraAgent(reread, pod ?? undefined, status);
     },
 
     async isOwnedBy(id, owner) {
@@ -219,6 +352,23 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
       await k8s.replaceConfigMap(id, cm);
     },
 
+    async patchAnnotations(id, entries) {
+      const cm = await k8s.getConfigMap(id);
+      if (!cm) return;
+      if (!cm.metadata!.annotations) cm.metadata!.annotations = {};
+      Object.assign(cm.metadata!.annotations, entries);
+      await k8s.replaceConfigMap(id, cm);
+    },
+
+    async markCreateFailed(id, reason) {
+      const cm = await k8s.getConfigMap(id);
+      if (!cm) return;
+      if (!cm.metadata!.annotations) cm.metadata!.annotations = {};
+      cm.metadata!.annotations[ANN_CREATE_ERROR] = reason;
+      delete cm.metadata!.annotations[ANN_PENDING_IMPORT];
+      await k8s.replaceConfigMap(id, setDesiredState(cm, "hibernated"));
+    },
+
     async wakeIfHibernated(id) {
       const wakeOnce = async () => {
         const cm = await k8s.getConfigMap(id);
@@ -236,33 +386,54 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
     },
 
     async ensureReady(id) {
-      const existing = inflight.get(id);
-      if (existing) return existing;
-
-      const work = (async () => {
-        const pod = await k8s.getPod(`${id}-0`);
-        if (pod !== null && isPodReady(pod)) {
-          await bumpLastActivity(id);
-          return;
-        }
-        await repo.wakeIfHibernated(id);
-        const ready = await pollUntilReady(
-          () => repo.isPodReady(id),
-          WAKE_POLL_INITIAL_MS,
-          WAKE_POLL_MAX_MS,
-          WAKE_TIMEOUT_MS,
+      const deadline = Date.now() + WAKE_TIMEOUT_MS;
+      await ensureReachable(id, deadline);
+      const ready = async (): Promise<boolean> => {
+        const infra = await readState(id);
+        if (infra === null) return false;
+        if (
+          !infra.podReady ||
+          infra.terminating ||
+          infra.currentState !== "running"
+        )
+          return false;
+        // Past the startup opening (warm), don't wait on background apply/import.
+        if (!infra.warm && (!infra.contributionsSettled || infra.importPending))
+          return false;
+        await markConvergedIfNeeded(infra);
+        return true;
+      };
+      const diag = async (): Promise<string> => {
+        const infra = await readState(id).catch(() => null);
+        return (
+          `agent ${id} did not become ready within ${WAKE_TIMEOUT_MS / 1000}s ` +
+          `(podReady=${infra?.podReady ?? "n/a"}, ` +
+          `terminating=${infra?.terminating ?? "n/a"}, ` +
+          `currentState=${infra?.currentState ?? "n/a"}, ` +
+          `warm=${infra?.warm ?? "n/a"}, ` +
+          `contributionsSettled=${infra?.contributionsSettled ?? "n/a"}, ` +
+          `importPending=${infra?.importPending ?? "n/a"})`
         );
-        if (!ready) {
-          throw new Error(
-            `agent ${id} did not become ready within ${WAKE_TIMEOUT_MS / 1000}s`,
-          );
-        }
-        await bumpLastActivity(id);
-      })().finally(() => {
-        inflight.delete(id);
-      });
-      inflight.set(id, work);
-      return work;
+      };
+      return ensureCondition(id, `ready:${id}`, ready, diag, deadline);
+    },
+
+    async ensureImportable(id) {
+      const deadline = Date.now() + WAKE_TIMEOUT_MS;
+      await ensureReachable(id, deadline);
+      const ready = async (): Promise<boolean> => {
+        const infra = await readState(id);
+        return infra !== null && infra.podReady && !infra.terminating;
+      };
+      const diag = async (): Promise<string> => {
+        const infra = await readState(id).catch(() => null);
+        return (
+          `agent ${id} did not become importable within ${WAKE_TIMEOUT_MS / 1000}s ` +
+          `(podReady=${infra?.podReady ?? "n/a"}, ` +
+          `terminating=${infra?.terminating ?? "n/a"})`
+        );
+      };
+      return ensureCondition(id, `import:${id}`, ready, diag, deadline);
     },
   };
 

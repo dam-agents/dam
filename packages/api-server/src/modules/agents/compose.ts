@@ -7,6 +7,7 @@ import type { ChannelSecretStore } from "../channels/infrastructure/channel-secr
 import {
   createAgentsRepository,
   type AgentsRepository,
+  type ContributionsSettledPort,
 } from "./infrastructure/agents-repository.js";
 import {
   createAgentsService,
@@ -50,13 +51,14 @@ export function composeAgentsModule(deps: {
   presetSeeder?: PresetSeeder;
   cleanupHooks?: readonly AgentCleanupHook[];
   runtimeMutator: RuntimeMutator;
+  contributionsSettled: ContributionsSettledPort;
 }): {
   agents: AgentsService;
   repo: AgentsRepository;
   isOwnedAgent: (agentId: string) => Promise<boolean>;
 } {
   const k8s = createK8sClient(deps.api, deps.namespace);
-  const repo = createAgentsRepository(k8s);
+  const repo = createAgentsRepository(k8s, deps.contributionsSettled);
   // For DB-scoped lookups, an undefined owner means "system-wide". The
   // Postgres queries that already accept an empty-string owner-filter
   // (channels/allowed_users repos) treat "" as "match all" — keep that.

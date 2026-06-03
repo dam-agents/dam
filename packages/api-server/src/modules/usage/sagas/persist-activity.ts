@@ -10,6 +10,9 @@ import {
   type ConnectionCreated,
   type ConnectionRemoved,
   type FilesImported,
+  type ContributionApplyFailed,
+  type ContributionRecovered,
+  type ContributionApplyGaveUp,
 } from "../../../events.js";
 import type { ActivityEventRow } from "../domain/types.js";
 
@@ -174,6 +177,78 @@ export function startPersistActivitySaga(
           } catch (err) {
             process.stderr.write(
               `[usage/persist-activity] files_imported insert failed: ${err}\n`,
+            );
+          }
+        }, STREAM_CONCURRENCY),
+      )
+      .subscribe(),
+  );
+
+  sub.add(
+    events$()
+      .pipe(
+        ofType<ContributionApplyFailed>(EventType.ContributionApplyFailed),
+        mergeMap(async (event) => {
+          try {
+            await deps.insert({
+              type: "contribution_apply_failed",
+              actorSub: null,
+              agentId: event.agentId,
+              surface: null,
+              outcome: "failure",
+              payload: { kind: event.kind, message: event.message },
+            });
+          } catch (err) {
+            process.stderr.write(
+              `[usage/persist-activity] contribution_apply_failed insert failed: ${err}\n`,
+            );
+          }
+        }, STREAM_CONCURRENCY),
+      )
+      .subscribe(),
+  );
+
+  sub.add(
+    events$()
+      .pipe(
+        ofType<ContributionRecovered>(EventType.ContributionRecovered),
+        mergeMap(async (event) => {
+          try {
+            await deps.insert({
+              type: "contribution_recovered",
+              actorSub: null,
+              agentId: event.agentId,
+              surface: null,
+              outcome: "success",
+              payload: { kind: event.kind },
+            });
+          } catch (err) {
+            process.stderr.write(
+              `[usage/persist-activity] contribution_recovered insert failed: ${err}\n`,
+            );
+          }
+        }, STREAM_CONCURRENCY),
+      )
+      .subscribe(),
+  );
+
+  sub.add(
+    events$()
+      .pipe(
+        ofType<ContributionApplyGaveUp>(EventType.ContributionApplyGaveUp),
+        mergeMap(async (event) => {
+          try {
+            await deps.insert({
+              type: "contribution_apply_gave_up",
+              actorSub: null,
+              agentId: event.agentId,
+              surface: null,
+              outcome: "failure",
+              payload: { kind: event.kind, message: event.message },
+            });
+          } catch (err) {
+            process.stderr.write(
+              `[usage/persist-activity] contribution_apply_gave_up insert failed: ${err}\n`,
             );
           }
         }, STREAM_CONCURRENCY),

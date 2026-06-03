@@ -10,6 +10,7 @@ const agent = (id: string, state: AgentView["state"]): AgentView => ({
   templateId: null,
   image: "x:latest",
   state,
+  contributionFailures: [],
   channels: [],
   allowedUserEmails: [],
 });
