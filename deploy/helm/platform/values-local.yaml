@@ -50,16 +50,6 @@ agentTemplates:
       tag: latest
     storageSize: "5Gi"
 
-  - name: google-workspace
-    enabled: false
-    description: "Google Workspace agent with Drive and Gmail via gws CLI"
-    image:
-      repository: platform-google-workspace-agent
-      tag: latest
-    storageSize: "2Gi"
-    skillPaths:
-      - $HOME/.claude/skills/
-
   - name: pi-agent
     enabled: false
     description: "Pi coding agent with multi-LLM support"

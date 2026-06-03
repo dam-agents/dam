@@ -417,13 +417,25 @@ function googleService(
     tokenUrl: "https://oauth2.googleapis.com/token",
     scopes: [...GOOGLE_BASELINE_SCOPES, ...def.scopes],
     extraAuthParams: { access_type: "offline", prompt: "consent" },
-    contributions: def.hosts.map((h) => ({
-      kind: "egress-inject",
-      host: h.host,
-      ...(h.pathPattern ? { pathPattern: h.pathPattern } : {}),
-      headerName: "Authorization",
-      valueFormat: "Bearer {value}",
-    })),
+    contributions: [
+      // The Google Workspace CLI (`gws`, baked into platform-base) reads this
+      // env var as its OAuth access token. Granting any Google connection
+      // stamps the sentinel here; the egress-inject contribution below then
+      // has Envoy swap it for the real Bearer token on *.googleapis.com calls
+      // (ADR-033). Same name across all Google services — first-granted-wins.
+      {
+        kind: "env",
+        name: "GOOGLE_WORKSPACE_CLI_TOKEN",
+        placeholder: "dummy-placeholder",
+      },
+      ...def.hosts.map((h) => ({
+        kind: "egress-inject" as const,
+        host: h.host,
+        ...(h.pathPattern ? { pathPattern: h.pathPattern } : {}),
+        headerName: "Authorization",
+        valueFormat: "Bearer {value}",
+      })),
+    ],
   };
 }
 

@@ -28,10 +28,10 @@ skills:
       gitUrl: "https://github.com/anthropics/skills"
 
 agentTemplates:
-  - name: google-workspace
+  - name: claude-code
     skillSources:
-      - name: "Google Workspace Skills"
-        gitUrl: "https://github.com/anthropics/google-workspace-skills"
+      - name: "Anthropic Skills"
+        gitUrl: "https://github.com/anthropics/skills"
 ```
 
 Users can also author skills in the Files panel and publish them upstream as pull requests via the Publish button on standalone skill rows. Publishing requires a connected GitHub account.

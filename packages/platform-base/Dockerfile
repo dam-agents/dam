@@ -61,8 +61,8 @@ RUN pnpm --filter agent-runtime build
 # Use the authored manifest, not pnpm's: modern deploy rewrites package.json
 # dependency versions to pnpm's peer-resolved form (e.g.
 # `@trpc/server: 11.16.0(typescript@6.0.2)`), which is invalid npm syntax and
-# breaks the plain `npm install` in derived agent images (claude-code,
-# google-workspace) with EINVALIDTAGNAME. agent-runtime's own package.json
+# breaks the plain `npm install` in derived agent images (e.g. claude-code)
+# with EINVALIDTAGNAME. agent-runtime's own package.json
 # already carries clean semver ranges, so overwrite the deployed manifest with
 # it and drop devDependencies — keeping deploy's lockfile-pinned node_modules
 # but an npm-consumable manifest.
@@ -114,6 +114,11 @@ RUN mkdir -p /app/working-dir/.claude /app/working-dir/.pi/agent \
 # platform-outbound MCP server now goes through the standard "first use
 # allow" prompt until we re-derive the explicit allowlist for the v2 schema.
 RUN mkdir -p /etc/claude-code && echo '{}' > /etc/claude-code/managed-settings.json
+
+# Google Workspace CLI (`gws`) — baked into the base so every agent has it,
+# pinned to the latest stable release (no-downgrade policy).
+RUN --mount=type=cache,target=/root/.npm \
+    npm install -g @googleworkspace/cli@0.22.5
 
 USER 65532
 

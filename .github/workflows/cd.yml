@@ -102,9 +102,6 @@ jobs:
           - component: codex
             dockerfile: packages/agents/codex/Dockerfile
             context: packages/agents/codex
-          - component: google-workspace-agent
-            dockerfile: packages/agents/google-workspace/Dockerfile
-            context: packages/agents/google-workspace
           - component: pi-agent
             dockerfile: packages/agents/pi-agent/Dockerfile
             context: packages/agents/pi-agent

@@ -8,7 +8,7 @@ e2e:
 
 # Helm replaces lists wholesale — narrow values-local.yaml's agentTemplates
 # down to just `mock`. The e2e task builds only platform-base + mock images,
-# so registering claude-code / codex / pi-agent / bob / google-workspace would
+# so registering claude-code / codex / pi-agent / bob would
 # leave the chart pointing at images that aren't loaded in the test cluster.
 agentTemplates:
   - name: mock
