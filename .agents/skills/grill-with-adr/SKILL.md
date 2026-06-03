@@ -21,7 +21,7 @@ During codebase exploration, also look for related ADRs and existing documentati
 
 ### File
 
-- `docs/architecture/index.md` — the main system architecture overview
+- `docs/architecture.md` — the main system architecture overview
 - `docs/ubiquitous-language.md` — the glossary of domain terms and their definitions.
 - `docs/adrs/` — the directory of ADRs
 
