@@ -3,7 +3,7 @@ FROM registry.access.redhat.com/hi/nodejs:24-builder AS base
 USER root
 ENV PATH="/app/node_modules/.bin:$PATH"
 
-RUN dnf install -y git tar gzip && dnf clean all
+RUN dnf install -y git tar gzip openssh-server && dnf clean all
 
 ARG NPM_VERSION=11.16.0
 RUN npm install -g "npm@${NPM_VERSION}" && rm -rf /usr/lib/node_modules_24/npm
@@ -126,6 +126,11 @@ RUN mkdir -p /etc/claude-code && echo '{}' > /etc/claude-code/managed-settings.j
 # pinned to the latest stable release (no-downgrade policy).
 RUN --mount=type=cache,target=/root/.npm \
     npm install -g @googleworkspace/cli@0.22.5
+
+RUN sed -i -E '/^[^:]*:[^:]*:65532:/d' /etc/passwd \
+    && echo 'agent:x:65532:0:Agent User:/home/agent:/bin/bash' >> /etc/passwd \
+    && mkdir -p /home/agent \
+    && chown -R 65532:0 /home/agent
 
 USER 65532
 

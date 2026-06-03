@@ -1,0 +1,80 @@
+# ADR-058: SSH access to agents via an in-pod inetd sshd tunneled over the agent WebSocket
+
+**Date:** 2026-06-02
+**Status:** Accepted
+**Owner:** @JanPokorny
+
+## Context
+
+`dam chat` ([ADR-037](037-remote-terminal.md)) connects a local terminal to an agent's
+PTY over a WebSocket relayed by the api-server. Users want the same reach but via
+**standard SSH** — the real `ssh` client, `scp`/`sftp`, port-forwarding, and especially
+**VS Code Remote-SSH** — pointed at an agent.
+
+Constraints that shape the design:
+
+- The agent pod's NetworkPolicy admits ingress on its single port (`:8080`) only from the
+  api-server pod ([ADR-038](038-paired-gateway-pod.md)). There is no path to expose a new
+  SSH port to the outside.
+- The agent runs as a non-root user (uid 65532) on a hardened base image; there is no
+  init system, just the agent-runtime process.
+- The api-server already authenticates every WebSocket upgrade (JWT → ownership → terms
+  acceptance) before relaying to a pod.
+
+## Decision
+
+**Run a real OpenSSH `sshd` inside the agent pod, spawned per-connection in inetd mode
+(`sshd -i`) by the agent-runtime, and tunnel the raw SSH byte-stream over a new
+`/api/ssh` WebSocket. SSH terminates at the in-pod sshd; the CLI and api-server only move
+bytes.**
+
+- **Transport.** A new agent-runtime endpoint `/api/ssh` spawns one `sshd -i` per
+  connection and bridges the child's stdin/stdout (the SSH transport) to the socket. The
+  api-server adds an `ssh` relay kind alongside `acp`/`terminal`, reusing the same upgrade
+  auth and forwarding bytes verbatim. **No listening port, no NetworkPolicy change, no
+  pod-spec change** — SSH rides the existing `:8080` WebSocket and its auth boundary.
+- **CLI.** `dam ssh --proxy <agent>` is an ssh `ProxyCommand`: it opens the WebSocket and
+  shovels raw bytes between it and stdin/stdout. `dam ssh <agent>` launches the system
+  `ssh` configured to use that proxy; `dam ssh --code <agent>` launches `code` with a
+  Remote-SSH target backed by the same proxy.
+- **Auth.** Public-key. The CLI keeps a dam-managed keypair under the XDG state dir and,
+  on each `--proxy` connect, registers the public key with the agent via a new
+  `ssh.authorizeKey` tRPC mutation (proxied through the existing `/api/agents/:id/trpc`
+  route) before connecting. `sshd -i` runs as uid 65532 and authenticates the same user —
+  **no root required** (verified: pubkey auth + bash login + PTY + sftp all work as 65532).
+  The dam key is the transport credential only; the user's real identity was already
+  verified at the api-server upgrade.
+
+## Considerations
+
+- Per-connection inetd means per-connection isolation and no long-running listener to
+  supervise; concurrent SSH sessions to one agent coexist (each its own `sshd`).
+- The host key is generated once and persists on the agent PVC; the CLI pins it in a
+  dam-managed `known_hosts` with `StrictHostKeyChecking=accept-new`. A fresh PVC rotates
+  the host key and re-prompts via accept-new.
+- `StrictModes` is disabled in the sshd config: the security boundary is the api-server
+  upgrade + NetworkPolicy, not file-mode checks on a single-user pod.
+- `dam ssh`'s editor flags (`--code`, `--code-insiders`, `--zed`) keep dam's
+  `Host` blocks in dam's own `$XDG_CONFIG_HOME/dam/ssh_config` and add a single
+  `Include` line to `~/.ssh/config` so the editor's SSH client resolves the
+  agent. That one `Include` is the only CLI write outside the XDG dirs — ssh has
+  no env-var override for its config location, and editors are often
+  already-running singletons that ignore a launch-time `PATH`/`HOME`, so an
+  `Include` is the reliable cross-editor hook. Called out in
+  [cli.md](../architecture/cli.md).
+- SSH is image-dependent: images without `sshd` (e.g. distroless `bob`) leave `/api/ssh`
+  unavailable and `dam ssh` fails cleanly.
+
+## Alternatives considered
+
+- **Embedded SSH server in the CLI** (terminate SSH locally; tunnel only the
+  resulting shell stream over the WebSocket, exactly like `dam chat`). Needs no
+  image change, but `ssh`'s `ProxyCommand` always speaks SSH to a server, so
+  this means embedding a full SSH server in the CLI and re-implementing exec,
+  sftp, and port-forwarding there — plus a new generic command-exec capability
+  in the agent-runtime — to make VS Code Remote-SSH work. Far more code, worse
+  compatibility. Rejected.
+- **Persistent sshd listener on `127.0.0.1:<port>`** in the pod with a TCP relay from
+  `/api/ssh`. Equivalent auth/CLI surface; kept as the fallback if non-root inetd ever
+  regresses, but rejected for v1 in favor of the simpler per-connection inetd (no
+  long-running process or port to manage).

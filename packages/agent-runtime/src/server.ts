@@ -24,6 +24,7 @@ import { expandHome } from "./core/expand-home.js";
 import { createFilesService } from "./modules/files.js";
 import { createImportHandlers, sweepStaging } from "./modules/import/index.js";
 import { composeSkills } from "./modules/skills/index.js";
+import { createSshService, prepareSshd, spawnSshd } from "./modules/ssh.js";
 import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
 import { createWebSocketChannel } from "./modules/acp/infrastructure/create-websocket-channel.js";
@@ -69,6 +70,7 @@ const filesService = createFilesService(homeDir);
 const skillsService = composeSkills({
   skillPaths: skillRefPaths(runtimeManifest, homeDir),
 });
+const sshService = createSshService(homeDir);
 const importHandlers = createImportHandlers(homeDir, workDir, (msg) =>
   process.stderr.write(`[import] ${msg}\n`),
 );
@@ -99,6 +101,10 @@ const runtimeChannel = await composeRuntimeChannel({
   ],
 });
 
+const preparedSshd = await prepareSshd(homeDir, (msg) =>
+  process.stderr.write(`[ssh] ${msg}\n`),
+);
+
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -120,6 +126,7 @@ const trpcHandler = createHTTPHandler({
   createContext: (): AgentRuntimeContext => ({
     files: filesService,
     skills: skillsService,
+    ssh: sshService,
     runtime: runtimeChannel.service,
   }),
   maxBodySize: TRPC_MAX_BODY_SIZE,
@@ -323,6 +330,7 @@ const server = http.createServer((req, res) => {
 
 const acpWss = new WebSocketServer({ noServer: true });
 const termWss = new WebSocketServer({ noServer: true });
+const sshWss = new WebSocketServer({ noServer: true });
 
 acpWss.on("connection", (ws) => {
   acpRuntime.attach(createWebSocketChannel(ws));
@@ -339,6 +347,16 @@ server.on("upgrade", (req, socket, head) => {
     const reset = url.searchParams.get("reset") === "1";
     termWss.handleUpgrade(req, socket, head, (ws) =>
       attachPty(sessionId, ws, { reset }),
+    );
+  } else if (url.pathname === "/api/ssh") {
+    if (!preparedSshd) {
+      socket.destroy();
+      return;
+    }
+    sshWss.handleUpgrade(req, socket, head, (ws) =>
+      spawnSshd(ws, preparedSshd, (msg) =>
+        process.stderr.write(`[ssh] ${msg}\n`),
+      ),
     );
   } else {
     socket.destroy();

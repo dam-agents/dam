@@ -44,6 +44,8 @@ export {
   skillScanInputSchema,
   skillUninstallInputSchema,
 } from "./modules/skills/schemas.js";
+export type { SshDomainError, SshService } from "./modules/ssh/types.js";
+export { sshAuthorizeKeyInputSchema } from "./modules/ssh/schemas.js";
 export { importBundleResultSchema } from "./modules/import/types.js";
 export type { ImportBundleResult } from "./modules/import/types.js";
 export {
