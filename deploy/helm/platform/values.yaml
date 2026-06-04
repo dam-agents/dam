@@ -748,6 +748,11 @@ agentRepos:
     url: https://github.com/dam-agents/google-workspace.git
     description: "Tools and skills for working with Google Workspace"
     compatibleTemplates: [claude-code]
+  - id: spotify-dj
+    name: Spotify DJ
+    url: https://github.com/dam-agents/spotify-dj.git
+    description: "Build sets, run playback, curate playlists, and discover music on Spotify"
+    compatibleTemplates: [claude-code]
 
 # -- E2E test affordances (ADR-056). Gated test-only surface: the api-server
 # registers a control tRPC namespace that drives the mock Agent harness over
