@@ -608,20 +608,27 @@ AGENT_TASKS=()
 AGENT_IMAGES=()
 while IFS=$'\t' read -r name image; do
   [ -z "$name" ] && continue
-  if [ ! -d "packages/agents/$name" ]; then
-    echo "WARN: no packages/agents/$name build task for '$name' ($image) — skipping local build" >&2
-    continue
+  if [ -d "packages/agents/$name" ]; then
+    [ -n "${AGENT_TASKS[*]}" ] && AGENT_TASKS+=(":::")
+    AGENT_TASKS+=("agents:$name:image")
+    AGENT_IMAGES+=("$image")
+  elif [ -d "packages/e2e/agents/$name" ]; then
+    # e2e fixture agents (the scripted mock) live outside packages/agents/* and
+    # have no agents:*:image task — build straight from their Dockerfile, root
+    # context so the platform-base FROM resolves. Mirrors cluster:install.
+    {{ mise_bin }} run platform-base:image
+    docker build -f "packages/e2e/agents/$name/Dockerfile" -t "$image" .
+    AGENT_IMAGES+=("$image")
+  else
+    echo "WARN: no build task for '$name' ($image) — skipping local build" >&2
   fi
-  [ -n "${AGENT_TASKS[*]}" ] && AGENT_TASKS+=(":::")
-  AGENT_TASKS+=("agents:$name:image")
-  AGENT_IMAGES+=("$image")
 done <<< "$DEPLOYED_AGENTS"
 
-if [ -z "${AGENT_TASKS[*]}" ]; then
+if [ ${#AGENT_IMAGES[@]} -eq 0 ]; then
   echo "No agent templates deployed — nothing to build."
   exit 0
 fi
-{{ mise_bin }} run "${AGENT_TASKS[@]}"
+[ -n "${AGENT_TASKS[*]}" ] && {{ mise_bin }} run "${AGENT_TASKS[@]}"
 
 echo "Loading into k3s..."
 tar="/tmp/platform-agent-images.tar"

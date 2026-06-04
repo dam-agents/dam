@@ -186,6 +186,7 @@ export function ConnectionsPicker({
             {apps.map((a) => (
               <AppItemRow
                 key={a.id}
+                testId={`connection-grant-${a.id}`}
                 label={a.name}
                 identity={undefined}
                 status={a.status}
@@ -373,6 +374,7 @@ function OAuthAppItemRow({
 }
 
 function AppItemRow({
+  testId,
   label,
   identity,
   status,
@@ -380,6 +382,7 @@ function AppItemRow({
   checked,
   onToggle,
 }: {
+  testId?: string;
   label: string;
   identity?: string;
   status: AppConnectionView["status"] | undefined;
@@ -389,6 +392,7 @@ function AppItemRow({
 }) {
   return (
     <label
+      data-testid={testId}
       className={`flex items-start gap-3 rounded-lg border bg-background px-4 py-3 cursor-pointer transition-colors hover:border-primary ${
         checked ? "border-primary bg-primary/10" : "border-border"
       }`}

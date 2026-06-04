@@ -37,3 +37,23 @@ export const getReceivedPromptsResultSchema = z
   .strict();
 
 export const resetResultSchema = z.object({ ok: z.literal(true) }).strict();
+
+export const getEnvInputSchema = z.object({ name: z.string().min(1) }).strict();
+
+export const getEnvResultSchema = z
+  .object({ value: z.string().optional() })
+  .strict();
+
+export const performFetchInputSchema = z
+  .object({
+    url: z.string().url(),
+    headers: z.record(z.string(), z.string()).optional(),
+  })
+  .strict();
+
+export const performFetchResultSchema = z
+  .object({
+    status: z.number().int(),
+    body: z.string(),
+  })
+  .strict();

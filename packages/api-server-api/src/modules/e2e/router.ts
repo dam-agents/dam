@@ -2,8 +2,12 @@ import { TRPCError } from "@trpc/server";
 import { t } from "../../trpc.js";
 import {
   e2eAgentIdInputSchema,
+  e2eGetEnvInputSchema,
+  e2ePerformFetchInputSchema,
   e2eSetScriptInputSchema,
+  getEnvResultSchema,
   getReceivedPromptsResultSchema,
+  performFetchResultSchema,
   resetResultSchema,
 } from "./schemas.js";
 
@@ -34,5 +38,24 @@ export const e2eRouter = t.router({
     .mutation(({ ctx, input }) => {
       gate(ctx);
       return ctx.e2e.reset(input.agentId);
+    }),
+
+  getEnv: t.procedure
+    .input(e2eGetEnvInputSchema)
+    .output(getEnvResultSchema)
+    .query(({ ctx, input }) => {
+      gate(ctx);
+      return ctx.e2e.getEnv(input.agentId, input.name);
+    }),
+
+  performFetch: t.procedure
+    .input(e2ePerformFetchInputSchema)
+    .output(performFetchResultSchema)
+    .mutation(({ ctx, input }) => {
+      gate(ctx);
+      return ctx.e2e.performFetch(input.agentId, {
+        url: input.url,
+        headers: input.headers,
+      });
     }),
 });

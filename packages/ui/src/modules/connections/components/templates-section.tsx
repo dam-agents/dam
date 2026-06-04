@@ -88,6 +88,7 @@ export function ConnectionTemplatesSection() {
                   {list.map((t) => (
                     <button
                       key={t.id}
+                      data-testid={`connection-template-${t.id}`}
                       onClick={() => setCreating(t)}
                       className="h-auto py-3 px-4 rounded-lg border bg-card text-left flex items-start gap-3 hover:border-primary transition-colors"
                     >

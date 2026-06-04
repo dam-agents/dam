@@ -48,3 +48,29 @@ export const e2eSetScriptInputSchema = z
     script: setScriptInputSchema,
   })
   .strict();
+
+export const getEnvResultSchema = z
+  .object({ value: z.string().optional() })
+  .strict();
+
+export const performFetchResultSchema = z
+  .object({
+    status: z.number().int(),
+    body: z.string(),
+  })
+  .strict();
+
+export const e2eGetEnvInputSchema = z
+  .object({
+    agentId: z.string().min(1),
+    name: z.string().min(1),
+  })
+  .strict();
+
+export const e2ePerformFetchInputSchema = z
+  .object({
+    agentId: z.string().min(1),
+    url: z.string().url(),
+    headers: z.record(z.string(), z.string()).optional(),
+  })
+  .strict();

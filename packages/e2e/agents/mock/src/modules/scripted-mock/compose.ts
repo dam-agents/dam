@@ -4,6 +4,7 @@ import { createScriptedMockService } from "./services/control-service.js";
 import { startAcpService } from "./services/acp-service.js";
 import { createTrpcDispatch } from "./services/trpc-dispatch.js";
 import type { AcpChannel } from "./services/ports.js";
+import { createProxyFetch } from "./infrastructure/proxy-fetch.js";
 import { createStdioChannel } from "./infrastructure/stdio-channel.js";
 import { createWorkspaceWriter } from "./infrastructure/workspace-writer.js";
 
@@ -13,7 +14,10 @@ export interface ScriptedMockComposition {
 
 export function composeScriptedMock(): ScriptedMockComposition {
   const state = createInitialState();
-  const scriptedMock = createScriptedMockService(state);
+  const scriptedMock = createScriptedMockService({
+    state,
+    proxyFetch: createProxyFetch(),
+  });
   const stdio = createStdioChannel();
 
   const tryTrpc = createTrpcDispatch({

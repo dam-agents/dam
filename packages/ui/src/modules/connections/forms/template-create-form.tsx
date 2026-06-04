@@ -183,6 +183,7 @@ export function TemplateCreateForm({
         <div className="flex flex-col gap-4">
           <LabeledInput
             label="Name"
+            testId="connection-field-name"
             placeholder="my-connection"
             value={name}
             onChange={setName}
@@ -203,6 +204,7 @@ export function TemplateCreateForm({
                 labelFor(input.name) +
                 (input.state === "optional" ? " (optional)" : "")
               }
+              testId={`connection-field-${input.name}`}
               placeholder={placeholderFor(input.name)}
               type={input.secret ? "password" : "text"}
               value={f(input.name)}
@@ -240,7 +242,11 @@ export function TemplateCreateForm({
         <Button variant="outline" onClick={onCancel} disabled={pending}>
           Cancel
         </Button>
-        <Button onClick={submit} disabled={pending}>
+        <Button
+          onClick={submit}
+          disabled={pending}
+          data-testid="connection-create-submit"
+        >
           {authorizing
             ? "Redirecting…"
             : pending
@@ -392,6 +398,7 @@ function OverridableSection({
 
 function LabeledInput({
   label,
+  testId,
   placeholder,
   type,
   value,
@@ -399,6 +406,7 @@ function LabeledInput({
   help,
 }: {
   label: string;
+  testId?: string;
   placeholder?: string;
   type?: "text" | "password";
   value: string;
@@ -412,6 +420,7 @@ function LabeledInput({
       </span>
       <Input
         type={type ?? "text"}
+        data-testid={testId}
         placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
