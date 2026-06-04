@@ -4,6 +4,7 @@ import type {
   AgentSpecCR,
   AgentState,
   ChannelConfig,
+  DriverFailure,
 } from "api-server-api";
 import type { KubeObject } from "./k8s.js";
 import {
@@ -119,6 +120,7 @@ export function assembleAgent(
   infra: InfraAgent,
   channels: ChannelConfig[],
   allowedUserEmails: string[],
+  contributionFailures: DriverFailure[],
 ): Agent {
   return {
     id: infra.id,
@@ -127,6 +129,7 @@ export function assembleAgent(
     spec: infra.spec,
     state: computeAgentState(infra),
     error: infra.error,
+    contributionFailures,
     channels,
     allowedUserEmails,
   };

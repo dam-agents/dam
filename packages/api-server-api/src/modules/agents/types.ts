@@ -58,6 +58,8 @@ export interface Agent {
   state: AgentState;
   /** Latest controller-reported error, if any. */
   error?: string;
+  /** Contributions that failed to install on the last settle; empty when healthy. */
+  contributionFailures: { kind: string; message: string }[];
   /** External communication pathways bound to this agent. */
   channels: ChannelConfig[];
   /** Emails of users (other than the owner) allowed to message this agent

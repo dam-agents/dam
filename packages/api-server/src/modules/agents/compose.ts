@@ -12,6 +12,7 @@ import {
   createAgentsService,
   type AgentCleanupHook,
   type PresetSeeder,
+  type ContributionsSettledPort,
 } from "./services/agents-service.js";
 import {
   listChannelsByOwner,
@@ -50,6 +51,7 @@ export function composeAgentsModule(deps: {
   presetSeeder?: PresetSeeder;
   cleanupHooks?: readonly AgentCleanupHook[];
   runtimeMutator: RuntimeMutator;
+  contributionsSettled: ContributionsSettledPort;
 }): {
   agents: AgentsService;
   repo: AgentsRepository;
@@ -69,6 +71,7 @@ export function composeAgentsModule(deps: {
       presetSeeder: deps.presetSeeder,
       cleanupHooks: deps.cleanupHooks,
       runtimeMutator: deps.runtimeMutator,
+      contributionsSettled: deps.contributionsSettled,
       listChannelsByOwner: listChannelsByOwner(deps.db, owner),
       listChannelsByAgent: listChannelsByAgent(deps.db, owner),
       upsertChannel: upsertChannel(deps.db, owner),

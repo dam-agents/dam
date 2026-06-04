@@ -28,6 +28,9 @@ export enum EventType {
   ConnectionCreated = "ConnectionCreated",
   ConnectionRemoved = "ConnectionRemoved",
   FilesImported = "FilesImported",
+  ContributionApplyFailed = "ContributionApplyFailed",
+  ContributionRecovered = "ContributionRecovered",
+  ContributionApplyGaveUp = "ContributionApplyGaveUp",
 }
 
 export type UserAuthenticated = {
@@ -175,6 +178,27 @@ export type FilesImported = {
   bytes: number;
 };
 
+export type ContributionApplyFailed = {
+  type: EventType.ContributionApplyFailed;
+  agentId: string;
+  kind: string;
+  message: string;
+};
+
+export type ContributionRecovered = {
+  type: EventType.ContributionRecovered;
+  agentId: string;
+  kind: string;
+};
+
+/** A contribution kind exhausted its retry budget and was abandoned (fires once at the cap). */
+export type ContributionApplyGaveUp = {
+  type: EventType.ContributionApplyGaveUp;
+  agentId: string;
+  kind: string;
+  message: string;
+};
+
 export type DomainEvent =
   | UserAuthenticated
   | AgentCreated
@@ -194,7 +218,10 @@ export type DomainEvent =
   | ScheduleFired
   | ConnectionCreated
   | ConnectionRemoved
-  | FilesImported;
+  | FilesImported
+  | ContributionApplyFailed
+  | ContributionRecovered
+  | ContributionApplyGaveUp;
 
 // ---------------------------------------------------------------------------
 // Event bus

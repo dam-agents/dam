@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-06-01
+Last verified: 2026-06-03
 
 ## Motivated by
 
@@ -14,6 +14,7 @@ Last verified: 2026-06-01
 - [ADR-027 — Slack user impersonation](../adrs/027-slack-user-impersonation.md) — channel-driven sessions carry per-user identity; channels never reach management endpoints
 - [ADR-031 — Schedules use RRULE for includes and quiet hours for exclusions](../adrs/031-schedule-rrule-quiet-hours.md) — recurrence semantics and suppression model
 - [ADR-032 — Centralized pod-reachability primitive](../adrs/032-pod-reachability-primitive.md) — observed pod `Ready` is the source of truth; every wake path routes through one primitive
+- [ADR-060 — Unified runtime-channel apply path + settlement tracking](../adrs/060-unified-apply-path-and-contributions-settled-gate.md) — a single background worker applies contributions, dispatching only to a *Ready* agent (the controller's `Ready` condition, ADR-059); settlement + per-driver failures are tracked and surfaced
 - [ADR-046 — Eliminate Instance, collapse into Agent](../adrs/046-eliminate-instance.md) — Agent is the durable runnable resource; there is no separate Instance concept
 
 ## Overview
@@ -85,6 +86,7 @@ Connector state that doesn't fit the env model (per-host CLI configs, allowlists
 ### Wake
 
 Every caller that sends work to a pod — the controller's schedule loop, the api-server's ACP relay, channel adapters — routes through a single reachability primitive ([ADR-032](../adrs/032-pod-reachability-primitive.md)). The primitive's contract: **observed pod `Ready` is the authoritative answer to "can I call this pod?"** `spec.desiredState` is user intent (running vs. hibernated) and continues to drive the reconciler, but it is no longer read as a reachability signal by callers. The primitive flips `desiredState` to `running` if needed, single-flights concurrent waits per Agent, bumps the `platform.ai/last-activity` annotation on every successful call (so any caller implicitly keeps the pod warm), and is implemented in parallel in Go (controller) and TypeScript (api-server).
+Per [ADR-060](../adrs/060-unified-apply-path-and-contributions-settled-gate.md), Contributions are applied out-of-band by a single background worker (a pod's `hello` is presence-only — it just signals the worker to dispatch). The worker dispatches **only to a Ready agent** — the same readiness gate the relay's `ensureReady` uses (the controller's `Ready` condition, [ADR-059](../adrs/059-agent-readiness-status.md)) — so an apply never targets a pod that is down or rolling; when the agent isn't Ready the outbox row stays unsettled and the periodic sweep re-dispatches once it is. Each apply runs every contribution to termination and records which drivers failed; a degraded agent (failed installs retrying in the background, capped) surfaces via its `contributionFailures` badge and never wedges. Readiness itself does **not** wait on contributions — configuration applies in the background.
 
 Two paths trigger a wake:
 

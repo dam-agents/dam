@@ -348,6 +348,7 @@ export {
   fileFormat,
   applyStateInput,
   applyStateResult,
+  driverFailure,
   stateSlice,
 } from "agent-runtime-api";
 export type {
@@ -360,5 +361,6 @@ export type {
   FileFormat,
   ApplyStateInput,
   ApplyStateResult,
+  DriverFailure,
   StateSlice,
 } from "agent-runtime-api";

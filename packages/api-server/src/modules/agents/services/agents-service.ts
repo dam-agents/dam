@@ -7,10 +7,23 @@ import {
   type EnvVar,
   type TemplateSpec,
   type ChannelConfig,
+  type DriverFailure,
   ChannelType,
 } from "api-server-api";
 import { TRPCError } from "@trpc/server";
 import type { AgentsRepository } from "../infrastructure/agents-repository.js";
+
+/** Outbox-derived contribution status, supplied by runtime-delivery. */
+export interface ContributionsStatus {
+  settled: boolean;
+  failures: DriverFailure[];
+}
+
+/** Port: the failed contributions surfaced on an agent (the degraded badge). */
+export interface ContributionsSettledPort {
+  status(agentId: string): Promise<ContributionsStatus>;
+  statusMany(agentIds: string[]): Promise<Map<string, ContributionsStatus>>;
+}
 import {
   assembleAgent,
   type InfraAgent,
@@ -74,6 +87,7 @@ export function createAgentsService(deps: {
    *  Postgres state contributes one hook. */
   cleanupHooks?: readonly AgentCleanupHook[];
   runtimeMutator: RuntimeMutator;
+  contributionsSettled: ContributionsSettledPort;
   // --- Runtime / channels / allowed-users dependencies (formerly Instance) ---
   listChannelsByOwner: () => Promise<Map<string, ChannelConfig[]>>;
   listChannelsByAgent: (agentId: string) => Promise<ChannelConfig[]>;
@@ -116,15 +130,25 @@ export function createAgentsService(deps: {
     return resolved.map((r) => r.sub!);
   }
 
+  // Fail-soft: a transient outbox-DB error must never 500 an agent read.
+  async function safeFailures(id: string): Promise<DriverFailure[]> {
+    try {
+      return (await deps.contributionsSettled.status(id)).failures;
+    } catch {
+      return [];
+    }
+  }
+
   async function project(
     infra: InfraAgent,
   ): Promise<ReturnType<typeof assembleAgent>> {
-    const [channels, allowedSubs] = await Promise.all([
+    const [channels, allowedSubs, failures] = await Promise.all([
       deps.listChannelsByAgent(infra.id),
       deps.listAllowedUsersByAgent(infra.id),
+      safeFailures(infra.id),
     ]);
     const emails = await subsToEmails(allowedSubs);
-    return assembleAgent(infra, channels, emails);
+    return assembleAgent(infra, channels, emails, failures);
   }
 
   return {
@@ -165,10 +189,19 @@ export function createAgentsService(deps: {
           ? await deps.userDirectory.resolveManyBySub(allSubs)
           : new Map<string, string>();
 
+      const failuresMap = await deps.contributionsSettled
+        .statusMany([...infraIds])
+        .catch(() => new Map<string, ContributionsStatus>());
+
       return infraAgents.map((infra) => {
         const subs = allowedUsersMap.get(infra.id) ?? [];
         const emails = subs.map((s) => subEmailMap.get(s) ?? s);
-        return assembleAgent(infra, channelMap.get(infra.id) ?? [], emails);
+        return assembleAgent(
+          infra,
+          channelMap.get(infra.id) ?? [],
+          emails,
+          failuresMap.get(infra.id)?.failures ?? [],
+        );
       });
     },
 
@@ -240,7 +273,7 @@ export function createAgentsService(deps: {
       // Bump so the built-in platform connection ships from creation (#421).
       await deps.runtimeMutator.bump(infra.id, []);
 
-      const agent = assembleAgent(infra, [], emails);
+      const agent = assembleAgent(infra, [], emails, []);
       // Records the agent's initial security posture (preset, secret ref,
       // allow-list size, env key names — never env values).
       securityLog("info", "agent.create", {
@@ -431,7 +464,10 @@ export function createAgentsService(deps: {
 
       const allowedSubs = await deps.listAllowedUsersByAgent(id);
       const emails = await subsToEmails(allowedSubs);
-      return ok(assembleAgent(infra, txResult.value.channels, emails));
+      const failures = await safeFailures(id);
+      return ok(
+        assembleAgent(infra, txResult.value.channels, emails, failures),
+      );
     },
 
     async disconnectSlack(id) {

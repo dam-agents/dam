@@ -16,6 +16,7 @@ export function createStateQueue(connection: ConnectionOptions): StateQueue {
   const queue = new Queue<StateJob>(RUNTIME_STATE_QUEUE, { connection });
   return {
     async enqueue(agentId): Promise<void> {
+      // No jobId dedup on purpose: applyState is idempotent, so a prompt redundant apply beats stalling fresh config behind an in-flight job.
       await queue.add(
         "state",
         { agentId },

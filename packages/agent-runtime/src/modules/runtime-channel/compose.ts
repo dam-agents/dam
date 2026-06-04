@@ -86,17 +86,24 @@ export async function composeRuntimeChannel(
     service,
     manifest,
     async helloOnBoot({ agentRuntimeVersion }) {
-      await runHello({
-        client: harnessClient,
-        stateStore,
-        runtime: service,
-        capabilities: {
-          contributions: contributionKinds as never,
-          events: eventKinds as never,
-        },
-        agentRuntimeVersion,
-        log,
-      });
+      const capabilities = {
+        contributions: contributionKinds as never,
+        events: eventKinds as never,
+      };
+      // Retry until it lands: the harness path (agent → gateway Envoy → mesh → api-server) can be unconverged at boot; readiness hard-depends on hello, so one miss must not wedge it.
+      for (let delay = 1_000; ; delay = Math.min(delay * 2, 30_000)) {
+        if (
+          await runHello({
+            client: harnessClient,
+            stateStore,
+            capabilities,
+            agentRuntimeVersion,
+            log,
+          })
+        )
+          return;
+        await new Promise((r) => setTimeout(r, delay));
+      }
     },
   };
 }

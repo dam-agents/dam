@@ -64,6 +64,7 @@ This directory contains ADRs for the Platform project.
 | [057](057-structured-logging.md)              | Structured logging for the api-server — Pino, JSON to stdout, security audit trail as first consumer | @pilartomas |
 | [058](058-crds-over-configmaps.md)            | CRDs over ConfigMaps — reconciled resources become custom resources | @jezekra1 |
 | [059](059-agent-readiness-status.md)          | Agent readiness is controller-computed status — agent ∧ gateway | @jezekra1 |
+| [060](060-unified-apply-path-and-contributions-settled-gate.md) | Unified runtime-channel apply path + settlement tracking (single worker, Ready-gated dispatch, retry + degraded badge) | @janjeliga |
 
 ## Drafts
 

@@ -97,8 +97,37 @@ const { api, customObjects } = createApi(config.namespace);
 await runMigrations(config.databaseUrl, config.migrationsPath);
 const { db, sql } = createDb(config.databaseUrl);
 
+if (!config.redisUrl)
+  throw new Error(
+    "REDIS_URL is required (Redis is a platform primitive — see ADR-036)",
+  );
+const bullConnection = createBullConnection(
+  config.redisUrl,
+  config.redisPassword ?? undefined,
+);
+const redisBus = createRedisBus(config.redisUrl, {
+  password: config.redisPassword ?? undefined,
+});
+
 const k8sClient = createK8sClient(api, config.namespace);
 const agentsRepo = createAgentsRepository(k8sClient);
+
+const runtimeDelivery = composeRuntimeDelivery({
+  db,
+  namespace: config.namespace,
+  bullConnection,
+  // The apply worker only dispatches to a ready agent (the controller's CRD
+  // Ready condition); otherwise it defers and the sweep retries once it's live.
+  agentRunningPort: {
+    isRunning: (agentId) => agentsRepo.isReady(agentId),
+  },
+  harnessServerUrl: config.harnessServerUrl,
+});
+runtimeDelivery.sweep.start();
+const contributionsSettledPort = {
+  status: runtimeDelivery.contributionsStatus,
+  statusMany: runtimeDelivery.contributionsStatusMany,
+};
 const channelSecretStore = createChannelSecretStore(k8sClient);
 const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);
 
@@ -165,29 +194,6 @@ const userDirectory = createKeycloakUserDirectory({
   clientSecret: config.keycloakApiClientSecret,
 });
 
-if (!config.redisUrl)
-  throw new Error(
-    "REDIS_URL is required (Redis is a platform primitive — see ADR-036)",
-  );
-const redisBus = createRedisBus(config.redisUrl, {
-  password: config.redisPassword ?? undefined,
-});
-
-const bullConnection = createBullConnection(
-  config.redisUrl,
-  config.redisPassword ?? undefined,
-);
-
-// Composed before the system-agents reader so runtimeMutator is a required agents dep (#421).
-const runtimeDelivery = composeRuntimeDelivery({
-  db,
-  namespace: config.namespace,
-  bullConnection,
-  agentRunningPort: { isRunning: () => true },
-  harnessServerUrl: config.harnessServerUrl,
-});
-runtimeDelivery.sweep.start();
-
 const { agents: systemAgents } = composeAgentsModule({
   api,
   namespace: config.namespace,
@@ -197,6 +203,7 @@ const { agents: systemAgents } = composeAgentsModule({
   channelSecretStore,
   readTemplateSpec: async () => null,
   runtimeMutator: runtimeDelivery.runtimeMutator,
+  contributionsSettled: contributionsSettledPort,
 });
 if (!config.redisUrl)
   throw new Error(
@@ -387,6 +394,7 @@ const { server: apiServer } = startApiServerApp({
   agentCleanupHooks,
   secretStores,
   runtimeMutator: runtimeDelivery.runtimeMutator,
+  contributionsSettled: contributionsSettledPort,
   schedulesBoot,
   mountUsageRoutes: usage.mount,
   terms: termsService,

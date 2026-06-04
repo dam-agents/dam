@@ -2,6 +2,7 @@ export { composeAgentsModule } from "./compose.js";
 export type {
   AgentCleanupHook,
   PresetSeeder,
+  ContributionsSettledPort,
 } from "./services/agents-service.js";
 export {
   createAgentsRepository,

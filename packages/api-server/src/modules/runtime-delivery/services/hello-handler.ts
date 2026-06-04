@@ -7,12 +7,13 @@ import type {
   AgentsRuntimeRepo,
   OutboxRepo,
 } from "../infrastructure/outbox-repo.js";
-import type { StateBuilder } from "./state-builder.js";
+import type { StateQueue } from "../infrastructure/state-queue.js";
 
+/** Presence ping + worker enqueue when the outbox is ahead of the agent. */
 export function createHelloHandler(deps: {
   outboxRepo: OutboxRepo;
   agentsRuntimeRepo: AgentsRuntimeRepo;
-  stateBuilder: StateBuilder;
+  queue: StateQueue;
 }): RuntimeDeliveryService {
   return {
     async hello(agentId: string, input: HelloInput): Promise<HelloResult> {
@@ -24,27 +25,10 @@ export function createHelloHandler(deps: {
       });
 
       const row = await deps.outboxRepo.getRow(agentId);
-      if (!row || row.version === 0) {
-        return { events: [] };
+      if (row && row.version > (input.lastAppliedVersion ?? 0)) {
+        await deps.queue.enqueue(agentId);
       }
-
-      const payload = await deps.stateBuilder.build(
-        agentId,
-        input.capabilities,
-      );
-      const divergedVersion = row.version > (input.lastAppliedVersion ?? 0);
-      const divergedHash = payload.hash !== (input.lastAppliedHash ?? null);
-      const hasEvents = payload.events.length > 0;
-
-      if (!divergedVersion && !divergedHash && !hasEvents) {
-        return { events: [] };
-      }
-
-      return {
-        version: row.version,
-        state: { contributions: payload.contributions, hash: payload.hash },
-        events: payload.events,
-      };
+      return { events: [] };
     },
   };
 }

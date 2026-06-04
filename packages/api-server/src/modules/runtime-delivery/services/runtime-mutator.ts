@@ -25,7 +25,7 @@ export function createRuntimeMutator(deps: {
         return deps.outboxRepo.bumpVersion(agentId);
       }
       return deps.db.transaction(async (tx) => {
-        const version = await deps.outboxRepo.bumpVersion(agentId, tx);
+        const version = await deps.outboxRepo.bumpVersion(agentId, tx, false);
         for (const e of events) {
           await deps.outboxRepo.insertEvent(
             {

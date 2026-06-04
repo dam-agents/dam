@@ -24,6 +24,7 @@ import type { SessionError } from "../../../store.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useAgents } from "../../agents/api/queries.js";
+import { ContributionFailuresBadge } from "../../agents/components/contribution-failures-badge.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
 import { prefetchSchedules } from "../../schedules/api/queries.js";
@@ -638,7 +639,17 @@ function ChatHeaderStatus({
     );
   }
   const agent = agents.find((a) => a.id === selectedAgent);
-  return <StatusBadge size="sm" state={agent?.state ?? "starting"} />;
+  return (
+    <>
+      <StatusBadge size="sm" state={agent?.state ?? "starting"} />
+      {agent && (
+        <ContributionFailuresBadge
+          size="sm"
+          failures={agent.contributionFailures}
+        />
+      )}
+    </>
+  );
 }
 
 function SessionErrorCard({

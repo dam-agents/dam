@@ -1,7 +1,7 @@
-import { TRPCError } from "@trpc/server";
 import type {
   ApplyStateInput,
   ApplyStateResult,
+  DriverFailure,
   RuntimeChannelService,
 } from "agent-runtime-api";
 import type { Dispatcher } from "./dispatcher.js";
@@ -30,54 +30,63 @@ export function createRuntimeChannelService(
 
       if (input.version <= local.lastAppliedVersion) {
         deps.log(
-          `[applyState] stale — incoming v=${input.version} <= local v=${local.lastAppliedVersion}; rejecting`,
+          `[applyState] stale — incoming v=${input.version} <= local v=${local.lastAppliedVersion}`,
         );
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: `stale apply: incoming version=${input.version} <= lastApplied=${local.lastAppliedVersion}`,
-        });
+        return { status: "stale", appliedVersion: local.lastAppliedVersion };
       }
 
+      let failures: DriverFailure[] = [];
       if (input.state.hash !== local.lastAppliedHash) {
         deps.log(
           `[applyState] hash changed (${(local.lastAppliedHash ?? "<none>").slice(0, 8)} → ${input.state.hash.slice(0, 8)}); dispatching ${input.state.contributions.length} contribution(s)`,
         );
-        const failures = await deps.dispatcher.apply(input.state.contributions);
-        if (failures.length > 0) {
-          const summary = failures
-            .map((f) => `${f.kind}: ${f.message}`)
-            .join("; ");
-          deps.log(
-            `[applyState] driver failure(s) — refusing to advance state. failures: ${summary}`,
-          );
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: `apply failed for ${failures.length} driver(s): ${summary}`,
-          });
-        }
+        failures = await deps.dispatcher.apply(input.state.contributions);
       } else {
         deps.log(`[applyState] hash unchanged; skipping dispatch`);
       }
 
-      await processEvents(
+      // Events apply in the same pass, independent of contribution outcome (ADR-060).
+      const settledEvents = await processEvents(
         input.events,
         deps.triggerImpl,
         deps.stateStore,
         deps.log,
       );
 
-      const next = {
+      if (failures.length > 0) {
+        const summary = failures
+          .map((f) => `${f.kind}: ${f.message}`)
+          .join("; ");
+        deps.log(
+          `[applyState] driver failure(s) — settling without advancing applied state; returning failures: ${summary}`,
+        );
+        // Leave the contribution cursor/hash behind so the retry re-dispatches.
+        return {
+          status: "ok",
+          appliedVersion: local.lastAppliedVersion,
+          appliedHash: local.lastAppliedHash,
+          failures,
+          settledEvents,
+        };
+      }
+
+      // Re-read to preserve the eventRuns just written by processEvents.
+      const current = deps.stateStore.read();
+      deps.stateStore.write({
+        ...current,
         lastAppliedVersion: input.version,
         lastAppliedHash: input.state.hash,
-      };
-      deps.stateStore.write(next);
+      });
       deps.log(
-        `[applyState] applied v=${next.lastAppliedVersion} hash=${next.lastAppliedHash.slice(0, 8)}`,
+        `[applyState] applied v=${input.version} hash=${input.state.hash.slice(0, 8)}`,
       );
 
       return {
-        appliedVersion: next.lastAppliedVersion,
-        appliedHash: next.lastAppliedHash,
+        status: "ok",
+        appliedVersion: input.version,
+        appliedHash: input.state.hash,
+        failures: [],
+        settledEvents,
       };
     },
   };

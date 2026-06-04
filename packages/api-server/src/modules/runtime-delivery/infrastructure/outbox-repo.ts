@@ -1,10 +1,10 @@
 import {
   and,
+  asc,
   eq,
-  gt,
+  inArray,
   isNull,
   lt,
-  lte,
   or,
   sql,
   type Db,
@@ -13,15 +13,18 @@ import {
   runtimeEvents,
   agents as agentsTable,
 } from "db";
-import type { RuntimeEventKind } from "api-server-api";
+import type { DriverFailure, RuntimeEventKind } from "api-server-api";
 
 export interface OutboxRow {
   agentId: string;
   version: number;
   lastEnqueuedAt: Date;
+  lastSettledVersion: number;
   lastAppliedVersion: number;
   lastAppliedHash: string | null;
   lastAppliedAt: Date | null;
+  applyFailures: DriverFailure[];
+  applyAttempts: number;
 }
 
 export interface PendingEventRow {
@@ -33,16 +36,43 @@ export interface PendingEventRow {
   expiresAt: Date;
 }
 
+/** Default cap on background re-dispatch of a failing settle. */
+export const DEFAULT_MAX_APPLY_ATTEMPTS = 8;
+
+/** Failure transitions for a settle, diffed under the row lock so each fires once. */
+export interface ApplyTransitions {
+  /** Started failing this settle → ContributionApplyFailed. */
+  newlyFailed: DriverFailure[];
+  /** Were failing, now succeeded → ContributionRecovered. */
+  recovered: string[];
+  /** Hit the retry cap this settle → ContributionApplyGaveUp. */
+  gaveUp: DriverFailure[];
+}
+
 export interface OutboxRepo {
   getRow(agentId: string): Promise<OutboxRow | null>;
-  bumpVersion(agentId: string, tx?: Db | DbTx): Promise<number>;
-  pendingEvents(agentId: string): Promise<PendingEventRow[]>;
-  stampAck(
+  getRows(agentIds: string[]): Promise<OutboxRow[]>;
+  bumpVersion(
     agentId: string,
-    ackedVersion: number,
-    ackedHash: string,
-  ): Promise<void>;
-  listStale(slopMs: number, limit: number): Promise<OutboxRow[]>;
+    tx?: Db | DbTx,
+    resetContributionErrors?: boolean,
+  ): Promise<number>;
+  pendingEvents(agentId: string): Promise<PendingEventRow[]>;
+  /** Record a settled apply and return the failure transitions (diffed under a row lock). */
+  recordOutcome(
+    agentId: string,
+    settledVersion: number,
+    result: {
+      appliedVersion: number;
+      appliedHash: string | null;
+      failures: DriverFailure[];
+      /** Event ids the agent settled this apply; marked dispatched regardless of failures. */
+      settledEventIds: string[];
+    },
+    maxAttempts?: number,
+  ): Promise<ApplyTransitions>;
+  /** Rows the sweep should re-dispatch: unsettled, or settled-with-failures under the attempt cap. */
+  listRetryable(maxAttempts: number, limit: number): Promise<OutboxRow[]>;
   deleteExpiredEvents(): Promise<number>;
   insertEvent(
     input: PendingEventRow & { createdAt?: Date },
@@ -54,9 +84,12 @@ interface InternalRow {
   agentId: string;
   version: number;
   lastEnqueuedAt: Date;
+  lastSettledVersion: number;
   lastAppliedVersion: number;
   lastAppliedHash: string | null;
   lastAppliedAt: Date | null;
+  applyFailures: DriverFailure[];
+  applyAttempts: number;
 }
 
 export function createOutboxRepo(db: Db): OutboxRepo {
@@ -69,14 +102,31 @@ export function createOutboxRepo(db: Db): OutboxRepo {
       return rows[0] ?? null;
     },
 
-    async bumpVersion(agentId, tx = db): Promise<number> {
+    async getRows(agentIds): Promise<OutboxRow[]> {
+      if (agentIds.length === 0) return [];
+      const rows = (await db
+        .select()
+        .from(runtimeStateOutbox)
+        .where(inArray(runtimeStateOutbox.agentId, agentIds))) as InternalRow[];
+      return rows;
+    },
+
+    async bumpVersion(
+      agentId,
+      tx = db,
+      resetContributionErrors = true,
+    ): Promise<number> {
+      // Only a contribution change re-arms retry; an event bump leaves errors intact.
+      const clearErrors = resetContributionErrors
+        ? sql`, apply_attempts = 0, apply_failures = '[]'::jsonb`
+        : sql``;
       const result = (await tx.execute(
         sql`
           INSERT INTO runtime_state_outbox (agent_id, version, last_enqueued_at)
           VALUES (${agentId}, 1, now())
           ON CONFLICT (agent_id) DO UPDATE
             SET version = runtime_state_outbox.version + 1,
-                last_enqueued_at = now()
+                last_enqueued_at = now()${clearErrors}
           RETURNING version
         `,
       )) as unknown as { version: number }[];
@@ -112,46 +162,92 @@ export function createOutboxRepo(db: Db): OutboxRepo {
       }));
     },
 
-    async stampAck(agentId, ackedVersion, ackedHash): Promise<void> {
-      await db.transaction(async (tx) => {
+    async recordOutcome(
+      agentId,
+      settledVersion,
+      result,
+      maxAttempts = DEFAULT_MAX_APPLY_ATTEMPTS,
+    ): Promise<ApplyTransitions> {
+      const clean = result.failures.length === 0 && result.appliedHash !== null;
+      return db.transaction(async (tx) => {
+        // Lock the row so concurrent workers can't both emit the same transition.
+        const locked = (await tx
+          .select()
+          .from(runtimeStateOutbox)
+          .where(eq(runtimeStateOutbox.agentId, agentId))
+          .for("update")) as InternalRow[];
+        const prev = locked[0];
+        if (!prev) return { newlyFailed: [], recovered: [], gaveUp: [] };
+
+        const prevKinds = new Set(prev.applyFailures.map((f) => f.kind));
+        const currKinds = new Set(result.failures.map((f) => f.kind));
+        const newlyFailed = result.failures.filter(
+          (f) => !prevKinds.has(f.kind),
+        );
+        const recovered = [...prevKinds].filter((k) => !currKinds.has(k));
+
+        // Events settle per-id, independent of the contribution outcome.
+        if (result.settledEventIds.length > 0) {
+          await tx
+            .update(runtimeEvents)
+            .set({ dispatchedAt: new Date() })
+            .where(
+              and(
+                eq(runtimeEvents.agentId, agentId),
+                inArray(runtimeEvents.id, result.settledEventIds),
+                isNull(runtimeEvents.dispatchedAt),
+              ),
+            );
+        }
+
+        if (!clean) {
+          // Leave the applied cursor behind so the retry re-dispatches.
+          const nextAttempts = prev.applyAttempts + 1;
+          await tx
+            .update(runtimeStateOutbox)
+            .set({
+              lastSettledVersion: settledVersion,
+              applyFailures: result.failures,
+              applyAttempts: nextAttempts,
+            })
+            .where(eq(runtimeStateOutbox.agentId, agentId));
+          // Only on the crossing into the cap, else a re-run (hello, direct enqueue) re-emits.
+          const gaveUp =
+            prev.applyAttempts < maxAttempts && nextAttempts >= maxAttempts
+              ? result.failures
+              : [];
+          return { newlyFailed, recovered, gaveUp };
+        }
+
         await tx
           .update(runtimeStateOutbox)
           .set({
-            lastAppliedVersion: ackedVersion,
-            lastAppliedHash: ackedHash,
+            lastSettledVersion: settledVersion,
+            lastAppliedVersion: result.appliedVersion,
+            lastAppliedHash: result.appliedHash,
             lastAppliedAt: new Date(),
+            applyFailures: [],
+            applyAttempts: 0,
           })
           .where(eq(runtimeStateOutbox.agentId, agentId));
-        await tx
-          .update(runtimeEvents)
-          .set({ dispatchedAt: new Date() })
-          .where(
-            and(
-              eq(runtimeEvents.agentId, agentId),
-              lte(runtimeEvents.version, ackedVersion),
-              isNull(runtimeEvents.dispatchedAt),
-            ),
-          );
+        return { newlyFailed, recovered, gaveUp: [] };
       });
     },
 
-    async listStale(slopMs, limit): Promise<OutboxRow[]> {
-      const cutoff = new Date(Date.now() - slopMs);
+    async listRetryable(maxAttempts, limit): Promise<OutboxRow[]> {
       const rows = (await db
         .select()
         .from(runtimeStateOutbox)
         .where(
-          and(
-            or(
-              isNull(runtimeStateOutbox.lastAppliedAt),
-              gt(
-                runtimeStateOutbox.lastEnqueuedAt,
-                runtimeStateOutbox.lastAppliedAt,
-              ),
+          or(
+            sql`${runtimeStateOutbox.lastSettledVersion} < ${runtimeStateOutbox.version}`,
+            and(
+              sql`${runtimeStateOutbox.applyFailures} <> '[]'::jsonb`,
+              lt(runtimeStateOutbox.applyAttempts, maxAttempts),
             ),
-            lt(runtimeStateOutbox.lastEnqueuedAt, cutoff),
           ),
         )
+        .orderBy(asc(runtimeStateOutbox.applyAttempts))
         .limit(limit)) as InternalRow[];
       return rows;
     },

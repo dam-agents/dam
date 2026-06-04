@@ -121,6 +121,7 @@ function makeAgent(overrides: Partial<Agent> = {}): Agent {
       image: "",
     },
     state: "running",
+    contributionFailures: [],
     channels: [],
     allowedUserEmails: [],
     ...overrides,

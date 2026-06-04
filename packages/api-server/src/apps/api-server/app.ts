@@ -23,6 +23,7 @@ import {
   composeAgentsModule,
   createAgentsRepository,
   createKeycloakUserDirectory,
+  type ContributionsSettledPort,
 } from "../../modules/agents/index.js";
 import { composeTemplatesModule } from "../../modules/templates/index.js";
 import { createTemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
@@ -104,6 +105,7 @@ export interface ApiServerAppDeps {
   agentCleanupHooks: readonly AgentCleanupHook[];
   secretStores: SecretStoreRegistry;
   runtimeMutator: RuntimeMutator;
+  contributionsSettled: ContributionsSettledPort;
   schedulesBoot: SchedulesBoot;
   mountUsageRoutes: (
     app: Hono<{ Variables: { user: UserIdentity; roles: string[] } }>,
@@ -132,6 +134,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     agentCleanupHooks,
     secretStores,
     runtimeMutator,
+    contributionsSettled,
     schedulesBoot,
     terms,
     isTermsAccepted,
@@ -601,6 +604,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       presetSeeder,
       cleanupHooks: agentCleanupHooks,
       runtimeMutator,
+      contributionsSettled,
     });
     const { schedules } = composeSchedulesForOwner({
       boot: schedulesBoot,

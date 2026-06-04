@@ -139,10 +139,22 @@ export const driverFailure = z.object({
 });
 export type DriverFailure = z.infer<typeof driverFailure>;
 
-export const applyStateResult = z.object({
-  appliedVersion: z.number().int().nonnegative(),
-  appliedHash: z.string().min(1),
-});
+// Discriminated outcome so the worker dispatches on `status`, never on error strings.
+export const applyStateResult = z.discriminatedUnion("status", [
+  // Processed: resulting cursor + any per-driver failures (empty on a fully clean apply).
+  z.object({
+    status: z.literal("ok"),
+    appliedVersion: z.number().int().nonnegative(),
+    appliedHash: z.string().min(1).nullable(), // null until the first clean settle
+    failures: z.array(driverFailure).default([]),
+    settledEvents: z.array(z.string()).default([]),
+  }),
+  // Agent already at ≥ the requested version (a prior ack was lost); worker reconciles.
+  z.object({
+    status: z.literal("stale"),
+    appliedVersion: z.number().int().nonnegative(),
+  }),
+]);
 export type ApplyStateResult = z.infer<typeof applyStateResult>;
 
 export const helloInput = z.object({

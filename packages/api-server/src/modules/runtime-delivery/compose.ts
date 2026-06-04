@@ -1,6 +1,6 @@
 import type { ConnectionOptions } from "bullmq";
 import type { Db } from "db";
-import type { RuntimeDeliveryService } from "api-server-api";
+import type { DriverFailure, RuntimeDeliveryService } from "api-server-api";
 import {
   createOutboxRepo,
   createAgentsRuntimeRepo,
@@ -43,6 +43,17 @@ export interface RuntimeDeliveryComposition {
   runtimeMutator: RuntimeMutator;
   stateBuilder: StateBuilder;
   builtin: BuiltinContributions;
+  /** Settled (`lastSettledVersion >= version`, or no row) + the drivers that failed the last settle. */
+  contributionsStatus(agentId: string): Promise<ContributionsStatus>;
+  /** Batched form; result includes every input id. */
+  contributionsStatusMany(
+    agentIds: string[],
+  ): Promise<Map<string, ContributionsStatus>>;
+}
+
+export interface ContributionsStatus {
+  settled: boolean;
+  failures: DriverFailure[];
 }
 
 export interface ComposeRuntimeDeliveryOpts {
@@ -86,7 +97,7 @@ export function composeRuntimeDelivery(
   const hello = createHelloHandler({
     outboxRepo,
     agentsRuntimeRepo,
-    stateBuilder,
+    queue,
   });
 
   const runtimeMutator = createRuntimeMutator({
@@ -105,5 +116,35 @@ export function composeRuntimeDelivery(
     runtimeMutator,
     stateBuilder,
     builtin,
+    async contributionsStatus(agentId): Promise<ContributionsStatus> {
+      const row = await outboxRepo.getRow(agentId);
+      if (!row) return { settled: true, failures: [] };
+      return {
+        settled: row.lastSettledVersion >= row.version,
+        failures: row.applyFailures,
+      };
+    },
+
+    async contributionsStatusMany(
+      agentIds,
+    ): Promise<Map<string, ContributionsStatus>> {
+      const result = new Map<string, ContributionsStatus>();
+      if (agentIds.length === 0) return result;
+      const rows = await outboxRepo.getRows(agentIds);
+      const byId = new Map(rows.map((r) => [r.agentId, r]));
+      for (const id of agentIds) {
+        const row = byId.get(id);
+        result.set(
+          id,
+          row
+            ? {
+                settled: row.lastSettledVersion >= row.version,
+                failures: row.applyFailures,
+              }
+            : { settled: true, failures: [] },
+        );
+      }
+      return result;
+    },
   };
 }
