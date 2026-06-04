@@ -357,17 +357,19 @@ if [ -n "${SKIP_IMAGE_LOAD:-}" ]; then
 else
   # Build (and below, load) only the templates enabled in the effective rendered
   # values (--set/--helm-values honored). Capture first so a failed render aborts
-  # rather than silently building none; yq emits `---` between docs.
+  # rather than silently building none. Templates are one ConfigMap keyed by
+  # "<name>.yaml" (ADR-058); emit "<name>.yaml\t<image>" per data entry.
   AGENTS_RENDERED=$(helm template platform deploy/helm/platform \
       -f deploy/helm/platform/values-local.yaml "${AGENT_VALUE_FLAGS[@]}" \
-    | yq -r 'select(.kind == "ConfigMap" and .metadata.labels["agent-platform.ai/type"] == "agent-template")
-             | .metadata.name + "\t" + (.data["spec.yaml"] | from_yaml | .image)')
+    | yq -r 'select(.kind == "ConfigMap") | select(.metadata.name | test("-agent-templates$"))
+             | .data | to_entries | .[] | .key + "\t" + (.value | from_yaml | .image)')
   # `:::` separates tasks in a single `mise run` — without it the extra task
   # names are parsed as arguments to the first task and never built.
   AGENT_TASKS=()
   AGENT_IMAGES=()
   while IFS=$'\t' read -r name image; do
     { [ -z "$name" ] || [ "$name" = "---" ]; } && continue
+    name="${name%.yaml}" # data keys are "<name>.yaml" (ADR-058 single CM)
     if [ -d "packages/agents/$name" ]; then
       [ -n "${AGENT_TASKS[*]}" ] && AGENT_TASKS+=(":::")
       AGENT_TASKS+=("agents:$name:image")
@@ -597,17 +599,19 @@ else
   KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
 fi
 
-# Rebuild only the agents the cluster has deployed (their agent-template
-# ConfigMaps). Capture first so a kubectl failure aborts rather than looking
-# like "nothing deployed".
-DEPLOYED_AGENTS=$(kubectl --kubeconfig="$KUBECONFIG" get configmap -A -l agent-platform.ai/type=agent-template -o yaml \
-  | yq -r '.items[] | .metadata.name + "\t" + (.data["spec.yaml"] | from_yaml | .image)')
+# Rebuild only the agents the cluster has deployed — their entries in the
+# agent-templates ConfigMap (ADR-058: one CM keyed by "<name>.yaml"). Capture
+# first so a kubectl failure aborts rather than looking like "nothing deployed".
+DEPLOYED_AGENTS=$(kubectl --kubeconfig="$KUBECONFIG" get configmap -A -o yaml \
+  | yq -r '.items[] | select(.metadata.name | test("-agent-templates$"))
+           | .data | to_entries | .[] | .key + "\t" + (.value | from_yaml | .image)')
 # `:::` separates tasks in a single `mise run` — without it the extra task
 # names are parsed as arguments to the first task and never built.
 AGENT_TASKS=()
 AGENT_IMAGES=()
 while IFS=$'\t' read -r name image; do
   [ -z "$name" ] && continue
+  name="${name%.yaml}" # data keys are "<name>.yaml" (ADR-058 single CM)
   if [ -d "packages/agents/$name" ]; then
     [ -n "${AGENT_TASKS[*]}" ] && AGENT_TASKS+=(":::")
     AGENT_TASKS+=("agents:$name:image")
