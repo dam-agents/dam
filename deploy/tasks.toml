@@ -624,7 +624,7 @@ while IFS=$'\t' read -r name image; do
   fi
 done <<< "$DEPLOYED_AGENTS"
 
-if [ ${#AGENT_IMAGES[@]} -eq 0 ]; then
+if [ -z "${AGENT_IMAGES[*]:-}" ]; then
   echo "No agent templates deployed — nothing to build."
   exit 0
 fi
@@ -845,10 +845,10 @@ done < <(
   kubectl --kubeconfig="$KUBECONFIG" get pvc -A -l platform.ai/instance \
     -o jsonpath='{range .items[*]}{.metadata.namespace}|{.metadata.name}|{.metadata.labels.platform\.ai/instance}{"\n"}{end}'
 )
-if [ "${#ORPHANS[@]}" -eq 0 ]; then
+if [ -z "${ORPHANS[*]:-}" ]; then
   echo "  no orphan PVCs found"
 else
-  echo "  ${#ORPHANS[@]} orphan PVC(s):"
+  echo "  $(printf '%s\n' "${ORPHANS[@]}" | wc -l | tr -d ' ') orphan PVC(s):"
   printf '    %s\n' "${ORPHANS[@]}"
   echo "  controller will GC them automatically; or delete manually with: kubectl delete pvc -n <ns> <name>"
 fi
