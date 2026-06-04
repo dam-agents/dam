@@ -624,7 +624,7 @@ while IFS=$'\t' read -r name image; do
   fi
 done <<< "$DEPLOYED_AGENTS"
 
-if [ ${#AGENT_IMAGES[@]} -eq 0 ]; then
+if [ -z "${AGENT_IMAGES[*]}" ]; then
   echo "No agent templates deployed — nothing to build."
   exit 0
 fi
