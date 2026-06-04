@@ -205,10 +205,6 @@ const { agents: systemAgents } = composeAgentsModule({
   runtimeMutator: runtimeDelivery.runtimeMutator,
   contributionsSettled: contributionsSettledPort,
 });
-if (!config.redisUrl)
-  throw new Error(
-    "REDIS_URL is required (Redis is a platform primitive — see ADR-036)",
-  );
 
 const identityLinkService = createIdentityLinkService({
   findByExternalUser: findIdentityByExternalUser(db),
