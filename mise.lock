@@ -107,6 +107,10 @@ backend = "go:golang.org/x/vuln/cmd/govulncheck"
 version = "latest"
 backend = "go:honnef.co/go/tools/cmd/staticcheck"
 
+[[tools."go:sigs.k8s.io/controller-tools/cmd/controller-gen"]]
+version = "latest"
+backend = "go:sigs.k8s.io/controller-tools/cmd/controller-gen"
+
 [[tools.gum]]
 version = "0.17.0"
 backend = "aqua:charmbracelet/gum"

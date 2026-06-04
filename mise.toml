@@ -5,6 +5,7 @@ nodejs = "24"
 go = "1.25"
 "go:honnef.co/go/tools/cmd/staticcheck" = "latest"
 "go:golang.org/x/vuln/cmd/govulncheck" = "latest"
+"go:sigs.k8s.io/controller-tools/cmd/controller-gen" = "latest"
 
 # Java + Maven — required by keycloakify to package the theme JAR (packages/keycloak-theme)
 java = "21"
