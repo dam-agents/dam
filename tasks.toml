@@ -74,9 +74,11 @@ cleanup() {
     echo "=== End diagnostics ==="
   fi
 
-  echo ""
-  echo "=== Tearing down test cluster ==="
-  mise run cluster:delete -- --vm-name="$VM_NAME" --force || true
+  if [ -z "${IS_SANDBOX:-}" ]; then
+    echo ""
+    echo "=== Tearing down test cluster ==="
+    mise run cluster:delete -- --vm-name="$VM_NAME" --force || true
+  fi
 
   exit $exit_code
 }
