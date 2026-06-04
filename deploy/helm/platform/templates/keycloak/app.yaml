@@ -83,16 +83,6 @@ spec:
                   key: KEYCLOAK_ADMIN_PASSWORD
             - name: KC_HEALTH_ENABLED
               value: "true"
-            # Keycloak 26.6/26.6.1 ship /opt/keycloak/data/tmp root-owned and
-            # not group-writable, so under a non-root UID (OpenShift's
-            # arbitrary SCC UID) the gzip resource cache fails to initialise and
-            # every static /resources/* asset 404s under `Accept-Encoding: gzip`
-            # — i.e. in every browser (keycloak/keycloak#48566). Point the io
-            # tmpdir at world-writable /tmp so the cache initialises under any
-            # UID. The cache holds only public theme assets. Remove once on
-            # Keycloak >= 26.7.0 (fix: keycloak/keycloak#48608).
-            - name: JAVA_OPTS_APPEND
-              value: "-Dkc.io.tmpdir=/tmp"
             - name: KC_LOG_CONSOLE_OUTPUT
               value: {{ .Values.keycloak.log.consoleOutput | quote }}
             - name: KC_SPI_EVENTS_LISTENER_JBOSS_LOGGING_SUCCESS_LEVEL
@@ -129,4 +119,19 @@ spec:
           {{- end }}
           resources:
             {{- toYaml .Values.keycloak.resources | nindent 12 }}
+          volumeMounts:
+            - name: gzip-cache
+              mountPath: /opt/keycloak/data/tmp
+      volumes:
+        # Keycloak 26.6/26.6.1 ship /opt/keycloak/data/tmp root-owned and not
+        # group-writable (0755), so under a non-root UID — i.e. OpenShift's
+        # arbitrary SCC UID — GzipResourceEncodingProviderFactory can't create
+        # its cache dir, and from then on every static /resources/* theme asset
+        # 404s under `Accept-Encoding: gzip`, which every browser sends
+        # (keycloak/keycloak#48566). A writable emptyDir at that path lets the
+        # gzip cache initialise under any UID. It holds only the gzip cache of
+        # public theme assets — regenerable, non-sensitive. Drop once on
+        # Keycloak >= 26.7.0, which fixes the perms upstream (keycloak#48608).
+        - name: gzip-cache
+          emptyDir: {}
 {{- end }}
