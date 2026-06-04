@@ -10,6 +10,8 @@ export function assembleSpecFromTemplate(
     name,
     version: SPEC_VERSION,
     image: tmplSpec.image,
+    // `??` not `||`: a cleared ("") description stays empty; only an omitted
+    // (undefined) one falls back to the template's default.
     description: opts.description ?? tmplSpec.description,
     mounts: tmplSpec.mounts,
     init: tmplSpec.init,

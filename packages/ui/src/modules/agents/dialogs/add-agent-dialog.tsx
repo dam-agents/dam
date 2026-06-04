@@ -250,7 +250,11 @@ export function AddAgentDialog({
       name: values.name.trim(),
       templateId: selectedTemplate?.id,
       image: selectedTemplate ? undefined : customImage.trim(),
-      description: values.description.trim() || undefined,
+      // Send the trimmed value verbatim — including "" when the user clears
+      // it — so an explicitly-empty description stays empty. spec-assembly
+      // only falls back to the template's description when this is genuinely
+      // undefined (e.g. a non-UI API caller that omits the field entirely).
+      description: values.description.trim(),
       // Always send the picker's state — even when the user hasn't toggled,
       // the baselined default (single provider preset) is real intent and
       // `setAgentAccess` is what triggers the connection-rules sync

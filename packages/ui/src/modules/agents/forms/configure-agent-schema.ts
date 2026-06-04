@@ -14,6 +14,7 @@ const envVarSchema = z.object({
  */
 export const configureAgentSchema = z.object({
   name: z.string().trim().min(1, "Required"),
+  description: z.string().trim(),
   assigned: z.array(z.string()),
   assignedAppIds: z.array(z.string()),
   envVars: z

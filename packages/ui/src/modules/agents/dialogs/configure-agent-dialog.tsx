@@ -109,6 +109,7 @@ export function ConfigureAgentDialog({
     mode: "onChange",
     defaultValues: {
       name: agent.name,
+      description: agent.description ?? "",
       assigned: [],
       assignedAppIds: [],
       envVars: userInitialEnv,
@@ -126,6 +127,7 @@ export function ConfigureAgentDialog({
     baselinedRef.current = true;
     reset({
       name: agent.name,
+      description: agent.description ?? "",
       assigned: [...accessQuery.data.secretIds].sort(),
       assignedAppIds: connectionsQuery.data.connections
         .map((c) => c.connectionId)
@@ -137,6 +139,7 @@ export function ConfigureAgentDialog({
     connectionsQuery.data,
     userInitialEnv,
     agent.name,
+    agent.description,
     reset,
   ]);
   const ready = baselinedRef.current;
@@ -301,7 +304,9 @@ export function ConfigureAgentDialog({
         });
       }
       const wantsAgentUpdate =
-        Boolean(dirtyFields.envVars) || Boolean(dirtyFields.name);
+        Boolean(dirtyFields.envVars) ||
+        Boolean(dirtyFields.name) ||
+        Boolean(dirtyFields.description);
       if (wantsAgentUpdate) {
         await updateAgent.mutateAsync({
           id: agentId,
@@ -309,6 +314,9 @@ export function ConfigureAgentDialog({
             ? { env: sanitizeEnvVars(values.envVars) }
             : {}),
           ...(dirtyFields.name ? { name: values.name.trim() } : {}),
+          ...(dirtyFields.description
+            ? { description: values.description.trim() }
+            : {}),
         });
       }
       // Preset switch is its own mutation. The server sweeps preset:* rows
@@ -417,6 +425,14 @@ export function ConfigureAgentDialog({
               className="w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted"
               disabled={saving}
               {...register("name")}
+            />
+          </FormField>
+          <FormField label="Description" error={errors.description?.message}>
+            <input
+              className="w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted"
+              placeholder="Optional"
+              disabled={saving}
+              {...register("description")}
             />
           </FormField>
         </DialogHeader>
