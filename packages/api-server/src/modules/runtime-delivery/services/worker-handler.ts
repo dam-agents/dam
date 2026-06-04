@@ -8,7 +8,7 @@ import type { DriverFailure } from "api-server-api";
 import { emit, EventType } from "../../../events.js";
 
 export interface IsAgentRunning {
-  /** True when the agent's pod is servable (Ready ∧ not terminating) — the apply may land. */
+  /** True when the agent is Ready (controller-published condition, ADR-059) — the apply may land. */
   isRunning(agentId: string): Promise<boolean>;
 }
 
@@ -28,12 +28,10 @@ export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
     const row = await deps.outboxRepo.getRow(agentId);
     if (!row) return;
 
-    // Don't dispatch to a pod that isn't servable (not Ready, or terminating): the
-    // row stays unsettled, so the sweep re-dispatches once a healthy pod is live.
+    // Don't dispatch to an agent that isn't Ready (ADR-059): the row stays
+    // unsettled, so the sweep re-dispatches once it becomes Ready.
     if (!(await deps.agentRunningPort.isRunning(agentId))) {
-      deps.log(
-        `[runtime-worker] ${agentId}: pod not servable; deferring to sweep`,
-      );
+      deps.log(`[runtime-worker] ${agentId}: agent not Ready; deferring to sweep`);
       return;
     }
 
@@ -79,7 +77,7 @@ export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
     };
     switch (outcome.status) {
       case "stale":
-        // Agent already at ≥ this version (lost ack); reconcile the cursor and settle every event we sent (it's caught up).
+        // Contributions already at ≥ this version; reconcile the cursor. Events carry their own version, so settle only the ones the agent reports it actually ran.
         deps.log(
           `[runtime-worker] ${agentId}: agent at v${outcome.appliedVersion} ≥ v${row.version} — reconciling settled cursor`,
         );
@@ -87,7 +85,7 @@ export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
           appliedVersion: row.version,
           appliedHash: payload.hash,
           failures: [],
-          settledEventIds: payload.events.map((e) => e.id),
+          settledEventIds: outcome.settledEvents,
         };
         break;
       case "ok":

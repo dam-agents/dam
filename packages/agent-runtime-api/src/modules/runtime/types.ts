@@ -149,10 +149,11 @@ export const applyStateResult = z.discriminatedUnion("status", [
     failures: z.array(driverFailure).default([]),
     settledEvents: z.array(z.string()).default([]),
   }),
-  // Agent already at ≥ the requested version (a prior ack was lost); worker reconciles.
+  // Contributions already at ≥ the requested version; worker reconciles. Events still apply (own version) — settledEvents reports which.
   z.object({
     status: z.literal("stale"),
     appliedVersion: z.number().int().nonnegative(),
+    settledEvents: z.array(z.string()).default([]),
   }),
 ]);
 export type ApplyStateResult = z.infer<typeof applyStateResult>;
