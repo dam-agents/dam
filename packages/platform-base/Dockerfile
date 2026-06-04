@@ -89,6 +89,16 @@ COPY packages/platform-base/harness-chat.sh /usr/local/bin/harness-chat
 COPY packages/platform-base/harness-terminal.sh /usr/local/bin/harness-terminal
 RUN chmod +x /usr/local/bin/harness-chat /usr/local/bin/harness-terminal
 
+# CA-trust shim (entrypoint.sh): at startup it adds the cluster's CA to the
+# system trust store. It runs as the non-root agent user, so give that user
+# write access to the dirs update-ca-trust touches — the CA input dir, the
+# generated-bundle dir, and the legacy cert dir (/etc/pki/tls/certs, where only
+# the dir itself needs to be writable; its symlinks stay root-owned).
+COPY packages/platform-base/entrypoint.sh /usr/local/bin/agent-entrypoint
+RUN chmod +x /usr/local/bin/agent-entrypoint \
+    && chown -R 65532 /etc/pki/ca-trust/source/anchors /etc/pki/ca-trust/extracted \
+    && chown 65532 /etc/pki/tls/certs
+
 COPY packages/platform-base/skills/ /app/working-dir/.agents/skills/
 COPY packages/platform-base/working-dir/.claude.json /app/working-dir/.claude.json
 COPY packages/platform-base/working-dir/.claude/settings.json /app/working-dir/.claude/settings.json
@@ -122,4 +132,5 @@ USER 65532
 ENV PORT=8080
 EXPOSE 8080
 
+ENTRYPOINT ["/usr/local/bin/agent-entrypoint"]
 CMD ["node", "dist/server.js"]

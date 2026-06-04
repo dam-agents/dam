@@ -99,9 +99,8 @@ func BuildForkAgentJob(
 		{Name: "HTTP_PROXY", Value: proxyAddr},
 		{Name: "https_proxy", Value: proxyAddr},
 		{Name: "http_proxy", Value: proxyAddr},
-		{Name: "SSL_CERT_FILE", Value: caCertPath},
+		// SSL_CERT_FILE / GIT_SSL_CAINFO left unset — see resources.go.
 		{Name: "NODE_EXTRA_CA_CERTS", Value: caCertPath},
-		{Name: "GIT_SSL_CAINFO", Value: caCertPath},
 		{Name: "NODE_USE_ENV_PROXY", Value: "1"},
 		{Name: "GIT_HTTP_PROXY_AUTHMETHOD", Value: "basic"},
 		{Name: "PLATFORM_AGENT_ID", Value: forkSpec.AgentName},

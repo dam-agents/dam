@@ -143,8 +143,14 @@ func TestBuildAgentStatefulSet_Running(t *testing.T) {
 	for _, e := range c.Env {
 		assert.NotEqual(t, "AGENT_RUNTIME_TOKEN", e.Name)
 	}
-	assert.Equal(t, "/etc/platform/ca/ca.crt", envMap["SSL_CERT_FILE"])
+	// Node gets the CA via NODE_EXTRA_CA_CERTS; SSL_CERT_FILE / GIT_SSL_CAINFO
+	// stay unset because the entrypoint installs the CA into the system trust
+	// store for the other tools. See resources.go.
 	assert.Equal(t, "/etc/platform/ca/ca.crt", envMap["NODE_EXTRA_CA_CERTS"])
+	_, hasSSLCertFile := envMap["SSL_CERT_FILE"]
+	assert.False(t, hasSSLCertFile, "SSL_CERT_FILE must be left to the entrypoint")
+	_, hasGitCAInfo := envMap["GIT_SSL_CAINFO"]
+	assert.False(t, hasGitCAInfo, "GIT_SSL_CAINFO must be left to the entrypoint")
 	assert.Equal(t, "my-instance", envMap["PLATFORM_AGENT_ID"])
 	assert.Equal(t, "8080", envMap["ACP_PORT"])
 	assert.Equal(t, "alpha", envMap["GITHUB_ORG"])
