@@ -71,7 +71,6 @@ docker build -t platform-controller:latest packages/controller/
 
 ["controller:scan:trivy"]
 dir = "{{config_root}}"
-raw = true
 usage = '''
 flag "--json" help="Emit Trivy JSON (exit 0) instead of failing on findings"
 flag "--tag <tag>" help="Scan quay.io/dam-agents/controller:<tag> instead of building locally"

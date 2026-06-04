@@ -91,7 +91,6 @@ depends = ["keycloak-theme:scan:*"]
 
 ["keycloak-theme:scan:trivy"]
 dir = "{{config_root}}"
-raw = true
 usage = '''
 flag "--json" help="Emit Trivy JSON (exit 0) instead of failing on findings"
 flag "--tag <tag>" help="Scan quay.io/dam-agents/keycloak:<tag> instead of building locally"

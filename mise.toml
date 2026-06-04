@@ -27,7 +27,6 @@ gum = "latest"
 [settings]
 experimental = true
 task.disable_spec_from_run_scripts = true
-raw = true
 
 [hooks]
 postinstall = ["{{ mise_bin }} setup"]

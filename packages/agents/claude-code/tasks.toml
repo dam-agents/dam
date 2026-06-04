@@ -13,7 +13,6 @@ depends = ["agents:claude-code:scan:*"]
 
 ["agents:claude-code:scan:trivy"]
 dir = "{{config_root}}"
-raw = true
 usage = '''
 flag "--json" help="Emit Trivy JSON (exit 0) instead of failing on findings"
 flag "--tag <tag>" help="Scan quay.io/dam-agents/claude-code:<tag> instead of building locally"

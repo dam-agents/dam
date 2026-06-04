@@ -63,7 +63,6 @@ depends = ["api-server:scan:*"]
 
 ["api-server:scan:trivy"]
 dir = "{{config_root}}"
-raw = true
 usage = '''
 flag "--json" help="Emit Trivy JSON (exit 0) instead of failing on findings"
 flag "--tag <tag>" help="Scan quay.io/dam-agents/api-server:<tag> instead of building locally"
