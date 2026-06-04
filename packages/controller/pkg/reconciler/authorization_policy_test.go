@@ -14,7 +14,7 @@ import (
 // `/internal/trigger`, or any future per-instance harness endpoint
 // scoped to the parent.
 func TestBuildForkHarnessAuthorizationPolicy_NarrowToMcp(t *testing.T) {
-	p := BuildForkHarnessAuthorizationPolicy("fork-abc", "parent-instance", testConfig, testOwnerCM)
+	p := BuildForkHarnessAuthorizationPolicy("fork-abc", "parent-instance", testConfig, testOwnerCM.Namespace, configMapOwnerRef(testOwnerCM))
 
 	assert.Equal(t, "fork-abc-harness-allow", p.GetName())
 	assert.Equal(t, testConfig.ReleaseNamespace, p.GetNamespace())
@@ -42,7 +42,7 @@ func TestBuildForkHarnessAuthorizationPolicy_NarrowToMcp(t *testing.T) {
 // stay the gate; the fork's gateway then injects the replier's
 // credential on the wire.
 func TestBuildForkExtAuthzAuthorizationPolicy_TargetsParentService(t *testing.T) {
-	p := BuildForkExtAuthzAuthorizationPolicy("fork-abc", "parent-instance", testConfig, testOwnerCM)
+	p := BuildForkExtAuthzAuthorizationPolicy("fork-abc", "parent-instance", testConfig, testOwnerCM.Namespace, configMapOwnerRef(testOwnerCM))
 
 	assert.Equal(t, "fork-abc-extauthz-allow", p.GetName())
 	assert.Equal(t, testConfig.ReleaseNamespace, p.GetNamespace())
@@ -67,7 +67,7 @@ func TestBuildForkExtAuthzAuthorizationPolicy_TargetsParentService(t *testing.T)
 // targetRefs (Gateway-API CRD), ALLOWs the SA principal to a path-prefix
 // keyed on the URL `:id`. Lives in the release ns alongside the waypoint.
 func TestBuildHarnessAuthorizationPolicy_PathPrefix(t *testing.T) {
-	p := BuildHarnessAuthorizationPolicy("my-instance", testConfig, testOwnerCM)
+	p := BuildHarnessAuthorizationPolicy("my-instance", testConfig, testOwnerCM.Namespace, configMapOwnerRef(testOwnerCM))
 
 	assert.Equal(t, "my-instance-harness-allow", p.GetName())
 	assert.Equal(t, testConfig.ReleaseNamespace, p.GetNamespace())
@@ -94,7 +94,7 @@ func TestBuildHarnessAuthorizationPolicy_PathPrefix(t *testing.T) {
 // matching SA principal — no header check, no host match needed since
 // the Service itself is per-instance.
 func TestBuildExtAuthzAuthorizationPolicy_TargetsService(t *testing.T) {
-	p := BuildExtAuthzAuthorizationPolicy("my-instance", testConfig, testOwnerCM)
+	p := BuildExtAuthzAuthorizationPolicy("my-instance", testConfig, testOwnerCM.Namespace, configMapOwnerRef(testOwnerCM))
 
 	assert.Equal(t, "my-instance-extauthz-allow", p.GetName())
 	assert.Equal(t, testConfig.ReleaseNamespace, p.GetNamespace())

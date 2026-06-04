@@ -37,7 +37,7 @@ func BuildForkAgentJob(
 	forkSpec *types.ForkSpec,
 	agentSpec *types.AgentSpec,
 	cfg *config.Config,
-	ownerCM *corev1.ConfigMap,
+	ownerRef metav1.OwnerReference,
 	credentialSecrets []corev1.Secret,
 	gatewayClusterIP string,
 ) *batchv1.Job {
@@ -295,12 +295,10 @@ func BuildForkAgentJob(
 
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      forkName,
-			Namespace: cfg.Namespace,
-			Labels:    labels,
-			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
-			},
+			Name:            forkName,
+			Namespace:       cfg.Namespace,
+			Labels:          labels,
+			OwnerReferences: []metav1.OwnerReference{ownerRef},
 		},
 		Spec: batchv1.JobSpec{
 			BackoffLimit:            &backoff,

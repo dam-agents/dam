@@ -51,14 +51,7 @@ const (
 	// the agent harness needs as placeholders (ADR-041). Connection-type
 	// Secrets do not write this annotation today and fall through to the
 	// hardcoded mapping in `credentialEnvVars` below.
-	envoyEnvMappingsAnn = "agent-platform.ai/env-mappings"
-	// Per-agent grant annotations stamped by the api-server on the
-	// instance ConfigMap. The controller reads them on every reconcile
-	// and intersects with the owner's credential Secret list. Both lists
-	// are always selective: an absent annotation reads as an empty grant
-	// set, never "all granted".
-	grantSecretIdsAnn          = "agent-platform.ai/granted-secret-ids"
-	grantConnectionIdsAnn      = "agent-platform.ai/granted-connection-ids"
+	envoyEnvMappingsAnn        = "agent-platform.ai/env-mappings"
 	credentialSecretNamePrefix = "platform-cred-"
 	envoyBootstrapVolume       = "envoy-bootstrap"
 	envoyBootstrapMount        = "/etc/envoy"
@@ -132,32 +125,32 @@ func (c envoyHostChain) Credentialed() bool { return len(c.Credentials) > 0 }
 const envoySecretTypeAllowOnly = "allow-only"
 
 // listAgentCredentialSecrets returns the owner's credential Secrets filtered
-// by the per-agent grant annotations on the instance ConfigMap. See
-// `filterByGrants` for the precise semantics.
-func listAgentCredentialSecrets(ctx context.Context, client kubernetes.Interface, namespace, owner string, agentCM *corev1.ConfigMap) ([]corev1.Secret, error) {
+// by the agent's grants. ADR-058 moved grants from ConfigMap annotations into
+// the Agent spec (grantedSecretIds / grantedConnectionIds); they arrive here as
+// the typed slices off that spec. See `filterByGrants` for the semantics.
+func listAgentCredentialSecrets(ctx context.Context, client kubernetes.Interface, namespace, owner string, grantedSecretIDs, grantedConnectionIDs []string) ([]corev1.Secret, error) {
 	all, err := listOwnerCredentialSecrets(ctx, client, namespace, owner)
 	if err != nil {
 		return nil, err
 	}
-	return filterByGrants(all, agentCM.Annotations), nil
+	return filterByGrants(all, grantedSecretIDs, grantedConnectionIDs), nil
 }
 
 // filterByGrants narrows the owner's credential Secret list using the agent's
-// grant annotations. Both lists are always selective: only Secrets whose
-// identifier appears in the relevant annotation are mounted into the
-// sidecar.
+// granted IDs. Both lists are always selective: only Secrets whose identifier
+// appears in the relevant grant slice are mounted into the sidecar.
 //
 //   - Regular secrets (`agent-platform.ai/secret-type` ∈ {anthropic, generic}):
-//     keyed by the id suffix after `platform-cred-`, looked up in
-//     `agent-platform.ai/granted-secret-ids`.
+//     keyed by the id suffix after `platform-cred-`, looked up in the granted
+//     secret IDs.
 //   - Connection secrets (`agent-platform.ai/secret-type` = connection):
-//     keyed by `agent-platform.ai/connection`, looked up in
-//     `agent-platform.ai/granted-connection-ids`.
+//     keyed by `agent-platform.ai/connection`, looked up in the granted
+//     connection IDs.
 //
-// Absent or empty annotations result in an empty intersection.
-func filterByGrants(secrets []corev1.Secret, ann map[string]string) []corev1.Secret {
-	grantedSecretIds := splitGrant(ann[grantSecretIdsAnn])
-	grantedConnIds := splitGrant(ann[grantConnectionIdsAnn])
+// An empty grant slice results in an empty intersection.
+func filterByGrants(secrets []corev1.Secret, grantedSecretIDs, grantedConnectionIDs []string) []corev1.Secret {
+	grantedSecretIds := toGrantSet(grantedSecretIDs)
+	grantedConnIds := toGrantSet(grantedConnectionIDs)
 
 	resolvedSecrets := map[string]bool{}
 	resolvedConns := map[string]bool{}
@@ -207,10 +200,10 @@ func unresolvedKeys(granted, resolved map[string]bool) []string {
 	return missing
 }
 
-func splitGrant(raw string) map[string]bool {
+func toGrantSet(ids []string) map[string]bool {
 	out := map[string]bool{}
-	for _, part := range strings.Split(raw, ",") {
-		if p := strings.TrimSpace(part); p != "" {
+	for _, id := range ids {
+		if p := strings.TrimSpace(id); p != "" {
 			out[p] = true
 		}
 	}
@@ -1092,7 +1085,7 @@ func renderEnvoyBootstrap(extAuthzInstanceID string, cfg *config.Config, chains 
 // `extAuthzInstanceID` is the instance whose per-instance ext-authz Service
 // the gateway dials (ADR-041). Long-lived pairs pass `instanceName` for
 // both args; forks pass the parent instance ID for the second.
-func BuildEnvoyBootstrapConfigMap(instanceName, extAuthzInstanceID string, cfg *config.Config, ownerCM *corev1.ConfigMap, secrets []corev1.Secret) (*corev1.ConfigMap, error) {
+func BuildEnvoyBootstrapConfigMap(instanceName, extAuthzInstanceID string, cfg *config.Config, ownerRef metav1.OwnerReference, secrets []corev1.Secret) (*corev1.ConfigMap, error) {
 	chains := chainsFromSecrets(secrets)
 	yaml, err := renderEnvoyBootstrap(extAuthzInstanceID, cfg, chains)
 	if err != nil {
@@ -1100,12 +1093,10 @@ func BuildEnvoyBootstrapConfigMap(instanceName, extAuthzInstanceID string, cfg *
 	}
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      EnvoyBootstrapName(instanceName),
-			Namespace: cfg.Namespace,
-			Labels:    map[string]string{LabelAgent: instanceName},
-			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
-			},
+			Name:            EnvoyBootstrapName(instanceName),
+			Namespace:       cfg.Namespace,
+			Labels:          map[string]string{LabelAgent: instanceName},
+			OwnerReferences: []metav1.OwnerReference{ownerRef},
 		},
 		Data: map[string]string{"envoy.yaml": yaml},
 	}, nil

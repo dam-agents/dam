@@ -7,21 +7,22 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	apitypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 
+	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
-func setupForkReconciler(t *testing.T, agents map[string]*corev1.ConfigMap, objects ...runtime.Object) (*ForkReconciler, *fake.Clientset) {
+func setupForkReconciler(t *testing.T, agents map[string]*apiv1.Agent, fork *apiv1.Fork, objects ...runtime.Object) (*ForkReconciler, *fake.Clientset) {
 	t.Helper()
 	client := fake.NewSimpleClientset(objects...)
 	// See setupReconciler — fake clientset doesn't assign ClusterIPs;
@@ -44,77 +45,73 @@ func setupForkReconciler(t *testing.T, agents map[string]*corev1.ConfigMap, obje
 		IstioWaypointName:  "apiserver-waypoint",
 		AgentProbesEnabled: true,
 	}
-	getter := &fakeGetter{cms: agents}
-	// ADR-041: ForkReconciler writes per-fork AuthorizationPolicies via
-	// the dynamic client; tests need a fake that knows the GVR.
-	r := NewForkReconciler(client, cfg, NewAgentResolver(getter)).WithDynamicClient(newFakeDynamic())
+	// The Fork CR is seeded into the dynamic fake — the reconciler writes its
+	// status subresource there (ADR-058). Agents are resolved via the getter.
+	var dynObjs []runtime.Object
+	if fork != nil {
+		u, err := forkToUnstructured(fork)
+		require.NoError(t, err)
+		dynObjs = append(dynObjs, u)
+	}
+	getter := &fakeGetter{agents: agents}
+	r := NewForkReconciler(client, cfg, NewAgentResolver(getter)).WithDynamicClient(newFakeDynamic(dynObjs...))
 	r.now = func() time.Time { return time.Unix(1_000_000, 0) }
 	return r, client
 }
 
-func forkCM(t *testing.T, name string, spec *types.ForkSpec, createdAt time.Time) *corev1.ConfigMap {
-	t.Helper()
-	data, err := yaml.Marshal(spec)
-	require.NoError(t, err)
-	return &corev1.ConfigMap{
+func forkCR(name string, spec *types.ForkSpec, createdAt time.Time) *apiv1.Fork {
+	return &apiv1.Fork{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name, Namespace: "test-agents", UID: apitypes.UID("fork-uid-" + name),
 			CreationTimestamp: metav1.Time{Time: createdAt},
 			Labels: map[string]string{
-				"agent-platform.ai/type":    "agent-fork",
-				"agent-platform.ai/agent":   spec.AgentName,
-				"agent-platform.ai/fork-id": name,
+				LabelAgent:      spec.AgentName,
+				ForkLabelForkID: name,
 			},
 		},
-		Data: map[string]string{"spec.yaml": string(data)},
+		Spec: *spec,
 	}
 }
 
-func readStatus(t *testing.T, client *fake.Clientset, name string) *types.ForkStatus {
+func readForkStatus(t *testing.T, r *ForkReconciler, name string) *apiv1.ForkStatus {
 	t.Helper()
-	cm, err := client.CoreV1().ConfigMaps("test-agents").Get(context.Background(), name, metav1.GetOptions{})
+	u, err := r.dynamic.Resource(ForksGVR).Namespace("test-agents").Get(context.Background(), name, metav1.GetOptions{})
 	require.NoError(t, err)
-	statusYAML, ok := cm.Data["status.yaml"]
-	if !ok {
+	raw, ok, _ := unstructured.NestedMap(u.Object, "status")
+	if !ok || raw == nil {
 		return nil
 	}
-	var s types.ForkStatus
-	require.NoError(t, yaml.Unmarshal([]byte(statusYAML), &s))
+	var s apiv1.ForkStatus
+	require.NoError(t, runtime.DefaultUnstructuredConverter.FromUnstructured(raw, &s))
 	return &s
 }
 
 func minimalForkSpec(agentName string) *types.ForkSpec {
 	return &types.ForkSpec{
-		Version:    types.SpecVersion,
 		AgentName:  agentName,
 		ForeignSub: "kc-user-42",
 	}
 }
 
 func TestForkReconcile_CreatesJob(t *testing.T) {
-	cm := forkCM(t, "fork-1", minimalForkSpec("my-agent"), time.Unix(1_000_000-1, 0))
-	r, client := setupForkReconciler(t,
-		map[string]*corev1.ConfigMap{"my-agent": agentCM("running")},
-		cm,
-	)
+	fork := forkCR("fork-1", minimalForkSpec("my-agent"), time.Unix(1_000_000-1, 0))
+	r, client := setupForkReconciler(t, map[string]*apiv1.Agent{"my-agent": agentCR()}, fork)
 
-	err := r.Reconcile(context.Background(), cm)
+	err := r.Reconcile(context.Background(), fork)
 	require.NoError(t, err)
 
 	job, err := client.BatchV1().Jobs("test-agents").Get(context.Background(), "fork-1", metav1.GetOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, "fork-1", job.Labels["agent-platform.ai/fork-id"])
 
-	status := readStatus(t, client, "fork-1")
+	status := readForkStatus(t, r, "fork-1")
 	require.NotNil(t, status)
-	assert.Equal(t, types.ForkPhasePending, status.Phase)
+	assert.Equal(t, apiv1.ForkPhasePending, status.Phase)
 }
 
 func TestForkReconcile_WritesReadyOnPodReady(t *testing.T) {
-	cm := forkCM(t, "fork-2", minimalForkSpec("my-agent"), time.Unix(1_000_000-1, 0))
-	r, client := setupForkReconciler(t,
-		map[string]*corev1.ConfigMap{"my-agent": agentCM("running")},
-		cm,
+	fork := forkCR("fork-2", minimalForkSpec("my-agent"), time.Unix(1_000_000-1, 0))
+	r, _ := setupForkReconciler(t, map[string]*apiv1.Agent{"my-agent": agentCR()}, fork,
 		&corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "fork-2-xyz", Namespace: "test-agents",
@@ -129,41 +126,35 @@ func TestForkReconcile_WritesReadyOnPodReady(t *testing.T) {
 		},
 	)
 
-	err := r.Reconcile(context.Background(), cm)
+	err := r.Reconcile(context.Background(), fork)
 	require.NoError(t, err)
 
-	status := readStatus(t, client, "fork-2")
+	status := readForkStatus(t, r, "fork-2")
 	require.NotNil(t, status)
-	assert.Equal(t, types.ForkPhaseReady, status.Phase)
+	assert.Equal(t, apiv1.ForkPhaseReady, status.Phase)
 	assert.Equal(t, "10.0.0.5", status.PodIP)
 	assert.Equal(t, "fork-2", status.JobName)
 }
 
 func TestForkReconcile_TimeoutEmitsFailed(t *testing.T) {
-	cm := forkCM(t, "fork-3", minimalForkSpec("my-agent"), time.Unix(1_000_000-200, 0))
-	r, client := setupForkReconciler(t,
-		map[string]*corev1.ConfigMap{"my-agent": agentCM("running")},
-		cm,
-	)
+	fork := forkCR("fork-3", minimalForkSpec("my-agent"), time.Unix(1_000_000-200, 0))
+	r, _ := setupForkReconciler(t, map[string]*apiv1.Agent{"my-agent": agentCR()}, fork)
 
-	err := r.Reconcile(context.Background(), cm)
+	err := r.Reconcile(context.Background(), fork)
 	require.Error(t, err)
 
-	status := readStatus(t, client, "fork-3")
+	status := readForkStatus(t, r, "fork-3")
 	require.NotNil(t, status)
-	assert.Equal(t, types.ForkPhaseFailed, status.Phase)
+	assert.Equal(t, apiv1.ForkPhaseFailed, status.Phase)
 	require.NotNil(t, status.Error)
 	assert.Equal(t, types.ForkReasonTimeout, status.Error.Reason)
 }
 
 func TestForkReconcile_JobFailedEmitsPodNotReady(t *testing.T) {
-	cm := forkCM(t, "fork-4", minimalForkSpec("my-agent"), time.Unix(1_000_000-1, 0))
-	r, client := setupForkReconciler(t,
-		map[string]*corev1.ConfigMap{"my-agent": agentCM("running")},
-		cm,
-	)
+	fork := forkCR("fork-4", minimalForkSpec("my-agent"), time.Unix(1_000_000-1, 0))
+	r, client := setupForkReconciler(t, map[string]*apiv1.Agent{"my-agent": agentCR()}, fork)
 
-	require.NoError(t, r.Reconcile(context.Background(), cm))
+	require.NoError(t, r.Reconcile(context.Background(), fork))
 
 	job, err := client.BatchV1().Jobs("test-agents").Get(context.Background(), "fork-4", metav1.GetOptions{})
 	require.NoError(t, err)
@@ -173,65 +164,36 @@ func TestForkReconcile_JobFailedEmitsPodNotReady(t *testing.T) {
 	_, err = client.BatchV1().Jobs("test-agents").Update(context.Background(), job, metav1.UpdateOptions{})
 	require.NoError(t, err)
 
-	err = r.Reconcile(context.Background(), cm)
+	err = r.Reconcile(context.Background(), fork)
 	require.Error(t, err)
 
-	status := readStatus(t, client, "fork-4")
+	status := readForkStatus(t, r, "fork-4")
 	require.NotNil(t, status)
-	assert.Equal(t, types.ForkPhaseFailed, status.Phase)
+	assert.Equal(t, apiv1.ForkPhaseFailed, status.Phase)
 	require.NotNil(t, status.Error)
 	assert.Equal(t, types.ForkReasonPodNotReady, status.Error.Reason)
 }
 
 func TestForkReconcile_MissingAgentEmitsOrchestrationFailed(t *testing.T) {
-	cm := forkCM(t, "fork-5", minimalForkSpec("ghost-agent"), time.Unix(1_000_000-1, 0))
-	r, client := setupForkReconciler(t,
-		map[string]*corev1.ConfigMap{},
-		cm,
-	)
+	fork := forkCR("fork-5", minimalForkSpec("ghost-agent"), time.Unix(1_000_000-1, 0))
+	r, _ := setupForkReconciler(t, map[string]*apiv1.Agent{}, fork)
 
-	err := r.Reconcile(context.Background(), cm)
+	err := r.Reconcile(context.Background(), fork)
 	require.Error(t, err)
 
-	status := readStatus(t, client, "fork-5")
+	status := readForkStatus(t, r, "fork-5")
 	require.NotNil(t, status)
-	assert.Equal(t, types.ForkPhaseFailed, status.Phase)
+	assert.Equal(t, apiv1.ForkPhaseFailed, status.Phase)
 	require.NotNil(t, status.Error)
 	assert.Equal(t, types.ForkReasonOrchestrationFailed, status.Error.Reason)
 }
 
-func TestForkReconcile_InvalidSpecEmitsOrchestrationFailed(t *testing.T) {
-	r, client := setupForkReconciler(t,
-		map[string]*corev1.ConfigMap{"my-agent": agentCM("running")},
-	)
-	cm := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "fork-6", Namespace: "test-agents",
-			CreationTimestamp: metav1.Time{Time: time.Unix(1_000_000-1, 0)},
-			Labels:            map[string]string{"agent-platform.ai/type": "agent-fork"},
-		},
-		Data: map[string]string{"spec.yaml": "this is not: valid: yaml: at all"},
-	}
-	_, err := client.CoreV1().ConfigMaps("test-agents").Create(context.Background(), cm, metav1.CreateOptions{})
-	require.NoError(t, err)
-
-	err = r.Reconcile(context.Background(), cm)
-	require.Error(t, err)
-
-	status := readStatus(t, client, "fork-6")
-	require.NotNil(t, status)
-	assert.Equal(t, types.ForkPhaseFailed, status.Phase)
-}
-
 func TestForkReconcile_TerminalPhasesAreNoOp(t *testing.T) {
-	cm := forkCM(t, "fork-7", minimalForkSpec("my-agent"), time.Unix(1_000_000-1, 0))
-	cm.Data["status.yaml"] = "version: agent-platform.ai/v1\nphase: Completed\n"
-	r, client := setupForkReconciler(t,
-		map[string]*corev1.ConfigMap{"my-agent": agentCM("running")},
-		cm,
-	)
+	fork := forkCR("fork-7", minimalForkSpec("my-agent"), time.Unix(1_000_000-1, 0))
+	fork.Status.Phase = apiv1.ForkPhaseCompleted
+	r, client := setupForkReconciler(t, map[string]*apiv1.Agent{"my-agent": agentCR()}, fork)
 
-	err := r.Reconcile(context.Background(), cm)
+	err := r.Reconcile(context.Background(), fork)
 	require.NoError(t, err)
 
 	_, err = client.BatchV1().Jobs("test-agents").Get(context.Background(), "fork-7", metav1.GetOptions{})

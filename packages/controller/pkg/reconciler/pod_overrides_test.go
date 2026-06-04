@@ -101,7 +101,7 @@ func TestApplyAgentBaseScheduling_StampsAllFields(t *testing.T) {
 
 func TestBuildAgentStatefulSet_AgentBase_FullSurface(t *testing.T) {
 	cfg := configWith(fullAgentBase())
-	ss := BuildAgentStatefulSet("my-instance", testAgent, cfg, testOwnerCM, nil, "")
+	ss := BuildAgentStatefulSet("my-instance", testAgent, cfg, configMapOwnerRef(testOwnerCM), nil, "")
 	require.NotNil(t, ss)
 	spec := ss.Spec.Template.Spec
 	meta := ss.Spec.Template.ObjectMeta
@@ -142,7 +142,7 @@ func TestBuildAgentStatefulSet_TemplateOverridesPullPolicyAndResources(t *testin
 	tmpl.Resources = types.ResourceSpec{
 		Requests: map[string]string{"cpu": "2", "memory": "4Gi"},
 	}
-	ss := BuildAgentStatefulSet("my-instance", &tmpl, &cfg, testOwnerCM, nil, "")
+	ss := BuildAgentStatefulSet("my-instance", &tmpl, &cfg, configMapOwnerRef(testOwnerCM), nil, "")
 	c := ss.Spec.Template.Spec.Containers[0]
 	assert.Equal(t, corev1.PullAlways, c.ImagePullPolicy, "template pullPolicy wins")
 	assert.Equal(t, resource.MustParse("2"), c.Resources.Requests[corev1.ResourceCPU], "template resources win")
@@ -161,8 +161,8 @@ func TestBuildAgentStatefulSet_FallsBackToTemplateDefaultsMountsAndEnv(t *testin
 	}
 	cfg.AgentTemplateDefaults.Env = []config.EnvVar{{Name: "PORT", Value: "8080"}}
 
-	bare := &types.AgentSpec{Image: "ghcr.io/myorg/agent:latest", Version: types.SpecVersion}
-	ss := BuildAgentStatefulSet("my-instance", bare, &cfg, testOwnerCM, nil, "")
+	bare := &types.AgentSpec{Image: "ghcr.io/myorg/agent:latest"}
+	ss := BuildAgentStatefulSet("my-instance", bare, &cfg, configMapOwnerRef(testOwnerCM), nil, "")
 
 	var sawHome bool
 	for _, vm := range ss.Spec.Template.Spec.Containers[0].VolumeMounts {

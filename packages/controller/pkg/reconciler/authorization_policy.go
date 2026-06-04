@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -53,21 +52,20 @@ var authzPolicyGVR = schema.GroupVersionResource{
 // authzPolicy builds an unstructured AuthorizationPolicy with the given
 // metadata + spec. Centralised so the three Build* helpers stay terse.
 //
-// `ownerCM` is consulted only when its namespace matches the policy's
+// The ownerRef is attached only when `ownerNamespace` matches the policy's
 // namespace — K8s ownerRef does not carry a namespace and assumes same-
 // namespace, so a cross-namespace ref triggers K8s GC to reap the
 // policy as orphaned. For policies in the release namespace (harness,
-// ext-authz) we omit the ownerRef and clean them up by label in
-// `instance.go Delete()`.
-func authzPolicy(name, namespace string, ownerCM *corev1.ConfigMap, labels map[string]string, spec map[string]interface{}) *unstructured.Unstructured {
+// ext-authz) we omit the ownerRef and clean them up by label in Delete().
+func authzPolicy(name, namespace, ownerNamespace string, ownerRef metav1.OwnerReference, labels map[string]string, spec map[string]interface{}) *unstructured.Unstructured {
 	meta := map[string]interface{}{
 		"name":      name,
 		"namespace": namespace,
 		"labels":    toInterfaceMap(labels),
 	}
-	if ownerCM.Namespace == namespace {
+	if ownerNamespace == namespace {
 		meta["ownerReferences"] = []interface{}{
-			ownerRefAsMap(metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap"))),
+			ownerRefAsMap(&ownerRef),
 		}
 	}
 	return &unstructured.Unstructured{Object: map[string]interface{}{
@@ -109,7 +107,7 @@ func ownerRefAsMap(r *metav1.OwnerReference) map[string]interface{} {
 //
 // `principalAgentID` is the agent ID; this is also the URL `:id`
 // the policy enforces.
-func BuildHarnessAuthorizationPolicy(principalAgentID string, cfg *config.Config, ownerCM *corev1.ConfigMap) *unstructured.Unstructured {
+func BuildHarnessAuthorizationPolicy(principalAgentID string, cfg *config.Config, ownerNamespace string, ownerRef metav1.OwnerReference) *unstructured.Unstructured {
 	spec := map[string]interface{}{
 		"targetRefs": []interface{}{
 			map[string]interface{}{
@@ -143,7 +141,7 @@ func BuildHarnessAuthorizationPolicy(principalAgentID string, cfg *config.Config
 		"agent-platform.ai/managed-by": "platform-controller",
 		"app.kubernetes.io/component":  "apiserver",
 	}
-	return authzPolicy(principalAgentID+"-harness-allow", cfg.ReleaseNamespace, ownerCM, labels, spec)
+	return authzPolicy(principalAgentID+"-harness-allow", cfg.ReleaseNamespace, ownerNamespace, ownerRef, labels, spec)
 }
 
 // BuildForkHarnessAuthorizationPolicy admits the fork's SA principal to a
@@ -155,7 +153,7 @@ func BuildHarnessAuthorizationPolicy(principalAgentID string, cfg *config.Config
 // to the parent. Lives in the release namespace alongside the parent's
 // harness-allow policy; Istio OR-s ALLOWs from multiple policies on the
 // same waypoint, so this is purely additive.
-func BuildForkHarnessAuthorizationPolicy(forkName, parentAgentID string, cfg *config.Config, ownerCM *corev1.ConfigMap) *unstructured.Unstructured {
+func BuildForkHarnessAuthorizationPolicy(forkName, parentAgentID string, cfg *config.Config, ownerNamespace string, ownerRef metav1.OwnerReference) *unstructured.Unstructured {
 	spec := map[string]interface{}{
 		"targetRefs": []interface{}{
 			map[string]interface{}{
@@ -190,7 +188,7 @@ func BuildForkHarnessAuthorizationPolicy(forkName, parentAgentID string, cfg *co
 		"app.kubernetes.io/component":  "apiserver",
 		ForkLabelForkID:                forkName,
 	}
-	return authzPolicy(forkName+"-harness-allow", cfg.ReleaseNamespace, ownerCM, labels, spec)
+	return authzPolicy(forkName+"-harness-allow", cfg.ReleaseNamespace, ownerNamespace, ownerRef, labels, spec)
 }
 
 // BuildForkExtAuthzAuthorizationPolicy admits the fork's SA principal to
@@ -200,7 +198,7 @@ func BuildForkHarnessAuthorizationPolicy(forkName, parentAgentID string, cfg *co
 // credential on the wire). The parent's own ext-authz-allow continues
 // to admit the parent SA; Istio OR-s the principal lists across both
 // policies on the same Service.
-func BuildForkExtAuthzAuthorizationPolicy(forkName, parentAgentID string, cfg *config.Config, ownerCM *corev1.ConfigMap) *unstructured.Unstructured {
+func BuildForkExtAuthzAuthorizationPolicy(forkName, parentAgentID string, cfg *config.Config, ownerNamespace string, ownerRef metav1.OwnerReference) *unstructured.Unstructured {
 	spec := map[string]interface{}{
 		"targetRefs": []interface{}{
 			map[string]interface{}{
@@ -228,14 +226,14 @@ func BuildForkExtAuthzAuthorizationPolicy(forkName, parentAgentID string, cfg *c
 		"app.kubernetes.io/component":  "apiserver",
 		ForkLabelForkID:                forkName,
 	}
-	return authzPolicy(forkName+"-extauthz-allow", cfg.ReleaseNamespace, ownerCM, labels, spec)
+	return authzPolicy(forkName+"-extauthz-allow", cfg.ReleaseNamespace, ownerNamespace, ownerRef, labels, spec)
 }
 
 // BuildExtAuthzAuthorizationPolicy admits traffic to the per-agent
 // ext-authz Service from the matching SA principal only. Lives in the
 // release namespace alongside the per-agent ext-authz Service it
 // targets.
-func BuildExtAuthzAuthorizationPolicy(agentName string, cfg *config.Config, ownerCM *corev1.ConfigMap) *unstructured.Unstructured {
+func BuildExtAuthzAuthorizationPolicy(agentName string, cfg *config.Config, ownerNamespace string, ownerRef metav1.OwnerReference) *unstructured.Unstructured {
 	spec := map[string]interface{}{
 		"targetRefs": []interface{}{
 			map[string]interface{}{
@@ -262,7 +260,7 @@ func BuildExtAuthzAuthorizationPolicy(agentName string, cfg *config.Config, owne
 		"agent-platform.ai/managed-by": "platform-controller",
 		"app.kubernetes.io/component":  "apiserver",
 	}
-	return authzPolicy(agentName+"-extauthz-allow", cfg.ReleaseNamespace, ownerCM, labels, spec)
+	return authzPolicy(agentName+"-extauthz-allow", cfg.ReleaseNamespace, ownerNamespace, ownerRef, labels, spec)
 }
 
 // applyAuthorizationPolicy creates or updates an Istio AuthorizationPolicy

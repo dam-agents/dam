@@ -3,6 +3,7 @@ package reconciler
 import (
 	"context"
 	"fmt"
+	"time"
 
 	cmv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -17,15 +18,13 @@ import (
 	"k8s.io/client-go/util/retry"
 	"log/slog"
 
+	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
 	"github.com/kagenti/platform/packages/controller/pkg/config"
-	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
-// AgentReconciler owns the merged Agent ConfigMap (ADR-046). Each Agent CM
-// (`agent-platform.ai/type=agent`) is the sole runtime resource per agent;
-// the controller renders the agent + gateway StatefulSets, paired Services,
-// per-agent SA / ext-authz Service / AuthorizationPolicies, and the egress
-// NetworkPolicy from the merged spec.
+// AgentReconciler renders an Agent custom resource (ADR-058) into its agent +
+// gateway StatefulSets, Services, per-agent SA / ext-authz / AuthorizationPolicies
+// and egress NetworkPolicy, and publishes observed state on the status subresource.
 type AgentReconciler struct {
 	client  kubernetes.Interface
 	dynamic dynamic.Interface // required to apply cert-manager Certificates
@@ -43,23 +42,19 @@ func (r *AgentReconciler) WithDynamicClient(d dynamic.Interface) *AgentReconcile
 	return r
 }
 
-func (r *AgentReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) error {
-	name := cm.Name
+func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) error {
+	name := agent.Name
+	ownerRef := agentOwnerRef(agent)
+	agentSpec := &agent.Spec
 
-	specYAML, ok := cm.Data["spec.yaml"]
-	if !ok {
-		return r.setError(ctx, name, "no spec.yaml in ConfigMap")
-	}
-	agentSpec, err := types.ParseAgentSpec(specYAML)
-	if err != nil {
-		return r.setError(ctx, name, err.Error())
-	}
-
-	// ADR-046: the Agent CM is self-contained — its `agent-platform.ai/owner`
-	// label scopes credential Secret discovery directly. There's no separate
-	// Agent definition CM to resolve against anymore.
-	owner := cm.Labels["agent-platform.ai/owner"]
-	credentialSecrets, err := listAgentCredentialSecrets(ctx, r.client, r.config.Namespace, owner, cm)
+	// ADR-058: K8s validated the spec at admission, so the controller trusts
+	// the typed resource — no app-layer re-parse or re-validation.
+	//
+	// The `agent-platform.ai/owner` label scopes credential Secret discovery;
+	// grants are read from spec (ADR-058 moved them off annotations).
+	owner := agent.Labels["agent-platform.ai/owner"]
+	credentialSecrets, err := listAgentCredentialSecrets(ctx, r.client, r.config.Namespace, owner,
+		agentSpec.GrantedSecretIDs, agentSpec.GrantedConnectionIDs)
 	if err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("listing credential secrets: %v", err))
 	}
@@ -69,14 +64,14 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) e
 			"agent", name, "owner", owner)
 	}
 
-	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(name, name, r.config, cm, credentialSecrets)
+	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(name, name, r.config, ownerRef, credentialSecrets)
 	if err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("rendering envoy bootstrap: %v", err))
 	}
 	if err := r.applyConfigMap(ctx, bootstrapCM); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying envoy bootstrap: %v", err))
 	}
-	if cert := BuildEnvoyLeafCertificate(name, r.config, cm, credentialSecrets); cert != nil {
+	if cert := BuildEnvoyLeafCertificate(name, r.config, ownerRef, credentialSecrets); cert != nil {
 		if err := r.applyCertificate(ctx, cert); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("applying envoy leaf certificate: %v", err))
 		}
@@ -85,8 +80,8 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) e
 		// --enable-certificate-owner-ref controls that and we don't require
 		// it), so deleting the Certificate alone leaves the Secret behind.
 		// Patch the produced Secret with an OwnerReference back to the
-		// agent ConfigMap so K8s GC cascade-deletes it with the agent.
-		if err := r.ensureLeafSecretOwnerReference(ctx, name, cm); err != nil {
+		// Agent so K8s GC cascade-deletes it with the agent.
+		if err := r.ensureLeafSecretOwnerReference(ctx, name, ownerRef); err != nil {
 			slog.Warn("setting owner ref on envoy leaf TLS Secret; will retry on next reconcile",
 				"agent", name, "error", err)
 		}
@@ -95,7 +90,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) e
 	// ADR-041: per-agent SA must exist before the agent + gateway pods
 	// start (kubelet rejects pod scheduling on a missing SA, and Istio
 	// stamps the SPIFFE workload cert from it).
-	if err := r.ensureServiceAccount(ctx, name, cm); err != nil {
+	if err := r.ensureServiceAccount(ctx, name, ownerRef); err != nil {
 		return r.setError(ctx, name, err.Error())
 	}
 
@@ -103,7 +98,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) e
 	// the gateway pod's Envoy bootstrap dials this Service for HITL
 	// approvals, and the per-agent AuthorizationPolicy below pins it
 	// to the matching SA principal.
-	extAuthzSvc := BuildExtAuthzService(name, r.config, cm)
+	extAuthzSvc := BuildExtAuthzService(name, r.config)
 	if err := r.applyExtAuthzService(ctx, extAuthzSvc); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying ext-authz service: %v", err))
 	}
@@ -113,10 +108,10 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) e
 	// Both gate the *gateway pod*'s SPIFFE identity (the only pod of the
 	// pair that's a mesh participant). The agent → gateway hop is gated
 	// by the agent-egress NetworkPolicy below, not by mesh AuthZ.
-	if err := r.applyAuthorizationPolicy(ctx, BuildHarnessAuthorizationPolicy(name, r.config, cm)); err != nil {
+	if err := r.applyAuthorizationPolicy(ctx, BuildHarnessAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying harness authz policy: %v", err))
 	}
-	if err := r.applyAuthorizationPolicy(ctx, BuildExtAuthzAuthorizationPolicy(name, r.config, cm)); err != nil {
+	if err := r.applyAuthorizationPolicy(ctx, BuildExtAuthzAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying ext-authz authz policy: %v", err))
 	}
 
@@ -125,33 +120,37 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) e
 	// DNS and the paired gateway pod's Envoy port, nothing else. The
 	// gateway's Envoy ext_authz filter (ADR-035) gates which destinations
 	// the agent's HTTPS_PROXY traffic reaches past the gateway.
-	if err := r.applyAgentEgressNetworkPolicy(ctx, BuildAgentEgressNetworkPolicy(name, r.config, cm)); err != nil {
+	if err := r.applyAgentEgressNetworkPolicy(ctx, BuildAgentEgressNetworkPolicy(name, r.config, ownerRef)); err != nil {
 		return r.setError(ctx, name, err.Error())
 	}
 
-	hibernated := agentSpec.DesiredState == "hibernated"
+	// ADR-058: run state is activity-driven — there is no desiredState. The
+	// reconciler scales *up* when recent activity says the agent should run;
+	// scale-*down* is the idle checker's probe-gated job, so a reconcile
+	// triggered for any other reason can never hibernate a busy agent.
+	running := shouldRun(agent.Annotations, r.config.AgentBase.IdleTimeout.AsDuration(), time.Now().UTC())
 
 	// ADR-038: paired pods, rendered as a unit. Render the gateway first
 	// so the agent's HTTPS_PROXY target exists by the time the agent pod
 	// starts dialing it. ADR-041: pair-key NetworkPolicies are gone —
 	// pair isolation is now enforced by the per-agent AuthorizationPolicy
 	// on the gateway Service (mesh-level, cryptographic).
-	gatewaySS := BuildGatewayStatefulSet(name, hibernated, r.config, cm, credentialSecrets)
-	gatewaySvc := BuildGatewayService(name, r.config, cm)
+	// ADR-058: an api-server-set roll-rev annotation requests a rolling
+	// restart. Stamp it into both pod templates so bumping it rolls the pair
+	// (UI restart button, grant changes) without a spec/status write.
+	rollRev := agent.Annotations[annRollRev]
 
-	if err := r.applyStatefulSet(ctx, gatewaySS); err != nil {
+	gatewaySS := BuildGatewayStatefulSet(name, !running, r.config, ownerRef, credentialSecrets)
+	stampRollRev(gatewaySS, rollRev)
+	gatewaySvc := BuildGatewayService(name, r.config, ownerRef)
+
+	if err := r.applyStatefulSet(ctx, gatewaySS, running); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying gateway statefulset: %v", err))
 	}
-	// The gateway pair is single-replica and may legitimately CrashLoop on a
-	// stale revision (e.g. when grants land after agent creation: rev-1 has
-	// no leaf TLS volume but kubelet refreshes the bootstrap CM in place,
-	// so the live pod ends up reading rev-2 config against rev-1 volumes).
-	// Default StatefulSet rolling-update semantics refuse to evict a
-	// NotReady pod, deadlocking the rollout. The MaxUnavailableStatefulSet
-	// gate fixes this upstream but isn't always enabled (k3s ≤ 1.35
-	// disables it by default), so we do the eviction ourselves: delete any
-	// gateway pod stuck on the old revision so the StatefulSet recreates
-	// it at updateRevision.
+	// A single-replica gateway can CrashLoop on a stale revision, and default
+	// StatefulSet rolling-update refuses to evict a NotReady pod — deadlocking
+	// the rollout where the MaxUnavailableStatefulSet gate is off (k3s ≤ 1.35).
+	// So evict the stuck old-revision pod ourselves.
 	if err := r.forceRollStuckPod(ctx, gatewaySS.Namespace, gatewaySS.Name); err != nil {
 		slog.Warn("force-rolling stuck gateway pod failed; rollout may be deadlocked",
 			"namespace", gatewaySS.Namespace, "statefulset", gatewaySS.Name, "error", err)
@@ -170,28 +169,87 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) e
 		return fmt.Errorf("agent %s: gateway Service ClusterIP not yet assigned, requeuing", name)
 	}
 
-	agentSS := BuildAgentStatefulSet(name, agentSpec, r.config, cm, credentialSecrets, gatewayIP)
-	agentSvc := BuildAgentService(name, r.config, cm)
-	if err := r.applyStatefulSet(ctx, agentSS); err != nil {
+	agentSS := BuildAgentStatefulSet(name, agentSpec, r.config, ownerRef, credentialSecrets, gatewayIP)
+	stampRollRev(agentSS, rollRev)
+	agentSvc := BuildAgentService(name, r.config, ownerRef)
+	if err := r.applyStatefulSet(ctx, agentSS, running); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying agent statefulset: %v", err))
 	}
 	if err := r.applyService(ctx, agentSvc); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying agent service: %v", err))
 	}
 
-	state := agentSpec.DesiredState
-	if state == "" {
-		state = "running"
+	// The reconciler only ever scales up. It never writes the Hibernated phase
+	// — scale-down and that phase are the idle checker's job — so a reconcile
+	// of an idle-but-not-yet-hibernated agent leaves its status untouched.
+	if running {
+		return r.publishReadiness(ctx, agent)
 	}
-	return WriteAgentStatus(ctx, r.client, r.config.Namespace, name, types.NewAgentStatus(state, ""))
+	return nil
+}
+
+// publishReadiness observes the agent + gateway StatefulSet rollouts and
+// publishes the readiness conditions (ADR-059). Ready = AgentPodReady ∧
+// GatewayPodReady — the agent cannot make credentialed egress without its
+// gateway, so both are required. The pod informer re-enqueues the agent on pod
+// transitions, so this runs again as pods come up and Phase advances Pending →
+// Running. The api-server routes on ConditionReady (superseding ADR-032's
+// pod-only live check).
+func (r *AgentReconciler) publishReadiness(ctx context.Context, agent *apiv1.Agent) error {
+	name := agent.Name
+	gen := agent.Generation
+	// Readiness reflects the StatefulSet's *observed rollout*, not any intent
+	// marker: a pod counts only when it's Ready AND on the latest revision the
+	// StatefulSet has rolled out (ADR-059). This is correct regardless of who
+	// changed the Agent (api-server, kubectl, GitOps) or how (roll-rev, spec
+	// edit, credential set) — every change to the rendered template bumps the
+	// StatefulSet revision, so a still-Ready pod on a superseded revision reads
+	// as not-ready until the new revision is up.
+	agentReady := r.podCurrentAndReady(ctx, name)
+	gatewayReady := r.podCurrentAndReady(ctx, GatewayName(name))
+	ready := agentReady && gatewayReady
+
+	return updateAgentStatus(ctx, r.dynamic, r.config.Namespace, name, func(s *apiv1.AgentStatus) {
+		setStatusCondition(s, apiv1.ConditionAgentPodReady, agentReady, "PodReady", "PodNotReady", "", gen)
+		setStatusCondition(s, apiv1.ConditionGatewayPodReady, gatewayReady, "PodReady", "PodNotReady", "", gen)
+		setStatusCondition(s, apiv1.ConditionReady, ready, "AllPodsReady", "PodsNotReady", "", gen)
+		setStatusCondition(s, apiv1.ConditionReconciled, true, "Reconciled", "", "", gen)
+		s.ObservedGeneration = gen
+	})
+}
+
+// podCurrentAndReady reports whether the StatefulSet's single pod is Ready AND
+// on the latest revision the StatefulSet has rolled out. It returns false while
+// a change is still being applied — either the StatefulSet controller hasn't
+// yet observed the newest template (ObservedGeneration < Generation) or the
+// running pod is on a superseded revision (controller-revision-hash !=
+// UpdateRevision). Reading the *observed* revision rather than an intent marker
+// makes this correct no matter who mutated the source (api-server, kubectl,
+// GitOps) or what changed it (roll-rev, spec edit, credential set): every
+// change to the rendered template bumps the revision the StatefulSet rolls to.
+func (r *AgentReconciler) podCurrentAndReady(ctx context.Context, ssName string) bool {
+	ss, err := r.client.AppsV1().StatefulSets(r.config.Namespace).Get(ctx, ssName, metav1.GetOptions{})
+	if err != nil {
+		return false
+	}
+	if ss.Status.ObservedGeneration != ss.Generation {
+		return false
+	}
+	pod, err := r.client.CoreV1().Pods(r.config.Namespace).Get(ctx, ssName+"-0", metav1.GetOptions{})
+	if err != nil {
+		return false
+	}
+	return isPodReady(*pod) &&
+		pod.Labels["controller-revision-hash"] == ss.Status.UpdateRevision
 }
 
 // ensureLeafSecretOwnerReference adds a non-controller OwnerReference from
-// the cert-manager-produced envoy leaf TLS Secret to the agent CM, so
+// the cert-manager-produced envoy leaf TLS Secret to the owning Agent, so
 // that deleting the agent cascade-deletes the Secret. Returns nil if
 // the Secret does not exist yet (cert-manager has not finished issuing —
-// the next reconcile will retry).
-func (r *AgentReconciler) ensureLeafSecretOwnerReference(ctx context.Context, agentName string, agentCM *corev1.ConfigMap) error {
+// the next reconcile will retry). The ref is non-controller (the Certificate
+// is the Secret's controller) so K8s GC reaps it without an ownership conflict.
+func (r *AgentReconciler) ensureLeafSecretOwnerReference(ctx context.Context, agentName string, ownerRef metav1.OwnerReference) error {
 	secretName := EnvoyLeafSecretName(agentName)
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		sec, err := r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, secretName, metav1.GetOptions{})
@@ -202,15 +260,15 @@ func (r *AgentReconciler) ensureLeafSecretOwnerReference(ctx context.Context, ag
 			return err
 		}
 		for _, ref := range sec.OwnerReferences {
-			if ref.UID == agentCM.UID {
+			if ref.UID == ownerRef.UID {
 				return nil
 			}
 		}
 		sec.OwnerReferences = append(sec.OwnerReferences, metav1.OwnerReference{
-			APIVersion: "v1",
-			Kind:       "ConfigMap",
-			Name:       agentCM.Name,
-			UID:        agentCM.UID,
+			APIVersion: ownerRef.APIVersion,
+			Kind:       ownerRef.Kind,
+			Name:       ownerRef.Name,
+			UID:        ownerRef.UID,
 		})
 		_, err = r.client.CoreV1().Secrets(r.config.Namespace).Update(ctx, sec, metav1.UpdateOptions{})
 		return err
@@ -271,12 +329,12 @@ func (r *AgentReconciler) deletePVCs(ctx context.Context, agentName string) {
 }
 
 // ReconcileOrphanPVCs deletes any PVC labeled `agent-platform.ai/agent=<name>` whose
-// agent ConfigMap no longer exists. Covers two leak modes (issue #244):
+// Agent CR no longer exists. Covers two leak modes (issue #244):
 // the controller crashing between StatefulSet teardown and PVC deletion, and
-// users removing the agent ConfigMap out-of-band (e.g. via kubectl).
+// users removing the Agent out-of-band (e.g. via kubectl).
 //
 // Safe against the create-PVC-before-finalize race because we re-read the
-// ConfigMap from the API server (not the informer cache) before deleting.
+// Agent from the API server (not the informer cache) before deleting.
 func (r *AgentReconciler) ReconcileOrphanPVCs(ctx context.Context) {
 	pvcs, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).List(ctx,
 		metav1.ListOptions{LabelSelector: LabelAgent},
@@ -291,7 +349,7 @@ func (r *AgentReconciler) ReconcileOrphanPVCs(ctx context.Context) {
 		if agentName == "" {
 			continue
 		}
-		_, err := r.client.CoreV1().ConfigMaps(r.config.Namespace).Get(ctx, agentName, metav1.GetOptions{})
+		_, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Get(ctx, agentName, metav1.GetOptions{})
 		if err == nil {
 			continue
 		}
@@ -312,7 +370,7 @@ func (r *AgentReconciler) ReconcileOrphanPVCs(ctx context.Context) {
 }
 
 // ReconcileOrphanLeafSecrets deletes any per-agent envoy leaf TLS
-// Secret whose agent ConfigMap no longer exists. Covers historical
+// Secret whose Agent CR no longer exists. Covers historical
 // leaks from before owner-references were added to these Secrets, plus
 // any future Secret that slips through (e.g. cert-manager produced the
 // Secret between the controller patching the ownerRef and the agent
@@ -320,7 +378,7 @@ func (r *AgentReconciler) ReconcileOrphanPVCs(ctx context.Context) {
 //
 // Match is intentionally tight: Secret name ends in `-envoy-tls`, type
 // is `kubernetes.io/tls`, and the prefix names a non-existent
-// ConfigMap. Anything else is left alone.
+// Agent. Anything else is left alone.
 func (r *AgentReconciler) ReconcileOrphanLeafSecrets(ctx context.Context) {
 	secrets, err := r.client.CoreV1().Secrets(r.config.Namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
@@ -335,7 +393,7 @@ func (r *AgentReconciler) ReconcileOrphanLeafSecrets(ctx context.Context) {
 			continue
 		}
 		scanned++
-		_, err := r.client.CoreV1().ConfigMaps(r.config.Namespace).Get(ctx, agentName, metav1.GetOptions{})
+		_, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Get(ctx, agentName, metav1.GetOptions{})
 		if err == nil {
 			continue
 		}
@@ -373,21 +431,57 @@ func agentNameFromLeafSecret(sec corev1.Secret) (string, bool) {
 }
 
 func (r *AgentReconciler) setError(ctx context.Context, name, msg string) error {
-	WriteAgentStatus(ctx, r.client, r.config.Namespace, name, types.NewAgentStatus("error", msg))
+	// Surface the failure on the Reconciled condition (message carries the
+	// error). The returned error also drives the work queue's rate-limited retry.
+	if err := updateAgentStatus(ctx, r.dynamic, r.config.Namespace, name, func(s *apiv1.AgentStatus) {
+		setStatusCondition(s, apiv1.ConditionReconciled, false, "Reconciled", "ReconcileError", msg, 0)
+	}); err != nil {
+		slog.Warn("writing agent reconcile-error status", "agent", name, "error", err)
+	}
 	return fmt.Errorf("agent %s: %s", name, msg)
 }
 
-func (r *AgentReconciler) applyStatefulSet(ctx context.Context, desired *appsv1.StatefulSet) error {
+// stampRollRev writes the roll-rev value into a StatefulSet's pod-template
+// annotations (ADR-058). A changed value diverges the template, so the
+// StatefulSet rolls its pod; an empty value is left unset so untouched agents
+// don't churn. applyStatefulSet propagates the template, so this reaches
+// already-running pairs too.
+func stampRollRev(ss *appsv1.StatefulSet, rollRev string) {
+	if rollRev == "" {
+		return
+	}
+	if ss.Spec.Template.Annotations == nil {
+		ss.Spec.Template.Annotations = map[string]string{}
+	}
+	ss.Spec.Template.Annotations[annRollRev] = rollRev
+}
+
+// applyStatefulSet creates or updates a StatefulSet, owning its replica count
+// per the activity-driven model (ADR-058). When `running` is true it scales the
+// StatefulSet to 1; when false it *preserves* the existing replica count rather
+// than forcing 0 — so the reconciler can wake an agent but never hibernates
+// one. Scale-down is the idle checker's probe-gated responsibility.
+func (r *AgentReconciler) applyStatefulSet(ctx context.Context, desired *appsv1.StatefulSet, running bool) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		existing, err := r.client.AppsV1().StatefulSets(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
 		if errors.IsNotFound(err) {
+			replicas := int32(0)
+			if running {
+				replicas = 1
+			}
+			desired.Spec.Replicas = &replicas
 			_, err = r.client.AppsV1().StatefulSets(desired.Namespace).Create(ctx, desired, metav1.CreateOptions{})
 			return err
 		}
 		if err != nil {
 			return err
 		}
-		existing.Spec.Replicas = desired.Spec.Replicas
+		// Scale up on activity; otherwise leave replicas as the idle checker
+		// (or a prior reconcile) set them.
+		if running {
+			one := int32(1)
+			existing.Spec.Replicas = &one
+		}
 		existing.Spec.Template = desired.Spec.Template
 		// UpdateStrategy is also patched so changes to RollingUpdate
 		// semantics (e.g. setting maxUnavailable: 1 to unstick rollouts

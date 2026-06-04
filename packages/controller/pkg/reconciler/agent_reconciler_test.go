@@ -2,8 +2,8 @@ package reconciler
 
 import (
 	"context"
-	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -11,12 +11,14 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 
+	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 )
 
@@ -26,19 +28,31 @@ import (
 // even for objects we just Created via the fake.
 var authzPolicyListGVR = schema.GroupVersionResource{Group: "security.istio.io", Version: "v1", Resource: "authorizationpolicies"}
 
-// newFakeDynamic returns a dynamic fake that knows about the
-// AuthorizationPolicy CRD shape the controller writes (ADR-041). Tests
-// that exercise Reconcile() rely on this so the per-agent policies
-// can be Created/Updated through the fake.
-func newFakeDynamic() *dynfake.FakeDynamicClient {
+// newFakeDynamic returns a dynamic fake that knows the AuthorizationPolicy CRD
+// shape the controller writes (ADR-041) and the Agent CRD (ADR-058) so agents
+// can be Get/UpdateStatus'd. `objects` seeds the tracker (unstructured CRs).
+func newFakeDynamic(objects ...runtime.Object) *dynfake.FakeDynamicClient {
 	scheme := runtime.NewScheme()
 	gvrToListKind := map[schema.GroupVersionResource]string{
 		authzPolicyListGVR: "AuthorizationPolicyList",
+		AgentsGVR:          "AgentList",
 	}
-	return dynfake.NewSimpleDynamicClientWithCustomListKinds(scheme, gvrToListKind)
+	return dynfake.NewSimpleDynamicClientWithCustomListKinds(scheme, gvrToListKind, objects...)
 }
 
-func setupReconciler(t *testing.T, objects ...runtime.Object) (*AgentReconciler, *fake.Clientset) {
+// agentCR returns a typed Agent CR (ADR-058). Most tests inherit the default
+// activity-less agent (no last-activity annotation → shouldRun fails open to
+// running); hibernation tests override Annotations.
+func agentCR() *apiv1.Agent {
+	return &apiv1.Agent{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "my-agent", Namespace: "test-agents", UID: "agent-uid",
+		},
+		Spec: *testAgent,
+	}
+}
+
+func setupReconciler(t *testing.T, agent *apiv1.Agent, objects ...runtime.Object) (*AgentReconciler, *fake.Clientset) {
 	t.Helper()
 	client := fake.NewSimpleClientset(objects...)
 	// The fake clientset doesn't simulate kube-apiserver's ClusterIP
@@ -64,6 +78,7 @@ func setupReconciler(t *testing.T, objects ...runtime.Object) (*AgentReconciler,
 		AgentBase: config.AgentBase{
 			AccessMode:             "ReadWriteMany",
 			TerminationGracePeriod: 5,
+			IdleTimeout:            config.Duration(time.Hour),
 			ContainerSecurityContext: &corev1.SecurityContext{
 				Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
 			},
@@ -74,31 +89,169 @@ func setupReconciler(t *testing.T, objects ...runtime.Object) (*AgentReconciler,
 			StorageSize:     "10Gi",
 		},
 	}
-	r := NewAgentReconciler(client, cfg).WithDynamicClient(newFakeDynamic())
+	var dynObjs []runtime.Object
+	if agent != nil {
+		u, err := agentToUnstructured(agent)
+		require.NoError(t, err)
+		dynObjs = append(dynObjs, u)
+	}
+	r := NewAgentReconciler(client, cfg).WithDynamicClient(newFakeDynamic(dynObjs...))
 	return r, client
 }
 
-// agentCM returns a merged Agent ConfigMap (ADR-046) carrying both the
-// definition fields (image, mounts, ...) and the runtime fields
-// (desiredState). The tests parameterise desiredState since the
-// running/hibernated split is the main lifecycle axis.
-func agentCM(desiredState string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "my-agent", Namespace: "test-agents", UID: "agent-uid",
-			Labels: map[string]string{"agent-platform.ai/type": "agent"},
-		},
-		Data: map[string]string{
-			"spec.yaml": fmt.Sprintf("%s\ndesiredState: %s\n", fixtureAgentYAML, desiredState),
+// readyPod is a pod reporting Ready=True, used to drive the readiness
+// conditions (ADR-059) — the fake has no StatefulSet controller, so tests
+// stand pods up directly.
+func readyPod(name string) *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "test-agents"},
+		Status: corev1.PodStatus{
+			Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}},
 		},
 	}
 }
 
-func TestReconcile_CreateResources(t *testing.T) {
-	cm := agentCM("running")
-	r, client := setupReconciler(t, cm)
+func agentCondition(t *testing.T, r *AgentReconciler, name, condType string) (string, bool) {
+	t.Helper()
+	u, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(context.Background(), name, metav1.GetOptions{})
+	require.NoError(t, err)
+	conds, _, _ := unstructured.NestedSlice(u.Object, "status", "conditions")
+	for _, c := range conds {
+		m, ok := c.(map[string]interface{})
+		if ok && m["type"] == condType {
+			st, _ := m["status"].(string)
+			return st, true
+		}
+	}
+	return "", false
+}
 
-	err := r.Reconcile(context.Background(), cm)
+func TestReconcile_RunningWhenBothPodsReady(t *testing.T) {
+	// Both pods Ready → Ready condition True (ADR-059).
+	agent := agentCR()
+	r, _ := setupReconciler(t, agent, readyPod("my-agent-0"), readyPod("my-agent-gateway-0"))
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	st, ok := agentCondition(t, r, "my-agent", apiv1.ConditionReady)
+	require.True(t, ok, "Ready condition must be published")
+	assert.Equal(t, string(metav1.ConditionTrue), st)
+}
+
+func TestReconcile_PendingWhenGatewayNotReady(t *testing.T) {
+	// Ready requires BOTH pods — a ready agent with no ready gateway is not
+	// routable (no credentialed egress), so Ready=False.
+	agent := agentCR()
+	r, _ := setupReconciler(t, agent, readyPod("my-agent-0")) // gateway pod absent
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	st, _ := agentCondition(t, r, "my-agent", apiv1.ConditionReady)
+	assert.Equal(t, string(metav1.ConditionFalse), st)
+	agentReady, _ := agentCondition(t, r, "my-agent", apiv1.ConditionAgentPodReady)
+	assert.Equal(t, string(metav1.ConditionTrue), agentReady, "agent pod is ready")
+	gwReady, _ := agentCondition(t, r, "my-agent", apiv1.ConditionGatewayPodReady)
+	assert.Equal(t, string(metav1.ConditionFalse), gwReady, "gateway pod is not ready")
+}
+
+// rolloutSS / podAtRev stand in for the StatefulSet controller the fake
+// clientset lacks: they seed the same fields real Kubernetes would maintain —
+// the StatefulSet's observed generation + latest (update) revision, and the
+// pod's controller-revision-hash. podCurrentAndReady reads both live; it keeps
+// no revision state of its own.
+func rolloutSS(name string, generation, observedGen int64, updateRev string) *appsv1.StatefulSet {
+	return &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "test-agents", Generation: generation},
+		Spec:       appsv1.StatefulSetSpec{Replicas: int32Ptr(1)},
+		Status:     appsv1.StatefulSetStatus{ObservedGeneration: observedGen, UpdateRevision: updateRev},
+	}
+}
+
+func podAtRev(name, rev string, ready bool) *corev1.Pod {
+	status := corev1.ConditionFalse
+	if ready {
+		status = corev1.ConditionTrue
+	}
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name, Namespace: "test-agents",
+			Labels: map[string]string{"controller-revision-hash": rev},
+		},
+		Status: corev1.PodStatus{
+			Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: status}},
+		},
+	}
+}
+
+func TestPodCurrentAndReady(t *testing.T) {
+	// The desired revision (ss.Status.UpdateRevision) and the pod's actual
+	// revision (controller-revision-hash) are both read live; readiness is true
+	// only when they match, the StatefulSet has observed the latest generation,
+	// and the pod is Ready. Anything mid-rollout reads as not-ready (ADR-059).
+	cases := []struct {
+		name string
+		ss   *appsv1.StatefulSet
+		pod  *corev1.Pod
+		want bool
+	}{
+		{"ready and on the latest revision", rolloutSS("x", 1, 1, "r1"), podAtRev("x-0", "r1", true), true},
+		{"pod on a superseded revision (mid-rollout)", rolloutSS("x", 1, 1, "r2"), podAtRev("x-0", "r1", true), false},
+		{"latest template not yet observed", rolloutSS("x", 2, 1, "r1"), podAtRev("x-0", "r1", true), false},
+		{"pod current but not ready", rolloutSS("x", 1, 1, "r1"), podAtRev("x-0", "r1", false), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r, _ := setupReconciler(t, agentCR(), tc.ss, tc.pod)
+			assert.Equal(t, tc.want, r.podCurrentAndReady(context.Background(), "x"))
+		})
+	}
+
+	t.Run("statefulset absent", func(t *testing.T) {
+		r, _ := setupReconciler(t, agentCR())
+		assert.False(t, r.podCurrentAndReady(context.Background(), "ghost"))
+	})
+	t.Run("pod absent", func(t *testing.T) {
+		r, _ := setupReconciler(t, agentCR(), rolloutSS("x", 1, 1, "r1"))
+		assert.False(t, r.podCurrentAndReady(context.Background(), "x"))
+	})
+}
+
+func TestReconcile_StampsRollRev(t *testing.T) {
+	// An api-server-set roll-rev lands on both pod templates so bumping it
+	// rolls the pair (ADR-058).
+	agent := agentCR()
+	agent.Annotations = map[string]string{annRollRev: "v1"}
+	r, client := setupReconciler(t, agent)
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	ctx := context.Background()
+	ss, err := client.AppsV1().StatefulSets("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "v1", ss.Spec.Template.Annotations[annRollRev], "agent pod template carries roll-rev")
+	gws, err := client.AppsV1().StatefulSets("test-agents").Get(ctx, "my-agent-gateway", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "v1", gws.Spec.Template.Annotations[annRollRev], "gateway pod template carries roll-rev")
+}
+
+func TestReconcile_NoRollRevWhenUnset(t *testing.T) {
+	// No roll-rev annotation → no roll-rev on the pod template, so agents that
+	// never requested a restart don't churn.
+	agent := agentCR()
+	r, client := setupReconciler(t, agent)
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	ss, _ := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "my-agent", metav1.GetOptions{})
+	_, present := ss.Spec.Template.Annotations[annRollRev]
+	assert.False(t, present, "roll-rev absent when the agent sets none")
+}
+
+func TestReconcile_CreateResources(t *testing.T) {
+	agent := agentCR()
+	r, client := setupReconciler(t, agent)
+
+	err := r.Reconcile(context.Background(), agent)
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -159,38 +312,72 @@ func TestReconcile_CreateResources(t *testing.T) {
 	assert.Equal(t, "my-agent", gws.Spec.Template.Spec.ServiceAccountName,
 		"gateway pod must run as the per-agent SA (its SPIFFE principal gates harness + ext-authz)")
 
-	// Status written
-	updated, _ := client.CoreV1().ConfigMaps("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
-	assert.Contains(t, updated.Data["status.yaml"], "currentState: running")
+	// Status published on the CR subresource: a scaled-up agent with no Ready
+	// pods reports Ready=False until the pod-watch pass observes readiness.
+	ready, _ := agentCondition(t, r, "my-agent", apiv1.ConditionReady)
+	assert.Equal(t, string(metav1.ConditionFalse), ready)
 }
 
-func TestReconcile_Hibernate(t *testing.T) {
-	cm := agentCM("hibernated")
-	r, client := setupReconciler(t, cm)
+func TestReconcile_IdleAgentScalesToZero(t *testing.T) {
+	// An idle agent (stale activity, no active session) reconciles to zero
+	// replicas — run state is derived from activity, not a stored desiredState
+	// (ADR-058). The reconciler does not publish readiness for an idle agent;
+	// the hibernated status is the idle checker's to write.
+	agent := agentCR()
+	agent.Annotations = map[string]string{
+		annLastActivity: time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339),
+	}
+	r, client := setupReconciler(t, agent)
 
-	err := r.Reconcile(context.Background(), cm)
+	err := r.Reconcile(context.Background(), agent)
 	require.NoError(t, err)
 
 	ss, _ := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "my-agent", metav1.GetOptions{})
-	assert.Equal(t, int32(0), *ss.Spec.Replicas)
-
-	// Gateway scales with the agent — both at 0 when hibernated.
+	assert.Equal(t, int32(0), *ss.Spec.Replicas, "idle agent created scaled to zero")
 	gws, _ := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "my-agent-gateway", metav1.GetOptions{})
-	assert.Equal(t, int32(0), *gws.Spec.Replicas, "gateway must hibernate alongside the agent")
+	assert.Equal(t, int32(0), *gws.Spec.Replicas, "gateway scaled to zero alongside the agent")
 
-	updated, _ := client.CoreV1().ConfigMaps("test-agents").Get(context.Background(), "my-agent", metav1.GetOptions{})
-	assert.Contains(t, updated.Data["status.yaml"], "currentState: hibernated")
+	_, found := agentCondition(t, r, "my-agent", apiv1.ConditionReady)
+	assert.False(t, found,
+		"reconciler must not publish readiness for an idle agent; that is the idle checker's job")
+}
+
+func TestReconcile_PreservesHibernation(t *testing.T) {
+	// An idle agent the idle checker already scaled to zero must stay at zero
+	// across a reconcile: the reconciler scales up only on activity and never
+	// force-wakes a hibernated agent (ADR-058).
+	agent := agentCR()
+	agent.Annotations = map[string]string{
+		annLastActivity: time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339),
+	}
+	existingAgent := &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-agent", Namespace: "test-agents"},
+		Spec:       appsv1.StatefulSetSpec{Replicas: int32Ptr(0)},
+	}
+	existingGW := &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-agent-gateway", Namespace: "test-agents"},
+		Spec:       appsv1.StatefulSetSpec{Replicas: int32Ptr(0)},
+	}
+	r, client := setupReconciler(t, agent, existingAgent, existingGW)
+
+	err := r.Reconcile(context.Background(), agent)
+	require.NoError(t, err)
+
+	ss, _ := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "my-agent", metav1.GetOptions{})
+	assert.Equal(t, int32(0), *ss.Spec.Replicas, "idle agent stays hibernated across reconcile")
+	gws, _ := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "my-agent-gateway", metav1.GetOptions{})
+	assert.Equal(t, int32(0), *gws.Spec.Replicas, "gateway stays hibernated alongside the agent")
 }
 
 func TestReconcile_UpdateReplicas(t *testing.T) {
-	cm := agentCM("running")
+	agent := agentCR()
 	existingSS := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{Name: "my-agent", Namespace: "test-agents"},
 		Spec:       appsv1.StatefulSetSpec{Replicas: int32Ptr(0)},
 	}
-	r, client := setupReconciler(t, cm, existingSS)
+	r, client := setupReconciler(t, agent, existingSS)
 
-	err := r.Reconcile(context.Background(), cm)
+	err := r.Reconcile(context.Background(), agent)
 	require.NoError(t, err)
 
 	ss, _ := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "my-agent", metav1.GetOptions{})
@@ -227,7 +414,7 @@ func TestForceRollStuckPod_DeletesNotReadyPodAtOldRev(t *testing.T) {
 			Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionFalse}},
 		},
 	}
-	r, client := setupReconciler(t, ss, stalePod)
+	r, client := setupReconciler(t, nil, ss, stalePod)
 
 	require.NoError(t, r.forceRollStuckPod(context.Background(), "test-agents", "my-agent-gateway"))
 
@@ -262,7 +449,7 @@ func TestForceRollStuckPod_LeavesReadyOldRevPodAlone(t *testing.T) {
 			Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}},
 		},
 	}
-	r, client := setupReconciler(t, ss, healthyPod)
+	r, client := setupReconciler(t, nil, ss, healthyPod)
 
 	require.NoError(t, r.forceRollStuckPod(context.Background(), "test-agents", "my-agent-gateway"))
 
@@ -294,7 +481,7 @@ func TestForceRollStuckPod_NoopWhenRevisionsMatch(t *testing.T) {
 			Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionFalse}},
 		},
 	}
-	r, client := setupReconciler(t, ss, pod)
+	r, client := setupReconciler(t, nil, ss, pod)
 
 	require.NoError(t, r.forceRollStuckPod(context.Background(), "test-agents", "my-agent-gateway"))
 
@@ -308,16 +495,16 @@ func TestReconcile_PatchesGatewayUpdateStrategyOnExistingStatefulSet(t *testing.
 	// to set maxUnavailable: 1 on the gateway only takes effect for
 	// fresh installs — already-running pairs keep the default rolling
 	// strategy and stay stuck behind CrashLoop pods on rev transitions.
-	cm := agentCM("running")
+	agent := agentCR()
 	// An existing gateway StatefulSet at the default (empty) update
 	// strategy, simulating a pre-fix install.
 	existingGateway := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{Name: "my-agent-gateway", Namespace: "test-agents"},
 		Spec:       appsv1.StatefulSetSpec{Replicas: int32Ptr(1)},
 	}
-	r, client := setupReconciler(t, cm, existingGateway)
+	r, client := setupReconciler(t, agent, existingGateway)
 
-	err := r.Reconcile(context.Background(), cm)
+	err := r.Reconcile(context.Background(), agent)
 	require.NoError(t, err)
 
 	got, err := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "my-agent-gateway", metav1.GetOptions{})
@@ -327,33 +514,19 @@ func TestReconcile_PatchesGatewayUpdateStrategyOnExistingStatefulSet(t *testing.
 	assert.Equal(t, "1", got.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable.String())
 }
 
-func TestReconcile_InvalidSpec(t *testing.T) {
-	// ADR-046: malformed Agent spec.yaml lands an error status on the
-	// merged CM (the same CM that holds the spec).
-	cm := agentCM("running")
-	cm.Data["spec.yaml"] = "not valid yaml: [unbalanced"
-	r, client := setupReconciler(t, cm)
-
-	err := r.Reconcile(context.Background(), cm)
-	assert.Error(t, err)
-
-	updated, _ := client.CoreV1().ConfigMaps("test-agents").Get(context.Background(), "my-agent", metav1.GetOptions{})
-	assert.Contains(t, updated.Data["status.yaml"], "currentState: error")
-}
-
 func TestReconcile_Idempotent(t *testing.T) {
-	cm := agentCM("running")
-	r, _ := setupReconciler(t, cm)
+	agent := agentCR()
+	r, _ := setupReconciler(t, agent)
 
-	err := r.Reconcile(context.Background(), cm)
+	err := r.Reconcile(context.Background(), agent)
 	require.NoError(t, err)
 	// Second reconcile should not error
-	err = r.Reconcile(context.Background(), cm)
+	err = r.Reconcile(context.Background(), agent)
 	require.NoError(t, err)
 }
 
 func TestDelete_CleansPVCs(t *testing.T) {
-	cm := agentCM("running")
+	agent := agentCR()
 	// Pre-create PVCs that would have been created by the StatefulSet controller
 	pvc := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
@@ -362,7 +535,7 @@ func TestDelete_CleansPVCs(t *testing.T) {
 			Labels:    map[string]string{LabelAgent: "my-agent"},
 		},
 	}
-	r, client := setupReconciler(t, cm, pvc)
+	r, client := setupReconciler(t, agent, pvc)
 
 	// Verify PVC exists before deletion
 	ctx := context.Background()
@@ -383,7 +556,7 @@ func TestDelete_CleansPVCs(t *testing.T) {
 }
 
 func TestReconcileOrphanPVCs(t *testing.T) {
-	// orphan: PVC labeled for an agent whose ConfigMap is gone
+	// orphan: PVC labeled for an agent whose Agent CR is gone
 	orphan := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "home-agent-deleted-agent-0",
@@ -391,7 +564,7 @@ func TestReconcileOrphanPVCs(t *testing.T) {
 			Labels:    map[string]string{LabelAgent: "deleted-agent"},
 		},
 	}
-	// live: PVC labeled for an agent that still has a ConfigMap
+	// live: PVC labeled for an agent that still has an Agent CR
 	live := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "home-agent-my-agent-0",
@@ -399,8 +572,7 @@ func TestReconcileOrphanPVCs(t *testing.T) {
 			Labels:    map[string]string{LabelAgent: "my-agent"},
 		},
 	}
-	liveCM := agentCM("running") // name = "my-agent"
-	r, client := setupReconciler(t, liveCM, orphan, live)
+	r, client := setupReconciler(t, agentCR(), orphan, live) // live agent = "my-agent"
 
 	r.ReconcileOrphanPVCs(context.Background())
 
@@ -418,10 +590,10 @@ func int32Ptr(i int32) *int32 { return &i }
 // Issue: when an agent is deleted, the cert-manager-produced envoy leaf
 // TLS Secret must be cascade-deleted. cert-manager doesn't set an
 // OwnerReference on that Secret by default, so the controller patches one
-// pointing back at the agent ConfigMap.
+// pointing back at the Agent CR.
 
 func TestEnsureLeafSecretOwnerReference_AddsOwnerRef(t *testing.T) {
-	agent := agentCM("running")
+	agent := agentCR()
 	// Seed the cluster with a Secret as if cert-manager had already produced
 	// it but without an OwnerReference (default cert-manager behaviour).
 	secret := &corev1.Secret{
@@ -433,30 +605,30 @@ func TestEnsureLeafSecretOwnerReference_AddsOwnerRef(t *testing.T) {
 	}
 	r, client := setupReconciler(t, agent, secret)
 
-	require.NoError(t, r.ensureLeafSecretOwnerReference(context.Background(), "my-agent", agent))
+	require.NoError(t, r.ensureLeafSecretOwnerReference(context.Background(), "my-agent", agentOwnerRef(agent)))
 
 	got, err := client.CoreV1().Secrets("test-agents").Get(context.Background(), "my-agent-envoy-tls", metav1.GetOptions{})
 	require.NoError(t, err)
 	require.Len(t, got.OwnerReferences, 1)
 	assert.Equal(t, agent.UID, got.OwnerReferences[0].UID)
-	assert.Equal(t, "ConfigMap", got.OwnerReferences[0].Kind)
+	assert.Equal(t, "Agent", got.OwnerReferences[0].Kind)
 	assert.Equal(t, agent.Name, got.OwnerReferences[0].Name)
 }
 
 func TestEnsureLeafSecretOwnerReference_Idempotent(t *testing.T) {
-	agent := agentCM("running")
+	agent := agentCR()
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "my-agent-envoy-tls",
 			Namespace: "test-agents",
 			OwnerReferences: []metav1.OwnerReference{{
-				APIVersion: "v1", Kind: "ConfigMap", Name: agent.Name, UID: agent.UID,
+				APIVersion: apiv1.GroupVersion.String(), Kind: "Agent", Name: agent.Name, UID: agent.UID,
 			}},
 		},
 	}
 	r, client := setupReconciler(t, agent, secret)
 
-	require.NoError(t, r.ensureLeafSecretOwnerReference(context.Background(), "my-agent", agent))
+	require.NoError(t, r.ensureLeafSecretOwnerReference(context.Background(), "my-agent", agentOwnerRef(agent)))
 
 	got, err := client.CoreV1().Secrets("test-agents").Get(context.Background(), "my-agent-envoy-tls", metav1.GetOptions{})
 	require.NoError(t, err)
@@ -464,7 +636,7 @@ func TestEnsureLeafSecretOwnerReference_Idempotent(t *testing.T) {
 }
 
 func TestReconcileOrphanLeafSecrets(t *testing.T) {
-	// orphan: leaf Secret whose agent ConfigMap is gone — must be reaped.
+	// orphan: leaf Secret whose Agent CR is gone — must be reaped.
 	orphan := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "deleted-agent-envoy-tls",
@@ -472,7 +644,7 @@ func TestReconcileOrphanLeafSecrets(t *testing.T) {
 		},
 		Type: corev1.SecretTypeTLS,
 	}
-	// live: leaf Secret whose agent ConfigMap still exists — must be kept.
+	// live: leaf Secret whose Agent CR still exists — must be kept.
 	live := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "my-agent-envoy-tls",
@@ -488,8 +660,7 @@ func TestReconcileOrphanLeafSecrets(t *testing.T) {
 		},
 		Type: corev1.SecretTypeOpaque,
 	}
-	liveCM := agentCM("running") // name = "my-agent"
-	r, client := setupReconciler(t, liveCM, orphan, live, unrelated)
+	r, client := setupReconciler(t, agentCR(), orphan, live, unrelated) // live agent = "my-agent"
 
 	r.ReconcileOrphanLeafSecrets(context.Background())
 
@@ -506,7 +677,7 @@ func TestReconcileOrphanLeafSecrets(t *testing.T) {
 func TestEnsureLeafSecretOwnerReference_NoSecretYetIsNoop(t *testing.T) {
 	// First reconcile arrives before cert-manager has issued the Secret —
 	// must not error; the next reconcile will patch the owner ref.
-	agent := agentCM("running")
+	agent := agentCR()
 	r, _ := setupReconciler(t, agent)
-	assert.NoError(t, r.ensureLeafSecretOwnerReference(context.Background(), "my-agent", agent))
+	assert.NoError(t, r.ensureLeafSecretOwnerReference(context.Background(), "my-agent", agentOwnerRef(agent)))
 }

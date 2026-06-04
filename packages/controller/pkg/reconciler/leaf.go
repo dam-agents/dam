@@ -45,19 +45,17 @@ func dnsNamesFromChains(chains []envoyHostChain) []string {
 // produces the per-instance Envoy TLS Secret. Returns nil if there are no
 // hosts to MITM (no credential Secrets) — the caller should treat that as
 // "do not apply".
-func BuildEnvoyLeafCertificate(instanceName string, cfg *config.Config, ownerCM *corev1.ConfigMap, secrets []corev1.Secret) *cmv1.Certificate {
+func BuildEnvoyLeafCertificate(instanceName string, cfg *config.Config, ownerRef metav1.OwnerReference, secrets []corev1.Secret) *cmv1.Certificate {
 	hosts := dnsNamesFromChains(chainsFromSecrets(secrets))
 	if len(hosts) == 0 {
 		return nil
 	}
 	cert := &cmv1.Certificate{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      EnvoyLeafSecretName(instanceName),
-			Namespace: cfg.Namespace,
-			Labels:    map[string]string{LabelAgent: instanceName},
-			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
-			},
+			Name:            EnvoyLeafSecretName(instanceName),
+			Namespace:       cfg.Namespace,
+			Labels:          map[string]string{LabelAgent: instanceName},
+			OwnerReferences: []metav1.OwnerReference{ownerRef},
 		},
 		Spec: cmv1.CertificateSpec{
 			SecretName: EnvoyLeafSecretName(instanceName),

@@ -27,7 +27,7 @@ import (
 // credential-free at the K8s API surface.
 
 // BuildServiceAccount renders the per-agent ServiceAccount for `agentName`.
-func BuildServiceAccount(agentName string, cfg *config.Config, ownerCM *corev1.ConfigMap) *corev1.ServiceAccount {
+func BuildServiceAccount(agentName string, cfg *config.Config, ownerRef metav1.OwnerReference) *corev1.ServiceAccount {
 	falseVal := false
 	return &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
@@ -37,9 +37,7 @@ func BuildServiceAccount(agentName string, cfg *config.Config, ownerCM *corev1.C
 				LabelAgent:                     agentName,
 				"agent-platform.ai/managed-by": "platform",
 			},
-			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
-			},
+			OwnerReferences: []metav1.OwnerReference{ownerRef},
 		},
 		AutomountServiceAccountToken: &falseVal,
 	}
@@ -99,8 +97,8 @@ func hasOwnerRef(existing []metav1.OwnerReference, want metav1.OwnerReference) b
 
 // ensureSA is the convenience wrapper used by Reconcile. Returns a wrapped
 // error that names the operation for callers that surface it via setError.
-func (r *AgentReconciler) ensureServiceAccount(ctx context.Context, agentName string, ownerCM *corev1.ConfigMap) error {
-	sa := BuildServiceAccount(agentName, r.config, ownerCM)
+func (r *AgentReconciler) ensureServiceAccount(ctx context.Context, agentName string, ownerRef metav1.OwnerReference) error {
+	sa := BuildServiceAccount(agentName, r.config, ownerRef)
 	if err := r.applyServiceAccount(ctx, sa); err != nil {
 		return fmt.Errorf("applying serviceaccount: %w", err)
 	}

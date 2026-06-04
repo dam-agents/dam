@@ -26,7 +26,7 @@ import (
 // agent pod of `pairKey`. Long-lived pairs use the instance name;
 // forks use the fork name. Selector pins to the pair's agent pod —
 // the paired gateway pod's egress stays unrestricted.
-func BuildAgentEgressNetworkPolicy(pairKey string, cfg *config.Config, ownerCM *corev1.ConfigMap) *networkingv1.NetworkPolicy {
+func BuildAgentEgressNetworkPolicy(pairKey string, cfg *config.Config, ownerRef metav1.OwnerReference) *networkingv1.NetworkPolicy {
 	envoyPort := intstr.FromInt(cfg.EnvoyPort)
 	tcp := corev1.ProtocolTCP
 
@@ -60,9 +60,7 @@ func BuildAgentEgressNetworkPolicy(pairKey string, cfg *config.Config, ownerCM *
 				LabelRole:                      RoleAgent,
 				"agent-platform.ai/managed-by": "platform-controller",
 			},
-			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
-			},
+			OwnerReferences: []metav1.OwnerReference{ownerRef},
 		},
 		Spec: networkingv1.NetworkPolicySpec{
 			PodSelector: metav1.LabelSelector{

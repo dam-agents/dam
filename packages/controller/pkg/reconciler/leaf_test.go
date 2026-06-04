@@ -9,7 +9,7 @@ import (
 )
 
 func TestBuildEnvoyLeafCertificate_NoSecretsReturnsNil(t *testing.T) {
-	cert := BuildEnvoyLeafCertificate("my-instance", testConfig, testOwnerCM, nil)
+	cert := BuildEnvoyLeafCertificate("my-instance", testConfig, configMapOwnerRef(testOwnerCM), nil)
 	assert.Nil(t, cert, "no credential Secrets means nothing to MITM, so no leaf needed")
 }
 
@@ -19,7 +19,7 @@ func TestBuildEnvoyLeafCertificate_DedupesAndSortsHosts(t *testing.T) {
 		credSecret("platform-cred-aaa", "a.example.com"),
 		credSecret("platform-cred-dup", "a.example.com"), // same host as -aaa
 	}
-	cert := BuildEnvoyLeafCertificate("my-instance", testConfig, testOwnerCM, secrets)
+	cert := BuildEnvoyLeafCertificate("my-instance", testConfig, configMapOwnerRef(testOwnerCM), secrets)
 	require.NotNil(t, cert)
 
 	assert.Equal(t, "my-instance-envoy-tls", cert.Name)
@@ -36,7 +36,7 @@ func TestBuildEnvoyLeafCertificate_IssuerRef(t *testing.T) {
 	cfg.EnvoyMitmCAIssuer = "platform-mitm-ca-issuer"
 	secrets := []corev1.Secret{credSecret("platform-cred-aaa", "api.example.com")}
 
-	cert := BuildEnvoyLeafCertificate("my-instance", &cfg, testOwnerCM, secrets)
+	cert := BuildEnvoyLeafCertificate("my-instance", &cfg, configMapOwnerRef(testOwnerCM), secrets)
 	require.NotNil(t, cert)
 
 	assert.Equal(t, "platform-mitm-ca-issuer", cert.Spec.IssuerRef.Name)
@@ -46,7 +46,7 @@ func TestBuildEnvoyLeafCertificate_IssuerRef(t *testing.T) {
 
 func TestBuildEnvoyLeafCertificate_OwnerReferences(t *testing.T) {
 	secrets := []corev1.Secret{credSecret("platform-cred-aaa", "api.example.com")}
-	cert := BuildEnvoyLeafCertificate("my-instance", testConfig, testOwnerCM, secrets)
+	cert := BuildEnvoyLeafCertificate("my-instance", testConfig, configMapOwnerRef(testOwnerCM), secrets)
 	require.NotNil(t, cert)
 
 	require.Len(t, cert.OwnerReferences, 1)

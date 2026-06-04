@@ -10,7 +10,9 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -78,102 +80,183 @@ func main() {
 func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Interface, cfg *config.Config) {
 	slog.Info("started leading", "namespace", cfg.Namespace)
 
-	factory := informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second,
+	// Agents and Forks are custom resources (ADR-058) — watched via dynamic
+	// informers off a shared factory.
+	dynFactory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(dynClient, 30*time.Second, cfg.Namespace, nil)
+	agentInformer := dynFactory.ForResource(reconciler.AgentsGVR)
+	forkInformer := dynFactory.ForResource(reconciler.ForksGVR)
+
+	// Pod informer (ADR-059): pod readiness transitions re-enqueue the owning
+	// agent so its Ready conditions are recomputed. Separate factory — it pins a
+	// pod label selector the CR factory can't carry.
+	podFactory := informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second,
 		informers.WithNamespace(cfg.Namespace),
 		informers.WithTweakListOptions(func(opts *metav1.ListOptions) {
-			opts.LabelSelector = "agent-platform.ai/type"
+			opts.LabelSelector = reconciler.LabelAgent
 		}),
 	)
+	podInformer := podFactory.Core().V1().Pods()
 
-	cmInformer := factory.Core().V1().ConfigMaps()
-	agentResolver := reconciler.NewAgentResolver(cmInformer.Lister().ConfigMaps(cfg.Namespace))
+	agentGetter := reconciler.NewAgentLister(agentInformer.Lister(), cfg.Namespace)
+	agentResolver := reconciler.NewAgentResolver(agentGetter)
 	agentReconciler := reconciler.NewAgentReconciler(client, cfg).WithDynamicClient(dynClient)
 	forkReconciler := reconciler.NewForkReconciler(client, cfg, agentResolver).WithDynamicClient(dynClient)
 
-	idleChecker := reconciler.NewIdleChecker(client, cfg)
+	idleChecker := reconciler.NewIdleChecker(client, dynClient, cfg)
 	go idleChecker.RunLoop(ctx)
 
-	// Periodic GC for resources whose agent ConfigMap has been removed
-	// out-of-band (issue #244). The Delete event handler covers the
-	// happy path; this catches crashes mid-delete and direct kubectl removals.
-	// Leaf TLS Secrets are also reaped here so historical leaks (from before
+	// Periodic GC for resources whose Agent has been removed out-of-band
+	// (issue #244). The Delete event handler covers the happy path; this
+	// catches crashes mid-delete and direct kubectl removals. Leaf TLS
+	// Secrets are also reaped here so historical leaks (from before
 	// owner-references were added) are eventually cleaned up.
 	go runOrphanSweep(ctx, agentReconciler, 10*time.Minute)
 
-	queue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]())
-	defer queue.ShutDown()
+	agentQueue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]())
+	defer agentQueue.ShutDown()
+	forkQueue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]())
+	defer forkQueue.ShutDown()
 
-	cmInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			cm := obj.(*corev1.ConfigMap)
-			queue.Add(cm.Namespace + "/" + cm.Name)
-		},
+	agentInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) { enqueueObjectName(obj, agentQueue) },
 		UpdateFunc: func(_, newObj interface{}) {
-			cm := newObj.(*corev1.ConfigMap)
-			queue.Add(cm.Namespace + "/" + cm.Name)
+			enqueueObjectName(newObj, agentQueue)
 		},
 		DeleteFunc: func(obj interface{}) {
-			cm, ok := obj.(*corev1.ConfigMap)
-			if !ok {
-				tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
-				if !ok {
-					return
-				}
-				cm, ok = tombstone.Obj.(*corev1.ConfigMap)
-				if !ok {
-					return
-				}
-			}
-			cmType := cm.Labels["agent-platform.ai/type"]
-			switch cmType {
-			case "agent":
-				agentReconciler.Delete(ctx, cm.Name)
-			case "agent-fork":
-				forkReconciler.Delete(ctx, cm.Name)
+			if u := unstructuredFrom(obj); u != nil {
+				agentReconciler.Delete(ctx, u.GetName())
 			}
 		},
 	})
 
-	factory.Start(ctx.Done())
-	if !cache.WaitForCacheSync(ctx.Done(), cmInformer.Informer().HasSynced) {
+	forkInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) { enqueueObjectName(obj, forkQueue) },
+		UpdateFunc: func(_, newObj interface{}) {
+			enqueueObjectName(newObj, forkQueue)
+		},
+		DeleteFunc: func(obj interface{}) {
+			if u := unstructuredFrom(obj); u != nil {
+				forkReconciler.Delete(ctx, u.GetName())
+			}
+		},
+	})
+
+	podInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    func(obj interface{}) { enqueuePodOwner(obj, agentQueue) },
+		UpdateFunc: func(_, newObj interface{}) { enqueuePodOwner(newObj, agentQueue) },
+		DeleteFunc: func(obj interface{}) { enqueuePodOwner(obj, agentQueue) },
+	})
+
+	dynFactory.Start(ctx.Done())
+	podFactory.Start(ctx.Done())
+	if !cache.WaitForCacheSync(ctx.Done(), agentInformer.Informer().HasSynced, forkInformer.Informer().HasSynced, podInformer.Informer().HasSynced) {
 		slog.Error("failed to sync informer caches")
 		return
 	}
 	slog.Info("informer caches synced")
 
+	go runForkWorker(ctx, forkReconciler, forkInformer.Lister(), cfg.Namespace, forkQueue)
+	runAgentWorker(ctx, agentReconciler, agentGetter, agentQueue)
+}
+
+// runAgentWorker drains the agent queue, reconciling each Agent CR resolved
+// from the informer cache. Blocks until the queue shuts down.
+func runAgentWorker(ctx context.Context, r *reconciler.AgentReconciler, getter reconciler.AgentGetter, queue workqueue.TypedRateLimitingInterface[string]) {
 	for {
-		key, shutdown := queue.Get()
+		name, shutdown := queue.Get()
 		if shutdown {
 			return
 		}
 		func() {
-			defer queue.Done(key)
-
-			name := keyName(key)
-			cm, err := cmInformer.Lister().ConfigMaps(cfg.Namespace).Get(name)
+			defer queue.Done(name)
+			agent, err := getter.Get(name)
 			if err != nil {
-				queue.Forget(key)
+				// Gone from cache (deleted) or undecodable — Delete handler
+				// owns teardown; nothing to reconcile.
+				queue.Forget(name)
 				return
 			}
-
-			cmType := cm.Labels["agent-platform.ai/type"]
-			switch cmType {
-			case "agent":
-				if err := agentReconciler.Reconcile(ctx, cm); err != nil {
-					slog.Error("reconcile agent", "name", name, "error", err)
-					queue.AddRateLimited(key)
-					return
-				}
-			case "agent-fork":
-				if err := forkReconciler.Reconcile(ctx, cm); err != nil {
-					slog.Error("reconcile fork", "name", name, "error", err)
-					queue.AddRateLimited(key)
-					return
-				}
+			if err := r.Reconcile(ctx, agent); err != nil {
+				slog.Error("reconcile agent", "name", name, "error", err)
+				queue.AddRateLimited(name)
+				return
 			}
-			queue.Forget(key)
+			queue.Forget(name)
 		}()
 	}
+}
+
+// runForkWorker drains the fork queue, reconciling each Fork CR read from the
+// informer cache. Blocks until the queue shuts down.
+func runForkWorker(ctx context.Context, r *reconciler.ForkReconciler, lister cache.GenericLister, namespace string, queue workqueue.TypedRateLimitingInterface[string]) {
+	for {
+		name, shutdown := queue.Get()
+		if shutdown {
+			return
+		}
+		func() {
+			defer queue.Done(name)
+			obj, err := lister.ByNamespace(namespace).Get(name)
+			if err != nil {
+				queue.Forget(name)
+				return
+			}
+			fork, err := reconciler.ForkFromCacheObject(obj)
+			if err != nil {
+				slog.Error("decode fork", "name", name, "error", err)
+				queue.Forget(name)
+				return
+			}
+			if err := r.Reconcile(ctx, fork); err != nil {
+				slog.Error("reconcile fork", "name", name, "error", err)
+				queue.AddRateLimited(name)
+				return
+			}
+			queue.Forget(name)
+		}()
+	}
+}
+
+// enqueueObjectName adds an object's name to the queue, tolerating the
+// unstructured shape the dynamic informer emits.
+func enqueueObjectName(obj interface{}, queue workqueue.TypedRateLimitingInterface[string]) {
+	if u := unstructuredFrom(obj); u != nil {
+		queue.Add(u.GetName())
+	}
+}
+
+// enqueuePodOwner re-enqueues the Agent that owns a pod (via the
+// agent-platform.ai/agent label) when the pod's readiness may have changed, so
+// the reconciler recomputes its Ready conditions (ADR-059). Fork pods carry
+// the parent agent's label; re-reconciling the parent is harmless (idempotent).
+func enqueuePodOwner(obj interface{}, queue workqueue.TypedRateLimitingInterface[string]) {
+	pod, ok := obj.(*corev1.Pod)
+	if !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			return
+		}
+		if pod, ok = tombstone.Obj.(*corev1.Pod); !ok {
+			return
+		}
+	}
+	if name := pod.Labels[reconciler.LabelAgent]; name != "" {
+		queue.Add(name)
+	}
+}
+
+// unstructuredFrom extracts the *unstructured.Unstructured from an informer
+// event payload, unwrapping a delete tombstone if present.
+func unstructuredFrom(obj interface{}) *unstructured.Unstructured {
+	if u, ok := obj.(*unstructured.Unstructured); ok {
+		return u
+	}
+	if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+		if u, ok := tombstone.Obj.(*unstructured.Unstructured); ok {
+			return u
+		}
+	}
+	return nil
 }
 
 func runOrphanSweep(ctx context.Context, r *reconciler.AgentReconciler, interval time.Duration) {
@@ -192,13 +275,4 @@ func runOrphanSweep(ctx context.Context, r *reconciler.AgentReconciler, interval
 			sweep()
 		}
 	}
-}
-
-func keyName(key string) string {
-	for i := len(key) - 1; i >= 0; i-- {
-		if key[i] == '/' {
-			return key[i+1:]
-		}
-	}
-	return key
 }

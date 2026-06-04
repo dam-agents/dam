@@ -44,8 +44,8 @@ func TestFilterByGrants_AbsentAnnotationsGrantNothing(t *testing.T) {
 		ownerSecret("platform-cred-bbb", "generic", ""),
 		ownerSecret("platform-conn-github", "connection", "github"),
 	}
-	// Always-selective: empty/absent grant annotations grant nothing.
-	got := filterByGrants(secrets, nil)
+	// Always-selective: empty/absent grants grant nothing.
+	got := filterByGrants(secrets, nil, nil)
 	assert.Empty(t, got)
 }
 
@@ -54,9 +54,7 @@ func TestFilterByGrants_SelectiveSecretsDropUngranted(t *testing.T) {
 		ownerSecret("platform-cred-aaa", "anthropic", ""),
 		ownerSecret("platform-cred-bbb", "generic", ""),
 	}
-	got := filterByGrants(secrets, map[string]string{
-		grantSecretIdsAnn: "aaa",
-	})
+	got := filterByGrants(secrets, []string{"aaa"}, nil)
 	assert.Equal(t, []string{"platform-cred-aaa"}, names(got))
 }
 
@@ -65,9 +63,7 @@ func TestFilterByGrants_EmptySecretListGrantsNothing(t *testing.T) {
 		ownerSecret("platform-cred-aaa", "anthropic", ""),
 		ownerSecret("platform-cred-bbb", "generic", ""),
 	}
-	got := filterByGrants(secrets, map[string]string{
-		grantSecretIdsAnn: "",
-	})
+	got := filterByGrants(secrets, []string{}, nil)
 	assert.Empty(t, got)
 }
 
@@ -76,15 +72,11 @@ func TestFilterByGrants_ConnectionGrantsByList(t *testing.T) {
 		ownerSecret("platform-conn-github", "connection", "github"),
 		ownerSecret("platform-conn-slack", "connection", "slack"),
 	}
-	got := filterByGrants(secrets, map[string]string{
-		grantConnectionIdsAnn: "github",
-	})
+	got := filterByGrants(secrets, nil, []string{"github"})
 	assert.Equal(t, []string{"platform-conn-github"}, names(got))
 
 	// Empty list → nothing granted.
-	got = filterByGrants(secrets, map[string]string{
-		grantConnectionIdsAnn: "",
-	})
+	got = filterByGrants(secrets, nil, []string{})
 	assert.Empty(t, got)
 }
 
@@ -95,10 +87,7 @@ func TestFilterByGrants_SecretAndConnectionAxesAreIndependent(t *testing.T) {
 		ownerSecret("platform-conn-github", "connection", "github"),
 		ownerSecret("platform-conn-slack", "connection", "slack"),
 	}
-	got := filterByGrants(secrets, map[string]string{
-		grantSecretIdsAnn:     "aaa",
-		grantConnectionIdsAnn: "slack",
-	})
+	got := filterByGrants(secrets, []string{"aaa"}, []string{"slack"})
 	assert.ElementsMatch(t, []string{"platform-cred-aaa", "platform-conn-slack"}, names(got))
 }
 

@@ -34,7 +34,7 @@ import (
 // makes the K8s GC controller reap the Service as orphaned. Cleanup is
 // label-driven instead — `instance.go Delete()` lists by `LabelAgent`
 // and deletes by name on agent removal.
-func BuildExtAuthzService(agentName string, cfg *config.Config, _ *corev1.ConfigMap) *corev1.Service {
+func BuildExtAuthzService(agentName string, cfg *config.Config) *corev1.Service {
 	extAuthzPort := portInt32(cfg.ExtAuthzPort)
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{

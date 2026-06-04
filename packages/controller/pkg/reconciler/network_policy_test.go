@@ -14,7 +14,7 @@ import (
 // namespace deny-all baseline, this is the only allow rule for the
 // agent.
 func TestBuildAgentEgressNetworkPolicy_LongLivedPair(t *testing.T) {
-	np := BuildAgentEgressNetworkPolicy("my-instance", testConfig, testOwnerCM)
+	np := BuildAgentEgressNetworkPolicy("my-instance", testConfig, configMapOwnerRef(testOwnerCM))
 
 	assert.Equal(t, "my-instance-agent-egress", np.Name)
 	assert.Equal(t, testConfig.Namespace, np.Namespace)
@@ -45,7 +45,7 @@ func TestBuildAgentEgressNetworkPolicy_LongLivedPair(t *testing.T) {
 
 // Fork pair: same shape, keyed on the fork name (ADR-027 isolation).
 func TestBuildAgentEgressNetworkPolicy_Fork(t *testing.T) {
-	np := BuildAgentEgressNetworkPolicy("fork-abc", testConfig, testForkOwnerCM)
+	np := BuildAgentEgressNetworkPolicy("fork-abc", testConfig, configMapOwnerRef(testForkOwnerCM))
 
 	assert.Equal(t, "fork-abc-agent-egress", np.Name)
 	assert.Equal(t, "fork-abc", np.Spec.PodSelector.MatchLabels[LabelPair])
@@ -60,7 +60,7 @@ func TestBuildAgentEgressNetworkPolicy_Fork(t *testing.T) {
 
 // DNS deny is structural — proxy is IP-direct.
 func TestBuildAgentEgressNetworkPolicy_NoDNS(t *testing.T) {
-	np := BuildAgentEgressNetworkPolicy("my-instance", testConfig, testOwnerCM)
+	np := BuildAgentEgressNetworkPolicy("my-instance", testConfig, configMapOwnerRef(testOwnerCM))
 	for _, rule := range np.Spec.Egress {
 		for _, p := range rule.Ports {
 			assert.NotEqual(t, int32(53), p.Port.IntVal, "DNS port 53 must not appear")
@@ -71,7 +71,7 @@ func TestBuildAgentEgressNetworkPolicy_NoDNS(t *testing.T) {
 
 // HBONE port 15008 must NOT appear in the agent egress policy.
 func TestBuildAgentEgressNetworkPolicy_NoHBONE(t *testing.T) {
-	np := BuildAgentEgressNetworkPolicy("my-instance", testConfig, testOwnerCM)
+	np := BuildAgentEgressNetworkPolicy("my-instance", testConfig, configMapOwnerRef(testOwnerCM))
 	for i, rule := range np.Spec.Egress {
 		for _, port := range rule.Ports {
 			assert.NotEqual(t, int32(15008), port.Port.IntVal,
@@ -83,7 +83,7 @@ func TestBuildAgentEgressNetworkPolicy_NoHBONE(t *testing.T) {
 // Label-managed-by lets operators bulk-list controller-managed NPs and
 // distinguishes them from any chart-rendered namespace-level perimeter.
 func TestBuildAgentEgressNetworkPolicy_ManagedByLabel(t *testing.T) {
-	np := BuildAgentEgressNetworkPolicy("my-instance", testConfig, testOwnerCM)
+	np := BuildAgentEgressNetworkPolicy("my-instance", testConfig, configMapOwnerRef(testOwnerCM))
 	assert.Equal(t, "platform-controller", np.Labels["agent-platform.ai/managed-by"])
 	assert.Equal(t, "my-instance", np.Labels[LabelAgent])
 }

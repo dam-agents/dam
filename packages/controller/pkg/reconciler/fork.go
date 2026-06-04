@@ -7,7 +7,6 @@ import (
 	"time"
 
 	cmv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
-	"gopkg.in/yaml.v3"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -18,6 +17,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
 
+	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
@@ -43,24 +43,20 @@ func (r *ForkReconciler) WithDynamicClient(d dynamic.Interface) *ForkReconciler 
 	return r
 }
 
-func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) error {
-	forkName := cm.Name
+func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error {
+	forkName := fork.Name
+	ownerRef := forkOwnerRef(fork)
 
-	currentPhase := readForkPhase(cm)
-	if currentPhase == types.ForkPhaseFailed || currentPhase == types.ForkPhaseCompleted {
+	currentPhase := fork.Status.Phase
+	if currentPhase == apiv1.ForkPhaseFailed || currentPhase == apiv1.ForkPhaseCompleted {
 		return nil
 	}
 
-	specYAML, ok := cm.Data["spec.yaml"]
-	if !ok {
-		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, "no spec.yaml in ConfigMap")
-	}
-	forkSpec, err := types.ParseForkSpec(specYAML)
-	if err != nil {
-		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, err.Error())
-	}
+	// ADR-058: K8s validated the spec at admission, so the controller trusts
+	// the typed resource — no app-layer re-parse.
+	forkSpec := &fork.Spec
 
-	// ADR-046: the fork derives from a single Agent CM that carries both
+	// ADR-046: the fork derives from a single Agent that carries both
 	// definition and runtime fields. Resolve it directly.
 	_, agentSpec, err := r.resolver.Resolve(forkSpec.AgentName)
 	if err != nil {
@@ -83,14 +79,14 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 			"fork", forkName, "foreignSub", forkSpec.ForeignSub)
 	}
 
-	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(forkName, forkSpec.AgentName, r.config, cm, credentialSecrets)
+	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(forkName, forkSpec.AgentName, r.config, ownerRef, credentialSecrets)
 	if err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("rendering envoy bootstrap: %v", err))
 	}
 	if err := r.applyConfigMap(ctx, bootstrapCM); err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying envoy bootstrap: %v", err))
 	}
-	if cert := BuildEnvoyLeafCertificate(forkName, r.config, cm, credentialSecrets); cert != nil {
+	if cert := BuildEnvoyLeafCertificate(forkName, r.config, ownerRef, credentialSecrets); cert != nil {
 		if err := r.applyCertificate(ctx, cert); err != nil {
 			return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying envoy leaf certificate: %v", err))
 		}
@@ -102,7 +98,7 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 	// the narrow paths the per-fork harness AuthorizationPolicy below
 	// admits. Owner-refed to the fork ConfigMap (same namespace), so
 	// K8s GC reaps it on fork-cm delete.
-	if err := r.ensureForkServiceAccount(ctx, forkName, cm); err != nil {
+	if err := r.ensureForkServiceAccount(ctx, forkName, ownerRef); err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, err.Error())
 	}
 
@@ -112,17 +108,17 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 	// per-agent ext-authz Service so the parent owner's HITL rules
 	// continue to gate the fork's egress. Both gate the fork *gateway*'s
 	// SPIFFE identity — the fork agent itself is not a mesh participant.
-	if err := r.applyAuthorizationPolicy(ctx, BuildForkHarnessAuthorizationPolicy(forkName, forkSpec.AgentName, r.config, cm)); err != nil {
+	if err := r.applyAuthorizationPolicy(ctx, BuildForkHarnessAuthorizationPolicy(forkName, forkSpec.AgentName, r.config, fork.Namespace, ownerRef)); err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying fork harness authz policy: %v", err))
 	}
-	if err := r.applyAuthorizationPolicy(ctx, BuildForkExtAuthzAuthorizationPolicy(forkName, forkSpec.AgentName, r.config, cm)); err != nil {
+	if err := r.applyAuthorizationPolicy(ctx, BuildForkExtAuthzAuthorizationPolicy(forkName, forkSpec.AgentName, r.config, fork.Namespace, ownerRef)); err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying fork ext-authz authz policy: %v", err))
 	}
 
 	// Per-pair agent egress NetworkPolicy — same shape and rationale as
 	// the long-lived pair: kernel-level boundary gating the agent → fork
 	// gateway hop, agent has no ambient enrolment.
-	if err := r.applyAgentEgressNetworkPolicy(ctx, BuildAgentEgressNetworkPolicy(forkName, r.config, cm)); err != nil {
+	if err := r.applyAgentEgressNetworkPolicy(ctx, BuildAgentEgressNetworkPolicy(forkName, r.config, ownerRef)); err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, err.Error())
 	}
 
@@ -131,8 +127,8 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 	// agent Job's pod starts dialing it. ADR-041: pair-key NetworkPolicy
 	// is gone — pair isolation is now enforced by the AuthorizationPolicy
 	// above.
-	gatewayPod := BuildForkGatewayPod(forkName, forkSpec.AgentName, r.config, cm, credentialSecrets)
-	gatewaySvc := BuildForkGatewayService(forkName, r.config, cm)
+	gatewayPod := BuildForkGatewayPod(forkName, forkSpec.AgentName, r.config, ownerRef, credentialSecrets)
+	gatewaySvc := BuildForkGatewayService(forkName, r.config, ownerRef)
 
 	if err := r.applyPod(ctx, gatewayPod); err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying gateway pod: %v", err))
@@ -149,7 +145,7 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 		return fmt.Errorf("fork %s: gateway Service ClusterIP not yet assigned, requeuing", forkName)
 	}
 
-	desired := BuildForkAgentJob(forkName, forkSpec, agentSpec, r.config, cm, credentialSecrets, gatewayIP)
+	desired := BuildForkAgentJob(forkName, forkSpec, agentSpec, r.config, ownerRef, credentialSecrets, gatewayIP)
 
 	if err := r.applyForkJob(ctx, desired); err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying job: %v", err))
@@ -166,18 +162,20 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) er
 
 	pod, _ := r.findForkPod(ctx, forkName)
 	if pod != nil && isPodReady(*pod) && pod.Status.PodIP != "" {
-		return WriteForkStatus(ctx, r.client, r.config.Namespace, forkName,
-			types.NewForkStatus(types.ForkPhaseReady, forkName, pod.Status.PodIP, nil))
+		return writeForkStatus(ctx, r.dynamic, r.config.Namespace, forkName, apiv1.ForkStatus{
+			Phase: apiv1.ForkPhaseReady, JobName: forkName, PodIP: pod.Status.PodIP,
+		})
 	}
 
-	if age := r.now().Sub(cm.CreationTimestamp.Time); age > ForkPodReadyTimeout {
+	if age := r.now().Sub(fork.CreationTimestamp.Time); age > ForkPodReadyTimeout {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonTimeout,
 			fmt.Sprintf("pod not Ready after %s", ForkPodReadyTimeout))
 	}
 
 	if currentPhase == "" {
-		return WriteForkStatus(ctx, r.client, r.config.Namespace, forkName,
-			types.NewForkStatus(types.ForkPhasePending, forkName, "", nil))
+		return writeForkStatus(ctx, r.dynamic, r.config.Namespace, forkName, apiv1.ForkStatus{
+			Phase: apiv1.ForkPhasePending, JobName: forkName,
+		})
 	}
 	return nil
 }
@@ -214,8 +212,8 @@ func (r *ForkReconciler) deleteReleaseNsForkResources(ctx context.Context, forkN
 // it idempotently. Mirrors AgentReconciler.ensureServiceAccount (same
 // SA shape — `automountServiceAccountToken: false`, owner-refed to the
 // fork ConfigMap, label-drift heal).
-func (r *ForkReconciler) ensureForkServiceAccount(ctx context.Context, forkName string, ownerCM *corev1.ConfigMap) error {
-	sa := BuildServiceAccount(forkName, r.config, ownerCM)
+func (r *ForkReconciler) ensureForkServiceAccount(ctx context.Context, forkName string, ownerRef metav1.OwnerReference) error {
+	sa := BuildServiceAccount(forkName, r.config, ownerRef)
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		existing, err := r.client.CoreV1().ServiceAccounts(sa.Namespace).Get(ctx, sa.Name, metav1.GetOptions{})
 		if errors.IsNotFound(err) {
@@ -254,8 +252,10 @@ func (r *ForkReconciler) ensureForkServiceAccount(ctx context.Context, forkName 
 }
 
 func (r *ForkReconciler) setForkFailed(ctx context.Context, name, reason, detail string) error {
-	status := types.NewForkStatus(types.ForkPhaseFailed, "", "", &types.ForkError{Reason: reason, Detail: detail})
-	if err := WriteForkStatus(ctx, r.client, r.config.Namespace, name, status); err != nil {
+	if err := writeForkStatus(ctx, r.dynamic, r.config.Namespace, name, apiv1.ForkStatus{
+		Phase: apiv1.ForkPhaseFailed,
+		Error: &apiv1.ForkError{Reason: reason, Detail: detail},
+	}); err != nil {
 		slog.Error("writing fork failed status", "fork", name, "error", err)
 	}
 	return fmt.Errorf("fork %s: %s: %s", name, reason, detail)
@@ -299,18 +299,6 @@ func (r *ForkReconciler) findForkPod(ctx context.Context, forkName string) (*cor
 		}
 	}
 	return nil, nil
-}
-
-func readForkPhase(cm *corev1.ConfigMap) string {
-	statusYAML, ok := cm.Data["status.yaml"]
-	if !ok {
-		return ""
-	}
-	var s types.ForkStatus
-	if err := yaml.Unmarshal([]byte(statusYAML), &s); err != nil {
-		return ""
-	}
-	return s.Phase
 }
 
 func isPodReady(pod corev1.Pod) bool {

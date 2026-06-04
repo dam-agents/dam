@@ -22,7 +22,7 @@ func TestBuildExtAuthzService_SelectorUsesInstanceLabel_NotFullname(t *testing.T
 		APIServerInstanceLabel: "dam",          // .Release.Name
 		ExtAuthzPort:           4002,
 	}
-	svc := BuildExtAuthzService("inst-1", cfg, nil)
+	svc := BuildExtAuthzService("inst-1", cfg)
 	assert.Equal(t, "dam", svc.Spec.Selector["app.kubernetes.io/instance"],
 		"selector must match the chart's .Release.Name-based instance label, not the fullname-based ReleaseName")
 	assert.Equal(t, "apiserver", svc.Spec.Selector["app.kubernetes.io/component"])

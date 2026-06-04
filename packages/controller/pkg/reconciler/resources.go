@@ -47,6 +47,15 @@ const (
 	RoleGateway = "gateway"
 )
 
+// annRollRev is an api-server-set annotation on the Agent that requests a
+// rolling restart of the pair (ADR-058). The controller stamps its value into
+// both pod templates, so bumping it rolls the agent + gateway without any
+// spec/status write — this is how the UI restart button and credential-grant
+// changes force a fresh pod. It is complementary to the gateway's
+// content-derived envoy-secrets-rev, which auto-rolls the gateway when the
+// resolved Secret set changes.
+const annRollRev = "agent-platform.ai/roll-rev"
+
 // agentProxyAddr is the agent's HTTPS_PROXY value — IP-direct, no DNS.
 // The agent/fork reconcilers requeue until the gateway ClusterIP is
 // assigned, so this never sees an empty IP at steady state.
@@ -67,8 +76,13 @@ func agentProxyAddr(cfg *config.Config, gatewayClusterIP string) string {
 // it's not yet assigned.
 //
 // ADR-046: there is no separate InstanceSpec anymore — the merged AgentSpec
-// carries `DesiredState`, `SecretRef`, and the single user-owned env list.
-func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret, gatewayClusterIP string) *appsv1.StatefulSet {
+// carries `SecretRef` and the single user-owned env list.
+//
+// Replicas are set to 1 here (the running default) but are owned by the
+// reconciler's applyStatefulSet, which scales up on activity and defers
+// scale-down to the idle checker (ADR-058: run state is activity-driven, not a
+// stored desiredState).
+func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.Config, ownerRef metav1.OwnerReference, credentialSecrets []corev1.Secret, gatewayClusterIP string) *appsv1.StatefulSet {
 	base := cfg.AgentBase
 	defaults := cfg.AgentTemplateDefaults
 
@@ -91,9 +105,6 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 	}
 
 	replicas := int32(1)
-	if agentSpec.DesiredState == "hibernated" {
-		replicas = 0
-	}
 
 	labels := map[string]string{
 		LabelAgent: name,
@@ -397,12 +408,10 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: cfg.Namespace,
-			Labels:    labels,
-			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
-			},
+			Name:            name,
+			Namespace:       cfg.Namespace,
+			Labels:          labels,
+			OwnerReferences: []metav1.OwnerReference{ownerRef},
 		},
 		Spec: appsv1.StatefulSetSpec{
 			Replicas:             &replicas,
@@ -420,16 +429,14 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 // BuildAgentService is the headless Service the api-server uses to reach the
 // agent pod's ACP/tRPC port. Selector pins to the pair key + role=agent so
 // the gateway pod (which carries the same instance label) is excluded.
-func BuildAgentService(name string, cfg *config.Config, ownerCM *corev1.ConfigMap) *corev1.Service {
+func BuildAgentService(name string, cfg *config.Config, ownerRef metav1.OwnerReference) *corev1.Service {
 	selector := map[string]string{LabelPair: name, LabelRole: RoleAgent}
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: cfg.Namespace,
-			Labels:    map[string]string{LabelAgent: name, LabelPair: name, LabelRole: RoleAgent},
-			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
-			},
+			Name:            name,
+			Namespace:       cfg.Namespace,
+			Labels:          map[string]string{LabelAgent: name, LabelPair: name, LabelRole: RoleAgent},
+			OwnerReferences: []metav1.OwnerReference{ownerRef},
 		},
 		Spec: corev1.ServiceSpec{
 			ClusterIP: corev1.ClusterIPNone,

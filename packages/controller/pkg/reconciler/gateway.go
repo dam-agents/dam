@@ -36,7 +36,7 @@ func GatewayName(pairKey string) string {
 //
 // `agentName` is both the pair key and the parent agent reference
 // (long-lived pairs collapse the two).
-func BuildGatewayStatefulSet(agentName string, hibernated bool, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret) *appsv1.StatefulSet {
+func BuildGatewayStatefulSet(agentName string, hibernated bool, cfg *config.Config, ownerRef metav1.OwnerReference, credentialSecrets []corev1.Secret) *appsv1.StatefulSet {
 	replicas := int32(1)
 	if hibernated {
 		replicas = 0
@@ -82,12 +82,10 @@ func BuildGatewayStatefulSet(agentName string, hibernated bool, cfg *config.Conf
 
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      gatewayName,
-			Namespace: cfg.Namespace,
-			Labels:    labels,
-			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
-			},
+			Name:            gatewayName,
+			Namespace:       cfg.Namespace,
+			Labels:          labels,
+			OwnerReferences: []metav1.OwnerReference{ownerRef},
 		},
 		Spec: appsv1.StatefulSetSpec{
 			Replicas:    &replicas,
@@ -125,18 +123,16 @@ func ptrIntOrString(v intstr.IntOrString) *intstr.IntOrString { return &v }
 // directly (IP-literal, no DNS) and what the iptables init container's
 // allow-list / np-gate probe target. Was previously headless;
 // `Service.Spec.ClusterIP == "None"` isn't usable as a literal target.
-func BuildGatewayService(agentName string, cfg *config.Config, ownerCM *corev1.ConfigMap) *corev1.Service {
+func BuildGatewayService(agentName string, cfg *config.Config, ownerRef metav1.OwnerReference) *corev1.Service {
 	gatewayName := GatewayName(agentName)
 	envoyPort := portInt32(cfg.EnvoyPort)
 	selector := map[string]string{LabelPair: agentName, LabelRole: RoleGateway}
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      gatewayName,
-			Namespace: cfg.Namespace,
-			Labels:    map[string]string{LabelAgent: agentName, LabelPair: agentName, LabelRole: RoleGateway},
-			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
-			},
+			Name:            gatewayName,
+			Namespace:       cfg.Namespace,
+			Labels:          map[string]string{LabelAgent: agentName, LabelPair: agentName, LabelRole: RoleGateway},
+			OwnerReferences: []metav1.OwnerReference{ownerRef},
 		},
 		Spec: corev1.ServiceSpec{
 			// ClusterIP omitted → apiserver auto-assigns a stable IP.
@@ -159,7 +155,7 @@ func BuildGatewayService(agentName string, cfg *config.Config, ownerCM *corev1.C
 // ext_authz Check calls from this gateway resolve under the parent
 // agent's egress rules (ADR-027). The pair key is the fork's own name
 // so the fork pair is structurally isolated from the parent agent's pair.
-func BuildForkGatewayPod(forkName, parentAgentID string, cfg *config.Config, ownerCM *corev1.ConfigMap, credentialSecrets []corev1.Secret) *corev1.Pod {
+func BuildForkGatewayPod(forkName, parentAgentID string, cfg *config.Config, ownerRef metav1.OwnerReference, credentialSecrets []corev1.Secret) *corev1.Pod {
 	gatewayName := GatewayName(forkName)
 	labels := map[string]string{
 		LabelAgent:    parentAgentID,
@@ -176,12 +172,10 @@ func BuildForkGatewayPod(forkName, parentAgentID string, cfg *config.Config, own
 
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      gatewayName,
-			Namespace: cfg.Namespace,
-			Labels:    labels,
-			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
-			},
+			Name:            gatewayName,
+			Namespace:       cfg.Namespace,
+			Labels:          labels,
+			OwnerReferences: []metav1.OwnerReference{ownerRef},
 		},
 		Spec: corev1.PodSpec{
 			// ADR-027: fork gateway pod runs as the per-fork SA (its own
@@ -202,18 +196,16 @@ func BuildForkGatewayPod(forkName, parentAgentID string, cfg *config.Config, own
 }
 
 // BuildForkGatewayService mirrors BuildGatewayService for the fork pair.
-func BuildForkGatewayService(forkName string, cfg *config.Config, ownerCM *corev1.ConfigMap) *corev1.Service {
+func BuildForkGatewayService(forkName string, cfg *config.Config, ownerRef metav1.OwnerReference) *corev1.Service {
 	gatewayName := GatewayName(forkName)
 	envoyPort := portInt32(cfg.EnvoyPort)
 	selector := map[string]string{LabelPair: forkName, LabelRole: RoleGateway}
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      gatewayName,
-			Namespace: cfg.Namespace,
-			Labels:    map[string]string{LabelPair: forkName, LabelRole: RoleGateway},
-			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(ownerCM, corev1.SchemeGroupVersion.WithKind("ConfigMap")),
-			},
+			Name:            gatewayName,
+			Namespace:       cfg.Namespace,
+			Labels:          map[string]string{LabelPair: forkName, LabelRole: RoleGateway},
+			OwnerReferences: []metav1.OwnerReference{ownerRef},
 		},
 		Spec: corev1.ServiceSpec{
 			// ClusterIP omitted → apiserver auto-assigns a stable IP.

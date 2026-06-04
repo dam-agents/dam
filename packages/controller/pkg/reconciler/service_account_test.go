@@ -13,7 +13,7 @@ import (
 // AutomountServiceAccountToken explicitly false, owner-refed to the
 // instance ConfigMap so K8s GC reaps it on instance delete.
 func TestBuildServiceAccount_Shape(t *testing.T) {
-	sa := BuildServiceAccount("my-instance", testConfig, testOwnerCM)
+	sa := BuildServiceAccount("my-instance", testConfig, configMapOwnerRef(testOwnerCM))
 
 	assert.Equal(t, "my-instance", sa.Name)
 	assert.Equal(t, testConfig.Namespace, sa.Namespace)
@@ -31,7 +31,7 @@ func TestBuildServiceAccount_Shape(t *testing.T) {
 // contract: name == argument, no implicit transformation.
 func TestBuildServiceAccount_NameEqualsInstanceID(t *testing.T) {
 	for _, id := range []string{"abc", "instance-with-dashes", "x"} {
-		sa := BuildServiceAccount(id, testConfig, testOwnerCM)
+		sa := BuildServiceAccount(id, testConfig, configMapOwnerRef(testOwnerCM))
 		assert.Equal(t, id, sa.Name, "SA name must equal the instance ID — peer principal SA name is the URL :id contract")
 	}
 }
@@ -41,10 +41,10 @@ func TestBuildServiceAccount_NameEqualsInstanceID(t *testing.T) {
 // manual creation). Without this, a drifted SA silently bypasses the
 // owner-ref + token guarantees.
 func TestApplyServiceAccount_HealsLabelDrift(t *testing.T) {
-	cm := agentCM("running")
+	agent := agentCR()
 	// Override the agent name to match the SA we pre-create below.
-	cm.Name = "my-instance"
-	r, client := setupReconciler(t, cm)
+	agent.Name = "my-instance"
+	r, client := setupReconciler(t, agent)
 	// Pre-create a drifted SA with no owner-ref and AutomountSA=nil.
 	pre := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
@@ -57,7 +57,7 @@ func TestApplyServiceAccount_HealsLabelDrift(t *testing.T) {
 	_, err := client.CoreV1().ServiceAccounts(testConfig.Namespace).Create(t.Context(), pre, metav1.CreateOptions{})
 	require.NoError(t, err)
 
-	require.NoError(t, r.ensureServiceAccount(t.Context(), "my-instance", cm))
+	require.NoError(t, r.ensureServiceAccount(t.Context(), "my-instance", agentOwnerRef(agent)))
 
 	got, err := client.CoreV1().ServiceAccounts(testConfig.Namespace).Get(t.Context(), "my-instance", metav1.GetOptions{})
 	require.NoError(t, err)
@@ -66,7 +66,7 @@ func TestApplyServiceAccount_HealsLabelDrift(t *testing.T) {
 	require.NotNil(t, got.AutomountServiceAccountToken)
 	assert.False(t, *got.AutomountServiceAccountToken)
 	require.Len(t, got.OwnerReferences, 1)
-	assert.Equal(t, cm.UID, got.OwnerReferences[0].UID)
+	assert.Equal(t, agent.UID, got.OwnerReferences[0].UID)
 }
 
 // testConfig and testOwnerCM are reused across reconciler tests; declared
