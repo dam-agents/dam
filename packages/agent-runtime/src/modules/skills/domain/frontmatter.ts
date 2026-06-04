@@ -2,7 +2,7 @@
  * Extract `name` and `description` from a SKILL.md's YAML frontmatter.
  * Handles plain scalars (`description: foo`), folded block scalars
  * (`description: >`), and literal block scalars (`description: |`) —
- * apocohq's catalog uses `>` with line continuations, which a naive parser
+ * some catalogs use `>` with line continuations, which a naive parser
  * surfaces as the literal character `>`.
  */
 export function parseFrontmatter(content: string): {

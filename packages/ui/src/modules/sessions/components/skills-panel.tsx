@@ -597,7 +597,7 @@ export function SkillsPanel({
         <div className="flex flex-col gap-3 border-b border-border-light p-4 anim-in">
           <input
             className={inp}
-            placeholder='Name (e.g. "Apocohq Skills")'
+            placeholder='Name (e.g. "My Skills")'
             value={addForm.name}
             onChange={(e) =>
               setAddForm((f) => ({ ...f, name: e.target.value }))
@@ -605,7 +605,7 @@ export function SkillsPanel({
           />
           <input
             className={`${inp} font-mono`}
-            placeholder="https://github.com/apocohq/skills"
+            placeholder="https://github.com/your-org/skills"
             value={addForm.gitUrl}
             onChange={(e) =>
               setAddForm((f) => ({ ...f, gitUrl: e.target.value }))
