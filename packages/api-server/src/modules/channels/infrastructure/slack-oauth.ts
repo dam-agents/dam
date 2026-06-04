@@ -5,6 +5,7 @@ import {
   exchangeCodeForTokens,
   type KeycloakOAuthConfig,
 } from "./identity-oauth.js";
+import { securityLog } from "../../../core/security-log.js";
 
 const FLOW_TTL_MS = 10 * 60 * 1000;
 
@@ -33,6 +34,15 @@ export function createSlackOAuthRoutes(deps: {
 
     const pending = deps.pendingFlows.get(state);
     if (!pending) {
+      // Invalid/replayed state on a public callback — a CSRF/replay probe.
+      securityLog("warn", "identity.link.denied", {
+        category: "channel",
+        actor: null,
+        actorKind: "external",
+        surface: "slack",
+        decision: "deny",
+        reason: "invalid-state",
+      });
       return c.text("Invalid or expired state", 400);
     }
 
@@ -63,8 +73,18 @@ export function createSlackOAuthRoutes(deps: {
       "slack",
       pending.slackUserId,
       result.keycloakSub,
-      result.refreshToken,
     );
+    // The primary "who got bound to which Keycloak account" record.
+    securityLog("info", "identity.link", {
+      category: "channel",
+      actor: result.keycloakSub,
+      actorKind: "user",
+      surface: "slack",
+      result: "success",
+      detail: {
+        externalUserId: pending.slackUserId,
+      },
+    });
 
     return c.html(
       "<html><body><h2>Account linked!</h2><p>You can close this window and return to Slack.</p></body></html>",

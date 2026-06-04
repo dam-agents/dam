@@ -116,8 +116,8 @@ func TestIdleChecker_CheckInterval(t *testing.T) {
 		timeout  time.Duration
 		expected time.Duration
 	}{
-		{1 * time.Hour, 5 * time.Minute},      // 10m clamped to 5m
-		{3 * time.Minute, 30 * time.Second},    // 30s clamped to 30s
+		{1 * time.Hour, 5 * time.Minute},                   // 10m clamped to 5m
+		{3 * time.Minute, 30 * time.Second},                // 30s clamped to 30s
 		{15 * time.Minute, 2*time.Minute + 30*time.Second}, // 2m30s within range
 	}
 	for _, tt := range tests {

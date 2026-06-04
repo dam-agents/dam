@@ -1,12 +1,10 @@
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, t } from "../../trpc.js";
 import {
-  skillInstallInputSchema,
   skillListLocalInputSchema,
   skillPublishInputSchema,
   skillReadLocalInputSchema,
   skillScanInputSchema,
-  skillUninstallInputSchema,
 } from "./schemas.js";
 import type { SkillsDomainError } from "./types.js";
 
@@ -52,22 +50,6 @@ function toTrpcError(error: SkillsDomainError): TRPCError {
 }
 
 export const skillsRouter = t.router({
-  install: protectedProcedure
-    .input(skillInstallInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const result = await ctx.skills.install(input);
-      if (!result.ok) throw toTrpcError(result.error);
-      return result.value;
-    }),
-
-  uninstall: protectedProcedure
-    .input(skillUninstallInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const result = await ctx.skills.uninstall(input);
-      if (!result.ok) throw toTrpcError(result.error);
-      return { ok: true as const };
-    }),
-
   scan: protectedProcedure
     .input(skillScanInputSchema)
     .mutation(async ({ ctx, input }) => {

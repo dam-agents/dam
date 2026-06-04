@@ -1,0 +1,34 @@
+["agents:codex:image"]
+description = "Build the codex agent image"
+dir = "{{config_root}}"
+depends = ["platform-base:image"]
+run = '''
+#!/usr/bin/env bash
+[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
+docker build -t platform-codex:latest packages/agents/codex
+'''
+
+["agents:codex:scan"]
+depends = ["agents:codex:scan:*"]
+
+["agents:codex:scan:trivy"]
+dir = "{{config_root}}"
+raw = true
+usage = '''
+flag "--json" help="Emit Trivy JSON (exit 0) instead of failing on findings"
+flag "--tag <tag>" help="Scan quay.io/dam-agents/codex:<tag> instead of building locally"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+if [ -n "${usage_tag:-}" ]; then
+  image="quay.io/dam-agents/codex:${usage_tag}"
+else
+  {{ mise_bin }} run agents:codex:image
+  image="platform-codex:latest"
+fi
+if [[ "${usage_json:-false}" == "true" ]]; then
+  exec trivy image --quiet --format json "$image"
+fi
+exec trivy image --quiet --exit-code 1 "$image"
+'''

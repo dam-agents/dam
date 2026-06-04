@@ -1,5 +1,9 @@
-import { Inbox } from "lucide-react";
+import { Email as Inbox } from "@carbon/icons-react";
 import { useEffect, useRef, useState } from "react";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import { useApprovalsForOwner } from "../api/queries.js";
@@ -43,25 +47,38 @@ export function InboxBell({ collapsed }: InboxBellProps) {
         type="button"
         onClick={() => setOpen((o) => !o)}
         title={collapsed ? "Inbox" : undefined}
-        className={`flex items-center gap-2.5 rounded-lg transition-colors h-9 w-full ${collapsed ? "justify-center px-0" : "px-2.5"} ${active ? "text-accent bg-accent-light" : "text-text-secondary hover:text-text hover:bg-surface-raised"}`}
+        className={cn(
+          "flex items-center gap-2.5 rounded-lg transition-colors h-9 w-full overflow-hidden",
+          collapsed ? "justify-center px-0" : "justify-start px-2.5",
+          active
+            ? "text-primary bg-primary/10"
+            : "text-foreground/80 hover:text-foreground hover:bg-muted",
+        )}
       >
         <span className="relative shrink-0">
           <Inbox size={18} />
           {pendingCount > 0 && (
-            <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] px-1 rounded-full bg-accent text-[10px] font-bold text-white flex items-center justify-center">
+            <Badge
+              variant="default"
+              className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center border-0"
+            >
               {pendingCount > 9 ? "9+" : pendingCount}
-            </span>
+            </Badge>
           )}
         </span>
-        {!collapsed && <span className="text-[14px] font-medium">Inbox</span>}
+        {!collapsed && (
+          <span className="text-[14px] font-medium whitespace-nowrap">
+            Inbox
+          </span>
+        )}
       </button>
       {open && (
-        <div className="absolute left-full ml-2 bottom-0 z-40 w-[320px] rounded-lg border border-border bg-surface shadow-brutal-sm overflow-hidden anim-scale-in">
-          <div className="px-3 py-2 border-b border-border-light flex items-center justify-between">
-            <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">
+        <div className="absolute left-full ml-2 bottom-0 z-40 w-[320px] rounded-lg border border-input bg-card shadow-sm overflow-hidden anim-scale-in">
+          <div className="px-3 py-2 border-b border-border flex items-center justify-between">
+            <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.05em]">
               Inbox
             </span>
-            <span className="text-[10px] text-text-muted">
+            <span className="text-[10px] text-muted-foreground">
               {pendingCount} pending
             </span>
           </div>
@@ -72,16 +89,17 @@ export function InboxBell({ collapsed }: InboxBellProps) {
               emptyLabel="Nothing pending"
             />
           </div>
-          <button
+          <Button
             type="button"
+            variant="ghost"
             onClick={() => {
               setOpen(false);
               setView("inbox");
             }}
-            className="w-full h-9 border-t border-border-light text-[12px] font-semibold text-accent hover:bg-accent-light transition-colors"
+            className="w-full h-9 border-t border-border rounded-none text-[12px] font-semibold text-primary hover:bg-primary/10"
           >
             See all
-          </button>
+          </Button>
         </div>
       )}
     </div>

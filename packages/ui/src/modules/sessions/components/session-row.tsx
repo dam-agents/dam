@@ -125,7 +125,7 @@ export function SessionRow({
       {menuOpen && (
         <div
           ref={menuRef}
-          className="absolute right-3 top-2 z-30 rounded-lg border-2 border-border bg-surface py-1 anim-scale-in shadow-brutal-sm"
+          className="absolute right-3 top-2 z-30 rounded-lg border border-border bg-surface py-1 anim-scale-in shadow-md"
         >
           <button
             className="flex items-center gap-2 w-full px-4 py-2 text-[13px] text-danger hover:bg-danger-light transition-colors"

@@ -1,5 +1,6 @@
 import * as grpc from "@grpc/grpc-js";
 import type { ExtAuthzGate } from "../../modules/approvals/compose.js";
+import { securityLog } from "../../core/security-log.js";
 import {
   AuthorizationService,
   type AuthorizationServer,
@@ -69,9 +70,15 @@ export async function startExtAuthzGrpcApp(
         const authority = call.getHost();
         const agentId = parseInstanceFromAuthority(authority, expectedPrefix);
         if (!agentId) {
-          process.stderr.write(
-            `[ext-authz] denied: unparsable :authority='${authority}'\n`,
-          );
+          securityLog("warn", "egress.decision", {
+            category: "egress",
+            actor: null,
+            actorKind: "agent",
+            surface: "ext-authz",
+            decision: "deny",
+            reason: "unparsable-authority",
+            detail: { authority },
+          });
           callback(
             null,
             denied(`unable to derive instance from :authority='${authority}'`),
@@ -88,6 +95,15 @@ export async function startExtAuthzGrpcApp(
         const rawHost = httpReq?.host || sni;
         const host = rawHost ? stripPort(rawHost) : null;
         if (!host) {
+          securityLog("warn", "egress.decision", {
+            category: "egress",
+            actor: null,
+            actorKind: "agent",
+            surface: "ext-authz",
+            agentId,
+            decision: "deny",
+            reason: "missing-host",
+          });
           callback(null, denied("missing host/sni"));
           return;
         }
@@ -100,6 +116,18 @@ export async function startExtAuthzGrpcApp(
         });
         callback(null, verdict === "allow" ? ok() : denied("policy denied"));
       } catch (err) {
+        // Fail closed AND surface — this catch otherwise hides identity-
+        // resolution / rule-lookup exceptions behind a generic gRPC deny.
+        securityLog("error", "egress.decision", {
+          category: "egress",
+          actor: null,
+          actorKind: "agent",
+          surface: "ext-authz",
+          decision: "deny",
+          result: "failure",
+          reason: "internal-error",
+          detail: { error: err instanceof Error ? err.message : "unknown" },
+        });
         callback(
           null,
           denied(err instanceof Error ? err.message : "internal error"),

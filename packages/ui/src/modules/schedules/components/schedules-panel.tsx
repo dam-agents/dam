@@ -20,7 +20,7 @@ export function SchedulesPanel({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const sessionsQuery = useScheduleSessions(expandedId);
+  const sessionsQuery = useScheduleSessions(selectedAgent, expandedId);
   const sessionsForExpanded = sessionsQuery.data ?? [];
 
   return (

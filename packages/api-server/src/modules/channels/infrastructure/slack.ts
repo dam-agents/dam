@@ -9,9 +9,11 @@ import { match, P } from "ts-pattern";
 import { ChannelType, SessionType, type AgentsService } from "api-server-api";
 import type { StoredChannelConfig } from "../stored-channel.js";
 import type { PostMessageOptions } from "../services/channel-manager.js";
+import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import {
   createAcpClient,
   createForkAcpClient,
+  type AcpClient,
 } from "../../../core/acp-client.js";
 import {
   EventType,
@@ -21,6 +23,7 @@ import {
   type DomainEvent,
   type ForkFailed,
   type ForkReady,
+  type TurnOutcome,
 } from "../../../events.js";
 import type { IdentityLinkService } from "./../services/identity-link-service.js";
 import {
@@ -29,10 +32,99 @@ import {
   type KeycloakOAuthConfig,
 } from "./identity-oauth.js";
 import { formatError } from "../../../core/format-error.js";
+import { securityLog } from "../../../core/security-log.js";
 
 type BoltApp = InstanceType<typeof App>;
 
 const FORK_OUTCOME_TIMEOUT_MS = 2 * 60_000;
+
+type SlackImageFile = {
+  id: string;
+  name: string;
+  mimetype: string;
+  url_private: string;
+  size: number;
+};
+
+export type FetchedImage = {
+  block: ContentBlock;
+  meta: { name: string; size: number };
+};
+
+type FetchedFailure = { name: string; reason: string };
+
+type FetchImagesResult =
+  | { kind: "ok"; images: FetchedImage[]; failures: FetchedFailure[] }
+  | { kind: "cap_exceeded"; totalBytes: number; count: number };
+
+const TOTAL_IMAGE_BYTES_CAP = 30 * 1_000_000;
+const CONCURRENT_IMAGE_FETCH_LIMIT = 10;
+
+function createSemaphore(max: number) {
+  let active = 0;
+  const queue: Array<() => void> = [];
+  return {
+    async acquire(): Promise<() => void> {
+      if (active < max) active++;
+      else await new Promise<void>((r) => queue.push(r));
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        const next = queue.shift();
+        if (next) next();
+        else active--;
+      };
+    },
+  };
+}
+
+const imageFetchSemaphore = createSemaphore(CONCURRENT_IMAGE_FETCH_LIMIT);
+
+async function fetchSlackImages(
+  botToken: string,
+  files: SlackImageFile[] | undefined,
+): Promise<FetchImagesResult> {
+  const imageFiles = (files ?? []).filter((f) =>
+    f.mimetype?.startsWith("image/"),
+  );
+  const totalBytes = imageFiles.reduce((sum, f) => sum + (f.size ?? 0), 0);
+  if (totalBytes > TOTAL_IMAGE_BYTES_CAP) {
+    return { kind: "cap_exceeded", totalBytes, count: imageFiles.length };
+  }
+
+  const release = await imageFetchSemaphore.acquire();
+  try {
+    const images: FetchedImage[] = [];
+    const failures: FetchedFailure[] = [];
+    for (const f of imageFiles) {
+      try {
+        const res = await fetch(f.url_private, {
+          headers: { Authorization: `Bearer ${botToken}` },
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = Buffer.from(await res.arrayBuffer()).toString("base64");
+        images.push({
+          block: { type: "image", data, mimeType: f.mimetype },
+          meta: { name: f.name, size: f.size },
+        });
+      } catch (err) {
+        failures.push({ name: f.name, reason: formatError(err) });
+      }
+    }
+    return { kind: "ok", images, failures };
+  } finally {
+    release();
+  }
+}
+
+function renderTurnFiles(images: FetchedImage[]): string {
+  if (images.length === 0) return "";
+  const list = images
+    .map((i) => `${i.meta.name} (${(i.meta.size / 1_000_000).toFixed(1)} MB)`)
+    .join(", ");
+  return `\nTurn included: ${list}.`;
+}
 
 async function getContextMessages(
   app: BoltApp,
@@ -93,30 +185,55 @@ export function createSlackWorker(
   botToken: string,
   appToken: string,
   agents: () => AgentsService,
-  persistSession: (
-    sessionId: string,
-    agentId: string,
-    type: SessionType,
-    threadTs?: string,
-  ) => Promise<void>,
   identityLinks: IdentityLinkService,
   oauthConfig: KeycloakOAuthConfig,
   pendingOAuthFlows: Map<string, SlackOAuthPending>,
-  threadSessions: {
-    find: (
-      agentId: string,
-      threadTs: string,
-    ) => Promise<{ sessionId: string } | null>;
-    touch: (sessionId: string) => Promise<void>;
-  },
   getInstanceOwner: (agentId: string) => Promise<string | null>,
   channelRegistry: ChannelRegistry,
   /** Lowercase brand identifier used as the Slack slash command name (e.g.
    *  brandShort="name" → /name login). Sourced from BRAND_SHORT env var. */
   brandShort: string,
+  isTermsAccepted: (sub: string) => Promise<boolean>,
+  uiBaseUrl: string,
   emit: (event: DomainEvent) => void = defaultEmit,
 ): SlackWorker {
   let app: BoltApp | null = null;
+
+  async function ephemeral(
+    channel: string,
+    user: string,
+    threadTs: string | undefined,
+    text: string,
+  ) {
+    if (!app) {
+      process.stderr.write(
+        `[slack] ephemeral skipped (app not started): ${text}\n`,
+      );
+      return;
+    }
+    try {
+      await app.client.chat.postEphemeral({
+        channel,
+        user,
+        ...(threadTs ? { thread_ts: threadTs } : {}),
+        text,
+      });
+    } catch (err) {
+      process.stderr.write(
+        `[slack] postEphemeral failed: ${formatError(err)}\n`,
+      );
+    }
+  }
+
+  async function findThreadSession(acp: AcpClient, threadTs: string) {
+    const sessions = await acp.listSessions().catch((err) => {
+      process.stderr.write(
+        `[slack] listSessions failed: ${formatError(err)}\n`,
+      );
+      return [];
+    });
+    return sessions.find((s) => s.platform?.threadTs === threadTs) ?? null;
+  }
 
   async function relayOwnerTurn(ctx: {
     instanceName: string;
@@ -125,6 +242,9 @@ export function createSlackWorker(
     eventTs: string;
     text: string;
     hasThread: boolean;
+    actorSub: string;
+    slackUserId: string;
+    images: FetchedImage[];
   }) {
     if (!app) return;
     const { instanceName } = ctx;
@@ -135,33 +255,51 @@ export function createSlackWorker(
       name: "eyes",
     });
 
+    let outcome: TurnOutcome = "failure";
+    const onImagesDropped = () =>
+      ephemeral(
+        ctx.channel,
+        ctx.slackUserId,
+        ctx.hasThread ? ctx.threadTs : undefined,
+        "This agent can't process images yet — answering text only.",
+      );
     try {
       await agents().ensureReady(instanceName);
       const acp = createAcpClient({ namespace, instanceName });
-      const onSessionCreated = (sid: string) =>
-        persistSession(
-          sid,
-          instanceName,
-          SessionType.ChannelSlack,
-          ctx.threadTs,
-        );
+      const platformMeta = {
+        type: SessionType.ChannelSlack,
+        threadTs: ctx.threadTs,
+      };
 
       let response: string;
-      const existing = await threadSessions.find(instanceName, ctx.threadTs);
+      const existing = await findThreadSession(acp, ctx.threadTs);
+      const resumePrompt: string | ContentBlock[] =
+        ctx.images.length === 0
+          ? ctx.text
+          : [
+              { type: "text", text: ctx.text },
+              ...ctx.images.map((i) => i.block),
+            ];
 
       if (existing) {
         try {
-          response = await acp.sendPrompt(ctx.text, {
+          response = await acp.sendPrompt(resumePrompt, {
             resumeSessionId: existing.sessionId,
+            onImagesDropped,
           });
-          await threadSessions.touch(existing.sessionId);
         } catch {
           const prompt = await buildThreadPrompt(app, ctx);
-          response = await acp.sendPrompt(prompt, { onSessionCreated });
+          response = await acp.sendPrompt(prompt, {
+            platformMeta,
+            onImagesDropped,
+          });
         }
       } else {
         const prompt = await buildThreadPrompt(app, ctx);
-        response = await acp.sendPrompt(prompt, { onSessionCreated });
+        response = await acp.sendPrompt(prompt, {
+          platformMeta,
+          onImagesDropped,
+        });
       }
 
       await postAssistantMessage(
@@ -170,13 +308,23 @@ export function createSlackWorker(
         instanceName,
         response,
       );
-      emit({ type: EventType.SlackTurnRelayed, replyId: ctx.eventTs });
+      outcome = "success";
     } catch (err) {
-      process.stderr.write(`[${instanceName}] ACP error: ${err}\n`);
+      process.stderr.write(
+        `[${instanceName}] ACP error: ${formatError(err)}\n`,
+      );
       await app.client.chat.postMessage({
         channel: ctx.channel,
         thread_ts: ctx.threadTs,
-        text: `Error: ${formatError(err)}`,
+        text: `Error: ${formatError(err)}.${renderTurnFiles(ctx.images)}`,
+      });
+    } finally {
+      emit({
+        type: EventType.ChannelTurnRelayed,
+        channel: "slack",
+        agentId: instanceName,
+        actorSub: ctx.actorSub,
+        outcome,
       });
     }
   }
@@ -211,6 +359,7 @@ export function createSlackWorker(
     instanceName: string;
     text: string;
     hasThread: boolean;
+    images: FetchedImage[];
   }) {
     if (!app) return;
 
@@ -226,13 +375,9 @@ export function createSlackWorker(
       eventTs: args.eventTs,
       text: args.text,
       hasThread: args.hasThread,
+      images: args.images,
     });
-    const existing = await threadSessions.find(
-      args.instanceName,
-      args.threadTs,
-    );
     const replyId = args.eventTs;
-    const existingSessionId = existing?.sessionId;
 
     const ready$ = events$().pipe(
       ofType<ForkReady>(EventType.ForkReady),
@@ -249,10 +394,12 @@ export function createSlackWorker(
           handleForkOutcome(outcome, {
             channel: args.channel,
             threadTs: args.threadTs,
+            hasThread: args.hasThread,
             instanceName: args.instanceName,
             slackUserId: args.slackUserId,
+            actorSub: args.keycloakSub,
             prompt,
-            existingSessionId,
+            images: args.images,
           }).catch((err) => {
             process.stderr.write(
               `[slack/fork] outcome handler error: ${formatError(err)}\n`,
@@ -285,7 +432,6 @@ export function createSlackWorker(
       agentId: args.instanceName,
       foreignSub: args.keycloakSub,
       threadTs: args.threadTs,
-      ...(existing ? { sessionId: existing.sessionId } : {}),
       prompt,
       slackContext: {
         channelId: args.channel,
@@ -299,10 +445,12 @@ export function createSlackWorker(
     ctx: {
       channel: string;
       threadTs: string;
+      hasThread: boolean;
       instanceName: string;
       slackUserId: string;
-      prompt: string;
-      existingSessionId: string | undefined;
+      actorSub: string;
+      prompt: string | ContentBlock[];
+      images: FetchedImage[];
     },
   ) {
     if (!app) return;
@@ -310,42 +458,52 @@ export function createSlackWorker(
 
     await match(outcome)
       .with({ type: EventType.ForkReady }, async (event) => {
+        let turnOutcome: TurnOutcome = "failure";
+        const onImagesDropped = () =>
+          ephemeral(
+            ctx.channel,
+            ctx.slackUserId,
+            ctx.hasThread ? ctx.threadTs : undefined,
+            "This agent can't process images yet — answering text only.",
+          );
         try {
           const acp = createForkAcpClient({ podIP: event.podIP });
-          const response = ctx.existingSessionId
+          const existing = await findThreadSession(acp, ctx.threadTs);
+          const response = existing
             ? await acp.sendPrompt(ctx.prompt, {
-                resumeSessionId: ctx.existingSessionId,
+                resumeSessionId: existing.sessionId,
+                onImagesDropped,
               })
             : await acp.sendPrompt(ctx.prompt, {
-                onSessionCreated: (sid) =>
-                  persistSession(
-                    sid,
-                    ctx.instanceName,
-                    SessionType.ChannelSlack,
-                    ctx.threadTs,
-                  ),
+                platformMeta: {
+                  type: SessionType.ChannelSlack,
+                  threadTs: ctx.threadTs,
+                },
+                onImagesDropped,
               });
-          if (ctx.existingSessionId)
-            await threadSessions.touch(ctx.existingSessionId);
           await postAssistantMessage(
             ctx.channel,
             ctx.threadTs,
             ctx.instanceName,
             response,
           );
+          turnOutcome = "success";
         } catch (err) {
           process.stderr.write(
-            `[slack/fork ${event.forkId}] ACP error: ${err}\n`,
+            `[slack/fork ${event.forkId}] ACP error: ${formatError(err)}\n`,
           );
           await bolt.client.chat.postMessage({
             channel: ctx.channel,
             thread_ts: ctx.threadTs,
-            text: `Error: ${formatError(err)}`,
+            text: `Error: ${formatError(err)}.${renderTurnFiles(ctx.images)}`,
           });
         } finally {
           emit({
-            type: EventType.SlackTurnRelayed,
-            replyId: event.replyId,
+            type: EventType.ChannelTurnRelayed,
+            channel: "slack",
+            agentId: ctx.instanceName,
+            actorSub: ctx.actorSub,
+            outcome: turnOutcome,
             forkId: event.forkId,
           });
         }
@@ -363,6 +521,16 @@ export function createSlackWorker(
             `[slack/fork] failed to notify ${ctx.slackUserId} of fork failure "${event.reason}": ${formatError(err)}\n`,
           );
         }
+        // Emit with forkId so the on-channel-turn-relayed saga calls
+        // closeFork — without this the failed fork orphans its k8s state.
+        emit({
+          type: EventType.ChannelTurnRelayed,
+          channel: "slack",
+          agentId: ctx.instanceName,
+          actorSub: ctx.actorSub,
+          outcome: "failure",
+          forkId: event.forkId,
+        });
       })
       .exhaustive();
   }
@@ -375,8 +543,9 @@ export function createSlackWorker(
       eventTs: string;
       text: string;
       hasThread: boolean;
+      images: FetchedImage[];
     },
-  ): Promise<string> {
+  ): Promise<string | ContentBlock[]> {
     const contextMessages = await getContextMessages(
       boltApp,
       ctx.channel,
@@ -388,7 +557,10 @@ export function createSlackWorker(
       parts.push(`<context>\n${contextMessages.join("\n")}\n</context>`);
     }
     parts.push(ctx.text);
-    return parts.join("\n\n");
+    const text = parts.join("\n\n");
+
+    if (ctx.images.length === 0) return text;
+    return [{ type: "text", text }, ...ctx.images.map((i) => i.block)];
   }
 
   async function handleCommand({ command, ack }: SlackCommandMiddlewareArgs) {
@@ -451,6 +623,16 @@ export function createSlackWorker(
 
     const keycloakSub = await identityLinks.resolve("slack", slackUserId);
     if (!keycloakSub) {
+      // An unlinked (unauthenticated) Slack user probing to drive an agent.
+      securityLog("warn", "channel.authz_deny", {
+        category: "channel",
+        actor: null,
+        actorKind: "external",
+        surface: "slack",
+        decision: "deny",
+        reason: "unlinked",
+        detail: { slackUserId, channelId: event.channel },
+      });
       await app.client.chat.postEphemeral({
         channel: event.channel,
         user: slackUserId,
@@ -472,6 +654,31 @@ export function createSlackWorker(
       return;
     }
 
+    const fetchResult = await fetchSlackImages(
+      botToken,
+      (event as { files?: SlackImageFile[] }).files,
+    );
+    if (fetchResult.kind === "cap_exceeded") {
+      const mb = (fetchResult.totalBytes / 1_000_000).toFixed(1);
+      const capMb = (TOTAL_IMAGE_BYTES_CAP / 1_000_000).toFixed(0);
+      await ephemeral(
+        event.channel,
+        slackUserId,
+        event.thread_ts,
+        `Attached images total ${mb} MB, over the ${capMb} MB per-message cap. Send smaller images or fewer at once.`,
+      );
+      return;
+    }
+    const { images, failures } = fetchResult;
+    for (const f of failures) {
+      await ephemeral(
+        event.channel,
+        slackUserId,
+        event.thread_ts,
+        `Couldn't fetch attached image '${f.name}': ${f.reason}. Try resending.`,
+      );
+    }
+
     await routeReply({
       channel: event.channel,
       threadTs,
@@ -481,6 +688,7 @@ export function createSlackWorker(
       slackUserId,
       keycloakSub,
       instanceName,
+      images,
     });
   }
 
@@ -493,6 +701,7 @@ export function createSlackWorker(
     slackUserId: string;
     keycloakSub: string;
     instanceName: string;
+    images: FetchedImage[];
   }) {
     if (!app) return;
 
@@ -502,10 +711,41 @@ export function createSlackWorker(
     ]);
     const isOwner = ownerSub !== null && ownerSub === args.keycloakSub;
     if (!isOwner && !isAllowed) {
+      // A linked user who is neither owner nor on the allow-list tried to
+      // drive the agent.
+      securityLog("warn", "channel.authz_deny", {
+        category: "channel",
+        actor: args.keycloakSub,
+        actorKind: "user",
+        surface: "slack",
+        agentId: args.instanceName,
+        decision: "deny",
+        reason: "not-allowed",
+        detail: { slackUserId: args.slackUserId, channelId: args.channel },
+      });
       await app.client.chat.postEphemeral({
         channel: args.channel,
         user: args.slackUserId,
         text: "You don't have access to this instance. Contact the instance owner to be added to the allowed users list.",
+      });
+      return;
+    }
+    // Authorized to drive — record who and on what basis.
+    securityLog("info", "channel.authz", {
+      category: "channel",
+      actor: args.keycloakSub,
+      actorKind: "user",
+      surface: "slack",
+      agentId: args.instanceName,
+      decision: "allow",
+      detail: { basis: isOwner ? "owner" : "allowlist" },
+    });
+
+    if (!(await isTermsAccepted(args.keycloakSub))) {
+      await app.client.chat.postEphemeral({
+        channel: args.channel,
+        user: args.slackUserId,
+        text: `Open ${uiBaseUrl} to accept the Terms of Use before sending messages.`,
       });
       return;
     }
@@ -522,6 +762,9 @@ export function createSlackWorker(
       eventTs: args.eventTs,
       text: args.text,
       hasThread: args.hasThread,
+      actorSub: args.keycloakSub,
+      slackUserId: args.slackUserId,
+      images: args.images,
     });
   }
 

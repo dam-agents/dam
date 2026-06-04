@@ -1,8 +1,5 @@
 import { PROTOCOL_VERSION } from "@agentclientprotocol/sdk/dist/acp.js";
-import type {
-  LoadSessionResponse,
-  McpServer,
-} from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
+import type { LoadSessionResponse } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import { useCallback } from "react";
 
 import { useStore } from "../../../store.js";
@@ -36,7 +33,6 @@ import { getSavedPreferences } from "../components/session-config-popover.js";
  */
 export function useAcpHistory(
   selectedAgent: string | null,
-  selectedMcpServers: McpServer[],
   captureSessionConfig: (response: SessionConfigPayload) => void,
   handleConfigUpdate: (update: AcpUpdate) => void,
 ): {
@@ -66,7 +62,7 @@ export function useAcpHistory(
         const resp: LoadSessionResponse = await conn.connection.loadSession({
           sessionId: sid,
           cwd: ".",
-          mcpServers: selectedMcpServers,
+          mcpServers: [],
         });
         captureSessionConfig(resp);
 
@@ -92,7 +88,6 @@ export function useAcpHistory(
     },
     [
       selectedAgent,
-      selectedMcpServers,
       captureSessionConfig,
       handleConfigUpdate,
       setSessionModes,

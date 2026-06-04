@@ -1,10 +1,10 @@
 import {
-  FileText as FileIcon,
-  Paperclip,
+  Attachment as Paperclip,
+  Close as X,
+  Document as FileIcon,
   Send as SendIcon,
-  Square,
-  X,
-} from "lucide-react";
+  Stop as Square,
+} from "@carbon/icons-react";
 import {
   type KeyboardEvent,
   type ReactNode,
@@ -14,6 +14,9 @@ import {
   useRef,
   useState,
 } from "react";
+
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 
 import { useAutoResize } from "../../../hooks/use-auto-resize.js";
 import { isMobile } from "../../../lib/breakpoints.js";
@@ -57,18 +60,18 @@ function BusyIndicator() {
     return () => clearInterval(id);
   }, []);
   return (
-    <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-text-muted">
+    <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
       <span className="inline-flex gap-0.5">
         <span
-          className="w-1 h-1 rounded-full bg-accent anim-pulse"
+          className="w-1 h-1 rounded-full bg-primary anim-pulse"
           style={{ animationDelay: "0ms" }}
         />
         <span
-          className="w-1 h-1 rounded-full bg-accent anim-pulse"
+          className="w-1 h-1 rounded-full bg-primary anim-pulse"
           style={{ animationDelay: "200ms" }}
         />
         <span
-          className="w-1 h-1 rounded-full bg-accent anim-pulse"
+          className="w-1 h-1 rounded-full bg-primary anim-pulse"
           style={{ animationDelay: "400ms" }}
         />
       </span>
@@ -211,7 +214,7 @@ export function ChatInput({
 
   return (
     <div
-      className={`border-t bg-surface/50 backdrop-blur-xl px-4 md:px-8 py-3 transition-colors ${dragOver ? "border-accent bg-accent-light/30" : "border-border-light"}`}
+      className={`border-t bg-card/50 backdrop-blur-xl px-4 md:px-8 py-3 transition-colors ${dragOver ? "border-primary bg-primary/10" : "border-border"}`}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
@@ -228,16 +231,18 @@ export function ChatInput({
           }}
         />
         <div className="flex items-end gap-2">
-          <button
-            className="h-[44px] w-[44px] rounded-lg border border-border-light bg-bg text-text-muted hover:text-accent hover:border-accent shrink-0 flex items-center justify-center transition-colors disabled:opacity-40"
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-[44px] w-[44px] text-muted-foreground hover:text-primary hover:border-primary shrink-0 disabled:opacity-40"
             onClick={() => fileInputRef.current?.click()}
             disabled={loadingSession}
             title="Attach file"
           >
             <Paperclip size={16} />
-          </button>
+          </Button>
           {attachments.length > 0 ? (
-            <div className="flex-1 rounded-lg border border-accent bg-bg shadow-[0_0_0_3px_var(--color-accent-glow)] transition-all focus-within:border-accent focus-within:shadow-[0_0_0_3px_var(--color-accent-glow)]">
+            <div className="flex-1 rounded-lg border border-primary bg-background shadow-[0_0_0_3px_var(--color-accent-glow)] transition-all focus-within:border-primary focus-within:shadow-[0_0_0_3px_var(--color-accent-glow)]">
               <div className="flex gap-2 flex-wrap px-3 pt-3">
                 {attachments.map((a, i) => (
                   <AttachmentChip
@@ -247,9 +252,9 @@ export function ChatInput({
                   />
                 ))}
               </div>
-              <textarea
+              <Textarea
                 ref={textareaRef}
-                className="w-full bg-transparent px-4 py-2 text-[14px] text-text outline-none resize-none max-h-[50vh] overflow-hidden placeholder:text-text-muted disabled:opacity-40"
+                className="w-full bg-transparent border-0 px-4 py-2 text-[14px] text-foreground resize-none min-h-0 max-h-[50vh] overflow-hidden placeholder:text-muted-foreground disabled:opacity-40 focus-visible:ring-0 focus-visible:ring-offset-0"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={onKeyDown}
@@ -260,9 +265,9 @@ export function ChatInput({
               />
             </div>
           ) : (
-            <textarea
+            <Textarea
               ref={textareaRef}
-              className="flex-1 rounded-lg border border-border-light bg-bg px-4 py-3 text-[14px] text-text outline-none resize-none min-h-[44px] max-h-[50vh] overflow-hidden transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted disabled:opacity-40"
+              className="flex-1 rounded-lg border border-border bg-background px-4 py-3 text-[14px] text-foreground resize-none min-h-[44px] max-h-[50vh] overflow-hidden transition-all focus-visible:border-primary focus-visible:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-muted-foreground disabled:opacity-40"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKeyDown}
@@ -273,23 +278,26 @@ export function ChatInput({
             />
           )}
           {showStop && (
-            <button
-              className="btn-brutal h-[44px] w-[44px] rounded-lg border-2 border-danger bg-danger text-white shrink-0 flex items-center justify-center shadow-[3px_3px_0_var(--c-danger)]"
+            <Button
+              variant="destructive"
+              size="icon"
+              className="h-[44px] w-[44px] shrink-0"
               onClick={onStop}
               title="Stop"
             >
               <Square size={16} />
-            </button>
+            </Button>
           )}
           {showSend && (
-            <button
-              className="btn-brutal h-[44px] w-[44px] rounded-lg border-2 border-accent-hover bg-accent text-white disabled:opacity-40 shrink-0 flex items-center justify-center shadow-brutal-accent"
+            <Button
+              size="icon"
+              className="h-[44px] w-[44px] disabled:opacity-40 shrink-0"
               onClick={send}
               disabled={sendDisabled || loadingSession}
               title={isComputing ? "Queue" : "Send"}
             >
               <SendIcon size={16} />
-            </button>
+            </Button>
           )}
         </div>
         <div className="flex items-center gap-3 min-h-[24px]">
@@ -314,22 +322,24 @@ function AttachmentChip({
         <img
           src={`data:${attachment.mimeType};base64,${attachment.data}`}
           alt="attachment"
-          className="h-14 w-14 rounded-md border border-border-light object-cover"
+          className="h-14 w-14 rounded-md border border-border object-cover"
         />
       ) : (
-        <div className="h-14 px-3 rounded-md border border-border-light bg-surface-raised flex items-center gap-2">
-          <FileIcon size={14} className="text-text-muted shrink-0" />
-          <span className="text-[11px] text-text-secondary truncate max-w-[120px]">
+        <div className="h-14 px-3 rounded-md border border-border bg-muted flex items-center gap-2">
+          <FileIcon size={14} className="text-muted-foreground shrink-0" />
+          <span className="text-[11px] text-foreground/80 truncate max-w-[120px]">
             {attachment.name}
           </span>
         </div>
       )}
-      <button
+      <Button
+        variant="destructive"
+        size="icon"
         onClick={onRemove}
-        className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-danger text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+        className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
       >
         <X size={10} />
-      </button>
+      </Button>
     </div>
   );
 }

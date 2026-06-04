@@ -1,7 +1,10 @@
 import sharp from "sharp";
 import { createHash } from "node:crypto";
 import type { Hono, Env } from "hono";
-import { DEFAULT_BRAND_ICON_SVG } from "./default-brand-icon.js";
+import {
+  DEFAULT_BRAND_ICON_RASTER_SVG,
+  DEFAULT_BRAND_ICON_SVG,
+} from "./default-brand-icon.js";
 
 /**
  * Brand icon serving — single SVG source of truth, rasterized on demand.
@@ -32,11 +35,14 @@ export function mountBrandIconRoutes<E extends Env>(
   getEnv?: () => string | undefined,
 ): void {
   // Resolved once per route call so test overrides (env mutated mid-test)
-  // pick up the new value without re-mounting the routes.
-  const resolveSvg = (): { svg: string; hash: string } => {
-    const svg =
-      (getEnv?.() ?? process.env.BRAND_ICON_SVG)?.trim() ||
-      DEFAULT_BRAND_ICON_SVG;
+  // pick up the new value without re-mounting the routes. The Helm override
+  // (`BRAND_ICON_SVG`) wins for both the favicon and the rasters; absent an
+  // override they diverge — the favicon is the color-scheme-adaptive SVG,
+  // the rasters are the gradient square (PNG can't carry a media query).
+  const resolveSvg = (
+    fallback: string = DEFAULT_BRAND_ICON_SVG,
+  ): { svg: string; hash: string } => {
+    const svg = (getEnv?.() ?? process.env.BRAND_ICON_SVG)?.trim() || fallback;
     const hash = createHash("sha256").update(svg).digest("hex").slice(0, 16);
     return { svg, hash };
   };
@@ -63,7 +69,7 @@ export function mountBrandIconRoutes<E extends Env>(
         400,
       );
     }
-    const { svg, hash } = resolveSvg();
+    const { svg, hash } = resolveSvg(DEFAULT_BRAND_ICON_RASTER_SVG);
     if (c.req.header("if-none-match") === `"${hash}-${size}"`) {
       return c.body(null, 304);
     }

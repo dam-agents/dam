@@ -3,6 +3,8 @@ export type { AgentRuntimeContext } from "./context.js";
 export type { Result } from "./result.js";
 export { ok, err } from "./result.js";
 export type {
+  DirEntry,
+  DirListResult,
   FileReadResult,
   FileWriteOk,
   FilesDomainError,
@@ -10,6 +12,7 @@ export type {
 } from "./modules/files/types.js";
 export {
   fileCreateInputSchema,
+  fileListDirsInputSchema,
   fileMkdirInputSchema,
   fileReadInputSchema,
   fileRemoveInputSchema,
@@ -45,3 +48,52 @@ export {
 } from "./modules/skills/schemas.js";
 export { importBundleResultSchema } from "./modules/import/types.js";
 export type { ImportBundleResult } from "./modules/import/types.js";
+export {
+  contribution,
+  contributionKind,
+  event,
+  eventKind,
+  capabilities,
+  mergeMode,
+  fileFormat,
+  envContribution,
+  egressAllowContribution,
+  egressInjectContribution,
+  fileContribution,
+  mcpEntryContribution,
+  skillRefContribution,
+  triggerEvent,
+  triggerEventPayload,
+  stateSlice,
+  applyStateInput,
+  applyStateResult,
+  driverFailure,
+  helloInput,
+  helloResult,
+} from "./modules/runtime/types.js";
+export type {
+  Contribution,
+  ContributionKind,
+  Event,
+  EventKind,
+  Capabilities,
+  MergeMode,
+  FileFormat,
+  TriggerEventPayload,
+  StateSlice,
+  ApplyStateInput,
+  ApplyStateResult,
+  DriverFailure,
+  HelloInput,
+  HelloResult,
+} from "./modules/runtime/types.js";
+export type { RuntimeChannelService } from "./modules/runtime/service.js";
+export {
+  PLUGIN_PROTOCOL_VERSION,
+  type DispatchContext,
+  type DriverBinding,
+  type KindHandler,
+  type Plugin,
+  type PluginModule,
+  type PluginProtocolVersion,
+} from "./modules/plugin/index.js";

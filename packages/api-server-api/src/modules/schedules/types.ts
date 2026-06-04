@@ -75,4 +75,8 @@ export interface SchedulesService {
   updateRRule: (input: ScheduleUpdateRRuleInput) => Promise<Schedule | null>;
   delete: (id: string) => Promise<void>;
   toggle: (id: string) => Promise<Schedule | null>;
+  /** Clear the schedule's accumulated session binding so the next tick starts
+   *  a fresh conversation. Durable: enqueued over the runtime outbox so it
+   *  reaches the agent even while its pod is scaled to zero (ADR-055). */
+  resetSession: (id: string) => Promise<void>;
 }

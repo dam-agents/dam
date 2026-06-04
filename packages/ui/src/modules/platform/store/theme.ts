@@ -3,6 +3,8 @@ import type { StateCreator } from "zustand";
 
 import type { PlatformStore } from "../../../store.js";
 
+export const THEME_STORAGE_KEY = "platform-theme";
+
 export const themeSchema = z.enum(["light", "dark", "system"]);
 export type Theme = z.infer<typeof themeSchema>;
 
@@ -19,8 +21,13 @@ function applyTheme(theme: Theme) {
   document.documentElement.classList.toggle("dark", isDark);
 }
 
-function readStoredTheme(): Theme {
-  const raw = localStorage.getItem("platform-theme");
+export function readStoredTheme(): Theme {
+  let raw: string | null = null;
+  try {
+    raw = localStorage.getItem(THEME_STORAGE_KEY);
+  } catch {
+    // localStorage unavailable (private mode, SSR-like contexts) — fall through
+  }
   if (raw === null) return "system";
   const parsed = themeSchema.safeParse(raw);
   if (!parsed.success) {
@@ -41,7 +48,7 @@ export const createThemeSlice: StateCreator<
 > = (set) => ({
   theme: readStoredTheme(),
   setTheme: (t) => {
-    localStorage.setItem("platform-theme", t);
+    localStorage.setItem(THEME_STORAGE_KEY, t);
     applyTheme(t);
     set({ theme: t });
   },

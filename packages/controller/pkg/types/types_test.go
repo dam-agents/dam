@@ -166,71 +166,6 @@ image: foo`)
 	assert.Empty(t, spec.DesiredState)
 }
 
-// --- Schedule ---
-
-func TestParseScheduleSpec(t *testing.T) {
-	spec, err := ParseScheduleSpec(`version: agent-platform.ai/v1
-type: cron
-cron: "*/30 * * * *"
-task: ""
-enabled: true
-`)
-	require.NoError(t, err)
-	assert.Equal(t, SpecVersion, spec.Version)
-	assert.Equal(t, "cron", spec.Type)
-	assert.Equal(t, "*/30 * * * *", spec.Cron)
-	assert.True(t, spec.Enabled)
-}
-
-func TestParseScheduleSpec_InvalidCron(t *testing.T) {
-	_, err := ParseScheduleSpec(`version: agent-platform.ai/v1
-cron: "not a cron"
-enabled: true`)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid cron")
-}
-
-func TestParseScheduleSpec_MissingVersion(t *testing.T) {
-	_, err := ParseScheduleSpec(`cron: "* * * * *"
-enabled: true`)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "version is required")
-}
-
-func TestParseScheduleSpecWithSessionMode(t *testing.T) {
-	yaml := `
-version: agent-platform.ai/v1
-type: cron
-cron: "*/5 * * * *"
-task: "check health"
-enabled: true
-sessionMode: continuous
-`
-	spec, err := ParseScheduleSpec(yaml)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if spec.SessionMode != "continuous" {
-		t.Errorf("sessionMode = %q, want %q", spec.SessionMode, "continuous")
-	}
-}
-
-func TestParseScheduleSpecSessionModeDefaults(t *testing.T) {
-	yaml := `
-version: agent-platform.ai/v1
-type: cron
-cron: "*/5 * * * *"
-enabled: true
-`
-	spec, err := ParseScheduleSpec(yaml)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if spec.SessionMode != "" {
-		t.Errorf("sessionMode = %q, want empty (default)", spec.SessionMode)
-	}
-}
-
 // --- Helpers ---
 
 func TestSanitizeMountName(t *testing.T) {
@@ -252,12 +187,6 @@ func TestNewAgentStatus(t *testing.T) {
 	s := NewAgentStatus("running", "")
 	assert.Equal(t, SpecVersion, s.Version)
 	assert.Equal(t, "running", s.CurrentState)
-}
-
-func TestNewScheduleStatus(t *testing.T) {
-	s := NewScheduleStatus("2026-04-01T14:00:00Z", "2026-04-01T14:30:00Z", "success")
-	assert.Equal(t, SpecVersion, s.Version)
-	assert.Equal(t, "success", s.LastResult)
 }
 
 // --- Fork ---

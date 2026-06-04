@@ -8,6 +8,7 @@ export const viewSchema = z.enum([
   "settings",
   "inbox",
   "agent-egress",
+  "terms",
 ]);
 export type View = z.infer<typeof viewSchema>;
 
@@ -23,6 +24,7 @@ export function viewToPath(
   if (view === "inbox") return "/inbox";
   if (view === "agent-egress" && agentId)
     return `/agents/${encodeURIComponent(agentId)}/egress`;
+  if (view === "terms") return "/terms";
   return "/";
 }
 
@@ -37,6 +39,7 @@ export function pathToState(path: string): {
   if (path === "/connections") return { view: "connections" };
   if (path === "/settings") return { view: "settings" };
   if (path === "/inbox") return { view: "inbox" };
+  if (path === "/terms") return { view: "terms" };
   const egressMatch = path.match(/^\/agents\/([^/]+)\/egress$/);
   if (egressMatch)
     return {

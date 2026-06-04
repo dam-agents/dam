@@ -7,7 +7,6 @@ import {
   useFileCreateMutation,
   useFileDeleteMutation,
   useFileRenameMutation,
-  useFileTreeQuery,
   useFileUploadMutation,
   useFolderCreateMutation,
 } from "../api/queries.js";
@@ -61,8 +60,8 @@ export function useFileMutations(agentId: string | null) {
   const showToast = useStore((s) => s.showToast);
   const openFilePath = useStore((s) => s.openFilePath);
   const setOpenFilePath = useStore((s) => s.setOpenFilePath);
-
-  const { data: fileTree = [] } = useFileTreeQuery(agentId);
+  const renameExpandedDir = useStore((s) => s.renameExpandedDir);
+  const pruneExpandedDir = useStore((s) => s.pruneExpandedDir);
 
   const createFile = useFileCreateMutation(agentId);
   const createFolder = useFolderCreateMutation(agentId);
@@ -100,6 +99,7 @@ export function useFileMutations(agentId: string | null) {
 
       const tryRename = async (overwrite: boolean) => {
         await renameMutation.mutateAsync({ from, to, overwrite });
+        if (agentId) renameExpandedDir(agentId, from, to);
         if (openFilePath === from) setOpenFilePath(to);
       };
 
@@ -128,24 +128,28 @@ export function useFileMutations(agentId: string | null) {
         }
       }
     },
-    [renameMutation, openFilePath, setOpenFilePath, showConfirm, showToast],
+    [
+      renameMutation,
+      agentId,
+      renameExpandedDir,
+      openFilePath,
+      setOpenFilePath,
+      showConfirm,
+      showToast,
+    ],
   );
 
   const deleteEntry = useCallback(
-    async (path: string) => {
-      const entry = fileTree.find((e) => e.path === path);
-      const isDir = entry?.type === "dir";
-      const childCount = isDir
-        ? fileTree.filter((e) => e.path.startsWith(path + "/")).length
-        : 0;
-      const msg =
-        isDir && childCount > 0
-          ? `Delete ${path}/? This will remove ${childCount} file${childCount === 1 ? "" : "s"}.`
-          : `Delete ${path}?`;
+    async (path: string, type: FileEntryKind) => {
+      const isDir = type === "dir";
+      const msg = isDir
+        ? `Delete ${path}/? This will remove its contents.`
+        : `Delete ${path}?`;
       const ok = await showConfirm(msg, "Delete");
       if (!ok) return;
       try {
         await deleteMutation.mutateAsync({ path });
+        if (agentId) pruneExpandedDir(agentId, path);
         if (
           openFilePath === path ||
           (openFilePath ?? "").startsWith(path + "/")
@@ -161,8 +165,9 @@ export function useFileMutations(agentId: string | null) {
       }
     },
     [
-      fileTree,
       deleteMutation,
+      agentId,
+      pruneExpandedDir,
       openFilePath,
       setOpenFilePath,
       showConfirm,
@@ -254,7 +259,6 @@ export function useFileMutations(agentId: string | null) {
   );
 
   return {
-    fileTree,
     createEntry,
     renameEntry,
     deleteEntry,

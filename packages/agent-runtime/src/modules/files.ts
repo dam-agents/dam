@@ -1,8 +1,8 @@
-import { dirname, join, resolve } from "node:path";
-import { readdirSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import {
   mkdir,
   open,
+  readdir,
   rename,
   rm,
   stat as statAsync,
@@ -10,6 +10,8 @@ import {
 } from "node:fs/promises";
 import { fileTypeFromBuffer } from "file-type";
 import type {
+  DirEntry,
+  DirListResult,
   FileReadResult,
   FilesDomainError,
   FilesService,
@@ -18,17 +20,16 @@ import type {
 } from "agent-runtime-api";
 import { err, ok } from "agent-runtime-api";
 
-const EXCLUDE = new Set([
-  ".git",
-  ".npm",
-  ".triggers",
-  ".claude.json",
-  ".initialized",
-  "node_modules",
-  ".DS_Store",
-]);
+// Wire-level per-file cap for tRPC-shaped reads and uploads. The transport
+// is JSON-base64 — ~10 MB fits well below the 32 MB tRPC body ceiling.
+// Larger transfers want a streaming endpoint, not this surface.
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+/** Platform-reserved paths under the working directory. The controller writes
+ *  trigger payloads to `.triggers/` (ADR-008) and uses `.initialized` as a
+ *  setup marker; user reads/writes against either would break agent lifecycle.
+ *  See ADR-050. Repo noise (.git, node_modules, .DS_Store, …) is surfaceable. */
+const RESERVED = new Set([".triggers", ".initialized"]);
 
 /** Fallback check for binary content when magic-byte detection fails. Null bytes in the first 8 KB are a reliable signal. */
 function hasNullBytes(buf: Buffer): boolean {
@@ -37,43 +38,27 @@ function hasNullBytes(buf: Buffer): boolean {
   return false;
 }
 
-function buildTree(
-  dir: string,
-  base = "",
-): { path: string; type: "file" | "dir" }[] {
-  const entries: { path: string; type: "file" | "dir" }[] = [];
-  for (const ent of readdirSync(dir, { withFileTypes: true })) {
-    if (EXCLUDE.has(ent.name)) continue;
-    const rel = base ? `${base}/${ent.name}` : ent.name;
-    if (ent.isDirectory()) {
-      entries.push({ path: rel, type: "dir" });
-      entries.push(...buildTree(join(dir, ent.name), rel));
-    } else {
-      entries.push({ path: rel, type: "file" });
-    }
-  }
-  return entries.sort((a, b) => {
-    if (a.type !== b.type) return a.type === "dir" ? -1 : 1;
-    return a.path.localeCompare(b.path);
-  });
-}
-
 function safePath(workingDir: string, rel: string): string | null {
   const resolved = resolve(workingDir, rel);
   if (!resolved.startsWith(resolve(workingDir))) return null;
   return resolved;
 }
 
-/** Every segment of a writable path must be outside the EXCLUDE set — this
- *  blocks writes into .git/*, node_modules/*, and the like even though those
- *  are invisible to the tree. Empty / traversal segments are rejected so the
- *  caller can return a safe error without relying on safePath alone. */
+/** True when any segment of the path hits the reserved set. Listing or
+ *  writing such a path is refused server-side. */
+function touchesReserved(rel: string): boolean {
+  if (!rel) return false;
+  return rel.split("/").some((seg) => RESERVED.has(seg));
+}
+
+/** Every segment of a writable path must be outside the reserved set and
+ *  must be a real segment (no traversal, no empties). */
 function isWritablePath(rel: string): boolean {
   if (!rel) return false;
   const parts = rel.split("/");
   for (const part of parts) {
     if (!part || part === "." || part === "..") return false;
-    if (EXCLUDE.has(part)) return false;
+    if (RESERVED.has(part)) return false;
   }
   return true;
 }
@@ -83,6 +68,37 @@ const forbidden = (reason: string): FilesDomainError => ({
   reason,
 });
 
+function compareEntries(a: DirEntry, b: DirEntry): number {
+  if (a.type !== b.type) return a.type === "dir" ? -1 : 1;
+  return a.name.localeCompare(b.name);
+}
+
+async function listDir(
+  workingDir: string,
+  rel: string,
+): Promise<DirListResult> {
+  if (touchesReserved(rel)) {
+    return { path: rel, ok: false, error: "forbidden" };
+  }
+  const abs = safePath(workingDir, rel);
+  if (!abs) return { path: rel, ok: false, error: "forbidden" };
+  try {
+    const ents = await readdir(abs, { withFileTypes: true });
+    const entries: DirEntry[] = ents
+      .filter((ent) => !RESERVED.has(ent.name))
+      .map(
+        (ent): DirEntry => ({
+          name: ent.name,
+          type: ent.isDirectory() ? "dir" : "file",
+        }),
+      )
+      .sort(compareEntries);
+    return { path: rel, ok: true, entries };
+  } catch {
+    return { path: rel, ok: false, error: "not-found" };
+  }
+}
+
 export function createFilesService(workingDir: string): FilesService {
   const toAbs = (rel: string): string | null => safePath(workingDir, rel);
   const toWritableAbs = (rel: string): string | null => {
@@ -91,11 +107,12 @@ export function createFilesService(workingDir: string): FilesService {
   };
 
   return {
-    buildTree: () => buildTree(workingDir),
+    listDirs: (paths) => Promise.all(paths.map((p) => listDir(workingDir, p))),
     readFileSafe: async (
       rel,
     ): Promise<Result<FileReadResult, FilesDomainError>> => {
       if (!rel) return err({ kind: "NotFound", path: rel });
+      if (touchesReserved(rel)) return err(forbidden("reserved path"));
       const abs = toAbs(rel);
       if (!abs) return err({ kind: "NotFound", path: rel });
       let fh;
@@ -103,7 +120,17 @@ export function createFilesService(workingDir: string): FilesService {
         fh = await open(abs, "r");
         const s = await fh.stat();
         if (!s.isFile()) return err({ kind: "NotFound", path: rel });
-        if (s.size > MAX_FILE_SIZE) return ok({ path: rel, binary: true });
+        if (s.size > MAX_FILE_SIZE) {
+          // Reading a file over the tRPC-shaped cap is a transport
+          // constraint, not a successful "no content" read. Surfaces as
+          // PAYLOAD_TOO_LARGE at the router, matching the symmetric
+          // behavior of uploadFileSafe. Streaming transfer for large
+          // single files is out of scope for this route.
+          return err({
+            kind: "PayloadTooLarge",
+            detail: `file ${s.size} bytes (max ${MAX_FILE_SIZE})`,
+          });
+        }
         const buf = await fh.readFile();
         const mtimeMs = s.mtimeMs;
         const type = await fileTypeFromBuffer(buf);
@@ -140,7 +167,7 @@ export function createFilesService(workingDir: string): FilesService {
                   : lower.endsWith(".xml")
                     ? "application/xml"
                     : "text/plain";
-        return ok({ path: rel, content, mimeType, mtimeMs });
+        return ok({ path: rel, content, binary: false, mimeType, mtimeMs });
       } catch {
         return err({ kind: "NotFound", path: rel });
       } finally {

@@ -14,12 +14,12 @@ import {
   printServiceError,
 } from "./errors.js";
 import {
-  EXIT_AGENT_BELOW_FLOOR,
-  EXIT_AGENT_INVALID_INPUT,
-  EXIT_AGENT_RUNTIME_FAILURE,
-  EXIT_AGENT_SUCCESS,
   EXIT_AGENT_NOT_RESOLVED,
-} from "./exit-codes.js";
+  EXIT_BELOW_FLOOR,
+  EXIT_INVALID_INPUT,
+  EXIT_RUNTIME_FAILURE,
+  EXIT_SUCCESS,
+} from "../../shared/exit-codes.js";
 
 const DEFAULT_TIMEOUT_SECONDS = 120;
 // Grace before first poll so the controller observes pod deletion before we see stale "running".
@@ -76,14 +76,14 @@ async function runRestart(
     process.stderr.write(
       `error: invalid \`--timeout\` value \`${opts.timeout}\`; expected positive integer\n`,
     );
-    process.exit(EXIT_AGENT_INVALID_INPUT);
+    process.exit(EXIT_INVALID_INPUT);
   }
 
   const host = await resolveActiveHost(deps, {
     flag: opts.server ? { server: opts.server } : undefined,
     exitCodes: {
-      runtimeFailure: EXIT_AGENT_RUNTIME_FAILURE,
-      belowFloor: EXIT_AGENT_BELOW_FLOOR,
+      runtimeFailure: EXIT_RUNTIME_FAILURE,
+      belowFloor: EXIT_BELOW_FLOOR,
     },
   });
 
@@ -103,7 +103,7 @@ async function runRestart(
       process.exit(EXIT_AGENT_NOT_RESOLVED);
     }
     printServiceError(restartResult.error, host);
-    process.exit(EXIT_AGENT_RUNTIME_FAILURE);
+    process.exit(EXIT_RUNTIME_FAILURE);
   }
 
   let finalAgent: AgentView | undefined;
@@ -138,7 +138,7 @@ async function runRestart(
             `error: agent "${agent.name}" entered error state: ${reason}\n`,
           );
         }
-        process.exit(EXIT_AGENT_RUNTIME_FAILURE);
+        process.exit(EXIT_RUNTIME_FAILURE);
         return;
       case "timeout":
         if (opts.json) {
@@ -150,13 +150,13 @@ async function runRestart(
             `error: timed out waiting for "${agent.name}" to reach running (current: ${waitResult.lastState})\n`,
           );
         }
-        process.exit(EXIT_AGENT_RUNTIME_FAILURE);
+        process.exit(EXIT_RUNTIME_FAILURE);
         return;
       case "transport":
         process.stderr.write(
           `error: ${formatTransportError(waitResult.reason, host)}\n`,
         );
-        process.exit(EXIT_AGENT_RUNTIME_FAILURE);
+        process.exit(EXIT_RUNTIME_FAILURE);
         return;
     }
   }
@@ -171,5 +171,5 @@ async function runRestart(
       `✓ Restarted agent "${agent.name}" (${agent.id}).${tail}\n`,
     );
   }
-  process.exit(EXIT_AGENT_SUCCESS);
+  process.exit(EXIT_SUCCESS);
 }

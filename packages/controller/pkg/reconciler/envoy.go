@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha1"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -14,8 +15,8 @@ import (
 	"text/template"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/kagenti/platform/packages/controller/pkg/config"
@@ -32,15 +33,15 @@ import (
 // bootstrap ConfigMap and roll the StatefulSet.
 
 const (
-	envoyOwnerLabel       = "agent-platform.ai/owner"
-	envoyManagedByLabel   = "agent-platform.ai/managed-by"
-	envoySecretTypeLabel  = "agent-platform.ai/secret-type"
-	envoyConnectionLabel  = "agent-platform.ai/connection"
+	envoyOwnerLabel      = "agent-platform.ai/owner"
+	envoyManagedByLabel  = "agent-platform.ai/managed-by"
+	envoySecretTypeLabel = "agent-platform.ai/secret-type"
+	envoyConnectionLabel = "agent-platform.ai/connection"
 	// Non-connection Secrets: single injection target via these.
-	envoyHostPatternAnn   = "agent-platform.ai/host-pattern"
-	envoyHeaderNameAnn    = "agent-platform.ai/injection-header-name"
-	envoyQueryParamAnn    = "agent-platform.ai/injection-query-param"
-	envoyAuthModeAnn      = "agent-platform.ai/auth-mode"
+	envoyHostPatternAnn = "agent-platform.ai/host-pattern"
+	envoyHeaderNameAnn  = "agent-platform.ai/injection-header-name"
+	envoyQueryParamAnn  = "agent-platform.ai/injection-query-param"
+	envoyAuthModeAnn    = "agent-platform.ai/auth-mode"
 	// Connection Secrets: N injection targets as JSON. Issue #219. (The
 	// api-server also stamps `agent-platform.ai/host-patterns` for kubectl
 	// readability; the controller doesn't read it.)
@@ -50,22 +51,22 @@ const (
 	// the agent harness needs as placeholders (ADR-041). Connection-type
 	// Secrets do not write this annotation today and fall through to the
 	// hardcoded mapping in `credentialEnvVars` below.
-	envoyEnvMappingsAnn   = "agent-platform.ai/env-mappings"
+	envoyEnvMappingsAnn = "agent-platform.ai/env-mappings"
 	// Per-agent grant annotations stamped by the api-server on the
 	// instance ConfigMap. The controller reads them on every reconcile
 	// and intersects with the owner's credential Secret list. Both lists
 	// are always selective: an absent annotation reads as an empty grant
 	// set, never "all granted".
-	grantSecretIdsAnn         = "agent-platform.ai/granted-secret-ids"
-	grantConnectionIdsAnn     = "agent-platform.ai/granted-connection-ids"
+	grantSecretIdsAnn          = "agent-platform.ai/granted-secret-ids"
+	grantConnectionIdsAnn      = "agent-platform.ai/granted-connection-ids"
 	credentialSecretNamePrefix = "platform-cred-"
-	envoyBootstrapVolume  = "envoy-bootstrap"
-	envoyBootstrapMount   = "/etc/envoy"
-	envoyCredentialsRoot   = "/etc/envoy/credentials"
-	envoyCredentialKeySDS  = "sds.yaml"  // SDS DiscoveryResponse file (expected by path_config_source)
-	envoyCredentialSDSName = "credential" // SDS resource name produced by api-server's K8sSecretsPort
-	envoyLeafTLSVolume     = "envoy-tls"
-	envoyLeafTLSMount      = "/etc/envoy/tls"
+	envoyBootstrapVolume       = "envoy-bootstrap"
+	envoyBootstrapMount        = "/etc/envoy"
+	envoyCredentialsRoot       = "/etc/envoy/credentials"
+	envoyCredentialKeySDS      = "sds.yaml"   // SDS DiscoveryResponse file (expected by path_config_source)
+	envoyCredentialSDSName     = "credential" // SDS resource name produced by api-server's K8sSecretsPort
+	envoyLeafTLSVolume         = "envoy-tls"
+	envoyLeafTLSMount          = "/etc/envoy/tls"
 )
 
 // EnvoyBootstrapName returns the per-instance ConfigMap name carrying the
@@ -315,11 +316,9 @@ type connectionHostInjection struct {
 }
 
 // sdsFileKeyForHost mirrors the api-server's `sdsFileKeyForHost`. MUST
-// stay byte-identical — pinned by tests on both sides. SHA-1 is
-// non-cryptographic use.
+// stay byte-identical — pinned by tests on both sides.
 func sdsFileKeyForHost(host string) string {
-	h := sha1.Sum([]byte(host)) // #nosec G401 — non-cryptographic
-	return "host-" + hex.EncodeToString(h[:])[:8] + ".sds.yaml"
+	return "host-" + base64.RawURLEncoding.EncodeToString([]byte(host)) + ".sds.yaml"
 }
 
 // expandConnectionSecret turns a connection Secret into one (host, cred)

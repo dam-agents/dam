@@ -8,12 +8,6 @@ import (
 	"syscall"
 	"time"
 
-	// Embed the IANA tzdata database in the binary so time.LoadLocation works
-	// for arbitrary zones (e.g. "Europe/Prague") inside the minimal container
-	// image, which doesn't ship /usr/share/zoneinfo. Schedules set their own
-	// timezone, so UTC-only wouldn't be enough.
-	_ "time/tzdata"
-
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/dynamic"
@@ -27,7 +21,6 @@ import (
 
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 	"github.com/kagenti/platform/packages/controller/pkg/reconciler"
-	"github.com/kagenti/platform/packages/controller/pkg/scheduler"
 )
 
 func main() {
@@ -73,7 +66,7 @@ func main() {
 		ReleaseOnCancel: true,
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(ctx context.Context) {
-				run(ctx, client, dynClient, restCfg, cfg)
+				run(ctx, client, dynClient, cfg)
 			},
 			OnStoppedLeading: func() {
 				slog.Info("lost leadership")
@@ -82,7 +75,7 @@ func main() {
 	})
 }
 
-func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Interface, restCfg *rest.Config, cfg *config.Config) {
+func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Interface, cfg *config.Config) {
 	slog.Info("started leading", "namespace", cfg.Namespace)
 
 	factory := informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second,
@@ -96,10 +89,6 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	agentResolver := reconciler.NewAgentResolver(cmInformer.Lister().ConfigMaps(cfg.Namespace))
 	agentReconciler := reconciler.NewAgentReconciler(client, cfg).WithDynamicClient(dynClient)
 	forkReconciler := reconciler.NewForkReconciler(client, cfg, agentResolver).WithDynamicClient(dynClient)
-
-	sched := scheduler.New(client, cfg).WithRESTConfig(restCfg)
-	sched.Start()
-	defer sched.Stop()
 
 	idleChecker := reconciler.NewIdleChecker(client, cfg)
 	go idleChecker.RunLoop(ctx)
@@ -139,8 +128,6 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 			switch cmType {
 			case "agent":
 				agentReconciler.Delete(ctx, cm.Name)
-			case "agent-schedule":
-				sched.RemoveSchedule(cm.Name)
 			case "agent-fork":
 				forkReconciler.Delete(ctx, cm.Name)
 			}
@@ -177,13 +164,6 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 					queue.AddRateLimited(key)
 					return
 				}
-			case "agent-schedule":
-				if err := sched.SyncSchedule(cm); err != nil {
-					slog.Error("sync schedule", "name", name, "error", err)
-					queue.AddRateLimited(key)
-					return
-				}
-				slog.Info("synced schedule", "name", name)
 			case "agent-fork":
 				if err := forkReconciler.Reconcile(ctx, cm); err != nil {
 					slog.Error("reconcile fork", "name", name, "error", err)

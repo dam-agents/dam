@@ -13,6 +13,7 @@ import {
 } from "../infrastructure/agent-runtime-client.js";
 import { detectHost } from "../infrastructure/git-host.js";
 import { upstreamToTrpc } from "../infrastructure/upstream-to-trpc.js";
+import { securityLog } from "../../../core/security-log.js";
 
 const DEFAULT_SKILL_PATHS = ["/home/agent/.agents/skills/"];
 
@@ -105,6 +106,22 @@ export async function publishSkill(
     publishedAt: new Date().toISOString(),
   };
   await deps.agentSkills.appendPublish(input.agentId, record);
+
+  // Credential-backed external write: the agent's injected GitHub PAT opens a
+  // PR upstream on the owner's behalf.
+  securityLog("info", "skill.publish", {
+    category: "privileged",
+    actor: deps.owner,
+    actorKind: "user",
+    agentId: input.agentId,
+    target: source.gitUrl,
+    result: "success",
+    detail: {
+      skill: input.name,
+      repo: `${host.owner}/${host.repo}`,
+      prUrl: result.prUrl,
+    },
+  });
 
   return result;
 }

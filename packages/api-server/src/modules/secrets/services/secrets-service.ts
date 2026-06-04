@@ -26,6 +26,17 @@ import type {
 } from "./../infrastructure/k8s-secrets-port.js";
 import type { AgentGrantsPort } from "../../agents/infrastructure/agent-grants-port.js";
 import { hostPatternFor, pathPatternFor } from "../domain/types.js";
+import { securityLog } from "../../../core/security-log.js";
+
+interface InternalSecretCreate {
+  type: SecretType;
+  name: string;
+  value: string;
+  hostPattern?: string;
+  pathPattern?: string;
+  injectionConfig?: InjectionConfig;
+  envMappings?: EnvMapping[];
+}
 
 /**
  * Default env-var bundle for a provider preset+mode, sourced from the
@@ -122,18 +133,6 @@ function envMappingsChanged(
   );
 }
 
-function hostOrPathChanged(
-  before: K8sStoredSecret,
-  after: K8sStoredSecret,
-): boolean {
-  return (
-    before.hostPattern !== after.hostPattern ||
-    (before.pathPattern ?? "") !== (after.pathPattern ?? "")
-  );
-}
-
-// Build the (secretId → host rule) grant map syncForAgent expects. Shared
-// between secret-edit fanout (`update`) and `setAgentAccess`.
 function buildHostGrantsMap(
   allSecrets: readonly K8sStoredSecret[],
   grantedIds: readonly string[],
@@ -207,13 +206,8 @@ export function createSecretsService(deps: {
   /** Owner sub for the calling user, stamped onto auto-inserted rules
    *  (`decided_by`). Required when `connectionRules` is set. */
   ownerSub?: string;
-  /** Resolves agent display names for the `listGrantedAgents` endpoint.
-   *  Falls back to agentId as name when unwired. */
-  listOwnedAgentSummaries?: () => Promise<
-    readonly { id: string; name: string }[]
-  >;
 }): SecretsService {
-  async function createOne(input: SecretCreateInput): Promise<SecretView> {
+  async function createOne(input: InternalSecretCreate): Promise<SecretView> {
     const hostPattern = hostPatternFor(input.type, input.hostPattern);
     const id = randomUUID();
     // Anthropic OAuth tokens are `sk-ant-oat…`; API keys are `sk-ant-api…`.
@@ -268,19 +262,30 @@ export function createSecretsService(deps: {
         try {
           await deps.k8sPort.deleteSecret(twinId);
         } catch (cleanupErr) {
-          console.warn(
-            `secrets-service: orphan twin K8s Secret ${twinId} (primary ${id}, type ${input.type}) — manual cleanup required:`,
-            cleanupErr instanceof Error ? cleanupErr.message : cleanupErr,
-          );
+          securityLog("error", "secret.orphan_cleanup_failed", {
+            category: "credential",
+            actor: deps.ownerSub ?? null,
+            actorKind: "user",
+            target: twinId,
+            result: "failure",
+            reason:
+              cleanupErr instanceof Error ? cleanupErr.message : "unknown",
+            detail: { primarySecretId: id, type: input.type, role: "twin" },
+          });
         }
       }
       try {
         await deps.k8sPort.deleteSecret(id);
       } catch (cleanupErr) {
-        console.warn(
-          `secrets-service: orphan primary K8s Secret ${id} (type ${input.type}) — manual cleanup required:`,
-          cleanupErr instanceof Error ? cleanupErr.message : cleanupErr,
-        );
+        securityLog("error", "secret.orphan_cleanup_failed", {
+          category: "credential",
+          actor: deps.ownerSub ?? null,
+          actorKind: "user",
+          target: id,
+          result: "failure",
+          reason: cleanupErr instanceof Error ? cleanupErr.message : "unknown",
+          detail: { type: input.type, role: "primary" },
+        });
       }
       throw err;
     }
@@ -296,6 +301,20 @@ export function createSecretsService(deps: {
       view.injectionConfig = input.injectionConfig;
     }
     if (envMappings?.length) view.envMappings = envMappings;
+    // A credential stored at rest — record who, what kind, and where it
+    // injects. NEVER the value.
+    securityLog("info", "secret.create", {
+      category: "credential",
+      actor: deps.ownerSub ?? null,
+      actorKind: "user",
+      target: id,
+      result: "success",
+      detail: {
+        type: input.type,
+        hostPattern,
+        twins: createdTwinIds.length,
+      },
+    });
     return view;
   }
 
@@ -398,17 +417,6 @@ export function createSecretsService(deps: {
     },
 
     async update({ id, ...patch }: SecretUpdateInput) {
-      // Anthropic value swaps re-discriminate the auth mode from the new
-      // value's prefix and rewrite envMappings + injectionConfig to match.
-      // Without this, replacing an API key (stored as
-      // `x-api-key: {value}`, env `ANTHROPIC_API_KEY`) with an OAuth
-      // token (needs `Authorization: Bearer {value}`, env
-      // `CLAUDE_CODE_OAUTH_TOKEN`) leaves the injection metadata stuck
-      // at the old mode — Anthropic receives `x-api-key: sk-ant-oat…`
-      // and rejects with "Invalid API key". The same prefix rule lives
-      // in `create` above; this just teaches `update` to redo it when
-      // the caller didn't supply envMappings explicitly (the web UI's
-      // Anthropic Edit form does, the CLI's replace path does not).
       const rotation =
         patch.value !== undefined && patch.envMappings === undefined
           ? await anthropicModeRotationFor(deps.k8sPort, id, patch.value)
@@ -416,17 +424,7 @@ export function createSecretsService(deps: {
       const result = await deps.k8sPort.updateSecret(id, {
         ...(patch.name !== undefined ? { name: patch.name } : {}),
         ...(patch.value !== undefined ? { value: patch.value } : {}),
-        ...(patch.hostPattern !== undefined
-          ? { hostPattern: patch.hostPattern }
-          : {}),
-        ...(patch.pathPattern !== undefined
-          ? { pathPattern: patch.pathPattern }
-          : {}),
-        ...(patch.injectionConfig !== undefined
-          ? { injectionConfig: patch.injectionConfig }
-          : rotation
-            ? { injectionConfig: null }
-            : {}),
+        ...(rotation ? { injectionConfig: null } : {}),
         ...(patch.envMappings !== undefined
           ? { envMappings: patch.envMappings }
           : rotation
@@ -434,62 +432,59 @@ export function createSecretsService(deps: {
             : {}),
         ...(rotation ? { authMode: rotation.authMode } : {}),
       });
-      // ADR-040 fanout. Host edits → re-sync egress_rules per granted
-      // agent (hot, no roll). envMappings edits → bump secrets-rev so the
-      // controller re-renders the agent pod with the merged env.
-      //
-      // `updateSecret` returns null when the K8s Secret was deleted between
-      // our read and write — surface that as NOT_FOUND so the user sees the
-      // save was lost instead of a silent success and a closed dialog.
-      if (!result) throw new TRPCError({ code: "NOT_FOUND" });
+      if (!result) {
+        securityLog("warn", "secret.update_notfound", {
+          category: "credential",
+          actor: deps.ownerSub ?? null,
+          actorKind: "user",
+          target: id,
+          result: "failure",
+          reason: "not-found",
+        });
+        throw new TRPCError({ code: "NOT_FOUND" });
+      }
       const { before, after } = result;
 
       const valueChanged = patch.value !== undefined;
-      const hostChanged = hostOrPathChanged(before, after);
+      // Rotation/timestamp forensics most wants after a suspected leak — log
+      // metadata only (what changed), never the value.
+      securityLog("info", "secret.update", {
+        category: "credential",
+        actor: deps.ownerSub ?? null,
+        actorKind: "user",
+        target: id,
+        result: "success",
+        detail: {
+          valueChanged,
+          nameChanged: patch.name !== undefined,
+          authModeRotated: rotation !== null,
+        },
+      });
       const envChanged = envMappingsChanged(before, after);
-      if (valueChanged || hostChanged) {
+      if (valueChanged) {
         const allSecretsForTwins = await deps.k8sPort.listSecrets();
         const twins = allSecretsForTwins.filter(
           (s) => s.primarySecretId === id,
         );
         for (const twin of twins) {
-          await deps.k8sPort.updateSecret(twin.id, {
-            ...(valueChanged ? { value: patch.value } : {}),
-            ...(hostChanged ? { hostPattern: after.hostPattern } : {}),
-          });
+          await deps.k8sPort.updateSecret(twin.id, { value: patch.value });
         }
       }
 
-      if (!hostChanged && !envChanged) return;
-      if (!deps.connectionRules || !deps.ownerSub) return;
+      if (!envChanged) return;
 
       const granted = await deps.grants.listAgentsGrantedSecret(id);
       if (granted.length === 0) return;
 
       const allSecrets = await deps.k8sPort.listSecrets();
-      const ownedSourceIds = new Set(allSecrets.map((s) => s.id));
-      const ownerSub = deps.ownerSub;
-      const connectionRules = deps.connectionRules;
 
       await Promise.all(
         granted.map(async (g) => {
-          if (hostChanged) {
-            await connectionRules.syncForAgent({
-              agentId: g.agentId,
-              decidedBy: ownerSub,
-              grants: buildHostGrantsMap(allSecrets, g.grantedSecretIds),
-              ownedSourceIds,
-            });
-          }
-          if (envChanged) {
-            const grantedForAgent = allSecrets.filter((s) =>
-              g.grantedSecretIds.includes(s.id),
-            );
-            const hash = combinedSecretsRev(grantedForAgent);
-            // Per ADR-046, the agent is its own resource — one Agent CM per
-            // agentId, so we bump the rev annotation on that CM directly.
-            await deps.grants.bumpSecretsRev(g.agentId, hash);
-          }
+          const grantedForAgent = allSecrets.filter((s) =>
+            g.grantedSecretIds.includes(s.id),
+          );
+          const hash = combinedSecretsRev(grantedForAgent);
+          await deps.grants.bumpSecretsRev(g.agentId, hash);
         }),
       );
     },
@@ -504,6 +499,15 @@ export function createSecretsService(deps: {
         await deps.k8sPort.deleteSecret(twinId);
       }
       await deps.k8sPort.deleteSecret(id);
+      // Proves when a credential was revoked/destroyed.
+      securityLog("info", "secret.delete", {
+        category: "credential",
+        actor: deps.ownerSub ?? null,
+        actorKind: "user",
+        target: id,
+        result: "success",
+        detail: { twins: twinIds.length },
+      });
     },
 
     async getAgentAccess(agentId: string) {
@@ -515,17 +519,6 @@ export function createSecretsService(deps: {
       return {
         secretIds: grants.grantedSecretIds.filter((id) => !twinIds.has(id)),
       };
-    },
-
-    async listGrantedAgents(secretId: string) {
-      const granted = await deps.grants.listAgentsGrantedSecret(secretId);
-      if (granted.length === 0) return [];
-      const all = await deps.listOwnedAgentSummaries?.();
-      const byId = new Map((all ?? []).map((a) => [a.id, a.name] as const));
-      return granted.map((g) => ({
-        id: g.agentId,
-        name: byId.get(g.agentId) ?? g.agentId,
-      }));
     },
 
     async setAgentAccess(agentId: string, access: AgentAccess) {
@@ -546,6 +539,15 @@ export function createSecretsService(deps: {
         ...primaries.flatMap((id) => twinsByPrimary.get(id) ?? []),
       ];
       await deps.grants.setSecretGrants(agentId, expanded);
+      // Central to "which agent could use credential X at time T".
+      securityLog("info", "secret.grants_set", {
+        category: "authz-list",
+        actor: deps.ownerSub ?? null,
+        actorKind: "user",
+        agentId,
+        result: "success",
+        detail: { primarySecretIds: primaries, expandedCount: expanded.length },
+      });
 
       if (deps.connectionRules && deps.ownerSub) {
         const ownedSourceIds = new Set(allSecrets.map((s) => s.id));

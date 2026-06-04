@@ -445,9 +445,9 @@ func TestChainsFromSecrets_MultiHostSecretYieldsDistinctClusterNames(t *testing.
 func TestSDSFileKeyForHost_StableAndShort(t *testing.T) {
 	// Pinned against the api-server's `sdsFileKeyForHost`. Mismatch =
 	// gateway reads a missing file.
-	assert.Equal(t, "host-01892413.sds.yaml", sdsFileKeyForHost("api.github.com"))
-	assert.Equal(t, "host-c2208abd.sds.yaml", sdsFileKeyForHost("github.com"))
-	assert.Equal(t, "host-3cf88e0a.sds.yaml", sdsFileKeyForHost("raw.githubusercontent.com"))
+	assert.Equal(t, "host-YXBpLmdpdGh1Yi5jb20.sds.yaml", sdsFileKeyForHost("api.github.com"))
+	assert.Equal(t, "host-Z2l0aHViLmNvbQ.sds.yaml", sdsFileKeyForHost("github.com"))
+	assert.Equal(t, "host-cmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbQ.sds.yaml", sdsFileKeyForHost("raw.githubusercontent.com"))
 }
 
 func TestCredentialEnvVars_AnnotationOverridesLegacyDefault(t *testing.T) {

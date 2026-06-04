@@ -1,6 +1,11 @@
 import { createDb, runMigrations } from "db";
 import { createApi } from "./modules/agents/infrastructure/k8s.js";
 import {
+  LABEL_TYPE,
+  LABEL_OWNER,
+  TYPE_AGENT,
+} from "./modules/agents/infrastructure/labels.js";
+import {
   composeAgentsModule,
   createAgentsRepository,
   createKeycloakUserDirectory,
@@ -11,12 +16,6 @@ import {
   findBySlackChannelId,
   findSlackChannelByAgent,
 } from "./modules/agents/index.js";
-import { SessionMode, SessionType } from "api-server-api";
-import {
-  upsertSession,
-  findByInstanceAndThreadTs,
-  touchSession,
-} from "./modules/sessions/index.js";
 import {
   createAgentSkillsRepository,
   parseSeedSources,
@@ -47,19 +46,29 @@ import {
   revokeThread,
   listAuthorizedThreads,
   deleteThreadsByAgent,
+  getAuthorizedBy,
 } from "./modules/channels/infrastructure/telegram-threads-repository.js";
-import { createOAuthRefreshService } from "./modules/connections/services/oauth-refresh-service.js";
-import { createPodFilesBus } from "./modules/pod-files/bus.js";
-import { createPodFilesPublisher } from "./modules/pod-files/publisher.js";
-import { buildPodFilesRegistry } from "./modules/pod-files/registry.js";
-import { createGrantedConnectionsAdapter } from "./modules/pod-files/adapters/granted-connections.js";
+import {
+  composeRuntimeDelivery,
+  createBullConnection,
+} from "./modules/runtime-delivery/index.js";
+import { composeSchedulesAtBoot } from "./modules/schedules/index.js";
+import {
+  createKubernetesSecretStore,
+  createSecretStoreRegistry,
+} from "./modules/secret-store/index.js";
 import {
   composeForksModule,
   startOnForeignReplySaga,
-  startOnSlackTurnRelayedSaga,
+  startOnChannelTurnRelayedSaga,
 } from "./modules/forks/index.js";
+import { composeUsageModule } from "./modules/usage/compose.js";
+import { composeAuditModule } from "./modules/audit/index.js";
 import { createK8sForkOrchestrator } from "./modules/forks/infrastructure/k8s-fork-orchestrator.js";
+import { composeE2eModule } from "./modules/e2e/compose.js";
+import { composeTermsModule } from "./modules/terms/index.js";
 import { loadConfig } from "./config.js";
+import { configureLogger } from "./core/logger.js";
 import { startApiServerApp } from "./apps/api-server/app.js";
 import { startHarnessApiServerApp } from "./apps/harness-api-server/app.js";
 import { startExtAuthzGrpcApp } from "./apps/ext-authz/grpc.js";
@@ -79,9 +88,11 @@ import { createAgentArtifactsSweeper } from "./sagas/agent-artifacts-sweeper.js"
 import { createK8sClient as createAgentsK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
 import { createRedisBus } from "./core/redis-bus.js";
+import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
 
 const config = loadConfig();
+configureLogger({ level: config.logLevel });
 
 const { api } = createApi(config.namespace);
 await runMigrations(config.databaseUrl, config.migrationsPath);
@@ -90,6 +101,21 @@ const { db, sql } = createDb(config.databaseUrl);
 const k8sClient = createK8sClient(api, config.namespace);
 const agentsRepo = createAgentsRepository(k8sClient);
 const channelSecretStore = createChannelSecretStore(k8sClient);
+const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);
+
+const secretStores = createSecretStoreRegistry();
+secretStores.register(createKubernetesSecretStore({ k8s: k8sClient }));
+
+const { service: termsService, isAcceptedPort: isTermsAccepted } =
+  composeTermsModule({
+    db,
+    version: config.terms.version,
+    text: config.terms.text,
+  });
+
+const { service: e2eService } = composeE2eModule({
+  namespace: config.namespace,
+});
 
 const k8sCleanupSub = startK8sCleanupSaga(k8sClient, channelSecretStore);
 const channelCleanupSub = startChannelCleanupSaga(
@@ -106,7 +132,29 @@ const { forks } = composeForksModule({
 });
 
 const onForeignReplySub = startOnForeignReplySaga(forks);
-const onSlackTurnRelayedSub = startOnSlackTurnRelayedSaga(forks);
+const onChannelTurnRelayedSub = startOnChannelTurnRelayedSaga(forks);
+const usage = composeUsageModule({
+  db,
+  subPseudonymizer,
+  activityTrackingEnabled: config.activityTrackingEnabled,
+  inspectorRole: config.keycloakInspectorRole ?? "",
+  listK8sAgents: async () => {
+    const cms = await k8sClient.listConfigMaps(`${LABEL_TYPE}=${TYPE_AGENT}`);
+    return cms
+      .filter((cm) => cm.metadata?.name && cm.metadata?.labels?.[LABEL_OWNER])
+      .map((cm) => ({
+        id: cm.metadata!.name!,
+        owner: cm.metadata!.labels![LABEL_OWNER]!,
+      }));
+  },
+});
+usage.start();
+
+// Security audit trail (bus-driven half). Denials and call-site-only
+// mutations log directly at their sites; this covers the actor-bearing
+// success/observation events on the domain bus.
+const audit = composeAuditModule();
+audit.start();
 
 const userDirectory = createKeycloakUserDirectory({
   keycloakUrl: config.keycloakUrl,
@@ -114,6 +162,29 @@ const userDirectory = createKeycloakUserDirectory({
   clientId: config.keycloakApiClientId,
   clientSecret: config.keycloakApiClientSecret,
 });
+
+if (!config.redisUrl)
+  throw new Error(
+    "REDIS_URL is required (Redis is a platform primitive — see ADR-036)",
+  );
+const redisBus = createRedisBus(config.redisUrl, {
+  password: config.redisPassword ?? undefined,
+});
+
+const bullConnection = createBullConnection(
+  config.redisUrl,
+  config.redisPassword ?? undefined,
+);
+
+// Composed before the system-agents reader so runtimeMutator is a required agents dep (#421).
+const runtimeDelivery = composeRuntimeDelivery({
+  db,
+  namespace: config.namespace,
+  bullConnection,
+  agentRunningPort: { isRunning: () => true },
+  harnessServerUrl: config.harnessServerUrl,
+});
+runtimeDelivery.sweep.start();
 
 const { agents: systemAgents } = composeAgentsModule({
   api,
@@ -123,35 +194,11 @@ const { agents: systemAgents } = composeAgentsModule({
   userDirectory,
   channelSecretStore,
   readTemplateSpec: async () => null,
+  runtimeMutator: runtimeDelivery.runtimeMutator,
 });
-const persistSession = upsertSession(db);
-const persistSlackSession = (
-  sessionId: string,
-  agentId: string,
-  type: SessionType,
-  threadTs?: string,
-) =>
-  persistSession(
-    sessionId,
-    agentId,
-    SessionMode.Chat,
-    type,
-    undefined,
-    threadTs,
-  );
-const persistTelegramSession = (
-  sessionId: string,
-  agentId: string,
-  type: SessionType,
-  threadId?: string,
-) =>
-  persistSession(
-    sessionId,
-    agentId,
-    SessionMode.Chat,
-    type,
-    undefined,
-    threadId,
+if (!config.redisUrl)
+  throw new Error(
+    "REDIS_URL is required (Redis is a platform primitive — see ADR-036)",
   );
 
 const identityLinkService = createIdentityLinkService({
@@ -185,7 +232,6 @@ const slackWorker =
         config.slackBotToken,
         config.slackAppToken,
         () => systemAgents,
-        persistSlackSession,
         identityLinkService,
         {
           keycloakExternalUrl: config.keycloakExternalUrl,
@@ -195,13 +241,11 @@ const slackWorker =
           callbackUrl: slackOauthCallbackUrl,
         },
         pendingSlackOAuthFlows,
-        {
-          find: findByInstanceAndThreadTs(db),
-          touch: touchSession(db),
-        },
         (agentId) => agentsRepo.getOwner(agentId),
         channelRegistry,
         config.brand.short,
+        isTermsAccepted,
+        config.uiBaseUrl,
       )
     : undefined;
 
@@ -211,12 +255,12 @@ const telegramWorker =
         config.namespace,
         chatSdkState,
         () => systemAgents,
-        persistTelegramSession,
         {
           isAuthorized: isThreadAuthorized(db),
           authorize: authorizeThread(db),
           list: listAuthorizedThreads(db),
           revoke: revokeThread(db),
+          getAuthorizedBy: getAuthorizedBy(db),
         },
         {
           keycloakExternalUrl: config.keycloakExternalUrl,
@@ -226,10 +270,8 @@ const telegramWorker =
           callbackUrl: telegramOauthCallbackUrl,
         },
         pendingTelegramOAuthFlows,
-        {
-          find: findByInstanceAndThreadTs(db),
-          touch: touchSession(db),
-        },
+        isTermsAccepted,
+        config.uiBaseUrl,
       )
     : undefined;
 
@@ -237,34 +279,6 @@ const channelManager = createChannelManager({
   slackWorker,
   telegramWorker,
   channelSecretStore,
-});
-
-// Pod-files plumbing — see 034-pod-files-push. The github-enterprise
-// hosts.yml producer is the first registry entry; future producers (secrets-
-// as-files, schedule-driven config, …) plug into the same publisher and SSE
-// channel without changes elsewhere.
-const podFilesBus = createPodFilesBus();
-const podFilesRegistry = buildPodFilesRegistry({
-  // Agent HOME from the helm chart. Must agree with the controller's mount
-  // path; both read the same chart value.
-  agentHome: config.agentHome,
-  // Resolves an agent's granted connection records against live K8s state
-  // (instance CM annotations for grants, owner-scoped connection Secrets
-  // for the records). Two API calls per snapshot — fine for the SSE-connect
-  // and grant-change cadence.
-  fetchAgentGrantedConnections: createGrantedConnectionsAdapter(k8sClient),
-});
-const podFilesPublisher = createPodFilesPublisher({
-  bus: podFilesBus,
-  registry: podFilesRegistry,
-});
-
-if (!config.redisUrl)
-  throw new Error(
-    "REDIS_URL is required (Redis is a platform primitive — see ADR-036)",
-  );
-const redisBus = createRedisBus(config.redisUrl, {
-  password: config.redisPassword ?? undefined,
 });
 
 // Seed list for the `trusted` egress preset (ADR-035).
@@ -342,6 +356,17 @@ const agentArtifactsSweeper = createAgentArtifactsSweeper({
 });
 agentArtifactsSweeper.start();
 
+const schedulesBoot = composeSchedulesAtBoot({
+  db,
+  bullConnection,
+  runtimeMutator: runtimeDelivery.runtimeMutator,
+});
+schedulesBoot.runner.restoreAll().catch((err) => {
+  process.stderr.write(
+    `[schedules] restoreAll failed: ${(err as Error).message}\n`,
+  );
+});
+
 const { server: apiServer } = startApiServerApp({
   config,
   api,
@@ -351,7 +376,6 @@ const { server: apiServer } = startApiServerApp({
   identityLinkService,
   pendingSlackOAuthFlows,
   pendingTelegramOAuthFlows,
-  podFilesPublisher,
   seedSources,
   redisBus,
   approvalsRelay,
@@ -359,23 +383,24 @@ const { server: apiServer } = startApiServerApp({
   presetSeeder,
   trustedHosts,
   agentCleanupHooks,
+  secretStores,
+  runtimeMutator: runtimeDelivery.runtimeMutator,
+  schedulesBoot,
+  mountUsageRoutes: usage.mount,
+  terms: termsService,
+  isTermsAccepted,
+  e2e: e2eService,
 });
-
-// Re-mints OAuth access tokens from stored refresh tokens before they expire
-// (ADR-033 § "Token provisioning and refresh"). Single-process — multi-replica
-// leader election is a follow-up.
-const oauthRefreshService = createOAuthRefreshService({ k8sClient });
-oauthRefreshService.start();
 
 const { server: harnessApiServer } = startHarnessApiServerApp({
   config,
   api,
   db,
   channelManager,
-  channelSecretStore,
-  podFilesBus,
-  podFilesSnapshot: podFilesPublisher.compute,
   seedSources,
+  runtimeHello: runtimeDelivery.hello,
+  schedulesBoot,
+  runtimeMutator: runtimeDelivery.runtimeMutator,
 });
 
 // ADR-041: instance identity for ext-authz now flows from the per-instance
@@ -406,11 +431,16 @@ async function shutdown() {
   channelCleanupSub.unsubscribe();
   skillsCleanupSub.unsubscribe();
   onForeignReplySub.unsubscribe();
-  onSlackTurnRelayedSub.unsubscribe();
-  await oauthRefreshService.stop();
+  onChannelTurnRelayedSub.unsubscribe();
+  usage.stop();
+  audit.stop();
   await deliverySweeper.stop();
   await agentArtifactsSweeper.stop();
   await channelManager.stopAll();
+  await runtimeDelivery.sweep.stop();
+  await runtimeDelivery.worker.close();
+  await runtimeDelivery.queue.close();
+  await schedulesBoot.close();
   await redisBus.close();
   await sql.end();
   extAuthzGrpcServer.tryShutdown(() => {});

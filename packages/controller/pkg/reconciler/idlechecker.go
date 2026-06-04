@@ -9,10 +9,10 @@ import (
 	"net/http"
 	"time"
 
+	"gopkg.in/yaml.v3"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
-	"gopkg.in/yaml.v3"
 
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 	"github.com/kagenti/platform/packages/controller/pkg/types"

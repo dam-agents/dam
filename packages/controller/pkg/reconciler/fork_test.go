@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -15,7 +16,6 @@ import (
 	apitypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
-	"gopkg.in/yaml.v3"
 
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 	"github.com/kagenti/platform/packages/controller/pkg/types"
@@ -38,7 +38,7 @@ func setupForkReconciler(t *testing.T, agents map[string]*corev1.ConfigMap, obje
 		ReleaseNamespace:   "default",
 		ReleaseName:        "platform",
 		HarnessServerPort:  4001,
-		EnvoyImage:         "envoyproxy/envoy:distroless-v1.37.2",
+		EnvoyImage:         "mirror.gcr.io/envoyproxy/envoy:distroless-v1.37.2",
 		EnvoyPort:          10000,
 		IstioTrustDomain:   "cluster.local",
 		IstioWaypointName:  "apiserver-waypoint",

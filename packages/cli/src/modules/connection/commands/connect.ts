@@ -1,0 +1,493 @@
+import { isCancel, password, text } from "@clack/prompts";
+import { Command } from "commander";
+import {
+  type ConnectionCreateInput,
+  type ConnectionTemplateInput,
+  type ConnectionTemplateView,
+  connectionNameSchema,
+} from "api-server-api";
+import { printServiceError } from "../../agent/commands/errors.js";
+import type { BrowserOpener } from "../../auth/index.js";
+import type { CompatService, ConfigService } from "../../cli/index.js";
+import {
+  EXIT_BELOW_FLOOR,
+  EXIT_INVALID_INPUT,
+  EXIT_RUNTIME_FAILURE,
+  EXIT_SUCCESS,
+} from "../../shared/exit-codes.js";
+import { resolveActiveHost } from "../../shared/preflight.js";
+import { exitCancelled } from "../../shared/prompt.js";
+import type { ConnectionService } from "../services/connection-service.js";
+
+const POLL_INTERVAL_MS = 2000;
+const DEFAULT_TIMEOUT_SECONDS = 300;
+
+interface ConnectOpts {
+  name?: string;
+  auth?: string;
+  url?: string;
+  host?: string;
+  clientId?: string;
+  clientSecret?: string;
+  appSlug?: string;
+  headerName?: string;
+  valueFormat?: string;
+  value?: string;
+  server?: string;
+  json?: boolean;
+  browser?: boolean;
+  timeout?: string;
+}
+
+export function buildConnectCommand(deps: {
+  compatService: CompatService;
+  configService: ConfigService;
+  createConnectionService: (host: string) => ConnectionService;
+  browserOpener: BrowserOpener;
+}): Command {
+  return new Command("connect")
+    .description("Create a connection from a provider template or MCP server")
+    .argument(
+      "<provider-or-url>",
+      "a provider template id (see `dam connection templates`) or an MCP server URL (https://…)",
+    )
+    .option(
+      "--name <name>",
+      "connection name (default: slug of the template name, or the MCP server host)",
+    )
+    .option(
+      "--auth <mode>",
+      "MCP auth mode: oauth | none (default: auto-detect from the server)",
+    )
+    .option("--url <url>", "input: url")
+    .option("--host <host>", "input: host")
+    .option("--client-id <id>", "input: OAuth client id")
+    .option("--client-secret <secret>", "input: OAuth client secret")
+    .option("--app-slug <slug>", "input: GitHub App slug")
+    .option("--header-name <name>", "input: header name")
+    .option("--value-format <format>", "input: header value format")
+    .option("--value <value>", "input: header secret value")
+    .option(
+      "--server <url>",
+      "override the configured server URL for this call",
+    )
+    .option("--json", "emit { ok, id, status, authKind } as JSON")
+    .option("--no-browser", "print the authorize URL instead of opening it")
+    .option(
+      "--timeout <seconds>",
+      "how long to wait for OAuth authorization",
+      String(DEFAULT_TIMEOUT_SECONDS),
+    )
+    .addHelpText(
+      "after",
+      "\nExamples:\n" +
+        "  dam connection connect github\n" +
+        "  dam connection connect github --no-browser\n" +
+        "  dam connection connect my-api --header-name X-API-Key --value sk-…\n" +
+        "  dam connection connect https://mcp.example.com\n" +
+        "  dam connection connect https://mcp.example.com --auth none\n",
+    )
+    .action(async (providerOrUrl: string, opts: ConnectOpts) => {
+      const json = opts.json ?? false;
+
+      const timeoutSeconds = parseTimeout(opts.timeout);
+      if (timeoutSeconds === null) {
+        process.stderr.write("error: --timeout must be a positive integer\n");
+        process.exit(EXIT_INVALID_INPUT);
+      }
+
+      const authOverride = parseAuthMode(opts.auth);
+
+      const host = await resolveActiveHost(deps, {
+        flag: opts.server ? { server: opts.server } : undefined,
+        exitCodes: {
+          runtimeFailure: EXIT_RUNTIME_FAILURE,
+          belowFloor: EXIT_BELOW_FLOOR,
+        },
+      });
+      const svc = deps.createConnectionService(host);
+
+      const templatesRes = await svc.listTemplates();
+      if (!templatesRes.ok) {
+        printServiceError(templatesRes.error, host);
+        process.exit(EXIT_RUNTIME_FAILURE);
+      }
+      const templates = templatesRes.value;
+
+      // A positional that parses as an http(s) URL is an MCP server; catalog
+      // template ids are slugs (`github`, `custom-header`, …) and never contain
+      // `://`, so the discriminator is unambiguous.
+      const mcpUrl = parseHttpUrl(providerOrUrl);
+      const { template, name, values } = mcpUrl
+        ? await resolveMcpTemplate({
+            svc,
+            url: providerOrUrl,
+            mcpUrl,
+            templates,
+            opts,
+            authOverride,
+            json,
+            host,
+          })
+        : await resolveSlugTemplate({
+            templates,
+            appId: providerOrUrl,
+            opts,
+            json,
+          });
+
+      const payload = buildPayload(template, name, values);
+      if ("error" in payload) {
+        process.stderr.write(`error: ${payload.error}\n`);
+        process.exit(EXIT_INVALID_INPUT);
+      }
+
+      const createRes = await svc.createConnection(payload);
+      if (!createRes.ok) {
+        printServiceError(createRes.error, host);
+        process.exit(EXIT_RUNTIME_FAILURE);
+      }
+      const { id } = createRes.value;
+
+      if (template.authKind !== "oauth") {
+        emitSuccess({
+          json,
+          verb: "Created",
+          name,
+          id,
+          authKind: template.authKind,
+        });
+        process.exit(EXIT_SUCCESS);
+      }
+
+      const oauthRes = await svc.startOAuth(id);
+      if (!oauthRes.ok) {
+        printServiceError(oauthRes.error, host);
+        process.exit(EXIT_RUNTIME_FAILURE);
+      }
+      const { authUrl } = oauthRes.value;
+
+      const noBrowser = opts.browser === false;
+      if (noBrowser) {
+        process.stderr.write(`Open this URL to authorize:\n  ${authUrl}\n`);
+      } else {
+        const opened = await deps.browserOpener.open(authUrl);
+        if (!opened.ok) {
+          process.stderr.write(
+            `Couldn't open a browser. Open this URL to authorize:\n  ${authUrl}\n`,
+          );
+        }
+      }
+      process.stderr.write("Waiting for authorization…\n");
+
+      const outcome = await pollUntilActive(svc, id, timeoutSeconds);
+      if (outcome !== "active") {
+        process.stderr.write(
+          `error: couldn't confirm the connection finished within ${timeoutSeconds}s; ` +
+            "it may still complete — check `dam connection list`\n",
+        );
+        process.exit(EXIT_RUNTIME_FAILURE);
+      }
+
+      emitSuccess({
+        json,
+        verb: "Connected",
+        name,
+        id,
+        authKind: "oauth",
+        ...(noBrowser ? { authUrl } : {}),
+      });
+      process.exit(EXIT_SUCCESS);
+    });
+}
+
+interface ResolvedConnection {
+  template: ConnectionTemplateView;
+  name: string;
+  values: Record<string, string>;
+}
+
+async function resolveSlugTemplate(args: {
+  templates: readonly ConnectionTemplateView[];
+  appId: string;
+  opts: ConnectOpts;
+  json: boolean;
+}): Promise<ResolvedConnection> {
+  const { templates, appId, opts, json } = args;
+  const template = templates.find((t) => t.id === appId);
+  if (!template) {
+    process.stderr.write(`error: unknown provider id '${appId}'\n`);
+    process.stderr.write(
+      "hint: run `dam connection templates` to see the available providers\n",
+    );
+    process.exit(EXIT_INVALID_INPUT);
+  }
+  if (template.category === "mcp") {
+    process.stderr.write(
+      "error: to connect an MCP server, pass its URL:\n" +
+        "  dam connection connect https://your-mcp-server\n",
+    );
+    process.exit(EXIT_INVALID_INPUT);
+  }
+
+  const name = (opts.name ?? slugifyTemplateName(template.name)).trim();
+  validateName(name);
+  const values = await collectInputs(template, opts, json);
+  return { template, name, values };
+}
+
+async function resolveMcpTemplate(args: {
+  svc: ConnectionService;
+  url: string;
+  mcpUrl: URL;
+  templates: readonly ConnectionTemplateView[];
+  opts: ConnectOpts;
+  authOverride: "oauth" | "none" | undefined;
+  json: boolean;
+  host: string;
+}): Promise<ResolvedConnection> {
+  const { svc, url, mcpUrl, templates, opts, authOverride, json, host } = args;
+
+  let auth = authOverride;
+  if (!auth) {
+    const res = await svc.discoverMcp(url);
+    if (!res.ok) {
+      printServiceError(res.error, host);
+      process.exit(EXIT_RUNTIME_FAILURE);
+    }
+    auth = res.value.auth;
+  }
+
+  const templateId = auth === "oauth" ? "custom-mcp-oauth" : "custom-mcp-none";
+  const template = templates.find((t) => t.id === templateId);
+  if (!template) {
+    process.stderr.write(
+      `error: built-in template '${templateId}' is missing from the catalog\n`,
+    );
+    process.exit(EXIT_RUNTIME_FAILURE);
+  }
+
+  const name = await resolveMcpName(mcpUrl, opts, json);
+  validateName(name);
+  return { template, name, values: { url } };
+}
+
+async function resolveMcpName(
+  url: URL,
+  opts: ConnectOpts,
+  json: boolean,
+): Promise<string> {
+  if (opts.name !== undefined) return opts.name.trim();
+  const derived = deriveMcpName(url);
+  if (!process.stdin.isTTY) {
+    if (!derived) {
+      process.stderr.write(
+        "error: couldn't derive a name from the URL — pass --name\n",
+      );
+      process.exit(EXIT_INVALID_INPUT);
+    }
+    return derived;
+  }
+  const answer = await text({
+    message: "Connection name",
+    initialValue: derived,
+    placeholder: derived || "my-mcp-server",
+    validate: (v) => (v && v.trim().length > 0 ? undefined : "Required"),
+  });
+  if (isCancel(answer)) exitCancelled({ json });
+  return String(answer).trim();
+}
+
+function validateName(name: string): void {
+  const nameCheck = connectionNameSchema.safeParse(name);
+  if (!nameCheck.success) {
+    const msg = nameCheck.error.issues[0]?.message ?? "invalid name";
+    process.stderr.write(`error: ${msg}\n`);
+    process.exit(EXIT_INVALID_INPUT);
+  }
+}
+
+async function collectInputs(
+  template: ConnectionTemplateView,
+  opts: ConnectOpts,
+  json: boolean,
+): Promise<Record<string, string>> {
+  const flags = opts as unknown as Record<string, unknown>;
+  const values: Record<string, string> = {};
+  const missing: ConnectionTemplateInput[] = [];
+
+  // `overridable` inputs use the admin preset in v1; only required/optional
+  // are user-supplied.
+  const relevant = template.inputs.filter(
+    (i) => i.state === "required" || i.state === "optional",
+  );
+  for (const input of relevant) {
+    const flagVal = flags[input.name];
+    if (typeof flagVal === "string" && flagVal.trim().length > 0) {
+      values[input.name] = flagVal.trim();
+    } else if (input.state === "required") {
+      missing.push(input);
+    }
+  }
+
+  if (missing.length === 0) return values;
+
+  if (!process.stdin.isTTY) {
+    const flagList = missing.map((i) => `--${camelToKebab(i.name)}`).join(", ");
+    process.stderr.write(`error: missing required input(s): ${flagList}\n`);
+    process.exit(EXIT_INVALID_INPUT);
+  }
+
+  for (const input of missing) {
+    const prompt = input.secret ? password : text;
+    const answer = await prompt({
+      message: labelFor(input.name),
+      validate: (v) => (v && v.trim().length > 0 ? undefined : "Required"),
+    });
+    if (isCancel(answer)) exitCancelled({ json });
+    values[input.name] = String(answer).trim();
+  }
+  return values;
+}
+
+function buildPayload(
+  template: ConnectionTemplateView,
+  name: string,
+  values: Record<string, string>,
+): ConnectionCreateInput | { error: string } {
+  const common = { templateId: template.id, name };
+  const v = (k: string): string | undefined => {
+    const s = values[k]?.trim();
+    return s && s.length > 0 ? s : undefined;
+  };
+  switch (template.authKind) {
+    case "oauth":
+      return {
+        ...common,
+        authKind: "oauth",
+        ...(v("url") ? { url: v("url")! } : {}),
+        ...(v("host") ? { host: v("host")! } : {}),
+        ...(v("clientId") ? { clientId: v("clientId")! } : {}),
+        ...(v("clientSecret") ? { clientSecret: v("clientSecret")! } : {}),
+        ...(v("appSlug") ? { appSlug: v("appSlug")! } : {}),
+      };
+    case "header": {
+      const value = v("value");
+      if (!value) return { error: "the secret value is required (--value)" };
+      return {
+        ...common,
+        authKind: "header",
+        ...(v("host") ? { host: v("host")! } : {}),
+        ...(v("headerName") ? { headerName: v("headerName")! } : {}),
+        ...(v("valueFormat") ? { valueFormat: v("valueFormat")! } : {}),
+        value,
+      };
+    }
+    case "none":
+      return {
+        ...common,
+        authKind: "none",
+        ...(v("url") ? { url: v("url")! } : {}),
+      };
+  }
+}
+
+async function pollUntilActive(
+  svc: ConnectionService,
+  id: string,
+  timeoutSeconds: number,
+): Promise<"active" | "timeout"> {
+  const deadline = Date.now() + timeoutSeconds * 1000;
+  while (true) {
+    const res = await svc.getConnection(id);
+    // A transient read failure shouldn't abort a multi-minute wait — retry
+    // on the next tick; a persistent one surfaces as the timeout message.
+    if (res.ok && res.value?.status === "active") return "active";
+    if (Date.now() + POLL_INTERVAL_MS >= deadline) return "timeout";
+    await sleep(POLL_INTERVAL_MS);
+  }
+}
+
+function emitSuccess(args: {
+  json: boolean;
+  verb: "Created" | "Connected";
+  name: string;
+  id: string;
+  authKind: ConnectionTemplateView["authKind"];
+  authUrl?: string;
+}): void {
+  if (args.json) {
+    process.stdout.write(
+      `${JSON.stringify({
+        ok: true,
+        id: args.id,
+        status: "active",
+        authKind: args.authKind,
+        ...(args.authUrl ? { authUrl: args.authUrl } : {}),
+      })}\n`,
+    );
+  } else {
+    process.stdout.write(`✓ ${args.verb} ${args.name} (${args.id})\n`);
+  }
+}
+
+function parseTimeout(raw: string | undefined): number | null {
+  if (raw === undefined) return DEFAULT_TIMEOUT_SECONDS;
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function slugifyTemplateName(templateName: string): string {
+  return templateName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 63);
+}
+
+function parseAuthMode(raw: string | undefined): "oauth" | "none" | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === "oauth" || raw === "none") return raw;
+  process.stderr.write("error: --auth must be 'oauth' or 'none'\n");
+  process.exit(EXIT_INVALID_INPUT);
+}
+
+function parseHttpUrl(s: string): URL | null {
+  try {
+    const u = new URL(s);
+    return u.protocol === "http:" || u.protocol === "https:" ? u : null;
+  } catch {
+    return null;
+  }
+}
+
+// Strip a leading mcp./api./www. label, take the first remaining DNS label,
+// and slugify to connectionNameSchema (e.g. mcp.notion.com -> "notion").
+function deriveMcpName(url: URL): string {
+  const host = url.hostname.replace(/^(mcp|api|www)\./, "");
+  const label = host.split(".")[0] ?? host;
+  return slugifyTemplateName(label);
+}
+
+function camelToKebab(s: string): string {
+  return s.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
+}
+
+const FIELD_LABELS: Record<string, string> = {
+  url: "URL",
+  host: "Host",
+  headerName: "Header name",
+  valueFormat: "Value format",
+  value: "Secret value",
+  clientId: "Client ID",
+  clientSecret: "Client secret",
+  appSlug: "GitHub App slug",
+};
+
+function labelFor(key: string): string {
+  return FIELD_LABELS[key] ?? key;
+}

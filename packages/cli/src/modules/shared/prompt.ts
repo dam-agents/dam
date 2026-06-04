@@ -1,4 +1,5 @@
 import { createInterface } from "node:readline/promises";
+import { EXIT_SUCCESS } from "./exit-codes.js";
 
 /** Default idle window before a hanging confirm prompt aborts to No. */
 const DEFAULT_PROMPT_TIMEOUT_MS = 30_000;
@@ -45,4 +46,19 @@ export async function confirm(
     clearTimeout(timer);
     rl.close();
   }
+}
+
+/**
+ * Common exit path for verbs that confirm before mutating: writes
+ * `{"cancelled":true}` (under `--json`) or `Cancelled.` to stdout, then
+ * exits 0. Stdout — not stderr — so scripts can branch on it without
+ * a separate stream redirect.
+ */
+export function exitCancelled(opts: { json?: boolean }): never {
+  if (opts.json) {
+    process.stdout.write(`${JSON.stringify({ cancelled: true })}\n`);
+  } else {
+    process.stdout.write("Cancelled.\n");
+  }
+  process.exit(EXIT_SUCCESS);
 }

@@ -1,0 +1,94 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+  src: url("@ibm/plex/IBM-Plex-Sans/fonts/complete/woff2/IBMPlexSans-Light.woff2")
+    format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url("@ibm/plex/IBM-Plex-Sans/fonts/complete/woff2/IBMPlexSans-Regular.woff2")
+    format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+  src: url("@ibm/plex/IBM-Plex-Sans/fonts/complete/woff2/IBMPlexSans-Medium.woff2")
+    format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+  src: url("@ibm/plex/IBM-Plex-Sans/fonts/complete/woff2/IBMPlexSans-SemiBold.woff2")
+    format("woff2");
+}
+
+@theme {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --font-sans:
+    "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+:root {
+  --radius: 0.5rem;
+  --background: #ffffff;
+  --foreground: #121619;
+  --primary: #000000;
+  --primary-foreground: #ffffff;
+  --muted: #f2f4f8;
+  --muted-foreground: #4d5358;
+  --input: #dde1e6;
+  --ring: #000000;
+
+  /* Aurora backdrop blob palette (IBM Plex). Soft against white. */
+  --blob-a: #78a9ff;
+  --blob-b: #be95ff;
+  --blob-c: #ff7eb6;
+  --blob-d: #8a3ffc;
+}
+
+.dark {
+  --background: #0c0a09;
+  --foreground: #fafaf9;
+  --primary: #fafaf9;
+  --primary-foreground: #0c0a09;
+  --muted: #1c1917;
+  --muted-foreground: #a8a29e;
+  --input: #292524;
+  --ring: #fafaf9;
+
+  /* Deeper Carbon shades — same hue family, less luminous so the
+     gradient reads as an ambient glow against a dark background
+     instead of a daylight wash. */
+  --blob-a: #4589ff;
+  --blob-b: #a56eff;
+  --blob-c: #ee5396;
+  --blob-d: #6929c4;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--background);
+  color: var(--foreground);
+  margin: 0;
+}

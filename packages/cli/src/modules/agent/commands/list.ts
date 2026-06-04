@@ -5,10 +5,10 @@ import { renderTable } from "../../shared/render-table.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { printServiceError } from "./errors.js";
 import {
-  EXIT_AGENT_BELOW_FLOOR,
-  EXIT_AGENT_RUNTIME_FAILURE,
-  EXIT_AGENT_SUCCESS,
-} from "./exit-codes.js";
+  EXIT_BELOW_FLOOR,
+  EXIT_RUNTIME_FAILURE,
+  EXIT_SUCCESS,
+} from "../../shared/exit-codes.js";
 
 export function buildListCommand(deps: {
   compatService: CompatService;
@@ -30,27 +30,27 @@ export function buildListCommand(deps: {
       const host = await resolveActiveHost(deps, {
         flag: opts.server ? { server: opts.server } : undefined,
         exitCodes: {
-          runtimeFailure: EXIT_AGENT_RUNTIME_FAILURE,
-          belowFloor: EXIT_AGENT_BELOW_FLOOR,
+          runtimeFailure: EXIT_RUNTIME_FAILURE,
+          belowFloor: EXIT_BELOW_FLOOR,
         },
       });
 
       const result = await deps.createAgentService(host).list();
       if (!result.ok) {
         printServiceError(result.error, host);
-        process.exit(EXIT_AGENT_RUNTIME_FAILURE);
+        process.exit(EXIT_RUNTIME_FAILURE);
       }
 
       if (opts.json) {
         process.stdout.write(`${JSON.stringify(result.value)}\n`);
-        process.exit(EXIT_AGENT_SUCCESS);
+        process.exit(EXIT_SUCCESS);
       }
 
       if (result.value.length === 0) {
         process.stderr.write(
           "No agents.\nhint: create one with `dam agent create <name> --template <id>`\n",
         );
-        process.exit(EXIT_AGENT_SUCCESS);
+        process.exit(EXIT_SUCCESS);
       }
 
       const sorted = [...result.value].sort((a, b) =>
@@ -67,6 +67,6 @@ export function buildListCommand(deps: {
           ]),
         ]),
       );
-      process.exit(EXIT_AGENT_SUCCESS);
+      process.exit(EXIT_SUCCESS);
     });
 }

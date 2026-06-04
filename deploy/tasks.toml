@@ -16,7 +16,7 @@ fi
 description = 'Open a subshell with env for local cluster'
 quiet = true
 raw = true
-run = '''                                                                                                                                                                                                                                                                                                                                                                                              
+run = '''
 #!/usr/bin/env bash
 
 export KUBECONFIG="$(mise run cluster:kubeconfig)"
@@ -42,49 +42,6 @@ esac
 '''
 
 
-# -- Image builds (docker only, no k3s interaction) --
-
-["image:controller"]
-description = "Build controller Docker image"
-dir = "{{config_root}}"
-run = '''
-#!/usr/bin/env bash
-[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
-docker build -t platform-controller:latest packages/controller/
-'''
-
-["image:apiserver"]
-description = "Build api-server Docker image"
-dir = "{{config_root}}"
-run = '''
-#!/usr/bin/env bash
-[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
-docker build -f packages/api-server/Dockerfile -t platform-api-server:latest .
-'''
-
-["image:ui"]
-description = "Build UI Docker image"
-dir = "{{config_root}}"
-run = '''
-#!/usr/bin/env bash
-[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
-docker build -f packages/ui/Dockerfile -t platform-ui:latest .
-'''
-
-["image:agent"]
-description = "Build agent Docker images (platform-base + claude-code + google-workspace + pi-agent + bob)"
-dir = "{{config_root}}"
-run = '''
-#!/usr/bin/env bash
-set -eo pipefail
-[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
-docker build -f packages/platform-base/Dockerfile -t platform-base .
-docker build -t platform-claude-code:latest packages/agents/claude-code
-docker build -t platform-google-workspace-agent:latest packages/agents/google-workspace
-docker build -t platform-pi-agent:latest packages/agents/pi-agent
-docker build -t platform-bob:latest packages/agents/bob
-'''
-
 # -- Cluster lifecycle (k3s via lima) --
 #
 # When IS_SANDBOX is set, it is assumed we are already _inside_ a VM.
@@ -97,7 +54,7 @@ docker build -t platform-bob:latest packages/agents/bob
 
 ["cluster:install"]
 description = "Create k3s cluster, build images, install cert-manager + Platform chart. Options: --vm-name=NAME --lima-template=PATH --helm-values=PATH --set=key=val --no-restart"
-depends = ["image:controller", "image:apiserver", "image:ui", "image:agent"]
+depends = ["controller:image", "api-server:image", "ui:image", "keycloak-theme:image"]
 dir = "{{config_root}}"
 raw = true
 run = '''
@@ -119,6 +76,19 @@ for arg in "$@"; do
     --no-restart) NO_RESTART=true ;;
   esac
 done
+
+# Resolve the optional personal overlay (values-dev.yaml, gitignored) up front so
+# the agent render in step 3 sees the same values the install uses. Committed dev
+# defaults (terms.*, keycloak admin) live in values-local.yaml.
+if [ -z "$HELM_VALUES" ] && [ -f "$DEV_VALUES" ]; then
+  HELM_VALUES="$DEV_VALUES"
+  echo "Using dev overrides: $DEV_VALUES"
+fi
+# Value flags that can flip an agentTemplate's `enabled` (btrfs --sets added
+# later don't touch agentTemplates).
+AGENT_VALUE_FLAGS=()
+[ -n "$HELM_VALUES" ] && AGENT_VALUE_FLAGS+=(-f "$HELM_VALUES")
+AGENT_VALUE_FLAGS+=("${HELM_EXTRA_ARGS[@]}")
 
 # 1. Provision cluster and set KUBECONFIG
 if [ -n "${IS_SANDBOX:-}" ]; then
@@ -220,6 +190,24 @@ if ! kubectl --kubeconfig="$KUBECONFIG" get crd gateways.gateway.networking.k8s.
 else
   echo "Gateway API CRDs already installed"
 fi
+
+# k3s bundles Traefik (chart v39+), whose `traefik-crd` chart also ships the
+# Gateway API CRDs. We install those out-of-band above (for Istio) via plain
+# `kubectl apply`, so they carry no Helm ownership metadata — and the
+# `traefik-crd` Helm job then dies with "invalid ownership metadata" and
+# Traefik never installs, leaving nothing on the ingress port. Stamp the
+# ownership the `traefik-crd` release expects so it adopts them on its next
+# reconcile. Idempotent, and covers both install orders (whichever of the k3s
+# Traefik bootstrap vs. this CRD apply wins the race).
+echo "Stamping Helm ownership on Gateway API CRDs (so k3s traefik-crd can adopt them)..."
+for crd in gatewayclasses gateways grpcroutes httproutes referencegrants; do
+  kubectl --kubeconfig="$KUBECONFIG" label crd "$crd.gateway.networking.k8s.io" \
+    app.kubernetes.io/managed-by=Helm --overwrite >/dev/null 2>&1 || true
+  kubectl --kubeconfig="$KUBECONFIG" annotate crd "$crd.gateway.networking.k8s.io" \
+    meta.helm.sh/release-name=traefik-crd --overwrite >/dev/null 2>&1 || true
+  kubectl --kubeconfig="$KUBECONFIG" annotate crd "$crd.gateway.networking.k8s.io" \
+    meta.helm.sh/release-namespace=kube-system --overwrite >/dev/null 2>&1 || true
+done
 
 echo "Ensuring Istio ambient mesh ($ISTIO_VERSION)..."
 helm repo add istio https://istio-release.storage.googleapis.com/charts >/dev/null 2>&1 || true
@@ -329,7 +317,7 @@ spec:
           restartPolicy: Never
           containers:
             - name: watchdog
-              image: alpine/k8s:1.30.4
+              image: mirror.gcr.io/alpine/k8s:1.30.4
               command:
                 - sh
                 - -c
@@ -358,23 +346,62 @@ YAML
 # chart's validate-istio.yaml asserts this label is present).
 kubectl --kubeconfig="$KUBECONFIG" label namespace default istio.io/dataplane-mode=ambient --overwrite
 
-# 3. Load images into k3s (built by depends: image:*)
-echo "Loading images into k3s..."
-tar="/tmp/platform-images.tar"
-docker save -o "$tar" platform-controller:latest platform-api-server:latest platform-ui:latest platform-claude-code:latest platform-google-workspace-agent:latest platform-pi-agent:latest platform-bob:latest
-if [ -n "${IS_SANDBOX:-}" ]; then
-  [ -z "${CI:-}" ] && docker image prune --all --force >/dev/null 2>&1 || true
-  sudo k3s ctr images import "$tar"
+# 3. Load images into k3s (built by depends: image:*, or out-of-band in CI).
+# SKIP_IMAGE_LOAD skips the containerd import — cluster:helm reuses the SHAs
+# already loaded, so pods keep their pinned images. SKIP_IMAGE_BUILD alone (CI)
+# does NOT skip the load: buildx built the images out-of-band into the docker
+# daemon, and they still have to be imported into k3s's separate containerd.
+if [ -n "${SKIP_IMAGE_LOAD:-}" ]; then
+  echo "Skipping image load (SKIP_IMAGE_LOAD set)"
+  NO_RESTART=true
 else
-  limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
-  limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
+  # Build (and below, load) only the templates enabled in the effective rendered
+  # values (--set/--helm-values honored). Capture first so a failed render aborts
+  # rather than silently building none; yq emits `---` between docs.
+  AGENTS_RENDERED=$(helm template platform deploy/helm/platform \
+      -f deploy/helm/platform/values-local.yaml "${AGENT_VALUE_FLAGS[@]}" \
+    | yq -r 'select(.kind == "ConfigMap" and .metadata.labels["agent-platform.ai/type"] == "agent-template")
+             | .metadata.name + "\t" + (.data["spec.yaml"] | from_yaml | .image)')
+  # `:::` separates tasks in a single `mise run` — without it the extra task
+  # names are parsed as arguments to the first task and never built.
+  AGENT_TASKS=()
+  AGENT_IMAGES=()
+  while IFS=$'\t' read -r name image; do
+    { [ -z "$name" ] || [ "$name" = "---" ]; } && continue
+    if [ -d "packages/agents/$name" ]; then
+      [ -n "${AGENT_TASKS[*]}" ] && AGENT_TASKS+=(":::")
+      AGENT_TASKS+=("agents:$name:image")
+      AGENT_IMAGES+=("$image")
+    elif [ -d "packages/e2e/agents/$name" ]; then
+      # e2e fixture agents (the scripted mock) live outside packages/agents/* and
+      # have no agents:*:image task — build straight from their Dockerfile, root
+      # context so the platform-base FROM resolves. Honors SKIP_IMAGE_BUILD like
+      # the per-agent tasks; in CI the image is already in the daemon.
+      if [ -z "${SKIP_IMAGE_BUILD:-}" ]; then
+        {{ mise_bin }} run platform-base:image
+        docker build -f "packages/e2e/agents/$name/Dockerfile" -t "$image" .
+      fi
+      AGENT_IMAGES+=("$image")
+    else
+      echo "WARN: no build task for '$name' ($image) — skipping" >&2
+    fi
+  done <<< "$AGENTS_RENDERED"
+  [ -n "${AGENT_TASKS[*]}" ] && {{ mise_bin }} run "${AGENT_TASKS[@]}"
+
+  echo "Loading images into k3s..."
+  tar="/tmp/platform-images.tar"
+  docker save -o "$tar" platform-controller:latest platform-api-server:latest platform-ui:latest platform-keycloak:latest "${AGENT_IMAGES[@]}"
+  if [ -n "${IS_SANDBOX:-}" ]; then
+    [ -z "${CI:-}" ] && docker image prune --all --force >/dev/null 2>&1 || true
+    sudo k3s ctr images import "$tar"
+  else
+    limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
+    limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
+  fi
+  rm -f "$tar"
 fi
-rm -f "$tar"
 
-# 4. Helm install or upgrade
-# Dev-cluster defaults (overridable via --set)
-DEV_DEFAULTS=(--set keycloak.admin.password=admin)
-
+# 4. Helm install or upgrade.
 # Detect btrfs-backed clusters (Fedora hosts default to btrfs) and bypass
 # the bundled nfs-ganesha provisioner — it returns EREMOTEIO on every write
 # against a btrfs export (userspace ganesha hits ENOSYS on handle-based
@@ -398,18 +425,14 @@ echo "Installing/upgrading Platform chart..."
 # No --wait: the keycloak-provision post-install hook imports the platform realm
 # after deployments come up. With --wait, helm would block on readiness
 # before the hook runs.
-if [ -z "$HELM_VALUES" ] && [ -f "$DEV_VALUES" ]; then
-    HELM_VALUES="$DEV_VALUES"
-    echo "Using dev overrides: $DEV_VALUES"
-  fi
-  helm --kubeconfig="$KUBECONFIG" upgrade --install platform deploy/helm/platform -f deploy/helm/platform/values-local.yaml --timeout 15m ${HELM_VALUES:+-f "$HELM_VALUES"} "${DEV_DEFAULTS[@]}" "${HELM_EXTRA_ARGS[@]}"
+helm --kubeconfig="$KUBECONFIG" upgrade --install platform deploy/helm/platform -f deploy/helm/platform/values-local.yaml --timeout 15m ${HELM_VALUES:+-f "$HELM_VALUES"} "${HELM_EXTRA_ARGS[@]}"
 
 # 5. Restart pods to pick up new local images (dev only — :latest tags don't trigger rollout)
 if [ "$NO_RESTART" = true ]; then
   echo "Skipping pod restart (--no-restart)"
 else
   echo "Restarting pods..."
-  kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-controller platform-apiserver platform-ui
+  kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-controller platform-apiserver platform-ui platform-keycloak
   # Agent pods are managed by the controller (StatefulSets in platform-agents) and
   # pin :latest too — delete them so they come back on the freshly loaded image.
   kubectl --kubeconfig="$KUBECONFIG" delete pods -n platform-agents --all --ignore-not-found
@@ -440,9 +463,18 @@ echo ""
 kubectl --kubeconfig="$KUBECONFIG" get pods
 '''
 
+["cluster:helm"]
+description = "Redeploy chart only (no image rebuild, no image load, no pod restart). Use for values/template/secret changes. Forwards extra args to cluster:install."
+dir = "{{config_root}}"
+raw = true
+run = '''
+#!/usr/bin/env bash
+exec env SKIP_IMAGE_BUILD=1 SKIP_IMAGE_LOAD=1 mise run cluster:install "$@"
+'''
+
 ["cluster:build-apiserver"]
 description = "Build and load API server image into k3s, restart apiserver pod"
-depends = ["image:apiserver"]
+depends = ["api-server:image"]
 dir = "{{config_root}}"
 run = '''
 #!/usr/bin/env bash
@@ -456,7 +488,7 @@ if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
   sudo k3s ctr images import "$tar"
 else
-  LIMA_INSTANCE="platform-k3s"
+  LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
   KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
   limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
   limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
@@ -477,9 +509,46 @@ fi
 echo "Done."
 '''
 
+["cluster:build-controller"]
+description = "Build and load controller image into k3s, restart controller pod"
+depends = ["controller:image"]
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+
+echo "Loading into k3s..."
+tar="/tmp/platform-controller.tar"
+docker save platform-controller:latest -o "$tar"
+
+if [ -n "${IS_SANDBOX:-}" ]; then
+  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+  sudo k3s ctr images import "$tar"
+else
+  LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
+  KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
+  limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
+  limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
+fi
+rm -f "$tar"
+
+echo "Restarting controller pod..."
+kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-controller
+kubectl --kubeconfig="$KUBECONFIG" rollout status deployment platform-controller --timeout=60s
+
+PRUNE_DANGLING='sudo k3s crictl images 2>/dev/null | sed -nE "s/^<none>[[:space:]]+<none>[[:space:]]+([^[:space:]]+).*/\\1/p" | xargs -r sudo k3s crictl rmi >/dev/null 2>&1 || true'
+if [ -n "${IS_SANDBOX:-}" ]; then
+  bash -c "$PRUNE_DANGLING"
+else
+  limactl shell "$LIMA_INSTANCE" bash -c "$PRUNE_DANGLING"
+fi
+
+echo "Done."
+'''
+
 ["cluster:build-ui"]
 description = "Build and load UI image into k3s, restart UI pod"
-depends = ["image:ui"]
+depends = ["ui:image"]
 dir = "{{config_root}}"
 run = '''
 #!/usr/bin/env bash
@@ -493,7 +562,7 @@ if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
   sudo k3s ctr images import "$tar"
 else
-  LIMA_INSTANCE="platform-k3s"
+  LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
   KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
   limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
   limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
@@ -515,23 +584,59 @@ echo "Done."
 '''
 
 ["cluster:build-agent"]
-description = "Build and load agent images into k3s, restart agent pods"
-depends = ["image:agent"]
+description = "Rebuild the deployed agents' images, load into k3s, restart agent pods"
 dir = "{{config_root}}"
 run = '''
 #!/usr/bin/env bash
 set -eo pipefail
 
-echo "Loading into k3s..."
-tar="/tmp/platform-agent-images.tar"
-docker save platform-claude-code:latest platform-google-workspace-agent:latest platform-pi-agent:latest platform-bob:latest -o "$tar"
-
 if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+else
+  LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
+  KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
+fi
+
+# Rebuild only the agents the cluster has deployed (their agent-template
+# ConfigMaps). Capture first so a kubectl failure aborts rather than looking
+# like "nothing deployed".
+DEPLOYED_AGENTS=$(kubectl --kubeconfig="$KUBECONFIG" get configmap -A -l agent-platform.ai/type=agent-template -o yaml \
+  | yq -r '.items[] | .metadata.name + "\t" + (.data["spec.yaml"] | from_yaml | .image)')
+# `:::` separates tasks in a single `mise run` — without it the extra task
+# names are parsed as arguments to the first task and never built.
+AGENT_TASKS=()
+AGENT_IMAGES=()
+while IFS=$'\t' read -r name image; do
+  [ -z "$name" ] && continue
+  if [ -d "packages/agents/$name" ]; then
+    [ -n "${AGENT_TASKS[*]}" ] && AGENT_TASKS+=(":::")
+    AGENT_TASKS+=("agents:$name:image")
+    AGENT_IMAGES+=("$image")
+  elif [ -d "packages/e2e/agents/$name" ]; then
+    # e2e fixture agents (the scripted mock) live outside packages/agents/* and
+    # have no agents:*:image task — build straight from their Dockerfile, root
+    # context so the platform-base FROM resolves. Mirrors cluster:install.
+    {{ mise_bin }} run platform-base:image
+    docker build -f "packages/e2e/agents/$name/Dockerfile" -t "$image" .
+    AGENT_IMAGES+=("$image")
+  else
+    echo "WARN: no build task for '$name' ($image) — skipping local build" >&2
+  fi
+done <<< "$DEPLOYED_AGENTS"
+
+if [ ${#AGENT_IMAGES[@]} -eq 0 ]; then
+  echo "No agent templates deployed — nothing to build."
+  exit 0
+fi
+[ -n "${AGENT_TASKS[*]}" ] && {{ mise_bin }} run "${AGENT_TASKS[@]}"
+
+echo "Loading into k3s..."
+tar="/tmp/platform-agent-images.tar"
+docker save "${AGENT_IMAGES[@]}" -o "$tar"
+
+if [ -n "${IS_SANDBOX:-}" ]; then
   sudo k3s ctr images import "$tar"
 else
-  LIMA_INSTANCE="platform-k3s"
-  KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
   limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
   limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
 fi
@@ -552,6 +657,41 @@ else
 fi
 
 echo "Done. Agent pods will restart with new image."
+'''
+
+["cluster:build-keycloak"]
+description = "Build and load keycloak image into k3s, restart keycloak pod"
+depends = ["keycloak-theme:image"]
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+
+echo "Loading into k3s..."
+tar="/tmp/platform-keycloak.tar"
+docker save platform-keycloak:latest -o "$tar"
+
+if [ -n "${IS_SANDBOX:-}" ]; then
+  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+  sudo k3s ctr images import "$tar"
+else
+  LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
+  KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
+  limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
+  limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
+fi
+rm -f "$tar"
+
+echo "Restarting keycloak pod..."
+kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-keycloak
+kubectl --kubeconfig="$KUBECONFIG" rollout status deployment platform-keycloak --timeout=180s
+
+PRUNE_DANGLING='sudo k3s crictl images 2>/dev/null | sed -nE "s/^<none>[[:space:]]+<none>[[:space:]]+([^[:space:]]+).*/\\1/p" | xargs -r sudo k3s crictl rmi >/dev/null 2>&1 || true'
+if [ -n "${IS_SANDBOX:-}" ]; then
+  bash -c "$PRUNE_DANGLING"
+else
+  limactl shell "$LIMA_INSTANCE" bash -c "$PRUNE_DANGLING"
+fi
 '''
 
 ["cluster:kubectl"]
@@ -679,7 +819,7 @@ if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
   RUN_IN_VM="sudo"
 else
-  LIMA_INSTANCE="platform-k3s"
+  LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
   KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
   RUN_IN_VM="limactl shell $LIMA_INSTANCE sudo"
 fi

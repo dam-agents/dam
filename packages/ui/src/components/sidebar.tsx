@@ -1,117 +1,129 @@
-import {
-  Bot,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Settings,
-  Sparkles,
-  Unplug,
-} from "lucide-react";
+import { Bot, Connect, Model, Settings } from "@carbon/icons-react";
 import { useEffect, useState } from "react";
 
-import { getBrand } from "../brand.js";
+import { DamSquareLogo, DamSquareLogoDark } from "@/components/brand-logo";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+
 import { InboxBell } from "../modules/approvals/components/inbox-bell.js";
 import { useStore } from "../store.js";
-import { Logo } from "./logo.js";
 
 const STORAGE_KEY = "platform-sidebar-collapsed";
 
 const navItems = [
   { view: "list" as const, label: "Agents", icon: Bot },
-  { view: "providers" as const, label: "Providers", icon: Sparkles },
-  { view: "connections" as const, label: "Connections", icon: Unplug },
+  { view: "providers" as const, label: "Providers", icon: Model },
+  { view: "connections" as const, label: "Connections", icon: Connect },
 ] as const;
 
 export function Sidebar() {
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
 
-  const [collapsed, setCollapsed] = useState(() => {
-    return localStorage.getItem(STORAGE_KEY) === "true";
-  });
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem(STORAGE_KEY) === "true",
+  );
+  // `iconMode` drives the label↔icon swap and lags `collapsed`: on collapse
+  // it flips only after the width transition finishes, on expand it flips
+  // immediately. That keeps the width animation smooth — labels clip away as
+  // the rail narrows, then icons appear once it's settled — instead of icons
+  // popping in at full width mid-animation.
+  const [iconMode, setIconMode] = useState(collapsed);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, String(collapsed));
+    if (!collapsed) {
+      setIconMode(false);
+      return;
+    }
+    const t = setTimeout(() => setIconMode(true), 200);
+    return () => clearTimeout(t);
   }, [collapsed]);
 
   return (
     <nav
-      className={`hidden md:flex flex-col h-dvh bg-surface border-r border-border-light shrink-0 transition-[width] duration-200 ${collapsed ? "w-[52px]" : "w-[200px]"}`}
+      className={cn(
+        "hidden md:flex flex-col h-full bg-card border-r shrink-0 transition-[width] duration-200",
+        collapsed ? "w-[52px]" : "w-[200px]",
+      )}
+      data-testid="app-sidebar"
     >
-      {/* Logo */}
-      <button
-        onClick={() => setView("list")}
-        className={`flex items-center gap-2.5 px-3.5 h-12 shrink-0 hover:bg-surface-raised transition-colors ${collapsed ? "justify-center" : ""}`}
-        title="Home"
-      >
-        <Logo size={22} className="text-accent shrink-0" />
-        {!collapsed && (
-          <span className="text-[15px] font-extrabold tracking-[-0.03em] text-accent">
-            {getBrand().short}
-          </span>
+      {/* Brand row — DAM mark click toggles collapse. The viewBox on
+          DamSquareLogo is cropped tightly around the letters so the
+          rendered DAM dominates whatever pixel size the row gives it. The
+          18px left offset (expanded) matches the x-position of the nav
+          items' icons below (row px-2 + button px-2.5). */}
+      <div
+        className={cn(
+          "flex items-center h-14",
+          iconMode ? "justify-center" : "pl-[18px]",
         )}
-      </button>
+      >
+        <button
+          type="button"
+          onClick={() => setCollapsed((c) => !c)}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          className="shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <DamSquareLogo className="h-8 w-8 block dark:hidden" />
+          <DamSquareLogoDark className="h-8 w-8 hidden dark:block" />
+        </button>
+      </div>
 
-      {/* Divider */}
-      <div className="mx-2.5 border-t border-border-light" />
-
-      {/* Nav items */}
+      {/* Nav items — labels in the expanded sidebar (per the design),
+          collapsing to icon-only so the rail stays legible. */}
       <div className="flex flex-col gap-0.5 mt-2 px-2">
         {navItems.map(({ view: v, label, icon: Icon }) => {
           const active = view === v;
           return (
-            <button
+            <Button
               key={v}
+              id={`tour-nav-${v}`}
+              variant="ghost"
               onClick={() => setView(v)}
               title={collapsed ? label : undefined}
-              className={`flex items-center gap-2.5 rounded-lg transition-colors h-9 ${collapsed ? "justify-center px-0" : "px-2.5"} ${active ? "text-accent bg-accent-light" : "text-text-secondary hover:text-text hover:bg-surface-raised"}`}
-            >
-              <Icon size={18} className="shrink-0" />
-              {!collapsed && (
-                <span className="text-[14px] font-medium">{label}</span>
+              className={cn(
+                "h-9 overflow-hidden",
+                iconMode ? "justify-center px-0" : "justify-start px-2.5",
+                active && "bg-muted",
               )}
-            </button>
+            >
+              {iconMode ? (
+                <Icon />
+              ) : (
+                <span className="text-sm font-medium whitespace-nowrap">
+                  {label}
+                </span>
+              )}
+            </Button>
           );
         })}
       </div>
 
-      {/* Spacer */}
       <div className="flex-1" />
 
-      {/* Bottom section */}
       <div className="flex flex-col gap-0.5 px-2 mb-2">
-        {/* Divider */}
-        <div className="mx-0.5 mb-1 border-t border-border-light" />
+        <InboxBell collapsed={iconMode} />
 
-        {/* Inbox */}
-        <InboxBell collapsed={collapsed} />
-
-        {/* Settings */}
-        <button
+        <Button
+          variant="ghost"
           onClick={() => setView("settings")}
           title={collapsed ? "Settings" : undefined}
-          className={`flex items-center gap-2.5 rounded-lg transition-colors h-9 ${collapsed ? "justify-center px-0" : "px-2.5"} ${view === "settings" ? "text-accent bg-accent-light" : "text-text-secondary hover:text-text hover:bg-surface-raised"}`}
-        >
-          <Settings size={18} className="shrink-0" />
-          {!collapsed && (
-            <span className="text-[14px] font-medium">Settings</span>
+          className={cn(
+            "h-9 overflow-hidden",
+            iconMode ? "justify-center px-0" : "justify-start px-2.5",
+            view === "settings" && "bg-muted",
           )}
-        </button>
-
-        {/* Collapse toggle */}
-        <button
-          onClick={() => setCollapsed((c) => !c)}
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className={`flex items-center gap-2.5 rounded-lg transition-colors h-9 text-text-secondary hover:text-text hover:bg-surface-raised ${collapsed ? "justify-center px-0" : "px-2.5"}`}
         >
-          {collapsed ? (
-            <PanelLeftOpen size={18} className="shrink-0" />
+          {iconMode ? (
+            <Settings />
           ) : (
-            <PanelLeftClose size={18} className="shrink-0" />
+            <span className="text-sm font-medium whitespace-nowrap">
+              Settings
+            </span>
           )}
-          {!collapsed && (
-            <span className="text-[14px] font-medium">Collapse</span>
-          )}
-        </button>
+        </Button>
       </div>
     </nav>
   );

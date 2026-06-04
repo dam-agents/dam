@@ -16,7 +16,7 @@ The catch: every room on the same server shares one front door, called the *kern
 
 Platform can't turn those on for you; they live a layer *below* Platform, in the infrastructure. We strongly recommend enabling one. If you don't, you need to assume that anyone who breaks out of one pod has the whole server, so only run Platform on servers where that's an acceptable outcome.
 
-<!-- TODO: how do we protect cluster / internal network? -->
+Inside the cluster, Platform also limits where a broken-out agent can go *laterally*. The agent pod has no admitted network route to anything except its paired gateway pod (enforced by a Kubernetes NetworkPolicy), and the platform's internal services only accept calls carrying a cryptographic mesh identity the agent doesn't have. See [security-and-credentials](../architecture/security-and-credentials.md) § Intra-cluster identity and admission for the details.
 
 There's one exception: the "local" version of Platform, which runs the whole stack inside a virtual machine on your laptop. Putting another sandbox inside a virtual machine is slow and finicky, so we skip it.
 
@@ -28,11 +28,11 @@ So yes: *inside* the virtual machine, an agent has fewer walls between it and th
 
 > **Example.** A guide online tells the agent to install a tool called `official-slack-cli` by running `uvx official-slack-cli` (a common one-line way to fetch and run a package). The tool looks real, but it's a copycat built by an attacker. The moment the agent runs it, the Slack API key gets shipped off to the attacker's server. From there, the attacker logs into your Slack workspace and starts scanning messages for anything valuable: passwords, customer data, internal plans.
 
-The trick for solving this is a proxy: a middleman program that sits between the agent and the outside world, letting it use APIs and CLI tools without ever holding the real keys. The platform runs an Envoy sidecar in every agent pod for this — the agent talks to the sidecar over `localhost`, and the sidecar swaps a placeholder for the real credential before the request leaves the pod.
+The trick for solving this is a proxy: a middleman program that sits between the agent and the outside world, letting it use APIs and CLI tools without ever holding the real keys. Platform runs Envoy in a **separate paired gateway pod** alongside each agent. The agent's outbound traffic is forced through that gateway by a cluster-level NetworkPolicy — the agent pod has no other admitted route to the internet. The gateway swaps a placeholder for the real credential and only forwards the request if it's headed to the matching upstream.
 
-Here's how it works. Instead of giving the agent your real API keys, the agent only sees fake placeholders like `{{SLACK_TOKEN}}`. When the agent sends a request, say to Slack, the request passes through the proxy first. The proxy swaps the placeholder for the real key at the very last second, and only if the request is actually going to Slack. A request going anywhere else gets no key at all.
+Here's how it works. Instead of giving the agent your real API keys, the agent only sees fake placeholders like `{{SLACK_TOKEN}}`. When the agent sends a request, say to Slack, the request passes through the gateway pod first. The gateway swaps the placeholder for the real key at the very last second, and only if the request is actually going to Slack. A request going anywhere else gets no key at all.
 
-That means even if an attacker fully takes over the agent's pod, they don't find any real keys to steal, only placeholders that are useless on their own.
+The real keys are mounted only into the gateway pod; the agent pod never sees them. That means even if an attacker fully takes over the agent's pod, they don't find any real keys to steal, only placeholders that are useless on their own — and they can't reach the gateway's secrets either, because the gateway is a different pod on the other side of the credential boundary.
 
 Two things to watch out for:
 

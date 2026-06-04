@@ -5,7 +5,13 @@ images:
     arch: x86_64
 
 cpus: 4
-memory: 4GiB
+# Matches lima-k3s.yaml: Istio ambient (istiod + istio-cni + ztunnel +
+# waypoint) adds ~1 GiB on top of the platform stack. On 4 GiB the keycloak
+# JVM boot exceeds the 2-min keycloak-config-cli retry deadline because
+# every pod is fighting for memory. Bumping here doesn't resize an existing
+# VM — `mise run e2e` always nukes the prior VM first, so this takes effect
+# on the next run.
+memory: 8GiB
 disk: 20GiB
 
 # Skip lima's default rootless containerd + buildkit + stargz setup —

@@ -12,7 +12,8 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { api } from "../../../api.js";
+import { Button } from "@/components/ui/button";
+
 import { Markdown } from "../../../components/markdown.js";
 import { ResizeHandle } from "../../../components/resize-handle.js";
 import { StatusBadge } from "../../../components/status-indicator.js";
@@ -25,6 +26,7 @@ import { useAgents } from "../../agents/api/queries.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
 import { prefetchSchedules } from "../../schedules/api/queries.js";
+import { setSessionMode as applySessionMode } from "../api/acp-session-ops.js";
 import { acpSessionsKeys } from "../api/queries.js";
 import { ChatInput } from "../components/chat-input.js";
 import { ConfigurationPanel } from "../components/configuration-panel.js";
@@ -36,7 +38,6 @@ import { Terminal } from "../components/terminal.js";
 import { ThoughtBlock } from "../components/thought-block.js";
 import { ToolChip } from "../components/tool-chip.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
-import { useMcpPicker } from "../hooks/use-mcp-picker.js";
 
 export function ChatView() {
   const selectedAgent = useStore((s) => s.selectedAgent);
@@ -81,15 +82,6 @@ export function ChatView() {
 
   // ── Hooks ──
   const {
-    mcpOptions,
-    enabledMcps,
-    toggleMcp,
-    selectAllMcps,
-    clearAllMcps,
-    selectedMcpServers,
-  } = useMcpPicker(selectedAgent);
-
-  const {
     ensureConnection,
     resetSession,
     resumeSession,
@@ -98,7 +90,7 @@ export function ChatView() {
     busy,
     engagedSessionIdRef,
     loadingSession,
-  } = useAcpSession(selectedAgent, selectedMcpServers, textareaRef);
+  } = useAcpSession(selectedAgent, textareaRef);
 
   const { openFileHandler } = useFileTree(selectedAgent);
 
@@ -183,17 +175,12 @@ export function ChatView() {
         ? SessionMode.Chat
         : SessionMode.Terminal;
 
-    // Blank chat → terminal: spawn a fresh terminal session with no confirmation.
+    // Blank chat → terminal: spawn a fresh terminal session with no
+    // confirmation. The PTY creates it (ADR-055) — no server registration; it
+    // surfaces in session/list with no `_meta` and decodes as terminal.
     if (!sessionId && messages.length === 0) {
       if (target === SessionMode.Terminal) {
-        const newSessionId = crypto.randomUUID();
-        await api.sessions.create.mutate({
-          sessionId: newSessionId,
-          agentId: selectedAgent,
-          mode: SessionMode.Terminal,
-        });
-        queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
-        setSessionId(newSessionId);
+        setSessionId(crypto.randomUUID());
       }
       setSessionMode(target);
       return;
@@ -216,11 +203,7 @@ export function ChatView() {
     if (sessionId) {
       if (target !== SessionMode.Terminal) setSessionMode(target);
       try {
-        await api.sessions.setMode.mutate({
-          sessionId,
-          agentId: selectedAgent,
-          mode: target,
-        });
+        await applySessionMode(selectedAgent, sessionId, target);
         queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
       } catch {
         setSessionMode(sessionMode);
@@ -294,12 +277,6 @@ export function ChatView() {
           className={`flex flex-1 flex-col overflow-hidden ${rightTab === "configuration" ? "" : "hidden"}`}
         >
           <ConfigurationPanel
-            mcpOptions={mcpOptions}
-            enabledMcps={enabledMcps}
-            onToggleMcp={toggleMcp}
-            onSelectAllMcps={selectAllMcps}
-            onClearAllMcps={clearAllMcps}
-            hasActiveSession={!!sessionId}
             onResumeSession={mobileResumeSession}
             agentId={selectedAgent}
             agentRunning={
@@ -679,7 +656,7 @@ function SessionErrorCard({
         ? "Can't reach the agent"
         : "Failed to load session";
   return (
-    <div className="my-4 rounded-xl border-2 border-danger bg-danger-light p-5 flex flex-col gap-3 anim-in shadow-brutal-sm">
+    <div className="my-4 rounded-xl border-2 border-danger bg-danger-light p-5 flex flex-col gap-3 anim-in">
       <div className="flex items-start gap-3">
         <AlertCircle size={20} className="text-danger shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
@@ -690,19 +667,13 @@ function SessionErrorCard({
         </div>
       </div>
       <div className="flex items-center gap-2 flex-wrap">
-        <button
-          onClick={onBack}
-          className="btn-brutal h-8 rounded-lg border-2 border-border bg-surface px-3 text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center gap-1.5 shadow-brutal-sm"
-        >
+        <Button variant="outline" size="sm" onClick={onBack}>
           <ArrowLeft size={12} /> Back to sessions
-        </button>
+        </Button>
         {error.kind === "not-found" && (
-          <button
-            onClick={onDelete}
-            className="btn-brutal h-8 rounded-lg border-2 border-danger bg-danger-light px-3 text-[12px] font-semibold text-danger hover:bg-danger hover:text-white flex items-center gap-1.5 shadow-brutal-sm"
-          >
+          <Button variant="destructive" size="sm" onClick={onDelete}>
             <Trash2 size={12} /> Delete orphaned session
-          </button>
+          </Button>
         )}
       </div>
     </div>
@@ -718,7 +689,7 @@ function SendErrorCard({
 }) {
   return (
     <div
-      className="rounded-xl border-2 border-danger bg-danger-light px-4 py-3 flex items-start gap-2.5 max-w-[620px] shadow-brutal-sm"
+      className="rounded-xl border-2 border-danger bg-danger-light px-4 py-3 flex items-start gap-2.5 max-w-[620px]"
       role="alert"
     >
       <AlertCircle size={16} className="text-danger shrink-0 mt-0.5" />
@@ -727,12 +698,14 @@ function SendErrorCard({
           <span className="font-bold text-danger">Send failed:</span> {error}
         </div>
         {onRetry && (
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             onClick={onRetry}
-            className="btn-brutal self-start h-7 rounded-md border-2 border-danger bg-surface px-3 text-[12px] font-bold text-danger hover:bg-danger hover:text-white flex items-center gap-1.5 shadow-brutal-sm"
+            className="self-start"
           >
             <RefreshCw size={11} /> Retry
-          </button>
+          </Button>
         )}
       </div>
     </div>

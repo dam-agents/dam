@@ -14,9 +14,7 @@ export function AnthropicCard({ secret }: { secret?: SecretView }) {
     return (
       <AnthropicConnected
         secret={secret}
-        onRemove={() =>
-          actions.remove(secret.id, `Remove ${NAME} API key?`, "Remove Key")
-        }
+        onRemove={() => actions.remove(secret.id, NAME)}
         onSave={({ mode, value }) =>
           actions.update({
             id: secret.id,

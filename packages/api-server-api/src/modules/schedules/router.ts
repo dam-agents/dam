@@ -6,6 +6,7 @@ import {
   scheduleDeleteInputSchema,
   scheduleGetInputSchema,
   scheduleListInputSchema,
+  scheduleResetSessionInputSchema,
   scheduleToggleInputSchema,
   scheduleUpdateRRuleInputSchema,
 } from "./schemas.js";
@@ -90,4 +91,8 @@ export const schedulesRouter = t.router({
       if (!sched) throw new TRPCError({ code: "NOT_FOUND" });
       return toView(sched);
     }),
+
+  resetSession: t.procedure
+    .input(scheduleResetSessionInputSchema)
+    .mutation(({ ctx, input }) => ctx.schedules.resetSession(input.id)),
 });

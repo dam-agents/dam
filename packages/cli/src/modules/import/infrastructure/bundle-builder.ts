@@ -6,7 +6,7 @@ import { pipeline } from "node:stream/promises";
 import { createGzip } from "node:zlib";
 import { pack as tarPack } from "tar-stream";
 import { err, ok, type Result } from "../../../result.js";
-import { EXIT_IMPORT_SIGINT } from "../commands/exit-codes.js";
+import { EXIT_SIGINT } from "../../shared/exit-codes.js";
 
 /** Mirror of packages/ui/src/modules/files/api/import-bundle.ts EXCLUDE_FROM_IMPORT. */
 export const EXCLUDE_FROM_IMPORT = new Set([
@@ -109,7 +109,7 @@ export function createBundleBuilder(): BundleBuilder {
         } catch {
           // best effort — process is exiting
         }
-        process.exit(EXIT_IMPORT_SIGINT);
+        process.exit(EXIT_SIGINT);
       };
       process.once("SIGINT", onSigint);
 

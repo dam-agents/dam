@@ -19,16 +19,16 @@ export const egressRuleCurrentPresetInputSchema = z.object({
 export const egressRuleCreateInputSchema = z.object({
   agentId: z.string().min(1),
   host: z.string().min(1),
-  method: z.string().min(1),
-  pathPattern: z.string().min(1),
+  method: z.string().min(1).default("*"),
+  pathPattern: z.string().min(1).default("*"),
   verdict: ruleVerdictSchema,
 });
 
 export const egressRuleUpdateInputSchema = z.object({
   id: z.string().min(1),
-  method: z.string().min(1),
-  pathPattern: z.string().min(1),
-  verdict: ruleVerdictSchema,
+  method: z.string().min(1).optional(),
+  pathPattern: z.string().min(1).optional(),
+  verdict: ruleVerdictSchema.optional(),
 });
 
 export const egressRuleRevokeInputSchema = z.object({

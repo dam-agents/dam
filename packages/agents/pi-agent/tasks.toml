@@ -1,0 +1,34 @@
+["agents:pi-agent:image"]
+description = "Build the pi-agent agent image"
+dir = "{{config_root}}"
+depends = ["platform-base:image"]
+run = '''
+#!/usr/bin/env bash
+[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
+docker build -t platform-pi-agent:latest packages/agents/pi-agent
+'''
+
+["agents:pi-agent:scan"]
+depends = ["agents:pi-agent:scan:*"]
+
+["agents:pi-agent:scan:trivy"]
+dir = "{{config_root}}"
+raw = true
+usage = '''
+flag "--json" help="Emit Trivy JSON (exit 0) instead of failing on findings"
+flag "--tag <tag>" help="Scan quay.io/dam-agents/pi-agent:<tag> instead of building locally"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+if [ -n "${usage_tag:-}" ]; then
+  image="quay.io/dam-agents/pi-agent:${usage_tag}"
+else
+  {{ mise_bin }} run agents:pi-agent:image
+  image="platform-pi-agent:latest"
+fi
+if [[ "${usage_json:-false}" == "true" ]]; then
+  exec trivy image --quiet --format json "$image"
+fi
+exec trivy image --quiet --exit-code 1 "$image"
+'''

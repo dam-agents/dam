@@ -11,7 +11,7 @@ This directory contains ADRs for the Platform project.
 | [003](003-k8s-from-the-start.md)              | Kubernetes from the start — k3s for local dev, K8s for production | @jezekra1 |
 | [004](004-acp-over-a2a.md)                    | ACP over A2A for the experiment | @tomkis |
 | [005](005-credential-gateway.md)              | Gateway pattern for credentials — agent never sees tokens | @pilartomas |
-| [006](006-configmaps-over-crds.md)            | ConfigMaps over CRDs — namespace-scoped resource model | @jezekra1 |
+| [006](006-configmaps-over-crds.md)            | ConfigMaps over CRDs — namespace-scoped resource model — superseded by ADR-058 | @jezekra1 |
 | [007](007-acp-relay.md)                       | ACP traffic always proxied through the API Server | @tomkis |
 | [008](008-trigger-files.md)                   | Controller-owned cron with exec-based trigger delivery | @jezekra1 |
 | [009](009-go-and-typescript.md)               | Go for Controller, TypeScript for API Server | @jezekra1 |
@@ -19,7 +19,7 @@ This directory contains ADRs for the Platform project.
 | [011](011-skills-claude-marketplace.md)       | Skills via Claude plugin marketplace — superseded by ADR-030 | @pilartomas |
 | [012](012-runtime-lifetime.md)                | Runtime lifetime — single-use Jobs | @JanPokorny |
 | [013](013-ui-approach.md)                     | UI approach — chat-primary, dashboard for inspection | @PetrBulanek |
-| [014](014-integration-testing.md)             | E2E integration testing against dedicated k3s cluster | @tomkis |
+| [014](014-integration-testing.md)             | E2E integration testing against dedicated k3s cluster — superseded by ADR-056 | @tomkis |
 | [015](015-multi-user-auth.md)                 | Multi-user auth via Keycloak + OneCLI fork with token exchange | @tomkis |
 | [016](016-messenger-integration.md)           | Messenger integration handled by API Server | @tomkis |
 | [017](017-db-backed-sessions.md)              | DB-backed ACP sessions for metadata | @tomkis |
@@ -37,7 +37,7 @@ This directory contains ADRs for the Platform project.
 | [029](029-per-instance-channels.md)           | Per-instance messenger channels — secrets in k8s Secrets, per-thread authorization | @pilartomas |
 | [030](030-skills-marketplace.md)              | Skills — connectable sources and install | @PetrBulanek |
 | [031](031-schedule-rrule-quiet-hours.md)      | Schedules use RRULE for includes and structured quiet hours for exclusions | @jezekra1 |
-| [032](032-pod-reachability-primitive.md)      | Centralized pod-reachability primitive; observed pod Ready is the truth | @janjeliga |
+| [032](032-pod-reachability-primitive.md)      | Centralized pod-reachability primitive; observed pod Ready is the truth — superseded by ADR-059 | @janjeliga |
 | [033](033-envoy-credential-gateway.md)        | Envoy-based credential gateway with ext_authz HITL — drop OneCLI | @pilartomas |
 | [035](035-unified-hitl-ux.md)                 | Unified HITL UX — verdict authority outside the agent pod | @jezekra1 |
 | [036](036-redis-platform-primitive.md)        | Redis as a platform primitive — pub/sub, queues, cache | @jezekra1 |
@@ -49,11 +49,24 @@ This directory contains ADRs for the Platform project.
 | [042](042-agent-egress-network-policy.md)     | Agent egress is gated by NetworkPolicy; the agent is not a mesh participant | @pilartomas |
 | [043](043-agent-pod-config-layers.md)         | Three-layer agent pod configuration — base / templateDefaults / templates | @jezekra1 |
 | [044](044-provider-twin-secrets.md)           | Provider twin secrets — multiple injection points per credential | @xjacka |
+| [045](045-file-import.md) | File import — bundled, atomic, one-shot | @janjeliga |
 | [046](046-eliminate-instance.md)              | Eliminate Instance — collapse into Agent | @jezekra1 |
+| [047](047-terms-of-use-acceptance.md)         | Terms of Use acceptance — api-server gate with hash-as-proof | @tomkis |
+| [048](048-usage-tracking.md)                  | Usage tracking — append-only activity log with pseudonymized identifiers | @jjeliga |
+| [049](049-lazy-workspace-fetch.md)            | Lazy per-directory workspace fetch | @tomkis |
+| [050](050-platform-reserved-paths.md)         | Platform-reserved paths | @tomkis |
+| [051](051-connections-and-contributions.md)   | Connections, Connection Templates, and Contributions — unified configuration model | @jezekra1 |
+| [052](052-runtime-channel.md)                 | Unified runtime channel — state snapshot plus event stream between api-server and agent-runtime | @jezekra1 |
+| [053](053-runtime-outbox-worker.md)           | Transactional outbox + worker for runtime-channel delivery | @jezekra1 |
+| [054](054-keycloak-theme.md)                  | Branded Keycloak login via Keycloakify-built custom image | @kapetr |
+| [055](055-agent-owned-session-metadata.md)    | Agent-owned session metadata via ACP `_meta`; no server-side session store | @jezekra1 |
+| [056](056-browser-driven-e2e.md)              | Browser-driven E2E tracer with values-gated test affordances | @tomkis |
+| [057](057-structured-logging.md)              | Structured logging for the api-server — Pino, JSON to stdout, security audit trail as first consumer | @pilartomas |
+| [058](058-crds-over-configmaps.md)            | CRDs over ConfigMaps — reconciled resources become custom resources | @jezekra1 |
+| [059](059-agent-readiness-status.md)          | Agent readiness is controller-computed status — agent ∧ gateway | @jezekra1 |
 
 ## Drafts
 
 | Draft | Title | Owner |
 |-------|-------|-------|
 | [DRAFT](DRAFT-multi-agent.md) | Multi-agent collaboration — isolated instances with shared artifacts | @tomkis |
-| [DRAFT](044-file-import.md) | File import — bundled, atomic, one-shot | @janjeliga |

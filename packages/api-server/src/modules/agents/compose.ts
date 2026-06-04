@@ -30,6 +30,7 @@ import {
 } from "./infrastructure/allowed-users-repository.js";
 import type { KeycloakUserDirectory } from "./infrastructure/keycloak-user-directory.js";
 import type { ReadTemplateSpec } from "../templates/index.js";
+import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
 export type {
   AgentCleanupHook,
@@ -48,6 +49,7 @@ export function composeAgentsModule(deps: {
   readTemplateSpec: ReadTemplateSpec;
   presetSeeder?: PresetSeeder;
   cleanupHooks?: readonly AgentCleanupHook[];
+  runtimeMutator: RuntimeMutator;
 }): {
   agents: AgentsService;
   repo: AgentsRepository;
@@ -66,6 +68,7 @@ export function composeAgentsModule(deps: {
       readTemplateSpec: deps.readTemplateSpec,
       presetSeeder: deps.presetSeeder,
       cleanupHooks: deps.cleanupHooks,
+      runtimeMutator: deps.runtimeMutator,
       listChannelsByOwner: listChannelsByOwner(deps.db, owner),
       listChannelsByAgent: listChannelsByAgent(deps.db, owner),
       upsertChannel: upsertChannel(deps.db, owner),

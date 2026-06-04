@@ -1,13 +1,16 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 @import "highlight.js/styles/github.css";
 @import "./styles/hljs-dark.css";
+
+@custom-variant dark (&:is(.dark *));
 
 @theme {
   /* ── Color tokens (resolved via CSS vars set in :root / .dark) ── */
   --color-bg: var(--c-bg);
   --color-surface: var(--c-surface);
   --color-surface-raised: var(--c-surface-raised);
-  --color-border: var(--c-border);
+  --color-border: var(--border-ui);
   --color-border-light: var(--c-border-light);
   --color-text: var(--c-text);
   --color-text-secondary: var(--c-text-secondary);
@@ -26,11 +29,33 @@
   --color-info-light: var(--c-info-light);
   --color-template: var(--c-template);
   --color-template-light: var(--c-template-light);
-  --shadow-brutal: var(--s-brutal);
-  --shadow-brutal-sm: var(--s-brutal-sm);
-  --shadow-brutal-accent: var(--s-brutal-accent);
-  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
-  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  /* ── shadcn/ui token mapping (see :root below for source values) ── */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent-alt: var(--accent-alt);
+  --color-accent-alt-foreground: var(--accent-alt-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border-ui: var(--border-ui);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
 }
 
 /* ── Light theme (default) ── */
@@ -39,36 +64,55 @@
   --c-surface: #ffffff;
   --c-surface-raised: #f5f5f4;
   --c-border: #292524;
-  --c-border-light: #e7e5e4;
-  --c-text: #1c1917;
+  --c-border-light: #dde1e6;
+  --c-text: #121619;
   --c-text-secondary: #57534e;
   --c-text-muted: #a8a29e;
   --c-accent: #1d6be1;
   --c-accent-hover: #1556b8;
   --c-accent-light: #eaf2fe;
   --c-accent-glow: rgba(29, 107, 225, 0.15);
-  --c-success: #059669;
-  --c-success-light: #ecfdf5;
-  --c-warning: #d97706;
+  --c-success: #24a148;
+  --c-success-light: #defbe6;
+  --c-warning: #ff832b;
   --c-warning-light: #fffbeb;
   --c-danger: #dc2626;
   --c-danger-light: #fef2f2;
-  --c-info: #2563eb;
-  --c-info-light: #eff6ff;
+  --c-info: #000000;
+  --c-info-light: #f2f4f8;
   --c-template: #7c3aed;
   --c-template-light: #f5f3ff;
-  --s-brutal: 3px 3px 0 #292524;
-  --s-brutal-sm: 2px 2px 0 #292524;
-  --s-brutal-accent: 3px 3px 0 #1d6be1;
+
+  /* shadcn tokens — mapped to brand palette above */
+  --radius: 0.5rem;
+  --background: #ffffff;
+  --foreground: #121619;
+  --card: #ffffff;
+  --card-foreground: #121619;
+  --popover: #ffffff;
+  --popover-foreground: #121619;
+  --primary: #000000;
+  --primary-foreground: #ffffff;
+  --secondary: #f2f4f8;
+  --secondary-foreground: #161616;
+  --muted: #f2f4f8;
+  --muted-foreground: #4d5358;
+  --accent-alt: #eaf2fe;
+  --accent-alt-foreground: #1556b8;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border-ui: #dde1e6;
+  --input: #dde1e6;
+  --ring: #000000;
 }
 
 /* ── Dark theme ── */
 .dark {
   --c-bg: #0c0a09;
-  --c-surface: #1c1917;
-  --c-surface-raised: #292524;
+  --c-surface: #161616;
+  --c-surface-raised: #262626;
   --c-border: #78716c;
-  --c-border-light: #44403c;
+  --c-border-light: #393939;
   --c-text: #fafaf9;
   --c-text-secondary: #d6d3d1;
   --c-text-muted: #78716c;
@@ -86,10 +130,41 @@
   --c-info-light: #0f1f3a;
   --c-template: #a78bfa;
   --c-template-light: #1f1438;
-  --s-brutal: 3px 3px 0 #000000;
-  --s-brutal-sm: 2px 2px 0 #000000;
-  --s-brutal-accent: 3px 3px 0 #3c92fd;
   color-scheme: dark;
+
+  /* shadcn tokens — dark. Surface colors that are pure #ffffff in light
+     mode map to #161616 in dark (carbon-style elevated grey) so the
+     swap reads as a true dark counterpart of the light surface. */
+  --background: #161616;
+  --foreground: #fafaf9;
+  --card: #161616;
+  --card-foreground: #fafaf9;
+  --popover: #161616;
+  --popover-foreground: #fafaf9;
+  --primary: #ffffff;
+  --primary-foreground: #161616;
+  --secondary: #262626;
+  --secondary-foreground: #fafaf9;
+  --muted: #262626;
+  --muted-foreground: #a8a29e;
+  --accent-alt: #0f1f3a;
+  --accent-alt-foreground: #3c92fd;
+  --destructive: #f87171;
+  --destructive-foreground: #161616;
+  --border-ui: #393939;
+  --input: #393939;
+  --ring: #ffffff;
+}
+
+/* ── Dark-mode card elevation ──
+   Card surfaces (`--card`) share the same value as `--background` in dark
+   mode, so the default downward dark shadow is invisible and borderless
+   cards melt into the page. Give the Card a soft light lift so it reads as
+   raised without a border. Scoped to `[data-slot="card"]` so the shared
+   shadow utilities on bordered overlays (modal, tooltip, sonner, popovers,
+   menus) keep their own styling instead of picking up a white halo. */
+.dark [data-slot="card"] {
+  box-shadow: 0 2px 5px 0 rgb(255 255 255 / 0.12);
 }
 
 @layer base {
@@ -97,6 +172,7 @@
   *::before,
   *::after {
     box-sizing: border-box;
+    border-color: var(--color-border);
   }
 
   html,
@@ -299,18 +375,6 @@
   opacity: 0.04;
 }
 
-/* ── Brutalist button interaction ── */
-.btn-brutal {
-  transition: all 0.15s ease;
-}
-.btn-brutal:hover:not(:disabled) {
-  transform: translate(-1px, -1px);
-}
-.btn-brutal:active:not(:disabled) {
-  transform: translate(1px, 1px);
-  box-shadow: 0 0 0 var(--c-border) !important;
-}
-
 /* ── Markdown / Prose ── */
 .prose {
   font-size: 15px;
@@ -364,12 +428,11 @@
 }
 .prose pre {
   background: var(--c-surface-raised) !important;
-  border: 2px solid var(--c-border);
+  border: 1px solid var(--border-ui);
   border-radius: 12px;
   padding: 1em 1.15em;
   overflow-x: auto;
   margin: 0.65em 0;
-  box-shadow: var(--s-brutal-sm);
 }
 .prose pre code {
   background: none;
@@ -414,10 +477,9 @@
   border-spacing: 0;
   margin: 0.65em 0;
   font-size: 0.93em;
-  border: 2px solid var(--c-border);
+  border: 1px solid var(--border-ui);
   border-radius: 12px;
   overflow: hidden;
-  box-shadow: var(--s-brutal-sm);
 }
 .prose th {
   background: var(--c-surface-raised);

@@ -6,9 +6,26 @@ sources = ["go.mod", "go.sum"]
 ["controller:check"]
 depends = ["controller:check:*"]
 
+["controller:check:fmt"]
+dir = "{{config_root}}/packages/controller"
+run = """
+unformatted=$(gofmt -s -l .)
+if [ -n "$unformatted" ]; then
+  echo "Files not formatted:" >&2
+  echo "$unformatted" >&2
+  exit 1
+fi
+"""
+sources = ["**/*.go"]
+
 ["controller:check:vet"]
 dir = "{{config_root}}/packages/controller"
 run = "go vet ./..."
+sources = ["**/*.go", "go.mod", "go.sum"]
+
+["controller:check:staticcheck"]
+dir = "{{config_root}}/packages/controller"
+run = "staticcheck ./..."
 sources = ["**/*.go", "go.mod", "go.sum"]
 
 ["controller:check:build"]
@@ -17,11 +34,62 @@ run = "go build -o dist/ ./..."
 sources = ["**/*.go", "go.mod", "go.sum"]
 
 ["controller:fix"]
-run = "echo 'No fix tasks for controller yet'"
+depends = ["controller:fix:*"]
+
+["controller:fix:fmt"]
+dir = "{{config_root}}/packages/controller"
+run = "gofmt -s -w ."
 
 ["controller:test"]
 dir = "{{config_root}}/packages/controller"
 run = "go test ./..."
+
+["controller:scan"]
+depends = ["controller:scan:*"]
+
+["controller:scan:govulncheck"]
+description = "Check the Go call graph against the vuln DB"
+dir = "{{config_root}}/packages/controller"
+sources = ["**/*.go", "go.mod", "go.sum"]
+usage = 'flag "--json" help="Emit govulncheck streaming JSON instead of text"'
+run = '''
+#!/usr/bin/env bash
+set -uo pipefail
+if [[ "${usage_json:-false}" == "true" ]]; then
+  exec govulncheck -format json ./...
+fi
+exec govulncheck ./...
+'''
+
+["controller:image"]
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
+docker build -t platform-controller:latest packages/controller/
+'''
+
+["controller:scan:trivy"]
+dir = "{{config_root}}"
+raw = true
+usage = '''
+flag "--json" help="Emit Trivy JSON (exit 0) instead of failing on findings"
+flag "--tag <tag>" help="Scan quay.io/dam-agents/controller:<tag> instead of building locally"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+if [ -n "${usage_tag:-}" ]; then
+  image="quay.io/dam-agents/controller:${usage_tag}"
+else
+  {{ mise_bin }} run controller:image
+  image="platform-controller:latest"
+fi
+if [[ "${usage_json:-false}" == "true" ]]; then
+  exec trivy image --quiet --format json "$image"
+fi
+exec trivy image --quiet --exit-code 1 "$image"
+'''
 
 ["controller:build"]
 dir = "{{config_root}}/packages/controller"

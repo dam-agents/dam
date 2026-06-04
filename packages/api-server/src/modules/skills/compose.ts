@@ -10,6 +10,7 @@ import { createSkillsRepository } from "./infrastructure/skills-repository.js";
 import { createAgentSkillsRepository } from "./infrastructure/agent-skills-repository.js";
 import type { SkillSourceSeed } from "./infrastructure/seed-sources.js";
 import { createSkillsService } from "./services/skills-service.js";
+import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -56,6 +57,7 @@ export function composeSkillsModule(
   db: Db,
   seedSources: SkillSourceSeed[],
   brandName: string,
+  runtimeMutator: RuntimeMutator,
 ): SkillsService {
   const k8s = createK8sClient(api, namespace);
   return createSkillsService({
@@ -65,6 +67,7 @@ export function composeSkillsModule(
     templatesRepo: createTemplatesRepository(k8s),
     seedSources,
     runtimeClient: createAgentRuntimeSkillsClient(namespace),
+    runtimeMutator,
     owner,
     scanSource: scanWithCache,
     invalidateScan: invalidateScanCache,

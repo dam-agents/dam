@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useRef } from "react";
 
+import { Badge } from "@/components/ui/badge";
+
 import { useStore } from "../../../store.js";
 
 const badgeStyle: Record<string, string> = {
-  text: "bg-bg text-text-muted border-border-light",
-  tool: "bg-accent-light text-accent border-accent",
+  text: "bg-background text-muted-foreground border-border",
+  tool: "bg-primary/10 text-primary border-primary",
   done: "bg-success-light text-success border-success",
-  error: "bg-danger-light text-danger border-danger",
+  error: "bg-destructive/10 text-destructive border-destructive",
   prompt: "bg-info-light text-info border-info",
-  session: "bg-bg text-text-muted border-border-light",
+  session: "bg-background text-muted-foreground border-border",
 };
 
 export function LogPanel() {
@@ -36,24 +38,27 @@ export function LogPanel() {
       className="flex flex-1 flex-col overflow-y-auto"
     >
       {log.length === 0 && (
-        <p className="px-4 py-5 text-[12px] text-text-muted">No events yet</p>
+        <p className="px-4 py-5 text-[12px] text-muted-foreground">
+          No events yet
+        </p>
       )}
       {log.map((e) => (
         <div
           key={e.id}
-          className="flex flex-col gap-1 border-b border-border-light px-4 py-3"
+          className="flex flex-col gap-1 border-b border-border px-4 py-3"
         >
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-mono text-text-muted">
+            <span className="text-[11px] font-mono text-muted-foreground">
               {e.ts}
             </span>
-            <span
-              className={`text-[10px] font-bold uppercase tracking-[0.05em] border-2 rounded-full px-2 py-0.5 ${badgeStyle[e.type] ?? "bg-bg text-text-muted border-border-light"}`}
+            <Badge
+              variant="outline"
+              className={`text-[10px] font-bold uppercase tracking-[0.05em] border-2 rounded-full px-2 py-0.5 ${badgeStyle[e.type] ?? "bg-background text-muted-foreground border-border"}`}
             >
               {e.type}
-            </span>
+            </Badge>
           </div>
-          <pre className="text-[11px] font-mono text-text-muted whitespace-pre-wrap break-all leading-[1.5] max-h-[100px] overflow-y-auto">
+          <pre className="text-[11px] font-mono text-muted-foreground whitespace-pre-wrap break-all leading-[1.5] max-h-[100px] overflow-y-auto">
             {JSON.stringify(e.payload, null, 2)}
           </pre>
         </div>

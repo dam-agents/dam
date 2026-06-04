@@ -1,7 +1,12 @@
-import { Plus, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Add as Plus, Close as X } from "@carbon/icons-react";
+import { useState } from "react";
+
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 
 import { useStore } from "../../../store.js";
+import type { AgentView } from "../../../types.js";
 import {
   useConnectSlack,
   useConnectTelegram,
@@ -19,15 +24,43 @@ export function ChannelsPanel() {
   const telegramAvailable = !!availableChannels.telegram;
 
   const selectedAgent = useStore((s) => s.selectedAgent);
+  const agent = agents.find((a) => a.id === selectedAgent);
+
+  if (!slackAvailable && !telegramAvailable) {
+    return (
+      <div className="px-4 py-4 text-[12px] text-muted-foreground">
+        No channels are configured for this installation.
+      </div>
+    );
+  }
+
+  return (
+    <ChannelsForm
+      key={agent?.id ?? "none"}
+      agent={agent}
+      slackAvailable={slackAvailable}
+      telegramAvailable={telegramAvailable}
+    />
+  );
+}
+
+function ChannelsForm({
+  agent,
+  slackAvailable,
+  telegramAvailable,
+}: {
+  agent: AgentView | undefined;
+  slackAvailable: boolean;
+  telegramAvailable: boolean;
+}) {
+  const slackChannel = agent?.channels.find((c) => c.type === "slack");
+  const telegramChannel = agent?.channels.find((c) => c.type === "telegram");
+
   const connectSlack = useConnectSlack();
   const disconnectSlack = useDisconnectSlack();
   const connectTelegram = useConnectTelegram();
   const disconnectTelegram = useDisconnectTelegram();
   const updateAgent = useUpdateAgent();
-
-  const agent = agents.find((a) => a.id === selectedAgent);
-  const slackChannel = agent?.channels.find((c) => c.type === "slack");
-  const telegramChannel = agent?.channels.find((c) => c.type === "telegram");
 
   const [slackEnabled, setSlackEnabled] = useState(!!slackChannel);
   const [channelId, setChannelId] = useState(
@@ -40,18 +73,6 @@ export function ChannelsPanel() {
   const [userInput, setUserInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
-
-  useEffect(() => {
-    const sc = agent?.channels.find((c) => c.type === "slack");
-    const tc = agent?.channels.find((c) => c.type === "telegram");
-    setSlackEnabled(!!sc);
-    setChannelId(sc?.type === "slack" ? sc.slackChannelId : "");
-    setTelegramEnabled(!!tc);
-    setBotToken("");
-    setEditingBotToken(!tc);
-    setUsers(agent?.allowedUserEmails ?? []);
-    setDirty(false);
-  }, [agent?.id]);
 
   const addUser = () => {
     const v = userInput.trim();
@@ -113,42 +134,34 @@ export function ChannelsPanel() {
     }
   };
 
-  if (!slackAvailable && !telegramAvailable) {
-    return (
-      <div className="px-4 py-4 text-[12px] text-text-muted">
-        No channels are configured for this installation.
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-col gap-4 p-4 overflow-y-auto">
       {slackAvailable && (
-        <fieldset className="rounded-lg border-2 border-border p-4 flex flex-col gap-3">
-          <legend className="text-[12px] font-bold uppercase tracking-[0.05em] text-text-secondary px-1">
+        <fieldset className="rounded-lg border border-border p-4 flex flex-col gap-3">
+          <legend className="text-[12px] font-bold uppercase tracking-[0.05em] text-foreground/80 px-1">
             Slack
           </legend>
 
           <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={slackEnabled}
-              onChange={(e) => {
-                setSlackEnabled(e.target.checked);
+              onCheckedChange={(c) => {
+                setSlackEnabled(c === true);
                 setDirty(true);
               }}
-              className="w-4 h-4 accent-[var(--color-accent)]"
             />
-            <span className="text-[13px] font-semibold text-text">Enabled</span>
+            <span className="text-[13px] font-semibold text-foreground">
+              Enabled
+            </span>
           </label>
 
           {slackEnabled && (
             <>
               <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted">
+                <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-muted-foreground">
                   Channel ID
                 </label>
-                <input
+                <Input
                   type="text"
                   value={channelId}
                   onChange={(e) => {
@@ -156,16 +169,16 @@ export function ChannelsPanel() {
                     setDirty(true);
                   }}
                   placeholder="C0..."
-                  className="h-8 rounded-md border border-border-light bg-bg px-3 text-[13px] text-text outline-none focus:border-accent"
+                  className="h-8"
                 />
               </div>
 
               <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted">
+                <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-muted-foreground">
                   Allowed users
                 </label>
                 {users.length === 0 && (
-                  <span className="text-[12px] text-text-muted italic">
+                  <span className="text-[12px] text-muted-foreground italic">
                     Unrestricted — any linked Slack user can interact
                   </span>
                 )}
@@ -173,14 +186,14 @@ export function ChannelsPanel() {
                   {users.map((u) => (
                     <div
                       key={u}
-                      className="flex items-center gap-2 rounded-md border border-border-light bg-bg px-2 py-1"
+                      className="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1"
                     >
-                      <span className="flex-1 text-[12px] font-mono text-text truncate">
+                      <span className="flex-1 text-[12px] font-mono text-foreground truncate">
                         {u}
                       </span>
                       <button
                         onClick={() => removeUser(u)}
-                        className="text-text-muted hover:text-danger shrink-0"
+                        className="text-muted-foreground hover:text-destructive shrink-0"
                       >
                         <X size={12} />
                       </button>
@@ -188,7 +201,7 @@ export function ChannelsPanel() {
                   ))}
                 </div>
                 <div className="flex gap-1 mt-1">
-                  <input
+                  <Input
                     type="email"
                     value={userInput}
                     onChange={(e) => setUserInput(e.target.value)}
@@ -196,15 +209,17 @@ export function ChannelsPanel() {
                       e.key === "Enter" && (e.preventDefault(), addUser())
                     }
                     placeholder="user@example.com"
-                    className="flex-1 h-7 rounded-md border border-border-light bg-bg px-2 text-[12px] text-text outline-none focus:border-accent"
+                    className="flex-1 h-7"
                   />
-                  <button
+                  <Button
+                    variant="outline"
+                    size="icon"
                     onClick={addUser}
                     disabled={!userInput.trim()}
-                    className="h-7 w-7 rounded-md border border-border-light flex items-center justify-center text-text-muted hover:text-accent hover:border-accent disabled:opacity-30"
+                    className="h-7 w-7"
                   >
                     <Plus size={12} />
-                  </button>
+                  </Button>
                 </div>
               </div>
             </>
@@ -213,34 +228,33 @@ export function ChannelsPanel() {
       )}
 
       {telegramAvailable && (
-        <fieldset className="rounded-lg border-2 border-border p-4 flex flex-col gap-3">
-          <legend className="text-[12px] font-bold uppercase tracking-[0.05em] text-text-secondary px-1">
+        <fieldset className="rounded-lg border border-border p-4 flex flex-col gap-3">
+          <legend className="text-[12px] font-bold uppercase tracking-[0.05em] text-foreground/80 px-1">
             Telegram
           </legend>
 
           <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={telegramEnabled}
-              onChange={(e) => {
-                setTelegramEnabled(e.target.checked);
-                if (e.target.checked && !telegramChannel)
-                  setEditingBotToken(true);
+              onCheckedChange={(c) => {
+                setTelegramEnabled(c === true);
+                if (c === true && !telegramChannel) setEditingBotToken(true);
                 setDirty(true);
               }}
-              className="w-4 h-4 accent-[var(--color-accent)]"
             />
-            <span className="text-[13px] font-semibold text-text">Enabled</span>
+            <span className="text-[13px] font-semibold text-foreground">
+              Enabled
+            </span>
           </label>
 
           {telegramEnabled && (
             <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted">
+              <label className="text-[11px] font-bold uppercase tracking-[0.05em] text-muted-foreground">
                 Bot token
               </label>
               {editingBotToken ? (
                 <>
-                  <input
+                  <Input
                     type="password"
                     value={botToken}
                     onChange={(e) => {
@@ -248,25 +262,27 @@ export function ChannelsPanel() {
                       setDirty(true);
                     }}
                     placeholder="123456:ABC-..."
-                    className="h-8 rounded-md border border-border-light bg-bg px-3 text-[13px] text-text outline-none focus:border-accent"
+                    className="h-8"
                   />
-                  <span className="text-[11px] text-text-muted mt-1">
+                  <span className="text-[11px] text-muted-foreground mt-1">
                     Create a bot with @BotFather in Telegram and paste the token
                     here.
                   </span>
                 </>
               ) : (
                 <div className="flex items-center gap-2">
-                  <span className="flex-1 text-[13px] text-text-muted font-mono">
+                  <span className="flex-1 text-[13px] text-muted-foreground font-mono">
                     ••••••••
                   </span>
-                  <button
+                  <Button
                     type="button"
+                    variant="outline"
+                    size="sm"
                     onClick={() => setEditingBotToken(true)}
-                    className="h-7 px-2 rounded-md border border-border-light text-[11px] font-semibold text-text hover:border-accent hover:text-accent"
+                    className="h-7"
                   >
                     Change
-                  </button>
+                  </Button>
                 </div>
               )}
             </div>
@@ -274,13 +290,14 @@ export function ChannelsPanel() {
         </fieldset>
       )}
 
-      <button
+      <Button
         onClick={save}
         disabled={saving || !dirty}
-        className="btn-brutal h-8 rounded-lg border-2 border-accent-hover bg-accent px-4 text-[12px] font-bold text-white disabled:opacity-40 self-start shadow-brutal-accent"
+        size="sm"
+        className="self-start"
       >
         {saving ? "Saving..." : "Save"}
-      </button>
+      </Button>
     </div>
   );
 }

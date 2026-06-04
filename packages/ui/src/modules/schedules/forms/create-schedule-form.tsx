@@ -1,5 +1,10 @@
-import { Trash2 } from "lucide-react";
+import { TrashCan as Trash2 } from "@carbon/icons-react";
 import { useMemo, useState } from "react";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 
 import { FormError } from "../../../components/form-error.js";
 import type { Schedule } from "../../../types.js";
@@ -13,13 +18,6 @@ import {
   hasVisibleOccurrence,
   rruleToText,
 } from "../domain/rrule-builder.js";
-
-const INPUT_CLASS =
-  "w-full h-8 rounded-md border-2 border-border-light bg-surface px-3 text-[12px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)]";
-
-// Time inputs render HH:MM plus a picker glyph; ~7.5rem is enough for both.
-const TIME_INPUT_CLASS = INPUT_CLASS.replace("w-full", "w-[7.5rem]");
-const NUMBER_INPUT_CLASS = INPUT_CLASS.replace("w-full", "w-20");
 
 const DAYS_ISO: { iso: number; label: string }[] = [
   { iso: 1, label: "Mon" },
@@ -206,12 +204,12 @@ export function CreateScheduleForm({
 
   return (
     <form
-      className="flex flex-col gap-3 border-b border-border-light p-4 anim-in"
+      className="flex flex-col gap-3 border-b border-border p-4 anim-in"
       onSubmit={onSubmit}
     >
       <div>
-        <input
-          className={INPUT_CLASS}
+        <Input
+          className="h-8 text-[12px]"
           placeholder="Name"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -220,15 +218,15 @@ export function CreateScheduleForm({
       </div>
 
       <div className="flex flex-col gap-2">
-        <label className="text-[11px] font-semibold text-text-secondary">
+        <Label className="text-[11px] font-semibold text-foreground/80">
           Run
-        </label>
+        </Label>
         <div className="flex flex-wrap gap-1">
           {(["minutely", "hourly", "daily", "custom"] as const).map((k) => (
             <button
               key={k}
               type="button"
-              className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 capitalize ${kind === k ? "bg-accent text-white border-accent-hover" : "bg-surface text-text-muted border-border-light"}`}
+              className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 capitalize ${kind === k ? "bg-primary text-primary-foreground border-primary" : "bg-card text-muted-foreground border-border"}`}
               onClick={() => setKind(k)}
             >
               {k === "minutely"
@@ -241,12 +239,12 @@ export function CreateScheduleForm({
         </div>
 
         {(kind === "minutely" || kind === "hourly") && (
-          <div className="flex items-center gap-2 text-[12px] text-text">
+          <div className="flex items-center gap-2 text-[12px] text-foreground">
             <span>Every</span>
-            <input
+            <Input
               type="number"
               min={1}
-              className={NUMBER_INPUT_CLASS}
+              className="h-8 w-20 text-[12px]"
               value={intervalText}
               onChange={(e) => setIntervalText(e.target.value)}
               onBlur={() => setIntervalText(String(interval))}
@@ -256,11 +254,11 @@ export function CreateScheduleForm({
         )}
 
         {kind === "daily" && (
-          <div className="flex items-center gap-2 text-[12px] text-text">
+          <div className="flex items-center gap-2 text-[12px] text-foreground">
             <span>at</span>
-            <input
+            <Input
               type="time"
-              className={TIME_INPUT_CLASS}
+              className="h-8 w-[7.5rem] text-[12px]"
               value={`${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`}
               onChange={(e) => {
                 const [h, m] = e.target.value.split(":").map(Number);
@@ -273,13 +271,13 @@ export function CreateScheduleForm({
 
         {kind !== "custom" && (
           <div className="flex flex-col gap-1">
-            <span className="text-[11px] text-text-muted">on</span>
+            <span className="text-[11px] text-muted-foreground">on</span>
             <div className="flex flex-wrap gap-1">
               {DAYS_ISO.map((d) => (
                 <button
                   key={d.iso}
                   type="button"
-                  className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 ${days.includes(d.iso) ? "bg-accent text-white border-accent-hover" : "bg-surface text-text-muted border-border-light"}`}
+                  className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2 py-0.5 ${days.includes(d.iso) ? "bg-primary text-primary-foreground border-primary" : "bg-card text-muted-foreground border-border"}`}
                   onClick={() => toggleDay(d.iso)}
                 >
                   {d.label}
@@ -291,8 +289,8 @@ export function CreateScheduleForm({
         )}
 
         {kind === "custom" && (
-          <input
-            className={`${INPUT_CLASS} font-mono`}
+          <Input
+            className="h-8 text-[12px] font-mono"
             placeholder="FREQ=WEEKLY;BYDAY=MO,WE;BYHOUR=7;BYMINUTE=30"
             value={customRRule}
             onChange={(e) => setCustomRRule(e.target.value)}
@@ -303,17 +301,19 @@ export function CreateScheduleForm({
           <FormError message={rruleError} />
         ) : (
           rruleSummary && (
-            <p className="text-[11px] text-text-muted italic">{rruleSummary}</p>
+            <p className="text-[11px] text-muted-foreground italic">
+              {rruleSummary}
+            </p>
           )
         )}
       </div>
 
       <div>
-        <label className="text-[11px] font-semibold text-text-secondary">
+        <Label className="text-[11px] font-semibold text-foreground/80">
           Timezone
-        </label>
-        <input
-          className={INPUT_CLASS}
+        </Label>
+        <Input
+          className="h-8 text-[12px]"
           value={timezone}
           onChange={(e) => setTimezone(e.target.value)}
           placeholder="Europe/Prague"
@@ -323,40 +323,40 @@ export function CreateScheduleForm({
 
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
-          <label className="text-[11px] font-semibold text-text-secondary">
+          <Label className="text-[11px] font-semibold text-foreground/80">
             Quiet hours
-          </label>
+          </Label>
           <button
             type="button"
             onClick={addQuietHour}
-            className="text-[10px] font-bold uppercase tracking-[0.03em] border-2 border-border-light rounded-full px-2.5 py-0.5 text-text-muted hover:text-accent hover:border-accent"
+            className="text-[10px] font-bold uppercase tracking-[0.03em] border-2 border-border rounded-full px-2.5 py-0.5 text-muted-foreground hover:text-primary hover:border-primary"
           >
             + Add
           </button>
         </div>
-        <p className="text-[11px] text-text-muted italic -mt-1">
+        <p className="text-[11px] text-muted-foreground italic -mt-1">
           Runs inside the window are suppressed; start time is inside, end time
           is outside (e.g. 22:00→06:00 skips the 22:00 tick, fires at 06:00).
         </p>
         {quietHours.length === 0 && (
-          <p className="text-[11px] text-text-muted italic">
+          <p className="text-[11px] text-muted-foreground italic">
             None — schedule fires on every occurrence.
           </p>
         )}
         {quietHours.map((q, idx) => (
           <div key={idx} className="flex items-center gap-2">
-            <input
+            <Input
               type="time"
-              className={TIME_INPUT_CLASS}
+              className="h-8 w-[7.5rem] text-[12px]"
               value={q.startTime}
               onChange={(e) =>
                 updateQuietHour(idx, { startTime: e.target.value })
               }
             />
-            <span className="text-[12px] text-text-muted">→</span>
-            <input
+            <span className="text-[12px] text-muted-foreground">→</span>
+            <Input
               type="time"
-              className={TIME_INPUT_CLASS}
+              className="h-8 w-[7.5rem] text-[12px]"
               value={q.endTime}
               onChange={(e) =>
                 updateQuietHour(idx, { endTime: e.target.value })
@@ -365,17 +365,19 @@ export function CreateScheduleForm({
             <button
               type="button"
               onClick={() => updateQuietHour(idx, { enabled: !q.enabled })}
-              className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 ${q.enabled ? "bg-success-light text-success border-success" : "bg-bg text-text-muted border-border-light"}`}
+              className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 ${q.enabled ? "bg-success-light text-success border-success" : "bg-background text-muted-foreground border-border"}`}
             >
               {q.enabled ? "On" : "Off"}
             </button>
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 text-muted-foreground hover:text-destructive"
               onClick={() => removeQuietHour(idx)}
-              className="text-text-muted hover:text-danger transition-colors"
             >
               <Trash2 size={13} />
-            </button>
+            </Button>
           </div>
         ))}
         <FormError message={quietHoursError ?? undefined} />
@@ -383,8 +385,8 @@ export function CreateScheduleForm({
       </div>
 
       <div>
-        <textarea
-          className="w-full rounded-md border-2 border-border-light bg-surface px-3 py-2 text-[12px] text-text outline-none transition-all focus:border-accent resize-y min-h-[50px]"
+        <Textarea
+          className="text-[12px] resize-y min-h-[50px]"
           placeholder="Task prompt"
           rows={2}
           value={task}
@@ -394,14 +396,14 @@ export function CreateScheduleForm({
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="text-[11px] font-semibold text-text-secondary">
+        <span className="text-[11px] font-semibold text-foreground/80">
           Session:
         </span>
         {(["fresh", "continuous"] as const).map((mode) => (
           <button
             key={mode}
             type="button"
-            className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 capitalize ${sessionMode === mode ? "bg-accent text-white border-accent-hover" : "bg-surface text-text-muted border-border-light"}`}
+            className={`text-[10px] font-bold uppercase tracking-[0.03em] border-2 rounded-full px-2.5 py-0.5 capitalize ${sessionMode === mode ? "bg-primary text-primary-foreground border-primary" : "bg-card text-muted-foreground border-border"}`}
             onClick={() => setSessionMode(mode)}
           >
             {mode}
@@ -410,20 +412,23 @@ export function CreateScheduleForm({
       </div>
 
       <div className="flex justify-end gap-2">
-        <button
+        <Button
           type="button"
-          className="h-7 rounded-md border-2 border-border-light px-3 text-[11px] font-semibold text-text-muted hover:text-text transition-colors"
+          variant="outline"
+          size="sm"
+          className="h-7 text-[11px]"
           onClick={onCancel}
         >
           Cancel
-        </button>
-        <button
+        </Button>
+        <Button
           type="submit"
-          className="btn-brutal h-7 rounded-md border-2 border-accent-hover bg-accent px-3.5 text-[11px] font-bold text-white shadow-brutal-accent disabled:opacity-40"
+          size="sm"
+          className="h-7 text-[11px]"
           disabled={!isValid || mutation.isPending}
         >
           {mutation.isPending ? "..." : existing ? "Save" : "Create"}
-        </button>
+        </Button>
       </div>
     </form>
   );

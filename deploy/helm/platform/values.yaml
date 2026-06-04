@@ -5,13 +5,17 @@
 # ("agent-platform.ai/...") are permanent and unrelated to brand; this
 # section is the only knob users see.
 brand:
-  # Display name shown in the UI title bar, PWA manifest, OAuth dynamic
-  # client_name, and skill-publish git author.
-  name: Dam
+  # Display name shown in the PWA manifest, OAuth dynamic client_name,
+  # skill-publish git author, and the Keycloak realm display name (sign-in
+  # heading + tab title).
+  name: DAM
   # Lowercase identifier (DNS/URL-safe). Used for the Slack slash command
   # (`/<short> login`), GitHub publish branch prefix, and git-author email
   # local-part.
   short: dam
+  # Marketing tagline shown as the browser tab title in the web app (the
+  # `name` expansion). Empty string falls back to `name`.
+  tagline: "Deploy Agents Massively"
   # UI theme — applied at runtime as CSS custom properties so a brand
   # change requires no UI rebuild.
   theme:
@@ -29,6 +33,19 @@ brand:
   # bundled default. Use `helm install --set-file brand.icon=./my-logo.svg`
   # for the easiest override workflow.
   icon: ""
+
+# -- Terms of Use shown at the api-server acceptance gate. Both fields are
+# required; the chart refuses to install when either is unset. Bump
+# `terms.version` on every material change to re-prompt every user; the
+# server records `sha256(text)` on each Acceptance row as proof binding.
+# See ADR-047.
+terms:
+  # Markdown content rendered at /terms and on the login page. Supply via
+  # `helm install --set-file terms.text=./TERMS.md`.
+  text: ""
+  # Free-form re-prompt trigger (e.g. "2026-05-25", "v1"). Operator
+  # judgment — whitespace edits don't bump this.
+  version: ""
 
 # -- Base domain for the app. UI and API share this host; the ingress
 # splits `/api/*` to the api-server and everything else to the UI. Keycloak
@@ -55,9 +72,9 @@ scheme: http
 # `ingress.tls[].hosts` with the override hostnames — see the note on
 # `ingress.tls` below.
 urls:
-  ui: ""        # default: {scheme}://{domain}{:port}
-  api: ""       # back-compat fallback for urls.ui; same host
-  keycloak: ""  # default: {scheme}://keycloak.{domain}{:port}
+  ui: "" # default: {scheme}://{domain}{:port}
+  api: "" # back-compat fallback for urls.ui; same host
+  keycloak: "" # default: {scheme}://keycloak.{domain}{:port}
 
 # -- Pull secrets for all pods managed by this chart.
 # Agent pods (managed by the controller) also inherit these secrets.
@@ -134,7 +151,7 @@ postgres:
 # the source of truth for anything durable).
 redis:
   enabled: true
-  image: redis:8.6
+  image: registry.access.redhat.com/hi/valkey:9.0
   port: 6379
   storage: 1Gi
   storageClass: ""
@@ -149,9 +166,14 @@ redis:
 # -- Keycloak (OIDC identity provider)
 keycloak:
   enabled: true
-  image: quay.io/keycloak/keycloak:26.5.4
-  configCliImage: adorsys/keycloak-config-cli:latest-26.5.4
-  provisionImage: curlimages/curl:8.19.0
+  # The Keycloak image is a first-party build (ADR-054) that bakes the
+  # Keycloakify theme JAR on top of upstream Keycloak. The upstream
+  # version is pinned in `packages/keycloak-theme/Dockerfile`.
+  image:
+    repository: quay.io/dam-agents/keycloak
+    tag: "" # defaults to .Chart.AppVersion
+    pullPolicy: IfNotPresent
+  configCliImage: quay.io/adorsys/keycloak-config-cli:latest-26.5.4
   port: 8080
 
   # -- Admin credentials (for Keycloak admin console)
@@ -167,6 +189,14 @@ keycloak:
   # -- Realm role required to access the API. Users without this role get 403.
   # Leave empty to allow all authenticated users.
   requiredRole: ""
+  # -- Realm role granting read access to the inspector endpoints
+  # (`GET /api/usage`, `GET /api/usage/report`). The chart auto-creates this role
+  # plus an `inspectors` group mapped to it; grant access by adding users to
+  # the group via the Keycloak admin UI. For bulk assignment use `kcadm.sh`
+  # or the Keycloak admin REST API; for SSO-federated installs, map your
+  # upstream group to the `inspectors` group. Set to empty string to disable
+  # usage-data access entirely (the endpoint will not be mounted).
+  inspectorRole: "platform-inspector"
   # -- Confidential client for API server
   apiClientId: platform-api
   apiClientSecret: ""
@@ -181,6 +211,40 @@ keycloak:
   # through verbatim — wildcards (`/*`) are supported by Keycloak.
   extraRedirectUris: []
   extraWebOrigins: []
+
+  # -- Event logging. Login + admin events are emitted to stdout via the
+  # built-in `jboss-logging` event listener so they ride the cluster log
+  # pipeline to whatever external log service is collecting pod logs.
+  #
+  # Login events are NOT persisted to the Keycloak DB (eventsEnabled: false
+  # in the realm import) — pod logs are the source of truth. Admin-event
+  # metadata IS persisted (low volume), but request-body detail is NOT
+  # (adminEventsDetailsEnabled: false in the realm import): those bodies can
+  # carry plaintext credentials on user-create/update and Keycloak keeps
+  # them indefinitely (no built-in expiration), while the log pipeline is
+  # the audit source of truth regardless. Set `adminEventsEnabled: false`
+  # in the realm import to stop admin events firing on the listener too.
+  #
+  # The listener emits successes at `debug` and errors at `warn` by
+  # default. We raise success-level to `info` so successful logins appear
+  # under the default root log level without touching log categories.
+  # See https://www.keycloak.org/server/all-provider-config (search for
+  # `spi-events-listener-jboss-logging`).
+  events:
+    # -- Log level for successful auth / admin events.
+    successLevel: "info"
+    # -- Log level for error events (LOGIN_ERROR, etc.).
+    errorLevel: "warn"
+
+  # -- Keycloak logging output.
+  log:
+    # -- Console output format. Only `default` and `json` are valid;
+    # Keycloak rejects any other value at startup. `default` is
+    # human-readable plain text; `json` is structured one-record-per-line,
+    # friendlier for external log aggregators (Loki / ELK / Datadog).
+    # Local dev overrides this to `default` in `values-local.yaml` for
+    # readable `kubectl logs`.
+    consoleOutput: "json"
 
   # -- Test user bootstrapped via realm import.
   # DISABLED by default — production deployments must not ship a known credential.
@@ -275,6 +339,13 @@ apiServer:
     pullPolicy: IfNotPresent
   port: 4000
   harnessServerPort: 4001
+  # -- Minimum severity emitted by the structured logger
+  # (`error`|`warn`|`info`|`debug`). The security audit trail is logged at
+  # common levels (denials → warn, allowed/successful actions → info), so the
+  # default `info` keeps the full trail on; raise to `warn` to keep only
+  # denials/failures, or `error` to silence the trail. There is no separate
+  # audit on/off switch — visibility is governed here as usual.
+  logLevel: info
   # -- ext_authz gRPC listener for the Envoy sidecar's HITL gate
   # (ADR-035). Single endpoint: Envoy's HTTP filter (L7,
   # TLS-terminated chains) and network filter (L4, catch-all chain) both
@@ -287,6 +358,19 @@ apiServer:
   slackAppToken: ""
   # -- Enable the Telegram channel. Each agent can connect its own bot token via the UI.
   telegramEnabled: false
+  # -- Activity tracking saga: when enabled, the api-server captures user
+  # logins and channel turns into the `activity_events` table for the
+  # usage reporting endpoints. Disable to stop all writes (the read
+  # endpoints are independently gated by `keycloak.inspectorRole`).
+  activityTracking:
+    enabled: true
+    # -- HMAC key used to pseudonymize Keycloak `sub` values written to
+    # `activity_events`, `actor_roles`, and `instances.owner_sub` (GDPR
+    # Art. 32 risk reduction). Leave empty to have the chart generate and
+    # persist one in a Secret; rotating breaks every existing row, so it
+    # must remain stable. Provide your own (≥32 chars) for cross-cluster
+    # consistency or compliance audit trails.
+    hmacKey: ""
   # -- Default hold window (seconds) for HITL ext_authz approvals. The held
   # call resolves on user verdict or denies on timeout; the durable
   # pending_approvals row outlives the hold and is consumed by the agent's
@@ -428,16 +512,16 @@ controller:
   agent:
     base:
       # Cluster details (immutable per-agent)
-      imagePullSecrets: []           # must exist in agentNamespace
+      imagePullSecrets: [] # must exist in agentNamespace
       # storageClass must support ReadWriteMany so per-turn fork pods can
       # mount /home/agent concurrently with the long-lived pod. Empty =
       # cluster default. Set to "platform-rwx" for the bundled NFS provisioner.
       storageClass: ""
-      accessMode: ReadWriteMany      # ReadWriteOnce for single-node dev
+      accessMode: ReadWriteMany # ReadWriteOnce for single-node dev
 
       # Lifecycle
-      idleTimeout: "1h"              # hibernate idle agents; "0s" disables
-      terminationGracePeriod: 5      # gateway pods have a hardcoded drain
+      idleTimeout: "1h" # hibernate idle agents; "0s" disables
+      terminationGracePeriod: 5 # gateway pods have a hardcoded drain
 
       # Pod metadata + scheduling
       extraLabels: {}
@@ -447,7 +531,7 @@ controller:
       affinity: {}
       topologySpreadConstraints: []
       priorityClassName: ""
-      runtimeClassName: ""           # e.g. "kata" for sandboxed runtimes
+      runtimeClassName: "" # e.g. "kata" for sandboxed runtimes
 
       # Probes (each sub-field overrides the controller's built-in probe).
       # Gated by top-level `probes.enabled`.
@@ -489,13 +573,13 @@ controller:
 
       # -- Userspace init container that blocks the agent's main
       # container until the egress NetworkPolicy is verifiably enforced.
-      # Pure userspace TCP probe; no caps; works against any guest kernel.
+      # Runs a small shell+curl probe; no caps, works against any guest kernel.
       npGateInit:
         enabled: false
-        # busybox provides nc + sh in one image. K8s SIG distroless
-        # variants don't bundle nc. Digest pins the multi-arch manifest
-        # list — resolves to amd64/arm64/etc at pull time. Rotate manually.
-        image: docker.io/library/busybox:1.37@sha256:1487d0af5f52b4ba31c7e465126ee2123fe3f2305d638e7827681e7cf6c83d5e
+        # Hardened curl image for the probe. The probe is a `sh` loop, so it
+        # needs a shell — use the `-builder` variant (the distroless curl image
+        # has no shell). Any image works as long as it provides /bin/sh + curl.
+        image: registry.access.redhat.com/hi/curl:8.20-builder
         # Hard deadline before the init container fails the pod. OVN-K
         # typically converges in well under a second; 30s is generous
         # for cold node churn / controller restart scenarios.
@@ -543,7 +627,10 @@ controller:
 
   replicas: 1
   # -- Image for the Envoy credential-injector sidecar (ADR-033).
-  envoyImage: envoyproxy/envoy:distroless-v1.37.2
+  # Envoy publishes only to Docker Hub; pulled via mirror.gcr.io (Google's
+  # pull-through cache, higher anonymous rate limits) — byte-identical to
+  # envoyproxy/envoy:distroless-v1.37.2 (same manifest digest).
+  envoyImage: mirror.gcr.io/envoyproxy/envoy:distroless-v1.37.2
   # -- Port the Envoy sidecar listens on inside the agent pod (proxy on 127.0.0.1).
   envoyPort: 10000
   # -- TLS interception support for the credential injector. The chart
@@ -563,11 +650,11 @@ controller:
     caSecretNamespace: cert-manager
     caSecretName: platform-mitm-ca
     # -- CA validity. cert-manager will renew before expiry automatically.
-    caDuration: 87600h     # 10y
-    caRenewBefore: 720h    # 30d
+    caDuration: 87600h # 10y
+    caRenewBefore: 720h # 30d
     # -- Per-agent leaf cert validity.
-    leafDuration: 2160h    # 90d
-    leafRenewBefore: 360h  # 15d
+    leafDuration: 2160h # 90d
+    leafRenewBefore: 360h # 15d
   resources:
     requests:
       cpu: 100m
@@ -592,6 +679,24 @@ agentTemplates:
     skillPaths:
       - $HOME/.claude/skills/
 
+  - name: codex
+    enabled: true
+    description: "OpenAI Codex coding agent"
+    image:
+      repository: quay.io/dam-agents/codex
+      tag: ""
+    storageSize: "5Gi"
+
+  - name: pi-agent
+    enabled: true
+    description: "Pi coding agent with multi-LLM support"
+    image:
+      repository: quay.io/dam-agents/pi-agent
+      tag: ""
+    storageSize: "5Gi"
+    skillPaths:
+      - $HOME/.pi/agent/skills/
+
   - name: bob
     enabled: true
     description: "Bob shell agent"
@@ -611,6 +716,23 @@ agentTemplates:
       limits:
         cpu: "2"
         memory: "4Gi"
+
+  # Test-only mock agent (ADR-056). Scripted ACP emitter; receives prompts
+  # into an in-pod buffer and emits a pre-set sequence of session/update
+  # frames in response. Default off — flipped on by the e2e/local install.
+  - name: mock
+    enabled: false
+    description: "Scripted mock agent (E2E test fixture)"
+    image:
+      repository: quay.io/dam-agents/mock
+      tag: ""
+    storageSize: "1Gi"
+
+# -- E2E test affordances (ADR-056). Gated test-only surface: the api-server
+# registers a control tRPC namespace that drives the mock Agent harness over
+# the existing ACP relay. Default off — flipped on by the e2e/local install.
+e2e:
+  enabled: false
 
 # -- Platform-wide skill sources (shared catalog visible to all users).
 # Rendered into the api-server pod as SKILL_SOURCES_SEED. The same

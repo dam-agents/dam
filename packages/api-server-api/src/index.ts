@@ -55,6 +55,7 @@ export { agentSpecSchema } from "./modules/agents/schemas.js";
 export {
   scheduleSpecSchema,
   scheduleStatusSchema,
+  scheduleResetSessionInputSchema,
 } from "./modules/schedules/schemas.js";
 export type {
   Schedule,
@@ -104,7 +105,6 @@ export {
   secretCreateInputSchema,
   secretDeleteInputSchema,
   secretGetAgentAccessInputSchema,
-  secretListGrantedAgentsInputSchema,
   secretSetAgentAccessInputSchema,
   secretTestAnthropicInputSchema,
   secretUpdateGithubPatInputSchema,
@@ -113,11 +113,9 @@ export {
 export { ENV_NAME_RE } from "./modules/shared.js";
 export {
   DEFAULT_ENV_PLACEHOLDER,
-  DEFAULT_INJECTION_CONFIG,
   isValidEnvName,
   PROVIDERS,
   PROVIDER_PRESET_TYPES,
-  QUERY_PARAM_RE,
   isProviderPresetType,
   IBM_LITELLM_DEFAULT_MODEL_PINS,
   ibmLitellmEnvMappings,
@@ -135,33 +133,41 @@ export type {
   AppConnectionStatus,
   AppConnectionView,
   ConnectionsService,
+  Connection,
+  ConnectionStatus,
+  ConnectionView,
+  ConnectionTemplateView,
+  TemplateInput as ConnectionTemplateInput,
+  TemplateInputState as ConnectionTemplateInputState,
+  ConnectionCategory,
+  AgentConnections,
+  AuthConfig as ConnectionAuthConfig,
+  AuthKind as ConnectionAuthKind,
 } from "./modules/connections/types.js";
 export {
+  authConfig as connectionAuthConfigSchema,
+  authKind as connectionAuthKindSchema,
+  connection as connectionWireSchema,
+  connectionView as connectionViewSchema,
+  connectionTemplateView as connectionTemplateViewSchema,
+  connectionStatus as connectionStatusSchema,
+  connectionCategory as connectionCategorySchema,
+} from "./modules/connections/types.js";
+export {
+  connectionCreateInputSchema,
+  connectionDiscoverMcpInputSchema,
   connectionGetAgentConnectionsInputSchema,
+  connectionNameSchema,
   connectionSetAgentConnectionsInputSchema,
 } from "./modules/connections/schemas.js";
+export type { ConnectionCreateInput } from "./modules/connections/schemas.js";
 
 export {
   SessionType,
   SessionMode,
   sessionModeSchema,
 } from "./modules/sessions/types.js";
-export type {
-  SessionView,
-  SessionResolution,
-  TerminalStrategy,
-  SessionsService as SessionsApiService,
-} from "./modules/sessions/types.js";
-export {
-  sessionCreateInputSchema,
-  sessionDeleteInputSchema,
-  sessionListByScheduleIdInputSchema,
-  sessionListInputSchema,
-  sessionResetByScheduleIdInputSchema,
-  sessionResolveTerminalInputSchema,
-  sessionSetModeInputSchema,
-  terminalStrategySchema,
-} from "./modules/sessions/schemas.js";
+export type { SessionView } from "./modules/sessions/types.js";
 
 export {
   OP_INPUT,
@@ -225,6 +231,12 @@ export {
 } from "./modules/skills/schemas.js";
 
 export type {
+  FilesService,
+  UploadFileInput,
+  UploadFileResult,
+} from "./modules/files/router.js";
+
+export type {
   ApprovalType,
   ApprovalStatus,
   ApprovalVerdict,
@@ -268,27 +280,85 @@ export {
   egressRuleUpdateInputSchema,
   ruleVerdictSchema,
 } from "./modules/egress-rules/schemas.js";
+export {
+  formatEgressRuleInline,
+  formatEgressRuleSource,
+} from "./modules/egress-rules/format.js";
 
 // ACP platform/* synthetic notifications
 export {
   platformTurnEndedNotificationSchema,
   platformTurnEndedParamsSchema,
-  platformSessionModeChangedNotificationSchema,
-  platformSessionModeChangedParamsSchema,
   buildPlatformTurnEndedNotification,
-  buildPlatformSessionModeChangedNotification,
 } from "./modules/acp/types.js";
 export type {
   PlatformTurnEndedNotification,
   PlatformTurnEndedParams,
-  PlatformSessionModeChangedNotification,
-  PlatformSessionModeChangedParams,
 } from "./modules/acp/types.js";
 
 // Brand
 export { brandSchema } from "./modules/brand/types.js";
 export type { Brand } from "./modules/brand/types.js";
 
+// Terms
+export type {
+  TermsCurrent,
+  TermsDocument,
+  StaleAcceptance,
+  AcceptedAcceptance,
+  TermsService,
+} from "./modules/terms/types.js";
+export {
+  staleAcceptanceSchema,
+  termsAcceptInputSchema,
+  termsCurrentSchema,
+  termsDocumentSchema,
+  termsLatestAcceptanceSchema,
+} from "./modules/terms/schemas.js";
+
 // Auth config
 export { authConfigSchema } from "./modules/auth/types.js";
 export type { AuthConfig } from "./modules/auth/types.js";
+
+// E2E
+export type { E2eService } from "./modules/e2e/types.js";
+export {
+  e2eAgentIdInputSchema,
+  e2eSetScriptInputSchema,
+} from "./modules/e2e/schemas.js";
+
+export { secretRef } from "./modules/secret-store/types.js";
+export type { SecretRef } from "./modules/secret-store/types.js";
+
+export type { HarnessRouter } from "./harness-router.js";
+export type { HarnessContext } from "./harness-context.js";
+export { helloInput, helloResult } from "./modules/runtime/types.js";
+export type {
+  HelloInput,
+  HelloResult,
+  RuntimeDeliveryService,
+} from "./modules/runtime/types.js";
+export {
+  contribution,
+  contributionKind,
+  event as runtimeEvent,
+  eventKind as runtimeEventKind,
+  capabilities,
+  mergeMode as contributionMergeMode,
+  fileFormat,
+  applyStateInput,
+  applyStateResult,
+  stateSlice,
+} from "agent-runtime-api";
+export type {
+  Contribution,
+  ContributionKind,
+  Event as RuntimeEvent,
+  EventKind as RuntimeEventKind,
+  Capabilities,
+  MergeMode as ContributionMergeMode,
+  FileFormat,
+  ApplyStateInput,
+  ApplyStateResult,
+  StateSlice,
+} from "agent-runtime-api";

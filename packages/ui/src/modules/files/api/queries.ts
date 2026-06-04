@@ -1,14 +1,19 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { TRPCClientError } from "@trpc/client";
+import type { DirListResult } from "agent-runtime-api";
 
+import { api } from "../../../api.js";
 import { queryClient } from "../../../query-client.js";
+import { useStore } from "../../../store.js";
 import { createAgentTrpc } from "../../agents/agent-trpc.js";
+import { fileKeys } from "./keys.js";
 
-export const fileKeys = {
-  root: (agentId: string) => ["files", agentId] as const,
-  tree: (agentId: string) => [...fileKeys.root(agentId), "tree"] as const,
-  content: (agentId: string, path: string) =>
-    [...fileKeys.root(agentId), "content", path] as const,
-};
+const EMPTY_EXPANDED: ReadonlySet<string> = new Set();
 
 // Per-agent tRPC clients are cheap but creating a new one per refetch is
 // wasteful churn. Cache by agentId so each polled query reuses the same
@@ -23,25 +28,51 @@ function getAgentTrpc(agentId: string) {
   return client;
 }
 
-interface FileContent {
+export interface FileContent {
   path: string;
   content: string;
   binary?: boolean;
   mimeType?: string;
   mtimeMs?: number;
+  tooLarge?: boolean;
 }
 
-export function useFileTreeQuery(agentId: string | null) {
+interface ListDirsResponse {
+  results: DirListResult[];
+}
+
+function useExpandedDirs(agentId: string | null): ReadonlySet<string> {
+  return useStore((s) =>
+    agentId ? (s.expandedDirs[agentId] ?? EMPTY_EXPANDED) : EMPTY_EXPANDED,
+  );
+}
+
+/** Sorted, deduped paths to fetch. The sort makes the query key stable
+ *  across renders so React Query treats `{a, b}` and `{b, a}` as the same
+ *  entry instead of churning two cache rows. */
+function paramsForExpanded(expanded: ReadonlySet<string>): string[] {
+  return ["", ...expanded].sort();
+}
+
+/** Subscribe to one directory's slice of the batched poll. The sorted paths
+ *  set is part of the key (ADR-049), so an expand/collapse swaps to a new
+ *  entry and React Query refetches without any explicit invalidation. Returns null
+ *  until the slice is present; null is the right answer for "the user just
+ *  expanded this dir and the next poll hasn't arrived yet". */
+export function useDirSnapshot(agentId: string | null, path: string) {
+  const expanded = useExpandedDirs(agentId);
+  const paths = paramsForExpanded(expanded);
   return useQuery({
-    queryKey: fileKeys.tree(agentId ?? "_none"),
-    queryFn: async () => {
+    queryKey: fileKeys.treeForPaths(agentId ?? "_none", paths),
+    queryFn: async (): Promise<ListDirsResponse> => {
       const trpc = getAgentTrpc(agentId!);
-      const result = await trpc.files.tree.query();
-      return result.entries;
+      return trpc.files.listDirs.query({ paths });
     },
     enabled: !!agentId,
     refetchInterval: 2000,
     staleTime: 2000,
+    placeholderData: keepPreviousData,
+    select: (data) => data.results.find((r) => r.path === path) ?? null,
     meta: { errorToast: "Couldn't refresh file tree" },
   });
 }
@@ -52,22 +83,40 @@ export function useFileContentQuery(
 ) {
   return useQuery({
     queryKey: fileKeys.content(agentId ?? "_none", path ?? "_none"),
-    queryFn: async () => {
-      const trpc = getAgentTrpc(agentId!);
-      const result = await trpc.files.read.query({ path: path! });
-      return {
-        path: result.path,
-        content: result.content ?? "",
-        binary: result.binary,
-        mimeType: result.mimeType,
-        mtimeMs: result.mtimeMs,
-      } satisfies FileContent;
-    },
+    queryFn: async () => readFileContent(agentId!, path!),
     enabled: !!agentId && !!path,
     refetchInterval: 2000,
     staleTime: 2000,
+    // No retry — transient errors resolve on the next 2 s poll tick, and we
+    // don't want React Query to mask NOT_FOUND with a delayed close-on-error.
     retry: 0,
   });
+}
+
+async function readFileContent(
+  agentId: string,
+  path: string,
+): Promise<FileContent> {
+  const trpc = getAgentTrpc(agentId);
+  try {
+    const result = await trpc.files.read.query({ path });
+    return {
+      path: result.path,
+      content: result.content,
+      binary: result.binary,
+      mimeType: result.mimeType,
+      mtimeMs: result.mtimeMs,
+    };
+  } catch (e) {
+    // Convert the transport-layer "too large" error back into a typed
+    // placeholder so the viewer can render its "file too large" state.
+    // The query-cache close-on-error path is reserved for genuinely
+    // gone files (rename, delete, NOT_FOUND).
+    if (e instanceof TRPCClientError && e.data?.code === "PAYLOAD_TOO_LARGE") {
+      return { path, content: "", binary: true, tooLarge: true };
+    }
+    throw e;
+  }
 }
 
 /**
@@ -81,17 +130,7 @@ export async function fetchFileContent(
 ): Promise<FileContent> {
   return queryClient.fetchQuery({
     queryKey: fileKeys.content(agentId, path),
-    queryFn: async () => {
-      const trpc = getAgentTrpc(agentId);
-      const result = await trpc.files.read.query({ path });
-      return {
-        path: result.path,
-        content: result.content ?? "",
-        binary: result.binary,
-        mimeType: result.mimeType,
-        mtimeMs: result.mtimeMs,
-      };
-    },
+    queryFn: async () => readFileContent(agentId, path),
   });
 }
 
@@ -185,9 +224,9 @@ export function useFileDeleteMutation(agentId: string | null) {
   });
 }
 
-/** Mirrors the MAX_FILE_SIZE cap in agent-runtime/src/modules/files.ts.
- *  Exported so callers (tree-panel upload button, chat composer) can reject
- *  oversized files before sending and surface a consistent message. */
+// Client-side pre-flight cap so oversized uploads fail in the UI before
+// hitting the wire. Server-side enforcement lives in agent-runtime and
+// surfaces as PAYLOAD_TOO_LARGE — this value can drift up to but not past it.
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 const MESSAGE_UPLOAD_ROOT = ".uploads";
@@ -229,15 +268,12 @@ export async function uploadMessageAttachment(
 export function useFileUploadMutation(agentId: string | null) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: {
+    mutationFn: (input: {
       path: string;
       contentBase64: string;
       contentType?: string;
       overwrite?: boolean;
-    }) => {
-      const trpc = getAgentTrpc(agentId!);
-      return trpc.files.upload.mutate(input);
-    },
+    }) => api.files.upload.mutate({ agentId: agentId!, ...input }),
     onSuccess: (_data, vars) => {
       if (agentId) invalidateFiles(qc, agentId, vars.path);
     },

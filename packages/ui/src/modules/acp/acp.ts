@@ -5,13 +5,11 @@ import type {
   SessionNotification,
 } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
-import {
-  platformSessionModeChangedParamsSchema,
-  platformTurnEndedParamsSchema,
-} from "api-server-api";
+import { platformTurnEndedParamsSchema } from "api-server-api";
 
 import { getAccessToken } from "../../auth.js";
 import { type PermissionOutcome, useStore } from "../../store.js";
+import { withCloseRace } from "./close-race.js";
 import type { UpdateHandler } from "./types.js";
 
 const WS_CONNECT_TIMEOUT_MS = 120_000;
@@ -100,7 +98,7 @@ export async function openConnection(
   onUpdate: UpdateHandler,
 ): Promise<{ connection: ClientSideConnection; ws: WebSocket }> {
   const { stream, ws } = await wsStream(await wsUrl(agentId));
-  const connection = new ClientSideConnection(
+  const raw = new ClientSideConnection(
     () => ({
       async requestPermission(params: RequestPermissionRequest) {
         return awaitPermission(params);
@@ -129,24 +127,10 @@ export async function openConnection(
             return;
           }
           onUpdate({ sessionUpdate: "platform_turn_ended", ...parsed.data });
-        } else if (method === "platform/sessionModeChanged") {
-          const parsed =
-            platformSessionModeChangedParamsSchema.safeParse(params);
-          if (!parsed.success) {
-            console.warn(
-              "[acp] platform/sessionModeChanged schema mismatch:",
-              parsed.error.issues,
-            );
-            return;
-          }
-          onUpdate({
-            sessionUpdate: "platform_session_mode_changed",
-            ...parsed.data,
-          });
         }
       },
     }),
     stream,
   );
-  return { connection, ws };
+  return { connection: withCloseRace(raw), ws };
 }

@@ -1,0 +1,33 @@
+{
+  "name": "keycloak-theme",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "tsc --noEmit",
+    "build:jar": "keycloakify update-kc-gen && tsc --noEmit && vite build && keycloakify build",
+    "start-keycloak": "keycloakify start-keycloak -p ./",
+    "eject-page": "keycloakify eject-page",
+    "update-kc-gen": "keycloakify update-kc-gen"
+  },
+  "dependencies": {
+    "@ibm/plex": "^6.4.1",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "keycloakify": "^11.15.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwind-merge": "^3.3.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.2.2",
+    "@types/react": "^18.3.1",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "dev-config": "workspace:*",
+    "tailwindcss": "^4.2.2",
+    "typescript": "^5.6.3",
+    "vite": "^6.4.2"
+  }
+}

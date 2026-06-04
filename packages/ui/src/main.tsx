@@ -1,11 +1,15 @@
 import "./App.css";
+import "./modules/usage/devtools.js";
 
 import { QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
+import { TooltipProvider } from "@/components/ui/tooltip";
+
 import { initAuth } from "./auth.js";
 import { applyBrand, loadBrand } from "./brand.js";
+import { preflightTermsGate } from "./modules/terms/lib/preflight.js";
 import { queryClient } from "./query-client.js";
 
 async function main() {
@@ -15,11 +19,15 @@ async function main() {
   const [user] = await Promise.all([initAuth(), loadBrand().then(applyBrand)]);
   if (!user) return; // Redirecting to Keycloak, don't render
 
+  if (!(await preflightTermsGate())) return;
+
   const { default: App } = await import("./app.js");
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>
-        <App />
+        <TooltipProvider delayDuration={200}>
+          <App />
+        </TooltipProvider>
       </QueryClientProvider>
     </StrictMode>,
   );

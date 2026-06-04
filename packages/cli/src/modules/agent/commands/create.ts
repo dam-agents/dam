@@ -14,11 +14,11 @@ import { waitForRunning } from "../services/wait-for-state.js";
 import { formatTransportError, printServiceError } from "./errors.js";
 import { parseEnvFlag, validateAgentName } from "./create-helpers.js";
 import {
-  EXIT_AGENT_BELOW_FLOOR,
-  EXIT_AGENT_INVALID_INPUT,
-  EXIT_AGENT_RUNTIME_FAILURE,
-  EXIT_AGENT_SUCCESS,
-} from "./exit-codes.js";
+  EXIT_BELOW_FLOOR,
+  EXIT_INVALID_INPUT,
+  EXIT_RUNTIME_FAILURE,
+  EXIT_SUCCESS,
+} from "../../shared/exit-codes.js";
 
 const DEFAULT_TIMEOUT_SECONDS = 120;
 
@@ -106,14 +106,14 @@ async function runCreate(
     } else {
       process.stderr.write("error: agent name cannot be empty\n");
     }
-    process.exit(EXIT_AGENT_INVALID_INPUT);
+    process.exit(EXIT_INVALID_INPUT);
   }
 
   if (!opts.template) {
     process.stderr.write(
       "error: `--template` is required; run `dam template list` to see options\n",
     );
-    process.exit(EXIT_AGENT_INVALID_INPUT);
+    process.exit(EXIT_INVALID_INPUT);
   }
   const template = opts.template;
 
@@ -128,7 +128,7 @@ async function runCreate(
         `error: invalid env var name \`${envResult.error.key}\`; must match [A-Z_][A-Z0-9_]*\n`,
       );
     }
-    process.exit(EXIT_AGENT_INVALID_INPUT);
+    process.exit(EXIT_INVALID_INPUT);
   }
   const env = envResult.value.vars;
   for (const dup of envResult.value.duplicates) {
@@ -142,28 +142,28 @@ async function runCreate(
     process.stderr.write(
       `error: invalid \`--timeout\` value \`${opts.timeout}\`; expected positive integer\n`,
     );
-    process.exit(EXIT_AGENT_INVALID_INPUT);
+    process.exit(EXIT_INVALID_INPUT);
   }
 
   const host = await resolveActiveHost(deps, {
     flag: opts.server ? { server: opts.server } : undefined,
     exitCodes: {
-      runtimeFailure: EXIT_AGENT_RUNTIME_FAILURE,
-      belowFloor: EXIT_AGENT_BELOW_FLOOR,
+      runtimeFailure: EXIT_RUNTIME_FAILURE,
+      belowFloor: EXIT_BELOW_FLOOR,
     },
   });
 
   const tmplResult = await deps.createTemplateService(host).list();
   if (!tmplResult.ok) {
     printServiceError(tmplResult.error, host);
-    process.exit(EXIT_AGENT_RUNTIME_FAILURE);
+    process.exit(EXIT_RUNTIME_FAILURE);
   }
   const match = tmplResult.value.find((t) => t.id === template);
   if (!match) {
     process.stderr.write(
       `error: unknown template \`${template}\`; available: ${tmplResult.value.map((t) => t.id).join(", ") || "(none)"}\n`,
     );
-    process.exit(EXIT_AGENT_INVALID_INPUT);
+    process.exit(EXIT_INVALID_INPUT);
   }
 
   const trpc = deps.createTrpcClient(host);
@@ -175,7 +175,7 @@ async function runCreate(
       description: opts.description,
       env: env.length > 0 ? env : undefined,
     },
-    EXIT_AGENT_INVALID_INPUT,
+    EXIT_INVALID_INPUT,
   );
   let agent: AgentView;
   try {
@@ -185,17 +185,17 @@ async function runCreate(
       process.stderr.write(
         `error: template \`${template}\` was deleted while creating; retry\n`,
       );
-      process.exit(EXIT_AGENT_RUNTIME_FAILURE);
+      process.exit(EXIT_RUNTIME_FAILURE);
     }
     const classified = classifyTrpcError(e);
     if (!classified.ok && classified.error.kind === "auth-required") {
       process.stderr.write(
         `error: not authenticated: ${classified.error.reason}\nhint: run \`dam auth login\` first\n`,
       );
-      process.exit(EXIT_AGENT_RUNTIME_FAILURE);
+      process.exit(EXIT_RUNTIME_FAILURE);
     }
     process.stderr.write(`error: failed to create agent: ${errorReason(e)}\n`);
-    process.exit(EXIT_AGENT_RUNTIME_FAILURE);
+    process.exit(EXIT_RUNTIME_FAILURE);
   }
 
   let finalAgent = agent;
@@ -230,7 +230,7 @@ async function runCreate(
             `error: agent "${name}" (${waitResult.agent.id}) entered error state: ${reason}\n`,
           );
         }
-        process.exit(EXIT_AGENT_RUNTIME_FAILURE);
+        process.exit(EXIT_RUNTIME_FAILURE);
         return;
       case "timeout":
         if (opts.json) {
@@ -242,13 +242,13 @@ async function runCreate(
             `error: timed out waiting for "${name}" to reach running (current: ${waitResult.lastState})\n`,
           );
         }
-        process.exit(EXIT_AGENT_RUNTIME_FAILURE);
+        process.exit(EXIT_RUNTIME_FAILURE);
         return;
       case "transport":
         process.stderr.write(
           `error: ${formatTransportError(waitResult.reason, host)}\n`,
         );
-        process.exit(EXIT_AGENT_RUNTIME_FAILURE);
+        process.exit(EXIT_RUNTIME_FAILURE);
         return;
     }
   }
@@ -260,7 +260,7 @@ async function runCreate(
       `✓ Created agent "${finalAgent.name}" (${finalAgent.id}). State: ${finalAgent.state}.\n`,
     );
   }
-  process.exit(EXIT_AGENT_SUCCESS);
+  process.exit(EXIT_SUCCESS);
 }
 
 function errorReason(e: unknown): string {

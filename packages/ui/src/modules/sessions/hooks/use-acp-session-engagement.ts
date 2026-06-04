@@ -1,5 +1,4 @@
 import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
-import type { McpServer } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import { SessionMode, SessionType, type SessionView } from "api-server-api";
 import { useCallback, useRef } from "react";
 
@@ -30,7 +29,6 @@ import { acpSessionsKeys } from "../api/queries.js";
  */
 export function useAcpSessionEngagement(
   selectedAgent: string | null,
-  selectedMcpServers: McpServer[],
   captureSessionConfig: (response: SessionConfigPayload) => void,
   applySavedPreferences: (
     conn: ClientSideConnection,
@@ -57,15 +55,20 @@ export function useAcpSessionEngagement(
         const resp = await conn.unstable_resumeSession({
           sessionId: sid,
           cwd: ".",
-          mcpServers: selectedMcpServers,
+          mcpServers: [],
         });
         captureSessionConfig(resp);
         engagedSessionIdRef.current = sid;
         await applySavedPreferences(conn, sid, resp);
       } else {
+        // Stamp platform metadata (ADR-055) so the session records as a regular
+        // chat session rather than decoding as terminal-by-default.
         const s = await conn.newSession({
           cwd: ".",
-          mcpServers: selectedMcpServers,
+          mcpServers: [],
+          _meta: {
+            platform: { mode: SessionMode.Chat, type: SessionType.Regular },
+          },
         });
         captureSessionConfig(s);
         setSessionId(s.sessionId);
@@ -92,7 +95,6 @@ export function useAcpSessionEngagement(
     },
     [
       selectedAgent,
-      selectedMcpServers,
       captureSessionConfig,
       applySavedPreferences,
       setSessionId,

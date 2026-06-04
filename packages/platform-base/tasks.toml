@@ -1,0 +1,33 @@
+["platform-base:image"]
+description = "Build the platform-base image (shared base layer for every agent image)"
+dir = "{{config_root}}"
+run = '''
+#!/usr/bin/env bash
+[ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
+docker build -f packages/platform-base/Dockerfile -t platform-base .
+'''
+
+["platform-base:scan"]
+depends = ["platform-base:scan:*"]
+
+["platform-base:scan:trivy"]
+dir = "{{config_root}}"
+raw = true
+usage = '''
+flag "--json" help="Emit Trivy JSON (exit 0) instead of failing on findings"
+flag "--tag <tag>" help="Scan quay.io/dam-agents/platform-base:<tag> instead of building locally"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+if [ -n "${usage_tag:-}" ]; then
+  image="quay.io/dam-agents/platform-base:${usage_tag}"
+else
+  {{ mise_bin }} run platform-base:image
+  image="platform-base:latest"
+fi
+if [[ "${usage_json:-false}" == "true" ]]; then
+  exec trivy image --quiet --format json "$image"
+fi
+exec trivy image --quiet --exit-code 1 "$image"
+'''

@@ -8,9 +8,10 @@ import type {
   ApiContext,
   AuthConfig,
   Brand,
+  E2eService,
+  TermsService,
   UserIdentity,
 } from "api-server-api";
-import { buildPlatformSessionModeChangedNotification } from "api-server-api";
 import type { CoreV1Api } from "@kubernetes/client-node";
 import type { Db } from "db";
 import type { SkillSourceSeed } from "../../modules/skills/index.js";
@@ -24,11 +25,12 @@ import {
   createKeycloakUserDirectory,
 } from "../../modules/agents/index.js";
 import { composeTemplatesModule } from "../../modules/templates/index.js";
-import { composeSchedulesModule } from "../../modules/schedules/index.js";
-import { composeSessionsModule } from "../../modules/sessions/index.js";
-import { upsertSession } from "../../modules/sessions/infrastructure/sessions-repository.js";
-import { SessionMode, SessionType } from "api-server-api";
+import {
+  composeSchedulesForOwner,
+  type SchedulesBoot,
+} from "../../modules/schedules/index.js";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
+import { composeFilesModule } from "../../modules/files/files-service.js";
 import { createSlackOAuthRoutes } from "../../modules/channels/infrastructure/slack-oauth.js";
 import { createTelegramOAuthRoutes } from "../../modules/channels/infrastructure/telegram-oauth.js";
 import type { TelegramOAuthPending } from "../../modules/channels/infrastructure/telegram.js";
@@ -37,25 +39,30 @@ import {
   authorizeThread,
   revokeThread,
   listAuthorizedThreads,
+  getAuthorizedBy,
 } from "../../modules/channels/infrastructure/telegram-threads-repository.js";
 import { createAcpRelay } from "./acp-relay.js";
 import { createTerminalRelay } from "./terminal-relay.js";
-import { getSessionMode } from "../../modules/sessions/infrastructure/sessions-repository.js";
 import { createOAuthRoutes } from "./oauth.js";
 import { mountBrandIconRoutes } from "./brand-icon.js";
-import { createOAuthAppRegistry } from "../../modules/connections/infrastructure/oauth-apps.js";
 import type { Config } from "../../config.js";
-import { createAuth, ForbiddenError } from "./auth.js";
+import { createAuth, ForbiddenError, clientIp } from "./auth.js";
+import { securityLog } from "../../core/security-log.js";
+import { createTermsGate } from "./terms-gate.js";
+import type { IsAcceptedPort } from "../../modules/terms/compose.js";
 import { createK8sSecretsPort } from "./../../modules/secrets/infrastructure/k8s-secrets-port.js";
 import { createSecretsService } from "./../../modules/secrets/services/secrets-service.js";
-import { createK8sConnectionsPort } from "./../../modules/connections/infrastructure/k8s-connections-port.js";
-import { createConnectionsService } from "./../../modules/connections/services/connections-service.js";
+import {
+  composeConnectionsAtBoot,
+  composeConnectionsForOwner,
+} from "./../../modules/connections/compose.js";
 import { createAgentGrantsPort } from "./../../modules/agents/infrastructure/agent-grants-port.js";
+import type { SecretStoreRegistry } from "./../../modules/secret-store/index.js";
+import type { RuntimeMutator } from "./../../modules/runtime-delivery/index.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { ChannelSecretStore } from "./../../modules/channels/infrastructure/channel-secret-store.js";
 import type { IdentityLinkService } from "./../../modules/channels/services/identity-link-service.js";
 import type { SlackOAuthPending } from "../../modules/channels/infrastructure/slack.js";
-import type { PodFilesPublisher } from "../../modules/pod-files/publisher.js";
 import {
   composeApprovalsService,
   type ApprovalsRelayService,
@@ -73,6 +80,7 @@ import type {
   PresetSeeder,
 } from "../../modules/agents/compose.js";
 import type { RedisBus } from "../../core/redis-bus.js";
+import { emit, EventType, type TurnOutcome } from "../../events.js";
 
 export interface ApiServerAppDeps {
   config: Config;
@@ -83,7 +91,6 @@ export interface ApiServerAppDeps {
   identityLinkService: IdentityLinkService;
   pendingSlackOAuthFlows: Map<string, SlackOAuthPending>;
   pendingTelegramOAuthFlows: Map<string, TelegramOAuthPending>;
-  podFilesPublisher: PodFilesPublisher;
   seedSources: SkillSourceSeed[];
   redisBus: RedisBus;
   approvalsRelay: ApprovalsRelayService;
@@ -94,6 +101,15 @@ export interface ApiServerAppDeps {
    *  module's per-agent durable state; the orphan-sweeper saga is the
    *  belt-and-suspenders for anything missed here. */
   agentCleanupHooks: readonly AgentCleanupHook[];
+  secretStores: SecretStoreRegistry;
+  runtimeMutator: RuntimeMutator;
+  schedulesBoot: SchedulesBoot;
+  mountUsageRoutes: (
+    app: Hono<{ Variables: { user: UserIdentity; roles: string[] } }>,
+  ) => void;
+  terms: TermsService;
+  isTermsAccepted: IsAcceptedPort;
+  e2e: E2eService;
 }
 
 export function startApiServerApp(deps: ApiServerAppDeps) {
@@ -106,7 +122,6 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     identityLinkService,
     pendingSlackOAuthFlows,
     pendingTelegramOAuthFlows,
-    podFilesPublisher,
     seedSources,
     redisBus,
     approvalsRelay,
@@ -114,10 +129,49 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     presetSeeder,
     trustedHosts,
     agentCleanupHooks,
+    secretStores,
+    runtimeMutator,
+    schedulesBoot,
+    terms,
+    isTermsAccepted,
+    e2e,
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
   const agentsRepo = createAgentsRepository(k8sClient);
+
+  const connectionsBoot = composeConnectionsAtBoot({
+    db,
+    secretStore: secretStores.default(),
+    operatorCredentials: {
+      ...(config.defaultGithubClientId && config.defaultGithubClientSecret
+        ? {
+            github: {
+              clientId: config.defaultGithubClientId,
+              clientSecret: config.defaultGithubClientSecret,
+              ...(config.defaultGithubAppSlug
+                ? { appSlug: config.defaultGithubAppSlug }
+                : {}),
+            },
+          }
+        : {}),
+      githubEnterprise: {
+        ...(config.defaultGithubEnterpriseHost
+          ? { host: config.defaultGithubEnterpriseHost }
+          : {}),
+        ...(config.defaultGithubEnterpriseClientId
+          ? { clientId: config.defaultGithubEnterpriseClientId }
+          : {}),
+        ...(config.defaultGithubEnterpriseClientSecret
+          ? { clientSecret: config.defaultGithubEnterpriseClientSecret }
+          : {}),
+        ...(config.defaultGithubEnterpriseAppSlug
+          ? { appSlug: config.defaultGithubEnterpriseAppSlug }
+          : {}),
+      },
+    },
+  });
+  connectionsBoot.refreshLoop.start();
 
   const userDirectory = createKeycloakUserDirectory({
     keycloakUrl: config.keycloakUrl,
@@ -131,13 +185,18 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     jwksUrl: `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/certs`,
     audience: config.keycloakApiAudience,
     requiredRole: config.keycloakRequiredRole,
+    uiClientId: config.keycloakClientId,
+    cliClientId: config.keycloakCliClientId,
+    coreRole: config.keycloakInspectorRole,
   });
 
   const slackOauthCallbackUrl =
     config.slackOauthCallbackUrl ??
     `${config.uiBaseUrl}/api/slack/oauth/callback`;
 
-  const app = new Hono<{ Variables: { user: UserIdentity } }>();
+  const app = new Hono<{
+    Variables: { user: UserIdentity; roles: string[] };
+  }>();
 
   app.get("/api/health", (c) => c.json({ status: "ok" }));
   app.get("/api/version", (c) =>
@@ -153,6 +212,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       issuer: `${config.keycloakExternalUrl}/realms/${config.keycloakRealm}`,
       clientId: config.keycloakClientId,
       cliClientId: config.keycloakCliClientId,
+      inspectorRole: config.keycloakInspectorRole ?? "",
     } satisfies AuthConfig),
   );
   // Public — UI fetches this on bootstrap (before auth) to set the page
@@ -160,6 +220,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   // of brand truth; all UI components read from here, never from build-time
   // constants.
   app.get("/api/brand", (c) => c.json(config.brand satisfies Brand));
+  app.get("/api/terms", (c) => c.json(terms.document()));
   // Public — PWA manifest (replaces the build-time bundled one). Served
   // dynamically so the installed-PWA name follows brand without a UI rebuild.
   app.get("/api/brand/manifest.webmanifest", (c) => {
@@ -200,43 +261,21 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   mountBrandIconRoutes(app);
 
   app.use("/api/*", auth.middleware);
+  const termsGate = createTermsGate({ terms });
+  app.use("/api/*", termsGate.middleware);
 
-  const oauthApps = createOAuthAppRegistry({
-    github: {
-      ...(config.defaultGithubClientId
-        ? { clientId: config.defaultGithubClientId }
-        : {}),
-      ...(config.defaultGithubClientSecret
-        ? { clientSecret: config.defaultGithubClientSecret }
-        : {}),
-      ...(config.defaultGithubAppSlug
-        ? { appSlug: config.defaultGithubAppSlug }
-        : {}),
-    },
-    githubEnterprise: {
-      ...(config.defaultGithubEnterpriseHost
-        ? { host: config.defaultGithubEnterpriseHost }
-        : {}),
-      ...(config.defaultGithubEnterpriseClientId
-        ? { clientId: config.defaultGithubEnterpriseClientId }
-        : {}),
-      ...(config.defaultGithubEnterpriseClientSecret
-        ? { clientSecret: config.defaultGithubEnterpriseClientSecret }
-        : {}),
-      ...(config.defaultGithubEnterpriseAppSlug
-        ? { appSlug: config.defaultGithubEnterpriseAppSlug }
-        : {}),
-    },
-  });
   app.route(
     "/",
     createOAuthRoutes({
+      db,
+      secretStore: secretStores.default(),
+      engine: connectionsBoot.oauthEngine,
+      templates: connectionsBoot.templates,
       uiBaseUrl: config.uiBaseUrl,
-      k8sClient,
-      apps: oauthApps,
-      brandName: config.brand.name,
     }),
   );
+
+  deps.mountUsageRoutes(app);
 
   if (config.slackBotToken && config.slackAppToken) {
     app.route(
@@ -266,6 +305,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
           authorize: authorizeThread(db),
           list: listAuthorizedThreads(db),
           revoke: revokeThread(db),
+          getAuthorizedBy: getAuthorizedBy(db),
         },
         isAgentOwner: (agentId, sub) => agentsRepo.isOwnedBy(agentId, sub),
         oauthConfig: {
@@ -287,6 +327,18 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     const user = c.get("user");
     const agentId = c.req.param("id")!;
     if (!(await verifyOwner(agentId, user.sub))) {
+      // The 404 is otherwise indistinguishable from a genuinely missing
+      // agent — log the cross-tenant access attempt.
+      securityLog("warn", "authz.owner_mismatch", {
+        category: "authz",
+        actor: user.sub,
+        actorKind: "user",
+        agentId,
+        decision: "deny",
+        reason: "not-owner",
+        sourceIp: clientIp(c),
+        detail: { surface: "trpc-proxy" },
+      });
       return c.json({ error: "not found" }, 404);
     }
 
@@ -322,7 +374,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   // File import — bundle is a tar (or tar.gz) inside multipart/form-data;
   // we wake the pod via the reachability primitive and stream the body
   // straight to agent-runtime, which lands it under `<homeDir>/work`
-  // with top-level replace semantics. See docs/adrs/044-file-import.md.
+  // with top-level replace semantics. See docs/adrs/045-file-import.md.
   //
   // The proxy uses node:http directly (NOT undici fetch). undici buffers
   // arbitrary-sized request bodies in memory even with `duplex: "half"`,
@@ -351,11 +403,23 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     "upgrade",
     "expect",
   ]);
-  type ImportCtx = Context<{ Variables: { user: UserIdentity } }>;
+  type ImportCtx = Context<{
+    Variables: { user: UserIdentity; roles: string[] };
+  }>;
   async function proxyImport(c: ImportCtx) {
     const user = c.get("user");
     const agentId = c.req.param("id")!;
     if (!(await verifyOwner(agentId, user.sub))) {
+      securityLog("warn", "authz.owner_mismatch", {
+        category: "authz",
+        actor: user.sub,
+        actorKind: "user",
+        agentId,
+        decision: "deny",
+        reason: "not-owner",
+        sourceIp: clientIp(c),
+        detail: { surface: "import" },
+      });
       return c.json({ error: "not found" }, 404);
     }
     // Hard byte ceiling at the proxy boundary. Requires Content-Length so
@@ -373,7 +437,20 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     if (!Number.isFinite(length) || length < 0) {
       return c.json({ error: "invalid Content-Length" }, 400);
     }
+    let emitted = false;
+    const fireEmit = (outcome: TurnOutcome) => {
+      if (emitted) return;
+      emitted = true;
+      emit({
+        type: EventType.FilesImported,
+        actorSub: user.sub,
+        agentId,
+        outcome,
+        bytes: length,
+      });
+    };
     if (length > config.maxImportBundleBytes) {
+      fireEmit("failure");
       return c.json(
         {
           error: `bundle exceeds maximum size of ${config.maxImportBundleBytes} bytes`,
@@ -387,6 +464,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       process.stderr.write(
         `[import-proxy] ensureReady failed for ${agentId}: ${(err as Error).message}\n`,
       );
+      fireEmit("failure");
       return c.json({ error: "instance unreachable" }, 502);
     }
     const upstreamUrl = new URL(
@@ -432,6 +510,8 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
               Array.isArray(value) ? value.join(", ") : value,
             );
           }
+          const status = upstreamRes.statusCode ?? 502;
+          fireEmit(status >= 200 && status < 300 ? "success" : "failure");
           // toWeb gives a Web ReadableStream backed by the IncomingMessage —
           // Hono streams this back to the client without buffering.
           const body = Readable.toWeb(
@@ -439,19 +519,21 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
           ) as ReadableStream<Uint8Array>;
           resolveOnce(
             new Response(body, {
-              status: upstreamRes.statusCode ?? 502,
+              status,
               headers: responseHeaders,
             }),
           );
         },
       );
       upstreamReq.on("error", () => {
+        fireEmit("failure");
         resolveOnce(c.json({ error: "instance unreachable" }, 502));
       });
       upstreamReq.on("close", () => {
         // Backstop: if the upstream socket closed without ever emitting
         // either `response` or `error` (Node sometimes does this on
         // mid-request aborts), the Promise would otherwise hang.
+        fireEmit("failure");
         resolveOnce(c.json({ error: "instance closed connection" }, 502));
       });
 
@@ -482,6 +564,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         try {
           upstreamReq.destroy();
         } catch {}
+        fireEmit("failure");
         resolveOnce(
           c.json({ error: `bundle exceeds maximum size of ${cap} bytes` }, 413),
         );
@@ -515,24 +598,12 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       readTemplateSpec,
       presetSeeder,
       cleanupHooks: agentCleanupHooks,
+      runtimeMutator,
     });
-    const { schedules, isOwnedSchedule } = composeSchedulesModule(
-      api,
-      config.namespace,
-      user.sub,
-    );
-    const { sessions } = composeSessionsModule({
-      db,
-      namespace: config.namespace,
-      isOwnedAgent,
-      isOwnedSchedule,
-      closeTerminalSession: terminalRelay.closeSession,
-      notifyModeChange: (agentId, sessionId, mode) => {
-        const frame = JSON.stringify(
-          buildPlatformSessionModeChangedNotification({ sessionId, mode }),
-        );
-        redisBus.publish(injectChannelOf(agentId), frame).catch(() => {});
-      },
+    const { schedules } = composeSchedulesForOwner({
+      boot: schedulesBoot,
+      owner: user.sub,
+      agentExists: async (agentId) => (await agents.get(agentId)) !== null,
     });
     const skills = composeSkillsModule(
       api,
@@ -541,6 +612,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       db,
       seedSources,
       config.brand.name,
+      runtimeMutator,
     );
     const grants = createAgentGrantsPort(k8sClient, user.sub);
     const secrets = createSecretsService({
@@ -548,16 +620,18 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       grants,
       connectionRules: createConnectionRulesSyncAdapter(db),
       ownerSub: user.sub,
-      listOwnedAgentSummaries: async () =>
-        (await agents.list()).map((a) => ({ id: a.id, name: a.name })),
     });
-    const connections = createConnectionsService({
-      port: createK8sConnectionsPort(k8sClient, user.sub),
-      grants,
-      owner: user.sub,
-      podFiles: podFilesPublisher,
-      apps: oauthApps,
-      connectionRules: createConnectionRulesSyncAdapter(db),
+    const connections = composeConnectionsForOwner({
+      ownerId: user.sub,
+      db,
+      templates: connectionsBoot.templates,
+      oauthEngine: connectionsBoot.oauthEngine,
+      secretStore: secretStores.default(),
+      runtimeMutator,
+      agentsRepo,
+      connectionRulesSync: createConnectionRulesSyncAdapter(db),
+      oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
+      brandName: config.brand.name,
     });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agents.get(agentId)) !== null && ownerSub === user.sub;
@@ -578,6 +652,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       bus: redisBus,
       wrapperFrameSender,
     });
+    const files = composeFilesModule(api, config.namespace, user.sub);
 
     return fetchRequestHandler({
       endpoint: "/api/trpc",
@@ -587,19 +662,21 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
         templates,
         agents,
         schedules,
-        sessions,
         secrets,
         channels: { available: channelManager.availableChannels() },
         connections,
         skills,
         approvals,
         egressRules,
+        files,
+        terms,
+        e2e,
         user,
+        e2eEnabled: config.e2eEnabled,
       }),
     });
   });
 
-  const persistAcpSession = upsertSession(db);
   const acpRelay = createAcpRelay(
     config.namespace,
     agentsRepo,
@@ -610,18 +687,9 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
           .resolveIdentity(id)
           .then((r) => (r ? { ownerSub: r.owner, agentId: r.agentId } : null)),
     },
-    (sessionId, agentId) =>
-      persistAcpSession(
-        sessionId,
-        agentId,
-        SessionMode.Chat,
-        SessionType.Regular,
-      ),
   );
 
-  const terminalRelay = createTerminalRelay(config.namespace, agentsRepo, {
-    getSessionMode: getSessionMode(db),
-  });
+  const terminalRelay = createTerminalRelay(config.namespace, agentsRepo);
 
   const server = serve({ fetch: app.fetch, port: config.port }, () => {
     process.stderr.write(
@@ -664,8 +732,30 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       return;
     }
 
+    // `relayKind` and `agentId` identify the target credentialed pod; the
+    // token rides in the query string and must NEVER be logged (only the
+    // pathname, which carries no secret).
+    const relayKind = match[2]!; // "acp" | "terminal"
+    const agentId = decodeURIComponent(match[1]!);
+    const fwd = req.headers["x-forwarded-for"];
+    const sourceIp =
+      (typeof fwd === "string" ? fwd.split(",")[0]!.trim() : undefined) ??
+      req.socket.remoteAddress ??
+      undefined;
+
     const token = url.searchParams.get("token");
     if (!token) {
+      securityLog("warn", "ws.authn_deny", {
+        category: "authn",
+        actor: null,
+        actorKind: "external",
+        surface: "ws",
+        agentId,
+        decision: "deny",
+        reason: "missing-token",
+        sourceIp,
+        detail: { relay: relayKind },
+      });
       socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
       socket.destroy();
       return;
@@ -673,23 +763,79 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
 
     let user: UserIdentity;
     try {
-      user = await auth.verify(token);
+      user = (await auth.verify(token)).user;
     } catch (err) {
-      const status =
-        err instanceof ForbiddenError ? "403 Forbidden" : "401 Unauthorized";
-      socket.write(`HTTP/1.1 ${status}\r\n\r\n`);
+      const forbidden = err instanceof ForbiddenError;
+      securityLog("warn", forbidden ? "ws.authz_deny" : "ws.authn_deny", {
+        category: forbidden ? "authz" : "authn",
+        actor: forbidden ? err.sub : null,
+        actorKind: forbidden ? "user" : "external",
+        surface: "ws",
+        agentId,
+        decision: "deny",
+        reason: forbidden
+          ? "missing-required-role"
+          : err instanceof Error
+            ? err.name
+            : "verify-failed",
+        sourceIp,
+        detail: { relay: relayKind },
+      });
+      socket.write(
+        `HTTP/1.1 ${forbidden ? "403 Forbidden" : "401 Unauthorized"}\r\n\r\n`,
+      );
       socket.destroy();
       return;
     }
 
-    const agentId = decodeURIComponent(match[1]);
     if (!(await verifyOwner(agentId, user.sub))) {
+      securityLog("warn", "ws.owner_mismatch", {
+        category: "authz",
+        actor: user.sub,
+        actorKind: "user",
+        surface: "ws",
+        agentId,
+        decision: "deny",
+        reason: "not-owner",
+        sourceIp,
+        detail: { relay: relayKind },
+      });
       socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
       socket.destroy();
       return;
     }
 
-    const relay = match[2] === "acp" ? acpRelay : terminalRelay;
+    if (!(await isTermsAccepted(user.sub))) {
+      securityLog("warn", "ws.terms_block", {
+        category: "authz",
+        actor: user.sub,
+        actorKind: "user",
+        surface: "ws",
+        agentId,
+        decision: "deny",
+        reason: "terms-not-accepted",
+        sourceIp,
+        detail: { relay: relayKind },
+      });
+      socket.write("HTTP/1.1 412 Precondition Failed\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+
+    // Success: a human (or token-bearer) is attaching to a credentialed pod —
+    // an interactive shell (terminal) or prompt channel (acp). High-value
+    // forensic event in its own right.
+    securityLog("info", "relay.attach", {
+      category: "privileged",
+      actor: user.sub,
+      actorKind: "user",
+      surface: "ws",
+      agentId,
+      result: "success",
+      sourceIp,
+      detail: { relay: relayKind },
+    });
+    const relay = relayKind === "acp" ? acpRelay : terminalRelay;
     relay.handleUpgrade(req, socket, head, agentId);
   });
 

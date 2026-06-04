@@ -9,9 +9,16 @@ import {
   primaryKey,
   timestamp,
   boolean,
+  bigint,
 } from "drizzle-orm/pg-core";
 
-export const sessionModeEnum = pgEnum("session_mode", ["chat", "terminal"]);
+/** Outcome of a recorded activity. Constrained at the DB so a typo or a
+ *  forgotten field surfaces as a constraint violation, not as a row that
+ *  silently miscounts in the usage views. */
+export const activityOutcomeEnum = pgEnum("activity_outcome", [
+  "success",
+  "failure",
+]);
 
 export const channels = pgTable(
   "channels",
@@ -35,7 +42,6 @@ export const identityLinks = pgTable(
     provider: text("provider").notNull(),
     externalUserId: text("external_user_id").notNull(),
     keycloakSub: text("keycloak_sub").notNull(),
-    refreshToken: text("refresh_token"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -141,29 +147,8 @@ export const pendingApprovals = pgTable(
   ],
 );
 
-export const sessions = pgTable(
-  "sessions",
-  {
-    sessionId: text("session_id").primaryKey(),
-    agentId: text("agent_id").notNull(),
-    type: text("type").notNull().default("regular"),
-    mode: sessionModeEnum("mode").notNull(),
-    scheduleId: text("schedule_id"),
-    scheduleActive: boolean("schedule_active").default(true).notNull(),
-    threadTs: text("thread_ts"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [
-    uniqueIndex("sessions_agent_thread_idx")
-      .on(table.agentId, table.threadTs)
-      .where(sql`${table.threadTs} IS NOT NULL`),
-  ],
-);
+// Sessions are agent-owned (ADR-055): the agent's on-disk store is the source
+// of truth, surfaced over ACP `_meta`. The server keeps no session table.
 
 export const skillSources = pgTable(
   "skill_sources",
@@ -203,6 +188,91 @@ export const agentSkills = pgTable(
   ],
 );
 
+/** Append-only log of semantically-meaningful platform activity (auth, channel turns).
+ *  `actor_sub` is HMAC-SHA256(keycloak_sub, ACTIVITY_HMAC_KEY) — pseudonymized
+ *  (not anonymized) at the storage boundary; same key joins to actor_roles and
+ *  agents.owner_sub. See packages/api-server/src/core/sub-pseudonymizer.ts. */
+export const activityEvents = pgTable(
+  "activity_events",
+  {
+    id: text("id").primaryKey(),
+    type: text("type").notNull(),
+    actorSub: text("actor_sub"),
+    agentId: text("agent_id"),
+    surface: text("surface"),
+    outcome: activityOutcomeEnum("outcome").notNull(),
+    payload: jsonb("payload").notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("activity_events_type_occurred_idx").on(table.type, table.occurredAt),
+    index("activity_events_actor_occurred_idx")
+      .on(table.actorSub, table.occurredAt)
+      .where(sql`${table.actorSub} IS NOT NULL`),
+    index("activity_events_surface_occurred_idx").on(
+      table.surface,
+      table.occurredAt,
+    ),
+    uniqueIndex("activity_events_auth_dedup_idx")
+      .on(
+        table.actorSub,
+        table.surface,
+        sql`date_trunc('day', ${table.occurredAt} AT TIME ZONE 'UTC')`,
+      )
+      .where(sql`${table.type} = 'auth'`),
+  ],
+);
+
+/** Role flags keyed by pseudonymized Keycloak sub (see activity_events.actor_sub).
+ *  Populated by the persist-activity saga on every UserAuthenticated event.
+ *  Read by usage_core_actor_subs to feed core-team exclusion filters. */
+export const actorRoles = pgTable("actor_roles", {
+  actorSub: text("actor_sub").primaryKey(),
+  isCore: boolean("is_core").notNull().default(false),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+/** Postgres mirror of K8s agent ConfigMaps (ADR-046) — kept here so SQL views
+ *  and cross-table joins can resolve agent ownership without a CM round-trip.
+ *  Populated by the persist-agents saga (on AgentCreated/Deleted) plus a
+ *  startup bootstrap that backfills agents pre-dating the saga.
+ *  `owner_sub` is HMACed with the same key as activity_events.actor_sub. */
+export const agents = pgTable(
+  "agents",
+  {
+    id: text("id").primaryKey(),
+    ownerSub: text("owner_sub").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    runtimeProtocolVersion: text("runtime_protocol_version"),
+    runtimeCapabilities: jsonb("runtime_capabilities"),
+    runtimeLastHelloAt: timestamp("runtime_last_hello_at", {
+      withTimezone: true,
+    }),
+    runtimeAgentVersion: text("runtime_agent_version"),
+  },
+  (table) => [index("agents_owner_idx").on(table.ownerSub)],
+);
+
+export const termsAcceptances = pgTable(
+  "terms_acceptances",
+  {
+    sub: text("sub").notNull(),
+    version: text("version").notNull(),
+    hash: text("hash").notNull(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.sub, table.version] })],
+);
+
 export const agentSkillPublishes = pgTable(
   "agent_skill_publishes",
   {
@@ -218,4 +288,121 @@ export const agentSkillPublishes = pgTable(
       .notNull(),
   },
   (table) => [index("agent_skill_publishes_agent_idx").on(table.agentId)],
+);
+
+export const connections = pgTable(
+  "connections",
+  {
+    id: text("id").primaryKey(),
+    owner: text("owner").notNull(),
+    templateId: text("template_id").notNull(),
+    name: text("name").notNull(),
+    inputs: jsonb("inputs").notNull(),
+    auth: jsonb("auth").notNull(),
+    contributions: jsonb("contributions").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("connections_owner_idx").on(table.owner),
+    uniqueIndex("connections_owner_name_unique_idx").on(
+      table.owner,
+      table.name,
+    ),
+  ],
+);
+
+export const connectionGrants = pgTable(
+  "connection_grants",
+  {
+    connectionId: text("connection_id").notNull(),
+    agentId: text("agent_id").notNull(),
+    grantedAt: timestamp("granted_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.connectionId, table.agentId] }),
+    index("connection_grants_agent_idx").on(table.agentId),
+  ],
+);
+
+export const runtimeStateOutbox = pgTable(
+  "runtime_state_outbox",
+  {
+    agentId: text("agent_id").primaryKey(),
+    version: bigint("version", { mode: "number" }).notNull().default(0),
+    lastEnqueuedAt: timestamp("last_enqueued_at", {
+      withTimezone: true,
+    })
+      .defaultNow()
+      .notNull(),
+    lastAppliedVersion: bigint("last_applied_version", { mode: "number" })
+      .notNull()
+      .default(0),
+    lastAppliedHash: text("last_applied_hash"),
+    lastAppliedAt: timestamp("last_applied_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("runtime_state_outbox_stale_idx")
+      .on(table.lastEnqueuedAt)
+      .where(
+        sql`${table.lastAppliedAt} IS NULL OR ${table.lastEnqueuedAt} > ${table.lastAppliedAt}`,
+      ),
+  ],
+);
+
+export const runtimeEvents = pgTable(
+  "runtime_events",
+  {
+    id: text("id").primaryKey(),
+    agentId: text("agent_id").notNull(),
+    kind: text("kind").notNull(),
+    payload: jsonb("payload").notNull(),
+    version: bigint("version", { mode: "number" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("runtime_events_agent_pending_idx")
+      .on(table.agentId, table.version)
+      .where(sql`${table.dispatchedAt} IS NULL`),
+    index("runtime_events_expiry_idx")
+      .on(table.expiresAt)
+      .where(sql`${table.dispatchedAt} IS NULL`),
+  ],
+);
+
+export const schedules = pgTable(
+  "schedules",
+  {
+    id: text("id").primaryKey(),
+    agentId: text("agent_id").notNull(),
+    owner: text("owner").notNull(),
+    name: text("name").notNull(),
+    spec: jsonb("spec").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    nextRun: timestamp("next_run", { withTimezone: true }),
+    lastFiredAt: timestamp("last_fired_at", { withTimezone: true }),
+    lastFiredResult: text("last_fired_result"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("schedules_agent_owner_idx").on(table.agentId, table.owner),
+    index("schedules_enabled_idx")
+      .on(table.id)
+      .where(sql`${table.enabled} = true`),
+  ],
 );

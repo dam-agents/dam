@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight } from "@carbon/icons-react";
 import { useMemo, useState } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import rehypeHighlight from "rehype-highlight";

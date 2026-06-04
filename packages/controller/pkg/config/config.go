@@ -123,7 +123,7 @@ func LoadFromEnv() (*Config, error) {
 	if cfg.AgentTemplateDefaults.AgentHome == "" {
 		cfg.AgentTemplateDefaults.AgentHome = envOrDefault("AGENT_HOME", "/home/agent")
 	}
-	cfg.EnvoyImage = envOrDefault("ENVOY_IMAGE", "envoyproxy/envoy:distroless-v1.37.2")
+	cfg.EnvoyImage = envOrDefault("ENVOY_IMAGE", "mirror.gcr.io/envoyproxy/envoy:distroless-v1.37.2")
 	cfg.EnvoyPort = envOrDefaultInt("ENVOY_PORT", 10000)
 	cfg.EnvoyMitmCAIssuer = envOrDefault("ENVOY_MITM_CA_ISSUER", "platform-mitm-ca-issuer")
 	cfg.EnvoyMitmLeafDuration = envOrDefaultDuration("ENVOY_MITM_LEAF_DURATION", 0)

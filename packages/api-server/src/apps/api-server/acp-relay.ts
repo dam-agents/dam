@@ -58,11 +58,6 @@ function isResponse(msg: unknown): msg is JsonRpcResponse {
   return m.result !== undefined || m.error !== undefined;
 }
 
-function extractRequestSessionId(req: JsonRpcRequest): string | null {
-  const sid = req.params?.sessionId;
-  return typeof sid === "string" ? sid : null;
-}
-
 const lastActivityTimestamps = new Map<string, number>();
 
 function sanitizeCloseCode(code: number): number {
@@ -107,20 +102,11 @@ export interface AgentIdentityLookup {
   ): Promise<{ ownerSub: string; agentId: string } | null>;
 }
 
-/** Persists a session row on first creation. Idempotent on conflict — repeated
- *  calls for the same sid no-op. Injected by the composition root so the relay
- *  doesn't reach into the sessions module directly. */
-export type PersistSession = (
-  sessionId: string,
-  agentId: string,
-) => Promise<void>;
-
 export function createAcpRelay(
   namespace: string,
   repo: AgentsRepository,
   approvals: ApprovalsRelayService,
   identityLookup: AgentIdentityLookup,
-  persistSession: PersistSession,
 ) {
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
 
@@ -244,50 +230,8 @@ export function createAcpRelay(
 
             const parsed = tryParse(data);
 
-            // Persist on every session/prompt — upsertSession is idempotent on
-            // conflict, so subsequent prompts on the same sid are PG no-ops.
-            // Holding the frame until commit keeps DB row + agent state atomic
-            // and makes the persist robust across WS reconnects.
-            if (isRequest(parsed) && parsed.method === "session/prompt") {
-              const sid = extractRequestSessionId(parsed);
-              if (sid) {
-                const requestId = parsed.id;
-                persistSession(sid, agentId).then(
-                  () => {
-                    if (upstream.readyState === WebSocket.OPEN) {
-                      upstream.send(data, { binary: false });
-                    } else if (client.readyState === WebSocket.OPEN) {
-                      client.send(
-                        JSON.stringify({
-                          jsonrpc: "2.0",
-                          id: requestId,
-                          error: {
-                            code: -32000,
-                            message:
-                              "upstream closed before prompt could be forwarded",
-                          },
-                        }),
-                      );
-                    }
-                  },
-                  (e: unknown) => {
-                    if (client.readyState !== WebSocket.OPEN) return;
-                    client.send(
-                      JSON.stringify({
-                        jsonrpc: "2.0",
-                        id: requestId,
-                        error: {
-                          code: -32000,
-                          message: `failed to persist session`,
-                        },
-                      }),
-                    );
-                  },
-                );
-                return;
-              }
-            }
-
+            // Dumb proxy (ADR-007/055): the agent owns session existence; the
+            // server learns of sessions via session/list, not by writing here.
             upstream.send(data, { binary: false });
             if (isResponse(parsed)) mirrorPermissionResponse(parsed);
           });

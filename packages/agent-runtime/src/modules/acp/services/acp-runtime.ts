@@ -9,6 +9,12 @@ import {
 import type { AgentProcess } from "../infrastructure/agent-process.js";
 import type { ClientChannel } from "../infrastructure/client-channel.js";
 import { rewriteAuthError, rewriteCwd } from "../infrastructure/mappers.js";
+import {
+  platformSessionMetaSchema,
+  type PlatformSessionMeta,
+  type SessionMetaEntry,
+  type SessionMetadataStore,
+} from "../infrastructure/session-metadata-store.js";
 
 /** Maximum prompts queued per session before we reject with an error. */
 const PROMPT_QUEUE_CAP = 32;
@@ -68,6 +74,8 @@ export interface AcpRuntimeDeps {
   orphanTtlMs?: number;
   /** Override the log size cap — exposed for tests. */
   logBytesCap?: number;
+  /** Owns the `_meta.platform.*` round-trip (ADR-055); skipped when omitted. */
+  sessionMetadata?: SessionMetadataStore;
 }
 
 interface ActivePrompt {
@@ -106,6 +114,8 @@ interface OutboundMapping {
    * (session/load). Used to cache metadata on response and to fan out to
    * bootstrap waiters. */
   attachSessionId: string | null;
+  /** Captured on `session/new`, applied once the response carries the sessionId. */
+  platformMeta: PlatformSessionMeta | null;
 }
 
 interface PendingAgentRequest {
@@ -132,7 +142,23 @@ interface SessionLog {
   truncated: boolean;
   /** Cached `session/load` response metadata, captured from the first
    * (cold) bootstrap response. Used to synthesize responses to subsequent
-   * `session/load` requests without forwarding to the agent. */
+   * `session/load` requests without forwarding to the agent.
+   *
+   * Invariant: `metadata !== null` means "the agent has this session live
+   * and our log mirrors what it would replay." When `maybeCloseIdleSession`
+   * tears the session down inside the agent, it MUST reset `metadata` to
+   * null AND clear `entries`, so the next access goes through cold-bootstrap
+   * and rehydrates both sides from disk.
+   *
+   * `null` represents two states: (a) the session was never bootstrapped, or
+   * (b) the most recent cold `session/load` failed — the cache-population
+   * guard in `handleAgentLine` skips writes when the agent's response has
+   * `result === undefined` (i.e. an error frame), so an error leaves
+   * `metadata` null. The bootstrap completion handler relies on exactly
+   * this to detect cold-load failure (`loadFailed = log.metadata === null`)
+   * and relay the agent's error to parked waiters. A future discriminated
+   * union (`{ status: "loaded"; data: unknown } | null`) would let the
+   * type system encode this directly. */
   metadata: unknown | null;
 }
 
@@ -552,24 +578,40 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   }
 
   /**
-   * Close an SDK session when nothing is keeping it alive. Each open session
-   * pins a `claude` CLI subprocess (~300MB RSS) inside the agent pod; leaving
-   * them open after viewers leave accumulates until the pod OOMs.
+   * Tear a session down on both sides of the relay: send `session/close` to
+   * the agent (if it supports it) and drop the runtime's cache + per-channel
+   * cursors. The two halves MUST happen together — otherwise the cache lies
+   * to the UI about a session the agent has forgotten, and the next
+   * `session/prompt` comes back with "Session not found".
    *
-   * "Idle" means: no channel engaged with the session, no active or queued
-   * prompts, no agent→client requests still pending (permission prompts).
-   * The SDK respawns the subprocess on the next resume/load, so closing is
-   * safe — we just trade memory for a brief cold-start when a viewer returns.
+   * Fire-and-forget on the agent side: we don't register the outbound id, so
+   * the agent's response is silently dropped by `handleAgentLine`.
+   */
+  function tearDownSession(sessionId: string): void {
+    if (agent && !agentExited && sessionCloseSupported) {
+      agent.send({
+        jsonrpc: "2.0",
+        id: nextOutboundId++,
+        method: "session/close",
+        params: { sessionId },
+      });
+    }
+    sessionLogs.delete(sessionId);
+    for (const cursors of channelCursors.values()) cursors.delete(sessionId);
+  }
+
+  /**
+   * Refcount-driven reap: when no channel is engaged with the session and no
+   * work is in flight, tear it down to free the ~300MB CLI subprocess the
+   * SDK pins per session. The cold-bootstrap path rehydrates from disk on
+   * the next viewer's `session/resume`.
    *
-   * Fire-and-forget: we don't register the outbound id, so the agent's
-   * response is silently dropped by `handleAgentLine`.
+   * Skipped entirely when the agent doesn't advertise
+   * `sessionCapabilities.close`: we can't tell the agent to drop the session,
+   * so we also keep the cache so future resumes can still serve from memory.
    */
   function maybeCloseIdleSession(sessionId: string): void {
     if (!agent || agentExited) return;
-    // Skip if the agent didn't advertise `sessionCapabilities.close` in its
-    // initialize response. The session lives on inside the agent — keep the
-    // local log + cursors so a future session/resume can serve from cache
-    // without forcing a cold re-bootstrap the agent likely can't satisfy.
     if (!sessionCloseSupported) return;
     if (hasEngagedChannel(sessionId)) return;
     if (activePromptBySession.has(sessionId)) return;
@@ -582,13 +624,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (req.sessionId === sessionId) return;
     }
 
-    const id = nextOutboundId++;
-    agent.send({
-      jsonrpc: "2.0",
-      id,
-      method: "session/close",
-      params: { sessionId },
-    });
+    tearDownSession(sessionId);
     deps.log?.(`closing idle session ${sessionId}`);
   }
 
@@ -750,13 +786,21 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             mapping.method === "session/new" ||
             mapping.method === "session/fork" ||
             mapping.method === "session/load";
-          if (cacheable) {
+          const result = (frame as { result?: unknown }).result;
+          if (cacheable && result !== undefined) {
             const log = getOrCreateLog(sidForChannel);
             if (log.metadata === null) {
-              log.metadata = (frame as { result?: unknown }).result ?? {
-                sessionId: sidForChannel,
-              };
+              log.metadata = result;
             }
+          }
+          // Record every session/new: a missing entry marks a harness-minted
+          // session (TUI /clear), which decodes as terminal downstream.
+          if (
+            mapping.method === "session/new" &&
+            sidFromResult &&
+            deps.sessionMetadata
+          ) {
+            deps.sessionMetadata.set(sidFromResult, mapping.platformMeta ?? {});
           }
         }
 
@@ -773,8 +817,23 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           const boot = bootstrapBySession.get(sid);
           if (boot) {
             bootstrapBySession.delete(sid);
+            // Error responses leave metadata null (cache-population guard
+            // above requires `result !== undefined`); see SessionLog.metadata
+            // invariant for the full coupling.
+            const loadFailed = log.metadata === null;
             for (const waiter of boot.waiters) {
               if (!waiter.channel.isOpen()) continue;
+              if (loadFailed) {
+                // Relay the agent's error to the waiter under its own id
+                // — we have no cached metadata to synthesize a response,
+                // and a thrown error here would leave the waiter hanging.
+                const out = JSON.stringify({
+                  ...(frame as object),
+                  id: waiter.originalId,
+                });
+                waiter.channel.send(rewriteAuthError(out));
+                continue;
+              }
               if (waiter.kind === "load") {
                 serveLoadFromLog(waiter.channel, waiter.originalId, sid, log);
               } else {
@@ -787,8 +846,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         // Rewrite the response id back to what the originating client used.
         // Skip when the runtime initiated the call (no client to respond to).
         if (mapping.channel && mapping.originalId !== null) {
+          const responseFrame =
+            mapping.method === "session/list" && deps.sessionMetadata
+              ? injectPlatformMetaIntoList(frame, deps.sessionMetadata)
+              : (frame as object);
           const out = JSON.stringify({
-            ...(frame as object),
+            ...responseFrame,
             id: mapping.originalId,
           });
           if (mapping.channel.isOpen())
@@ -887,6 +950,19 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           : "";
       const paramsSid = extractParamsSessionId(frame);
 
+      // `platform/deleteSession` ExtRequest (ADR-055): soft delete — tombstone
+      // in the metadata store so `session/list` enrichment hides it even while
+      // the harness still lists the on-disk JSONL. Answered synthetically; the
+      // vanilla harness has no delete capability, so it never forwards.
+      if (method === "platform/deleteSession" && paramsSid) {
+        deps.sessionMetadata?.tombstone(paramsSid);
+        sendToChannel(
+          channel,
+          JSON.stringify({ jsonrpc: "2.0", id: frame.id, result: {} }),
+        );
+        return;
+      }
+
       // `session/resume` short-circuit: the runtime mediates resume entirely.
       // Many harnesses (pi-acp) don't implement `unstable_resumeSession` at
       // all, and even harnesses that do can't resume against a freshly-
@@ -902,6 +978,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       //             but reach no client. On completion, all resume waiters
       //             are served via `serveResumeFromLog`.
       if (method === "session/resume" && paramsSid) {
+        // setMode (ADR-055): a resume may carry `_meta.platform` (e.g. a new
+        // mode) — merge it into the stored entry, preserving fields it omits.
+        const incomingMeta = extractPlatformMeta(frame);
+        if (incomingMeta && deps.sessionMetadata) {
+          const current = deps.sessionMetadata.get(paramsSid)?.meta ?? {};
+          deps.sessionMetadata.set(paramsSid, { ...current, ...incomingMeta });
+        }
         // Engage immediately so the channel receives pending agent requests
         // for the session and has its cursor advanced silently during a
         // cold-bootstrap window. `serveResumeFromLog` will call `engage`
@@ -931,6 +1014,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           method: "session/load",
           promptSessionId: null,
           attachSessionId: paramsSid,
+          platformMeta: null,
         });
         const loadFrame = {
           jsonrpc: "2.0",
@@ -973,8 +1057,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       // we stash it from params to recover it when the response comes back.
       const attachSessionId = method === "session/load" ? paramsSid : null;
 
+      const platformMeta =
+        method === "session/new" ? extractPlatformMeta(frame) : null;
+      const forwardFrame =
+        platformMeta !== null ? stripPlatformMeta(frame) : frame;
+
       const rewritten = rewriteCwd(
-        { ...frame, id: outboundId },
+        { ...forwardFrame, id: outboundId },
         deps.workingDir,
       );
       outboundIdToClient.set(outboundId, {
@@ -983,6 +1072,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         method,
         promptSessionId,
         attachSessionId,
+        platformMeta,
       });
 
       // Mark a cold bootstrap in flight so concurrent loads of the same sid
@@ -1071,17 +1161,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     },
 
     resetSession(sessionId) {
-      if (agent && !agentExited && sessionCloseSupported) {
-        agent.send({
-          jsonrpc: "2.0",
-          id: nextOutboundId++,
-          method: "session/close",
-          params: { sessionId },
-        });
-      }
-      // Always clear client-side state even if the agent didn't accept the close.
-      sessionLogs.delete(sessionId);
-      for (const cursors of channelCursors.values()) cursors.delete(sessionId);
+      tearDownSession(sessionId);
       deps.log?.(`reset session ${sessionId}`);
     },
 
@@ -1101,6 +1181,75 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
 function isNonNullObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
+}
+
+function extractPlatformMeta(frame: unknown): PlatformSessionMeta | null {
+  if (!isNonNullObject(frame)) return null;
+  const params = frame.params;
+  if (!isNonNullObject(params)) return null;
+  const meta = params._meta;
+  if (!isNonNullObject(meta) || !("platform" in meta)) return null;
+  const parsed = platformSessionMetaSchema.safeParse(meta.platform);
+  return parsed.success ? parsed.data : null;
+}
+
+function stripPlatformMeta(frame: unknown): object {
+  if (!isNonNullObject(frame)) return frame as object;
+  const params = frame.params;
+  if (!isNonNullObject(params)) return frame as object;
+  const meta = params._meta;
+  if (!isNonNullObject(meta)) return frame as object;
+  const { platform: _platform, ...restMeta } = meta;
+  const nextParams: Record<string, unknown> = { ...params };
+  if (Object.keys(restMeta).length > 0) nextParams._meta = restMeta;
+  else delete nextParams._meta;
+  return { ...frame, params: nextParams };
+}
+
+// createdAt rides inside _meta.platform so it round-trips to the server.
+function withPlatformMeta(
+  session: Record<string, unknown>,
+  entry: SessionMetaEntry,
+): Record<string, unknown> {
+  const existingMeta = isNonNullObject(session._meta) ? session._meta : {};
+  return {
+    ...session,
+    _meta: {
+      ...existingMeta,
+      platform: { ...entry.meta, createdAt: entry.createdAt },
+    },
+  };
+}
+
+/** Enrich the harness's session list with `_meta.platform` from the store. The
+ * harness list is the ground truth for session existence — entries that live
+ * only in the store (e.g. a session created via `session/new` but never
+ * prompted, so never written to disk, or the UI's config-probe) are NOT
+ * invented into the list. A listed session with no store entry passes through
+ * unenriched (terminal default); tombstoned sessions are dropped. */
+function injectPlatformMetaIntoList(
+  frame: unknown,
+  store: SessionMetadataStore,
+): object {
+  if (!isNonNullObject(frame)) return frame as object;
+  const result = frame.result;
+  if (!isNonNullObject(result)) return frame as object;
+  const listed = Array.isArray(result.sessions) ? result.sessions : [];
+  const enriched = listed
+    .filter(
+      (s) =>
+        !(
+          isNonNullObject(s) &&
+          typeof s.sessionId === "string" &&
+          store.isTombstoned(s.sessionId)
+        ),
+    )
+    .map((s) => {
+      if (!isNonNullObject(s) || typeof s.sessionId !== "string") return s;
+      const entry = store.get(s.sessionId);
+      return entry ? withPlatformMeta(s, entry) : s;
+    });
+  return { ...frame, result: { ...result, sessions: enriched } };
 }
 
 function extractSessionCloseSupported(frame: unknown): boolean {

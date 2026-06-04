@@ -1,5 +1,4 @@
 import { z } from "zod";
-import type { terminalStrategySchema } from "./schemas.js";
 
 export const SessionType = {
   Regular: "regular",
@@ -17,6 +16,12 @@ export enum SessionMode {
 
 export const sessionModeSchema = z.enum(SessionMode);
 
+/**
+ * Sessions are agent-owned (ADR-055): the UI and channel workers read, create,
+ * and mutate them directly over ACP, decoding this view from `_meta.platform`.
+ * The server has no session service — the one schedule-scoped mutation (reset)
+ * lives on the schedules service.
+ */
 export interface SessionView {
   sessionId: string;
   agentId: string;
@@ -26,34 +31,4 @@ export interface SessionView {
   scheduleId?: string | null;
   title?: string | null;
   updatedAt?: string | null;
-}
-
-export type TerminalStrategy = z.infer<typeof terminalStrategySchema>;
-
-export type SessionResolution =
-  | { kind: "ready"; sessionId: string; terminalPath: string }
-  | { kind: "confirm-mode-switch"; sessionId: string; currentMode: SessionMode }
-  | { kind: "no-terminal-session" }
-  | { kind: "multiple-terminal-sessions"; sessionIds: string[] }
-  | { kind: "session-not-found"; sessionId: string };
-
-export interface SessionsService {
-  list(agentId: string, includeChannel?: boolean): Promise<SessionView[]>;
-  create(
-    sessionId: string,
-    agentId: string,
-    mode: SessionMode,
-    type?: SessionType,
-    scheduleId?: string,
-  ): Promise<void>;
-  setMode(sessionId: string, agentId: string, mode: SessionMode): Promise<void>;
-  delete(sessionId: string, agentId: string): Promise<void>;
-  listByScheduleId(scheduleId: string): Promise<SessionView[]>;
-  findByScheduleId(scheduleId: string): Promise<SessionView | null>;
-  resetByScheduleId(scheduleId: string): Promise<void>;
-  resolveTerminal(
-    agentId: string,
-    strategy: TerminalStrategy,
-    opts?: { reset?: boolean; force?: boolean },
-  ): Promise<SessionResolution>;
 }

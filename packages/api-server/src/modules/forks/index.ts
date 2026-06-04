@@ -1,6 +1,6 @@
 export { composeForksModule } from "./compose.js";
 export { startOnForeignReplySaga } from "./sagas/on-foreign-reply.js";
-export { startOnSlackTurnRelayedSaga } from "./sagas/on-slack-turn-relayed.js";
+export { startOnChannelTurnRelayedSaga } from "./sagas/on-channel-turn-relayed.js";
 export {
   isForkReady,
   isForkFailed,

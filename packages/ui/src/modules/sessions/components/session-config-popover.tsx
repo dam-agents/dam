@@ -239,7 +239,7 @@ export function SessionConfigBar({
         createPortal(
           <div
             ref={popoverRef}
-            className="fixed w-[300px] max-h-[400px] overflow-y-auto rounded-xl border-2 border-border bg-surface z-[9999] anim-scale-in shadow-brutal"
+            className="fixed w-[300px] max-h-[400px] overflow-y-auto rounded-xl border border-border bg-surface z-[9999] anim-scale-in shadow-lg"
             style={{
               left: pos.left,
               bottom: pos.bottom,

@@ -12,23 +12,43 @@
     "docker:platform-base:build": "docker build -f packages/platform-base/Dockerfile -t platform-base .",
     "docker:platform-base:start": "docker rm -f platform-base 2>/dev/null; docker run --name platform-base -p 8080:8080 platform-base",
     "docker:claude-code:build": "pnpm docker:platform-base:build && docker build -t platform-claude-code packages/agents/claude-code",
-    "docker:claude-code:start": "docker rm -f platform-claude-code 2>/dev/null; docker run --name platform-claude-code -p 3000:3000 platform-claude-code",
-    "docker:google-workspace:build": "pnpm docker:platform-base:build && docker build -t platform-google-workspace-agent packages/agents/google-workspace",
-    "docker:google-workspace:start": "docker rm -f platform-google-workspace-agent 2>/dev/null; docker run --name platform-google-workspace-agent -p 3001:8080 platform-google-workspace-agent"
+    "docker:claude-code:start": "docker rm -f platform-claude-code 2>/dev/null; docker run --name platform-claude-code -p 3000:3000 platform-claude-code"
   },
   "pnpm": {
+    "packageExtensions": {
+      "@hookform/resolvers": {
+        "peerDependencies": {
+          "zod": "*"
+        },
+        "peerDependenciesMeta": {
+          "zod": {
+            "optional": true
+          }
+        }
+      }
+    },
     "overrides": {
       "@anthropic-ai/sdk@<0.91.1": "0.91.1",
       "brace-expansion@5.0.5": "5.0.6",
       "esbuild@<0.25.0": "0.25.12",
       "protobufjs@<7.5.8": "7.5.8",
+      "qs@<6.15.2": "6.15.2",
       "serialize-javascript@<7.0.5": "7.0.5",
       "ws@8.20.0": "8.20.1"
-    }
+    },
+    "onlyBuiltDependencies": [
+      "@google/genai",
+      "esbuild",
+      "grpc-tools",
+      "koffi",
+      "msgpackr-extract",
+      "protobufjs",
+      "sharp"
+    ]
   },
   "devDependencies": {
     "eslint": "^10.2.0",
-    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-hooks": "^7.1.0",
     "eslint-plugin-simple-import-sort": "^13.0.0",
     "eslint-plugin-unicorn": "^64.0.0",
     "prettier": "^3.8.3",

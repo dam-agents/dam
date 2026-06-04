@@ -14,12 +14,12 @@ export function ScheduleSessionRow({ session, onResume }: Props) {
   return (
     <div
       onClick={() => onResume?.(session.sessionId)}
-      className="flex items-center gap-2 px-4 py-2.5 pl-9 cursor-pointer hover:bg-accent-light transition-colors border-b border-border-light last:border-b-0"
+      className="flex items-center gap-2 px-4 py-2.5 pl-9 cursor-pointer hover:bg-muted transition-colors border-b border-border last:border-b-0"
     >
-      <span className="text-[12px] text-text font-medium truncate flex-1">
+      <span className="text-[12px] text-foreground font-medium truncate flex-1">
         {displayName}
       </span>
-      <span className="text-[10px] text-text-muted shrink-0">
+      <span className="text-[10px] text-muted-foreground shrink-0">
         created at: {createdAt}
       </span>
     </div>

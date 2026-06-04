@@ -3,9 +3,9 @@ import { Command } from "commander";
 import type { CompatService, ConfigService } from "../cli/index.js";
 import type { TokenProvider } from "../auth/index.js";
 import type { AgentService } from "../agent/index.js";
-import type { TrpcClient } from "../shared/trpc/trpc-client.js";
 import { buildChatCommand } from "./commands/chat.js";
 import { buildSessionListCommand } from "./commands/session-list.js";
+import { createAcpSessionClient } from "./infrastructure/acp-session-client.js";
 import { createChatService } from "./services/chat-service.js";
 import { createSessionsPort } from "./services/sessions-service.js";
 
@@ -13,17 +13,17 @@ export function composeChatModule({
   compatService,
   configService,
   tokenProvider,
-  buildTrpc,
   createAgentService,
 }: {
   compatService: CompatService;
   configService: ConfigService;
   tokenProvider: TokenProvider;
-  buildTrpc: (host: string) => TrpcClient;
   createAgentService: (host: string) => AgentService;
 }): { commands: ReadonlyArray<Command> } {
-  const buildSessionsPort = (host: string) =>
-    createSessionsPort({ trpc: buildTrpc(host) });
+  // Sessions are agent-owned (ADR-055): the port talks ACP to the agent over
+  // the api-server relay, not tRPC.
+  const buildSessionsPort = (host: string, token: string) =>
+    createSessionsPort({ acp: createAcpSessionClient({ host, token }) });
 
   const chatService = createChatService({
     compatService,

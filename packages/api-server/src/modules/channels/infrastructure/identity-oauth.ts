@@ -16,7 +16,6 @@ export interface PkcePair {
 
 export interface TokenExchangeResult {
   keycloakSub: string;
-  refreshToken: string | null;
 }
 
 export function generatePkce(): PkcePair {
@@ -72,8 +71,6 @@ export async function exchangeCodeForTokens(
 
   const tokenData = (await res.json()) as {
     access_token: string;
-    refresh_token?: string;
-    id_token?: string;
   };
 
   const payload = JSON.parse(
@@ -82,6 +79,5 @@ export async function exchangeCodeForTokens(
 
   return {
     keycloakSub: payload.sub,
-    refreshToken: tokenData.refresh_token ?? null,
   };
 }

@@ -16,6 +16,7 @@ import { type Brand, brandSchema } from "api-server-api";
 const FALLBACK: Brand = {
   name: "Platform",
   short: "platform",
+  tagline: "",
   theme: {
     light: {
       accent: "#1D6BE1",
@@ -72,7 +73,7 @@ function setSafe(el: HTMLElement, prop: string, value: string): void {
 }
 
 export function applyBrand(brand: Brand): void {
-  document.title = brand.name;
+  document.title = brand.tagline || brand.name;
 
   const themeMeta = document.querySelector<HTMLMetaElement>(
     'meta[name="theme-color"]',

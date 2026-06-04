@@ -1,4 +1,7 @@
-import { Plus, X } from "lucide-react";
+import { Add as Plus, Close as X } from "@carbon/icons-react";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 import { isValidEnvName } from "../types.js";
 
@@ -22,9 +25,6 @@ interface KeyValueEditorProps {
   /** Label on the add-row button. Default: "Add env var". */
   addLabel?: string;
 }
-
-const INPUT_CLASS =
-  "w-full h-9 rounded-lg border-2 border-border-light bg-bg px-3 text-[13px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted font-mono";
 
 /**
  * Repeater editor for an ordered list of key/value pairs. Keys must match
@@ -50,15 +50,15 @@ export function KeyValueEditor({
   return (
     <div className="flex flex-col gap-2">
       {value.length === 0 && emptyMessage && (
-        <p className="text-[12px] text-text-muted">{emptyMessage}</p>
+        <p className="text-[12px] text-muted-foreground">{emptyMessage}</p>
       )}
       {value.map((row, i) => {
         const invalid = row.key.length > 0 && !isValidEnvName(row.key);
         return (
           <div key={i} className="flex items-start gap-2">
             <div className="flex-1 flex flex-col gap-1">
-              <input
-                className={`${INPUT_CLASS} ${invalid ? "border-danger" : ""}`}
+              <Input
+                className={`font-mono ${invalid ? "border-destructive" : ""}`}
                 placeholder={keyPlaceholder}
                 value={row.key}
                 onChange={(e) =>
@@ -67,40 +67,42 @@ export function KeyValueEditor({
                 disabled={disabled}
               />
               {invalid && (
-                <span className="text-[11px] text-danger">
+                <span className="text-[11px] text-destructive">
                   Must match [A-Z_][A-Z0-9_]*
                 </span>
               )}
             </div>
-            <input
-              className={`${INPUT_CLASS} flex-1`}
+            <Input
+              className="flex-1 font-mono"
               placeholder={valuePlaceholder}
               value={row.value}
               onChange={(e) => update(i, { value: e.target.value })}
               disabled={disabled}
             />
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="icon"
               onClick={() => remove(i)}
               disabled={disabled}
-              className="btn-brutal h-9 w-9 shrink-0 rounded-md border-2 border-border-light bg-surface flex items-center justify-center text-text-muted hover:text-danger hover:border-danger"
-              style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+              className="shrink-0 text-muted-foreground hover:text-destructive hover:border-destructive"
               title="Remove"
             >
               <X size={13} />
-            </button>
+            </Button>
           </div>
         );
       })}
-      <button
+      <Button
         type="button"
+        variant="outline"
+        size="sm"
         onClick={add}
         disabled={disabled}
-        className="btn-brutal self-start h-8 rounded-md border-2 border-border-light bg-surface px-3 text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent inline-flex items-center gap-1.5"
-        style={{ boxShadow: "var(--shadow-brutal-sm)" }}
+        className="self-start"
       >
         <Plus size={12} /> {addLabel}
-      </button>
+      </Button>
     </div>
   );
 }

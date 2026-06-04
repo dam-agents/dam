@@ -56,6 +56,22 @@ export function revokeThread(db: Db) {
   };
 }
 
+export function getAuthorizedBy(db: Db) {
+  return async (agentId: string, threadId: string): Promise<string | null> => {
+    const rows = await db
+      .select({ authorizedBy: telegramThreads.authorizedBy })
+      .from(telegramThreads)
+      .where(
+        and(
+          eq(telegramThreads.agentId, agentId),
+          eq(telegramThreads.threadId, threadId),
+        ),
+      )
+      .limit(1);
+    return rows[0]?.authorizedBy ?? null;
+  };
+}
+
 export function deleteThreadsByAgent(db: Db) {
   return async (agentId: string): Promise<void> => {
     await db

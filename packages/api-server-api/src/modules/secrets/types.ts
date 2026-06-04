@@ -41,11 +41,6 @@ export function isValidEnvName(name: string): boolean {
   return name.length > 0 && ENV_NAME_RE.test(name);
 }
 
-// RFC 3986 unreserved set — the only characters guaranteed safe in a URL
-// query parameter name without percent-encoding. Shared by the Zod schema
-// and both UI forms; keep them in sync.
-export const QUERY_PARAM_RE = /^[A-Za-z0-9._~-]+$/;
-
 /**
  * How the Envoy sidecar injects a generic secret into matching outbound
  * requests. `valueFormat` may reference the literal token `{value}`;
@@ -71,12 +66,6 @@ export interface InjectionConfig {
   queryParamName?: string;
 }
 
-/** Default used when the user doesn't override it: `Authorization: Bearer <value>`. */
-export const DEFAULT_INJECTION_CONFIG: InjectionConfig = {
-  headerName: "Authorization",
-  valueFormat: "Bearer {value}",
-};
-
 /**
  * IBM LiteLLM model pins. The IBM LiteLLM preset's default env-var bundle
  * pins all five Claude model env vars to AWS-hosted Claude IDs; the form's
@@ -90,6 +79,8 @@ export interface IbmLitellmModelPins {
   subagent: string;
   /** `ANTHROPIC_MODEL` — fallback when no `ANTHROPIC_DEFAULT_*_MODEL` matches. */
   default: string;
+  /** `OPENAI_MODEL` — model ID for Codex and other OpenAI-compatible agents. */
+  openaiModel: string;
 }
 
 export const IBM_LITELLM_DEFAULT_MODEL_PINS: IbmLitellmModelPins = {
@@ -98,9 +89,10 @@ export const IBM_LITELLM_DEFAULT_MODEL_PINS: IbmLitellmModelPins = {
   haiku: "aws/claude-haiku-4-5",
   subagent: "aws/claude-opus-4-6",
   default: "aws/claude-opus-4-6",
+  openaiModel: "gpt-5.5",
 };
 
-const IBM_LITELLM_HOST = "ete-litellm.ai-models.vpc-int.res.ibm.com";
+const IBM_LITELLM_HOST = "ete-litellm.ai-models.vpc.res.ibm.com";
 const IBM_LITELLM_BASE_URL = `https://${IBM_LITELLM_HOST}`;
 
 /**
@@ -109,9 +101,9 @@ const IBM_LITELLM_BASE_URL = `https://${IBM_LITELLM_HOST}`;
  * advanced disclosure; the default bundle (with `IBM_LITELLM_DEFAULT_MODEL_PINS`)
  * is what the registry stores.
  *
- * 13 entries: 1 credential placeholder, 1 endpoint pin, 2 behavior flags,
- * 5 Claude Code model pins, 4 pi-agent `openai-proxy` SPECS overrides
- * (`pi-dynamic-providers/index.ts`).
+ * 16 entries: 1 credential placeholder, 1 endpoint pin, 2 behavior flags,
+ * 5 Claude Code model pins, 4 pi-agent `openai-proxy` overrides
+ * (`pi-dynamic-providers/index.ts`), 3 Codex/OpenAI-compatible env vars.
  */
 export function ibmLitellmEnvMappings(
   pins: IbmLitellmModelPins = IBM_LITELLM_DEFAULT_MODEL_PINS,
@@ -130,6 +122,9 @@ export function ibmLitellmEnvMappings(
     { envName: "OPENAI_PROXY_MODEL", placeholder: pins.opus },
     { envName: "OPENAI_PROXY_CONTEXT_WINDOW", placeholder: "200000" },
     { envName: "OPENAI_PROXY_MAX_TOKENS", placeholder: "8192" },
+    { envName: "OPENAI_API_KEY", placeholder: DEFAULT_ENV_PLACEHOLDER },
+    { envName: "OPENAI_BASE_URL", placeholder: IBM_LITELLM_BASE_URL },
+    { envName: "OPENAI_MODEL", placeholder: pins.openaiModel },
   ];
 }
 
@@ -158,6 +153,8 @@ export function ibmLitellmPinsFromEnvMappings(
       IBM_LITELLM_DEFAULT_MODEL_PINS.subagent,
     default:
       lookup("ANTHROPIC_MODEL") ?? IBM_LITELLM_DEFAULT_MODEL_PINS.default,
+    openaiModel:
+      lookup("OPENAI_MODEL") ?? IBM_LITELLM_DEFAULT_MODEL_PINS.openaiModel,
   };
 }
 
@@ -395,13 +392,6 @@ export interface UpdateGithubPatOutput {
   gitSecretId: string;
 }
 
-/** Minimal agent shape returned by `listGrantedAgents` — used by the UI's
- *  env-affecting edit confirmation to show which agents will roll. */
-export interface GrantedAgentSummary {
-  id: string;
-  name: string;
-}
-
 export interface SecretsService {
   list(): Promise<SecretView[]>;
   create(input: SecretCreateInput): Promise<SecretView>;
@@ -415,7 +405,4 @@ export interface SecretsService {
   delete(id: string): Promise<void>;
   getAgentAccess(agentId: string): Promise<AgentAccess>;
   setAgentAccess(agentId: string, access: AgentAccess): Promise<void>;
-  /** Agents that currently have this secret in their granted set. Empty
-   *  when the secret is not granted to any agent. (ADR-040) */
-  listGrantedAgents(secretId: string): Promise<GrantedAgentSummary[]>;
 }

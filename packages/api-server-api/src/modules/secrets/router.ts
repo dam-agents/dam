@@ -4,7 +4,6 @@ import {
   secretCreateInputSchema,
   secretDeleteInputSchema,
   secretGetAgentAccessInputSchema,
-  secretListGrantedAgentsInputSchema,
   secretSetAgentAccessInputSchema,
   secretTestAnthropicInputSchema,
   secretUpdateGithubPatInputSchema,
@@ -81,8 +80,4 @@ export const secretsRouter = t.router({
         secretIds: input.secretIds,
       }),
     ),
-
-  listGrantedAgents: t.procedure
-    .input(secretListGrantedAgentsInputSchema)
-    .query(({ ctx, input }) => ctx.secrets.listGrantedAgents(input.id)),
 });

@@ -112,8 +112,12 @@ spec:
               value: {{ include "platform.fullname" . | quote }}
             - name: PORT
               value: {{ .Values.apiServer.port | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.apiServer.logLevel | quote }}
             - name: MCP_PORT
               value: {{ .Values.apiServer.harnessServerPort | quote }}
+            - name: PLATFORM_HARNESS_SERVER_URL
+              value: "http://{{ include "platform.fullname" . }}-apiserver-harness.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.apiServer.harnessServerPort }}"
             - name: EXT_AUTHZ_PORT
               value: {{ .Values.apiServer.extAuthzPort | quote }}
             - name: UI_BASE_URL
@@ -134,6 +138,19 @@ spec:
             - name: TELEGRAM_ENABLED
               value: "true"
             {{- end }}
+            {{- if .Values.e2e.enabled }}
+            - name: E2E_ENABLED
+              value: "true"
+            {{- end }}
+            {{- if .Values.apiServer.activityTracking.enabled }}
+            - name: ACTIVITY_TRACKING_ENABLED
+              value: "true"
+            {{- end }}
+            - name: ACTIVITY_HMAC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.fullname" . }}-apiserver-activity
+                  key: ACTIVITY_HMAC_KEY
             {{- if .Values.keycloak.enabled }}
             - name: KEYCLOAK_URL
               value: "http://{{ include "platform.keycloak.fullname" . }}:{{ .Values.keycloak.port }}"
@@ -157,6 +174,10 @@ spec:
             {{- if .Values.keycloak.requiredRole }}
             - name: KEYCLOAK_REQUIRED_ROLE
               value: {{ .Values.keycloak.requiredRole | quote }}
+            {{- end }}
+            {{- if .Values.keycloak.inspectorRole }}
+            - name: KEYCLOAK_INSPECTOR_ROLE
+              value: {{ .Values.keycloak.inspectorRole | quote }}
             {{- end }}
             {{- end }}
             - name: AGENT_HOME
@@ -220,6 +241,8 @@ spec:
               value: {{ .Values.brand.name | quote }}
             - name: BRAND_SHORT
               value: {{ .Values.brand.short | quote }}
+            - name: BRAND_TAGLINE
+              value: {{ .Values.brand.tagline | quote }}
             - name: BRAND_THEME_LIGHT_ACCENT
               value: {{ .Values.brand.theme.light.accent | quote }}
             - name: BRAND_THEME_LIGHT_ACCENT_HOVER
@@ -236,6 +259,10 @@ spec:
             - name: BRAND_ICON_SVG
               value: {{ .Values.brand.icon | quote }}
             {{- end }}
+            - name: TERMS_VERSION
+              value: {{ .Values.terms.version | quote }}
+            - name: TERMS_TEXT
+              value: {{ .Values.terms.text | quote }}
           volumeMounts:
             - name: trusted-hosts
               mountPath: /etc/platform/trusted-hosts
