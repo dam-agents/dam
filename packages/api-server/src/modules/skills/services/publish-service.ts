@@ -6,6 +6,7 @@ import type {
   SkillSource,
 } from "api-server-api";
 import type { AgentsRepository } from "../../agents/infrastructure/agents-repository.js";
+import { computeAgentState } from "../../agents/infrastructure/agent-mappers.js";
 import type { AgentSkillsRepository } from "../infrastructure/agent-skills-repository.js";
 import {
   AgentRuntimeUpstreamError,
@@ -48,10 +49,10 @@ export async function publishSkill(
   const agent = await deps.agents.get(input.agentId, deps.owner);
   if (!agent)
     throw new TRPCError({ code: "NOT_FOUND", message: "agent not found" });
-  if (agent.currentState !== "running") {
+  if (computeAgentState(agent) !== "running") {
     throw new TRPCError({
       code: "PRECONDITION_FAILED",
-      message: `agent is ${agent.currentState ?? "not running"}; start it before publishing`,
+      message: `agent is ${computeAgentState(agent)}; start it before publishing`,
     });
   }
 

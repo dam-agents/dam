@@ -1,28 +1,15 @@
 /**
- * Per-agent grants stored as annotations on the Agent ConfigMap.
+ * Per-agent grants stored as fields on the Agent custom resource spec
+ * (`grantedSecretIds` / `grantedConnectionIds`) — ADR-058 moved them off
+ * ConfigMap annotations into spec, because they define what the agent can
+ * reach and the controller intersects them with the owner's credential
+ * Secret list before mounting into the gateway.
  *
- * Per ADR-046, Agent and Instance were merged: each agent has exactly one
- * ConfigMap of type `agent`, which carries the grant annotations directly.
- *
- * The controller reads these annotations on every reconcile and intersects
- * them with the owner's credential Secret list before mounting into the
- * Envoy sidecar — touching annotations is therefore enough to trigger a
- * pod roll on the next reconcile.
- *
- * Both grant lists are always selective: absence of the annotation reads
- * as an empty grant set, never "all granted." New Agent ConfigMaps are
- * initialized with the empty annotation explicitly so the explicit-empty
- * vs. legacy-absent distinction is moot for anything created today.
+ * Both grant lists are always selective: an absent field reads as an empty
+ * grant set, never "all granted."
  */
-import type { K8sClient } from "./k8s.js";
-import {
-  ANN_GRANTED_CONNECTION_IDS,
-  ANN_GRANTED_SECRET_IDS,
-  ANN_SECRETS_REV,
-  LABEL_OWNER,
-  LABEL_TYPE,
-  TYPE_AGENT,
-} from "./labels.js";
+import { type K8sClient, type KubeObject } from "./k8s.js";
+import { AGENTS_PLURAL, ANN_ROLL_REV, LABEL_OWNER } from "./labels.js";
 
 export interface AgentGrants {
   grantedSecretIds: string[];
@@ -54,28 +41,26 @@ export interface AgentGrantsPort {
    */
   listAgentsGrantedSecret(secretId: string): Promise<GrantedAgentSummary[]>;
   /**
-   * Bump the render-affecting `secrets-rev` annotation on the Agent
-   * ConfigMap. Forces the controller's ConfigMap watch to refire so the
-   * agent pod re-renders with the merged env (ADR-040).
+   * Bump the render-affecting roll-rev annotation on the Agent so the
+   * controller rolls the pod to re-render merged env (ADR-040 / ADR-058 A3).
    */
   bumpSecretsRev(agentId: string, hash: string): Promise<void>;
 }
 
-function parseList(raw: string | undefined): string[] {
-  if (!raw) return [];
-  return raw
-    .split(",")
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
+function toStringArray(v: unknown): string[] {
+  return Array.isArray(v)
+    ? v.filter((x): x is string => typeof x === "string")
+    : [];
 }
 
-function readGrants(
-  annotations: Record<string, string> | undefined,
-): AgentGrants {
-  const ann = annotations ?? {};
+function readGrants(spec: unknown): AgentGrants {
+  const s = (spec ?? {}) as {
+    grantedSecretIds?: unknown;
+    grantedConnectionIds?: unknown;
+  };
   return {
-    grantedSecretIds: parseList(ann[ANN_GRANTED_SECRET_IDS]),
-    grantedConnectionIds: parseList(ann[ANN_GRANTED_CONNECTION_IDS]),
+    grantedSecretIds: toStringArray(s.grantedSecretIds),
+    grantedConnectionIds: toStringArray(s.grantedConnectionIds),
   };
 }
 
@@ -83,79 +68,60 @@ export function createAgentGrantsPort(
   client: K8sClient,
   ownerSub: string,
 ): AgentGrantsPort {
-  async function patchAnnotations(
-    name: string,
-    annotations: Record<string, string | null>,
-  ) {
-    // strategic-merge-patch: a null value clears the annotation key.
-    await client.patchConfigMap(name, {
-      metadata: { annotations },
-    });
-  }
+  const ownedBy = (obj: KubeObject | null): boolean =>
+    obj !== null && obj.metadata?.labels?.[LABEL_OWNER] === ownerSub;
 
   return {
     async get(agentId) {
-      const cm = await client.getConfigMap(agentId);
-      if (
-        !cm ||
-        cm.metadata?.labels?.[LABEL_TYPE] !== TYPE_AGENT ||
-        cm.metadata?.labels?.[LABEL_OWNER] !== ownerSub
-      ) {
-        return DEFAULT_GRANTS;
-      }
-      return readGrants(cm.metadata?.annotations);
+      const obj = await client.getCustomObject(AGENTS_PLURAL, agentId);
+      if (!ownedBy(obj)) return DEFAULT_GRANTS;
+      return readGrants(obj!.spec);
     },
 
     async setSecretGrants(agentId, ids) {
-      const cm = await client.getConfigMap(agentId);
-      if (
-        !cm ||
-        cm.metadata?.labels?.[LABEL_TYPE] !== TYPE_AGENT ||
-        cm.metadata?.labels?.[LABEL_OWNER] !== ownerSub
-      ) {
+      const obj = await client.getCustomObject(AGENTS_PLURAL, agentId);
+      if (!ownedBy(obj)) {
         throw new Error(
           `setSecretGrants: agent ${agentId} not found or not owned`,
         );
       }
-      await patchAnnotations(agentId, {
-        [ANN_GRANTED_SECRET_IDS]: ids.join(","),
+      await client.patchCustomObject(AGENTS_PLURAL, agentId, {
+        spec: { grantedSecretIds: ids },
       });
     },
 
     async setConnectionGrants(agentId, ids) {
-      const cm = await client.getConfigMap(agentId);
-      if (
-        !cm ||
-        cm.metadata?.labels?.[LABEL_TYPE] !== TYPE_AGENT ||
-        cm.metadata?.labels?.[LABEL_OWNER] !== ownerSub
-      ) {
+      const obj = await client.getCustomObject(AGENTS_PLURAL, agentId);
+      if (!ownedBy(obj)) {
         throw new Error(
           `setConnectionGrants: agent ${agentId} not found or not owned`,
         );
       }
-      await patchAnnotations(agentId, {
-        [ANN_GRANTED_CONNECTION_IDS]: ids.join(","),
+      await client.patchCustomObject(AGENTS_PLURAL, agentId, {
+        spec: { grantedConnectionIds: ids },
       });
     },
 
     async listAgentsGrantedSecret(secretId) {
-      const cms = await client.listConfigMaps(
-        `${LABEL_TYPE}=${TYPE_AGENT},${LABEL_OWNER}=${ownerSub}`,
+      const objs = await client.listCustomObjects(
+        AGENTS_PLURAL,
+        `${LABEL_OWNER}=${ownerSub}`,
       );
       const out: GrantedAgentSummary[] = [];
-      for (const cm of cms) {
-        const ann = cm.metadata?.annotations ?? {};
-        const cmName = cm.metadata?.name;
-        if (!cmName) continue;
-        const grantedSecretIds = parseList(ann[ANN_GRANTED_SECRET_IDS]);
+      for (const obj of objs) {
+        const agentId = obj.metadata?.name;
+        if (!agentId) continue;
+        const grantedSecretIds = readGrants(obj.spec).grantedSecretIds;
         if (!grantedSecretIds.includes(secretId)) continue;
-        out.push({ agentId: cmName, grantedSecretIds });
+        out.push({ agentId, grantedSecretIds });
       }
       return out;
     },
 
     async bumpSecretsRev(agentId, hash) {
-      await patchAnnotations(agentId, { [ANN_SECRETS_REV]: hash });
+      await client.patchCustomObject(AGENTS_PLURAL, agentId, {
+        metadata: { annotations: { [ANN_ROLL_REV]: hash } },
+      });
     },
   };
 }

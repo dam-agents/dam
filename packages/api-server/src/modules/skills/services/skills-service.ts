@@ -14,6 +14,7 @@ import type {
   SkillUninstallInput,
 } from "api-server-api";
 import type { AgentsRepository } from "../../agents/infrastructure/agents-repository.js";
+import { computeAgentState } from "../../agents/infrastructure/agent-mappers.js";
 import type { TemplatesRepository } from "../../templates/infrastructure/templates-repository.js";
 import {
   SkillSourceProtectedError,
@@ -109,10 +110,10 @@ async function loadRunningInstance(deps: SkillsServiceDeps, agentId: string) {
   const infra = await deps.agentsRepo.get(agentId, deps.owner);
   if (!infra)
     throw new TRPCError({ code: "NOT_FOUND", message: "instance not found" });
-  if (infra.currentState !== "running") {
+  if (computeAgentState(infra) !== "running") {
     throw new TRPCError({
       code: "PRECONDITION_FAILED",
-      message: `instance is ${infra.currentState ?? "not running"}; wake it before installing skills`,
+      message: `instance is ${computeAgentState(infra)}; wake it before installing skills`,
     });
   }
   return infra;
@@ -348,10 +349,10 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
           code: "NOT_FOUND",
           message: "instance not found",
         });
-      if (infra.currentState !== "running") {
+      if (computeAgentState(infra) !== "running") {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
-          message: `instance is ${infra.currentState ?? "not running"}; start it before browsing private sources`,
+          message: `instance is ${computeAgentState(infra)}; start it before browsing private sources`,
         });
       }
       try {
@@ -458,7 +459,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       const infra = await deps.agentsRepo.get(agentId, deps.owner);
       if (!infra) return [];
       // No filesystem to read when the pod isn't running.
-      if (infra.currentState !== "running") return [];
+      if (computeAgentState(infra) !== "running") return [];
       const skillPaths = await resolveSkillPaths(deps, infra.id);
       const all = await deps.runtimeClient.listLocal(agentId, skillPaths);
       // Subtract anything already tracked as installed-from-remote (by directory
@@ -488,7 +489,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       const infra = await deps.agentsRepo.get(agentId, deps.owner);
       if (!infra)
         return { installed: [], standalone: [], instancePublishes: [] };
-      if (infra.currentState !== "running") {
+      if (computeAgentState(infra) !== "running") {
         const [installed, instancePublishes] = await Promise.all([
           deps.agentSkillsRepo.listSkills(agentId),
           deps.agentSkillsRepo.listPublishes(agentId),

@@ -27,31 +27,26 @@ export const TYPE_CHANNEL_SECRET = "channel-secret";
 export const SPEC_KEY = "spec.yaml";
 export const STATUS_KEY = "status.yaml";
 
+// ---- agent-platform.ai/v1 Agent custom resource coordinates (ADR-058) ----
+export const GROUP = "agent-platform.ai";
+export const VERSION = "v1";
+export const AGENTS_PLURAL = "agents";
+export const KIND_AGENT = "Agent";
+
 // ---- Annotation keys ----
 export const LAST_ACTIVITY_KEY = "agent-platform.ai/last-activity";
 export const ACTIVE_SESSION_KEY = "agent-platform.ai/active-session";
 
-// Per-agent grant annotations stored on the Agent ConfigMap. The controller
-// reads these on every reconcile and intersects them with the owner's
-// credential Secret list before mounting into the Envoy sidecar.
-//
-// Both grants are always selective: absence is treated as an empty grant
-// list, and new Agent ConfigMaps initialize the annotations explicitly
-// so the explicit-empty vs. legacy-absent distinction is moot.
-export const ANN_GRANTED_SECRET_IDS = "agent-platform.ai/granted-secret-ids";
-export const ANN_GRANTED_CONNECTION_IDS =
-  "agent-platform.ai/granted-connection-ids";
+// Roll trigger (ADR-058 A3). The api-server bumps this annotation on the Agent
+// to request a rolling restart of the pair: the controller stamps its value
+// into both pod templates, so a change rolls the pods without any spec/status
+// write. Used by the UI restart button and to force a pod re-render when a
+// granted secret's env mappings change (Pod env is immutable on a live pod).
+// The value is opaque to the controller — a roll trigger only.
+export const ANN_ROLL_REV = "agent-platform.ai/roll-rev";
 
-// Render-affecting hash of the agent's currently-granted secrets (ADR-040).
-// The api-server bumps this on the Agent ConfigMap whenever a granted
-// secret's `envMappings` change, because Pod env is immutable on a running
-// pod and the merged env can only be re-rendered by rolling. Bumping the
-// annotation forces the controller's ConfigMap watch to refire so the agent
-// pod re-renders with the merged env. The value is opaque to the
-// controller — a roll trigger only.
-//
-// `hostPattern` / `pathPattern` edits do NOT bump this annotation: they
-// propagate hot via `connectionRules.syncForAgent` (live `egress_rules`
-// rows). `injectionConfig` (ADR-028) currently has no fanout; if a future
-// change wires it through this rev, update this comment then.
-export const ANN_SECRETS_REV = "agent-platform.ai/secrets-rev";
+// Reason the controller stamps on the Ready condition when it hibernates an
+// agent (scales to zero). Lets the api-server tell "hibernated" from "starting"
+// — both report Ready=False — from conditions alone. Mirrors the controller
+// constant (ADR-059).
+export const READY_REASON_HIBERNATED = "Hibernated";

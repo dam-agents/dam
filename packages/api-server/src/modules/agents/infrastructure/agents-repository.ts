@@ -1,48 +1,24 @@
-import { is409, type K8sClient } from "./k8s.js";
-import { retry } from "./retry.js";
+import { type K8sClient } from "./k8s.js";
 import {
-  LABEL_TYPE,
-  TYPE_AGENT,
+  AGENTS_PLURAL,
+  ANN_ROLL_REV,
   LABEL_OWNER,
-  LABEL_ROLE,
-  ROLE_AGENT,
   LAST_ACTIVITY_KEY,
 } from "./labels.js";
 import {
-  isOwnedBy,
-  hasType,
-  patchSpecField,
-  setDesiredState,
-  isPodReady,
-} from "./configmap-mappers.js";
-import {
+  agentIsOwnedBy,
+  agentOwner,
+  buildAgentObject,
   parseInfraAgent,
-  buildAgentConfigMap,
+  readyConditionStatus,
   type InfraAgent,
-} from "./agents-configmap-mappers.js";
+} from "./agent-mappers.js";
 import {
   pollUntilReady,
   WAKE_POLL_INITIAL_MS,
   WAKE_POLL_MAX_MS,
   WAKE_TIMEOUT_MS,
 } from "./poll-until-ready.js";
-
-/** Re-run a read-modify-write routine when the K8s API rejects the write
- *  with 409 Conflict. Mirrors the Go controller's `retry.RetryOnConflict`
- *  so concurrent MCP + UI writers don't surface racy errors to the user. */
-async function retryOnConflict<T>(fn: () => Promise<T>): Promise<T> {
-  const MAX_ATTEMPTS = 5;
-  let lastErr: unknown;
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    try {
-      return await fn();
-    } catch (err) {
-      if (!is409(err)) throw err;
-      lastErr = err;
-    }
-  }
-  throw lastErr;
-}
 
 export interface AgentsRepository {
   list(owner?: string): Promise<InfraAgent[]>;
@@ -57,12 +33,15 @@ export interface AgentsRepository {
     owner: string | undefined,
     patch: Record<string, unknown>,
   ): Promise<InfraAgent | null>;
+  /** Merge-patch arbitrary spec fields without an ownership check — for
+   *  trusted internal fan-outs (e.g. connection grants). */
+  patchSpec(id: string, patch: Record<string, unknown>): Promise<void>;
   delete(id: string, owner?: string): Promise<boolean>;
   restart(id: string, owner?: string): Promise<boolean>;
   wake(id: string): Promise<InfraAgent | null>;
   isOwnedBy(id: string, owner: string): Promise<boolean>;
   getOwner(id: string): Promise<string | null>;
-  /** Resolve an agent CM to its identity. Used by the ext_authz hot path
+  /** Resolve an agent CR to its identity. Used by the ext_authz hot path
    *  to look up egress rules and credit pending approvals. After ADR-046
    *  the agent is its own resource, so `agentId === id`. */
   resolveIdentity(
@@ -70,15 +49,12 @@ export interface AgentsRepository {
   ): Promise<{ owner: string; agentId: string } | null>;
   patchAnnotation(id: string, key: string, value: string): Promise<void>;
   wakeIfHibernated(id: string): Promise<boolean>;
-  isPodReady(id: string): Promise<boolean>;
-  /**
-   * Make the agent's pod reachable. Idempotent; single-flight per id;
-   * bumps `agent-platform.ai/last-activity` on every successful completion
-   * so any caller implicitly keeps the pod warm.
-   *
-   * The observed pod Ready condition is the authoritative signal — not
-   * `desiredState`. See ADR-032.
-   */
+  /** Authoritative reachability (ADR-059): the controller's Ready condition
+   *  (`AgentPodReady ∧ GatewayPodReady`). Absent or False ⇒ not ready; the
+   *  api-server never reads pods. */
+  isReady(id: string): Promise<boolean>;
+  /** Make the agent's pod reachable. Idempotent, single-flight per id; bumps
+   *  `agent-platform.ai/last-activity` on success to keep the pod warm. */
   ensureReady(id: string): Promise<void>;
 }
 
@@ -86,16 +62,14 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
   // Single-flight per agent id. Concurrent callers for the same id share
   // one in-flight wake+wait+bump; callers for different ids don't block each
   // other. Correctness does not depend on this (K8s optimistic concurrency
-  // already serializes concurrent ConfigMap updates) — it keeps API load
-  // sane under bursty call patterns.
+  // already serializes concurrent writes) — it keeps API load sane under
+  // bursty call patterns.
   const inflight = new Map<string, Promise<void>>();
 
-  // Strategic-merge-patch — no read-modify-write, no resourceVersion, no
-  // 409 conflict possible. Mirrors the intent of the Go controller's
-  // retry.RetryOnConflict wrapper but is more direct (and cheaper: one round
-  // trip, no GET).
+  // RFC 7386 merge-patch — no read-modify-write, no resourceVersion, no 409
+  // conflict possible. One round trip.
   async function bumpLastActivity(id: string): Promise<void> {
-    await k8s.patchConfigMap(id, {
+    await k8s.patchCustomObject(AGENTS_PLURAL, id, {
       metadata: {
         annotations: { [LAST_ACTIVITY_KEY]: new Date().toISOString() },
       },
@@ -104,135 +78,112 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
 
   const repo: AgentsRepository = {
     async list(owner?) {
-      const ownerSelector = owner ? `,${LABEL_OWNER}=${owner}` : "";
-      const [configMaps, pods] = await Promise.all([
-        k8s.listConfigMaps(`${LABEL_TYPE}=${TYPE_AGENT}${ownerSelector}`),
-        // ADR-038: agent and gateway pods share the agent label; narrow
-        // to role=agent so status (Ready, podIP) reflects the agent half
-        // of the pair, which is what callers expect.
-        k8s.listPods(`${LABEL_ROLE}=${ROLE_AGENT}`),
-      ]);
-      const podMap = new Map<string, (typeof pods)[number]>();
-      for (const pod of pods) {
-        // Pod name is `<agentId>-0` (StatefulSet replica 0)
-        const podName = pod.metadata?.name;
-        if (!podName) continue;
-        const agentId = podName.endsWith("-0") ? podName.slice(0, -2) : podName;
-        podMap.set(agentId, pod);
-      }
-      return configMaps.map((cm) =>
-        parseInfraAgent(cm, podMap.get(cm.metadata!.name!)),
-      );
+      const selector = owner ? `${LABEL_OWNER}=${owner}` : undefined;
+      const objs = await k8s.listCustomObjects(AGENTS_PLURAL, selector);
+      return objs.map((o) => parseInfraAgent(o));
     },
 
     async get(id, owner?) {
-      const cm = await k8s.getConfigMap(id);
-      if (!cm) return null;
-      if (!hasType(cm, TYPE_AGENT)) return null;
-      if (owner && !isOwnedBy(cm, owner)) return null;
-      const pod = await k8s.getPod(`${id}-0`);
-      return parseInfraAgent(cm, pod ?? undefined);
+      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+      if (!obj) return null;
+      if (owner && !agentIsOwnedBy(obj, owner)) return null;
+      return parseInfraAgent(obj);
     },
 
     async create(spec, owner, templateId?) {
-      const body = buildAgentConfigMap(spec, owner, templateId);
-      const created = await k8s.createConfigMap(body);
+      const created = await k8s.createCustomObject(
+        AGENTS_PLURAL,
+        buildAgentObject(spec, owner, templateId),
+      );
       return parseInfraAgent(created);
     },
 
     async updateSpec(id, owner, patch) {
-      // read-modify-write under a conflict-retry loop: re-fetch the
-      // ConfigMap (fresh resourceVersion) on 409 so concurrent writers
-      // (MCP + UI, or two tabs) don't surface racy errors.
-      return retryOnConflict(async () => {
-        const cm = await k8s.getConfigMap(id);
-        if (!cm) return null;
-        if (!hasType(cm, TYPE_AGENT)) return null;
-        if (owner && !isOwnedBy(cm, owner)) return null;
-        cm.data = patchSpecField(cm, patch);
-        const updated = await k8s.replaceConfigMap(id, cm);
-        return parseInfraAgent(updated);
+      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+      if (!obj) return null;
+      if (owner && !agentIsOwnedBy(obj, owner)) return null;
+      // Merge-patch sets the given spec fields (arrays replaced wholesale);
+      // conflict-free, so no read-modify-write retry loop is needed.
+      const updated = await k8s.patchCustomObject(AGENTS_PLURAL, id, {
+        spec: patch,
       });
+      return parseInfraAgent(updated);
+    },
+
+    async patchSpec(id, patch) {
+      await k8s.patchCustomObject(AGENTS_PLURAL, id, { spec: patch });
     },
 
     async delete(id, owner?) {
-      const cm = await k8s.getConfigMap(id);
-      if (!cm) return false;
-      if (!hasType(cm, TYPE_AGENT)) return false;
-      if (owner && !isOwnedBy(cm, owner)) return false;
-      await k8s.deleteConfigMap(id);
+      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+      if (!obj) return false;
+      if (owner && !agentIsOwnedBy(obj, owner)) return false;
+      await k8s.deleteCustomObject(AGENTS_PLURAL, id);
       return true;
     },
 
     async restart(id, owner?) {
-      const cm = await k8s.getConfigMap(id);
-      if (!cm) return false;
-      if (!hasType(cm, TYPE_AGENT)) return false;
-      if (owner && !isOwnedBy(cm, owner)) return false;
-      // Delete pod-0; the StatefulSet controller will recreate it with the
-      // current spec. For replicas=1 this is equivalent to `kubectl rollout
-      // restart` without the pod-template annotation dance.
-      await k8s.deletePod(`${id}-0`);
+      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+      if (!obj) return false;
+      if (owner && !agentIsOwnedBy(obj, owner)) return false;
+      // ADR-058 A3: bump roll-rev. The controller stamps it into both pod
+      // templates, rolling the pair — no pod-template annotation dance, no
+      // direct pod deletion.
+      await k8s.patchCustomObject(AGENTS_PLURAL, id, {
+        metadata: { annotations: { [ANN_ROLL_REV]: new Date().toISOString() } },
+      });
       return true;
     },
 
     async wake(id) {
-      const cm = await k8s.getConfigMap(id);
-      if (!cm || !hasType(cm, TYPE_AGENT)) return null;
-      const infra = parseInfraAgent(cm);
-      if (infra.desiredState !== "hibernated") {
-        const pod = await k8s.getPod(`${id}-0`);
-        return parseInfraAgent(cm, pod ?? undefined);
-      }
-      const woken = setDesiredState(cm, "running");
-      await k8s.replaceConfigMap(cm.metadata!.name!, woken);
-      const reread = await k8s.getConfigMap(id);
-      if (!reread) return null;
-      const pod = await k8s.getPod(`${id}-0`);
-      return parseInfraAgent(reread, pod ?? undefined);
+      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+      if (!obj) return null;
+      // ADR-058: waking is an activity poke — bump last-activity so the
+      // reconciler scales the pair up. There is no desiredState to flip.
+      await bumpLastActivity(id);
+      const reread = await k8s.getCustomObject(AGENTS_PLURAL, id);
+      return reread ? parseInfraAgent(reread) : null;
     },
 
     async isOwnedBy(id, owner) {
-      const cm = await k8s.getConfigMap(id);
-      return cm !== null && hasType(cm, TYPE_AGENT) && isOwnedBy(cm, owner);
+      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+      return obj !== null && agentIsOwnedBy(obj, owner);
     },
 
     async getOwner(id) {
-      const cm = await k8s.getConfigMap(id);
-      if (!cm || !hasType(cm, TYPE_AGENT)) return null;
-      return cm.metadata?.labels?.[LABEL_OWNER] ?? null;
+      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+      return obj ? (agentOwner(obj) ?? null) : null;
     },
 
     async resolveIdentity(id) {
-      const cm = await k8s.getConfigMap(id);
-      if (!cm || !hasType(cm, TYPE_AGENT)) return null;
-      const owner = cm.metadata?.labels?.[LABEL_OWNER];
+      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+      if (!obj) return null;
+      const owner = agentOwner(obj);
       if (!owner) return null;
       return { owner, agentId: id };
     },
 
     async patchAnnotation(id, key, value) {
-      const cm = await k8s.getConfigMap(id);
-      if (!cm) return;
-      if (!cm.metadata!.annotations) cm.metadata!.annotations = {};
-      cm.metadata!.annotations[key] = value;
-      await k8s.replaceConfigMap(id, cm);
+      await k8s.patchCustomObject(AGENTS_PLURAL, id, {
+        metadata: { annotations: { [key]: value } },
+      });
     },
 
     async wakeIfHibernated(id) {
-      const wakeOnce = async () => {
-        const cm = await k8s.getConfigMap(id);
-        if (!cm || !hasType(cm, TYPE_AGENT)) return false;
-        if (parseInfraAgent(cm).desiredState !== "hibernated") return true;
-        await k8s.replaceConfigMap(id, setDesiredState(cm, "running"));
-        return true;
-      };
-      return retry(wakeOnce, is409);
+      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+      if (!obj) return false;
+      // Unconditional activity poke (ADR-058); waking an already-running
+      // agent simply keeps it warm.
+      await bumpLastActivity(id);
+      return true;
     },
 
-    async isPodReady(id) {
-      const pod = await k8s.getPod(`${id}-0`);
-      return pod !== null && isPodReady(pod);
+    async isReady(id) {
+      // The controller-published Ready condition is the sole authority
+      // (ADR-059). Absent (not yet reconciled) or False ⇒ not ready — the
+      // api-server never inspects pods directly.
+      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+      return obj !== null && readyConditionStatus(obj) === "True";
     },
 
     async ensureReady(id) {
@@ -240,14 +191,13 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
       if (existing) return existing;
 
       const work = (async () => {
-        const pod = await k8s.getPod(`${id}-0`);
-        if (pod !== null && isPodReady(pod)) {
+        if (await repo.isReady(id)) {
           await bumpLastActivity(id);
           return;
         }
         await repo.wakeIfHibernated(id);
         const ready = await pollUntilReady(
-          () => repo.isPodReady(id),
+          () => repo.isReady(id),
           WAKE_POLL_INITIAL_MS,
           WAKE_POLL_MAX_MS,
           WAKE_TIMEOUT_MS,

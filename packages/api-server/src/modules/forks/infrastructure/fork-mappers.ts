@@ -1,28 +1,26 @@
-import type * as k8s from "@kubernetes/client-node";
-import yaml from "js-yaml";
 import { z } from "zod";
 import type { ForkFailureReason } from "../../../events.js";
 import type { ForkSpec, ForkStatus } from "../domain/fork.js";
 import {
-  LABEL_FORK_ID,
+  GROUP,
+  KIND_FORK,
   LABEL_AGENT_REF,
-  LABEL_TYPE,
-  SPEC_KEY,
-  SPEC_VERSION,
-  STATUS_KEY,
-  TYPE_AGENT_FORK,
+  LABEL_FORK_ID,
+  VERSION,
 } from "./labels.js";
 
-interface ForkSpecYaml {
-  version: string;
-  agentName: string;
-  foreignSub: string;
-  sessionId?: string;
+/** The agent-platform.ai/v1 Fork custom resource (ADR-058). The api-server
+ *  writes spec; the controller owns the status subresource. */
+export interface ForkObject {
+  apiVersion: string;
+  kind: string;
+  metadata: { name: string; labels?: Record<string, string> };
+  spec: { agentName: string; foreignSub: string; sessionId?: string };
+  status?: unknown;
 }
 
-const forkStatusYamlSchema = z
+const forkStatusSchema = z
   .object({
-    version: z.string().optional(),
     phase: z.string().optional(),
     jobName: z.string().optional(),
     podIP: z.string().optional(),
@@ -33,36 +31,36 @@ const forkStatusYamlSchema = z
       })
       .optional(),
   })
-  .nullable();
+  .nullish();
 
-export function buildForkConfigMap(args: {
+export function buildForkObject(args: {
   forkId: string;
   spec: ForkSpec;
-}): k8s.V1ConfigMap {
-  const body: ForkSpecYaml = {
-    version: SPEC_VERSION,
+}): ForkObject {
+  const spec: ForkObject["spec"] = {
     agentName: args.spec.agentId,
     foreignSub: args.spec.foreignSub,
   };
-  if (args.spec.sessionId !== undefined) body.sessionId = args.spec.sessionId;
+  if (args.spec.sessionId !== undefined) spec.sessionId = args.spec.sessionId;
 
   return {
+    apiVersion: `${GROUP}/${VERSION}`,
+    kind: KIND_FORK,
     metadata: {
       name: args.forkId,
       labels: {
-        [LABEL_TYPE]: TYPE_AGENT_FORK,
         [LABEL_AGENT_REF]: args.spec.agentId,
         [LABEL_FORK_ID]: args.forkId,
       },
     },
-    data: { [SPEC_KEY]: yaml.dump(body) },
+    spec,
   };
 }
 
-export function parseForkStatus(cm: k8s.V1ConfigMap): ForkStatus | null {
-  const raw = cm.data?.[STATUS_KEY];
-  if (!raw) return null;
-  const parsed = forkStatusYamlSchema.parse(yaml.load(raw));
+/** Read the Fork's observed status off the CR status subresource. Returns null
+ *  until the controller has written a recognised phase. */
+export function parseForkStatus(obj: { status?: unknown }): ForkStatus | null {
+  const parsed = forkStatusSchema.parse(obj.status ?? null);
   if (!parsed || !parsed.phase) return null;
   const phase = normalisePhase(parsed.phase);
   if (!phase) return null;

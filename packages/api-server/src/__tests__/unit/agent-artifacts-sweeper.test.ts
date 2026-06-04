@@ -1,12 +1,16 @@
 import { describe, it, expect, vi } from "vitest";
-import type * as k8s from "@kubernetes/client-node";
 import { createAgentArtifactsSweeper } from "../../sagas/agent-artifacts-sweeper.js";
-import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import type {
+  K8sClient,
+  KubeObject,
+} from "../../modules/agents/infrastructure/k8s.js";
 
+// Live agents are Agent custom resources now (ADR-058), listed via
+// listCustomObjects — not ConfigMaps.
 function fakeK8s(liveAgents: string[]): K8sClient {
   return {
-    listConfigMaps: async () =>
-      liveAgents.map((name) => ({ metadata: { name } }) as k8s.V1ConfigMap),
+    listCustomObjects: async () =>
+      liveAgents.map((name) => ({ metadata: { name } }) as KubeObject),
   } as unknown as K8sClient;
 }
 

@@ -46,9 +46,9 @@ export type AgentState =
 // (security context, scheduling, pod metadata, cluster details) is
 // chart-only and applied by the controller at reconcile time.
 //
-// Per ADR-046, the merged Agent absorbs runtime state — `desiredState`
-// (user intent: running vs. hibernated) and `secretRef` (bound credential
-// Secret) — that previously lived on the Instance ConfigMap.
+// Per ADR-058, run state is no longer stored intent: there is no
+// `desiredState`. Running-vs-hibernated is observed status the controller
+// derives from activity, surfaced as `Agent.state`.
 export interface AgentSpec {
   version: string;
   name: string;
@@ -64,8 +64,6 @@ export interface AgentSpec {
   /** Overrides chart-wide storageSize for the persistent home mount. */
   storageSize?: string;
   skillPaths?: string[];
-  /** Target lifecycle state. Controller scales the StatefulSet accordingly. */
-  desiredState?: "running" | "hibernated";
   /** Bound credential Secret name; consumed by the paired gateway pod (ADR-038). */
   secretRef?: string;
 }

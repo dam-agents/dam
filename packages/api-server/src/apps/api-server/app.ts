@@ -25,6 +25,7 @@ import {
   createKeycloakUserDirectory,
 } from "../../modules/agents/index.js";
 import { composeTemplatesModule } from "../../modules/templates/index.js";
+import { createTemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
 import {
   composeSchedulesForOwner,
   type SchedulesBoot,
@@ -139,6 +140,9 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
 
   const k8sClient = createK8sClient(api, config.namespace);
   const agentsRepo = createAgentsRepository(k8sClient);
+  // Templates are file-mounted config loaded once at boot (ADR-058); shared
+  // across requests rather than re-read from K8s on each tRPC call.
+  const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
 
   const connectionsBoot = composeConnectionsAtBoot({
     db,
@@ -584,10 +588,8 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   app.all("/api/trpc/*", (c) => {
     const user = c.get("user");
 
-    const { templates, readSpec: readTemplateSpec } = composeTemplatesModule(
-      api,
-      config.namespace,
-    );
+    const { templates, readSpec: readTemplateSpec } =
+      composeTemplatesModule(templatesRepo);
     const { agents, isOwnedAgent } = composeAgentsModule({
       api,
       namespace: config.namespace,
@@ -613,6 +615,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       seedSources,
       config.brand.name,
       runtimeMutator,
+      templatesRepo,
     );
     const grants = createAgentGrantsPort(k8sClient, user.sub);
     const secrets = createSecretsService({

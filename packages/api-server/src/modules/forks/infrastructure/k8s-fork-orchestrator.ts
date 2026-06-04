@@ -2,10 +2,11 @@ import type * as k8s from "@kubernetes/client-node";
 import type { ForkStatus } from "../domain/fork.js";
 import { err, ok, type Result } from "../../../core/result.js";
 import type { ForkOrchestratorPort, OrchestratorCreateError } from "./ports.js";
-import { buildForkConfigMap, parseForkStatus } from "./configmap-mappers.js";
+import { buildForkObject, parseForkStatus } from "./fork-mappers.js";
+import { FORKS_PLURAL, GROUP, VERSION } from "./labels.js";
 
 export interface K8sForkOrchestratorDeps {
-  api: k8s.CoreV1Api;
+  customObjects: k8s.CustomObjectsApi;
   namespace: string;
   pollIntervalMs?: number;
   sleep?: (ms: number) => Promise<void>;
@@ -19,14 +20,13 @@ export function createK8sForkOrchestrator(
 
   return {
     async createFork({ forkId, spec }) {
-      const body = buildForkConfigMap({ forkId, spec });
       try {
-        await deps.api.createNamespacedConfigMap({
+        await deps.customObjects.createNamespacedCustomObject({
+          group: GROUP,
+          version: VERSION,
           namespace: deps.namespace,
-          body: {
-            ...body,
-            metadata: { ...body.metadata, namespace: deps.namespace },
-          },
+          plural: FORKS_PLURAL,
+          body: buildForkObject({ forkId, spec }),
         });
         return ok(undefined);
       } catch (cause) {
@@ -42,7 +42,7 @@ export function createK8sForkOrchestrator(
 
     watchStatus(forkId) {
       return pollForkStatus({
-        api: deps.api,
+        customObjects: deps.customObjects,
         namespace: deps.namespace,
         pollIntervalMs,
         sleep,
@@ -52,9 +52,12 @@ export function createK8sForkOrchestrator(
 
     async deleteFork(forkId) {
       try {
-        await deps.api.deleteNamespacedConfigMap({
-          name: forkId,
+        await deps.customObjects.deleteNamespacedCustomObject({
+          group: GROUP,
+          version: VERSION,
           namespace: deps.namespace,
+          plural: FORKS_PLURAL,
+          name: forkId,
         });
       } catch (cause) {
         if (!isNotFound(cause)) throw cause;
@@ -64,7 +67,7 @@ export function createK8sForkOrchestrator(
 }
 
 async function* pollForkStatus(args: {
-  api: k8s.CoreV1Api;
+  customObjects: k8s.CustomObjectsApi;
   namespace: string;
   pollIntervalMs: number;
   sleep: (ms: number) => Promise<void>;
@@ -72,17 +75,20 @@ async function* pollForkStatus(args: {
 }): AsyncIterable<ForkStatus> {
   let lastPhase: ForkStatus["phase"] | null = null;
   while (true) {
-    let cm: k8s.V1ConfigMap | null = null;
+    let obj: unknown = null;
     try {
-      cm = await args.api.readNamespacedConfigMap({
-        name: args.forkId,
+      obj = await args.customObjects.getNamespacedCustomObject({
+        group: GROUP,
+        version: VERSION,
         namespace: args.namespace,
+        plural: FORKS_PLURAL,
+        name: args.forkId,
       });
     } catch (cause) {
       if (isNotFound(cause)) return;
     }
-    if (cm) {
-      const status = parseForkStatus(cm);
+    if (obj) {
+      const status = parseForkStatus(obj as { status?: unknown });
       if (status && status.phase !== lastPhase) {
         lastPhase = status.phase;
         yield status;

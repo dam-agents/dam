@@ -68,16 +68,16 @@ export function composeConnectionsForOwner(opts: {
 
   const port: FanOutPort = {
     async setConnectionGrants(agentId, connectionIds): Promise<void> {
-      await opts.agentsRepo.patchAnnotation(
-        agentId,
-        "agent-platform.ai/granted-connection-ids",
-        connectionIds.join(","),
-      );
+      // ADR-058: connection grants live in the Agent spec.
+      await opts.agentsRepo.patchSpec(agentId, {
+        grantedConnectionIds: connectionIds,
+      });
     },
     async bumpSecretsRev(agentId): Promise<void> {
+      // ADR-058 A3: roll-rev is the api-server-driven roll trigger.
       await opts.agentsRepo.patchAnnotation(
         agentId,
-        "agent-platform.ai/secrets-rev",
+        "agent-platform.ai/roll-rev",
         String(Date.now()),
       );
     },

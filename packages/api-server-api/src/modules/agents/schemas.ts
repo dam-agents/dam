@@ -73,7 +73,6 @@ export const agentSpecSchema = z
     imagePullPolicy: z.string().optional(),
     storageSize: z.string().optional(),
     skillPaths: z.array(z.string()).optional(),
-    desiredState: z.enum(["running", "hibernated"]).optional(),
     secretRef: z.string().optional(),
   })
   .passthrough();

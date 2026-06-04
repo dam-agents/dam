@@ -14,7 +14,7 @@ import type { AgentsRepository } from "../infrastructure/agents-repository.js";
 import {
   assembleAgent,
   type InfraAgent,
-} from "../infrastructure/agents-configmap-mappers.js";
+} from "../infrastructure/agent-mappers.js";
 import {
   assembleSpecFromTemplate,
   assembleSpecFromImage,
@@ -207,9 +207,8 @@ export function createAgentsService(deps: {
         spec.env = preserveProtectedEnvs(base, [...base, ...input.env]);
       }
       if (input.secretRef !== undefined) spec.secretRef = input.secretRef;
-      // Merged Agent starts in the running desired state by default; the
-      // user can hibernate explicitly.
-      spec.desiredState = spec.desiredState ?? "running";
+      // ADR-058: no desiredState — a freshly-created agent runs (recent
+      // activity), and the idle checker hibernates it once it goes quiet.
       const owner = deps.owner ?? "";
       const infra = await deps.repo.create(spec, owner, templateId);
 
@@ -386,16 +385,16 @@ export function createAgentsService(deps: {
       }
       const infra = await deps.repo.wake(id);
       if (!infra) return null;
-      if (infra.desiredState === "running") {
-        securityLog("info", "agent.wake", {
-          category: "privileged",
-          actor: deps.owner ?? null,
-          actorKind: "user",
-          agentId: id,
-          result: "success",
-        });
-        emit({ type: EventType.AgentWoken, agentId: id });
-      }
+      // ADR-058: wake is an unconditional activity poke; the reconciler scales
+      // the pair up in response.
+      securityLog("info", "agent.wake", {
+        category: "privileged",
+        actor: deps.owner ?? null,
+        actorKind: "user",
+        agentId: id,
+        result: "success",
+      });
+      emit({ type: EventType.AgentWoken, agentId: id });
       return project(infra);
     },
 

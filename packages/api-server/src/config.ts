@@ -104,6 +104,11 @@ const configSchema = z.object({
    *  preset (ADR-035). Mounted from a Helm-managed ConfigMap.
    *  Empty/missing file → preset is empty (still selectable, just seeds nothing). */
   trustedHostsPath: z.string().default(""),
+  /** Directory of chart-shipped agent templates, mounted from a Helm-managed
+   *  ConfigMap (ADR-058). One `<id>.yaml` per template. The api-server loads
+   *  them once at boot — templates are declarative config that only changes on
+   *  a helm upgrade, which restarts the pod. Empty/missing → no templates. */
+  agentTemplatesPath: z.string().default(""),
   /** Hard ceiling for file-import bundle uploads, in bytes. Enforced at the
    *  api-server proxy boundary before any byte reaches agent-runtime, so a
    *  misbehaving client can't fill the PVC. Default 5 GiB — generous enough
@@ -181,6 +186,7 @@ export function loadConfig(): Config {
     approvalHoldSeconds: process.env.APPROVAL_HOLD_SECONDS,
     minClientCliVersion: process.env.MIN_CLIENT_CLI_VERSION,
     trustedHostsPath: process.env.TRUSTED_HOSTS_PATH,
+    agentTemplatesPath: process.env.AGENT_TEMPLATES_PATH,
     maxImportBundleBytes: process.env.MAX_IMPORT_BUNDLE_BYTES,
     brand: {
       name: process.env.BRAND_NAME ?? "Platform",

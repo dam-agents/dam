@@ -1,9 +1,8 @@
 import { createDb, runMigrations } from "db";
 import { createApi } from "./modules/agents/infrastructure/k8s.js";
 import {
-  LABEL_TYPE,
+  AGENTS_PLURAL,
   LABEL_OWNER,
-  TYPE_AGENT,
 } from "./modules/agents/infrastructure/labels.js";
 import {
   composeAgentsModule,
@@ -94,7 +93,7 @@ import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
 const config = loadConfig();
 configureLogger({ level: config.logLevel });
 
-const { api } = createApi(config.namespace);
+const { api, customObjects } = createApi(config.namespace);
 await runMigrations(config.databaseUrl, config.migrationsPath);
 const { db, sql } = createDb(config.databaseUrl);
 
@@ -128,7 +127,10 @@ const skillsCleanupSub = startSkillsCleanupSaga((agentId) =>
 const seedSources = parseSeedSources(config.skillSourcesSeed);
 
 const { forks } = composeForksModule({
-  orchestrator: createK8sForkOrchestrator({ api, namespace: config.namespace }),
+  orchestrator: createK8sForkOrchestrator({
+    customObjects,
+    namespace: config.namespace,
+  }),
 });
 
 const onForeignReplySub = startOnForeignReplySaga(forks);
@@ -139,12 +141,12 @@ const usage = composeUsageModule({
   activityTrackingEnabled: config.activityTrackingEnabled,
   inspectorRole: config.keycloakInspectorRole ?? "",
   listK8sAgents: async () => {
-    const cms = await k8sClient.listConfigMaps(`${LABEL_TYPE}=${TYPE_AGENT}`);
-    return cms
-      .filter((cm) => cm.metadata?.name && cm.metadata?.labels?.[LABEL_OWNER])
-      .map((cm) => ({
-        id: cm.metadata!.name!,
-        owner: cm.metadata!.labels![LABEL_OWNER]!,
+    const agents = await k8sClient.listCustomObjects(AGENTS_PLURAL);
+    return agents
+      .filter((a) => a.metadata?.name && a.metadata?.labels?.[LABEL_OWNER])
+      .map((a) => ({
+        id: a.metadata!.name!,
+        owner: a.metadata!.labels![LABEL_OWNER]!,
       }));
   },
 });

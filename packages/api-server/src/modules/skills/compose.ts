@@ -2,7 +2,7 @@ import type * as k8s from "@kubernetes/client-node";
 import type { Db } from "db";
 import type { Skill, SkillsService } from "api-server-api";
 import { createAgentsRepository } from "../agents/infrastructure/agents-repository.js";
-import { createTemplatesRepository } from "../templates/infrastructure/templates-repository.js";
+import type { TemplatesRepository } from "../templates/infrastructure/templates-repository.js";
 import { createK8sClient } from "../agents/infrastructure/k8s.js";
 import { createAgentRuntimeSkillsClient } from "./infrastructure/agent-runtime-client.js";
 import { scanPublicGithubArchive } from "./infrastructure/public-archive-scanner.js";
@@ -58,13 +58,14 @@ export function composeSkillsModule(
   seedSources: SkillSourceSeed[],
   brandName: string,
   runtimeMutator: RuntimeMutator,
+  templatesRepo: TemplatesRepository,
 ): SkillsService {
   const k8s = createK8sClient(api, namespace);
   return createSkillsService({
     repo: createSkillsRepository(db, seedSources),
     agentSkillsRepo: createAgentSkillsRepository(db),
     agentsRepo: createAgentsRepository(k8s),
-    templatesRepo: createTemplatesRepository(k8s),
+    templatesRepo,
     seedSources,
     runtimeClient: createAgentRuntimeSkillsClient(namespace),
     runtimeMutator,

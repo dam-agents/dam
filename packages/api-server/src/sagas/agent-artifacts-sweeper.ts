@@ -1,15 +1,16 @@
 /**
  * Periodic orphan reaper for per-agent Postgres state.
  *
- * The agent identity lives in K8s ConfigMaps; rules and approvals live in
- * Postgres keyed by `agent_id`. There's no cross-store foreign key, and
- * `agents.delete` runs the cleanup hooks best-effort. Anything those hooks
- * miss (replica died mid-delete, hook threw, manual `kubectl delete cm`,
- * pre-cleanup-hook agent on upgrade) accumulates as orphan rows.
+ * The agent identity lives in K8s Agent custom resources (ADR-058); rules and
+ * approvals live in Postgres keyed by `agent_id`. There's no cross-store
+ * foreign key, and `agents.delete` runs the cleanup hooks best-effort.
+ * Anything those hooks miss (replica died mid-delete, hook threw, manual
+ * `kubectl delete agent`, pre-cleanup-hook agent on upgrade) accumulates as
+ * orphan rows.
  *
- * Strategy: every `intervalMs` list the live agent ConfigMaps and the
- * distinct `agent_id`s referenced in each Postgres table; the difference
- * is the orphan set; delete those rows.
+ * Strategy: every `intervalMs` list the live Agent CRs and the distinct
+ * `agent_id`s referenced in each Postgres table; the difference is the orphan
+ * set; delete those rows.
  *
  * Multi-replica: every replica runs this; the diff queries are read-only
  * and the deletes are idempotent. A randomized initial delay keeps replicas
@@ -17,10 +18,7 @@
  * is fine — `DELETE WHERE agent_id IN (...)` is order-independent.
  */
 import type { K8sClient } from "../modules/agents/infrastructure/k8s.js";
-import {
-  LABEL_TYPE,
-  TYPE_AGENT,
-} from "../modules/agents/infrastructure/labels.js";
+import { AGENTS_PLURAL } from "../modules/agents/infrastructure/labels.js";
 
 export interface AgentArtifactsSweeper {
   start(): void;
@@ -56,10 +54,10 @@ export function createAgentArtifactsSweeper(
     if (running) return;
     running = true;
     try {
-      const cms = await deps.k8s.listConfigMaps(`${LABEL_TYPE}=${TYPE_AGENT}`);
+      const agents = await deps.k8s.listCustomObjects(AGENTS_PLURAL);
       const live = new Set(
-        cms
-          .map((cm) => cm.metadata?.name)
+        agents
+          .map((a) => a.metadata?.name)
           .filter((n): n is string => Boolean(n)),
       );
 

@@ -8,7 +8,10 @@ import {
   resolveInjection,
   sdsYamlContent,
 } from "../../modules/secrets/infrastructure/k8s-secrets-port.js";
-import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import type {
+  K8sClient,
+  KubeObject,
+} from "../../modules/agents/infrastructure/k8s.js";
 
 function fakeClient() {
   const created: k8s.V1Secret[] = [];
@@ -17,12 +20,7 @@ function fakeClient() {
   const store = new Map<string, k8s.V1Secret>();
   const client: K8sClient = {
     namespace: "test-ns",
-    listConfigMaps: async () => [],
-    getConfigMap: async () => null,
-    createConfigMap: async (b) => b,
-    replaceConfigMap: async (_n, b) => b,
-    patchConfigMap: async () => undefined,
-    deleteConfigMap: async () => undefined,
+
     listSecrets: async () => Array.from(store.values()),
     getSecret: async (n) => store.get(n) ?? null,
     createSecret: async (body) => {
@@ -39,12 +37,14 @@ function fakeClient() {
       deleted.push(n);
       store.delete(n);
     },
-    listPods: async () => [],
-    getPod: async () => null,
-    patchPod: async () => undefined,
-    deletePod: async () => false,
+
     listPVCs: async () => [],
     deletePVC: async () => undefined,
+    getCustomObject: async () => null,
+    listCustomObjects: async () => [],
+    createCustomObject: async (_p, b) => b as KubeObject,
+    patchCustomObject: async (_p, _n, b) => b as KubeObject,
+    deleteCustomObject: async () => undefined,
   };
   return { client, created, replaced, deleted, store };
 }

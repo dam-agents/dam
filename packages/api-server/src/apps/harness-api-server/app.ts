@@ -8,6 +8,7 @@ import {
   type SchedulesBoot,
 } from "../../modules/schedules/index.js";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
+import { createTemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
 import type { SkillSourceSeed } from "../../modules/skills/index.js";
 import { createHarnessRouter } from "./harness-router.js";
 import type { Config } from "../../config.js";
@@ -38,6 +39,8 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
+  // Boot-loaded, file-mounted templates (ADR-058), shared across requests.
+  const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
 
   const app = createHarnessRouter({
     channelManager,
@@ -53,6 +56,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         seedSources,
         config.brand.name,
         runtimeMutator,
+        templatesRepo,
       ),
     schedulesServiceFor: (owner) =>
       composeSchedulesForOwner({ boot: schedulesBoot, owner }).schedules,
