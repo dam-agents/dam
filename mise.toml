@@ -16,8 +16,6 @@ java = "21"
 maven = "latest"
 
 # Kubernetes
-# Pinned: Helm v4 applies server-side by default; floating "latest" silently
-# changes apply semantics. Bump deliberately.
 helm = "4.2.0"
 kubeconform = "latest"
 "lima" = "2"
