@@ -20,8 +20,11 @@ metadata:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: apiserver
 rules:
+  # No configmaps/pods: the api-server reads neither anywhere (ADR-058 —
+  # agents/forks are CRs, templates are file-mounted; ADR-059 — reachability is
+  # the Agent's Ready condition).
   - apiGroups: [""]
-    resources: ["configmaps", "secrets", "pods"]
+    resources: ["secrets"]
     verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -51,18 +54,22 @@ metadata:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: apiserver
 rules:
+  # ADR-058: the api-server is the sole writer of the Agent + Fork custom
+  # resource spec (create/patch/delete); the controller owns their status.
+  - apiGroups: ["agent-platform.ai"]
+    resources: ["agents", "forks"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Secrets for credentials. ConfigMaps are gone from the api-server's API
+  # surface (ADR-058): agents/forks are CRs and the chart-shipped templates
+  # are mounted as files, loaded at boot — not read via the K8s API.
   - apiGroups: [""]
-    resources: ["configmaps", "secrets"]
+    resources: ["secrets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: [""]
     resources: ["persistentvolumeclaims"]
     verbs: ["get", "list", "delete"]
-  - apiGroups: [""]
-    resources: ["pods"]
-    # `delete` powers agent restart: deleting pod-{id}-0 makes the StatefulSet
-    # recreate it with the current spec — functionally equivalent to a rolling
-    # restart for replicas=1 without racing against the controller's reconcile.
-    verbs: ["get", "list", "watch", "delete"]
+  # No pods: reachability is the Agent's Ready condition (ADR-059), and restart
+  # is a roll-rev annotation patch — the api-server never reads pods.
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

@@ -8,7 +8,7 @@ sources = ["**/*.yaml", "**/*.yml", "**/*.tpl"]
 
 ["helm:check:render"]
 dir = "{{config_root}}/deploy/helm/platform"
-run = "helm template platform . --set terms.version=test --set terms.text='Test Terms' | kubeconform -strict -summary -skip Certificate,Issuer,ClusterIssuer,AuthorizationPolicy,Gateway,SecurityContextConstraints"
+run = "helm template platform . --set terms.version=test --set terms.text='Test Terms' | kubeconform -strict -summary -skip Certificate,Issuer,ClusterIssuer,AuthorizationPolicy,Gateway,SecurityContextConstraints,CustomResourceDefinition"
 sources = ["**/*.yaml", "**/*.yml", "**/*.tpl"]
 
 ["helm:setup"]

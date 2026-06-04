@@ -1,7 +1,9 @@
 {{/*
-Agent template ConfigMaps. One per enabled entry in `.Values.agentTemplates`.
-Each becomes an agent-template ConfigMap the api-server lists by the
-`agent-platform.ai/type: agent-template` label.
+Agent templates (ADR-058). One ConfigMap in the RELEASE namespace with a
+`<name>.yaml` data key per enabled `.Values.agentTemplates` entry. It is
+mounted into the api-server pod (see apiserver/app.yaml) and loaded once at
+boot — the api-server no longer reads templates dynamically via the K8s API,
+so this CM needs no label selector and no agent-namespace placement.
 
 Only fields the template differs on are rendered. Anything omitted falls
 through at reconcile time to `controller.agent.templateDefaults.*` (chart
@@ -9,23 +11,22 @@ fallback) or `controller.agent.base.*` (chart-only policy).
 
 The literal string `$HOME` in mount paths and skillPaths is substituted
 HERE (chart render time) using the template's `agentHome` if set, else
-`controller.agent.templateDefaults.agentHome`. The rendered ConfigMap
-ships absolute paths — the controller and agent-runtime never see `$HOME`.
+`controller.agent.templateDefaults.agentHome`. The rendered spec ships
+absolute paths — the controller and agent-runtime never see `$HOME`.
 */}}
-{{- range $tmpl := .Values.agentTemplates }}
-{{- if $tmpl.enabled }}
-{{- $home := $tmpl.agentHome | default $.Values.controller.agent.templateDefaults.agentHome }}
----
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ $tmpl.name }}
-  namespace: {{ $.Values.agentNamespace }}
+  name: {{ include "platform.fullname" . }}-agent-templates
+  namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "platform.labels" $ | nindent 4 }}
-    agent-platform.ai/type: agent-template
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: apiserver
 data:
-  spec.yaml: |
+  {{- range $tmpl := .Values.agentTemplates }}
+  {{- if $tmpl.enabled }}
+  {{- $home := $tmpl.agentHome | default $.Values.controller.agent.templateDefaults.agentHome }}
+  {{ $tmpl.name }}.yaml: |
     version: agent-platform.ai/v1
     image: "{{ $tmpl.image.repository }}:{{ $tmpl.image.tag | default $.Chart.AppVersion }}"
     description: {{ $tmpl.description | quote }}
@@ -68,5 +69,5 @@ data:
     init: |
       {{- . | nindent 6 }}
     {{- end }}
-{{- end }}
-{{- end }}
+  {{- end }}
+  {{- end }}

@@ -235,6 +235,10 @@ spec:
             {{- end }}
             - name: TRUSTED_HOSTS_PATH
               value: /etc/platform/trusted-hosts
+            # ADR-058: agent templates are mounted from a ConfigMap and loaded
+            # once at boot — not read dynamically via the K8s API.
+            - name: AGENT_TEMPLATES_PATH
+              value: /etc/platform/agent-templates
             # Brand — drives UI title/theme, OAuth client_name, Slack
             # slash command, skill-publish git author + branch prefix.
             - name: BRAND_NAME
@@ -268,6 +272,11 @@ spec:
               mountPath: /etc/platform/trusted-hosts
               subPath: trusted-hosts
               readOnly: true
+            # Whole-ConfigMap mount (no subPath): each `<id>.yaml` data key
+            # surfaces as a file the api-server loads at boot (ADR-058).
+            - name: agent-templates
+              mountPath: /etc/platform/agent-templates
+              readOnly: true
           {{- if .Values.probes.enabled }}
           readinessProbe:
             httpGet:
@@ -291,3 +300,6 @@ spec:
             items:
               - key: trusted-hosts
                 path: trusted-hosts
+        - name: agent-templates
+          configMap:
+            name: {{ include "platform.fullname" . }}-agent-templates
