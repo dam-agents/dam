@@ -36,14 +36,20 @@ rules:
   - apiGroups: ["agent-platform.ai"]
     resources: ["agents/status", "forks/status"]
     verbs: ["get", "update", "patch"]
-  # ConfigMaps remain for the chart-shipped templates and the controller-
-  # rendered Envoy bootstrap CM (owner-refed to the Agent/Fork).
+  # The children the controller renders (Envoy bootstrap CM, StatefulSets,
+  # Services, …) are owner-refed to the Agent/Fork CR with blockOwnerDeletion.
+  # K8s admission only permits that if the creator can update the owner's
+  # finalizers, so the controller needs the agents/forks finalizers subresource.
+  # (Pre-ADR-058 the children were owned by the agent ConfigMap, hence the old
+  # configmaps/finalizers grant — now dead.)
+  - apiGroups: ["agent-platform.ai"]
+    resources: ["agents/finalizers", "forks/finalizers"]
+    verbs: ["update"]
+  # ConfigMaps for the chart-shipped templates and the controller-rendered Envoy
+  # bootstrap CM (owner-refed to the Agent/Fork).
   - apiGroups: [""]
     resources: ["configmaps"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  - apiGroups: [""]
-    resources: ["configmaps/finalizers"]
-    verbs: ["update"]
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
