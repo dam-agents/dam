@@ -1,4 +1,4 @@
-# ADR-058: SSH access to agents via an in-pod inetd sshd tunneled over the agent WebSocket
+# ADR-061: SSH access to agents via an in-pod inetd sshd tunneled over the agent WebSocket
 
 **Date:** 2026-06-02
 **Status:** Accepted

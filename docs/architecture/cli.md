@@ -6,7 +6,7 @@ Last verified: 2026-06-03
 
 - [ADR-039 — Platform CLI foundation](../adrs/039-cli-foundation.md) — TypeScript Node package distributed via npm; reuses the api-server tRPC contract; flat config under XDG-standard locations; server-advertised compatibility floor.
 - [ADR-037 — Remote terminal](../adrs/037-remote-terminal.md) — established the "terminal" session mode; `dam chat` connects the local terminal to it.
-- [ADR-058 — SSH access to agents](../adrs/058-ssh-access.md) — `dam ssh` tunnels standard SSH to an in-pod sshd over the agent WebSocket; `--proxy` is the ssh ProxyCommand, `-m code` opens VS Code Remote-SSH.
+- [ADR-061 — SSH access to agents](../adrs/061-ssh-access.md) — `dam ssh` tunnels standard SSH to an in-pod sshd over the agent WebSocket; `--proxy` is the ssh ProxyCommand, `-m code` opens VS Code Remote-SSH.
 - [#73 — Import local project context into agent workspace](https://github.com/dam-agents/dam/issues/73) — the `dam import` verb that uploads local files and folders into an Agent.
 - [#254 — Granular file ops over the agent-runtime proxy](https://github.com/dam-agents/dam/issues/254) — the `dam file` group (`get`, `put`, `list`) for single-file workspace operations.
 - [ADR-046 — Eliminate Instance, collapse into Agent](../adrs/046-eliminate-instance.md) — the CLI addresses Agents (not Instances); a single `dam agent` group covers the lifecycle.
@@ -129,7 +129,7 @@ The chat module composes a per-host `SessionsPort` backed by a small ACP client 
 
 ## SSH access
 
-`dam ssh <agent>` opens a standard SSH session to a running agent. Where `dam chat` attaches to a PTY running the harness TUI, `dam ssh` drops into a plain login shell (`/bin/bash`) in the agent's workspace and supports everything a real SSH server does — `scp`, `sftp`, port-forwarding, and VS Code Remote-SSH. The transport is an in-pod OpenSSH `sshd` spawned per-connection in inetd mode and tunneled over the agent WebSocket; the rationale lives in [ADR-058](../adrs/058-ssh-access.md). The SSH wire protocol is opaque to the CLI and the api-server (which relays bytes verbatim) — SSH terminates at the in-pod sshd, which reuses the same WebSocket upgrade auth (token → ownership → terms) that `dam chat` does.
+`dam ssh <agent>` opens a standard SSH session to a running agent. Where `dam chat` attaches to a PTY running the harness TUI, `dam ssh` drops into a plain login shell (`/bin/bash`) in the agent's workspace and supports everything a real SSH server does — `scp`, `sftp`, port-forwarding, and VS Code Remote-SSH. The transport is an in-pod OpenSSH `sshd` spawned per-connection in inetd mode and tunneled over the agent WebSocket; the rationale lives in [ADR-060](../adrs/061-ssh-access.md). The SSH wire protocol is opaque to the CLI and the api-server (which relays bytes verbatim) — SSH terminates at the in-pod sshd, which reuses the same WebSocket upgrade auth (token → ownership → terms) that `dam chat` does.
 
 The client is chosen by `-m`/`--mode` (`ssh` | `code` | `zed`) and the binary by `-x`/`--exec`. With neither flag the mode is `ssh` and the executable is `ssh`. Given only `--exec`, the mode is inferred from the executable's basename (e.g. `-x code-insiders` → mode `code`); given only `--mode`, the executable defaults to the mode name. So VS Code Insiders is `-m code -x code-insiders` (or just `-x code-insiders`).
 
