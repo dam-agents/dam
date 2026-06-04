@@ -1,7 +1,7 @@
 # ADR-058: CRDs over ConfigMaps — reconciled resources become custom resources
 
 **Date:** 2026-06-03
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** @jezekra1
 
 ## Context
@@ -14,7 +14,7 @@
 
 - **Scope.** Agent and Fork become CRDs with a status subresource (both are reconciled). Template stays a ConfigMap — it is chart-rendered, read-only at runtime, and never reconciled, so it earns neither a status subresource nor migration cost. Schedules remain in Postgres, unchanged.
 - **Eliminate the desired-state latch.** "Running" is no longer stored intent. Wake is a one-off activity poke; the controller hibernates on idleness and records running-vs-hibernated as observed status. This removes the only field both parties wrote and restores single-writer ownership by elimination, not negotiation.
-- **Field placement.** Connection and secret grants are intent and move into `spec` (they were annotations only to avoid rewriting the opaque ConfigMap spec blob; a structured CRD spec removes that reason). High-frequency signals — activity timestamp, active-session, secrets-revision — stay annotations: independently patchable, not part of the agent definition, and not subject to the spec/status writer split.
+- **Field placement.** Connection and secret grants are intent and move into `spec` (they were annotations only to avoid rewriting the opaque ConfigMap spec blob; a structured CRD spec removes that reason). High-frequency, out-of-band signals — activity timestamp, active-session, secrets-revision, and the api-server-set roll trigger that forces a rolling restart/re-render — stay annotations: independently patchable, not part of the agent definition, and not subject to the spec/status writer split.
 - **One validation point.** The CRD schema is authored Go-first; the K8s API server validates at admission. The controller and api-server consume generated types for typing only and do not re-validate the resource shape. Cross-field and referential rules stay application logic.
 - **Bundling.** The CRD ships as a values-gated templated chart manifest so `helm upgrade` propagates schema changes — not the non-upgradable `crds/` directory, and not a controller self-install. Templates-as-ConfigMaps keeps the chart free of custom-resource instances, so no CRD-before-CR install ordering hazard exists.
 - **Schema evolution without conversion webhooks.** Agent/Fork CRs are single-writer (api-server) and co-released with the controller, so there is no version skew to bridge. Evolve additively under one served and stored version; for a breaking change, use expand/contract with a Helm post-upgrade backfill (spec backfill runs from the api-server, status backfill from the controller). A conversion webhook plus storage-version migration is the documented escalation, valid only if Agent/Fork CRs ever become externally authored.
