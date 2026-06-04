@@ -427,7 +427,10 @@ echo "Installing/upgrading Platform chart..."
 # No --wait: the keycloak-provision post-install hook imports the platform realm
 # after deployments come up. With --wait, helm would block on readiness
 # before the hook runs.
-helm --kubeconfig="$KUBECONFIG" upgrade --install platform deploy/helm/platform -f deploy/helm/platform/values-local.yaml --timeout 15m ${HELM_VALUES:+-f "$HELM_VALUES"} "${HELM_EXTRA_ARGS[@]}"
+# --force-conflicts: Helm v4 applies server-side; field drift on a chart-managed
+# object (a stray kubectl patch/rollout, another controller) otherwise hard-fails
+# the upgrade with an ownership conflict. The chart is the source of truth here.
+helm --kubeconfig="$KUBECONFIG" upgrade --install platform deploy/helm/platform -f deploy/helm/platform/values-local.yaml --timeout 15m --force-conflicts ${HELM_VALUES:+-f "$HELM_VALUES"} "${HELM_EXTRA_ARGS[@]}"
 
 # 5. Restart pods to pick up new local images (dev only — :latest tags don't trigger rollout)
 if [ "$NO_RESTART" = true ]; then
