@@ -31,7 +31,9 @@ export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
     // Don't dispatch to an agent that isn't Ready (ADR-059): the row stays
     // unsettled, so the sweep re-dispatches once it becomes Ready.
     if (!(await deps.agentRunningPort.isRunning(agentId))) {
-      deps.log(`[runtime-worker] ${agentId}: agent not Ready; deferring to sweep`);
+      deps.log(
+        `[runtime-worker] ${agentId}: agent not Ready; deferring to sweep`,
+      );
       return;
     }
 
