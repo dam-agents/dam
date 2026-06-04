@@ -38,7 +38,7 @@ To release a different version than what's on main, run `mise run release:set-ve
 Run from the release branch. The task:
 
 1. Tags the current commit (e.g. `v0.3.0-rc1`) and pushes tag + branch atomically.
-2. The `v*` tag triggers the [CD workflow](.github/workflows/cd.yml): images are built, Helm chart is pushed, CLI is published to npm with `--tag rc`.
+2. The `v*` tag triggers the release jobs in [`cd.yml`](.github/workflows/cd.yml): images are built, Helm chart is pushed, CLI is published to npm with `--tag rc`.
 3. Bumps the branch to the next RC (`0.3.0-rc2`).
 
 Repeat as needed — cherry-pick fixes onto the release branch and publish another RC.
@@ -61,7 +61,7 @@ Run from the release branch when the latest RC is validated. The task:
 
 ## What CD publishes
 
-On every `v*` tag push, the [CD workflow](../../.github/workflows/cd.yml):
+On every `v*` tag push, the release jobs in [`cd.yml`](../../.github/workflows/cd.yml):
 
 - Builds and pushes container images (platform components + agents) to `quay.io/dam-agents/*`
 - Packages and pushes the Helm chart to `oci://quay.io/dam-agents/charts`
