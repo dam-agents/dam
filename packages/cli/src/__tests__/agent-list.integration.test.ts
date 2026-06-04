@@ -136,7 +136,6 @@ function makeAgent(overrides: Partial<Agent> = {}): Agent {
     name: "demo",
     templateId: "claude-code",
     spec: {
-      version: "1",
       name: overrides.name ?? "demo",
       image: "",
     },

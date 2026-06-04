@@ -1,7 +1,6 @@
 import type { z } from "zod";
-import type { EnvVar } from "../shared.js";
 import { ChannelType } from "../shared.js";
-import type { Mount, Resources } from "../templates/types.js";
+import type { AgentSpecCR } from "../../crd-types.gen.js";
 import type {
   agentCreateInputSchema,
   agentUpdateInputSchema,
@@ -42,31 +41,13 @@ export type AgentState =
   | "hibernated"
   | "error";
 
-// Per ADR-042, agent spec carries Layer B + C fields only. Layer A
-// (security context, scheduling, pod metadata, cluster details) is
-// chart-only and applied by the controller at reconcile time.
-//
-// Per ADR-058, run state is no longer stored intent: there is no
-// `desiredState`. Running-vs-hibernated is observed status the controller
-// derives from activity, surfaced as `Agent.state`.
-export interface AgentSpec {
-  version: string;
-  name: string;
-  // Copied from template at creation:
-  image: string;
-  description?: string;
-  mounts?: Mount[];
-  init?: string;
-  env?: EnvVar[];
-  resources?: Resources;
-  /** Overrides chart-wide imagePullPolicy. Empty = inherit. */
-  imagePullPolicy?: string;
-  /** Overrides chart-wide storageSize for the persistent home mount. */
-  storageSize?: string;
-  skillPaths?: string[];
-  /** Bound credential Secret name; consumed by the paired gateway pod (ADR-038). */
-  secretRef?: string;
-}
+// The public projection of the Agent CR spec: the generated AgentSpecCR (the
+// Go-authored CRD is the single source, ADR-058) with name guaranteed (the CRD
+// marks it optional). Layer A fields (security context, scheduling, pod
+// metadata) are chart-only and never in the CRD spec, so they're absent here
+// too (ADR-042). The connection/secret grants are api-server-written spec
+// intent (ADR-058), so they belong in the spec.
+export type AgentSpec = AgentSpecCR & { name: string };
 
 export interface Agent {
   id: string;

@@ -1,6 +1,10 @@
-import { agentSpecSchema } from "api-server-api";
-import type { Agent, AgentState, ChannelConfig } from "api-server-api";
-import type { z } from "zod";
+import type {
+  Agent,
+  AgentSpec,
+  AgentSpecCR,
+  AgentState,
+  ChannelConfig,
+} from "api-server-api";
 import type { KubeObject } from "./k8s.js";
 import {
   GROUP,
@@ -37,7 +41,7 @@ export interface InfraAgent {
   id: string;
   name: string;
   templateId?: string;
-  spec: z.infer<typeof agentSpecSchema>;
+  spec: AgentSpec;
   /** The authoritative Ready condition (ADR-059): Ready = AgentPodReady ∧
    *  GatewayPodReady. False until the controller publishes it. */
   ready: boolean;
@@ -84,19 +88,12 @@ export function agentIsOwnedBy(obj: KubeObject, owner: string): boolean {
 
 export function parseInfraAgent(obj: KubeObject): InfraAgent {
   const id = obj.metadata?.name ?? "";
-  // The CR spec carries controller-only fields (grants, agentHome) the public
-  // AgentSpec doesn't model, and lacks the legacy `version`; reconcile both.
-  const {
-    grantedSecretIds: _gs,
-    grantedConnectionIds: _gc,
-    agentHome: _ah,
-    ...crSpec
-  } = (obj.spec ?? {}) as Record<string, unknown>;
-  const spec = agentSpecSchema.parse({
-    version: SPEC_VERSION,
-    name: id,
-    ...crSpec,
-  });
+  // obj.spec is the generated AgentSpecCR (K8s validated it at admission,
+  // ADR-058) and is the public spec as-is — the grants are api-server-written
+  // intent, not controller status, so they stay. Only guarantee name (the CR
+  // marks it optional; fall back to the resource id).
+  const crSpec = (obj.spec ?? {}) as AgentSpecCR;
+  const spec: AgentSpec = { ...crSpec, name: crSpec.name ?? id };
 
   const status = (obj.status ?? {}) as AgentStatusObject;
   const reconciled = status.conditions?.find((c) => c.type === "Reconciled");
@@ -143,10 +140,6 @@ export function buildAgentObject(
   const labels: Record<string, string> = { [LABEL_OWNER]: owner };
   if (templateId) labels[LABEL_TEMPLATE_REF] = templateId;
 
-  // The CRD spec drops the legacy version + desiredState fields (ADR-058);
-  // strip them so the written resource matches the structural schema.
-  const { version: _v, desiredState: _d, ...crSpec } = spec;
-
   return {
     apiVersion: SPEC_VERSION,
     kind: KIND_AGENT,
@@ -155,7 +148,7 @@ export function buildAgentObject(
       labels,
       annotations: { [LAST_ACTIVITY_KEY]: new Date().toISOString() },
     },
-    spec: crSpec,
+    spec,
   };
 }
 

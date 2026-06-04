@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ForkSpecCR } from "api-server-api";
 import type { ForkFailureReason } from "../../../events.js";
 import type { ForkSpec, ForkStatus } from "../domain/fork.js";
 import {
@@ -15,7 +16,7 @@ export interface ForkObject {
   apiVersion: string;
   kind: string;
   metadata: { name: string; labels?: Record<string, string> };
-  spec: { agentName: string; foreignSub: string; sessionId?: string };
+  spec: ForkSpecCR;
   status?: unknown;
 }
 
@@ -37,7 +38,7 @@ export function buildForkObject(args: {
   forkId: string;
   spec: ForkSpec;
 }): ForkObject {
-  const spec: ForkObject["spec"] = {
+  const spec: ForkSpecCR = {
     agentName: args.spec.agentId,
     foreignSub: args.spec.foreignSub,
   };

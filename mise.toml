@@ -7,6 +7,10 @@ go = "1.25"
 "go:golang.org/x/vuln/cmd/govulncheck" = "latest"
 "go:sigs.k8s.io/controller-tools/cmd/controller-gen" = "latest"
 
+# Generates the api-server's Agent CR spec TS type from the controller's CRD
+# (api-server:gen:crd-types) — keeps the Go-authored schema the single source.
+"npm:json-schema-to-typescript" = "latest"
+
 # Java + Maven — required by keycloakify to package the theme JAR (packages/keycloak-theme)
 java = "21"
 maven = "latest"

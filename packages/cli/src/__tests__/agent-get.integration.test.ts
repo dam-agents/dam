@@ -117,7 +117,6 @@ function makeAgent(overrides: Partial<Agent> = {}): Agent {
     name: "demo",
     templateId: "claude-code",
     spec: {
-      version: "1",
       name: overrides.name ?? "demo",
       image: "",
     },
@@ -159,7 +158,6 @@ describe("dam agent get (integration)", () => {
       name: "prod",
       templateId: "claude-code",
       spec: {
-        version: "1",
         name: "prod",
         image: "registry.example.com/claude-code:latest",
         description: "My prod environment",

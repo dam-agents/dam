@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { egressPresetSchema } from "../egress-rules/schemas.js";
 import { envVarSchema } from "../shared.js";
-import { mountSchema, resourcesSchema } from "../templates/schemas.js";
 
 const idSchema = z.object({ id: z.string().min(1) });
 
@@ -51,28 +50,6 @@ export const agentConnectTelegramInputSchema = z.object({
   botToken: z.string().min(1),
 });
 
-// Loose schema for parsing ConfigMap-stored env entries. Looser than
-// `envVarSchema` (which guards the user-input boundary) because data
-// already inside a ConfigMap was written by code we trust and may
-// predate the stricter user-input rules.
-const envVarConfigMapSchema = z.object({
-  name: z.string(),
-  value: z.string(),
-});
-
-export const agentSpecSchema = z
-  .object({
-    version: z.string(),
-    name: z.string(),
-    image: z.string(),
-    description: z.string().optional(),
-    mounts: z.array(mountSchema).optional(),
-    init: z.string().optional(),
-    env: z.array(envVarConfigMapSchema).optional(),
-    resources: resourcesSchema.optional(),
-    imagePullPolicy: z.string().optional(),
-    storageSize: z.string().optional(),
-    skillPaths: z.array(z.string()).optional(),
-    secretRef: z.string().optional(),
-  })
-  .passthrough();
+// The Agent CR spec shape is the generated AgentSpecCR (crd-types.gen.ts, from
+// the controller's CRD); the public AgentSpec (types.ts) derives from it. K8s
+// validates it at admission (ADR-058), so there's no Zod re-validation here.

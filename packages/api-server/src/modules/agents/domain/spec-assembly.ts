@@ -1,5 +1,4 @@
 import type { TemplateSpec } from "api-server-api";
-import { SPEC_VERSION } from "api-server-api";
 
 export function assembleSpecFromTemplate(
   name: string,
@@ -8,7 +7,6 @@ export function assembleSpecFromTemplate(
 ): Record<string, unknown> {
   return {
     name,
-    version: SPEC_VERSION,
     image: tmplSpec.image,
     description: opts.description ?? tmplSpec.description,
     mounts: tmplSpec.mounts,
@@ -33,7 +31,6 @@ export function assembleSpecFromImage(
 ): Record<string, unknown> {
   return {
     name,
-    version: SPEC_VERSION,
     image: opts.image,
     description: opts.description,
   };
