@@ -32,13 +32,10 @@ export async function resolveActiveHost(
     );
   }
 
-  const cfg = await deps.configService.getResolved({ flag: opts.flag });
-  if (!cfg.ok) {
-    printConfigError(cfg.error);
-    process.exit(opts.exitCodes.runtimeFailure);
-  }
-
-  return cfg.value.server;
+  return resolveHostFromConfig(deps, {
+    flag: opts.flag,
+    exitCodes: { runtimeFailure: opts.exitCodes.runtimeFailure },
+  });
 }
 
 export async function resolveHostFromConfig(

@@ -858,12 +858,8 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       sourceIp,
       detail: { relay: relayKind },
     });
-    const relay =
-      relayKind === "acp"
-        ? acpRelay
-        : relayKind === "ssh"
-          ? sshRelay
-          : terminalRelay;
+    const relays = { acp: acpRelay, ssh: sshRelay, terminal: terminalRelay };
+    const relay = relays[relayKind as keyof typeof relays];
     relay.handleUpgrade(req, socket, head, agentId);
   });
 
