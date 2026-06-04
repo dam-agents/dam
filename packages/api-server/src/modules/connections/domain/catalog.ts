@@ -443,6 +443,14 @@ function googleService(
         headerName: "Authorization",
         valueFormat: "Bearer {value}",
       })),
+      // Google clients fetch the public discovery doc at startup (e.g.
+      // /discovery/v1/apis/gmail/v1/rest), outside each service's host scope.
+      // Public + read-only, so allow without credential injection.
+      {
+        kind: "egress-allow" as const,
+        host: "www.googleapis.com",
+        pathPattern: "/discovery/v1/apis/*",
+      },
     ],
   };
 }
