@@ -36,33 +36,32 @@ run = "pnpm exec prettier --write 'src/**/*.ts'"
 description = "Regenerate the Agent + Fork CR spec TS types from the controller's CRDs (ADR-058). AgentSpec derives from AgentSpecCR and buildForkObject is typed against ForkSpecCR, so the Go-authored types are the single source."
 dir = "{{config_root}}/packages/api-server-api"
 # Chain: api/v1/*.go --(controller:generate)--> CRD yaml --(here)--> crd-types.gen.ts
-depends = ["controller:generate"]
+depends = ["controller:generate", "common:setup:pnpm"]
 sources = [
   "{{config_root}}/deploy/helm/platform/files/crds/agent-platform.ai_agents.yaml",
   "{{config_root}}/deploy/helm/platform/files/crds/agent-platform.ai_forks.yaml",
+  "scripts/gen-crd-types.sh",
 ]
 outputs = ["src/crd-types.gen.ts"]
+run = "bash scripts/gen-crd-types.sh {{config_root}} src/crd-types.gen.ts"
+
+["api-server-api:check:gen"]
+description = "Fail if the committed CRD types are stale vs the committed CRDs (ADR-058 drift gate). Generates to a temp file and diffs — it never rewrites the committed file, which the tsc consumers read concurrently during `mise run check`."
+dir = "{{config_root}}/packages/api-server-api"
+depends = ["common:setup:pnpm"]
+sources = [
+  "{{config_root}}/deploy/helm/platform/files/crds/agent-platform.ai_agents.yaml",
+  "{{config_root}}/deploy/helm/platform/files/crds/agent-platform.ai_forks.yaml",
+  "src/crd-types.gen.ts",
+  "scripts/gen-crd-types.sh",
+]
 run = '''
 #!/usr/bin/env bash
 set -eo pipefail
-crds="{{config_root}}/deploy/helm/platform/files/crds"
-out="src/crd-types.gen.ts"
-gen() { # <crd-file> <TypeName> — emit the .spec subschema as a TS interface
-  yq -o=json ".spec.versions[0].schema.openAPIV3Schema.properties.spec | .title = \"$2\"" "$crds/$1" \
-    | json2ts --no-additionalProperties --bannerComment ""
-}
-{
-  echo "/* Code generated from the agent-platform.ai CRDs by \`mise run api-server-api:gen:crd-types\`. DO NOT EDIT. */"
-  echo
-  gen agent-platform.ai_agents.yaml AgentSpecCR
-  echo
-  gen agent-platform.ai_forks.yaml ForkSpecCR
-} > "$out"
-pnpm exec prettier --write "$out" >/dev/null
+tmp="$(mktemp -d)/crd-types.gen.ts"
+bash scripts/gen-crd-types.sh "{{config_root}}" "$tmp"
+if ! diff -u src/crd-types.gen.ts "$tmp"; then
+  echo "crd-types.gen.ts is stale — run: mise run api-server-api:gen:crd-types" >&2
+  exit 1
+fi
 '''
-
-["api-server-api:check:gen"]
-description = "Fail if the generated CRD types are stale vs the committed CRDs (ADR-058 drift gate)."
-dir = "{{config_root}}/packages/api-server-api"
-depends = ["api-server-api:gen:crd-types"]
-run = "git diff --exit-code -- src/crd-types.gen.ts"
