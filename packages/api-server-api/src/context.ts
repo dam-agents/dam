@@ -5,6 +5,7 @@ import type { ConnectionsService } from "./modules/connections/types.js";
 import type { E2eService } from "./modules/e2e/types.js";
 import type { EgressRulesService } from "./modules/egress-rules/types.js";
 import type { FilesService } from "./modules/files/router.js";
+import type { ReposService } from "./modules/repos/types.js";
 import type { SchedulesService } from "./modules/schedules/types.js";
 import type { SecretsService } from "./modules/secrets/types.js";
 import type { SkillsService } from "./modules/skills/types.js";
@@ -18,6 +19,7 @@ export interface UserIdentity {
 
 export interface ApiContext {
   templates: TemplatesService;
+  repos: ReposService;
   agents: AgentsService;
   schedules: SchedulesService;
   secrets: SecretsService;

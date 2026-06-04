@@ -28,6 +28,10 @@ export interface CreateAgentInput {
   secretIds?: string[];
   appConnectionIds?: string[];
   egressPreset?: EgressPreset;
+  /** Optional: seed the working directory by cloning this public repo once,
+   *  before first run. `source.type` defaults to "git" server-side. Flows
+   *  straight through to `agents.create`. */
+  workspace?: { source: { repo: string } };
   /** Optional local-context import. Files are bundled and uploaded as a
    *  tar to the new agent's `<agenthome>/work` after the agent is
    *  created. Failures here surface as a toast but do not roll back the

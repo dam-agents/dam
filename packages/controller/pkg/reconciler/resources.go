@@ -293,6 +293,12 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 	if ic := buildNPGateInitContainer(cfg, gatewayClusterIP); ic != nil {
 		initContainers = append(initContainers, *ic)
 	}
+	// Clone-repo seeds the working dir from a public repo. It runs after the
+	// egress lockdown (so it clones through the gateway like any other egress)
+	// and before the user init script (so seeding never clobbers the clone).
+	if ic := buildCloneRepoInitContainer(agentSpec, pullPolicy, env, volumeMounts); ic != nil {
+		initContainers = append(initContainers, *ic)
+	}
 	if initScript != "" {
 		initContainers = append(initContainers, corev1.Container{
 			Name:            "init",

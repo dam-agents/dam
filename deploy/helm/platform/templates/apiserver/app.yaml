@@ -79,6 +79,7 @@ spec:
         # the pod when the rendered templates change, making `helm upgrade` of a
         # template take effect instead of serving stale ones until the next restart.
         checksum/agent-templates: {{ include (print $.Template.BasePath "/agent-templates.yaml") . | sha256sum }}
+        checksum/agent-repos: {{ include (print $.Template.BasePath "/agent-repos.yaml") . | sha256sum }}
       labels:
         {{- include "platform.labels" . | nindent 8 }}
         app.kubernetes.io/component: apiserver
@@ -245,6 +246,10 @@ spec:
             # once at boot — not read dynamically via the K8s API.
             - name: AGENT_TEMPLATES_PATH
               value: /etc/platform/agent-templates
+            # Curated public-repo registry, mounted from a ConfigMap and loaded
+            # once at boot (same pattern as agent templates).
+            - name: AGENT_REPOS_PATH
+              value: /etc/platform/agent-repos
             # Brand — drives UI title/theme, OAuth client_name, Slack
             # slash command, skill-publish git author + branch prefix.
             - name: BRAND_NAME
@@ -283,6 +288,9 @@ spec:
             - name: agent-templates
               mountPath: /etc/platform/agent-templates
               readOnly: true
+            - name: agent-repos
+              mountPath: /etc/platform/agent-repos
+              readOnly: true
           {{- if .Values.probes.enabled }}
           readinessProbe:
             httpGet:
@@ -309,3 +317,6 @@ spec:
         - name: agent-templates
           configMap:
             name: {{ include "platform.fullname" . }}-agent-templates
+        - name: agent-repos
+          configMap:
+            name: {{ include "platform.fullname" . }}-agent-repos

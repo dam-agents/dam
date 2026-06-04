@@ -64,6 +64,37 @@ type AgentSpec struct {
 	// GrantedConnectionIDs are the connection IDs granted to this agent.
 	// +optional
 	GrantedConnectionIDs []string `json:"grantedConnectionIds,omitempty"`
+
+	// Workspace seeds the agent's working directory at first start. Optional;
+	// absent means the working directory starts empty as before.
+	// +optional
+	Workspace *WorkspaceSpec `json:"workspace,omitempty"`
+}
+
+// WorkspaceSpec configures one-shot working-directory initialization.
+//
+// Source is nested (rather than a flat repo URL) deliberately: it is a
+// discriminated union keyed on Type, so non-git sources (e.g. cloud storage)
+// can be added later without a breaking rename. Sync/behavior knobs that are
+// source-agnostic (auto-pull, clean-on-reset, …) belong as flat siblings of
+// Source on this struct, not inside it.
+type WorkspaceSpec struct {
+	// Source describes where the working directory is seeded from.
+	// +optional
+	Source *WorkspaceSource `json:"source,omitempty"`
+}
+
+// WorkspaceSource is the seed for the working directory. Type discriminates the
+// kind; only "git" is handled today.
+type WorkspaceSource struct {
+	// Type is the source kind ("git"). Reserved for non-git sources later.
+	// +optional
+	Type string `json:"type,omitempty"`
+	// Repo is an HTTPS git clone URL (Type "git") cloned into the working
+	// directory once, before first run. Public repos only — no credentials
+	// are injected.
+	// +optional
+	Repo string `json:"repo,omitempty"`
 }
 
 // Condition types on an Agent's status. Conditions are the source of truth for

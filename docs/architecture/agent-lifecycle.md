@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-06-03
+Last verified: 2026-06-04
 
 ## Motivated by
 
@@ -82,6 +82,8 @@ Pod env at start is the composition of **three** layers — last occurrence wins
 Template env contributes at *create time only*: when an Agent is created from a Template, the api-server's `assembleSpecFromTemplate` step copies template env into `agent.env`. The controller never reads the Template again at pod start, so editing a Template never re-flows into a running Agent — there is no "template envs" runtime layer. Editing `agent.env` takes effect on the next pod restart.
 
 Connector state that doesn't fit the env model (per-host CLI configs, allowlists, and similar) is materialized as files directly under HOME by `agent-runtime` itself, which holds an SSE connection to the api-server and merges declarative file fragments without restarting the pod. Image-baked content under the same paths participates in the merge — `agent-runtime` writes to the real PVC path, not a shadowing `emptyDir`.
+
+The working directory can optionally be seeded from a public git repo. When `spec.workspace.source` names a git repo (chosen at create time from a curated registry), the controller emits a harness-agnostic `clone-repo` init container ordered **after** the egress-lockdown init — so the clone routes through the paired gateway like any other egress and trusts the platform MITM CA via the image entrypoint — and **before** the user `init` script, so home-seeding never clobbers the clone. It reuses the agent container's proxy/CA env and volume mounts verbatim. The clone is **one-shot and idempotent**: it lands at the working-dir root on the persisted PVC and is skipped on later restarts (a failed clone is cleaned up so the next start retries). The platform never tracks, pulls, or pushes the repo afterward. `workspace.source` is a discriminated union (`type: git` today), leaving room for non-git sources without a breaking shape change.
 
 ### Wake
 

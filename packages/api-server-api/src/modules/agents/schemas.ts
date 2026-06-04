@@ -26,6 +26,18 @@ export const agentCreateInputSchema = z
     secretRef: z.string().optional(),
     allowedUserEmails: z.array(z.email()).optional(),
     egressPreset: egressPresetSchema.optional(),
+    // Optional one-shot working-directory seed. `source` is a discriminated
+    // union keyed on `type` (only "git" today) so non-git sources can be added
+    // without a breaking shape change. The git URL is a raw pass-through — the
+    // UI picks it from the curated repo registry.
+    workspace: z
+      .object({
+        source: z.object({
+          type: z.literal("git").default("git"),
+          repo: z.url(),
+        }),
+      })
+      .optional(),
   })
   .refine((d) => d.templateId !== undefined || d.image !== undefined, {
     message: "Either templateId or image is required",

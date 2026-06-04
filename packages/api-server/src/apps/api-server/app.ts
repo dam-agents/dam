@@ -27,6 +27,7 @@ import {
 } from "../../modules/agents/index.js";
 import { composeTemplatesModule } from "../../modules/templates/index.js";
 import { createTemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
+import { createReposRepository } from "../../modules/repos/infrastructure/repos-repository.js";
 import {
   composeSchedulesForOwner,
   type SchedulesBoot,
@@ -146,6 +147,9 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   // Templates are file-mounted config loaded once at boot (ADR-058); shared
   // across requests rather than re-read from K8s on each tRPC call.
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
+  // Curated public-repo registry — same boot-loaded, file-mounted pattern as
+  // templates. Doubles as the ReposService (read-only, request-independent).
+  const reposService = createReposRepository(config.agentReposPath);
 
   const connectionsBoot = composeConnectionsAtBoot({
     db,
@@ -667,6 +671,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       router: appRouter,
       createContext: (): ApiContext => ({
         templates,
+        repos: reposService,
         agents,
         schedules,
         secrets,

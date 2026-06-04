@@ -100,6 +100,8 @@ export interface TemplateView {
   description?: string;
 }
 
+export type { RepoView } from "api-server-api";
+
 export type AgentState =
   | "starting"
   | "running"

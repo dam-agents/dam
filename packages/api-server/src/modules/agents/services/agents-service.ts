@@ -240,6 +240,9 @@ export function createAgentsService(deps: {
         spec.env = preserveProtectedEnvs(base, [...base, ...input.env]);
       }
       if (input.secretRef !== undefined) spec.secretRef = input.secretRef;
+      // One-shot working-dir seed: the controller clones this repo before the
+      // first run, then never tracks it (no pull/push/refresh).
+      if (input.workspace) spec.workspace = input.workspace;
       // ADR-058: no desiredState — a freshly-created agent runs (recent
       // activity), and the idle checker hibernates it once it goes quiet.
       const owner = deps.owner ?? "";

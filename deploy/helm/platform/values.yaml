@@ -735,6 +735,20 @@ agentTemplates:
       tag: ""
     storageSize: "1Gi"
 
+# -- Curated registry of public git repos an agent's working directory can be
+# seeded from at creation time (cloned once into /home/agent/work before the
+# first run; never tracked/pulled/pushed afterward). Rendered into the
+# `agent-repos` ConfigMap and loaded by the api-server at boot. Each entry maps
+# to the harness template names it's compatible with; the Add Agent dialog
+# filters by the chosen harness (an entry with no `compatibleTemplates` is
+# offered for no harness). Public repos only — no credentials are injected.
+agentRepos:
+  - id: google-workspace
+    name: Google Workspace
+    url: https://github.com/dam-agents/google-workspace.git
+    description: "Tools and skills for working with Google Workspace"
+    compatibleTemplates: [claude-code]
+
 # -- E2E test affordances (ADR-056). Gated test-only surface: the api-server
 # registers a control tRPC namespace that drives the mock Agent harness over
 # the existing ACP relay. Default off — flipped on by the e2e/local install.

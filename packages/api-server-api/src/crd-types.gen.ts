@@ -99,6 +99,27 @@ export interface AgentSpecCR {
    * StorageSize overrides the chart-wide default PVC size; empty = inherit.
    */
   storageSize?: string;
+  /**
+   * Workspace seeds the agent's working directory at first start. Optional;
+   * absent means the working directory starts empty as before.
+   */
+  workspace?: {
+    /**
+     * Source describes where the working directory is seeded from.
+     */
+    source?: {
+      /**
+       * Repo is an HTTPS git clone URL (Type "git") cloned into the working
+       * directory once, before first run. Public repos only — no credentials
+       * are injected.
+       */
+      repo?: string;
+      /**
+       * Type is the source kind ("git"). Reserved for non-git sources later.
+       */
+      type?: string;
+    };
+  };
 }
 
 /**
