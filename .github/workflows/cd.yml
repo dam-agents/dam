@@ -568,7 +568,7 @@ jobs:
         with:
           pattern: findings-*
           path: findings
-      - name: Create or update issues
+      - name: Reconcile issues
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -581,15 +581,12 @@ jobs:
             exit 0
           fi
           mapfile -t findings < <(jq -c -s 'add // [] | unique_by(.title) | .[]' "${files[@]}")
-          if [ "${#findings[@]}" -eq 0 ]; then
-            echo "::notice::no vulnerabilities reported by any scanner"
-            exit 0
-          fi
           echo "Processing ${#findings[@]} finding(s) across all scanners"
           footer="See [docs/security/supply-chain.md](../blob/main/docs/security/supply-chain.md) for the remediation flow."
+
+          confirmed=()
           for finding in "${findings[@]}"; do
             title=$(jq -r '.title' <<<"$finding")
-            comment=$(jq -r '.comment' <<<"$finding")
             body=$(jq -r '.body' <<<"$finding")
             query=$(jq -r '.searchTerms | map("\"" + . + "\"") | join(" ")' <<<"$finding")
             existing=$(gh issue list \
@@ -599,14 +596,31 @@ jobs:
               --json number \
               --jq '.[0].number // empty')
             if [ -n "$existing" ]; then
-              gh issue comment "$existing" \
-                --repo "${GITHUB_REPOSITORY}" \
-                --body "$comment"
+              confirmed+=("$existing")
               continue
             fi
-            gh issue create \
+            url=$(gh issue create \
               --repo "${GITHUB_REPOSITORY}" \
               --title "$title" \
               --body "$(printf '%s\n\n---\n%s\n' "$body" "$footer")" \
-              --label "security,vulnerability"
+              --label "security,vulnerability")
+            confirmed+=("${url##*/}")
+          done
+
+          mapfile -t open_issues < <(gh issue list \
+            --repo "${GITHUB_REPOSITORY}" \
+            --state open \
+            --label "vulnerability" \
+            --author "github-actions[bot]" \
+            --limit 200 \
+            --json number \
+            --jq '.[].number')
+
+          for issue_num in "${open_issues[@]}"; do
+            for c in "${confirmed[@]}"; do
+              [ "$c" = "$issue_num" ] && continue 2
+            done
+            gh issue close "$issue_num" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --comment "Vulnerability no longer detected by scanners."
           done
