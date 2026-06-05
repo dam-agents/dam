@@ -316,6 +316,33 @@ url = "https://nodejs.org/dist/v24.14.1/node-v24.14.1-win-x64.zip"
 version = "15.0.4"
 backend = "npm:json-schema-to-typescript"
 
+[[tools.pinact]]
+version = "4.1.0-2"
+backend = "aqua:suzuki-shunsuke/pinact"
+
+[tools.pinact."platforms.linux-arm64"]
+checksum = "sha256:00e5493f95c33cb13b1e29effe409540f1a92c8c236156d96ae6c797686c97a9"
+url = "https://github.com/suzuki-shunsuke/pinact/releases/download/v4.1.0-2/pinact_linux_arm64.tar.gz"
+provenance = "github-attestations"
+
+[tools.pinact."platforms.linux-arm64-musl"]
+provenance = "github-attestations"
+
+[tools.pinact."platforms.linux-x64"]
+provenance = "github-attestations"
+
+[tools.pinact."platforms.linux-x64-musl"]
+provenance = "github-attestations"
+
+[tools.pinact."platforms.macos-arm64"]
+provenance = "github-attestations"
+
+[tools.pinact."platforms.macos-x64"]
+provenance = "github-attestations"
+
+[tools.pinact."platforms.windows-x64"]
+provenance = "github-attestations"
+
 [[tools.trivy]]
 version = "0.71.0"
 backend = "aqua:aquasecurity/trivy"

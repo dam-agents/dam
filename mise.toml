@@ -28,6 +28,7 @@ kubeconform = "latest"
 fd = "latest"
 yq = "latest"
 gum = "latest"
+pinact = "latest"
 
 [settings]
 experimental = true
