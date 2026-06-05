@@ -8,7 +8,6 @@ export interface SshPaths {
   dir: string;
   privateKey: string;
   publicKey: string;
-  knownHosts: string;
 }
 
 export function sshPaths(env: NodeJS.ProcessEnv = process.env): SshPaths {
@@ -19,7 +18,6 @@ export function sshPaths(env: NodeJS.ProcessEnv = process.env): SshPaths {
     dir,
     privateKey: join(dir, "id_ed25519"),
     publicKey: join(dir, "id_ed25519.pub"),
-    knownHosts: join(dir, "known_hosts"),
   };
 }
 

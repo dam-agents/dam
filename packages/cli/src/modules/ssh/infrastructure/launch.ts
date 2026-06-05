@@ -47,23 +47,18 @@ function sshConfigValue(v: string): string {
   return /\s/.test(v) ? `"${v}"` : v;
 }
 
-/** ssh hostname token — used only as the known_hosts key (the real route is
- *  the ProxyCommand). Normalized to a safe host-like string so names and IDs
- *  produce stable, valid entries. */
 function sanitizeHost(agentRef: string): string {
   return agentRef.toLowerCase().replace(/[^a-z0-9._-]/g, "-");
 }
 
-/** The ssh_config options every dam SSH connection uses, as ordered pairs so
- *  both the `ssh` argv (`-o k=v`) and the `~/.ssh/config` block (`  k v`) render
- *  from one source. ProxyCommand and the destination host are added per form. */
 function sshHostOptions(paths: SshPaths): [string, string][] {
   return [
     ["User", REMOTE_USER],
     ["IdentitiesOnly", "yes"],
     ["IdentityFile", paths.privateKey],
-    ["UserKnownHostsFile", paths.knownHosts],
-    ["StrictHostKeyChecking", "accept-new"],
+    ["UserKnownHostsFile", "/dev/null"],
+    ["StrictHostKeyChecking", "no"],
+    ["LogLevel", "ERROR"],
     ["PreferredAuthentications", "publickey"],
   ];
 }

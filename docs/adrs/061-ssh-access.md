@@ -55,13 +55,16 @@ bytes.**
 
 - Per-connection inetd means per-connection isolation and no long-running listener to
   supervise; concurrent SSH sessions to one agent coexist (each its own `sshd`).
-- The host key is generated once and persists on the agent PVC; the CLI pins it in a
-  dam-managed `known_hosts` with `StrictHostKeyChecking=accept-new`, which trusts an
-  agent's key on first connect. If a PVC is recreated the host key rotates, and
-  `accept-new` then *hard-refuses* the now-changed key (the usual host-identity-changed
-  error) rather than re-prompting; recovery means dropping the stale entry from the
-  dam-managed `known_hosts`. Acceptable because the real trust boundary is the api-server
-  upgrade, not the SSH host key.
+- **Host-key checking is disabled** on the CLI side (`UserKnownHostsFile=/dev/null`,
+  `StrictHostKeyChecking=no`, `LogLevel ERROR`). The real trust boundary is the api-server
+  WebSocket upgrade (JWT → ownership → terms) and the byte-stream is already TLS-encrypted
+  end to end, so the in-pod sshd host key authenticates nothing the upgrade hasn't. Pinning
+  it only caused breakage: the agent generates its host key on first boot, it does *not*
+  survive a PVC recreation, and a pinned entry then *hard-refuses* the changed key ("HOST
+  IDENTIFICATION CHANGED") instead of reconnecting — forcing manual `known_hosts` surgery.
+  Throwing the key away (`/dev/null`) keeps `ssh` happy across rotations with zero state;
+  `LogLevel ERROR` mutes the resulting per-connect "Permanently added" notice. The
+  dam-managed keypair remains the *client* credential the agent authorizes per-connect.
 - `StrictModes` is disabled in the sshd config: the security boundary is the api-server
   upgrade + NetworkPolicy, not file-mode checks on a single-user pod.
 - `dam ssh`'s editor modes (`-m code`, `-m zed`) keep dam's
