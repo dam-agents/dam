@@ -2,7 +2,7 @@
 nodejs = "24"
 
 # Go
-go = "1.25"
+go = "1.26"
 "go:honnef.co/go/tools/cmd/staticcheck" = "latest"
 "go:golang.org/x/vuln/cmd/govulncheck" = "latest"
 "go:sigs.k8s.io/controller-tools/cmd/controller-gen" = "latest"

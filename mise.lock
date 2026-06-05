@@ -68,36 +68,36 @@ checksum = "sha256:b2816e506390a89941c63c9187d58a3cc10e9a55f2ef0685f9ea0eccaf7c9
 url = "https://github.com/sharkdp/fd/releases/download/v10.4.2/fd-v10.4.2-x86_64-pc-windows-msvc.zip"
 
 [[tools.go]]
-version = "1.25.11"
+version = "1.26.4"
 backend = "core:go"
 
 [tools.go."platforms.linux-arm64"]
-checksum = "sha256:c30bf9e156a54ea4e31fbbbf31a712b32734b58cc9a22426fa5ee632d0885124"
-url = "https://dl.google.com/go/go1.25.11.linux-arm64.tar.gz"
+checksum = "sha256:ef758ae7c6cf9267c9c0ef080b8965f453d89ab2d25d9eb22de4405925238768"
+url = "https://dl.google.com/go/go1.26.4.linux-arm64.tar.gz"
 
 [tools.go."platforms.linux-arm64-musl"]
-checksum = "sha256:c30bf9e156a54ea4e31fbbbf31a712b32734b58cc9a22426fa5ee632d0885124"
-url = "https://dl.google.com/go/go1.25.11.linux-arm64.tar.gz"
+checksum = "sha256:ef758ae7c6cf9267c9c0ef080b8965f453d89ab2d25d9eb22de4405925238768"
+url = "https://dl.google.com/go/go1.26.4.linux-arm64.tar.gz"
 
 [tools.go."platforms.linux-x64"]
-checksum = "sha256:34f14304e856893f4ba30c2cacfe93906e9de7915c5f6aaaf3a81cdccd7ba30b"
-url = "https://dl.google.com/go/go1.25.11.linux-amd64.tar.gz"
+checksum = "sha256:1153d3d50e0ac764b447adfe05c2bcf08e889d42a02e0fe0259bd47f6733ad7f"
+url = "https://dl.google.com/go/go1.26.4.linux-amd64.tar.gz"
 
 [tools.go."platforms.linux-x64-musl"]
-checksum = "sha256:34f14304e856893f4ba30c2cacfe93906e9de7915c5f6aaaf3a81cdccd7ba30b"
-url = "https://dl.google.com/go/go1.25.11.linux-amd64.tar.gz"
+checksum = "sha256:1153d3d50e0ac764b447adfe05c2bcf08e889d42a02e0fe0259bd47f6733ad7f"
+url = "https://dl.google.com/go/go1.26.4.linux-amd64.tar.gz"
 
 [tools.go."platforms.macos-arm64"]
-checksum = "sha256:cd8d4920e7930d55da1a5a57ba43a64b1305f71cdf2ca3c76cd8c549272b1680"
-url = "https://dl.google.com/go/go1.25.11.darwin-arm64.tar.gz"
+checksum = "sha256:b62ad2b6d7d2464f12a5bcad7ff47f19d08325773b5efd21610e445a05a9bf53"
+url = "https://dl.google.com/go/go1.26.4.darwin-arm64.tar.gz"
 
 [tools.go."platforms.macos-x64"]
-checksum = "sha256:26d0ee4071de42b5c332337db9fdd234072877697c547e46e85efb0f59507c66"
-url = "https://dl.google.com/go/go1.25.11.darwin-amd64.tar.gz"
+checksum = "sha256:05dc9b5f9997744520aaebb3d5deaa7c755371aebbfb7f97c2511a9f3367538d"
+url = "https://dl.google.com/go/go1.26.4.darwin-amd64.tar.gz"
 
 [tools.go."platforms.windows-x64"]
-checksum = "sha256:b7401f1b41517428e537493316256fb7cf03c66a130a0103ab07f3a2152e2112"
-url = "https://dl.google.com/go/go1.25.11.windows-amd64.zip"
+checksum = "sha256:3ca8fb4630b07c419cbdd51f754e31363cfcfb83b3a5354d9e895c90be2cc345"
+url = "https://dl.google.com/go/go1.26.4.windows-amd64.zip"
 
 [[tools."go:golang.org/x/vuln/cmd/govulncheck"]]
 version = "latest"
