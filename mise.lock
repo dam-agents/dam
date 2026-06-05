@@ -335,6 +335,8 @@ provenance = "github-attestations"
 provenance = "github-attestations"
 
 [tools.pinact."platforms.macos-arm64"]
+checksum = "sha256:7bc89c1d3c828e7a8096df524e12eed61496b79629199201d835e541d5bfa6eb"
+url = "https://github.com/suzuki-shunsuke/pinact/releases/download/v4.1.0-2/pinact_darwin_arm64.tar.gz"
 provenance = "github-attestations"
 
 [tools.pinact."platforms.macos-x64"]
