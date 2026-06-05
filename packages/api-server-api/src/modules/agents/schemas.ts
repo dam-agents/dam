@@ -26,11 +26,14 @@ export const agentCreateInputSchema = z
     secretRef: z.string().optional(),
     allowedUserEmails: z.array(z.email()).optional(),
     egressPreset: egressPresetSchema.optional(),
-    // Optional: clone this public repo into the work dir once via a one-shot
-    // `workspace-seed` event. Not enforced against the `gitRepos` catalog
-    // server-side — the clone runs in the egress-gated agent pod, so this
-    // reaches no URL the agent couldn't already reach itself.
-    gitRepo: z.url().optional(),
+    // Optional: clone this public repo (optionally a branch/tag via `ref`) into
+    // the work dir once, via a one-shot `workspace-seed` event. Not enforced
+    // against the `gitRepos` catalog server-side — the clone runs in the
+    // egress-gated agent pod, so this reaches no URL the agent couldn't already
+    // reach itself.
+    gitRepo: z
+      .object({ url: z.url(), ref: z.string().min(1).optional() })
+      .optional(),
   })
   .refine((d) => d.templateId !== undefined || d.image !== undefined, {
     message: "Either templateId or image is required",

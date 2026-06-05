@@ -19,15 +19,22 @@ describe("seed-workspace handler", () => {
   it("clones into an empty work dir", async () => {
     const clone = vi.fn<CloneFn>(async () => ({ ok: true, value: undefined }));
     const { seed, workDir } = setup(clone);
-    await seed({ sourceUrl: URL });
-    expect(clone).toHaveBeenCalledWith(URL, workDir);
+    await seed({ url: URL });
+    expect(clone).toHaveBeenCalledWith(URL, workDir, undefined);
+  });
+
+  it("passes the ref (branch/tag) through to the clone", async () => {
+    const clone = vi.fn<CloneFn>(async () => ({ ok: true, value: undefined }));
+    const { seed, workDir } = setup(clone);
+    await seed({ url: URL, ref: "develop" });
+    expect(clone).toHaveBeenCalledWith(URL, workDir, "develop");
   });
 
   it("skips when the work dir already holds a repo (.git present)", async () => {
     const clone = vi.fn<CloneFn>(async () => ({ ok: true, value: undefined }));
     const { seed, workDir } = setup(clone);
     mkdirSync(join(workDir, ".git"), { recursive: true });
-    await seed({ sourceUrl: URL });
+    await seed({ url: URL });
     expect(clone).not.toHaveBeenCalled();
   });
 
@@ -36,7 +43,7 @@ describe("seed-workspace handler", () => {
     const { seed, workDir } = setup(clone);
     mkdirSync(workDir, { recursive: true });
     writeFileSync(join(workDir, "notes.txt"), "user work");
-    await expect(seed({ sourceUrl: URL })).rejects.toThrow(
+    await expect(seed({ url: URL })).rejects.toThrow(
       /non-empty work directory/,
     );
     expect(clone).not.toHaveBeenCalled();
@@ -48,6 +55,6 @@ describe("seed-workspace handler", () => {
       error: { kind: "SourceFetchFailed", source: URL, detail: "boom" },
     }));
     const { seed } = setup(clone);
-    await expect(seed({ sourceUrl: URL })).rejects.toThrow(/boom/);
+    await expect(seed({ url: URL })).rejects.toThrow(/boom/);
   });
 });

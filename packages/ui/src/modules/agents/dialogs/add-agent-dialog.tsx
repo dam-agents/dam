@@ -73,7 +73,7 @@ export function AddAgentDialog({
     secretIds?: string[];
     appConnectionIds?: string[];
     egressPreset?: EgressPreset;
-    gitRepo?: string;
+    gitRepo?: { url: string; ref?: string };
     importEntries?: BundleEntry[];
     importRawBundle?: File;
   }) => void;
@@ -287,6 +287,8 @@ export function AddAgentDialog({
   };
 
   const submitForm = handleSubmit((values) => {
+    // initSource holds the chosen catalog repo's url (or "" / "local").
+    const selectedRepo = compatibleRepos.find((r) => r.url === initSource);
     // ADR-040: env contributions from granted secrets/apps are merged at
     // pod-render time by the controller. Don't pre-stamp them onto the
     // agent spec.
@@ -307,7 +309,9 @@ export function AddAgentDialog({
       secretIds: values.selSecrets,
       appConnectionIds: values.selApps.length > 0 ? values.selApps : undefined,
       egressPreset: values.egressPreset,
-      gitRepo: initSource && initSource !== INIT_LOCAL ? initSource : undefined,
+      gitRepo: selectedRepo
+        ? { url: selectedRepo.url, ref: selectedRepo.ref }
+        : undefined,
       importEntries:
         initSource === INIT_LOCAL && importEntries.length > 0
           ? importEntries

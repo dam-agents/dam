@@ -11,14 +11,15 @@ import { createGitProtocolClient } from "../skills/infrastructure/git-protocol-c
 export type CloneFn = (
   url: string,
   dest: string,
+  ref?: string,
 ) => Promise<Result<void, SkillsDomainError>>;
 
 export type SeedWorkspaceFn = (
   payload: WorkspaceSeedEventPayload,
 ) => Promise<void>;
 
-/** One-shot `workspace-seed` event handler: clone a public repo into the work
- *  dir, once. Dirty-safe (see the branch logic below). */
+/** One-shot `workspace-seed` event handler: clone a public repo (optionally a
+ *  branch/tag) into the work dir, once. Dirty-safe (see the branch logic below). */
 export function createSeedWorkspace(deps: {
   workDir: string;
   clone?: CloneFn;
@@ -26,9 +27,11 @@ export function createSeedWorkspace(deps: {
 }): SeedWorkspaceFn {
   const clone: CloneFn =
     deps.clone ??
-    ((url, dest) => createGitProtocolClient().cloneShallow(url, dest));
+    ((url, dest, ref) =>
+      createGitProtocolClient().cloneShallow(url, dest, 50, ref));
 
-  return async ({ sourceUrl }) => {
+  return async ({ url, ref }) => {
+    const at = ref ? ` (${ref})` : "";
     if (existsSync(join(deps.workDir, ".git"))) {
       deps.log(`[workspace-seed] ${deps.workDir} already seeded, skipping`);
       return;
@@ -38,15 +41,15 @@ export function createSeedWorkspace(deps: {
         `refusing to seed a non-empty work directory: ${deps.workDir}`,
       );
     }
-    deps.log(`[workspace-seed] cloning ${sourceUrl} into ${deps.workDir}`);
-    const res = await clone(sourceUrl, deps.workDir);
+    deps.log(`[workspace-seed] cloning ${url}${at} into ${deps.workDir}`);
+    const res = await clone(url, deps.workDir, ref);
     if (!res.ok) {
       const e = res.error;
       const detail = "detail" in e ? `: ${e.detail}` : "";
       throw new Error(
-        `workspace seed of ${sourceUrl} failed (${e.kind})${detail}`,
+        `workspace seed of ${url}${at} failed (${e.kind})${detail}`,
       );
     }
-    deps.log(`[workspace-seed] cloned ${sourceUrl} into ${deps.workDir}`);
+    deps.log(`[workspace-seed] cloned ${url}${at} into ${deps.workDir}`);
   };
 }

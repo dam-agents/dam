@@ -116,7 +116,9 @@ export const scheduleResetEvent = z.object({
 // fire once at create, clone, forget. Not reconciled state — the clone is the
 // user's mutable workspace, which the platform never re-asserts or removes.
 export const workspaceSeedEventPayload = z.object({
-  sourceUrl: z.string().min(1),
+  url: z.string().min(1),
+  /** Branch or tag to clone; omitted = the repo's default branch. */
+  ref: z.string().min(1).optional(),
 });
 export type WorkspaceSeedEventPayload = z.infer<
   typeof workspaceSeedEventPayload

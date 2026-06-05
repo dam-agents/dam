@@ -280,7 +280,7 @@ export function createAgentsService(deps: {
               {
                 id: `workspace-seed:${infra.id}:${Date.now()}`,
                 kind: "workspace-seed",
-                payload: { sourceUrl: input.gitRepo },
+                payload: { url: input.gitRepo.url, ref: input.gitRepo.ref },
                 expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
               },
             ]
