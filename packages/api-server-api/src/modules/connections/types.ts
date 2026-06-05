@@ -132,7 +132,10 @@ export interface ConnectionsService {
     auth: "oauth" | "none";
   }>;
 
-  startOAuth(connectionId: string): Promise<{ authUrl: string }>;
+  startOAuth(
+    connectionId: string,
+    opts?: { returnTo?: string; popup?: boolean },
+  ): Promise<{ authUrl: string }>;
 
   deleteConnection(id: string): Promise<void>;
 

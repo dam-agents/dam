@@ -157,8 +157,11 @@ export function createConnectionsService(deps: {
       return conn ? toView(conn) : null;
     },
 
-    startOAuth(connectionId: string): Promise<{ authUrl: string }> {
-      return deps.oauthFlow.startOAuth(connectionId);
+    startOAuth(
+      connectionId: string,
+      opts?: { returnTo?: string; popup?: boolean },
+    ): Promise<{ authUrl: string }> {
+      return deps.oauthFlow.startOAuth(connectionId, opts);
     },
 
     async deleteConnection(id: string): Promise<void> {

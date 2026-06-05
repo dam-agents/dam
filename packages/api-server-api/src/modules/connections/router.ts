@@ -28,7 +28,10 @@ export const connectionsRouter = t.router({
   startOAuth: t.procedure
     .input(connectionStartOAuthInputSchema)
     .mutation(({ ctx, input }) =>
-      ctx.connections.startOAuth(input.connectionId),
+      ctx.connections.startOAuth(input.connectionId, {
+        returnTo: input.returnTo,
+        popup: input.popup,
+      }),
     ),
 
   discoverMcp: t.procedure

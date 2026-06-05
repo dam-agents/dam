@@ -16,7 +16,10 @@ import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
 
 export interface OAuthFlowService {
-  startOAuth(connectionId: string): Promise<{ authUrl: string }>;
+  startOAuth(
+    connectionId: string,
+    opts?: { returnTo?: string; popup?: boolean },
+  ): Promise<{ authUrl: string }>;
   completeOAuth(
     state: string,
     code: string,
@@ -28,6 +31,8 @@ export interface OAuthFlowPendingCtx {
   ownerId: string;
   accessTokenRef: SecretRef;
   refreshTokenRef?: SecretRef;
+  returnTo?: string;
+  popup?: boolean;
 }
 
 export function createOAuthFlowService(deps: {
@@ -39,7 +44,7 @@ export function createOAuthFlowService(deps: {
   callbackUrl: string;
 }): OAuthFlowService {
   return {
-    async startOAuth(connectionId): Promise<{ authUrl: string }> {
+    async startOAuth(connectionId, opts): Promise<{ authUrl: string }> {
       const conn = await deps.repo.get(connectionId, deps.ownerId);
       if (!conn) throw new Error(`connection ${connectionId} not found`);
       if (conn.auth.kind !== "oauth") {
@@ -63,6 +68,8 @@ export function createOAuthFlowService(deps: {
           ...(conn.auth.refreshTokenRef
             ? { refreshTokenRef: conn.auth.refreshTokenRef }
             : {}),
+          ...(opts?.returnTo ? { returnTo: opts.returnTo } : {}),
+          ...(opts?.popup ? { popup: true } : {}),
         },
       });
       return { authUrl };

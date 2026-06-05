@@ -6,6 +6,16 @@ export const connectionIdInputSchema = z.object({
 
 export const connectionStartOAuthInputSchema = z.object({
   connectionId: z.string().min(1),
+  returnTo: z
+    .string()
+    .regex(
+      /^\/(?!\/)/,
+      "returnTo must be a relative path starting with a single /",
+    )
+    .optional(),
+  // When set, the callback returns a page that postMessages the result to the
+  // opener and closes, instead of redirecting. Used by the popup OAuth flow.
+  popup: z.boolean().optional(),
 });
 
 export const connectionDiscoverMcpInputSchema = z.object({

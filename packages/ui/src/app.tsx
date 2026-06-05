@@ -14,6 +14,7 @@ import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { ProvidersView } from "./modules/settings/views/providers-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
 import { TermsView } from "./modules/terms/views/terms-view.js";
+import { V2App } from "./modules/v2/views/v2-app.js";
 import { useStore } from "./store.js";
 
 export default function App() {
@@ -37,6 +38,9 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
+    // The v2 wizard owns its own OAuth-return handling so it can rehydrate
+    // the in-progress sandbox before the params are stripped.
+    if (window.location.pathname.startsWith("/v2")) return;
     const params = new URLSearchParams(window.location.search);
     const oauthResult = params.get("oauth");
     if (!oauthResult) return;
@@ -68,6 +72,7 @@ export default function App() {
     };
     const onPopState = () => {
       const path = window.location.pathname;
+      const sandboxMatch = path.match(/^\/v2\/([^/]+)$/);
       if (path.startsWith("/chat/"))
         enterChat(decodeURIComponent(path.slice(6)));
       else if (path === "/providers") useStore.setState({ view: "providers" });
@@ -76,6 +81,15 @@ export default function App() {
       else if (path === "/settings") useStore.setState({ view: "settings" });
       else if (path === "/inbox") useStore.setState({ view: "inbox" });
       else if (path === "/terms") useStore.setState({ view: "terms" });
+      else if (path === "/v2")
+        useStore.setState({ view: "v2-list", agentId: null });
+      else if (path === "/v2/new")
+        useStore.setState({ view: "v2-new", agentId: null });
+      else if (sandboxMatch && path !== "/v2/new")
+        useStore.setState({
+          view: "v2-terminal",
+          agentId: decodeURIComponent(sandboxMatch[1]!),
+        });
       else if (path.startsWith("/agents/") && path.endsWith("/egress")) {
         const id = decodeURIComponent(
           path.slice("/agents/".length, -"/egress".length),
@@ -89,6 +103,15 @@ export default function App() {
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
+
+  // v2 sandbox surface is shell-less (no sidebar / mobile nav)
+  if (view === "v2-list" || view === "v2-new" || view === "v2-terminal")
+    return (
+      <>
+        <V2App />
+        <DialogOverlay />
+      </>
+    );
 
   // Chat view is full-screen (has its own layout)
   if (view === "chat")

@@ -14,6 +14,7 @@ export interface NavigationSlice {
   agentId: string | null;
   setView: (v: View) => void;
   navigateToAgentEgress: (agentId: string) => void;
+  openSandboxTerminal: (agentId: string) => void;
   mobileScreen: "sessions" | "chat";
   setMobileScreen: (screen: "sessions" | "chat") => void;
   showMobilePanel: boolean;
@@ -57,6 +58,10 @@ export const createNavigationSlice: StateCreator<
   navigateToAgentEgress: (agentId) => {
     history.pushState(null, "", viewToPath("agent-egress", null, agentId));
     set({ view: "agent-egress", agentId });
+  },
+  openSandboxTerminal: (agentId) => {
+    history.pushState(null, "", viewToPath("v2-terminal", null, agentId));
+    set({ view: "v2-terminal", agentId });
   },
   mobileScreen: "sessions",
   setMobileScreen: (screen) => set({ mobileScreen: screen }),
