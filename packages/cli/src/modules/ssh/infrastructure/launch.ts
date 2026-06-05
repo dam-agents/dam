@@ -34,15 +34,17 @@ export function editorLaunchArgs(
 function proxyCommandString(agentRef: string, serverFlag?: string): string {
   const script = process.argv[1];
   const parts = [
-    ...(script
-      ? [process.execPath, ...process.execArgv, resolve(script)]
-      : ["dam"]),
+    ...(script ? [process.execPath, resolve(script)] : ["dam"]),
     "ssh",
     "_proxy",
     agentRef,
     ...(serverFlag ? ["--server", serverFlag] : []),
   ];
   return parts.map((a) => `'${a.replace(/'/g, `'\\''`)}'`).join(" ");
+}
+
+function sshConfigValue(v: string): string {
+  return /\s/.test(v) ? `"${v}"` : v;
 }
 
 /** ssh hostname token — used only as the known_hosts key (the real route is
@@ -99,7 +101,9 @@ export async function ensureManagedSshHost(opts: {
     start,
     `Host ${alias}`,
     `  HostName ${host}`,
-    ...sshHostOptions(opts.paths).map(([k, v]) => `  ${k} ${v}`),
+    ...sshHostOptions(opts.paths).map(
+      ([k, v]) => `  ${k} ${sshConfigValue(v)}`,
+    ),
     `  ProxyCommand ${proxyCommandString(opts.agentRef, opts.serverFlag)}`,
     end,
   ].join("\n");
@@ -133,8 +137,8 @@ export async function ensureManagedSshHost(opts: {
   try {
     userExisting = await readFile(userConfig, "utf8");
   } catch {}
-  const includeLine = `Include ${damConfig}`;
-  if (!userExisting.includes(includeLine))
+  const includeLine = `Include ${sshConfigValue(damConfig)}`;
+  if (!userExisting.includes(damConfig))
     await writeFile(
       userConfig,
       `# dam ssh (managed)\n${includeLine}\n${userExisting ? `\n${userExisting}` : ""}`,

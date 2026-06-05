@@ -44,7 +44,7 @@ export function connectRawBridge({
       stdin.resume();
     });
     ws.on("message", (data: Buffer) => stdout.write(data));
-    ws.on("close", (code) => finish(code === 1000 ? 0 : 1));
+    ws.on("close", (code) => finish(code === 1000 || code === 1005 ? 0 : 1));
     ws.on("error", () => finish(1));
   });
 }

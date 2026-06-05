@@ -76,4 +76,28 @@ describe("connectRawBridge", () => {
     stdin.end();
     expect(await bridge).toBe(0);
   });
+
+  it("resolves 0 on a codeless close (the real pod/relay teardown → 1005)", async () => {
+    let serverWs: WsWebSocket | undefined;
+    const port = await new Promise<number>((resolve) => {
+      wss = new WebSocketServer({ port: 0 }, () =>
+        resolve((wss!.address() as AddressInfo).port),
+      );
+    });
+    wss!.on("connection", (ws) => {
+      serverWs = ws;
+    });
+    const stdin = new PassThrough();
+    const stdout = new PassThrough();
+    const bridge = connectRawBridge({
+      host: `http://127.0.0.1:${port}`,
+      token: "tok",
+      agentId: "agent-x",
+      stdin: stdin as unknown as NodeJS.ReadStream,
+      stdout: stdout as unknown as NodeJS.WriteStream,
+    });
+    await vi.waitFor(() => expect(serverWs).toBeDefined());
+    serverWs!.close();
+    expect(await bridge).toBe(0);
+  });
 });

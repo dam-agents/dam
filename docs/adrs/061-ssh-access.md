@@ -56,8 +56,12 @@ bytes.**
 - Per-connection inetd means per-connection isolation and no long-running listener to
   supervise; concurrent SSH sessions to one agent coexist (each its own `sshd`).
 - The host key is generated once and persists on the agent PVC; the CLI pins it in a
-  dam-managed `known_hosts` with `StrictHostKeyChecking=accept-new`. A fresh PVC rotates
-  the host key and re-prompts via accept-new.
+  dam-managed `known_hosts` with `StrictHostKeyChecking=accept-new`, which trusts an
+  agent's key on first connect. If a PVC is recreated the host key rotates, and
+  `accept-new` then *hard-refuses* the now-changed key (the usual host-identity-changed
+  error) rather than re-prompting; recovery means dropping the stale entry from the
+  dam-managed `known_hosts`. Acceptable because the real trust boundary is the api-server
+  upgrade, not the SSH host key.
 - `StrictModes` is disabled in the sshd config: the security boundary is the api-server
   upgrade + NetworkPolicy, not file-mode checks on a single-user pod.
 - `dam ssh`'s editor modes (`-m code`, `-m zed`) keep dam's

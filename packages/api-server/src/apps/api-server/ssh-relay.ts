@@ -3,7 +3,13 @@ import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
 import type { AgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
-import { ACTIVE_SESSION_KEY } from "../../modules/agents/infrastructure/labels.js";
+import {
+  LAST_ACTIVITY_KEY,
+  ACTIVE_SESSION_KEY,
+} from "../../modules/agents/infrastructure/labels.js";
+
+const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;
+const ACTIVITY_DEBOUNCE_MS = 30_000;
 
 export interface SshRelay {
   handleUpgrade(
@@ -30,6 +36,16 @@ export function createSshRelay(
         .patchAnnotation(id, ACTIVE_SESSION_KEY, n > 0 ? "true" : "")
         .catch(() => {});
   };
+  const lastActivity = new Map<string, number>();
+  const bumpActivity = (id: string) => {
+    const now = Date.now();
+    if (now - (lastActivity.get(id) ?? 0) >= ACTIVITY_DEBOUNCE_MS) {
+      lastActivity.set(id, now);
+      repo
+        .patchAnnotation(id, LAST_ACTIVITY_KEY, new Date().toISOString())
+        .catch(() => {});
+    }
+  };
   const pipe = (from: WebSocket, to: WebSocket) =>
     from.on(
       "message",
@@ -46,10 +62,37 @@ export function createSshRelay(
     wss.handleUpgrade(req, socket, head, async (client) => {
       client.on("error", () => client.terminate());
       mark(agentId, 1);
-      client.on("close", () => mark(agentId, -1));
+
+      let upstream: WebSocket | undefined;
+      let clientGone = false;
+      const closeWs = (ws?: WebSocket) => {
+        try {
+          ws?.close();
+        } catch {}
+      };
+      client.on("close", () => {
+        clientGone = true;
+        mark(agentId, -1);
+        closeWs(upstream);
+      });
 
       const pending: [Buffer, boolean][] = [];
-      const buffer = (d: Buffer, b: boolean) => pending.push([d, b]);
+      let pendingBytes = 0;
+      let overflow = false;
+      const buffer = (d: Buffer, b: boolean) => {
+        if (overflow) return;
+        pendingBytes += d.byteLength;
+        if (pendingBytes > PENDING_BUFFER_MAX_BYTES) {
+          overflow = true;
+          try {
+            client.close(1013, "buffer full");
+          } catch {
+            client.terminate();
+          }
+          return;
+        }
+        pending.push([d, b]);
+      };
       client.on("message", buffer);
 
       try {
@@ -58,24 +101,29 @@ export function createSshRelay(
         client.close(1011, "agent unavailable");
         return;
       }
+      if (clientGone || overflow) return;
 
-      const upstream = new WebSocket(
+      upstream = new WebSocket(
         `ws://${podBaseUrl(agentId, namespace)}/api/ssh`,
       );
-      const close = (ws: WebSocket) => () => {
-        try {
-          ws.close();
-        } catch {}
-      };
-      upstream.on("open", () => {
+      const us = upstream;
+      us.on("open", () => {
+        if (clientGone || overflow) return closeWs(us);
         client.off("message", buffer);
-        for (const [d, b] of pending) upstream.send(d, { binary: b });
-        pipe(client, upstream);
-        pipe(upstream, client);
-        client.on("close", close(upstream));
-        upstream.on("close", close(client));
+        for (const [d, b] of pending) us.send(d, { binary: b });
+        client.on("message", (d, isBinary) => {
+          if (us.readyState !== WebSocket.OPEN) return;
+          us.send(d, { binary: isBinary });
+          bumpActivity(agentId);
+        });
+        pipe(us, client);
+        us.on("close", () => closeWs(client));
       });
-      upstream.on("error", () => client.close(1011, "agent connection failed"));
+      us.on("error", () => {
+        closeWs(us);
+        if (client.readyState === WebSocket.OPEN)
+          client.close(1011, "agent connection failed");
+      });
     });
   }
 

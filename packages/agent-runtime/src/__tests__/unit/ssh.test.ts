@@ -29,6 +29,14 @@ describe("createSshService.authorizeKey", () => {
     if (!r.ok) expect(r.error.kind).toBe("Invalid");
   });
 
+  it("rejects a multi-line value (authorized_keys line injection)", async () => {
+    const r = await createSshService(home).authorizeKey(
+      `${KEY_A}\ncommand="evil" ${KEY_B}`,
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe("Invalid");
+  });
+
   it("writes the key to authorized_keys", async () => {
     const r = await createSshService(home).authorizeKey(KEY_A);
     expect(r.ok).toBe(true);

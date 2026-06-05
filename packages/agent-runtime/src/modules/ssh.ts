@@ -97,6 +97,13 @@ export function spawnSshd(
       ws.close();
     } catch {}
   };
+  const onStreamError = (where: string) => (e: Error) => {
+    log(`sshd ${where} error: ${e.message}`);
+    closeWs();
+  };
+  child.stdin.on("error", onStreamError("stdin"));
+  child.stdout.on("error", onStreamError("stdout"));
+  child.stderr.on("error", onStreamError("stderr"));
   child.on("exit", (code) => {
     log(`sshd exited ${code ?? "?"}`);
     closeWs();
@@ -125,7 +132,7 @@ export function createSshService(homeDir: string): SshService {
   return {
     async authorizeKey(publicKey) {
       const key = publicKey.trim();
-      if (!PUBKEY_RE.test(key))
+      if (/[\r\n]/.test(key) || !PUBKEY_RE.test(key))
         return err({ kind: "Invalid", reason: "not an OpenSSH public key" });
 
       await mkdir(sshDir, { recursive: true, mode: 0o700 });
