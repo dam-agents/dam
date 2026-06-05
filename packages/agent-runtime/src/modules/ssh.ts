@@ -19,6 +19,52 @@ export interface PreparedSshd {
   configPath: string;
 }
 
+// sshd resets the environment before the login shell, so the agent's pod env
+// (proxy routing, credential sentinels, PATH) would otherwise vanish inside an
+// SSH session — breaking egress (which is proxy-only) and every credentialed
+// tool. We replay it through ~/.ssh/environment. These keys are dropped: the
+// connecting client owns the terminal, sshd/login set the identity vars for the
+// target user, and the rest is local shell/tooling bookkeeping that would be
+// wrong in a fresh shell.
+const ENV_EXCLUDE_EXACT = new Set([
+  "TERM",
+  "COLORTERM",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "SHELL",
+  "MAIL",
+  "PWD",
+  "OLDPWD",
+  "SHLVL",
+  "_",
+  "HARNESS_SESSION_ID",
+]);
+const ENV_EXCLUDE_PREFIX = ["npm_config_", "npm_lifecycle_", "SSH_"];
+
+/** Render ~/.ssh/environment (one `NAME=value` per line) from a process env.
+ *  The file format takes each value literally to end-of-line — no quoting — so
+ *  values with spaces are fine, but a newline would forge a second line; those
+ *  are skipped. Non-identifier names (which sshd ignores anyway) are dropped. */
+export function buildSshEnvironmentFile(
+  env: NodeJS.ProcessEnv,
+  warn?: (msg: string) => void,
+): string {
+  const lines: string[] = [];
+  for (const [k, v] of Object.entries(env)) {
+    if (v === undefined) continue;
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) continue;
+    if (ENV_EXCLUDE_EXACT.has(k)) continue;
+    if (ENV_EXCLUDE_PREFIX.some((p) => k.startsWith(p))) continue;
+    if (/[\r\n\0]/.test(v)) {
+      warn?.(`skipping env ${k} (value spans multiple lines)`);
+      continue;
+    }
+    lines.push(`${k}=${v}`);
+  }
+  return lines.length ? lines.join("\n") + "\n" : "";
+}
+
 export async function prepareSshd(
   homeDir: string,
   log: (msg: string) => void,
@@ -56,12 +102,26 @@ export async function prepareSshd(
     "KbdInteractiveAuthentication no",
     "StrictModes no",
     "PrintMotd no",
-    "PermitUserEnvironment no",
+    // Apply ~/.ssh/environment (written below) to every session. Safe here
+    // because the SSH user IS the single pod user (uid 65532): no privilege
+    // boundary for the usual LD_PRELOAD concern to cross — the same reasoning
+    // that lets StrictModes off above.
+    "PermitUserEnvironment yes",
     "X11Forwarding no",
     "AllowTcpForwarding yes",
     ...(sftpServer ? [`Subsystem sftp ${sftpServer}`] : []),
   ];
   await writeFile(configPath, lines.join("\n") + "\n", { mode: 0o600 });
+
+  // Snapshot the live pod env into ~/.ssh/environment so every SSH session
+  // (shell, exec, sftp) starts with the same networking + credentials the
+  // harness gets. Rewritten on every boot so it tracks the env a pod restart
+  // applies (ADR-024); the host key, by contrast, persists across boots.
+  await writeFile(
+    join(sshDir, "environment"),
+    buildSshEnvironmentFile(process.env, log),
+    { mode: 0o600 },
+  );
   if (!sftpServer) log("sftp-server not found; scp/sftp will be unavailable");
 
   return { sshdPath: SSHD_PATH, configPath };

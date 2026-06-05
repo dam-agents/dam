@@ -67,6 +67,16 @@ bytes.**
   dam-managed keypair remains the *client* credential the agent authorizes per-connect.
 - `StrictModes` is disabled in the sshd config: the security boundary is the api-server
   upgrade + NetworkPolicy, not file-mode checks on a single-user pod.
+- **Environment parity.** sshd resets the environment before the login shell, so an SSH
+  session would otherwise start with none of the agent's pod env — no `HTTPS_PROXY` (egress
+  is proxy-only, so even DNS resolution fails), no credential sentinels, no harness `PATH`.
+  The agent-runtime snapshots the live pod env into `~/.ssh/environment` at boot and sets
+  `PermitUserEnvironment yes`, so every session (shell, `ssh <agent> <cmd>`, sftp/scp) gets
+  the same networking and credentials the harness has. The file is rewritten each boot, so
+  it tracks env changes a pod restart applies ([ADR-024](024-connector-declared-envs.md));
+  the host key, by contrast, persists. `PermitUserEnvironment` is safe here for the same
+  reason `StrictModes` is off — the SSH user *is* the single pod user (uid 65532), so the
+  usual `LD_PRELOAD` privilege-escalation concern crosses no boundary.
 - `dam ssh`'s editor modes (`-m code`, `-m zed`) keep dam's
   `Host` blocks in dam's own `$XDG_CONFIG_HOME/dam/ssh_config` and add a single
   `Include` line to `~/.ssh/config` so the editor's SSH client resolves the
