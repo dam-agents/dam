@@ -50,7 +50,9 @@ export function createOAuthRoutes(deps: OAuthCallbackDeps) {
 
     const respondError = (message: string) => {
       if (popup)
-        return c.html(renderPopupResult(targetOrigin, { oauth: "error", message }));
+        return c.html(
+          renderPopupResult(targetOrigin, { oauth: "error", message }),
+        );
       const params = new URLSearchParams();
       params.set("oauth", "error");
       params.set("message", message);
@@ -94,10 +96,10 @@ interface PopupResult {
  * message can't break out of the <script> element.
  */
 function renderPopupResult(targetOrigin: string, result: PopupResult): string {
-  const payload = JSON.stringify({ source: "platform-oauth", ...result }).replace(
-    /</g,
-    "\\u003c",
-  );
+  const payload = JSON.stringify({
+    source: "platform-oauth",
+    ...result,
+  }).replace(/</g, "\\u003c");
   const origin = JSON.stringify(targetOrigin).replace(/</g, "\\u003c");
   return `<!doctype html>
 <html>
