@@ -25,6 +25,9 @@ RUN chmod +x /usr/local/bin/harness-chat /usr/local/bin/harness-terminal
 RUN mkdir -p /app/working-dir/.bob \
     && ln -s ../.agents/skills /app/working-dir/.bob/skills
 
+# Bob reads MCP servers from $HOME/.bob/settings.json (ADR-052).
+COPY --chown=65532:0 runtime-manifest.yaml /app/runtime-manifest.yaml
+
 COPY --chown=65532:0 workspace/ /app/working-dir/
 
 # Bob's default auth is W3ID SSO — opens a browser that never arrives

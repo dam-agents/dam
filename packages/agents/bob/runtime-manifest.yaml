@@ -1,0 +1,17 @@
+# Bob runtime manifest. Bob reads MCP servers from $HOME/.bob/settings.json,
+# so the mcp-entry path is overridden here; other drivers match platform-base.
+manifestVersion: 1
+
+drivers:
+  file:
+    impl: file
+
+  mcp-entry:
+    impl: mcp-entry
+    path: "$HOME/.bob/settings.json"
+    keyPath: mcpServers
+
+  skill-ref:
+    impl: skill-install
+    paths:
+      - "$HOME/.agents/skills"
