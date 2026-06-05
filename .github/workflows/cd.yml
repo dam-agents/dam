@@ -295,7 +295,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      issues: write
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -304,18 +303,11 @@ jobs:
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
       - run: mise run controller:setup
 
-      - name: Scan and file issues
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Detect vulnerabilities
         run: |
           set -euo pipefail
-
-          # JSON mode always exits 0; findings come from the stream, not the code.
           results=$(mise run controller:scan:govulncheck --json) || true
-
-          # Keep only symbol-level (actually called) findings, joined with their
-          # OSV definition, one issue per advisory id.
-          mapfile -t findings < <(printf '%s' "$results" | jq -c -s '
+          out=$(printf '%s' "$results" | jq -s '
             (reduce .[] as $m ({}; if $m.osv then . + {($m.osv.id): $m.osv} else . end)) as $defs
             | [ .[]
                 | select(.finding != null and .finding.trace[0].function != null)
@@ -325,59 +317,33 @@ jobs:
                     package: ($f.trace[0].package // $f.trace[0].module),
                     summary: ($defs[$f.osv].summary // ""),
                     details: ($defs[$f.osv].details // ""),
-                    aliases: (($defs[$f.osv].aliases // []) | join(", ")) }]
+                    aliases: (($defs[$f.osv].aliases // []) | join(", ")) } ]
             | unique_by(.id)
-            | .[]')
-
-          if [ "${#findings[@]}" -eq 0 ]; then
-            echo "::notice::govulncheck: no called vulnerabilities detected"
-            exit 0
-          fi
-
-          for finding in "${findings[@]}"; do
-            id=$(echo "$finding" | jq -r '.id')
-            fixed=$(echo "$finding" | jq -r '.fixed')
-            package=$(echo "$finding" | jq -r '.package')
-            summary=$(echo "$finding" | jq -r '.summary')
-            details=$(echo "$finding" | jq -r '.details')
-            aliases=$(echo "$finding" | jq -r '.aliases')
-            url="https://pkg.go.dev/vuln/${id}"
-
-            title="[${id}] vulnerability in ${package} (govulncheck)"
-
-            existing=$(gh issue list \
-              --repo "${GITHUB_REPOSITORY}" \
-              --state open \
-              --search "in:title \"${id}\" \"${package}\"" \
-              --json number \
-              --jq '.[0].number // empty')
-
-            if [ -n "$existing" ]; then
-              gh issue comment "$existing" \
-                --repo "${GITHUB_REPOSITORY}" \
-                --body "Still present. Package: \`${package}\`. Fixed in: \`${fixed:-—}\`."
-              continue
-            fi
-
-            issue_body=$(printf '%s\n' \
-              "**Source:** govulncheck (Go call-graph analysis)" \
-              "**ID:** [\`${id}\`](${url})${aliases:+ (aliases: ${aliases})}" \
-              "**Package:** \`${package}\`" \
-              "**Fixed in:** \`${fixed:-—}\`" \
-              "" \
-              "${summary}" \
-              "" \
-              "${details}" \
-              "" \
-              "---" \
-              "See [docs/security/supply-chain.md](../blob/main/docs/security/supply-chain.md) for the remediation flow.")
-
-            gh issue create \
-              --repo "${GITHUB_REPOSITORY}" \
-              --title "$title" \
-              --body "$issue_body" \
-              --label "security,vulnerability"
-          done
+            | map({
+                title: ("[" + .id + "] vulnerability in " + .package + " (govulncheck)"),
+                searchTerms: [.id, .package],
+                comment: ("Still present. Package: `" + .package + "`. Fixed in: `" + (if .fixed == "" then "—" else .fixed end) + "`."),
+                body: ([
+                  "**Source:** govulncheck (Go call-graph analysis)",
+                  "**ID:** [`" + .id + "`](https://pkg.go.dev/vuln/" + .id + ")" + (if .aliases == "" then "" else " (aliases: " + .aliases + ")" end),
+                  "**Package:** `" + .package + "`",
+                  "**Fixed in:** `" + (if .fixed == "" then "—" else .fixed end) + "`",
+                  "",
+                  .summary,
+                  "",
+                  .details
+                ] | join("\n"))
+              })
+          ')
+          printf '%s\n' "${out:-[]}" > findings.json
+          echo "::notice::govulncheck: $(jq length findings.json) finding(s)"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: findings-go-vuln
+          path: findings.json
+          if-no-files-found: ignore
+          retention-days: 1
 
   npm-audit:
     name: mise common:scan:npm-audit
@@ -385,7 +351,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      issues: write
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -393,76 +358,47 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
       - run: mise run common:setup:pnpm
-      - name: Scan and file issues
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Detect vulnerabilities
         run: |
           set -euo pipefail
           results=$(mise run common:scan:npm-audit --json) || true
-          mapfile -t findings < <(printf '%s' "$results" | jq -c '
+          out=$(printf '%s' "$results" | jq '
             [ (.advisories // {}) | to_entries[] | .value
               | { id: (((.cves // []) | first) // .github_advisory_id // (.id | tostring)),
                   module: .module_name,
                   severity: (.severity // "unknown"),
-                  title: (.title // ""),
+                  vtitle: (.title // ""),
                   url: (.url // ""),
                   patched: (.patched_versions // ""),
                   recommendation: (.recommendation // ""),
-                  overview: (.overview // "") }]
+                  overview: (.overview // "") } ]
             | unique_by(.id + "|" + .module)
-            | .[]')
-
-          if [ "${#findings[@]}" -eq 0 ]; then
-            echo "::notice::pnpm audit: no vulnerabilities detected"
-            exit 0
-          fi
-
-          for finding in "${findings[@]}"; do
-            id=$(echo "$finding" | jq -r '.id')
-            module=$(echo "$finding" | jq -r '.module')
-            severity=$(echo "$finding" | jq -r '.severity')
-            title_text=$(echo "$finding" | jq -r '.title')
-            url=$(echo "$finding" | jq -r '.url')
-            patched=$(echo "$finding" | jq -r '.patched')
-            recommendation=$(echo "$finding" | jq -r '.recommendation')
-            overview=$(echo "$finding" | jq -r '.overview')
-
-            title="[${id}] ${severity} vulnerability in ${module} (pnpm audit)"
-
-            existing=$(gh issue list \
-              --repo "${GITHUB_REPOSITORY}" \
-              --state open \
-              --search "in:title \"${id}\" \"${module}\"" \
-              --json number \
-              --jq '.[0].number // empty')
-
-            if [ -n "$existing" ]; then
-              gh issue comment "$existing" \
-                --repo "${GITHUB_REPOSITORY}" \
-                --body "Still present. Package: \`${module}\`. Patched: \`${patched:-—}\`."
-              continue
-            fi
-
-            issue_body=$(printf '%s\n' \
-              "**Source:** pnpm audit (npm advisory database)" \
-              "**Advisory:** [\`${id}\`](${url}) (${severity})" \
-              "**Package:** \`${module}\`" \
-              "**Patched versions:** \`${patched:-—}\`" \
-              "**Recommendation:** ${recommendation:-—}" \
-              "" \
-              "**${title_text}**" \
-              "" \
-              "${overview}" \
-              "" \
-              "---" \
-              "See [docs/security/supply-chain.md](../blob/main/docs/security/supply-chain.md) for the remediation flow.")
-
-            gh issue create \
-              --repo "${GITHUB_REPOSITORY}" \
-              --title "$title" \
-              --body "$issue_body" \
-              --label "security,vulnerability"
-          done
+            | map({
+                title: ("[" + .id + "] " + .severity + " vulnerability in " + .module + " (pnpm audit)"),
+                searchTerms: [.id, .module],
+                comment: ("Still present. Package: `" + .module + "`. Patched: `" + (if .patched == "" then "—" else .patched end) + "`."),
+                body: ([
+                  "**Source:** pnpm audit (npm advisory database)",
+                  "**Advisory:** [`" + .id + "`](" + .url + ") (" + .severity + ")",
+                  "**Package:** `" + .module + "`",
+                  "**Patched versions:** `" + (if .patched == "" then "—" else .patched end) + "`",
+                  "**Recommendation:** " + (if .recommendation == "" then "—" else .recommendation end),
+                  "",
+                  "**" + .vtitle + "**",
+                  "",
+                  .overview
+                ] | join("\n"))
+              })
+          ')
+          printf '%s\n' "${out:-[]}" > findings.json
+          echo "::notice::pnpm audit: $(jq length findings.json) finding(s)"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: findings-npm-audit
+          path: findings.json
+          if-no-files-found: ignore
+          retention-days: 1
 
   mend-sca:
     name: Mend SCA
@@ -470,7 +406,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      issues: write
     timeout-minutes: 15
     env:
       MEND_URL: https://ibmets.whitesourcesoftware.com
@@ -489,9 +424,7 @@ jobs:
           curl -fsSL https://downloads.mend.io/cli/linux_amd64/mend -o /usr/local/bin/mend
           chmod +x /usr/local/bin/mend
 
-      - name: Run SCA scan and file issues
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Detect vulnerabilities
         run: |
           set -euo pipefail
 
@@ -499,62 +432,36 @@ jobs:
             --scope "${MEND_ORGNAME}//${MEND_PRODUCTNAME}//${MEND_PROJECTNAME}" \
             --update --format json --non-interactive)
 
-          mapfile -t findings < <(echo "$results" | jq -c '
+          out=$(echo "$results" | jq '
             [.. | objects | select(.vulnerabilities) |
               .name as $lib | .vulnerabilities[] |
               { cve: .name, severity: .severity, score: .cvss3_score,
                 description: .description, url: .url,
                 library: $lib, fix: (.topFix.fixResolution // "—") }]
             | unique_by(.cve + "|" + .library)
-            | .[]')
-
-          if [ "${#findings[@]}" -eq 0 ]; then
-            echo "::notice::Mend SCA: no vulnerabilities detected"
-            exit 0
-          fi
-
-          for finding in "${findings[@]}"; do
-            cve=$(echo "$finding" | jq -r '.cve')
-            severity=$(echo "$finding" | jq -r '.severity')
-            score=$(echo "$finding" | jq -r '.score')
-            description=$(echo "$finding" | jq -r '.description')
-            url=$(echo "$finding" | jq -r '.url')
-            library=$(echo "$finding" | jq -r '.library')
-            fix=$(echo "$finding" | jq -r '.fix')
-
-            title="[${cve}] ${severity} vulnerability in ${library} (SCA)"
-
-            existing=$(gh issue list \
-              --repo "${GITHUB_REPOSITORY}" \
-              --state open \
-              --search "in:title \"${cve}\" \"${library}\"" \
-              --json number \
-              --jq '.[0].number // empty')
-
-            if [ -n "$existing" ]; then
-              gh issue comment "$existing" \
-                --repo "${GITHUB_REPOSITORY}" \
-                --body "Still present. Library: \`${library}\`. Fix: \`${fix}\`."
-              continue
-            fi
-
-            issue_body=$(printf '%s\n' \
-              "**Source:** Mend SCA" \
-              "**CVE:** [\`${cve}\`](${url}) (${severity}, CVSS ${score})" \
-              "**Library:** \`${library}\`" \
-              "**Fix:** \`${fix}\`" \
-              "" \
-              "${description}" \
-              "" \
-              "---" \
-              "See [docs/security/supply-chain.md](../blob/main/docs/security/supply-chain.md) for the remediation flow.")
-
-            gh issue create \
-              --repo "${GITHUB_REPOSITORY}" \
-              --title "$title" \
-              --body "$issue_body" \
-              --label "security,vulnerability"
-          done
+            | map({
+                title: ("[" + .cve + "] " + .severity + " vulnerability in " + .library + " (SCA)"),
+                searchTerms: [.cve, .library],
+                comment: ("Still present. Library: `" + .library + "`. Fix: `" + .fix + "`."),
+                body: ([
+                  "**Source:** Mend SCA",
+                  "**CVE:** [`" + .cve + "`](" + .url + ") (" + .severity + ", CVSS " + (.score | tostring) + ")",
+                  "**Library:** `" + .library + "`",
+                  "**Fix:** `" + .fix + "`",
+                  "",
+                  .description
+                ] | join("\n"))
+              })
+          ')
+          printf '%s\n' "${out:-[]}" > findings.json
+          echo "::notice::Mend SCA: $(jq length findings.json) finding(s)"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: findings-mend-sca
+          path: findings.json
+          if-no-files-found: ignore
+          retention-days: 1
 
   trivy-tasks:
     name: mise tasks | grep ':scan:trivy$'
@@ -582,7 +489,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      issues: write
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -594,85 +500,113 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
 
-      - name: Scan and file issues
+      - name: Detect vulnerabilities
+        id: scan
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
           QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
           TASK: ${{ matrix.task }}
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-
+          echo "artifact=findings-$(echo "$TASK" | tr ':' '-')" >> "$GITHUB_OUTPUT"
+          echo '[]' > findings.json
           if [ -n "${QUAY_USERNAME:-}" ] && [ -n "${QUAY_PASSWORD:-}" ]; then
             echo "${QUAY_PASSWORD}" | docker login quay.io -u "${QUAY_USERNAME}" --password-stdin
           fi
-
           report=$(mise run "$TASK" --json --tag="$SHA") || {
             echo "::notice::Trivy scan skipped for ${TASK} (no ${SHA} image — build may have failed); see log"
             exit 0
           }
-
-          image=$(echo "$report" | jq -r '.ArtifactName // empty')
-          component=$(echo "$image" | awk -F/ '{print $NF}' | cut -d: -f1)
-
-          mapfile -t findings < <(echo "$report" | jq -c '
-            [ (.Results // [])[] | (.Vulnerabilities // [])[]
-              | { id: .VulnerabilityID, pkg: .PkgName, installed: .InstalledVersion,
-                  fixed: (.FixedVersion // ""), severity: (.Severity // "UNKNOWN"),
-                  title: (.Title // ""), url: (.PrimaryURL // ""),
-                  description: (.Description // "") } ]
+          out=$(echo "$report" | jq --arg task "$TASK" '
+            (.ArtifactName // "") as $image
+            | ($image | split("/") | last | split(":") | first) as $component
+            | [ (.Results // [])[] | (.Vulnerabilities // [])[]
+                | { id: .VulnerabilityID, pkg: .PkgName, installed: .InstalledVersion,
+                    fixed: (.FixedVersion // ""), severity: (.Severity // "UNKNOWN"),
+                    vtitle: (.Title // ""), url: (.PrimaryURL // ""),
+                    description: (.Description // "") } ]
             | unique_by(.id + "|" + .pkg)
-            | .[]')
+            | map({
+                title: ("[" + .id + "] " + .severity + " vulnerability in " + $component + " (" + .pkg + ")"),
+                searchTerms: [.id, $component, .pkg],
+                comment: ("Still present in `" + $component + "`. Package: `" + .pkg + "` " + .installed + ". Fixed in: `" + (if .fixed == "" then "—" else .fixed end) + "`."),
+                body: ([
+                  "**Source:** Trivy (`" + $task + "`)",
+                  "**Image:** `" + $image + "`",
+                  "**CVE:** [`" + .id + "`](" + .url + ") (" + .severity + ")",
+                  "**Package:** `" + .pkg + "` " + .installed,
+                  "**Fixed in:** `" + (if .fixed == "" then "—" else .fixed end) + "`",
+                  "",
+                  .vtitle,
+                  "",
+                  .description
+                ] | join("\n"))
+              })
+          ')
+          printf '%s\n' "${out:-[]}" > findings.json
+          echo "::notice::Trivy (${TASK}): $(jq length findings.json) finding(s)"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: ${{ steps.scan.outputs.artifact }}
+          path: findings.json
+          if-no-files-found: ignore
+          retention-days: 1
 
-          if [ "${#findings[@]}" -eq 0 ]; then
-            echo "::notice::Trivy: no vulnerabilities in ${image}"
+  manage-security-issues:
+    name: File security issues
+    needs: [go-vuln, npm-audit, mend-sca, container-scan]
+    if: ${{ always() && github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: findings-*
+          path: findings
+      - name: Create or update issues
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          files=(findings/*/findings.json)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::notice::no findings artifacts to process"
             exit 0
           fi
-
+          mapfile -t findings < <(jq -c -s 'add // [] | unique_by(.title) | .[]' "${files[@]}")
+          if [ "${#findings[@]}" -eq 0 ]; then
+            echo "::notice::no vulnerabilities reported by any scanner"
+            exit 0
+          fi
+          echo "Processing ${#findings[@]} finding(s) across all scanners"
+          footer="See [docs/security/supply-chain.md](../blob/main/docs/security/supply-chain.md) for the remediation flow."
           for finding in "${findings[@]}"; do
-            id=$(echo "$finding" | jq -r '.id')
-            pkg=$(echo "$finding" | jq -r '.pkg')
-            installed=$(echo "$finding" | jq -r '.installed')
-            fixed=$(echo "$finding" | jq -r '.fixed')
-            severity=$(echo "$finding" | jq -r '.severity')
-            title_text=$(echo "$finding" | jq -r '.title')
-            url=$(echo "$finding" | jq -r '.url')
-            description=$(echo "$finding" | jq -r '.description')
-
-            title="[${id}] ${severity} vulnerability in ${component} (${pkg})"
-
+            title=$(jq -r '.title' <<<"$finding")
+            comment=$(jq -r '.comment' <<<"$finding")
+            body=$(jq -r '.body' <<<"$finding")
+            query=$(jq -r '.searchTerms | map("\"" + . + "\"") | join(" ")' <<<"$finding")
             existing=$(gh issue list \
               --repo "${GITHUB_REPOSITORY}" \
               --state open \
-              --search "in:title \"${id}\" \"${component}\" \"${pkg}\"" \
+              --search "in:title ${query}" \
               --json number \
               --jq '.[0].number // empty')
-
             if [ -n "$existing" ]; then
               gh issue comment "$existing" \
                 --repo "${GITHUB_REPOSITORY}" \
-                --body "Still present in \`${component}\`. Package: \`${pkg}\` ${installed}. Fixed in: \`${fixed:-—}\`."
+                --body "$comment"
               continue
             fi
-
-            issue_body=$(printf '%s\n' \
-              "**Source:** Trivy (\`${TASK}\`)" \
-              "**Image:** \`${image}\`" \
-              "**CVE:** [\`${id}\`](${url}) (${severity})" \
-              "**Package:** \`${pkg}\` ${installed}" \
-              "**Fixed in:** \`${fixed:-—}\`" \
-              "" \
-              "${title_text}" \
-              "" \
-              "${description}" \
-              "" \
-              "---" \
-              "See [docs/security/supply-chain.md](../blob/main/docs/security/supply-chain.md) for the remediation flow.")
-
             gh issue create \
               --repo "${GITHUB_REPOSITORY}" \
               --title "$title" \
-              --body "$issue_body" \
+              --body "$(printf '%s\n\n---\n%s\n' "$body" "$footer")" \
               --label "security,vulnerability"
           done
