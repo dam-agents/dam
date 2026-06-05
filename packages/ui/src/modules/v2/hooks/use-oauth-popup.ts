@@ -59,7 +59,10 @@ export function useOAuthPopup(onResult: (result: OAuthPopupResult) => void) {
     pollRef.current = window.setInterval(() => {
       if (popupRef.current?.closed) {
         teardown();
-        onResultRef.current({ ok: false, message: "Authorization was cancelled." });
+        onResultRef.current({
+          ok: false,
+          message: "Authorization was cancelled.",
+        });
       }
     }, 600);
     return popup;

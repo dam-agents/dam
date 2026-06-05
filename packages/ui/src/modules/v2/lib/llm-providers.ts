@@ -71,9 +71,7 @@ export const LLM_PROVIDERS: readonly LlmProvider[] = [
 // Each harness uses its own credential: Claude Code on Anthropic/LiteLLM, Bob
 // on the Bob Shell key, Codex on the OpenAI key. The provider step only offers
 // the matching ones.
-export function providersForHarness(
-  harness: Harness,
-): readonly LlmProvider[] {
+export function providersForHarness(harness: Harness): readonly LlmProvider[] {
   if (harness === "bob") return LLM_PROVIDERS.filter((p) => p.id === "bob");
   if (harness === "codex")
     return LLM_PROVIDERS.filter((p) => p.id === "openai");

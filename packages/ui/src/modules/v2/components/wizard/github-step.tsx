@@ -4,9 +4,15 @@ import { type ReactNode, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 
 import { api } from "../../../../api.js";
-import { type GithubMode, useGithubConnect } from "../../hooks/use-github-connect.js";
+import {
+  type GithubMode,
+  useGithubConnect,
+} from "../../hooks/use-github-connect.js";
 import { useOAuthPopup } from "../../hooks/use-oauth-popup.js";
-import { saveSnapshot, type WizardSnapshot } from "../../lib/wizard-snapshot.js";
+import {
+  saveSnapshot,
+  type WizardSnapshot,
+} from "../../lib/wizard-snapshot.js";
 import { LabeledInput } from "../labeled-input.js";
 
 type Target = "github" | "ghe";
