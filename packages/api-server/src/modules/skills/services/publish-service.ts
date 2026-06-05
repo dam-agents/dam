@@ -6,8 +6,8 @@ import type {
   SkillSource,
 } from "api-server-api";
 import type { AgentsRepository } from "../../agents/infrastructure/agents-repository.js";
-import { computeAgentState } from "../../agents/infrastructure/agent-mappers.js";
 import type { AgentSkillsRepository } from "../infrastructure/agent-skills-repository.js";
+import { ensureAgentReachable } from "./ensure-agent-reachable.js";
 import {
   AgentRuntimeUpstreamError,
   type AgentRuntimeSkillsClient,
@@ -34,9 +34,9 @@ export interface PublishServiceDeps {
 
 /**
  * Publish orchestrator — thin proxy. Validates that the user owns the
- * instance + source and the instance is running, then delegates everything
- * else to agent-runtime (which goes through the in-pod Envoy sidecar's
- * credential injector for the GitHub token swap, ADR-033).
+ * instance + source and wakes a hibernated agent (ADR-032), then delegates
+ * everything else to agent-runtime (which goes through the in-pod Envoy
+ * sidecar's credential injector for the GitHub token swap, ADR-033).
  *
  * Upstream gateway errors (app_not_connected / access_restricted) get
  * re-thrown as tRPC errors with the `connect_url` / `manage_url` carried
@@ -46,15 +46,11 @@ export async function publishSkill(
   deps: PublishServiceDeps,
   input: SkillPublishInput,
 ): Promise<SkillPublishResult> {
-  const agent = await deps.agents.get(input.agentId, deps.owner);
-  if (!agent)
-    throw new TRPCError({ code: "NOT_FOUND", message: "agent not found" });
-  if (computeAgentState(agent) !== "running") {
-    throw new TRPCError({
-      code: "PRECONDITION_FAILED",
-      message: `agent is ${computeAgentState(agent)}; start it before publishing`,
-    });
-  }
+  const agent = await ensureAgentReachable(
+    deps.agents,
+    input.agentId,
+    deps.owner,
+  );
 
   const source = await deps.resolveSource(input.sourceId);
   if (!source)

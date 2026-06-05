@@ -1,6 +1,6 @@
 # Skills
 
-Last verified: 2026-05-22
+Last verified: 2026-06-05
 
 ## Motivated by
 
@@ -10,6 +10,7 @@ Last verified: 2026-05-22
 - [ADR-024 — Connector-declared envs and per-agent overrides](../adrs/024-connector-declared-envs.md) — env composition rules for agent pods
 - [ADR-033 — Envoy-based credential gateway](../adrs/033-envoy-credential-gateway.md) — Envoy performs the credential swap
 - [ADR-038 — Paired agent and gateway pods](../adrs/038-paired-gateway-pod.md) — Envoy lives in a paired gateway pod, not a sidecar
+- [ADR-032 — Centralized pod-reachability primitive](../adrs/032-pod-reachability-primitive.md) — skill *management* (install / uninstall / private scan / publish) wakes a hibernated agent through the shared `ensureReady` primitive rather than refusing
 
 ## Overview
 
@@ -111,9 +112,9 @@ Lives in [`packages/api-server/src/modules/skills/`](../../packages/api-server/s
 - The **Skill Source catalogue** — CRUD on user sources, merging in system seeds and template sources, dedupe and badge resolution.
 - The **scan cache** — per-`gitUrl`, 5-minute TTL, invalidated on `sources.refresh` or after a successful publish to that source.
 - **Public-archive scanning** — for `github.com` URLs, downloads `archive/HEAD.tar.gz` directly from GitHub, walks for `SKILL.md`, parses frontmatter, computes `contentHash`. No credentials required. This is the path that lets the catalog UI render even when no agent is running.
-- **Private / non-GitHub fallback** — falls through to the agent-runtime `skills.scan` over the harness port. Requires a running agent because the credential path needs the paired gateway pod; the api-server has none.
-- **Install / uninstall orchestration** — calls agent-runtime over its harness-port tRPC and on success upserts the `agent_skills` row with the returned `contentHash`. The api-server is the only pod whose NetworkPolicy can reach the agent's tRPC listener; no Bearer token is sent.
-- **Publish orchestration** ([`publish-service`](../../packages/api-server/src/modules/skills/services/publish-service.ts)) — validates that the source is a GitHub URL (only host that supports publish), calls agent-runtime, and on success writes the `agent_skill_publishes` row and invalidates the scan cache for that source.
+- **Private / non-GitHub fallback** — falls through to the agent-runtime `skills.scan` over the harness port. Needs the credential path's paired gateway pod, so it **wakes a hibernated agent** via the [ADR-032](../adrs/032-pod-reachability-primitive.md) `ensureReady` primitive (still requires an `agentId` to target).
+- **Install / uninstall orchestration** — wakes a hibernated agent ([ADR-032](../adrs/032-pod-reachability-primitive.md)) before recording the change, then upserts the `agent_skills` row and bumps the outbox; the [ADR-060](../adrs/060-unified-apply-path-and-contributions-settled-gate.md) apply worker applies it onto the (now-warm) pod. The api-server is the only pod whose NetworkPolicy can reach the agent's tRPC listener; no Bearer token is sent.
+- **Publish orchestration** ([`publish-service`](../../packages/api-server/src/modules/skills/services/publish-service.ts)) — validates that the source is a GitHub URL (only host that supports publish), wakes a hibernated agent ([ADR-032](../adrs/032-pod-reachability-primitive.md)), calls agent-runtime, and on success writes the `agent_skill_publishes` row and invalidates the scan cache for that source.
 - **Reconciled `state` view** — joins live `listLocal` from agent-runtime with the `agent_skills` rows, drops ghost rows whose directories were deleted out-of-band (and persists the cleanup), and folds in the `agent_skill_publishes` rows.
 - **MCP tools** — five tools registered on the per-agent MCP endpoint ([`mcp-endpoint.ts`](../../packages/api-server/src/apps/harness-api-server/mcp-endpoint.ts)): `list_skill_sources`, `list_skills_in_source`, `install_skill`, `uninstall_skill`, `publish_skill`. `agentId` is bound by the verified MCP session token, not user input — agents cannot spoof which agent they're acting on.
 - **Cleanup saga** — subscribes to `AgentDeleted` and deletes both `agent_skills` and `agent_skill_publishes` rows for the deleted agent. User-owned `skill_sources` are unaffected; they outlive any single agent.
@@ -210,7 +211,7 @@ GitHub errors (missing scope, repo not found) surface to agent-runtime as the up
 `skills.list(sourceId, agentId?)` resolves the source and dispatches:
 
 - **Public GitHub** → `public-archive-scanner` from the api-server, served from the per-`gitUrl` cache when fresh. No agent required.
-- **Anything else** → agent-runtime `skills.scan`. Requires a running agent and surfaces a clear error if `agentId` is missing.
+- **Anything else** → agent-runtime `skills.scan`. Requires an `agentId` (surfaces a clear error if missing) and **wakes a hibernated agent** via the [ADR-032](../adrs/032-pod-reachability-primitive.md) primitive before scanning.
 
 The cache is invalidated on `sources.refresh` and after every successful publish to that source — the latter so a freshly-merged PR shows up on the next list.
 

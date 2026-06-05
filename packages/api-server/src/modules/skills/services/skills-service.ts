@@ -32,6 +32,7 @@ import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import { detectHost } from "../infrastructure/git-host.js";
 import { PublicArchiveNotFoundError } from "../infrastructure/public-archive-scanner.js";
 import { publishSkill as runPublishSkill } from "./publish-service.js";
+import { ensureAgentReachable } from "./ensure-agent-reachable.js";
 import { upstreamToTrpc } from "../infrastructure/upstream-to-trpc.js";
 
 /** Stable, deterministic id for a template-derived source row. The hash
@@ -104,19 +105,6 @@ async function resolveSkillPaths(
   }
 
   return DEFAULT_SKILL_PATHS;
-}
-
-async function loadRunningInstance(deps: SkillsServiceDeps, agentId: string) {
-  const infra = await deps.agentsRepo.get(agentId, deps.owner);
-  if (!infra)
-    throw new TRPCError({ code: "NOT_FOUND", message: "instance not found" });
-  if (computeAgentState(infra) !== "running") {
-    throw new TRPCError({
-      code: "PRECONDITION_FAILED",
-      message: `instance is ${computeAgentState(infra)}; wake it before installing skills`,
-    });
-  }
-  return infra;
 }
 
 /**
@@ -343,18 +331,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
           message: "source is private; select an instance to scan it",
         });
       }
-      const infra = await deps.agentsRepo.get(agentId, deps.owner);
-      if (!infra)
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "instance not found",
-        });
-      if (computeAgentState(infra) !== "running") {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: `instance is ${computeAgentState(infra)}; start it before browsing private sources`,
-        });
-      }
+      await ensureAgentReachable(deps.agentsRepo, agentId, deps.owner);
       try {
         return await deps.scanSource(src.gitUrl, (gitUrl) =>
           deps.runtimeClient.scan(agentId, gitUrl),
@@ -366,7 +343,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     },
 
     async install(input: SkillInstallInput) {
-      await loadRunningInstance(deps, input.agentId);
+      await ensureAgentReachable(deps.agentsRepo, input.agentId, deps.owner);
 
       const ref: SkillRef = {
         source: input.source,
@@ -401,7 +378,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     },
 
     async uninstall(input: SkillUninstallInput) {
-      await loadRunningInstance(deps, input.agentId);
+      await ensureAgentReachable(deps.agentsRepo, input.agentId, deps.owner);
 
       await deps.agentSkillsRepo.removeSkill(input.agentId, {
         source: input.source,
