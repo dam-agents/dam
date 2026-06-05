@@ -4,20 +4,31 @@ import { dirname, join, resolve } from "node:path";
 import type { SshPaths } from "./ssh-keys.js";
 
 export const REMOTE_WORK_DIR = "/home/agent/work";
+const REMOTE_USER = "agent";
 
-/** JetBrains Gateway connect link for the managed host `alias`. Gateway resolves
- *  the alias through the user's OpenSSH config (the `Include`d managed block), so
- *  it inherits the same ProxyCommand and identity as the `ssh`/editor modes. The
- *  remote IDE (e.g. PyCharm) is chosen in Gateway itself — we don't pin one. */
 export function gatewayConnectUrl(alias: string): string {
   const params = new URLSearchParams({
     type: "ssh",
     host: alias,
-    user: "agent",
+    user: REMOTE_USER,
     port: "22",
     projectPath: REMOTE_WORK_DIR,
   });
   return `jetbrains-gateway://connect#${params.toString()}`;
+}
+
+export function editorLaunchArgs(
+  mode: "code" | "zed" | "jetbrains",
+  alias: string,
+): string[] {
+  switch (mode) {
+    case "code":
+      return ["--remote", `ssh-remote+${alias}`, REMOTE_WORK_DIR];
+    case "zed":
+      return [`ssh://${REMOTE_USER}@${alias}${REMOTE_WORK_DIR}`];
+    case "jetbrains":
+      return [gatewayConnectUrl(alias)];
+  }
 }
 
 function proxyCommandString(agentRef: string, serverFlag?: string): string {
@@ -46,7 +57,7 @@ function sanitizeHost(agentRef: string): string {
  *  from one source. ProxyCommand and the destination host are added per form. */
 function sshHostOptions(paths: SshPaths): [string, string][] {
   return [
-    ["User", "agent"],
+    ["User", REMOTE_USER],
     ["IdentitiesOnly", "yes"],
     ["IdentityFile", paths.privateKey],
     ["UserKnownHostsFile", paths.knownHosts],

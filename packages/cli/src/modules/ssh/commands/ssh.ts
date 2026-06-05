@@ -21,9 +21,8 @@ import { connectRawBridge } from "../infrastructure/raw-bridge.js";
 import { ensureKeyPair, sshPaths } from "../infrastructure/ssh-keys.js";
 import {
   buildSshArgs,
+  editorLaunchArgs,
   ensureManagedSshHost,
-  gatewayConnectUrl,
-  REMOTE_WORK_DIR,
 } from "../infrastructure/launch.js";
 
 export interface SshDeps {
@@ -35,6 +34,8 @@ export interface SshDeps {
 
 const MODES = ["ssh", "code", "zed", "jetbrains"] as const;
 type LaunchMode = (typeof MODES)[number];
+const MODES_PATTERN = MODES.join("|");
+const FORCED_EXEC_RE = new RegExp(`^(.+):(${MODES_PATTERN})$`);
 const MODE_BINS: Record<LaunchMode, readonly string[]> = {
   ssh: ["ssh"],
   code: ["code", "code-insiders"],
@@ -73,9 +74,7 @@ export function buildSshCommand(deps: SshDeps): Command {
     .argument("<agent>", "agent name or ID")
     .option(
       "-x, --exec <bin[:mode]>",
-      `client to launch: executable name or path, optionally suffixed with ":${MODES.join(
-        "|",
-      )}" to force how it's invoked; the mode is otherwise inferred from the name (e.g. code-insiders → code, pycharm → jetbrains)`,
+      `client to launch: executable name or path, optionally suffixed with ":${MODES_PATTERN}" to force how it's invoked; the mode is otherwise inferred from the name (e.g. code-insiders → code, pycharm → jetbrains)`,
     )
     .option("--server <url>", "override the configured server URL")
     .action(
@@ -83,9 +82,7 @@ export function buildSshCommand(deps: SshDeps): Command {
         let mode: LaunchMode = "ssh";
         let exec = "ssh";
         if (opts.exec) {
-          const forced = opts.exec.match(
-            new RegExp(`^(.+):(${MODES.join("|")})$`),
-          );
+          const forced = opts.exec.match(FORCED_EXEC_RE);
           if (forced) {
             exec = forced[1]!;
             mode = forced[2] as LaunchMode;
@@ -94,22 +91,14 @@ export function buildSshCommand(deps: SshDeps): Command {
             const inferred = inferMode(base);
             if (!inferred)
               die(
-                `could not infer mode from --exec "${opts.exec}"; append ":${MODES.join(
-                  "|",
-                )}" to force one`,
+                `could not infer mode from --exec "${opts.exec}"; append ":${MODES_PATTERN}" to force one`,
               );
             mode = inferred;
             exec = opts.exec;
           }
         }
 
-        const host = await resolveActiveHost(deps, {
-          flag: opts.server ? { server: opts.server } : undefined,
-          exitCodes: {
-            runtimeFailure: EXIT_RUNTIME_FAILURE,
-            belowFloor: EXIT_BELOW_FLOOR,
-          },
-        });
+        const host = await resolveSshHost(deps, opts.server);
         const paths = sshPaths();
         await Promise.all([
           resolveAgent(deps, host, agentRef), // early "not found" before handoff
@@ -128,13 +117,7 @@ export function buildSshCommand(deps: SshDeps): Command {
           serverFlag: opts.server,
           paths,
         });
-        const args =
-          mode === "zed"
-            ? [`ssh://agent@${alias}${REMOTE_WORK_DIR}`]
-            : mode === "jetbrains"
-              ? [gatewayConnectUrl(alias)]
-              : ["--remote", `ssh-remote+${alias}`, REMOTE_WORK_DIR];
-        return handoff(exec, args, label);
+        return handoff(exec, editorLaunchArgs(mode, alias), label);
       },
     );
 
@@ -158,13 +141,7 @@ export function buildSshCommand(deps: SshDeps): Command {
               : "specify an agent name/ID, or --all",
           );
 
-        const host = await resolveActiveHost(deps, {
-          flag: opts.server ? { server: opts.server } : undefined,
-          exitCodes: {
-            runtimeFailure: EXIT_RUNTIME_FAILURE,
-            belowFloor: EXIT_BELOW_FLOOR,
-          },
-        });
+        const host = await resolveSshHost(deps, opts.server);
         const paths = sshPaths();
         await orExit(ensureKeyPair(paths), (e) => e.message);
 
@@ -207,9 +184,9 @@ export function buildSshCommand(deps: SshDeps): Command {
         process.stdout.write(
           `Configured SSH host "${alias}" for agent "${agent.name}". Connect with:\n` +
             `  ssh ${alias}\n` +
-            `  code --remote ssh-remote+${alias} ${REMOTE_WORK_DIR}\n` +
-            `  zed ssh://agent@${alias}${REMOTE_WORK_DIR}\n` +
-            `  gateway ${gatewayConnectUrl(alias)}\n`,
+            `  code ${editorLaunchArgs("code", alias).join(" ")}\n` +
+            `  zed ${editorLaunchArgs("zed", alias).join(" ")}\n` +
+            `  gateway ${editorLaunchArgs("jetbrains", alias).join(" ")}\n`,
         );
         process.exit(0);
       },
@@ -259,6 +236,16 @@ export function buildSshCommand(deps: SshDeps): Command {
   ssh.addCommand(proxy, { hidden: true });
 
   return ssh;
+}
+
+function resolveSshHost(deps: SshDeps, serverFlag?: string) {
+  return resolveActiveHost(deps, {
+    flag: serverFlag ? { server: serverFlag } : undefined,
+    exitCodes: {
+      runtimeFailure: EXIT_RUNTIME_FAILURE,
+      belowFloor: EXIT_BELOW_FLOOR,
+    },
+  });
 }
 
 async function resolveAgent(
