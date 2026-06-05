@@ -10,7 +10,6 @@ import type {
   Result,
   SkillsDomainError,
 } from "agent-runtime-api";
-import { expandHome } from "./expand-home.js";
 
 const IMPL_NAME = "skill-install";
 
@@ -117,6 +116,10 @@ export function createSkillInstallPlugin(deps: {
       };
     },
   };
+}
+
+function expandHome(path: string, agentHome: string): string {
+  return path.replace(/\$HOME\b/g, agentHome).replace(/\$\{HOME\}/g, agentHome);
 }
 
 export const SKILL_INSTALL_PLUGIN_NAME = IMPL_NAME;

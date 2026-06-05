@@ -2,7 +2,6 @@ import {
   eq,
   type Db,
   agentSkills,
-  agentWorkspace,
   connectionGrants,
   connections as connectionsTable,
 } from "db";
@@ -48,14 +47,12 @@ export function createStateBuilder(deps: {
 }): StateBuilder {
   return {
     async build(agentId, capabilities): Promise<StatePayload> {
-      const [granted, skills, workspace] = await Promise.all([
+      const [granted, skills] = await Promise.all([
         readGrantedContributions(deps.db, agentId),
         readSkillRefContributions(deps.db, agentId),
-        readWorkspaceContribution(deps.db, agentId),
       ]);
       const builtin = deps.builtin.for(agentId);
-      // Driver apply order is set by the runtime-manifest, not this array order.
-      const rawContribs = [...builtin, ...workspace, ...granted, ...skills];
+      const rawContribs = [...builtin, ...granted, ...skills];
       const pending = await deps.outboxRepo.pendingEvents(agentId);
       const events = pending.map(toEvent).filter((e): e is Event => e !== null);
       const filtered = filterByCapabilities(capabilities, rawContribs, events);
@@ -117,19 +114,6 @@ async function readSkillRefContributions(
       name: r.name,
       version: r.version,
     }),
-  );
-}
-
-async function readWorkspaceContribution(
-  db: Db,
-  agentId: string,
-): Promise<Contribution[]> {
-  const rows = await db
-    .select({ sourceUrl: agentWorkspace.sourceUrl })
-    .from(agentWorkspace)
-    .where(eq(agentWorkspace.agentId, agentId));
-  return rows.map(
-    (r): Contribution => ({ kind: "workspace-git", sourceUrl: r.sourceUrl }),
   );
 }
 

@@ -7,12 +7,14 @@ import type {
 import type { Dispatcher } from "./dispatcher.js";
 import type { StateStore } from "./state-store.js";
 import type { TriggerImpl } from "./drivers/trigger-impl.js";
-import { processEvents } from "./event-loop.js";
+import type { SeedWorkspaceFn } from "./seed-workspace.js";
+import { processEvents, type EventHandlers } from "./event-loop.js";
 
 export interface ApplyStateDeps {
   dispatcher: Dispatcher;
   stateStore: StateStore;
   triggerImpl: TriggerImpl;
+  seedWorkspace: SeedWorkspaceFn;
   log: (msg: string) => void;
 }
 
@@ -25,6 +27,11 @@ export function createRuntimeChannelService(
     const run = tail.then(work, work);
     tail = run.catch(() => {});
     return run;
+  };
+
+  const handlers: EventHandlers = {
+    triggerImpl: deps.triggerImpl,
+    seedWorkspace: deps.seedWorkspace,
   };
 
   return {
@@ -48,7 +55,7 @@ export function createRuntimeChannelService(
       );
       const settledEvents = await processEvents(
         input.events,
-        deps.triggerImpl,
+        handlers,
         deps.stateStore,
         deps.log,
       );
@@ -72,7 +79,7 @@ export function createRuntimeChannelService(
     // Events apply in the same pass, independent of contribution outcome (ADR-060).
     const settledEvents = await processEvents(
       input.events,
-      deps.triggerImpl,
+      handlers,
       deps.stateStore,
       deps.log,
     );

@@ -27,8 +27,6 @@ function keyFor(c: Contribution): string {
       return `mcp-entry:${c.name}`;
     case "skill-ref":
       return `skill-ref:${c.name}@${c.version}@${c.sourceUrl}`;
-    case "workspace-git":
-      return `workspace-git:${c.sourceUrl}`;
   }
 }
 

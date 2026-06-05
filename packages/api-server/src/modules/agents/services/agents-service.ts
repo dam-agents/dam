@@ -88,8 +88,6 @@ export function createAgentsService(deps: {
   cleanupHooks?: readonly AgentCleanupHook[];
   runtimeMutator: RuntimeMutator;
   contributionsSettled: ContributionsSettledPort;
-  /** Records the one-shot working-dir git seed at create time (optional, like presetSeeder). */
-  setWorkspaceRepo?: (agentId: string, sourceUrl: string) => Promise<void>;
   // --- Runtime / channels / allowed-users dependencies (formerly Instance) ---
   listChannelsByOwner: () => Promise<Map<string, ChannelConfig[]>>;
   listChannelsByAgent: (agentId: string) => Promise<ChannelConfig[]>;
@@ -272,14 +270,22 @@ export function createAgentsService(deps: {
         );
       }
 
-      // Record the one-shot working-dir seed before the bump, so the first
-      // contribution delivery already carries the workspace-git contribution.
-      if (input.gitRepo && deps.setWorkspaceRepo) {
-        await deps.setWorkspaceRepo(infra.id, input.gitRepo);
-      }
-
       // Bump so the built-in platform connection ships from creation (#421).
-      await deps.runtimeMutator.bump(infra.id, []);
+      // When a git repo was chosen, also enqueue a one-shot `workspace-seed`
+      // event — the agent clones it into the work dir on its first apply.
+      await deps.runtimeMutator.bump(
+        infra.id,
+        input.gitRepo
+          ? [
+              {
+                id: `workspace-seed:${infra.id}:${Date.now()}`,
+                kind: "workspace-seed",
+                payload: { sourceUrl: input.gitRepo },
+                expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+              },
+            ]
+          : [],
+      );
 
       const agent = assembleAgent(infra, [], emails, []);
       // Records the agent's initial security posture (preset, secret ref,

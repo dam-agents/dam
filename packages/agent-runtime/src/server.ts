@@ -31,7 +31,6 @@ import {
   createFilePlugin,
   createMcpEntryPlugin,
   createSkillInstallPlugin,
-  createWorkspaceClonePlugin,
 } from "./modules/runtime-channel/index.js";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -66,6 +65,7 @@ const runtimeChannel = await composeRuntimeChannel({
     ? join(__dir, "../../platform-base/runtime-manifest.yaml")
     : join(__dir, "../runtime-manifest.yaml"),
   agentHome: homeDir,
+  workDir,
   stateBackend,
   apiServerUrl: config.API_SERVER_URL,
   agentId: process.env.PLATFORM_AGENT_ID ?? process.env.HOSTNAME ?? "unknown",
@@ -74,7 +74,6 @@ const runtimeChannel = await composeRuntimeChannel({
     createFilePlugin(),
     createMcpEntryPlugin(),
     createSkillInstallPlugin({ install: skillsService.install }),
-    createWorkspaceClonePlugin(),
   ],
 });
 

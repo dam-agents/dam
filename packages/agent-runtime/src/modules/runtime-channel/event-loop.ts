@@ -1,11 +1,17 @@
 import type { Event } from "agent-runtime-api";
 import type { TriggerImpl } from "./drivers/trigger-impl.js";
+import type { SeedWorkspaceFn } from "./seed-workspace.js";
 import type { StateStore } from "./state-store.js";
+
+export interface EventHandlers {
+  triggerImpl: TriggerImpl;
+  seedWorkspace: SeedWorkspaceFn;
+}
 
 /** Apply one-shot events independent of contributions; returns the settled ids (failed ones stay pending). */
 export async function processEvents(
   events: Event[],
-  triggerImpl: TriggerImpl,
+  handlers: EventHandlers,
   stateStore: StateStore,
   log: (msg: string) => void,
 ): Promise<string[]> {
@@ -32,7 +38,7 @@ export async function processEvents(
     }
 
     try {
-      await invokeHandler(e, triggerImpl);
+      await invokeHandler(e, handlers);
       const current = stateStore.read();
       stateStore.write({
         ...current,
@@ -54,16 +60,16 @@ function splitEventId(id: string): { key: string; ts: number } {
   return { key: id.slice(0, i), ts: Number(id.slice(i + 1)) };
 }
 
-async function invokeHandler(
-  e: Event,
-  triggerImpl: TriggerImpl,
-): Promise<void> {
+async function invokeHandler(e: Event, handlers: EventHandlers): Promise<void> {
   switch (e.kind) {
     case "trigger":
-      await triggerImpl.handle(e.payload);
+      await handlers.triggerImpl.handle(e.payload);
       return;
     case "schedule-reset":
-      triggerImpl.reset(e.payload.scheduleId);
+      handlers.triggerImpl.reset(e.payload.scheduleId);
+      return;
+    case "workspace-seed":
+      await handlers.seedWorkspace(e.payload);
       return;
   }
 }

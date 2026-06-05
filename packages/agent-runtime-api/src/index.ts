@@ -80,6 +80,7 @@ export type {
   MergeMode,
   FileFormat,
   TriggerEventPayload,
+  WorkspaceSeedEventPayload,
   StateSlice,
   ApplyStateInput,
   ApplyStateResult,

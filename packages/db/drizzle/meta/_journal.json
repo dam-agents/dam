@@ -162,13 +162,6 @@
       "when": 1780876800000,
       "tag": "0022_outbox_settled_gate",
       "breakpoints": true
-    },
-    {
-      "idx": 23,
-      "version": "7",
-      "when": 1780963200000,
-      "tag": "0023_agent_workspace",
-      "breakpoints": true
     }
   ]
 }

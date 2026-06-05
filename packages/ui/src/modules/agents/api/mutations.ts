@@ -29,7 +29,7 @@ export interface CreateAgentInput {
   appConnectionIds?: string[];
   egressPreset?: EgressPreset;
   /** Optional: clone this public repo into the working dir once, shortly after
-   *  first start (a `workspace-git` contribution). Flows to `agents.create`. */
+   *  first start (a one-shot `workspace-seed` event). Flows to `agents.create`. */
   gitRepo?: string;
   /** Optional local-context import. Files are bundled and uploaded as a
    *  tar to the new agent's `<agenthome>/work` after the agent is

@@ -8,4 +8,3 @@ export {
   createSkillInstallPlugin,
   type SkillInstallFn,
 } from "./drivers/skill-install-plugin.js";
-export { createWorkspaceClonePlugin } from "./drivers/workspace-clone-plugin.js";

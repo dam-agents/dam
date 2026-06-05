@@ -15,6 +15,7 @@ import { createPluginRegistry } from "./infrastructure/plugin-registry.js";
 import { createExtensionLoader } from "./infrastructure/extension-loader.js";
 import { createHarnessClient, type HarnessClient } from "./harness-client.js";
 import { createRuntimeChannelService } from "./service.js";
+import { createSeedWorkspace } from "./seed-workspace.js";
 import { runHello } from "./hello.js";
 import type { TriggerSessionDriver } from "../acp/index.js";
 
@@ -27,6 +28,7 @@ export interface RuntimeChannelComposition {
 export interface ComposeRuntimeChannelOpts {
   manifestPath: string;
   agentHome: string;
+  workDir: string;
   stateBackend: DocumentStoreBackend;
   apiServerUrl: string;
   agentId: string;
@@ -65,6 +67,8 @@ export async function composeRuntimeChannel(
     stateStore: triggerStateStore,
   });
 
+  const seedWorkspace = createSeedWorkspace({ workDir: opts.workDir, log });
+
   const harnessClient: HarnessClient = createHarnessClient({
     apiServerUrl: opts.apiServerUrl,
     agentId: opts.agentId,
@@ -73,12 +77,17 @@ export async function composeRuntimeChannel(
   const contributionKinds = Object.keys(
     manifest.drivers,
   ) as readonly ContributionKind[];
-  const eventKinds: readonly EventKind[] = ["trigger", "schedule-reset"];
+  const eventKinds: readonly EventKind[] = [
+    "trigger",
+    "schedule-reset",
+    "workspace-seed",
+  ];
 
   const service = createRuntimeChannelService({
     dispatcher,
     stateStore,
     triggerImpl,
+    seedWorkspace,
     log,
   });
 

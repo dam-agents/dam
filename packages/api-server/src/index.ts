@@ -21,7 +21,6 @@ import {
   startSkillsCleanupSaga,
 } from "./modules/skills/index.js";
 import { createK8sClient } from "./modules/agents/infrastructure/k8s.js";
-import { createAgentWorkspaceRepository } from "./modules/agents/infrastructure/agent-workspace-repository.js";
 import { createPostgresState } from "@chat-adapter/state-pg";
 import {
   createSlackWorker,
@@ -337,8 +336,6 @@ deliverySweeper.start();
 const agentCleanupHooks = [
   createEgressRulesCleanupHook(db),
   createApprovalsCleanupHook(db),
-  (agentId: string) =>
-    createAgentWorkspaceRepository(db).deleteByAgent(agentId),
 ];
 
 // Cross-store orphan reaper. Lists live agent ConfigMaps, finds DB rows
@@ -357,11 +354,6 @@ const agentArtifactsSweeper = createAgentArtifactsSweeper({
       name: "pending-approvals",
       listAgentIds: () => listPendingApprovalAgentIds(db),
       cleanup: agentCleanupHooks[1]!,
-    },
-    {
-      name: "agent-workspace",
-      listAgentIds: () => createAgentWorkspaceRepository(db).listAgentIds(),
-      cleanup: agentCleanupHooks[2]!,
     },
   ],
   intervalMs: 30 * 60_000,
