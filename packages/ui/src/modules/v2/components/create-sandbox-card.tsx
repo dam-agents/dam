@@ -1,14 +1,27 @@
 import { Plus } from "lucide-react";
 
-export function CreateSandboxCard({ onClick }: { onClick: () => void }) {
+export function CreateSandboxCard({
+  label,
+  description,
+  onClick,
+}: {
+  label: string;
+  description: string;
+  onClick: () => void;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="anim-in flex items-center justify-center gap-2 rounded-lg border border-dashed border-border px-5 py-4 text-[14px] font-semibold text-muted-foreground hover:border-primary hover:text-primary transition-colors"
+      className="group anim-in flex flex-col items-start gap-1.5 rounded-xl border border-dashed border-border p-4 text-left transition-colors hover:border-primary hover:bg-primary/5"
     >
-      <Plus size={18} />
-      Create sandbox
+      <span className="flex items-center gap-1.5 text-[14px] font-semibold text-foreground transition-colors group-hover:text-primary">
+        <Plus size={15} />
+        {label}
+      </span>
+      <span className="text-[12px] leading-snug text-muted-foreground">
+        {description}
+      </span>
     </button>
   );
 }

@@ -1,24 +1,22 @@
 import { Check } from "lucide-react";
 import type { ReactNode } from "react";
 
-import {
-  LLM_PROVIDERS,
-  type LlmProvider,
-  type LlmProviderId,
-} from "../../lib/llm-providers.js";
+import type { LlmProvider, LlmProviderId } from "../../lib/llm-providers.js";
 
 export function ProviderPicker({
+  providers,
   selected,
   onSelect,
   renderSelected,
 }: {
+  providers: readonly LlmProvider[];
   selected: LlmProviderId | null;
   onSelect: (provider: LlmProvider) => void;
   renderSelected?: (provider: LlmProvider) => ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-2">
-      {LLM_PROVIDERS.map((provider) => {
+      {providers.map((provider) => {
         const active = provider.id === selected;
         return (
           <div

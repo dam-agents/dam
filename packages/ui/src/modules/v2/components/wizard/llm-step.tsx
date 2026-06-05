@@ -12,6 +12,7 @@ import {
   findReusableSecret,
   getLlmProvider,
   type LlmProvider,
+  providersForHarness,
 } from "../../lib/llm-providers.js";
 import type { WizardSnapshot } from "../../lib/wizard-snapshot.js";
 import { LabeledInput } from "../labeled-input.js";
@@ -31,6 +32,7 @@ export function LlmStep({
   const { data: secrets = [] } = useSecrets();
   const createSecret = useCreateSecret();
   const testAnthropic = useTestAnthropic();
+  const providers = providersForHarness(snapshot.harness);
 
   const [value, setValue] = useState("");
   const [manualOverride, setManualOverride] = useState(false);
@@ -108,9 +110,10 @@ export function LlmStep({
 
       <div>
         <span className="text-[13px] font-semibold text-foreground/80 block mb-1.5">
-          LLM provider
+          {snapshot.harness === "bob" ? "Credential" : "LLM provider"}
         </span>
         <ProviderPicker
+          providers={providers}
           selected={snapshot.llmProvider}
           onSelect={selectProvider}
           renderSelected={(selectedProvider) => (

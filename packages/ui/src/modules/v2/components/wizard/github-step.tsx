@@ -29,7 +29,7 @@ export function GithubStep({
   onCreate: () => void;
   creating: boolean;
 }) {
-  const { isBringYourOwnApp, findExisting, ensureConnectionId } =
+  const { isBringYourOwnApp, ghePresetHost, findExisting, ensureConnectionId } =
     useGithubConnect();
   const [gheHost, setGheHost] = useState(snapshot.gheHost);
   const [clientId, setClientId] = useState("");
@@ -56,20 +56,21 @@ export function GithubStep({
     }
   });
 
-  const markConnection = (target: Target, id: string, authorized: boolean) =>
+  const markConnection = (
+    target: Target,
+    id: string,
+    host: string,
+    authorized: boolean,
+  ) =>
     update(
       target === "github"
         ? { githubConnectionId: id, githubAuthorized: authorized }
-        : {
-            gheConnectionId: id,
-            gheHost: gheHost.trim(),
-            gheAuthorized: authorized,
-          },
+        : { gheConnectionId: id, gheHost: host, gheAuthorized: authorized },
     );
 
   const connect = async (target: Target) => {
     const mode = MODE[target];
-    const host = target === "ghe" ? gheHost.trim() : "";
+    const host = target === "ghe" ? (ghePresetHost ?? gheHost.trim()) : "";
     if (target === "ghe" && !host)
       return setError("Enter the GitHub Enterprise host.");
     if (isBringYourOwnApp(mode) && (!clientId.trim() || !clientSecret.trim()))
@@ -78,7 +79,7 @@ export function GithubStep({
 
     const existing = findExisting(mode, host);
     if (existing?.status === "active") {
-      markConnection(target, existing.id, true);
+      markConnection(target, existing.id, host, true);
       return;
     }
 
@@ -90,7 +91,7 @@ export function GithubStep({
         clientId: clientId.trim(),
         clientSecret: clientSecret.trim(),
       });
-      markConnection(target, id, false);
+      markConnection(target, id, host, false);
       if (popup) {
         const { authUrl } = await api.connections.startOAuth.mutate({
           connectionId: id,
@@ -172,12 +173,20 @@ export function GithubStep({
             update({ gheConnectionId: null, gheAuthorized: false })
           }
         >
-          <LabeledInput
-            label="GitHub Enterprise host"
-            placeholder="ghe.example.com"
-            value={gheHost}
-            onChange={setGheHost}
-          />
+          {ghePresetHost ? (
+            <p className="text-[12px] text-muted-foreground">
+              Host{" "}
+              <span className="font-mono text-foreground">{ghePresetHost}</span>{" "}
+              (configured by your operator).
+            </p>
+          ) : (
+            <LabeledInput
+              label="GitHub Enterprise host"
+              placeholder="ghe.example.com"
+              value={gheHost}
+              onChange={setGheHost}
+            />
+          )}
           {isBringYourOwnApp("github-enterprise") && (
             <ByoFields
               clientId={clientId}

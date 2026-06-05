@@ -22,12 +22,18 @@ export function Terminal({
   sessionId,
   fresh,
   onConnected,
+  onFirstOutput,
   autoConnect = true,
 }: {
   agentId: string;
   sessionId: string;
   fresh?: boolean;
   onConnected?: () => void;
+  /** Fires once when the first output frame arrives — i.e. the agent is awake
+   *  and the shell is producing output, which the relay only reaches after
+   *  `ensureReady`. Use this (not `onConnected`) to clear a "starting" overlay,
+   *  since `onConnected` fires on the immediate relay handshake. */
+  onFirstOutput?: () => void;
   autoConnect?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -66,6 +72,7 @@ export function Terminal({
     let ws: WebSocket | null = null;
     let term: XTerm | null = null;
     let ro: ResizeObserver | null = null;
+    let firstOutputSeen = false;
 
     (async () => {
       term = new XTerm({
@@ -116,9 +123,13 @@ export function Terminal({
         } catch {
           return;
         }
-        if (frame.op === OP_OUTPUT)
+        if (frame.op === OP_OUTPUT) {
+          if (!firstOutputSeen) {
+            firstOutputSeen = true;
+            onFirstOutput?.();
+          }
           term?.write(new TextDecoder().decode(frame.data));
-        else if (frame.op === OP_EXIT) {
+        } else if (frame.op === OP_EXIT) {
           setExitCode(frame.code);
           setState("exited");
         }
@@ -155,8 +166,8 @@ export function Terminal({
       termRef.current = null;
       container.innerHTML = "";
     };
-    // `fresh` and `onConnected` are intentionally captured once at mount.
-    // `reconnectKey` triggers a full teardown+reconnect cycle.
+    // `fresh`, `onConnected`, and `onFirstOutput` are intentionally captured
+    // once at mount. `reconnectKey` triggers a full teardown+reconnect cycle.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agentId, sessionId, reconnectKey]);
 

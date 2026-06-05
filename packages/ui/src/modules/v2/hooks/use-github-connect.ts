@@ -24,6 +24,12 @@ export function useGithubConnect() {
       .find((t) => t.id === mode)
       ?.inputs.find((i) => i.name === "clientId")?.state === "required";
 
+  // Operator-configured GHE host (Helm `defaultGithubEnterpriseHost`) ships as
+  // the template's host preset; when present the user need not type it.
+  const ghePresetHost: string | undefined = templates
+    .find((t) => t.id === "github-enterprise")
+    ?.inputs.find((i) => i.name === "host")?.presetValue;
+
   // GitHub.com is one-per-user; GHE is keyed by host so distinct hosts get
   // distinct connections rather than colliding on a single record.
   const findExisting = (mode: GithubMode, host: string) =>
@@ -56,6 +62,7 @@ export function useGithubConnect() {
 
   return {
     isBringYourOwnApp,
+    ghePresetHost,
     findExisting,
     ensureConnectionId,
     creating: createConnection.isPending,

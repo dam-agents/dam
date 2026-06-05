@@ -9,8 +9,9 @@ const SNAPSHOT_KEY = "platform-v2-wizard";
 export const wizardSnapshotSchema = z.object({
   step: z.union([z.literal(1), z.literal(2)]),
   name: z.string(),
+  harness: z.enum(["claude-code", "bob", "codex"]),
   llmProvider: z
-    .enum(["anthropic-api", "anthropic-oauth", "ibm-litellm"])
+    .enum(["anthropic-api", "anthropic-oauth", "ibm-litellm", "bob", "openai"])
     .nullable(),
   llmSecretId: z.string().nullable(),
   // GitHub.com and GitHub Enterprise are independent — a sandbox can have both.
@@ -25,6 +26,7 @@ export type WizardSnapshot = z.infer<typeof wizardSnapshotSchema>;
 export const EMPTY_SNAPSHOT: WizardSnapshot = {
   step: 1,
   name: "",
+  harness: "claude-code",
   llmProvider: null,
   llmSecretId: null,
   githubConnectionId: null,

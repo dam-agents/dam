@@ -52,7 +52,7 @@ export function SandboxWizardView() {
     ].filter((id): id is string => Boolean(id));
     const agent = await createAgent.mutateAsync({
       name: snapshot.name.trim(),
-      templateId: "claude-code",
+      templateId: snapshot.harness,
       egressPreset: "trusted",
       secretIds: [snapshot.llmSecretId],
       ...(appConnectionIds.length ? { appConnectionIds } : {}),
