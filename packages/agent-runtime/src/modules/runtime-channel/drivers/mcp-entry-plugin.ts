@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from "node:fs";
 import { z } from "zod";
 import type {
   DriverBinding,
@@ -7,6 +8,10 @@ import type {
   Plugin,
 } from "agent-runtime-api";
 import { createFileOps, type FileDesired } from "../infrastructure/file-ops.js";
+import {
+  createMcpEntryStateStore,
+  type McpEntryStateStore,
+} from "../infrastructure/mcp-entry-state-store.js";
 
 const IMPL_NAME = "mcp-entry";
 const DEFAULT_KEY_PATH = "mcpServers";
@@ -44,8 +49,12 @@ export function createMcpEntryPlugin(): Plugin {
       }
       const { path, format, mergeMode, keyPath } = parsed.data;
       const effectiveKey = keyPath ?? DEFAULT_KEY_PATH;
+      let stateStore: McpEntryStateStore | undefined;
 
       return async (contributions, ctx) => {
+        stateStore ??= createMcpEntryStateStore(ctx.pluginStateDir);
+        const installed = new Set(stateStore.getInstalled());
+
         const entries: Record<string, unknown> = {};
         for (const c of contributions) {
           if (c.kind !== "mcp-entry") continue;
@@ -56,13 +65,24 @@ export function createMcpEntryPlugin(): Plugin {
           };
         }
         const names = Object.keys(entries);
+        const targetPath = expandHome(path, ctx.agentHome);
+
+        // Preserve user-added servers: start from what's on disk, drop only the
+        // servers this driver installed before that are no longer desired, then
+        // set the desired ones. Anything the user added stays untouched.
+        const segs = effectiveKey.split(".");
+        const next = { ...readKeyedObject(targetPath, segs) };
+        for (const name of installed) {
+          if (!(name in entries)) delete next[name];
+        }
+        Object.assign(next, entries);
+
         ctx.log(
-          `desired entries (${names.length}): ${names.length === 0 ? "<none>" : names.join(", ")}`,
+          `desired entries (${names.length}): ${names.length === 0 ? "<none>" : names.join(", ")}; preserved ${Object.keys(next).length - names.length} other server(s)`,
         );
         const content: Record<string, unknown> = keyPath
-          ? entries
-          : { [effectiveKey]: entries };
-        const targetPath = expandHome(path, ctx.agentHome);
+          ? next
+          : { [effectiveKey]: next };
         ctx.log(
           `writing → ${targetPath} (format=${format}, mergeMode=${mergeMode}, keyPath=${keyPath ?? "<root>"})`,
         );
@@ -83,6 +103,7 @@ export function createMcpEntryPlugin(): Plugin {
           agentHome: ctx.agentHome,
           log: ctx.log,
         });
+        stateStore.setInstalled(names);
       };
     },
   };
@@ -90,6 +111,26 @@ export function createMcpEntryPlugin(): Plugin {
 
 function expandHome(path: string, agentHome: string): string {
   return path.replace(/\$HOME\b/g, agentHome).replace(/\$\{HOME\}/g, agentHome);
+}
+
+// Reads the object at `segs` from a JSON file, or {} if missing/unreadable.
+function readKeyedObject(
+  targetPath: string,
+  segs: string[],
+): Record<string, unknown> {
+  try {
+    if (!existsSync(targetPath)) return {};
+    let cur: unknown = JSON.parse(readFileSync(targetPath, "utf8"));
+    for (const s of segs) {
+      if (!cur || typeof cur !== "object") return {};
+      cur = (cur as Record<string, unknown>)[s];
+    }
+    return cur && typeof cur === "object"
+      ? (cur as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
 }
 
 export const MCP_ENTRY_PLUGIN_NAME = IMPL_NAME;
