@@ -224,6 +224,16 @@ spec:
               value: {{ .appSlug | quote }}
             {{- end }}
             {{- end }}
+            {{- with .Values.apiServer.oauthAppDefaults.slack }}
+            {{- if .clientId }}
+            - name: PLATFORM_DEFAULT_SLACK_CLIENT_ID
+              value: {{ .clientId | quote }}
+            {{- end }}
+            {{- if .clientSecret }}
+            - name: PLATFORM_DEFAULT_SLACK_CLIENT_SECRET
+              value: {{ .clientSecret | quote }}
+            {{- end }}
+            {{- end }}
             - name: REDIS_URL
               value: {{ include "platform.redis.url" . | quote }}
             {{- if .Values.redis.enabled }}

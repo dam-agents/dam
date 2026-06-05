@@ -23,6 +23,7 @@ export interface OperatorCredentials {
   githubEnterprise?: GitHubEnterpriseCredentials;
   google?: OAuthClientCredentials;
   spotify?: OAuthClientCredentials;
+  slack?: OAuthClientCredentials;
 }
 
 const ANTHROPIC: HeaderConnectionTemplate = {
@@ -236,6 +237,80 @@ function spotify(creds?: OAuthClientCredentials): OAuthConnectionTemplate {
         host: "api.spotify.com",
         headerName: "Authorization",
         valueFormat: "Bearer {value}",
+      },
+    ],
+  };
+}
+
+// User-token scopes advertised by Slack's MCP server
+// (https://mcp.slack.com/.well-known/oauth-authorization-server). Requesting
+// the full set lets the agent use every Slack MCP tool — search, channel and
+// thread history, posting, reactions, canvases, files, and user lookups.
+const SLACK_SCOPES = [
+  "search:read.public",
+  "search:read.private",
+  "search:read.mpim",
+  "search:read.im",
+  "search:read.files",
+  "search:read.users",
+  "channels:history",
+  "groups:history",
+  "mpim:history",
+  "im:history",
+  "channels:read",
+  "groups:read",
+  "mpim:read",
+  "channels:write",
+  "groups:write",
+  "im:write",
+  "mpim:write",
+  "chat:write",
+  "reactions:read",
+  "reactions:write",
+  "canvases:read",
+  "canvases:write",
+  "files:read",
+  "emoji:read",
+  "users:read",
+  "users:read.email",
+];
+
+function slack(creds?: OAuthClientCredentials): OAuthConnectionTemplate {
+  return {
+    id: "slack",
+    name: "Slack",
+    category: "app",
+    isCustom: false,
+    description:
+      "Search, read, and post in Slack on your behalf — backed by Slack's MCP server.",
+    iconSlug: "slack",
+    authKind: "oauth",
+    setupUrl: "https://api.slack.com/apps",
+    ...(creds?.clientId ? { clientId: creds.clientId } : {}),
+    ...(creds?.clientSecret ? { clientSecret: creds.clientSecret } : {}),
+    // Slack's MCP OAuth is a standards-compliant AS (PKCE/S256, confidential
+    // client via client_secret_post) but offers no dynamic client registration,
+    // so the app is registered out of band and connects through the static
+    // OAuth path with these fixed endpoints.
+    authorizationUrl: "https://slack.com/oauth/v2_user/authorize",
+    tokenUrl: "https://slack.com/api/oauth.v2.user.access",
+    scopes: SLACK_SCOPES,
+    contributions: [
+      // The agent reaches Slack through its hosted MCP server, not a bearer in
+      // the pod: the mcp-entry writes a placeholder Authorization header into
+      // the harness MCP config and Envoy swaps in the real user token on egress
+      // to mcp.slack.com (same swap the OAuth-DCR MCP path relies on).
+      {
+        kind: "egress-inject",
+        host: "mcp.slack.com",
+        headerName: "Authorization",
+        valueFormat: "Bearer {value}",
+      },
+      {
+        kind: "mcp-entry",
+        name: "slack",
+        url: "https://mcp.slack.com/mcp",
+        headers: { Authorization: "Bearer dummy-placeholder" },
       },
     ],
   };
@@ -504,6 +579,7 @@ export function buildCatalog(
     github(creds.github),
     githubEnterprise(creds.githubEnterprise),
     spotify(creds.spotify),
+    slack(creds.slack),
     ...GOOGLE_SERVICES.map((def) => googleService(def, creds.google)),
     CUSTOM_HEADER,
     CUSTOM_MCP_OAUTH,

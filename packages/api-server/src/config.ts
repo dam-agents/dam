@@ -88,6 +88,8 @@ const configSchema = z.object({
   defaultGithubEnterpriseClientId: z.string().nullable().default(null),
   defaultGithubEnterpriseClientSecret: z.string().nullable().default(null),
   defaultGithubEnterpriseAppSlug: adminAppSlugSchema,
+  defaultSlackClientId: z.string().nullable().default(null),
+  defaultSlackClientSecret: z.string().nullable().default(null),
   redisUrl: z.string().nullable().default(null),
   /** Optional Redis AUTH password. The chart provisions a generated
    *  per-release password and binds it via secretKeyRef; standalone dev
@@ -181,6 +183,8 @@ export function loadConfig(): Config {
     defaultGithubEnterpriseClientSecret:
       process.env.PLATFORM_DEFAULT_GHE_CLIENT_SECRET,
     defaultGithubEnterpriseAppSlug: process.env.PLATFORM_DEFAULT_GHE_APP_SLUG,
+    defaultSlackClientId: process.env.PLATFORM_DEFAULT_SLACK_CLIENT_ID,
+    defaultSlackClientSecret: process.env.PLATFORM_DEFAULT_SLACK_CLIENT_SECRET,
     redisUrl: process.env.REDIS_URL,
     redisPassword: process.env.REDIS_PASSWORD,
     approvalHoldSeconds: process.env.APPROVAL_HOLD_SECONDS,

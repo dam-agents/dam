@@ -484,6 +484,12 @@ apiServer:
       clientId: ""
       clientSecret: ""
       appSlug: ""
+    # The Slack app must be registered out of band (Slack offers no dynamic
+    # client registration) with the platform OAuth callback as a redirect URL
+    # and the Slack MCP user-token scopes enabled.
+    slack:
+      clientId: ""
+      clientSecret: ""
 
   # -- Database connection (empty host = use shared local postgres)
   db:
