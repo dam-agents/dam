@@ -20,6 +20,7 @@ import {
   encodeExit,
 } from "api-server-api";
 import { createFileDocumentStoreBackend } from "./core/document-store.js";
+import { expandHome } from "./core/expand-home.js";
 import { createFilesService } from "./modules/files.js";
 import { createImportHandlers, sweepStaging } from "./modules/import/index.js";
 import { composeSkills } from "./modules/skills/index.js";
@@ -53,7 +54,7 @@ function skillRefPaths(manifest: RuntimeManifest, home: string): string[] {
   const raw = Array.isArray(binding?.paths) ? binding.paths : [];
   return raw
     .filter((p): p is string => typeof p === "string")
-    .map((p) => p.replace(/\$HOME\b/g, home).replace(/\$\{HOME\}/g, home));
+    .map((p) => expandHome(p, home));
 }
 
 // Shared by the skills service (read side) and the skill-install driver.

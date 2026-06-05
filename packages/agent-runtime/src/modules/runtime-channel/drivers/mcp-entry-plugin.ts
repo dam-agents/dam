@@ -6,6 +6,7 @@ import {
   createMcpEntryStateStore,
   type McpEntryStateStore,
 } from "../infrastructure/mcp-entry-state-store.js";
+import { expandHome } from "../../../core/expand-home.js";
 
 const IMPL_NAME = "mcp-entry";
 const DEFAULT_KEY_PATH = "mcpServers";
@@ -94,10 +95,6 @@ export function createMcpEntryPlugin(): Plugin {
       };
     },
   };
-}
-
-function expandHome(path: string, agentHome: string): string {
-  return path.replace(/\$HOME\b/g, agentHome).replace(/\$\{HOME\}/g, agentHome);
 }
 
 // Reads the object at `segs` from a JSON file, or {} if missing/unreadable.

@@ -14,6 +14,7 @@ import {
   createSkillInstallStateStore,
   type SkillInstallStateStore,
 } from "../infrastructure/skill-install-state-store.js";
+import { expandHome } from "../../../core/expand-home.js";
 
 const IMPL_NAME = "skill-install";
 
@@ -125,10 +126,6 @@ export function createSkillInstallPlugin(deps: {
       };
     },
   };
-}
-
-function expandHome(path: string, agentHome: string): string {
-  return path.replace(/\$HOME\b/g, agentHome).replace(/\$\{HOME\}/g, agentHome);
 }
 
 export const SKILL_INSTALL_PLUGIN_NAME = IMPL_NAME;

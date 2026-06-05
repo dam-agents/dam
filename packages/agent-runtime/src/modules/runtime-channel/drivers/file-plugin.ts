@@ -5,6 +5,7 @@ import type {
   Plugin,
 } from "agent-runtime-api";
 import { createFileOps, type FileDesired } from "../infrastructure/file-ops.js";
+import { expandHome } from "../../../core/expand-home.js";
 
 const IMPL_NAME = "file";
 
@@ -40,10 +41,6 @@ export function createFilePlugin(): Plugin {
       };
     },
   };
-}
-
-function expandHome(path: string, agentHome: string): string {
-  return path.replace(/\$HOME\b/g, agentHome).replace(/\$\{HOME\}/g, agentHome);
 }
 
 export const FILE_PLUGIN_NAME = IMPL_NAME;
