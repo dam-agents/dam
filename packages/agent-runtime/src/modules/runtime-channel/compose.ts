@@ -1,7 +1,7 @@
 import { join } from "node:path";
+import { eventKind } from "agent-runtime-api";
 import type {
   ContributionKind,
-  EventKind,
   Plugin,
   RuntimeChannelService,
 } from "agent-runtime-api";
@@ -77,11 +77,9 @@ export async function composeRuntimeChannel(
   const contributionKinds = Object.keys(
     manifest.drivers,
   ) as readonly ContributionKind[];
-  const eventKinds: readonly EventKind[] = [
-    "trigger",
-    "schedule-reset",
-    "workspace-seed",
-  ];
+  // Every event kind has a built-in handler (see event-loop invokeHandler), so
+  // the agent advertises the whole set — single-sourced from the schema enum.
+  const eventKinds = eventKind.options;
 
   const service = createRuntimeChannelService({
     dispatcher,

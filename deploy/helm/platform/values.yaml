@@ -763,8 +763,8 @@ skills:
 # agent starts, via a one-shot `workspace-seed` event — never tracked or pushed
 # afterward). Rendered into the `git-repos` ConfigMap and loaded by the
 # api-server at boot. Each entry maps to the harness template names it's
-# compatible with; the Add Agent dialog filters by the chosen harness (an entry
-# with no `compatibleTemplates` is offered for no harness). Public repos only.
+# compatible with; the Add Agent dialog filters by the chosen harness (omit
+# `compatibleTemplates` to disable an entry). Public repos only.
 gitRepos:
   - id: google-workspace
     name: Google Workspace

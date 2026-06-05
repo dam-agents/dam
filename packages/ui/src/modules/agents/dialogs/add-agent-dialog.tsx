@@ -640,11 +640,7 @@ export function AddAgentDialog({
                       {(importRawBundle || importEntries.length > 0) && (
                         <button
                           type="button"
-                          onClick={() => {
-                            setImportEntries([]);
-                            setImportRawBundle(null);
-                            setImportDropped(0);
-                          }}
+                          onClick={clearImport}
                           className="text-[12px] text-muted-foreground hover:text-foreground underline"
                         >
                           Clear

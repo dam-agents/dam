@@ -26,11 +26,10 @@ export const agentCreateInputSchema = z
     secretRef: z.string().optional(),
     allowedUserEmails: z.array(z.email()).optional(),
     egressPreset: egressPresetSchema.optional(),
-    // Optional: clone this public repo into the working dir once, after first
-    // start (a one-shot `workspace-seed` event). The UI picks from the
-    // `gitRepos` catalog; the catalog isn't enforced server-side, but the clone
-    // runs in the egress-gated agent pod, so no URL reachable here that the
-    // agent couldn't already reach itself.
+    // Optional: clone this public repo into the work dir once via a one-shot
+    // `workspace-seed` event. Not enforced against the `gitRepos` catalog
+    // server-side — the clone runs in the egress-gated agent pod, so this
+    // reaches no URL the agent couldn't already reach itself.
     gitRepo: z.url().optional(),
   })
   .refine((d) => d.templateId !== undefined || d.image !== undefined, {

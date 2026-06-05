@@ -17,11 +17,8 @@ export type SeedWorkspaceFn = (
   payload: WorkspaceSeedEventPayload,
 ) => Promise<void>;
 
-/**
- * Handler for the one-shot `workspace-seed` event: clone a public repo into the
- * work dir, once. Dirty-safe: `.git` present → skip; non-empty without `.git` →
- * throw; empty → clone (a real repo, with `.git`).
- */
+/** One-shot `workspace-seed` event handler: clone a public repo into the work
+ *  dir, once. Dirty-safe (see the branch logic below). */
 export function createSeedWorkspace(deps: {
   workDir: string;
   clone?: CloneFn;
