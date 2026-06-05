@@ -13,7 +13,7 @@
 export interface AgentSpecCR {
   /**
    * AgentHome is the resolved HOME inside the agent container. Any $HOME
-   * literals in Mounts/SkillPaths are already resolved against it at write
+   * literals in Mounts are already resolved against it at write
    * time, so the controller never sees $HOME.
    */
   agentHome?: string;
@@ -91,10 +91,6 @@ export interface AgentSpecCR {
    * agent container (operator-supplied envs).
    */
   secretRef?: string;
-  /**
-   * SkillPaths are absolute paths to skills installed into the agent.
-   */
-  skillPaths?: string[];
   /**
    * StorageSize overrides the chart-wide default PVC size; empty = inherit.
    */

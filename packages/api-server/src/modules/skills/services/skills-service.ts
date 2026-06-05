@@ -49,8 +49,6 @@ export function templateSourceId(templateId: string, gitUrl: string): string {
 
 export const TEMPLATE_SOURCE_ID_PREFIX = "template:";
 
-const DEFAULT_SKILL_PATHS = ["/home/agent/.agents/skills/"];
-
 export interface SkillsServiceDeps {
   repo: SkillsRepository;
   agentSkillsRepo: AgentSkillsRepository;
@@ -78,33 +76,6 @@ export interface SkillsServiceDeps {
   /** Brand display name surfaced in publish-PR bodies. Sourced from runtime
    *  brand config so a deployment rebrand doesn't need a code change. */
   brandName: string;
-}
-
-/** Resolve the filesystem paths the harness reads skills from, in order of
- *  preference:
- *    1. agent.spec.skillPaths (explicit override, written at creation time)
- *    2. template.spec.skillPaths (source of truth — fallback for agents
- *       created before spec-assembly copied the field through)
- *    3. DEFAULT_SKILL_PATHS (last-resort hardcoded default)
- *
- *  The template fallback is what rescues legacy agents: without it, any
- *  agent ConfigMap written before the spec-assembly fix would silently
- *  install skills into the wrong directory for its harness. */
-async function resolveSkillPaths(
-  deps: SkillsServiceDeps,
-  agentId: string,
-): Promise<string[]> {
-  const agent = await deps.agentsRepo.get(agentId, deps.owner);
-  const agentPaths = agent?.spec.skillPaths;
-  if (agentPaths && agentPaths.length > 0) return agentPaths;
-
-  if (agent?.templateId) {
-    const template = await deps.templatesRepo.get(agent.templateId);
-    const tmplPaths = template?.spec.skillPaths;
-    if (tmplPaths && tmplPaths.length > 0) return tmplPaths;
-  }
-
-  return DEFAULT_SKILL_PATHS;
 }
 
 /**
@@ -437,8 +408,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       if (!infra) return [];
       // No filesystem to read when the pod isn't running.
       if (computeAgentState(infra) !== "running") return [];
-      const skillPaths = await resolveSkillPaths(deps, infra.id);
-      const all = await deps.runtimeClient.listLocal(agentId, skillPaths);
+      const all = await deps.runtimeClient.listLocal(agentId);
       // Subtract anything already tracked as installed-from-remote (by directory
       // name). Matches behavior that the remote-installed entry is the canonical
       // one when names collide.
@@ -474,8 +444,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         return { installed, standalone: [], instancePublishes };
       }
 
-      const skillPaths = await resolveSkillPaths(deps, infra.id);
-      const local = await deps.runtimeClient.listLocal(agentId, skillPaths);
+      const local = await deps.runtimeClient.listLocal(agentId);
 
       const onDisk = new Set(local.map((s) => s.name));
 

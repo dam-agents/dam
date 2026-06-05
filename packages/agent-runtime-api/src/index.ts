@@ -28,7 +28,6 @@ export type {
   ScannedSkill,
   SkillInstallInput,
   SkillInstallResult,
-  SkillListLocalInput,
   SkillPublishInput,
   SkillPublishResult,
   SkillReadLocalInput,
@@ -40,7 +39,6 @@ export type {
 } from "./modules/skills/types.js";
 export {
   skillInstallInputSchema,
-  skillListLocalInputSchema,
   skillPublishInputSchema,
   skillReadLocalInputSchema,
   skillScanInputSchema,

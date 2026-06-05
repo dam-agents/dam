@@ -5,7 +5,8 @@ Last verified: 2026-06-05
 ## Motivated by
 
 - [ADR-030 — Skills: connectable sources and install](../adrs/030-skills-marketplace.md) — Platform owns skill *transport*, not skill format; sources are external git repos, not a Platform-hosted catalog
-- [ADR-023 — Harness-agnostic agent base image](../adrs/023-harness-agnostic-base-image.md) — `skillPaths` is a per-template knob; the controller stays harness-agnostic
+- [ADR-023 — Harness-agnostic agent base image](../adrs/023-harness-agnostic-base-image.md) — the skill store lives in `platform-base`; per-agent Dockerfiles symlink the harness-native path onto it, so the manifest stays harness-agnostic
+- [ADR-052 — Unified runtime channel](../adrs/052-runtime-channel.md) — install rides `skill-ref` Contributions and the agent's runtime manifest owns the skill-ref driver's paths
 - [ADR-005 — Gateway pattern for credentials](../adrs/005-credential-gateway.md) — agent-runtime makes GitHub calls without holding credentials; the gateway pod injects `Authorization` on the wire from the owner's K8s Secret
 - [ADR-024 — Connector-declared envs and per-agent overrides](../adrs/024-connector-declared-envs.md) — env composition rules for agent pods
 - [ADR-033 — Envoy-based credential gateway](../adrs/033-envoy-credential-gateway.md) — Envoy performs the credential swap
@@ -45,7 +46,7 @@ flowchart LR
 
   subgraph pod[agent pod]
     rt-skills[agent-runtime skills]
-    pvc[(per-agent PVC<br/>skillPaths)]
+    pvc[(per-agent PVC<br/>skill paths)]
   end
 
   subgraph gateway[gateway pod]
@@ -97,9 +98,9 @@ A **Skill Publish Record** (`agent_skill_publishes`) is the explicit log of a su
 
 ### Skill Path
 
-An absolute on-pod directory the harness reads skills from. Resolved per agent via a precedence chain at install time: the agent's own `spec.skillPaths` (copied from the template at agent creation) wins over the template's `spec.skillPaths`, which wins over the cross-harness default `/home/agent/.agents/skills/`. Claude-Code-derived templates override to `/home/agent/.claude/skills/`; `pi-agent` to `/home/agent/.pi/agent/skills/`; `bob` to `/home/agent/.bob/skills/`.
+An absolute on-pod directory the harness reads skills from — the `skill-ref` driver's `paths` in the agent's runtime manifest ([ADR-052](../adrs/052-runtime-channel.md)). The agent-runtime resolves it for both install and the read-side views (listLocal / publish); the api-server never passes paths over the wire. Every image inherits platform-base's `/home/agent/.agents/skills/`.
 
-Per-agent images create their harness-specific path as a symlink to the canonical `.agents/skills/` store (built into `platform-base`), so an install writes once on disk regardless of which path the api-server addresses. Harness-agnosticism stays in `platform-base` per [ADR-023](../adrs/023-harness-agnostic-base-image.md); each per-agent Dockerfile owns its own symlink.
+Each per-agent Dockerfile symlinks its harness-native dir (`.claude/skills`, `.pi/agent/skills`, `.bob/skills`) onto that canonical `.agents/skills/` store, so the harness reads from its own conventional path while the manifest stays harness-agnostic ([ADR-023](../adrs/023-harness-agnostic-base-image.md)). An install therefore writes once on disk regardless of harness, and no per-agent manifest override is needed.
 
 Install writes the skill directory into **every** configured Skill Path; uninstall removes it from all of them. Scanning the disk for Local Skills walks every path in order and dedupes by directory name (first found wins).
 
@@ -159,16 +160,15 @@ sequenceDiagram
   participant RT as agent-runtime<br/>skills
   participant ENV as gateway pod (Envoy)
   participant GH as GitHub
-  participant PVC as PVC<br/>skillPaths
+  participant PVC as PVC<br/>skill paths
 
   U->>API: skills.install(agentId, source, name, version)
-  API->>API: resolve skillPaths from agent spec
   API->>RT: skills.install (NetworkPolicy-gated, no Bearer)
   RT->>ENV: GET /repos/.../tarball/{version}
   ENV->>GH: + Authorization: Bearer <user GH token>
   GH-->>ENV: tarball
   ENV-->>RT: tarball
-  RT->>PVC: write skill dir into every skillPath
+  RT->>PVC: write skill dir into every configured path
   RT-->>API: { contentHash }
   API->>DB: upsert agent_skills row
   API-->>U: updated installed list

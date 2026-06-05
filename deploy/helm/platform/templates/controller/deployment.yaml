@@ -52,7 +52,7 @@ spec:
             #     template can override (template wins when set).
             - name: AGENT_BASE
               value: {{ .Values.controller.agent.base | toJson | quote }}
-            # `$HOME` literals in mount paths / skillPaths are substituted at
+            # `$HOME` literals in mount paths are substituted at
             # chart render time using templateDefaults.agentHome, so the
             # controller and api-server only ever see absolute paths.
             - name: AGENT_TEMPLATE_DEFAULTS

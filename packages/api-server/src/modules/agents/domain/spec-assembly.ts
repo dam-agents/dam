@@ -17,9 +17,6 @@ export function assembleSpecFromTemplate(
     resources: tmplSpec.resources,
     imagePullPolicy: tmplSpec.imagePullPolicy,
     storageSize: tmplSpec.storageSize,
-    // skillPaths is required for the harness's skills-service to find the
-    // installed skills directory; the chart sets it per template.
-    skillPaths: tmplSpec.skillPaths,
   };
 }
 

@@ -16,8 +16,6 @@ import { detectHost } from "../infrastructure/git-host.js";
 import { upstreamToTrpc } from "../infrastructure/upstream-to-trpc.js";
 import { securityLog } from "../../../core/security-log.js";
 
-const DEFAULT_SKILL_PATHS = ["/home/agent/.agents/skills/"];
-
 export interface PublishServiceDeps {
   owner: string;
   /** Look up a source by id. Must handle real ids (user / system) AND
@@ -67,15 +65,10 @@ export async function publishSkill(
     });
   }
 
-  const skillPaths = agent.spec.skillPaths?.length
-    ? agent.spec.skillPaths
-    : DEFAULT_SKILL_PATHS;
-
   let result;
   try {
     result = await deps.runtimeClient.publish(input.agentId, {
       name: input.name,
-      skillPaths,
       owner: host.owner,
       repo: host.repo,
       title: input.title?.trim() || `Add ${input.name} skill`,

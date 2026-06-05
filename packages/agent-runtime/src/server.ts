@@ -32,6 +32,10 @@ import {
   createMcpEntryPlugin,
   createSkillInstallPlugin,
 } from "./modules/runtime-channel/index.js";
+import {
+  loadManifest,
+  type RuntimeManifest,
+} from "./modules/runtime-channel/manifest.js";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const homeDir = config.PLATFORM_DEV
@@ -41,10 +45,29 @@ const workDir = config.PLATFORM_DEV
   ? join(__dir, "../working-dir")
   : config.WORK_DIR;
 
+// skill-ref driver paths from the manifest, $HOME expanded against home.
+function skillRefPaths(manifest: RuntimeManifest, home: string): string[] {
+  const binding = manifest.drivers["skill-ref"] as
+    | { paths?: unknown }
+    | undefined;
+  const raw = Array.isArray(binding?.paths) ? binding.paths : [];
+  return raw
+    .filter((p): p is string => typeof p === "string")
+    .map((p) => p.replace(/\$HOME\b/g, home).replace(/\$\{HOME\}/g, home));
+}
+
+// Shared by the skills service (read side) and the skill-install driver.
+const manifestPath = config.PLATFORM_DEV
+  ? join(__dir, "../../platform-base/runtime-manifest.yaml")
+  : join(__dir, "../runtime-manifest.yaml");
+const runtimeManifest = loadManifest(manifestPath);
+
 // Boot-time module composition. Skills + Files services are stable across the
 // lifetime of the process; createContext just hands them out per-request.
 const filesService = createFilesService(homeDir);
-const skillsService = composeSkills();
+const skillsService = composeSkills({
+  skillPaths: skillRefPaths(runtimeManifest, homeDir),
+});
 const importHandlers = createImportHandlers(homeDir, workDir, (msg) =>
   process.stderr.write(`[import] ${msg}\n`),
 );
@@ -61,9 +84,7 @@ const { runtime: acpRuntime, triggerDriver } = composeAcp({
 });
 
 const runtimeChannel = await composeRuntimeChannel({
-  manifestPath: config.PLATFORM_DEV
-    ? join(__dir, "../../platform-base/runtime-manifest.yaml")
-    : join(__dir, "../runtime-manifest.yaml"),
+  manifestPath,
   agentHome: homeDir,
   workDir,
   stateBackend,

@@ -39,8 +39,6 @@ agentTemplates:
       repository: platform-claude-code
       tag: latest
     storageSize: "5Gi"
-    skillPaths:
-      - $HOME/.claude/skills/
 
   - name: codex
     enabled: false
@@ -57,8 +55,6 @@ agentTemplates:
       repository: platform-pi-agent
       tag: latest
     storageSize: "2Gi"
-    skillPaths:
-      - $HOME/.pi/agent/skills/
 
   - name: bob
     enabled: false
@@ -67,8 +63,6 @@ agentTemplates:
       repository: platform-bob
       tag: latest
     storageSize: "2Gi"
-    skillPaths:
-      - $HOME/.bob/skills/
     resources:
       requests:
         cpu: "500m"

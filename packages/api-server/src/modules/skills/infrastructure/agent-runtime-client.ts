@@ -5,7 +5,6 @@ import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
 
 export interface PublishSkillCall {
   name: string;
-  skillPaths: string[];
   owner: string;
   repo: string;
   title: string;
@@ -36,7 +35,7 @@ export interface UpstreamGatewayError {
 }
 
 export interface AgentRuntimeSkillsClient {
-  listLocal(agentId: string, skillPaths: string[]): Promise<LocalSkill[]>;
+  listLocal(agentId: string): Promise<LocalSkill[]>;
   publish(agentId: string, body: PublishSkillCall): Promise<PublishSkillResult>;
   scan(agentId: string, source: string): Promise<Skill[]>;
 }
@@ -102,13 +101,10 @@ export function createAgentRuntimeSkillsClient(
   namespace: string,
 ): AgentRuntimeSkillsClient {
   return {
-    listLocal: async (agentId, skillPaths) => {
+    listLocal: async (agentId) => {
       const { skills } = await runWithUpstreamMapping(
         `agent-runtime listLocal ${agentId}`,
-        () =>
-          makeClient(agentId, namespace).skills.listLocal.query({
-            skillPaths,
-          }),
+        () => makeClient(agentId, namespace).skills.listLocal.query(),
       );
       return skills;
     },

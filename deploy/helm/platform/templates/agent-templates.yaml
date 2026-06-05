@@ -9,7 +9,7 @@ Only fields the template differs on are rendered. Anything omitted falls
 through at reconcile time to `controller.agent.templateDefaults.*` (chart
 fallback) or `controller.agent.base.*` (chart-only policy).
 
-The literal string `$HOME` in mount paths and skillPaths is substituted
+The literal string `$HOME` in mount paths is substituted
 HERE (chart render time) using the template's `agentHome` if set, else
 `controller.agent.templateDefaults.agentHome`. The rendered spec ships
 absolute paths — the controller and agent-runtime never see `$HOME`.
@@ -54,12 +54,6 @@ data:
     {{- with $tmpl.env }}
     env:
       {{- toYaml . | nindent 6 }}
-    {{- end }}
-    {{- with $tmpl.skillPaths }}
-    skillPaths:
-      {{- range . }}
-      - {{ . | replace "$HOME" $home | quote }}
-      {{- end }}
     {{- end }}
     {{- with $tmpl.skillSources }}
     skillSources:

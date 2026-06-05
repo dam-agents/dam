@@ -25,9 +25,6 @@ type AgentSpec struct {
 	// Init is an optional one-shot init script run before the agent starts.
 	// +optional
 	Init string `json:"init,omitempty"`
-	// SkillPaths are absolute paths to skills installed into the agent.
-	// +optional
-	SkillPaths []string `json:"skillPaths,omitempty"`
 	// Mounts declares the agent's volumes; a persisted mount becomes a PVC.
 	// +optional
 	Mounts []Mount `json:"mounts,omitempty"`
@@ -45,7 +42,7 @@ type AgentSpec struct {
 	// +optional
 	StorageSize string `json:"storageSize,omitempty"`
 	// AgentHome is the resolved HOME inside the agent container. Any $HOME
-	// literals in Mounts/SkillPaths are already resolved against it at write
+	// literals in Mounts are already resolved against it at write
 	// time, so the controller never sees $HOME.
 	// +optional
 	AgentHome string `json:"agentHome,omitempty"`

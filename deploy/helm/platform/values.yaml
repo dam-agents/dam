@@ -519,9 +519,9 @@ controller:
   #   2. `templateDefaults` — chart-wide fallbacks for fields a template
   #                           can override (template wins when set).
   #   3. agentTemplates[]   — per-template values (further down).
-  # Use the literal string `$HOME` in mount paths or skillPaths; the
-  # chart substitutes it at render time with the template's `agentHome`
-  # if set, else `templateDefaults.agentHome`.
+  # Use the literal string `$HOME` in mount paths; the chart substitutes
+  # it at render time with the template's `agentHome` if set, else
+  # `templateDefaults.agentHome`.
   agent:
     base:
       # Cluster details (immutable per-agent)
@@ -601,8 +601,8 @@ controller:
 
     templateDefaults:
       # HOME inside agent containers — set as the `HOME` env var and used at
-      # chart render time to substitute any literal `$HOME` in mount paths /
-      # skillPaths. Per-template `agentTemplates[i].agentHome` overrides
+      # chart render time to substitute any literal `$HOME` in mount paths.
+      # Per-template `agentTemplates[i].agentHome` overrides
       # this for that template's agents. Must match the image's user
       # HOME or pod-files materialization breaks silently. Also plumbed to
       # api-server for pod-files producers (currently one global value).
@@ -679,7 +679,7 @@ controller:
 # -- Agent templates. Each enabled entry renders an agent-template ConfigMap
 # in `agentNamespace`. Fields named identically to `controller.agent.templateDefaults.*`
 # override the chart-wide default for agents created from this template.
-# `$HOME` in mount paths / skillPaths is substituted at chart render time
+# `$HOME` in mount paths is substituted at chart render time
 # using this entry's `agentHome` if set, else `templateDefaults.agentHome`.
 agentTemplates:
   - name: claude-code
@@ -689,8 +689,6 @@ agentTemplates:
       repository: quay.io/dam-agents/claude-code
       tag: ""
     storageSize: "5Gi"
-    skillPaths:
-      - $HOME/.claude/skills/
 
   - name: codex
     enabled: true
@@ -707,8 +705,6 @@ agentTemplates:
       repository: quay.io/dam-agents/pi-agent
       tag: ""
     storageSize: "5Gi"
-    skillPaths:
-      - $HOME/.pi/agent/skills/
 
   - name: bob
     enabled: true
@@ -720,8 +716,6 @@ agentTemplates:
     # dir + workspace (the bundle lives in the image), so the agent default
     # of 2 Gi is plenty.
     storageSize: "2Gi"
-    skillPaths:
-      - $HOME/.bob/skills/
     resources:
       requests:
         cpu: "500m"

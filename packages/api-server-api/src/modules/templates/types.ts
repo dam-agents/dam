@@ -41,9 +41,6 @@ export interface TemplateSpec {
   /** Overrides `controller.agent.templateDefaults.storageSize` for the
    *  persistent home mount. Per-mount `size` (if set) wins over this. */
   storageSize?: string;
-  /** Filesystem paths the harness reads skills from. Copied onto the agent
-   *  spec at creation time so the skills-service knows where to install. */
-  skillPaths?: string[];
   /** Template-declared skill sources surfaced in the Skills panel of every
    *  instance derived from this template. Read-only; badged as "Agent". */
   skillSources?: SkillSourceSeed[];

@@ -1,6 +1,5 @@
 import type {
   SkillInstallInput,
-  SkillListLocalInput,
   SkillPublishInput,
   SkillReadLocalInput,
   Result,
@@ -23,6 +22,9 @@ export interface SkillsServiceDeps {
   github: GitHubRestClient;
   git: GitProtocolClient;
   repo: LocalSkillRepository;
+  /** Read-side paths (listLocal / readLocal / publish), from the manifest's
+   *  skill-ref driver. install / uninstall get theirs from the driver. */
+  skillPaths: SkillPath[];
   /** Wall-clock provider — used by publish for branch-name timestamps. */
   now: () => Date;
 }
@@ -47,7 +49,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
   return {
     install: (input: SkillInstallInput) => doInstall(deps, input),
     uninstall: (input: SkillUninstallInput) => doUninstall(deps, input),
-    listLocal: (input: SkillListLocalInput) => doListLocal(deps, input),
+    listLocal: () => doListLocal(deps),
     readLocal: (input: SkillReadLocalInput) => doReadLocal(deps, input),
     scan: (input: SkillScanInput) => runScan(deps, input),
     publish: (input: SkillPublishInput) => doPublish(deps, input),
@@ -75,13 +77,8 @@ async function doUninstall(
   return ok(undefined);
 }
 
-async function doListLocal(
-  deps: SkillsServiceDeps,
-  input: SkillListLocalInput,
-) {
-  const skillPaths = makeSkillPaths(input.skillPaths);
-  if (!skillPaths.ok) return skillPaths;
-  const skills = await deps.repo.listLocal(skillPaths.value);
+async function doListLocal(deps: SkillsServiceDeps) {
+  const skills = await deps.repo.listLocal(deps.skillPaths);
   return ok(skills);
 }
 
@@ -89,18 +86,13 @@ async function doReadLocal(
   deps: SkillsServiceDeps,
   input: SkillReadLocalInput,
 ) {
-  const validated = validateNameAndPaths(input.name, input.skillPaths);
-  if (!validated.ok) return validated;
-  return deps.repo.readLocal(validated.value.name, validated.value.skillPaths);
+  const name = makeSkillName(input.name);
+  if (!name.ok) return name;
+  return deps.repo.readLocal(name.value, deps.skillPaths);
 }
 
 async function doPublish(deps: SkillsServiceDeps, input: SkillPublishInput) {
-  const validated = validateNameAndPaths(input.name, input.skillPaths);
-  if (!validated.ok) return validated;
-  return runPublish(
-    deps,
-    validated.value.name,
-    validated.value.skillPaths,
-    input,
-  );
+  const name = makeSkillName(input.name);
+  if (!name.ok) return name;
+  return runPublish(deps, name.value, deps.skillPaths, input);
 }

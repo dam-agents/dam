@@ -34,8 +34,6 @@ resources:
     memory: "2Gi"
 imagePullPolicy: Always
 storageSize: "5Gi"
-skillPaths:
-  - $HOME/.claude/skills/
 `
 
 func TestParseAgentSpec(t *testing.T) {
@@ -55,7 +53,6 @@ func TestParseAgentSpec(t *testing.T) {
 	// Layer B overrides for AgentTemplateDefaults.
 	assert.Equal(t, "Always", spec.ImagePullPolicy)
 	assert.Equal(t, "5Gi", spec.StorageSize)
-	assert.Equal(t, []string{"$HOME/.claude/skills/"}, spec.SkillPaths)
 }
 
 // Minimal agent ConfigMap: image only. The controller fills the rest from
