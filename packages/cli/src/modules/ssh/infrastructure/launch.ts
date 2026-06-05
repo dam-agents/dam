@@ -3,45 +3,20 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { SshPaths } from "./ssh-keys.js";
 
-/** The agent's workspace — the default folder VS Code opens on `--code`. */
 export const REMOTE_WORK_DIR = "/home/agent/work";
 
-/** POSIX single-quote escaping, for embedding in an ssh `ProxyCommand` (which
- *  ssh runs via `/bin/sh -c`). */
-function shQuote(arg: string): string {
-  return `'${arg.replace(/'/g, `'\\''`)}'`;
-}
-
-/** How to re-invoke this same `dam` binary as a ProxyCommand subprocess.
- *
- *  For the built/installed CLI this is just `node dist/bin.js`. When running TS
- *  source under a loader (e.g. `cli:dev` via tsx), the subprocess must
- *  re-register that loader or it can't resolve `.ts` modules behind `.js`
- *  import specifiers. `execArgv` carries flag-based loaders (`--import` /
- *  `--loader`); tsx registers in-process (no flag), so add it explicitly for a
- *  `.ts` entry. */
-function damInvocation(): string[] {
-  const script = process.argv[1];
-  if (!script) return ["dam"];
-  const abs = resolve(script);
-  const cmd = [process.execPath, ...process.execArgv];
-  const hasLoader = process.execArgv.some((a) =>
-    /--import|--loader|--experimental-loader/.test(a),
-  );
-  if (/\.[cm]?ts$/.test(abs) && !hasLoader) cmd.push("--import", "tsx");
-  cmd.push(abs);
-  return cmd;
-}
-
 function proxyCommandString(agentRef: string, serverFlag?: string): string {
+  const script = process.argv[1];
   const parts = [
-    ...damInvocation(),
+    ...(script
+      ? [process.execPath, ...process.execArgv, resolve(script)]
+      : ["dam"]),
     "ssh",
     "--proxy",
     agentRef,
     ...(serverFlag ? ["--server", serverFlag] : []),
   ];
-  return parts.map(shQuote).join(" ");
+  return parts.map((a) => `'${a.replace(/'/g, `'\\''`)}'`).join(" ");
 }
 
 /** ssh hostname token — used only as the known_hosts key (the real route is
@@ -83,18 +58,6 @@ function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** dam's own ssh config, pulled into `~/.ssh/config` via one `Include` line. */
-function damSshConfigFile(env: NodeJS.ProcessEnv): string {
-  const xdg = env.XDG_CONFIG_HOME;
-  const base = xdg && xdg.length > 0 ? xdg : join(homedir(), ".config");
-  return join(base, "dam", "ssh_config");
-}
-
-/** Materialize a managed `Host` block in dam's own ssh config and ensure
- *  `~/.ssh/config` pulls it in via a single `Include` line — so `ssh`, VS Code,
- *  and Zed all resolve the alias while dam's host churn stays in dam's file.
- *  Shared by `--code`, `--code-insiders`, and `--zed`. Returns the alias.
- *  Idempotent: re-running replaces the block and never dupes the `Include`. */
 export async function ensureManagedSshHost(opts: {
   agentRef: string;
   serverFlag?: string;
@@ -117,7 +80,12 @@ export async function ensureManagedSshHost(opts: {
 
   // Upsert the block in dam's config (replace this alias's prior block, else
   // append) — dam owns this file, so other agents' blocks coexist.
-  const damConfig = damSshConfigFile(env);
+  const xdg = env.XDG_CONFIG_HOME;
+  const damConfig = join(
+    xdg && xdg.length > 0 ? xdg : join(homedir(), ".config"),
+    "dam",
+    "ssh_config",
+  );
   await mkdir(dirname(damConfig), { recursive: true });
   let damExisting = "";
   try {

@@ -35,8 +35,9 @@ bytes.**
   pod-spec change** — SSH rides the existing `:8080` WebSocket and its auth boundary.
 - **CLI.** `dam ssh --proxy <agent>` is an ssh `ProxyCommand`: it opens the WebSocket and
   shovels raw bytes between it and stdin/stdout. `dam ssh <agent>` launches the system
-  `ssh` configured to use that proxy; `dam ssh --code <agent>` launches `code` with a
-  Remote-SSH target backed by the same proxy.
+  `ssh` configured to use that proxy; `dam ssh -m code <agent>` launches `code` with a
+  Remote-SSH target backed by the same proxy. A `-m`/`--mode` (`ssh`|`code`|`zed`) +
+  `-x`/`--exec` pair picks the client and its binary (e.g. `-x code-insiders`).
 - **Auth.** Public-key. The CLI keeps a dam-managed keypair under the XDG state dir and,
   on each `--proxy` connect, registers the public key with the agent via a new
   `ssh.authorizeKey` tRPC mutation (proxied through the existing `/api/agents/:id/trpc`
@@ -54,7 +55,7 @@ bytes.**
   the host key and re-prompts via accept-new.
 - `StrictModes` is disabled in the sshd config: the security boundary is the api-server
   upgrade + NetworkPolicy, not file-mode checks on a single-user pod.
-- `dam ssh`'s editor flags (`--code`, `--code-insiders`, `--zed`) keep dam's
+- `dam ssh`'s editor modes (`-m code`, `-m zed`) keep dam's
   `Host` blocks in dam's own `$XDG_CONFIG_HOME/dam/ssh_config` and add a single
   `Include` line to `~/.ssh/config` so the editor's SSH client resolves the
   agent. That one `Include` is the only CLI write outside the XDG dirs — ssh has

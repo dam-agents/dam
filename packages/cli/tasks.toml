@@ -43,8 +43,8 @@ dir = "{{config_root}}/packages/cli"
 depends = ["common:setup:pnpm"]
 run = "pnpm exec tsup"
 
-["cli:dev"]
-description = "Run the dam CLI from source via tsx"
+["cli:run"]
+description = "Build the dam CLI and run it from dist (pass args after --)"
 dir = "{{config_root}}/packages/cli"
-depends = ["common:setup:pnpm"]
-run = "pnpm exec tsx src/bin.ts"
+depends = ["cli:build"]
+run = "node dist/bin.js"
