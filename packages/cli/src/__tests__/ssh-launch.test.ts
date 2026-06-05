@@ -5,10 +5,57 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   buildSshArgs,
   ensureManagedSshHost,
+  gatewayConnectUrl,
 } from "../modules/ssh/infrastructure/launch.js";
+import { inferMode } from "../modules/ssh/commands/ssh.js";
 import { sshPaths } from "../modules/ssh/infrastructure/ssh-keys.js";
 
 const paths = sshPaths({ XDG_STATE_HOME: "/tmp/xdg-state" });
+
+describe("inferMode", () => {
+  it("maps the known ssh/code/zed launchers", () => {
+    expect(inferMode("ssh")).toBe("ssh");
+    expect(inferMode("code")).toBe("code");
+    expect(inferMode("code-insiders")).toBe("code");
+    expect(inferMode("zed")).toBe("zed");
+  });
+
+  it("maps the gateway launcher and per-IDE JetBrains launchers to jetbrains", () => {
+    for (const bin of [
+      "gateway",
+      "pycharm",
+      "idea",
+      "goland",
+      "webstorm",
+      "clion",
+      "rider",
+      "datagrip",
+    ])
+      expect(inferMode(bin)).toBe("jetbrains");
+  });
+
+  it("matches exactly, not by substring", () => {
+    // "barcode" contains "code" but is not a known launcher.
+    expect(inferMode("barcode")).toBeUndefined();
+    expect(inferMode("zediot")).toBeUndefined();
+    expect(inferMode("vim")).toBeUndefined();
+  });
+});
+
+describe("gatewayConnectUrl", () => {
+  it("builds an ssh connect link bound to the managed alias and remote workdir", () => {
+    const url = gatewayConnectUrl("dam-my-agent");
+    expect(url.startsWith("jetbrains-gateway://connect#")).toBe(true);
+    const params = new URLSearchParams(url.split("#")[1]);
+    expect(params.get("type")).toBe("ssh");
+    expect(params.get("host")).toBe("dam-my-agent");
+    expect(params.get("user")).toBe("agent");
+    expect(params.get("port")).toBe("22");
+    // projectPath is the agent workspace, percent-encoded in the link.
+    expect(params.get("projectPath")).toBe("/home/agent/work");
+    expect(url).toContain("projectPath=%2Fhome%2Fagent%2Fwork");
+  });
+});
 
 describe("buildSshArgs", () => {
   it("wires the dam key, accept-new known_hosts, agent user, and a dam-ssh ProxyCommand", () => {
@@ -20,9 +67,9 @@ describe("buildSshArgs", () => {
     expect(joined).toContain(`UserKnownHostsFile=${paths.knownHosts}`);
     expect(joined).toContain("StrictHostKeyChecking=accept-new");
     expect(joined).toContain("PreferredAuthentications=publickey");
-    // ProxyCommand re-invokes `dam ssh --proxy <agent>` (each arg sh-quoted).
+    // ProxyCommand re-invokes `dam ssh _proxy <agent>` (each arg sh-quoted).
     expect(joined).toContain("ProxyCommand=");
-    expect(joined).toContain("'ssh' '--proxy' 'my-agent'");
+    expect(joined).toContain("'ssh' '_proxy' 'my-agent'");
     // Positional host is the last arg (the known_hosts key, sanitized).
     expect(args[args.length - 1]).toBe("my-agent");
   });
@@ -71,7 +118,7 @@ describe("ensureManagedSshHost", () => {
 
     expect(damConfig()).toContain("Host dam-my-agent");
     expect(damConfig()).toContain("User agent");
-    expect(damConfig()).toContain("'ssh' '--proxy' 'my-agent'");
+    expect(damConfig()).toContain("'ssh' '_proxy' 'my-agent'");
     // The user's config gains exactly one Include pointing at dam's file.
     expect(userConfig()).toContain(`Include ${join(xdg, "dam", "ssh_config")}`);
 

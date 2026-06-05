@@ -11,9 +11,10 @@ export interface SshModuleOptions {
   createAgentService: (host: string) => AgentService;
 }
 
-/** Wires `dam ssh`. The command is mostly a launcher (it hands off to the
- *  system `ssh`/`code`); the networked work happens in the `--proxy`
- *  subprocess that those clients invoke as their ProxyCommand. */
+/** Wires `dam ssh` and its subcommands (`connect`, `configure`, hidden
+ *  `_proxy`). The command is mostly a launcher (it hands off to the system
+ *  `ssh`/`code`); the networked work happens in the `_proxy` subprocess that
+ *  those clients invoke as their ProxyCommand. */
 export function composeSshModule(opts: SshModuleOptions): {
   commands: ReadonlyArray<Command>;
 } {

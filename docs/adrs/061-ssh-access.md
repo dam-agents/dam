@@ -33,13 +33,18 @@ bytes.**
   api-server adds an `ssh` relay kind alongside `acp`/`terminal`, reusing the same upgrade
   auth and forwarding bytes verbatim. **No listening port, no NetworkPolicy change, no
   pod-spec change** — SSH rides the existing `:8080` WebSocket and its auth boundary.
-- **CLI.** `dam ssh --proxy <agent>` is an ssh `ProxyCommand`: it opens the WebSocket and
-  shovels raw bytes between it and stdin/stdout. `dam ssh <agent>` launches the system
-  `ssh` configured to use that proxy; `dam ssh -m code <agent>` launches `code` with a
-  Remote-SSH target backed by the same proxy. A `-m`/`--mode` (`ssh`|`code`|`zed`) +
-  `-x`/`--exec` pair picks the client and its binary (e.g. `-x code-insiders`).
+- **CLI.** `dam ssh` is a command group. The hidden `dam ssh _proxy <agent>` is an ssh
+  `ProxyCommand`: it opens the WebSocket and shovels raw bytes between it and stdin/stdout.
+  `dam ssh connect <agent>` launches the system `ssh` configured to use that proxy;
+  `dam ssh connect -x code <agent>` launches `code` with a Remote-SSH target backed by the
+  same proxy, and `-x zed` / `-x pycharm` do the same for Zed and JetBrains (the latter via
+  a Gateway remote-dev link, opening a JetBrains IDE such as PyCharm). A single `-x`/`--exec`
+  flag picks the client binary, with an optional `:<mode>` suffix (`ssh`|`code`|`zed`|`jetbrains`)
+  forcing how it's invoked when the name isn't self-describing (e.g. `-x code-insiders`,
+  `-x my-gateway:jetbrains`). `dam ssh configure (<agent> | --all)` writes the managed host
+  config (one block, or one per agent) and exits without launching a client.
 - **Auth.** Public-key. The CLI keeps a dam-managed keypair under the XDG state dir and,
-  on each `--proxy` connect, registers the public key with the agent via a new
+  on each `_proxy` connect, registers the public key with the agent via a new
   `ssh.authorizeKey` tRPC mutation (proxied through the existing `/api/agents/:id/trpc`
   route) before connecting. `sshd -i` runs as uid 65532 and authenticates the same user —
   **no root required** (verified: pubkey auth + bash login + PTY + sftp all work as 65532).

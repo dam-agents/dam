@@ -1,11 +1,12 @@
 import { spawn } from "node:child_process";
-import { Command, Option } from "commander";
+import { Command } from "commander";
 import type { TokenProvider } from "../../auth/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import { createAgentResolver, type AgentService } from "../../agent/index.js";
 import {
   exitCodeForResolveError,
   printResolveError,
+  printServiceError,
 } from "../../agent/commands/errors.js";
 import {
   resolveActiveHost,
@@ -21,6 +22,7 @@ import { ensureKeyPair, sshPaths } from "../infrastructure/ssh-keys.js";
 import {
   buildSshArgs,
   ensureManagedSshHost,
+  gatewayConnectUrl,
   REMOTE_WORK_DIR,
 } from "../infrastructure/launch.js";
 
@@ -31,63 +33,113 @@ export interface SshDeps {
   createAgentService: (host: string) => AgentService;
 }
 
-const MODES = ["ssh", "code", "zed"] as const;
+const MODES = ["ssh", "code", "zed", "jetbrains"] as const;
 type LaunchMode = (typeof MODES)[number];
+const MODE_BINS: Record<LaunchMode, readonly string[]> = {
+  ssh: ["ssh"],
+  code: ["code", "code-insiders"],
+  zed: ["zed"],
+  jetbrains: [
+    "gateway",
+    "pycharm",
+    "idea",
+    "goland",
+    "webstorm",
+    "phpstorm",
+    "clion",
+    "rubymine",
+    "rider",
+    "datagrip",
+    "rustrover",
+    "dataspell",
+    "aqua",
+  ],
+};
+
+export function inferMode(base: string): LaunchMode | undefined {
+  return MODES.find((m) => MODE_BINS[m].includes(base));
+}
 
 export function buildSshCommand(deps: SshDeps): Command {
-  return new Command("ssh")
-    .description("Open an SSH session to an agent")
+  const ssh = new Command("ssh").description("Open or wire up SSH access to an agent");
+  ssh.addCommand(buildConnectCommand(deps));
+  ssh.addCommand(buildConfigureCommand(deps));
+  // `_proxy` is the ssh ProxyCommand the connect/editor forms re-invoke; it's an
+  // implementation detail, not run by hand, so it stays hidden from help.
+  ssh.addCommand(buildProxyCommand(deps), { hidden: true });
+  return ssh;
+}
+
+function buildConnectCommand(deps: SshDeps): Command {
+  return new Command("connect")
+    .description("Open an SSH session to an agent, or launch an editor/IDE against it")
     .argument("<agent>", "agent name or ID")
     .option(
-      "-m, --mode <mode>",
-      `client to launch: ${MODES.join(" | ")} (inferred from --exec, else "ssh")`,
-    )
-    .option(
-      "-x, --exec <path>",
-      "executable to run (path or name); defaults to the mode name",
-    )
-    .addOption(
-      new Option(
-        "--proxy",
-        "act as an ssh ProxyCommand — tunnel stdin/stdout to the agent",
-      ).hideHelp(),
+      "-x, --exec <bin[:mode]>",
+      `client to launch: executable name or path, optionally suffixed with ":${MODES.join(
+        "|",
+      )}" to force how it's invoked; the mode is otherwise inferred from the name (e.g. code-insiders → code, pycharm → jetbrains)`,
     )
     .option("--server <url>", "override the configured server URL")
     .action(
-      async (
-        agentRef: string,
-        opts: {
-          mode?: string;
-          exec?: string;
-          proxy?: boolean;
-          server?: string;
-        },
-      ) => {
-        if (opts.proxy) {
-          if (opts.mode || opts.exec)
-            die("--proxy cannot be combined with --mode/--exec");
-          return runProxy(deps, agentRef, opts.server);
-        }
-        const { mode, exec } = resolveLaunchTarget(opts.mode, opts.exec);
+      async (agentRef: string, opts: { exec?: string; server?: string }) => {
+        const { mode, exec } = resolveLaunchTarget(opts.exec);
         return runLaunch(deps, agentRef, opts.server, mode, exec);
       },
     );
 }
 
-function resolveLaunchTarget(
-  modeFlag: string | undefined,
-  execFlag: string | undefined,
-): { mode: LaunchMode; exec: string } {
-  if (modeFlag && !MODES.includes(modeFlag as LaunchMode))
-    die(`invalid --mode "${modeFlag}"; expected one of ${MODES.join(", ")}`);
-  const mode = modeFlag as LaunchMode | undefined;
-  if (mode) return { mode, exec: execFlag ?? mode };
+function buildConfigureCommand(deps: SshDeps): Command {
+  return new Command("configure")
+    .description(
+      "Write the dam-managed SSH host config for an agent (or --all), without launching a client",
+    )
+    .argument("[agent]", "agent name or ID (omit when using --all)")
+    .option("-a, --all", "configure every agent on the active host")
+    .option("--server <url>", "override the configured server URL")
+    .action(
+      async (
+        agentRef: string | undefined,
+        opts: { all?: boolean; server?: string },
+      ) => {
+        if (!!agentRef === !!opts.all)
+          die(
+            agentRef
+              ? "pass either an agent or --all, not both"
+              : "specify an agent name/ID, or --all",
+          );
+        return runConfigure(deps, { agentRef, all: opts.all }, opts.server);
+      },
+    );
+}
+
+function buildProxyCommand(deps: SshDeps): Command {
+  return new Command("_proxy")
+    .description("Internal: act as an ssh ProxyCommand — tunnel stdin/stdout to the agent")
+    .argument("<agent>", "agent name or ID")
+    .option("--server <url>", "override the configured server URL")
+    .action(async (agentRef: string, opts: { server?: string }) =>
+      runProxy(deps, agentRef, opts.server),
+    );
+}
+
+/** Resolve the `--exec` value into a (mode, binary) pair. The value is a binary
+ *  name or path with an optional `:<mode>` suffix that forces the mode; without
+ *  it the mode is inferred from the binary's basename. */
+function resolveLaunchTarget(execFlag: string | undefined): {
+  mode: LaunchMode;
+  exec: string;
+} {
   if (!execFlag) return { mode: "ssh", exec: "ssh" };
+  const forced = execFlag.match(new RegExp(`^(.+):(${MODES.join("|")})$`));
+  if (forced) return { mode: forced[2] as LaunchMode, exec: forced[1]! };
   const base = execFlag.split(/[/\\]/).pop()!.toLowerCase();
-  const inferred = MODES.find((m) => base.includes(m));
+  const inferred = inferMode(base);
   if (!inferred)
     die(
-      `could not infer --mode from --exec "${execFlag}"; pass --mode explicitly`,
+      `could not infer mode from --exec "${execFlag}"; append ":${MODES.join(
+        "|",
+      )}" to force one`,
     );
   return { mode: inferred, exec: execFlag };
 }
@@ -152,11 +204,82 @@ async function runLaunch(
   if (mode === "ssh")
     return handoff(exec, buildSshArgs({ agentRef, serverFlag, paths }), label);
   const alias = await ensureManagedSshHost({ agentRef, serverFlag, paths });
-  const args =
-    mode === "zed"
-      ? [`ssh://agent@${alias}${REMOTE_WORK_DIR}`]
-      : ["--remote", `ssh-remote+${alias}`, REMOTE_WORK_DIR];
-  return handoff(exec, args, label);
+  return handoff(exec, clientArgs(mode, alias), label);
+}
+
+/** Argv for an editor/IDE client launching against the managed host `alias`.
+ *  Each client takes the agent's workspace as a remote target it resolves from
+ *  the user's `~/.ssh/config` (so they share the alias's ProxyCommand). */
+function clientArgs(mode: Exclude<LaunchMode, "ssh">, alias: string): string[] {
+  switch (mode) {
+    case "zed":
+      return [`ssh://agent@${alias}${REMOTE_WORK_DIR}`];
+    case "jetbrains":
+      return [gatewayConnectUrl(alias)];
+    case "code":
+      return ["--remote", `ssh-remote+${alias}`, REMOTE_WORK_DIR];
+  }
+}
+
+/** Write the dam-managed SSH host block(s) and report the alias(es), without
+ *  launching any client — for wiring up editors/tools by hand. Configures a
+ *  single agent, or every agent on the host with `--all`. */
+async function runConfigure(
+  deps: SshDeps,
+  target: { agentRef?: string; all?: boolean },
+  serverFlag?: string,
+): Promise<never> {
+  const host = await resolveActiveHost(deps, {
+    flag: serverFlag ? { server: serverFlag } : undefined,
+    exitCodes: {
+      runtimeFailure: EXIT_RUNTIME_FAILURE,
+      belowFloor: EXIT_BELOW_FLOOR,
+    },
+  });
+  const paths = sshPaths();
+  await orExit(ensureKeyPair(paths), (e) => e.message);
+
+  if (target.all) {
+    const listed = await deps.createAgentService(host).list();
+    if (!listed.ok) {
+      printServiceError(listed.error, host);
+      process.exit(EXIT_RUNTIME_FAILURE);
+    }
+    if (listed.value.length === 0) {
+      process.stdout.write("No agents to configure.\n");
+      process.exit(0);
+    }
+    // Sequential: each call read-modify-writes the shared dam/user ssh_config,
+    // so concurrent writes would clobber each other's blocks.
+    const rows: { name: string; alias: string }[] = [];
+    for (const a of listed.value)
+      rows.push({
+        name: a.name,
+        alias: await ensureManagedSshHost({
+          agentRef: a.name,
+          serverFlag,
+          paths,
+        }),
+      });
+    process.stdout.write(
+      `Configured ${rows.length} SSH host${rows.length === 1 ? "" : "s"}:\n` +
+        rows.map((r) => `  ${r.alias}  (${r.name})`).join("\n") +
+        "\n",
+    );
+    process.exit(0);
+  }
+
+  const agentRef = target.agentRef!;
+  const agent = await resolveAgent(deps, host, agentRef);
+  const alias = await ensureManagedSshHost({ agentRef, serverFlag, paths });
+  process.stdout.write(
+    `Configured SSH host "${alias}" for agent "${agent.name}". Connect with:\n` +
+      `  ssh ${alias}\n` +
+      `  code --remote ssh-remote+${alias} ${REMOTE_WORK_DIR}\n` +
+      `  zed ssh://agent@${alias}${REMOTE_WORK_DIR}\n` +
+      `  gateway ${gatewayConnectUrl(alias)}\n`,
+  );
+  process.exit(0);
 }
 
 async function resolveAgent(

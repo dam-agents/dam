@@ -5,6 +5,21 @@ import type { SshPaths } from "./ssh-keys.js";
 
 export const REMOTE_WORK_DIR = "/home/agent/work";
 
+/** JetBrains Gateway connect link for the managed host `alias`. Gateway resolves
+ *  the alias through the user's OpenSSH config (the `Include`d managed block), so
+ *  it inherits the same ProxyCommand and identity as the `ssh`/editor modes. The
+ *  remote IDE (e.g. PyCharm) is chosen in Gateway itself — we don't pin one. */
+export function gatewayConnectUrl(alias: string): string {
+  const params = new URLSearchParams({
+    type: "ssh",
+    host: alias,
+    user: "agent",
+    port: "22",
+    projectPath: REMOTE_WORK_DIR,
+  });
+  return `jetbrains-gateway://connect#${params.toString()}`;
+}
+
 function proxyCommandString(agentRef: string, serverFlag?: string): string {
   const script = process.argv[1];
   const parts = [
@@ -12,7 +27,7 @@ function proxyCommandString(agentRef: string, serverFlag?: string): string {
       ? [process.execPath, ...process.execArgv, resolve(script)]
       : ["dam"]),
     "ssh",
-    "--proxy",
+    "_proxy",
     agentRef,
     ...(serverFlag ? ["--server", serverFlag] : []),
   ];
