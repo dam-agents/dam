@@ -281,9 +281,7 @@ export function ChatView() {
           <ConfigurationPanel
             onResumeSession={mobileResumeSession}
             agentId={selectedAgent}
-            agentRunning={
-              agents.find((a) => a.id === selectedAgent)?.state === "running"
-            }
+            agentState={agents.find((a) => a.id === selectedAgent)?.state}
             onOpenFile={openFileHandler}
           />
         </div>

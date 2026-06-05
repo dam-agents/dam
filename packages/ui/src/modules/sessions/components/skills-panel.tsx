@@ -24,6 +24,7 @@ import { api } from "../../../api.js";
 import { ACTION_FAILED, runAction } from "../../../lib/query-helpers.js";
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
+import type { AgentState } from "../../../types.js";
 
 /** localStorage key for per-user persistence of collapsed source ids. Per
  *  browser, not per instance — catalog preferences apply everywhere. */
@@ -68,7 +69,7 @@ function isCuratedSource(src: SkillSource): boolean {
 
 interface SkillsPanelProps {
   agentId: string | null;
-  isRunning: boolean;
+  agentState: AgentState | undefined;
   /** Opens a file in the Files tab. Threaded from useFileTree via ChatView. */
   onOpenFile?: (path: string) => void;
 }
@@ -114,10 +115,13 @@ function skillSourceUrl(
 
 export function SkillsPanel({
   agentId,
-  isRunning,
+  agentState,
   onOpenFile,
 }: SkillsPanelProps) {
   const showConfirm = useStore((s) => s.showConfirm);
+
+  const isError = agentState === "error";
+  const isAsleep = !!agentId && agentState !== "running" && !isError;
 
   const [sources, setSources] = useState<SkillSource[]>([]);
   const [skillsBySource, setSkillsBySource] = useState<Record<string, Skill[]>>(
@@ -284,7 +288,7 @@ export function SkillsPanel({
     installed.find((s) => s.source === source && s.name === name);
 
   const toggle = async (skill: Skill) => {
-    if (!agentId || !isRunning) return;
+    if (!agentId || isError) return;
     const key = skillKey(skill.source, skill.name);
     setBusyRow(key);
     const currentlyInstalled = isInstalled(skill.source, skill.name);
@@ -310,7 +314,7 @@ export function SkillsPanel({
   };
 
   const updateDrift = async (skill: Skill) => {
-    if (!agentId || !isRunning) return;
+    if (!agentId || isError) return;
     const key = skillKey(skill.source, skill.name);
     setBusyRow(key);
     const result = await runAction(
@@ -446,9 +450,15 @@ export function SkillsPanel({
 
   return (
     <div className="flex flex-col">
-      {!isRunning && agentId && (
+      {isError && (
         <div className="px-4 py-2 border-b border-border-light text-[11px] text-text-muted bg-warning-light">
-          Start the agent to manage skills.
+          Agent is in an error state — resolve it before managing skills.
+        </div>
+      )}
+      {isAsleep && (
+        <div className="px-4 py-2 border-b border-border-light text-[11px] text-text-muted">
+          Asleep — installing or removing a skill will wake the agent; this can
+          take a moment.
         </div>
       )}
 
@@ -782,7 +792,7 @@ export function SkillsPanel({
                   installed.contentHash !== skill.contentHash;
                 const key = skillKey(skill.source, skill.name);
                 const rowBusy = busyRow === key;
-                const disabled = !agentId || !isRunning || rowBusy;
+                const disabled = !agentId || isError || rowBusy;
 
                 return (
                   <label

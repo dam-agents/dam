@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
 
+import type { AgentState } from "../../../types.js";
 import { SchedulesPanel } from "../../schedules/components/schedules-panel.js";
 import { ChannelsPanel } from "./channels-panel.js";
 import { SkillsPanel } from "./skills-panel.js";
@@ -32,13 +33,13 @@ function Section({
 export function ConfigurationPanel({
   onResumeSession,
   agentId,
-  agentRunning,
+  agentState,
   onOpenFile,
 }: {
   /** Called when the user clicks a past run under a schedule card. */
   onResumeSession?: (sessionId: string) => void;
   agentId: string | null;
-  agentRunning: boolean;
+  agentState: AgentState | undefined;
   onOpenFile?: (path: string) => void;
 }) {
   return (
@@ -54,7 +55,7 @@ export function ConfigurationPanel({
       <Section title="Skills">
         <SkillsPanel
           agentId={agentId}
-          isRunning={agentRunning}
+          agentState={agentState}
           onOpenFile={onOpenFile}
         />
       </Section>
