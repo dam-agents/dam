@@ -26,6 +26,10 @@ export const agentCreateInputSchema = z
     secretRef: z.string().optional(),
     allowedUserEmails: z.array(z.email()).optional(),
     egressPreset: egressPresetSchema.optional(),
+    // Optional: clone this public git repo into the working directory once,
+    // shortly after first start (delivered as a `workspace-git` contribution).
+    // The UI picks it from the `gitRepos` catalog; raw URL pass-through.
+    gitRepo: z.url().optional(),
   })
   .refine((d) => d.templateId !== undefined || d.image !== undefined, {
     message: "Either templateId or image is required",

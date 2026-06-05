@@ -8,6 +8,7 @@ import {
   createAgentsRepository,
   type AgentsRepository,
 } from "./infrastructure/agents-repository.js";
+import { createAgentWorkspaceRepository } from "./infrastructure/agent-workspace-repository.js";
 import {
   createAgentsService,
   type AgentCleanupHook,
@@ -72,6 +73,8 @@ export function composeAgentsModule(deps: {
       cleanupHooks: deps.cleanupHooks,
       runtimeMutator: deps.runtimeMutator,
       contributionsSettled: deps.contributionsSettled,
+      setWorkspaceRepo: (agentId, sourceUrl) =>
+        createAgentWorkspaceRepository(deps.db).set(agentId, sourceUrl),
       listChannelsByOwner: listChannelsByOwner(deps.db, owner),
       listChannelsByAgent: listChannelsByAgent(deps.db, owner),
       upsertChannel: upsertChannel(deps.db, owner),

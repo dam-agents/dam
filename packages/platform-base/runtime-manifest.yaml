@@ -7,6 +7,14 @@
 manifestVersion: 1
 
 drivers:
+  # `workspace-git` kind — one-shot clone of a public repo into the working dir.
+  # Listed FIRST so it dispatches before skills/files (the dispatcher applies
+  # drivers in this map's order): the workspace exists before anything layers
+  # onto it. Idempotent (skips when $HOME/work already holds a repo).
+  workspace-git:
+    impl: workspace-clone
+    target: "$HOME/work"
+
   # `file` kind — params per contribution; impl needs no extra config.
   file:
     impl: file

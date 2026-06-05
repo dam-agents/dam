@@ -7,6 +7,7 @@ export const contributionKind = z.enum([
   "file",
   "mcp-entry",
   "skill-ref",
+  "workspace-git",
 ]);
 export type ContributionKind = z.infer<typeof contributionKind>;
 
@@ -67,6 +68,15 @@ export const skillRefContribution = z.object({
   version: z.string().min(1),
 });
 
+// One-shot seed of the agent's working directory from a public git repo. The
+// driver clones once into an empty work dir and skips thereafter (it is NOT
+// reconciled/removed like other state). Applied before skill-ref via the
+// runtime-manifest driver order.
+export const workspaceGitContribution = z.object({
+  kind: z.literal("workspace-git"),
+  sourceUrl: z.string().min(1),
+});
+
 export const contribution = z.discriminatedUnion("kind", [
   envContribution,
   egressAllowContribution,
@@ -74,6 +84,7 @@ export const contribution = z.discriminatedUnion("kind", [
   fileContribution,
   mcpEntryContribution,
   skillRefContribution,
+  workspaceGitContribution,
 ]);
 export type Contribution = z.infer<typeof contribution>;
 

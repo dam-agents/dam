@@ -79,6 +79,7 @@ spec:
         # the pod when the rendered templates change, making `helm upgrade` of a
         # template take effect instead of serving stale ones until the next restart.
         checksum/agent-templates: {{ include (print $.Template.BasePath "/agent-templates.yaml") . | sha256sum }}
+        checksum/git-repos: {{ include (print $.Template.BasePath "/git-repos.yaml") . | sha256sum }}
       labels:
         {{- include "platform.labels" . | nindent 8 }}
         app.kubernetes.io/component: apiserver
@@ -266,6 +267,10 @@ spec:
             # once at boot — not read dynamically via the K8s API.
             - name: AGENT_TEMPLATES_PATH
               value: /etc/platform/agent-templates
+            # Curated public-repo catalog (gitRepos), mounted from a ConfigMap
+            # and loaded once at boot (same pattern as agent templates).
+            - name: GIT_REPOS_PATH
+              value: /etc/platform/git-repos
             # Brand — drives UI title/theme, OAuth client_name, Slack
             # slash command, skill-publish git author + branch prefix.
             - name: BRAND_NAME
@@ -301,6 +306,9 @@ spec:
               readOnly: true
             # Whole-ConfigMap mount (no subPath): each `<id>.yaml` data key
             # surfaces as a file the api-server loads at boot (ADR-058).
+            - name: git-repos
+              mountPath: /etc/platform/git-repos
+              readOnly: true
             - name: agent-templates
               mountPath: /etc/platform/agent-templates
               readOnly: true
@@ -330,3 +338,6 @@ spec:
         - name: agent-templates
           configMap:
             name: {{ include "platform.fullname" . }}-agent-templates
+        - name: git-repos
+          configMap:
+            name: {{ include "platform.fullname" . }}-git-repos

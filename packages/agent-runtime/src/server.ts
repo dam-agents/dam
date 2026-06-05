@@ -31,6 +31,7 @@ import {
   createFilePlugin,
   createMcpEntryPlugin,
   createSkillInstallPlugin,
+  createWorkspaceClonePlugin,
 } from "./modules/runtime-channel/index.js";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -73,6 +74,7 @@ const runtimeChannel = await composeRuntimeChannel({
     createFilePlugin(),
     createMcpEntryPlugin(),
     createSkillInstallPlugin({ install: skillsService.install }),
+    createWorkspaceClonePlugin(),
   ],
 });
 

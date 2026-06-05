@@ -88,6 +88,9 @@ export function createAgentsService(deps: {
   cleanupHooks?: readonly AgentCleanupHook[];
   runtimeMutator: RuntimeMutator;
   contributionsSettled: ContributionsSettledPort;
+  /** Records the one-shot working-directory git seed at create time. Optional
+   *  so the system-agents composition (which never creates agents) can omit it. */
+  setWorkspaceRepo?: (agentId: string, sourceUrl: string) => Promise<void>;
   // --- Runtime / channels / allowed-users dependencies (formerly Instance) ---
   listChannelsByOwner: () => Promise<Map<string, ChannelConfig[]>>;
   listChannelsByAgent: (agentId: string) => Promise<ChannelConfig[]>;
@@ -268,6 +271,12 @@ export function createAgentsService(deps: {
           input.egressPreset ?? "trusted",
           owner,
         );
+      }
+
+      // Record the one-shot working-dir seed before the bump, so the first
+      // contribution delivery already carries the workspace-git contribution.
+      if (input.gitRepo && deps.setWorkspaceRepo) {
+        await deps.setWorkspaceRepo(infra.id, input.gitRepo);
       }
 
       // Bump so the built-in platform connection ships from creation (#421).

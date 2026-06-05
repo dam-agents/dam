@@ -758,6 +758,20 @@ skills:
   #   - name: "Anthropic Skills"
   #     gitUrl: "https://github.com/anthropics/skills"
 
+# -- Curated catalog of public git repos an agent's working directory can be
+# seeded from at creation (cloned once into /home/agent/work, shortly after the
+# agent starts, by the `workspace-git` contribution driver — never tracked or
+# pushed afterward). Rendered into the `git-repos` ConfigMap and loaded by the
+# api-server at boot. Each entry maps to the harness template names it's
+# compatible with; the Add Agent dialog filters by the chosen harness (an entry
+# with no `compatibleTemplates` is offered for no harness). Public repos only.
+gitRepos: []
+  # - id: google-workspace
+  #   name: Google Workspace
+  #   url: https://github.com/dam-agents/google-workspace.git
+  #   description: "Tools and skills for working with Google Workspace"
+  #   compatibleTemplates: [claude-code]
+
 # -- Opt-in in-cluster NFS server + external provisioner. Provides an RWX
 # StorageClass for dev clusters whose default provisioner is RWO-only.
 # Production deployments should leave this disabled and point

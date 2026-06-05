@@ -189,6 +189,17 @@ export const agentSkills = pgTable(
   ],
 );
 
+/** One-shot working-directory seed per agent. Set at create time; the
+ *  runtime state-builder projects it to a `workspace-git` Contribution the
+ *  agent-runtime driver clones once into the work dir. One row per agent. */
+export const agentWorkspace = pgTable("agent_workspace", {
+  agentId: text("agent_id").primaryKey(),
+  sourceUrl: text("source_url").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
 /** Append-only log of semantically-meaningful platform activity (auth, channel turns).
  *  `actor_sub` is HMAC-SHA256(keycloak_sub, ACTIVITY_HMAC_KEY) — pseudonymized
  *  (not anonymized) at the storage boundary; same key joins to actor_roles and

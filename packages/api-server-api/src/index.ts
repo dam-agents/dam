@@ -20,6 +20,9 @@ export type {
 } from "./modules/templates/types.js";
 export { templateGetInputSchema } from "./modules/templates/schemas.js";
 
+export { repoSchema } from "./modules/repos/schemas.js";
+export type { Repo, RepoView, ReposService } from "./modules/repos/types.js";
+
 export type {
   Agent,
   AgentSpec,

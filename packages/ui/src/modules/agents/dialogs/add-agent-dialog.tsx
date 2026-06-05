@@ -3,6 +3,7 @@ import {
   Document as FileIcon,
   Folder as FolderIcon,
   FolderAdd as FolderUp,
+  Launch,
   Upload,
   Warning,
 } from "@carbon/icons-react";
@@ -35,6 +36,7 @@ import {
   isTarballName,
   walkDataTransfer,
 } from "../../files/api/import-bundle.js";
+import { useRepos } from "../../repos/api/queries.js";
 import { useSecrets } from "../../secrets/api/queries.js";
 import {
   addAgentSchema,
@@ -42,6 +44,18 @@ import {
 } from "../forms/add-agent-schema.js";
 
 type Step = "pick" | "configure";
+
+// `initSource` selects where the working directory is seeded from:
+//   ""       → None (empty working dir, the default)
+//   "local"  → upload local files (drag & drop)
+//   <url>    → clone that catalog repo
+const INIT_NONE = "";
+const INIT_LOCAL = "local";
+
+const tileClass = (active: boolean) =>
+  `flex flex-col gap-0.5 rounded-lg border px-3 py-2.5 cursor-pointer transition-colors ${
+    active ? "border-primary bg-primary/10" : "bg-background hover:border-input"
+  }`;
 
 export function AddAgentDialog({
   templates,
@@ -59,6 +73,7 @@ export function AddAgentDialog({
     secretIds?: string[];
     appConnectionIds?: string[];
     egressPreset?: EgressPreset;
+    gitRepo?: string;
     importEntries?: BundleEntry[];
     importRawBundle?: File;
   }) => void;
@@ -85,6 +100,20 @@ export function AddAgentDialog({
   // expose both numbers and they reconcile.
   const [importDropped, setImportDropped] = useState(0);
   const [dropActive, setDropActive] = useState(false);
+  // Working-directory seed: "" (none) | "local" | a catalog repo URL.
+  const [initSource, setInitSource] = useState<string>(INIT_NONE);
+
+  // Switching the seed away from local drops any staged upload so it can't
+  // linger invisibly and get sent on submit.
+  const clearImport = () => {
+    setImportEntries([]);
+    setImportRawBundle(null);
+    setImportDropped(0);
+  };
+  const selectInit = (value: string) => {
+    setInitSource(value);
+    if (value !== INIT_LOCAL) clearImport();
+  };
   const importFolderInputRef = useRef<HTMLInputElement | null>(null);
   const importFileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -157,6 +186,7 @@ export function AddAgentDialog({
 
   const { data: secrets = [], isLoading: loadSecrets } = useSecrets();
   const { data: apps = [] } = useAppConnections();
+  const { data: repos = [] } = useRepos();
   const {
     register,
     handleSubmit,
@@ -221,10 +251,24 @@ export function AddAgentDialog({
   // subsection while the grant flows through the secret-access mechanism.
   const oauthAppEntries: OAuthAppEntry[] = [];
 
+  // Repos compatible with the chosen harness. The custom-image path has no
+  // known template id, so it offers no repos.
+  const compatibleRepos = useMemo(
+    () =>
+      selectedTemplate
+        ? repos.filter((r) =>
+            r.compatibleTemplates.includes(selectedTemplate.id),
+          )
+        : [],
+    [repos, selectedTemplate],
+  );
+
   const pickTemplate = (tmpl: TemplateView) => {
     setSelectedTemplate(tmpl);
     setValue("name", tmpl.name);
     setValue("description", tmpl.description ?? "");
+    // Repo compatibility is per-harness; reset the working-dir seed.
+    selectInit(INIT_NONE);
     // Force validation so isValid reflects the prefilled template values —
     // setValue defaults to skipping it and the user might submit without ever
     // typing in the field.
@@ -238,6 +282,7 @@ export function AddAgentDialog({
     setSelectedTemplate(null);
     setValue("name", "");
     setValue("description", "");
+    selectInit(INIT_NONE);
     trigger();
     setStep("configure");
   };
@@ -263,8 +308,13 @@ export function AddAgentDialog({
       secretIds: values.selSecrets,
       appConnectionIds: values.selApps.length > 0 ? values.selApps : undefined,
       egressPreset: values.egressPreset,
-      importEntries: importEntries.length > 0 ? importEntries : undefined,
-      importRawBundle: importRawBundle ?? undefined,
+      gitRepo: initSource && initSource !== INIT_LOCAL ? initSource : undefined,
+      importEntries:
+        initSource === INIT_LOCAL && importEntries.length > 0
+          ? importEntries
+          : undefined,
+      importRawBundle:
+        initSource === INIT_LOCAL ? (importRawBundle ?? undefined) : undefined,
     });
   });
 
@@ -372,201 +422,282 @@ export function AddAgentDialog({
               <Input placeholder="Optional" {...register("description")} />
             </FormField>
 
-            <FormField label="Import local context (optional)">
-              <input
-                ref={importFolderInputRef}
-                type="file"
-                multiple
-                // @ts-expect-error -- non-standard but supported by Chromium-based + Safari + Firefox
-                webkitdirectory=""
-                directory=""
-                className="hidden"
-                onChange={(e) => {
-                  const files = e.target.files;
-                  if (!files || files.length === 0) return;
-                  handleIncoming(
-                    Array.from(files).map((f) => ({
-                      path:
-                        (f as File & { webkitRelativePath?: string })
-                          .webkitRelativePath || f.name,
-                      file: f,
-                    })),
-                  );
-                  e.target.value = "";
-                }}
-              />
-              <input
-                ref={importFileInputRef}
-                type="file"
-                multiple
-                className="hidden"
-                onChange={(e) => {
-                  const files = e.target.files;
-                  if (!files || files.length === 0) return;
-                  handleIncoming(
-                    Array.from(files).map((f) => ({ path: f.name, file: f })),
-                  );
-                  e.target.value = "";
-                }}
-              />
-              <div
-                onDragEnter={(e) => {
-                  if (e.dataTransfer?.types?.includes("Files")) {
-                    e.preventDefault();
-                    setDropActive(true);
-                  }
-                }}
-                onDragOver={(e) => {
-                  if (e.dataTransfer?.types?.includes("Files")) {
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = "copy";
-                  }
-                }}
-                onDragLeave={(e) => {
-                  if (e.currentTarget.contains(e.relatedTarget as Node | null))
-                    return;
-                  setDropActive(false);
-                }}
-                onDrop={(e) => {
-                  if (!e.dataTransfer) return;
-                  e.preventDefault();
-                  setDropActive(false);
-                  const items = e.dataTransfer.items;
-                  if (items && items.length > 0) {
-                    void (async () => {
-                      const entries = await walkDataTransfer(items);
-                      handleIncoming(entries);
-                    })();
-                  }
-                }}
-                className={`rounded-lg border-2 border-dashed px-4 py-6 transition-colors flex flex-col items-center gap-3 text-center ${
-                  dropActive
-                    ? "border-primary bg-primary/10"
-                    : "border-border hover:border-input bg-background/50"
-                }`}
-              >
-                {importRawBundle ? (
-                  <>
-                    <FileIcon size={24} className="text-muted-foreground" />
-                    <div className="text-[13px] text-foreground">
-                      <code className="font-mono">{importRawBundle.name}</code>
-                    </div>
-                  </>
-                ) : importEntries.length > 0 ? (
-                  <>
-                    <Upload size={24} className="text-muted-foreground" />
-                    <div className="text-[13px] text-foreground">
-                      <span className="font-semibold">
-                        {importEntries.length + importDropped}
-                      </span>{" "}
-                      file
-                      {importEntries.length + importDropped === 1
-                        ? ""
-                        : "s"}{" "}
-                      selected ·{" "}
-                      <span className="text-foreground/80">
-                        {importEntries.length} to import
+            <fieldset className="flex flex-col gap-2">
+              <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.05em]">
+                Initialize working directory
+              </span>
+              <p className="text-[12px] text-muted-foreground">
+                Where the agent's working directory starts from. You can change
+                its files later.
+              </p>
+              <div className="grid grid-cols-2 gap-1.5 auto-rows-fr">
+                <label className={tileClass(initSource === INIT_NONE)}>
+                  <input
+                    type="radio"
+                    className="sr-only"
+                    checked={initSource === INIT_NONE}
+                    onChange={() => selectInit(INIT_NONE)}
+                  />
+                  <span className="text-[13px] font-semibold text-foreground">
+                    None
+                  </span>
+                  <span className="text-[12px] text-muted-foreground">
+                    Empty working directory
+                  </span>
+                </label>
+                {compatibleRepos.map((repo) => (
+                  <label
+                    key={repo.id}
+                    className={tileClass(initSource === repo.url)}
+                  >
+                    <input
+                      type="radio"
+                      className="sr-only"
+                      checked={initSource === repo.url}
+                      onChange={() => selectInit(repo.url)}
+                    />
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-[13px] font-semibold text-foreground truncate">
+                        {repo.name}
                       </span>
-                      {importDropped > 0 && (
-                        <>
-                          {" "}
-                          ·{" "}
-                          <span className="text-muted-foreground">
-                            {importDropped} filtered (
-                            <code className="font-mono">node_modules</code>,{" "}
-                            <code className="font-mono">.venv</code>, etc.)
+                      <a
+                        href={repo.readmeUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex items-center gap-0.5 text-[11px] text-primary hover:underline shrink-0"
+                      >
+                        README <Launch size={11} />
+                      </a>
+                    </span>
+                    {repo.description && (
+                      <span className="text-[12px] text-muted-foreground line-clamp-2">
+                        {repo.description}
+                      </span>
+                    )}
+                  </label>
+                ))}
+                <label className={tileClass(initSource === INIT_LOCAL)}>
+                  <input
+                    type="radio"
+                    className="sr-only"
+                    checked={initSource === INIT_LOCAL}
+                    onChange={() => selectInit(INIT_LOCAL)}
+                  />
+                  <span className="text-[13px] font-semibold text-foreground">
+                    Local files
+                  </span>
+                  <span className="text-[12px] text-muted-foreground">
+                    Upload from your machine
+                  </span>
+                </label>
+              </div>
+
+              {initSource === INIT_LOCAL && (
+                <div className="mt-1 flex flex-col gap-2">
+                  <input
+                    ref={importFolderInputRef}
+                    type="file"
+                    multiple
+                    // @ts-expect-error -- non-standard but supported by Chromium-based + Safari + Firefox
+                    webkitdirectory=""
+                    directory=""
+                    className="hidden"
+                    onChange={(e) => {
+                      const files = e.target.files;
+                      if (!files || files.length === 0) return;
+                      handleIncoming(
+                        Array.from(files).map((f) => ({
+                          path:
+                            (f as File & { webkitRelativePath?: string })
+                              .webkitRelativePath || f.name,
+                          file: f,
+                        })),
+                      );
+                      e.target.value = "";
+                    }}
+                  />
+                  <input
+                    ref={importFileInputRef}
+                    type="file"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => {
+                      const files = e.target.files;
+                      if (!files || files.length === 0) return;
+                      handleIncoming(
+                        Array.from(files).map((f) => ({
+                          path: f.name,
+                          file: f,
+                        })),
+                      );
+                      e.target.value = "";
+                    }}
+                  />
+                  <div
+                    onDragEnter={(e) => {
+                      if (e.dataTransfer?.types?.includes("Files")) {
+                        e.preventDefault();
+                        setDropActive(true);
+                      }
+                    }}
+                    onDragOver={(e) => {
+                      if (e.dataTransfer?.types?.includes("Files")) {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = "copy";
+                      }
+                    }}
+                    onDragLeave={(e) => {
+                      if (
+                        e.currentTarget.contains(e.relatedTarget as Node | null)
+                      )
+                        return;
+                      setDropActive(false);
+                    }}
+                    onDrop={(e) => {
+                      if (!e.dataTransfer) return;
+                      e.preventDefault();
+                      setDropActive(false);
+                      const items = e.dataTransfer.items;
+                      if (items && items.length > 0) {
+                        void (async () => {
+                          const entries = await walkDataTransfer(items);
+                          handleIncoming(entries);
+                        })();
+                      }
+                    }}
+                    className={`rounded-lg border-2 border-dashed px-4 py-6 transition-colors flex flex-col items-center gap-3 text-center ${
+                      dropActive
+                        ? "border-primary bg-primary/10"
+                        : "border-border hover:border-input bg-background/50"
+                    }`}
+                  >
+                    {importRawBundle ? (
+                      <>
+                        <FileIcon size={24} className="text-muted-foreground" />
+                        <div className="text-[13px] text-foreground">
+                          <code className="font-mono">
+                            {importRawBundle.name}
+                          </code>
+                        </div>
+                      </>
+                    ) : importEntries.length > 0 ? (
+                      <>
+                        <Upload size={24} className="text-muted-foreground" />
+                        <div className="text-[13px] text-foreground">
+                          <span className="font-semibold">
+                            {importEntries.length + importDropped}
+                          </span>{" "}
+                          file
+                          {importEntries.length + importDropped === 1
+                            ? ""
+                            : "s"}{" "}
+                          selected ·{" "}
+                          <span className="text-foreground/80">
+                            {importEntries.length} to import
                           </span>
-                        </>
+                          {importDropped > 0 && (
+                            <>
+                              {" "}
+                              ·{" "}
+                              <span className="text-muted-foreground">
+                                {importDropped} filtered (
+                                <code className="font-mono">node_modules</code>,{" "}
+                                <code className="font-mono">.venv</code>, etc.)
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <Upload size={28} className="text-muted-foreground" />
+                        <div className="text-[13px] text-foreground">
+                          Drop a folder or files here
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">
+                          <code className="font-mono">.tar.gz</code> bundles
+                          pass through verbatim
+                        </div>
+                      </>
+                    )}
+                    <div className="flex items-center gap-2 flex-wrap justify-center">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => importFolderInputRef.current?.click()}
+                      >
+                        <FolderUp /> Choose folder
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => importFileInputRef.current?.click()}
+                      >
+                        <FileIcon /> Choose files
+                      </Button>
+                      {(importRawBundle || importEntries.length > 0) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setImportEntries([]);
+                            setImportRawBundle(null);
+                            setImportDropped(0);
+                          }}
+                          className="text-[12px] text-muted-foreground hover:text-foreground underline"
+                        >
+                          Clear
+                        </button>
                       )}
                     </div>
-                  </>
-                ) : (
-                  <>
-                    <Upload size={28} className="text-muted-foreground" />
-                    <div className="text-[13px] text-foreground">
-                      Drop a folder or files here
+                    <div className="text-[11px] text-muted-foreground italic">
+                      Tip: drag-and-drop supports a mix of folders and files in
+                      one go.
                     </div>
-                    <div className="text-[11px] text-muted-foreground">
-                      <code className="font-mono">.tar.gz</code> bundles pass
-                      through verbatim
+                  </div>
+                  {importGroups.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {importGroups.map((g) => (
+                        <span
+                          key={g.name}
+                          className="inline-flex items-center gap-1.5 rounded-md border bg-background px-2 py-1 text-[12px] text-foreground max-w-full"
+                        >
+                          {g.isFolder ? (
+                            <FolderIcon
+                              size={12}
+                              className="text-muted-foreground shrink-0"
+                            />
+                          ) : (
+                            <FileIcon
+                              size={12}
+                              className="text-muted-foreground shrink-0"
+                            />
+                          )}
+                          <span className="font-mono truncate" title={g.name}>
+                            {g.name}
+                          </span>
+                          {g.isFolder && (
+                            <span className="text-muted-foreground shrink-0">
+                              ({g.count})
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => removeGroup(g.name)}
+                            className="text-muted-foreground hover:text-foreground shrink-0"
+                            aria-label={`Remove ${g.name}`}
+                          >
+                            <X size={12} />
+                          </button>
+                        </span>
+                      ))}
                     </div>
-                  </>
-                )}
-                <div className="flex items-center gap-2 flex-wrap justify-center">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => importFolderInputRef.current?.click()}
-                  >
-                    <FolderUp /> Choose folder
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => importFileInputRef.current?.click()}
-                  >
-                    <FileIcon /> Choose files
-                  </Button>
-                  {(importRawBundle || importEntries.length > 0) && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setImportEntries([]);
-                        setImportRawBundle(null);
-                        setImportDropped(0);
-                      }}
-                      className="text-[12px] text-muted-foreground hover:text-foreground underline"
-                    >
-                      Clear
-                    </button>
                   )}
                 </div>
-                <div className="text-[11px] text-muted-foreground italic">
-                  Tip: drag-and-drop supports a mix of folders and files in one
-                  go.
-                </div>
-              </div>
-              {importGroups.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {importGroups.map((g) => (
-                    <span
-                      key={g.name}
-                      className="inline-flex items-center gap-1.5 rounded-md border bg-background px-2 py-1 text-[12px] text-foreground max-w-full"
-                    >
-                      {g.isFolder ? (
-                        <FolderIcon
-                          size={12}
-                          className="text-muted-foreground shrink-0"
-                        />
-                      ) : (
-                        <FileIcon
-                          size={12}
-                          className="text-muted-foreground shrink-0"
-                        />
-                      )}
-                      <span className="font-mono truncate" title={g.name}>
-                        {g.name}
-                      </span>
-                      {g.isFolder && (
-                        <span className="text-muted-foreground shrink-0">
-                          ({g.count})
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => removeGroup(g.name)}
-                        className="text-muted-foreground hover:text-foreground shrink-0"
-                        aria-label={`Remove ${g.name}`}
-                      >
-                        <X size={12} />
-                      </button>
-                    </span>
-                  ))}
-                </div>
               )}
-            </FormField>
+            </fieldset>
 
             {!loadSecrets && providerSecrets.length === 0 && (
               <div className="rounded-lg border-2 border-warning bg-warning-light px-4 py-3 flex items-center gap-3">

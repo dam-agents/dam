@@ -1,0 +1,20 @@
+{{/*
+Curated public-repo catalog (`gitRepos`). A single ConfigMap in the RELEASE
+namespace with one `git-repos.yaml` data key holding the `.Values.gitRepos`
+list. Mounted into the api-server pod (see apiserver/app.yaml) and loaded once
+at boot — same pattern as agent-templates (ADR-058).
+
+Each entry seeds an agent's working directory once, via the `workspace-git`
+contribution; the platform never tracks the repo afterward. Public repos only.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "platform.fullname" . }}-git-repos
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: apiserver
+data:
+  git-repos.yaml: |
+    {{- toYaml .Values.gitRepos | nindent 4 }}
