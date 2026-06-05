@@ -34,7 +34,7 @@ VM_NAME="platform-k3s-test"
 if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
 else
-  KUBECONFIG="$HOME/.lima/$VM_NAME/copied-from-guest/kubeconfig.yaml"
+  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$VM_NAME/copied-from-guest/kubeconfig.yaml"
 fi
 
 cleanup() {
@@ -113,7 +113,7 @@ VM_NAME="${E2E_VM_NAME:-platform-k3s-test}"
 if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
 else
-  KUBECONFIG="$HOME/.lima/$VM_NAME/copied-from-guest/kubeconfig.yaml"
+  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$VM_NAME/copied-from-guest/kubeconfig.yaml"
 fi
 
 export E2E_MOCK_ONLY=1
@@ -159,7 +159,7 @@ VM_NAME="${E2E_VM_NAME:-platform-k3s-test}"
 if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
 else
-  KUBECONFIG="$HOME/.lima/$VM_NAME/copied-from-guest/kubeconfig.yaml"
+  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$VM_NAME/copied-from-guest/kubeconfig.yaml"
 fi
 KCTL=(kubectl --kubeconfig="$KUBECONFIG")
 
@@ -215,7 +215,7 @@ export E2E_VM_NAME="$VM_NAME"
 if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
 else
-  KUBECONFIG="$HOME/.lima/$VM_NAME/copied-from-guest/kubeconfig.yaml"
+  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$VM_NAME/copied-from-guest/kubeconfig.yaml"
 fi
 
 PLAYWRIGHT_TASK="e2e-playwright:run"

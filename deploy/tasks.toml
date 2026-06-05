@@ -8,7 +8,7 @@ run = '''
 if [ -n "${IS_SANDBOX:-}" ]; then
   echo "/etc/rancher/k3s/k3s.yaml"
 else
-  echo "$HOME/.lima/platform-k3s/copied-from-guest/kubeconfig.yaml"
+  echo "${LIMA_HOME:-$HOME/.lima}/platform-k3s/copied-from-guest/kubeconfig.yaml"
 fi
 '''
 
@@ -124,7 +124,7 @@ SHIM
   for _ in $(seq 1 60); do [ -f "$KUBECONFIG" ] && break; sleep 2; done
   for _ in $(seq 1 60); do kubectl --kubeconfig="$KUBECONFIG" get nodes -o name 2>/dev/null | grep -q . && break; sleep 2; done
 else
-  KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
+  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
   if ! limactl list -q 2>/dev/null | grep -qx "$LIMA_INSTANCE"; then
     echo "Creating k3s VM ($LIMA_INSTANCE)..."
     limactl create --name="$LIMA_INSTANCE" "$LIMA_TEMPLATE" --tty=false
@@ -494,7 +494,7 @@ if [ -n "${IS_SANDBOX:-}" ]; then
   sudo k3s ctr images import "$tar"
 else
   LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
-  KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
+  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
   limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
   limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
 fi
@@ -531,7 +531,7 @@ if [ -n "${IS_SANDBOX:-}" ]; then
   sudo k3s ctr images import "$tar"
 else
   LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
-  KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
+  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
   limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
   limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
 fi
@@ -568,7 +568,7 @@ if [ -n "${IS_SANDBOX:-}" ]; then
   sudo k3s ctr images import "$tar"
 else
   LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
-  KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
+  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
   limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
   limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
 fi
@@ -599,7 +599,7 @@ if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
 else
   LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
-  KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
+  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
 fi
 
 # Rebuild only the agents the cluster has deployed — their entries in the
@@ -683,7 +683,7 @@ if [ -n "${IS_SANDBOX:-}" ]; then
   sudo k3s ctr images import "$tar"
 else
   LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
-  KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
+  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
   limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
   limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
 fi
@@ -709,7 +709,7 @@ run = '''
 if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
 else
-  KUBECONFIG="$HOME/.lima/platform-k3s/copied-from-guest/kubeconfig.yaml"
+  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/platform-k3s/copied-from-guest/kubeconfig.yaml"
 fi
 exec kubectl --kubeconfig="$KUBECONFIG" "$@"
 '''
@@ -751,7 +751,7 @@ set -eo pipefail
 if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
 else
-  KUBECONFIG="$HOME/.lima/platform-k3s/copied-from-guest/kubeconfig.yaml"
+  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/platform-k3s/copied-from-guest/kubeconfig.yaml"
 fi
 KCTL=(kubectl --kubeconfig="$KUBECONFIG")
 
@@ -827,7 +827,7 @@ if [ -n "${IS_SANDBOX:-}" ]; then
   RUN_IN_VM="sudo"
 else
   LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
-  KUBECONFIG="$HOME/.lima/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
+  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
   RUN_IN_VM="limactl shell $LIMA_INSTANCE sudo"
 fi
 
@@ -873,7 +873,7 @@ set -eo pipefail
 if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
 else
-  KUBECONFIG="$HOME/.lima/platform-k3s/copied-from-guest/kubeconfig.yaml"
+  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/platform-k3s/copied-from-guest/kubeconfig.yaml"
 fi
 
 STATUS_CMD="
@@ -919,7 +919,7 @@ set -eo pipefail
 if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
 else
-  KUBECONFIG="$HOME/.lima/platform-k3s/copied-from-guest/kubeconfig.yaml"
+  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/platform-k3s/copied-from-guest/kubeconfig.yaml"
 fi
 kubectl --kubeconfig="$KUBECONFIG" logs -l app.kubernetes.io/component=apiserver --all-containers --tail=50
 '''
