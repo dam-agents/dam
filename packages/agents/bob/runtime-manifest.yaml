@@ -8,7 +8,7 @@ drivers:
 
   mcp-entry:
     impl: mcp-entry
-    path: "$HOME/.bob/settings.json"
+    path: "$HOME/.bob/mcp_settings.json"
     keyPath: mcpServers
 
   skill-ref:
