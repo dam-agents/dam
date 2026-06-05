@@ -18,8 +18,6 @@ drivers:
   mcp-entry:
     impl: mcp-entry
     path: "$HOME/.mcp.json"
-    format: json
-    mergeMode: key-targeted
     keyPath: mcpServers
 
   # `skill-ref` kind — installs into the shared .agents/skills tree;

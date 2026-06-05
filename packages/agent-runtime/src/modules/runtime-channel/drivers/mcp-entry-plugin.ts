@@ -1,12 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { z } from "zod";
-import type {
-  DriverBinding,
-  FileFormat,
-  KindHandler,
-  MergeMode,
-  Plugin,
-} from "agent-runtime-api";
+import type { DriverBinding, KindHandler, Plugin } from "agent-runtime-api";
 import { createFileOps, type FileDesired } from "../infrastructure/file-ops.js";
 import {
   createMcpEntryStateStore,
@@ -16,16 +10,11 @@ import {
 const IMPL_NAME = "mcp-entry";
 const DEFAULT_KEY_PATH = "mcpServers";
 
+// MCP config is always a JSON object merged under `keyPath` — format and merge
+// strategy are intrinsic to the kind, not per-binding knobs.
 const bindingSchema = z.object({
   impl: z.literal(IMPL_NAME),
   path: z.string().min(1),
-  format: z.enum(["yaml", "json", "text", "ini"]),
-  mergeMode: z.enum([
-    "overwrite",
-    "section-marker",
-    "key-targeted",
-    "yaml-fill-if-missing",
-  ]),
   keyPath: z.string().optional(),
 });
 
@@ -47,7 +36,7 @@ export function createMcpEntryPlugin(): Plugin {
           `plugin "${IMPL_NAME}" invalid binding: ${parsed.error.message}`,
         );
       }
-      const { path, format, mergeMode, keyPath } = parsed.data;
+      const { path, keyPath } = parsed.data;
       const effectiveKey = keyPath ?? DEFAULT_KEY_PATH;
       let stateStore: McpEntryStateStore | undefined;
 
@@ -83,16 +72,14 @@ export function createMcpEntryPlugin(): Plugin {
         const content: Record<string, unknown> = keyPath
           ? next
           : { [effectiveKey]: next };
-        ctx.log(
-          `writing → ${targetPath} (format=${format}, mergeMode=${mergeMode}, keyPath=${keyPath ?? "<root>"})`,
-        );
+        ctx.log(`writing → ${targetPath} (keyPath=${effectiveKey})`);
         const desired = new Map<string, FileDesired[]>([
           [
             targetPath,
             [
               {
-                format: format as FileFormat,
-                mergeMode: mergeMode as MergeMode,
+                format: "json",
+                mergeMode: "key-targeted",
                 content,
                 ...(keyPath ? { keyPath } : {}),
               },
