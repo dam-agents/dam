@@ -2,6 +2,8 @@ import { expect, test } from "@playwright/test";
 
 import { baseUrl } from "../config.js";
 import {
+  agentCardStatus,
+  gotoAgentDetail,
   sendMessageToAgent,
   setMockAgentReply,
   waitForAgentRunning,
@@ -20,8 +22,14 @@ test("exchange messages with the agent", async ({ page }) => {
   const agentId = await waitForAgentRunning(api, agentName);
   await setMockAgentReply(api, agentId, scriptedReply);
 
-  await test.step("open the agent chat", async () => {
-    await page.goto(`${baseUrl}/chat/${agentId}`);
+  await test.step("open the agent chat from the agent list", async () => {
+    await page.goto(baseUrl);
+    await expect(page.getByTestId("app-sidebar")).toBeVisible();
+
+    await expect(agentCardStatus(page, agentName, "Running")).toBeVisible();
+
+    await gotoAgentDetail(page, agentName, agentId);
+
     await expect(page.getByPlaceholder(/message agent/i)).toBeVisible();
   });
 

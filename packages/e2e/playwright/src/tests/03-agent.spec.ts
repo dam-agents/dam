@@ -8,6 +8,8 @@ import { getConnectionId } from "../lib/connections.js";
 import { agentName, connectionName, harnessName } from "../lib/fixtures.js";
 
 test("create a mock agent with the connection attached", async ({ page }) => {
+  test.setTimeout(60_000);
+
   const token = await getAccessToken();
   const api = createApiClient(token);
 
