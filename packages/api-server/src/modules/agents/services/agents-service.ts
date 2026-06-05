@@ -88,8 +88,7 @@ export function createAgentsService(deps: {
   cleanupHooks?: readonly AgentCleanupHook[];
   runtimeMutator: RuntimeMutator;
   contributionsSettled: ContributionsSettledPort;
-  /** Records the one-shot working-directory git seed at create time. Optional
-   *  so the system-agents composition (which never creates agents) can omit it. */
+  /** Records the one-shot working-dir git seed at create time (optional, like presetSeeder). */
   setWorkspaceRepo?: (agentId: string, sourceUrl: string) => Promise<void>;
   // --- Runtime / channels / allowed-users dependencies (formerly Instance) ---
   listChannelsByOwner: () => Promise<Map<string, ChannelConfig[]>>;

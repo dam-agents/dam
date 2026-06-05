@@ -26,9 +26,11 @@ export const agentCreateInputSchema = z
     secretRef: z.string().optional(),
     allowedUserEmails: z.array(z.email()).optional(),
     egressPreset: egressPresetSchema.optional(),
-    // Optional: clone this public git repo into the working directory once,
-    // shortly after first start (delivered as a `workspace-git` contribution).
-    // The UI picks it from the `gitRepos` catalog; raw URL pass-through.
+    // Optional: clone this public repo into the working dir once, after first
+    // start (a `workspace-git` contribution). The UI picks from the `gitRepos`
+    // catalog; the catalog isn't enforced server-side, but the clone runs in
+    // the egress-gated agent pod, so no URL reachable here that the agent
+    // couldn't already reach itself.
     gitRepo: z.url().optional(),
   })
   .refine((d) => d.templateId !== undefined || d.image !== undefined, {

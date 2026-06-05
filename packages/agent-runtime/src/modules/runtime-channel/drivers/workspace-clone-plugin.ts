@@ -9,6 +9,7 @@ import type {
   SkillsDomainError,
 } from "agent-runtime-api";
 import { createGitProtocolClient } from "../../skills/infrastructure/git-protocol-client.js";
+import { expandHome } from "./expand-home.js";
 
 const IMPL_NAME = "workspace-clone";
 const DEFAULT_TARGET = "$HOME/work";
@@ -18,22 +19,15 @@ const bindingSchema = z.object({
   target: z.string().min(1).optional(),
 });
 
-/** Clones `url` into `dest` (shallow). Injectable for tests; defaults to the
- *  same `GitProtocolClient` the skills installer uses (proxy + CA aware). */
+/** Clone fn, injectable for tests; defaults to GitProtocolClient (proxy + CA aware). */
 export type CloneFn = (
   url: string,
   dest: string,
 ) => Promise<Result<void, SkillsDomainError>>;
 
-/**
- * Driver for the one-shot `workspace-git` contribution: clone a public repo into
- * the agent's working directory, once. Idempotent and dirty-safe:
- *   - `<target>/.git` exists      → already seeded, skip (the re-apply path).
- *   - target non-empty, no `.git` → throw; never clone into a dirty directory.
- *   - target empty / missing      → `git clone` straight in (a real repo, .git).
- * Bound before `skill-ref` in runtime-manifest.yaml so the workspace exists
- * before skills (or anything else) layer onto it.
- */
+/** Driver for the one-shot `workspace-git` contribution (see its schema for the
+ *  skip/throw/clone contract). Bound before `skill-ref` in runtime-manifest.yaml
+ *  so the workspace exists before anything layers onto it. */
 export function createWorkspaceClonePlugin(
   deps: { clone?: CloneFn } = {},
 ): Plugin {
@@ -58,15 +52,9 @@ export function createWorkspaceClonePlugin(
       const configuredTarget = parsed.data.target ?? DEFAULT_TARGET;
 
       return async (contributions, ctx) => {
-        const seeds = contributions.filter((c) => c.kind === "workspace-git");
-        if (seeds.length === 0) return;
-        if (seeds.length > 1) {
-          ctx.log(
-            `${seeds.length} workspace-git contributions — seeding from the first, ignoring the rest`,
-          );
-        }
-        const seed = seeds[0];
-        if (seed.kind !== "workspace-git") return; // narrow for TS
+        // The producer emits at most one (PK on agent_id); take the first.
+        const seed = contributions.find((c) => c.kind === "workspace-git");
+        if (seed?.kind !== "workspace-git") return;
 
         const target = resolve(expandHome(configuredTarget, ctx.agentHome));
 
@@ -93,10 +81,6 @@ export function createWorkspaceClonePlugin(
       };
     },
   };
-}
-
-function expandHome(path: string, agentHome: string): string {
-  return path.replace(/\$HOME\b/g, agentHome).replace(/\$\{HOME\}/g, agentHome);
 }
 
 export const WORKSPACE_CLONE_PLUGIN_NAME = IMPL_NAME;

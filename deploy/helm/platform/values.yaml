@@ -765,12 +765,17 @@ skills:
 # api-server at boot. Each entry maps to the harness template names it's
 # compatible with; the Add Agent dialog filters by the chosen harness (an entry
 # with no `compatibleTemplates` is offered for no harness). Public repos only.
-gitRepos: []
-  # - id: google-workspace
-  #   name: Google Workspace
-  #   url: https://github.com/dam-agents/google-workspace.git
-  #   description: "Tools and skills for working with Google Workspace"
-  #   compatibleTemplates: [claude-code]
+gitRepos:
+  - id: google-workspace
+    name: Google Workspace
+    url: https://github.com/dam-agents/google-workspace.git
+    description: "Tools and skills for working with Google Workspace"
+    compatibleTemplates: [claude-code]
+  - id: spotify-dj
+    name: Spotify DJ
+    url: https://github.com/dam-agents/spotify-dj.git
+    description: "Build sets, run playback, curate playlists, and discover music on Spotify"
+    compatibleTemplates: [claude-code]
 
 # -- Opt-in in-cluster NFS server + external provisioner. Provides an RWX
 # StorageClass for dev clusters whose default provisioner is RWO-only.

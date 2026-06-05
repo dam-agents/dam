@@ -100,7 +100,6 @@ export function AddAgentDialog({
   // expose both numbers and they reconcile.
   const [importDropped, setImportDropped] = useState(0);
   const [dropActive, setDropActive] = useState(false);
-  // Working-directory seed: "" (none) | "local" | a catalog repo URL.
   const [initSource, setInitSource] = useState<string>(INIT_NONE);
 
   // Switching the seed away from local drops any staged upload so it can't

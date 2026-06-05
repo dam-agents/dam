@@ -1,12 +1,5 @@
-{{/*
-Curated public-repo catalog (`gitRepos`). A single ConfigMap in the RELEASE
-namespace with one `git-repos.yaml` data key holding the `.Values.gitRepos`
-list. Mounted into the api-server pod (see apiserver/app.yaml) and loaded once
-at boot — same pattern as agent-templates (ADR-058).
-
-Each entry seeds an agent's working directory once, via the `workspace-git`
-contribution; the platform never tracks the repo afterward. Public repos only.
-*/}}
+{{/* Renders `.Values.gitRepos` into a ConfigMap the api-server loads at boot
+     (see values.yaml for semantics; apiserver/app.yaml for the mount). */}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
