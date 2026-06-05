@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, rmSync, statSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import type {
@@ -10,6 +10,10 @@ import type {
   Result,
   SkillsDomainError,
 } from "agent-runtime-api";
+import {
+  createSkillInstallStateStore,
+  type SkillInstallStateStore,
+} from "../infrastructure/skill-install-state-store.js";
 
 const IMPL_NAME = "skill-install";
 
@@ -41,13 +45,18 @@ export function createSkillInstallPlugin(deps: {
         );
       }
       const configuredPaths = parsed.data.paths;
+      // State lives in this plugin's own dir (ctx.pluginStateDir), known only
+      // at dispatch; created once and reused across dispatches.
+      let stateStore: SkillInstallStateStore | undefined;
 
       return async (contributions, ctx) => {
+        stateStore ??= createSkillInstallStateStore(ctx.pluginStateDir);
         const skillPaths = configuredPaths.map((p) =>
           expandHome(p, ctx.agentHome),
         );
         const resolvedPaths = skillPaths.map((p) => resolve(p));
         const skillRefs = contributions.filter((c) => c.kind === "skill-ref");
+        const managed = new Set(stateStore.getInstalled());
         ctx.log(
           `wanted (${skillRefs.length}): ${
             skillRefs.length === 0
@@ -57,12 +66,16 @@ export function createSkillInstallPlugin(deps: {
                     c.kind === "skill-ref" ? `${c.name}@${c.version}` : "",
                   )
                   .join(", ")
-          }; targets: ${resolvedPaths.join(", ") || "<none>"}`,
+          }; targets: ${resolvedPaths.join(", ") || "<none>"}; managed: ${
+            [...managed].join(", ") || "<none>"
+          }`,
         );
-        const wantedDirs = new Set<string>();
 
+        const desired = new Set<string>();
+        const installed = new Set<string>();
         for (const c of contributions) {
           if (c.kind !== "skill-ref") continue;
+          desired.add(c.name);
           const installInput: SkillInstallInput = {
             sourceUrl: c.sourceUrl,
             name: c.name,
@@ -80,39 +93,35 @@ export function createSkillInstallPlugin(deps: {
             continue;
           }
           ctx.log(`${c.name}@${c.version}: install ok`);
-          for (const root of resolvedPaths) {
-            wantedDirs.add(join(root, c.name));
-          }
+          installed.add(c.name);
         }
 
+        // Only remove skills this driver installed before that are no longer
+        // desired. Seeded skills (platform-base) and standalone skills authored
+        // on disk are never in `managed`, so the sweep leaves them untouched.
+        const toRemove = [...managed].filter((name) => !desired.has(name));
         for (const root of resolvedPaths) {
-          if (!existsSync(root)) {
-            ctx.log(`root missing, nothing to sweep: ${root}`);
-            continue;
-          }
-          let kept = 0;
-          let removed = 0;
-          for (const entry of readdirSync(root)) {
-            const p = join(root, entry);
-            try {
-              if (!statSync(p).isDirectory()) continue;
-            } catch {
-              continue;
-            }
-            if (wantedDirs.has(p)) {
-              kept++;
-              continue;
-            }
+          for (const name of toRemove) {
+            const p = join(root, name);
+            if (!existsSync(p)) continue;
             try {
               rmSync(p, { recursive: true, force: true });
               ctx.log(`removed ${p}`);
-              removed++;
             } catch (err) {
               ctx.log(`failed to remove ${p}: ${(err as Error).message}`);
             }
           }
-          ctx.log(`sweep ${root}: kept=${kept} removed=${removed}`);
         }
+
+        const nextManaged = [...desired].filter(
+          (name) => managed.has(name) || installed.has(name),
+        );
+        stateStore.setInstalled(nextManaged);
+        ctx.log(
+          `managed now (${nextManaged.length}): ${
+            nextManaged.join(", ") || "<none>"
+          }; removed ${toRemove.length}`,
+        );
       };
     },
   };
