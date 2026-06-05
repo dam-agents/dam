@@ -35,7 +35,7 @@ export function useRestartAgent() {
  * "Restarting" pill so stuck/resolved entries age out correctly.
  */
 export function useSyncRestartingAgents() {
-  const { data } = useAgents();
+  const { data, dataUpdatedAt } = useAgents();
   const setRestartingAgents = useStore((s) => s.setRestartingAgents);
 
   useEffect(() => {
@@ -43,5 +43,5 @@ export function useSyncRestartingAgents() {
     const current = useStore.getState().restartingAgents;
     const next = transitionRestartingAgents(current, data.list);
     if (next !== current) setRestartingAgents(next);
-  }, [data, setRestartingAgents]);
+  }, [data, dataUpdatedAt, setRestartingAgents]);
 }
