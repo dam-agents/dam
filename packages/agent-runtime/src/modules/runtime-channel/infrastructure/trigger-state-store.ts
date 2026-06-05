@@ -1,5 +1,6 @@
+import { join } from "node:path";
 import { z } from "zod";
-import type { DocumentStoreBackend } from "../../../core/document-store.js";
+import { openJsonFile } from "../../../core/document-store.js";
 
 const triggerStateSchema = z.object({
   scheduleSessions: z.record(z.string(), z.string()).catch({}).default({}),
@@ -13,10 +14,8 @@ export interface TriggerStateStore {
   clearSessionForSchedule(scheduleId: string): void;
 }
 
-export function createTriggerStateStore(
-  backend: DocumentStoreBackend,
-): TriggerStateStore {
-  const store = backend.open("trigger-state", {
+export function createTriggerStateStore(stateDir: string): TriggerStateStore {
+  const store = openJsonFile(join(stateDir, "trigger-state.json"), {
     schema: triggerStateSchema,
     initial: () => ({ scheduleSessions: {} }),
   });

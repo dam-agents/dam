@@ -35,7 +35,7 @@ export function createFileDocumentStoreBackend(
 /** A missing, unreadable, or schema-rejected file yields `initial`, never throws. */
 export function openJsonFile<T>(
   path: string,
-  { schema, initial }: { schema: ZodType<T>; initial: () => T },
+  { schema, initial }: { schema: ZodType<T>; initial: () => NoInfer<T> },
 ): DocumentStore<T> {
   let cache: T;
   let loaded = false;

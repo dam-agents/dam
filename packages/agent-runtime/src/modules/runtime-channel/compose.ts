@@ -43,7 +43,9 @@ export async function composeRuntimeChannel(
   const manifest = loadManifest(opts.manifestPath);
 
   const stateStore = createStateStore(opts.stateBackend);
-  const triggerStateStore = createTriggerStateStore(opts.stateBackend);
+  const triggerStateStore = createTriggerStateStore(
+    join(opts.agentHome, ".platform", "trigger"),
+  );
 
   const registry = createPluginRegistry();
   for (const plugin of opts.plugins) registry.register(plugin);
