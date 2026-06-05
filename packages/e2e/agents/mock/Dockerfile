@@ -20,7 +20,7 @@ COPY packages/dev-config/ packages/dev-config/
 COPY packages/e2e/agents/mock-api/ packages/e2e/agents/mock-api/
 COPY packages/e2e/agents/mock/ packages/e2e/agents/mock/
 
-RUN pnpm --filter mock-agent build
+RUN pnpm --filter mock-agent exec tsup
 
 FROM ${BASE_IMAGE}
 

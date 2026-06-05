@@ -43,7 +43,7 @@ COPY packages/agent-runtime-api/ packages/agent-runtime-api/
 COPY packages/api-server-api/ packages/api-server-api/
 COPY packages/agent-runtime/ packages/agent-runtime/
 
-RUN pnpm --filter agent-runtime build
+RUN pnpm --filter agent-runtime exec tsup
 
 # Materialize a flat, prod-only runtime tree for agent-runtime. The contract
 # packages (agent-runtime-api, api-server-api) are inlined into dist by tsup

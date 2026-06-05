@@ -3,14 +3,6 @@
   "version": "1.0.0",
   "type": "module",
   "private": true,
-  "scripts": {
-    "dev": "vite",
-    "typecheck": "tsc --noEmit",
-    "build:jar": "keycloakify update-kc-gen && tsc --noEmit && vite build && keycloakify build",
-    "start-keycloak": "keycloakify start-keycloak -p ./",
-    "eject-page": "keycloakify eject-page",
-    "update-kc-gen": "keycloakify update-kc-gen"
-  },
   "dependencies": {
     "@ibm/plex": "^6.4.1",
     "class-variance-authority": "^0.7.1",

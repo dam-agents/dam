@@ -20,7 +20,7 @@ COPY packages/api-server-api/ packages/api-server-api/
 COPY packages/agent-runtime-api/ packages/agent-runtime-api/
 COPY packages/ui/ packages/ui/
 
-RUN pnpm --filter platform-ui build
+RUN pnpm --filter platform-ui exec sh -c 'tsc && vite build'
 
 FROM registry.access.redhat.com/hi/nginx:1.30 AS runner
 

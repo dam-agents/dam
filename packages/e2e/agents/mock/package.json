@@ -3,11 +3,6 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "scripts": {
-    "typecheck": "tsc --noEmit",
-    "build": "tsup",
-    "start": "node dist/main.js"
-  },
   "dependencies": {
     "@trpc/server": "^11.16.0",
     "zod": "^4.4.3"

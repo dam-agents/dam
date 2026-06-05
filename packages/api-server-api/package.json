@@ -9,9 +9,6 @@
     "./router": "./src/router.ts",
     "./harness-router": "./src/harness-router.ts"
   },
-  "scripts": {
-    "typecheck": "tsc --noEmit"
-  },
   "dependencies": {
     "@trpc/server": "^11.16.0",
     "agent-runtime-api": "workspace:*",

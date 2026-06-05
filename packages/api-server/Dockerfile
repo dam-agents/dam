@@ -24,7 +24,7 @@ COPY packages/e2e/agents/mock-api/ packages/e2e/agents/mock-api/
 COPY packages/api-server/ packages/api-server/
 COPY packages/db/ packages/db/
 
-RUN pnpm --filter api-server build \
+RUN pnpm --filter api-server exec tsup \
     && pnpm --filter api-server --prod --legacy deploy /prod
 
 FROM registry.access.redhat.com/hi/nodejs:24 AS runner

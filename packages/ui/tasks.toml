@@ -43,7 +43,12 @@ run = 'pnpm --filter platform-ui exec vitest run'
 
 ["ui:run"]
 dir = "{{config_root}}"
-run = "pnpm ui"
+run = "pnpm --filter platform-ui exec vite"
+
+["ui:preview"]
+dir = "{{config_root}}/packages/ui"
+depends = ["common:setup:pnpm"]
+run = "pnpm exec vite preview"
 
 ["ui:image"]
 dir = "{{config_root}}"

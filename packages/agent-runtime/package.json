@@ -3,13 +3,6 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "scripts": {
-    "dev": "tsx watch --env-file=.env src/server.ts",
-    "typecheck": "tsc --noEmit",
-    "build": "tsup",
-    "start": "node dist/server.js",
-    "test": "vitest run"
-  },
   "dependencies": {
     "@agentclientprotocol/claude-agent-acp": "^0.33.1",
     "@lydell/node-pty": "1.1.0",

@@ -24,13 +24,6 @@
     "LICENSE",
     "README.md"
   ],
-  "scripts": {
-    "dev": "tsx watch src/bin.ts",
-    "typecheck": "tsc --noEmit",
-    "build": "tsup",
-    "test": "vitest run",
-    "prepack": "pnpm build"
-  },
   "devDependencies": {
     "@agentclientprotocol/sdk": "^0.17.1",
     "@clack/prompts": "1.3.0",

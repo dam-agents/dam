@@ -27,7 +27,10 @@ run = '''
 set -eo pipefail
 export XDG_CACHE_HOME="$PWD/node_modules/.cache"
 export KEYCLOAKIFY_USE_DEFAULT_MAVEN_REPO=true
-pnpm run build:jar
+pnpm exec keycloakify update-kc-gen
+pnpm exec tsc --noEmit
+pnpm exec vite build
+pnpm exec keycloakify build
 '''
 
 ["keycloak-theme:run"]

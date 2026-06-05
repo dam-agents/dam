@@ -2,13 +2,6 @@
   "name": "platform-ui",
   "version": "1.0.0",
   "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "typecheck": "tsc --noEmit",
-    "build": "tsc && vite build",
-    "preview": "vite preview",
-    "test": "vitest run"
-  },
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.17.1",
     "@carbon/icons-react": "^11.80.0",

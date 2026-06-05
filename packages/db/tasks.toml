@@ -31,3 +31,13 @@ run = "pnpm exec eslint --fix ."
 dir = "{{config_root}}/packages/db"
 depends = ["common:setup:pnpm"]
 run = "pnpm exec prettier --write 'src/**/*.ts'"
+
+["db:generate"]
+dir = "{{config_root}}/packages/db"
+depends = ["common:setup:pnpm"]
+run = "pnpm exec drizzle-kit generate"
+
+["db:migrate"]
+dir = "{{config_root}}/packages/db"
+depends = ["common:setup:pnpm"]
+run = "pnpm exec drizzle-kit migrate"

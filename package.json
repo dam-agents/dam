@@ -3,17 +3,6 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.33.4+sha512.1c67b3b359b2d408119ba1ed289f34b8fc3c6873412bec6fd264fbdc82489e510fcbecb9ce9d22dae7f3b76269d8441046014bdca53b9979cd7a561ad631b800",
-  "scripts": {
-    "dev": "pnpm --filter agent-runtime dev",
-    "start": "pnpm --filter agent-runtime start",
-    "ui": "pnpm --filter platform-ui dev",
-    "api-server": "pnpm --filter api-server dev",
-    "typecheck": "pnpm -r --parallel run typecheck",
-    "docker:platform-base:build": "docker build -f packages/platform-base/Dockerfile -t platform-base .",
-    "docker:platform-base:start": "docker rm -f platform-base 2>/dev/null; docker run --name platform-base -p 8080:8080 platform-base",
-    "docker:claude-code:build": "pnpm docker:platform-base:build && docker build -t platform-claude-code packages/agents/claude-code",
-    "docker:claude-code:start": "docker rm -f platform-claude-code 2>/dev/null; docker run --name platform-claude-code -p 3000:3000 platform-claude-code"
-  },
   "pnpm": {
     "packageExtensions": {
       "@hookform/resolvers": {

@@ -40,3 +40,9 @@ run = "pnpm exec prettier --write 'src/**/*.ts'"
 description = "Run agent-runtime unit tests"
 dir = "{{config_root}}"
 run = 'pnpm --filter agent-runtime exec vitest run'
+
+["agent-runtime:dev"]
+description = "Run agent-runtime in watch mode (tsx, loads .env)"
+dir = "{{config_root}}/packages/agent-runtime"
+depends = ["common:setup:pnpm"]
+run = "pnpm exec tsx watch --env-file=.env src/server.ts"

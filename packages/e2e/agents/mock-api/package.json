@@ -12,9 +12,6 @@
     "@trpc/server": "^11.16.0",
     "zod": "^4.4.3"
   },
-  "scripts": {
-    "typecheck": "tsc --noEmit"
-  },
   "devDependencies": {
     "dev-config": "workspace:*",
     "typescript": "^6.0.2"
