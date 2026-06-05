@@ -3,6 +3,7 @@ import { Command } from "commander";
 import type { TokenProvider } from "../../auth/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import { createAgentResolver, type AgentService } from "../../agent/index.js";
+import type { EgressService } from "../../egress/index.js";
 import {
   exitCodeForResolveError,
   printResolveError,
@@ -24,15 +25,20 @@ import {
   editorLaunchArgs,
   ensureManagedSshHost,
 } from "../infrastructure/launch.js";
+import {
+  ensureEditorEgress,
+  VSCODE_REMOTE_HOSTS,
+} from "../infrastructure/editor-egress.js";
 
 export interface SshDeps {
   tokenProvider: TokenProvider;
   configService: ConfigService;
   compatService: CompatService;
   createAgentService: (host: string) => AgentService;
+  createEgressService: (host: string) => EgressService;
 }
 
-const MODES = ["ssh", "code", "zed", "jetbrains"] as const;
+const MODES = ["ssh", "code", "zed"] as const;
 type LaunchMode = (typeof MODES)[number];
 const MODES_PATTERN = MODES.join("|");
 const FORCED_EXEC_RE = new RegExp(`^(.+):(${MODES_PATTERN})$`);
@@ -40,21 +46,6 @@ const MODE_BINS: Record<LaunchMode, readonly string[]> = {
   ssh: ["ssh"],
   code: ["code", "code-insiders"],
   zed: ["zed"],
-  jetbrains: [
-    "gateway",
-    "pycharm",
-    "idea",
-    "goland",
-    "webstorm",
-    "phpstorm",
-    "clion",
-    "rubymine",
-    "rider",
-    "datagrip",
-    "rustrover",
-    "dataspell",
-    "aqua",
-  ],
 };
 
 export function inferMode(base: string): LaunchMode | undefined {
@@ -74,7 +65,7 @@ export function buildSshCommand(deps: SshDeps): Command {
     .argument("<agent>", "agent name or ID")
     .option(
       "-x, --exec <bin[:mode]>",
-      `client to launch: executable name or path, optionally suffixed with ":${MODES_PATTERN}" to force how it's invoked; the mode is otherwise inferred from the name (e.g. code-insiders → code, pycharm → jetbrains)`,
+      `client to launch: executable name or path, optionally suffixed with ":${MODES_PATTERN}" to force how it's invoked; the mode is otherwise inferred from the name`,
     )
     .option("--server <url>", "override the configured server URL")
     .action(
@@ -100,7 +91,7 @@ export function buildSshCommand(deps: SshDeps): Command {
 
         const host = await resolveSshHost(deps, opts.server);
         const paths = sshPaths();
-        await Promise.all([
+        const [agent] = await Promise.all([
           resolveAgent(deps, host, agentRef), // early "not found" before handoff
           orExit(ensureKeyPair(paths), (e) => e.message),
         ]);
@@ -112,6 +103,18 @@ export function buildSshCommand(deps: SshDeps): Command {
             buildSshArgs({ agentRef, serverFlag: opts.server, paths }),
             label,
           );
+
+        // VS Code Remote-SSH downloads its in-pod server from a couple of
+        // Microsoft hosts; pre-allow them so the agent's network gate doesn't
+        // pop an approval prompt in the web UI mid-connect. Best-effort.
+        if (mode === "code")
+          await ensureEditorEgress({
+            egress: deps.createEgressService(host),
+            agentId: agent.id,
+            hosts: VSCODE_REMOTE_HOSTS,
+            note: (m) => process.stderr.write(`dam ssh: ${m}\n`),
+          });
+
         const alias = await ensureManagedSshHost({
           agentRef,
           serverFlag: opts.server,
@@ -185,8 +188,7 @@ export function buildSshCommand(deps: SshDeps): Command {
           `Configured SSH host "${alias}" for agent "${agent.name}". Connect with:\n` +
             `  ssh ${alias}\n` +
             `  code ${editorLaunchArgs("code", alias).join(" ")}\n` +
-            `  zed ${editorLaunchArgs("zed", alias).join(" ")}\n` +
-            `  gateway ${editorLaunchArgs("jetbrains", alias).join(" ")}\n`,
+            `  zed ${editorLaunchArgs("zed", alias).join(" ")}\n`,
         );
         process.exit(0);
       },

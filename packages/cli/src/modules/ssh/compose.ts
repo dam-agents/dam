@@ -2,6 +2,7 @@ import { Command } from "commander";
 import type { TokenProvider } from "../auth/index.js";
 import type { CompatService, ConfigService } from "../cli/index.js";
 import type { AgentService } from "../agent/index.js";
+import type { EgressService } from "../egress/index.js";
 import { buildSshCommand } from "./commands/ssh.js";
 
 export interface SshModuleOptions {
@@ -9,6 +10,7 @@ export interface SshModuleOptions {
   configService: ConfigService;
   compatService: CompatService;
   createAgentService: (host: string) => AgentService;
+  createEgressService: (host: string) => EgressService;
 }
 
 /** Wires `dam ssh` and its subcommands (`connect`, `configure`, hidden

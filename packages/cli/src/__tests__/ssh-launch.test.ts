@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   buildSshArgs,
   ensureManagedSshHost,
-  gatewayConnectUrl,
 } from "../modules/ssh/infrastructure/launch.js";
 import { inferMode } from "../modules/ssh/commands/ssh.js";
 import { sshPaths } from "../modules/ssh/infrastructure/ssh-keys.js";
@@ -20,40 +19,11 @@ describe("inferMode", () => {
     expect(inferMode("zed")).toBe("zed");
   });
 
-  it("maps the gateway launcher and per-IDE JetBrains launchers to jetbrains", () => {
-    for (const bin of [
-      "gateway",
-      "pycharm",
-      "idea",
-      "goland",
-      "webstorm",
-      "clion",
-      "rider",
-      "datagrip",
-    ])
-      expect(inferMode(bin)).toBe("jetbrains");
-  });
-
   it("matches exactly, not by substring", () => {
     // "barcode" contains "code" but is not a known launcher.
     expect(inferMode("barcode")).toBeUndefined();
     expect(inferMode("zediot")).toBeUndefined();
     expect(inferMode("vim")).toBeUndefined();
-  });
-});
-
-describe("gatewayConnectUrl", () => {
-  it("builds an ssh connect link bound to the managed alias and remote workdir", () => {
-    const url = gatewayConnectUrl("dam-my-agent");
-    expect(url.startsWith("jetbrains-gateway://connect#")).toBe(true);
-    const params = new URLSearchParams(url.split("#")[1]);
-    expect(params.get("type")).toBe("ssh");
-    expect(params.get("host")).toBe("dam-my-agent");
-    expect(params.get("user")).toBe("agent");
-    expect(params.get("port")).toBe("22");
-    // projectPath is the agent workspace, percent-encoded in the link.
-    expect(params.get("projectPath")).toBe("/home/agent/work");
-    expect(url).toContain("projectPath=%2Fhome%2Fagent%2Fwork");
   });
 });
 

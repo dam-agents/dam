@@ -37,12 +37,12 @@ bytes.**
   `ProxyCommand`: it opens the WebSocket and shovels raw bytes between it and stdin/stdout.
   `dam ssh connect <agent>` launches the system `ssh` configured to use that proxy;
   `dam ssh connect -x code <agent>` launches `code` with a Remote-SSH target backed by the
-  same proxy, and `-x zed` / `-x pycharm` do the same for Zed and JetBrains (the latter via
-  a Gateway remote-dev link, opening a JetBrains IDE such as PyCharm). A single `-x`/`--exec`
-  flag picks the client binary, with an optional `:<mode>` suffix (`ssh`|`code`|`zed`|`jetbrains`)
-  forcing how it's invoked when the name isn't self-describing (e.g. `-x code-insiders`,
-  `-x my-gateway:jetbrains`). `dam ssh configure (<agent> | --all)` writes the managed host
-  config (one block, or one per agent) and exits without launching a client.
+  same proxy, and `-x zed` does the same for Zed. A single `-x`/`--exec` flag picks the
+  client binary, with an optional `:<mode>` suffix (`ssh`|`code`|`zed`) forcing how it's
+  invoked when the name isn't self-describing (e.g. `-x code-insiders`). `dam ssh configure
+  (<agent> | --all)` writes the managed host config (one block, or one per agent) and exits
+  without launching a client. (Editor support beyond VS Code and Zed — e.g. JetBrains
+  Gateway — is out of scope for the MVP.)
 - **Auth.** Public-key. The CLI keeps a dam-managed keypair under the XDG state dir and,
   on each `_proxy` connect, registers the public key with the agent via a new
   `ssh.authorizeKey` tRPC mutation (proxied through the existing `/api/agents/:id/trpc`

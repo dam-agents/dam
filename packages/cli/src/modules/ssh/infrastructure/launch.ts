@@ -6,19 +6,8 @@ import type { SshPaths } from "./ssh-keys.js";
 export const REMOTE_WORK_DIR = "/home/agent/work";
 const REMOTE_USER = "agent";
 
-export function gatewayConnectUrl(alias: string): string {
-  const params = new URLSearchParams({
-    type: "ssh",
-    host: alias,
-    user: REMOTE_USER,
-    port: "22",
-    projectPath: REMOTE_WORK_DIR,
-  });
-  return `jetbrains-gateway://connect#${params.toString()}`;
-}
-
 export function editorLaunchArgs(
-  mode: "code" | "zed" | "jetbrains",
+  mode: "code" | "zed",
   alias: string,
 ): string[] {
   switch (mode) {
@@ -26,8 +15,6 @@ export function editorLaunchArgs(
       return ["--remote", `ssh-remote+${alias}`, REMOTE_WORK_DIR];
     case "zed":
       return [`ssh://${REMOTE_USER}@${alias}${REMOTE_WORK_DIR}`];
-    case "jetbrains":
-      return [gatewayConnectUrl(alias)];
   }
 }
 

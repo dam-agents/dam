@@ -98,6 +98,7 @@ export function compose(opts: ComposeOptions = {}): Command {
     configService: cli.services.configService,
     compatService: cli.services.compatService,
     createAgentService: agent.exports.createService,
+    createEgressService: egress.exports.createService,
   });
 
   const program = new Command();
