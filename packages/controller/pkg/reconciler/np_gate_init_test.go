@@ -69,14 +69,20 @@ func TestBuildNPGateInitContainer_ProbeShape(t *testing.T) {
 	assert.Equal(t, "/bin/sh", ic.Command[0])
 	script := ic.Command[2]
 
-	// Probe shape: curl connect-test against kube-apiserver (must be DROPped)
-	// and the gateway (must be reachable), read from %{time_connect}. Both
+	// Probe shape: the denied target (kube-apiserver) is a handshake test read
+	// from %{time_connect} — it must be DROPped. The allowed target (gateway)
+	// is an HTTP 200 from the platform health path read from %{http_code} —
+	// that route is answered by the health_check filter before ext_authz, so
+	// the probe never creates a HITL hold for the gateway IP (#675). Both
 	// conditions must hold before exit 0; fail-closed on the deadline.
 	assert.Contains(t, script, `--connect-timeout 2`)
-	assert.Contains(t, script, `%{time_connect}`)
-	assert.Contains(t, script, `connected "${KUBERNETES_SERVICE_HOST}" "${KUBERNETES_SERVICE_PORT}"`,
+	assert.Contains(t, script, `%{time_connect}`, "denied target uses TCP-handshake timing")
+	assert.Contains(t, script, `%{http_code}`, "allowed target asserts a 200 from the health endpoint")
+	assert.Contains(t, script, `reachable "${KUBERNETES_SERVICE_HOST}" "${KUBERNETES_SERVICE_PORT}"`,
 		"negative probe against kube-apiserver (kubelet-injected env)")
-	assert.Contains(t, script, `connected "${GATEWAY_IP}" "${ENVOY_PORT}"`, "positive probe against the paired gateway")
+	assert.Contains(t, script, `gateway_ready`, "positive probe is the gateway health check")
+	assert.Contains(t, script, `${HEALTH_PATH}`, "gateway probe targets the namespaced health path, not /")
+	assert.Contains(t, script, `[ "$code" = "200" ]`, "gateway probe requires a 200, not just a connect")
 	assert.Contains(t, script, "exit 1", "fail-closed on timeout — NP didn't converge")
 	assert.Contains(t, script, "exit 0", "release the workload when both probes match expectation")
 
@@ -87,6 +93,9 @@ func TestBuildNPGateInitContainer_ProbeShape(t *testing.T) {
 	assert.Equal(t, "10.96.42.42", envMap["GATEWAY_IP"])
 	assert.Equal(t, "30", envMap["TIMEOUT_SECONDS"])
 	assert.NotEmpty(t, envMap["ENVOY_PORT"])
+	// The probe path is plumbed from the controller and must match the path
+	// the gateway's health_check filter answers (envoy.go).
+	assert.Equal(t, platformGatewayHealthPath, envMap["HEALTH_PATH"])
 	// kube-apiserver isn't plumbed via our env block — kubelet does it.
 	_, kubeHostSet := envMap["KUBERNETES_SERVICE_HOST"]
 	_, kubePortSet := envMap["KUBERNETES_SERVICE_PORT"]

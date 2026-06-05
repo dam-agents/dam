@@ -510,6 +510,10 @@ func hostShort(host string) string {
 //   - Admin interface intentionally omitted; the gateway pod's NetworkPolicy
 //      additionally admits ingress only from its paired agent pod.
 
+// Gateway liveness path the health_check filter answers locally before
+// ext_authz, so the np-gate probe doesn't trip the egress gate (#675).
+const platformGatewayHealthPath = "/__platform_healthz"
+
 const envoyBootstrapTmpl = `node:
   id: platform-credential-injector
   cluster: platform-credential-injector
@@ -531,6 +535,15 @@ static_resources:
                 upgrade_configs:
                   - upgrade_type: CONNECT
                 http_filters:
+                  # np-gate liveness probe (#675): answered locally before
+                  # ext_authz; pass_through_mode:false so it never forwards.
+                  - name: envoy.filters.http.health_check
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.health_check.v3.HealthCheck
+                      pass_through_mode: false
+                      headers:
+                        - name: ":path"
+                          string_match: { exact: "{{ $.HealthPath }}" }
                   # Gate plain-HTTP egress (ADR-035). The
                   # CONNECT route disables this via per-route config — TLS
                   # tunnels are gated downstream (per-host L7 chain or
@@ -1055,6 +1068,7 @@ func renderEnvoyBootstrap(extAuthzInstanceID string, cfg *config.Config, chains 
 		HarnessAuthority       string
 		HarnessHost            string
 		HarnessPort            int
+		HealthPath             string
 		ExtAuthzHost           string
 		ExtAuthzPort           int
 		ExtAuthzHoldSeconds    int
@@ -1067,6 +1081,7 @@ func renderEnvoyBootstrap(extAuthzInstanceID string, cfg *config.Config, chains 
 		CredentialSDSName:      envoyCredentialSDSName,
 		LeafTLSDir:             envoyLeafTLSMount,
 		HarnessAuthority:       harnessAuthority,
+		HealthPath:             platformGatewayHealthPath,
 		HarnessHost:            cfg.HarnessHost(),
 		HarnessPort:            cfg.HarnessServerPort,
 		ExtAuthzHost:           cfg.ExtAuthzHostFor(extAuthzInstanceID),
@@ -1157,7 +1172,7 @@ func ptrBool(b bool) *bool { return &b }
 // kubelet keeps the old bootstrap mounted.
 //
 // Bump on any template change that affects pod-visible behavior.
-const envoyBootstrapTemplateRev = "v10-url-encode-cred"
+const envoyBootstrapTemplateRev = "v11-gateway-health-probe"
 
 // envoySecretsRev digests the Secret set that drives Envoy's chain
 // rendering. Includes `injection-hosts` JSON so a descriptor change
