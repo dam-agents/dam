@@ -102,9 +102,9 @@ describe("ensureEditorEgress", () => {
     });
     expect(created.map((r) => r.host)).toEqual([...VSCODE_REMOTE_HOSTS]);
     // Every seeded rule is L4 (host-only), so it applies without a pod roll.
-    expect(created.every((r) => r.method === "*" && r.pathPattern === "*")).toBe(
-      true,
-    );
+    expect(
+      created.every((r) => r.method === "*" && r.pathPattern === "*"),
+    ).toBe(true);
     expect(created.every((r) => r.verdict === "allow")).toBe(true);
     expect(notes.some((n) => n.includes("pre-allowed"))).toBe(true);
   });
@@ -153,7 +153,9 @@ describe("ensureEditorEgress", () => {
     expect(created.map((r) => r.host)).toEqual([VSCODE_REMOTE_HOSTS[1]]);
     expect(
       notes.some(
-        (n) => n.includes("could not pre-allow") && n.includes(VSCODE_REMOTE_HOSTS[0]),
+        (n) =>
+          n.includes("could not pre-allow") &&
+          n.includes(VSCODE_REMOTE_HOSTS[0]),
       ),
     ).toBe(true);
   });

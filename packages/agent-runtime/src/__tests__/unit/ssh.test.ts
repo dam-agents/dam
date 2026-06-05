@@ -2,7 +2,10 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { buildSshEnvironmentFile, createSshService } from "../../modules/ssh.js";
+import {
+  buildSshEnvironmentFile,
+  createSshService,
+} from "../../modules/ssh.js";
 
 // A real (throwaway) ed25519 public key line.
 const KEY_A =
@@ -101,7 +104,9 @@ describe("buildSshEnvironmentFile", () => {
   });
 
   it("keeps values containing spaces verbatim (no quoting in this file format)", () => {
-    const out = parse(buildSshEnvironmentFile({ GREETING: "hello world  two" }));
+    const out = parse(
+      buildSshEnvironmentFile({ GREETING: "hello world  two" }),
+    );
     expect(out.GREETING).toBe("hello world  two");
   });
 
