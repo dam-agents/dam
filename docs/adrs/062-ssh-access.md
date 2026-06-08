@@ -1,4 +1,4 @@
-# ADR-061: SSH access to agents via an in-pod inetd sshd tunneled over the agent WebSocket
+# ADR-062: SSH access to agents via an in-pod inetd sshd tunneled over the agent WebSocket
 
 **Date:** 2026-06-02
 **Status:** Accepted
@@ -70,13 +70,20 @@ bytes.**
 - **Environment parity.** sshd resets the environment before the login shell, so an SSH
   session would otherwise start with none of the agent's pod env — no `HTTPS_PROXY` (egress
   is proxy-only, so even DNS resolution fails), no credential sentinels, no harness `PATH`.
-  The agent-runtime snapshots the live pod env into `~/.ssh/environment` at boot and sets
-  `PermitUserEnvironment yes`, so every session (shell, `ssh <agent> <cmd>`, sftp/scp) gets
-  the same networking and credentials the harness has. The file is rewritten each boot, so
-  it tracks env changes a pod restart applies ([ADR-024](024-connector-declared-envs.md));
-  the host key, by contrast, persists. `PermitUserEnvironment` is safe here for the same
-  reason `StrictModes` is off — the SSH user *is* the single pod user (uid 65532), so the
-  usual `LD_PRELOAD` privilege-escalation concern crosses no boundary.
+  The agent-runtime rebuilds `~/.ssh/environment` on **each connection** — from the
+  runtime-channel injected env overlaid with the pod env (`process.env` wins on collision,
+  the same precedence the terminal PTY spawn uses) — and sets `PermitUserEnvironment yes`,
+  so every session (shell, `ssh <agent> <cmd>`, sftp/scp) gets the same networking and
+  credentials the harness has. Per-connection rather than per-boot because env injection is
+  now hot: connection and credential env land in the runtime-channel env file without a pod
+  restart ([env injection without pod rolls](DRAFT-runtime-env-injection.md)), so a boot
+  snapshot would go stale the moment a user adds a connection. The freshness boundary is the
+  **connection**: a user picks up an env change by reconnecting. The rewrite is synchronous +
+  atomic (temp + rename) immediately before sshd spawns, so the freshly spawned sshd reads
+  the new file and a concurrent session never sees a torn one. The host key, by contrast,
+  persists across boots. `PermitUserEnvironment` is safe here for the same reason
+  `StrictModes` is off — the SSH user *is* the single pod user (uid 65532), so the usual
+  `LD_PRELOAD` privilege-escalation concern crosses no boundary.
 - `dam ssh`'s editor modes (`-m code`, `-m zed`) keep dam's
   `Host` blocks in dam's own `$XDG_CONFIG_HOME/dam/ssh_config` and add a single
   `Include` line to `~/.ssh/config` so the editor's SSH client resolves the

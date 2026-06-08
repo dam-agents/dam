@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-06-05
+Last verified: 2026-06-08
 
 ## Motivated by
 
@@ -16,6 +16,7 @@ Last verified: 2026-06-05
 - [ADR-032 — Centralized pod-reachability primitive](../adrs/032-pod-reachability-primitive.md) — observed pod `Ready` is the source of truth; every wake path routes through one primitive
 - [ADR-060 — Unified runtime-channel apply path + settlement tracking](../adrs/060-unified-apply-path-and-contributions-settled-gate.md) — a single background worker applies contributions, dispatching only to a *Ready* agent (the controller's `Ready` condition, ADR-059); settlement + per-driver failures are tracked and surfaced
 - [ADR-046 — Eliminate Instance, collapse into Agent](../adrs/046-eliminate-instance.md) — Agent is the durable runnable resource; there is no separate Instance concept
+- [ADR-061 — Warm PVC pool](../adrs/061-warm-pvc-pool.md) — a newly created Agent claims a pre-provisioned spare workspace volume at create time instead of waiting for dynamic provisioning
 
 ## Overview
 
@@ -71,7 +72,7 @@ sequenceDiagram
 
 The api-server writes a new `agent` ConfigMap with `spec.yaml` carrying the Agent's image / mount declarations (copied from a Template at create time, if any), env, secret refs, allowed users, and a `desiredState` of `running` or `hibernated`. The controller reconciles a paired set of owned resources: two StatefulSets (the agent and its paired gateway, each tracking `desiredState`), two headless Services (the agent's ACP and the gateway's `<agent>-gateway` proxy DNS), two role-scoped NetworkPolicies, and a per-Agent Envoy bootstrap ConfigMap + leaf TLS Certificate ([ADR-033](../adrs/033-envoy-credential-gateway.md), [ADR-038](../adrs/038-paired-gateway-pod.md)).
 
-The pod image is built from `platform-base` plus a harness-specific layer ([ADR-023](../adrs/023-harness-agnostic-base-image.md)). The platform contract is two executables at fixed paths: `/usr/local/bin/harness-chat` (spawned as the ACP subprocess for chat-mode sessions) and `/usr/local/bin/harness-terminal` (spawned attached to a PTY for terminal-mode sessions, with `HARNESS_SESSION_ID` exported so the harness can pick up the right resumable session). agent-runtime otherwise treats the harness as opaque. The workspace PVC is provisioned on first wake and survives subsequent hibernations.
+The pod image is built from `platform-base` plus a harness-specific layer ([ADR-023](../adrs/023-harness-agnostic-base-image.md)). The platform contract is two executables at fixed paths: `/usr/local/bin/harness-chat` (spawned as the ACP subprocess for chat-mode sessions) and `/usr/local/bin/harness-terminal` (spawned attached to a PTY for terminal-mode sessions, with `HARNESS_SESSION_ID` exported so the harness can pick up the right resumable session). agent-runtime otherwise treats the harness as opaque. The workspace PVC is provisioned on first wake and survives subsequent hibernations — unless the warm pool ([ADR-061](../adrs/061-warm-pvc-pool.md)) is enabled and a pre-provisioned spare matches the mount's size, in which case the controller claims that already-bound spare at create time so first start skips the provisioning wait. The choice is invisible after the fact: a claimed spare becomes an ordinary per-Agent PVC. See [persistence](persistence.md#warm-pvc-pool).
 
 Pod env at start is the composition of **three** layers — last occurrence wins, with `PORT` server-enforced ([ADR-024](../adrs/024-connector-declared-envs.md), [ADR-046](../adrs/046-eliminate-instance.md)):
 
@@ -130,7 +131,7 @@ When a session goes idle — no engaged channel, no active or queued prompt, no 
 
 Terminal-mode sessions ([ADR-037](../adrs/037-remote-terminal.md)) follow a different model from the chat path above. agent-runtime accepts at most one WebSocket per `sessionId` on `/api/terminal`, allocates a PTY, spawns `harness-terminal` attached to it, and pipes raw bytes both ways through a small binary frame protocol (`OP_INPUT` / `OP_OUTPUT` / `OP_RESIZE` / `OP_EXIT`). A headless xterm tracks scrollback so that a tab refresh within 30 seconds of disconnect reattaches to the same PTY and replays the serialized buffer; after the grace window, the PTY is killed. There is no append-only log, no fan-out, and no `session/resume` — terminal sessions belong to one viewer at a time, and the harness's own on-disk session store is the only durable record (e.g. `~/.claude/projects/.../<HARNESS_SESSION_ID>.jsonl`).
 
-SSH sessions ([ADR-061](../adrs/061-ssh-access.md)) are unrelated to the session/mode machinery above — they carry no `sessionId`, no DB row, and no harness involvement. agent-runtime accepts a WebSocket on `/api/ssh`, spawns a per-connection OpenSSH `sshd -i` (inetd mode) as the agent user, and relays raw bytes verbatim between the socket and the child's stdio. SSH terminates at that sshd, which authenticates a CLI-registered public key (`ssh.authorizeKey`) and drops into a plain `/bin/bash` login shell; the api-server and CLI never parse the SSH wire. sshd resets the environment before that shell, so agent-runtime snapshots the pod env into `~/.ssh/environment` at boot (with `PermitUserEnvironment yes`) — the SSH session gets the same proxy routing and credentials the harness has, rather than a bare env with no working egress. Concurrent SSH connections to one agent coexist (each its own `sshd`), and the endpoint exists only on images that ship `sshd`.
+SSH sessions ([ADR-062](../adrs/062-ssh-access.md)) are unrelated to the session/mode machinery above — they carry no `sessionId`, no DB row, and no harness involvement. agent-runtime accepts a WebSocket on `/api/ssh`, spawns a per-connection OpenSSH `sshd -i` (inetd mode) as the agent user, and relays raw bytes verbatim between the socket and the child's stdio. SSH terminates at that sshd, which authenticates a CLI-registered public key (`ssh.authorizeKey`) and drops into a plain `/bin/bash` login shell; the api-server and CLI never parse the SSH wire. sshd resets the environment before that shell, so agent-runtime rebuilds `~/.ssh/environment` from the live injected env on each connection (with `PermitUserEnvironment yes`) — the SSH session gets the same proxy routing and credentials the harness has, rather than a bare env with no working egress, and picks up connection/credential changes injected since boot on the next reconnect. Concurrent SSH connections to one agent coexist (each its own `sshd`), and the endpoint exists only on images that ship `sshd`.
 
 Switching a session's mode (e.g. chat → terminal) is metadata-only ([ADR-055](../adrs/055-agent-owned-session-metadata.md)): the switching client persists the new mode over ACP (`session/resume` carrying `_meta.platform.mode`), which the runtime merges into its session-metadata store. The running harness is unaffected — mode is a UI hint about which surface (chat vs. terminal PTY) to render. There is no cross-client notification; other clients reflect the change on their next `session/list`. The `--reset` / terminal-reset path is independent: it closes the terminal WebSocket and calls agent-runtime's `resetSession`, which sends `session/close` to the harness and clears the in-memory log and cursors.
 
@@ -146,7 +147,7 @@ The pod terminates; the PVC, Secret, Service, and NetworkPolicy persist. Workspa
 
 ### Delete
 
-The api-server deletes the `agent` ConfigMap. The controller's reconciler tears down the owned StatefulSet, Service, NetworkPolicy, and Secret. Sessions tied to this Agent in the DB are cleaned via cascade or periodic reconciliation. PVC handling follows the cluster's reclaim policy.
+The api-server deletes the `agent` ConfigMap. The controller's reconciler tears down the owned StatefulSet, Service, NetworkPolicy, and Secret. Sessions tied to this Agent in the DB are cleaned via cascade or periodic reconciliation. The controller reclaims the agent's workspace PVCs explicitly (StatefulSet `volumeClaimTemplate` PVCs are not cascade-deleted by K8s). In-flight per-turn forks are owner-refed to the Agent CR, so Kubernetes garbage-collects them automatically. The api-server owns none of this: it never touches PVCs, and only deletes the per-channel credential Secrets it wrote.
 
 Schedule ConfigMaps (`agent-schedule`) are independent resources and survive Agent deletion as orphans unless the deletion path explicitly cascades. The UI offers a checkbox to delete a schedule's accumulated sessions alongside the schedule itself ([ADR-019](../adrs/019-session-identity.md)).
 

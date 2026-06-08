@@ -1,10 +1,11 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { WebSocket as WsWebSocket } from "ws";
 import type { SshService } from "agent-runtime-api";
 import { err, ok } from "agent-runtime-api";
+import { readRuntimeEnv } from "../core/runtime-env.js";
 
 const SSHD_PATH = process.env.SSHD_PATH || "/usr/sbin/sshd";
 const SFTP_SERVER_CANDIDATES = [
@@ -17,15 +18,17 @@ const SFTP_SERVER_CANDIDATES = [
 export interface PreparedSshd {
   sshdPath: string;
   configPath: string;
+  homeDir: string;
 }
 
 // sshd resets the environment before the login shell, so the agent's pod env
 // (proxy routing, credential sentinels, PATH) would otherwise vanish inside an
 // SSH session — breaking egress (which is proxy-only) and every credentialed
-// tool. We replay it through ~/.ssh/environment. These keys are dropped: the
-// connecting client owns the terminal, sshd/login set the identity vars for the
-// target user, and the rest is local shell/tooling bookkeeping that would be
-// wrong in a fresh shell.
+// tool. We replay it through ~/.ssh/environment, rebuilt per connection
+// (refreshSshEnvironment) so each session tracks env injected since boot.
+// These keys are dropped: the connecting client owns the terminal, sshd/login
+// set the identity vars for the target user, and the rest is local
+// shell/tooling bookkeeping that would be wrong in a fresh shell.
 const ENV_EXCLUDE_EXACT = new Set([
   "TERM",
   "COLORTERM",
@@ -63,6 +66,42 @@ export function buildSshEnvironmentFile(
     lines.push(`${k}=${v}`);
   }
   return lines.length ? lines.join("\n") + "\n" : "";
+}
+
+// Rebuild ~/.ssh/environment from the *current* merged env, called right before
+// each session's sshd spawns. Env injection is hot — connection/credential
+// changes land in the runtime-channel env file (core/runtime-env) without a pod
+// restart — so a once-at-boot snapshot would feed every later SSH session stale
+// proxy routing and credentials. sshd -i reads ~/.ssh/environment at session
+// start and we spawn it synchronously after this write, so the refresh is
+// picked up by exactly the connection that triggered it.
+//
+// Synchronous (writeFileSync) + atomic rename, mirroring the runtime-env
+// reader: keeping the spawn path free of an `await` avoids dropping the SSH
+// client's opening bytes (the message handler is attached synchronously in
+// spawnSshd), and the rename means a concurrent session never reads a torn file.
+export function refreshSshEnvironment(
+  homeDir: string,
+  log: (msg: string) => void,
+): void {
+  // Runtime-channel env first; pod env (process.env) wins on collision — the
+  // same precedence the terminal PTY spawn uses, so an SSH login shell and a
+  // terminal shell resolve to an identical environment.
+  const merged: NodeJS.ProcessEnv = {
+    ...readRuntimeEnv(homeDir),
+    ...process.env,
+  };
+  const body = buildSshEnvironmentFile(merged, log);
+  const sshDir = join(homeDir, ".ssh");
+  const target = join(sshDir, "environment");
+  try {
+    mkdirSync(sshDir, { recursive: true, mode: 0o700 });
+    const tmp = `${target}.tmp`;
+    writeFileSync(tmp, body, { mode: 0o600 });
+    renameSync(tmp, target);
+  } catch (e) {
+    log(`failed to refresh ~/.ssh/environment: ${(e as Error).message}`);
+  }
 }
 
 export async function prepareSshd(
@@ -113,18 +152,13 @@ export async function prepareSshd(
   ];
   await writeFile(configPath, lines.join("\n") + "\n", { mode: 0o600 });
 
-  // Snapshot the live pod env into ~/.ssh/environment so every SSH session
-  // (shell, exec, sftp) starts with the same networking + credentials the
-  // harness gets. Rewritten on every boot so it tracks the env a pod restart
-  // applies (ADR-024); the host key, by contrast, persists across boots.
-  await writeFile(
-    join(sshDir, "environment"),
-    buildSshEnvironmentFile(process.env, log),
-    { mode: 0o600 },
-  );
   if (!sftpServer) log("sftp-server not found; scp/sftp will be unavailable");
 
-  return { sshdPath: SSHD_PATH, configPath };
+  // ~/.ssh/environment is (re)written per connection in refreshSshEnvironment,
+  // not here: env injection is hot, so a boot-time snapshot would go stale the
+  // moment a connection or credential changes without a pod restart. The host
+  // key, config, and sftp lookup above are boot-stable, so they stay.
+  return { sshdPath: SSHD_PATH, configPath, homeDir };
 }
 
 export function spawnSshd(
@@ -132,6 +166,9 @@ export function spawnSshd(
   prepared: PreparedSshd,
   log: (msg: string) => void,
 ): void {
+  // Refresh the session env before spawning so this connection picks up any env
+  // injected since boot (see refreshSshEnvironment). sshd reads the file below.
+  refreshSshEnvironment(prepared.homeDir, log);
   ws.binaryType = "nodebuffer";
   const child = spawn(
     prepared.sshdPath,

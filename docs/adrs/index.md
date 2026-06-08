@@ -65,10 +65,12 @@ This directory contains ADRs for the Platform project.
 | [058](058-crds-over-configmaps.md)            | CRDs over ConfigMaps — reconciled resources become custom resources | @jezekra1 |
 | [059](059-agent-readiness-status.md)          | Agent readiness is controller-computed status — agent ∧ gateway | @jezekra1 |
 | [060](060-unified-apply-path-and-contributions-settled-gate.md) | Unified runtime-channel apply path + settlement tracking (single worker, Ready-gated dispatch, retry + degraded badge) | @janjeliga |
-| [061](061-ssh-access.md)                      | SSH access to agents — in-pod inetd sshd tunneled over the agent WebSocket | @JanPokorny |
+| [061](061-warm-pvc-pool.md)                   | Warm PVC pool — pre-provisioned size-keyed spare workspace volumes claimed at agent create | @pilartomas |
+| [062](062-ssh-access.md)                      | SSH access to agents — in-pod inetd sshd tunneled over the agent WebSocket | @JanPokorny |
 
 ## Drafts
 
 | Draft | Title | Owner |
 |-------|-------|-------|
 | [DRAFT](DRAFT-multi-agent.md) | Multi-agent collaboration — isolated instances with shared artifacts | @tomkis |
+| [DRAFT](DRAFT-runtime-env-injection.md) | Credential env via the runtime channel — injected at harness spawn, not baked into the pod | @janjeliga |

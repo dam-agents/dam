@@ -105,6 +105,12 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	idleChecker := reconciler.NewIdleChecker(client, dynClient, cfg)
 	go idleChecker.RunLoop(ctx)
 
+	// Warm PVC pool (#692): pre-provisions spare workspace volumes so new
+	// agents claim one instantly instead of waiting on dynamic provisioning.
+	// Leader-only and a no-op when disabled.
+	warmPool := reconciler.NewWarmPoolManager(client, cfg)
+	go warmPool.RunLoop(ctx)
+
 	// Periodic GC for resources whose Agent has been removed out-of-band
 	// (issue #244). The Delete event handler covers the happy path; this
 	// catches crashes mid-delete and direct kubectl removals. Leaf TLS

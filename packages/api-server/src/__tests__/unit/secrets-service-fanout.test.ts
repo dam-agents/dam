@@ -24,6 +24,19 @@ import type {
   AgentGrantsPort,
   GrantedAgentSummary,
 } from "../../modules/agents/infrastructure/agent-grants-port.js";
+import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
+
+function makeMutator() {
+  const delivered: string[] = [];
+  const mutator: RuntimeMutator = {
+    async bump(agentId) {
+      delivered.push(agentId);
+      return 1;
+    },
+    async enqueueAfterCommit() {},
+  };
+  return { mutator, delivered };
+}
 
 function makePort(initial: K8sStoredSecret[]) {
   const store = new Map(initial.map((s) => [s.id, s]));
@@ -99,7 +112,6 @@ function makePort(initial: K8sStoredSecret[]) {
 }
 
 function makeGrants(initial: GrantedAgentSummary[] = []) {
-  const bumps: { cmName: string; hash: string }[] = [];
   const secretGrantCalls: { agentId: string; secretIds: readonly string[] }[] =
     [];
   const port: AgentGrantsPort = {
@@ -113,11 +125,8 @@ function makeGrants(initial: GrantedAgentSummary[] = []) {
     async listAgentsGrantedSecret() {
       return initial;
     },
-    async bumpSecretsRev(cmName, hash) {
-      bumps.push({ cmName, hash });
-    },
   };
-  return { port, bumps, secretGrantCalls };
+  return { port, secretGrantCalls };
 }
 
 describe("PROVIDERS registry shape", () => {
@@ -282,13 +291,15 @@ describe("secrets-service.update — fanout (ADR-040)", () => {
     granted?: GrantedAgentSummary[];
   }) {
     const { port, updated } = makePort([opts.secret]);
-    const { port: grants, bumps } = makeGrants(opts.granted ?? []);
+    const { port: grants } = makeGrants(opts.granted ?? []);
+    const { mutator, delivered } = makeMutator();
     const svc = createSecretsService({
       k8sPort: port,
       grants,
       ownerSub: "owner-1",
+      runtimeMutator: mutator,
     });
-    return { svc, updated, bumps };
+    return { svc, updated, delivered };
   }
 
   const baseSecret: K8sStoredSecret = {
@@ -300,8 +311,8 @@ describe("secrets-service.update — fanout (ADR-040)", () => {
     createdAt: "2026-01-01T00:00:00Z",
   };
 
-  it("envMappings change → bumps secrets-rev", async () => {
-    const { svc, bumps } = setup({
+  it("envMappings change → delivers to granted agent over the runtime channel", async () => {
+    const { svc, delivered } = setup({
       secret: baseSecret,
       granted: [
         {
@@ -314,12 +325,11 @@ describe("secrets-service.update — fanout (ADR-040)", () => {
       id: "secret-x",
       envMappings: [{ envName: "BAR", placeholder: "ph2" }],
     });
-    expect(bumps).toHaveLength(1);
-    expect(bumps[0]!.cmName).toBe("agent-a");
+    expect(delivered).toEqual(["agent-a"]);
   });
 
   it("name-only edit → no fanout", async () => {
-    const { svc, bumps } = setup({
+    const { svc, delivered } = setup({
       secret: baseSecret,
       granted: [
         {
@@ -329,11 +339,11 @@ describe("secrets-service.update — fanout (ADR-040)", () => {
       ],
     });
     await svc.update({ id: "secret-x", name: "Renamed" });
-    expect(bumps).toHaveLength(0);
+    expect(delivered).toHaveLength(0);
   });
 
   it("no granted agents → no fanout even on render-affecting edit", async () => {
-    const { svc, bumps } = setup({
+    const { svc, delivered } = setup({
       secret: baseSecret,
       granted: [],
     });
@@ -341,7 +351,7 @@ describe("secrets-service.update — fanout (ADR-040)", () => {
       id: "secret-x",
       envMappings: [{ envName: "BAR", placeholder: "ph2" }],
     });
-    expect(bumps).toHaveLength(0);
+    expect(delivered).toHaveLength(0);
   });
 });
 
@@ -469,7 +479,6 @@ describe("secrets-service — extraInjections (twin secrets, e.g. Bob)", () => {
         async listAgentsGrantedSecret() {
           return [];
         },
-        async bumpSecretsRev() {},
       },
       ownerSub: "owner-1",
     });
@@ -495,7 +504,6 @@ describe("secrets-service — extraInjections (twin secrets, e.g. Bob)", () => {
         async listAgentsGrantedSecret() {
           return [];
         },
-        async bumpSecretsRev() {},
       },
       ownerSub: "owner-1",
     });
@@ -558,5 +566,55 @@ describe("secrets-service — extraInjections (twin secrets, e.g. Bob)", () => {
       svc.create({ type: "bob", name: "Bob Shell", value: "sk-bob-foo" }),
     ).rejects.toThrow("twin write boom");
     expect(store.size).toBe(0);
+  });
+});
+
+describe("secrets-service.expandSecretGrants — GitHub PAT twins (single-shot create)", () => {
+  const ghApi: K8sStoredSecret = {
+    id: "gh-api",
+    name: "My PAT",
+    type: "generic",
+    hostPattern: "api.github.com",
+    createdAt: "2026-01-01T00:00:00Z",
+  };
+  const ghGit: K8sStoredSecret = {
+    id: "gh-git",
+    name: "My PAT",
+    type: "generic",
+    hostPattern: "github.com",
+    primarySecretId: "gh-api",
+    createdAt: "2026-01-01T00:00:00Z",
+  };
+  const anthropic: K8sStoredSecret = {
+    id: "anthropic",
+    name: "Key",
+    type: "anthropic",
+    hostPattern: "api.anthropic.com",
+    createdAt: "2026-01-01T00:00:00Z",
+  };
+
+  function setup() {
+    const { port } = makePort([ghApi, ghGit, anthropic]);
+    const { port: grants } = makeGrants();
+    return createSecretsService({ k8sPort: port, grants, ownerSub: "owner-1" });
+  }
+
+  it("expands a selected primary to include its twin", async () => {
+    expect(await setup().expandSecretGrants(["gh-api"])).toEqual([
+      "gh-api",
+      "gh-git",
+    ]);
+  });
+
+  it("leaves a non-twinned secret untouched", async () => {
+    expect(await setup().expandSecretGrants(["anthropic"])).toEqual([
+      "anthropic",
+    ]);
+  });
+
+  it("expands across a mixed selection", async () => {
+    expect(
+      [...(await setup().expandSecretGrants(["gh-api", "anthropic"]))].sort(),
+    ).toEqual(["anthropic", "gh-api", "gh-git"]);
   });
 });

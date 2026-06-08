@@ -405,4 +405,8 @@ export interface SecretsService {
   delete(id: string): Promise<void>;
   getAgentAccess(agentId: string): Promise<AgentAccess>;
   setAgentAccess(agentId: string, access: AgentAccess): Promise<void>;
+  /** Expand a selection of primary secret ids to the full granted set
+   *  (adds GitHub-PAT twins). Used to settle grants into an Agent spec at
+   *  create time without re-implementing twin expansion. */
+  expandSecretGrants(secretIds: string[]): Promise<string[]>;
 }

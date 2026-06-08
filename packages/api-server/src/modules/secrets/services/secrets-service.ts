@@ -1,5 +1,6 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { TRPCError } from "@trpc/server";
+import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import {
   DEFAULT_ENV_PLACEHOLDER,
   isProviderPresetType,
@@ -106,23 +107,6 @@ async function anthropicModeRotationFor(
   return { authMode: newAuthMode, envMappings: [...mode.defaultEnvMappings] };
 }
 
-// `secrets-rev` hashes only what affects the agent pod's env. hostPattern,
-// pathPattern, and injectionConfig are gateway-side and have their own roll
-// trigger (envoy-secrets-rev on the gateway StatefulSet); rolling the agent
-// pod for them would be gratuitous. ADR-040 §Fanout: host edits hot, env
-// edits roll.
-function combinedSecretsRev(
-  grantedSecrets: readonly K8sStoredSecret[],
-): string {
-  const data = [...grantedSecrets]
-    .sort((a, b) => a.id.localeCompare(b.id))
-    .map((s) => ({ id: s.id, envMappings: s.envMappings ?? [] }));
-  return createHash("sha256")
-    .update(JSON.stringify(data))
-    .digest("hex")
-    .slice(0, 16);
-}
-
 function envMappingsChanged(
   before: K8sStoredSecret,
   after: K8sStoredSecret,
@@ -206,7 +190,37 @@ export function createSecretsService(deps: {
   /** Owner sub for the calling user, stamped onto auto-inserted rules
    *  (`decided_by`). Required when `connectionRules` is set. */
   ownerSub?: string;
+  /** Delivers env changes to granted agents over the runtime channel. */
+  runtimeMutator?: RuntimeMutator;
 }): SecretsService {
+  async function deliverToAgent(agentId: string): Promise<void> {
+    if (!deps.runtimeMutator) return;
+    await deps.runtimeMutator.bump(agentId, []);
+    await deps.runtimeMutator.enqueueAfterCommit(agentId);
+  }
+
+  // Pull in twins so a GitHub PAT's two halves are always granted together.
+  function expandWith(
+    secretIds: string[],
+    allSecrets: readonly K8sStoredSecret[],
+  ): string[] {
+    const twinIds = new Set(
+      allSecrets.filter((s) => s.primarySecretId).map((s) => s.id),
+    );
+    const twinsByPrimary = new Map<string, string[]>();
+    for (const s of allSecrets) {
+      if (!s.primarySecretId) continue;
+      const list = twinsByPrimary.get(s.primarySecretId) ?? [];
+      list.push(s.id);
+      twinsByPrimary.set(s.primarySecretId, list);
+    }
+    const primaries = secretIds.filter((id) => !twinIds.has(id));
+    return [
+      ...primaries,
+      ...primaries.flatMap((id) => twinsByPrimary.get(id) ?? []),
+    ];
+  }
+
   async function createOne(input: InternalSecretCreate): Promise<SecretView> {
     const hostPattern = hostPatternFor(input.type, input.hostPattern);
     const id = randomUUID();
@@ -476,20 +490,13 @@ export function createSecretsService(deps: {
       const granted = await deps.grants.listAgentsGrantedSecret(id);
       if (granted.length === 0) return;
 
-      const allSecrets = await deps.k8sPort.listSecrets();
-
-      await Promise.all(
-        granted.map(async (g) => {
-          const grantedForAgent = allSecrets.filter((s) =>
-            g.grantedSecretIds.includes(s.id),
-          );
-          const hash = combinedSecretsRev(grantedForAgent);
-          await deps.grants.bumpSecretsRev(g.agentId, hash);
-        }),
-      );
+      // Re-deliver to each granted agent; the state-builder reads the new env-mappings live.
+      await Promise.all(granted.map((g) => deliverToAgent(g.agentId)));
     },
 
     async delete(id) {
+      // Capture grant holders before deletion so we can re-deliver after.
+      const granted = await deps.grants.listAgentsGrantedSecret(id);
       // Twins first; primary last on success so retry-after-failure is clean.
       const allSecrets = await deps.k8sPort.listSecrets();
       const twinIds = allSecrets
@@ -508,6 +515,9 @@ export function createSecretsService(deps: {
         result: "success",
         detail: { twins: twinIds.length },
       });
+      // Re-deliver so the deleted secret's placeholder drops from each granted
+      // agent's env on the next snapshot (the env-source omits missing secrets).
+      await Promise.all(granted.map((g) => deliverToAgent(g.agentId)));
     },
 
     async getAgentAccess(agentId: string) {
@@ -521,23 +531,16 @@ export function createSecretsService(deps: {
       };
     },
 
+    async expandSecretGrants(secretIds: string[]) {
+      return expandWith(secretIds, await deps.k8sPort.listSecrets());
+    },
+
     async setAgentAccess(agentId: string, access: AgentAccess) {
       const allSecrets = await deps.k8sPort.listSecrets();
-      const twinIds = new Set(
-        allSecrets.filter((s) => s.primarySecretId).map((s) => s.id),
+      const expanded = expandWith(access.secretIds, allSecrets);
+      const primaries = access.secretIds.filter(
+        (id) => !allSecrets.find((s) => s.id === id)?.primarySecretId,
       );
-      const twinsByPrimary = new Map<string, string[]>();
-      for (const s of allSecrets) {
-        if (!s.primarySecretId) continue;
-        const list = twinsByPrimary.get(s.primarySecretId) ?? [];
-        list.push(s.id);
-        twinsByPrimary.set(s.primarySecretId, list);
-      }
-      const primaries = access.secretIds.filter((id) => !twinIds.has(id));
-      const expanded = [
-        ...primaries,
-        ...primaries.flatMap((id) => twinsByPrimary.get(id) ?? []),
-      ];
       await deps.grants.setSecretGrants(agentId, expanded);
       // Central to "which agent could use credential X at time T".
       securityLog("info", "secret.grants_set", {
@@ -558,6 +561,9 @@ export function createSecretsService(deps: {
           ownedSourceIds,
         });
       }
+
+      // Deliver the new grant set over the runtime channel.
+      await deliverToAgent(agentId);
     },
   };
 }

@@ -270,4 +270,23 @@ reclaimPolicy: Delete
 volumeBindingMode: WaitForFirstConsumer
 parameters:
   mountOptions: "vers=4.1"
+{{- if .Values.nfsProvisioner.warmPoolClass.enabled }}
+---
+# Immediate-binding variant for the warm PVC pool (#692). Same NFS backend as
+# the default class, but volumeBindingMode: Immediate so a pre-created spare
+# provisions (and Binds) the moment it's created rather than waiting for a pod
+# to mount it. Reference its name from controller.warmPool.storageClass.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: {{ .Values.nfsProvisioner.warmPoolClass.name }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: nfs-provisioner
+provisioner: {{ $provisioner }}
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+parameters:
+  mountOptions: "vers=4.1"
+{{- end }}
 {{- end }}

@@ -65,9 +65,7 @@ rules:
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  - apiGroups: [""]
-    resources: ["persistentvolumeclaims"]
-    verbs: ["get", "list", "delete"]
+  # No persistentvolumeclaims: the controller owns the PVC lifecycle (ADR-058).
   # No pods: reachability is the Agent's Ready condition (ADR-059), and restart
   # is a roll-rev annotation patch — the api-server never reads pods.
 ---

@@ -1,0 +1,3 @@
+# False positive: Trivy miscompares 13.2.1 with fix version 13.2.1.jre11 (same artifact, JRE classifier stripped)
+# https://github.com/aquasecurity/trivy/discussions/9990
+CVE-2025-59250

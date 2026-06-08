@@ -10,6 +10,10 @@ Persistence vocabulary shared by every bounded context. See [`docs/architecture/
 |------|-----------|
 | Infra State | State the Controller reconciles into running infrastructure. Stored in a ConfigMap with `spec.yaml` (api-server writer) and `status.yaml` (controller writer). |
 | Application State | State only the API Server reads and writes; the Controller never touches it. Stored in PostgreSQL. |
+| Workspace Volume | The persistent volume mounted into an Agent's pod that holds its workspace and `$HOME`. Identified by an owning-Agent + mount label, **not** by a reconstructed name — its name is not a stable contract ([ADR-061](adrs/061-warm-pvc-pool.md)). |
+| Warm Pool | A controller-managed, leader-only background buffer of pre-provisioned, already-bound Spare workspace volumes, organized into per-size pools, that a newly created Agent claims at create time to skip first-start provisioning latency. Disabled by default ([ADR-061](adrs/061-warm-pvc-pool.md)). |
+| Spare | An unclaimed Workspace Volume in the Warm Pool — provisioned and bound, waiting to be claimed. Carries a pool label and an available marker, and deliberately **no** owning-Agent label, so the orphan-volume sweep ignores it. |
+| Claim (verb) | To assign a Spare to a newly created Agent: the controller relabels the Spare to that Agent in one atomic update, and the Agent mounts it as its Workspace Volume. A claimed Spare becomes an ordinary owned Workspace Volume — destroyed on Agent deletion, never returned to the pool. Distinct from the Kubernetes noun *PersistentVolumeClaim*. |
 
 ## Agents (bounded context)
 

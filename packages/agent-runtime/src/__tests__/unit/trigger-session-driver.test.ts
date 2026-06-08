@@ -32,6 +32,7 @@ function fakeRuntime(): { runtime: AcpRuntime; sent: any[] } {
       agentAlive: true,
     }),
     resetSession: () => {},
+    refreshEnv: () => {},
     shutdown: () => {},
   };
   return { runtime, sent };

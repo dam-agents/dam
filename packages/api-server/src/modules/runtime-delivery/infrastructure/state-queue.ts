@@ -5,21 +5,23 @@ export const RUNTIME_STATE_QUEUE = "runtime-state";
 
 export interface StateJob {
   agentId: string;
+  /** Set by `hello`: fast-retry on the queue backoff if not yet Ready, instead of deferring to the sweep. */
+  retryUntilReady?: boolean;
 }
 
 export interface StateQueue {
-  enqueue(agentId: string): Promise<void>;
+  enqueue(agentId: string, opts?: { retryUntilReady?: boolean }): Promise<void>;
   close(): Promise<void>;
 }
 
 export function createStateQueue(connection: ConnectionOptions): StateQueue {
   const queue = new Queue<StateJob>(RUNTIME_STATE_QUEUE, { connection });
   return {
-    async enqueue(agentId): Promise<void> {
+    async enqueue(agentId, opts): Promise<void> {
       // No jobId dedup on purpose: applyState is idempotent, so a prompt redundant apply beats stalling fresh config behind an in-flight job.
       await queue.add(
         "state",
-        { agentId },
+        { agentId, retryUntilReady: opts?.retryUntilReady },
         {
           attempts: 8,
           backoff: { type: "exponential", delay: 1_000 },
@@ -36,7 +38,10 @@ export function createStateQueue(connection: ConnectionOptions): StateQueue {
 
 export interface StartWorkerOpts {
   connection: ConnectionOptions;
-  handler: (agentId: string) => Promise<void>;
+  handler: (
+    agentId: string,
+    opts?: { retryUntilReady?: boolean },
+  ) => Promise<void>;
   log: (msg: string) => void;
 }
 
@@ -47,7 +52,10 @@ export interface RunningWorker {
 export function startStateWorker(opts: StartWorkerOpts): RunningWorker {
   const worker = new Worker<StateJob>(
     RUNTIME_STATE_QUEUE,
-    async (job) => opts.handler(job.data.agentId),
+    async (job) =>
+      opts.handler(job.data.agentId, {
+        retryUntilReady: job.data.retryUntilReady,
+      }),
     {
       connection: opts.connection,
       concurrency: 16,

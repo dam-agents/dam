@@ -63,7 +63,6 @@ function makeGrants() {
     async listAgentsGrantedSecret() {
       return [];
     },
-    async bumpSecretsRev() {},
   };
   return { port };
 }

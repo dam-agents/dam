@@ -38,8 +38,6 @@ function fakeClient() {
       store.delete(n);
     },
 
-    listPVCs: async () => [],
-    deletePVC: async () => undefined,
     getCustomObject: async () => null,
     listCustomObjects: async () => [],
     createCustomObject: async (_p, b) => b as KubeObject,

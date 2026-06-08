@@ -21,6 +21,7 @@ import {
 } from "api-server-api";
 import { createFileDocumentStoreBackend } from "./core/document-store.js";
 import { expandHome } from "./core/expand-home.js";
+import { readRuntimeEnv } from "./core/runtime-env.js";
 import { createFilesService } from "./modules/files.js";
 import { createImportHandlers, sweepStaging } from "./modules/import/index.js";
 import { composeSkills } from "./modules/skills/index.js";
@@ -30,6 +31,7 @@ import { composeAcp } from "./modules/acp/compose.js";
 import { createWebSocketChannel } from "./modules/acp/infrastructure/create-websocket-channel.js";
 import {
   composeRuntimeChannel,
+  createEnvPlugin,
   createFilePlugin,
   createMcpEntryPlugin,
   createSkillInstallPlugin,
@@ -82,6 +84,7 @@ const { runtime: acpRuntime, triggerDriver } = composeAcp({
     ? ["npx", "tsx", join(__dir, "agent.ts")]
     : ["/usr/local/bin/harness-chat"],
   workingDir: workDir,
+  agentHome: homeDir,
   stateBackend,
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
 });
@@ -95,6 +98,7 @@ const runtimeChannel = await composeRuntimeChannel({
   agentId: process.env.PLATFORM_AGENT_ID ?? process.env.HOSTNAME ?? "unknown",
   triggerDriver,
   plugins: [
+    createEnvPlugin({ onChange: () => acpRuntime.refreshEnv() }),
     createFilePlugin(),
     createMcpEntryPlugin(),
     createSkillInstallPlugin({ install: skillsService.install }),
@@ -226,6 +230,8 @@ function attachPty(
         rows,
         cwd: workDir,
         env: {
+          // Runtime-channel env first; process.env wins on collision.
+          ...readRuntimeEnv(homeDir),
           ...(Object.fromEntries(
             Object.entries(process.env).filter(
               ([k, v]) =>

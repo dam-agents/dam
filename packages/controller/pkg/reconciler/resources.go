@@ -45,6 +45,20 @@ const (
 	LabelRole   = "agent-platform.ai/role"
 	RoleAgent   = "agent"
 	RoleGateway = "gateway"
+
+	// LabelMount records the sanitized mount a persisted workspace PVC backs. Set
+	// on every persisted PVC (volumeClaimTemplate and claimed spare), so a PVC is
+	// addressed by (LabelAgent, LabelMount) rather than a reconstructed
+	// `<mount>-<agent>-0` name — a claimed spare keeps its generated name (#692).
+	LabelMount = "agent-platform.ai/mount"
+
+	// Warm-pool labels (#692). A spare carries LabelPool (canonical size = pool
+	// key) and, while unclaimed, LabelPoolAvailable="true" but NO LabelAgent — so
+	// the orphan sweep (lists by LabelAgent) skips it. On claim it gains
+	// LabelAgent + LabelMount and loses LabelPoolAvailable, becoming an ordinary
+	// agent PVC.
+	LabelPool          = "agent-platform.ai/pool"
+	LabelPoolAvailable = "agent-platform.ai/pool-available"
 )
 
 // annRollRev is an api-server-set annotation on the Agent that requests a
@@ -67,9 +81,9 @@ func agentProxyAddr(cfg *config.Config, gatewayClusterIP string) string {
 // (ADR-038). The agent container holds zero credentials; egress credential
 // injection happens in the paired gateway pod, reached via HTTPS_PROXY.
 //
-// `credentialSecrets` is consulted only for the GH_TOKEN-availability signal
-// surfaced as an env var and pod annotation; no Secret material is mounted
-// into the agent pod.
+// The template is independent of the granted set: it always mounts the leaf
+// Secret's `ca.crt` (the cluster MITM CA), and that leaf is always issued, so
+// a grant change never alters the agent pod and never rolls it.
 //
 // `gatewayClusterIP` is the paired gateway Service's assigned ClusterIP,
 // used directly as the HTTPS_PROXY target. The caller requeues when
@@ -82,7 +96,7 @@ func agentProxyAddr(cfg *config.Config, gatewayClusterIP string) string {
 // reconciler's applyStatefulSet, which scales up on activity and defers
 // scale-down to the idle checker (ADR-058: run state is activity-driven, not a
 // stored desiredState).
-func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.Config, ownerRef metav1.OwnerReference, credentialSecrets []corev1.Secret, gatewayClusterIP string) *appsv1.StatefulSet {
+func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.Config, ownerRef metav1.OwnerReference, gatewayClusterIP string) *appsv1.StatefulSet {
 	base := cfg.AgentBase
 	defaults := cfg.AgentTemplateDefaults
 
@@ -95,10 +109,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 	if agentHome == "" {
 		agentHome = defaults.AgentHome
 	}
-	specMounts := agentSpec.Mounts
-	if len(specMounts) == 0 {
-		specMounts = configMountsToTypes(defaults.Mounts)
-	}
+	specMounts := resolveSpecMounts(agentSpec, defaults)
 	specEnv := agentSpec.Env
 	if len(specEnv) == 0 {
 		specEnv = configEnvToTypes(defaults.Env)
@@ -168,13 +179,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 		{Name: "PLATFORM_POD_FILES_EVENTS_URL", Value: fmt.Sprintf("%s/api/agents/%s/pod-files/events", cfg.HarnessServerURL, name)},
 	}
 
-	// Order matters: K8s resolves duplicate env names by keeping the last
-	// occurrence, so credential placeholders < agent env — user overrides
-	// win. The placeholders only need to satisfy the harness's "is this env
-	// set?" check; Envoy in the paired gateway overwrites the header on the
-	// wire. ADR-046 collapsed the former template + instance env layers
-	// into the single Agent env list.
-	env = append(env, credentialEnvVars(credentialSecrets)...)
+	// User-supplied agent env; credential placeholders arrive via the runtime channel.
 	for _, e := range specEnv {
 		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
 	}
@@ -200,16 +205,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 			Name: volName, MountPath: m.Path,
 		})
 		if m.Persist {
-			// Size precedence: per-mount > AgentSpec.StorageSize > chart default.
-			// All three sources are validated upstream (Config.Validate at startup
-			// for the chart default, ParseAgentSpec for the spec.yaml values).
-			storageSize := m.Size
-			if storageSize == "" {
-				storageSize = agentSpec.StorageSize
-			}
-			if storageSize == "" {
-				storageSize = defaults.StorageSize
-			}
+			storageSize := effectiveMountSize(m, agentSpec, defaults)
 			pvcSpec := corev1.PersistentVolumeClaimSpec{
 				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.PersistentVolumeAccessMode(base.AccessMode)},
 				Resources: corev1.VolumeResourceRequirements{
@@ -223,7 +219,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 			pvcs = append(pvcs, corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:   volName,
-					Labels: map[string]string{LabelAgent: name},
+					Labels: map[string]string{LabelAgent: name, LabelMount: volName},
 				},
 				Spec: pvcSpec,
 			})
@@ -235,29 +231,21 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 		}
 	}
 
-	// CA cert volume — projected from the cert-manager-issued Envoy leaf
-	// Secret. We expose only the `ca.crt` key; the `tls.key` stays inside
-	// the gateway pod's mount, never the agent's. This is the only
-	// platform-issued data the agent pod mounts (ADR-038).
-	if len(credentialSecrets) > 0 {
-		volumes = append(volumes, corev1.Volume{
-			Name: "ca-cert",
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName: EnvoyLeafSecretName(name),
-					Items: []corev1.KeyToPath{{
-						Key:  "ca.crt",
-						Path: "ca.crt",
-					}},
-				},
+	// ca.crt only (the tls.key stays on the gateway) — the only platform data
+	// the agent mounts (ADR-038). The leaf is always issued, so this Secret
+	// always exists and the volume never flips with the granted set.
+	volumes = append(volumes, corev1.Volume{
+		Name: "ca-cert",
+		VolumeSource: corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: EnvoyLeafSecretName(name),
+				Items: []corev1.KeyToPath{{
+					Key:  "ca.crt",
+					Path: "ca.crt",
+				}},
 			},
-		})
-	} else {
-		volumes = append(volumes, corev1.Volume{
-			Name:         "ca-cert",
-			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
-		})
-	}
+		},
+	})
 	volumeMounts = append(volumeMounts, corev1.VolumeMount{
 		Name: "ca-cert", MountPath: "/etc/platform/ca", ReadOnly: true,
 	})
@@ -309,15 +297,6 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 	for _, n := range base.ImagePullSecrets {
 		pullSecrets = append(pullSecrets, corev1.LocalObjectReference{Name: n})
 	}
-
-	// GH_TOKEN signal. Surface whether a GitHub credential is wired up so
-	// wrapper scripts and operators can detect missing auth without making
-	// a 401-eliciting request first.
-	ghAvail := "false"
-	if hasGHTokenEnv(credentialSecrets) {
-		ghAvail = "true"
-	}
-	env = append(env, corev1.EnvVar{Name: "PLATFORM_GH_TOKEN_AVAILABLE", Value: ghAvail})
 
 	// Fast (1s) during startup so wake-up is detected quickly, slow
 	// (10s) afterwards so we're not probing every agent pod every
@@ -371,10 +350,6 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 		VolumeMounts:    volumeMounts,
 	}}
 
-	podAnnotations := map[string]string{
-		"agent-platform.ai/gh-token-available": ghAvail,
-	}
-
 	// ADR-033 Threat Model: agent must have no SA token (Secret-read RBAC
 	// would otherwise bypass the per-pod credential boundary). With the
 	// paired-pod split (ADR-038) the agent and gateway are different pods
@@ -385,8 +360,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 	shareProcessNS := &falseVal
 
 	podMeta := metav1.ObjectMeta{
-		Labels:      podLabels,
-		Annotations: podAnnotations,
+		Labels: podLabels,
 	}
 	applyAgentBaseMeta(&podMeta, base)
 
@@ -426,6 +400,59 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 				Spec:       podSpec,
 			},
 		},
+	}
+}
+
+// resolveSpecMounts returns the agent's effective mount list: the AgentSpec's
+// own mounts, or the chart-wide default mounts when the spec omits them
+// (REPLACE semantics, matching the env/skill fallback). Shared by the
+// StatefulSet builder and the warm-pool claim path so the two never disagree
+// about which volumes an agent has.
+func resolveSpecMounts(agentSpec *types.AgentSpec, defaults config.AgentTemplateDefaults) []types.Mount {
+	if len(agentSpec.Mounts) > 0 {
+		return agentSpec.Mounts
+	}
+	return configMountsToTypes(defaults.Mounts)
+}
+
+// effectiveMountSize resolves a persisted mount's PVC size by the documented
+// precedence: per-mount override > AgentSpec.StorageSize > chart default. All
+// three are validated upstream (Config.Validate for the chart default,
+// ParseAgentSpec for spec.yaml values). Shared with the warm-pool claim path
+// so a mount is matched to a pool by the exact size the StatefulSet renders.
+func effectiveMountSize(m types.Mount, agentSpec *types.AgentSpec, defaults config.AgentTemplateDefaults) string {
+	if m.Size != "" {
+		return m.Size
+	}
+	if agentSpec.StorageSize != "" {
+		return agentSpec.StorageSize
+	}
+	return defaults.StorageSize
+}
+
+// applyPoolClaims swaps the named mounts from a volumeClaimTemplate to an
+// explicit pod Volume referencing the claimed PVC by name (the shape forks use).
+// The container's volumeMount already targets the mount name. No-op for an empty
+// map, so unclaimed agents render exactly as before.
+func applyPoolClaims(ss *appsv1.StatefulSet, claims map[string]string) {
+	if len(claims) == 0 {
+		return
+	}
+	kept := ss.Spec.VolumeClaimTemplates[:0]
+	for _, vct := range ss.Spec.VolumeClaimTemplates {
+		if _, claimed := claims[vct.Name]; claimed {
+			continue
+		}
+		kept = append(kept, vct)
+	}
+	ss.Spec.VolumeClaimTemplates = kept
+	for mountName, pvcName := range claims {
+		ss.Spec.Template.Spec.Volumes = append(ss.Spec.Template.Spec.Volumes, corev1.Volume{
+			Name: mountName,
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: pvcName},
+			},
+		})
 	}
 }
 

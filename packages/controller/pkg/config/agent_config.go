@@ -42,10 +42,9 @@ func (d Duration) MarshalJSON() ([]byte, error) {
 // scheduling and security are controller-internal.
 //
 // On metadata collision: controller-managed labels on agent pods (selector
-// labels `agent-platform.ai/agent|pair|role`) and annotations the
-// controller sets itself (e.g. `agent-platform.ai/gh-token-available`)
-// always win. ExtraLabels/ExtraAnnotations entries with the same key
-// drop silently — see applyAgentBaseMeta.
+// labels `agent-platform.ai/agent|pair|role`) and annotations the controller
+// sets itself always win. ExtraLabels/ExtraAnnotations entries with the same
+// key drop silently — see applyAgentBaseMeta.
 type AgentBase struct {
 	// Cluster details
 	ImagePullSecrets []string `json:"imagePullSecrets,omitempty"`
@@ -141,6 +140,42 @@ type AgentTemplateDefaults struct {
 	// `$HOME` is shell-expanded at runtime — the controller sets the
 	// HOME env var on the init container; do not pre-substitute here.
 	Init string `json:"init,omitempty"`
+}
+
+// WarmPool configures a background buffer of pre-provisioned, already-Bound
+// spare workspace PVCs that a newly created agent claims instantly instead of
+// waiting for dynamic provisioning (#692). Shipped via the WARM_POOL env var
+// from `controller.warmPool`. Disabled by default — when off the controller
+// behaves exactly as before.
+type WarmPool struct {
+	Enabled bool `json:"enabled,omitempty"`
+	// StorageClass for spare PVCs. MUST be an Immediate-binding class
+	// (volumeBindingMode: Immediate) so a spare provisions the instant it is
+	// created and sits Bound and ready. Deliberately separate from
+	// AgentBase.StorageClass, whose bundled NFS class is WaitForFirstConsumer —
+	// under which a pre-created PVC would stay Pending and save nothing. The
+	// access mode is NOT configured here: a claimed spare becomes the agent's
+	// workspace PVC, so it must match AgentBase.AccessMode (RWX per ADR-027 so
+	// per-turn fork pods can co-mount); the pool inherits that single value.
+	StorageClass string `json:"storageClass,omitempty"`
+	// ReplenishInterval is how often the manager reconciles inventory toward
+	// target. Zero falls back to a built-in default.
+	ReplenishInterval Duration `json:"replenishInterval,omitempty"`
+	// MaxProvisioningTime bounds how long a spare may sit Pending (provisioning)
+	// before the manager treats it as stuck and reclaims it. Must sit well above
+	// the worst-case *healthy* provisioning time on the backing storage, or a
+	// slow-but-healthy spare gets reaped and recreated in a churn loop. Zero
+	// falls back to a generous built-in default.
+	MaxProvisioningTime Duration `json:"maxProvisioningTime,omitempty"`
+	// Sizes are the per-size buffers. Each {size, target} is an independent
+	// pool keyed by the canonicalized size; an agent claims from the pool whose
+	// size matches its effective workspace size.
+	Sizes []WarmPoolSize `json:"sizes,omitempty"`
+}
+
+type WarmPoolSize struct {
+	Size   string `json:"size"`   // K8s quantity, e.g. "10Gi"
+	Target int    `json:"target"` // desired ready spares for this size
 }
 
 // Mount mirrors types.Mount on the JSON side — defined here so config

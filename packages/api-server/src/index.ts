@@ -8,7 +8,7 @@ import {
   composeAgentsModule,
   createAgentsRepository,
   createKeycloakUserDirectory,
-  startK8sCleanupSaga,
+  startChannelSecretCleanupSaga,
   startChannelCleanupSaga,
   deleteChannelsByAgent,
   listChannelsByOwner,
@@ -52,6 +52,7 @@ import {
   createBullConnection,
 } from "./modules/runtime-delivery/index.js";
 import { composeSchedulesAtBoot } from "./modules/schedules/index.js";
+import { createSecretEnvSource } from "./modules/secrets/services/secret-env-source.js";
 import {
   createKubernetesSecretStore,
   createSecretStoreRegistry,
@@ -122,6 +123,7 @@ const runtimeDelivery = composeRuntimeDelivery({
     isRunning: (agentId) => agentsRepo.isReady(agentId),
   },
   harnessServerUrl: config.harnessServerUrl,
+  secretEnv: createSecretEnvSource({ k8sClient }),
 });
 runtimeDelivery.sweep.start();
 const contributionsSettledPort = {
@@ -145,7 +147,8 @@ const { service: e2eService } = composeE2eModule({
   namespace: config.namespace,
 });
 
-const k8sCleanupSub = startK8sCleanupSaga(k8sClient, channelSecretStore);
+const channelSecretCleanupSub =
+  startChannelSecretCleanupSaga(channelSecretStore);
 const channelCleanupSub = startChannelCleanupSaga(
   deleteChannelsByAgent(db),
   deleteThreadsByAgent(db),
@@ -433,7 +436,7 @@ listChannelsByOwner(db, "")()
 
 async function shutdown() {
   process.stderr.write("shutting down...\n");
-  k8sCleanupSub.unsubscribe();
+  channelSecretCleanupSub.unsubscribe();
   channelCleanupSub.unsubscribe();
   skillsCleanupSub.unsubscribe();
   onForeignReplySub.unsubscribe();

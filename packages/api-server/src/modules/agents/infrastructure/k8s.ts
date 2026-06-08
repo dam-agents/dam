@@ -1,6 +1,6 @@
 /**
- * Thin K8s client — generic ConfigMap / Pod / PVC operations only.
- * No domain types, no YAML parsing, no label constants.
+ * Thin K8s client — Secret and agent-platform.ai custom-resource operations
+ * only. No domain types, no YAML parsing, no label constants.
  */
 import * as k8s from "@kubernetes/client-node";
 
@@ -19,9 +19,6 @@ export interface K8sClient {
   createSecret(body: k8s.V1Secret): Promise<k8s.V1Secret>;
   replaceSecret(name: string, body: k8s.V1Secret): Promise<k8s.V1Secret>;
   deleteSecret(name: string): Promise<void>;
-
-  listPVCs(labelSelector: string): Promise<k8s.V1PersistentVolumeClaim[]>;
-  deletePVC(name: string): Promise<void>;
 
   // agent-platform.ai/v1 custom resources (ADR-058). `plural` selects the
   // resource (e.g. "agents"); the group/version are the platform's.
@@ -129,18 +126,6 @@ export function createK8sClient(
         if (is404(err)) return;
         throw err;
       }
-    },
-
-    async listPVCs(labelSelector) {
-      const res = await api.listNamespacedPersistentVolumeClaim({
-        namespace,
-        labelSelector,
-      });
-      return res.items ?? [];
-    },
-
-    async deletePVC(name) {
-      await api.deleteNamespacedPersistentVolumeClaim({ name, namespace });
     },
 
     async getCustomObject(plural, name) {

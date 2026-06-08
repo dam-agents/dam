@@ -20,6 +20,7 @@ import (
 
 	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
 	"github.com/kagenti/platform/packages/controller/pkg/config"
+	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
 // AgentReconciler renders an Agent custom resource (ADR-058) into its agent +
@@ -71,7 +72,8 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	if err := r.applyConfigMap(ctx, bootstrapCM); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying envoy bootstrap: %v", err))
 	}
-	if cert := BuildEnvoyLeafCertificate(name, r.config, ownerRef, credentialSecrets); cert != nil {
+	// alwaysIssue: agent mounts ca.crt unconditionally, so the leaf must exist.
+	if cert := BuildEnvoyLeafCertificate(name, r.config, ownerRef, credentialSecrets, true); cert != nil {
 		if err := r.applyCertificate(ctx, cert); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("applying envoy leaf certificate: %v", err))
 		}
@@ -169,7 +171,14 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 		return fmt.Errorf("agent %s: gateway Service ClusterIP not yet assigned, requeuing", name)
 	}
 
-	agentSS := BuildAgentStatefulSet(name, agentSpec, r.config, ownerRef, credentialSecrets, gatewayIP)
+	// #692: back matching persisted mounts with a pre-provisioned warm-pool PVC
+	// so a new agent skips the dynamic-provisioning wait. A lookup error requeues.
+	claims, err := r.resolveWorkspaceClaims(ctx, agent, agentSpec)
+	if err != nil {
+		return r.setError(ctx, name, fmt.Sprintf("resolving warm-pool claims: %v", err))
+	}
+	agentSS := BuildAgentStatefulSet(name, agentSpec, r.config, ownerRef, gatewayIP)
+	applyPoolClaims(agentSS, claims)
 	stampRollRev(agentSS, rollRev)
 	agentSvc := BuildAgentService(name, r.config, ownerRef)
 	if err := r.applyStatefulSet(ctx, agentSS, running); err != nil {
@@ -289,7 +298,8 @@ func (r *AgentReconciler) Delete(ctx context.Context, name string) {
 
 	// PVCs created via VolumeClaimTemplates on the agent StatefulSet are
 	// intentionally NOT cascade-deleted by K8s (to prevent data loss).
-	// We clean them up explicitly here.
+	// We clean them up explicitly here. (In-flight forks are owner-refed to
+	// the Agent CR, so K8s GC reaps them — see ensureForkOwnerReference.)
 	r.deletePVCs(ctx, name)
 }
 
@@ -326,6 +336,136 @@ func (r *AgentReconciler) deletePVCs(ctx context.Context, agentName string) {
 			slog.Warn("deleting PVC", "pvc", pvc.Name, "agent", agentName, "error", err)
 		}
 	}
+}
+
+// resolveWorkspaceClaims returns the sanitized-mount-name → warm-pool-PVC-name
+// map backing an agent's persisted mounts (#692); an empty map means "provision
+// dynamically" (unchanged behavior). The decision is made once at create; once
+// the StatefulSet exists its volume/volumeClaimTemplate split is immutable, so
+// the map is rebuilt from the live StatefulSet (not PVC labels) and intersected
+// with the currently-persisted mounts — keeping the template byte-identical
+// across wake/hibernate, even if a claimed PVC is deleted out-of-band.
+func (r *AgentReconciler) resolveWorkspaceClaims(ctx context.Context, agent *apiv1.Agent, agentSpec *apiv1.AgentSpec) (map[string]string, error) {
+	name := agent.Name
+	defaults := r.config.AgentTemplateDefaults
+
+	// Mounts the spec currently persists; every returned claim is intersected with this.
+	persisted := map[string]bool{}
+	for _, mnt := range resolveSpecMounts(agentSpec, defaults) {
+		if mnt.Persist {
+			persisted[types.SanitizeMountName(mnt.Path)] = true
+		}
+	}
+
+	// If the StatefulSet exists, the decision is frozen in its pod-template
+	// volume / volumeClaimTemplate split — reconstruct from the live object.
+	sts, err := r.client.AppsV1().StatefulSets(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
+	if err == nil {
+		claims := map[string]string{}
+		for _, v := range sts.Spec.Template.Spec.Volumes {
+			if v.PersistentVolumeClaim != nil && persisted[v.Name] {
+				claims[v.Name] = v.PersistentVolumeClaim.ClaimName
+			}
+		}
+		return claims, nil
+	}
+	if !errors.IsNotFound(err) {
+		return nil, err
+	}
+
+	// StatefulSet not created yet: recover any already-claimed spare (crash-safety),
+	// then — first create only, when enabled — claim one per remaining matching mount.
+	claimed, err := r.listClaimedPoolPVCs(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	claims := map[string]string{}
+	for mount, pvc := range claimed {
+		if persisted[mount] {
+			claims[mount] = pvc
+		}
+	}
+	if !r.config.WarmPool.Enabled {
+		return claims, nil
+	}
+
+	targets := poolTargets(r.config.WarmPool)
+	for _, mnt := range resolveSpecMounts(agentSpec, defaults) {
+		if !mnt.Persist {
+			continue
+		}
+		volName := types.SanitizeMountName(mnt.Path)
+		if _, ok := claims[volName]; ok {
+			continue // already recovered above
+		}
+		key, ok := matchPoolKey(targets, effectiveMountSize(mnt, agentSpec, defaults))
+		if !ok {
+			continue
+		}
+		pvcName, err := r.claimSpare(ctx, name, key, volName)
+		if err != nil {
+			return nil, err
+		}
+		if pvcName != "" {
+			claims[volName] = pvcName
+		}
+	}
+	return claims, nil
+}
+
+// listClaimedPoolPVCs maps mount → PVC name for an agent's pool-claimed PVCs
+// (those carrying LabelPool + LabelMount alongside LabelAgent).
+func (r *AgentReconciler) listClaimedPoolPVCs(ctx context.Context, agentName string) (map[string]string, error) {
+	list, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: LabelAgent + "=" + agentName,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	for _, p := range list.Items {
+		if _, fromPool := p.Labels[LabelPool]; !fromPool {
+			continue
+		}
+		if mount := p.Labels[LabelMount]; mount != "" {
+			out[mount] = p.Name
+		}
+	}
+	return out, nil
+}
+
+// claimSpare atomically claims one Bound available spare for poolKey: it stamps
+// LabelAgent + LabelMount and drops the available marker in a resourceVersion-
+// checked update. A lost race (Conflict/NotFound) tries the next candidate; an
+// empty pool returns "" so the caller falls back to dynamic provisioning.
+func (r *AgentReconciler) claimSpare(ctx context.Context, agentName, poolKey, mountName string) (string, error) {
+	list, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: LabelPool + "=" + poolKey + "," + LabelPoolAvailable + "=true",
+	})
+	if err != nil {
+		return "", err
+	}
+	for i := range list.Items {
+		p := &list.Items[i]
+		if p.Status.Phase != corev1.ClaimBound {
+			continue
+		}
+		if p.Labels == nil {
+			p.Labels = map[string]string{}
+		}
+		p.Labels[LabelAgent] = agentName
+		p.Labels[LabelMount] = mountName
+		delete(p.Labels, LabelPoolAvailable)
+		if _, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).Update(ctx, p, metav1.UpdateOptions{}); err != nil {
+			if errors.IsConflict(err) || errors.IsNotFound(err) {
+				continue
+			}
+			return "", err
+		}
+		slog.Info("warm pool: claimed spare for agent", "agent", agentName, "pool", poolKey, "mount", mountName, "pvc", p.Name)
+		return p.Name, nil
+	}
+	return "", nil
 }
 
 // ReconcileOrphanPVCs deletes any PVC labeled `agent-platform.ai/agent=<name>` whose

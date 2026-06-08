@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 type Config struct {
@@ -35,6 +36,11 @@ type Config struct {
 	// template (or bare-image AgentSpec) omits a field. Threaded in via the
 	// AGENT_TEMPLATE_DEFAULTS env var from `controller.agent.templateDefaults`.
 	AgentTemplateDefaults AgentTemplateDefaults
+
+	// WarmPool configures the pre-provisioned spare-PVC buffer (#692).
+	// Threaded in via the WARM_POOL env var from `controller.warmPool`.
+	// Disabled by default.
+	WarmPool WarmPool
 
 	AgentProbesEnabled       bool          // Render startup/readiness/liveness probes on agent pods (default: true; matches the chart's probes.enabled)
 	HarnessServerURL         string        // Harness API server internal URL (separate port, agent-facing)
@@ -112,6 +118,13 @@ func LoadFromEnv() (*Config, error) {
 			return nil, fmt.Errorf("AGENT_TEMPLATE_DEFAULTS: invalid JSON: %w", err)
 		}
 	}
+	if v := os.Getenv("WARM_POOL"); v != "" {
+		dec := json.NewDecoder(strings.NewReader(v))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&cfg.WarmPool); err != nil {
+			return nil, fmt.Errorf("WARM_POOL: invalid JSON: %w", err)
+		}
+	}
 
 	cfg.HarnessServerURL = os.Getenv("PLATFORM_HARNESS_SERVER_URL")
 	cfg.HarnessServerPort = envOrDefaultInt("PLATFORM_HARNESS_SERVER_PORT", 4001)
@@ -162,6 +175,45 @@ func (c *Config) validate() error {
 	// noticing privileged agent containers in prod.
 	if c.AgentBase.ContainerSecurityContext == nil {
 		return fmt.Errorf("controller.agent.base.containerSecurityContext is required (chart default ships capabilities.drop: [\"ALL\"])")
+	}
+	if err := c.WarmPool.validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validate checks the warm-pool config only when it is enabled, so a default
+// (disabled) deployment never trips these. Fails-loud on the operator-facing
+// mistakes: a missing/empty Immediate-binding StorageClass, no sizes, an
+// unparseable quantity, a size that can't be a label value, a duplicate size,
+// or a negative target.
+func (w *WarmPool) validate() error {
+	if !w.Enabled {
+		return nil
+	}
+	if w.StorageClass == "" {
+		return fmt.Errorf("controller.warmPool.storageClass is required when the warm pool is enabled (must be an Immediate-binding StorageClass)")
+	}
+	if len(w.Sizes) == 0 {
+		return fmt.Errorf("controller.warmPool.sizes must list at least one {size, target} when the warm pool is enabled")
+	}
+	seen := make(map[string]bool, len(w.Sizes))
+	for i, s := range w.Sizes {
+		q, err := resource.ParseQuantity(s.Size)
+		if err != nil {
+			return fmt.Errorf("controller.warmPool.sizes[%d].size %q is not a valid K8s quantity: %w", i, s.Size, err)
+		}
+		if s.Target < 0 {
+			return fmt.Errorf("controller.warmPool.sizes[%d].target must be >= 0 (got %d)", i, s.Target)
+		}
+		canon := q.String()
+		if errs := validation.IsValidLabelValue(canon); len(errs) > 0 {
+			return fmt.Errorf("controller.warmPool.sizes[%d].size %q canonicalizes to %q, not a valid label value: %s", i, s.Size, canon, strings.Join(errs, "; "))
+		}
+		if seen[canon] {
+			return fmt.Errorf("controller.warmPool.sizes[%d].size %q duplicates another entry (both canonicalize to %q)", i, s.Size, canon)
+		}
+		seen[canon] = true
 	}
 	return nil
 }

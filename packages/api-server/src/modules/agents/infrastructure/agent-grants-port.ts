@@ -9,7 +9,7 @@
  * grant set, never "all granted."
  */
 import { type K8sClient, type KubeObject } from "./k8s.js";
-import { AGENTS_PLURAL, ANN_ROLL_REV, LABEL_OWNER } from "./labels.js";
+import { AGENTS_PLURAL, LABEL_OWNER } from "./labels.js";
 
 export interface AgentGrants {
   grantedSecretIds: string[];
@@ -40,11 +40,6 @@ export interface AgentGrantsPort {
    * (ADR-040).
    */
   listAgentsGrantedSecret(secretId: string): Promise<GrantedAgentSummary[]>;
-  /**
-   * Bump the render-affecting roll-rev annotation on the Agent so the
-   * controller rolls the pod to re-render merged env (ADR-040 / ADR-058 A3).
-   */
-  bumpSecretsRev(agentId: string, hash: string): Promise<void>;
 }
 
 function toStringArray(v: unknown): string[] {
@@ -116,12 +111,6 @@ export function createAgentGrantsPort(
         out.push({ agentId, grantedSecretIds });
       }
       return out;
-    },
-
-    async bumpSecretsRev(agentId, hash) {
-      await client.patchCustomObject(AGENTS_PLURAL, agentId, {
-        metadata: { annotations: { [ANN_ROLL_REV]: hash } },
-      });
     },
   };
 }

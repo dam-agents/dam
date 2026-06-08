@@ -40,19 +40,26 @@ export interface StateBuilder {
   ): Promise<StatePayload>;
 }
 
+/** `env` contributions for an agent's granted standalone secrets (secrets module, ADR-040). */
+export interface SecretEnvSource {
+  forAgent(agentId: string): Promise<Contribution[]>;
+}
+
 export function createStateBuilder(deps: {
   db: Db;
   outboxRepo: OutboxRepo;
   builtin: BuiltinContributions;
+  secretEnv: SecretEnvSource;
 }): StateBuilder {
   return {
     async build(agentId, capabilities): Promise<StatePayload> {
-      const [granted, skills] = await Promise.all([
+      const [granted, skills, secretEnv] = await Promise.all([
         readGrantedContributions(deps.db, agentId),
         readSkillRefContributions(deps.db, agentId),
+        deps.secretEnv.forAgent(agentId),
       ]);
       const builtin = deps.builtin.for(agentId);
-      const rawContribs = [...builtin, ...granted, ...skills];
+      const rawContribs = [...builtin, ...granted, ...skills, ...secretEnv];
       const pending = await deps.outboxRepo.pendingEvents(agentId);
       const events = pending.map(toEvent).filter((e): e is Event => e !== null);
       const filtered = filterByCapabilities(capabilities, rawContribs, events);

@@ -41,14 +41,22 @@ func dnsNamesFromChains(chains []envoyHostChain) []string {
 	return out
 }
 
-// BuildEnvoyLeafCertificate is the desired cert-manager Certificate that
-// produces the per-instance Envoy TLS Secret. Returns nil if there are no
-// hosts to MITM (no credential Secrets) — the caller should treat that as
-// "do not apply".
-func BuildEnvoyLeafCertificate(instanceName string, cfg *config.Config, ownerRef metav1.OwnerReference, secrets []corev1.Secret) *cmv1.Certificate {
+// Placeholder SAN for a leaf issued with no credential hosts; never presented.
+func leafPlaceholderDNS(instanceName string) string {
+	return instanceName + ".mitm-placeholder.invalid"
+}
+
+// BuildEnvoyLeafCertificate renders the per-instance Envoy leaf Certificate.
+// alwaysIssue=true (long-lived agent) issues even with no hosts (placeholder
+// SAN) so the leaf Secret — and the agent's mounted ca.crt — always exists;
+// false (forks) returns nil when there's nothing to MITM.
+func BuildEnvoyLeafCertificate(instanceName string, cfg *config.Config, ownerRef metav1.OwnerReference, secrets []corev1.Secret, alwaysIssue bool) *cmv1.Certificate {
 	hosts := dnsNamesFromChains(chainsFromSecrets(secrets))
 	if len(hosts) == 0 {
-		return nil
+		if !alwaysIssue {
+			return nil
+		}
+		hosts = []string{leafPlaceholderDNS(instanceName)}
 	}
 	cert := &cmv1.Certificate{
 		ObjectMeta: metav1.ObjectMeta{

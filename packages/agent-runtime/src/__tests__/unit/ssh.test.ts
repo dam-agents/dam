@@ -5,7 +5,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   buildSshEnvironmentFile,
   createSshService,
+  refreshSshEnvironment,
 } from "../../modules/ssh.js";
+import { writeRuntimeEnv } from "../../core/runtime-env.js";
 
 // A real (throwaway) ed25519 public key line.
 const KEY_A =
@@ -129,5 +131,61 @@ describe("buildSshEnvironmentFile", () => {
       buildSshEnvironmentFile({ "bad-name": "x", "0lead": "y", good_1: "z" }),
     );
     expect(out).toEqual({ good_1: "z" });
+  });
+});
+
+describe("refreshSshEnvironment", () => {
+  let home: string;
+
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), "dam-ssh-env-"));
+  });
+  afterEach(() => {
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  const envFile = () =>
+    Object.fromEntries(
+      readFileSync(join(home, ".ssh", "environment"), "utf8")
+        .split("\n")
+        .filter(Boolean)
+        .map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]),
+    );
+
+  it("writes the runtime-channel injected env into ~/.ssh/environment", () => {
+    writeRuntimeEnv(home, {
+      DAM_TEST_TOKEN: "sentinel-1",
+      DAM_TEST_FOO: "bar",
+    });
+    refreshSshEnvironment(home, () => {});
+    const out = envFile();
+    expect(out.DAM_TEST_TOKEN).toBe("sentinel-1");
+    expect(out.DAM_TEST_FOO).toBe("bar");
+  });
+
+  // The fix: env injection is hot, so each connection must see the *current*
+  // injected env, not a boot-time snapshot. A second refresh reflects changes.
+  it("picks up injected-env changes on the next refresh (per-connection freshness)", () => {
+    writeRuntimeEnv(home, { DAM_TEST_TOKEN: "old" });
+    refreshSshEnvironment(home, () => {});
+    expect(envFile().DAM_TEST_TOKEN).toBe("old");
+
+    writeRuntimeEnv(home, { DAM_TEST_TOKEN: "new", DAM_TEST_EXTRA: "added" });
+    refreshSshEnvironment(home, () => {});
+    const out = envFile();
+    expect(out.DAM_TEST_TOKEN).toBe("new");
+    expect(out.DAM_TEST_EXTRA).toBe("added");
+  });
+
+  it("lets the pod env (process.env) win over injected env on collision", () => {
+    const key = "DAM_TEST_PRECEDENCE";
+    writeRuntimeEnv(home, { [key]: "from-runtime" });
+    process.env[key] = "from-pod";
+    try {
+      refreshSshEnvironment(home, () => {});
+      expect(envFile()[key]).toBe("from-pod");
+    } finally {
+      delete process.env[key];
+    }
   });
 });

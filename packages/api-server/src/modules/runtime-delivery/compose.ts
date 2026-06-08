@@ -16,6 +16,7 @@ import {
 } from "./infrastructure/state-queue.js";
 import {
   createStateBuilder,
+  type SecretEnvSource,
   type StateBuilder,
 } from "./services/state-builder.js";
 import {
@@ -62,6 +63,7 @@ export interface ComposeRuntimeDeliveryOpts {
   bullConnection: ConnectionOptions;
   agentRunningPort: IsAgentRunning;
   harnessServerUrl: string;
+  secretEnv: SecretEnvSource;
   log?: (msg: string) => void;
 }
 
@@ -75,7 +77,12 @@ export function composeRuntimeDelivery(
   const builtin = createBuiltinContributions({
     harnessServerUrl: opts.harnessServerUrl,
   });
-  const stateBuilder = createStateBuilder({ db: opts.db, outboxRepo, builtin });
+  const stateBuilder = createStateBuilder({
+    db: opts.db,
+    outboxRepo,
+    builtin,
+    secretEnv: opts.secretEnv,
+  });
   const queue = createStateQueue(opts.bullConnection);
 
   const handler = createWorkerHandler({

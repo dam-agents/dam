@@ -71,7 +71,10 @@ export function buildConnectCommand(deps: {
       "--server <url>",
       "override the configured server URL for this call",
     )
-    .option("--json", "emit { ok, id, status, authKind } as JSON")
+    .option(
+      "--json",
+      "emit { ok, id, status, authKind, presetsApplied? } as JSON",
+    )
     .option("--no-browser", "print the authorize URL instead of opening it")
     .option(
       "--timeout <seconds>",
@@ -82,6 +85,7 @@ export function buildConnectCommand(deps: {
       "after",
       "\nExamples:\n" +
         "  dam connection connect github\n" +
+        "  dam connection connect github --client-id Iv1.… --client-secret …  # use your own OAuth app\n" +
         "  dam connection connect github --no-browser\n" +
         "  dam connection connect my-api --header-name X-API-Key --value sk-…\n" +
         "  dam connection connect https://mcp.example.com\n" +
@@ -118,7 +122,7 @@ export function buildConnectCommand(deps: {
       // template ids are slugs (`github`, `custom-header`, …) and never contain
       // `://`, so the discriminator is unambiguous.
       const mcpUrl = parseHttpUrl(providerOrUrl);
-      const { template, name, values } = mcpUrl
+      const { template, name, values, presetsApplied } = mcpUrl
         ? await resolveMcpTemplate({
             svc,
             url: providerOrUrl,
@@ -149,6 +153,14 @@ export function buildConnectCommand(deps: {
       }
       const { id } = createRes.value;
 
+      // A preset filled inputs we never asked about (operator default or family
+      // sibling). Note it on stderr in human mode; under --json the same signal
+      // rides along in the result as `presetsApplied`.
+      const presetNames = presetsApplied.map((i) => i.name);
+      if (!json && presetNames.length > 0) {
+        process.stderr.write(formatPresetNote(presetsApplied));
+      }
+
       if (template.authKind !== "oauth") {
         emitSuccess({
           json,
@@ -156,6 +168,7 @@ export function buildConnectCommand(deps: {
           name,
           id,
           authKind: template.authKind,
+          presetsApplied: presetNames,
         });
         process.exit(EXIT_SUCCESS);
       }
@@ -195,6 +208,7 @@ export function buildConnectCommand(deps: {
         name,
         id,
         authKind: "oauth",
+        presetsApplied: presetNames,
         ...(noBrowser ? { authUrl } : {}),
       });
       process.exit(EXIT_SUCCESS);
@@ -205,6 +219,7 @@ interface ResolvedConnection {
   template: ConnectionTemplateView;
   name: string;
   values: Record<string, string>;
+  presetsApplied: ConnectionTemplateInput[];
 }
 
 async function resolveSlugTemplate(args: {
@@ -232,8 +247,8 @@ async function resolveSlugTemplate(args: {
 
   const name = (opts.name ?? slugifyTemplateName(template.name)).trim();
   validateName(name);
-  const values = await collectInputs(template, opts, json);
-  return { template, name, values };
+  const { values, presetsApplied } = await collectInputs(template, opts, json);
+  return { template, name, values, presetsApplied };
 }
 
 async function resolveMcpTemplate(args: {
@@ -269,7 +284,8 @@ async function resolveMcpTemplate(args: {
 
   const name = await resolveMcpName(mcpUrl, opts, json);
   validateName(name);
-  return { template, name, values: { url } };
+  // MCP templates declare only a `url` input — no presets to override.
+  return { template, name, values: { url }, presetsApplied: [] };
 }
 
 async function resolveMcpName(
@@ -307,33 +323,42 @@ function validateName(name: string): void {
   }
 }
 
+interface CollectedInputs {
+  values: Record<string, string>;
+  /** Overridable inputs the user didn't supply a flag for — the server fills
+   *  these from a preset. Surfaced to the user so the silent reuse is visible. */
+  presetsApplied: ConnectionTemplateInput[];
+}
+
 async function collectInputs(
   template: ConnectionTemplateView,
   opts: ConnectOpts,
   json: boolean,
-): Promise<Record<string, string>> {
+): Promise<CollectedInputs> {
   const flags = opts as unknown as Record<string, unknown>;
   const values: Record<string, string> = {};
   const missing: ConnectionTemplateInput[] = [];
+  const presetsApplied: ConnectionTemplateInput[] = [];
 
-  // `overridable` inputs use the admin preset in v1; only required/optional
-  // are user-supplied.
-  const relevant = template.inputs.filter(
-    (i) => i.state === "required" || i.state === "optional",
-  );
-  for (const input of relevant) {
+  for (const input of template.inputs) {
     const flagVal = flags[input.name];
     if (typeof flagVal === "string" && flagVal.trim().length > 0) {
+      // A supplied flag overrides an `overridable` preset; for required/optional
+      // inputs it's just the user-typed value.
       values[input.name] = flagVal.trim();
     } else if (input.state === "required") {
       missing.push(input);
+    } else if (input.state === "overridable") {
+      // Left to the server-side preset (an operator default, or a credential
+      // inherited from a family sibling). Never prompted — reported instead.
+      presetsApplied.push(input);
     }
   }
 
-  if (missing.length === 0) return values;
+  if (missing.length === 0) return { values, presetsApplied };
 
   if (!process.stdin.isTTY) {
-    const flagList = missing.map((i) => `--${camelToKebab(i.name)}`).join(", ");
+    const flagList = flagListFor(missing);
     process.stderr.write(`error: missing required input(s): ${flagList}\n`);
     process.exit(EXIT_INVALID_INPUT);
   }
@@ -347,7 +372,7 @@ async function collectInputs(
     if (isCancel(answer)) exitCancelled({ json });
     values[input.name] = String(answer).trim();
   }
-  return values;
+  return { values, presetsApplied };
 }
 
 function buildPayload(
@@ -415,6 +440,7 @@ function emitSuccess(args: {
   id: string;
   authKind: ConnectionTemplateView["authKind"];
   authUrl?: string;
+  presetsApplied?: string[];
 }): void {
   if (args.json) {
     process.stdout.write(
@@ -424,6 +450,9 @@ function emitSuccess(args: {
         status: "active",
         authKind: args.authKind,
         ...(args.authUrl ? { authUrl: args.authUrl } : {}),
+        ...(args.presetsApplied && args.presetsApplied.length > 0
+          ? { presetsApplied: args.presetsApplied }
+          : {}),
       })}\n`,
     );
   } else {
@@ -477,6 +506,13 @@ function camelToKebab(s: string): string {
   return s.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
 }
 
+// CLI flag spellings for a set of inputs, e.g. [clientId, clientSecret] →
+// "--client-id, --client-secret". Shared by the missing-input error and the
+// preset note so the two can never disagree on how a flag is spelled.
+function flagListFor(inputs: readonly ConnectionTemplateInput[]): string {
+  return inputs.map((i) => `--${camelToKebab(i.name)}`).join(", ");
+}
+
 const FIELD_LABELS: Record<string, string> = {
   url: "URL",
   host: "Host",
@@ -490,4 +526,14 @@ const FIELD_LABELS: Record<string, string> = {
 
 function labelFor(key: string): string {
   return FIELD_LABELS[key] ?? key;
+}
+
+// Generic by design: the CLI can't tell an operator default from a family
+// inheritance, so the note names the fields and how to override them, not the
+// source (issue #554, "Out of scope"). Preset values are never printed — for
+// secrets the CLI doesn't have them, and echoing even a client id into a
+// terminal/CI log is needless exposure.
+function formatPresetNote(inputs: ConnectionTemplateInput[]): string {
+  const fields = inputs.map((i) => labelFor(i.name)).join(", ");
+  return `Using preset values (${fields}). Pass ${flagListFor(inputs)} to use your own.\n`;
 }

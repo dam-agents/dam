@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -680,4 +681,168 @@ func TestEnsureLeafSecretOwnerReference_NoSecretYetIsNoop(t *testing.T) {
 	agent := agentCR()
 	r, _ := setupReconciler(t, agent)
 	assert.NoError(t, r.ensureLeafSecretOwnerReference(context.Background(), "my-agent", agentOwnerRef(agent)))
+}
+
+// --- Warm-pool claim path (#692) ---
+
+func enableWarmPool(r *AgentReconciler, sizes ...config.WarmPoolSize) {
+	// AccessMode is inherited from AgentBase (set by setupReconciler), not the
+	// pool config.
+	r.config.WarmPool = config.WarmPool{
+		Enabled:      true,
+		StorageClass: "platform-rwx-immediate",
+		Sizes:        sizes,
+	}
+}
+
+func getAgentSTS(t *testing.T, client *fake.Clientset, name string) *appsv1.StatefulSet {
+	t.Helper()
+	ss, err := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), name, metav1.GetOptions{})
+	require.NoError(t, err)
+	return ss
+}
+
+func TestReconcile_ClaimsWarmPoolSpare(t *testing.T) {
+	agent := agentCR() // testAgent persists /home/agent at the 10Gi chart default
+	r, client := setupReconciler(t, agent, availableSpare("platform-pool-aaaaaa", "10Gi", corev1.ClaimBound, time.Now()))
+	enableWarmPool(r, config.WarmPoolSize{Size: "10Gi", Target: 1})
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	claimed, err := client.CoreV1().PersistentVolumeClaims("test-agents").Get(context.Background(), "platform-pool-aaaaaa", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "my-agent", claimed.Labels[LabelAgent], "spare relabeled to the agent")
+	assert.Equal(t, "home-agent", claimed.Labels[LabelMount], "records the mount it backs")
+	assert.NotContains(t, claimed.Labels, LabelPoolAvailable, "available marker removed")
+
+	ss := getAgentSTS(t, client, "my-agent")
+	assert.False(t, hasVCT(ss, "home-agent"), "claimed mount mounted by name, not via volumeClaimTemplate")
+	claim, ok := podClaimName(ss, "home-agent")
+	require.True(t, ok)
+	assert.Equal(t, "platform-pool-aaaaaa", claim)
+}
+
+func TestReconcile_FallsBackWhenPoolEmpty(t *testing.T) {
+	agent := agentCR()
+	r, client := setupReconciler(t, agent) // no spares seeded
+	enableWarmPool(r, config.WarmPoolSize{Size: "10Gi", Target: 1})
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	ss := getAgentSTS(t, client, "my-agent")
+	assert.True(t, hasVCT(ss, "home-agent"), "empty pool → dynamic provisioning via volumeClaimTemplate")
+	_, ok := podClaimName(ss, "home-agent")
+	assert.False(t, ok)
+}
+
+func TestReconcile_DoesNotDoubleClaimOnReReconcile(t *testing.T) {
+	agent := agentCR()
+	r, client := setupReconciler(t, agent,
+		availableSpare("platform-pool-aaaaaa", "10Gi", corev1.ClaimBound, time.Now()),
+		availableSpare("platform-pool-bbbbbb", "10Gi", corev1.ClaimBound, time.Now()),
+	)
+	enableWarmPool(r, config.WarmPoolSize{Size: "10Gi", Target: 2})
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+	require.NoError(t, r.Reconcile(context.Background(), agent)) // STS now exists
+
+	claimed, err := client.CoreV1().PersistentVolumeClaims("test-agents").List(context.Background(), metav1.ListOptions{LabelSelector: LabelAgent + "=my-agent"})
+	require.NoError(t, err)
+	assert.Len(t, claimed.Items, 1, "re-reconcile reuses the first claim, never grabs a second spare")
+}
+
+func TestReconcile_ClaimRetriesOnConflict(t *testing.T) {
+	agent := agentCR()
+	r, client := setupReconciler(t, agent,
+		availableSpare("platform-pool-aaaaaa", "10Gi", corev1.ClaimBound, time.Now()),
+		availableSpare("platform-pool-bbbbbb", "10Gi", corev1.ClaimBound, time.Now()),
+	)
+	enableWarmPool(r, config.WarmPoolSize{Size: "10Gi", Target: 2})
+	// The first candidate always conflicts (a concurrent writer); claimSpare
+	// must move on to the next available spare rather than fail the reconcile.
+	client.PrependReactor("update", "persistentvolumeclaims", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		pvc := action.(k8stesting.UpdateAction).GetObject().(*corev1.PersistentVolumeClaim)
+		if pvc.Name == "platform-pool-aaaaaa" {
+			return true, nil, errors.NewConflict(schema.GroupResource{Resource: "persistentvolumeclaims"}, pvc.Name, fmt.Errorf("conflict"))
+		}
+		return false, pvc, nil
+	})
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	bbbbbb, err := client.CoreV1().PersistentVolumeClaims("test-agents").Get(context.Background(), "platform-pool-bbbbbb", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "my-agent", bbbbbb.Labels[LabelAgent], "second spare claimed after the first conflicts")
+	aaaaaa, err := client.CoreV1().PersistentVolumeClaims("test-agents").Get(context.Background(), "platform-pool-aaaaaa", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "true", aaaaaa.Labels[LabelPoolAvailable], "conflicted spare stays available")
+}
+
+// seedAgentSTSWithClaim stands up a live agent StatefulSet whose pod template
+// already mounts a workspace PVC by claimName (as applyPoolClaims would render
+// it), so resolveWorkspaceClaims can be exercised against an existing STS.
+func seedAgentSTSWithClaim(t *testing.T, client *fake.Clientset, name, mount, pvc string) {
+	t.Helper()
+	ss := &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "test-agents"},
+		Spec: appsv1.StatefulSetSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Volumes: []corev1.Volume{
+						{Name: mount, VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: pvc}}},
+						{Name: "ca-cert", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+					},
+				},
+			},
+		},
+	}
+	_, err := client.AppsV1().StatefulSets("test-agents").Create(context.Background(), ss, metav1.CreateOptions{})
+	require.NoError(t, err)
+}
+
+func TestResolveWorkspaceClaims_ReconstructsFromExistingSTS(t *testing.T) {
+	// The claimed spare PVC is gone (deleted out-of-band), but the live STS
+	// still mounts it by name. Reconstruction must reproduce that claim from the
+	// STS — not from PVC labels — so the rendered template stays valid (keeps
+	// referencing the missing PVC, a recoverable state) instead of degrading to
+	// a volumeMount with no backing volume.
+	agent := agentCR() // persists /home/agent
+	r, client := setupReconciler(t, agent)
+	enableWarmPool(r, config.WarmPoolSize{Size: "10Gi", Target: 1})
+	seedAgentSTSWithClaim(t, client, "my-agent", "home-agent", "platform-pool-gone")
+
+	claims, err := r.resolveWorkspaceClaims(context.Background(), agent, &agent.Spec)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"home-agent": "platform-pool-gone"}, claims)
+}
+
+func TestResolveWorkspaceClaims_DropsClaimForRemovedMount(t *testing.T) {
+	// The live STS still mounts a "cache" PVC by name, but the spec no longer
+	// persists /cache. The claim must be dropped so applyPoolClaims doesn't add
+	// a volume that no container mounts.
+	agent := agentCR() // persists /home/agent only — no /cache
+	r, client := setupReconciler(t, agent)
+	enableWarmPool(r, config.WarmPoolSize{Size: "10Gi", Target: 1})
+	seedAgentSTSWithClaim(t, client, "my-agent", "cache", "platform-pool-stale")
+
+	claims, err := r.resolveWorkspaceClaims(context.Background(), agent, &agent.Spec)
+	require.NoError(t, err)
+	assert.NotContains(t, claims, "cache", "a claim for a mount no longer in the spec is dropped")
+}
+
+func TestReconcileOrphanPVCs_LeavesPoolSparesAlone(t *testing.T) {
+	agent := agentCR() // "my-agent" exists in the dynamic fake
+	r, client := setupReconciler(t, agent,
+		availableSpare("platform-pool-aaaaaa", "10Gi", corev1.ClaimBound, time.Now()), // unclaimed: no agent label
+		&corev1.PersistentVolumeClaim{ // orphan: agent CR long gone
+			ObjectMeta: metav1.ObjectMeta{Name: "home-agent-ghost-0", Namespace: "test-agents", Labels: map[string]string{LabelAgent: "ghost"}},
+		},
+	)
+
+	r.ReconcileOrphanPVCs(context.Background())
+
+	_, err := client.CoreV1().PersistentVolumeClaims("test-agents").Get(context.Background(), "platform-pool-aaaaaa", metav1.GetOptions{})
+	assert.NoError(t, err, "unclaimed spare carries no agent label → the sweep never sees it")
+	_, err = client.CoreV1().PersistentVolumeClaims("test-agents").Get(context.Background(), "home-agent-ghost-0", metav1.GetOptions{})
+	assert.True(t, errors.IsNotFound(err), "orphan PVC for a missing agent is reclaimed")
 }

@@ -4,10 +4,7 @@ import type {
   K8sClient,
   KubeObject,
 } from "../../modules/agents/infrastructure/k8s.js";
-import {
-  ANN_ROLL_REV,
-  LABEL_OWNER,
-} from "../../modules/agents/infrastructure/labels.js";
+import { LABEL_OWNER } from "../../modules/agents/infrastructure/labels.js";
 
 /** ADR-058: an agent is a single custom resource; grants live in its spec
  *  (`grantedSecretIds` / `grantedConnectionIds`). */
@@ -39,8 +36,6 @@ function fakeClient(initial: KubeObject[]) {
     replaceSecret: unsupported,
     deleteSecret: async () => undefined,
 
-    listPVCs: async () => [],
-    deletePVC: async () => undefined,
     getCustomObject: async (_plural, name) => store.get(name) ?? null,
     listCustomObjects: async () => Array.from(store.values()),
     createCustomObject: async (_plural, body) => body as KubeObject,
@@ -202,17 +197,5 @@ describe("createAgentGrantsPort.listAgentsGrantedSecret", () => {
     ]);
     const port = createAgentGrantsPort(client, "owner-1");
     expect(await port.listAgentsGrantedSecret("secret-x")).toEqual([]);
-  });
-});
-
-describe("createAgentGrantsPort.bumpSecretsRev", () => {
-  it("patches the roll-rev annotation on the named agent", async () => {
-    const { client, patches } = fakeClient([agentObj("agent-1")]);
-    const port = createAgentGrantsPort(client, "owner-1");
-    await port.bumpSecretsRev("agent-1", "abc123def456");
-    expect(patches.at(-1)).toEqual({
-      name: "agent-1",
-      body: { metadata: { annotations: { [ANN_ROLL_REV]: "abc123def456" } } },
-    });
   });
 });

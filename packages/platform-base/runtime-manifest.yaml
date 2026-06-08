@@ -7,6 +7,10 @@
 manifestVersion: 1
 
 drivers:
+  # `env` kind — credential-placeholder env vars written to a JSON file the spawn paths read.
+  env:
+    impl: env
+
   # `file` kind — params per contribution; impl needs no extra config.
   file:
     impl: file

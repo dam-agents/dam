@@ -88,6 +88,18 @@ export function createAgentsService(deps: {
   cleanupHooks?: readonly AgentCleanupHook[];
   runtimeMutator: RuntimeMutator;
   contributionsSettled: ContributionsSettledPort;
+  /** Single-shot create: seeds spec grant fields before first render, then
+   *  applies egress/DB/delivery side-effects. Omitted by system compositions. */
+  grantProvisioner?: {
+    resolveSpecGrants(sel: {
+      secretIds: string[];
+      connectionIds: string[];
+    }): Promise<{ grantedSecretIds: string[]; grantedConnectionIds: string[] }>;
+    applyAfterCreate(
+      agentId: string,
+      sel: { secretIds: string[]; connectionIds: string[] },
+    ): Promise<void>;
+  };
   // --- Runtime / channels / allowed-users dependencies (formerly Instance) ---
   listChannelsByOwner: () => Promise<Map<string, ChannelConfig[]>>;
   listChannelsByAgent: (agentId: string) => Promise<ChannelConfig[]>;
@@ -240,6 +252,24 @@ export function createAgentsService(deps: {
         spec.env = preserveProtectedEnvs(base, [...base, ...input.env]);
       }
       if (input.secretRef !== undefined) spec.secretRef = input.secretRef;
+
+      // Single-shot create: seed grants into the spec before first render so
+      // credentials ride the first snapshot and the gateway renders its chains
+      // once. (Not the roll fix — the agent template is grant-independent.)
+      const grantSel = {
+        secretIds: input.secretIds ?? [],
+        connectionIds: input.connectionIds ?? [],
+      };
+      const hasInitialGrants =
+        grantSel.secretIds.length > 0 || grantSel.connectionIds.length > 0;
+      if (deps.grantProvisioner && hasInitialGrants) {
+        const g = await deps.grantProvisioner.resolveSpecGrants(grantSel);
+        if (g.grantedSecretIds.length)
+          spec.grantedSecretIds = g.grantedSecretIds;
+        if (g.grantedConnectionIds.length)
+          spec.grantedConnectionIds = g.grantedConnectionIds;
+      }
+
       // ADR-058: no desiredState — a freshly-created agent runs (recent
       // activity), and the idle checker hibernates it once it goes quiet.
       const owner = deps.owner ?? "";
@@ -286,6 +316,12 @@ export function createAgentsService(deps: {
             ]
           : [],
       );
+
+      // Side-effects now the CR exists: egress sync, connection-grant rows,
+      // channel delivery. Re-states the seeded grants (idempotent, no roll).
+      if (deps.grantProvisioner && hasInitialGrants) {
+        await deps.grantProvisioner.applyAfterCreate(infra.id, grantSel);
+      }
 
       const agent = assembleAgent(infra, [], emails, []);
       // Records the agent's initial security posture (preset, secret ref,

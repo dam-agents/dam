@@ -638,6 +638,35 @@ controller:
         fi
         mkdir -p $HOME/work
 
+  # -- Warm PVC pool (#692). A background buffer of pre-provisioned,
+  # already-Bound spare workspace volumes that a newly created agent claims
+  # instantly, instead of waiting tens of seconds to minutes for dynamic
+  # provisioning on first start. Refills in the background. Disabled by default;
+  # when off the controller behaves exactly as before.
+  warmPool:
+    enabled: false
+    # -- StorageClass for spare PVCs. MUST be an Immediate-binding class
+    # (volumeBindingMode: Immediate) so a spare provisions the instant it is
+    # created and sits ready. The bundled NFS class (platform-rwx) is
+    # WaitForFirstConsumer and will NOT pre-warm — enable
+    # nfsProvisioner.warmPoolClass for an Immediate variant, or point this at a
+    # cloud RWX class (EFS/Filestore/Azure Files) configured for Immediate.
+    storageClass: ""
+    # -- How often the manager reconciles inventory toward target.
+    replenishInterval: "30s"
+    # -- How long a spare may sit provisioning before it's treated as stuck and
+    # reclaimed. Must exceed the worst-case healthy provisioning time on your
+    # storage, or a slow-but-healthy spare gets reaped and recreated in a loop.
+    maxProvisioningTime: "30m"
+    # -- Per-size buffers. Each entry is an independent pool: keep `target`
+    # ready spares of `size`. An agent claims from the pool matching its
+    # effective workspace size; sizes with no pool fall back to dynamic
+    # provisioning. Size the pools to your templates' storageSize values.
+    sizes: []
+    #  - size: "10Gi"
+    #    target: 3
+    #  - size: "5Gi"
+    #    target: 2
   replicas: 1
   # -- Image for the Envoy credential-injector sidecar (ADR-033).
   # Envoy publishes only to Docker Hub; pulled via mirror.gcr.io (Google's
@@ -788,6 +817,15 @@ nfsProvisioner:
   # Name of the RWX StorageClass created here. Reference it from
   # `controller.agent.base.storageClass`.
   storageClassName: platform-rwx
+  # Immediate-binding RWX StorageClass for the warm PVC pool (#692). The default
+  # platform-rwx class binds WaitForFirstConsumer (correct for agent PVCs, which
+  # provision when their pod schedules) but useless for pre-warming, since a
+  # spare would sit Pending until mounted. This variant binds Immediate so
+  # spares provision the moment they're created. Reference its name from
+  # `controller.warmPool.storageClass`.
+  warmPoolClass:
+    enabled: false
+    name: platform-rwx-immediate
   # Single backing volume that hosts all NFS exports; individual agent PVCs
   # are carved out as subdirectories.
   size: 20Gi
