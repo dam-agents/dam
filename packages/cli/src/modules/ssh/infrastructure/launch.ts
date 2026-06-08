@@ -64,7 +64,6 @@ function sshHostOptions(paths: SshPaths): [string, string][] {
   ];
 }
 
-/** Full argv for the interactive `ssh` invocation. */
 export function buildSshArgs(opts: {
   agentRef: string;
   serverFlag?: string;
@@ -133,8 +132,6 @@ export async function ensureManagedSshHost(opts: {
     end,
   ].join("\n");
 
-  // Upsert the block in dam's config (replace this alias's prior block, else
-  // append) — dam owns this file, so other agents' blocks coexist.
   const damConfig = damConfigPath(env);
   await mkdir(dirname(damConfig), { recursive: true });
   let damExisting = "";
@@ -149,8 +146,6 @@ export async function ensureManagedSshHost(opts: {
   const body = stripped ? `${stripped}\n\n${block}\n` : `${block}\n`;
   await writeFile(damConfig, body, { mode: 0o600 });
 
-  // Pull dam's config into the user's via one idempotent `Include`. It must
-  // precede any `Host` block to apply globally, so prepend it.
   const userConfig = join(homedir(), ".ssh", "config");
   await mkdir(dirname(userConfig), { recursive: true, mode: 0o700 });
   let userExisting = "";

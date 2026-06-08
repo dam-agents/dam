@@ -94,7 +94,7 @@ export function buildSshCommand(deps: SshDeps): Command {
         const host = await resolveSshHost(deps, opts.server);
         const paths = sshPaths();
         const [agent] = await Promise.all([
-          resolveAgent(deps, host, agentRef), // early "not found" before handoff
+          resolveAgent(deps, host, agentRef),
           orExit(ensureKeyPair(paths), (e) => e.message),
         ]);
 
@@ -106,9 +106,6 @@ export function buildSshCommand(deps: SshDeps): Command {
             label,
           );
 
-        // VS Code Remote-SSH downloads its in-pod server from a couple of
-        // Microsoft hosts; pre-allow them so the agent's network gate doesn't
-        // pop an approval prompt in the web UI mid-connect. Best-effort.
         if (mode === "code")
           await ensureEditorEgress({
             egress: deps.createEgressService(host),
@@ -175,8 +172,6 @@ export function buildSshCommand(deps: SshDeps): Command {
             printServiceError(listed.error, host);
             process.exit(EXIT_RUNTIME_FAILURE);
           }
-          // Sequential: each call read-modify-writes the shared ssh_config, so
-          // concurrent writes would clobber each other's blocks.
           const rows: { name: string; alias: string }[] = [];
           for (const a of listed.value)
             rows.push({
@@ -187,7 +182,6 @@ export function buildSshCommand(deps: SshDeps): Command {
                 paths,
               }),
             });
-          // Reconcile: drop managed blocks for agents that no longer exist.
           const pruned = await pruneManagedHosts({
             keep: new Set(rows.map((r) => r.alias)),
           });
@@ -221,8 +215,6 @@ export function buildSshCommand(deps: SshDeps): Command {
       },
     );
 
-  // `_proxy` is the ssh ProxyCommand the connect/editor forms re-invoke — an
-  // implementation detail, not run by hand, so it stays hidden from help.
   const proxy = new Command("_proxy")
     .description(
       "Internal: act as an ssh ProxyCommand — tunnel stdin/stdout to the agent",
@@ -306,9 +298,6 @@ async function orExit<T>(p: Promise<T>, msg: (e: Error) => string): Promise<T> {
   }
 }
 
-/** Spawn an external client (`ssh`/`code`) inheriting the terminal and exit
- *  with its code. Resolves never — every exit path goes through process.exit.
- *  A missing binary is the common setup error, so name it clearly. */
 function handoff(bin: string, args: string[], label: string): Promise<never> {
   return new Promise<never>(() => {
     const child = spawn(bin, args, { stdio: "inherit" });

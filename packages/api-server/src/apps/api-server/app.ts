@@ -717,9 +717,6 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     });
   });
 
-  // One writer of the per-agent `active-session` pin, shared by all three
-  // relays so the count is across connection types (a terminal close can't
-  // clear a live SSH session's pin). See session-presence.ts.
   const sessionPresence = createSessionPresence(agentsRepo);
 
   const acpRelay = createAcpRelay(

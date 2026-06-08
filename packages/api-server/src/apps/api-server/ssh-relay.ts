@@ -52,10 +52,6 @@ export function createSshRelay(
       client.on("error", () => client.terminate());
       const release = presence.acquire(agentId);
 
-      // WS liveness: a half-open client (network drop with no clean close)
-      // would otherwise hold its active-session pin forever, since `release()`
-      // only runs on 'close'. Ping each interval; if the previous ping went
-      // unanswered, terminate — that fires 'close' below, releasing the pin.
       let alive = true;
       client.on("pong", () => {
         alive = true;

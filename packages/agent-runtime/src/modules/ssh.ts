@@ -21,14 +21,6 @@ export interface PreparedSshd {
   homeDir: string;
 }
 
-// sshd resets the environment before the login shell, so the agent's pod env
-// (proxy routing, credential sentinels, PATH) would otherwise vanish inside an
-// SSH session — breaking egress (which is proxy-only) and every credentialed
-// tool. We replay it through ~/.ssh/environment, rebuilt per connection
-// (refreshSshEnvironment) so each session tracks env injected since boot.
-// These keys are dropped: the connecting client owns the terminal, sshd/login
-// set the identity vars for the target user, and the rest is local
-// shell/tooling bookkeeping that would be wrong in a fresh shell.
 const ENV_EXCLUDE_EXACT = new Set([
   "TERM",
   "COLORTERM",
@@ -45,10 +37,6 @@ const ENV_EXCLUDE_EXACT = new Set([
 ]);
 const ENV_EXCLUDE_PREFIX = ["npm_config_", "npm_lifecycle_", "SSH_"];
 
-/** Render ~/.ssh/environment (one `NAME=value` per line) from a process env.
- *  The file format takes each value literally to end-of-line — no quoting — so
- *  values with spaces are fine, but a newline would forge a second line; those
- *  are skipped. Non-identifier names (which sshd ignores anyway) are dropped. */
 export function buildSshEnvironmentFile(
   env: NodeJS.ProcessEnv,
   warn?: (msg: string) => void,
@@ -68,25 +56,10 @@ export function buildSshEnvironmentFile(
   return lines.length ? lines.join("\n") + "\n" : "";
 }
 
-// Rebuild ~/.ssh/environment from the *current* merged env, called right before
-// each session's sshd spawns. Env injection is hot — connection/credential
-// changes land in the runtime-channel env file (core/runtime-env) without a pod
-// restart — so a once-at-boot snapshot would feed every later SSH session stale
-// proxy routing and credentials. sshd -i reads ~/.ssh/environment at session
-// start and we spawn it synchronously after this write, so the refresh is
-// picked up by exactly the connection that triggered it.
-//
-// Synchronous (writeFileSync) + atomic rename, mirroring the runtime-env
-// reader: keeping the spawn path free of an `await` avoids dropping the SSH
-// client's opening bytes (the message handler is attached synchronously in
-// spawnSshd), and the rename means a concurrent session never reads a torn file.
 export function refreshSshEnvironment(
   homeDir: string,
   log: (msg: string) => void,
 ): void {
-  // Runtime-channel env first; pod env (process.env) wins on collision — the
-  // same precedence the terminal PTY spawn uses, so an SSH login shell and a
-  // terminal shell resolve to an identical environment.
   const merged: NodeJS.ProcessEnv = {
     ...readRuntimeEnv(homeDir),
     ...process.env,
@@ -141,10 +114,6 @@ export async function prepareSshd(
     "KbdInteractiveAuthentication no",
     "StrictModes no",
     "PrintMotd no",
-    // Apply ~/.ssh/environment (written below) to every session. Safe here
-    // because the SSH user IS the single pod user (uid 65532): no privilege
-    // boundary for the usual LD_PRELOAD concern to cross — the same reasoning
-    // that lets StrictModes off above.
     "PermitUserEnvironment yes",
     "X11Forwarding no",
     "AllowTcpForwarding yes",
@@ -154,10 +123,6 @@ export async function prepareSshd(
 
   if (!sftpServer) log("sftp-server not found; scp/sftp will be unavailable");
 
-  // ~/.ssh/environment is (re)written per connection in refreshSshEnvironment,
-  // not here: env injection is hot, so a boot-time snapshot would go stale the
-  // moment a connection or credential changes without a pod restart. The host
-  // key, config, and sftp lookup above are boot-stable, so they stay.
   return { sshdPath: SSHD_PATH, configPath, homeDir };
 }
 
@@ -166,8 +131,6 @@ export function spawnSshd(
   prepared: PreparedSshd,
   log: (msg: string) => void,
 ): void {
-  // Refresh the session env before spawning so this connection picks up any env
-  // injected since boot (see refreshSshEnvironment). sshd reads the file below.
   refreshSshEnvironment(prepared.homeDir, log);
   ws.binaryType = "nodebuffer";
   const child = spawn(

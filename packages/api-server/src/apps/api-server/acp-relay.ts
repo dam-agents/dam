@@ -173,9 +173,6 @@ export function createAcpRelay(
         approvals.resolveAcpNativeFromInSession(rowId).catch(() => {});
       }
 
-      // Shared presence: count this connection toward the agent's
-      // active-session pin. Release on close registered now, so the pin frees
-      // even if the resolve/ensureReady/connect chain below rejects.
       const release = presence.acquire(agentId);
       client.once("close", release);
 

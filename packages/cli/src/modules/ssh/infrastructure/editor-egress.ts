@@ -1,23 +1,11 @@
 import type { EgressRuleView } from "api-server-api";
 import type { EgressService } from "../../egress/index.js";
 
-// Hosts VS Code Remote-SSH reaches while bootstrapping its server on the
-// agent: the update service that resolves the build commit, and the PRSS CDN
-// that serves the server tarball. The agent's egress is gated per-host (the
-// HITL network model, ADR-035), so without a pre-approval the first connect
-// pops an approval prompt in the web UI — confusing for someone driving the
-// whole flow from the CLI. Pre-allowing them keeps `dam ssh connect -x code`
-// silent end to end.
 export const VSCODE_REMOTE_HOSTS = [
   "update.code.visualstudio.com",
   "vscode.download.prss.microsoft.com",
 ] as const;
 
-/** Of `wanted`, the hosts that still need an allow rule. Returns none when
- *  egress is already wide open (a global `*` allow — e.g. the `all` preset),
- *  and skips any host an existing rule already references, so a prior explicit
- *  allow or deny is respected and repeated connects never pile up duplicates
- *  (the server's create does not dedupe). */
 export function hostsToSeed(
   existing: readonly EgressRuleView[],
   wanted: readonly string[],
@@ -34,10 +22,6 @@ export function hostsToSeed(
   return wanted.filter((h) => !referenced.has(h));
 }
 
-/** Best-effort: ensure host-only allow rules exist for `hosts` on the agent
- *  before an editor connects. Host-only rules are L4 (SNI-gated), so they apply
- *  without rolling the pod. Never throws — a failure just means the user might
- *  still see the approval prompt, which we flag via `note`. */
 export async function ensureEditorEgress(opts: {
   egress: EgressService;
   agentId: string;

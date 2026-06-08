@@ -49,10 +49,6 @@ export interface AgentsRepository {
     id: string,
   ): Promise<{ owner: string; agentId: string } | null>;
   patchAnnotation(id: string, key: string, value: string): Promise<void>;
-  /** Clear every agent's `active-session` pin. Called once at api-server boot:
-   *  a freshly started process holds no relay connections, so any
-   *  `active-session=true` is a leaked pin (a half-open socket, or a crash that
-   *  skipped the relay's close handler). Returns how many were cleared. */
   clearActiveSessions(): Promise<number>;
   wakeIfHibernated(id: string): Promise<boolean>;
   /** Authoritative reachability (ADR-059): the controller's Ready condition
