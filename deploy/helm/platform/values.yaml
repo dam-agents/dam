@@ -799,6 +799,11 @@ gitRepos:
     url: https://github.com/dam-agents/spotify-dj.git
     description: "Build sets, run playback, curate playlists, and discover music on Spotify"
     compatibleTemplates: [claude-code]
+  - id: link-guardian
+    name: Link Guardian
+    url: https://github.com/dam-agents/link-guardian.git
+    description: "Monitor and validate links to guard against broken or malicious URLs"
+    compatibleTemplates: [claude-code, bob]
 
 # -- Opt-in in-cluster NFS server + external provisioner. Provides an RWX
 # StorageClass for dev clusters whose default provisioner is RWO-only.
