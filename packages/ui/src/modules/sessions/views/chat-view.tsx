@@ -26,6 +26,7 @@ import type { AgentView } from "../../../types.js";
 import { useAgents } from "../../agents/api/queries.js";
 import { ContributionFailuresBadge } from "../../agents/components/contribution-failures-badge.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
+import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
 import { prefetchSchedules } from "../../schedules/api/queries.js";
 import { setSessionMode as applySessionMode } from "../api/acp-session-ops.js";
@@ -640,6 +641,7 @@ function ChatHeaderStatus({
   return (
     <>
       <StatusBadge size="sm" state={agent?.state ?? "starting"} />
+      <ImportInProgressBadge size="sm" agentId={selectedAgent} />
       {agent && (
         <ContributionFailuresBadge
           size="sm"

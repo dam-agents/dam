@@ -3,6 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 import { api } from "../../../api.js";
 import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
+import { useStore } from "../../../store.js";
 import { trpc } from "../../../trpc.js";
 import type { EgressPreset, EnvVar } from "../../../types.js";
 import { egressRulesKeys } from "../../egress-rules/api/queries.js";
@@ -85,6 +86,11 @@ export function useCreateAgent() {
       }
 
       if (preparedBundle) {
+        // The create dialog has already closed, so the in-flight signal must
+        // ride the store keyed on the new agent — that's where its status pill
+        // (list + chat header) reads `useIsImporting`.
+        const { beginImport, endImport } = useStore.getState();
+        beginImport(agent.id);
         try {
           await importRawBundle({
             agentId: agent.id,
@@ -99,6 +105,8 @@ export function useCreateAgent() {
             kind: "error",
             message: `Agent created, but import failed: ${err instanceof Error ? err.message : String(err)}`,
           });
+        } finally {
+          endImport(agent.id);
         }
       }
 

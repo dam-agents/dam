@@ -14,12 +14,19 @@ export interface FilesSlice {
    *  the tree-click handler can prompt before discarding. */
   openFileDirty: boolean;
   expandedDirs: Record<string, Set<string>>;
+  /** In-flight upload/import count per agent id. A count, not a boolean: a
+   *  folder pick and a drag-drop can overlap, and the agent stays "importing"
+   *  until the last one settles. Shared so the status pill — in a different
+   *  subtree from the files panel — can badge it. */
+  importingAgents: Record<string, number>;
   setOpenFilePath: (path: string | null) => void;
   setRightTab: (tab: RightTab) => void;
   setOpenFileDirty: (dirty: boolean) => void;
   toggleExpandedDir: (agentId: string, path: string) => void;
   pruneExpandedDir: (agentId: string, path: string) => void;
   renameExpandedDir: (agentId: string, from: string, to: string) => void;
+  beginImport: (agentId: string) => void;
+  endImport: (agentId: string) => void;
 }
 
 /** Drop `prefix` and every path nested under it. Collapsing a parent must
@@ -60,6 +67,7 @@ export const createFilesSlice: StateCreator<
   rightTab: "files",
   openFileDirty: false,
   expandedDirs: {},
+  importingAgents: {},
   setOpenFilePath: (path) => set({ openFilePath: path, openFileDirty: false }),
   setRightTab: (tab) => set({ rightTab: tab }),
   setOpenFileDirty: (dirty) => set({ openFileDirty: dirty }),
@@ -94,6 +102,23 @@ export const createFilesSlice: StateCreator<
           [agentId]: rewritePrefix(current, from, to),
         },
       };
+    });
+  },
+  beginImport: (agentId) => {
+    set((state) => ({
+      importingAgents: {
+        ...state.importingAgents,
+        [agentId]: (state.importingAgents[agentId] ?? 0) + 1,
+      },
+    }));
+  },
+  endImport: (agentId) => {
+    set((state) => {
+      const next = (state.importingAgents[agentId] ?? 0) - 1;
+      const importingAgents = { ...state.importingAgents };
+      if (next > 0) importingAgents[agentId] = next;
+      else delete importingAgents[agentId];
+      return { importingAgents };
     });
   },
 });

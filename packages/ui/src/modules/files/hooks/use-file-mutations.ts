@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
@@ -11,6 +11,7 @@ import {
   useFileUploadMutation,
   useFolderCreateMutation,
 } from "../api/queries.js";
+import { useIsImporting } from "./use-is-importing.js";
 
 export type FileEntryKind = "file" | "dir";
 
@@ -69,9 +70,9 @@ export function useFileMutations(agentId: string | null) {
   const deleteMutation = useFileDeleteMutation(agentId);
   const uploadMutation = useFileUploadMutation(agentId);
 
-  // Counter, not a boolean: a folder pick and a drag-drop can overlap, and we
-  // must stay "uploading" until the last one settles.
-  const [pendingUploads, setPendingUploads] = useState(0);
+  const beginImport = useStore((s) => s.beginImport);
+  const endImport = useStore((s) => s.endImport);
+  const isUploading = useIsImporting(agentId);
 
   const createEntry = useCallback(
     async ({ kind, dir, name }: CreateEntryInput) => {
@@ -181,7 +182,7 @@ export function useFileMutations(agentId: string | null) {
     async (files: FileList | File[], targetDir?: string) => {
       const list = Array.from(files);
       if (list.length === 0) return;
-      setPendingUploads((n) => n + 1);
+      if (agentId) beginImport(agentId);
       const dir = (targetDir ?? "").replace(/^\/+|\/+$/g, "");
       const prefix = dir ? `${dir}/` : "";
 
@@ -240,16 +241,16 @@ export function useFileMutations(agentId: string | null) {
           }
         }
       } finally {
-        setPendingUploads((n) => n - 1);
+        if (agentId) endImport(agentId);
       }
     },
-    [uploadMutation, showConfirm],
+    [uploadMutation, showConfirm, agentId, beginImport, endImport],
   );
 
   const uploadBundle = useCallback(
     async (entries: BundleEntry[]) => {
       if (!agentId || entries.length === 0) return;
-      setPendingUploads((n) => n + 1);
+      beginImport(agentId);
       try {
         await importBundle({ agentId, entries });
         emitToast({
@@ -262,10 +263,10 @@ export function useFileMutations(agentId: string | null) {
           message: errorMessage(err, "Import failed"),
         });
       } finally {
-        setPendingUploads((n) => n - 1);
+        endImport(agentId);
       }
     },
-    [agentId],
+    [agentId, beginImport, endImport],
   );
 
   return {
@@ -274,6 +275,6 @@ export function useFileMutations(agentId: string | null) {
     deleteEntry,
     uploadFiles,
     uploadBundle,
-    isUploading: pendingUploads > 0,
+    isUploading,
   };
 }
