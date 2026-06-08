@@ -84,7 +84,7 @@ bytes.**
   persists across boots. `PermitUserEnvironment` is safe here for the same reason
   `StrictModes` is off — the SSH user *is* the single pod user (uid 65532), so the usual
   `LD_PRELOAD` privilege-escalation concern crosses no boundary.
-- `dam ssh`'s editor modes (`-m code`, `-m zed`) keep dam's
+- `dam ssh`'s editor modes (`-x code`, `-x zed`) keep dam's
   `Host` blocks in dam's own `$XDG_CONFIG_HOME/dam/ssh_config` and add a single
   `Include` line to `~/.ssh/config` so the editor's SSH client resolves the
   agent. That one `Include` is the only CLI write outside the XDG dirs — ssh has

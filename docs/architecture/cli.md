@@ -25,7 +25,7 @@ The CLI shares types directly with the api-server via a shared contract package,
 
 ## Trust boundary
 
-The CLI runs on the user's machine. It reads and writes only under the XDG config and state directories (today: `config.toml` under `$XDG_CONFIG_HOME/dam/`; later, credentials under `$XDG_STATE_HOME/dam/`), and makes outbound network calls only to the configured server. There is no telemetry and no anonymous reporting — the platform collects nothing today and the CLI does not break that posture. The one deliberate exception is `dam ssh`'s editor modes (`-m code`, `-m zed`): dam's host entries live in its own `$XDG_CONFIG_HOME/dam/ssh_config`, and a single `Include` line is added to `~/.ssh/config` so the editor's SSH client resolves the agent host — see [SSH access](#ssh-access).
+The CLI runs on the user's machine. It reads and writes only under the XDG config and state directories (today: `config.toml` under `$XDG_CONFIG_HOME/dam/`; later, credentials under `$XDG_STATE_HOME/dam/`), and makes outbound network calls only to the configured server. There is no telemetry and no anonymous reporting — the platform collects nothing today and the CLI does not break that posture. The one deliberate exception is `dam ssh`'s editor modes (`-x code`, `-x zed`): dam's host entries live in its own `$XDG_CONFIG_HOME/dam/ssh_config`, and a single `Include` line is added to `~/.ssh/config` so the editor's SSH client resolves the agent host — see [SSH access](#ssh-access).
 
 ## Config
 
