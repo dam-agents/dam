@@ -40,7 +40,11 @@ export interface ComposeRuntimeChannelOpts {
 export async function composeRuntimeChannel(
   opts: ComposeRuntimeChannelOpts,
 ): Promise<RuntimeChannelComposition> {
-  const log = opts.log ?? ((m) => process.stderr.write(`[runtime] ${m}\n`));
+  // Timestamp the in-pod seed/apply lines so the boot timeline is diagnosable (#695).
+  const log =
+    opts.log ??
+    ((m) =>
+      process.stderr.write(`${new Date().toISOString()} [runtime] ${m}\n`));
 
   const manifest = loadManifest(opts.manifestPath);
 

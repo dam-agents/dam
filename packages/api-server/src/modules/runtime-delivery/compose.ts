@@ -1,6 +1,7 @@
 import type { ConnectionOptions } from "bullmq";
 import type { Db } from "db";
 import type { DriverFailure, RuntimeDeliveryService } from "api-server-api";
+import { getLogger } from "../../core/logger.js";
 import {
   createOutboxRepo,
   createAgentsRuntimeRepo,
@@ -70,7 +71,8 @@ export interface ComposeRuntimeDeliveryOpts {
 export function composeRuntimeDelivery(
   opts: ComposeRuntimeDeliveryOpts,
 ): RuntimeDeliveryComposition {
-  const log = opts.log ?? ((m) => process.stderr.write(`[runtime] ${m}\n`));
+  // Via Pino so apply/sweep lines carry an ISO timestamp (#695).
+  const log = opts.log ?? ((m) => getLogger().info(`[runtime] ${m}`));
 
   const outboxRepo = createOutboxRepo(opts.db);
   const agentsRuntimeRepo = createAgentsRuntimeRepo(opts.db);

@@ -14,17 +14,29 @@ export interface StateQueue {
   close(): Promise<void>;
 }
 
+// `retryUntilReady` jobs wait on the Ready condition (ADR-059/060): re-check on a tight fixed cadence (~wake budget) so the apply lands seconds after Ready, not at the next sparse exponential retry.
+const READY_RECHECK_MS = 1_000;
+const READY_RECHECK_ATTEMPTS = 120;
+
 export function createStateQueue(connection: ConnectionOptions): StateQueue {
   const queue = new Queue<StateJob>(RUNTIME_STATE_QUEUE, { connection });
   return {
     async enqueue(agentId, opts): Promise<void> {
       // No jobId dedup on purpose: applyState is idempotent, so a prompt redundant apply beats stalling fresh config behind an in-flight job.
+      const retry = opts?.retryUntilReady
+        ? {
+            attempts: READY_RECHECK_ATTEMPTS,
+            backoff: { type: "fixed" as const, delay: READY_RECHECK_MS },
+          }
+        : {
+            attempts: 8,
+            backoff: { type: "exponential" as const, delay: 1_000 },
+          };
       await queue.add(
         "state",
         { agentId, retryUntilReady: opts?.retryUntilReady },
         {
-          attempts: 8,
-          backoff: { type: "exponential", delay: 1_000 },
+          ...retry,
           removeOnComplete: { age: 3600, count: 1000 },
           removeOnFail: { age: 86_400, count: 1000 },
         },

@@ -31,8 +31,7 @@ export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
     const row = await deps.outboxRepo.getRow(agentId);
     if (!row) return;
 
-    // Not Ready (ADR-059): hello-triggered jobs fast-retry on the queue backoff
-    // (Ready is ~1s away); others defer to the sweep. Gate holds either way.
+    // Not Ready (ADR-059): hello-triggered jobs re-check on a tight cadence until Ready; others defer to the sweep.
     if (!(await deps.agentRunningPort.isRunning(agentId))) {
       if (opts?.retryUntilReady) {
         throw new Error(`${agentId}: not Ready yet — retrying until Ready`);
