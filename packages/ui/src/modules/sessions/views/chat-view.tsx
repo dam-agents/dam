@@ -629,12 +629,15 @@ function ChatHeaderStatus({
 }) {
   if (busy) {
     return (
-      <StatusBadge
-        size="sm"
-        label="Busy"
-        colorClasses="bg-accent-light text-accent border-accent"
-        dotColorClasses="bg-accent anim-pulse"
-      />
+      <>
+        <StatusBadge
+          size="sm"
+          label="Busy"
+          colorClasses="bg-accent-light text-accent border-accent"
+          dotColorClasses="bg-accent anim-pulse"
+        />
+        <ImportInProgressBadge size="sm" agentId={selectedAgent} />
+      </>
     );
   }
   const agent = agents.find((a) => a.id === selectedAgent);

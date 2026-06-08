@@ -14,10 +14,7 @@ export interface FilesSlice {
    *  the tree-click handler can prompt before discarding. */
   openFileDirty: boolean;
   expandedDirs: Record<string, Set<string>>;
-  /** In-flight upload/import count per agent id. A count, not a boolean: a
-   *  folder pick and a drag-drop can overlap, and the agent stays "importing"
-   *  until the last one settles. Shared so the status pill — in a different
-   *  subtree from the files panel — can badge it. */
+  /** In-flight import count per agent; count not bool so overlapping uploads compose. */
   importingAgents: Record<string, number>;
   setOpenFilePath: (path: string | null) => void;
   setRightTab: (tab: RightTab) => void;

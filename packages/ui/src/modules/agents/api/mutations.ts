@@ -3,7 +3,6 @@ import { useMutation } from "@tanstack/react-query";
 import { api } from "../../../api.js";
 import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
-import { useStore } from "../../../store.js";
 import { trpc } from "../../../trpc.js";
 import type { EgressPreset, EnvVar } from "../../../types.js";
 import { egressRulesKeys } from "../../egress-rules/api/queries.js";
@@ -12,6 +11,7 @@ import {
   type BundleEntry,
   importRawBundle,
 } from "../../files/api/import-bundle.js";
+import { trackImport } from "../../files/track-import.js";
 import { agentsKeys } from "./queries.js";
 
 const invalidatesAgentsList = {
@@ -86,16 +86,12 @@ export function useCreateAgent() {
       }
 
       if (preparedBundle) {
-        // The create dialog has already closed, so the in-flight signal must
-        // ride the store keyed on the new agent — that's where its status pill
-        // (list + chat header) reads `useIsImporting`.
-        const { beginImport, endImport } = useStore.getState();
-        beginImport(agent.id);
+        // Dialog has closed; the signal rides the store keyed on the new agent,
+        // where the chat-header pill reads `useIsImporting`.
         try {
-          await importRawBundle({
-            agentId: agent.id,
-            bundle: preparedBundle.blob,
-          });
+          await trackImport(agent.id, () =>
+            importRawBundle({ agentId: agent.id, bundle: preparedBundle.blob }),
+          );
           emitToast({
             kind: "success",
             message: `Imported ${preparedBundle.label} into ${input.name}`,
@@ -105,8 +101,6 @@ export function useCreateAgent() {
             kind: "error",
             message: `Agent created, but import failed: ${err instanceof Error ? err.message : String(err)}`,
           });
-        } finally {
-          endImport(agent.id);
         }
       }
 

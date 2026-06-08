@@ -11,6 +11,7 @@ import {
   useFileUploadMutation,
   useFolderCreateMutation,
 } from "../api/queries.js";
+import { trackImport } from "../track-import.js";
 import { useIsImporting } from "./use-is-importing.js";
 
 export type FileEntryKind = "file" | "dir";
@@ -70,8 +71,6 @@ export function useFileMutations(agentId: string | null) {
   const deleteMutation = useFileDeleteMutation(agentId);
   const uploadMutation = useFileUploadMutation(agentId);
 
-  const beginImport = useStore((s) => s.beginImport);
-  const endImport = useStore((s) => s.endImport);
   const isUploading = useIsImporting(agentId);
 
   const createEntry = useCallback(
@@ -182,7 +181,6 @@ export function useFileMutations(agentId: string | null) {
     async (files: FileList | File[], targetDir?: string) => {
       const list = Array.from(files);
       if (list.length === 0) return;
-      if (agentId) beginImport(agentId);
       const dir = (targetDir ?? "").replace(/^\/+|\/+$/g, "");
       const prefix = dir ? `${dir}/` : "";
 
@@ -215,7 +213,7 @@ export function useFileMutations(agentId: string | null) {
         }
       };
 
-      try {
+      await trackImport(agentId, async () => {
         for (const file of list) {
           if (file.size > MAX_UPLOAD_BYTES) {
             emitToast({
@@ -240,19 +238,16 @@ export function useFileMutations(agentId: string | null) {
             });
           }
         }
-      } finally {
-        if (agentId) endImport(agentId);
-      }
+      });
     },
-    [uploadMutation, showConfirm, agentId, beginImport, endImport],
+    [uploadMutation, showConfirm, agentId],
   );
 
   const uploadBundle = useCallback(
     async (entries: BundleEntry[]) => {
       if (!agentId || entries.length === 0) return;
-      beginImport(agentId);
       try {
-        await importBundle({ agentId, entries });
+        await trackImport(agentId, () => importBundle({ agentId, entries }));
         emitToast({
           kind: "success",
           message: `Imported ${entries.length} file${entries.length === 1 ? "" : "s"}`,
@@ -262,11 +257,9 @@ export function useFileMutations(agentId: string | null) {
           kind: "error",
           message: errorMessage(err, "Import failed"),
         });
-      } finally {
-        endImport(agentId);
       }
     },
-    [agentId, beginImport, endImport],
+    [agentId],
   );
 
   return {
