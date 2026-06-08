@@ -153,6 +153,12 @@ export function buildCatalogCommand(deps: {
             );
             process.exit(EXIT_INVALID_INPUT);
           }
+          if (e.kind === "source-needs-connection") {
+            process.stderr.write(`error: ${e.message}\n`);
+            if (e.cta)
+              process.stderr.write(`hint: connect the source — ${e.cta}\n`);
+            process.exit(EXIT_INVALID_INPUT);
+          }
           printServiceError(e, host);
           process.exit(EXIT_RUNTIME_FAILURE);
         }

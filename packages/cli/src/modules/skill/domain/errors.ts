@@ -12,3 +12,12 @@ export interface AgentNotReachableError {
 export interface PrivateSourceNeedsAgentError {
   kind: "private-source-needs-agent";
 }
+
+/** The scan reached the pod but GitHub refused: the source's app isn't
+ *  connected or access is restricted. The server encodes a fix-it URL as a
+ *  `platform-cta:` marker. Distinct from an unreachable pod. → exit 2. */
+export interface SourceNeedsConnectionError {
+  kind: "source-needs-connection";
+  message: string;
+  cta?: string;
+}

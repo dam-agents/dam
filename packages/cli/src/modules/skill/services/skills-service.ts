@@ -6,6 +6,7 @@ import type {
   AgentNotReachableError,
   AuthRequiredError,
   PrivateSourceNeedsAgentError,
+  SourceNeedsConnectionError,
   TransportError,
 } from "../domain/errors.js";
 
@@ -29,6 +30,7 @@ export interface SkillsService {
       | AuthRequiredError
       | AgentNotReachableError
       | PrivateSourceNeedsAgentError
+      | SourceNeedsConnectionError
     >
   >;
 
@@ -110,6 +112,19 @@ export function createSkillsService(deps: { trpc: TrpcClient }): SkillsService {
           if (code === "PRECONDITION_FAILED")
             return err({ kind: "private-source-needs-agent" });
           return classifyTrpcError(e);
+        }
+        // With an agentId, the pod was reached but GitHub may have refused: the
+        // server encodes a `platform-cta:` fix-it URL in the message for the
+        // app-not-connected / access-restricted case. Surface that distinctly
+        // (mirroring the UI) rather than as an unreachable-agent failure.
+        const cta = (e instanceof Error ? e.message : "").match(
+          /platform-cta:(\S+)/,
+        )?.[1];
+        if (cta !== undefined) {
+          const message = (e as Error).message
+            .replace(/\nplatform-cta:\S+/, "")
+            .trim();
+          return err({ kind: "source-needs-connection", message, cta });
         }
         return classifyWakeError(e);
       }

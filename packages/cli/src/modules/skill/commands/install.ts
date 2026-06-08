@@ -103,19 +103,26 @@ export function buildInstallCommand(deps: {
         const catalogRes = await svc.catalog(source.id, agentId);
         if (!catalogRes.ok) {
           const e = catalogRes.error;
-          if (
-            e.kind === "agent-not-reachable" ||
-            e.kind === "private-source-needs-agent"
-          ) {
-            // Both indicate the pod couldn't be reached for the scan; with an
-            // agentId always sent, only agent-not-reachable occurs in practice.
-            process.stderr.write(
-              `error: ${e.kind === "agent-not-reachable" ? e.reason : "source could not be scanned"}\n`,
-            );
-            process.exit(EXIT_AGENT_NOT_REACHABLE);
+          switch (e.kind) {
+            case "agent-not-reachable":
+              process.stderr.write(`error: ${e.reason}\n`);
+              process.exit(EXIT_AGENT_NOT_REACHABLE);
+            case "source-needs-connection":
+              process.stderr.write(`error: ${e.message}\n`);
+              if (e.cta)
+                process.stderr.write(`hint: connect the source — ${e.cta}\n`);
+              process.exit(EXIT_INVALID_INPUT);
+            case "private-source-needs-agent":
+              // Unreachable: install always sends an agentId. Kept for
+              // exhaustiveness over the catalog error union.
+              process.stderr.write(
+                `error: source '${source.name}' could not be scanned\n`,
+              );
+              process.exit(EXIT_RUNTIME_FAILURE);
+            default:
+              printServiceError(e, host);
+              process.exit(EXIT_RUNTIME_FAILURE);
           }
-          printServiceError(e, host);
-          process.exit(EXIT_RUNTIME_FAILURE);
         }
 
         const scanned = catalogRes.value.find((s) => s.name === name);

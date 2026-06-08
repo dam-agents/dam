@@ -5,4 +5,5 @@ export type {
   AuthRequiredError,
   AgentNotReachableError,
   PrivateSourceNeedsAgentError,
+  SourceNeedsConnectionError,
 } from "./domain/errors.js";
