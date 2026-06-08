@@ -148,7 +148,9 @@ func (m *WarmPoolManager) reconcileSize(ctx context.Context, poolKey string, tar
 		slog.Info("warm pool: provisioned spare", "pool", poolKey, "pvc", pvc.Name)
 	}
 
-	// Trim Bound excess (target lowered, or drift), oldest first.
+	// Shrink to target, oldest first. target is a setpoint, not a floor: lowering
+	// it (or setting 0) must release the surplus *provisioned* storage, or a
+	// scaled-down pool would keep paying for idle Bound volumes forever.
 	if len(bound) > target {
 		sort.Slice(bound, func(i, j int) bool {
 			return bound[i].CreationTimestamp.Time.Before(bound[j].CreationTimestamp.Time)
