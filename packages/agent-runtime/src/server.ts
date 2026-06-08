@@ -1,5 +1,4 @@
 import http from "node:http";
-import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import headlessPkg from "@xterm/headless";
@@ -25,6 +24,7 @@ import { readRuntimeEnv } from "./core/runtime-env.js";
 import { createFilesService } from "./modules/files.js";
 import { createImportHandlers, sweepStaging } from "./modules/import/index.js";
 import { composeSkills } from "./modules/skills/index.js";
+import { configureGitCredentialHelper } from "./modules/git.js";
 import { createSshService, prepareSshd, spawnSshd } from "./modules/ssh.js";
 import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
@@ -98,7 +98,16 @@ const runtimeChannel = await composeRuntimeChannel({
   agentId: process.env.PLATFORM_AGENT_ID ?? process.env.HOSTNAME ?? "unknown",
   triggerDriver,
   plugins: [
-    createEnvPlugin({ onChange: () => acpRuntime.refreshEnv() }),
+    createEnvPlugin({
+      onChange: () => {
+        acpRuntime.refreshEnv();
+        // Env carrying GH_TOKEN just landed — (re)point git's credential helper
+        // at gh. Reads the freshly-written runtime env; no-ops without a token.
+        configureGitCredentialHelper(homeDir, (msg) =>
+          process.stderr.write(`[git] ${msg}\n`),
+        );
+      },
+    }),
     createFilePlugin(),
     createMcpEntryPlugin(),
     createSkillInstallPlugin({ install: skillsService.install }),
@@ -368,24 +377,6 @@ server.on("upgrade", (req, socket, head) => {
     socket.destroy();
   }
 });
-
-// Configure git to use gh's credential helper. git doesn't know about
-// GH_TOKEN directly, so without this it prompts for a username on private
-// repos. With this, git asks `gh auth git-credential`, gets the sentinel,
-// and the Envoy sidecar swaps it on the wire — same path REST already
-// uses. Idempotent; safe to run on every boot.
-try {
-  const result = spawnSync("gh", ["auth", "setup-git"], { stdio: "pipe" });
-  if (result.status !== 0) {
-    process.stderr.write(
-      `[git] gh auth setup-git exited ${result.status}: ${result.stderr?.toString() ?? ""}\n`,
-    );
-  }
-} catch (e) {
-  process.stderr.write(
-    `[git] failed to configure credential helper: ${(e as Error).message}\n`,
-  );
-}
 
 // Node defaults `requestTimeout` to 5 minutes. The import route holds a
 // request open through extract+finalize of a multi-GB tar — easily over
