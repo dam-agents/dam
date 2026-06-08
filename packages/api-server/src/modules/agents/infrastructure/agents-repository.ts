@@ -1,5 +1,6 @@
 import { type K8sClient } from "./k8s.js";
 import {
+  ACTIVE_SESSION_KEY,
   AGENTS_PLURAL,
   ANN_ROLL_REV,
   LABEL_OWNER,
@@ -48,6 +49,11 @@ export interface AgentsRepository {
     id: string,
   ): Promise<{ owner: string; agentId: string } | null>;
   patchAnnotation(id: string, key: string, value: string): Promise<void>;
+  /** Clear every agent's `active-session` pin. Called once at api-server boot:
+   *  a freshly started process holds no relay connections, so any
+   *  `active-session=true` is a leaked pin (a half-open socket, or a crash that
+   *  skipped the relay's close handler). Returns how many were cleared. */
+  clearActiveSessions(): Promise<number>;
   wakeIfHibernated(id: string): Promise<boolean>;
   /** Authoritative reachability (ADR-059): the controller's Ready condition
    *  (`AgentPodReady ∧ GatewayPodReady`). Absent or False ⇒ not ready; the
@@ -167,6 +173,19 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
       await k8s.patchCustomObject(AGENTS_PLURAL, id, {
         metadata: { annotations: { [key]: value } },
       });
+    },
+
+    async clearActiveSessions() {
+      const objs = await k8s.listCustomObjects(AGENTS_PLURAL);
+      let cleared = 0;
+      for (const o of objs) {
+        const id = o.metadata?.name;
+        if (id && o.metadata?.annotations?.[ACTIVE_SESSION_KEY] === "true") {
+          await repo.patchAnnotation(id, ACTIVE_SESSION_KEY, "");
+          cleared++;
+        }
+      }
+      return cleared;
     },
 
     async wakeIfHibernated(id) {

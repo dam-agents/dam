@@ -375,6 +375,26 @@ schedulesBoot.runner.restoreAll().catch((err) => {
   );
 });
 
+// Clear stale `active-session` pins left by a prior process generation. This
+// fresh api-server holds no relay connections yet, so any active-session=true
+// is a leaked pin (half-open socket, or a crash/restart that skipped a relay's
+// close handler) — and the controller would keep that agent awake forever
+// (hibernation.go bypasses the idle timeout while the pin is set). Relays
+// re-set it as clients reconnect. Best-effort; never block boot on it. Runs
+// before startApiServerApp begins accepting upgrades, so it can't race a fresh
+// connection's own pin.
+try {
+  const cleared = await agentsRepo.clearActiveSessions();
+  if (cleared)
+    process.stderr.write(
+      `[boot] cleared ${cleared} stale active-session pin(s)\n`,
+    );
+} catch (err) {
+  process.stderr.write(
+    `[boot] clearActiveSessions failed: ${(err as Error).message}\n`,
+  );
+}
+
 const { server: apiServer } = startApiServerApp({
   config,
   api,

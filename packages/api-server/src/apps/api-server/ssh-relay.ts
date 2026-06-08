@@ -10,6 +10,7 @@ import {
 
 const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;
 const ACTIVITY_DEBOUNCE_MS = 30_000;
+const PING_INTERVAL_MS = 30_000;
 
 export interface SshRelay {
   handleUpgrade(
@@ -63,6 +64,25 @@ export function createSshRelay(
       client.on("error", () => client.terminate());
       mark(agentId, 1);
 
+      // WS liveness: a half-open client (network drop with no clean close)
+      // would otherwise hold its active-session pin forever, since `mark(-1)`
+      // only runs on 'close'. Ping each interval; if the previous ping went
+      // unanswered, terminate — that fires 'close' below, releasing the pin.
+      let alive = true;
+      client.on("pong", () => {
+        alive = true;
+      });
+      const heartbeat = setInterval(() => {
+        if (!alive) {
+          client.terminate();
+          return;
+        }
+        alive = false;
+        try {
+          client.ping();
+        } catch {}
+      }, PING_INTERVAL_MS);
+
       let upstream: WebSocket | undefined;
       let clientGone = false;
       const closeWs = (ws?: WebSocket) => {
@@ -71,6 +91,7 @@ export function createSshRelay(
         } catch {}
       };
       client.on("close", () => {
+        clearInterval(heartbeat);
         clientGone = true;
         mark(agentId, -1);
         closeWs(upstream);
