@@ -79,6 +79,7 @@ export function ChatView() {
   // Ref (not state) so the chat→terminal toggle propagates to Terminal's mount
   // synchronously — zustand re-renders before useState commits.
   const terminalFreshRef = useRef(false);
+  const ephemeralTerminalIdRef = useRef<string | null>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -182,9 +183,23 @@ export function ChatView() {
     // surfaces in session/list with no `_meta` and decodes as terminal.
     if (!sessionId && messages.length === 0) {
       if (target === SessionMode.Terminal) {
-        setSessionId(crypto.randomUUID());
+        const id = crypto.randomUUID();
+        ephemeralTerminalIdRef.current = id;
+        setSessionId(id);
       }
       setSessionMode(target);
+      return;
+    }
+
+    if (
+      target === SessionMode.Chat &&
+      sessionId &&
+      ephemeralTerminalIdRef.current === sessionId
+    ) {
+      ephemeralTerminalIdRef.current = null;
+      resetSession();
+      setSessionMode(SessionMode.Chat);
+      requestAnimationFrame(() => textareaRef.current?.focus());
       return;
     }
 
@@ -234,6 +249,7 @@ export function ChatView() {
     stopAgent,
     setSessionMode,
     resumeSession,
+    resetSession,
     setSessionId,
     setTerminalPaused,
   ]);
