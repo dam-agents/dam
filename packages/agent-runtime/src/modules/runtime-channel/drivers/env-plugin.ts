@@ -1,16 +1,18 @@
 import type { DriverBinding, KindHandler, Plugin } from "agent-runtime-api";
-import { readRuntimeEnv, writeRuntimeEnv } from "../../../core/runtime-env.js";
+import type { EnvStateStore } from "../infrastructure/env-state-store.js";
 
 const IMPL_NAME = "env";
 const GH_TOKEN_ENV = "GH_TOKEN";
 const GH_AVAILABLE_ENV = "PLATFORM_GH_TOKEN_AVAILABLE";
 
 export interface EnvPluginDeps {
+  /** The shared env store; the driver is its only writer. */
+  store: EnvStateStore;
   /** Fired only when the written env changed, so a running harness can recycle. */
   onChange?: () => void;
 }
 
-export function createEnvPlugin(deps: EnvPluginDeps = {}): Plugin {
+export function createEnvPlugin(deps: EnvPluginDeps): Plugin {
   return {
     name: IMPL_NAME,
 
@@ -31,11 +33,11 @@ export function createEnvPlugin(deps: EnvPluginDeps = {}): Plugin {
         env[GH_AVAILABLE_ENV] = GH_TOKEN_ENV in env ? "true" : "false";
 
         // Only rewrite + recycle when env actually changed (dispatcher fires on any snapshot change).
-        if (envEquals(readRuntimeEnv(ctx.agentHome), env)) {
+        if (envEquals(deps.store.current(), env)) {
           ctx.log("env unchanged");
           return;
         }
-        writeRuntimeEnv(ctx.agentHome, env);
+        deps.store.write(env);
         ctx.log(`wrote ${Object.keys(env).length} env var(s)`);
         deps.onChange?.();
       };

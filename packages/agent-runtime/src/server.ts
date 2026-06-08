@@ -20,7 +20,6 @@ import {
 } from "api-server-api";
 import { createFileDocumentStoreBackend } from "./core/document-store.js";
 import { expandHome } from "./core/expand-home.js";
-import { readRuntimeEnv } from "./core/runtime-env.js";
 import { createFilesService } from "./modules/files.js";
 import { createImportHandlers, sweepStaging } from "./modules/import/index.js";
 import { composeSkills } from "./modules/skills/index.js";
@@ -32,6 +31,7 @@ import { createWebSocketChannel } from "./modules/acp/infrastructure/create-webs
 import {
   composeRuntimeChannel,
   createEnvPlugin,
+  createEnvStateStore,
   createFilePlugin,
   createMcpEntryPlugin,
   createSkillInstallPlugin,
@@ -79,13 +79,17 @@ const importHandlers = createImportHandlers(homeDir, workDir, (msg) =>
 
 const stateBackend = createFileDocumentStoreBackend(homeDir);
 
+// Single shared env store: the env driver writes it; the spawn paths below
+// (harness, terminal, ssh, git) read it through the RuntimeEnvReader port.
+const envStore = createEnvStateStore(homeDir);
+
 const { runtime: acpRuntime, triggerDriver } = composeAcp({
   command: config.PLATFORM_DEV
     ? ["npx", "tsx", join(__dir, "agent.ts")]
     : ["/usr/local/bin/harness-chat"],
   workingDir: workDir,
-  agentHome: homeDir,
   stateBackend,
+  envReader: envStore,
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
 });
 
@@ -99,11 +103,12 @@ const runtimeChannel = await composeRuntimeChannel({
   triggerDriver,
   plugins: [
     createEnvPlugin({
+      store: envStore,
       onChange: () => {
         acpRuntime.refreshEnv();
         // Env carrying GH_TOKEN just landed — (re)point git's credential helper
-        // at gh. Reads the freshly-written runtime env; no-ops without a token.
-        configureGitCredentialHelper(homeDir, (msg) =>
+        // at gh. Reads the freshly-written env; no-ops without a token.
+        configureGitCredentialHelper(envStore, (msg) =>
           process.stderr.write(`[git] ${msg}\n`),
         );
       },
@@ -240,7 +245,7 @@ function attachPty(
         cwd: workDir,
         env: {
           // Runtime-channel env first; process.env wins on collision.
-          ...readRuntimeEnv(homeDir),
+          ...envStore.current(),
           ...(Object.fromEntries(
             Object.entries(process.env).filter(
               ([k, v]) =>
@@ -369,7 +374,7 @@ server.on("upgrade", (req, socket, head) => {
       return;
     }
     sshWss.handleUpgrade(req, socket, head, (ws) =>
-      spawnSshd(ws, preparedSshd, (msg) =>
+      spawnSshd(ws, preparedSshd, envStore, (msg) =>
         process.stderr.write(`[ssh] ${msg}\n`),
       ),
     );

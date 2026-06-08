@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { readRuntimeEnv } from "../core/runtime-env.js";
+import type { RuntimeEnvReader } from "../core/runtime-env.js";
 
 const GH_TOKEN_ENV = "GH_TOKEN";
 const SETUP_TIMEOUT_MS = 10_000;
@@ -13,10 +13,10 @@ const SETUP_TIMEOUT_MS = 10_000;
 // reaction, and a failure just leaves git unconfigured (private-repo ops would
 // then prompt) rather than wedging anything.
 export function configureGitCredentialHelper(
-  homeDir: string,
+  envReader: RuntimeEnvReader,
   log: (msg: string) => void,
 ): void {
-  const env = { ...readRuntimeEnv(homeDir), ...process.env };
+  const env = { ...envReader.current(), ...process.env };
   if (!env[GH_TOKEN_ENV]) return;
 
   const proc = spawn("gh", ["auth", "setup-git"], {
