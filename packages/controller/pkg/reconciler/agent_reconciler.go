@@ -290,7 +290,8 @@ func (r *AgentReconciler) Delete(ctx context.Context, name string) {
 
 	// PVCs created via VolumeClaimTemplates on the agent StatefulSet are
 	// intentionally NOT cascade-deleted by K8s (to prevent data loss).
-	// We clean them up explicitly here.
+	// We clean them up explicitly here. (In-flight forks are owner-refed to
+	// the Agent CR, so K8s GC reaps them — see ensureForkOwnerReference.)
 	r.deletePVCs(ctx, name)
 }
 

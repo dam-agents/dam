@@ -8,7 +8,7 @@ import {
   composeAgentsModule,
   createAgentsRepository,
   createKeycloakUserDirectory,
-  startK8sCleanupSaga,
+  startChannelSecretCleanupSaga,
   startChannelCleanupSaga,
   deleteChannelsByAgent,
   listChannelsByOwner,
@@ -147,7 +147,8 @@ const { service: e2eService } = composeE2eModule({
   namespace: config.namespace,
 });
 
-const k8sCleanupSub = startK8sCleanupSaga(k8sClient, channelSecretStore);
+const channelSecretCleanupSub =
+  startChannelSecretCleanupSaga(channelSecretStore);
 const channelCleanupSub = startChannelCleanupSaga(
   deleteChannelsByAgent(db),
   deleteThreadsByAgent(db),
@@ -435,7 +436,7 @@ listChannelsByOwner(db, "")()
 
 async function shutdown() {
   process.stderr.write("shutting down...\n");
-  k8sCleanupSub.unsubscribe();
+  channelSecretCleanupSub.unsubscribe();
   channelCleanupSub.unsubscribe();
   skillsCleanupSub.unsubscribe();
   onForeignReplySub.unsubscribe();

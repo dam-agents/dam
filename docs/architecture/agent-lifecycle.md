@@ -144,7 +144,7 @@ The pod terminates; the PVC, Secret, Service, and NetworkPolicy persist. Workspa
 
 ### Delete
 
-The api-server deletes the `agent` ConfigMap. The controller's reconciler tears down the owned StatefulSet, Service, NetworkPolicy, and Secret. Sessions tied to this Agent in the DB are cleaned via cascade or periodic reconciliation. PVC handling follows the cluster's reclaim policy.
+The api-server deletes the `agent` ConfigMap. The controller's reconciler tears down the owned StatefulSet, Service, NetworkPolicy, and Secret. Sessions tied to this Agent in the DB are cleaned via cascade or periodic reconciliation. The controller reclaims the agent's workspace PVCs explicitly (StatefulSet `volumeClaimTemplate` PVCs are not cascade-deleted by K8s). In-flight per-turn forks are owner-refed to the Agent CR, so Kubernetes garbage-collects them automatically. The api-server owns none of this: it never touches PVCs, and only deletes the per-channel credential Secrets it wrote.
 
 Schedule ConfigMaps (`agent-schedule`) are independent resources and survive Agent deletion as orphans unless the deletion path explicitly cascades. The UI offers a checkbox to delete a schedule's accumulated sessions alongside the schedule itself ([ADR-019](../adrs/019-session-identity.md)).
 

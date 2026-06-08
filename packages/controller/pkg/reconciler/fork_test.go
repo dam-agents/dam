@@ -109,6 +109,21 @@ func TestForkReconcile_CreatesJob(t *testing.T) {
 	assert.Equal(t, apiv1.ForkPhasePending, status.Phase)
 }
 
+func TestForkReconcile_OwnedByParentAgent(t *testing.T) {
+	fork := forkCR("fork-own", minimalForkSpec("my-agent"), time.Unix(1_000_000-1, 0))
+	r, _ := setupForkReconciler(t, map[string]*apiv1.Agent{"my-agent": agentCR()}, fork)
+
+	require.NoError(t, r.Reconcile(context.Background(), fork))
+
+	u, err := r.dynamic.Resource(ForksGVR).Namespace("test-agents").Get(context.Background(), "fork-own", metav1.GetOptions{})
+	require.NoError(t, err)
+	refs := u.GetOwnerReferences()
+	require.Len(t, refs, 1)
+	assert.Equal(t, "Agent", refs[0].Kind)
+	assert.Equal(t, "my-agent", refs[0].Name)
+	assert.Equal(t, apitypes.UID("agent-uid"), refs[0].UID)
+}
+
 func TestForkReconcile_WritesReadyOnPodReady(t *testing.T) {
 	fork := forkCR("fork-2", minimalForkSpec("my-agent"), time.Unix(1_000_000-1, 0))
 	r, _ := setupForkReconciler(t, map[string]*apiv1.Agent{"my-agent": agentCR()}, fork,

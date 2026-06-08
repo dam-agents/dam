@@ -36,8 +36,6 @@ function fakeClient(initial: KubeObject[]) {
     replaceSecret: unsupported,
     deleteSecret: async () => undefined,
 
-    listPVCs: async () => [],
-    deletePVC: async () => undefined,
     getCustomObject: async (_plural, name) => store.get(name) ?? null,
     listCustomObjects: async () => Array.from(store.values()),
     createCustomObject: async (_plural, body) => body as KubeObject,

@@ -58,9 +58,15 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 
 	// ADR-046: the fork derives from a single Agent that carries both
 	// definition and runtime fields. Resolve it directly.
-	_, agentSpec, err := r.resolver.Resolve(forkSpec.AgentName)
+	parentAgent, agentSpec, err := r.resolver.Resolve(forkSpec.AgentName)
 	if err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, err.Error())
+	}
+
+	// Own the Fork by its parent Agent so K8s GC reaps an in-flight fork when
+	// the Agent is deleted. Best-effort — retried on the next reconcile.
+	if err := r.ensureForkOwnerReference(ctx, fork, parentAgent); err != nil {
+		slog.Warn("setting fork owner reference", "fork", forkName, "agent", parentAgent.Name, "error", err)
 	}
 
 	// Load the replier's K8s credential Secrets and render the per-fork
@@ -191,6 +197,38 @@ func (r *ForkReconciler) Delete(ctx context.Context, name string) {
 	// resources in AgentReconciler.Delete. Clean them up explicitly.
 	r.deleteReleaseNsForkResources(ctx, name)
 	slog.Info("fork configmap deleted", "fork", name)
+}
+
+// ensureForkOwnerReference adds an OwnerReference from the Fork CR to its parent
+// Agent, so K8s GC reaps an in-flight fork when the Agent is deleted. Idempotent;
+// mirrors AgentReconciler.ensureLeafSecretOwnerReference.
+func (r *ForkReconciler) ensureForkOwnerReference(ctx context.Context, fork *apiv1.Fork, parent *apiv1.Agent) error {
+	for _, ref := range fork.OwnerReferences {
+		if ref.UID == parent.UID {
+			return nil
+		}
+	}
+	cli := r.dynamic.Resource(ForksGVR).Namespace(r.config.Namespace)
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		obj, err := cli.Get(ctx, fork.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		refs := obj.GetOwnerReferences()
+		for _, ref := range refs {
+			if ref.UID == parent.UID {
+				return nil
+			}
+		}
+		obj.SetOwnerReferences(append(refs, metav1.OwnerReference{
+			APIVersion: apiv1.GroupVersion.String(),
+			Kind:       "Agent",
+			Name:       parent.Name,
+			UID:        parent.UID,
+		}))
+		_, err = cli.Update(ctx, obj, metav1.UpdateOptions{})
+		return err
+	})
 }
 
 // deleteReleaseNsForkResources removes the per-fork harness + ext-authz
