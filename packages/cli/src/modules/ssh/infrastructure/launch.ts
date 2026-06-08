@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { SshPaths } from "./ssh-keys.js";
@@ -18,16 +18,30 @@ export function editorLaunchArgs(
   }
 }
 
+const shQuote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+
 function proxyCommandString(agentRef: string, serverFlag?: string): string {
-  const script = process.argv[1];
-  const parts = [
-    ...(script ? [process.execPath, resolve(script)] : ["dam"]),
+  const node = shQuote(process.execPath);
+  const script = shQuote(process.argv[1] ? resolve(process.argv[1]) : "");
+  const damArgs = [
     "ssh",
     "_proxy",
     agentRef,
     ...(serverFlag ? ["--server", serverFlag] : []),
-  ];
-  return parts.map((a) => `'${a.replace(/'/g, `'\\''`)}'`).join(" ");
+  ]
+    .map(shQuote)
+    .join(" ");
+  return [
+    `set -- ${damArgs}`,
+    `if [ -x ${node} ] && [ -f ${script} ]; then exec ${node} ${script} "$@"`,
+    `elif command -v node >/dev/null 2>&1 && [ -f ${script} ]; then exec node ${script} "$@"`,
+    `elif command -v dam >/dev/null 2>&1; then exec dam "$@"`,
+    `else for s in zsh bash; do command -v "$s" >/dev/null 2>&1 || continue; ` +
+      `d=$("$s" -ic 'command -v dam' </dev/null 2>/dev/null | tail -n1); ` +
+      `[ -n "$d" ] && [ -x "$d" ] && exec "$d" "$@"; done; ` +
+      `echo 'dam ssh _proxy: dam not found (resolved node+script, node/dam on PATH, or via zsh/bash)' >&2; exit 127`,
+    `fi`,
+  ].join("; ");
 }
 
 function sshConfigValue(v: string): string {
@@ -68,6 +82,35 @@ function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function damConfigPath(env: NodeJS.ProcessEnv): string {
+  const xdg = env.XDG_CONFIG_HOME;
+  return join(
+    xdg && xdg.length > 0 ? xdg : join(homedir(), ".config"),
+    "dam",
+    "ssh_config",
+  );
+}
+
+const managedBlockRe = () =>
+  /# >>> dam ssh: (\S+) \(managed\) >>>[\s\S]*?# <<< dam ssh: \1 \(managed\) <<</g;
+
+function dropManagedBlocks(
+  content: string,
+  remove: (alias: string) => boolean,
+): { body: string; removed: string[] } {
+  const removed: string[] = [];
+  const stripped = content.replace(managedBlockRe(), (full, alias: string) => {
+    if (!remove(alias)) return full;
+    removed.push(alias);
+    return "";
+  });
+  const body = stripped
+    .replace(/^\s*\n/, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trimEnd();
+  return { body, removed };
+}
+
 export async function ensureManagedSshHost(opts: {
   agentRef: string;
   serverFlag?: string;
@@ -92,12 +135,7 @@ export async function ensureManagedSshHost(opts: {
 
   // Upsert the block in dam's config (replace this alias's prior block, else
   // append) — dam owns this file, so other agents' blocks coexist.
-  const xdg = env.XDG_CONFIG_HOME;
-  const damConfig = join(
-    xdg && xdg.length > 0 ? xdg : join(homedir(), ".config"),
-    "dam",
-    "ssh_config",
-  );
+  const damConfig = damConfigPath(env);
   await mkdir(dirname(damConfig), { recursive: true });
   let damExisting = "";
   try {
@@ -127,4 +165,68 @@ export async function ensureManagedSshHost(opts: {
       { mode: 0o600 },
     );
   return alias;
+}
+
+export async function pruneManagedHosts(opts: {
+  keep: Set<string>;
+  env?: NodeJS.ProcessEnv;
+}): Promise<string[]> {
+  const env = opts.env ?? process.env;
+  const damConfig = damConfigPath(env);
+  let existing = "";
+  try {
+    existing = await readFile(damConfig, "utf8");
+  } catch {
+    return [];
+  }
+  const { body, removed } = dropManagedBlocks(
+    existing,
+    (alias) => !opts.keep.has(alias),
+  );
+  if (removed.length)
+    await writeFile(damConfig, body ? `${body}\n` : "", { mode: 0o600 });
+  return removed;
+}
+
+export async function clearManagedHosts(
+  opts: { env?: NodeJS.ProcessEnv } = {},
+): Promise<number> {
+  const env = opts.env ?? process.env;
+  const damConfig = damConfigPath(env);
+  let existing = "";
+  try {
+    existing = await readFile(damConfig, "utf8");
+  } catch {
+    return 0;
+  }
+  const { body, removed } = dropManagedBlocks(existing, () => true);
+  if (body) {
+    await writeFile(damConfig, `${body}\n`, { mode: 0o600 });
+  } else {
+    await rm(damConfig, { force: true });
+    await removeDamInclude(damConfig);
+  }
+  return removed.length;
+}
+
+async function removeDamInclude(damConfig: string): Promise<void> {
+  const userConfig = join(homedir(), ".ssh", "config");
+  let content = "";
+  try {
+    content = await readFile(userConfig, "utf8");
+  } catch {
+    return;
+  }
+  const includeLine = `Include ${sshConfigValue(damConfig)}`;
+  const lines = content.split("\n");
+  const kept = lines.filter(
+    (l, i) =>
+      l !== includeLine &&
+      !(l === "# dam ssh (managed)" && lines[i + 1] === includeLine),
+  );
+  const next = kept
+    .join("\n")
+    .replace(/^\n+/, "")
+    .replace(/\n{3,}/g, "\n\n");
+  await writeFile(userConfig, next, { mode: 0o600 });
 }

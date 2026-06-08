@@ -22,8 +22,10 @@ import { connectRawBridge } from "../infrastructure/raw-bridge.js";
 import { ensureKeyPair, sshPaths } from "../infrastructure/ssh-keys.js";
 import {
   buildSshArgs,
+  clearManagedHosts,
   editorLaunchArgs,
   ensureManagedSshHost,
+  pruneManagedHosts,
 } from "../infrastructure/launch.js";
 import {
   ensureEditorEgress,
@@ -127,22 +129,41 @@ export function buildSshCommand(deps: SshDeps): Command {
   ssh
     .command("configure")
     .description(
-      "Write the dam-managed SSH host config for an agent (or --all), without launching a client",
+      "Write or remove the dam-managed SSH host config without launching a client. Configure one agent, --all (reconciles: adds current agents, prunes deleted ones), or --clear (remove all)",
     )
-    .argument("[agent]", "agent name or ID (omit when using --all)")
-    .option("-a, --all", "configure every agent on the active host")
+    .argument("[agent]", "agent name or ID (omit when using --all/--clear)")
+    .option(
+      "-a, --all",
+      "configure every agent on the active host, pruning hosts whose agent no longer exists",
+    )
+    .option("--clear", "remove all dam-managed SSH hosts and exit")
     .option("--server <url>", "override the configured server URL")
     .action(
       async (
         agentRef: string | undefined,
-        opts: { all?: boolean; server?: string },
+        opts: { all?: boolean; clear?: boolean; server?: string },
       ) => {
-        if (!!agentRef === !!opts.all)
+        const modes = [
+          agentRef ? "an agent" : null,
+          opts.all ? "--all" : null,
+          opts.clear ? "--clear" : null,
+        ].filter((m): m is string => m !== null);
+        if (modes.length !== 1)
           die(
-            agentRef
-              ? "pass either an agent or --all, not both"
-              : "specify an agent name/ID, or --all",
+            modes.length === 0
+              ? "specify an agent name/ID, --all, or --clear"
+              : `pass exactly one of: an agent, --all, or --clear (got ${modes.join(", ")})`,
           );
+
+        if (opts.clear) {
+          const cleared = await clearManagedHosts();
+          process.stdout.write(
+            cleared === 0
+              ? "No dam-managed SSH hosts to clear.\n"
+              : `Cleared ${cleared} dam-managed SSH host${cleared === 1 ? "" : "s"}.\n`,
+          );
+          process.exit(0);
+        }
 
         const host = await resolveSshHost(deps, opts.server);
         const paths = sshPaths();
@@ -153,10 +174,6 @@ export function buildSshCommand(deps: SshDeps): Command {
           if (!listed.ok) {
             printServiceError(listed.error, host);
             process.exit(EXIT_RUNTIME_FAILURE);
-          }
-          if (listed.value.length === 0) {
-            process.stdout.write("No agents to configure.\n");
-            process.exit(0);
           }
           // Sequential: each call read-modify-writes the shared ssh_config, so
           // concurrent writes would clobber each other's blocks.
@@ -170,11 +187,21 @@ export function buildSshCommand(deps: SshDeps): Command {
                 paths,
               }),
             });
-          process.stdout.write(
-            `Configured ${rows.length} SSH host${rows.length === 1 ? "" : "s"}:\n` +
-              rows.map((r) => `  ${r.alias}  (${r.name})`).join("\n") +
-              "\n",
-          );
+          // Reconcile: drop managed blocks for agents that no longer exist.
+          const pruned = await pruneManagedHosts({
+            keep: new Set(rows.map((r) => r.alias)),
+          });
+          const out = [
+            rows.length === 0
+              ? "No agents to configure."
+              : `Configured ${rows.length} SSH host${rows.length === 1 ? "" : "s"}:`,
+            ...rows.map((r) => `  ${r.alias}  (${r.name})`),
+          ];
+          if (pruned.length)
+            out.push(
+              `Pruned ${pruned.length} stale host${pruned.length === 1 ? "" : "s"}: ${pruned.join(", ")}`,
+            );
+          process.stdout.write(out.join("\n") + "\n");
           process.exit(0);
         }
 

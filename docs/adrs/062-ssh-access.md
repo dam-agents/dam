@@ -40,8 +40,9 @@ bytes.**
   same proxy, and `-x zed` does the same for Zed. A single `-x`/`--exec` flag picks the
   client binary, with an optional `:<mode>` suffix (`ssh`|`code`|`zed`) forcing how it's
   invoked when the name isn't self-describing (e.g. `-x code-insiders`). `dam ssh configure
-  (<agent> | --all)` writes the managed host config (one block, or one per agent) and exits
-  without launching a client. (Editor support beyond VS Code and Zed — e.g. JetBrains
+  (<agent> | --all | --clear)` writes the managed host config (one block, or one per agent)
+  and exits without launching a client; `--all` reconciles — it also prunes blocks for
+  agents that no longer exist — and `--clear` removes every managed block. (Editor support beyond VS Code and Zed — e.g. JetBrains
   Gateway — is out of scope for the MVP.)
 - **Auth.** Public-key. The CLI keeps a dam-managed keypair under the XDG state dir and,
   on each `_proxy` connect, registers the public key with the agent via a new
@@ -92,6 +93,14 @@ bytes.**
   already-running singletons that ignore a launch-time `PATH`/`HOME`, so an
   `Include` is the reliable cross-editor hook. Called out in
   [cli.md](../architecture/cli.md).
+- The persisted `ProxyCommand` is a small `sh` fallback script, not a frozen absolute
+  path, because the same editor-singleton problem applies: a config block written once
+  must keep working after the CLI moves (node-version switch, reinstall) or when an editor
+  spawns it without the user's shell `PATH`. It tries, in order, the node+script resolved
+  at write time, `node`+script on `PATH`, `dam` on `PATH`, then `dam` as found by an
+  rc-loaded `zsh`/`bash`; discovery never writes to the stdin/stdout that carry the SSH
+  transport. `dam ssh connect -x <editor>` also re-upserts the block each launch, so the
+  common path self-heals.
 - SSH is available on every agent image: `sshd` and the canonical `/bin/bash` login user
   live in `platform-base`, which all harness images (claude-code, codex, pi-agent, bob, the
   e2e mock) build on. The runtime still degrades cleanly if a future image strips `sshd`

@@ -1,10 +1,12 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   buildSshArgs,
+  clearManagedHosts,
   ensureManagedSshHost,
+  pruneManagedHosts,
 } from "../modules/ssh/infrastructure/launch.js";
 import { inferMode } from "../modules/ssh/commands/ssh.js";
 import { sshPaths } from "../modules/ssh/infrastructure/ssh-keys.js";
@@ -56,6 +58,23 @@ describe("buildSshArgs", () => {
     expect(joined).toContain("--server' 'https://example.test'");
     // Host token is lowercased and stripped of unsafe chars for the ssh destination.
     expect(args[args.length - 1]).toBe("agent_with.caps");
+  });
+});
+
+describe("proxyCommandString resilience chain (via buildSshArgs)", () => {
+  it("is a single-line fallback: node+script → PATH node → dam → zsh/bash", () => {
+    const joined = buildSshArgs({ agentRef: "my-agent", paths }).join(" ");
+    const pc = joined.slice(joined.indexOf("ProxyCommand="));
+    // ssh config ProxyCommand must be one line; the chain runs under `sh -c`.
+    expect(pc).not.toContain("\n");
+    // 1) resolved node interpreter captured at write time.
+    expect(pc).toContain(process.execPath);
+    // 2) `node` on PATH with the script.
+    expect(pc).toContain("command -v node");
+    // 3) `dam` on PATH.
+    expect(pc).toContain('exec dam "$@"');
+    // 4) dam discovered via an rc-loaded zsh, then bash.
+    expect(pc).toContain("for s in zsh bash");
   });
 });
 
@@ -111,5 +130,67 @@ describe("ensureManagedSshHost", () => {
     await ensureManagedSshHost({ agentRef: "beta", paths, env });
     expect(damConfig()).toContain("Host dam-alpha");
     expect(damConfig()).toContain("Host dam-beta");
+  });
+});
+
+describe("pruneManagedHosts / clearManagedHosts", () => {
+  let home: string;
+  let xdg: string;
+  let prevHome: string | undefined;
+  const env = () => ({ XDG_CONFIG_HOME: xdg });
+  const damCfgPath = () => join(xdg, "dam", "ssh_config");
+  const damCfg = () => readFileSync(damCfgPath(), "utf8");
+  const userCfg = () => readFileSync(join(home, ".ssh", "config"), "utf8");
+
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), "dam-ssh-home-"));
+    xdg = mkdtempSync(join(tmpdir(), "dam-ssh-xdg-"));
+    prevHome = process.env.HOME;
+    process.env.HOME = home;
+  });
+  afterEach(() => {
+    if (prevHome === undefined) delete process.env.HOME;
+    else process.env.HOME = prevHome;
+    rmSync(home, { recursive: true, force: true });
+    rmSync(xdg, { recursive: true, force: true });
+  });
+
+  it("prune removes only blocks whose alias is not in the keep set", async () => {
+    for (const a of ["alpha", "beta", "gamma"])
+      await ensureManagedSshHost({ agentRef: a, paths, env: env() });
+    const removed = await pruneManagedHosts({
+      keep: new Set(["dam-alpha", "dam-gamma"]),
+      env: env(),
+    });
+    expect(removed).toEqual(["dam-beta"]);
+    const cfg = damCfg();
+    expect(cfg).toContain("Host dam-alpha");
+    expect(cfg).toContain("Host dam-gamma");
+    expect(cfg).not.toContain("Host dam-beta");
+  });
+
+  it("prune is a no-op (returns []) when every alias is kept", async () => {
+    await ensureManagedSshHost({ agentRef: "alpha", paths, env: env() });
+    const removed = await pruneManagedHosts({
+      keep: new Set(["dam-alpha"]),
+      env: env(),
+    });
+    expect(removed).toEqual([]);
+    expect(damCfg()).toContain("Host dam-alpha");
+  });
+
+  it("clear removes every block, deletes the file, and drops the Include", async () => {
+    await ensureManagedSshHost({ agentRef: "alpha", paths, env: env() });
+    await ensureManagedSshHost({ agentRef: "beta", paths, env: env() });
+    expect(userCfg()).toContain("Include ");
+
+    const cleared = await clearManagedHosts({ env: env() });
+    expect(cleared).toBe(2);
+    expect(existsSync(damCfgPath())).toBe(false);
+    expect(userCfg()).not.toContain("Include ");
+  });
+
+  it("clear returns 0 when nothing is configured", async () => {
+    expect(await clearManagedHosts({ env: env() })).toBe(0);
   });
 });
