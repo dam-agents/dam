@@ -11,10 +11,6 @@ RUN --mount=type=cache,target=/root/.npm \
     | bash -s -- --pm npm \
     && chown -R 65532:0 /app
 
-# os.userInfo() needs a /etc/passwd entry for uid 65532 — distroless
-# base has none and bob crashes during initializeStorage().
-RUN echo 'agent:x:65532:0:Agent User:/home/agent:/sbin/nologin' >> /etc/passwd
-
 COPY bob-acp-shim.mjs /app/bob-acp-shim.mjs
 COPY harness-chat.sh /usr/local/bin/harness-chat
 COPY harness-terminal.sh /usr/local/bin/harness-terminal

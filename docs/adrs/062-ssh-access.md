@@ -92,8 +92,11 @@ bytes.**
   already-running singletons that ignore a launch-time `PATH`/`HOME`, so an
   `Include` is the reliable cross-editor hook. Called out in
   [cli.md](../architecture/cli.md).
-- SSH is image-dependent: images without `sshd` (e.g. distroless `bob`) leave `/api/ssh`
-  unavailable and `dam ssh` fails cleanly.
+- SSH is available on every agent image: `sshd` and the canonical `/bin/bash` login user
+  live in `platform-base`, which all harness images (claude-code, codex, pi-agent, bob, the
+  e2e mock) build on. The runtime still degrades cleanly if a future image strips `sshd`
+  from the base — `prepareSshd` returns null and `/api/ssh` refuses the upgrade — but no
+  shipped image exercises that path today.
 
 ## Alternatives considered
 

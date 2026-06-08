@@ -143,7 +143,7 @@ Forms:
 
 Authentication is public-key: a dedicated dam keypair under `$XDG_STATE_HOME/dam/ssh/` (so the CLI never touches the user's own `~/.ssh` keys). Host-key checking is disabled (`UserKnownHostsFile=/dev/null`, `StrictHostKeyChecking=no`): the WebSocket upgrade is the real trust boundary and the stream is already TLS-encrypted, so the in-pod host key authenticates nothing extra and only broke connections when an agent PVC rotated it. The user's real identity is the bearer token verified at the upgrade; the SSH key is only the transport credential `ssh` requires. The `connect` and `configure` forms run the same compatibility gate as other networked verbs; `_proxy` resolves the server from config directly, since it runs once per SSH connection.
 
-`dam ssh` depends on the OpenSSH client (`ssh`, `ssh-keygen`) on the user's machine; the editor modes additionally need the chosen client on PATH (`code`/`code-insiders` for mode `code`, `zed` for mode `zed`). Server-side it is image-dependent — agents on images without `sshd` (e.g. distroless) reject the connection.
+`dam ssh` depends on the OpenSSH client (`ssh`, `ssh-keygen`) on the user's machine; the editor modes additionally need the chosen client on PATH (`code`/`code-insiders` for mode `code`, `zed` for mode `zed`). Server-side, `sshd` ships in `platform-base`, so every agent image supports it; an image that stripped `sshd` from the base would reject the connection cleanly.
 
 ## Import
 
