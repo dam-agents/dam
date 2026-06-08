@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
@@ -68,6 +68,10 @@ export function useFileMutations(agentId: string | null) {
   const renameMutation = useFileRenameMutation(agentId);
   const deleteMutation = useFileDeleteMutation(agentId);
   const uploadMutation = useFileUploadMutation(agentId);
+
+  // Counter, not a boolean: a folder pick and a drag-drop can overlap, and we
+  // must stay "uploading" until the last one settles.
+  const [pendingUploads, setPendingUploads] = useState(0);
 
   const createEntry = useCallback(
     async ({ kind, dir, name }: CreateEntryInput) => {
@@ -177,6 +181,7 @@ export function useFileMutations(agentId: string | null) {
     async (files: FileList | File[], targetDir?: string) => {
       const list = Array.from(files);
       if (list.length === 0) return;
+      setPendingUploads((n) => n + 1);
       const dir = (targetDir ?? "").replace(/^\/+|\/+$/g, "");
       const prefix = dir ? `${dir}/` : "";
 
@@ -209,29 +214,33 @@ export function useFileMutations(agentId: string | null) {
         }
       };
 
-      for (const file of list) {
-        if (file.size > MAX_UPLOAD_BYTES) {
-          emitToast({
-            kind: "error",
-            message: `${file.name} exceeds 10 MB — skipped`,
-          });
-          continue;
+      try {
+        for (const file of list) {
+          if (file.size > MAX_UPLOAD_BYTES) {
+            emitToast({
+              kind: "error",
+              message: `${file.name} exceeds 10 MB — skipped`,
+            });
+            continue;
+          }
+          const safe = sanitizeUploadName(file.name);
+          if (!safe) continue;
+          const path = `${prefix}${safe}`;
+          try {
+            const contentBase64 = await fileToBase64(file);
+            const contentType = file.type || undefined;
+            const written = await uploadOne(path, contentBase64, contentType);
+            if (written)
+              emitToast({ kind: "success", message: `Uploaded ${path}` });
+          } catch (err) {
+            emitToast({
+              kind: "error",
+              message: errorMessage(err, `Upload failed: ${path}`),
+            });
+          }
         }
-        const safe = sanitizeUploadName(file.name);
-        if (!safe) continue;
-        const path = `${prefix}${safe}`;
-        try {
-          const contentBase64 = await fileToBase64(file);
-          const contentType = file.type || undefined;
-          const written = await uploadOne(path, contentBase64, contentType);
-          if (written)
-            emitToast({ kind: "success", message: `Uploaded ${path}` });
-        } catch (err) {
-          emitToast({
-            kind: "error",
-            message: errorMessage(err, `Upload failed: ${path}`),
-          });
-        }
+      } finally {
+        setPendingUploads((n) => n - 1);
       }
     },
     [uploadMutation, showConfirm],
@@ -240,6 +249,7 @@ export function useFileMutations(agentId: string | null) {
   const uploadBundle = useCallback(
     async (entries: BundleEntry[]) => {
       if (!agentId || entries.length === 0) return;
+      setPendingUploads((n) => n + 1);
       try {
         await importBundle({ agentId, entries });
         emitToast({
@@ -251,6 +261,8 @@ export function useFileMutations(agentId: string | null) {
           kind: "error",
           message: errorMessage(err, "Import failed"),
         });
+      } finally {
+        setPendingUploads((n) => n - 1);
       }
     },
     [agentId],
@@ -262,5 +274,6 @@ export function useFileMutations(agentId: string | null) {
     deleteEntry,
     uploadFiles,
     uploadBundle,
+    isUploading: pendingUploads > 0,
   };
 }

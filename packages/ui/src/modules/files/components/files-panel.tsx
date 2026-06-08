@@ -51,6 +51,7 @@ export function FilesPanel({
         onChange={controller.handleFolderInputChange}
       />
       <FilesPanelToolbar
+        isUploading={controller.isUploading}
         onUploadFiles={() => controller.openFilePickerFor("")}
         onUploadFolder={controller.openFolderPicker}
         onNew={(kind) => controller.startNewIn(kind, "")}

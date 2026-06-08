@@ -94,8 +94,14 @@ export function useFilesPanelController({
 
   const rootSnapshot = useDirSnapshot(selectedAgent, "");
 
-  const { createEntry, renameEntry, deleteEntry, uploadFiles, uploadBundle } =
-    useFileMutations(selectedAgent);
+  const {
+    createEntry,
+    renameEntry,
+    deleteEntry,
+    uploadFiles,
+    uploadBundle,
+    isUploading,
+  } = useFileMutations(selectedAgent);
   const { data: openFile, error: openFileError } = useFileContentQuery(
     selectedAgent,
     openFilePath,
@@ -357,6 +363,7 @@ export function useFilesPanelController({
     menu,
     rootIsLoadedEmpty,
     showPanelOverlay,
+    isUploading,
     fileInputRef,
     folderInputRef,
     closeFile,

@@ -3,12 +3,17 @@ import { FilePlus, FolderPlus, FolderUp, Upload } from "lucide-react";
 import type { FileEntryKind } from "../hooks/use-file-mutations.js";
 
 interface Props {
+  isUploading: boolean;
   onUploadFiles: () => void;
   onUploadFolder: () => void;
   onNew: (kind: FileEntryKind) => void;
 }
 
+const uploadButtonClass =
+  "text-text-muted hover:text-accent p-0.5 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-text-muted";
+
 export function FilesPanelToolbar({
+  isUploading,
   onUploadFiles,
   onUploadFolder,
   onNew,
@@ -19,15 +24,17 @@ export function FilesPanelToolbar({
         /home/agent
       </span>
       <button
-        className="text-text-muted hover:text-accent p-0.5 rounded transition-colors"
-        title="Upload files"
+        className={uploadButtonClass}
+        title={isUploading ? "Upload in progress…" : "Upload files"}
+        disabled={isUploading}
         onClick={onUploadFiles}
       >
         <Upload size={13} />
       </button>
       <button
-        className="text-text-muted hover:text-accent p-0.5 rounded transition-colors"
-        title="Upload folder"
+        className={uploadButtonClass}
+        title={isUploading ? "Upload in progress…" : "Upload folder"}
+        disabled={isUploading}
         onClick={onUploadFolder}
       >
         <FolderUp size={13} />
