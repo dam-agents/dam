@@ -46,24 +46,17 @@ const (
 	RoleAgent   = "agent"
 	RoleGateway = "gateway"
 
-	// LabelMount records which sanitized mount path a persisted workspace PVC
-	// backs. It is set on every persisted PVC — both the StatefulSet's
-	// volumeClaimTemplate (normal agents) and warm-pool spares at claim time —
-	// so a workspace PVC is addressed by (LabelAgent, LabelMount) rather than by
-	// a reconstructed `<mount>-<agent>-0` name. A claimed pool spare keeps its
-	// generated name, so name reconstruction is no longer a valid contract
-	// (#692, ADR-061). Consumers fall back to the legacy name only when no
-	// labeled PVC is found (agents created before this label existed).
+	// LabelMount records the sanitized mount a persisted workspace PVC backs. Set
+	// on every persisted PVC (volumeClaimTemplate and claimed spare), so a PVC is
+	// addressed by (LabelAgent, LabelMount) rather than a reconstructed
+	// `<mount>-<agent>-0` name — a claimed spare keeps its generated name (#692).
 	LabelMount = "agent-platform.ai/mount"
 
-	// Warm-pool labels (#692). A pre-provisioned spare workspace PVC carries
-	// LabelPool (= the canonical workspace size, the pool key) and, while
-	// unclaimed, LabelPoolAvailable="true". Crucially a spare carries NO
-	// LabelAgent until claimed, so the orphan sweep (ReconcileOrphanPVCs, which
-	// lists by LabelAgent) never reaps it. On claim, the controller stamps
-	// LabelAgent and LabelMount and removes LabelPoolAvailable in one atomic
-	// update; from then on the PVC is an ordinary agent PVC (reclaimed by
-	// deletePVCs on agent delete).
+	// Warm-pool labels (#692). A spare carries LabelPool (canonical size = pool
+	// key) and, while unclaimed, LabelPoolAvailable="true" but NO LabelAgent — so
+	// the orphan sweep (lists by LabelAgent) skips it. On claim it gains
+	// LabelAgent + LabelMount and loses LabelPoolAvailable, becoming an ordinary
+	// agent PVC.
 	LabelPool          = "agent-platform.ai/pool"
 	LabelPoolAvailable = "agent-platform.ai/pool-available"
 )
@@ -437,19 +430,10 @@ func effectiveMountSize(m types.Mount, agentSpec *types.AgentSpec, defaults conf
 	return defaults.StorageSize
 }
 
-// applyPoolClaims rewrites a freshly built agent StatefulSet so the named
-// mounts are backed by pre-provisioned warm-pool PVCs instead of
-// volumeClaimTemplates. For each (sanitized mount name → claimed PVC name) it
-// drops that mount's volumeClaimTemplate and adds an explicit pod Volume
-// referencing the claim by name — the same shape forks use
-// (fork_resources.go). The container's volumeMount already targets the mount
-// name, so nothing else changes.
-//
-// No-op for an empty map, so agents with no pool claim render exactly as
-// before. The claim decision is made once at first create
-// (resolveWorkspaceClaims) and reproduced identically on later reconciles, so
-// the rendered template is stable across wake/hibernate; applyStatefulSet
-// never mutates volumeClaimTemplates on an existing StatefulSet regardless.
+// applyPoolClaims swaps the named mounts from a volumeClaimTemplate to an
+// explicit pod Volume referencing the claimed PVC by name (the shape forks use).
+// The container's volumeMount already targets the mount name. No-op for an empty
+// map, so unclaimed agents render exactly as before.
 func applyPoolClaims(ss *appsv1.StatefulSet, claims map[string]string) {
 	if len(claims) == 0 {
 		return

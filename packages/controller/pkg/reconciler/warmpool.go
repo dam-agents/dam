@@ -28,12 +28,9 @@ const defaultReplenishInterval = 30 * time.Second
 const defaultMaxProvisioningTime = 30 * time.Minute
 
 // WarmPoolManager maintains a background buffer of pre-provisioned, already-Bound
-// spare workspace PVCs so a newly created agent claims one instantly instead of
-// waiting for dynamic provisioning (#692). It mirrors the IdleChecker shape: a
-// single goroutine, leader-only (started inside main.run), so all pool mutations
-// are single-writer. The reconciler is the only other PVC writer and only ever
-// *claims* available spares (relabels them); the manager only ever *creates* and
-// *garbage-collects available* spares, so the two never fight over the same PVC.
+// spare workspace PVCs (#692). Leader-only single goroutine (mirrors IdleChecker).
+// It only creates/GCs *available* spares; the reconciler only *claims* them — so
+// the two writers never contend over the same PVC.
 type WarmPoolManager struct {
 	client kubernetes.Interface
 	config *config.Config

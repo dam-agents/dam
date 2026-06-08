@@ -171,11 +171,8 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 		return fmt.Errorf("agent %s: gateway Service ClusterIP not yet assigned, requeuing", name)
 	}
 
-	// #692: back matching persisted mounts with a pre-provisioned warm-pool
-	// PVC so a brand-new agent skips the dynamic-provisioning wait. Decided
-	// once at first create and reconstructed from PVC labels thereafter, so the
-	// template stays stable across wake/hibernate; a transient lookup error
-	// requeues rather than risk a drifting template.
+	// #692: back matching persisted mounts with a pre-provisioned warm-pool PVC
+	// so a new agent skips the dynamic-provisioning wait. A lookup error requeues.
 	claims, err := r.resolveWorkspaceClaims(ctx, agent, agentSpec)
 	if err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("resolving warm-pool claims: %v", err))
@@ -340,29 +337,18 @@ func (r *AgentReconciler) deletePVCs(ctx context.Context, agentName string) {
 	}
 }
 
-// resolveWorkspaceClaims decides which persisted mounts of an agent are backed
-// by a pre-provisioned warm-pool spare (#692), returning a sanitized-mount-name
-// → claimed-PVC-name map. A nil/empty map means "provision dynamically", which
-// is the unchanged behavior.
-//
-// The decision is made exactly once, at first create. Once the StatefulSet
-// exists, the split between claimed-by-name volumes and volumeClaimTemplates is
-// frozen (volumeClaimTemplates are immutable), so the map is reconstructed from
-// the **live StatefulSet** — not from PVC labels — guaranteeing the rendered
-// template is reproduced byte-identically across wake/hibernate even if a
-// claimed PVC was deleted out-of-band (we keep referencing it by name, an
-// ordinary recoverable missing-PVC state, rather than rendering a volumeMount
-// with no backing volume, which is unrecoverable). The map is always
-// intersected with the spec's currently-persisted mounts, so a mount removed
-// from the spec drops its volume instead of leaving a dangling one. A transient
-// API error is returned (the caller requeues) rather than risk a drifting
-// template.
+// resolveWorkspaceClaims returns the sanitized-mount-name → warm-pool-PVC-name
+// map backing an agent's persisted mounts (#692); an empty map means "provision
+// dynamically" (unchanged behavior). The decision is made once at create; once
+// the StatefulSet exists its volume/volumeClaimTemplate split is immutable, so
+// the map is rebuilt from the live StatefulSet (not PVC labels) and intersected
+// with the currently-persisted mounts — keeping the template byte-identical
+// across wake/hibernate, even if a claimed PVC is deleted out-of-band.
 func (r *AgentReconciler) resolveWorkspaceClaims(ctx context.Context, agent *apiv1.Agent, agentSpec *apiv1.AgentSpec) (map[string]string, error) {
 	name := agent.Name
 	defaults := r.config.AgentTemplateDefaults
 
-	// Sanitized names of the mounts the spec currently persists. Every returned
-	// claim is intersected with this set.
+	// Mounts the spec currently persists; every returned claim is intersected with this.
 	persisted := map[string]bool{}
 	for _, mnt := range resolveSpecMounts(agentSpec, defaults) {
 		if mnt.Persist {
@@ -386,11 +372,8 @@ func (r *AgentReconciler) resolveWorkspaceClaims(ctx context.Context, agent *api
 		return nil, err
 	}
 
-	// StatefulSet not created yet. Recover any spare already claimed for a
-	// still-persisted mount (crash-safety: a claim that landed before the STS
-	// was created), then — only on this first-create path, and only when
-	// enabled — claim a spare for each remaining persisted mount whose size
-	// matches a pool.
+	// StatefulSet not created yet: recover any already-claimed spare (crash-safety),
+	// then — first create only, when enabled — claim one per remaining matching mount.
 	claimed, err := r.listClaimedPoolPVCs(ctx, name)
 	if err != nil {
 		return nil, err
@@ -429,9 +412,8 @@ func (r *AgentReconciler) resolveWorkspaceClaims(ctx context.Context, agent *api
 	return claims, nil
 }
 
-// listClaimedPoolPVCs reconstructs an agent's claim map from the labels on PVCs
-// it already owns: a pool-claimed PVC carries LabelAgent + LabelPool and records
-// the mount it backs in LabelMount.
+// listClaimedPoolPVCs maps mount → PVC name for an agent's pool-claimed PVCs
+// (those carrying LabelPool + LabelMount alongside LabelAgent).
 func (r *AgentReconciler) listClaimedPoolPVCs(ctx context.Context, agentName string) (map[string]string, error) {
 	list, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: LabelAgent + "=" + agentName,
@@ -451,12 +433,10 @@ func (r *AgentReconciler) listClaimedPoolPVCs(ctx context.Context, agentName str
 	return out, nil
 }
 
-// claimSpare atomically claims one Bound, available spare for poolKey on behalf
-// of agentName: it stamps LabelAgent + LabelMount and removes the available
-// marker in a single resourceVersion-checked update. A lost race (a concurrent
-// claim, or the manager GC'ing the spare) surfaces as Conflict/NotFound and we
-// try the next candidate; an empty pool returns "" so the caller falls back to
-// dynamic provisioning. Never blocks agent creation.
+// claimSpare atomically claims one Bound available spare for poolKey: it stamps
+// LabelAgent + LabelMount and drops the available marker in a resourceVersion-
+// checked update. A lost race (Conflict/NotFound) tries the next candidate; an
+// empty pool returns "" so the caller falls back to dynamic provisioning.
 func (r *AgentReconciler) claimSpare(ctx context.Context, agentName, poolKey, mountName string) (string, error) {
 	list, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: LabelPool + "=" + poolKey + "," + LabelPoolAvailable + "=true",
