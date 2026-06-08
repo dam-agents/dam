@@ -8,6 +8,7 @@ import { composeConnectionModule } from "./modules/connection/compose.js";
 import { composeEgressModule } from "./modules/egress/compose.js";
 import { composeFileModule } from "./modules/file/compose.js";
 import { composeImportModule } from "./modules/import/compose.js";
+import { composeSkillModule } from "./modules/skill/compose.js";
 import { composeSshModule } from "./modules/ssh/compose.js";
 import { composeTemplateModule } from "./modules/template/compose.js";
 import { createTrpcClient } from "./modules/shared/trpc/trpc-client.js";
@@ -93,6 +94,13 @@ export function compose(opts: ComposeOptions = {}): Command {
     browserOpener: createBrowserOpener(),
   });
 
+  const skill = composeSkillModule({
+    tokenProvider: auth.exports.tokenProvider,
+    configService: cli.services.configService,
+    compatService: cli.services.compatService,
+    createAgentService: agent.exports.createService,
+  });
+
   const ssh = composeSshModule({
     tokenProvider: auth.exports.tokenProvider,
     configService: cli.services.configService,
@@ -116,6 +124,7 @@ export function compose(opts: ComposeOptions = {}): Command {
   for (const command of fileModule.commands) program.addCommand(command);
   for (const command of egress.commands) program.addCommand(command);
   for (const command of connection.commands) program.addCommand(command);
+  for (const command of skill.commands) program.addCommand(command);
   for (const command of ssh.commands) program.addCommand(command);
 
   return program;

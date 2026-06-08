@@ -19,5 +19,9 @@ export const EXIT_AGENT_NOT_RESOLVED = 5;
 /** `dam network update` against an unknown rule ID (revoke is idempotent — exits 0). */
 export const EXIT_RULE_NOT_FOUND = 6;
 
+/** Skills management verb couldn't reach the agent's pod — it's in an error
+ *  state, or the wake-to-ready primitive (ADR-032) timed out. */
+export const EXIT_AGENT_NOT_REACHABLE = 7;
+
 /** POSIX convention: 128 + SIGINT(2). Emitted on Ctrl+C during bundle pack/upload. */
 export const EXIT_SIGINT = 130;
