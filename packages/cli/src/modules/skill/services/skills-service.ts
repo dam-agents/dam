@@ -36,6 +36,34 @@ export interface SkillsService {
   installed(
     agentId: string,
   ): Promise<Result<readonly SkillRef[], TransportError | AuthRequiredError>>;
+
+  /** skills.install — source is the git URL; version/contentHash come from a
+   *  prior scan. Always sends an agentId, so it can hit the wake path but
+   *  never the private-source case. Returns the updated installed refs. */
+  install(input: {
+    agentId: string;
+    source: string;
+    name: string;
+    version: string;
+    contentHash?: string;
+  }): Promise<
+    Result<
+      readonly SkillRef[],
+      TransportError | AuthRequiredError | AgentNotReachableError
+    >
+  >;
+
+  /** skills.uninstall — keys on (source git URL, name). Idempotent. */
+  uninstall(input: {
+    agentId: string;
+    source: string;
+    name: string;
+  }): Promise<
+    Result<
+      readonly SkillRef[],
+      TransportError | AuthRequiredError | AgentNotReachableError
+    >
+  >;
 }
 
 /**
@@ -92,6 +120,26 @@ export function createSkillsService(deps: { trpc: TrpcClient }): SkillsService {
           (await deps.trpc.skills.state.query({ agentId }))
             .installed as readonly SkillRef[],
       );
+    },
+    async install(input) {
+      try {
+        const refs = (await deps.trpc.skills.install.mutate(
+          input,
+        )) as readonly SkillRef[];
+        return ok(refs);
+      } catch (e) {
+        return classifyWakeError(e);
+      }
+    },
+    async uninstall(input) {
+      try {
+        const refs = (await deps.trpc.skills.uninstall.mutate(
+          input,
+        )) as readonly SkillRef[];
+        return ok(refs);
+      } catch (e) {
+        return classifyWakeError(e);
+      }
     },
   };
 }

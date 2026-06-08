@@ -7,8 +7,10 @@ import {
   type TrpcClient,
 } from "../shared/trpc/trpc-client.js";
 import { buildCatalogCommand } from "./commands/catalog.js";
+import { buildInstallCommand } from "./commands/install.js";
 import { buildListCommand } from "./commands/list.js";
 import { buildSourceListCommand } from "./commands/source-list.js";
+import { buildUninstallCommand } from "./commands/uninstall.js";
 import {
   createSkillsService,
   type SkillsService,
@@ -51,7 +53,8 @@ export function composeSkillModule(opts: SkillModuleOptions): SkillModule {
   parent.addCommand(sourceGroup);
   parent.addCommand(buildCatalogCommand(shared));
   parent.addCommand(buildListCommand(shared));
-  // install/uninstall added in sub-issue 02
+  parent.addCommand(buildInstallCommand(shared));
+  parent.addCommand(buildUninstallCommand(shared));
 
   return { commands: [parent], exports: { createService } };
 }
