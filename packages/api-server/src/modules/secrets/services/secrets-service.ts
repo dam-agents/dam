@@ -495,6 +495,8 @@ export function createSecretsService(deps: {
     },
 
     async delete(id) {
+      // Capture grant holders before deletion so we can re-deliver after.
+      const granted = await deps.grants.listAgentsGrantedSecret(id);
       // Twins first; primary last on success so retry-after-failure is clean.
       const allSecrets = await deps.k8sPort.listSecrets();
       const twinIds = allSecrets
@@ -513,6 +515,9 @@ export function createSecretsService(deps: {
         result: "success",
         detail: { twins: twinIds.length },
       });
+      // Re-deliver so the deleted secret's placeholder drops from each granted
+      // agent's env on the next snapshot (the env-source omits missing secrets).
+      await Promise.all(granted.map((g) => deliverToAgent(g.agentId)));
     },
 
     async getAgentAccess(agentId: string) {
