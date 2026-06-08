@@ -108,19 +108,21 @@ async function followRedirects(
   return { res, url };
 }
 
-function extractFormAction(html: string): string | null {
-  const m = /<form[^>]*action="([^"]+)"/.exec(html);
-  return m ? m[1]!.replace(/&amp;/g, "&") : null;
-}
-
-function extractHiddenInputValue(html: string, name: string): string | null {
-  // Tolerates attribute order — name and value can be on either side.
-  const re = new RegExp(
-    `<input[^>]*\\bname="${name}"[^>]*\\bvalue="([^"]+)"|<input[^>]*\\bvalue="([^"]+)"[^>]*\\bname="${name}"`,
-    "i",
-  );
-  const m = re.exec(html);
-  return m ? (m[1] ?? m[2] ?? null) : null;
+// The deployed Keycloak uses the first-party Keycloakify SPA login theme
+// (ADR-054, packages/keycloak-theme). It serves an HTML shell with an
+// embedded `const kcContext = {...}` object and renders the login/consent
+// forms client-side — there is no server-rendered `<form action=...>`. The
+// POST targets, however, are unchanged Keycloak endpoints carried in
+// kcContext (`url.loginAction`, `url.oauthAction`, `oauth.code`, `pageId`),
+// so we drive the flow by reading those fields instead of scraping <form>s.
+//
+// kcContext is JS, not JSON (trailing commas, comments, function values), so
+// we extract single string fields by key rather than parsing the object.
+// The only escape that appears in the fields we need is `\/`; URLs embed
+// `&`/`=` literally (no HTML-entity encoding).
+function extractKcContextString(html: string, key: string): string | null {
+  const m = new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`).exec(html);
+  return m ? m[1]!.replace(/\\\//g, "/") : null;
 }
 
 /**
@@ -135,16 +137,18 @@ async function authorizeAsDevUser(
 ): Promise<void> {
   const jar = new CookieJar();
 
-  // 1. Verification URL → Keycloak 302s to the login page.
+  // 1. Verification URL → Keycloak 302s to the SPA login page (pageId
+  //    "login"). The credential POST target is kcContext.url.loginAction.
   const { res: loginPage, url: loginPageUrl } = await followRedirects(
     verificationUriComplete,
     jar,
   );
   const loginHtml = await loginPage.text();
-  const loginAction = extractFormAction(loginHtml);
+  const loginAction = extractKcContextString(loginHtml, "loginAction");
   if (!loginAction) {
+    const pageId = extractKcContextString(loginHtml, "pageId");
     throw new Error(
-      `could not find login form (status ${loginPage.status})\n--- head ---\n${loginHtml.slice(0, 400)}`,
+      `could not find kcContext.url.loginAction (status ${loginPage.status}, pageId ${pageId})\n--- head ---\n${loginHtml.slice(0, 400)}`,
     );
   }
   const loginPostUrl = new URL(loginAction, loginPageUrl).toString();
@@ -164,15 +168,21 @@ async function authorizeAsDevUser(
 
   const consentHtml = await res.text();
 
-  // If the page still has a password input, login failed.
-  if (/<input[^>]+name="password"/.test(consentHtml)) {
-    throw new Error(`Keycloak rejected credentials for ${username}`);
+  // On success Keycloak advances to the consent page (pageId
+  // "login-oauth-grant"). If credentials were rejected it re-renders the
+  // login page, so a still-"login" pageId means the login failed.
+  if (extractKcContextString(consentHtml, "pageId") === "login") {
+    const summary = extractKcContextString(consentHtml, "summary");
+    throw new Error(
+      `Keycloak rejected credentials for ${username}${summary ? ` (${summary})` : ""}`,
+    );
   }
 
-  // 3. The consent form has a `code` hidden input and `accept` button.
-  //    Submit both — without `code`, the consent endpoint 404s.
-  const consentAction = extractFormAction(consentHtml);
-  const codeValue = extractHiddenInputValue(consentHtml, "code");
+  // 3. The consent grant carries `oauth.code` and posts to
+  //    kcContext.url.oauthAction. Submit both — without `code`, the consent
+  //    endpoint 404s.
+  const consentAction = extractKcContextString(consentHtml, "oauthAction");
+  const codeValue = extractKcContextString(consentHtml, "code");
   if (!consentAction || !codeValue) {
     // Some Keycloak configs may auto-grant without a consent screen.
     // Treat that as success — the CLI poll will resolve the device code.
