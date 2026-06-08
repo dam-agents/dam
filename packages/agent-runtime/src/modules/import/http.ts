@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { ImportBundleResult } from "agent-runtime-api";
 import busboy from "busboy";
 
-import { STAGING_PREFIX } from "./constants.js";
+import { IMPORT_STAGING_PREFIX } from "../../core/import-staging.js";
 import type { ImportDomainError } from "./errors.js";
 import { extractBundle } from "./extract.js";
 import { finalize } from "./finalize.js";
@@ -106,6 +106,9 @@ export function createImportHandlers(
       if (finished) return;
       finished = true;
       log(`fail ${status}: ${message}`);
+      // Let extraction settle before rm — abort paths destroy the socket, so
+      // awaiting here means the tar writer stopped and can't race the cleanup.
+      if (extractPromise) await extractPromise.catch(() => {});
       if (staging)
         await rm(staging, { recursive: true, force: true }).catch(() => {});
       try {
@@ -157,7 +160,7 @@ export function createImportHandlers(
       sawFile = true;
       log(`file part received — extracting`);
       extractPromise = (async () => {
-        staging = await mkdtemp(join(homeDir, STAGING_PREFIX));
+        staging = await mkdtemp(join(homeDir, IMPORT_STAGING_PREFIX));
         log(`staging dir created: ${staging}`);
         const result = await extractBundle(fileStream as never, staging);
         log(`extract complete (ok=${result.ok})`);

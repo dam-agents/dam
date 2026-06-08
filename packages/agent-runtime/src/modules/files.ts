@@ -20,6 +20,8 @@ import type {
 } from "agent-runtime-api";
 import { err, ok } from "agent-runtime-api";
 
+import { IMPORT_STAGING_PREFIX } from "../core/import-staging.js";
+
 // Wire-level per-file cap for tRPC-shaped reads and uploads. The transport
 // is JSON-base64 — ~10 MB fits well below the 32 MB tRPC body ceiling.
 // Larger transfers want a streaming endpoint, not this surface.
@@ -85,7 +87,11 @@ async function listDir(
   try {
     const ents = await readdir(abs, { withFileTypes: true });
     const entries: DirEntry[] = ents
-      .filter((ent) => !RESERVED.has(ent.name))
+      .filter(
+        (ent) =>
+          !RESERVED.has(ent.name) &&
+          !ent.name.startsWith(IMPORT_STAGING_PREFIX),
+      )
       .map(
         (ent): DirEntry => ({
           name: ent.name,

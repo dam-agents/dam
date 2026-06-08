@@ -1,7 +1,7 @@
 import { readdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 
-import { STAGING_PREFIX } from "./constants.js";
+import { IMPORT_STAGING_PREFIX } from "../../core/import-staging.js";
 
 const MAX_AGE_MS = 60 * 60 * 1000;
 
@@ -25,7 +25,7 @@ export async function sweepStaging(
   }
   const now = Date.now();
   for (const name of entries) {
-    if (!name.startsWith(STAGING_PREFIX)) continue;
+    if (!name.startsWith(IMPORT_STAGING_PREFIX)) continue;
     const abs = join(homeDir, name);
     try {
       const s = await stat(abs);
