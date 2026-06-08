@@ -21,16 +21,22 @@ export interface WorkerHandlerDeps {
   log: (msg: string) => void;
 }
 
-export type WorkerHandler = (agentId: string) => Promise<void>;
+export type WorkerHandler = (
+  agentId: string,
+  opts?: { retryUntilReady?: boolean },
+) => Promise<void>;
 
 export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
-  return async (agentId: string) => {
+  return async (agentId: string, opts?: { retryUntilReady?: boolean }) => {
     const row = await deps.outboxRepo.getRow(agentId);
     if (!row) return;
 
-    // Don't dispatch to an agent that isn't Ready (ADR-059): the row stays
-    // unsettled, so the sweep re-dispatches once it becomes Ready.
+    // Not Ready (ADR-059): hello-triggered jobs fast-retry on the queue backoff
+    // (Ready is ~1s away); others defer to the sweep. Gate holds either way.
     if (!(await deps.agentRunningPort.isRunning(agentId))) {
+      if (opts?.retryUntilReady) {
+        throw new Error(`${agentId}: not Ready yet — retrying until Ready`);
+      }
       deps.log(
         `[runtime-worker] ${agentId}: agent not Ready; deferring to sweep`,
       );

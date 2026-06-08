@@ -71,3 +71,4 @@ This directory contains ADRs for the Platform project.
 | Draft | Title | Owner |
 |-------|-------|-------|
 | [DRAFT](DRAFT-multi-agent.md) | Multi-agent collaboration — isolated instances with shared artifacts | @tomkis |
+| [DRAFT](DRAFT-runtime-env-injection.md) | Credential env via the runtime channel — injected at harness spawn, not baked into the pod | @janjeliga |

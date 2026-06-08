@@ -86,7 +86,8 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 	if err := r.applyConfigMap(ctx, bootstrapCM); err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying envoy bootstrap: %v", err))
 	}
-	if cert := BuildEnvoyLeafCertificate(forkName, r.config, ownerRef, credentialSecrets); cert != nil {
+	// Forks keep the credential-gated leaf (ephemeral; out of no-roll scope).
+	if cert := BuildEnvoyLeafCertificate(forkName, r.config, ownerRef, credentialSecrets, false); cert != nil {
 		if err := r.applyCertificate(ctx, cert); err != nil {
 			return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying envoy leaf certificate: %v", err))
 		}

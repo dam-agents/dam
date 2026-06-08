@@ -605,6 +605,27 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
 
     const { templates, readSpec: readTemplateSpec } =
       composeTemplatesModule(templatesRepo);
+    // Before the agents module so grantProvisioner (single-shot create) can use them.
+    const grants = createAgentGrantsPort(k8sClient, user.sub);
+    const secrets = createSecretsService({
+      k8sPort: createK8sSecretsPort(k8sClient, user.sub),
+      grants,
+      connectionRules: createConnectionRulesSyncAdapter(db),
+      ownerSub: user.sub,
+      runtimeMutator,
+    });
+    const connections = composeConnectionsForOwner({
+      ownerId: user.sub,
+      db,
+      templates: connectionsBoot.templates,
+      oauthEngine: connectionsBoot.oauthEngine,
+      secretStore: secretStores.default(),
+      runtimeMutator,
+      agentsRepo,
+      connectionRulesSync: createConnectionRulesSyncAdapter(db),
+      oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
+      brandName: config.brand.name,
+    });
     const { agents, isOwnedAgent } = composeAgentsModule({
       api,
       namespace: config.namespace,
@@ -617,6 +638,22 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       cleanupHooks: agentCleanupHooks,
       runtimeMutator,
       contributionsSettled,
+      grantProvisioner: {
+        async resolveSpecGrants(sel) {
+          return {
+            grantedSecretIds: sel.secretIds.length
+              ? await secrets.expandSecretGrants(sel.secretIds)
+              : [],
+            grantedConnectionIds: Array.from(new Set(sel.connectionIds)),
+          };
+        },
+        async applyAfterCreate(agentId, sel) {
+          if (sel.secretIds.length)
+            await secrets.setAgentAccess(agentId, { secretIds: sel.secretIds });
+          if (sel.connectionIds.length)
+            await connections.setAgentConnections(agentId, sel.connectionIds);
+        },
+      },
     });
     const { schedules } = composeSchedulesForOwner({
       boot: schedulesBoot,
@@ -633,25 +670,6 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       runtimeMutator,
       templatesRepo,
     );
-    const grants = createAgentGrantsPort(k8sClient, user.sub);
-    const secrets = createSecretsService({
-      k8sPort: createK8sSecretsPort(k8sClient, user.sub),
-      grants,
-      connectionRules: createConnectionRulesSyncAdapter(db),
-      ownerSub: user.sub,
-    });
-    const connections = composeConnectionsForOwner({
-      ownerId: user.sub,
-      db,
-      templates: connectionsBoot.templates,
-      oauthEngine: connectionsBoot.oauthEngine,
-      secretStore: secretStores.default(),
-      runtimeMutator,
-      agentsRepo,
-      connectionRulesSync: createConnectionRulesSyncAdapter(db),
-      oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
-      brandName: config.brand.name,
-    });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agents.get(agentId)) !== null && ownerSub === user.sub;
     const { service: egressRules } = composeEgressRulesModule({

@@ -28,6 +28,12 @@ const PROMPT_QUEUE_CAP = 32;
  */
 const DEFAULT_ORPHAN_TTL_MS = 10 * 60 * 1000;
 
+// Wait this long for an idle turn boundary before forcing a harness recycle to apply changed env.
+const DEFAULT_ENV_FORCE_RECYCLE_MS = 60 * 1000;
+
+// Cold boot: hold the first spawn this long for env to arrive, then spawn anyway.
+const DEFAULT_WARM_START_TIMEOUT_MS = 15 * 1000;
+
 /**
  * Soft cap on per-session log size. Once an append would push the log past
  * this, we drop the oldest entry and mark the log as `truncated` — future
@@ -63,6 +69,8 @@ export interface AcpRuntime {
   attach(channel: ClientChannel): void;
   status(): AcpRuntimeStatus;
   resetSession(sessionId: string): void;
+  /** Env on disk changed: recycle a running harness so it respawns with the new env. */
+  refreshEnv(): void;
   shutdown(): void;
 }
 
@@ -72,6 +80,12 @@ export interface AcpRuntimeDeps {
   log?: (msg: string) => void;
   /** Override the orphan TTL — exposed for tests; production defaults to 10 min. */
   orphanTtlMs?: number;
+  /** Override the env force-recycle bound — exposed for tests; default 60s. */
+  envForceRecycleMs?: number;
+  /** Env already on disk at boot → spawn now; false gates the first spawn until env arrives. Defaults true. */
+  envReadyAtBoot?: boolean;
+  /** Override the cold-boot warm-start bound — exposed for tests; default 15s. */
+  warmStartTimeoutMs?: number;
   /** Override the log size cap — exposed for tests. */
   logBytesCap?: number;
   /** Owns the `_meta.platform.*` round-trip (ADR-055); skipped when omitted. */
@@ -194,8 +208,19 @@ interface BootstrapState {
 export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   const orphanTtlMs = deps.orphanTtlMs ?? DEFAULT_ORPHAN_TTL_MS;
   const logBytesCap = deps.logBytesCap ?? DEFAULT_LOG_BYTES_CAP;
+  const envForceRecycleMs =
+    deps.envForceRecycleMs ?? DEFAULT_ENV_FORCE_RECYCLE_MS;
+  const warmStartTimeoutMs =
+    deps.warmStartTimeoutMs ?? DEFAULT_WARM_START_TIMEOUT_MS;
+  // Cold-boot spawn gate: channels attaching before env lands buffer until it does.
+  let envReady = deps.envReadyAtBoot ?? true;
+  const warmWaiters = new Set<() => void>();
+  let warmTimer: ReturnType<typeof setTimeout> | null = null;
   let agent: AgentProcess | null = null;
   let agentExited = false;
+  /** Env on disk changed; a running harness must be recycled to pick it up. */
+  let envRefreshPending = false;
+  let envForceTimer: ReturnType<typeof setTimeout> | null = null;
   /**
    * Whether the agent advertised `agentCapabilities.sessionCapabilities.close`
    * in its `initialize` response. Some harnesses (notably pi-acp) don't
@@ -506,6 +531,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     agent = a;
     a.onLine(handleAgentLine);
     a.exited.then(() => {
+      // A detached (recycled) process exiting must not clobber the current one.
+      if (agent !== a) return;
       agentExited = true;
       for (const channel of engagedSessions.keys()) {
         channel.close(1011, "agent exited");
@@ -519,6 +546,61 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       pendingFromAgent.clear();
     });
     return a;
+  }
+
+  // ── Cold-boot warm-start gate ──
+  // Release the gate: spawn the harness for every channel parked while waiting.
+  function markEnvReady(): void {
+    if (envReady) return;
+    envReady = true;
+    if (warmTimer) {
+      clearTimeout(warmTimer);
+      warmTimer = null;
+    }
+    for (const release of [...warmWaiters]) release();
+    warmWaiters.clear();
+  }
+
+  // Safety valve: never hold the gate forever if env never arrives.
+  if (!envReady) warmTimer = setTimeout(markEnvReady, warmStartTimeoutMs);
+
+  // ── Env-change recycle ──
+  // Kills the harness but leaves agentExited false, so the next attach respawns.
+
+  function clearEnvForceTimer(): void {
+    if (envForceTimer) {
+      clearTimeout(envForceTimer);
+      envForceTimer = null;
+    }
+  }
+
+  function recycleAgentForEnv(): void {
+    clearEnvForceTimer();
+    envRefreshPending = false;
+    const old = agent;
+    if (!old || agentExited) return;
+    deps.log?.("recycling harness to apply env change");
+    // Close code 1011 matches a real agent exit; clients reconnect and resume (ADR-055).
+    for (const channel of engagedSessions.keys())
+      channel.close(1011, "agent recycled for env change");
+    engagedSessions.clear();
+    channelCursors.clear();
+    sessionLogs.clear();
+    bootstrapBySession.clear();
+    for (const t of orphanTimers.values()) clearTimeout(t);
+    orphanTimers.clear();
+    pendingFromAgent.clear();
+    activePromptBySession.clear();
+    promptQueueBySession.clear();
+    // Detach before kill so the old process's exit handler no-ops.
+    agent = null;
+    old.kill();
+  }
+
+  /** Recycle now if an env refresh is pending and no turn is in flight. */
+  function maybeRecycleForEnv(): void {
+    if (envRefreshPending && activePromptBySession.size === 0)
+      recycleAgentForEnv();
   }
 
   // ── Channel lifecycle ──
@@ -872,6 +954,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           if (active && active.outboundId === outboundId) {
             activePromptBySession.delete(sid);
             if (agent && !agentExited) advanceQueue(agent, sid);
+            // Turn boundary — apply a deferred env change if nothing's in flight.
+            maybeRecycleForEnv();
           }
           appendAndFanOut(
             sid,
@@ -1137,16 +1221,34 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   return {
     attach(channel) {
-      const a = ensureAgent();
-      if (!a) {
-        channel.close(1011, "agent process is not running");
-        return;
-      }
-
+      // One path for both: buffer frames until the agent is bound, then replay.
+      // Warm (env present) releases synchronously below — buffered stays empty.
+      // Cold-boot parks the release until env lands (or the safety timer fires).
       engagedSessions.set(channel, new Set());
+      const buffered: string[] = [];
+      let live: AgentProcess | null = null;
+      const release = (): void => {
+        if (live) return;
+        const a = ensureAgent();
+        if (!a) {
+          channel.close(1011, "agent process is not running");
+          return;
+        }
+        live = a;
+        for (const data of buffered) handleClientMessage(a, channel, data);
+        buffered.length = 0;
+      };
+      channel.onMessage((data) => {
+        if (live) handleClientMessage(live, channel, data);
+        else buffered.push(data);
+      });
+      channel.onClose(() => {
+        warmWaiters.delete(release);
+        detach(channel);
+      });
 
-      channel.onMessage((data) => handleClientMessage(a, channel, data));
-      channel.onClose(() => detach(channel));
+      if (envReady) release();
+      else warmWaiters.add(release);
     },
 
     status() {
@@ -1165,6 +1267,24 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       deps.log?.(`reset session ${sessionId}`);
     },
 
+    refreshEnv() {
+      // First delivery after a cold boot just releases the gate — no recycle.
+      if (!envReady) {
+        markEnvReady();
+        return;
+      }
+      // Nothing running → the next spawn reads the new env for free.
+      if (!agent || agentExited) return;
+      envRefreshPending = true;
+      if (activePromptBySession.size === 0) {
+        recycleAgentForEnv();
+        return;
+      }
+      // A turn is in flight: recycle at the next turn boundary, or force after a bound.
+      if (!envForceTimer)
+        envForceTimer = setTimeout(recycleAgentForEnv, envForceRecycleMs);
+    },
+
     shutdown() {
       for (const channel of engagedSessions.keys())
         channel.close(1000, "shutdown");
@@ -1174,6 +1294,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       bootstrapBySession.clear();
       for (const t of orphanTimers.values()) clearTimeout(t);
       orphanTimers.clear();
+      clearEnvForceTimer();
+      if (warmTimer) clearTimeout(warmTimer);
+      warmWaiters.clear();
       if (agent && !agentExited) agent.kill();
     },
   };

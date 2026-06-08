@@ -73,14 +73,6 @@ export function composeConnectionsForOwner(opts: {
         grantedConnectionIds: connectionIds,
       });
     },
-    async bumpSecretsRev(agentId): Promise<void> {
-      // ADR-058 A3: roll-rev is the api-server-driven roll trigger.
-      await opts.agentsRepo.patchAnnotation(
-        agentId,
-        "agent-platform.ai/roll-rev",
-        String(Date.now()),
-      );
-    },
     async syncEgressHosts(input): Promise<void> {
       await opts.connectionRulesSync.syncForAgent(input);
     },

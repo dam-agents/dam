@@ -71,7 +71,8 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	if err := r.applyConfigMap(ctx, bootstrapCM); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying envoy bootstrap: %v", err))
 	}
-	if cert := BuildEnvoyLeafCertificate(name, r.config, ownerRef, credentialSecrets); cert != nil {
+	// alwaysIssue: agent mounts ca.crt unconditionally, so the leaf must exist.
+	if cert := BuildEnvoyLeafCertificate(name, r.config, ownerRef, credentialSecrets, true); cert != nil {
 		if err := r.applyCertificate(ctx, cert); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("applying envoy leaf certificate: %v", err))
 		}
@@ -169,7 +170,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 		return fmt.Errorf("agent %s: gateway Service ClusterIP not yet assigned, requeuing", name)
 	}
 
-	agentSS := BuildAgentStatefulSet(name, agentSpec, r.config, ownerRef, credentialSecrets, gatewayIP)
+	agentSS := BuildAgentStatefulSet(name, agentSpec, r.config, ownerRef, gatewayIP)
 	stampRollRev(agentSS, rollRev)
 	agentSvc := BuildAgentService(name, r.config, ownerRef)
 	if err := r.applyStatefulSet(ctx, agentSS, running); err != nil {

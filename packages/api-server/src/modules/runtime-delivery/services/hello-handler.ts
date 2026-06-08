@@ -26,7 +26,8 @@ export function createHelloHandler(deps: {
 
       const row = await deps.outboxRepo.getRow(agentId);
       if (row && row.version > (input.lastAppliedVersion ?? 0)) {
-        await deps.queue.enqueue(agentId);
+        // Ready is about to flip true; retryUntilReady so a sub-second miss fast-retries, not waits for the sweep.
+        await deps.queue.enqueue(agentId, { retryUntilReady: true });
       }
       return { events: [] };
     },

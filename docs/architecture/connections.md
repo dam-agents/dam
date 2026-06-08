@@ -1,6 +1,6 @@
 # Connections, Contributions, and the Runtime Channel
 
-Last verified: 2026-05-22
+Last verified: 2026-06-05
 
 > **Status: Proposed — not yet implemented.** This page describes the target shape of the subsystem per [ADR-051](../adrs/051-connections-and-contributions.md), [ADR-052](../adrs/052-runtime-channel.md), and [ADR-053](../adrs/053-runtime-outbox-worker.md). The current system still uses the parallel OAuth-app / provider-preset registries, pod-files SSE (ADR-034), and exec-based trigger delivery (ADR-008). Other architecture pages that describe those retiring mechanisms are not updated yet — they will be revised in the implementation PR(s).
 
@@ -11,7 +11,8 @@ Last verified: 2026-05-22
 - [ADR-053 — Transactional outbox + worker](../adrs/053-runtime-outbox-worker.md) — how mutations decouple from agent reachability
 - [ADR-036 — Redis as a platform primitive](../adrs/036-redis-platform-primitive.md) — the signal-path substrate the worker wakes on
 - [ADR-022 — Harness API server](../adrs/022-harness-api-server.md) — the restricted port the agent reaches; per-kind event handlers live here
-- [ADR-040 — Unified secret contributions](../adrs/040-unified-secret-contributions.md) — the `env` Contribution's render-time merge survives unchanged
+- [ADR-040 — Unified secret contributions](../adrs/040-unified-secret-contributions.md) — established the `env` Contribution and user-wins precedence; its render-into-pod delivery is superseded below
+- [ADR-DRAFT — Credential env via the runtime channel](../adrs/DRAFT-runtime-env-injection.md) — moves `env` delivery off the pod spec onto the runtime channel, injected at harness spawn; a grant change no longer rolls the agent pod
 
 ## Overview
 
@@ -28,22 +29,18 @@ A grant of one Connection produces Contributions of several kinds. They don't al
 ```mermaid
 flowchart LR
   grant[Connection grant on Agent A]
-  envRail[env Contributions]
   hostRail[egress-host Contributions]
-  rtRail[file / mcp-entry / skill-ref Contributions]
-  controller[controller render then pod roll]
+  rtRail[env / file / mcp-entry / skill-ref Contributions]
   envoy[egress_rules then Envoy ext_authz]
   channel[runtime channel]
 
-  grant --> envRail
   grant --> hostRail
   grant --> rtRail
-  envRail -->|bump annotation| controller
   hostRail -->|sync rows| envoy
   rtRail -->|outbox row| channel
 ```
 
-Two of the three rails were already in place before this subsystem and stay unchanged ([ADR-040](../adrs/040-unified-secret-contributions.md) for envs; [ADR-035](../adrs/035-unified-hitl-ux.md) for egress_rules). The third rail — the runtime channel — is new and is what the rest of this page is about.
+After [ADR-DRAFT](../adrs/DRAFT-runtime-env-injection.md) there are two rails. `egress-host` Contributions sync into Postgres `egress_rules` and are read live by Envoy ([ADR-035](../adrs/035-unified-hitl-ux.md)) — unchanged. Everything else — `env` (formerly a controller-render/pod-roll rail, [ADR-040](../adrs/040-unified-secret-contributions.md)), `file`, `mcp-entry`, `skill-ref` — now travels the runtime channel and is what the rest of this page is about.
 
 The runtime channel is two routes between api-server and agent-runtime, plus per-kind event handlers on the harness API:
 
@@ -214,13 +211,13 @@ The api-server's contribution-fanout layer routes each Contribution kind to the 
 
 | Kind | Rail | Delivery semantics | Note |
 |---|---|---|---|
-| `env` | Controller render at next pod start | Requires pod roll; immutable on a running pod | Implemented by bumping the `secrets-rev` annotation on the agent's ConfigMap; controller's existing reconciler re-renders. ADR-040 mechanism preserved. |
+| `env` | Runtime channel `applyState` (state slice) | Sub-second push; applied at next harness spawn | Written to a JSON file on the PV; the harness spawn path merges it into the process env (user env wins). A change recycles the harness at an idle turn boundary — no pod roll. |
 | `egress-host` | Postgres `egress_rules` → Envoy `ext_authz` | Live read; no pod involvement | Joined per-grant; revoke sweeps rows. Agent never sees these. |
 | `file` | Runtime channel `applyState` (state slice) | Sub-second push; idempotent reconciliation | Per-format + per-mergeMode driver materializes. |
 | `mcp-entry` | Runtime channel `applyState` (state slice) | Sub-second push; idempotent reconciliation | Driver dispatches to harness-specific path. |
 | `skill-ref` | Runtime channel `applyState` (state slice) | Sub-second push; per-version installer | Driver wraps existing skill-fetch helpers. |
 
-The rail choice is a property of the kind, not of the Connection. A single grant of GitHub Enterprise produces Contributions on three rails: `env` (controller render → pod roll), `egress-host` (egress_rules → Envoy live), and `file` (runtime channel push). They flow independently.
+The rail choice is a property of the kind, not of the Connection. A single grant of GitHub Enterprise produces Contributions on both rails: `egress-host` (egress_rules → Envoy live), and `env` + `file` (runtime channel push). They flow independently.
 
 ## The runtime channel
 
@@ -417,6 +414,7 @@ flowchart TD
   noop[exit clean, return]
   check{agent running?}
   defer[exit clean, sweep re-enqueues later]
+  retry[throw, fast-retry on backoff]
   compute[compute state slice + non-dispatched events]
   dispatch[POST runtime.v1.applyState]
   stamp["UPDATE outbox last_applied and stamp events dispatched_at up to acked"]
@@ -426,13 +424,14 @@ flowchart TD
   handlerStart --> load --> exists
   exists -->|no| noop
   exists -->|yes| check
-  check -->|no| defer
+  check -->|"no (plain)"| defer
+  check -->|"no (hello-triggered)"| retry
   check -->|yes| compute --> dispatch
   dispatch -->|appliedVersion, appliedHash| stamp --> ok
   dispatch -->|error| fail
 ```
 
-BullMQ retries are reserved for transport failures (network blip, agent crash mid-call). "Agent not running" exits clean — the cron sweep re-enqueues the row on its next tick, and `hello` picks up the payload when the agent eventually wakes.
+BullMQ retries cover transport failures (network blip, agent crash mid-call) and the boot window: a `hello`-triggered dispatch whose agent is a heartbeat short of Ready throws to fast-retry on the backoff, so fresh config lands in ~a second instead of waiting a full sweep tick. A plain dispatch to an agent that isn't running exits clean — the cron sweep re-enqueues on its next tick, and `hello` picks up the payload when the agent eventually wakes.
 
 ### Cron sweep
 
@@ -443,7 +442,7 @@ A scheduled job runs every minute and does two things:
 
 ### Agent-state cache
 
-The worker handler reads agent running-state from an in-memory cache fed by the existing ConfigMap watch in the agents service — never from a direct K8s API call. When the agent is not running the handler exits clean; the outbox row remains for the cron sweep to re-enqueue when the agent transitions back to running, and `hello` clears it on wake.
+The worker handler reads agent running-state from an in-memory cache fed by the existing ConfigMap watch in the agents service — never from a direct K8s API call. When the agent is not running a plain dispatch exits clean and the outbox row waits for the cron sweep to re-enqueue once it transitions back to running. A `hello`-triggered dispatch instead fast-retries on the queue backoff: `hello` means the agent is up and Ready is imminent, so the brief miss resolves in ~a second rather than at the next sweep tick.
 
 ### Redis-down behavior
 
@@ -563,7 +562,7 @@ The UI surfaces the gap at grant time: connecting GitHub to a Claude-Code agent 
 | Redis (BullMQ queues) | Pending BullMQ jobs referencing outbox row ids | Relaxed durability per ADR-036; Postgres outbox + cron sweep is the recovery path. |
 | Postgres `egress_rules` | `egress-host` Contributions joined per grant | Existing table; same as today (ADR-035). |
 | K8s Secret per Connection | Auth credentials (refresh tokens, api-keys) | Owner-label-scoped; mounted into the paired gateway pod, never into the agent pod. |
-| Agent ConfigMap `secrets-rev` annotation | Bump triggers env re-render | Existing ADR-040 mechanism unchanged. |
+| Per-agent PVC `$HOME/.platform/runtime-env.json` | Reconciled credential-placeholder env | Written by the `env` driver from the channel snapshot; read by the harness/terminal spawn paths. |
 | `agents` table — new columns | `runtime_protocol_version`, `runtime_capabilities`, `runtime_last_hello_at`, `runtime_agent_version` | Populated on every `hello`. |
 | Per-Agent PVC | Materialized files, MCP config, installed skills | Driver-written via runtime channel. No event-dedupe log — events dedupe server-side. |
 | Per-agent state file under `$HOME/.platform/<kind>.json` | Driver's tracking of what it has previously written | Per-contribution-driver, opt-in. Section-marker file driver doesn't need it; key-targeted does. |

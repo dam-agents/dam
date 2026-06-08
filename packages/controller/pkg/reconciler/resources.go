@@ -67,9 +67,9 @@ func agentProxyAddr(cfg *config.Config, gatewayClusterIP string) string {
 // (ADR-038). The agent container holds zero credentials; egress credential
 // injection happens in the paired gateway pod, reached via HTTPS_PROXY.
 //
-// `credentialSecrets` is consulted only for the GH_TOKEN-availability signal
-// surfaced as an env var and pod annotation; no Secret material is mounted
-// into the agent pod.
+// The template is independent of the granted set: it always mounts the leaf
+// Secret's `ca.crt` (the cluster MITM CA), and that leaf is always issued, so
+// a grant change never alters the agent pod and never rolls it.
 //
 // `gatewayClusterIP` is the paired gateway Service's assigned ClusterIP,
 // used directly as the HTTPS_PROXY target. The caller requeues when
@@ -82,7 +82,7 @@ func agentProxyAddr(cfg *config.Config, gatewayClusterIP string) string {
 // reconciler's applyStatefulSet, which scales up on activity and defers
 // scale-down to the idle checker (ADR-058: run state is activity-driven, not a
 // stored desiredState).
-func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.Config, ownerRef metav1.OwnerReference, credentialSecrets []corev1.Secret, gatewayClusterIP string) *appsv1.StatefulSet {
+func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.Config, ownerRef metav1.OwnerReference, gatewayClusterIP string) *appsv1.StatefulSet {
 	base := cfg.AgentBase
 	defaults := cfg.AgentTemplateDefaults
 
@@ -168,13 +168,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 		{Name: "PLATFORM_POD_FILES_EVENTS_URL", Value: fmt.Sprintf("%s/api/agents/%s/pod-files/events", cfg.HarnessServerURL, name)},
 	}
 
-	// Order matters: K8s resolves duplicate env names by keeping the last
-	// occurrence, so credential placeholders < agent env — user overrides
-	// win. The placeholders only need to satisfy the harness's "is this env
-	// set?" check; Envoy in the paired gateway overwrites the header on the
-	// wire. ADR-046 collapsed the former template + instance env layers
-	// into the single Agent env list.
-	env = append(env, credentialEnvVars(credentialSecrets)...)
+	// User-supplied agent env; credential placeholders arrive via the runtime channel.
 	for _, e := range specEnv {
 		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
 	}
@@ -235,29 +229,21 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 		}
 	}
 
-	// CA cert volume — projected from the cert-manager-issued Envoy leaf
-	// Secret. We expose only the `ca.crt` key; the `tls.key` stays inside
-	// the gateway pod's mount, never the agent's. This is the only
-	// platform-issued data the agent pod mounts (ADR-038).
-	if len(credentialSecrets) > 0 {
-		volumes = append(volumes, corev1.Volume{
-			Name: "ca-cert",
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName: EnvoyLeafSecretName(name),
-					Items: []corev1.KeyToPath{{
-						Key:  "ca.crt",
-						Path: "ca.crt",
-					}},
-				},
+	// ca.crt only (the tls.key stays on the gateway) — the only platform data
+	// the agent mounts (ADR-038). The leaf is always issued, so this Secret
+	// always exists and the volume never flips with the granted set.
+	volumes = append(volumes, corev1.Volume{
+		Name: "ca-cert",
+		VolumeSource: corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: EnvoyLeafSecretName(name),
+				Items: []corev1.KeyToPath{{
+					Key:  "ca.crt",
+					Path: "ca.crt",
+				}},
 			},
-		})
-	} else {
-		volumes = append(volumes, corev1.Volume{
-			Name:         "ca-cert",
-			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
-		})
-	}
+		},
+	})
 	volumeMounts = append(volumeMounts, corev1.VolumeMount{
 		Name: "ca-cert", MountPath: "/etc/platform/ca", ReadOnly: true,
 	})
@@ -309,15 +295,6 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 	for _, n := range base.ImagePullSecrets {
 		pullSecrets = append(pullSecrets, corev1.LocalObjectReference{Name: n})
 	}
-
-	// GH_TOKEN signal. Surface whether a GitHub credential is wired up so
-	// wrapper scripts and operators can detect missing auth without making
-	// a 401-eliciting request first.
-	ghAvail := "false"
-	if hasGHTokenEnv(credentialSecrets) {
-		ghAvail = "true"
-	}
-	env = append(env, corev1.EnvVar{Name: "PLATFORM_GH_TOKEN_AVAILABLE", Value: ghAvail})
 
 	// Fast (1s) during startup so wake-up is detected quickly, slow
 	// (10s) afterwards so we're not probing every agent pod every
@@ -371,10 +348,6 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 		VolumeMounts:    volumeMounts,
 	}}
 
-	podAnnotations := map[string]string{
-		"agent-platform.ai/gh-token-available": ghAvail,
-	}
-
 	// ADR-033 Threat Model: agent must have no SA token (Secret-read RBAC
 	// would otherwise bypass the per-pod credential boundary). With the
 	// paired-pod split (ADR-038) the agent and gateway are different pods
@@ -385,8 +358,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 	shareProcessNS := &falseVal
 
 	podMeta := metav1.ObjectMeta{
-		Labels:      podLabels,
-		Annotations: podAnnotations,
+		Labels: podLabels,
 	}
 	applyAgentBaseMeta(&podMeta, base)
 

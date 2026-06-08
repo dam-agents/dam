@@ -23,8 +23,8 @@ export interface CreateAgentInput {
   image?: string;
   description?: string;
   env?: EnvVar[];
-  /** undefined ⇒ accept controller's default (auto-assign Anthropic selective).
-   *  explicit array (incl. []) ⇒ override. */
+  /** Initial secret grants, settled into the Agent spec at create. Omitted or
+   *  empty ⇒ no secrets granted (grants are selective; there is no default). */
   secretIds?: string[];
   appConnectionIds?: string[];
   egressPreset?: EgressPreset;
@@ -58,17 +58,14 @@ export function useCreateAgent() {
       importRawBundle: rawBundle,
       ...input
     }: CreateAgentInput) => {
-      // Step order is tuned for fastest user-visible feedback:
-      //   1. agents.create + invalidate → tile appears with runtime state
-      //   2. buildBundle (lazy Blob, microseconds) + upload
-      //   3. setAgentAccess / setAgentConnections
-      // Import goes BEFORE access/connection mutations: those rewrite the
-      // agent ConfigMap's grant annotations, which the controller applies
-      // by deleting and recreating the pod — running the import after them
-      // races with the pod swap and surfaces as "agent unreachable". The
-      // PVC outlives the pod so files land regardless of when the pod
-      // comes back. Raw bundle wins when both are provided.
-      const agent = await api.agents.create.mutate({ ...input, egressPreset });
+      // Single-shot create: grants ride the create call (no post-create swap).
+      // Import follows; raw bundle wins over entries when both are present.
+      const agent = await api.agents.create.mutate({
+        ...input,
+        egressPreset,
+        secretIds,
+        connectionIds: appConnectionIds,
+      });
       void queryClient.invalidateQueries({
         queryKey: trpc.agents.list.queryKey(),
       });
@@ -105,22 +102,6 @@ export function useCreateAgent() {
         }
       }
 
-      if (secretIds !== undefined) {
-        await withRetry(() =>
-          api.secrets.setAgentAccess.mutate({
-            agentId: agent.id,
-            secretIds,
-          }),
-        );
-      }
-      if (appConnectionIds?.length) {
-        await withRetry(() =>
-          api.connections.setAgentConnections.mutate({
-            agentId: agent.id,
-            connectionIds: appConnectionIds,
-          }),
-        );
-      }
       return agent;
     },
     meta: {
@@ -256,20 +237,4 @@ export async function fetchAgentAccess(agentId: string) {
   return queryClient.fetchQuery({
     ...trpc.secrets.getAgentAccess.queryOptions({ agentId: agentId }),
   });
-}
-
-async function withRetry(
-  fn: () => Promise<void>,
-  maxAttempts = 5,
-  delayMs = 2000,
-) {
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    try {
-      await fn();
-      return;
-    } catch (err) {
-      if (attempt === maxAttempts - 1) throw err;
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-    }
-  }
 }

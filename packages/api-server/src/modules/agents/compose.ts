@@ -52,6 +52,17 @@ export function composeAgentsModule(deps: {
   cleanupHooks?: readonly AgentCleanupHook[];
   runtimeMutator: RuntimeMutator;
   contributionsSettled: ContributionsSettledPort;
+  /** Single-shot create; wired from secrets + connections. Omitted system-side. */
+  grantProvisioner?: {
+    resolveSpecGrants(sel: {
+      secretIds: string[];
+      connectionIds: string[];
+    }): Promise<{ grantedSecretIds: string[]; grantedConnectionIds: string[] }>;
+    applyAfterCreate(
+      agentId: string,
+      sel: { secretIds: string[]; connectionIds: string[] },
+    ): Promise<void>;
+  };
 }): {
   agents: AgentsService;
   repo: AgentsRepository;
@@ -72,6 +83,7 @@ export function composeAgentsModule(deps: {
       cleanupHooks: deps.cleanupHooks,
       runtimeMutator: deps.runtimeMutator,
       contributionsSettled: deps.contributionsSettled,
+      grantProvisioner: deps.grantProvisioner,
       listChannelsByOwner: listChannelsByOwner(deps.db, owner),
       listChannelsByAgent: listChannelsByAgent(deps.db, owner),
       upsertChannel: upsertChannel(deps.db, owner),

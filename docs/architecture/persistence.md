@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-06-01
+Last verified: 2026-06-05
 
 ## Motivated by
 
@@ -88,7 +88,7 @@ Each reconciled ConfigMap carries two `data` keys with strict single-writer owne
 - **`spec.yaml`** — user intent. Written exclusively by the api-server.
 - **`status.yaml`** — observed state and scheduler bookkeeping (next fire, last fire, error). Written exclusively by the controller.
 
-High-frequency, lightweight metadata (heartbeats, activity timestamps, `granted-secret-ids`, `granted-connection-ids`, `secrets-rev`, `last-activity`) lives on **annotations** rather than `status.yaml` to avoid rewriting the spec/status payload on every update.
+High-frequency, lightweight metadata (heartbeats, activity timestamps, `granted-secret-ids`, `granted-connection-ids`, `last-activity`) lives on **annotations** rather than `status.yaml` to avoid rewriting the spec/status payload on every update. (Credential `env` no longer has a `secrets-rev` annotation — it rides the runtime channel; see [connections.md](connections.md) and ADR-DRAFT.)
 
 ConfigMaps were chosen over CRDs so that Platform installs without cluster-admin — the schema maps directly onto a CRD spec if the constraint ever lifts. There is no schema validation at the K8s API layer; both the api-server (on write) and the controller (on read) validate in application code.
 

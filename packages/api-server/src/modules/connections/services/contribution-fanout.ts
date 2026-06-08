@@ -3,7 +3,6 @@ import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 
 export interface FanOutPort {
   setConnectionGrants(agentId: string, connectionIds: string[]): Promise<void>;
-  bumpSecretsRev(agentId: string): Promise<void>;
   syncEgressHosts(input: {
     agentId: string;
     decidedBy: string;
@@ -32,10 +31,6 @@ export function createContributionFanOut(deps: {
       grantedConnections,
       allOwnerConnectionIds,
     }) {
-      const allContribs: Contribution[] = grantedConnections.flatMap(
-        (c) => c.contributions,
-      );
-
       await deps.port.setConnectionGrants(
         agentId,
         grantedConnections.map((c) => c.id),
@@ -69,11 +64,6 @@ export function createContributionFanOut(deps: {
         grants: egressGrants,
         ownedSourceIds: allOwnerConnectionIds,
       });
-
-      const hasEnvContribs = allContribs.some((c) => c.kind === "env");
-      if (hasEnvContribs) {
-        await deps.port.bumpSecretsRev(agentId);
-      }
 
       await deps.runtimeMutator.bump(agentId, []);
 

@@ -145,6 +145,8 @@ Agent-runtime never holds a real GitHub token. The paired gateway pod performs t
 
 If the user has not connected GitHub, no Secret exists and the request leaves authenticated only when the agent has supplied its own token. The agent runtime exposes `PLATFORM_GH_TOKEN_AVAILABLE=true|false` so wrapper scripts can short-circuit instead of making a 401-eliciting request first.
 
+Since credential env moved to the runtime channel (ADR-DRAFT), the flag is derived in-pod from the reconciled env rather than stamped on the pod by the controller. It therefore inherits the channel's best-effort first-spawn semantics: on a cold pod it reads `false` until the first env snapshot arrives, then flips to `true` on the harness respawn that follows. A wrapper that short-circuits on `false` may do so during that boot window — treat it as "not yet known," not "permanently absent."
+
 The same path lets `git clone` of a private repo work without any credential being mounted into the agent pod.
 
 ## Flows
