@@ -73,6 +73,19 @@ Platform-specific. **Always** start from [`docs/architecture.md`](docs/architect
 
 Generic conventions for TS server-side code (tRPC, Zod, RxJS, layering). Invoke the `/typescript-engineering` skill whenever touching server-side TS. If you spot a contradiction between the skill and a Platform architecture doc or ADR, **stop and flag it** — the two should stay aligned, so a conflict means one of them is wrong.
 
+## Database Migrations (`packages/db`)
+
+Schema is defined in [`packages/db/src/schema.ts`](packages/db/src/schema.ts) using Drizzle ORM.
+
+1. Edit the schema in `schema.ts`.
+2. Run `mise run db:generate` — this auto-generates a numbered `.sql` migration in `packages/db/drizzle/`.
+3. Review the generated SQL. Never hand-write migration files; always generate from schema changes.
+4. Add a top comment to the generated file explaining *why* (reference ADRs if relevant).
+5. For destructive changes (drops, renames), verify the SQL uses safe patterns (`IF EXISTS`, data-preserving renames over drop+recreate).
+6. Run `mise run check` to verify types.
+
+Migrations run automatically on api-server startup — no manual `migrate` step in production. The `packages/db/drizzle/meta/_journal.json` tracks migration metadata; commit it alongside the `.sql` file.
+
 ## Documentation
 
 Always follow [`docs/guidelines/documentation-guidelines.md`](docs/guidelines/documentation-guidelines.md).
