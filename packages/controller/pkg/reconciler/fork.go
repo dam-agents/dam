@@ -147,6 +147,15 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 	}
 
 	desired := BuildForkAgentJob(forkName, forkSpec, agentSpec, r.config, ownerRef, credentialSecrets, gatewayIP)
+	// #692: a warm-pool-claimed parent workspace PVC no longer follows the
+	// `<mount>-<agent>-0` name BuildForkAgentJob assumes. Resolve each persisted
+	// mount's PVC by label and rewrite the fork's claim refs (no-op for
+	// pre-label agents — resolution falls back to the legacy name).
+	parentPVCs, err := r.resolveParentWorkspacePVCs(ctx, forkSpec.AgentName, agentSpec)
+	if err != nil {
+		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("resolving parent workspace PVCs: %v", err))
+	}
+	applyForkParentPVCs(desired, parentPVCs)
 
 	if err := r.applyForkJob(ctx, desired); err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying job: %v", err))
@@ -260,6 +269,34 @@ func (r *ForkReconciler) setForkFailed(ctx context.Context, name, reason, detail
 		slog.Error("writing fork failed status", "fork", name, "error", err)
 	}
 	return fmt.Errorf("fork %s: %s: %s", name, reason, detail)
+}
+
+// resolveParentWorkspacePVCs maps each persisted mount of the parent Agent to
+// the PVC name backing it, looked up by (agent, mount) label so a warm-pool
+// workspace — whose name is the pool's generated name, not the
+// `<mount>-<agent>-0` convention — resolves correctly (#692). For agents created
+// before the mount label existed, no labeled PVC is found and it falls back to
+// the legacy convention name, which is still the real name for those.
+func (r *ForkReconciler) resolveParentWorkspacePVCs(ctx context.Context, parentAgent string, agentSpec *types.AgentSpec) (map[string]string, error) {
+	out := map[string]string{}
+	for _, m := range resolveSpecMounts(agentSpec, r.config.AgentTemplateDefaults) {
+		if !m.Persist {
+			continue
+		}
+		volName := types.SanitizeMountName(m.Path)
+		list, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: LabelAgent + "=" + parentAgent + "," + LabelMount + "=" + volName,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if len(list.Items) > 0 {
+			out[volName] = list.Items[0].Name
+		} else {
+			out[volName] = fmt.Sprintf("%s-%s-0", volName, parentAgent)
+		}
+	}
+	return out, nil
 }
 
 func (r *ForkReconciler) applyForkJob(ctx context.Context, desired *batchv1.Job) error {

@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -387,4 +388,82 @@ func TestBuildEnvoyBootstrapConfigMap(t *testing.T) {
 	assert.Contains(t, yaml, "/etc/envoy/tls/tls.key", "must reference the leaf private key")
 	assert.Contains(t, yaml, "dynamic_forward_proxy_https", "must re-originate upstream TLS")
 	assert.Contains(t, yaml, "sni_dynamic_forward_proxy", "must passthrough on SNI miss")
+}
+
+// --- Warm-pool claim transform (#692) ---
+
+func hasVCT(ss *appsv1.StatefulSet, name string) bool {
+	for _, v := range ss.Spec.VolumeClaimTemplates {
+		if v.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func podClaimName(ss *appsv1.StatefulSet, volName string) (string, bool) {
+	for _, v := range ss.Spec.Template.Spec.Volumes {
+		if v.Name == volName && v.PersistentVolumeClaim != nil {
+			return v.PersistentVolumeClaim.ClaimName, true
+		}
+	}
+	return "", false
+}
+
+func TestBuildAgentStatefulSet_PersistedVCTCarriesMountLabel(t *testing.T) {
+	// #692: every persisted PVC must carry the (agent, mount) labels so a fork
+	// can resolve it by label instead of reconstructing its name.
+	ss := BuildAgentStatefulSet("my-instance", testAgent, testConfig, configMapOwnerRef(testOwnerCM), "10.96.42.42")
+	var vct *corev1.PersistentVolumeClaim
+	for i := range ss.Spec.VolumeClaimTemplates {
+		if ss.Spec.VolumeClaimTemplates[i].Name == "home-agent" {
+			vct = &ss.Spec.VolumeClaimTemplates[i]
+		}
+	}
+	require.NotNil(t, vct, "/home/agent persists → a volumeClaimTemplate")
+	assert.Equal(t, "my-instance", vct.Labels[LabelAgent])
+	assert.Equal(t, "home-agent", vct.Labels[LabelMount])
+}
+
+func TestApplyPoolClaims_SwapsVCTForClaimName(t *testing.T) {
+	ss := BuildAgentStatefulSet("my-instance", testAgent, testConfig, configMapOwnerRef(testOwnerCM), "10.96.42.42")
+	require.True(t, hasVCT(ss, "home-agent"), "testAgent persists /home/agent → a volumeClaimTemplate")
+
+	applyPoolClaims(ss, map[string]string{"home-agent": "platform-pool-abc123"})
+
+	assert.False(t, hasVCT(ss, "home-agent"), "claimed mount dropped from volumeClaimTemplates")
+	claim, ok := podClaimName(ss, "home-agent")
+	require.True(t, ok, "claimed mount becomes an explicit pod volume")
+	assert.Equal(t, "platform-pool-abc123", claim)
+}
+
+func TestApplyPoolClaims_NilIsNoop(t *testing.T) {
+	ss := BuildAgentStatefulSet("my-instance", testAgent, testConfig, configMapOwnerRef(testOwnerCM), "10.96.42.42")
+	before := len(ss.Spec.VolumeClaimTemplates)
+
+	applyPoolClaims(ss, nil)
+
+	assert.Len(t, ss.Spec.VolumeClaimTemplates, before)
+	assert.True(t, hasVCT(ss, "home-agent"))
+	_, ok := podClaimName(ss, "home-agent")
+	assert.False(t, ok, "no pool claim → no explicit claimName volume")
+}
+
+func TestApplyPoolClaims_PartialMultiMount(t *testing.T) {
+	agent := *testAgent
+	agent.Mounts = []types.Mount{
+		{Path: "/home/agent", Persist: true, Size: "2Gi"},
+		{Path: "/cache", Persist: true},
+	}
+	ss := BuildAgentStatefulSet("my-instance", &agent, testConfig, configMapOwnerRef(testOwnerCM), "10.96.42.42")
+	require.True(t, hasVCT(ss, "home-agent"))
+	require.True(t, hasVCT(ss, "cache"))
+
+	applyPoolClaims(ss, map[string]string{"home-agent": "platform-pool-xyz"})
+
+	assert.False(t, hasVCT(ss, "home-agent"), "claimed mount swapped")
+	assert.True(t, hasVCT(ss, "cache"), "unclaimed mount keeps its volumeClaimTemplate")
+	claim, ok := podClaimName(ss, "home-agent")
+	require.True(t, ok)
+	assert.Equal(t, "platform-pool-xyz", claim)
 }

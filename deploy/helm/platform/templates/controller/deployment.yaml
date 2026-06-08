@@ -57,6 +57,10 @@ spec:
             # controller and api-server only ever see absolute paths.
             - name: AGENT_TEMPLATE_DEFAULTS
               value: {{ .Values.controller.agent.templateDefaults | toJson | replace "$HOME" .Values.controller.agent.templateDefaults.agentHome | quote }}
+            # Warm PVC pool (#692): pre-provisioned spare workspace volumes a new
+            # agent claims instantly. Disabled by default; see controller.warmPool.
+            - name: WARM_POOL
+              value: {{ .Values.controller.warmPool | toJson | quote }}
             # ADR-041: harness traffic routes through the waypoint-fronted
             # `-apiserver-harness` Service. The bare apiserver Service no
             # longer carries the harness port.

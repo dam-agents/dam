@@ -199,3 +199,48 @@ func TestForkReconcile_TerminalPhasesAreNoOp(t *testing.T) {
 	_, err = client.BatchV1().Jobs("test-agents").Get(context.Background(), "fork-7", metav1.GetOptions{})
 	assert.True(t, errors.IsNotFound(err), "no job should be created after terminal phase")
 }
+
+// --- Warm-pool parent PVC resolution (#692) ---
+
+func TestFork_ResolvesParentWorkspacePVCByLabel(t *testing.T) {
+	// A warm-pool-claimed parent workspace PVC has a generated name, not the
+	// `<mount>-<agent>-0` convention — the fork must find it by label.
+	parentPVC := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "platform-pool-zzzzzz",
+			Namespace: "test-agents",
+			Labels:    map[string]string{LabelAgent: "parent-agent", LabelMount: "home-agent", LabelPool: "10Gi"},
+		},
+	}
+	r, _ := setupForkReconciler(t, nil, nil, parentPVC)
+	spec := &types.AgentSpec{Mounts: []types.Mount{{Path: "/home/agent", Persist: true}, {Path: "/tmp", Persist: false}}}
+
+	got, err := r.resolveParentWorkspacePVCs(context.Background(), "parent-agent", spec)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"home-agent": "platform-pool-zzzzzz"}, got)
+}
+
+func TestFork_FallsBackToConventionPVCName(t *testing.T) {
+	// Agents created before the mount label exists have no labeled PVC; the
+	// fork falls back to the legacy convention name, which is still their real
+	// PVC name.
+	r, _ := setupForkReconciler(t, nil, nil)
+	spec := &types.AgentSpec{Mounts: []types.Mount{{Path: "/home/agent", Persist: true}}}
+
+	got, err := r.resolveParentWorkspacePVCs(context.Background(), "legacy-agent", spec)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"home-agent": "home-agent-legacy-agent-0"}, got)
+}
+
+func TestApplyForkParentPVCs_RewritesClaimName(t *testing.T) {
+	job := &batchv1.Job{}
+	job.Spec.Template.Spec.Volumes = []corev1.Volume{
+		{Name: "home-agent", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "home-agent-p-0"}}},
+		{Name: "ca-cert", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+	}
+
+	applyForkParentPVCs(job, map[string]string{"home-agent": "platform-pool-zzzzzz"})
+
+	assert.Equal(t, "platform-pool-zzzzzz", job.Spec.Template.Spec.Volumes[0].PersistentVolumeClaim.ClaimName)
+	assert.Nil(t, job.Spec.Template.Spec.Volumes[1].PersistentVolumeClaim, "non-PVC volume untouched")
+}

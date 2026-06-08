@@ -79,9 +79,21 @@ rules:
   - apiGroups: [""]
     resources: ["services"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Agent workspace PVCs: list/delete for reclamation + orphan GC. The warm
+  # pool (#692) additionally creates pre-provisioned spares and updates them to
+  # claim one for a new agent (relabel), so create/update/patch are required
+  # when it's enabled — harmless to grant unconditionally.
   - apiGroups: [""]
     resources: ["persistentvolumeclaims"]
-    verbs: ["get", "list", "delete"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+  # Read-only StorageClass access so the warm pool can warn at startup when its
+  # configured class binds WaitForFirstConsumer (which defeats pre-warming).
+  # Best-effort: the manager degrades to a logged warning without this (e.g.
+  # under namespace-scoped RBAC, where cluster-scoped StorageClasses aren't
+  # grantable).
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list"]
   - apiGroups: [""]
     # Per-fork gateway Pod (ADR-038): the fork's paired gateway is a bare
     # Pod, not a StatefulSet, so the controller needs full CRUD on pods

@@ -19,6 +19,28 @@ const (
 	ForkLabelType     = "agent-platform.ai/type"
 )
 
+// applyForkParentPVCs rewrites the fork Job's workspace-volume claim refs to the
+// parent PVC names the reconciler resolved by label (#692). BuildForkAgentJob
+// fills in the legacy `<mount>-<agent>-0` name; this overwrites it with the
+// resolved name, which is the warm-pool spare's generated name when the parent
+// claimed one — and equals the legacy name for pre-label agents, making this a
+// no-op there. No-op for an empty map.
+func applyForkParentPVCs(job *batchv1.Job, parentPVCs map[string]string) {
+	if len(parentPVCs) == 0 {
+		return
+	}
+	vols := job.Spec.Template.Spec.Volumes
+	for i := range vols {
+		pvc := vols[i].PersistentVolumeClaim
+		if pvc == nil {
+			continue
+		}
+		if name, ok := parentPVCs[vols[i].Name]; ok {
+			pvc.ClaimName = name
+		}
+	}
+}
+
 // BuildForkAgentJob constructs the agent half of the per-turn paired pod
 // pair (ADR-038). The fork agent runs the harness; egress credential
 // injection happens in the paired fork gateway pod, reached via HTTPS_PROXY.
@@ -52,10 +74,7 @@ func BuildForkAgentJob(
 	if agentHome == "" {
 		agentHome = defaults.AgentHome
 	}
-	specMounts := agentSpec.Mounts
-	if len(specMounts) == 0 {
-		specMounts = configMountsToTypes(defaults.Mounts)
-	}
+	specMounts := resolveSpecMounts(agentSpec, defaults)
 	specEnv := agentSpec.Env
 	if len(specEnv) == 0 {
 		specEnv = configEnvToTypes(defaults.Env)
