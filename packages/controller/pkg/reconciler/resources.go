@@ -298,10 +298,11 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 		pullSecrets = append(pullSecrets, corev1.LocalObjectReference{Name: n})
 	}
 
-	// Fast (1s) during startup so wake-up is detected quickly, slow
-	// (10s) afterwards so we're not probing every agent pod every
-	// second forever. FailureThreshold=120 → ~2 min of startup
-	// runway, enough for a cold pull of a large agent image.
+	// Startup + readiness hit /healthz every 1s so wake-up and ready
+	// transitions surface near-instantly (ADR-059 routes on PodReady).
+	// Liveness stays 10s — it only needs to catch a hung process, not
+	// drive routing. startup FailureThreshold=120 → ~2 min of runway,
+	// enough for a cold pull of a large agent image.
 	var startupProbe, readinessProbe, livenessProbe *corev1.Probe
 	if cfg.AgentProbesEnabled {
 		startupProbe = &corev1.Probe{
@@ -311,7 +312,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 		}
 		readinessProbe = &corev1.Probe{
 			ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
-			PeriodSeconds: 10,
+			PeriodSeconds: 1,
 		}
 		livenessProbe = &corev1.Probe{
 			ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
