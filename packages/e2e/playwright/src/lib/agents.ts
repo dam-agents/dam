@@ -108,6 +108,55 @@ export async function setMockReplyWithFiles(
   });
 }
 
+export async function setMockReplyWithMidTurnUserPrompt(
+  api: ApiClient,
+  agentId: string,
+  parts: { head: string; midTurnUserPrompt: string; tail: string },
+): Promise<void> {
+  await api.e2e.setScript.mutate({
+    agentId,
+    script: {
+      entries: [
+        {
+          sessionUpdate: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: parts.head },
+          },
+        },
+        {
+          delayMs: 200,
+          sessionUpdate: {
+            sessionUpdate: "user_message_chunk",
+            content: { type: "text", text: parts.midTurnUserPrompt },
+          },
+        },
+        {
+          delayMs: 200,
+          sessionUpdate: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: parts.tail },
+          },
+        },
+      ],
+      stopReason: "end_turn",
+    },
+  });
+}
+
+export async function readChatMessages(
+  page: Page,
+): Promise<{ role: string | null; text: string }[]> {
+  const nodes = await page.getByTestId("chat-message").all();
+  const rows: { role: string | null; text: string }[] = [];
+  for (const node of nodes) {
+    rows.push({
+      role: await node.getAttribute("data-role"),
+      text: await node.innerText(),
+    });
+  }
+  return rows;
+}
+
 export function agentNameHeading(page: Page, agentName: string): Locator {
   return page.getByRole("heading", { name: agentName, exact: true });
 }

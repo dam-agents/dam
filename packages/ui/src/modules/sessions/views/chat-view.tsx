@@ -436,6 +436,8 @@ export function ChatView() {
                     ) : (
                       <div
                         key={m.id}
+                        data-testid="chat-message"
+                        data-role={m.role}
                         className={`flex flex-col gap-1 anim-in ${m.role === "user" ? "items-end" : "items-start"}`}
                       >
                         <span className="text-[11px] font-bold uppercase tracking-[0.05em] text-text-muted mb-0.5">
