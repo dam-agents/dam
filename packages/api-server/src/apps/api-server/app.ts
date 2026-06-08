@@ -47,6 +47,7 @@ import {
 import { createAcpRelay } from "./acp-relay.js";
 import { createTerminalRelay } from "./terminal-relay.js";
 import { createSshRelay } from "./ssh-relay.js";
+import { createSessionPresence } from "./session-presence.js";
 import { createOAuthRoutes } from "./oauth.js";
 import { mountBrandIconRoutes } from "./brand-icon.js";
 import type { Config } from "../../config.js";
@@ -716,6 +717,11 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     });
   });
 
+  // One writer of the per-agent `active-session` pin, shared by all three
+  // relays so the count is across connection types (a terminal close can't
+  // clear a live SSH session's pin). See session-presence.ts.
+  const sessionPresence = createSessionPresence(agentsRepo);
+
   const acpRelay = createAcpRelay(
     config.namespace,
     agentsRepo,
@@ -726,11 +732,20 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
           .resolveIdentity(id)
           .then((r) => (r ? { ownerSub: r.owner, agentId: r.agentId } : null)),
     },
+    sessionPresence,
   );
 
-  const terminalRelay = createTerminalRelay(config.namespace, agentsRepo);
+  const terminalRelay = createTerminalRelay(
+    config.namespace,
+    agentsRepo,
+    sessionPresence,
+  );
 
-  const sshRelay = createSshRelay(config.namespace, agentsRepo);
+  const sshRelay = createSshRelay(
+    config.namespace,
+    agentsRepo,
+    sessionPresence,
+  );
 
   const server = serve({ fetch: app.fetch, port: config.port }, () => {
     process.stderr.write(

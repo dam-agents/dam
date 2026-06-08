@@ -3,11 +3,9 @@ import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
 import type { AgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
-import {
-  LAST_ACTIVITY_KEY,
-  ACTIVE_SESSION_KEY,
-} from "../../modules/agents/infrastructure/labels.js";
+import { LAST_ACTIVITY_KEY } from "../../modules/agents/infrastructure/labels.js";
 import type { ApprovalsRelayService } from "../../modules/approvals/compose.js";
+import type { SessionPresence } from "./session-presence.js";
 import { acpNativeRowId } from "../../modules/approvals/domain/ids.js";
 
 const DEBOUNCE_MS = 30_000;
@@ -107,6 +105,7 @@ export function createAcpRelay(
   repo: AgentsRepository,
   approvals: ApprovalsRelayService,
   identityLookup: AgentIdentityLookup,
+  presence: SessionPresence,
 ) {
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
 
@@ -174,7 +173,11 @@ export function createAcpRelay(
         approvals.resolveAcpNativeFromInSession(rowId).catch(() => {});
       }
 
-      repo.patchAnnotation(agentId, ACTIVE_SESSION_KEY, "true").catch(() => {});
+      // Shared presence: count this connection toward the agent's
+      // active-session pin. Release on close registered now, so the pin frees
+      // even if the resolve/ensureReady/connect chain below rejects.
+      const release = presence.acquire(agentId);
+      client.once("close", release);
 
       const pending: {
         data: Buffer | ArrayBuffer | Buffer[];
@@ -198,10 +201,6 @@ export function createAcpRelay(
         .then(() => repo.ensureReady(agentId))
         .then(() => connectUpstream(upstreamUrl))
         .then((upstream) => {
-          repo
-            .patchAnnotation(agentId, ACTIVE_SESSION_KEY, "true")
-            .catch(() => {});
-
           for (const msg of pending) {
             if (upstream.readyState === WebSocket.OPEN) {
               upstream.send(msg.data, { binary: msg.isBinary });
@@ -273,9 +272,6 @@ export function createAcpRelay(
           });
 
           client.on("close", () => {
-            repo
-              .patchAnnotation(agentId, ACTIVE_SESSION_KEY, "")
-              .catch(() => {});
             // Inbox-driven verdicts no longer need this upstream — delivery
             // happens out-of-band via WrapperFrameSender on the click-handling
             // replica (or via the periodic sweep). Closing here is safe.

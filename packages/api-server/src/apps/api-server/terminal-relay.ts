@@ -3,10 +3,8 @@ import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
 import type { AgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
-import {
-  LAST_ACTIVITY_KEY,
-  ACTIVE_SESSION_KEY,
-} from "../../modules/agents/infrastructure/labels.js";
+import { LAST_ACTIVITY_KEY } from "../../modules/agents/infrastructure/labels.js";
+import type { SessionPresence } from "./session-presence.js";
 
 const ACTIVITY_DEBOUNCE_MS = 30_000;
 const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;
@@ -24,6 +22,7 @@ export interface TerminalRelay {
 export function createTerminalRelay(
   namespace: string,
   repo: AgentsRepository,
+  presence: SessionPresence,
 ): TerminalRelay {
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
   const lastActivity = new Map<string, number>();
@@ -79,6 +78,9 @@ export function createTerminalRelay(
       }
       activeClients.set(sessionId, client);
 
+      const release = presence.acquire(agentId);
+      client.once("close", release);
+
       const pending: { data: Buffer; isBinary: boolean }[] = [];
       let pendingBytes = 0;
       let bufferOverflow = false;
@@ -97,8 +99,6 @@ export function createTerminalRelay(
         pending.push({ data, isBinary });
       };
       client.on("message", buffer);
-
-      repo.patchAnnotation(agentId, ACTIVE_SESSION_KEY, "true").catch(() => {});
 
       repo
         .ensureReady(agentId)
@@ -172,9 +172,6 @@ export function createTerminalRelay(
           client.on("close", () => {
             if (activeClients.get(sessionId) === client)
               activeClients.delete(sessionId);
-            repo
-              .patchAnnotation(agentId, ACTIVE_SESSION_KEY, "")
-              .catch(() => {});
             if (upstream.readyState === WebSocket.OPEN) upstream.close();
           });
         })

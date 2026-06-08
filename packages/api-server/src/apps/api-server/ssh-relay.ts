@@ -3,10 +3,8 @@ import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
 import type { AgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
-import {
-  LAST_ACTIVITY_KEY,
-  ACTIVE_SESSION_KEY,
-} from "../../modules/agents/infrastructure/labels.js";
+import { LAST_ACTIVITY_KEY } from "../../modules/agents/infrastructure/labels.js";
+import type { SessionPresence } from "./session-presence.js";
 
 const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;
 const ACTIVITY_DEBOUNCE_MS = 30_000;
@@ -24,19 +22,9 @@ export interface SshRelay {
 export function createSshRelay(
   namespace: string,
   repo: AgentsRepository,
+  presence: SessionPresence,
 ): SshRelay {
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
-  const open = new Map<string, number>();
-  const mark = (id: string, delta: number) => {
-    const before = open.get(id) ?? 0;
-    const n = before + delta;
-    if (n > 0) open.set(id, n);
-    else open.delete(id);
-    if (before === 0 || n === 0)
-      repo
-        .patchAnnotation(id, ACTIVE_SESSION_KEY, n > 0 ? "true" : "")
-        .catch(() => {});
-  };
   const lastActivity = new Map<string, number>();
   const bumpActivity = (id: string) => {
     const now = Date.now();
@@ -62,10 +50,10 @@ export function createSshRelay(
   ) {
     wss.handleUpgrade(req, socket, head, async (client) => {
       client.on("error", () => client.terminate());
-      mark(agentId, 1);
+      const release = presence.acquire(agentId);
 
       // WS liveness: a half-open client (network drop with no clean close)
-      // would otherwise hold its active-session pin forever, since `mark(-1)`
+      // would otherwise hold its active-session pin forever, since `release()`
       // only runs on 'close'. Ping each interval; if the previous ping went
       // unanswered, terminate — that fires 'close' below, releasing the pin.
       let alive = true;
@@ -93,7 +81,7 @@ export function createSshRelay(
       client.on("close", () => {
         clearInterval(heartbeat);
         clientGone = true;
-        mark(agentId, -1);
+        release();
         closeWs(upstream);
       });
 

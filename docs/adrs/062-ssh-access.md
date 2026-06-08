@@ -106,15 +106,17 @@ bytes.**
   e2e mock) build on. The runtime still degrades cleanly if a future image strips `sshd`
   from the base — `prepareSshd` returns null and `/api/ssh` refuses the upgrade — but no
   shipped image exercises that path today.
-- **An open SSH session keeps the agent awake.** Like `dam chat` and the web terminal, the
-  relay marks `active-session` while a connection is open, and the controller bypasses the
-  idle timeout while that pin is set (`hibernation.go`). This is intended — a connected
-  editor is "in use" — but the byte stream is opaque, so the relay can't tell a real
-  keystroke from a VS Code Remote-SSH keepalive. A forgotten, still-connected editor window
-  therefore keeps the agent running (and billing); **close it to let the agent hibernate.**
-  Two safety nets keep the pin honest: a per-connection WS ping/pong terminates a half-open
-  client (releasing the pin), and the api-server clears all `active-session` pins at boot,
-  since a fresh process holds no connections and any surviving pin is stale.
+- **An open SSH session keeps the agent awake.** Like `dam chat` and the web terminal, an
+  open connection marks `active-session`, and the controller bypasses the idle timeout
+  while that pin is set (`hibernation.go`). All three relays (acp, terminal, ssh) share one
+  counter that owns the pin — true while ≥1 connection of any type is open — so closing a
+  terminal can't clear a live SSH session's pin. This is intended (a connected editor is
+  "in use"), but the byte stream is opaque, so the relay can't tell a real keystroke from a
+  VS Code Remote-SSH keepalive. A forgotten, still-connected editor window therefore keeps
+  the agent running (and billing); **close it to let the agent hibernate.** Two safety nets
+  keep the pin honest: a per-connection WS ping/pong terminates a half-open client
+  (releasing it), and the api-server clears all pins at boot, since a fresh process holds no
+  connections so any surviving pin is stale.
 
 ## Alternatives considered
 
