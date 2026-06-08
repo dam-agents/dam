@@ -21,3 +21,15 @@ export interface SourceNeedsConnectionError {
   message: string;
   cta?: string;
 }
+
+/** `add` of a gitUrl already registered as one of your User sources (the
+ *  server returns CONFLICT). → exit 2. */
+export interface SourceAlreadyExistsError {
+  kind: "source-exists";
+}
+
+/** `refresh` race: the source resolved client-side but the server NOT_FOUND'd
+ *  it (deleted between list and refresh). → exit 2. */
+export interface SourceNotFoundError {
+  kind: "source-not-found";
+}

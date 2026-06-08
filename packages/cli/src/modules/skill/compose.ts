@@ -9,7 +9,10 @@ import {
 import { buildCatalogCommand } from "./commands/catalog.js";
 import { buildInstallCommand } from "./commands/install.js";
 import { buildListCommand } from "./commands/list.js";
+import { buildSourceAddCommand } from "./commands/source-add.js";
 import { buildSourceListCommand } from "./commands/source-list.js";
+import { buildSourceRefreshCommand } from "./commands/source-refresh.js";
+import { buildSourceRemoveCommand } from "./commands/source-remove.js";
 import { buildUninstallCommand } from "./commands/uninstall.js";
 import {
   createSkillsService,
@@ -47,9 +50,12 @@ export function composeSkillModule(opts: SkillModuleOptions): SkillModule {
     "Browse skill sources and manage the skills installed on an Agent",
   );
   const sourceGroup = new Command("source").description(
-    "Inspect connected skill sources",
+    "Inspect and manage connected skill sources",
   );
   sourceGroup.addCommand(buildSourceListCommand(shared));
+  sourceGroup.addCommand(buildSourceAddCommand(shared));
+  sourceGroup.addCommand(buildSourceRemoveCommand(shared));
+  sourceGroup.addCommand(buildSourceRefreshCommand(shared));
   parent.addCommand(sourceGroup);
   parent.addCommand(buildCatalogCommand(shared));
   parent.addCommand(buildListCommand(shared));

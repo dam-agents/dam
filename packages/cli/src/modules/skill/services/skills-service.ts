@@ -6,7 +6,9 @@ import type {
   AgentNotReachableError,
   AuthRequiredError,
   PrivateSourceNeedsAgentError,
+  SourceAlreadyExistsError,
   SourceNeedsConnectionError,
+  SourceNotFoundError,
   TransportError,
 } from "../domain/errors.js";
 
@@ -16,6 +18,32 @@ export interface SkillsService {
     agentId?: string,
   ): Promise<
     Result<readonly SkillSource[], TransportError | AuthRequiredError>
+  >;
+
+  /** sources.create — register a User source. A CONFLICT (the gitUrl is
+   *  already one of yours) maps to source-exists. */
+  addSource(input: {
+    name: string;
+    gitUrl: string;
+  }): Promise<
+    Result<
+      SkillSource,
+      TransportError | AuthRequiredError | SourceAlreadyExistsError
+    >
+  >;
+
+  /** sources.delete — untrack a User source. Protected sources are rejected in
+   *  the command before this is reached, so no FORBIDDEN mapping is needed. */
+  removeSource(
+    id: string,
+  ): Promise<Result<void, TransportError | AuthRequiredError>>;
+
+  /** sources.refresh — drop the source's scan cache. A NOT_FOUND (raced with a
+   *  delete) maps to source-not-found. */
+  refreshSource(
+    id: string,
+  ): Promise<
+    Result<void, TransportError | AuthRequiredError | SourceNotFoundError>
   >;
 
   /** skills.list(sourceId, agentId?) — scan one source. Disambiguates the two
@@ -96,6 +124,35 @@ export function createSkillsService(deps: { trpc: TrpcClient }): SkillsService {
             agentId ? { agentId } : undefined,
           ) as Promise<readonly SkillSource[]>,
       );
+    },
+    async addSource(input) {
+      try {
+        const created = (await deps.trpc.skills.sources.create.mutate(
+          input,
+        )) as SkillSource;
+        return ok(created);
+      } catch (e) {
+        if ((e as { data?: { code?: string } })?.data?.code === "CONFLICT") {
+          return err({ kind: "source-exists" });
+        }
+        return classifyTrpcError(e);
+      }
+    },
+    async removeSource(id) {
+      return trpcCall(async () => {
+        await deps.trpc.skills.sources.delete.mutate({ id });
+      });
+    },
+    async refreshSource(id) {
+      try {
+        await deps.trpc.skills.sources.refresh.mutate({ id });
+        return ok(undefined);
+      } catch (e) {
+        if ((e as { data?: { code?: string } })?.data?.code === "NOT_FOUND") {
+          return err({ kind: "source-not-found" });
+        }
+        return classifyTrpcError(e);
+      }
     },
     async catalog(sourceId, agentId) {
       try {

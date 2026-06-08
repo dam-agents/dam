@@ -15,21 +15,16 @@ import {
 } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { renderTable } from "../../shared/render-table.js";
+import { sourceKind } from "../domain/source-ref.js";
 import type { SkillsService } from "../services/skills-service.js";
 
 const HEADER = ["ID", "NAME", "GIT URL", "KIND"];
-
-function kindOf(s: SkillSource): "Platform" | "Agent" | "User" {
-  if (s.system === true) return "Platform";
-  if (s.fromTemplate) return "Agent";
-  return "User";
-}
 
 function tableFor(sources: readonly SkillSource[]): string {
   const sorted = [...sources].sort((a, b) => a.name.localeCompare(b.name));
   return renderTable([
     HEADER,
-    ...sorted.map((s) => [s.id, s.name, s.gitUrl, kindOf(s)]),
+    ...sorted.map((s) => [s.id, s.name, s.gitUrl, sourceKind(s)]),
   ]);
 }
 
