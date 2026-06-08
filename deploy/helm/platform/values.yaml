@@ -148,9 +148,21 @@ postgres:
   annotations: {}
   podAnnotations: {}
   image: registry.access.redhat.com/hi/postgresql:18
-  user: platform
-  # password is auto-generated if not set
-  password: null
+
+  # -- Three Postgres roles (ADR-062): one per service plus a
+  # dedicated SUPERUSER for DBA work. The two app roles are
+  # NOSUPERUSER and own only their own database, so a leaked app
+  # credential is bounded to one service's data. The admin role has
+  # `ALTER ROLE … SET log_statement = 'all'` attached so DBA sessions
+  # are statement-logged by default. Passwords are auto-generated on
+  # first install if left null.
+  apiserverUser: platform_apiserver
+  apiserverPassword: null
+  keycloakUser: platform_keycloak
+  keycloakPassword: null
+  adminUser: platform_admin
+  adminPassword: null
+
   storage: 5Gi
   storageClass: ""
   resources:
@@ -160,6 +172,38 @@ postgres:
     limits:
       cpu: 500m
       memory: 512Mi
+
+  # -- Event logging. Authentication events (connect, disconnect, failed
+  # auth) and admin events (DDL — CREATE/ALTER/DROP, GRANT/REVOKE, ROLE
+  # changes) are surfaced on the pod's stderr so the external log
+  # collector picks them up. The image's default logging-collector +
+  # file output is disabled in favor of plain stderr (kubectl logs).
+  # These are passed to the server as `-c` flags (see postgres.yaml)
+  # because the image's postgresql.conf has no drop-in include dir.
+  #
+  # JSON-format logs aren't used: PG's `jsonlog` destination requires
+  # the file-based logging_collector, which writes to files instead of
+  # stderr. Plain text with a structured prefix is the canonical
+  # Postgres-in-K8s pattern; the external log shipper parses the
+  # prefix.
+  log:
+    # -- Prefix on every log line. Default is a key=value-ish layout:
+    # timestamp, pid, user@db (only on backend processes via %q), client
+    # host, application_name.
+    linePrefix: "%m [%p] %q%u@%d from %h app=%a "
+
+    # -- Authentication events (PG 18 enum). Comma-separated subset of:
+    # receipt, authentication, authorization, setup_durations. Failed
+    # auth is always logged regardless of this setting.
+    connections: "authentication,authorization"
+
+    # -- Log session-close events (with session duration).
+    disconnections: "on"
+
+    # -- Admin-statement audit. `ddl` covers CREATE / ALTER / DROP
+    # including roles and grants. Set to `all` for full query log
+    # (very noisy), `mod` to also catch INSERT/UPDATE/DELETE.
+    statement: "ddl"
 
 # -- Shared Redis instance.
 # Used as the cross-replica pub/sub primitive — first consumer is HITL ext_authz
@@ -290,7 +334,7 @@ keycloak:
   db:
     host: ""
     port: 5432
-    user: platform
+    user: platform_keycloak
     password: null
     database: keycloak
     # Postgres TLS mode for an external DB: require | verify-ca | verify-full.
@@ -541,7 +585,7 @@ apiServer:
   db:
     host: ""
     port: 5432
-    user: platform
+    user: platform_apiserver
     password: null
     database: platform
     # Postgres TLS mode for an external DB: require | verify-ca | verify-full.

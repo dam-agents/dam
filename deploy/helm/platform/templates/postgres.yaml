@@ -10,17 +10,76 @@ metadata:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: postgres
 data:
-  init-databases.sh: |
+  01-init-databases.sh: |
     #!/bin/bash
     set -e
-    # Create additional databases beyond the default ($POSTGRES_DB).
-    # This script runs only on first PGDATA init.
-    for db in keycloak platform; do
-      echo "Creating database '$db' (if not exists)..."
-      psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-SQL
-        SELECT 'CREATE DATABASE $db' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '$db')\gexec
+    # ADR-062: POSTGRES_USER is `platform_admin`, so the image creates the
+    # admin role as the bootstrap superuser (OID 10) — the one role
+    # Postgres refuses to demote, and exactly the role that should keep
+    # SUPERUSER. This script runs as that superuser on first PGDATA init
+    # and creates the two NOSUPERUSER application roles, each owning its
+    # own database, with cross-database CONNECT revoked. A leaked app
+    # credential is bounded to a single service's data.
+    #
+    # Runs only on first PGDATA init.
+    psql -v ON_ERROR_STOP=1 \
+         -v admin_user="$POSTGRES_USER" \
+         -v apiserver_user="$POSTGRES_APISERVER_USER" \
+         -v apiserver_pwd="$POSTGRES_APISERVER_PASSWORD" \
+         -v keycloak_user="$POSTGRES_KEYCLOAK_USER" \
+         -v keycloak_pwd="$POSTGRES_KEYCLOAK_PASSWORD" \
+         --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<'SQL'
+    -- Application roles: LOGIN, explicit NOSUPERUSER (the default, stated
+    -- so the guarantee reads at a glance and can't silently regress).
+    SELECT format('CREATE ROLE %I LOGIN NOSUPERUSER PASSWORD %L', :'apiserver_user', :'apiserver_pwd')
+    WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'apiserver_user')
+    \gexec
+    SELECT format('CREATE ROLE %I LOGIN NOSUPERUSER PASSWORD %L', :'keycloak_user', :'keycloak_pwd')
+    WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'keycloak_user')
+    \gexec
+
+    -- One database per service, each owned by its app role so each runs
+    -- its own migrations (Drizzle on platform, Liquibase on keycloak)
+    -- within its own database and reaches nowhere else.
+    SELECT format('CREATE DATABASE platform OWNER %I', :'apiserver_user')
+    WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'platform')
+    \gexec
+    SELECT format('CREATE DATABASE keycloak OWNER %I', :'keycloak_user')
+    WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'keycloak')
+    \gexec
+
+    -- CONNECT defaults to PUBLIC; revoke it so neither app role can reach
+    -- the other's database, then grant it back only to each database's own
+    -- owner. The explicit grants are what re-admit the owning service after
+    -- the PUBLIC revoke — do not drop them. The admin superuser bypasses
+    -- the CONNECT check regardless.
+    REVOKE CONNECT ON DATABASE platform FROM PUBLIC;
+    REVOKE CONNECT ON DATABASE keycloak FROM PUBLIC;
+    GRANT  CONNECT ON DATABASE platform TO :"apiserver_user";
+    GRANT  CONNECT ON DATABASE keycloak TO :"keycloak_user";
+
+    -- DBA sessions are statement-logged by default. The global
+    -- log_statement stays at ddl (set on the server command line), so
+    -- routine app traffic never enters the audit stream.
+    ALTER ROLE :"admin_user" SET log_statement = 'all';
+
+    -- Regression guard: abort the init (ON_ERROR_STOP) if either app role
+    -- comes up SUPERUSER — the guarantee this ADR exists to deliver. A
+    -- failed init crashes the container, so the pod can never reach Ready
+    -- with the escalation hole open. Role names are rendered by Helm
+    -- because psql does not interpolate :vars inside a dollar-quoted body.
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM pg_roles
+        WHERE rolname IN ('{{ .Values.postgres.apiserverUser }}', '{{ .Values.postgres.keycloakUser }}')
+          AND rolsuper
+      ) THEN
+        RAISE EXCEPTION 'ADR-062: application roles must be NOSUPERUSER';
+      END IF;
+    END
+    $$;
     SQL
-    done
 ---
 apiVersion: v1
 kind: Service
@@ -68,17 +127,62 @@ spec:
       containers:
         - name: postgres
           image: {{ .Values.postgres.image }}
+          # Event logging via server flags (ADR-062). The image's
+          # `postgresql.conf` has no include for a drop-in config dir, so
+          # passing these as `-c` flags is the image-agnostic way to make
+          # them take effect — auth + admin events land on stderr, where
+          # the cluster log collector picks them up. `args` (not
+          # `command`) keeps the image's docker-entrypoint.sh, so first-
+          # boot init scripts still run before `exec postgres …`.
+          args:
+            - postgres
+            - -c
+            - logging_collector=off
+            - -c
+            - log_destination=stderr
+            - -c
+            - "log_line_prefix={{ .Values.postgres.log.linePrefix }}"
+            - -c
+            - "log_connections={{ .Values.postgres.log.connections }}"
+            - -c
+            - "log_disconnections={{ .Values.postgres.log.disconnections }}"
+            - -c
+            - "log_statement={{ .Values.postgres.log.statement }}"
           ports:
             - containerPort: 5432
               name: postgres
           env:
+            # Bootstrap identity — POSTGRES_USER becomes the cluster's
+            # bootstrap superuser (OID 10), which Postgres forbids
+            # demoting. We make that the dedicated DBA role; the two app
+            # roles are created NOSUPERUSER by 01-init-databases.sh
+            # (ADR-062).
             - name: POSTGRES_USER
-              value: {{ .Values.postgres.user | quote }}
+              value: {{ .Values.postgres.adminUser | quote }}
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ include "platform.postgres.secrets.fullname" . }}
-                  key: POSTGRES_PASSWORD
+                  key: POSTGRES_ADMIN_PASSWORD
+            # api-server app role — created NOSUPERUSER by the init script
+            # and given ownership of the platform database.
+            - name: POSTGRES_APISERVER_USER
+              value: {{ .Values.postgres.apiserverUser | quote }}
+            - name: POSTGRES_APISERVER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.postgres.secrets.fullname" . }}
+                  key: POSTGRES_APISERVER_PASSWORD
+            # Keycloak app role — created NOSUPERUSER by the init script
+            # and given ownership of the keycloak database.
+            - name: POSTGRES_KEYCLOAK_USER
+              value: {{ .Values.postgres.keycloakUser | quote }}
+            - name: POSTGRES_KEYCLOAK_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.postgres.secrets.fullname" . }}
+                  key: POSTGRES_KEYCLOAK_PASSWORD
+            # Maintenance database for the bootstrap (admin) connection.
             - name: POSTGRES_DB
               value: "postgres"
             - name: PGDATA
@@ -89,7 +193,12 @@ spec:
               command:
                 - pg_isready
                 - -U
-                - {{ .Values.postgres.user }}
+                - {{ .Values.postgres.apiserverUser }}
+                # Target an existing database so the probe does not log
+                # `FATAL: database "<role>" does not exist` every cycle
+                # (pg_isready otherwise defaults the database to the role).
+                - -d
+                - postgres
             initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 3
@@ -99,7 +208,9 @@ spec:
               command:
                 - pg_isready
                 - -U
-                - {{ .Values.postgres.user }}
+                - {{ .Values.postgres.apiserverUser }}
+                - -d
+                - postgres
             initialDelaySeconds: 15
             periodSeconds: 15
             timeoutSeconds: 3

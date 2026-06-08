@@ -74,7 +74,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: {{ include "platform.keycloak.db.password.secretName" . }}
-                  key: POSTGRES_PASSWORD
+                  key: POSTGRES_KEYCLOAK_PASSWORD
             - name: KC_BOOTSTRAP_ADMIN_USERNAME
               value: {{ .Values.keycloak.admin.user | quote }}
             - name: KC_BOOTSTRAP_ADMIN_PASSWORD
