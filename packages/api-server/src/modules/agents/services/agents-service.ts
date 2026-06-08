@@ -17,6 +17,7 @@ import type { AgentsRepository } from "../infrastructure/agents-repository.js";
 export interface ContributionsStatus {
   settled: boolean;
   failures: DriverFailure[];
+  preparingWorkspace: boolean;
 }
 
 /** Port: the failed contributions surfaced on an agent (the degraded badge). */
@@ -143,24 +144,30 @@ export function createAgentsService(deps: {
   }
 
   // Fail-soft: a transient outbox-DB error must never 500 an agent read.
-  async function safeFailures(id: string): Promise<DriverFailure[]> {
+  async function safeStatus(id: string): Promise<ContributionsStatus> {
     try {
-      return (await deps.contributionsSettled.status(id)).failures;
+      return await deps.contributionsSettled.status(id);
     } catch {
-      return [];
+      return { settled: true, failures: [], preparingWorkspace: false };
     }
   }
 
   async function project(
     infra: InfraAgent,
   ): Promise<ReturnType<typeof assembleAgent>> {
-    const [channels, allowedSubs, failures] = await Promise.all([
+    const [channels, allowedSubs, status] = await Promise.all([
       deps.listChannelsByAgent(infra.id),
       deps.listAllowedUsersByAgent(infra.id),
-      safeFailures(infra.id),
+      safeStatus(infra.id),
     ]);
     const emails = await subsToEmails(allowedSubs);
-    return assembleAgent(infra, channels, emails, failures);
+    return assembleAgent(
+      infra,
+      channels,
+      emails,
+      status.failures,
+      status.preparingWorkspace,
+    );
   }
 
   return {
@@ -208,11 +215,13 @@ export function createAgentsService(deps: {
       return infraAgents.map((infra) => {
         const subs = allowedUsersMap.get(infra.id) ?? [];
         const emails = subs.map((s) => subEmailMap.get(s) ?? s);
+        const status = failuresMap.get(infra.id);
         return assembleAgent(
           infra,
           channelMap.get(infra.id) ?? [],
           emails,
-          failuresMap.get(infra.id)?.failures ?? [],
+          status?.failures ?? [],
+          status?.preparingWorkspace ?? false,
         );
       });
     },
@@ -514,9 +523,15 @@ export function createAgentsService(deps: {
 
       const allowedSubs = await deps.listAllowedUsersByAgent(id);
       const emails = await subsToEmails(allowedSubs);
-      const failures = await safeFailures(id);
+      const status = await safeStatus(id);
       return ok(
-        assembleAgent(infra, txResult.value.channels, emails, failures),
+        assembleAgent(
+          infra,
+          txResult.value.channels,
+          emails,
+          status.failures,
+          status.preparingWorkspace,
+        ),
       );
     },
 

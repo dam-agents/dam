@@ -53,11 +53,15 @@ export interface InfraAgent {
   error?: string;
 }
 
-/** Map the controller's conditions to the public-facing AgentState. Purely
- *  condition-driven (ADR-059) — the non-authoritative phase is not read. */
-export function computeAgentState(infra: InfraAgent): AgentState {
+/** Map the controller's conditions to the public-facing AgentState. Mostly
+ *  condition-driven (ADR-059); `preparingWorkspace` (a pending workspace-seed
+ *  clone) refines a Ready agent into the not-yet-usable phase. */
+export function computeAgentState(
+  infra: InfraAgent,
+  preparingWorkspace = false,
+): AgentState {
   if (infra.error) return "error";
-  if (infra.ready) return "running";
+  if (infra.ready) return preparingWorkspace ? "preparing_workspace" : "running";
   if (infra.hibernated) return "hibernated";
   return "starting";
 }
@@ -121,13 +125,14 @@ export function assembleAgent(
   channels: ChannelConfig[],
   allowedUserEmails: string[],
   contributionFailures: DriverFailure[],
+  preparingWorkspace = false,
 ): Agent {
   return {
     id: infra.id,
     name: infra.name,
     templateId: infra.templateId,
     spec: infra.spec,
-    state: computeAgentState(infra),
+    state: computeAgentState(infra, preparingWorkspace),
     error: infra.error,
     contributionFailures,
     channels,

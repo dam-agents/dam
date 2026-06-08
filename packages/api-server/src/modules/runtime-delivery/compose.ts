@@ -56,6 +56,7 @@ export interface RuntimeDeliveryComposition {
 export interface ContributionsStatus {
   settled: boolean;
   failures: DriverFailure[];
+  preparingWorkspace: boolean;
 }
 
 export interface ComposeRuntimeDeliveryOpts {
@@ -126,11 +127,16 @@ export function composeRuntimeDelivery(
     stateBuilder,
     builtin,
     async contributionsStatus(agentId): Promise<ContributionsStatus> {
-      const row = await outboxRepo.getRow(agentId);
-      if (!row) return { settled: true, failures: [] };
+      const [row, seeding] = await Promise.all([
+        outboxRepo.getRow(agentId),
+        outboxRepo.seedingAgentIds([agentId]),
+      ]);
+      const preparingWorkspace = seeding.has(agentId);
+      if (!row) return { settled: true, failures: [], preparingWorkspace };
       return {
         settled: row.lastSettledVersion >= row.version,
         failures: row.applyFailures,
+        preparingWorkspace,
       };
     },
 
@@ -139,18 +145,23 @@ export function composeRuntimeDelivery(
     ): Promise<Map<string, ContributionsStatus>> {
       const result = new Map<string, ContributionsStatus>();
       if (agentIds.length === 0) return result;
-      const rows = await outboxRepo.getRows(agentIds);
+      const [rows, seeding] = await Promise.all([
+        outboxRepo.getRows(agentIds),
+        outboxRepo.seedingAgentIds(agentIds),
+      ]);
       const byId = new Map(rows.map((r) => [r.agentId, r]));
       for (const id of agentIds) {
         const row = byId.get(id);
+        const preparingWorkspace = seeding.has(id);
         result.set(
           id,
           row
             ? {
                 settled: row.lastSettledVersion >= row.version,
                 failures: row.applyFailures,
+                preparingWorkspace,
               }
-            : { settled: true, failures: [] },
+            : { settled: true, failures: [], preparingWorkspace },
         );
       }
       return result;

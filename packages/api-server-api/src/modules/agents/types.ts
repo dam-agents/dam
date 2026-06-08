@@ -36,6 +36,7 @@ export type ChannelConfig = SlackChannel | TelegramChannel;
 
 export type AgentState =
   | "starting"
+  | "preparing_workspace"
   | "running"
   | "hibernating"
   | "hibernated"

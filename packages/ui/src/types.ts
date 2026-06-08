@@ -102,6 +102,7 @@ export interface TemplateView {
 
 export type AgentState =
   | "starting"
+  | "preparing_workspace"
   | "running"
   | "hibernating"
   | "hibernated"

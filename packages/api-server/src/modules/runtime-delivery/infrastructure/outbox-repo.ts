@@ -73,6 +73,8 @@ export interface OutboxRepo {
   ): Promise<ApplyTransitions>;
   /** Rows the sweep should re-dispatch: unsettled, or settled-with-failures under the attempt cap. */
   listRetryable(maxAttempts: number, limit: number): Promise<OutboxRow[]>;
+  /** Of `agentIds`, those with an undispatched, unexpired `workspace-seed` event — drives the "preparing workspace" state (#695). */
+  seedingAgentIds(agentIds: string[]): Promise<Set<string>>;
   deleteExpiredEvents(): Promise<number>;
   insertEvent(
     input: PendingEventRow & { createdAt?: Date },
@@ -250,6 +252,22 @@ export function createOutboxRepo(db: Db): OutboxRepo {
         .orderBy(asc(runtimeStateOutbox.applyAttempts))
         .limit(limit)) as InternalRow[];
       return rows;
+    },
+
+    async seedingAgentIds(agentIds): Promise<Set<string>> {
+      if (agentIds.length === 0) return new Set();
+      const rows = (await db
+        .select({ agentId: runtimeEvents.agentId })
+        .from(runtimeEvents)
+        .where(
+          and(
+            inArray(runtimeEvents.agentId, agentIds),
+            eq(runtimeEvents.kind, "workspace-seed"),
+            isNull(runtimeEvents.dispatchedAt),
+            sql`${runtimeEvents.expiresAt} > now()`,
+          ),
+        )) as { agentId: string }[];
+      return new Set(rows.map((r) => r.agentId));
     },
 
     async deleteExpiredEvents(): Promise<number> {

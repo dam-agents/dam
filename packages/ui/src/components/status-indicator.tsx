@@ -3,6 +3,7 @@ import type { AgentDisplayState } from "../modules/agents/utils/agent-resolver.j
 const stateLabel: Record<AgentDisplayState, string> = {
   running: "Running",
   starting: "Starting",
+  preparing_workspace: "Preparing workspace",
   hibernating: "Hibernating",
   hibernated: "Hibernated",
   error: "Error",
@@ -12,6 +13,7 @@ const stateLabel: Record<AgentDisplayState, string> = {
 const badgeColors: Record<AgentDisplayState, string> = {
   running: "bg-success-light text-success border-success",
   starting: "bg-warning-light text-warning border-warning",
+  preparing_workspace: "bg-warning-light text-warning border-warning",
   hibernating: "bg-warning-light text-warning border-warning",
   hibernated: "bg-info-light text-info/50 border-info/25",
   error: "bg-danger-light text-danger border-danger",
@@ -21,6 +23,7 @@ const badgeColors: Record<AgentDisplayState, string> = {
 const dotColors: Record<AgentDisplayState, string> = {
   running: "bg-success",
   starting: "bg-warning anim-pulse",
+  preparing_workspace: "bg-warning anim-pulse",
   hibernating: "bg-warning anim-pulse",
   hibernated: "bg-info/50",
   error: "bg-danger",
