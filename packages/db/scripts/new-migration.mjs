@@ -1,4 +1,10 @@
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import {
+  readFileSync,
+  writeFileSync,
+  openSync,
+  writeSync,
+  closeSync,
+} from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -37,20 +43,32 @@ if (last && when <= last.when) {
 
 const tag = `${seq}_${name}`;
 const sqlPath = join(drizzleDir, `${tag}.sql`);
-if (existsSync(sqlPath)) {
-  console.error(`refusing to overwrite existing ${tag}.sql`);
-  process.exit(1);
-}
 
 const template = `-- ${tag}
 -- WHY: <describe the change; link the ADR/issue>. Separate statements with "--> statement-breakpoint".
 
 `;
-writeFileSync(sqlPath, template);
+let fd;
+try {
+  fd = openSync(sqlPath, "wx");
+} catch (err) {
+  if (err.code === "EEXIST") {
+    console.error(`refusing to overwrite existing ${tag}.sql`);
+    process.exit(1);
+  }
+  throw err;
+}
+try {
+  writeSync(fd, template);
+} finally {
+  closeSync(fd);
+}
 
 entries.push({ idx, version: "7", when, tag, breakpoints: true });
 journal.entries = entries;
 writeFileSync(journalPath, JSON.stringify(journal, null, 2) + "\n");
 
-console.log(`created drizzle/${tag}.sql and appended journal entry (idx ${idx}).`);
+console.log(
+  `created drizzle/${tag}.sql and appended journal entry (idx ${idx}).`,
+);
 console.log("Next: write the SQL, then run `mise run db:drift`.");
