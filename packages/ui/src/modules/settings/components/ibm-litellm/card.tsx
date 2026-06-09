@@ -9,22 +9,19 @@ import { IbmLitellmForm } from "./form.js";
 
 const NAME = PROVIDERS["ibm-litellm"].displayName;
 
-/** Self-contained card for the IBM LiteLLM preset. The form's "Advanced"
- *  disclosure may have changed any model pin, so we mint a fresh
- *  env-var bundle on every save. */
+/** Self-contained card for the IBM LiteLLM preset. */
 export function IbmLitellmCard({ secret }: { secret?: SecretView }) {
   const actions = useProviderActions();
 
   if (secret) {
     return (
       <IbmLitellmConnected
-        secret={secret}
         onRemove={() => actions.remove(secret.id, NAME)}
-        onSave={({ value, pins }) =>
+        onSave={({ value }) =>
           actions.update({
             id: secret.id,
             value,
-            envMappings: ibmLitellmEnvMappings(pins),
+            envMappings: ibmLitellmEnvMappings(),
           })
         }
       />
@@ -34,12 +31,12 @@ export function IbmLitellmCard({ secret }: { secret?: SecretView }) {
   return (
     <IbmLitellmForm
       variant="wizard"
-      onSave={({ value, pins }) =>
+      onSave={({ value }) =>
         actions.create({
           type: "ibm-litellm",
           name: NAME,
           value,
-          envMappings: ibmLitellmEnvMappings(pins),
+          envMappings: ibmLitellmEnvMappings(),
         })
       }
     />

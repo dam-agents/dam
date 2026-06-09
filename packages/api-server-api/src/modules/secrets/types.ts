@@ -66,96 +66,36 @@ export interface InjectionConfig {
   queryParamName?: string;
 }
 
-/**
- * IBM LiteLLM model pins. The IBM LiteLLM preset's default env-var bundle
- * pins all five Claude model env vars to AWS-hosted Claude IDs; the form's
- * "Advanced — model overrides" disclosure lets the user change them.
- */
-export interface IbmLitellmModelPins {
-  opus: string;
-  sonnet: string;
-  haiku: string;
-  /** Subagent model — Claude Code uses this for the Task tool. */
-  subagent: string;
-  /** `ANTHROPIC_MODEL` — fallback when no `ANTHROPIC_DEFAULT_*_MODEL` matches. */
-  default: string;
-  /** `OPENAI_MODEL` — model ID for Codex and other OpenAI-compatible agents. */
-  openaiModel: string;
-}
-
-export const IBM_LITELLM_DEFAULT_MODEL_PINS: IbmLitellmModelPins = {
-  opus: "aws/claude-opus-4-8",
-  sonnet: "aws/claude-sonnet-4-6",
-  haiku: "aws/claude-sonnet-4-6",
-  subagent: "aws/claude-opus-4-8",
-  default: "aws/claude-opus-4-8",
-  openaiModel: "gpt-5.5",
-};
-
 const IBM_LITELLM_HOST = "ete-litellm.ai-models.vpc.res.ibm.com";
 const IBM_LITELLM_BASE_URL = `https://${IBM_LITELLM_HOST}`;
 
 /**
- * Builds the IBM LiteLLM env-var bundle from a model-pin set. The form
- * uses this to mint a fresh bundle when the user changes any pin in the
- * advanced disclosure; the default bundle (with `IBM_LITELLM_DEFAULT_MODEL_PINS`)
- * is what the registry stores.
+ * The IBM LiteLLM preset's default env-var bundle.
  *
- * 16 entries: 1 credential placeholder, 1 endpoint pin, 2 behavior flags,
- * 5 Claude Code model pins, 4 pi-agent `openai-proxy` overrides
- * (`pi-dynamic-providers/index.ts`), 3 Codex/OpenAI-compatible env vars.
+ * The Claude Code model pins (ANTHROPIC_DEFAULT_*_MODEL, CLAUDE_CODE_SUBAGENT_MODEL,
+ * ANTHROPIC_MODEL) are intentionally NOT here: the claude-code agent's local
+ * LiteLLM gateway discovers them from the upstream's /v1/models and sets them at
+ * session start (packages/agents/claude-code/litellm-gateway.py). A user who needs
+ * a specific model sets the env var manually on the agent.
+ *
+ * 10 entries: 1 credential placeholder, 1 endpoint pin, 1 behavior flag,
+ * 4 pi-agent `openai-proxy` overrides (`pi-dynamic-providers/index.ts`),
+ * 3 Codex/OpenAI-compatible env vars. The OPENAI_* model ids stay fixed —
+ * pi-agent and Codex have no gateway to discover them.
  */
-export function ibmLitellmEnvMappings(
-  pins: IbmLitellmModelPins = IBM_LITELLM_DEFAULT_MODEL_PINS,
-): EnvMapping[] {
+export function ibmLitellmEnvMappings(): EnvMapping[] {
   return [
     { envName: "ANTHROPIC_AUTH_TOKEN", placeholder: "sk-dummy" },
     { envName: "ANTHROPIC_BASE_URL", placeholder: IBM_LITELLM_BASE_URL },
     { envName: "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", placeholder: "1" },
-    { envName: "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", placeholder: "1" },
-    { envName: "ANTHROPIC_DEFAULT_OPUS_MODEL", placeholder: pins.opus },
-    { envName: "ANTHROPIC_DEFAULT_SONNET_MODEL", placeholder: pins.sonnet },
-    { envName: "ANTHROPIC_DEFAULT_HAIKU_MODEL", placeholder: pins.haiku },
-    { envName: "CLAUDE_CODE_SUBAGENT_MODEL", placeholder: pins.subagent },
-    { envName: "ANTHROPIC_MODEL", placeholder: pins.default },
     { envName: "OPENAI_PROXY_URL", placeholder: IBM_LITELLM_BASE_URL },
-    { envName: "OPENAI_PROXY_MODEL", placeholder: pins.opus },
+    { envName: "OPENAI_PROXY_MODEL", placeholder: "aws/claude-opus-4-8" },
     { envName: "OPENAI_PROXY_CONTEXT_WINDOW", placeholder: "200000" },
     { envName: "OPENAI_PROXY_MAX_TOKENS", placeholder: "8192" },
     { envName: "OPENAI_API_KEY", placeholder: DEFAULT_ENV_PLACEHOLDER },
     { envName: "OPENAI_BASE_URL", placeholder: IBM_LITELLM_BASE_URL },
-    { envName: "OPENAI_MODEL", placeholder: pins.openaiModel },
+    { envName: "OPENAI_MODEL", placeholder: "gpt-5.5" },
   ];
-}
-
-/**
- * Reverse map: extract user-facing model pins from a stored env-mapping
- * set so the edit form can pre-populate the advanced disclosure. Falls
- * back to defaults for any pin not present.
- */
-export function ibmLitellmPinsFromEnvMappings(
-  envMappings: readonly EnvMapping[] | undefined,
-): IbmLitellmModelPins {
-  const lookup = (name: string) =>
-    envMappings?.find((m) => m.envName === name)?.placeholder;
-  return {
-    opus:
-      lookup("ANTHROPIC_DEFAULT_OPUS_MODEL") ??
-      IBM_LITELLM_DEFAULT_MODEL_PINS.opus,
-    sonnet:
-      lookup("ANTHROPIC_DEFAULT_SONNET_MODEL") ??
-      IBM_LITELLM_DEFAULT_MODEL_PINS.sonnet,
-    haiku:
-      lookup("ANTHROPIC_DEFAULT_HAIKU_MODEL") ??
-      IBM_LITELLM_DEFAULT_MODEL_PINS.haiku,
-    subagent:
-      lookup("CLAUDE_CODE_SUBAGENT_MODEL") ??
-      IBM_LITELLM_DEFAULT_MODEL_PINS.subagent,
-    default:
-      lookup("ANTHROPIC_MODEL") ?? IBM_LITELLM_DEFAULT_MODEL_PINS.default,
-    openaiModel:
-      lookup("OPENAI_MODEL") ?? IBM_LITELLM_DEFAULT_MODEL_PINS.openaiModel,
-  };
 }
 
 export interface BobModelPins {

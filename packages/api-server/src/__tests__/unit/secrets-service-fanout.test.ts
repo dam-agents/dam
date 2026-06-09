@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   type EnvMapping,
-  IBM_LITELLM_DEFAULT_MODEL_PINS,
   ibmLitellmEnvMappings,
   PROVIDERS,
 } from "api-server-api";
@@ -199,7 +198,7 @@ describe("secrets-service.create — Anthropic envMappings default (ADR-040)", (
     expect(created[0]!.envMappings).toEqual(userMappings);
   });
 
-  it("defaults the 13-entry env bundle for ibm-litellm secrets", async () => {
+  it("defaults the 10-entry env bundle for ibm-litellm secrets", async () => {
     const { port, created, store } = makePort([]);
     const { port: grants } = makeGrants();
     const svc = createSecretsService({
@@ -214,7 +213,8 @@ describe("secrets-service.create — Anthropic envMappings default (ADR-040)", (
     });
     expect(created[0]!.envMappings).toEqual(ibmLitellmEnvMappings());
     // Spot-check the bundle: credential placeholder, the BASE_URL pin
-    // (must mirror the host pattern), and a default model pin.
+    // (must mirror the host pattern), and the pi-agent proxy pin. The Claude
+    // model pins are no longer here — the agent's gateway sets them.
     const envByName = new Map(
       created[0]!.envMappings!.map((m) => [m.envName, m.placeholder]),
     );
@@ -222,9 +222,7 @@ describe("secrets-service.create — Anthropic envMappings default (ADR-040)", (
     expect(envByName.get("ANTHROPIC_BASE_URL")).toBe(
       `https://${IBM_LITELLM_HOST_PATTERN}`,
     );
-    expect(envByName.get("ANTHROPIC_DEFAULT_OPUS_MODEL")).toBe(
-      IBM_LITELLM_DEFAULT_MODEL_PINS.opus,
-    );
+    expect(envByName.has("ANTHROPIC_DEFAULT_OPUS_MODEL")).toBe(false);
     // pi-agent SPECS slot is also primed so the same secret configures pi.
     expect(envByName.get("OPENAI_PROXY_URL")).toBe(
       `https://${IBM_LITELLM_HOST_PATTERN}`,
@@ -234,7 +232,7 @@ describe("secrets-service.create — Anthropic envMappings default (ADR-040)", (
     expect(store.get(view.id)!.hostPattern).toBe(IBM_LITELLM_HOST_PATTERN);
   });
 
-  it("respects caller-supplied envMappings on ibm-litellm (form-driven model overrides)", async () => {
+  it("respects caller-supplied envMappings on ibm-litellm", async () => {
     const { port, created } = makePort([]);
     const { port: grants } = makeGrants();
     const svc = createSecretsService({
@@ -242,10 +240,10 @@ describe("secrets-service.create — Anthropic envMappings default (ADR-040)", (
       grants,
       ownerSub: "owner-1",
     });
-    const overridden = ibmLitellmEnvMappings({
-      ...IBM_LITELLM_DEFAULT_MODEL_PINS,
-      opus: "aws/claude-opus-4-7",
-    });
+    const overridden: EnvMapping[] = [
+      { envName: "ANTHROPIC_AUTH_TOKEN", placeholder: "sk-dummy" },
+      { envName: "ANTHROPIC_MODEL", placeholder: "claude-custom" },
+    ];
     await svc.create({
       type: "ibm-litellm",
       name: "IBM LiteLLM ETE Proxy",
@@ -253,11 +251,6 @@ describe("secrets-service.create — Anthropic envMappings default (ADR-040)", (
       envMappings: overridden,
     });
     expect(created[0]!.envMappings).toEqual(overridden);
-    expect(
-      created[0]!.envMappings!.find(
-        (m) => m.envName === "ANTHROPIC_DEFAULT_OPUS_MODEL",
-      )?.placeholder,
-    ).toBe("aws/claude-opus-4-7");
   });
 
   it("defaults the OPENAI_API_KEY env mapping + /v1/* path for openai secrets", async () => {

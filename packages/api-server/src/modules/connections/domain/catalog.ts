@@ -91,21 +91,10 @@ const IBM_LITELLM: HeaderConnectionTemplate = {
       name: "ANTHROPIC_AUTH_TOKEN",
       placeholder: "dummy-placeholder",
     },
-    {
-      kind: "env",
-      name: "ANTHROPIC_DEFAULT_OPUS_MODEL",
-      placeholder: "claude-opus-4-7",
-    },
-    {
-      kind: "env",
-      name: "ANTHROPIC_DEFAULT_SONNET_MODEL",
-      placeholder: "claude-sonnet-4-6",
-    },
-    {
-      kind: "env",
-      name: "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-      placeholder: "claude-haiku-4-5",
-    },
+    // Claude model pins (ANTHROPIC_DEFAULT_*_MODEL) are intentionally omitted:
+    // the claude-code agent's local LiteLLM gateway discovers them from the
+    // upstream's /v1/models and sets them at session start. OPENAI_MODEL stays
+    // for Codex, which has no gateway.
     { kind: "env", name: "OPENAI_MODEL", placeholder: "gpt-5.5" },
     { kind: "egress-allow", host: "ete-litellm.bx.cloud9.ibm.com" },
   ],

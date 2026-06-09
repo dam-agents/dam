@@ -12,8 +12,8 @@ import { IconButton } from "./icon-button.js";
  * Uses a shadcn {@link Card} so it visually matches the rest of the
  * design-branch UI (no thick borders, no brutal shadow). Each preset's
  * `connected.tsx` decides what the subtitle says (e.g. Anthropic shows
- * "Set up with OAuth Token"; IBM LiteLLM shows the current default model)
- * and whether clicking Edit transitions to its specific Form.
+ * "Set up with OAuth Token") and whether clicking Edit transitions to its
+ * specific Form.
  */
 export function ProviderConnectedShell({
   provider,
@@ -25,8 +25,7 @@ export function ProviderConnectedShell({
   provider: ProviderPresetType;
   title: string;
   /** Free-form node so callers can include `<span class="font-mono">`
-   *  fragments etc. (IBM LiteLLM displays its current default model with
-   *  monospace formatting). */
+   *  fragments etc. */
   subtitle: ReactNode;
   onEdit: () => void;
   onRemove: () => void | Promise<void>;

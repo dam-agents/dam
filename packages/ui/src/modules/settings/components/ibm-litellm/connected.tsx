@@ -1,34 +1,22 @@
 import { useState } from "react";
 
-import {
-  type IbmLitellmModelPins,
-  ibmLitellmPinsFromEnvMappings,
-  PROVIDERS,
-  type SecretView,
-} from "../../../../types.js";
+import { PROVIDERS } from "../../../../types.js";
 import { ProviderConnectedShell } from "../shared/provider-connected-shell.js";
 import { IbmLitellmForm } from "./form.js";
 
 export function IbmLitellmConnected({
-  secret,
   onRemove,
   onSave,
 }: {
-  secret: SecretView;
   onRemove: () => Promise<void>;
-  onSave: (input: {
-    value: string;
-    pins: IbmLitellmModelPins;
-  }) => Promise<void>;
+  onSave: (input: { value: string }) => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
-  const currentPins = ibmLitellmPinsFromEnvMappings(secret.envMappings);
 
   if (editing) {
     return (
       <IbmLitellmForm
         variant="edit"
-        initialPins={currentPins}
         onCancel={() => setEditing(false)}
         onSave={async (input) => {
           await onSave(input);
@@ -42,11 +30,7 @@ export function IbmLitellmConnected({
     <ProviderConnectedShell
       provider="ibm-litellm"
       title={PROVIDERS["ibm-litellm"].displayName}
-      subtitle={
-        <>
-          Default: <span className="font-mono">{currentPins.default}</span>
-        </>
-      }
+      subtitle="Routes Claude Code & pi-agent through IBM's LiteLLM proxy"
       onEdit={() => setEditing(true)}
       onRemove={onRemove}
     />

@@ -100,7 +100,6 @@ export type {
   SecretsService,
   EnvMapping,
   InjectionConfig,
-  IbmLitellmModelPins,
   BobModelPins,
 } from "./modules/secrets/types.js";
 export {
@@ -120,9 +119,7 @@ export {
   PROVIDERS,
   PROVIDER_PRESET_TYPES,
   isProviderPresetType,
-  IBM_LITELLM_DEFAULT_MODEL_PINS,
   ibmLitellmEnvMappings,
-  ibmLitellmPinsFromEnvMappings,
   bobEnvMappings,
   bobPinsFromEnvMappings,
   BOB_CHAT_MODES,
