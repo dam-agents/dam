@@ -32,9 +32,9 @@ describe("resolveAgentDisplay", () => {
     },
   );
 
-  test("restart override: state flips to restarting and actions are suppressed", () => {
+  test("restart override: state shows starting and actions are suppressed", () => {
     const out = resolveAgentDisplay(agent("a", "running"), new Set(["a"]));
-    expect(out.state).toBe("restarting");
+    expect(out.state).toBe("starting");
     expect(out.clickable).toBe(false);
     expect(out.powerAction).toBe(null);
   });

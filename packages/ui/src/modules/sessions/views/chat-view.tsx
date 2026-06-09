@@ -10,7 +10,7 @@ import {
   TerminalSquare,
   Trash2,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
@@ -23,8 +23,12 @@ import { queryClient } from "../../../query-client.js";
 import type { SessionError } from "../../../store.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import { useAgents } from "../../agents/api/queries.js";
+import { useAgents, useIsAgentOperable } from "../../agents/api/queries.js";
+import { AgentUnavailableOverlay } from "../../agents/components/agent-unavailable-overlay.js";
 import { ContributionFailuresBadge } from "../../agents/components/contribution-failures-badge.js";
+import { useAgentReachabilityProbe } from "../../agents/hooks/use-agent-reachability-probe.js";
+import { useSyncRestartingAgents } from "../../agents/hooks/use-restart-agent.js";
+import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
@@ -40,12 +44,26 @@ import { SessionsSidebar } from "../components/sessions-sidebar.js";
 import { Terminal } from "../components/terminal.js";
 import { ThoughtBlock } from "../components/thought-block.js";
 import { ToolChip } from "../components/tool-chip.js";
+import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
 
 export function ChatView() {
   const selectedAgent = useStore((s) => s.selectedAgent);
   const { data: agentsData } = useAgents();
   const agents = agentsData?.list ?? [];
+  const agentOperable = useIsAgentOperable(selectedAgent);
+
+  useSyncRestartingAgents();
+  useAgentReachabilityProbe(selectedAgent);
+  const restartingAgents = useStore((s) => s.restartingAgents);
+  const restartingIds = useMemo(
+    () => new Set(restartingAgents.keys()),
+    [restartingAgents],
+  );
+  const agentView = agents.find((a) => a.id === selectedAgent) ?? null;
+  const agentDisplay = agentView
+    ? resolveAgentDisplay(agentView, restartingIds)
+    : null;
   const selectedAgentName =
     agents.find((a) => a.id === selectedAgent)?.name ?? selectedAgent;
   const sessionId = useStore((s) => s.sessionId);
@@ -94,6 +112,7 @@ export function ChatView() {
     busy,
     engagedSessionIdRef,
     loadingSession,
+    connectionState,
   } = useAcpSession(selectedAgent, textareaRef);
 
   const { openFileHandler } = useFileTree(selectedAgent);
@@ -402,6 +421,7 @@ export function ChatView() {
               selectedAgent={selectedAgent}
               agents={agents}
               busy={busy}
+              connectionState={connectionState}
             />
           </div>
         </header>
@@ -413,7 +433,7 @@ export function ChatView() {
             agentId={selectedAgent}
             sessionId={sessionId}
             fresh={terminalFreshRef.current}
-            autoConnect={!terminalPaused}
+            autoConnect={!terminalPaused && agentOperable}
             onConnected={() => {
               terminalFreshRef.current = false;
               setTerminalPaused(false);
@@ -661,40 +681,59 @@ export function ChatView() {
           </div>
         </div>
       )}
+
+      {selectedAgent && !agentOperable && (
+        <AgentUnavailableOverlay
+          agent={agentView}
+          display={agentDisplay}
+          name={selectedAgentName ?? ""}
+          onBack={handleBack}
+        />
+      )}
     </div>
   );
 }
 
 /** Small pill in the chat header. Falls through to the shared `StatusBadge`,
- *  overriding to a "Busy" variant while the agent is mid-turn. */
+ *  overriding to a "Busy" variant while the agent is mid-turn. A transient WS
+ *  hiccup on a still-running agent adds a "Reconnecting" pill alongside —
+ *  full lifecycle outages are handled by the takeover overlay, not here. */
 function ChatHeaderStatus({
   selectedAgent,
   agents,
   busy,
+  connectionState,
 }: {
   selectedAgent: string | null;
   agents: AgentView[];
   busy: boolean;
+  connectionState: ConnectionState;
 }) {
-  if (busy) {
-    return (
-      <>
+  const agent = agents.find((a) => a.id === selectedAgent);
+  const reconnecting =
+    connectionState === "reconnecting" || connectionState === "reloading";
+  return (
+    <>
+      {busy ? (
         <StatusBadge
           size="sm"
           label="Busy"
           colorClasses="bg-accent-light text-accent border-accent"
           dotColorClasses="bg-accent anim-pulse"
         />
-        <ImportInProgressBadge size="sm" agentId={selectedAgent} />
-      </>
-    );
-  }
-  const agent = agents.find((a) => a.id === selectedAgent);
-  return (
-    <>
-      <StatusBadge size="sm" state={agent?.state ?? "starting"} />
+      ) : (
+        <StatusBadge size="sm" state={agent?.state ?? "starting"} />
+      )}
+      {reconnecting && (
+        <StatusBadge
+          size="sm"
+          label="Reconnecting"
+          colorClasses="bg-warning-light text-warning border-warning"
+          dotColorClasses="bg-warning anim-pulse"
+        />
+      )}
       <ImportInProgressBadge size="sm" agentId={selectedAgent} />
-      {agent && (
+      {!busy && agent && (
         <ContributionFailuresBadge
           size="sm"
           failures={agent.contributionFailures}

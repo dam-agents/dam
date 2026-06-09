@@ -3,7 +3,7 @@ import { ArrowLeft, Plus, RefreshCw } from "lucide-react";
 import { useCallback } from "react";
 
 import { useStore } from "../../../store.js";
-import { useAgentsList } from "../../agents/api/queries.js";
+import { useAgentRunState } from "../../agents/api/queries.js";
 import { AgentApprovalsTray } from "../../approvals/components/agent-approvals-tray.js";
 import { useAcpSessions } from "../api/queries.js";
 import { SessionRow } from "./session-row.js";
@@ -25,8 +25,7 @@ export function SessionsSidebar({
   const showConfirm = useStore((s) => s.showConfirm);
   const goBack = useStore((s) => s.goBack);
 
-  const agents = useAgentsList();
-  const agentRunState = agents.find((a) => a.id === selectedAgent)?.state;
+  const agentRunState = useAgentRunState(selectedAgent);
   const {
     data: sessions = [],
     isFetching,

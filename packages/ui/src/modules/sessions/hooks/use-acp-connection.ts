@@ -35,6 +35,11 @@ interface UseAcpConnectionOptions {
   /** Block live-WS opening (e.g. while resumeSession's throwaway is replaying
    *  history) — both channels would otherwise receive the replay stream. */
   liveBlocked: boolean;
+  /** Whether the pod is reachable now (running and not mid-restart). While
+   *  false the keep-alive and reconnect loop stay parked: the pod can't answer
+   *  ACP, and each connect attempt re-wakes a hibernated agent via the relay's
+   *  ensureReady. */
+  agentOperable: boolean;
   makeUpdateHandler: () => UpdateHandler;
   engage: (conn: ClientSideConnection) => Promise<void>;
   clearEngagement: () => void;
@@ -80,6 +85,7 @@ export function useAcpConnection(
     sessionId,
     sessionMode,
     liveBlocked,
+    agentOperable,
     makeUpdateHandler,
     engage,
     clearEngagement,
@@ -102,6 +108,13 @@ export function useAcpConnection(
   const pendingReloadRef = useRef(false);
 
   const [state, setState] = useState<ConnectionState>("idle");
+
+  // Mirror of agentOperable so the late-bound reconnect closure reads the
+  // latest value without re-subscribing.
+  const operableRef = useRef(agentOperable);
+  useEffect(() => {
+    operableRef.current = agentOperable;
+  }, [agentOperable]);
 
   // Cleanup on unmount: cancel any in-flight reconnect, close the live WS.
   useEffect(
@@ -213,6 +226,9 @@ export function useAcpConnection(
   useEffect(() => {
     reconnectFnRef.current = () => {
       if (!isMountedRef.current) return;
+      // Pod isn't reachable — don't reconnect (and don't re-wake it). The
+      // keep-alive effect re-engages once it flips back to operable.
+      if (!operableRef.current) return;
       const sid = useStore.getState().sessionId;
       const inst = useStore.getState().selectedAgent;
       if (!sid || inst !== selectedAgent) return;
@@ -226,7 +242,7 @@ export function useAcpConnection(
 
       reconnectTimerRef.current = setTimeout(async () => {
         reconnectTimerRef.current = null;
-        if (!isMountedRef.current) return;
+        if (!isMountedRef.current || !operableRef.current) return;
         const currentSid = useStore.getState().sessionId;
         const currentInst = useStore.getState().selectedAgent;
         if (!currentSid || currentInst !== selectedAgent) return;
@@ -255,10 +271,17 @@ export function useAcpConnection(
   // any pending tool-permission prompt replayed there has no live channel to
   // answer on.
   useEffect(() => {
-    if (!selectedAgent || !sessionId || liveBlocked) return;
+    if (!selectedAgent || !sessionId || liveBlocked || !agentOperable) return;
     if (sessionMode === SessionMode.Terminal) return;
     ensureLive().catch(() => {});
-  }, [selectedAgent, sessionId, sessionMode, liveBlocked, ensureLive]);
+  }, [
+    selectedAgent,
+    sessionId,
+    sessionMode,
+    liveBlocked,
+    agentOperable,
+    ensureLive,
+  ]);
 
   const reset = useCallback(() => {
     connectionRef.current?.ws.close();

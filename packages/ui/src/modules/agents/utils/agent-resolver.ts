@@ -1,6 +1,6 @@
 import type { AgentState, AgentView } from "../../../types.js";
 
-export type AgentDisplayState = AgentState | "restarting";
+export type AgentDisplayState = AgentState;
 
 export interface AgentDisplay {
   /** Derived state that drives the status pill. */
@@ -14,14 +14,16 @@ export interface AgentDisplay {
 
 /**
  * Pure projection: derive the display-level state from an agent's runtime
- * status, layering the optimistic "Restarting" pill on top.
+ * status. An optimistic restart (Restart clicked before the poll sees the pod
+ * dip) presents as `starting` — a restart and a cold start are the same
+ * "coming up" state to the user, so they share one presentation.
  */
 export function resolveAgentDisplay(
   agent: AgentView,
   restartingAgentIds: ReadonlySet<string>,
 ): AgentDisplay {
   const restarting = restartingAgentIds.has(agent.id);
-  const state: AgentDisplayState = restarting ? "restarting" : agent.state;
+  const state: AgentDisplayState = restarting ? "starting" : agent.state;
   const clickable =
     !restarting && (agent.state === "running" || agent.state === "hibernated");
   const powerAction: AgentDisplay["powerAction"] = restarting

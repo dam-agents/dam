@@ -30,6 +30,13 @@ export interface AgentsSlice {
   setRestartingAgents: (
     map: Map<string, { seenNonRunning: boolean; clickedAt: number }>,
   ) => void;
+  /** Reactive circuit breaker: agent IDs whose pod returned 502 ("agent
+   *  unreachable") on a per-agent tRPC call. Tripped by the createAgentTrpc
+   *  fetch wrapper, cleared once the reachability probe gets a 2xx. Gates pod
+   *  calls regardless of who restarted the pod (env edit, controller, schedule). */
+  unreachableAgents: ReadonlySet<string>;
+  markAgentUnreachable: (id: string) => void;
+  clearAgentUnreachable: (id: string) => void;
   selectAgent: (id: string) => void;
   goBack: () => void;
 }
@@ -56,6 +63,22 @@ export const createAgentsSlice: StateCreator<
       return { restartingAgents: next };
     }),
   setRestartingAgents: (map) => set({ restartingAgents: map }),
+
+  unreachableAgents: new Set(),
+  markAgentUnreachable: (id) =>
+    set((s) => {
+      if (s.unreachableAgents.has(id)) return {};
+      const next = new Set(s.unreachableAgents);
+      next.add(id);
+      return { unreachableAgents: next };
+    }),
+  clearAgentUnreachable: (id) =>
+    set((s) => {
+      if (!s.unreachableAgents.has(id)) return {};
+      const next = new Set(s.unreachableAgents);
+      next.delete(id);
+      return { unreachableAgents: next };
+    }),
 
   selectAgent: (id) => {
     history.pushState(null, "", viewToPath("chat", id));

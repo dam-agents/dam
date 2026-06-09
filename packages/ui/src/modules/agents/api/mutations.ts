@@ -131,7 +131,12 @@ export function useUpdateAgent() {
   });
 }
 
-export function useWakeAgent() {
+/**
+ * Raw wake mutation. The optimistic "Starting" lifecycle is managed by
+ * useWakeAgent in hooks/use-wake-agent.ts — consumers should call that so the
+ * overlay/pill flips the instant the user clicks Start, not on the next poll.
+ */
+export function useWakeAgentMutation() {
   return useMutation({
     ...trpc.agents.wake.mutationOptions(),
     meta: {

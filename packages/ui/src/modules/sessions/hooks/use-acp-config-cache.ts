@@ -42,7 +42,7 @@ export interface AcpConfigCache {
 export function useAcpConfigCache(
   selectedAgent: string | null,
   sessionId: string | null,
-  agentRunState: string | undefined,
+  agentOperable: boolean,
 ): AcpConfigCache {
   const setSessionModes = useStore((s) => s.setSessionModes);
   const setSessionModels = useStore((s) => s.setSessionModels);
@@ -192,7 +192,7 @@ export function useAcpConfigCache(
       );
     }
 
-    if (agentRunState !== "running") return;
+    if (!agentOperable) return;
     let cancelled = false;
 
     (async () => {
@@ -245,7 +245,7 @@ export function useAcpConfigCache(
   }, [
     selectedAgent,
     sessionId,
-    agentRunState,
+    agentOperable,
     setSessionModes,
     setSessionModels,
     setSessionConfigOptions,

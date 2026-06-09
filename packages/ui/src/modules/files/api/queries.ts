@@ -11,6 +11,7 @@ import { api } from "../../../api.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import { createAgentTrpc } from "../../agents/agent-trpc.js";
+import { useIsAgentOperable } from "../../agents/api/queries.js";
 import { fileKeys } from "./keys.js";
 
 const EMPTY_EXPANDED: ReadonlySet<string> = new Set();
@@ -62,13 +63,14 @@ function paramsForExpanded(expanded: ReadonlySet<string>): string[] {
 export function useDirSnapshot(agentId: string | null, path: string) {
   const expanded = useExpandedDirs(agentId);
   const paths = paramsForExpanded(expanded);
+  const operable = useIsAgentOperable(agentId);
   return useQuery({
     queryKey: fileKeys.treeForPaths(agentId ?? "_none", paths),
     queryFn: async (): Promise<ListDirsResponse> => {
       const trpc = getAgentTrpc(agentId!);
       return trpc.files.listDirs.query({ paths });
     },
-    enabled: !!agentId,
+    enabled: !!agentId && operable,
     refetchInterval: 2000,
     staleTime: 2000,
     placeholderData: keepPreviousData,
@@ -81,10 +83,11 @@ export function useFileContentQuery(
   agentId: string | null,
   path: string | null,
 ) {
+  const operable = useIsAgentOperable(agentId);
   return useQuery({
     queryKey: fileKeys.content(agentId ?? "_none", path ?? "_none"),
     queryFn: async () => readFileContent(agentId!, path!),
-    enabled: !!agentId && !!path,
+    enabled: !!agentId && !!path && operable,
     refetchInterval: 2000,
     staleTime: 2000,
     // No retry — transient errors resolve on the next 2 s poll tick, and we

@@ -7,7 +7,6 @@ const stateLabel: Record<AgentDisplayState, string> = {
   hibernating: "Hibernating",
   hibernated: "Hibernated",
   error: "Error",
-  restarting: "Restarting",
 };
 
 const badgeColors: Record<AgentDisplayState, string> = {
@@ -17,7 +16,6 @@ const badgeColors: Record<AgentDisplayState, string> = {
   hibernating: "bg-warning-light text-warning border-warning",
   hibernated: "bg-info-light text-info/50 border-info/25",
   error: "bg-danger-light text-danger border-danger",
-  restarting: "bg-warning-light text-warning border-warning",
 };
 
 const dotColors: Record<AgentDisplayState, string> = {
@@ -27,7 +25,6 @@ const dotColors: Record<AgentDisplayState, string> = {
   hibernating: "bg-warning anim-pulse",
   hibernated: "bg-info/50",
   error: "bg-danger",
-  restarting: "bg-warning anim-pulse",
 };
 
 /** Shared state pill used in the agents list and the chat header. `sm` matches

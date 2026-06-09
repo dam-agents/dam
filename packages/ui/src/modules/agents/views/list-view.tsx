@@ -13,11 +13,7 @@ import { Card } from "@/components/ui/card";
 import { StatusBadge } from "../../../components/status-indicator.js";
 import { useStore } from "../../../store.js";
 import { useTemplates } from "../../templates/api/queries.js";
-import {
-  useCreateAgent,
-  useDeleteAgent,
-  useWakeAgent,
-} from "../api/mutations.js";
+import { useCreateAgent, useDeleteAgent } from "../api/mutations.js";
 import { useAgents } from "../api/queries.js";
 import { ContributionFailuresBadge } from "../components/contribution-failures-badge.js";
 import { AddAgentDialog } from "../dialogs/add-agent-dialog.js";
@@ -26,6 +22,7 @@ import {
   useRestartAgent,
   useSyncRestartingAgents,
 } from "../hooks/use-restart-agent.js";
+import { useWakeAgent } from "../hooks/use-wake-agent.js";
 import { resolveAgentDisplay } from "../utils/agent-resolver.js";
 
 export function ListView() {
@@ -109,14 +106,11 @@ export function ListView() {
           {initialLoaded &&
             agents.map((agent) => {
               const display = resolveAgentDisplay(agent, restartingIds);
-              const onOpen = () => {
-                if (display.clickable) selectAgent(agent.id);
-              };
               return (
                 <Card
                   key={agent.id}
-                  onClick={onOpen}
-                  className={`overflow-hidden anim-in transition-shadow ${display.clickable ? "group cursor-pointer hover:not-has-[button:hover]:shadow-md" : ""}`}
+                  onClick={() => selectAgent(agent.id)}
+                  className="overflow-hidden anim-in transition-shadow group cursor-pointer hover:not-has-[button:hover]:shadow-md"
                 >
                   <div className="px-4 md:px-6 py-4 md:py-5">
                     <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
@@ -146,7 +140,7 @@ export function ListView() {
                           size="sm"
                           onClick={() => {
                             if (display.powerAction === "start")
-                              wakeAgent.mutate({ id: agent.id });
+                              wakeAgent.wake(agent.id);
                             else if (display.powerAction === "restart")
                               restartAgent(agent.id);
                           }}

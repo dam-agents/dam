@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { api } from "../../../api.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import { hasStreamingAssistant } from "../../acp/session-projection.js";
 import { classifyResumeError, extractErrorMessage } from "../../acp/utils.js";
-import { useAgentsList } from "../../agents/api/queries.js";
+import { useIsAgentOperable } from "../../agents/api/queries.js";
 import {
   deleteAgentSession,
   listAgentSessions,
@@ -45,12 +44,10 @@ export function useAcpSession(
     setBusy(busy);
   }, [busy, setBusy]);
 
-  const agentRunState = useAgentsList().find(
-    (a) => a.id === selectedAgent,
-  )?.state;
+  const agentOperable = useIsAgentOperable(selectedAgent);
 
   const { captureSessionConfig, handleConfigUpdate, applySavedPreferences } =
-    useAcpConfigCache(selectedAgent, sessionId, agentRunState);
+    useAcpConfigCache(selectedAgent, sessionId, agentOperable);
 
   const { loadHistory } = useAcpHistory(
     selectedAgent,
@@ -73,6 +70,7 @@ export function useAcpSession(
   const {
     ensureLive,
     connectionRef,
+    state: connectionState,
     reset: resetConnection,
   } = useAcpConnection({
     selectedAgent,
@@ -82,19 +80,16 @@ export function useAcpSession(
     // replaying history — both channels would otherwise receive the replay
     // stream and the live projection would double-apply every update.
     liveBlocked: loadingSession,
+    // Only the pod can answer ACP. Gating here stops the keep-alive and
+    // reconnect loop from hammering (and re-waking, via the relay's
+    // ensureReady) an agent that's hibernated, starting, or mid-restart.
+    agentOperable,
     makeUpdateHandler,
     engage,
     clearEngagement,
     loadHistory,
     setMessages,
   });
-
-  // Wake hibernated agent on entry.
-  useEffect(() => {
-    if (selectedAgent && agentRunState === "hibernated") {
-      api.agents.wake.mutate({ id: selectedAgent }).catch(() => {});
-    }
-  }, [selectedAgent, agentRunState]);
 
   const resetSession = useCallback(() => {
     resetConnection();
@@ -177,5 +172,6 @@ export function useAcpSession(
     stopAgent,
     busy,
     loadingSession,
+    connectionState,
   };
 }
