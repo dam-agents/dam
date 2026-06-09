@@ -84,11 +84,11 @@ export interface IbmLitellmModelPins {
 }
 
 export const IBM_LITELLM_DEFAULT_MODEL_PINS: IbmLitellmModelPins = {
-  opus: "aws/claude-opus-4-6",
+  opus: "aws/claude-opus-4-8",
   sonnet: "aws/claude-sonnet-4-6",
-  haiku: "aws/claude-haiku-4-5",
-  subagent: "aws/claude-opus-4-6",
-  default: "aws/claude-opus-4-6",
+  haiku: "aws/claude-sonnet-4-6",
+  subagent: "aws/claude-opus-4-8",
+  default: "aws/claude-opus-4-8",
   openaiModel: "gpt-5.5",
 };
 
