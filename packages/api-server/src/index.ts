@@ -68,7 +68,7 @@ import { createK8sForkOrchestrator } from "./modules/forks/infrastructure/k8s-fo
 import { composeE2eModule } from "./modules/e2e/compose.js";
 import { composeTermsModule } from "./modules/terms/index.js";
 import { loadConfig } from "./config.js";
-import { configureLogger } from "./core/logger.js";
+import { configureLogger, getLogger } from "./core/logger.js";
 import { startApiServerApp } from "./apps/api-server/app.js";
 import { startHarnessApiServerApp } from "./apps/harness-api-server/app.js";
 import { startExtAuthzGrpcApp } from "./apps/ext-authz/grpc.js";
@@ -92,7 +92,11 @@ import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
 
 const config = loadConfig();
-configureLogger({ level: config.logLevel });
+configureLogger({
+  level: config.logLevel,
+  base: { appVersion: config.appVersion },
+});
+getLogger().info("api-server starting");
 
 const { api, customObjects } = createApi(config.namespace);
 await runMigrations(config.databaseUrl, config.migrationsPath);

@@ -140,6 +140,8 @@ spec:
               value: {{ .Values.apiServer.extAuthzPort | quote }}
             - name: UI_BASE_URL
               value: {{ include "platform.url.ui" . | quote }}
+            - name: PLATFORM_APP_VERSION
+              value: {{ .Chart.AppVersion | quote }}
             {{- if .Values.apiServer.minClientCliVersion }}
             - name: MIN_CLIENT_CLI_VERSION
               value: {{ .Values.apiServer.minClientCliVersion | quote }}

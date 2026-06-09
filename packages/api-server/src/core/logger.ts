@@ -17,7 +17,10 @@ import pino, { type Logger, type LoggerOptions } from "pino";
 export type { Logger };
 export type LogLevel = "error" | "warn" | "info" | "debug";
 
-function options(level: LogLevel): LoggerOptions {
+function options(
+  level: LogLevel,
+  base?: Record<string, unknown>,
+): LoggerOptions {
   return {
     level,
     // String level labels and an ISO `time` — readable, parseable, and
@@ -25,7 +28,8 @@ function options(level: LogLevel): LoggerOptions {
     formatters: { level: (label: string) => ({ level: label }) },
     timestamp: pino.stdTimeFunctions.isoTime,
     // Drop pid/hostname noise — the log pipeline annotates pod identity.
-    base: undefined,
+    // A provided base (e.g. build identity) stamps every line instead.
+    base,
     // Defense-in-depth: even though call sites must never pass secret values,
     // censor a few well-known credential keys (top-level and one nesting deep)
     // so a careless field can't leak a token onto the forensic stream.
@@ -54,11 +58,12 @@ let instance: Logger = pino(options("info"));
 export function configureLogger(opts: {
   level?: LogLevel;
   write?: (line: string) => void;
+  base?: Record<string, unknown>;
 }): void {
   const level = opts.level ?? (instance.level as LogLevel);
   instance = opts.write
-    ? pino(options(level), { write: opts.write })
-    : pino(options(level));
+    ? pino(options(level, opts.base), { write: opts.write })
+    : pino(options(level, opts.base));
 }
 
 /** The current Pino instance. Read at call time so reconfiguration applies. */

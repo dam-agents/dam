@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 
 import { getUser, logout } from "../../../auth.js";
 import { useStore } from "../../../store.js";
+import { useAppVersion } from "../api/queries.js";
 
 type Tab = "appearance" | "account";
 
@@ -47,6 +48,7 @@ export function SettingsView() {
   const setTheme = useStore((s) => s.setTheme);
   const setView = useStore((s) => s.setView);
   const user = getUser();
+  const { data: appVersion } = useAppVersion();
 
   return (
     <div className="flex gap-6 md:gap-10 flex-col md:flex-row">
@@ -160,6 +162,12 @@ export function SettingsView() {
                 View Terms of Use
               </button>
             </div>
+
+            {appVersion && (
+              <div className="mt-6 text-[12px] text-muted-foreground break-all">
+                Version {appVersion}
+              </div>
+            )}
           </div>
         )}
       </div>

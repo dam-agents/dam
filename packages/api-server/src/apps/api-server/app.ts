@@ -226,6 +226,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       ...(config.minClientCliVersion !== undefined && {
         minClientVersion: config.minClientCliVersion,
       }),
+      appVersion: config.appVersion,
     }),
   );
   app.get("/api/auth/config", (c) =>
