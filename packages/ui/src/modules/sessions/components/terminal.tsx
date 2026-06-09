@@ -23,6 +23,7 @@ export function Terminal({
   fresh,
   onConnected,
   onFirstOutput,
+  onFirstSubmit,
   autoConnect = true,
 }: {
   agentId: string;
@@ -34,6 +35,10 @@ export function Terminal({
    *  `ensureReady`. Use this (not `onConnected`) to clear a "starting" overlay,
    *  since `onConnected` fires on the immediate relay handshake. */
   onFirstOutput?: () => void;
+  /** Fires once on the first submitted line (CR/LF in the input). Startup
+   *  emits cursor/device-attribute report responses through onData, but never
+   *  a bare CR/LF — so this means "a message was sent", not "terminal opened". */
+  onFirstSubmit?: () => void;
   autoConnect?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -73,6 +78,7 @@ export function Terminal({
     let term: XTerm | null = null;
     let ro: ResizeObserver | null = null;
     let firstOutputSeen = false;
+    let firstSubmitSeen = false;
 
     (async () => {
       term = new XTerm({
@@ -143,6 +149,10 @@ export function Terminal({
       };
 
       term.onData((data) => {
+        if (!firstSubmitSeen && /[\r\n]/.test(data)) {
+          firstSubmitSeen = true;
+          onFirstSubmit?.();
+        }
         if (ws?.readyState === WebSocket.OPEN)
           ws.send(encodeDataFrame(OP_INPUT, data));
       });
@@ -166,8 +176,7 @@ export function Terminal({
       termRef.current = null;
       container.innerHTML = "";
     };
-    // `fresh`, `onConnected`, and `onFirstOutput` are intentionally captured
-    // once at mount. `reconnectKey` triggers a full teardown+reconnect cycle.
+    // Callback props captured once at mount; `reconnectKey` forces reconnect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agentId, sessionId, reconnectKey]);
 

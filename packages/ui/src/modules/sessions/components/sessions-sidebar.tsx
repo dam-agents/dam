@@ -1,4 +1,4 @@
-import type { SessionMode } from "api-server-api";
+import { SessionMode } from "api-server-api";
 import { ArrowLeft, Plus, RefreshCw } from "lucide-react";
 import { useCallback } from "react";
 
@@ -17,6 +17,7 @@ export function SessionsSidebar({
 }) {
   const selectedAgent = useStore((s) => s.selectedAgent);
   const sessionId = useStore((s) => s.sessionId);
+  const sessionMode = useStore((s) => s.sessionMode);
   const pendingPermissions = useStore((s) => s.pendingPermissions);
   const includeChannel = useStore((s) => s.includeChannelSessions);
   const setIncludeChannel = useStore((s) => s.setIncludeChannelSessions);
@@ -32,6 +33,8 @@ export function SessionsSidebar({
     refetch,
   } = useAcpSessions(selectedAgent, includeChannel, {
     enabled: agentRunState === "running",
+    pollActive: sessionMode === SessionMode.Terminal,
+    activeSessionId: sessionId,
   });
   const loading = isFetching;
 

@@ -30,6 +30,7 @@ export function useAcpSession(
   textareaRef: React.RefObject<HTMLTextAreaElement | null>,
 ) {
   const sessionId = useStore((s) => s.sessionId);
+  const sessionMode = useStore((s) => s.sessionMode);
   const messages = useStore((s) => s.messages);
   const setSessionId = useStore((s) => s.setSessionId);
   const setMessages = useStore((s) => s.setMessages);
@@ -76,6 +77,7 @@ export function useAcpSession(
   } = useAcpConnection({
     selectedAgent,
     sessionId,
+    sessionMode,
     // Don't open a live WS while resumeSession's throwaway is still
     // replaying history — both channels would otherwise receive the replay
     // stream and the live projection would double-apply every update.

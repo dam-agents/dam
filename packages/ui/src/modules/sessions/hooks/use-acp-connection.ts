@@ -1,5 +1,6 @@
 import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
 import { PROTOCOL_VERSION } from "@agentclientprotocol/sdk/dist/acp.js";
+import { SessionMode } from "api-server-api";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useStore } from "../../../store.js";
@@ -29,6 +30,8 @@ export type ConnectionState = "idle" | "live" | "reloading" | "reconnecting";
 interface UseAcpConnectionOptions {
   selectedAgent: string | null;
   sessionId: string | null;
+  /** Terminal sessions are PTY-only; never engage ACP for them. */
+  sessionMode: SessionMode | null;
   /** Block live-WS opening (e.g. while resumeSession's throwaway is replaying
    *  history) — both channels would otherwise receive the replay stream. */
   liveBlocked: boolean;
@@ -75,6 +78,7 @@ export function useAcpConnection(
   const {
     selectedAgent,
     sessionId,
+    sessionMode,
     liveBlocked,
     makeUpdateHandler,
     engage,
@@ -252,8 +256,9 @@ export function useAcpConnection(
   // answer on.
   useEffect(() => {
     if (!selectedAgent || !sessionId || liveBlocked) return;
+    if (sessionMode === SessionMode.Terminal) return;
     ensureLive().catch(() => {});
-  }, [selectedAgent, sessionId, liveBlocked, ensureLive]);
+  }, [selectedAgent, sessionId, sessionMode, liveBlocked, ensureLive]);
 
   const reset = useCallback(() => {
     connectionRef.current?.ws.close();
