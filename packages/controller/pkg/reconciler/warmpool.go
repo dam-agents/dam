@@ -88,6 +88,7 @@ func (m *WarmPoolManager) maxPendingAge() time.Duration {
 // size is no longer configured. Each step logs and continues on error; the next
 // tick retries.
 func (m *WarmPoolManager) reconcile(ctx context.Context) {
+	start := time.Now()
 	configured := make(map[string]bool, len(m.config.WarmPool.Sizes))
 	for _, s := range m.config.WarmPool.Sizes {
 		key, err := canonicalSize(s.Size)
@@ -100,6 +101,7 @@ func (m *WarmPoolManager) reconcile(ctx context.Context) {
 		m.reconcileSize(ctx, key, s.Target)
 	}
 	m.gcRemovedPools(ctx, configured)
+	slog.Debug("warm pool sweep complete", "pools", len(configured), "duration", time.Since(start))
 }
 
 // reconcileSize drives one size pool to target: reap stuck/lost spares, create

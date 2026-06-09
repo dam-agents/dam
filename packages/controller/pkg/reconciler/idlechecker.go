@@ -71,6 +71,7 @@ func (c *IdleChecker) checkInterval() time.Duration {
 }
 
 func (c *IdleChecker) check(ctx context.Context) {
+	start := time.Now()
 	agents, err := c.dynamic.Resource(AgentsGVR).Namespace(c.config.Namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		slog.Error("idle checker: listing agents", "error", err)
@@ -79,6 +80,7 @@ func (c *IdleChecker) check(ctx context.Context) {
 
 	now := time.Now().UTC()
 	timeout := c.config.AgentBase.IdleTimeout.AsDuration()
+	hibernated := 0
 	for i := range agents.Items {
 		agent := &agents.Items[i]
 		name := agent.GetName()
@@ -101,8 +103,14 @@ func (c *IdleChecker) check(ctx context.Context) {
 		slog.Info("hibernating idle agent", "agent", name)
 		if err := c.hibernate(ctx, name); err != nil {
 			slog.Error("idle checker: hibernating", "agent", name, "error", err)
+			continue
 		}
+		hibernated++
 	}
+	// Each idle candidate triggers a 3s-timeout busy-probe, so the duration
+	// shows when a sweep over unreachable pods runs long.
+	slog.Debug("idle checker sweep complete",
+		"scanned", len(agents.Items), "hibernated", hibernated, "duration", time.Since(start))
 }
 
 // podIsBusy probes the agent runtime's /api/status endpoint to check for active sessions or triggers.

@@ -341,6 +341,12 @@ func TestReconcile_IdleAgentScalesToZero(t *testing.T) {
 	_, found := agentCondition(t, r, "my-agent", apiv1.ConditionReady)
 	assert.False(t, found,
 		"reconciler must not publish readiness for an idle agent; that is the idle checker's job")
+
+	// Rendering still succeeded, so Reconciled is published — an idle agent must
+	// not keep a stale error condition.
+	reconciled, found := agentCondition(t, r, "my-agent", apiv1.ConditionReconciled)
+	require.True(t, found, "idle agent must still record the Reconciled condition")
+	assert.Equal(t, string(metav1.ConditionTrue), reconciled)
 }
 
 func TestReconcile_PreservesHibernation(t *testing.T) {

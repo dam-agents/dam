@@ -26,6 +26,8 @@ import (
 )
 
 func main() {
+	setupLogger()
+
 	cfg, err := config.LoadFromEnv()
 	if err != nil {
 		slog.Error("loading config", "error", err)
@@ -37,6 +39,15 @@ func main() {
 		slog.Error("loading in-cluster config", "error", err)
 		os.Exit(1)
 	}
+
+	// Raise the client-go default (QPS 5 / Burst 10), shared across every
+	// reconcile loop against this one client; the API server's priority &
+	// fairness is the real backstop.
+	if restCfg.QPS == 0 {
+		restCfg.QPS = 50
+		restCfg.Burst = 100
+	}
+	slog.Info("kube client rate limits", "qps", restCfg.QPS, "burst", restCfg.Burst)
 
 	client, err := kubernetes.NewForConfig(restCfg)
 	if err != nil {
@@ -75,6 +86,19 @@ func main() {
 			},
 		},
 	})
+}
+
+// setupLogger installs the slog handler at the LOG_LEVEL level (debug|info|warn|
+// error, default info) — debug surfaces the per-reconcile phase timing.
+func setupLogger() {
+	level := slog.LevelInfo
+	if v := os.Getenv("LOG_LEVEL"); v != "" {
+		if err := level.UnmarshalText([]byte(v)); err != nil {
+			slog.Warn("invalid LOG_LEVEL; defaulting to info", "value", v, "error", err)
+			level = slog.LevelInfo
+		}
+	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
 }
 
 func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Interface, cfg *config.Config) {
@@ -165,6 +189,12 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	runAgentWorker(ctx, agentReconciler, agentGetter, agentQueue)
 }
 
+// maxReconcileRetries is the consecutive-failure count after which an Agent is
+// marked BackoffLimitExceeded (visibility only). The rate limiter already caps
+// the retry delay (~1000s) and the resync keeps retrying, so recovery stays
+// automatic — this just surfaces "stuck" on the condition.
+const maxReconcileRetries = 15
+
 // runAgentWorker drains the agent queue, reconciling each Agent CR resolved
 // from the informer cache. Blocks until the queue shuts down.
 func runAgentWorker(ctx context.Context, r *reconciler.AgentReconciler, getter reconciler.AgentGetter, queue workqueue.TypedRateLimitingInterface[string]) {
@@ -173,18 +203,33 @@ func runAgentWorker(ctx context.Context, r *reconciler.AgentReconciler, getter r
 		if shutdown {
 			return
 		}
+		// queueDepth separates a slow reconcile from a backed-up queue.
+		slog.Debug("agent reconcile dequeued", "name", name, "queueDepth", queue.Len())
 		func() {
 			defer queue.Done(name)
 			agent, err := getter.Get(name)
 			if err != nil {
-				// Gone from cache (deleted) or undecodable — Delete handler
-				// owns teardown; nothing to reconcile.
+				// Gone from cache (deleted) — Delete handler owns teardown.
 				queue.Forget(name)
 				return
 			}
 			if err := r.Reconcile(ctx, agent); err != nil {
-				slog.Error("reconcile agent", "name", name, "error", err)
+				// Keep requeuing — the rate limiter caps the delay (~1000s) and
+				// the resync still retries, so a transient cause recovers. Don't
+				// Forget here: that resets the limiter to fast retries.
 				queue.AddRateLimited(name)
+				requeues := queue.NumRequeues(name)
+				if requeues >= maxReconcileRetries {
+					// Surface the persistent failure on the condition; retries
+					// continue at the capped cadence. setError won't downgrade
+					// this back, so the agent settles instead of flip-flopping.
+					r.SetBackoffExceeded(ctx, name, requeues, err)
+					slog.Error("reconcile agent: backoff limit exceeded",
+						"name", name, "requeues", requeues, "error", err)
+					return
+				}
+				slog.Error("reconcile agent; requeued",
+					"name", name, "requeues", requeues, "error", err)
 				return
 			}
 			queue.Forget(name)
@@ -200,6 +245,7 @@ func runForkWorker(ctx context.Context, r *reconciler.ForkReconciler, lister cac
 		if shutdown {
 			return
 		}
+		slog.Debug("fork reconcile dequeued", "name", name, "queueDepth", queue.Len())
 		func() {
 			defer queue.Done(name)
 			obj, err := lister.ByNamespace(namespace).Get(name)
@@ -267,8 +313,12 @@ func unstructuredFrom(obj interface{}) *unstructured.Unstructured {
 
 func runOrphanSweep(ctx context.Context, r *reconciler.AgentReconciler, interval time.Duration) {
 	sweep := func() {
+		// Both passes list every PVC / Secret in the namespace; time them so a
+		// heavy sweep eating the shared QPS budget shows up.
+		start := time.Now()
 		r.ReconcileOrphanPVCs(ctx)
 		r.ReconcileOrphanLeafSecrets(ctx)
+		slog.Debug("orphan sweep complete", "duration", time.Since(start))
 	}
 	sweep()
 	t := time.NewTicker(interval)

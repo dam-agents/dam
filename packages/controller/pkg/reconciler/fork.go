@@ -52,6 +52,9 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 		return nil
 	}
 
+	timer := newReconcileTimer("fork", forkName)
+	defer timer.done()
+
 	// ADR-058: K8s validated the spec at admission, so the controller trusts
 	// the typed resource — no app-layer re-parse.
 	forkSpec := &fork.Spec
@@ -79,11 +82,7 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 	if err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("listing replier credential secrets: %v", err))
 	}
-
-	if !hasGHTokenEnv(credentialSecrets) {
-		slog.Warn("fork: replier has no GitHub credential Secret; gh/octokit calls will be unauthenticated",
-			"fork", forkName, "foreignSub", forkSpec.ForeignSub)
-	}
+	timer.mark("credentials")
 
 	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(forkName, forkSpec.AgentName, r.config, ownerRef, credentialSecrets)
 	if err != nil {
@@ -98,6 +97,7 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 			return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying envoy leaf certificate: %v", err))
 		}
 	}
+	timer.mark("envoyBootstrap")
 
 	// ADR-041: per-fork ServiceAccount in the agent namespace. Forks get
 	// their OWN identity (not the parent's) so a compromised fork cannot
@@ -108,6 +108,7 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 	if err := r.ensureForkServiceAccount(ctx, forkName, ownerRef); err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, err.Error())
 	}
+	timer.mark("serviceAccount")
 
 	// ADR-027: per-fork harness policy admits the fork SA only to
 	// `/api/agents/<parent>/mcp` (not the parent's full surface), and
@@ -128,6 +129,7 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 	if err := r.applyAgentEgressNetworkPolicy(ctx, BuildAgentEgressNetworkPolicy(forkName, r.config, ownerRef)); err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, err.Error())
 	}
+	timer.mark("authzAndNetpol")
 
 	// ADR-038: paired gateway pod for the fork. Render the gateway-side
 	// resources first so HTTPS_PROXY's target exists by the time the
@@ -147,6 +149,7 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("ensuring gateway service: %v", err))
 	}
 	gatewayIP := liveGatewaySvc.Spec.ClusterIP
+	timer.mark("gateway")
 
 	if gatewayIP == "" || gatewayIP == corev1.ClusterIPNone {
 		return fmt.Errorf("fork %s: gateway Service ClusterIP not yet assigned, requeuing", forkName)
@@ -166,6 +169,7 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 	if err := r.applyForkJob(ctx, desired); err != nil {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("applying job: %v", err))
 	}
+	timer.mark("forkJob")
 
 	job, err := r.client.BatchV1().Jobs(r.config.Namespace).Get(ctx, forkName, metav1.GetOptions{})
 	if err != nil {

@@ -77,7 +77,7 @@ func credSecret(name, host string) corev1.Secret {
 	}
 	// Fixtures targeting github hosts also declare GH_TOKEN in their
 	// env-mappings — mirrors what the api-server's github descriptor
-	// stamps, so `hasGHTokenEnv` returns true for these Secrets.
+	// stamps, so `credentialEnvVars` synthesizes GH_TOKEN for these Secrets.
 	if host == "api.github.com" || host == "github.com" || host == "raw.githubusercontent.com" {
 		ann["agent-platform.ai/env-mappings"] = `[{"envName":"GH_TOKEN","placeholder":"dummy-placeholder"}]`
 	}

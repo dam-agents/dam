@@ -18,6 +18,7 @@ controller:
     repository: platform-controller
     tag: latest
     pullPolicy: Never
+  logLevel: debug
   agent:
     base:
       storageClass: platform-rwx

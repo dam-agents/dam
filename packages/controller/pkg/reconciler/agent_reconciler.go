@@ -9,6 +9,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -43,10 +44,31 @@ func (r *AgentReconciler) WithDynamicClient(d dynamic.Interface) *AgentReconcile
 	return r
 }
 
+// Reconcile renders the Agent's resources and publishes its status conditions
+// (ADR-058/059). The controller is the sole status writer; the api-server routes
+// on Ready and surfaces the Reconciled message as the agent's error. Reconciled
+// ("last render accepted") and readiness ("pods running") are orthogonal —
+// Ready=True with Reconciled=False is valid (running pods stay routable while a
+// later re-render fails).
+//
+//	Trigger                          Reconciled                    Readiness                 Next reconcile
+//	-------------------------------  ----------------------------  ------------------------  --------------
+//	render step fails                False / ReconcileError        unchanged                 rate-limited backoff
+//	gateway ClusterIP not assigned   unchanged (transient wait)    unchanged                 rate-limited backoff
+//	failures >= maxReconcileRetries  False / BackoffLimitExceeded  unchanged                 capped backoff + resync
+//	render ok, running               True / Reconciled             observed pod readiness*   pod events + resync
+//	render ok, idle (scaled down)    True / Reconciled             unchanged (idle checker)  resync
+//	idle checker hibernates          unchanged                     all False / Hibernated    (idle checker loop)
+//
+//	* Agent/GatewayPodReady = PodReady|PodNotReady; Ready = AllPodsReady|PodsNotReady (both pods required).
+//	BackoffLimitExceeded is sticky: setError won't downgrade it (no informer flip-flop); clears on next success.
 func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) error {
 	name := agent.Name
 	ownerRef := agentOwnerRef(agent)
 	agentSpec := &agent.Spec
+
+	timer := newReconcileTimer("agent", name)
+	defer timer.done()
 
 	// ADR-058: K8s validated the spec at admission, so the controller trusts
 	// the typed resource — no app-layer re-parse or re-validation.
@@ -59,11 +81,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	if err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("listing credential secrets: %v", err))
 	}
-
-	if !hasGHTokenEnv(credentialSecrets) {
-		slog.Warn("no GitHub credential Secret attached — gh/octokit calls will be unauthenticated",
-			"agent", name, "owner", owner)
-	}
+	timer.mark("credentials")
 
 	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(name, name, r.config, ownerRef, credentialSecrets)
 	if err != nil {
@@ -72,6 +90,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	if err := r.applyConfigMap(ctx, bootstrapCM); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying envoy bootstrap: %v", err))
 	}
+	timer.mark("envoyBootstrap")
 	// alwaysIssue: agent mounts ca.crt unconditionally, so the leaf must exist.
 	if cert := BuildEnvoyLeafCertificate(name, r.config, ownerRef, credentialSecrets, true); cert != nil {
 		if err := r.applyCertificate(ctx, cert); err != nil {
@@ -88,6 +107,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 				"agent", name, "error", err)
 		}
 	}
+	timer.mark("leafCert")
 
 	// ADR-041: per-agent SA must exist before the agent + gateway pods
 	// start (kubelet rejects pod scheduling on a missing SA, and Istio
@@ -95,6 +115,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	if err := r.ensureServiceAccount(ctx, name, ownerRef); err != nil {
 		return r.setError(ctx, name, err.Error())
 	}
+	timer.mark("serviceAccount")
 
 	// ADR-041: per-agent ext-authz Service in the release namespace —
 	// the gateway pod's Envoy bootstrap dials this Service for HITL
@@ -104,6 +125,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	if err := r.applyExtAuthzService(ctx, extAuthzSvc); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying ext-authz service: %v", err))
 	}
+	timer.mark("extAuthzService")
 
 	// Two per-agent AuthorizationPolicies in the release namespace —
 	// harness path-prefix at the waypoint, ext-authz Service principal.
@@ -116,6 +138,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	if err := r.applyAuthorizationPolicy(ctx, BuildExtAuthzAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying ext-authz authz policy: %v", err))
 	}
+	timer.mark("authzPolicies")
 
 	// Per-pair agent egress NetworkPolicy. Agent pods opt out of ambient
 	// mesh, so kernel NP is the only thing gating agent egress; it admits
@@ -125,6 +148,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	if err := r.applyAgentEgressNetworkPolicy(ctx, BuildAgentEgressNetworkPolicy(name, r.config, ownerRef)); err != nil {
 		return r.setError(ctx, name, err.Error())
 	}
+	timer.mark("egressNetworkPolicy")
 
 	// ADR-058: run state is activity-driven — there is no desiredState. The
 	// reconciler scales *up* when recent activity says the agent should run;
@@ -157,6 +181,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 		slog.Warn("force-rolling stuck gateway pod failed; rollout may be deadlocked",
 			"namespace", gatewaySS.Namespace, "statefulset", gatewaySS.Name, "error", err)
 	}
+	timer.mark("gatewayStatefulSet")
 	// Apply gateway Service + migrate any legacy headless instance, return
 	// the live object so we capture the assigned ClusterIP synchronously.
 	liveGatewaySvc, err := ensureGatewayService(ctx, r.client, gatewaySvc, "agent", name)
@@ -164,9 +189,13 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 		return r.setError(ctx, name, fmt.Sprintf("ensuring gateway service: %v", err))
 	}
 	gatewayIP := liveGatewaySvc.Spec.ClusterIP
+	timer.mark("gatewayService")
 
-	// HTTPS_PROXY + init containers all need the gateway ClusterIP;
-	// requeue until it's assigned.
+	// HTTPS_PROXY + init containers need the gateway ClusterIP — normally
+	// assigned synchronously at Service create. If not yet, requeue quietly: a
+	// transient wait, not an error (don't stamp ReconcileError, or the api-server
+	// flashes a brief "error" on a starting agent). A persistent failure still
+	// escalates via the reconcile backoff cap.
 	if gatewayIP == "" || gatewayIP == corev1.ClusterIPNone {
 		return fmt.Errorf("agent %s: gateway Service ClusterIP not yet assigned, requeuing", name)
 	}
@@ -177,6 +206,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	if err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("resolving warm-pool claims: %v", err))
 	}
+	timer.mark("workspaceClaims")
 	agentSS := BuildAgentStatefulSet(name, agentSpec, r.config, ownerRef, gatewayIP)
 	applyPoolClaims(agentSS, claims)
 	stampRollRev(agentSS, rollRev)
@@ -187,14 +217,20 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	if err := r.applyService(ctx, agentSvc); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying agent service: %v", err))
 	}
+	timer.mark("agentStatefulSet")
 
-	// The reconciler only ever scales up. It never writes the Hibernated phase
-	// — scale-down and that phase are the idle checker's job — so a reconcile
-	// of an idle-but-not-yet-hibernated agent leaves its status untouched.
+	// ADR-058: the reconciler only scales up; scale-down and the Hibernated
+	// readiness reason are the idle checker's job. So readiness is published
+	// only for a running agent — but rendering succeeded either way, so an idle
+	// agent still records Reconciled rather than keeping a stale error.
 	if running {
-		return r.publishReadiness(ctx, agent)
+		err = r.publishReadiness(ctx, agent)
+		timer.mark("readiness")
+		return err
 	}
-	return nil
+	err = r.publishReconciled(ctx, agent)
+	timer.mark("reconciled")
+	return err
 }
 
 // publishReadiness observes the agent + gateway StatefulSet rollouts and
@@ -222,6 +258,17 @@ func (r *AgentReconciler) publishReadiness(ctx context.Context, agent *apiv1.Age
 		setStatusCondition(s, apiv1.ConditionAgentPodReady, agentReady, "PodReady", "PodNotReady", "", gen)
 		setStatusCondition(s, apiv1.ConditionGatewayPodReady, gatewayReady, "PodReady", "PodNotReady", "", gen)
 		setStatusCondition(s, apiv1.ConditionReady, ready, "AllPodsReady", "PodsNotReady", "", gen)
+		setStatusCondition(s, apiv1.ConditionReconciled, true, "Reconciled", "", "", gen)
+		s.ObservedGeneration = gen
+	})
+}
+
+// publishReconciled records that the spec was accepted and rendered, without
+// touching readiness — for a not-running (idle) agent, whose readiness
+// conditions are the idle checker's to write.
+func (r *AgentReconciler) publishReconciled(ctx context.Context, agent *apiv1.Agent) error {
+	gen := agent.Generation
+	return updateAgentStatus(ctx, r.dynamic, r.config.Namespace, agent.Name, func(s *apiv1.AgentStatus) {
 		setStatusCondition(s, apiv1.ConditionReconciled, true, "Reconciled", "", "", gen)
 		s.ObservedGeneration = gen
 	})
@@ -574,11 +621,29 @@ func (r *AgentReconciler) setError(ctx context.Context, name, msg string) error 
 	// Surface the failure on the Reconciled condition (message carries the
 	// error). The returned error also drives the work queue's rate-limited retry.
 	if err := updateAgentStatus(ctx, r.dynamic, r.config.Namespace, name, func(s *apiv1.AgentStatus) {
+		// Don't downgrade a terminal BackoffLimitExceeded back to ReconcileError:
+		// the flip-flop self-triggers via the informer and stops the backed-off
+		// agent from settling. It clears on the next successful reconcile.
+		if c := apimeta.FindStatusCondition(s.Conditions, apiv1.ConditionReconciled); c != nil && c.Reason == "BackoffLimitExceeded" {
+			return
+		}
 		setStatusCondition(s, apiv1.ConditionReconciled, false, "Reconciled", "ReconcileError", msg, 0)
 	}); err != nil {
 		slog.Warn("writing agent reconcile-error status", "agent", name, "error", err)
 	}
 	return fmt.Errorf("agent %s: %s", name, msg)
+}
+
+// SetBackoffExceeded stamps Reconciled=False/BackoffLimitExceeded once the work
+// queue's retry budget is spent (mirrors a Job). Retries continue at the capped
+// backoff + resync cadence; the condition clears on the next successful reconcile.
+func (r *AgentReconciler) SetBackoffExceeded(ctx context.Context, name string, attempts int, cause error) {
+	msg := fmt.Sprintf("reconcile failed %d times, retrying with capped backoff: %v", attempts, cause)
+	if err := updateAgentStatus(ctx, r.dynamic, r.config.Namespace, name, func(s *apiv1.AgentStatus) {
+		setStatusCondition(s, apiv1.ConditionReconciled, false, "Reconciled", "BackoffLimitExceeded", msg, 0)
+	}); err != nil {
+		slog.Warn("writing agent backoff-exceeded status", "agent", name, "error", err)
+	}
 }
 
 // stampRollRev writes the roll-rev value into a StatefulSet's pod-template

@@ -28,6 +28,8 @@ spec:
           image: "{{ .Values.controller.image.repository }}:{{ .Values.controller.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.controller.image.pullPolicy | default "IfNotPresent" }}
           env:
+            - name: LOG_LEVEL
+              value: {{ .Values.controller.logLevel | default "info" | quote }}
             - name: PLATFORM_RELEASE_NAME
               value: {{ include "platform.fullname" . }}
             # Value of `app.kubernetes.io/instance` on chart-rendered apiserver

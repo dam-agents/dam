@@ -235,13 +235,6 @@ func BuildForkAgentJob(
 		pullSecrets = append(pullSecrets, corev1.LocalObjectReference{Name: n})
 	}
 
-	// GH_TOKEN signal — mirrors the long-lived shape.
-	ghAvail := "false"
-	if hasGHTokenEnv(credentialSecrets) {
-		ghAvail = "true"
-	}
-	env = append(env, corev1.EnvVar{Name: "PLATFORM_GH_TOKEN_AVAILABLE", Value: ghAvail})
-
 	var readinessProbe, livenessProbe *corev1.Probe
 	if cfg.AgentProbesEnabled {
 		readinessProbe = &corev1.Probe{

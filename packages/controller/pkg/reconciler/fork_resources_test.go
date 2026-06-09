@@ -191,21 +191,3 @@ func TestBuildForkAgentJob_NoFetchCACertInit(t *testing.T) {
 	assert.Equal(t, "ca.crt", caVol.Secret.Items[0].Key,
 		"fork agent must only see ca.crt — never tls.key")
 }
-
-func TestBuildForkAgentJob_GHTokenSignal(t *testing.T) {
-	cases := map[string]struct {
-		secrets []corev1.Secret
-		want    string
-	}{
-		"with github cred":    {[]corev1.Secret{credSecret("platform-cred-gh", "api.github.com")}, "true"},
-		"without github cred": {[]corev1.Secret{credSecret("platform-cred-other", "api.example.com")}, "false"},
-		"no creds":            {nil, "false"},
-	}
-	for name, tc := range cases {
-		t.Run(name, func(t *testing.T) {
-			job := BuildForkAgentJob("fork-abc", testForkSpec, testAgent, testConfig, configMapOwnerRef(testForkOwnerCM), tc.secrets, "")
-			env := envMap(job.Spec.Template.Spec.Containers[0].Env)
-			assert.Equal(t, tc.want, env["PLATFORM_GH_TOKEN_AVAILABLE"])
-		})
-	}
-}

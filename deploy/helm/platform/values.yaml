@@ -513,6 +513,9 @@ controller:
     tag: ""
     pullPolicy: IfNotPresent
 
+  # -- slog level for the controller: debug | info | warn | error.
+  logLevel: info
+
   # -- Agent pod configuration. Three layers, applied at reconcile time:
   #   1. `base`             — chart-only platform policy, applied verbatim
   #                           to every agent + fork agent pod.

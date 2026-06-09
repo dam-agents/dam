@@ -284,19 +284,6 @@ func credentialEnvVars(secrets []corev1.Secret) []corev1.EnvVar {
 	return envs
 }
 
-// hasGHTokenEnv reports whether any granted Secret declares `GH_TOKEN`
-// in its env-mappings. Used to set `PLATFORM_GH_TOKEN_AVAILABLE` and to
-// gate the no-credential warning — replaces a hardcoded github-host
-// check with a derivation from the declarative env-mapping spec.
-func hasGHTokenEnv(secrets []corev1.Secret) bool {
-	for _, e := range credentialEnvVars(secrets) {
-		if e.Name == "GH_TOKEN" {
-			return true
-		}
-	}
-	return false
-}
-
 // connectionHostInjection mirrors the TS `ConnectionHostInjection`
 // persisted on the `injection-hosts` annotation. Decoded once per Secret
 // and fanned out by `chainsFromSecrets`.
