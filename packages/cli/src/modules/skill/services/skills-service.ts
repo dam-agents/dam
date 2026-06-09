@@ -2,6 +2,7 @@ import type {
   Skill,
   SkillPublishResult,
   SkillRef,
+  SkillsState,
   SkillSource,
 } from "api-server-api";
 import { err, ok, type Result } from "../../../result.js";
@@ -73,6 +74,12 @@ export interface SkillsService {
   installed(
     agentId: string,
   ): Promise<Result<readonly SkillRef[], TransportError | AuthRequiredError>>;
+
+  /** skills.state(agentId) — the full reconciled view: installed refs,
+   *  standalone (on-disk, untracked) skills, and publish records. */
+  state(
+    agentId: string,
+  ): Promise<Result<SkillsState, TransportError | AuthRequiredError>>;
 
   /** skills.install — source is the git URL; version/contentHash come from a
    *  prior scan. Always sends an agentId, so it can hit the wake path but
@@ -269,6 +276,12 @@ export function createSkillsService(deps: { trpc: TrpcClient }): SkillsService {
         async () =>
           (await deps.trpc.skills.state.query({ agentId }))
             .installed as readonly SkillRef[],
+      );
+    },
+    async state(agentId) {
+      return trpcCall(
+        async () =>
+          (await deps.trpc.skills.state.query({ agentId })) as SkillsState,
       );
     },
     async install(input) {
