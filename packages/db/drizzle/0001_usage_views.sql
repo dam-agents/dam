@@ -1,3 +1,12 @@
+-- Usage reporting views (ADR-048). Hand-written, not generated: they aren't in
+-- schema.ts (expressing 23 aggregate views in the ORM is lossy, and drizzle-kit
+-- emits interdependent views in the wrong order), so they get their own
+-- migration (issue #739, ADR-063) — keeping the 0000 baseline purely generated.
+--
+-- Existing deployments skip this file: its journal `when` predates every
+-- migration they have recorded. Only fresh installs run it, after the baseline's
+-- tables. Views are in dependency order — the usage_core_* helpers come first.
+
 -- Every pilot view excludes core-team activity:
 --
 --   * activity_events-backed views:  AND actor_sub NOT IN (SELECT actor_sub FROM usage_core_actor_subs)
@@ -158,64 +167,6 @@ CREATE VIEW "usage_channel_top_agents_30d" AS
   ORDER BY turn_count DESC;
 --> statement-breakpoint
 
--- ----------------------------------------------------------------------------
--- Session views (from sessions; core-team filter joins through usage_core_agents)
--- ----------------------------------------------------------------------------
-
-CREATE VIEW "usage_sessions_by_type_30d" AS
-  SELECT
-    type,
-    COUNT(*) AS session_count
-  FROM sessions
-  WHERE created_at >= NOW() - INTERVAL '30 days'
-    AND agent_id NOT IN (SELECT agent_id FROM usage_core_agents)
-  GROUP BY type
-  ORDER BY session_count DESC;
---> statement-breakpoint
-CREATE VIEW "usage_sessions_by_mode_30d" AS
-  SELECT
-    mode,
-    COUNT(*) AS session_count
-  FROM sessions
-  WHERE created_at >= NOW() - INTERVAL '30 days'
-    AND agent_id NOT IN (SELECT agent_id FROM usage_core_agents)
-  GROUP BY mode
-  ORDER BY session_count DESC;
---> statement-breakpoint
-CREATE VIEW "usage_active_agents_7d" AS
-  SELECT
-    agent_id,
-    COUNT(*) AS session_count,
-    MAX(updated_at) AS last_active
-  FROM sessions
-  WHERE updated_at >= NOW() - INTERVAL '7 days'
-    AND agent_id NOT IN (SELECT agent_id FROM usage_core_agents)
-  GROUP BY agent_id
-  ORDER BY last_active DESC;
---> statement-breakpoint
-CREATE VIEW "usage_sessions_by_agent_30d" AS
-  SELECT
-    agent_id,
-    COUNT(*) AS session_count,
-    MAX(updated_at) AS last_active
-  FROM sessions
-  WHERE created_at >= NOW() - INTERVAL '30 days'
-    AND agent_id NOT IN (SELECT agent_id FROM usage_core_agents)
-  GROUP BY agent_id
-  ORDER BY session_count DESC;
---> statement-breakpoint
-CREATE VIEW "usage_session_active_span" AS
-  SELECT
-    agent_id,
-    COUNT(*) AS session_count,
-    ROUND(AVG(EXTRACT(EPOCH FROM (updated_at - created_at))))::bigint AS avg_span_seconds,
-    ROUND(MAX(EXTRACT(EPOCH FROM (updated_at - created_at))))::bigint AS max_span_seconds
-  FROM sessions
-  WHERE updated_at > created_at
-    AND agent_id NOT IN (SELECT agent_id FROM usage_core_agents)
-  GROUP BY agent_id
-  ORDER BY avg_span_seconds DESC;
---> statement-breakpoint
 -- Sourced from activity_events (type='schedule_fire'), not sessions: continuous-mode
 -- schedules reuse one sessions row across many fires, so counting sessions
 -- under-reports. ScheduleFired events fire once per trigger and carry outcome.

@@ -75,16 +75,13 @@ Generic conventions for TS server-side code (tRPC, Zod, RxJS, layering). Invoke 
 
 ## Database Migrations (`packages/db`)
 
-Schema is defined in [`packages/db/src/schema.ts`](packages/db/src/schema.ts) using Drizzle ORM.
+Tables/indexes/enums are **generated** from `schema.ts`; the `usage_*` reporting views are **hand-written** raw SQL (they aren't in `schema.ts`) (#739, [ADR-063](docs/adrs/063-hand-written-migrations.md)). Full workflow in [`packages/db/README.md`](packages/db/README.md).
 
-1. Edit the schema in `schema.ts`.
-2. Run `mise run db:generate` — this auto-generates a numbered `.sql` migration in `packages/db/drizzle/`.
-3. Review the generated SQL. Never hand-write migration files; always generate from schema changes.
-4. Add a top comment to the generated file explaining *why* (reference ADRs if relevant).
-5. For destructive changes (drops, renames), verify the SQL uses safe patterns (`IF EXISTS`, data-preserving renames over drop+recreate).
-6. Run `mise run check` to verify types.
+- **Table change**: edit `src/schema.ts` → `mise run db:generate` (writes the `.sql`, `_journal.json` entry, and snapshot — never hand-edit them) → add a top comment explaining *why*.
+- **View change**: `mise run db:new -- <name>` scaffolds the `.sql` + journal entry, then hand-write the `CREATE/DROP VIEW` SQL (dependency order; `--> statement-breakpoint` between statements).
+- Never hand-write a table migration: `mise run db:check:generated` (part of `mise run check`, no database) fails if the snapshot doesn't match `schema.ts`.
 
-Migrations run automatically on api-server startup — no manual `migrate` step in production. The `packages/db/drizzle/meta/_journal.json` tracks migration metadata; commit it alongside the `.sql` file.
+Migrations run automatically on api-server startup — no manual migrate step in production. The squash split the original history into `0000_squashed_baseline.sql` (tables) and `0001_usage_views.sql` (views); existing deployments skip both (do not change their journal `when`). Commit `_journal.json` alongside the `.sql` file.
 
 ## Documentation
 

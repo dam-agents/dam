@@ -32,6 +32,8 @@ dir = "{{config_root}}/packages/db"
 depends = ["common:setup:pnpm"]
 run = "pnpm exec prettier --write 'src/**/*.ts'"
 
+# Generate a migration for table/index/enum changes by diffing schema.ts against
+# the latest snapshot. Edit schema.ts, run this, commit. See packages/db/README.md.
 ["db:generate"]
 dir = "{{config_root}}/packages/db"
 depends = ["common:setup:pnpm"]
@@ -41,3 +43,55 @@ run = "pnpm exec drizzle-kit generate"
 dir = "{{config_root}}/packages/db"
 depends = ["common:setup:pnpm"]
 run = "pnpm exec drizzle-kit migrate"
+
+# Scaffold a HAND-WRITTEN migration file + journal entry — for the reporting
+# views, which aren't in schema.ts so db:generate can't emit them. Table changes
+# use db:generate, not this. Usage: mise run db:new -- <name>  (see ADR-063)
+#
+# Wraps `drizzle-kit generate --custom`: it scaffolds the empty .sql, the journal
+# entry, AND a snapshot (a copy of the latest — a hand-written view migration
+# changes no tracked table). The snapshot matters: without it the next
+# db:generate can't find a base to diff against. We only slugify the name first,
+# since --custom otherwise puts spaces in the filename.
+["db:new"]
+dir = "{{config_root}}/packages/db"
+depends = ["common:setup:pnpm"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+slug=$(printf '%s' "$*" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '_' | sed 's/^_//;s/_$//')
+[ -n "$slug" ] || { echo "Usage: mise run db:new -- <name>"; exit 1; }
+pnpm exec drizzle-kit generate --custom --name "$slug"
+echo "Write your CREATE/DROP VIEW SQL in the new file, then run: mise run check"
+'''
+
+# Guard (ADR-063): assert every schema.ts change has been generated into a
+# migration. Diffs schema.ts against the committed snapshots inside a throwaway
+# copy of drizzle/ — if `generate` would add a migration, the schema changed
+# without `mise run db:generate`. Pure files, no database, so it runs in `mise
+# run check`. Views aren't in schema.ts, so they're out of scope by design.
+["db:check:generated"]
+dir = "{{config_root}}/packages/db"
+depends = ["common:setup:pnpm"]
+sources = ["src/schema.ts", "drizzle/meta/*.json"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+# Temp copy lives under node_modules so the parallel lint/format/tsc tasks
+# (which ignore node_modules) never scan it — avoids a scandir race as it's
+# created and removed. A relative --out path also dodges a drizzle-kit bug that
+# prefixes absolute --out paths with "./".
+tmp="node_modules/.cache/db-generated-check.$$"
+trap 'rm -rf "$tmp"' EXIT
+rm -rf "$tmp"; mkdir -p "$tmp"; cp -r drizzle/. "$tmp/"
+before=$(ls "$tmp"/*.sql 2>/dev/null | wc -l | tr -d ' ')
+# If generate can't complete non-interactively (an ambiguous diff), set -e
+# fails the check — fail closed.
+pnpm exec drizzle-kit generate --dialect postgresql --schema ./src/schema.ts --out "$tmp" --name generated_check >/dev/null 2>&1
+after=$(ls "$tmp"/*.sql 2>/dev/null | wc -l | tr -d ' ')
+if [ "$before" != "$after" ]; then
+  echo "❌ schema.ts changed without a migration. Run: mise run db:generate"
+  exit 1
+fi
+echo "✅ Schema is fully generated: snapshot matches schema.ts."
+'''

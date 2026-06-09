@@ -1,1 +1,0 @@
-ALTER TABLE "sessions" ADD COLUMN "schedule_active" boolean DEFAULT true NOT NULL;

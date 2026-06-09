@@ -1,1 +1,0 @@
-ALTER TABLE "sessions" ADD COLUMN "schedule_id" text;

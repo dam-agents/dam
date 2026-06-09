@@ -67,6 +67,7 @@ This directory contains ADRs for the Platform project.
 | [060](060-unified-apply-path-and-contributions-settled-gate.md) | Unified runtime-channel apply path + settlement tracking (single worker, Ready-gated dispatch, retry + degraded badge) | @janjeliga |
 | [061](061-warm-pvc-pool.md)                   | Warm PVC pool — pre-provisioned size-keyed spare workspace volumes claimed at agent create | @pilartomas |
 | [062](062-ssh-access.md)                      | SSH access to agents — in-pod inetd sshd tunneled over the agent WebSocket | @JanPokorny |
+| [063](063-hand-written-migrations.md)         | Generated table migrations, hand-written views, squashed baseline | @jezekra1 |
 
 ## Drafts
 

@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-06-08
+Last verified: 2026-06-09
 
 ## Motivated by
 
@@ -10,6 +10,7 @@ Last verified: 2026-06-08
 - [ADR-046 — Eliminate Instance, collapse into Agent](../adrs/046-eliminate-instance.md) — the merged `agent` ConfigMap is the sole resource per Agent and carries both `spec.yaml` and `status.yaml`
 - [ADR-8 — Usage tracking with pseudonymized identifiers](../adrs/048-usage-tracking.md) — append-only activity log + agent mirror table, with HMAC-pseudonymized `sub` values at the write boundary
 - [ADR-061 — Warm PVC pool](../adrs/061-warm-pvc-pool.md) — pre-provisioned, size-keyed spare workspace volumes claimed at create time to skip first-start provisioning latency
+- [ADR-063 — Generated table migrations, hand-written views, squashed baseline](../adrs/063-hand-written-migrations.md) — table changes are generated from the schema, the reporting views are hand-written; the history is squashed to a baseline that existing deployments skip, with a no-database guard asserting every schema change was generated
 
 ## Overview
 
@@ -69,7 +70,7 @@ Postgres carries application state the api-server owns end-to-end — anything t
 - **skills catalog** — connected sources, per-Agent install records, and publish history. Owned by [skills](skills.md).
 - **activity log + agent mirror** — append-only event log (`activity_events`), per-sub role flags (`actor_roles`), and the K8s↔Postgres agent ownership mirror (`agents`). Pseudonymized `actor_sub` and `owner_sub` columns at the write boundary. Owned by [usage-tracking](usage-tracking.md).
 
-The api-server is the sole writer for all of it. The controller does not touch Postgres — its bookkeeping lives on `status.yaml` of the ConfigMap it owns. The authoritative schema and migrations live in [`packages/db/`](../../packages/db/).
+The api-server is the sole writer for all of it. The controller does not touch Postgres — its bookkeeping lives on `status.yaml` of the ConfigMap it owns. The authoritative schema and migrations live in [`packages/db/`](../../packages/db/): migrations run automatically on api-server startup — table/index/enum changes generated from the schema, the reporting views hand-written — with the original history squashed to a baseline that fresh installs run and existing deployments skip, and a no-database guard asserting every schema change was generated ([ADR-063](../adrs/063-hand-written-migrations.md); workflow in [`packages/db/README.md`](../../packages/db/README.md)).
 
 ### ConfigMaps
 
