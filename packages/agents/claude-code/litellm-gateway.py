@@ -29,6 +29,8 @@ PORT = os.environ.get("LITELLM_PROXY_PORT", "4000")
 CONFIG = "/tmp/litellm-gateway.config.yaml"
 ENV_FILE = "/tmp/litellm-gateway.env"  # sourced by litellm-proxy.sh
 REFRESH_SECONDS = int(os.environ.get("LITELLM_MODEL_REFRESH_SECONDS", "600"))
+# Pause before relaunching a crashed LiteLLM so a startup-time crash can't spin.
+RESTART_BACKOFF_SECONDS = 5
 # Captured before the shim re-points ANTHROPIC_BASE_URL at the proxy.
 UPSTREAM = (os.environ.get("ANTHROPIC_BASE_URL") or "").rstrip("/")
 TOKEN = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
@@ -88,6 +90,8 @@ def model_env(models):
     the best available model so they are always set."""
     opus, sonnet, haiku = (_latest(models, t) for t in ("opus", "sonnet", "haiku"))
     fallback = opus or sonnet or haiku or max(models, key=_version_key)
+    if not (opus or sonnet or haiku):
+        log(f"no opus/sonnet/haiku model in upstream set; pinning every tier to '{fallback}'")
     return {
         "ANTHROPIC_DEFAULT_OPUS_MODEL": public_name(opus or fallback),
         "ANTHROPIC_DEFAULT_SONNET_MODEL": public_name(sonnet or fallback),
@@ -123,6 +127,10 @@ def apply_models(models):
         yaml.safe_dump(cfg, f, sort_keys=False)
 
     if not models:
+        log(
+            "no models discovered; serving wildcard 'claude-*' so Claude Code's "
+            "built-in model names still route to the upstream"
+        )
         return
     env = model_env(models)
     tmp = f"{ENV_FILE}.tmp"
@@ -130,7 +138,7 @@ def apply_models(models):
         for key, val in env.items():
             f.write(f"[ -n \"${{{key}:-}}\" ] || export {key}='{val}'\n")
     os.replace(tmp, ENV_FILE)
-    log("model env -> " + ", ".join(f"{k}={v}" for k, v in env.items()))
+    log(f"serving {len(models)} model(s); env -> " + ", ".join(f"{k}={v}" for k, v in env.items()))
 
 
 def start():
@@ -149,6 +157,13 @@ def stop():
             proc.kill()
 
 
+def restart():
+    """Swap the running LiteLLM for a fresh process on the current config."""
+    global proc
+    stop()
+    proc = start()
+
+
 def shutdown(*_):
     stop()
     sys.exit(0)
@@ -160,23 +175,25 @@ def main():
     signal.signal(signal.SIGINT, shutdown)
 
     models = fetch_models()
-    log(f"discovered {len(models)} model(s)" if models else "no models; wildcard fallback")
     apply_models(models)
     proc = start()
 
     while True:
-        time.sleep(REFRESH_SECONDS)
-        if proc.poll() is not None:
-            log("LiteLLM exited; restarting")
+        try:
+            # Wakes immediately if LiteLLM exits; TimeoutExpired means it's still up.
+            proc.wait(timeout=REFRESH_SECONDS)
+            log(f"LiteLLM exited; restarting in {RESTART_BACKOFF_SECONDS}s")
+            time.sleep(RESTART_BACKOFF_SECONDS)
             proc = start()
             continue
+        except subprocess.TimeoutExpired:
+            pass
         latest = fetch_models()
         if latest and latest != models:
             log(f"models changed ({len(models or [])} -> {len(latest)}); restarting")
             models = latest
             apply_models(models)
-            stop()
-            proc = start()
+            restart()
 
 
 if __name__ == "__main__":
