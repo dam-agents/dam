@@ -111,21 +111,31 @@ SQL), the bundled bootstrap above does not run — there is no StatefulSet, init
 script, or server flag. Reproduce the role shape out-of-band, as the provider's
 admin role:
 
+- **One instance hosts both databases.** A single managed deployment carries
+  both `platform` and `keycloak` (`CREATE DATABASE` works as the provider admin —
+  on IBM Cloud Databases the admin inherits `CREATEDB`/`CREATEROLE` from
+  `ibm-cloud-base-user`). The database-level `REVOKE CONNECT` isolation works
+  within one server, so a second instance is only warranted for stronger
+  blast-radius separation, not by this design.
 - Create `platform_apiserver` and `platform_keycloak` as `LOGIN NOSUPERUSER`,
   each owning its own database; `REVOKE CONNECT ON DATABASE … FROM PUBLIC` and
   grant it back only to the owner. This is portable SQL.
 - There is no `platform_admin` SUPERUSER to create — managed services withhold
   tenant superuser (on IBM Cloud Databases the only superuser is IBM's internal
   `ibm` account), so the provider's admin role *is* the top role.
-- The per-role `log_statement = 'all'` admin audit does not apply: it is a
-  superuser-only (SUSET) GUC the provider's admin cannot set, and providers
-  often don't expose `log_statement` at all. Use the provider's audit/logging
-  path instead (e.g. `log_min_duration_statement` plus the managed logging
-  integration).
-- Event logging (`log_connections` / `log_disconnections`) is set through the
-  provider's configuration API, not server flags, and is delivered to the
-  provider's logging service rather than pod stderr; `log_line_prefix` is
-  typically not tunable.
+- **Logging is server-wide and covers every database on the instance** — the
+  `log_*` GUCs are not per-database, so one configuration captures both
+  `platform` and `keycloak`. Set `log_connections` / `log_disconnections` through
+  the provider's configuration (not server flags); logs flow to the provider's
+  logging service rather than pod stderr, and `log_line_prefix` is typically not
+  tunable.
+- The per-role `log_statement = 'all'` admin audit does not translate — it is a
+  superuser-only (SUSET) GUC the provider's admin cannot set, and `log_statement`
+  is often not exposed at all. Use **`pgaudit`** for statement/DDL auditing where
+  the provider offers it (IBM Cloud Databases does, enabled via a config
+  function); it runs cluster-wide and so likewise covers both databases. If you
+  ever split across two instances, configure logging *and* pgaudit on each — or
+  one service's database goes dark.
 
 Supply the connection passwords yourself, under the secret keys the chart now
 reads — **`POSTGRES_APISERVER_PASSWORD`** and **`POSTGRES_KEYCLOAK_PASSWORD`**
