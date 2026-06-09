@@ -44,10 +44,21 @@ def log(msg):
 
 
 def public_name(model_id):
-    """model_name Claude Code sees. Gateway discovery wants a provider prefix,
-    so expose each as anthropic/<id>; the upstream id stays in
+    """model_name Claude Code sees, lowercased. Gateway discovery wants a provider
+    prefix, so expose each as claude/<id>; the upstream id stays in
     litellm_params.model for routing."""
-    return model_id if model_id.startswith("anthropic/") else f"anthropic/{model_id}"
+    name = model_id.lower()
+    return name if name.startswith("claude/") else f"claude/{name}"
+
+
+def _is_embedding(model):
+    """Embedding models can't serve chat, so drop them. Detect via an explicit
+    mode/type flag (LiteLLM-style gateways set mode='embedding') or an
+    'embedding' substring in the model id."""
+    return any(
+        "embedding" in str(model.get(field, "")).lower()
+        for field in ("id", "mode", "type")
+    )
 
 
 def fetch_models():
@@ -72,7 +83,13 @@ def fetch_models():
         return None
     if not isinstance(data, list):
         return None
-    return sorted({m["id"] for m in data if isinstance(m, dict) and m.get("id")}) or None
+    return sorted(
+        {
+            m["id"]
+            for m in data
+            if isinstance(m, dict) and m.get("id") and not _is_embedding(m)
+        }
+    ) or None
 
 
 def _version_key(model_id):
