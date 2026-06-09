@@ -67,6 +67,15 @@ export async function walkDataTransfer(
   return out;
 }
 
+/** Walk a single FileSystemEntry into BundleEntry[] — lets callers defer the recursive walk per top-level drop entry. */
+export async function walkFileSystemEntry(
+  entry: FileSystemEntry,
+): Promise<BundleEntry[]> {
+  const out: BundleEntry[] = [];
+  await walkEntry(entry, "", out);
+  return out;
+}
+
 async function walkEntry(
   entry: FileSystemEntry,
   prefix: string,
