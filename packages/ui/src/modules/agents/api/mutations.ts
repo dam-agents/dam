@@ -86,8 +86,6 @@ export function useCreateAgent() {
       }
 
       if (preparedBundle) {
-        // Dialog has closed; the signal rides the store keyed on the new agent,
-        // where the chat-header pill reads `useIsImporting`.
         try {
           await trackImport(agent.id, () =>
             importRawBundle({ agentId: agent.id, bundle: preparedBundle.blob }),
