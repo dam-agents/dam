@@ -26,6 +26,18 @@ import type { AcpUpdate } from "./types.js";
  * bubble to active. Turn boundaries (`platform_turn_ended`, or a fresh
  * `user_message_chunk`) close the active bubble, so the next agent content
  * picks the earliest remaining queued bubble (or opens one on demand).
+ *
+ * Queued background prompts: a `user_message_chunk` carrying
+ * `_meta.queued === true` is a prompt the runtime parked behind the active
+ * turn (a self-scheduled wakeup, a trigger, or a second viewer's prompt that
+ * arrived mid-stream). It is NOT a turn boundary — the active reply is still
+ * streaming — so it must not close the active bubble. We append the user
+ * message plus a queued (pending) assistant bubble, mirroring `sendPrompt`'s
+ * optimistic shape, and let the active reply keep merging. When the active
+ * turn finally ends and the agent starts the parked turn, the pending bubble
+ * is promoted on its first content. Without the marker, a mid-stream
+ * `user_message_chunk` would split the live reply across two bubbles and slot
+ * the parked prompt between them (issue #703).
  */
 
 /**
@@ -154,25 +166,26 @@ export function hasStreamingAssistant(messages: Message[]): boolean {
 }
 
 function handleUserChunk(messages: Message[], u: ContentChunk): Message[] {
-  const closed = closeActiveAssistant(messages);
+  const queued = u._meta?.queued === true;
   const mid = u.messageId ?? null;
 
+  let parts: MessagePart[] | null = null;
   if (u.content.type === "text") {
     const txt = stripUserTags(u.content.text);
-    if (!txt) return closed;
-    return appendOrExtendUser(closed, mid, parseUserText(txt));
+    if (txt) parts = parseUserText(txt);
+  } else if (u.content.type === "image") {
+    parts = [
+      { kind: "image", data: u.content.data, mimeType: u.content.mimeType },
+    ];
   }
 
-  if (u.content.type === "image") {
-    const part: MessagePart = {
-      kind: "image",
-      data: u.content.data,
-      mimeType: u.content.mimeType,
-    };
-    return appendOrExtendUser(closed, mid, [part]);
-  }
+  // Nothing renderable: a real turn boundary still closes the active bubble; a
+  // queued background prompt must leave the live reply untouched.
+  if (parts === null) return queued ? messages : closeActiveAssistant(messages);
 
-  return closed;
+  if (queued) return appendQueuedUser(messages, mid, parts);
+
+  return appendOrExtendUser(closeActiveAssistant(messages), mid, parts);
 }
 
 function handleAgentChunk(
@@ -358,4 +371,48 @@ function appendOrExtendUser(
     streaming: false,
   };
   return [...messages, newMsg];
+}
+
+/**
+ * Append a queued background prompt without disturbing the active reply: a
+ * user bubble followed by a `queued` assistant placeholder (the same shape
+ * `sendPrompt` writes for a locally-queued prompt). The placeholder is
+ * promoted to active once the parked turn starts streaming.
+ *
+ * Consecutive chunks of the same multi-block prompt arrive back-to-back with
+ * no agent content between them; we fold those into the user bubble that sits
+ * just before the trailing placeholder instead of stacking a new pair.
+ */
+function appendQueuedUser(
+  messages: Message[],
+  mid: string | null,
+  parts: MessagePart[],
+): Message[] {
+  const n = messages.length;
+  const tailAssistant = messages[n - 1];
+  const tailUser = messages[n - 2];
+  if (
+    tailAssistant?.role === "assistant" &&
+    tailAssistant.queued &&
+    tailAssistant.parts.length === 0 &&
+    tailUser?.role === "user"
+  ) {
+    return messages.map((m, i) =>
+      i === n - 2 ? { ...m, parts: mergeParts(m.parts, parts) } : m,
+    );
+  }
+  const userMsg: Message = {
+    id: mid ?? crypto.randomUUID(),
+    role: "user",
+    parts,
+    streaming: false,
+  };
+  const pending: Message = {
+    id: crypto.randomUUID(),
+    role: "assistant",
+    parts: [],
+    streaming: true,
+    queued: true,
+  };
+  return [...messages, userMsg, pending];
 }

@@ -128,6 +128,7 @@ export async function setMockReplyWithMidTurnUserPrompt(
           sessionUpdate: {
             sessionUpdate: "user_message_chunk",
             content: { type: "text", text: parts.midTurnUserPrompt },
+            _meta: { queued: true },
           },
         },
         {

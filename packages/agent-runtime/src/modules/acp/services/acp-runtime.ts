@@ -443,22 +443,30 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
    * still advanced, so subsequent fan-outs don't re-deliver this entry,
    * but a fresh channel (after reload) will catch it through the normal
    * catch-up from cursor=0.
+   *
+   * When `queued` is set (the prompt is parked behind an in-flight turn), the
+   * chunk carries `_meta.queued` so viewers render it as a pending background
+   * prompt instead of treating it as a turn boundary that would split the
+   * active reply (issue #703).
    */
   function appendUserPromptToLog(
     sessionId: string,
     prompt: unknown,
     originator: ClientChannel,
+    queued: boolean,
   ): void {
     if (!Array.isArray(prompt)) return;
     for (const block of prompt) {
       if (!block || typeof block !== "object") continue;
+      const update: Record<string, unknown> = {
+        sessionUpdate: "user_message_chunk",
+        content: block,
+      };
+      if (queued) update._meta = { queued: true };
       const line = JSON.stringify({
         jsonrpc: "2.0",
         method: "session/update",
-        params: {
-          sessionId,
-          update: { sessionUpdate: "user_message_chunk", content: block },
-        },
+        params: { sessionId, update },
       });
       appendAndFanOut(sessionId, line, { skipChannel: originator });
     }
@@ -1178,9 +1186,15 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         // against its optimistic bubble.
         const promptBlocks = (frame as { params?: { prompt?: unknown } }).params
           ?.prompt;
-        appendUserPromptToLog(promptSessionId, promptBlocks, channel);
+        const willQueue = activePromptBySession.has(promptSessionId);
+        appendUserPromptToLog(
+          promptSessionId,
+          promptBlocks,
+          channel,
+          willQueue,
+        );
 
-        if (activePromptBySession.has(promptSessionId)) {
+        if (willQueue) {
           const queue = promptQueueBySession.get(promptSessionId) ?? [];
           if (queue.length >= PROMPT_QUEUE_CAP) {
             outboundIdToClient.delete(outboundId);
