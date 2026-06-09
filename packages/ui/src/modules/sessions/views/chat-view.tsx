@@ -144,6 +144,13 @@ export function ChatView() {
     };
   }, []);
 
+  useEffect(() => {
+    if (messages.length === 0) {
+      stickRef.current = true;
+      setShowJump(false);
+    }
+  }, [messages.length]);
+
   const mobileResumeSession = useCallback(
     (sid: string, mode?: SessionMode) => {
       setMobileScreen("chat");
