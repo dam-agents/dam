@@ -9,6 +9,7 @@ import {
 import {
   agentIsOwnedBy,
   agentOwner,
+  agentPodTerminationMessage,
   buildAgentObject,
   parseInfraAgent,
   readyConditionStatus,
@@ -58,6 +59,8 @@ export interface AgentsRepository {
   /** Make the agent's pod reachable. Idempotent, single-flight per id; bumps
    *  `agent-platform.ai/last-activity` on success to keep the pod warm. */
   ensureReady(id: string): Promise<void>;
+  /** Controller-reported cause of the agent pod's abnormal termination, or null. */
+  podTerminationReason(id: string): Promise<string | null>;
 }
 
 export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
@@ -228,6 +231,11 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
       });
       inflight.set(id, work);
       return work;
+    },
+
+    async podTerminationReason(id) {
+      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+      return obj ? (agentPodTerminationMessage(obj) ?? null) : null;
     },
   };
 

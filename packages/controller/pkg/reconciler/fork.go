@@ -176,11 +176,12 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 		return r.setForkFailed(ctx, forkName, types.ForkReasonOrchestrationFailed, fmt.Sprintf("reading job: %v", err))
 	}
 
+	pod, _ := r.findForkPod(ctx, forkName)
+
 	if isJobFailed(job) {
-		return r.setForkFailed(ctx, forkName, types.ForkReasonPodNotReady, jobFailureReason(job))
+		return r.setForkFailed(ctx, forkName, types.ForkReasonPodNotReady, withPodTermination(jobFailureReason(job), pod))
 	}
 
-	pod, _ := r.findForkPod(ctx, forkName)
 	if pod != nil && isPodReady(*pod) && pod.Status.PodIP != "" {
 		return writeForkStatus(ctx, r.dynamic, r.config.Namespace, forkName, apiv1.ForkStatus{
 			Phase: apiv1.ForkPhaseReady, JobName: forkName, PodIP: pod.Status.PodIP,
@@ -189,7 +190,7 @@ func (r *ForkReconciler) Reconcile(ctx context.Context, fork *apiv1.Fork) error 
 
 	if age := r.now().Sub(fork.CreationTimestamp.Time); age > ForkPodReadyTimeout {
 		return r.setForkFailed(ctx, forkName, types.ForkReasonTimeout,
-			fmt.Sprintf("pod not Ready after %s", ForkPodReadyTimeout))
+			withPodTermination(fmt.Sprintf("pod not Ready after %s", ForkPodReadyTimeout), pod))
 	}
 
 	if currentPhase == "" {
@@ -379,6 +380,14 @@ func (r *ForkReconciler) findForkPod(ctx context.Context, forkName string) (*cor
 		}
 	}
 	return nil, nil
+}
+
+// withPodTermination appends the fork pod's abnormal-termination cause to a generic detail.
+func withPodTermination(detail string, pod *corev1.Pod) string {
+	if _, msg, ok := terminationReason(pod); ok {
+		return fmt.Sprintf("%s: %s", detail, msg)
+	}
+	return detail
 }
 
 func isPodReady(pod corev1.Pod) bool {

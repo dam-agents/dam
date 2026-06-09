@@ -186,6 +186,14 @@ export function createAcpRelay(
 
       const upstreamUrl = `ws://${podBaseUrl(agentId, namespace)}/api/acp`;
 
+      // Name the pod's termination cause on close, else fall back; only set when the pod actually died.
+      async function closeReason(fallback: string): Promise<string> {
+        const reason = await repo
+          .podTerminationReason(agentId)
+          .catch(() => null);
+        return reason ? `agent terminated: ${reason}` : fallback;
+      }
+
       identityLookup
         .resolve(agentId)
         .then((resolved) => {
@@ -245,26 +253,25 @@ export function createAcpRelay(
             if (isPermissionRequest(parsed)) mirrorPermissionRequest(parsed);
           });
 
-          upstream.on("close", (code, reason) => {
-            if (client.readyState === WebSocket.OPEN) {
-              try {
-                client.close(
-                  sanitizeCloseCode(code),
-                  reason.toString() || "upstream closed",
-                );
-              } catch {
-                client.terminate();
-              }
+          upstream.on("close", async (code, reason) => {
+            if (client.readyState !== WebSocket.OPEN) return;
+            const msg = await closeReason(reason.toString() || "upstream closed");
+            if (client.readyState !== WebSocket.OPEN) return;
+            try {
+              client.close(sanitizeCloseCode(code), msg);
+            } catch {
+              client.terminate();
             }
           });
 
-          upstream.on("error", () => {
-            if (client.readyState === WebSocket.OPEN) {
-              try {
-                client.close(1011, "upstream error");
-              } catch {
-                client.terminate();
-              }
+          upstream.on("error", async () => {
+            if (client.readyState !== WebSocket.OPEN) return;
+            const msg = await closeReason("upstream error");
+            if (client.readyState !== WebSocket.OPEN) return;
+            try {
+              client.close(1011, msg);
+            } catch {
+              client.terminate();
             }
           });
 
@@ -277,8 +284,13 @@ export function createAcpRelay(
             }
           });
         })
-        .catch(() => {
-          client.close(1011, "failed to connect to agent");
+        .catch(async () => {
+          if (client.readyState !== WebSocket.OPEN) return;
+          const msg = await closeReason("failed to connect to agent");
+          if (client.readyState !== WebSocket.OPEN) return;
+          try {
+            client.close(1011, msg);
+          } catch {}
         });
     });
   }

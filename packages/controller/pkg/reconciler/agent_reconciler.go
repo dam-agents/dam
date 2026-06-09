@@ -254,8 +254,16 @@ func (r *AgentReconciler) publishReadiness(ctx context.Context, agent *apiv1.Age
 	gatewayReady := r.podCurrentAndReady(ctx, GatewayName(name))
 	ready := agentReady && gatewayReady
 
+	// Name the abnormal-termination cause on AgentPodReady so callers can surface it.
+	agentFailReason, agentFailMsg := "PodNotReady", ""
+	if !agentReady {
+		if reason, msg, ok := terminationReason(r.getPod(ctx, name)); ok {
+			agentFailReason, agentFailMsg = reason, msg
+		}
+	}
+
 	return updateAgentStatus(ctx, r.dynamic, r.config.Namespace, name, func(s *apiv1.AgentStatus) {
-		setStatusCondition(s, apiv1.ConditionAgentPodReady, agentReady, "PodReady", "PodNotReady", "", gen)
+		setStatusCondition(s, apiv1.ConditionAgentPodReady, agentReady, "PodReady", agentFailReason, agentFailMsg, gen)
 		setStatusCondition(s, apiv1.ConditionGatewayPodReady, gatewayReady, "PodReady", "PodNotReady", "", gen)
 		setStatusCondition(s, apiv1.ConditionReady, ready, "AllPodsReady", "PodsNotReady", "", gen)
 		setStatusCondition(s, apiv1.ConditionReconciled, true, "Reconciled", "", "", gen)
@@ -291,12 +299,21 @@ func (r *AgentReconciler) podCurrentAndReady(ctx context.Context, ssName string)
 	if ss.Status.ObservedGeneration != ss.Generation {
 		return false
 	}
-	pod, err := r.client.CoreV1().Pods(r.config.Namespace).Get(ctx, ssName+"-0", metav1.GetOptions{})
-	if err != nil {
+	pod := r.getPod(ctx, ssName)
+	if pod == nil {
 		return false
 	}
 	return isPodReady(*pod) &&
 		pod.Labels["controller-revision-hash"] == ss.Status.UpdateRevision
+}
+
+// getPod returns the StatefulSet's single pod, or nil if absent.
+func (r *AgentReconciler) getPod(ctx context.Context, ssName string) *corev1.Pod {
+	pod, err := r.client.CoreV1().Pods(r.config.Namespace).Get(ctx, ssName+"-0", metav1.GetOptions{})
+	if err != nil {
+		return nil
+	}
+	return pod
 }
 
 // ensureLeafSecretOwnerReference adds a non-controller OwnerReference from

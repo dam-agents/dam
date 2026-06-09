@@ -84,6 +84,13 @@ function readyCondition(obj: KubeObject) {
   return status.conditions?.find((c) => c.type === "Ready");
 }
 
+/** The abnormal-termination cause the controller stamps on AgentPodReady, else undefined. */
+export function agentPodTerminationMessage(obj: KubeObject): string | undefined {
+  const status = (obj.status ?? {}) as AgentStatusObject;
+  const c = status.conditions?.find((c) => c.type === "AgentPodReady");
+  return c?.status === "False" && c.message ? c.message : undefined;
+}
+
 export function agentOwner(obj: KubeObject): string | undefined {
   return obj.metadata?.labels?.[LABEL_OWNER];
 }
