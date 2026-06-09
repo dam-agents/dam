@@ -149,10 +149,24 @@ export function ChatView() {
       setMobileScreen("chat");
       setSessionMode(mode ?? SessionMode.Chat);
       // Terminal sessions don't use ACP.
-      if (mode === SessionMode.Terminal) setSessionId(sid);
-      else resumeSession(sid);
+      if (mode === SessionMode.Terminal) {
+        setSessionId(sid);
+        return;
+      }
+      if (sid === sessionId) {
+        scrollToBottom();
+        return;
+      }
+      resumeSession(sid);
     },
-    [setMobileScreen, setSessionMode, setSessionId, resumeSession],
+    [
+      sessionId,
+      setMobileScreen,
+      setSessionMode,
+      setSessionId,
+      resumeSession,
+      scrollToBottom,
+    ],
   );
 
   const handleNewSession = useCallback(() => {
