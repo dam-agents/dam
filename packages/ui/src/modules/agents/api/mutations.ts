@@ -7,8 +7,8 @@ import { trpc } from "../../../trpc.js";
 import type { EgressPreset, EnvVar } from "../../../types.js";
 import { egressRulesKeys } from "../../egress-rules/api/queries.js";
 import {
-  buildBundle,
   type BundleEntry,
+  importBundle,
   importRawBundle,
 } from "../../files/api/import-bundle.js";
 import { trackImport } from "../../files/track-import.js";
@@ -74,25 +74,26 @@ export function useCreateAgent() {
         queryKey: agentsKeys.listWithChannels(),
       });
 
-      let preparedBundle: { blob: Blob; label: string } | undefined;
+      // Raw bundle is sent verbatim; entries are tarred + gzipped inside importBundle.
+      let runImport: (() => Promise<unknown>) | undefined;
+      let importLabel = "";
       if (rawBundle != null) {
-        preparedBundle = { blob: rawBundle, label: rawBundle.name };
+        importLabel = rawBundle.name;
+        runImport = () =>
+          importRawBundle({ agentId: agent.id, bundle: rawBundle });
       } else if (importEntries && importEntries.length > 0) {
         const count = importEntries.length;
-        preparedBundle = {
-          blob: await buildBundle(importEntries),
-          label: `${count} file${count === 1 ? "" : "s"}`,
-        };
+        importLabel = `${count} file${count === 1 ? "" : "s"}`;
+        runImport = () =>
+          importBundle({ agentId: agent.id, entries: importEntries });
       }
 
-      if (preparedBundle) {
+      if (runImport) {
         try {
-          await trackImport(agent.id, () =>
-            importRawBundle({ agentId: agent.id, bundle: preparedBundle.blob }),
-          );
+          await trackImport(agent.id, runImport);
           emitToast({
             kind: "success",
-            message: `Imported ${preparedBundle.label} into ${input.name}`,
+            message: `Imported ${importLabel} into ${input.name}`,
           });
         } catch (err) {
           emitToast({

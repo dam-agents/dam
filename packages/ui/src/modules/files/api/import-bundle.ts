@@ -150,16 +150,7 @@ function splitUstarPath(path: string, enc: TextEncoder): UstarPath | null {
   return null;
 }
 
-/**
- * Build a raw (uncompressed) USTAR tar Blob from the entries. We
- * deliberately don't gzip in the browser: most pain inputs are already
- * compressed (MKV, MP4, .git pack files), and `CompressionStream` piped
- * into `new Response(stream).blob()` materializes the whole compressed
- * output as a Blob before upload — for multi-GB inputs that hits origin
- * storage quota and truncates the body. The Blob references each `File`
- * lazily, so the fetch upload reads from disk as the stream is consumed.
- * The `tar` package on the server auto-detects gzip vs raw input.
- */
+/** Build a raw USTAR tar Blob; parts reference each File lazily, so the upload streams from disk. */
 export async function buildBundle(entries: BundleEntry[]): Promise<Blob> {
   const splits: UstarPath[] = entries.map((ent) => {
     const split = splitUstarPath(ent.path, TAR_ENCODER);
@@ -252,12 +243,26 @@ async function postBundle(
   return parsed.data;
 }
 
+// Cap exists because gzipBlob materializes the whole compressed Blob in origin storage; multi-GB would blow the quota and truncate the upload.
+const MAX_GZIP_BUNDLE_BYTES = 512 * 1024 * 1024;
+
+async function gzipBlob(blob: Blob): Promise<Blob> {
+  const stream = blob.stream().pipeThrough(new CompressionStream("gzip"));
+  return new Response(stream).blob();
+}
+
 export async function importBundle({
   agentId,
   entries,
 }: ImportBundleArgs): Promise<ImportBundleResult> {
-  const bundle = await buildBundle(entries);
-  return postBundle(agentId, bundle, "bundle.tar");
+  const tar = await buildBundle(entries);
+  if (
+    typeof CompressionStream !== "undefined" &&
+    tar.size <= MAX_GZIP_BUNDLE_BYTES
+  ) {
+    return postBundle(agentId, await gzipBlob(tar), "bundle.tar.gz");
+  }
+  return postBundle(agentId, tar, "bundle.tar");
 }
 
 /**
