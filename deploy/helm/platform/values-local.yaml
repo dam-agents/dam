@@ -41,7 +41,7 @@ agentTemplates:
     storageSize: "5Gi"
 
   - name: codex
-    enabled: false
+    enabled: true
     description: "OpenAI Codex coding agent"
     image:
       repository: platform-codex
@@ -49,7 +49,7 @@ agentTemplates:
     storageSize: "5Gi"
 
   - name: pi-agent
-    enabled: false
+    enabled: true
     description: "Pi coding agent with multi-LLM support"
     image:
       repository: platform-pi-agent
@@ -57,7 +57,7 @@ agentTemplates:
     storageSize: "2Gi"
 
   - name: bob
-    enabled: false
+    enabled: true
     description: "Bob shell agent"
     image:
       repository: platform-bob

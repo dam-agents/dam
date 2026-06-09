@@ -1,3 +1,4 @@
+import { SessionMode } from "api-server-api";
 import type { StateCreator } from "zustand";
 
 import type { PlatformStore } from "../../store.js";
@@ -31,6 +32,9 @@ export interface AgentsSlice {
     map: Map<string, { seenNonRunning: boolean; clickedAt: number }>,
   ) => void;
   selectAgent: (id: string) => void;
+  /** Like {@link selectAgent} but lands on the chat view's Terminal tab with a
+   *  fresh terminal session (used as the post-create destination). */
+  openAgentTerminal: (id: string) => void;
   goBack: () => void;
 }
 
@@ -68,10 +72,25 @@ export const createAgentsSlice: StateCreator<
     });
   },
 
+  openAgentTerminal: (id) => {
+    history.pushState(null, "", viewToPath("chat", id));
+    get().resetChatContext();
+    // Spawn a fresh terminal session and open the Terminal tab — mirrors the
+    // chat view's blank-chat→terminal toggle (the PTY creates the session).
+    set({
+      selectedAgent: id,
+      view: "chat",
+      mobileScreen: "chat",
+      showMobilePanel: true,
+      sessionId: crypto.randomUUID(),
+      sessionMode: SessionMode.Terminal,
+    });
+  },
+
   goBack: () => {
     history.pushState(null, "", "/");
     get().resetChatContext();
-    set({ selectedAgent: null, view: "list", showMobilePanel: false });
+    set({ selectedAgent: null, view: "new-landing", showMobilePanel: false });
   },
 });
 

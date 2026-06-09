@@ -1,7 +1,5 @@
 import type { SecretView } from "api-server-api";
 
-import type { Harness } from "./harnesses.js";
-
 export type LlmProviderId =
   | "anthropic-api"
   | "anthropic-oauth"
@@ -67,16 +65,6 @@ export const LLM_PROVIDERS: readonly LlmProvider[] = [
     envName: "OPENAI_API_KEY",
   },
 ];
-
-// Each harness uses its own credential: Claude Code on Anthropic/LiteLLM, Bob
-// on the Bob Shell key, Codex on the OpenAI key. The provider step only offers
-// the matching ones.
-export function providersForHarness(harness: Harness): readonly LlmProvider[] {
-  if (harness === "bob") return LLM_PROVIDERS.filter((p) => p.id === "bob");
-  if (harness === "codex")
-    return LLM_PROVIDERS.filter((p) => p.id === "openai");
-  return LLM_PROVIDERS.filter((p) => p.id !== "bob" && p.id !== "openai");
-}
 
 export function getLlmProvider(id: LlmProviderId): LlmProvider {
   const provider = LLM_PROVIDERS.find((p) => p.id === id);

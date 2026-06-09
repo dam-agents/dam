@@ -3,7 +3,6 @@ import { useState } from "react";
 
 import type { AgentState } from "../../../types.js";
 import { SchedulesPanel } from "../../schedules/components/schedules-panel.js";
-import { ChannelsPanel } from "./channels-panel.js";
 import { SkillsPanel } from "./skills-panel.js";
 
 function Section({
@@ -46,10 +45,6 @@ export function ConfigurationPanel({
     <div className="flex flex-1 flex-col overflow-y-auto">
       <Section title="Schedules">
         <SchedulesPanel onResumeSession={onResumeSession} />
-      </Section>
-
-      <Section title="Channels">
-        <ChannelsPanel />
       </Section>
 
       <Section title="Skills">

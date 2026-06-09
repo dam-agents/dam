@@ -24,10 +24,18 @@ export function TemplateCreateForm({
   template,
   onCreated,
   onCancel,
+  returnTo,
+  onBeforeOAuthRedirect,
 }: {
   template: ConnectionTemplateView;
   onCreated: (id: string) => void;
   onCancel: () => void;
+  /** Where the OAuth provider should send the user back. Defaults to the
+   *  connections page; the wizard passes its own step URL. */
+  returnTo?: string;
+  /** Called with the new connection id right before an OAuth full-page
+   *  redirect, so the caller can persist any in-progress state first. */
+  onBeforeOAuthRedirect?: (connectionId: string) => void;
 }) {
   const create = useCreateConnection();
 
@@ -143,10 +151,13 @@ export function TemplateCreateForm({
       setAuthorizing(true);
       try {
         const result = await api.connections.create.mutate(payload);
+        onBeforeOAuthRedirect?.(result.id);
         const r = await api.connections.startOAuth.mutate({
           connectionId: result.id,
+          ...(returnTo ? { returnTo } : {}),
         });
-        sessionStorage.setItem("platform-return-view", "connections");
+        if (!returnTo)
+          sessionStorage.setItem("platform-return-view", "connections");
         window.location.href = r.authUrl;
       } catch (err) {
         setAuthorizing(false);

@@ -1,17 +1,16 @@
 import { z } from "zod";
 
 export const viewSchema = z.enum([
-  "list",
   "chat",
-  "providers",
-  "connections",
   "settings",
   "inbox",
   "agent-egress",
   "terms",
-  "v2-list",
-  "v2-new",
-  "v2-terminal",
+  "new-landing",
+  "new-image",
+  "new-sandbox",
+  "new-connections",
+  "new-context",
 ]);
 export type View = z.infer<typeof viewSchema>;
 
@@ -21,17 +20,15 @@ export function viewToPath(
   agentId?: string | null,
 ): string {
   if (view === "chat" && agent) return `/chat/${encodeURIComponent(agent)}`;
-  if (view === "providers") return "/providers";
-  if (view === "connections") return "/connections";
   if (view === "settings") return "/settings";
   if (view === "inbox") return "/inbox";
   if (view === "agent-egress" && agentId)
     return `/agents/${encodeURIComponent(agentId)}/egress`;
   if (view === "terms") return "/terms";
-  if (view === "v2-list") return "/v2";
-  if (view === "v2-new") return "/v2/new";
-  if (view === "v2-terminal" && agentId)
-    return `/v2/${encodeURIComponent(agentId)}`;
+  if (view === "new-image") return "/new/image";
+  if (view === "new-sandbox") return "/new/sandbox";
+  if (view === "new-connections") return "/new/connections";
+  if (view === "new-context") return "/new/context";
   return "/";
 }
 
@@ -42,24 +39,18 @@ export function pathToState(path: string): {
 } {
   if (path.startsWith("/chat/"))
     return { view: "chat", agent: decodeURIComponent(path.slice(6)) };
-  if (path === "/providers") return { view: "providers" };
-  if (path === "/connections") return { view: "connections" };
   if (path === "/settings") return { view: "settings" };
   if (path === "/inbox") return { view: "inbox" };
   if (path === "/terms") return { view: "terms" };
-  if (path === "/v2") return { view: "v2-list" };
-  if (path === "/v2/new") return { view: "v2-new" };
-  const sandboxMatch = path.match(/^\/v2\/([^/]+)$/);
-  if (sandboxMatch)
-    return {
-      view: "v2-terminal",
-      agentId: decodeURIComponent(sandboxMatch[1]!),
-    };
+  if (path === "/new/image") return { view: "new-image" };
+  if (path === "/new/sandbox") return { view: "new-sandbox" };
+  if (path === "/new/connections") return { view: "new-connections" };
+  if (path === "/new/context") return { view: "new-context" };
   const egressMatch = path.match(/^\/agents\/([^/]+)\/egress$/);
   if (egressMatch)
     return {
       view: "agent-egress",
       agentId: decodeURIComponent(egressMatch[1]!),
     };
-  return { view: "list" };
+  return { view: "new-landing" };
 }

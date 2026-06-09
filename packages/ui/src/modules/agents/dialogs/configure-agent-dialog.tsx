@@ -2,18 +2,13 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import {
   type AppConnectionView,
   type EgressPreset,
-  isProtectedAgentEnvName,
+  isProviderPresetType,
 } from "api-server-api";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Controller, useForm } from "react-hook-form";
+import { useForm } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
 
-import {
-  ConnectionsPicker,
-  type OAuthAppEntry,
-} from "../../../components/connections-picker.js";
-import { sanitizeEnvVars } from "../../../components/env-vars-editor.js";
 import { FormField } from "../../../components/form-field.js";
 import { HoverTooltip } from "../../../components/hover-tooltip.js";
 import {
@@ -23,7 +18,10 @@ import {
   Modal,
 } from "../../../components/modal.js";
 import type { AgentView } from "../../../types.js";
-import { useAppConnections } from "../../connections/api/queries.js";
+import {
+  useAppConnections,
+  useConnectionTemplates,
+} from "../../connections/api/queries.js";
 import {
   useApplyEgressPreset,
   useCreateEgressRule,
@@ -45,16 +43,16 @@ import {
 } from "../api/mutations.js";
 import { useAgentAccess, useAgentConnections } from "../api/queries.js";
 import {
-  EnvTab,
-  type InheritedEnv,
-} from "../components/configure-agent/env-tab.js";
+  ConnectionsTab,
+  ProvidersTab,
+} from "../components/configure-agent/agent-access-editor.js";
 import { TabButton } from "../components/configure-agent/tab-button.js";
 import {
   configureAgentSchema,
   type ConfigureAgentValues,
 } from "../forms/configure-agent-schema.js";
 
-type Tab = "connections" | "env" | "egress";
+type Tab = "providers" | "connections" | "egress";
 
 export function ConfigureAgentDialog({
   agent,
@@ -64,13 +62,10 @@ export function ConfigureAgentDialog({
   onClose: () => void;
 }) {
   const agentId = agent.id;
-  const userInitialEnv = useMemo(
-    () => (agent.env ?? []).filter((e) => !isProtectedAgentEnvName(e.name)),
-    [agent.env],
-  );
 
   const { data: secrets = [] } = useSecrets();
   const { data: apps = [] } = useAppConnections();
+  const { data: connTemplates = [] } = useConnectionTemplates();
   const accessQuery = useAgentAccess(agentId);
   const connectionsQuery = useAgentConnections(agentId);
   const { data: egressRules = [] } = useEgressRulesForAgent(agentId);
@@ -85,7 +80,7 @@ export function ConfigureAgentDialog({
   const revokeRule = useRevokeEgressRule();
   const applyPreset = useApplyEgressPreset();
 
-  const [tab, setTab] = useState<Tab>("connections");
+  const [tab, setTab] = useState<Tab>("providers");
   // Network access edits, all staged. Save commits the bundle alongside
   // the rest of the form; closing discards. Tracked outside RHF since
   // none of these correspond to schema fields.
@@ -97,7 +92,6 @@ export function ConfigureAgentDialog({
 
   const {
     register,
-    control,
     handleSubmit,
     watch,
     getValues,
@@ -109,10 +103,8 @@ export function ConfigureAgentDialog({
     mode: "onChange",
     defaultValues: {
       name: agent.name,
-      description: agent.description ?? "",
       assigned: [],
       assignedAppIds: [],
-      envVars: userInitialEnv,
     },
   });
   const { errors, isDirty, dirtyFields, isSubmitting } = formState;
@@ -127,21 +119,12 @@ export function ConfigureAgentDialog({
     baselinedRef.current = true;
     reset({
       name: agent.name,
-      description: agent.description ?? "",
       assigned: [...accessQuery.data.secretIds].sort(),
       assignedAppIds: connectionsQuery.data.connections
         .map((c) => c.connectionId)
         .sort(),
-      envVars: userInitialEnv,
     });
-  }, [
-    accessQuery.data,
-    connectionsQuery.data,
-    userInitialEnv,
-    agent.name,
-    agent.description,
-    reset,
-  ]);
+  }, [accessQuery.data, connectionsQuery.data, agent.name, reset]);
   const ready = baselinedRef.current;
 
   // ADR-040: grant toggles no longer mutate `envVars`. The controller merges
@@ -162,50 +145,28 @@ export function ConfigureAgentDialog({
       : [...current, id].sort();
     setValue("assignedAppIds", next, { shouldDirty: true });
   };
+  // Grant a just-created/selected provider key (add-only, idempotent) — used by
+  // the inline ProviderSection so adding a key also assigns it to this agent.
+  const grantSecret = (id: string) => {
+    const current = getValues("assigned");
+    if (!current.includes(id))
+      setValue("assigned", [...current, id].sort(), {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+  };
+  const grantApp = (id: string) => {
+    const current = getValues("assignedAppIds");
+    if (!current.includes(id))
+      setValue("assignedAppIds", [...current, id].sort(), {
+        shouldDirty: true,
+      });
+  };
 
   const assigned = watch("assigned");
   const assignedAppIds = watch("assignedAppIds");
-  const envVars = watch("envVars");
   const assignedSet = useMemo(() => new Set(assigned), [assigned]);
   const appIdsSet = useMemo(() => new Set(assignedAppIds), [assignedAppIds]);
-
-  const oauthAppEntries: OAuthAppEntry[] = [];
-
-  const inheritedEnvs = useMemo<InheritedEnv[]>(() => {
-    const items: InheritedEnv[] = (agent.env ?? [])
-      .filter((e) => isProtectedAgentEnvName(e.name))
-      .map((e) => ({
-        name: e.name,
-        value: e.value,
-        source: "system" as const,
-      }));
-
-    for (const s of secrets.filter((s) => assignedSet.has(s.id))) {
-      for (const m of s.envMappings ?? []) {
-        items.push({
-          name: m.envName,
-          value: m.placeholder,
-          source: { secretName: s.name },
-        });
-      }
-    }
-
-    const userEnvNames = new Set(envVars.map((e) => e.name));
-    for (const a of apps.filter((a) => appIdsSet.has(a.id))) {
-      const envContribs = a.contributions.filter(
-        (c): c is Extract<typeof c, { kind: "env" }> => c.kind === "env",
-      );
-      for (const c of envContribs) {
-        if (userEnvNames.has(c.name)) continue;
-        items.push({
-          name: c.name,
-          value: c.placeholder,
-          source: { appLabel: a.name },
-        });
-      }
-    }
-    return items;
-  }, [agent.env, secrets, assignedSet, apps, appIdsSet, envVars]);
 
   // Connection-grant preview: secret + app-connection toggles in this
   // dialog haven't hit the server yet. Compute the diff against both
@@ -303,20 +264,11 @@ export function ConfigureAgentDialog({
           secretIds: values.assigned,
         });
       }
-      const wantsAgentUpdate =
-        Boolean(dirtyFields.envVars) ||
-        Boolean(dirtyFields.name) ||
-        Boolean(dirtyFields.description);
+      const wantsAgentUpdate = Boolean(dirtyFields.name);
       if (wantsAgentUpdate) {
         await updateAgent.mutateAsync({
           id: agentId,
-          ...(dirtyFields.envVars
-            ? { env: sanitizeEnvVars(values.envVars) }
-            : {}),
           ...(dirtyFields.name ? { name: values.name.trim() } : {}),
-          ...(dirtyFields.description
-            ? { description: values.description.trim() }
-            : {}),
         });
       }
       // Preset switch is its own mutation. The server sweeps preset:* rows
@@ -372,8 +324,15 @@ export function ConfigureAgentDialog({
     }
   });
 
-  const connectionsCount = assigned.length + assignedAppIds.length;
-  const envCount = sanitizeEnvVars(envVars).length + inheritedEnvs.length;
+  // Count only provider-preset secrets (MCP / custom secrets are granted via
+  // the same `assigned` list but aren't "providers").
+  const providerSecretIds = new Set(
+    secrets.filter((s) => isProviderPresetType(s.type)).map((s) => s.id),
+  );
+  const providersCount = assigned.filter((id) =>
+    providerSecretIds.has(id),
+  ).length;
+  const connectionsCount = assignedAppIds.length;
   const isSubmitDisabled = saving || !ready || !dirty;
 
   // Inline warning replacing the old "Allow everything" confirm popup.
@@ -427,28 +386,20 @@ export function ConfigureAgentDialog({
               {...register("name")}
             />
           </FormField>
-          <FormField label="Description" error={errors.description?.message}>
-            <input
-              className="w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted"
-              placeholder="Optional"
-              disabled={saving}
-              {...register("description")}
-            />
-          </FormField>
         </DialogHeader>
 
         <div className="px-5 md:px-7 pt-4 flex items-center gap-1 border-b-2 border-border-light">
+          <TabButton
+            active={tab === "providers"}
+            label="Provider"
+            count={providersCount}
+            onClick={() => setTab("providers")}
+          />
           <TabButton
             active={tab === "connections"}
             label="Connections"
             count={connectionsCount}
             onClick={() => setTab("connections")}
-          />
-          <TabButton
-            active={tab === "env"}
-            label="Environment"
-            count={envCount}
-            onClick={() => setTab("env")}
           />
           {networkTabVisible && (
             <TabButton
@@ -463,30 +414,21 @@ export function ConfigureAgentDialog({
         </div>
 
         <DialogBody className="flex flex-col gap-4">
-          {tab === "connections" && (
-            <ConnectionsPicker
-              loading={!ready}
+          {tab === "providers" && (
+            <ProvidersTab
               secrets={secrets}
-              apps={apps as unknown as AppConnectionView[]}
-              oauthApps={oauthAppEntries}
-              selSecrets={assignedSet}
-              selApps={appIdsSet}
-              onToggleSecret={toggleSecret}
-              onToggleApp={toggleApp}
+              assignedSecretIds={assignedSet}
+              onGrantSecret={grantSecret}
+              onRevokeSecret={toggleSecret}
             />
           )}
-          {tab === "env" && (
-            <Controller
-              control={control}
-              name="envVars"
-              render={({ field }) => (
-                <EnvTab
-                  inherited={inheritedEnvs}
-                  envVars={field.value}
-                  setEnvVars={field.onChange}
-                  saving={saving}
-                />
-              )}
+          {tab === "connections" && (
+            <ConnectionsTab
+              apps={apps as unknown as AppConnectionView[]}
+              templates={connTemplates}
+              assignedAppIds={appIdsSet}
+              onRevokeApp={toggleApp}
+              onGrantApp={grantApp}
             />
           )}
           {tab === "egress" && networkTabVisible && (

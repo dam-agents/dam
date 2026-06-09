@@ -25,7 +25,7 @@ export function AgentEgressView() {
   if (!agentId) {
     return (
       <div className="flex flex-col gap-3">
-        <BackLink onClick={() => setView("list")} />
+        <BackLink onClick={() => setView("new-landing")} />
         <p className="text-[12px] text-muted-foreground">Missing agent id.</p>
       </div>
     );
@@ -33,7 +33,7 @@ export function AgentEgressView() {
 
   return (
     <div className="flex flex-col gap-4">
-      <BackLink onClick={() => setView("list")} />
+      <BackLink onClick={() => setView("new-landing")} />
       <div className="flex items-baseline justify-between">
         <h1 className="text-[20px] font-extrabold tracking-[-0.02em] text-foreground">
           Network access

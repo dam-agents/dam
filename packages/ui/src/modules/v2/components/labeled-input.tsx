@@ -20,9 +20,11 @@ export function LabeledInput({
   const secret = type === "password";
   return (
     <label className="block">
-      <span className="text-[13px] font-semibold text-foreground/80 block mb-1.5">
-        {label}
-      </span>
+      {label && (
+        <span className="text-[13px] font-semibold text-foreground/80 block mb-1.5">
+          {label}
+        </span>
+      )}
       <Input
         type={type}
         value={value}

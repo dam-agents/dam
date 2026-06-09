@@ -2,19 +2,14 @@ import { useEffect } from "react";
 
 import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
-import { MobileNav } from "./components/mobile-nav.js";
-import { SetupProgressBar } from "./components/setup-progress-bar.js";
-import { Sidebar } from "./components/sidebar.js";
 import { emitToast } from "./lib/toast.js";
-import { ListView } from "./modules/agents/views/list-view.js";
 import { InboxView } from "./modules/approvals/views/inbox-view.js";
-import { ConnectionsView } from "./modules/connections/views/connections-view.js";
 import { AgentEgressView } from "./modules/egress-rules/views/agent-egress-view.js";
+import { RailShell } from "./modules/journey/components/rail-shell.js";
+import { JourneyApp } from "./modules/journey/views/journey-app.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
-import { ProvidersView } from "./modules/settings/views/providers-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
 import { TermsView } from "./modules/terms/views/terms-view.js";
-import { V2App } from "./modules/v2/views/v2-app.js";
 import { useStore } from "./store.js";
 
 export default function App() {
@@ -38,9 +33,9 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
-    // The v2 wizard owns its own OAuth-return handling so it can rehydrate
-    // the in-progress sandbox before the params are stripped.
-    if (window.location.pathname.startsWith("/v2")) return;
+    // The connections step owns its own OAuth-return handling so it can
+    // rehydrate the in-progress sandbox before the params are stripped.
+    if (window.location.pathname.startsWith("/new/connections")) return;
     const params = new URLSearchParams(window.location.search);
     const oauthResult = params.get("oauth");
     if (!oauthResult) return;
@@ -68,28 +63,23 @@ export default function App() {
     };
     const leaveChat = () => {
       useStore.getState().resetChatContext();
-      useStore.setState({ selectedAgent: null, view: "list" });
+      useStore.setState({ selectedAgent: null, view: "new-landing" });
     };
     const onPopState = () => {
       const path = window.location.pathname;
-      const sandboxMatch = path.match(/^\/v2\/([^/]+)$/);
       if (path.startsWith("/chat/"))
         enterChat(decodeURIComponent(path.slice(6)));
-      else if (path === "/providers") useStore.setState({ view: "providers" });
-      else if (path === "/connections")
-        useStore.setState({ view: "connections" });
+      else if (path === "/new/image")
+        useStore.setState({ view: "new-image", agentId: null });
+      else if (path === "/new/sandbox")
+        useStore.setState({ view: "new-sandbox", agentId: null });
+      else if (path === "/new/connections")
+        useStore.setState({ view: "new-connections", agentId: null });
+      else if (path === "/new/context")
+        useStore.setState({ view: "new-context", agentId: null });
       else if (path === "/settings") useStore.setState({ view: "settings" });
       else if (path === "/inbox") useStore.setState({ view: "inbox" });
       else if (path === "/terms") useStore.setState({ view: "terms" });
-      else if (path === "/v2")
-        useStore.setState({ view: "v2-list", agentId: null });
-      else if (path === "/v2/new")
-        useStore.setState({ view: "v2-new", agentId: null });
-      else if (sandboxMatch && path !== "/v2/new")
-        useStore.setState({
-          view: "v2-terminal",
-          agentId: decodeURIComponent(sandboxMatch[1]!),
-        });
       else if (path.startsWith("/agents/") && path.endsWith("/egress")) {
         const id = decodeURIComponent(
           path.slice("/agents/".length, -"/egress".length),
@@ -104,12 +94,19 @@ export default function App() {
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
-  // v2 sandbox surface is shell-less (no sidebar / mobile nav)
-  if (view === "v2-list" || view === "v2-new" || view === "v2-terminal")
+  // The agent-creation journey owns its own chrome (icon rail + step nav).
+  if (
+    view === "new-landing" ||
+    view === "new-image" ||
+    view === "new-sandbox" ||
+    view === "new-connections" ||
+    view === "new-context"
+  )
     return (
       <>
-        <V2App />
+        <JourneyApp />
         <DialogOverlay />
+        <ConnectionBanner />
       </>
     );
 
@@ -130,33 +127,20 @@ export default function App() {
       </>
     );
 
-  // All non-chat views share the sidebar shell
+  // Settings / Inbox / agent-egress: full-screen under the icon rail.
   return (
-    <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
-      <div className="flex flex-1 min-h-0 overflow-hidden">
-        <Sidebar />
-        <main className="relative z-10 flex-1 overflow-y-auto">
-          <SetupProgressBar />
-          <div className="mx-auto w-full max-w-[960px] px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10">
-            {view === "settings" ? (
-              <SettingsView />
-            ) : view === "providers" ? (
-              <ProvidersView />
-            ) : view === "connections" ? (
-              <ConnectionsView />
-            ) : view === "inbox" ? (
-              <InboxView />
-            ) : view === "agent-egress" ? (
-              <AgentEgressView />
-            ) : (
-              <ListView />
-            )}
-          </div>
-        </main>
-      </div>
-      <MobileNav />
+    <>
+      <RailShell>
+        {view === "settings" ? (
+          <SettingsView />
+        ) : view === "inbox" ? (
+          <InboxView />
+        ) : (
+          <AgentEgressView />
+        )}
+      </RailShell>
       <DialogOverlay />
       <ConnectionBanner />
-    </div>
+    </>
   );
 }
