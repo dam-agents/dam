@@ -397,8 +397,7 @@ export function ChatView() {
               setTerminalPaused(false);
             }}
             onFirstSubmit={() => {
-              // First message sent: show it optimistically (like chat), then
-              // refetch so the poll reconciles it to the real listed session.
+              // Show the first message optimistically, then refetch so the poll reconciles it.
               optimisticInsertSession(
                 selectedAgent,
                 sessionId,

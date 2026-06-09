@@ -35,9 +35,7 @@ export function Terminal({
    *  `ensureReady`. Use this (not `onConnected`) to clear a "starting" overlay,
    *  since `onConnected` fires on the immediate relay handshake. */
   onFirstOutput?: () => void;
-  /** Fires once on the first submitted line (CR/LF in the input). Startup
-   *  emits cursor/device-attribute report responses through onData, but never
-   *  a bare CR/LF — so this means "a message was sent", not "terminal opened". */
+  /** Fires on the first submitted line (CR/LF) — a sent message, not startup's device-report onData noise. */
   onFirstSubmit?: () => void;
   autoConnect?: boolean;
 }) {

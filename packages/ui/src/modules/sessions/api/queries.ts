@@ -19,8 +19,7 @@ export const acpSessionsKeys = {
     [...acpSessionsKeys.agentLists(agentId), { includeChannel }] as const,
 };
 
-// Optimistic insert so the sidebar shows the row immediately. Relay
-// writes the DB row on first prompt; the next refetch reconciles.
+// Optimistic insert so the sidebar shows the row immediately; the next refetch reconciles.
 export function optimisticInsertSession(
   agentId: string,
   sessionId: string,
@@ -86,9 +85,7 @@ export function useAcpSessions(
         }
       : skipToken,
     refetchOnMount: "always",
-    // Terminal mode has no per-turn refresh. Once the active session is shown
-    // (optimistic stub on first submit), poll until it reconciles to the real
-    // listed session with its harness-set title; don't poll before then.
+    // Terminal mode has no per-turn refresh; poll the active session until it reconciles to a titled listed session.
     refetchInterval: options?.pollActive
       ? (query) => {
           const id = options.activeSessionId;
