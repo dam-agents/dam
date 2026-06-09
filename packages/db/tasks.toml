@@ -32,12 +32,19 @@ dir = "{{config_root}}/packages/db"
 depends = ["common:setup:pnpm"]
 run = "pnpm exec prettier --write 'src/**/*.ts'"
 
-["db:generate"]
+["db:new"]
+description = "Scaffold the next hand-written migration + journal entry (db:new -- <name>)"
 dir = "{{config_root}}/packages/db"
 depends = ["common:setup:pnpm"]
-run = "pnpm exec drizzle-kit generate"
+run = "node scripts/new-migration.mjs"
 
 ["db:migrate"]
 dir = "{{config_root}}/packages/db"
 depends = ["common:setup:pnpm"]
-run = "pnpm exec drizzle-kit migrate"
+run = "node scripts/migrate.mjs"
+
+["db:drift"]
+description = "Verify migrations reproduce schema.ts; needs Postgres via DRIFT_DATABASE_URL"
+dir = "{{config_root}}/packages/db"
+depends = ["common:setup:pnpm"]
+run = "node scripts/check-drift.mjs"

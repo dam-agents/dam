@@ -13,7 +13,7 @@ overrides:
   serialize-javascript@<7.0.5: 7.0.5
   ws@8.20.0: 8.20.1
 
-packageExtensionsChecksum: sha256-MiHZ3mgtOUb60KfpkAkui5ad/9eLmcQda0MiZKaTRqA=
+packageExtensionsChecksum: sha256-OaHx25yLDXSMJ8nvygkXoC5ZMkxY945LG/3sr0J0P7U=
 
 importers:
 
@@ -356,7 +356,7 @@ importers:
         version: link:../dev-config
       drizzle-kit:
         specifier: ^0.31.4
-        version: 0.31.10
+        version: 0.31.10(pg@8.20.0)(postgres@3.4.9)
       typescript:
         specifier: ^6.0.2
         version: 6.0.2
@@ -9057,7 +9057,7 @@ snapshots:
   '@types/body-parser@1.19.6':
     dependencies:
       '@types/connect': 3.4.38
-      '@types/node': 25.9.1
+      '@types/node': 24.12.0
 
   '@types/busboy@1.5.4':
     dependencies:
@@ -9070,7 +9070,7 @@ snapshots:
 
   '@types/connect@3.4.38':
     dependencies:
-      '@types/node': 25.9.1
+      '@types/node': 24.12.0
 
   '@types/debug@4.1.13':
     dependencies:
@@ -9092,7 +9092,7 @@ snapshots:
 
   '@types/express-serve-static-core@5.1.1':
     dependencies:
-      '@types/node': 25.9.1
+      '@types/node': 24.12.0
       '@types/qs': 6.15.1
       '@types/range-parser': 1.2.7
       '@types/send': 1.2.1
@@ -9136,6 +9136,7 @@ snapshots:
   '@types/node@25.9.1':
     dependencies:
       undici-types: 7.24.6
+    optional: true
 
   '@types/prop-types@15.7.15': {}
 
@@ -9158,12 +9159,12 @@ snapshots:
 
   '@types/send@1.2.1':
     dependencies:
-      '@types/node': 25.9.1
+      '@types/node': 24.12.0
 
   '@types/serve-static@2.2.0':
     dependencies:
       '@types/http-errors': 2.0.5
-      '@types/node': 25.9.1
+      '@types/node': 24.12.0
 
   '@types/stream-buffers@3.0.8':
     dependencies:
@@ -9799,12 +9800,43 @@ snapshots:
     dependencies:
       detect-libc: 1.0.3
 
-  drizzle-kit@0.31.10:
+  drizzle-kit@0.31.10(pg@8.20.0)(postgres@3.4.9):
     dependencies:
       '@drizzle-team/brocli': 0.10.2
       '@esbuild-kit/esm-loader': 2.6.5
+      drizzle-orm: 0.45.2(pg@8.20.0)(postgres@3.4.9)
       esbuild: 0.25.12
       tsx: 4.21.0
+    transitivePeerDependencies:
+      - '@aws-sdk/client-rds-data'
+      - '@cloudflare/workers-types'
+      - '@electric-sql/pglite'
+      - '@libsql/client'
+      - '@libsql/client-wasm'
+      - '@neondatabase/serverless'
+      - '@op-engineering/op-sqlite'
+      - '@opentelemetry/api'
+      - '@planetscale/database'
+      - '@prisma/client'
+      - '@tidbcloud/serverless'
+      - '@types/better-sqlite3'
+      - '@types/pg'
+      - '@types/sql.js'
+      - '@upstash/redis'
+      - '@vercel/postgres'
+      - '@xata.io/client'
+      - better-sqlite3
+      - bun-types
+      - expo-sqlite
+      - gel
+      - knex
+      - kysely
+      - mysql2
+      - pg
+      - postgres
+      - prisma
+      - sql.js
+      - sqlite3
 
   drizzle-orm@0.45.2(pg@8.20.0)(postgres@3.4.9):
     optionalDependencies:
@@ -12512,7 +12544,8 @@ snapshots:
 
   undici-types@7.16.0: {}
 
-  undici-types@7.24.6: {}
+  undici-types@7.24.6:
+    optional: true
 
   undici@8.3.0: {}
 

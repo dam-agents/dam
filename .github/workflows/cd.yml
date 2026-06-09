@@ -47,6 +47,35 @@ jobs:
       - run: mise run setup
       - run: mise run test
 
+  db-drift:
+    name: mise db:drift
+    if: github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+      # Confirms the squashed migrations still reproduce schema.ts (ADR-063).
+      - run: mise run db:drift
+        env:
+          DRIFT_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+
   build-images:
     needs: [check]
     runs-on: ubuntu-latest

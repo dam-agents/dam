@@ -1,38 +1,242 @@
--- Every pilot view excludes core-team activity:
---
---   * activity_events-backed views:  AND actor_sub NOT IN (SELECT actor_sub FROM usage_core_actor_subs)
---   * sessions / agent_skills:       AND agent_id NOT IN (SELECT agent_id FROM usage_core_agents)
---   * pending_approvals:             AND owner_sub NOT IN (SELECT actor_sub FROM usage_core_actor_subs)
---   * egress_rules:                  no filter yet — needs agent-ownership capture (out of scope)
---
--- "is this sub core?" is sourced from the actor_roles table, upserted by the
--- persist-activity saga on every UserAuthenticated event from JWT
--- realm_access.roles. Agent ownership is resolved via the `agents` table,
--- populated by the persist-agents saga on `AgentCreated`/`AgentDeleted` plus
--- a startup bootstrap that backfills agents pre-dating the saga.
+-- Squashed baseline (issue #739, ADR-063). Reproduces the schema the 0000–0022
+-- history produced, including the usage_* views. Keeps the original 0000 journal
+-- timestamp so existing databases skip it and only fresh installs run it.
 
--- ----------------------------------------------------------------------------
--- Helper views — referenced by core-team filters in the views below
--- ----------------------------------------------------------------------------
+CREATE TYPE "public"."activity_outcome" AS ENUM ('success', 'failure');--> statement-breakpoint
 
--- Keycloak subs currently flagged with the core role (latest seen on auth).
+CREATE TABLE "activity_events" (
+	"id" text PRIMARY KEY NOT NULL,
+	"type" text NOT NULL,
+	"actor_sub" text,
+	"agent_id" text,
+	"surface" text,
+	"outcome" "activity_outcome" NOT NULL,
+	"payload" jsonb NOT NULL,
+	"occurred_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE INDEX "activity_events_type_occurred_idx" ON "activity_events" USING btree ("type","occurred_at");--> statement-breakpoint
+CREATE INDEX "activity_events_actor_occurred_idx" ON "activity_events" USING btree ("actor_sub","occurred_at") WHERE "actor_sub" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "activity_events_surface_occurred_idx" ON "activity_events" USING btree ("surface","occurred_at");--> statement-breakpoint
+CREATE UNIQUE INDEX "activity_events_auth_dedup_idx" ON "activity_events" USING btree ("actor_sub","surface",date_trunc('day', "occurred_at" AT TIME ZONE 'UTC')) WHERE "type" = 'auth';--> statement-breakpoint
+
+CREATE TABLE "actor_roles" (
+	"actor_sub" text PRIMARY KEY NOT NULL,
+	"is_core" boolean DEFAULT false NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+
+CREATE TABLE "agent_skill_publishes" (
+	"id" text NOT NULL,
+	"agent_id" text NOT NULL,
+	"skill_name" text NOT NULL,
+	"source_id" text NOT NULL,
+	"source_name" text NOT NULL,
+	"source_git_url" text NOT NULL,
+	"pr_url" text NOT NULL,
+	"published_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "instance_skill_publishes_pkey" PRIMARY KEY("id")
+);
+--> statement-breakpoint
+CREATE INDEX "agent_skill_publishes_agent_idx" ON "agent_skill_publishes" USING btree ("agent_id");--> statement-breakpoint
+
+CREATE TABLE "agent_skills" (
+	"agent_id" text NOT NULL,
+	"source" text NOT NULL,
+	"name" text NOT NULL,
+	"version" text NOT NULL,
+	"content_hash" text,
+	"installed_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "agent_skills_agent_id_source_name_pk" PRIMARY KEY("agent_id","source","name")
+);
+--> statement-breakpoint
+CREATE INDEX "agent_skills_agent_idx" ON "agent_skills" USING btree ("agent_id");--> statement-breakpoint
+
+CREATE TABLE "agents" (
+	"id" text PRIMARY KEY NOT NULL,
+	"owner_sub" text NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"deleted_at" timestamp with time zone,
+	"runtime_protocol_version" text,
+	"runtime_capabilities" jsonb,
+	"runtime_last_hello_at" timestamp with time zone,
+	"runtime_agent_version" text
+);
+--> statement-breakpoint
+CREATE INDEX "agents_owner_idx" ON "agents" USING btree ("owner_sub");--> statement-breakpoint
+
+CREATE TABLE "allowed_users" (
+	"agent_id" text NOT NULL,
+	"owner" text NOT NULL,
+	"keycloak_sub" text NOT NULL,
+	CONSTRAINT "allowed_users_agent_id_keycloak_sub_pk" PRIMARY KEY("agent_id","keycloak_sub")
+);
+--> statement-breakpoint
+
+CREATE TABLE "channels" (
+	"agent_id" text NOT NULL,
+	"owner" text NOT NULL,
+	"type" text NOT NULL,
+	"config" jsonb NOT NULL
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX "channels_agent_type_idx" ON "channels" USING btree ("agent_id","type");--> statement-breakpoint
+CREATE UNIQUE INDEX "channels_slack_channel_unique_idx" ON "channels" USING btree (("config"->>'slackChannelId')) WHERE "type" = 'slack';--> statement-breakpoint
+
+CREATE TABLE "connection_grants" (
+	"connection_id" text NOT NULL,
+	"agent_id" text NOT NULL,
+	"granted_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "connection_grants_connection_id_agent_id_pk" PRIMARY KEY("connection_id","agent_id")
+);
+--> statement-breakpoint
+CREATE INDEX "connection_grants_agent_idx" ON "connection_grants" USING btree ("agent_id");--> statement-breakpoint
+
+CREATE TABLE "connections" (
+	"id" text PRIMARY KEY NOT NULL,
+	"owner" text NOT NULL,
+	"template_id" text NOT NULL,
+	"name" text NOT NULL,
+	"inputs" jsonb NOT NULL,
+	"auth" jsonb NOT NULL,
+	"contributions" jsonb NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE INDEX "connections_owner_idx" ON "connections" USING btree ("owner");--> statement-breakpoint
+CREATE UNIQUE INDEX "connections_owner_name_unique_idx" ON "connections" USING btree ("owner","name");--> statement-breakpoint
+
+CREATE TABLE "egress_rules" (
+	"id" text PRIMARY KEY NOT NULL,
+	"agent_id" text NOT NULL,
+	"host" text NOT NULL,
+	"method" text NOT NULL,
+	"path_pattern" text NOT NULL,
+	"verdict" text NOT NULL,
+	"decided_by" text NOT NULL,
+	"decided_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"status" text DEFAULT 'active' NOT NULL,
+	"source" text DEFAULT 'manual' NOT NULL
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX "egress_rules_lookup_idx" ON "egress_rules" USING btree ("agent_id","host","method","path_pattern") WHERE "status" = 'active';--> statement-breakpoint
+CREATE INDEX "egress_rules_source_idx" ON "egress_rules" USING btree ("source") WHERE "status" = 'active' AND "source" != 'manual';--> statement-breakpoint
+
+CREATE TABLE "identity_links" (
+	"external_user_id" text NOT NULL,
+	"keycloak_sub" text NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"provider" text NOT NULL,
+	CONSTRAINT "identity_links_provider_external_user_id_pk" PRIMARY KEY("provider","external_user_id")
+);
+--> statement-breakpoint
+
+CREATE TABLE "pending_approvals" (
+	"id" text PRIMARY KEY NOT NULL,
+	"type" text NOT NULL,
+	"agent_id" text NOT NULL,
+	"owner_sub" text NOT NULL,
+	"session_id" text,
+	"payload" jsonb NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"expires_at" timestamp with time zone NOT NULL,
+	"resolved_at" timestamp with time zone,
+	"verdict" text,
+	"decided_by" text,
+	"status" text DEFAULT 'pending' NOT NULL,
+	"delivered_at" timestamp with time zone
+);
+--> statement-breakpoint
+CREATE INDEX "pending_approvals_owner_status_idx" ON "pending_approvals" USING btree ("owner_sub","status");--> statement-breakpoint
+CREATE INDEX "pending_approvals_agent_status_idx" ON "pending_approvals" USING btree ("agent_id","status");--> statement-breakpoint
+CREATE INDEX "pending_approvals_undelivered_idx" ON "pending_approvals" USING btree ("resolved_at") WHERE status = 'resolved' AND delivered_at IS NULL;--> statement-breakpoint
+
+CREATE TABLE "runtime_events" (
+	"id" text PRIMARY KEY NOT NULL,
+	"agent_id" text NOT NULL,
+	"kind" text NOT NULL,
+	"payload" jsonb NOT NULL,
+	"version" bigint NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"expires_at" timestamp with time zone NOT NULL,
+	"dispatched_at" timestamp with time zone
+);
+--> statement-breakpoint
+CREATE INDEX "runtime_events_agent_pending_idx" ON "runtime_events" USING btree ("agent_id","version") WHERE "dispatched_at" IS NULL;--> statement-breakpoint
+CREATE INDEX "runtime_events_expiry_idx" ON "runtime_events" USING btree ("expires_at") WHERE "dispatched_at" IS NULL;--> statement-breakpoint
+
+CREATE TABLE "runtime_state_outbox" (
+	"agent_id" text PRIMARY KEY NOT NULL,
+	"version" bigint DEFAULT 0 NOT NULL,
+	"last_enqueued_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"last_applied_version" bigint DEFAULT 0 NOT NULL,
+	"last_applied_hash" text,
+	"last_applied_at" timestamp with time zone,
+	"last_settled_version" bigint DEFAULT 0 NOT NULL,
+	"apply_failures" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"apply_attempts" integer DEFAULT 0 NOT NULL
+);
+--> statement-breakpoint
+CREATE INDEX "runtime_state_outbox_retry_idx" ON "runtime_state_outbox" USING btree ("apply_attempts") WHERE "apply_failures" <> '[]'::jsonb OR "last_settled_version" < "version";--> statement-breakpoint
+
+CREATE TABLE "schedules" (
+	"id" text PRIMARY KEY NOT NULL,
+	"agent_id" text NOT NULL,
+	"owner" text NOT NULL,
+	"name" text NOT NULL,
+	"spec" jsonb NOT NULL,
+	"enabled" boolean DEFAULT true NOT NULL,
+	"next_run" timestamp with time zone,
+	"last_fired_at" timestamp with time zone,
+	"last_fired_result" text,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE INDEX "schedules_agent_owner_idx" ON "schedules" USING btree ("agent_id","owner");--> statement-breakpoint
+CREATE INDEX "schedules_enabled_idx" ON "schedules" USING btree ("id") WHERE "enabled" = true;--> statement-breakpoint
+
+CREATE TABLE "skill_sources" (
+	"id" text PRIMARY KEY NOT NULL,
+	"owner" text NOT NULL,
+	"name" text NOT NULL,
+	"git_url" text NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX "skill_sources_owner_git_url_idx" ON "skill_sources" USING btree ("owner","git_url");--> statement-breakpoint
+CREATE INDEX "skill_sources_owner_idx" ON "skill_sources" USING btree ("owner");--> statement-breakpoint
+
+CREATE TABLE "telegram_threads" (
+	"agent_id" text NOT NULL,
+	"thread_id" text NOT NULL,
+	"authorized_by" text NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "telegram_threads_agent_id_thread_id_pk" PRIMARY KEY("agent_id","thread_id")
+);
+--> statement-breakpoint
+
+CREATE TABLE "terms_acceptances" (
+	"sub" text NOT NULL,
+	"version" text NOT NULL,
+	"hash" text NOT NULL,
+	"accepted_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "terms_acceptances_sub_version_pk" PRIMARY KEY("sub","version")
+);
+--> statement-breakpoint
+
 CREATE VIEW "usage_core_actor_subs" AS
   SELECT actor_sub
   FROM actor_roles
   WHERE is_core = true;
 --> statement-breakpoint
--- Agents owned by anyone with the core role. Used to exclude core-team
--- agent activity from pilot metrics. Owners with no auth events yet won't
--- appear here — see the edge-case discussion in usage-tracking-steps.md.
 CREATE VIEW "usage_core_agents" AS
   SELECT DISTINCT a.id AS agent_id
   FROM agents a
   JOIN usage_core_actor_subs cs ON cs.actor_sub = a.owner_sub;
 --> statement-breakpoint
-
--- ----------------------------------------------------------------------------
--- Auth views (from activity_events, type='auth')
--- ----------------------------------------------------------------------------
 
 CREATE VIEW "usage_auth_users_7d" AS
   SELECT
@@ -110,10 +314,6 @@ CREATE VIEW "usage_distinct_users_per_day_7d" AS
   ORDER BY day DESC;
 --> statement-breakpoint
 
--- ----------------------------------------------------------------------------
--- Channel views (from activity_events, type='channel_turn')
--- ----------------------------------------------------------------------------
-
 CREATE VIEW "usage_channel_turns_by_agent" AS
   SELECT
     agent_id,
@@ -158,67 +358,6 @@ CREATE VIEW "usage_channel_top_agents_30d" AS
   ORDER BY turn_count DESC;
 --> statement-breakpoint
 
--- ----------------------------------------------------------------------------
--- Session views (from sessions; core-team filter joins through usage_core_agents)
--- ----------------------------------------------------------------------------
-
-CREATE VIEW "usage_sessions_by_type_30d" AS
-  SELECT
-    type,
-    COUNT(*) AS session_count
-  FROM sessions
-  WHERE created_at >= NOW() - INTERVAL '30 days'
-    AND agent_id NOT IN (SELECT agent_id FROM usage_core_agents)
-  GROUP BY type
-  ORDER BY session_count DESC;
---> statement-breakpoint
-CREATE VIEW "usage_sessions_by_mode_30d" AS
-  SELECT
-    mode,
-    COUNT(*) AS session_count
-  FROM sessions
-  WHERE created_at >= NOW() - INTERVAL '30 days'
-    AND agent_id NOT IN (SELECT agent_id FROM usage_core_agents)
-  GROUP BY mode
-  ORDER BY session_count DESC;
---> statement-breakpoint
-CREATE VIEW "usage_active_agents_7d" AS
-  SELECT
-    agent_id,
-    COUNT(*) AS session_count,
-    MAX(updated_at) AS last_active
-  FROM sessions
-  WHERE updated_at >= NOW() - INTERVAL '7 days'
-    AND agent_id NOT IN (SELECT agent_id FROM usage_core_agents)
-  GROUP BY agent_id
-  ORDER BY last_active DESC;
---> statement-breakpoint
-CREATE VIEW "usage_sessions_by_agent_30d" AS
-  SELECT
-    agent_id,
-    COUNT(*) AS session_count,
-    MAX(updated_at) AS last_active
-  FROM sessions
-  WHERE created_at >= NOW() - INTERVAL '30 days'
-    AND agent_id NOT IN (SELECT agent_id FROM usage_core_agents)
-  GROUP BY agent_id
-  ORDER BY session_count DESC;
---> statement-breakpoint
-CREATE VIEW "usage_session_active_span" AS
-  SELECT
-    agent_id,
-    COUNT(*) AS session_count,
-    ROUND(AVG(EXTRACT(EPOCH FROM (updated_at - created_at))))::bigint AS avg_span_seconds,
-    ROUND(MAX(EXTRACT(EPOCH FROM (updated_at - created_at))))::bigint AS max_span_seconds
-  FROM sessions
-  WHERE updated_at > created_at
-    AND agent_id NOT IN (SELECT agent_id FROM usage_core_agents)
-  GROUP BY agent_id
-  ORDER BY avg_span_seconds DESC;
---> statement-breakpoint
--- Sourced from activity_events (type='schedule_fire'), not sessions: continuous-mode
--- schedules reuse one sessions row across many fires, so counting sessions
--- under-reports. ScheduleFired events fire once per trigger and carry outcome.
 CREATE VIEW "usage_schedule_fires_by_schedule" AS
   SELECT
     (payload->>'scheduleId') AS schedule_id,
@@ -250,10 +389,6 @@ CREATE VIEW "usage_schedule_fires_by_agent" AS
   ORDER BY fire_count DESC;
 --> statement-breakpoint
 
--- ----------------------------------------------------------------------------
--- Approvals (from pending_approvals)
--- ----------------------------------------------------------------------------
-
 CREATE VIEW "usage_approvals_summary_30d" AS
   SELECT
     type,
@@ -267,10 +402,6 @@ CREATE VIEW "usage_approvals_summary_30d" AS
   ORDER BY approval_count DESC;
 --> statement-breakpoint
 
--- ----------------------------------------------------------------------------
--- Skills (from agent_skills and skill_sources)
--- ----------------------------------------------------------------------------
-
 CREATE VIEW "usage_skill_installs_by_skill" AS
   SELECT
     source,
@@ -283,8 +414,6 @@ CREATE VIEW "usage_skill_installs_by_skill" AS
   GROUP BY source, name
   ORDER BY agent_count DESC;
 --> statement-breakpoint
--- "by_user" = grouped by the skill_sources.owner (the person who curated the
--- source). Per-installer attribution would require joining to agents.owner_sub.
 CREATE VIEW "usage_skill_installs_by_user" AS
   SELECT
     ss.owner,
@@ -297,13 +426,6 @@ CREATE VIEW "usage_skill_installs_by_user" AS
   ORDER BY install_count DESC;
 --> statement-breakpoint
 
--- ----------------------------------------------------------------------------
--- Egress (from egress_rules) — post-ADR-046 egress_rules.agent_id keys on
--- the agent (formerly the template, but instance and template are collapsed
--- now). Core-team filter could join through `agents.owner_sub` but the
--- existing views don't yet. Left as-is for now.
--- ----------------------------------------------------------------------------
-
 CREATE VIEW "usage_egress_hosts_by_agent" AS
   SELECT
     agent_id,
@@ -315,15 +437,6 @@ CREATE VIEW "usage_egress_hosts_by_agent" AS
   GROUP BY agent_id
   ORDER BY distinct_hosts DESC;
 --> statement-breakpoint
-
--- ----------------------------------------------------------------------------
--- Connection views (from activity_events, type='connection_added' / 'connection_removed')
---
--- Persist-activity writes one row per OAuth grant or revoke. Re-grants
--- (token expired, user reconnected) appear as additional rows for the same
--- (actor_sub, payload->>'connectionKey') — the views collapse that with
--- DISTINCT so cardinality reflects users/connections, not grants over time.
--- ----------------------------------------------------------------------------
 
 CREATE VIEW "usage_connections_by_user" AS
   SELECT
@@ -367,10 +480,6 @@ CREATE VIEW "usage_connection_churn_by_user" AS
   GROUP BY actor_sub
   ORDER BY adds DESC;
 --> statement-breakpoint
-
--- ----------------------------------------------------------------------------
--- File-import views (from activity_events, type='files_imported')
--- ----------------------------------------------------------------------------
 
 CREATE VIEW "usage_imports_by_agent" AS
   SELECT

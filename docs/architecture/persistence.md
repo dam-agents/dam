@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-06-08
+Last verified: 2026-06-09
 
 ## Motivated by
 
@@ -10,6 +10,7 @@ Last verified: 2026-06-08
 - [ADR-046 — Eliminate Instance, collapse into Agent](../adrs/046-eliminate-instance.md) — the merged `agent` ConfigMap is the sole resource per Agent and carries both `spec.yaml` and `status.yaml`
 - [ADR-8 — Usage tracking with pseudonymized identifiers](../adrs/048-usage-tracking.md) — append-only activity log + agent mirror table, with HMAC-pseudonymized `sub` values at the write boundary
 - [ADR-061 — Warm PVC pool](../adrs/061-warm-pvc-pool.md) — pre-provisioned, size-keyed spare workspace volumes claimed at create time to skip first-start provisioning latency
+- [ADR-063 — Squash migration baseline + hand-written SQL workflow](../adrs/063-squash-migrations-and-handwritten-sql.md) — one squashed baseline (safe to skip on existing deployments), hand-written migrations scaffolded by `db:new`, and a `db:drift` check that the migrations still reproduce `schema.ts`
 
 ## Overview
 
@@ -70,6 +71,8 @@ Postgres carries application state the api-server owns end-to-end — anything t
 - **activity log + agent mirror** — append-only event log (`activity_events`), per-sub role flags (`actor_roles`), and the K8s↔Postgres agent ownership mirror (`agents`). Pseudonymized `actor_sub` and `owner_sub` columns at the write boundary. Owned by [usage-tracking](usage-tracking.md).
 
 The api-server is the sole writer for all of it. The controller does not touch Postgres — its bookkeeping lives on `status.yaml` of the ConfigMap it owns. The authoritative schema and migrations live in [`packages/db/`](../../packages/db/).
+
+Migrations are **hand-written raw SQL** ([ADR-063](../adrs/063-squash-migrations-and-handwritten-sql.md)) — the schema relies on views and partial indexes the drizzle-kit generator can't round-trip. The history is squashed to a single `0000_baseline.sql` that reproduces the current schema (including the reporting views); it carries the original baseline timestamp so existing deployments recognize it as already applied and only fresh installs run it. Author new migrations with `mise run db:new -- <name>` (scaffolds the file and updates the journal) and verify with `mise run db:drift`, which applies every migration to a throwaway database and confirms the result still matches `schema.ts` (views excluded). Migrations apply automatically when the api-server boots.
 
 ### ConfigMaps
 

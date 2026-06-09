@@ -75,16 +75,15 @@ Generic conventions for TS server-side code (tRPC, Zod, RxJS, layering). Invoke 
 
 ## Database Migrations (`packages/db`)
 
-Schema is defined in [`packages/db/src/schema.ts`](packages/db/src/schema.ts) using Drizzle ORM.
+Schema is defined in [`packages/db/src/schema.ts`](packages/db/src/schema.ts) using Drizzle ORM. Migrations are **hand-written raw SQL** — the drizzle-kit generator is retired because the schema uses views and partial indexes it can't round-trip ([ADR-063](docs/adrs/063-squash-migrations-and-handwritten-sql.md)). The history is squashed to a single `0000_baseline.sql`; never edit it or the journal by hand.
 
 1. Edit the schema in `schema.ts`.
-2. Run `mise run db:generate` — this auto-generates a numbered `.sql` migration in `packages/db/drizzle/`.
-3. Review the generated SQL. Never hand-write migration files; always generate from schema changes.
-4. Add a top comment to the generated file explaining *why* (reference ADRs if relevant).
-5. For destructive changes (drops, renames), verify the SQL uses safe patterns (`IF EXISTS`, data-preserving renames over drop+recreate).
-6. Run `mise run check` to verify types.
+2. Run `mise run db:new -- <name>` — scaffolds the next numbered `.sql` file in `packages/db/drizzle/` and appends its `meta/_journal.json` entry. Never hand-edit the journal or renumber files.
+3. Write the SQL by hand. Add a top comment explaining *why* (reference ADRs/issues). Separate statements with `--> statement-breakpoint`.
+4. For destructive changes (drops, renames), use safe patterns (`IF EXISTS`, data-preserving renames over drop+recreate).
+5. Run `mise run db:drift` to confirm the migrations still reproduce `schema.ts` (needs a local Postgres via `DRIFT_DATABASE_URL`; CI runs this in its own job). Then `mise run check` for types/lint.
 
-Migrations run automatically on api-server startup — no manual `migrate` step in production. The `packages/db/drizzle/meta/_journal.json` tracks migration metadata; commit it alongside the `.sql` file.
+The reporting views (`usage_*`) are raw SQL not modeled in `schema.ts`, so `db:drift` excludes them. Migrations run automatically on api-server startup — no manual `migrate` step in production; commit the `.sql` file together with the updated `_journal.json`.
 
 ## Documentation
 
