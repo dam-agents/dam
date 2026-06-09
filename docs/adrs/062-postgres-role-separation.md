@@ -102,3 +102,15 @@ future ADR.
   - App-role migrations must continue to fit DDL-on-owned-database
     privileges. A future migration that needs SUPERUSER (e.g.
     `CREATE EXTENSION` on a non-trusted extension) breaks app boot.
+- **Managed Postgres:** the decision is provider-agnostic and, in fact,
+  the native posture of managed services (IBM Cloud Databases, RDS,
+  Cloud SQL) — they withhold tenant SUPERUSER, so "no SUPERUSER on app
+  roles" holds for free and the NOSUPERUSER-owners + `REVOKE CONNECT`
+  shape is reproducible as plain SQL run by the provider's admin role.
+  What does *not* carry over is the bundled *enforcement*: the chart's
+  role bootstrap, the per-role `log_statement` admin audit (a SUSET GUC
+  the provider's non-superuser admin cannot set), and the stderr `-c`
+  event logging are bundled-Postgres mechanisms. On a managed DB those
+  become the operator's responsibility — provision the roles
+  out-of-band and use the provider's own audit/logging integration. See
+  the [runbook](../notes/postgres-role-operations.md).

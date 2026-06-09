@@ -102,3 +102,34 @@ they connect as exist.
    mise run cluster:kubectl -- rollout restart \
      deploy/platform-apiserver deploy/platform-keycloak
    ```
+
+## External / managed Postgres
+
+With `postgres.enabled: false` and the api-server / Keycloak pointed at an
+external or managed instance (IBM Cloud Databases for PostgreSQL, RDS, Cloud
+SQL), the bundled bootstrap above does not run — there is no StatefulSet, init
+script, or server flag. Reproduce the role shape out-of-band, as the provider's
+admin role:
+
+- Create `platform_apiserver` and `platform_keycloak` as `LOGIN NOSUPERUSER`,
+  each owning its own database; `REVOKE CONNECT ON DATABASE … FROM PUBLIC` and
+  grant it back only to the owner. This is portable SQL.
+- There is no `platform_admin` SUPERUSER to create — managed services withhold
+  tenant superuser (on IBM Cloud Databases the only superuser is IBM's internal
+  `ibm` account), so the provider's admin role *is* the top role.
+- The per-role `log_statement = 'all'` admin audit does not apply: it is a
+  superuser-only (SUSET) GUC the provider's admin cannot set, and providers
+  often don't expose `log_statement` at all. Use the provider's audit/logging
+  path instead (e.g. `log_min_duration_statement` plus the managed logging
+  integration).
+- Event logging (`log_connections` / `log_disconnections`) is set through the
+  provider's configuration API, not server flags, and is delivered to the
+  provider's logging service rather than pod stderr; `log_line_prefix` is
+  typically not tunable.
+
+Supply the connection passwords yourself, under the secret keys the chart now
+reads — **`POSTGRES_APISERVER_PASSWORD`** and **`POSTGRES_KEYCLOAK_PASSWORD`**
+(renamed from the former single `POSTGRES_PASSWORD`). Update any pre-existing
+operator-managed secret accordingly, or the pods will not find the password.
+Managed instances also generally require TLS — set `sslmode` and the provider
+CA in the connection accordingly.
