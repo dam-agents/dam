@@ -1,10 +1,12 @@
 # shellcheck shell=sh
-# Sourced by the claude-code harness shims. When the agent is pointed at a custom
+# Sourced by the claude-code harness shims and by the SSH login hook
+# (/etc/profile.d/litellm-proxy.sh — see litellm-login.sh), so `claude` reaches
+# the gateway over every entry path. When the agent is pointed at a custom
 # Anthropic-compatible upstream, bring up a local LiteLLM gateway (once per pod)
 # and re-point Claude Code at it; otherwise do nothing. This runs here, not the
 # image entrypoint, because credentials arrive over the runtime channel only once
-# the harness is spawned. All diagnostics go to stderr — the chat shim's stdout
-# carries the ACP JSON stream.
+# the harness (or SSH session) is spawned. All diagnostics go to stderr — the
+# chat shim's stdout carries the ACP JSON stream.
 
 _LITELLM_BASE="http://127.0.0.1:4000"
 _LITELLM_LOG=/tmp/litellm-proxy.log
@@ -69,3 +71,10 @@ if _litellm_custom_upstream; then
 		tail -n 20 "$_LITELLM_LOG" >&2 2>/dev/null || true
 	fi
 fi
+
+# Leave no _litellm_* helpers behind in an interactive login shell that sourced
+# this via the SSH hook; the harness shims exec immediately, so this is a no-op
+# for them. The exported ANTHROPIC_BASE_URL / NO_PROXY / CLAUDE_CODE_* and the
+# sourced model pins must survive — only internal helpers and scratch vars go.
+unset -f _litellm_custom_upstream _litellm_ready _litellm_start _litellm_wait_ready 2>/dev/null || true
+unset _LITELLM_BASE _LITELLM_LOG _LITELLM_LOCK _LITELLM_ENV_FILE _LITELLM_CA_BUNDLE _i 2>/dev/null || true

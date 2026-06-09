@@ -32,6 +32,10 @@ RUN --mount=type=cache,target=/root/.npm \
 
 COPY litellm-gateway.py /usr/local/lib/litellm-gateway.py
 COPY litellm-proxy.sh /usr/local/lib/litellm-proxy.sh
+# SSH / VS Code Remote-SSH sessions (ADR-062) bypass the harness shims, so also
+# front the upstream from a login hook. profile.d is sourced by interactive login
+# shells but not by sftp/scp (no shell) or `ssh host cmd` (non-login).
+COPY litellm-login.sh /etc/profile.d/litellm-proxy.sh
 # Override the platform-base shims with claude-code's, which source the proxy
 # helper before launching the harness.
 COPY harness-chat.sh /usr/local/bin/harness-chat
