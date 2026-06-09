@@ -23,7 +23,8 @@ export KUBECONFIG="$(mise run cluster:kubeconfig)"
 
 CALLER=$(ps -o comm= -p $(ps -o ppid= -p $PPID) 2>/dev/null)
 CALLER="${CALLER:-$SHELL}"
-case "$(basename "$CALLER")" in
+CALLER="${CALLER#-}" # login shells report argv[0] as "-zsh"/"-bash"; drop the leading dash
+case "$(basename -- "$CALLER")" in
   bash) exec bash --rcfile <(echo 'source ~/.bashrc; PS1="(platform) $PS1"') ;;
   zsh)
     ZDOTDIR=$(mktemp -d)
