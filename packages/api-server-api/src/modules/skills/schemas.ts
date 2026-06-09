@@ -16,8 +16,6 @@ export const skillSourceSchema = z.object({
   fromTemplate: z
     .object({ templateId: z.string(), templateName: z.string() })
     .optional(),
-  /** True when the current user has a publish credential stored for
-   *  this source. */
   canPublish: z.boolean().optional(),
 });
 

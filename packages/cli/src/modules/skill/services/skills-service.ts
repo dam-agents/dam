@@ -1,4 +1,9 @@
-import type { Skill, SkillRef, SkillSource } from "api-server-api";
+import type {
+  Skill,
+  SkillPublishResult,
+  SkillRef,
+  SkillSource,
+} from "api-server-api";
 import { err, ok, type Result } from "../../../result.js";
 import { classifyTrpcError, trpcCall } from "../../shared/trpc/classify.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
@@ -6,6 +11,8 @@ import type {
   AgentNotReachableError,
   AuthRequiredError,
   PrivateSourceNeedsAgentError,
+  PublishFailedError,
+  PublishNeedsConnectionError,
   SourceAlreadyExistsError,
   SourceNeedsConnectionError,
   SourceNotFoundError,
@@ -94,6 +101,27 @@ export interface SkillsService {
       TransportError | AuthRequiredError | AgentNotReachableError
     >
   >;
+
+  /** skills.publish — opens a GitHub PR for a standalone skill. Keys on the
+   *  source `id` (unlike install/uninstall, which key on the git URL). The
+   *  pod is woken server-side (ADR-032); the CLI surfaces only the residual
+   *  failures. */
+  publish(input: {
+    agentId: string;
+    sourceId: string;
+    name: string;
+    title?: string;
+    body?: string;
+  }): Promise<
+    Result<
+      SkillPublishResult,
+      | TransportError
+      | AuthRequiredError
+      | AgentNotReachableError
+      | PublishNeedsConnectionError
+      | PublishFailedError
+    >
+  >;
 }
 
 /**
@@ -112,6 +140,56 @@ function classifyWakeError(
       reason: e instanceof Error ? e.message : String(e),
     });
   }
+  return classifyTrpcError(e);
+}
+
+/**
+ * Map a `skills.publish` failure to a clean error. More granular than
+ * `classifyWakeError` because publish's INTERNAL_SERVER_ERROR is overloaded:
+ * both a wake-to-ready timeout and a relayed GitHub 5xx land on it, so it's
+ * disambiguated by message rather than treated as unreachable wholesale.
+ */
+function classifyPublishError(
+  e: unknown,
+): Result<
+  never,
+  | TransportError
+  | AuthRequiredError
+  | AgentNotReachableError
+  | PublishNeedsConnectionError
+  | PublishFailedError
+> {
+  const msg = e instanceof Error ? e.message : String(e);
+
+  // app_not_connected / access_restricted: server encodes a fix-it URL.
+  const cta = msg.match(/platform-cta:(\S+)/)?.[1];
+  if (cta !== undefined) {
+    return err({
+      kind: "publish-needs-connection",
+      message: msg.replace(/\nplatform-cta:\S+/, "").trim(),
+      cta,
+    });
+  }
+
+  const code = (e as { data?: { code?: string } })?.data?.code;
+  // Error-state agent (PRECONDITION_FAILED, no CTA) or wake-to-ready timeout
+  // (INTERNAL_SERVER_ERROR from ensureAgentReachable, identifiable message).
+  if (
+    code === "PRECONDITION_FAILED" ||
+    (code === "INTERNAL_SERVER_ERROR" && /could not be made ready/.test(msg))
+  ) {
+    return err({ kind: "agent-not-reachable", reason: msg });
+  }
+
+  // Any other tRPC error from a reachable server — missing skill (NOT_FOUND),
+  // GitHub 403/404/5xx, bad request. Print the server message verbatim, not
+  // through printServiceError (whose "cannot reach server" wording is wrong
+  // for a relayed application error).
+  if (code !== undefined) {
+    return err({ kind: "publish-failed", message: msg });
+  }
+
+  // No tRPC code ⇒ genuine transport / auth-required.
   return classifyTrpcError(e);
 }
 
@@ -211,6 +289,16 @@ export function createSkillsService(deps: { trpc: TrpcClient }): SkillsService {
         return ok(refs);
       } catch (e) {
         return classifyWakeError(e);
+      }
+    },
+    async publish(input) {
+      try {
+        const result = (await deps.trpc.skills.publish.mutate(
+          input,
+        )) as SkillPublishResult;
+        return ok(result);
+      } catch (e) {
+        return classifyPublishError(e);
       }
     },
   };

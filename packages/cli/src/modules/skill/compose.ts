@@ -9,6 +9,7 @@ import {
 import { buildCatalogCommand } from "./commands/catalog.js";
 import { buildInstallCommand } from "./commands/install.js";
 import { buildListCommand } from "./commands/list.js";
+import { buildPublishCommand } from "./commands/publish.js";
 import { buildSourceAddCommand } from "./commands/source-add.js";
 import { buildSourceListCommand } from "./commands/source-list.js";
 import { buildSourceRefreshCommand } from "./commands/source-refresh.js";
@@ -61,6 +62,7 @@ export function composeSkillModule(opts: SkillModuleOptions): SkillModule {
   parent.addCommand(buildListCommand(shared));
   parent.addCommand(buildInstallCommand(shared));
   parent.addCommand(buildUninstallCommand(shared));
+  parent.addCommand(buildPublishCommand(shared));
 
   return { commands: [parent], exports: { createService } };
 }

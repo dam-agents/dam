@@ -6,4 +6,6 @@ export type {
   AgentNotReachableError,
   PrivateSourceNeedsAgentError,
   SourceNeedsConnectionError,
+  PublishNeedsConnectionError,
+  PublishFailedError,
 } from "./domain/errors.js";

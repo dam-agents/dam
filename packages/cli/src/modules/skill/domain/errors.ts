@@ -33,3 +33,20 @@ export interface SourceAlreadyExistsError {
 export interface SourceNotFoundError {
   kind: "source-not-found";
 }
+
+/** publish reached the pod but GitHub refused — app not connected, agent not
+ *  granted, or repo not in the allowlist. The server encodes a fix-it URL as a
+ *  `platform-cta:` marker. The CLI strips it and prints `Fix: <url>`. → exit 2. */
+export interface PublishNeedsConnectionError {
+  kind: "publish-needs-connection";
+  message: string;
+  cta?: string;
+}
+
+/** publish hit a server-side application error from a reachable agent — the
+ *  named skill doesn't exist, or GitHub rejected the request (403/404/5xx).
+ *  Carries the server message, printed verbatim. → exit 1. */
+export interface PublishFailedError {
+  kind: "publish-failed";
+  message: string;
+}
