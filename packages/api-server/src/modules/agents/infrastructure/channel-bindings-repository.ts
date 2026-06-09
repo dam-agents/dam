@@ -2,6 +2,7 @@ import type { Db } from "db";
 import { channels, eq, and, inArray, sql } from "db";
 import { ChannelType, type ChannelConfig } from "api-server-api";
 import type { Tx } from "../../../core/unit-of-work.js";
+import { isUniqueViolation } from "../../../core/db-errors.js";
 
 function toChannelConfig(row: {
   type: string;
@@ -134,24 +135,7 @@ export function findBySlackChannelId(db: Db) {
 }
 
 export function isSlackChannelUniqueViolation(e: unknown): boolean {
-  // Drizzle (>=0.44) wraps every driver failure in a DrizzleQueryError and
-  // stashes the original postgres.js error — the one carrying `code` and
-  // `constraint_name` — on `.cause`. Walk the cause chain so the guard matches
-  // whether it is handed the raw driver error or the Drizzle wrapper.
-  for (
-    let cur: unknown = e, depth = 0;
-    cur !== null && typeof cur === "object" && depth < 10;
-    cur = (cur as { cause?: unknown }).cause, depth++
-  ) {
-    const obj = cur as { code?: unknown; constraint_name?: unknown };
-    if (
-      obj.code === "23505" &&
-      obj.constraint_name === "channels_slack_channel_unique_idx"
-    ) {
-      return true;
-    }
-  }
-  return false;
+  return isUniqueViolation(e, "channels_slack_channel_unique_idx");
 }
 
 export function findSlackChannelByAgent(db: Db) {

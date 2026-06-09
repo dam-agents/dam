@@ -30,6 +30,7 @@ import type { ContributionFanOut } from "./contribution-fanout.js";
 import type { OAuthFlowService } from "./oauth-flow.js";
 import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
+import { isUniqueViolation } from "../../../core/db-errors.js";
 
 export function createConnectionsService(deps: {
   ownerId: string;
@@ -413,12 +414,6 @@ function deriveStatus(conn: Connection): ConnectionView["status"] {
 
 function newConnectionId(): string {
   return `conn-${randomBytes(6).toString("hex")}`;
-}
-
-function isUniqueViolation(err: unknown): boolean {
-  if (!err || typeof err !== "object") return false;
-  const e = err as { code?: unknown; cause?: { code?: unknown } };
-  return e.code === "23505" || e.cause?.code === "23505";
 }
 
 function connectionSecretPath(auth: Connection["auth"]): string | null {

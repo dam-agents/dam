@@ -24,6 +24,7 @@ import type { AgentSkillsRepository } from "../infrastructure/agent-skills-repos
 import type { SkillSourceSeed } from "../infrastructure/seed-sources.js";
 import { seedToSkillSource } from "../infrastructure/seed-sources.js";
 import { securityLog } from "../../../core/security-log.js";
+import { isUniqueViolation } from "../../../core/db-errors.js";
 import {
   AgentRuntimeUpstreamError,
   type AgentRuntimeSkillsClient,
@@ -230,8 +231,19 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       const [enriched] = enrichSources([s]);
       return enriched;
     },
-    createSource: (input: SkillCreateSourceInput) =>
-      deps.repo.create(input, deps.owner),
+    async createSource(input: SkillCreateSourceInput) {
+      try {
+        return await deps.repo.create(input, deps.owner);
+      } catch (err) {
+        if (isUniqueViolation(err, "skill_sources_owner_git_url_idx")) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "a skill source for this git URL is already registered",
+          });
+        }
+        throw err;
+      }
+    },
     async deleteSource(id) {
       // Template-derived ids are synthesised at read time — there's no row
       // to delete. Reject up-front with the same FORBIDDEN code the UI uses
