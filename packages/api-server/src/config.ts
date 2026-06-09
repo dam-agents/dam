@@ -42,6 +42,11 @@ const configSchema = z.object({
    *  TLS-terminated chains) and network filter (L4, catch-all). */
   extAuthzPort: z.coerce.number().default(4002),
   databaseUrl: z.string(),
+  /** Filesystem path to a PEM CA cert for verifying the database's TLS
+   *  certificate (external managed DB with a private CA). Trust is scoped to
+   *  the DB connection — the client passes it as `ssl.ca`. The Helm chart
+   *  mounts the CA and sets this; unset means no custom CA. */
+  databaseCaCertPath: z.string().optional(),
   migrationsPath: z.string().default("./packages/db/drizzle"),
   slackBotToken: z.string().nullable().default(null),
   slackAppToken: z.string().nullable().default(null),
@@ -157,6 +162,7 @@ export function loadConfig(): Config {
     harnessServerUrl: process.env.PLATFORM_HARNESS_SERVER_URL,
     extAuthzPort: process.env.EXT_AUTHZ_PORT,
     databaseUrl: process.env.DATABASE_URL,
+    databaseCaCertPath: process.env.DATABASE_CA_CERT_PATH,
     migrationsPath: process.env.MIGRATIONS_PATH,
     slackBotToken: process.env.SLACK_BOT_TOKEN,
     slackAppToken: process.env.SLACK_APP_TOKEN,

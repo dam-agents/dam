@@ -174,21 +174,35 @@ API Server database host — uses external host if set, otherwise shared postgre
 {{- end }}
 
 {{/*
+API Server secrets name — chart-managed Secret holding the external DB password
+*/}}
+{{- define "platform.apiserver.secrets.fullname" -}}
+{{- printf "%s-apiserver-secrets" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
 API Server database password secret name — uses shared postgres secret when db.password is empty
 */}}
 {{- define "platform.apiserver.db.password.secretName" -}}
 {{- if .Values.apiServer.db.password }}
-{{- printf "%s-apiserver-secrets" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- include "platform.apiserver.secrets.fullname" . }}
 {{- else }}
 {{- include "platform.postgres.secrets.fullname" . }}
 {{- end }}
 {{- end }}
 
 {{/*
-API Server PostgreSQL DSN
+API Server PostgreSQL DSN. When db.sslmode is set the connection is encrypted.
+A custom CA (db.caCert) reaches the api-server via DATABASE_CA_CERT_PATH (the DB
+client passes it as `ssl.ca`), not the DSN, because postgres-js does not read
+sslrootcert from the connection string.
 */}}
 {{- define "platform.apiserver.postgres.dsn" -}}
-{{- printf "postgresql://%s:$(POSTGRES_PASSWORD)@%s:%v/%s" .Values.apiServer.db.user (include "platform.apiserver.db.host" .) (int .Values.apiServer.db.port) .Values.apiServer.db.database }}
+{{- $dsn := printf "postgresql://%s:$(POSTGRES_PASSWORD)@%s:%v/%s" .Values.apiServer.db.user (include "platform.apiserver.db.host" .) (int .Values.apiServer.db.port) .Values.apiServer.db.database -}}
+{{- if .Values.apiServer.db.sslmode -}}
+{{- $dsn = printf "%s?sslmode=%s" $dsn .Values.apiServer.db.sslmode -}}
+{{- end -}}
+{{- $dsn -}}
 {{- end }}
 
 {{/*
@@ -237,10 +251,19 @@ Keycloak database password secret name — uses shared postgres secret when db.p
 {{- end }}
 
 {{/*
-Keycloak JDBC URL
+Keycloak JDBC URL. When db.sslmode is set the connection is encrypted; a custom
+CA (db.caCert) is trusted by pointing sslrootcert at the mounted CA file, which
+the PostgreSQL JDBC driver reads.
 */}}
 {{- define "platform.keycloak.db.url" -}}
-{{- printf "jdbc:postgresql://%s:%v/%s" (include "platform.keycloak.db.host" .) (int .Values.keycloak.db.port) .Values.keycloak.db.database }}
+{{- $url := printf "jdbc:postgresql://%s:%v/%s" (include "platform.keycloak.db.host" .) (int .Values.keycloak.db.port) .Values.keycloak.db.database -}}
+{{- if .Values.keycloak.db.sslmode -}}
+{{- $url = printf "%s?sslmode=%s" $url .Values.keycloak.db.sslmode -}}
+{{- if .Values.keycloak.db.caCert -}}
+{{- $url = printf "%s&sslrootcert=%s" $url "/etc/keycloak/pg-ca/ca.crt" -}}
+{{- end -}}
+{{- end -}}
+{{- $url -}}
 {{- end }}
 
 {{/* ---- Platform resources ---- */}}

@@ -121,6 +121,13 @@ spec:
                   key: POSTGRES_PASSWORD
             - name: DATABASE_URL
               value: {{ include "platform.apiserver.postgres.dsn" . | quote }}
+            {{- if .Values.apiServer.db.caCert }}
+            # Verify the external DB's TLS cert against this CA (sslmode=verify-*).
+            # The api-server passes it as the DB client's `ssl.ca`, scoping trust
+            # to the database connection rather than the whole process.
+            - name: DATABASE_CA_CERT_PATH
+              value: /etc/platform/pg-ca/ca.crt
+            {{- end }}
             - name: NAMESPACE
               value: {{ .Values.agentNamespace | quote }}
             # ADR-041: api-server parses agent ID out of the per-agent
@@ -312,6 +319,11 @@ spec:
             - name: agent-templates
               mountPath: /etc/platform/agent-templates
               readOnly: true
+            {{- if .Values.apiServer.db.caCert }}
+            - name: pg-ca
+              mountPath: /etc/platform/pg-ca
+              readOnly: true
+            {{- end }}
           {{- if .Values.probes.enabled }}
           readinessProbe:
             httpGet:
@@ -341,3 +353,8 @@ spec:
         - name: git-repos
           configMap:
             name: {{ include "platform.fullname" . }}-git-repos
+        {{- if .Values.apiServer.db.caCert }}
+        - name: pg-ca
+          configMap:
+            name: {{ include "platform.fullname" . }}-apiserver-db-ca
+        {{- end }}

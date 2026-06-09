@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { createDb, runMigrations } from "db";
 import { createApi } from "./modules/agents/infrastructure/k8s.js";
 import {
@@ -95,8 +96,13 @@ const config = loadConfig();
 configureLogger({ level: config.logLevel });
 
 const { api, customObjects } = createApi(config.namespace);
-await runMigrations(config.databaseUrl, config.migrationsPath);
-const { db, sql } = createDb(config.databaseUrl);
+const dbTls = {
+  ca: config.databaseCaCertPath
+    ? readFileSync(config.databaseCaCertPath, "utf8")
+    : undefined,
+};
+await runMigrations(config.databaseUrl, config.migrationsPath, dbTls);
+const { db, sql } = createDb(config.databaseUrl, dbTls);
 
 if (!config.redisUrl)
   throw new Error(
@@ -223,8 +229,14 @@ const slackOauthCallbackUrl =
   `${config.uiBaseUrl}/api/slack/oauth/callback`;
 const telegramOauthCallbackUrl = `${config.uiBaseUrl}/api/telegram/oauth/callback`;
 
+// The chat-sdk state pool uses node-postgres (`pg`), which — unlike postgres-js
+// — reads a CA file from `sslrootcert` in the connection string. Append it so
+// the pool verifies against the same scoped CA; trust stays on this connection.
+const chatSdkDatabaseUrl = config.databaseCaCertPath
+  ? `${config.databaseUrl}${config.databaseUrl.includes("?") ? "&" : "?"}sslrootcert=${config.databaseCaCertPath}`
+  : config.databaseUrl;
 const chatSdkState = config.telegramEnabled
-  ? createPostgresState({ url: config.databaseUrl, keyPrefix: "chat-sdk" })
+  ? createPostgresState({ url: chatSdkDatabaseUrl, keyPrefix: "chat-sdk" })
   : undefined;
 
 const channelRegistry: ChannelRegistry = {

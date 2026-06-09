@@ -1,0 +1,15 @@
+{{- if .Values.apiServer.db.caCert }}
+{{- /* CA certificate for verifying an external DB's TLS cert. Mounted into the
+       api-server pod; DATABASE_CA_CERT_PATH points the DB client at it so the CA
+       is passed as the client's `ssl.ca` (trust scoped to the DB connection). */ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "platform.fullname" . }}-apiserver-db-ca
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+data:
+  ca.crt: |
+    {{- .Values.apiServer.db.caCert | nindent 4 }}
+{{- end }}

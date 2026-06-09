@@ -122,6 +122,11 @@ spec:
           volumeMounts:
             - name: gzip-cache
               mountPath: /opt/keycloak/data/tmp
+            {{- if .Values.keycloak.db.caCert }}
+            - name: pg-ca
+              mountPath: /etc/keycloak/pg-ca
+              readOnly: true
+            {{- end }}
       volumes:
         # Keycloak 26.6/26.6.1 ship /opt/keycloak/data/tmp root-owned and not
         # group-writable (0755), so under a non-root UID — i.e. OpenShift's
@@ -134,4 +139,9 @@ spec:
         # Keycloak >= 26.7.0, which fixes the perms upstream (keycloak#48608).
         - name: gzip-cache
           emptyDir: {}
+        {{- if .Values.keycloak.db.caCert }}
+        - name: pg-ca
+          configMap:
+            name: {{ include "platform.fullname" . }}-keycloak-db-ca
+        {{- end }}
 {{- end }}

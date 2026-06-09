@@ -268,6 +268,12 @@ keycloak:
     user: platform
     password: null
     database: keycloak
+    # Postgres TLS mode for an external DB: require | verify-ca | verify-full.
+    # null = no TLS (the in-cluster postgres). verify-ca/verify-full need caCert.
+    sslmode: null
+    # CA certificate (PEM) used to verify the external DB's TLS certificate.
+    # Required for sslmode verify-ca/verify-full when the DB presents a private CA.
+    caCert: ""
 
   resources:
     requests:
@@ -498,6 +504,12 @@ apiServer:
     user: platform
     password: null
     database: platform
+    # Postgres TLS mode for an external DB: require | verify-ca | verify-full.
+    # null = no TLS (the in-cluster postgres). verify-ca/verify-full need caCert.
+    sslmode: null
+    # CA certificate (PEM) used to verify the external DB's TLS certificate.
+    # Required for sslmode verify-ca/verify-full when the DB presents a private CA.
+    caCert: ""
   resources:
     requests:
       cpu: 100m
