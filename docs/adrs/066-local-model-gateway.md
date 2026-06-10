@@ -28,13 +28,23 @@ the upstream's live catalog with chat-capable models renamed into the prefix
 namespace Claude Code's discovery accepts, maps names back to the verbatim
 upstream id on each request, and otherwise forwards requests byte-for-byte —
 it does not re-encode bodies, so unknown fields and beta headers survive. It
-also pins the model env vars to the latest model per tier (assign-if-unset,
-so a value set manually on the agent wins). Model-pin ownership moves out of
-the provider presets entirely: presets carry credentials and endpoints, the
-gateway derives models. Its upstream hop rides the same egress path as
-everything else in the pod (the HTTP(S)_PROXY Envoy chain with credential
-injection). With no custom upstream the gateway never runs and Claude Code
-talks to the Anthropic API directly.
+also derives Claude Code's tier-default vars
+(`ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL`) — the latest model per tier
+by a version-ordering heuristic (numeric components compared in order;
+8-digit date stamps only break ties) — written assign-if-unset, so a value
+set manually on the agent wins. The main and subagent models are deliberately
+*not* pinned: Claude Code's own tier selection stays in charge. Model
+ownership moves out of the provider presets entirely: presets carry
+credentials and endpoints, the gateway derives tier defaults, and an
+idempotent api-server boot sweep strips the pins that pre-gateway preset
+saves snapshotted into stored secrets — assign-if-unset would otherwise let
+those stale pins mask discovery forever. Env changes reach the running
+gateway as an ADR-065 SIGHUP reload: it re-reads the runtime's env snapshot
+and re-points in place, so in-flight streams survive a mid-turn provider
+re-save. Its upstream hop rides the same egress path as everything else in
+the pod (the HTTP(S)_PROXY Envoy chain with credential injection). With no
+custom upstream the gateway never runs and Claude Code talks to the
+Anthropic API directly.
 
 ## Alternatives Considered
 
@@ -72,8 +82,12 @@ talks to the Anthropic API directly.
   hygiene, request cancellation) instead of delegating it to an off-the-shelf
   proxy; protocol translation for non-Anthropic upstreams is explicitly out
   of scope.
-- **Committed-to:** the loopback port and the pins-file handshake between the
-  gateway and the harness entry paths (shims, SSH login hook) are now
-  image-internal ABI; the upstream must keep serving an OpenAI-compatible
-  model-list endpoint; and the prefix namespace is load-bearing — Claude Code
-  dropping or changing its discovery prefix rules breaks the catalog path.
+- **Committed-to:** the loopback port (24180 — below the ephemeral range and
+  away from common dev-server defaults, since agent workloads share the
+  network namespace) and the pins-file handshake between the gateway and the
+  harness entry paths (shims, SSH login hook) are now image-internal ABI; the
+  upstream must keep serving an OpenAI-compatible model-list endpoint; and
+  the prefix namespace is load-bearing — Claude Code dropping or changing its
+  discovery prefix rules breaks the catalog path, which is why the image pins
+  the Claude Code version and bumps it deliberately with a discovery
+  smoke-check.

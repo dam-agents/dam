@@ -8,32 +8,38 @@
 // are not re-encoded, so unknown fields and beta headers survive (unlike a
 // full LiteLLM proxy, which parses and re-issues requests via its SDK).
 //
-// Also derives Claude Code's model env-var pins (latest model per tier) from
-// the discovered catalog and writes them to a shim-sourced env file.
+// Also derives Claude Code's tier-default env vars (latest model per tier)
+// from the discovered catalog and writes them to a shim-sourced env file.
 //
 // Runs as the agent-runtime-supervised pod service (pod-service.sh, ADR-065):
-// spawned with the current runtime env, respawned on env change, restarted
-// with backoff on crash. The upstream hop crosses the Envoy gateway for
-// credential injection via NODE_USE_ENV_PROXY (set by pod-service.sh); the
-// platform MITM CA reaches Node through the controller-injected
-// NODE_EXTRA_CA_CERTS.
+// spawned with the current runtime env and restarted with backoff on crash.
+// Env changes arrive as SIGHUP (ADR-065): the supervisor rewrites the env
+// snapshot file and signals; the handler below re-reads it and re-points at
+// the fresh upstream in place, so the listener never closes and in-flight
+// streams finish. The upstream hop crosses the Envoy gateway for credential
+// injection via NODE_USE_ENV_PROXY (set by pod-service.sh); the platform MITM
+// CA reaches Node through the controller-injected NODE_EXTRA_CA_CERTS.
 
 import http from "node:http";
-import { writeFileSync, renameSync } from "node:fs";
+import { readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { Readable } from "node:stream";
 
 const HOST = process.env.MODEL_GATEWAY_HOST || "127.0.0.1";
-const PORT = Number(process.env.MODEL_GATEWAY_PORT || "4000");
+const PORT = Number(process.env.MODEL_GATEWAY_PORT || "24180");
 const REFRESH_MS =
   Number(process.env.MODEL_GATEWAY_REFRESH_SECONDS || "600") * 1000;
 const ENV_FILE = "/tmp/model-gateway.env"; // sourced by model-gateway.sh
+// The supervisor's merged-env snapshot (ADR-065), re-read on SIGHUP.
+const SNAPSHOT_FILE = `${process.env.HOME}/.platform/pod-service-env.json`;
 const PREFIX = "claude/";
-// The supervisor spawns us with the runtime env, where ANTHROPIC_BASE_URL is
-// still the real upstream (only harness sessions get re-pointed at loopback).
-const UPSTREAM = (process.env.ANTHROPIC_BASE_URL || "").replace(/\/+$/, "");
-const TOKEN = process.env.ANTHROPIC_AUTH_TOKEN || "";
 
 const log = (msg) => process.stderr.write(`model-gateway: ${msg}\n`);
+
+// The supervisor spawns us with the runtime env, where ANTHROPIC_BASE_URL is
+// still the real upstream (only harness sessions get re-pointed at loopback).
+// Mutable: a SIGHUP reload re-derives both from the fresh env snapshot.
+let UPSTREAM = (process.env.ANTHROPIC_BASE_URL || "").replace(/\/+$/, "");
+let TOKEN = process.env.ANTHROPIC_AUTH_TOKEN || "";
 
 // public (prefixed, lowercased) name -> verbatim upstream id, from the last
 // successful catalog fetch. Unknown names fall back to a bare prefix strip,
@@ -88,25 +94,48 @@ async function fetchCatalog() {
   }
 }
 
+/** Fetch and apply, discarding the result if a reload switched upstreams
+ *  while the request was in flight. */
+async function refreshCatalog() {
+  const upstream = UPSTREAM;
+  const ids = await fetchCatalog();
+  if (ids && UPSTREAM === upstream) applyCatalog(ids);
+  return ids;
+}
+
 // Numeric components approximate "latest" (opus-4-8 > opus-4-1 > 3-opus).
-const versionKey = (id) => (id.match(/\d+/g) ?? []).map(Number);
-const byVersion = (a, b) => {
-  const ka = versionKey(a);
-  const kb = versionKey(b);
-  for (let i = 0; i < Math.max(ka.length, kb.length); i++) {
-    const d = (ka[i] ?? -1) - (kb[i] ?? -1);
+// 8-digit date stamps would dwarf real version numbers (sonnet-4-20250514
+// outranking sonnet-4-5-20250929), so they only break ties between
+// otherwise-equal versions.
+const isDateLike = (p) => p.length >= 8;
+const versionKey = (id) => {
+  const parts = id.match(/\d+/g) ?? [];
+  return [
+    parts.filter((p) => !isDateLike(p)).map(Number),
+    parts.filter(isDateLike).map(Number),
+  ];
+};
+const cmpParts = (a, b) => {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const d = (a[i] ?? -1) - (b[i] ?? -1);
     if (d) return d;
   }
-  return a < b ? -1 : a > b ? 1 : 0;
+  return 0;
+};
+const byVersion = (a, b) => {
+  const [va, da] = versionKey(a);
+  const [vb, db] = versionKey(b);
+  return cmpParts(va, vb) || cmpParts(da, db) || (a < b ? -1 : a > b ? 1 : 0);
 };
 const latest = (models, tier) => {
   const tiered = models.filter((m) => m.toLowerCase().includes(tier));
   return tiered.length ? tiered.sort(byVersion).at(-1) : null;
 };
 
-/** Claude Code's model vars -> latest opus/sonnet/haiku, each falling back to
- *  the best available model so they are always set. The subagent pin mirrors
- *  the retired IBM LiteLLM preset default (opus). */
+/** Claude Code's tier-default vars -> latest opus/sonnet/haiku, each falling
+ *  back to the best available model so they are always set. Only the tier
+ *  defaults: the main and subagent models are deliberately not pinned, so
+ *  Claude Code's own tier selection (and any user-set var) stays in charge. */
 function modelEnv(models) {
   const [opus, sonnet, haiku] = ["opus", "sonnet", "haiku"].map((t) =>
     latest(models, t),
@@ -118,20 +147,20 @@ function modelEnv(models) {
     ANTHROPIC_DEFAULT_OPUS_MODEL: publicName(opus ?? fallback),
     ANTHROPIC_DEFAULT_SONNET_MODEL: publicName(sonnet ?? fallback),
     ANTHROPIC_DEFAULT_HAIKU_MODEL: publicName(haiku ?? fallback),
-    ANTHROPIC_MODEL: publicName(opus ?? fallback),
-    CLAUDE_CODE_SUBAGENT_MODEL: publicName(opus ?? fallback),
   };
 }
 
 const shQuote = (v) => `'${v.replaceAll("'", "'\\''")}'`;
+const pinsStamp = () => `# upstream=${UPSTREAM}\n`;
 
-/** Env lines assign only if unset, so a model set manually on the agent wins. */
+/** Env lines assign only if unset, so a model set manually on the agent wins.
+ *  Stamped with the upstream they were discovered from (see dropStalePins). */
 function writePins(models) {
   const env = modelEnv(models);
   const lines = Object.entries(env)
     .map(([k, v]) => `[ -n "\${${k}:-}" ] || export ${k}=${shQuote(v)}\n`)
     .join("");
-  writeFileSync(`${ENV_FILE}.tmp`, lines);
+  writeFileSync(`${ENV_FILE}.tmp`, pinsStamp() + lines);
   renameSync(`${ENV_FILE}.tmp`, ENV_FILE);
   log(
     `serving ${models.length} model(s); env -> ` +
@@ -141,9 +170,22 @@ function writePins(models) {
   );
 }
 
+/** The pins file survives restarts and reloads in /tmp; if it was written for
+ *  a different upstream, sessions would source model names the current
+ *  upstream may not serve. Drop it until a fresh catalog rewrites it. */
+function dropStalePins() {
+  try {
+    if (!readFileSync(ENV_FILE, "utf8").startsWith(pinsStamp()))
+      unlinkSync(ENV_FILE);
+  } catch {
+    // no pins file — nothing stale
+  }
+}
+
 function applyCatalog(ids) {
+  const changed = ids.join("\n") !== [...knownModels.values()].join("\n");
   knownModels = new Map(ids.map((id) => [publicName(id), id]));
-  writePins(ids);
+  if (changed) writePins(ids); // writePins logs; stay quiet on no-op refreshes
 }
 
 // Hop-by-hop / recomputed headers, dropped when forwarding the request.
@@ -231,8 +273,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url.startsWith("/v1/models")) {
     // Always re-fetch: Claude Code asks once per session, and a live answer
     // keeps the catalog fresh without any restart machinery.
-    void fetchCatalog().then((ids) => {
-      if (ids) applyCatalog(ids);
+    void refreshCatalog().then((ids) => {
       const names = ids ?? [...knownModels.values()];
       res.writeHead(200, { "content-type": "application/json" }).end(
         JSON.stringify({
@@ -249,23 +290,49 @@ const server = http.createServer((req, res) => {
   });
 });
 
+// ADR-065 reload: the supervisor rewrote the env snapshot and SIGHUP'd us.
+// Re-read it, adopt the fresh env wholesale (it is exactly what a respawn
+// would have received), and re-point at the upstream without closing the
+// listener — in-flight requests finish on the connection they started on.
+process.on("SIGHUP", () => {
+  let env;
+  try {
+    env = JSON.parse(readFileSync(SNAPSHOT_FILE, "utf8")).env ?? {};
+  } catch (err) {
+    log(`reload: cannot read env snapshot (${err.message}); keeping env`);
+    return;
+  }
+  Object.assign(process.env, env);
+  const base = (process.env.ANTHROPIC_BASE_URL || "").replace(/\/+$/, "");
+  // Same custom-upstream test as pod-service.sh makes at spawn (keep in
+  // sync): no custom upstream means nothing to front — exit 0 tells the
+  // supervisor to leave us down until the env next changes.
+  if (!base || /^http:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(base)) {
+    log("reload: no custom upstream in fresh env; exiting");
+    process.exit(0);
+  }
+  const changed = base !== UPSTREAM || (process.env.ANTHROPIC_AUTH_TOKEN || "") !== TOKEN;
+  UPSTREAM = base;
+  TOKEN = process.env.ANTHROPIC_AUTH_TOKEN || "";
+  if (changed) {
+    knownModels = new Map();
+    dropStalePins();
+    log(`reload: fronting ${UPSTREAM}`);
+    void refreshCatalog();
+  }
+});
+
 process.on("SIGTERM", () => process.exit(0));
 process.on("SIGINT", () => process.exit(0));
 
-const ids = await fetchCatalog();
-if (ids) applyCatalog(ids);
-else
+dropStalePins();
+const ids = await refreshCatalog();
+if (!ids)
   log(
     "no models discovered yet; serving passthrough so Claude Code's built-in " +
       "model names still route to the upstream",
   );
-setInterval(async () => {
-  const fresh = await fetchCatalog();
-  if (fresh && fresh.join("\n") !== [...knownModels.values()].join("\n")) {
-    log(`models changed (${knownModels.size} -> ${fresh.length})`);
-    applyCatalog(fresh);
-  }
-}, REFRESH_MS).unref?.();
+setInterval(() => void refreshCatalog(), REFRESH_MS).unref?.();
 
 server.listen(PORT, HOST, () =>
   log(`listening on ${HOST}:${PORT}, fronting ${UPSTREAM}`),

@@ -8,7 +8,10 @@
 # All diagnostics go to stderr — the chat shim's stdout carries the ACP JSON
 # stream.
 
-_GATEWAY_BASE="http://127.0.0.1:4000"
+# 24180 sits below the Linux ephemeral range and away from common dev-server
+# defaults — agent workloads share this network namespace. Must match
+# MODEL_GATEWAY_PORT's default in model-gateway.mjs.
+_GATEWAY_BASE="http://127.0.0.1:24180"
 _GATEWAY_ENV_FILE=/tmp/model-gateway.env
 
 # Custom = set and not already a local proxy (guards re-wrap on warm restart).
