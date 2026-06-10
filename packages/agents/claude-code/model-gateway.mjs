@@ -138,7 +138,8 @@ function envLines() {
   return Object.entries({
     ANTHROPIC_DEFAULT_OPUS_MODEL: publicName(opus ?? fallback),
     ANTHROPIC_DEFAULT_SONNET_MODEL: publicName(sonnet ?? fallback),
-    ANTHROPIC_DEFAULT_HAIKU_MODEL: publicName(haiku ?? fallback),
+    // Haiku substitutes downward in price first; opus only as a last resort.
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: publicName(haiku ?? sonnet ?? fallback),
   })
     .map(([k, v]) => `[ -n "\${${k}:-}" ] || export ${k}=${shQuote(v)}\n`)
     .join("");
