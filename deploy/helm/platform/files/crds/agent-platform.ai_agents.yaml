@@ -5,6 +5,7 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.21.0
+    helm.sh/resource-policy: keep
   name: agents.agent-platform.ai
 spec:
   group: agent-platform.ai

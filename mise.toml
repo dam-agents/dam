@@ -19,6 +19,8 @@ maven = "latest"
 helm = "4.2.0"
 kubeconform = "latest"
 "lima" = "2"
+# CRD compatibility gate vs the last release (controller:check:crd-compat, ADR-065)
+"go:sigs.k8s.io/crdify" = "latest"
 
 # Security scanning
 "zizmor" = "latest"

@@ -36,6 +36,48 @@ fi
 """
 sources = ["**/*.go"]
 
+# Shared-cluster CRD compatibility gate (ADR-065): every environment in a
+# cluster writes through whatever CRD schema the newest release installed, so
+# the generated CRDs must stay compatible with what the last release shipped.
+# Compares each files/crds/ manifest against the same path at the baseline
+# (latest v* tag) with crdify; new CRDs are skipped, removed CRDs fail.
+["controller:check:crd-compat"]
+dir = "{{config_root}}"
+sources = ["deploy/helm/platform/files/crds/*.yaml"]
+usage = 'flag "--baseline <ref>" help="Git ref to compare against (default: latest v* tag)"'
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+baseline="${usage_baseline:-$(git tag -l 'v*' --sort=-v:refname | head -1)}"
+if [ -z "$baseline" ]; then
+  echo "crd-compat: no v* tag found for a baseline; run git fetch --tags or pass --baseline" >&2
+  exit 1
+fi
+if ! git rev-parse -q --verify "$baseline^{commit}" >/dev/null; then
+  echo "crd-compat: baseline ref '$baseline' does not resolve to a commit" >&2
+  exit 1
+fi
+crds=deploy/helm/platform/files/crds
+status=0
+for f in $(git ls-tree -r --name-only "$baseline" -- "$crds"); do
+  if [ ! -f "$f" ]; then
+    echo "crd-compat: $f shipped in $baseline but was removed" >&2
+    status=1
+  fi
+done
+for f in "$crds"/*.yaml; do
+  if ! git cat-file -e "$baseline:$f" 2>/dev/null; then
+    echo "crd-compat: $f is new since $baseline — skipped"
+    continue
+  fi
+  if ! crdify "git://$baseline?path=$f" "file://$f"; then
+    echo "crd-compat: $f is incompatible with $baseline (see findings above)" >&2
+    status=1
+  fi
+done
+exit $status
+'''
+
 ["controller:check:vet"]
 dir = "{{config_root}}/packages/controller"
 run = "go vet ./..."

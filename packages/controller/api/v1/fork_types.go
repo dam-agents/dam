@@ -53,6 +53,7 @@ type ForkStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced
+// +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Agent",type=string,JSONPath=`.spec.agentName`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`

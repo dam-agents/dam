@@ -69,6 +69,7 @@ This directory contains ADRs for the Platform project.
 | [062](062-ssh-access.md)                      | SSH access to agents — in-pod inetd sshd tunneled over the agent WebSocket | @JanPokorny |
 | [063](063-hand-written-migrations.md)         | Generated table migrations, hand-written views, squashed baseline | @jezekra1 |
 | [064](064-slack-e2e-bolt-port.md)             | Slack E2E — Bolt behind a swappable port, fork path exercised end-to-end | @tomkis |
+| [065](065-shared-crds-multi-env.md)           | Shared CRDs across co-located environments — single owner release, release-compat CI gate | @jezekra1 |
 
 ## Drafts
 

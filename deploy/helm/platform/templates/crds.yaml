@@ -9,6 +9,10 @@ only ever writes files/crds/, so regeneration never clobbers this gate.
 
 Templates remain ConfigMaps (chart-shipped, not custom resources), so the chart
 contains no CR instances and there is no CRD-before-CR install ordering hazard.
+
+When several releases share a cluster, exactly one installs these (ADR-065);
+the manifests carry helm.sh/resource-policy=keep so uninstalling the owner
+never cascade-deletes other releases' CRs.
 */}}
 {{- if .Values.crds.enabled }}
 {{- range $path, $_ := .Files.Glob "files/crds/*.yaml" }}
