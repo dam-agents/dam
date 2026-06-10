@@ -83,6 +83,16 @@ export {
   scheduleToggleInputSchema,
   scheduleUpdateRRuleInputSchema,
 } from "./modules/schedules/schemas.js";
+export {
+  ALL_DAYS,
+  buildRRule,
+  detectPreset,
+  detectTimezone,
+  hasVisibleOccurrence,
+  isInQuietHours,
+  rruleToText,
+} from "./modules/schedules/rrule.js";
+export type { FrequencyPreset } from "./modules/schedules/rrule.js";
 
 export type {
   SecretType,

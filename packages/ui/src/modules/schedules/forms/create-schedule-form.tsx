@@ -1,4 +1,13 @@
 import { TrashCan as Trash2 } from "@carbon/icons-react";
+import {
+  ALL_DAYS,
+  buildRRule,
+  detectPreset,
+  detectTimezone,
+  type FrequencyPreset,
+  hasVisibleOccurrence,
+  rruleToText,
+} from "api-server-api";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -9,15 +18,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { FormError } from "../../../components/form-error.js";
 import type { Schedule } from "../../../types.js";
 import { useCreateSchedule, useUpdateSchedule } from "../api/mutations.js";
-import {
-  ALL_DAYS,
-  buildRRule,
-  detectPreset,
-  detectTimezone,
-  type FrequencyPreset,
-  hasVisibleOccurrence,
-  rruleToText,
-} from "../domain/rrule-builder.js";
 
 const DAYS_ISO: { iso: number; label: string }[] = [
   { iso: 1, label: "Mon" },

@@ -1,5 +1,17 @@
+import * as rruleModule from "rrule";
 import type { Weekday } from "rrule";
-import { Frequency, RRule } from "rrule";
+import type { QuietWindow } from "./types.js";
+
+// rrule@2.8.1 ships two builds with incompatible shapes: a CJS `main`
+// (default export = the module object — what Node ESM resolves, since there's
+// no `exports` map) and an ESM `module` build (named exports, no default —
+// what Vite resolves). A default import breaks under Vite; a named import
+// breaks under Node. This module is consumed by both the UI (Vite) and the
+// api-server / CLI (Node ESM), so namespace-import and reconcile at runtime:
+// prefer the CJS `.default`, fall back to the ESM namespace itself.
+const rrulePkg =
+  (rruleModule as { default?: typeof rruleModule }).default ?? rruleModule;
+const { Frequency, RRule } = rrulePkg;
 
 /**
  * Preset shapes the user can pick in the create-schedule form.
@@ -158,19 +170,13 @@ function byweekdayToIso(byweekday: unknown): number[] | null {
   return mapped.length > 0 ? mapped : null;
 }
 
-/** Detect the browser's IANA timezone, with UTC fallback. */
+/** Detect the host's IANA timezone, with UTC fallback. */
 export function detectTimezone(): string {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   } catch {
     return "UTC";
   }
-}
-
-interface QuietWindow {
-  startTime: string;
-  endTime: string;
-  enabled: boolean;
 }
 
 /**

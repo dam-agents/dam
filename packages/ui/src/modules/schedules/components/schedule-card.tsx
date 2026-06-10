@@ -5,6 +5,7 @@ import {
   Edit as Pencil,
   Time as Clock,
 } from "@carbon/icons-react";
+import { rruleToText } from "api-server-api";
 
 import { Button } from "@/components/ui/button";
 
@@ -15,7 +16,6 @@ import {
   useResetScheduleSession,
   useToggleSchedule,
 } from "../api/mutations.js";
-import { rruleToText } from "../domain/rrule-builder.js";
 import { ScheduleSessionRow } from "./schedule-session-row.js";
 
 // Render an ISO timestamp as a coarse "in N min / h / d" relative to now.
