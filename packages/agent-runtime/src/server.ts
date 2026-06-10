@@ -1,4 +1,5 @@
 import http from "node:http";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import headlessPkg from "@xterm/headless";
@@ -24,6 +25,10 @@ import { createFilesService } from "./modules/files.js";
 import { createImportHandlers, sweepStaging } from "./modules/import/index.js";
 import { composeSkills } from "./modules/skills/index.js";
 import { configureGitCredentialHelper } from "./modules/git.js";
+import {
+  createPodServiceSupervisor,
+  spawnPodServiceProcess,
+} from "./modules/pod-service.js";
 import { createSshService, prepareSshd, spawnSshd } from "./modules/ssh.js";
 import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
@@ -83,6 +88,22 @@ const stateBackend = createFileDocumentStoreBackend(homeDir);
 // (harness, terminal, ssh, git) read it through the RuntimeEnvReader port.
 const envStore = createEnvStateStore(homeDir);
 
+// ADR-065: optional image-provided pod service (e.g. claude-code's local
+// LiteLLM gateway), supervised by the runtime so it is never an unmanaged
+// daemon. Spawned once env is materialized (the service reads credentials/URLs
+// from it) and respawned whenever the env driver rewrites it.
+const podServicePath = "/usr/local/bin/pod-service";
+const podLog = (msg: string) => process.stderr.write(`[pod-service] ${msg}\n`);
+const podService = existsSync(podServicePath)
+  ? createPodServiceSupervisor({
+      spawn: spawnPodServiceProcess(podServicePath, podLog),
+      envReader: envStore,
+      log: podLog,
+    })
+  : null;
+// Warm restart (env on the PV) starts now; cold boot waits for the env driver.
+if (envStore.ready()) podService?.refreshEnv();
+
 const { runtime: acpRuntime, triggerDriver } = composeAcp({
   command: config.PLATFORM_DEV
     ? ["npx", "tsx", join(__dir, "agent.ts")]
@@ -106,6 +127,9 @@ const runtimeChannel = await composeRuntimeChannel({
       store: envStore,
       onChange: () => {
         acpRuntime.refreshEnv();
+        // The pod service caches credentials/URLs from its spawn env; respawn
+        // it so it can't keep routing on a stale upstream.
+        podService?.refreshEnv();
         // Env carrying GH_TOKEN just landed — (re)point git's credential helper
         // at gh. Reads the freshly-written env; no-ops without a token.
         configureGitCredentialHelper(envStore, (msg) =>
