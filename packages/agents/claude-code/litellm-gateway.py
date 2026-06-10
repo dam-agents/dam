@@ -1,15 +1,7 @@
 #!/usr/bin/env python3.12
-"""Local LiteLLM gateway for the claude-code agent.
-
-Fronts a custom Anthropic-compatible upstream: discovers its models
-(GET /v1/models), serves them through a local LiteLLM proxy, and pins Claude
-Code's model env vars to real models. Re-fetches every REFRESH_SECONDS and
-restarts LiteLLM only when the model set changes.
-
-Concrete model entries are generated rather than relying on a wildcard +
-check_provider_endpoint (which doesn't enumerate models for litellm_proxy
-providers — BerriAI/litellm#20064) or POST /model/new (needs a database).
-"""
+"""Local LiteLLM gateway: discovers the upstream's models, serves them through a
+local LiteLLM proxy, pins Claude Code's model env vars, and restarts LiteLLM when
+the model set changes."""
 
 import json
 import os
@@ -29,9 +21,7 @@ PORT = os.environ.get("LITELLM_PROXY_PORT", "4000")
 CONFIG = "/tmp/litellm-gateway.config.yaml"
 ENV_FILE = "/tmp/litellm-gateway.env"  # sourced by litellm-proxy.sh
 REFRESH_SECONDS = int(os.environ.get("LITELLM_MODEL_REFRESH_SECONDS", "600"))
-# Pause before relaunching a crashed LiteLLM so a startup-time crash can't spin.
 RESTART_BACKOFF_SECONDS = 5
-# Captured before the shim re-points ANTHROPIC_BASE_URL at the proxy.
 UPSTREAM = (os.environ.get("ANTHROPIC_BASE_URL") or "").rstrip("/")
 TOKEN = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
 
@@ -44,17 +34,12 @@ def log(msg):
 
 
 def public_name(model_id):
-    """model_name Claude Code sees, lowercased. Gateway discovery wants a provider
-    prefix, so expose each as claude/<id>; the upstream id stays in
-    litellm_params.model for routing."""
+    # Gateway discovery wants a provider prefix; the bare id stays in the route.
     name = model_id.lower()
     return name if name.startswith("claude/") else f"claude/{name}"
 
 
 def _is_embedding(model):
-    """Embedding models can't serve chat, so drop them. Detect via an explicit
-    mode/type flag (LiteLLM-style gateways set mode='embedding') or an
-    'embedding' substring in the model id."""
     return any(
         "embedding" in str(model.get(field, "")).lower()
         for field in ("id", "mode", "type")
@@ -62,8 +47,8 @@ def _is_embedding(model):
 
 
 def fetch_models():
-    """Sorted upstream model ids, or None on failure. urllib honors HTTP(S)_PROXY
-    (crosses Envoy for credential injection) and trusts the system CA store."""
+    # urllib honors HTTP(S)_PROXY (crosses Envoy for credential injection) and
+    # trusts the system CA store. None on failure -> keep current models.
     if not UPSTREAM:
         return None
     req = urllib.request.Request(
@@ -103,8 +88,6 @@ def _latest(models, tier):
 
 
 def model_env(models):
-    """Claude Code's model vars → latest opus/sonnet/haiku, each falling back to
-    the best available model so they are always set."""
     opus, sonnet, haiku = (_latest(models, t) for t in ("opus", "sonnet", "haiku"))
     fallback = opus or sonnet or haiku or max(models, key=_version_key)
     if not (opus or sonnet or haiku):
@@ -118,9 +101,8 @@ def model_env(models):
 
 
 def apply_models(models):
-    """Write the LiteLLM config (concrete discovered models, else a wildcard
-    fallback) and — when models are known — the shim-sourced env file. Env lines
-    assign only if unset, so a model set manually on the agent wins."""
+    # Concrete discovered models, else a wildcard fallback (litellm_proxy
+    # providers aren't enumerable via check_provider_endpoint, BerriAI/litellm#20064).
     pairs = (
         [(public_name(m), f"litellm_proxy/{m}") for m in models]
         if models
@@ -144,11 +126,9 @@ def apply_models(models):
         yaml.safe_dump(cfg, f, sort_keys=False)
 
     if not models:
-        log(
-            "no models discovered; serving wildcard 'claude-*' so Claude Code's "
-            "built-in model names still route to the upstream"
-        )
+        log("no models discovered; serving wildcard 'claude-*'")
         return
+    # Assign-if-unset, so a model set manually on the agent wins.
     env = model_env(models)
     tmp = f"{ENV_FILE}.tmp"
     with open(tmp, "w") as f:
@@ -175,7 +155,6 @@ def stop():
 
 
 def restart():
-    """Swap the running LiteLLM for a fresh process on the current config."""
     global proc
     stop()
     proc = start()
@@ -197,7 +176,7 @@ def main():
 
     while True:
         try:
-            # Wakes immediately if LiteLLM exits; TimeoutExpired means it's still up.
+            # Wakes immediately if LiteLLM exits; TimeoutExpired means still up.
             proc.wait(timeout=REFRESH_SECONDS)
             log(f"LiteLLM exited; restarting in {RESTART_BACKOFF_SECONDS}s")
             time.sleep(RESTART_BACKOFF_SECONDS)
