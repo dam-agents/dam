@@ -22,6 +22,7 @@ import {
   startSkillsCleanupSaga,
 } from "./modules/skills/index.js";
 import { createK8sClient } from "./modules/agents/infrastructure/k8s.js";
+import { stripStaleModelPins } from "./modules/secrets/infrastructure/strip-stale-model-pins.js";
 import { createPostgresState } from "@chat-adapter/state-pg";
 import {
   createSlackWorker,
@@ -411,6 +412,24 @@ try {
     `[boot] clearActiveSessions failed: ${(err as Error).message}\n`,
   );
 }
+
+// Idempotent sweep: the retired IBM LiteLLM preset snapshotted Claude Code
+// model pins into saved secrets; the claude-code model gateway (ADR-066) owns
+// model selection now and its env file is assign-if-unset, so a stored pin
+// would permanently mask discovery. Fire-and-forget — an agent spawned during
+// the race reads a stale pin once; the sweep reruns every boot.
+stripStaleModelPins(k8sClient)
+  .then((n) => {
+    if (n)
+      process.stderr.write(
+        `[boot] stripped stale model pins from ${n} provider secret(s)\n`,
+      );
+  })
+  .catch((err) =>
+    process.stderr.write(
+      `[boot] stale-model-pin sweep failed: ${(err as Error).message}\n`,
+    ),
+  );
 
 const { server: apiServer } = startApiServerApp({
   config,

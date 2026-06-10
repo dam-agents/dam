@@ -20,15 +20,17 @@ import {
 import type { K8sClient } from "../../agents/infrastructure/k8s.js";
 
 const LABEL_OWNER = "agent-platform.ai/owner";
-const LABEL_SECRET_TYPE = "agent-platform.ai/secret-type";
-const LABEL_MANAGED_BY = "agent-platform.ai/managed-by";
+// Exported for the boot-time sweeps that operate across owners (e.g.
+// strip-stale-model-pins.ts).
+export const LABEL_SECRET_TYPE = "agent-platform.ai/secret-type";
+export const LABEL_MANAGED_BY = "agent-platform.ai/managed-by";
 const ANN_HOST_PATTERN = "agent-platform.ai/host-pattern";
 const ANN_PATH_PATTERN = "agent-platform.ai/path-pattern";
 const ANN_HEADER_NAME = "agent-platform.ai/injection-header-name";
 const ANN_AUTH_MODE = "agent-platform.ai/auth-mode";
 const ANN_VALUE_FORMAT = "agent-platform.ai/injection-value-format";
 const ANN_QUERY_PARAM = "agent-platform.ai/injection-query-param";
-const ANN_ENV_MAPPINGS = "agent-platform.ai/env-mappings";
+export const ANN_ENV_MAPPINGS = "agent-platform.ai/env-mappings";
 // Twin → primary link. Set on extraInjections-derived secrets.
 const ANN_PRIMARY_ID = "agent-platform.ai/primary-secret-id";
 
