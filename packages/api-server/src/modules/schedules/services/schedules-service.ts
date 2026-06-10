@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import type {
   SchedulesService,
   ScheduleCreateCronInput,
@@ -15,6 +16,23 @@ import {
   validateTimezone,
 } from "../domain/recurrences.js";
 import { securityLog } from "../../../core/security-log.js";
+
+// The domain validators throw plain `Error`, which tRPC surfaces as
+// INTERNAL_SERVER_ERROR — indistinguishable from a real server fault to a
+// client. Map them to BAD_REQUEST at the service boundary (the domain stays
+// transport-agnostic) so the CLI can exit on bad input. Each validator is
+// wrapped individually so an unexpected fault from repo/runner/ensureAgent
+// still propagates as INTERNAL_SERVER_ERROR.
+function asBadRequest(fn: () => void): void {
+  try {
+    fn();
+  } catch (e) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: e instanceof Error ? e.message : "invalid schedule",
+    });
+  }
+}
 
 export function createSchedulesService(deps: {
   repo: SchedulesRepository;
@@ -71,9 +89,11 @@ export function createSchedulesService(deps: {
     },
 
     async createRRule(input: ScheduleCreateRRuleInput) {
-      validateTimezone(input.timezone);
-      validateRRule(input.rrule);
-      validateHasVisibleOccurrence(input.rrule, input.quietHours ?? []);
+      asBadRequest(() => validateTimezone(input.timezone));
+      asBadRequest(() => validateRRule(input.rrule));
+      asBadRequest(() =>
+        validateHasVisibleOccurrence(input.rrule, input.quietHours ?? []),
+      );
       await ensureAgent(input.agentId);
       const spec: ScheduleSpec = {
         version: SPEC_VERSION,
@@ -112,9 +132,11 @@ export function createSchedulesService(deps: {
     },
 
     async updateRRule(input: ScheduleUpdateRRuleInput) {
-      validateTimezone(input.timezone);
-      validateRRule(input.rrule);
-      validateHasVisibleOccurrence(input.rrule, input.quietHours);
+      asBadRequest(() => validateTimezone(input.timezone));
+      asBadRequest(() => validateRRule(input.rrule));
+      asBadRequest(() =>
+        validateHasVisibleOccurrence(input.rrule, input.quietHours),
+      );
       const current = await deps.repo.get(input.id, deps.owner);
       if (!current) return null;
       const spec: ScheduleSpec = {
