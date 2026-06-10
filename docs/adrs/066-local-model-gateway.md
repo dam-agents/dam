@@ -31,17 +31,18 @@ it does not re-encode bodies, so unknown fields and beta headers survive. It
 also derives Claude Code's tier-default vars
 (`ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL`) — the latest model per tier
 by a version-ordering heuristic (numeric components compared in order;
-8-digit date stamps only break ties) — written assign-if-unset, so a value
-set manually on the agent wins. The main and subagent models are deliberately
-*not* pinned: Claude Code's own tier selection stays in charge. Model
-ownership moves out of the provider presets entirely: presets carry
-credentials and endpoints, the gateway derives tier defaults, and an
-idempotent api-server boot sweep strips the pins that pre-gateway preset
-saves snapshotted into stored secrets — assign-if-unset would otherwise let
-those stale pins mask discovery forever. Env changes reach the running
-gateway as an ADR-065 SIGHUP reload: it re-reads the runtime's env snapshot
-and re-points in place, so in-flight streams survive a mid-turn provider
-re-save. Its upstream hop rides the same egress path as everything else in
+8-digit date stamps only break ties) — served as a loopback env endpoint the
+harness entry paths fetch and eval before launching Claude Code, applied
+assign-if-unset so a value set manually on the agent wins; the same fetch is
+the readiness probe. The main and subagent models are deliberately *not*
+pinned: Claude Code's own tier selection stays in charge. Model ownership
+moves out of the provider presets entirely: presets carry credentials and
+endpoints, the gateway derives tier defaults, and an idempotent api-server
+boot sweep strips the pins that pre-gateway preset saves snapshotted into
+stored secrets — assign-if-unset would otherwise let those stale pins mask
+discovery forever. Env changes reach the running gateway as an ADR-065
+SIGHUP reload: it re-reads the runtime's env snapshot and re-points in
+place, so in-flight streams survive a mid-turn provider re-save. Its upstream hop rides the same egress path as everything else in
 the pod (the HTTP(S)_PROXY Envoy chain with credential injection). With no
 custom upstream the gateway never runs and Claude Code talks to the
 Anthropic API directly.
@@ -72,9 +73,9 @@ Anthropic API directly.
 ## Consequences
 
 - **Easier:** connect the provider once and every model the token can reach
-  is usable; catalog changes propagate on the gateway's refresh interval with
-  no stored-secret edits (the pins this replaces were snapshotted into each
-  saved secret).
+  is usable; catalog changes propagate at each session start (Claude Code's
+  discovery fetch re-pulls the upstream catalog) with no stored-secret edits
+  (the pins this replaces were snapshotted into each saved secret).
 - **Easier:** the gateway is a single dependency-free script on the Node
   runtime the image already ships — no new interpreter, no Trivy surface
   growth, RSS in the tens of MB, sub-second cold start.
@@ -84,8 +85,9 @@ Anthropic API directly.
   of scope.
 - **Committed-to:** the loopback port (24180 — below the ephemeral range and
   away from common dev-server defaults, since agent workloads share the
-  network namespace) and the pins-file handshake between the gateway and the
-  harness entry paths (shims, SSH login hook) are now image-internal ABI; the
+  network namespace) and the env-endpoint handshake between the gateway and
+  the harness entry paths (shims, SSH login hook) are now image-internal ABI;
+  the
   upstream must keep serving an OpenAI-compatible model-list endpoint; and
   the prefix namespace is load-bearing — Claude Code dropping or changing its
   discovery prefix rules breaks the catalog path, which is why the image pins
