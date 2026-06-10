@@ -71,7 +71,7 @@ This directory contains ADRs for the Platform project.
 | [064](064-slack-e2e-bolt-port.md)             | Slack E2E — Bolt behind a swappable port, fork path exercised end-to-end | @tomkis |
 | [065](065-shared-crds-multi-env.md)           | Shared CRDs across co-located environments — single owner release, release-compat CI gate | @jezekra1 |
 | [065](065-pod-service-supervision.md)         | Pod services — image-provided background processes supervised by agent-runtime | @JanPokorny |
-| [066](066-local-litellm-gateway.md)           | Local LiteLLM gateway fronts custom Anthropic upstreams for claude-code | @Tomas2D |
+| [066](066-local-model-gateway.md)             | Local model gateway fronts custom Anthropic upstreams for claude-code | @Tomas2D |
 
 ## Drafts
 

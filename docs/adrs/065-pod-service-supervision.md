@@ -6,8 +6,8 @@
 
 ## Context
 
-The claude-code image needs a pod-scoped background process (a local LiteLLM
-gateway, [ADR-066](066-local-litellm-gateway.md)) — the first long-lived
+The claude-code image needs a pod-scoped background process (a local model
+gateway, [ADR-066](066-local-model-gateway.md)) — the first long-lived
 process in an agent pod outside agent-runtime's per-session children. The
 first cut launched it as a `nohup`'d daemon from the harness shims, which
 exposed what an unsupervised daemon costs in this pod model: PID 1 is

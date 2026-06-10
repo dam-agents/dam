@@ -146,8 +146,8 @@ until the env next changes. Its output joins the pod log stream. The pod's
 PID 1 is a minimal init (catatonit) wrapping agent-runtime, so descendants
 the runtime did not spawn — processes orphaned by a dying harness or service
 — are reaped rather than left as zombies. claude-code uses the hook to front
-custom Anthropic-compatible upstreams with a local LiteLLM gateway
-([ADR-066](../adrs/066-local-litellm-gateway.md)); images without a pod
+custom Anthropic-compatible upstreams with a local model gateway
+([ADR-066](../adrs/066-local-model-gateway.md)); images without a pod
 service are unaffected.
 
 Switching a session's mode (e.g. chat → terminal) is metadata-only ([ADR-055](../adrs/055-agent-owned-session-metadata.md)): the switching client persists the new mode over ACP (`session/resume` carrying `_meta.platform.mode`), which the runtime merges into its session-metadata store. The running harness is unaffected — mode is a UI hint about which surface (chat vs. terminal PTY) to render. There is no cross-client notification; other clients reflect the change on their next `session/list`. The `--reset` / terminal-reset path is independent: it closes the terminal WebSocket and calls agent-runtime's `resetSession`, which sends `session/close` to the harness and clears the in-memory log and cursors.
