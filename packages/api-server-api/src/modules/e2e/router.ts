@@ -9,6 +9,10 @@ import {
   getReceivedPromptsResultSchema,
   performFetchResultSchema,
   resetResultSchema,
+  slackFireCommandInputSchema,
+  slackFireCommandResultSchema,
+  slackFireMentionInputSchema,
+  slackReadOutboundResultSchema,
 } from "./schemas.js";
 
 function gate(ctx: { e2eEnabled: boolean }): void {
@@ -57,5 +61,35 @@ export const e2eRouter = t.router({
         url: input.url,
         headers: input.headers,
       });
+    }),
+
+  slackFireMention: t.procedure
+    .input(slackFireMentionInputSchema)
+    .output(resetResultSchema)
+    .mutation(({ ctx, input }) => {
+      gate(ctx);
+      return ctx.e2e.slackFireMention(input);
+    }),
+
+  slackFireCommand: t.procedure
+    .input(slackFireCommandInputSchema)
+    .output(slackFireCommandResultSchema)
+    .mutation(({ ctx, input }) => {
+      gate(ctx);
+      return ctx.e2e.slackFireCommand(input);
+    }),
+
+  slackReadOutbound: t.procedure
+    .output(slackReadOutboundResultSchema)
+    .query(({ ctx }) => {
+      gate(ctx);
+      return ctx.e2e.slackReadOutbound();
+    }),
+
+  slackResetOutbound: t.procedure
+    .output(resetResultSchema)
+    .mutation(({ ctx }) => {
+      gate(ctx);
+      return ctx.e2e.slackResetOutbound();
     }),
 });

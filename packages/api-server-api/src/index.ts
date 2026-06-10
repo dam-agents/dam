@@ -327,7 +327,14 @@ export { authConfigSchema } from "./modules/auth/types.js";
 export type { AuthConfig } from "./modules/auth/types.js";
 
 // E2E
-export type { E2eService } from "./modules/e2e/types.js";
+export type {
+  E2eService,
+  SlackFireCommandInput,
+  SlackFireCommandResult,
+  SlackFireMentionInput,
+  SlackOutboundRecord,
+  SlackReadOutboundResult,
+} from "./modules/e2e/types.js";
 export {
   e2eAgentIdInputSchema,
   e2eSetScriptInputSchema,

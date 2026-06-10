@@ -254,6 +254,13 @@ keycloak:
     username: null
     password: null
 
+  # -- Second test user for e2e foreign-user (fork) scenarios.
+  # DISABLED by default — only the e2e overlay (values-e2e.yaml) enables it.
+  testUser2:
+    enabled: false
+    username: null
+    password: null
+
   # -- Database connection (empty host = use shared local postgres)
   db:
     host: ""

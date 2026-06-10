@@ -157,6 +157,26 @@ data:
           {{- end }}
         },
         {{- end }}
+        {{- if .Values.keycloak.testUser2.enabled }}
+        {
+          "username": {{ .Values.keycloak.testUser2.username | quote }},
+          "enabled": true,
+          "emailVerified": true,
+          "firstName": "Dev",
+          "lastName": "UserTwo",
+          "email": "dev2@platform.local",
+          "credentials": [
+            {
+              "type": "password",
+              "value": {{ .Values.keycloak.testUser2.password | quote }},
+              "temporary": false
+            }
+          ]
+          {{- if .Values.keycloak.requiredRole }}
+          ,"realmRoles": [{{ .Values.keycloak.requiredRole | quote }}]
+          {{- end }}
+        },
+        {{- end }}
         {
           "username": {{ printf "service-account-%s" (lower .Values.keycloak.apiClientId) | quote }},
           "enabled": true,

@@ -58,5 +58,11 @@ export default defineConfig({
       dependencies: ["auth"],
       use: { ...devices["Desktop Chrome"] },
     },
+    {
+      name: "slack",
+      testMatch: /07-.*\.spec\.ts$/,
+      dependencies: ["injection"],
+      use: { ...devices["Desktop Chrome"], storageState },
+    },
   ],
 });

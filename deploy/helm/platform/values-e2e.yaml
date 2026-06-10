@@ -6,6 +6,14 @@
 e2e:
   enabled: true
 
+# Second user for the foreign-fork Slack spec (07-slack). The primary
+# dev/dev user comes from values-local.yaml's keycloak.testUser.
+keycloak:
+  testUser2:
+    enabled: true
+    username: dev2
+    password: dev2
+
 # Helm replaces lists wholesale — narrow values-local.yaml's agentTemplates
 # down to just `mock`. The e2e task builds only platform-base + mock images,
 # so registering claude-code / codex / pi-agent / bob would

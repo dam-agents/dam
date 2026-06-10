@@ -12,3 +12,8 @@ export const testUser = {
   username: process.env.PLATFORM_E2E_USERNAME ?? "dev",
   password: process.env.PLATFORM_E2E_PASSWORD ?? "dev",
 };
+
+export const testUser2 = {
+  username: process.env.PLATFORM_E2E_USERNAME2 ?? "dev2",
+  password: process.env.PLATFORM_E2E_PASSWORD2 ?? "dev2",
+};

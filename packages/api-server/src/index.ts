@@ -31,6 +31,7 @@ import {
   type ChannelRegistry,
 } from "./modules/channels/infrastructure/slack.js";
 import { createBoltSlackGateway } from "./modules/channels/infrastructure/bolt-slack-gateway.js";
+import { createFakeSlackGateway } from "./modules/channels/infrastructure/fake-slack-gateway.js";
 import {
   createTelegramWorker,
   type TelegramOAuthPending,
@@ -156,8 +157,14 @@ const { service: termsService, isAcceptedPort: isTermsAccepted } =
     text: config.terms.text,
   });
 
+const fakeSlackGateway =
+  config.e2eEnabled && !(config.slackBotToken && config.slackAppToken)
+    ? createFakeSlackGateway()
+    : undefined;
+
 const { service: e2eService } = composeE2eModule({
   namespace: config.namespace,
+  slack: fakeSlackGateway,
 });
 
 const channelSecretCleanupSub =
@@ -257,15 +264,21 @@ const slackTokens =
     ? { botToken: config.slackBotToken, appToken: config.slackAppToken }
     : null;
 
-const slackWorker = slackTokens
+const slackGatewayFactory = slackTokens
+  ? () =>
+      createBoltSlackGateway({
+        botToken: slackTokens.botToken,
+        appToken: slackTokens.appToken,
+        commandName: `/${config.brand.short}`,
+      })
+  : fakeSlackGateway
+    ? () => fakeSlackGateway
+    : undefined;
+
+const slackWorker = slackGatewayFactory
   ? createSlackWorker(
       config.namespace,
-      () =>
-        createBoltSlackGateway({
-          botToken: slackTokens.botToken,
-          appToken: slackTokens.appToken,
-          commandName: `/${config.brand.short}`,
-        }),
+      slackGatewayFactory,
       () => systemAgents,
       identityLinkService,
       {
