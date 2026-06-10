@@ -9,7 +9,7 @@ main (0.3.0)
   │
   ├─ mise run release:new
   │    creates release-v0.3.0 branch (0.3.0-rc1)
-  │    bumps main to 0.3.1
+  │    opens PR bumping main to 0.3.1
   │
   │  release-v0.3.0
   │  │
@@ -29,7 +29,7 @@ Run from a clean working directory. The task:
 1. Checks out and pulls `main`.
 2. Reads the current version (e.g. `0.3.0`) from Chart.yaml.
 3. Creates `release-v0.3.0` from `main`, bumps it to `0.3.0-rc1`, pushes.
-4. Bumps `main` to `0.3.1`, pushes.
+4. Opens a PR bumping `main` to `0.3.1`, with auto-merge enabled (`main` is protected and requires one approval, so direct pushes don't work).
 
 To release a different version than what's on main, run `mise run release:set-version <version>` on `main` first.
 
