@@ -3,13 +3,7 @@ import { useEffect, useRef } from "react";
 import { emitToast } from "../../../lib/toast.js";
 import { useAgentsList } from "../api/queries.js";
 
-/**
- * Fires one toast per crash episode. `podTerminationReason` is abnormal-only
- * (OOM / non-zero exit) and absent on normal lifecycle, so a routine restart or
- * hibernation never toasts. Re-arms only once the agent genuinely recovers
- * (back to `running`/`hibernated`) — a crash-loop briefly flaps the reason on
- * each restart, and re-arming on that flap would re-toast every cycle.
- */
+/** One toast per crash episode. Re-arms only on genuine recovery (running/hibernated), not on reason change — a crash-loop flaps the reason and would otherwise re-toast every restart. */
 export function useAgentCrashToasts(): void {
   const agents = useAgentsList();
   const toastedRef = useRef<Map<string, string>>(new Map());
