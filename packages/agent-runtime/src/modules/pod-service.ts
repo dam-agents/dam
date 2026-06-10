@@ -29,7 +29,6 @@ export function createPodServiceSupervisor(opts: {
   let stopped = false;
   let backoffMs = BACKOFF_INITIAL_MS;
 
-  // If the runtime itself dies, don't leave the service running unreaped.
   process.once("exit", () => {
     try {
       child?.kill("SIGKILL");
@@ -68,7 +67,6 @@ export function createPodServiceSupervisor(opts: {
       killTimer = null;
       if (stopped) return;
       if (signal === "SIGHUP") {
-        // Didn't handle the reload signal — respawn against the fresh env.
         backoffMs = BACKOFF_INITIAL_MS;
         log("did not handle reload; respawning with fresh env");
         start();
@@ -101,10 +99,8 @@ export function createPodServiceSupervisor(opts: {
   return {
     refreshEnv() {
       if (stopped) return;
-      if (restartTimer) {
-        clearTimeout(restartTimer);
-        restartTimer = null;
-      }
+      if (restartTimer) clearTimeout(restartTimer);
+      restartTimer = null;
       backoffMs = BACKOFF_INITIAL_MS;
       writeSnapshot();
       if (child) child.kill("SIGHUP");

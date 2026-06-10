@@ -108,13 +108,11 @@ const versionKey = (id) => {
     parts.filter(isDateLike).map(Number),
   ];
 };
-const cmpParts = (a, b) => {
-  for (let i = 0; i < Math.max(a.length, b.length); i++) {
-    const d = (a[i] ?? -1) - (b[i] ?? -1);
-    if (d) return d;
-  }
-  return 0;
-};
+const cmpParts = (a, b) =>
+  Array.from(
+    { length: Math.max(a.length, b.length) },
+    (_, i) => (a[i] ?? -1) - (b[i] ?? -1),
+  ).find(Boolean) ?? 0;
 const byVersion = (a, b) => {
   const [va, da] = versionKey(a);
   const [vb, db] = versionKey(b);
@@ -169,26 +167,29 @@ const RES_DROP = new Set([
   "connection",
 ]);
 
-async function proxy(req, res) {
-  const chunks = [];
-  for await (const c of req) chunks.push(c);
-  let body = Buffer.concat(chunks);
-
-  if ((req.headers["content-type"] ?? "").includes("json") && body.length) {
-    try {
-      const obj = JSON.parse(body.toString("utf8"));
-      if (typeof obj?.model === "string") {
-        obj.model = resolveModel(obj.model);
-        body = Buffer.from(JSON.stringify(obj));
-      }
-    } catch {
-      // not JSON after all — forward verbatim
-    }
+function rewriteModel(body, contentType) {
+  if (!body.length || !(contentType ?? "").includes("json")) return body;
+  try {
+    const obj = JSON.parse(body.toString("utf8"));
+    return typeof obj?.model === "string"
+      ? Buffer.from(JSON.stringify({ ...obj, model: resolveModel(obj.model) }))
+      : body;
+  } catch {
+    return body;
   }
+}
 
-  const headers = {};
-  for (const [k, v] of Object.entries(req.headers))
-    if (!REQ_DROP.has(k.toLowerCase()) && typeof v === "string") headers[k] = v;
+const keepHeaders = (entries, drop) =>
+  Object.fromEntries(
+    entries.filter(([k, v]) => !drop.has(k) && typeof v === "string"),
+  );
+
+async function proxy(req, res) {
+  const body = rewriteModel(
+    Buffer.concat(await Array.fromAsync(req)),
+    req.headers["content-type"],
+  );
+  const headers = keepHeaders(Object.entries(req.headers), REQ_DROP);
 
   const ac = new AbortController();
   res.on("close", () => {
@@ -206,36 +207,30 @@ async function proxy(req, res) {
   } catch (err) {
     if (!ac.signal.aborted) {
       log(`upstream request failed (${err.cause?.message ?? err.message})`);
-      res
-        .writeHead(502, { "content-type": "application/json" })
-        .end(
-          JSON.stringify({
-            error: {
-              type: "api_error",
-              message: `model-gateway: upstream unreachable: ${err.cause?.message ?? err.message}`,
-            },
-          }),
-        );
+      res.writeHead(502, { "content-type": "application/json" }).end(
+        JSON.stringify({
+          error: {
+            type: "api_error",
+            message: `model-gateway: upstream unreachable: ${err.cause?.message ?? err.message}`,
+          },
+        }),
+      );
     }
     return;
   }
 
-  const resHeaders = {};
-  for (const [k, v] of r.headers) if (!RES_DROP.has(k)) resHeaders[k] = v;
-  res.writeHead(r.status, resHeaders);
+  res.writeHead(r.status, keepHeaders([...r.headers], RES_DROP));
   if (r.body) Readable.fromWeb(r.body).pipe(res);
   else res.end();
 }
 
 const server = http.createServer((req, res) => {
-  // Doubles as the shim's readiness probe.
-  if (req.method === "GET" && req.url === "/env.sh") {
+  const path = new URL(req.url, `http://${HOST}`).pathname;
+  if (req.method === "GET" && path === "/env.sh") {
     res.writeHead(200, { "content-type": "text/plain" }).end(envLines());
     return;
   }
-  if (req.method === "GET" && req.url.startsWith("/v1/models")) {
-    // Re-fetch on demand: Claude Code asks once per session, which is the
-    // only moment catalog freshness matters.
+  if (req.method === "GET" && path === "/v1/models") {
     void refreshCatalog().then((ids) => {
       const names = ids ?? [...knownModels.values()];
       res.writeHead(200, { "content-type": "application/json" }).end(
