@@ -1,16 +1,29 @@
 #!/usr/bin/env python3.12
-"""Local LiteLLM gateway: discovers the upstream's models, serves them through a
-local LiteLLM proxy, pins Claude Code's model env vars, and restarts LiteLLM when
-the model set changes."""
+"""Local LiteLLM gateway for the claude-code agent.
+
+Fronts a custom Anthropic-compatible upstream: discovers its models
+(GET /v1/models), serves them through a local LiteLLM proxy, and pins Claude
+Code's model env vars to real models. Re-fetches every REFRESH_SECONDS and
+restarts LiteLLM only when the model set changes.
+
+Runs as the agent-runtime-supervised pod service (pod-service.sh, ADR-065):
+spawned with the current runtime env, respawned on env change, restarted with
+backoff on crash — so crash recovery lives in the supervisor, and a LiteLLM
+exit here just propagates as a non-zero exit.
+
+Concrete model entries are generated rather than relying on a wildcard +
+check_provider_endpoint (which doesn't enumerate models for litellm_proxy
+providers — BerriAI/litellm#20064) or POST /model/new (needs a database).
+"""
 
 import json
 import os
 import re
+import shlex
 import signal
 import ssl
 import subprocess
 import sys
-import time
 import urllib.error
 import urllib.request
 
@@ -21,7 +34,9 @@ PORT = os.environ.get("LITELLM_PROXY_PORT", "4000")
 CONFIG = "/tmp/litellm-gateway.config.yaml"
 ENV_FILE = "/tmp/litellm-gateway.env"  # sourced by litellm-proxy.sh
 REFRESH_SECONDS = int(os.environ.get("LITELLM_MODEL_REFRESH_SECONDS", "600"))
-RESTART_BACKOFF_SECONDS = 5
+# The supervisor spawns us with the runtime env, where ANTHROPIC_BASE_URL is
+# still the real upstream (only harness sessions get re-pointed at loopback),
+# and respawns us when env changes — so this snapshot can't go stale.
 UPSTREAM = (os.environ.get("ANTHROPIC_BASE_URL") or "").rstrip("/")
 TOKEN = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
 
@@ -34,12 +49,17 @@ def log(msg):
 
 
 def public_name(model_id):
-    # Gateway discovery wants a provider prefix; the bare id stays in the route.
+    """model_name Claude Code sees, lowercased. Gateway discovery wants a provider
+    prefix, so expose each as claude/<id>; the upstream id stays in
+    litellm_params.model for routing."""
     name = model_id.lower()
     return name if name.startswith("claude/") else f"claude/{name}"
 
 
 def _is_embedding(model):
+    """Embedding models can't serve chat, so drop them. Detect via an explicit
+    mode/type flag (LiteLLM-style gateways set mode='embedding') or an
+    'embedding' substring in the model id."""
     return any(
         "embedding" in str(model.get(field, "")).lower()
         for field in ("id", "mode", "type")
@@ -47,8 +67,8 @@ def _is_embedding(model):
 
 
 def fetch_models():
-    # urllib honors HTTP(S)_PROXY (crosses Envoy for credential injection) and
-    # trusts the system CA store. None on failure -> keep current models.
+    """Sorted upstream model ids, or None on failure. urllib honors HTTP(S)_PROXY
+    (crosses Envoy for credential injection) and trusts the system CA store."""
     if not UPSTREAM:
         return None
     req = urllib.request.Request(
@@ -88,6 +108,9 @@ def _latest(models, tier):
 
 
 def model_env(models):
+    """Claude Code's model vars → latest opus/sonnet/haiku, each falling back to
+    the best available model so they are always set. The subagent pin mirrors
+    the retired IBM LiteLLM preset default (opus)."""
     opus, sonnet, haiku = (_latest(models, t) for t in ("opus", "sonnet", "haiku"))
     fallback = opus or sonnet or haiku or max(models, key=_version_key)
     if not (opus or sonnet or haiku):
@@ -97,12 +120,14 @@ def model_env(models):
         "ANTHROPIC_DEFAULT_SONNET_MODEL": public_name(sonnet or fallback),
         "ANTHROPIC_DEFAULT_HAIKU_MODEL": public_name(haiku or fallback),
         "ANTHROPIC_MODEL": public_name(opus or fallback),
+        "CLAUDE_CODE_SUBAGENT_MODEL": public_name(opus or fallback),
     }
 
 
 def apply_models(models):
-    # Concrete discovered models, else a wildcard fallback (litellm_proxy
-    # providers aren't enumerable via check_provider_endpoint, BerriAI/litellm#20064).
+    """Write the LiteLLM config (concrete discovered models, else a wildcard
+    fallback) and — when models are known — the shim-sourced env file. Env lines
+    assign only if unset, so a model set manually on the agent wins."""
     pairs = (
         [(public_name(m), f"litellm_proxy/{m}") for m in models]
         if models
@@ -126,14 +151,16 @@ def apply_models(models):
         yaml.safe_dump(cfg, f, sort_keys=False)
 
     if not models:
-        log("no models discovered; serving wildcard 'claude-*'")
+        log(
+            "no models discovered; serving wildcard 'claude-*' so Claude Code's "
+            "built-in model names still route to the upstream"
+        )
         return
-    # Assign-if-unset, so a model set manually on the agent wins.
     env = model_env(models)
     tmp = f"{ENV_FILE}.tmp"
     with open(tmp, "w") as f:
         for key, val in env.items():
-            f.write(f"[ -n \"${{{key}:-}}\" ] || export {key}='{val}'\n")
+            f.write(f"[ -n \"${{{key}:-}}\" ] || export {key}={shlex.quote(val)}\n")
     os.replace(tmp, ENV_FILE)
     log(f"serving {len(models)} model(s); env -> " + ", ".join(f"{k}={v}" for k, v in env.items()))
 
@@ -154,12 +181,6 @@ def stop():
             proc.kill()
 
 
-def restart():
-    global proc
-    stop()
-    proc = start()
-
-
 def shutdown(*_):
     stop()
     sys.exit(0)
@@ -176,20 +197,22 @@ def main():
 
     while True:
         try:
-            # Wakes immediately if LiteLLM exits; TimeoutExpired means still up.
+            # Wakes immediately if LiteLLM exits; TimeoutExpired means it's still up.
             proc.wait(timeout=REFRESH_SECONDS)
-            log(f"LiteLLM exited; restarting in {RESTART_BACKOFF_SECONDS}s")
-            time.sleep(RESTART_BACKOFF_SECONDS)
-            proc = start()
-            continue
         except subprocess.TimeoutExpired:
             pass
+        else:
+            # Crash recovery is the supervisor's job: exit non-zero and let
+            # agent-runtime respawn us with backoff (ADR-065).
+            log("LiteLLM exited; exiting for supervised restart")
+            sys.exit(1)
         latest = fetch_models()
         if latest and latest != models:
-            log(f"models changed ({len(models or [])} -> {len(latest)}); restarting")
+            log(f"models changed ({len(models or [])} -> {len(latest)}); restarting LiteLLM")
             models = latest
             apply_models(models)
-            restart()
+            stop()
+            proc = start()
 
 
 if __name__ == "__main__":
