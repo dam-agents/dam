@@ -89,7 +89,7 @@ const stateBackend = createFileDocumentStoreBackend(homeDir);
 const envStore = createEnvStateStore(homeDir);
 
 // ADR-065: optional image-provided pod service (e.g. claude-code's local
-// LiteLLM gateway), supervised by the runtime so it is never an unmanaged
+// model gateway), supervised by the runtime so it is never an unmanaged
 // daemon. Spawned once env is materialized (the service reads credentials/URLs
 // from it) and respawned whenever the env driver rewrites it.
 const podServicePath = "/usr/local/bin/pod-service";

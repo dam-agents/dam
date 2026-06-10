@@ -5,7 +5,7 @@ import type { RuntimeEnvReader } from "../core/runtime-env.js";
 // image may install an executable at /usr/local/bin/pod-service (a well-known
 // path, like the harness shims of ADR-037); when present, the runtime keeps it
 // running as a supervised child for the life of the pod — e.g. claude-code's
-// local LiteLLM gateway. The runtime owns the lifecycle so the service is
+// local model gateway. The runtime owns the lifecycle so the service is
 // never an orphaned nohup daemon: crashes restart with backoff, env changes
 // restart it against the fresh env (a service caches credentials/URLs from its
 // spawn env), and exits are reaped as ordinary children of PID 1.

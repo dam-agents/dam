@@ -736,16 +736,6 @@ agentTemplates:
       repository: quay.io/dam-agents/claude-code
       tag: ""
     storageSize: "5Gi"
-    # Above the 2Gi templateDefaults limit: against a custom Anthropic
-    # upstream this image also runs the local LiteLLM gateway (ADR-064),
-    # ~0.5Gi RSS on top of the harness — 2Gi risks OOM-killing the gateway.
-    resources:
-      requests:
-        cpu: "250m"
-        memory: "512Mi"
-      limits:
-        cpu: "1"
-        memory: "3Gi"
 
   - name: codex
     enabled: true
