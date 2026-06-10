@@ -50,7 +50,9 @@ test("foreign user mention forks the agent and the reply lands back in the threa
   });
 
   await test.step("link the foreign user via Keycloak OAuth and accept terms", async () => {
-    const context = await browser.newContext();
+    const context = await browser.newContext({
+      storageState: { cookies: [], origins: [] },
+    });
     const page = await context.newPage();
 
     await page.goto(baseUrl);

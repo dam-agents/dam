@@ -315,7 +315,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
 
   deps.mountUsageRoutes(app);
 
-  if (config.slackBotToken && config.slackAppToken) {
+  if ((config.slackBotToken && config.slackAppToken) || config.e2eEnabled) {
     app.route(
       "/",
       createSlackOAuthRoutes({
