@@ -25,11 +25,7 @@ import { createFilesService } from "./modules/files.js";
 import { createImportHandlers, sweepStaging } from "./modules/import/index.js";
 import { composeSkills } from "./modules/skills/index.js";
 import { configureGitCredentialHelper } from "./modules/git.js";
-import {
-  createEnvSnapshotWriter,
-  createPodServiceSupervisor,
-  spawnPodServiceProcess,
-} from "./modules/pod-service.js";
+import { createPodServiceSupervisor } from "./modules/pod-service.js";
 import { createSshService, prepareSshd, spawnSshd } from "./modules/ssh.js";
 import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
@@ -94,11 +90,9 @@ const podServicePath = "/usr/local/bin/pod-service";
 const podLog = (msg: string) => process.stderr.write(`[pod-service] ${msg}\n`);
 const podService = existsSync(podServicePath)
   ? createPodServiceSupervisor({
-      spawn: spawnPodServiceProcess(podServicePath, podLog),
+      command: podServicePath,
+      snapshotPath: join(homeDir, ".platform", "pod-service-env.json"),
       envReader: envStore,
-      writeEnvSnapshot: createEnvSnapshotWriter(
-        join(homeDir, ".platform", "pod-service-env.json"),
-      ),
       log: podLog,
     })
   : null;

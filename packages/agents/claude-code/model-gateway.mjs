@@ -10,8 +10,9 @@ import http from "node:http";
 import { readFileSync } from "node:fs";
 import { Readable } from "node:stream";
 
-const HOST = process.env.MODEL_GATEWAY_HOST || "127.0.0.1";
-const PORT = Number(process.env.MODEL_GATEWAY_PORT || "24180");
+// Keep in sync with _GATEWAY_BASE in model-gateway.sh.
+const HOST = "127.0.0.1";
+const PORT = 24180;
 const SNAPSHOT_FILE = `${process.env.HOME}/.platform/pod-service-env.json`;
 const PREFIX = "claude/";
 
@@ -71,7 +72,9 @@ async function fetchCatalog() {
     const data = (await r.json())?.data;
     if (!Array.isArray(data)) return null;
     const ids = [
-      ...new Set(data.filter((m) => m?.id && !isEmbedding(m)).map((m) => String(m.id))),
+      ...new Set(
+        data.filter((m) => m?.id && !isEmbedding(m)).map((m) => String(m.id)),
+      ),
     ].sort();
     return ids.length ? ids : null;
   } catch (err) {
@@ -205,7 +208,14 @@ async function proxy(req, res) {
       log(`upstream request failed (${err.cause?.message ?? err.message})`);
       res
         .writeHead(502, { "content-type": "application/json" })
-        .end(JSON.stringify({ error: { type: "api_error", message: `model-gateway: upstream unreachable: ${err.cause?.message ?? err.message}` } }));
+        .end(
+          JSON.stringify({
+            error: {
+              type: "api_error",
+              message: `model-gateway: upstream unreachable: ${err.cause?.message ?? err.message}`,
+            },
+          }),
+        );
     }
     return;
   }
@@ -254,9 +264,6 @@ process.on("SIGHUP", () => {
     log(`reload: unreadable env snapshot (${err.message}); keeping env`);
     return;
   }
-  // Read from the snapshot, not process.env: the snapshot is the complete
-  // merged env, so a key it lacks was *removed* (assigning into process.env
-  // would let the stale value linger).
   const base = customUpstream(env.ANTHROPIC_BASE_URL);
   if (!base) {
     log("reload: no custom upstream; exiting");
@@ -275,7 +282,9 @@ process.on("SIGTERM", () => process.exit(0));
 process.on("SIGINT", () => process.exit(0));
 
 if (!(await refreshCatalog()))
-  log("no models discovered yet; passthrough only (built-in names still route)");
+  log(
+    "no models discovered yet; passthrough only (built-in names still route)",
+  );
 server.listen(PORT, HOST, () =>
   log(`listening on ${HOST}:${PORT}, fronting ${UPSTREAM}`),
 );

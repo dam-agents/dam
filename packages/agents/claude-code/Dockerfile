@@ -3,22 +3,13 @@ FROM ${BASE_IMAGE}
 
 USER root
 
-# Pinned: the model gateway (ADR-066) leans on undocumented Claude Code
-# discovery behavior (the claude/ prefix filter and
-# CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY), so bump deliberately and
-# smoke-check model discovery against a custom upstream when you do.
 ARG CLAUDE_CODE_VERSION=2.1.170
-
-# Patch @anthropic-ai/sdk (transitive via claude-agent-acp) for CVE-2026-41686.
 RUN --mount=type=cache,target=/root/.npm \
     npm pkg set "overrides.@anthropic-ai/sdk"=">=0.100.1" \
     && npm install @agentclientprotocol/claude-agent-acp \
     && npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
     && chown -R 65532:0 /app
 
-# Local model gateway (ADR-065/066): supervised pod service fronting custom
-# Anthropic-compatible upstreams; the shims and the SSH login hook re-point
-# Claude Code at it.
 COPY model-gateway.mjs /usr/local/lib/model-gateway.mjs
 COPY model-gateway.sh /usr/local/lib/model-gateway.sh
 COPY --chmod=0755 pod-service.sh /usr/local/bin/pod-service
