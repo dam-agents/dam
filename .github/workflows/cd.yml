@@ -47,8 +47,35 @@ jobs:
       - run: mise run setup
       - run: mise run test
 
+  appversion:
+    name: derive app version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      composite: ${{ steps.c.outputs.composite }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - id: c
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          short="${SHA:0:12}"
+          if [ "$REF_TYPE" = "tag" ] && [ "${REF_NAME#v}" != "$REF_NAME" ]; then
+            composite="${REF_NAME#v}"
+          else
+            appver="$(grep -E '^appVersion:' deploy/helm/platform/Chart.yaml | head -n1 | sed -E 's/^appVersion:[[:space:]]*//; s/["'"'"']//g')"
+            composite="${appver}-dev-${short}"
+          fi
+          echo "composite=$composite" >> "$GITHUB_OUTPUT"
+          echo "::notice::composite app version: $composite"
+
   build-images:
-    needs: [check]
+    needs: [check, appversion]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -92,6 +119,7 @@ jobs:
             type=sha,prefix=,format=long
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ needs.appversion.outputs.composite }}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
       - uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
@@ -105,7 +133,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.component }}
 
   build-agents:
-    needs: [build-images]
+    needs: [build-images, appversion]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -142,6 +170,7 @@ jobs:
             type=sha,prefix=,format=long
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ needs.appversion.outputs.composite }}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
       - uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
@@ -232,7 +261,7 @@ jobs:
           if-no-files-found: ignore
 
   publish:
-    needs: [build-agents]
+    needs: [build-agents, appversion]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -266,18 +295,19 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          COMPOSITE: ${{ needs.appversion.outputs.composite }}
         run: |
-          helm package deploy/helm/platform --version "$VERSION" --app-version "$VERSION"
+          helm package deploy/helm/platform --version "$VERSION" --app-version "$COMPOSITE"
           helm push "platform-${VERSION}.tgz" oci://quay.io/dam-agents/charts
       - name: Push Helm chart (main)
         if: github.ref == 'refs/heads/main'
         env:
           RUN_NUMBER: ${{ github.run_number }}
-          SHA: ${{ github.sha }}
+          COMPOSITE: ${{ needs.appversion.outputs.composite }}
         run: |
-          helm package deploy/helm/platform --version "0.0.0-main.${RUN_NUMBER}" --app-version "$SHA"
+          helm package deploy/helm/platform --version "0.0.0-main.${RUN_NUMBER}" --app-version "$COMPOSITE"
           helm push "platform-0.0.0-main.${RUN_NUMBER}.tgz" oci://quay.io/dam-agents/charts
-          helm package deploy/helm/platform --version 0.0.0-main --app-version "$SHA"
+          helm package deploy/helm/platform --version 0.0.0-main --app-version "$COMPOSITE"
           helm push platform-0.0.0-main.tgz oci://quay.io/dam-agents/charts
 
       - name: Publish CLI to npm
