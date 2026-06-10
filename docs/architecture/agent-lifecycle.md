@@ -17,7 +17,7 @@ Last verified: 2026-06-10
 - [ADR-060 — Unified runtime-channel apply path + settlement tracking](../adrs/060-unified-apply-path-and-contributions-settled-gate.md) — a single background worker applies contributions, dispatching only to a *Ready* agent (the controller's `Ready` condition, ADR-059); settlement + per-driver failures are tracked and surfaced
 - [ADR-046 — Eliminate Instance, collapse into Agent](../adrs/046-eliminate-instance.md) — Agent is the durable runnable resource; there is no separate Instance concept
 - [ADR-061 — Warm PVC pool](../adrs/061-warm-pvc-pool.md) — a newly created Agent claims a pre-provisioned spare workspace volume at create time instead of waiting for dynamic provisioning
-- [ADR-065 — Pod services](../adrs/065-pod-service-supervision.md) — an image-provided background process supervised by agent-runtime, respawned on env change
+- [ADR-065 — Pod services](../adrs/065-pod-service-supervision.md) — an image-provided background process supervised by agent-runtime, reloaded via SIGHUP on env change
 
 ## Overview
 
@@ -139,10 +139,13 @@ service** ([ADR-065](../adrs/065-pod-service-supervision.md)) — an optional
 background process the agent image provides at a well-known path, running for
 the life of the pod. The runtime spawns it once the runtime-channel env is
 first materialized (it typically consumes credentials/URLs from that env),
-respawns it whenever the env driver rewrites the env so it never operates on
-a stale snapshot, restarts crashes with capped backoff, and interprets a
-clean exit as "nothing to do for this env" — the service then stays down
-until the env next changes. Its output joins the pod log stream. The pod's
+restarts crashes with capped backoff, and interprets a clean exit as
+"nothing to do for this env" — the service then stays down until the env
+next changes. When the env driver rewrites the env, the runtime refreshes a
+well-known env snapshot file and sends SIGHUP: a service that handles it
+reloads in place (in-flight work finishes, new work uses the fresh env); one
+that doesn't dies by the signal's default action and is respawned with the
+fresh env. Its output joins the pod log stream. The pod's
 PID 1 is a minimal init (catatonit) wrapping agent-runtime, so descendants
 the runtime did not spawn — processes orphaned by a dying harness or service
 — are reaped rather than left as zombies. claude-code uses the hook to front

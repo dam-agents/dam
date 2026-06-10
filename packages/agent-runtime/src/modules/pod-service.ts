@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import type { RuntimeEnvReader } from "../core/runtime-env.js";
 
 // Supervisor for the optional image-provided pod service (ADR-065). An agent
@@ -6,13 +8,21 @@ import type { RuntimeEnvReader } from "../core/runtime-env.js";
 // path, like the harness shims of ADR-037); when present, the runtime keeps it
 // running as a supervised child for the life of the pod — e.g. claude-code's
 // local model gateway. The runtime owns the lifecycle so the service is
-// never an orphaned nohup daemon: crashes restart with backoff, env changes
-// restart it against the fresh env (a service caches credentials/URLs from its
-// spawn env), and exits are reaped as ordinary children of PID 1.
+// never an orphaned nohup daemon: crashes restart with backoff, and exits are
+// reaped as ordinary children of PID 1.
+//
+// Env changes reload in place: a running process's environ can't be rewritten
+// from outside, so the supervisor persists the merged env to a well-known
+// snapshot file and sends SIGHUP. A service that handles the signal re-reads
+// the snapshot and keeps serving (no listener gap, in-flight work finishes);
+// one that doesn't dies by the signal's default action and is respawned with
+// the fresh env — the snapshot is also what every spawn receives, so both
+// paths converge on the same env.
 //
 // Exit-code contract: exit 0 means "nothing to do for this env" — the service
-// stays down until the env next changes. Any other exit is a crash and is
-// restarted with capped exponential backoff.
+// stays down until the env next changes. Death by the reload SIGHUP respawns
+// immediately. Any other exit is a crash and is restarted with capped
+// exponential backoff.
 
 const BACKOFF_INITIAL_MS = 1_000;
 const BACKOFF_MAX_MS = 30_000;
@@ -20,6 +30,10 @@ const BACKOFF_MAX_MS = 30_000;
 // later crash is fresh, not a continuation of a startup-crash loop.
 const HEALTHY_RUN_MS = 60_000;
 const SIGTERM_GRACE_MS = 10_000;
+
+const SNAPSHOT_NOTE =
+  "Managed by agent-runtime (ADR-065). The merged env the pod service was " +
+  "(re)started with; the service re-reads it on SIGHUP. Do not edit.";
 
 /** Narrow process port so tests can fake the child without an EventEmitter. */
 export interface PodServiceProcess {
@@ -34,10 +48,11 @@ export type SpawnPodService = (
 
 export interface PodServiceSupervisor {
   /**
-   * Env is current — warm boot, or the env driver just rewrote it. Ensures the
-   * service runs against it: starts it if down (including "declined" services
-   * whose condition may now hold), or kills + respawns it so nothing keeps
-   * routing on credentials/URLs captured from a stale env.
+   * Env is current — warm boot, or the env driver just rewrote it. Persists
+   * the env snapshot, then ensures the service runs against it: starts it if
+   * down (including "declined" services whose condition may now hold), or
+   * sends SIGHUP so it reloads in place — nothing may take on new work with
+   * credentials/URLs captured from a stale env.
    */
   refreshEnv(): void;
   shutdown(): void;
@@ -46,6 +61,8 @@ export interface PodServiceSupervisor {
 export interface PodServiceSupervisorDeps {
   spawn: SpawnPodService;
   envReader: RuntimeEnvReader;
+  /** Persist the merged env for the service to re-read on SIGHUP. */
+  writeEnvSnapshot: (env: Record<string, string | undefined>) => void;
   log: (msg: string) => void;
   /** Test seams — production uses the defaults above. */
   backoffInitialMs?: number;
@@ -65,14 +82,15 @@ export function createPodServiceSupervisor(
   let child: PodServiceProcess | null = null;
   let restartTimer: ReturnType<typeof setTimeout> | null = null;
   let killTimer: ReturnType<typeof setTimeout> | null = null;
-  let respawnOnExit = false;
   let stopped = false;
   let backoffMs = backoffInitialMs;
 
+  // Same merge order as every other spawn path: runtime-channel env first,
+  // process.env (pod env, user-set vars) wins on collision.
+  const mergedEnv = () => ({ ...deps.envReader.current(), ...process.env });
+
   function start(): void {
-    // Same merge order as every other spawn path: runtime-channel env first,
-    // process.env (pod env, user-set vars) wins on collision.
-    const proc = deps.spawn({ ...deps.envReader.current(), ...process.env });
+    const proc = deps.spawn(mergedEnv());
     child = proc;
     const startedAt = Date.now();
     deps.log("started");
@@ -83,10 +101,11 @@ export function createPodServiceSupervisor(
       if (killTimer) clearTimeout(killTimer);
       killTimer = null;
       if (stopped) return;
-      if (respawnOnExit) {
-        respawnOnExit = false;
+      if (signal === "SIGHUP") {
+        // Didn't handle the reload signal — default action killed it. Respawn
+        // against the fresh env, which is what the reload was for.
         backoffMs = backoffInitialMs;
-        deps.log("respawning with fresh env");
+        deps.log("did not handle reload; respawning with fresh env");
         start();
         return;
       }
@@ -106,13 +125,6 @@ export function createPodServiceSupervisor(
     });
   }
 
-  function killChild(): void {
-    const proc = child;
-    if (!proc) return;
-    proc.kill("SIGTERM");
-    killTimer = setTimeout(() => proc.kill("SIGKILL"), sigtermGraceMs);
-  }
-
   return {
     refreshEnv() {
       if (stopped) return;
@@ -121,18 +133,20 @@ export function createPodServiceSupervisor(
         restartTimer = null;
       }
       backoffMs = backoffInitialMs;
-      if (child) {
-        respawnOnExit = true;
-        killChild();
-      } else {
-        start();
-      }
+      // Snapshot first: by the time the signal lands, the file must already
+      // hold the env the reload should pick up.
+      deps.writeEnvSnapshot(mergedEnv());
+      if (child) child.kill("SIGHUP");
+      else start();
     },
     shutdown() {
       stopped = true;
       if (restartTimer) clearTimeout(restartTimer);
       restartTimer = null;
-      killChild();
+      const proc = child;
+      if (!proc) return;
+      proc.kill("SIGTERM");
+      killTimer = setTimeout(() => proc.kill("SIGKILL"), sigtermGraceMs);
     },
   };
 }
@@ -175,5 +189,19 @@ export function spawnPodServiceProcess(
       },
     );
     return { kill: (sig) => proc.kill(sig), exited };
+  };
+}
+
+/**
+ * Production adapter for the env snapshot: atomic write (tmp + rename) so the
+ * service never reads a half-written file from its SIGHUP handler.
+ */
+export function createEnvSnapshotWriter(
+  path: string,
+): (env: Record<string, string | undefined>) => void {
+  return (env) => {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(`${path}.tmp`, JSON.stringify({ _note: SNAPSHOT_NOTE, env }));
+    renameSync(`${path}.tmp`, path);
   };
 }

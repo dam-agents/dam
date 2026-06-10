@@ -34,21 +34,28 @@ function makeFakeProc(): FakeProc {
 function makeSupervisor(opts: { env?: Record<string, string> } = {}) {
   const spawned: FakeProc[] = [];
   const spawnedEnvs: Record<string, string | undefined>[] = [];
+  const snapshots: Record<string, string | undefined>[] = [];
+  const events: string[] = [];
   const supervisor = createPodServiceSupervisor({
     spawn: (env) => {
       spawnedEnvs.push(env);
+      events.push("spawn");
       const fake = makeFakeProc();
       spawned.push(fake);
       return fake.proc;
     },
     envReader: { current: () => opts.env ?? {}, ready: () => true },
+    writeEnvSnapshot: (env) => {
+      snapshots.push(env);
+      events.push("snapshot");
+    },
     log: () => {},
     backoffInitialMs: 1_000,
     backoffMaxMs: 4_000,
     healthyRunMs: 60_000,
     sigtermGraceMs: 10_000,
   });
-  return { supervisor, spawned, spawnedEnvs };
+  return { supervisor, spawned, spawnedEnvs, snapshots, events };
 }
 
 // Promise reactions (the exited.then in the supervisor) need a microtask flush
@@ -74,6 +81,18 @@ describe("pod-service supervisor", () => {
     expect(spawnedEnvs[0]!.FROM_RUNTIME).toBe("yes");
     // Same precedence as harness spawns: process.env wins on collision.
     expect(spawnedEnvs[0]!.POD_SVC_COLLIDE).toBe("from-process");
+  });
+
+  it("writes the env snapshot before spawning or signaling", async () => {
+    const { supervisor, snapshots, events } = makeSupervisor({
+      env: { FROM_RUNTIME: "yes" },
+    });
+    supervisor.refreshEnv();
+    expect(snapshots[0]!.FROM_RUNTIME).toBe("yes");
+    supervisor.refreshEnv();
+    // Snapshot lands before the process could possibly act on the signal —
+    // and before the spawn, so a service may read it at any point in life.
+    expect(events).toEqual(["snapshot", "spawn", "snapshot"]);
   });
 
   it("stays down after a clean exit until env changes again", async () => {
@@ -126,25 +145,38 @@ describe("pod-service supervisor", () => {
     expect(spawned).toHaveLength(3);
   });
 
-  it("SIGTERMs and respawns immediately on env change, skipping backoff", async () => {
+  it("SIGHUPs a running service on env change and keeps it as the child", async () => {
     const { supervisor, spawned } = makeSupervisor();
     supervisor.refreshEnv();
 
     supervisor.refreshEnv();
-    expect(spawned[0]!.signals).toEqual(["SIGTERM"]);
-    expect(spawned).toHaveLength(1); // waits for the old process to be gone
-
-    spawned[0]!.exit(null, "SIGTERM");
-    await flush();
-    expect(spawned).toHaveLength(2);
+    expect(spawned[0]!.signals).toEqual(["SIGHUP"]);
+    // Reload-in-place: a service that handles the signal is never respawned.
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(spawned).toHaveLength(1);
   });
 
-  it("escalates to SIGKILL when SIGTERM is ignored", async () => {
+  it("respawns immediately when the service dies of the reload SIGHUP", async () => {
     const { supervisor, spawned } = makeSupervisor();
     supervisor.refreshEnv();
     supervisor.refreshEnv();
-    await vi.advanceTimersByTimeAsync(10_000);
-    expect(spawned[0]!.signals).toEqual(["SIGTERM", "SIGKILL"]);
+
+    // Default signal action: the service didn't install a handler.
+    spawned[0]!.exit(null, "SIGHUP");
+    await flush();
+    expect(spawned).toHaveLength(2); // no backoff on the reload path
+  });
+
+  it("stays down when the service answers the reload with a clean exit", async () => {
+    const { supervisor, spawned } = makeSupervisor();
+    supervisor.refreshEnv();
+    supervisor.refreshEnv();
+
+    // e.g. the gateway re-read the snapshot and found nothing to front.
+    spawned[0]!.exit(0);
+    await flush();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(spawned).toHaveLength(1);
   });
 
   it("cancels a pending crash-restart when env changes, spawning fresh instead", async () => {
@@ -169,5 +201,13 @@ describe("pod-service supervisor", () => {
     expect(spawned).toHaveLength(1);
     supervisor.refreshEnv();
     expect(spawned).toHaveLength(1);
+  });
+
+  it("escalates shutdown to SIGKILL when SIGTERM is ignored", async () => {
+    const { supervisor, spawned } = makeSupervisor();
+    supervisor.refreshEnv();
+    supervisor.shutdown();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(spawned[0]!.signals).toEqual(["SIGTERM", "SIGKILL"]);
   });
 });

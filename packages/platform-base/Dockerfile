@@ -139,7 +139,7 @@ ENV PORT=8080
 EXPOSE 8080
 
 # catatonit as PID 1: agent-runtime (Node) supervises the processes it spawns
-# (harness sessions, the ADR-063 pod service) but does not reap children it
+# (harness sessions, the ADR-065 pod service) but does not reap children it
 # didn't — anything orphaned by a dying harness would zombify without an init.
 # catatonit reaps all descendants and forwards signals to agent-runtime.
 ENTRYPOINT ["/usr/libexec/catatonit/catatonit", "--", "/usr/local/bin/agent-entrypoint"]

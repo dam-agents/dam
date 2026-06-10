@@ -26,6 +26,7 @@ import { createImportHandlers, sweepStaging } from "./modules/import/index.js";
 import { composeSkills } from "./modules/skills/index.js";
 import { configureGitCredentialHelper } from "./modules/git.js";
 import {
+  createEnvSnapshotWriter,
   createPodServiceSupervisor,
   spawnPodServiceProcess,
 } from "./modules/pod-service.js";
@@ -91,13 +92,18 @@ const envStore = createEnvStateStore(homeDir);
 // ADR-065: optional image-provided pod service (e.g. claude-code's local
 // model gateway), supervised by the runtime so it is never an unmanaged
 // daemon. Spawned once env is materialized (the service reads credentials/URLs
-// from it) and respawned whenever the env driver rewrites it.
+// from it); when the env driver rewrites the env, the supervisor refreshes the
+// snapshot file and SIGHUPs the service to reload in place. The snapshot path
+// is image-facing ABI, like the pod-service path itself.
 const podServicePath = "/usr/local/bin/pod-service";
 const podLog = (msg: string) => process.stderr.write(`[pod-service] ${msg}\n`);
 const podService = existsSync(podServicePath)
   ? createPodServiceSupervisor({
       spawn: spawnPodServiceProcess(podServicePath, podLog),
       envReader: envStore,
+      writeEnvSnapshot: createEnvSnapshotWriter(
+        join(homeDir, ".platform", "pod-service-env.json"),
+      ),
       log: podLog,
     })
   : null;
@@ -127,8 +133,9 @@ const runtimeChannel = await composeRuntimeChannel({
       store: envStore,
       onChange: () => {
         acpRuntime.refreshEnv();
-        // The pod service caches credentials/URLs from its spawn env; respawn
-        // it so it can't keep routing on a stale upstream.
+        // The pod service captured credentials/URLs from its spawn env;
+        // refresh the snapshot and SIGHUP it so no new work routes on a
+        // stale upstream.
         podService?.refreshEnv();
         // Env carrying GH_TOKEN just landed — (re)point git's credential helper
         // at gh. Reads the freshly-written env; no-ops without a token.
