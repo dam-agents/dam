@@ -1,11 +1,10 @@
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
+import type { ReactNode } from "react";
 import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
 const TooltipProvider = TooltipPrimitive.Provider;
-const Tooltip = TooltipPrimitive.Root;
-const TooltipTrigger = TooltipPrimitive.Trigger;
 
 const TooltipContent = React.forwardRef<
   React.ElementRef<typeof TooltipPrimitive.Content>,
@@ -26,4 +25,34 @@ const TooltipContent = React.forwardRef<
 ));
 TooltipContent.displayName = TooltipPrimitive.Content.displayName;
 
-export { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger };
+interface TooltipProps {
+  children: ReactNode;
+  content: ReactNode;
+  side?: React.ComponentPropsWithoutRef<
+    typeof TooltipPrimitive.Content
+  >["side"];
+  className?: string;
+}
+
+function Tooltip({
+  children,
+  content,
+  side = "bottom",
+  className,
+}: TooltipProps) {
+  return (
+    <TooltipPrimitive.Root>
+      <TooltipPrimitive.Trigger asChild>
+        <span className="inline-flex">{children}</span>
+      </TooltipPrimitive.Trigger>
+      <TooltipContent
+        side={side}
+        className={cn("max-w-xs text-xs leading-relaxed", className)}
+      >
+        {content}
+      </TooltipContent>
+    </TooltipPrimitive.Root>
+  );
+}
+
+export { Tooltip, TooltipContent, TooltipProvider };

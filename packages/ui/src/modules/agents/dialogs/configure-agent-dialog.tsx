@@ -8,11 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip } from "@/components/ui/tooltip";
 
 import {
   ConnectionsPicker,
@@ -403,18 +399,13 @@ export function ConfigureAgentDialog({
               {agent.templateId ? (
                 <>
                   Template:{" "}
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="inline-flex font-semibold text-text-secondary border-b border-dotted border-text-muted cursor-help">
-                        {agent.templateId}
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent
-                      side="right"
-                      className="max-w-xs text-xs leading-relaxed"
-                    >
-                      <span className="font-mono">{agent.image}</span>
-                    </TooltipContent>
+                  <Tooltip
+                    side="right"
+                    content={<span className="font-mono">{agent.image}</span>}
+                  >
+                    <span className="font-semibold text-text-secondary border-b border-dotted border-text-muted cursor-help">
+                      {agent.templateId}
+                    </span>
                   </Tooltip>
                 </>
               ) : (

@@ -14,11 +14,7 @@ import { useForm } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip } from "@/components/ui/tooltip";
 
 import {
   ConnectionsPicker,
@@ -312,20 +308,17 @@ export function AddAgentDialog({
               {selectedTemplate ? (
                 <>
                   Template:{" "}
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="inline-flex font-semibold text-foreground/80 border-b border-dotted border-muted-foreground cursor-help">
-                        {selectedTemplate.name}
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent
-                      side="right"
-                      className="max-w-xs text-xs leading-relaxed"
-                    >
+                  <Tooltip
+                    side="right"
+                    content={
                       <span className="font-mono">
                         {selectedTemplate.image}
                       </span>
-                    </TooltipContent>
+                    }
+                  >
+                    <span className="font-semibold text-foreground/80 border-b border-dotted border-muted-foreground cursor-help">
+                      {selectedTemplate.name}
+                    </span>
                   </Tooltip>
                 </>
               ) : (
