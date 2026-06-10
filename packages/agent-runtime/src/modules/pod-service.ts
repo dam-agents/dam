@@ -1,32 +1,27 @@
 import { spawn } from "node:child_process";
-import { mkdirSync, renameSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
-import type { RuntimeEnvReader } from "../core/runtime-env.js";
+import type { DocumentStore } from "../core/document-store.js";
+import { mergedSpawnEnv, type RuntimeEnvReader } from "../core/runtime-env.js";
 
 const BACKOFF_INITIAL_MS = 1_000;
 const BACKOFF_MAX_MS = 30_000;
 // A run at least this long resets the backoff — a later crash is fresh, not
 // a continuation of a startup-crash loop.
 const HEALTHY_RUN_MS = 60_000;
-const SIGTERM_GRACE_MS = 10_000;
 
 export interface PodServiceSupervisor {
   refreshEnv(): void;
-  shutdown(): void;
 }
 
 export function createPodServiceSupervisor(opts: {
   command: string;
-  snapshotPath: string;
+  snapshot: DocumentStore<{ env: NodeJS.ProcessEnv }>;
   envReader: RuntimeEnvReader;
   log: (msg: string) => void;
 }): PodServiceSupervisor {
-  const { command, snapshotPath, envReader, log } = opts;
+  const { command, snapshot, envReader, log } = opts;
 
   let child: ReturnType<typeof spawn> | null = null;
   let restartTimer: ReturnType<typeof setTimeout> | null = null;
-  let killTimer: ReturnType<typeof setTimeout> | null = null;
-  let stopped = false;
   let backoffMs = BACKOFF_INITIAL_MS;
 
   process.once("exit", () => {
@@ -37,21 +32,9 @@ export function createPodServiceSupervisor(opts: {
     }
   });
 
-  // Same merge order as every other spawn path: runtime-channel env first,
-  // process.env wins on collision. The snapshot is what the service re-reads
-  // on SIGHUP, so it must be written before the signal lands.
-  const mergedEnv = () => ({ ...envReader.current(), ...process.env });
-
-  function writeSnapshot(): void {
-    mkdirSync(dirname(snapshotPath), { recursive: true });
-    // Atomic (tmp + rename) so a SIGHUP handler never reads a partial file.
-    writeFileSync(`${snapshotPath}.tmp`, JSON.stringify({ env: mergedEnv() }));
-    renameSync(`${snapshotPath}.tmp`, snapshotPath);
-  }
-
   function start(): void {
     const proc = spawn(command, [], {
-      env: mergedEnv(),
+      env: mergedSpawnEnv(envReader),
       stdio: ["ignore", "pipe", "pipe"],
     });
     child = proc;
@@ -63,9 +46,6 @@ export function createPodServiceSupervisor(opts: {
     const onExit = (code: number | null, signal: string | null): void => {
       if (child !== proc) return; // superseded, or already handled
       child = null;
-      if (killTimer) clearTimeout(killTimer);
-      killTimer = null;
-      if (stopped) return;
       if (signal === "SIGHUP") {
         backoffMs = BACKOFF_INITIAL_MS;
         log("did not handle reload; respawning with fresh env");
@@ -98,22 +78,12 @@ export function createPodServiceSupervisor(opts: {
 
   return {
     refreshEnv() {
-      if (stopped) return;
       if (restartTimer) clearTimeout(restartTimer);
       restartTimer = null;
       backoffMs = BACKOFF_INITIAL_MS;
-      writeSnapshot();
+      snapshot.write({ env: mergedSpawnEnv(envReader) });
       if (child) child.kill("SIGHUP");
       else start();
-    },
-    shutdown() {
-      stopped = true;
-      if (restartTimer) clearTimeout(restartTimer);
-      restartTimer = null;
-      const proc = child;
-      if (!proc) return;
-      proc.kill("SIGTERM");
-      killTimer = setTimeout(() => proc.kill("SIGKILL"), SIGTERM_GRACE_MS);
     },
   };
 }

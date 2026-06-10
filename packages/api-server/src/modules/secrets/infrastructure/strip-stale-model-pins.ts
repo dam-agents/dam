@@ -6,13 +6,12 @@
  * same var in a generic/custom provider is a deliberate choice and must
  * keep winning.
  */
-import type { EnvMapping } from "api-server-api";
-
 import type { K8sClient } from "../../agents/infrastructure/k8s.js";
 import {
-  ANN_ENV_MAPPINGS,
   LABEL_MANAGED_BY,
   LABEL_SECRET_TYPE,
+  readEnvMappings,
+  writeEnvMappings,
 } from "./k8s-secrets-port.js";
 
 const PIN_ENV_VARS = new Set([
@@ -33,20 +32,12 @@ export async function stripStaleModelPins(
   let patched = 0;
   for (const secret of secrets) {
     const name = secret.metadata?.name;
-    const raw = secret.metadata?.annotations?.[ANN_ENV_MAPPINGS];
-    if (!name || !raw) continue;
-    let mappings: EnvMapping[];
-    try {
-      mappings = JSON.parse(raw);
-    } catch {
-      continue; // malformed annotation — not this sweep's problem
-    }
-    if (!Array.isArray(mappings)) continue;
+    const mappings = readEnvMappings(secret.metadata?.annotations);
+    if (!name || !mappings) continue;
     const kept = mappings.filter((m) => !PIN_ENV_VARS.has(m?.envName));
     if (kept.length === mappings.length) continue;
     const annotations = { ...secret.metadata!.annotations };
-    if (kept.length) annotations[ANN_ENV_MAPPINGS] = JSON.stringify(kept);
-    else delete annotations[ANN_ENV_MAPPINGS];
+    writeEnvMappings(annotations, kept);
     await client.replaceSecret(name, {
       ...secret,
       metadata: { ...secret.metadata, annotations },

@@ -9,3 +9,7 @@ export interface RuntimeEnvReader {
   /** Whether env has been materialized at least once — the cold-boot gate. */
   ready(): boolean;
 }
+
+export const mergedSpawnEnv = (
+  envReader: RuntimeEnvReader,
+): NodeJS.ProcessEnv => ({ ...envReader.current(), ...process.env });

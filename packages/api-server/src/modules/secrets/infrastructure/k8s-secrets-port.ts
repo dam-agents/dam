@@ -30,7 +30,28 @@ const ANN_HEADER_NAME = "agent-platform.ai/injection-header-name";
 const ANN_AUTH_MODE = "agent-platform.ai/auth-mode";
 const ANN_VALUE_FORMAT = "agent-platform.ai/injection-value-format";
 const ANN_QUERY_PARAM = "agent-platform.ai/injection-query-param";
-export const ANN_ENV_MAPPINGS = "agent-platform.ai/env-mappings";
+const ANN_ENV_MAPPINGS = "agent-platform.ai/env-mappings";
+
+export function readEnvMappings(
+  annotations: Record<string, string> | undefined,
+): EnvMapping[] | null {
+  const raw = annotations?.[ANN_ENV_MAPPINGS];
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as EnvMapping[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeEnvMappings(
+  annotations: Record<string, string>,
+  mappings: EnvMapping[],
+): void {
+  if (mappings.length) annotations[ANN_ENV_MAPPINGS] = JSON.stringify(mappings);
+  else delete annotations[ANN_ENV_MAPPINGS];
+}
 // Twin → primary link. Set on extraInjections-derived secrets.
 const ANN_PRIMARY_ID = "agent-platform.ai/primary-secret-id";
 
@@ -239,13 +260,8 @@ function parseStoredSecret(s: k8s.V1Secret): K8sStoredSecret | null {
   if (ann[ANN_PATH_PATTERN]) stored.pathPattern = ann[ANN_PATH_PATTERN];
   if (injectionConfig) stored.injectionConfig = injectionConfig;
   if (authMode) stored.authMode = authMode;
-  if (ann[ANN_ENV_MAPPINGS]) {
-    try {
-      stored.envMappings = JSON.parse(ann[ANN_ENV_MAPPINGS]);
-    } catch {
-      /* malformed annotation — controller falls back to legacy switch */
-    }
-  }
+  const envMappings = readEnvMappings(ann);
+  if (envMappings) stored.envMappings = envMappings;
   if (ann[ANN_PRIMARY_ID]) stored.primarySecretId = ann[ANN_PRIMARY_ID];
   return stored;
 }
@@ -302,8 +318,7 @@ export function createK8sSecretsPort(
       }
       if (pathPattern) annotations[ANN_PATH_PATTERN] = pathPattern;
       if (authMode) annotations[ANN_AUTH_MODE] = authMode;
-      if (envMappings?.length)
-        annotations[ANN_ENV_MAPPINGS] = JSON.stringify(envMappings);
+      writeEnvMappings(annotations, envMappings ?? []);
       if (injectionConfig?.queryParamName) {
         annotations[ANN_QUERY_PARAM] = injectionConfig.queryParamName;
       }
@@ -350,17 +365,9 @@ export function createK8sSecretsPort(
       if (patch.pathPattern === null) delete annotations[ANN_PATH_PATTERN];
       else if (patch.pathPattern !== undefined)
         annotations[ANN_PATH_PATTERN] = patch.pathPattern;
-      if (patch.envMappings !== undefined) {
-        if (patch.envMappings.length > 0)
-          annotations[ANN_ENV_MAPPINGS] = JSON.stringify(patch.envMappings);
-        else delete annotations[ANN_ENV_MAPPINGS];
-      }
+      if (patch.envMappings !== undefined)
+        writeEnvMappings(annotations, patch.envMappings);
 
-      // Recompute header + value format if the injection config or auth mode
-      // changed; otherwise keep what was stored at create time. The router
-      // enforces that any `injectionConfig` change is paired with a new
-      // `value`, so we re-bake the SDS file in that branch below — there is
-      // no need to recover the prior value from the existing inline_string.
       const newAuthMode: AuthMode | undefined =
         patch.authMode ?? (annotations[ANN_AUTH_MODE] as AuthMode | undefined);
       // Recover the existing InjectionConfig from annotations to seed

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { WebSocket as WsWebSocket } from "ws";
 import type { SshService } from "agent-runtime-api";
 import { err, ok } from "agent-runtime-api";
-import type { RuntimeEnvReader } from "../core/runtime-env.js";
+import { mergedSpawnEnv, type RuntimeEnvReader } from "../core/runtime-env.js";
 
 const SSHD_PATH = process.env.SSHD_PATH || "/usr/sbin/sshd";
 const SFTP_SERVER_CANDIDATES = [
@@ -61,11 +61,7 @@ export function refreshSshEnvironment(
   homeDir: string,
   log: (msg: string) => void,
 ): void {
-  const merged: NodeJS.ProcessEnv = {
-    ...envReader.current(),
-    ...process.env,
-  };
-  const body = buildSshEnvironmentFile(merged, log);
+  const body = buildSshEnvironmentFile(mergedSpawnEnv(envReader), log);
   const sshDir = join(homeDir, ".ssh");
   const target = join(sshDir, "environment");
   try {

@@ -108,11 +108,13 @@ const versionKey = (id) => {
     parts.filter(isDateLike).map(Number),
   ];
 };
-const cmpParts = (a, b) =>
-  Array.from(
-    { length: Math.max(a.length, b.length) },
-    (_, i) => (a[i] ?? -1) - (b[i] ?? -1),
-  ).find(Boolean) ?? 0;
+const cmpParts = (a, b) => {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const d = (a[i] ?? -1) - (b[i] ?? -1);
+    if (d) return d;
+  }
+  return 0;
+};
 const byVersion = (a, b) => {
   const [va, da] = versionKey(a);
   const [vb, db] = versionKey(b);
@@ -136,9 +138,8 @@ function envLines() {
   );
   const fallback = opus ?? sonnet ?? haiku ?? models.toSorted(byVersion).at(-1);
   return Object.entries({
-    ANTHROPIC_DEFAULT_OPUS_MODEL: publicName(opus ?? fallback),
+    ANTHROPIC_DEFAULT_OPUS_MODEL: publicName(fallback),
     ANTHROPIC_DEFAULT_SONNET_MODEL: publicName(sonnet ?? fallback),
-    // Haiku substitutes downward in price first; opus only as a last resort.
     ANTHROPIC_DEFAULT_HAIKU_MODEL: publicName(haiku ?? sonnet ?? fallback),
   })
     .map(([k, v]) => `[ -n "\${${k}:-}" ] || export ${k}=${shQuote(v)}\n`)
@@ -232,15 +233,22 @@ const server = http.createServer((req, res) => {
     return;
   }
   if (req.method === "GET" && path === "/v1/models") {
-    void refreshCatalog().then((ids) => {
-      const names = ids ?? [...knownModels.values()];
+    const respond = () =>
       res.writeHead(200, { "content-type": "application/json" }).end(
         JSON.stringify({
-          data: names.map((id) => ({ id: publicName(id), type: "model" })),
+          data: [...knownModels.values()].map((id) => ({
+            id: publicName(id),
+            type: "model",
+          })),
           has_more: false,
         }),
       );
-    });
+    if (knownModels.size) {
+      void refreshCatalog();
+      respond();
+    } else {
+      void refreshCatalog().then(respond);
+    }
     return;
   }
   void proxy(req, res).catch((err) => {
@@ -273,9 +281,6 @@ process.on("SIGHUP", () => {
     void refreshCatalog();
   }
 });
-
-process.on("SIGTERM", () => process.exit(0));
-process.on("SIGINT", () => process.exit(0));
 
 if (!(await refreshCatalog()))
   log(

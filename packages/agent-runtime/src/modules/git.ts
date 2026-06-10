@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import type { RuntimeEnvReader } from "../core/runtime-env.js";
+import { mergedSpawnEnv, type RuntimeEnvReader } from "../core/runtime-env.js";
 
 const GH_TOKEN_ENV = "GH_TOKEN";
 const SETUP_TIMEOUT_MS = 10_000;
@@ -16,7 +16,7 @@ export function configureGitCredentialHelper(
   envReader: RuntimeEnvReader,
   log: (msg: string) => void,
 ): void {
-  const env = { ...envReader.current(), ...process.env };
+  const env = mergedSpawnEnv(envReader);
   if (!env[GH_TOKEN_ENV]) return;
 
   const proc = spawn("gh", ["auth", "setup-git"], {

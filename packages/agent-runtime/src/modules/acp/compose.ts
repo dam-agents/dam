@@ -1,5 +1,8 @@
 import type { DocumentStoreBackend } from "../../core/document-store.js";
-import type { RuntimeEnvReader } from "../../core/runtime-env.js";
+import {
+  mergedSpawnEnv,
+  type RuntimeEnvReader,
+} from "../../core/runtime-env.js";
 import { createChildAgentProcess } from "./infrastructure/create-child-agent-process.js";
 import { createSessionMetadataStore } from "./infrastructure/session-metadata-store.js";
 import { createAcpRuntime, type AcpRuntime } from "./services/acp-runtime.js";
@@ -27,7 +30,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
       createChildAgentProcess({
         command: opts.command,
         workingDir: opts.workingDir,
-        env: { ...opts.envReader.current(), ...process.env },
+        env: mergedSpawnEnv(opts.envReader),
       }),
     workingDir: opts.workingDir,
     sessionMetadata,
