@@ -20,8 +20,6 @@ import {
 import type { K8sClient } from "../../agents/infrastructure/k8s.js";
 
 const LABEL_OWNER = "agent-platform.ai/owner";
-// Exported for the boot-time sweeps that operate across owners (e.g.
-// strip-stale-model-pins.ts).
 export const LABEL_SECRET_TYPE = "agent-platform.ai/secret-type";
 export const LABEL_MANAGED_BY = "agent-platform.ai/managed-by";
 const ANN_HOST_PATTERN = "agent-platform.ai/host-pattern";

@@ -413,8 +413,6 @@ try {
   );
 }
 
-// Fire-and-forget: an agent spawned during the race reads a stale pin once;
-// the sweep reruns every boot.
 stripStaleModelPins(k8sClient)
   .then((n) => {
     if (n)

@@ -1,11 +1,3 @@
-/**
- * Idempotent boot sweep: drop the Claude Code model pins that pre-gateway
- * saves of the IBM LiteLLM preset snapshotted into secrets — the model
- * gateway (ADR-066) serves tier defaults assign-if-unset, so a stored pin
- * would mask live discovery forever (#702). Only `ibm-litellm` secrets: the
- * same var in a generic/custom provider is a deliberate choice and must
- * keep winning.
- */
 import type { K8sClient } from "../../agents/infrastructure/k8s.js";
 import {
   LABEL_MANAGED_BY,

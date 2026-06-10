@@ -99,7 +99,7 @@ const podService = existsSync(podServicePath)
       log: podLog,
     })
   : null;
-// Warm restart (env on the PV) starts now; cold boot waits for the env driver.
+
 if (envStore.ready()) podService?.refreshEnv();
 
 const { runtime: acpRuntime, triggerDriver } = composeAcp({
@@ -126,8 +126,6 @@ const runtimeChannel = await composeRuntimeChannel({
       onChange: () => {
         acpRuntime.refreshEnv();
         podService?.refreshEnv();
-        // Env carrying GH_TOKEN just landed — (re)point git's credential helper
-        // at gh. Reads the freshly-written env; no-ops without a token.
         configureGitCredentialHelper(envStore, (msg) =>
           process.stderr.write(`[git] ${msg}\n`),
         );

@@ -1,16 +1,7 @@
-// Loopback passthrough gateway fronting a custom Anthropic-compatible
-// upstream (ADR-066), run as the supervised pod service (ADR-065). Claude
-// Code's gateway model discovery drops catalog ids without a recognized
-// provider prefix (verified empirically), so /v1/models is served with
-// claude/-prefixed ids and the prefix is mapped back to the verbatim
-// upstream id on each request. Bodies are otherwise forwarded byte-for-byte
-// so unknown API fields and beta headers survive.
-
 import http from "node:http";
 import { readFileSync } from "node:fs";
 import { Readable } from "node:stream";
 
-// Keep in sync with _GATEWAY_BASE in model-gateway.sh.
 const HOST = "127.0.0.1";
 const PORT = 24180;
 const SNAPSHOT_FILE = `${process.env.HOME}/.platform/pod-service-env.json`;
@@ -18,8 +9,6 @@ const PREFIX = "claude/";
 
 const log = (msg) => process.stderr.write(`model-gateway: ${msg}\n`);
 
-// Keep in sync with _gateway_custom_upstream in model-gateway.sh; "already
-// loopback" guards re-wrapping ourselves.
 function customUpstream(raw) {
   const base = (raw ?? "").replace(/\/+$/, "");
   if (!base || /^http:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(base))
@@ -34,9 +23,6 @@ if (!UPSTREAM) {
   process.exit(0);
 }
 
-// public (prefixed, lowercased) name -> verbatim upstream id. Unknown names
-// fall back to a bare prefix strip, so Claude Code's built-in model names
-// still route when discovery failed.
 let knownModels = new Map();
 
 const publicName = (id) => {
@@ -48,8 +34,6 @@ const resolveModel = (name) =>
   knownModels.get(name) ??
   (name.toLowerCase().startsWith(PREFIX) ? name.slice(PREFIX.length) : name);
 
-// Embedding models can't serve chat (LiteLLM-style upstreams flag them via
-// mode/type).
 const isEmbedding = (m) =>
   ["id", "mode", "type"].some((f) =>
     String(m?.[f] ?? "")
@@ -83,7 +67,6 @@ async function fetchCatalog() {
   }
 }
 
-// Discard a fetch that raced a reload to a different upstream.
 async function refreshCatalog() {
   const upstream = UPSTREAM;
   const ids = await fetchCatalog();
@@ -97,9 +80,6 @@ function applyCatalog(ids) {
   knownModels = new Map(ids.map((id) => [publicName(id), id]));
 }
 
-// Numeric components approximate "latest" (opus-4-8 > opus-4-1 > 3-opus).
-// 8-digit date stamps only break ties — compared inline they would dwarf
-// version numbers (sonnet-4-20250514 outranking sonnet-4-5-20250929).
 const isDateLike = (p) => p.length >= 8;
 const versionKey = (id) => {
   const parts = id.match(/\d+/g) ?? [];
@@ -127,9 +107,6 @@ const latest = (models, tier) => {
 
 const shQuote = (v) => `'${v.replaceAll("'", "'\\''")}'`;
 
-// Tier-default model vars for the shim to eval, assign-if-unset so a var set
-// on the agent wins. Only tier defaults: main/subagent model selection stays
-// Claude Code's. Empty until discovery first succeeds.
 function envLines() {
   const models = [...knownModels.values()];
   if (!models.length) return "";
@@ -146,9 +123,6 @@ function envLines() {
     .join("");
 }
 
-// Hop-by-hop / recomputed headers. accept-encoding too: fetch() negotiates
-// and transparently decompresses, so encoding/length no longer describe what
-// we forward.
 const REQ_DROP = new Set([
   "host",
   "connection",
@@ -257,9 +231,6 @@ const server = http.createServer((req, res) => {
   });
 });
 
-// ADR-065 reload: re-read the supervisor's env snapshot (exactly what a
-// respawn would receive) and re-point in place — the listener never closes,
-// so in-flight streams survive an env change.
 process.on("SIGHUP", () => {
   let env;
   try {

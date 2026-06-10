@@ -3,7 +3,6 @@ FROM registry.access.redhat.com/hi/nodejs:24-builder AS base
 USER root
 ENV PATH="/app/node_modules/.bin:$PATH"
 
-# catatonit: minimal container init (RH's tini equivalent, see ENTRYPOINT).
 RUN dnf install -y git tar gzip openssh-server catatonit && dnf clean all
 
 ARG NPM_VERSION=11.16.0
@@ -138,9 +137,5 @@ USER 65532
 ENV PORT=8080
 EXPOSE 8080
 
-# catatonit as PID 1: agent-runtime (Node) supervises the processes it spawns
-# (harness sessions, the ADR-065 pod service) but does not reap children it
-# didn't — anything orphaned by a dying harness would zombify without an init.
-# catatonit reaps all descendants and forwards signals to agent-runtime.
 ENTRYPOINT ["/usr/libexec/catatonit/catatonit", "--", "/usr/local/bin/agent-entrypoint"]
 CMD ["node", "dist/server.js"]
