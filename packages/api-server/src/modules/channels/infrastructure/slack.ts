@@ -1,9 +1,3 @@
-import {
-  App,
-  LogLevel,
-  type SlackEventMiddlewareArgs,
-  type SlackCommandMiddlewareArgs,
-} from "@slack/bolt";
 import { filter, merge, take, timeout } from "rxjs";
 import { match, P } from "ts-pattern";
 import { ChannelType, SessionType, type AgentsService } from "api-server-api";
@@ -33,18 +27,15 @@ import {
 } from "./identity-oauth.js";
 import { formatError } from "../../../core/format-error.js";
 import { securityLog } from "../../../core/security-log.js";
-
-type BoltApp = InstanceType<typeof App>;
+import type {
+  SlackAck,
+  SlackGateway,
+  SlackImageFile,
+  SlackMentionEvent,
+  SlackSlashCommand,
+} from "./slack-gateway.js";
 
 const FORK_OUTCOME_TIMEOUT_MS = 2 * 60_000;
-
-type SlackImageFile = {
-  id: string;
-  name: string;
-  mimetype: string;
-  url_private: string;
-  size: number;
-};
 
 export type FetchedImage = {
   block: ContentBlock;
@@ -82,7 +73,7 @@ function createSemaphore(max: number) {
 const imageFetchSemaphore = createSemaphore(CONCURRENT_IMAGE_FETCH_LIMIT);
 
 async function fetchSlackImages(
-  botToken: string,
+  gateway: SlackGateway,
   files: SlackImageFile[] | undefined,
 ): Promise<FetchImagesResult> {
   const imageFiles = (files ?? []).filter((f) =>
@@ -99,11 +90,8 @@ async function fetchSlackImages(
     const failures: FetchedFailure[] = [];
     for (const f of imageFiles) {
       try {
-        const res = await fetch(f.url_private, {
-          headers: { Authorization: `Bearer ${botToken}` },
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = Buffer.from(await res.arrayBuffer()).toString("base64");
+        const buf = await gateway.downloadFile(f.url_private);
+        const data = Buffer.from(buf).toString("base64");
         images.push({
           block: { type: "image", data, mimeType: f.mimetype },
           meta: { name: f.name, size: f.size },
@@ -127,27 +115,24 @@ function renderTurnFiles(images: FetchedImage[]): string {
 }
 
 async function getContextMessages(
-  app: BoltApp,
+  gateway: SlackGateway,
   channel: string,
   ts: string,
   threadTs?: string,
 ): Promise<string[]> {
   if (threadTs) {
-    const replies = await app.client.conversations.replies({
+    const messages = await gateway.getThreadReplies({
       channel,
-      ts: threadTs,
+      threadTs,
       limit: 50,
     });
-    return (replies.messages ?? [])
+    return messages
       .filter((m) => m.ts !== ts)
       .map((m) => `${m.user ?? "unknown"}: ${m.text}`);
   }
 
-  const history = await app.client.conversations.history({
-    channel,
-    limit: 10,
-  });
-  return (history.messages ?? [])
+  const messages = await gateway.getChannelHistory({ channel, limit: 10 });
+  return messages
     .filter((m) => m.ts !== ts)
     .reverse()
     .map((m) => `${m.user ?? "unknown"}: ${m.text}`);
@@ -182,22 +167,21 @@ export interface SlackOAuthPending {
 
 export function createSlackWorker(
   namespace: string,
-  botToken: string,
-  appToken: string,
+  createGateway: () => SlackGateway,
   agents: () => AgentsService,
   identityLinks: IdentityLinkService,
   oauthConfig: KeycloakOAuthConfig,
   pendingOAuthFlows: Map<string, SlackOAuthPending>,
   getInstanceOwner: (agentId: string) => Promise<string | null>,
   channelRegistry: ChannelRegistry,
-  /** Lowercase brand identifier used as the Slack slash command name (e.g.
+  /** Lowercase brand identifier used in slash-command help text (e.g.
    *  brandShort="name" → /name login). Sourced from BRAND_SHORT env var. */
   brandShort: string,
   isTermsAccepted: (sub: string) => Promise<boolean>,
   uiBaseUrl: string,
   emit: (event: DomainEvent) => void = defaultEmit,
 ): SlackWorker {
-  let app: BoltApp | null = null;
+  let gateway: SlackGateway | null = null;
 
   async function ephemeral(
     channel: string,
@@ -205,19 +189,14 @@ export function createSlackWorker(
     threadTs: string | undefined,
     text: string,
   ) {
-    if (!app) {
+    if (!gateway) {
       process.stderr.write(
         `[slack] ephemeral skipped (app not started): ${text}\n`,
       );
       return;
     }
     try {
-      await app.client.chat.postEphemeral({
-        channel,
-        user,
-        ...(threadTs ? { thread_ts: threadTs } : {}),
-        text,
-      });
+      await gateway.postEphemeral({ channel, user, threadTs, text });
     } catch (err) {
       process.stderr.write(
         `[slack] postEphemeral failed: ${formatError(err)}\n`,
@@ -246,12 +225,12 @@ export function createSlackWorker(
     slackUserId: string;
     images: FetchedImage[];
   }) {
-    if (!app) return;
+    if (!gateway) return;
     const { instanceName } = ctx;
 
-    await app.client.reactions.add({
+    await gateway.addReaction({
       channel: ctx.channel,
-      timestamp: ctx.eventTs,
+      ts: ctx.eventTs,
       name: "eyes",
     });
 
@@ -288,14 +267,14 @@ export function createSlackWorker(
             onImagesDropped,
           });
         } catch {
-          const prompt = await buildThreadPrompt(app, ctx);
+          const prompt = await buildThreadPrompt(gateway, ctx);
           response = await acp.sendPrompt(prompt, {
             platformMeta,
             onImagesDropped,
           });
         }
       } else {
-        const prompt = await buildThreadPrompt(app, ctx);
+        const prompt = await buildThreadPrompt(gateway, ctx);
         response = await acp.sendPrompt(prompt, {
           platformMeta,
           onImagesDropped,
@@ -313,9 +292,9 @@ export function createSlackWorker(
       process.stderr.write(
         `[${instanceName}] ACP error: ${formatError(err)}\n`,
       );
-      await app.client.chat.postMessage({
+      await gateway.postMessage({
         channel: ctx.channel,
-        thread_ts: ctx.threadTs,
+        threadTs: ctx.threadTs,
         text: `Error: ${formatError(err)}.${renderTurnFiles(ctx.images)}`,
       });
     } finally {
@@ -335,10 +314,10 @@ export function createSlackWorker(
     instanceName: string,
     response: string,
   ) {
-    if (!app) return;
-    await app.client.chat.postMessage({
+    if (!gateway) return;
+    await gateway.postMessage({
       channel,
-      thread_ts: threadTs,
+      threadTs,
       text: response || "(no response)",
       blocks: [
         { type: "markdown", text: response || "(no response)" },
@@ -361,15 +340,15 @@ export function createSlackWorker(
     hasThread: boolean;
     images: FetchedImage[];
   }) {
-    if (!app) return;
+    if (!gateway) return;
 
-    await app.client.reactions.add({
+    await gateway.addReaction({
       channel: args.channel,
-      timestamp: args.eventTs,
+      ts: args.eventTs,
       name: "eyes",
     });
 
-    const prompt = await buildThreadPrompt(app, {
+    const prompt = await buildThreadPrompt(gateway, {
       channel: args.channel,
       threadTs: args.threadTs,
       eventTs: args.eventTs,
@@ -410,19 +389,17 @@ export function createSlackWorker(
           process.stderr.write(
             `[slack/fork] fork outcome timeout for reply ${replyId}: ${formatError(err)}\n`,
           );
-          const bolt = app;
-          if (!bolt) return;
-          bolt.client.chat
-            .postEphemeral({
-              channel: args.channel,
-              user: args.slackUserId,
-              text: "Could not run turn as you: fork provisioning timed out. Try again or contact the instance owner.",
-            })
-            .catch((postErr) => {
-              process.stderr.write(
-                `[slack/fork] postEphemeral after timeout failed: ${formatError(postErr)}\n`,
-              );
-            });
+          const gw = gateway;
+          if (!gw) return;
+          gw.postEphemeral({
+            channel: args.channel,
+            user: args.slackUserId,
+            text: "Could not run turn as you: fork provisioning timed out. Try again or contact the instance owner.",
+          }).catch((postErr) => {
+            process.stderr.write(
+              `[slack/fork] postEphemeral after timeout failed: ${formatError(postErr)}\n`,
+            );
+          });
         },
       });
 
@@ -453,8 +430,8 @@ export function createSlackWorker(
       images: FetchedImage[];
     },
   ) {
-    if (!app) return;
-    const bolt = app;
+    if (!gateway) return;
+    const gw = gateway;
 
     await match(outcome)
       .with({ type: EventType.ForkReady }, async (event) => {
@@ -492,9 +469,9 @@ export function createSlackWorker(
           process.stderr.write(
             `[slack/fork ${event.forkId}] ACP error: ${formatError(err)}\n`,
           );
-          await bolt.client.chat.postMessage({
+          await gw.postMessage({
             channel: ctx.channel,
-            thread_ts: ctx.threadTs,
+            threadTs: ctx.threadTs,
             text: `Error: ${formatError(err)}.${renderTurnFiles(ctx.images)}`,
           });
         } finally {
@@ -511,7 +488,7 @@ export function createSlackWorker(
       .with({ type: EventType.ForkFailed }, async (event) => {
         const detail = event.detail ? ` (${event.detail})` : "";
         try {
-          await bolt.client.chat.postEphemeral({
+          await gw.postEphemeral({
             channel: ctx.channel,
             user: ctx.slackUserId,
             text: `Could not run turn as you: ${event.reason}${detail}.`,
@@ -536,7 +513,7 @@ export function createSlackWorker(
   }
 
   async function buildThreadPrompt(
-    boltApp: BoltApp,
+    gw: SlackGateway,
     ctx: {
       channel: string;
       threadTs: string;
@@ -547,7 +524,7 @@ export function createSlackWorker(
     },
   ): Promise<string | ContentBlock[]> {
     const contextMessages = await getContextMessages(
-      boltApp,
+      gw,
       ctx.channel,
       ctx.eventTs,
       ctx.hasThread ? ctx.threadTs : undefined,
@@ -563,15 +540,14 @@ export function createSlackWorker(
     return [{ type: "text", text }, ...ctx.images.map((i) => i.block)];
   }
 
-  async function handleCommand({ command, ack }: SlackCommandMiddlewareArgs) {
+  async function handleCommand(command: SlackSlashCommand, ack: SlackAck) {
     const subcommand = command.text.trim().toLowerCase();
 
     await match(subcommand)
       .with("login", async () => {
-        const existing = await identityLinks.resolve("slack", command.user_id);
+        const existing = await identityLinks.resolve("slack", command.userId);
         if (existing) {
           await ack({
-            response_type: "ephemeral",
             text: `You are already linked. Use \`/${brandShort} logout\` to unlink first.`,
           });
           return;
@@ -579,44 +555,37 @@ export function createSlackWorker(
 
         const { state, codeVerifier, codeChallenge } = generatePkce();
         pendingOAuthFlows.set(state, {
-          slackUserId: command.user_id,
-          channelId: command.channel_id,
+          slackUserId: command.userId,
+          channelId: command.channelId,
           codeVerifier,
           createdAt: Date.now(),
         });
 
         const loginUrl = buildAuthorizeUrl(oauthConfig, state, codeChallenge);
         await ack({
-          response_type: "ephemeral",
           text: `<${loginUrl}|Click here to link your Keycloak account>`,
         });
       })
       .with("logout", async () => {
-        const existing = await identityLinks.resolve("slack", command.user_id);
+        const existing = await identityLinks.resolve("slack", command.userId);
         if (!existing) {
-          await ack({
-            response_type: "ephemeral",
-            text: "You don't have a linked account.",
-          });
+          await ack({ text: "You don't have a linked account." });
           return;
         }
 
-        await identityLinks.unlink("slack", command.user_id);
-        await ack({ response_type: "ephemeral", text: "Account unlinked." });
+        await identityLinks.unlink("slack", command.userId);
+        await ack({ text: "Account unlinked." });
       })
       .with(P.string, async () => {
         await ack({
-          response_type: "ephemeral",
           text: `Usage: \`/${brandShort} login\` or \`/${brandShort} logout\``,
         });
       })
       .exhaustive();
   }
 
-  async function handleAppMention({
-    event,
-  }: SlackEventMiddlewareArgs<"app_mention">) {
-    if (!app) return;
+  async function handleAppMention(event: SlackMentionEvent) {
+    if (!gateway) return;
 
     const slackUserId = event.user;
     if (!slackUserId) return;
@@ -633,7 +602,7 @@ export function createSlackWorker(
         reason: "unlinked",
         detail: { slackUserId, channelId: event.channel },
       });
-      await app.client.chat.postEphemeral({
+      await gateway.postEphemeral({
         channel: event.channel,
         user: slackUserId,
         text: `You need to link your account first. Use \`/${brandShort} login\` to get started.`,
@@ -641,12 +610,12 @@ export function createSlackWorker(
       return;
     }
 
-    const threadTs = event.thread_ts ?? event.ts;
+    const threadTs = event.threadTs ?? event.ts;
     const instanceName = await channelRegistry.resolveInstanceBySlackChannel(
       event.channel,
     );
     if (!instanceName) {
-      await app.client.chat.postEphemeral({
+      await gateway.postEphemeral({
         channel: event.channel,
         user: slackUserId,
         text: "No instance connected to this channel.",
@@ -654,17 +623,14 @@ export function createSlackWorker(
       return;
     }
 
-    const fetchResult = await fetchSlackImages(
-      botToken,
-      (event as { files?: SlackImageFile[] }).files,
-    );
+    const fetchResult = await fetchSlackImages(gateway, event.files);
     if (fetchResult.kind === "cap_exceeded") {
       const mb = (fetchResult.totalBytes / 1_000_000).toFixed(1);
       const capMb = (TOTAL_IMAGE_BYTES_CAP / 1_000_000).toFixed(0);
       await ephemeral(
         event.channel,
         slackUserId,
-        event.thread_ts,
+        event.threadTs,
         `Attached images total ${mb} MB, over the ${capMb} MB per-message cap. Send smaller images or fewer at once.`,
       );
       return;
@@ -674,7 +640,7 @@ export function createSlackWorker(
       await ephemeral(
         event.channel,
         slackUserId,
-        event.thread_ts,
+        event.threadTs,
         `Couldn't fetch attached image '${f.name}': ${f.reason}. Try resending.`,
       );
     }
@@ -684,7 +650,7 @@ export function createSlackWorker(
       threadTs,
       eventTs: event.ts,
       text: event.text,
-      hasThread: !!event.thread_ts,
+      hasThread: !!event.threadTs,
       slackUserId,
       keycloakSub,
       instanceName,
@@ -703,7 +669,7 @@ export function createSlackWorker(
     instanceName: string;
     images: FetchedImage[];
   }) {
-    if (!app) return;
+    if (!gateway) return;
 
     const [ownerSub, isAllowed] = await Promise.all([
       getInstanceOwner(args.instanceName),
@@ -723,7 +689,7 @@ export function createSlackWorker(
         reason: "not-allowed",
         detail: { slackUserId: args.slackUserId, channelId: args.channel },
       });
-      await app.client.chat.postEphemeral({
+      await gateway.postEphemeral({
         channel: args.channel,
         user: args.slackUserId,
         text: "You don't have access to this instance. Contact the instance owner to be added to the allowed users list.",
@@ -742,7 +708,7 @@ export function createSlackWorker(
     });
 
     if (!(await isTermsAccepted(args.keycloakSub))) {
-      await app.client.chat.postEphemeral({
+      await gateway.postEphemeral({
         channel: args.channel,
         user: args.slackUserId,
         text: `Open ${uiBaseUrl} to accept the Terms of Use before sending messages.`,
@@ -768,46 +734,33 @@ export function createSlackWorker(
     });
   }
 
-  let appFailed = false;
+  let gatewayFailed = false;
 
-  async function ensureApp(): Promise<BoltApp | null> {
-    if (app) return app;
-    if (appFailed) return null;
+  async function ensureGateway(): Promise<SlackGateway | null> {
+    if (gateway) return gateway;
+    if (gatewayFailed) return null;
 
-    const bolt = new App({
-      token: botToken,
-      appToken,
-      socketMode: true,
-      logLevel: LogLevel.DEBUG,
+    const gw = createGateway();
+    const connected = await gw.start({
+      onMention: handleAppMention,
+      onCommand: handleCommand,
     });
-
-    bolt.event("app_mention", handleAppMention);
-    bolt.command(`/${brandShort}`, handleCommand);
-
-    bolt.error(async (error) => {
-      process.stderr.write(`[slack] Bolt error: ${error}\n`);
-    });
-
-    try {
-      await bolt.start();
-    } catch (err) {
-      appFailed = true;
-      process.stderr.write(
-        `[slack] Failed to start Slack bot: ${formatError(err)}\n`,
-      );
+    if (!connected) {
+      gatewayFailed = true;
+      process.stderr.write("[slack] Slack bot not connected\n");
       return null;
     }
 
-    app = bolt;
+    gateway = gw;
     process.stderr.write("Slack bot started (single app)\n");
-    return app;
+    return gateway;
   }
 
   return {
     type: ChannelType.Slack,
 
     async start(instanceName: string, _channel: StoredChannelConfig) {
-      const started = await ensureApp();
+      const started = await ensureGateway();
       if (!started) {
         process.stderr.write(
           `Slack: skipping ${instanceName} — bot not connected\n`,
@@ -822,9 +775,9 @@ export function createSlackWorker(
     },
 
     async stopAll() {
-      if (app) {
-        await app.stop();
-        app = null;
+      if (gateway) {
+        await gateway.stop();
+        gateway = null;
       }
     },
 
@@ -854,36 +807,36 @@ export function createSlackWorker(
         };
       }
 
-      if (!app) {
+      if (!gateway) {
         return { error: "slack bot not running" };
       }
 
       const contextBlock = {
-        type: "context" as const,
-        elements: [{ type: "mrkdwn" as const, text: `_${instanceName}_` }],
+        type: "context",
+        elements: [{ type: "mrkdwn", text: `_${instanceName}_` }],
       };
 
       try {
         // Two-message pattern when there's both text and a file: post the
-        // text via chat.postMessage (full markdown rendering) then upload the
-        // file as a separate message. files.uploadV2 with blocks gives a
-        // narrower mrkdwn subset and was returning internal_error on Slack's
-        // side for some block shapes — keeping the upload simple side-steps
-        // both issues and gives consistent text formatting in either path.
+        // text via postMessage (full markdown rendering) then upload the file
+        // as a separate message. uploadFile with blocks gives a narrower
+        // mrkdwn subset and was returning internal_error on Slack's side for
+        // some block shapes — keeping the upload simple side-steps both issues
+        // and gives consistent text formatting in either path.
         if (text) {
-          await app.client.chat.postMessage({
+          await gateway.postMessage({
             channel: slackChannelId,
             text,
             blocks: [{ type: "markdown", text }, contextBlock],
           });
         }
         if (attachment) {
-          await app.client.files.uploadV2({
-            channel_id: slackChannelId,
+          await gateway.uploadFile({
+            channelId: slackChannelId,
             file: attachment.data,
             filename: attachment.filename,
-            ...(attachment.title ? { title: attachment.title } : {}),
-            ...(text ? {} : { initial_comment: `_${instanceName}_` }),
+            title: attachment.title,
+            initialComment: text ? undefined : `_${instanceName}_`,
           });
         }
         return { ok: true as const };

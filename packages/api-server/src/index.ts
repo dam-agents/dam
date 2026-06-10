@@ -28,6 +28,7 @@ import {
   type SlackOAuthPending,
   type ChannelRegistry,
 } from "./modules/channels/infrastructure/slack.js";
+import { createBoltSlackGateway } from "./modules/channels/infrastructure/bolt-slack-gateway.js";
 import {
   createTelegramWorker,
   type TelegramOAuthPending,
@@ -249,29 +250,37 @@ const channelRegistry: ChannelRegistry = {
   resolveSlackChannelByInstance: findSlackChannelByAgent(db),
 };
 
-const slackWorker =
+const slackTokens =
   config.slackBotToken && config.slackAppToken
-    ? createSlackWorker(
-        config.namespace,
-        config.slackBotToken,
-        config.slackAppToken,
-        () => systemAgents,
-        identityLinkService,
-        {
-          keycloakExternalUrl: config.keycloakExternalUrl,
-          keycloakUrl: config.keycloakUrl,
-          keycloakRealm: config.keycloakRealm,
-          keycloakClientId: config.keycloakClientId,
-          callbackUrl: slackOauthCallbackUrl,
-        },
-        pendingSlackOAuthFlows,
-        (agentId) => agentsRepo.getOwner(agentId),
-        channelRegistry,
-        config.brand.short,
-        isTermsAccepted,
-        config.uiBaseUrl,
-      )
-    : undefined;
+    ? { botToken: config.slackBotToken, appToken: config.slackAppToken }
+    : null;
+
+const slackWorker = slackTokens
+  ? createSlackWorker(
+      config.namespace,
+      () =>
+        createBoltSlackGateway({
+          botToken: slackTokens.botToken,
+          appToken: slackTokens.appToken,
+          commandName: `/${config.brand.short}`,
+        }),
+      () => systemAgents,
+      identityLinkService,
+      {
+        keycloakExternalUrl: config.keycloakExternalUrl,
+        keycloakUrl: config.keycloakUrl,
+        keycloakRealm: config.keycloakRealm,
+        keycloakClientId: config.keycloakClientId,
+        callbackUrl: slackOauthCallbackUrl,
+      },
+      pendingSlackOAuthFlows,
+      (agentId) => agentsRepo.getOwner(agentId),
+      channelRegistry,
+      config.brand.short,
+      isTermsAccepted,
+      config.uiBaseUrl,
+    )
+  : undefined;
 
 const telegramWorker =
   config.telegramEnabled && chatSdkState

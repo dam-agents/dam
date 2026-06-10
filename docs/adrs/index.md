@@ -68,6 +68,7 @@ This directory contains ADRs for the Platform project.
 | [061](061-warm-pvc-pool.md)                   | Warm PVC pool — pre-provisioned size-keyed spare workspace volumes claimed at agent create | @pilartomas |
 | [062](062-ssh-access.md)                      | SSH access to agents — in-pod inetd sshd tunneled over the agent WebSocket | @JanPokorny |
 | [063](063-hand-written-migrations.md)         | Generated table migrations, hand-written views, squashed baseline | @jezekra1 |
+| [064](064-slack-e2e-bolt-port.md)             | Slack E2E — Bolt behind a swappable port, fork path exercised end-to-end | @tomkis |
 
 ## Drafts
 
