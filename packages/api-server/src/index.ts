@@ -413,11 +413,8 @@ try {
   );
 }
 
-// Idempotent sweep: the retired IBM LiteLLM preset snapshotted Claude Code
-// model pins into saved secrets; the claude-code model gateway (ADR-066) owns
-// model selection now and its env file is assign-if-unset, so a stored pin
-// would permanently mask discovery. Fire-and-forget — an agent spawned during
-// the race reads a stale pin once; the sweep reruns every boot.
+// Fire-and-forget: an agent spawned during the race reads a stale pin once;
+// the sweep reruns every boot.
 stripStaleModelPins(k8sClient)
   .then((n) => {
     if (n)

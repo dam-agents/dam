@@ -3,31 +3,23 @@ import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { RuntimeEnvReader } from "../core/runtime-env.js";
 
-// Supervisor for the optional image-provided pod service (ADR-065). An agent
-// image may install an executable at /usr/local/bin/pod-service (a well-known
-// path, like the harness shims of ADR-037); when present, the runtime keeps it
-// running as a supervised child for the life of the pod — e.g. claude-code's
-// local model gateway. The runtime owns the lifecycle so the service is
-// never an orphaned nohup daemon: crashes restart with backoff, and exits are
-// reaped as ordinary children of PID 1.
+// Supervisor for the optional image-provided pod service (ADR-065),
+// installed at /usr/local/bin/pod-service like the ADR-037 harness shims.
 //
-// Env changes reload in place: a running process's environ can't be rewritten
-// from outside, so the supervisor persists the merged env to a well-known
-// snapshot file and sends SIGHUP. A service that handles the signal re-reads
-// the snapshot and keeps serving (no listener gap, in-flight work finishes);
-// one that doesn't dies by the signal's default action and is respawned with
-// the fresh env — the snapshot is also what every spawn receives, so both
-// paths converge on the same env.
+// Env changes reload in place: a running process's environ can't be
+// rewritten from outside, so the supervisor persists the merged env to a
+// snapshot file and sends SIGHUP. A service that handles it re-reads the
+// snapshot; one that doesn't dies by the default signal action and is
+// respawned with the fresh env — both paths converge on the same env.
 //
-// Exit-code contract: exit 0 means "nothing to do for this env" — the service
-// stays down until the env next changes. Death by the reload SIGHUP respawns
-// immediately. Any other exit is a crash and is restarted with capped
-// exponential backoff.
+// Exit-code contract: exit 0 means "nothing to do for this env" (down until
+// the env next changes); any other exit is a crash, restarted with capped
+// backoff.
 
 const BACKOFF_INITIAL_MS = 1_000;
 const BACKOFF_MAX_MS = 30_000;
-// A run at least this long resets the backoff — the service was healthy, so a
-// later crash is fresh, not a continuation of a startup-crash loop.
+// A run at least this long resets the backoff — a later crash is fresh, not
+// a continuation of a startup-crash loop.
 const HEALTHY_RUN_MS = 60_000;
 const SIGTERM_GRACE_MS = 10_000;
 
@@ -47,13 +39,8 @@ export type SpawnPodService = (
 ) => PodServiceProcess;
 
 export interface PodServiceSupervisor {
-  /**
-   * Env is current — warm boot, or the env driver just rewrote it. Persists
-   * the env snapshot, then ensures the service runs against it: starts it if
-   * down (including "declined" services whose condition may now hold), or
-   * sends SIGHUP so it reloads in place — nothing may take on new work with
-   * credentials/URLs captured from a stale env.
-   */
+  /** Env is current (warm boot or driver rewrite): snapshot it, then start
+   *  the service or SIGHUP a running one. */
   refreshEnv(): void;
   shutdown(): void;
 }
@@ -61,7 +48,6 @@ export interface PodServiceSupervisor {
 export interface PodServiceSupervisorDeps {
   spawn: SpawnPodService;
   envReader: RuntimeEnvReader;
-  /** Persist the merged env for the service to re-read on SIGHUP. */
   writeEnvSnapshot: (env: Record<string, string | undefined>) => void;
   log: (msg: string) => void;
   /** Test seams — production uses the defaults above. */
@@ -86,7 +72,7 @@ export function createPodServiceSupervisor(
   let backoffMs = backoffInitialMs;
 
   // Same merge order as every other spawn path: runtime-channel env first,
-  // process.env (pod env, user-set vars) wins on collision.
+  // process.env wins on collision.
   const mergedEnv = () => ({ ...deps.envReader.current(), ...process.env });
 
   function start(): void {
@@ -102,8 +88,6 @@ export function createPodServiceSupervisor(
       killTimer = null;
       if (stopped) return;
       if (signal === "SIGHUP") {
-        // Didn't handle the reload signal — default action killed it. Respawn
-        // against the fresh env, which is what the reload was for.
         backoffMs = backoffInitialMs;
         deps.log("did not handle reload; respawning with fresh env");
         start();
@@ -133,8 +117,8 @@ export function createPodServiceSupervisor(
         restartTimer = null;
       }
       backoffMs = backoffInitialMs;
-      // Snapshot first: by the time the signal lands, the file must already
-      // hold the env the reload should pick up.
+      // Snapshot before the signal: the file must hold the fresh env by the
+      // time the handler reads it.
       deps.writeEnvSnapshot(mergedEnv());
       if (child) child.kill("SIGHUP");
       else start();
@@ -151,10 +135,8 @@ export function createPodServiceSupervisor(
   };
 }
 
-/**
- * Production adapter: runs the executable as a direct child so PID 1 (the
- * runtime) reaps it, forwarding its output to the runtime log (i.e. pod logs).
- */
+/** Production adapter: direct child of the runtime (PID 1 reaps it), output
+ *  forwarded to the pod log stream. */
 export function spawnPodServiceProcess(
   command: string,
   log: (msg: string) => void,
@@ -179,8 +161,8 @@ export function spawnPodServiceProcess(
     proc.stderr.on("data", (c: Buffer) => log(c.toString().trimEnd()));
     const exited = new Promise<{ code: number | null; signal: string | null }>(
       (resolve) => {
-        // `error` fires without `exit` when the spawn itself fails; map it to
-        // a crash-shaped exit so the supervisor's backoff handles it.
+        // `error` fires without `exit` when the spawn itself fails; map it
+        // to a crash-shaped exit so the backoff handles it.
         proc.on("error", (err) => {
           log(`spawn failed: ${err.message}`);
           resolve({ code: null, signal: null });
@@ -192,10 +174,8 @@ export function spawnPodServiceProcess(
   };
 }
 
-/**
- * Production adapter for the env snapshot: atomic write (tmp + rename) so the
- * service never reads a half-written file from its SIGHUP handler.
- */
+/** Atomic write (tmp + rename) so a SIGHUP handler never reads a
+ *  half-written snapshot. */
 export function createEnvSnapshotWriter(
   path: string,
 ): (env: Record<string, string | undefined>) => void {

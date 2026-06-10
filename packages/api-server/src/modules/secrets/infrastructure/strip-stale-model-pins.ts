@@ -1,15 +1,10 @@
 /**
- * Boot-time sweep: drop the Claude Code model pins that the retired IBM
- * LiteLLM preset snapshotted into saved secrets.
- *
- * The claude-code model gateway (ADR-066) owns model selection now — it
- * discovers the upstream catalog live and writes tier defaults assign-if-unset
- * — so a pin stored in an old secret would permanently mask discovery (the
- * exact staleness of #702, frozen into every pre-gateway save). Only
- * `ibm-litellm` secrets are touched: the same var in a generic/custom provider
- * is a deliberate user choice and must keep winning.
- *
- * Idempotent; runs on every api-server boot and no-ops once the pins are gone.
+ * Idempotent boot sweep: drop the Claude Code model pins that pre-gateway
+ * saves of the IBM LiteLLM preset snapshotted into secrets — the model
+ * gateway (ADR-066) serves tier defaults assign-if-unset, so a stored pin
+ * would mask live discovery forever (#702). Only `ibm-litellm` secrets: the
+ * same var in a generic/custom provider is a deliberate choice and must
+ * keep winning.
  */
 import type { EnvMapping } from "api-server-api";
 

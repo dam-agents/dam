@@ -89,12 +89,7 @@ const stateBackend = createFileDocumentStoreBackend(homeDir);
 // (harness, terminal, ssh, git) read it through the RuntimeEnvReader port.
 const envStore = createEnvStateStore(homeDir);
 
-// ADR-065: optional image-provided pod service (e.g. claude-code's local
-// model gateway), supervised by the runtime so it is never an unmanaged
-// daemon. Spawned once env is materialized (the service reads credentials/URLs
-// from it); when the env driver rewrites the env, the supervisor refreshes the
-// snapshot file and SIGHUPs the service to reload in place. The snapshot path
-// is image-facing ABI, like the pod-service path itself.
+// ADR-065 pod service. Both paths here are image-facing ABI.
 const podServicePath = "/usr/local/bin/pod-service";
 const podLog = (msg: string) => process.stderr.write(`[pod-service] ${msg}\n`);
 const podService = existsSync(podServicePath)
@@ -133,9 +128,6 @@ const runtimeChannel = await composeRuntimeChannel({
       store: envStore,
       onChange: () => {
         acpRuntime.refreshEnv();
-        // The pod service captured credentials/URLs from its spawn env;
-        // refresh the snapshot and SIGHUP it so no new work routes on a
-        // stale upstream.
         podService?.refreshEnv();
         // Env carrying GH_TOKEN just landed — (re)point git's credential helper
         // at gh. Reads the freshly-written env; no-ops without a token.
