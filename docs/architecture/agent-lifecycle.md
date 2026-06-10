@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-06-08
+Last verified: 2026-06-10
 
 ## Motivated by
 
@@ -17,6 +17,7 @@ Last verified: 2026-06-08
 - [ADR-060 — Unified runtime-channel apply path + settlement tracking](../adrs/060-unified-apply-path-and-contributions-settled-gate.md) — a single background worker applies contributions, dispatching only to a *Ready* agent (the controller's `Ready` condition, ADR-059); settlement + per-driver failures are tracked and surfaced
 - [ADR-046 — Eliminate Instance, collapse into Agent](../adrs/046-eliminate-instance.md) — Agent is the durable runnable resource; there is no separate Instance concept
 - [ADR-061 — Warm PVC pool](../adrs/061-warm-pvc-pool.md) — a newly created Agent claims a pre-provisioned spare workspace volume at create time instead of waiting for dynamic provisioning
+- [ADR-065 — Pod services](../adrs/065-pod-service-supervision.md) — an image-provided background process supervised by agent-runtime, respawned on env change
 
 ## Overview
 
@@ -132,6 +133,22 @@ When a session goes idle — no engaged channel, no active or queued prompt, no 
 Terminal-mode sessions ([ADR-037](../adrs/037-remote-terminal.md)) follow a different model from the chat path above. agent-runtime accepts at most one WebSocket per `sessionId` on `/api/terminal`, allocates a PTY, spawns `harness-terminal` attached to it, and pipes raw bytes both ways through a small binary frame protocol (`OP_INPUT` / `OP_OUTPUT` / `OP_RESIZE` / `OP_EXIT`). A headless xterm tracks scrollback so that a tab refresh within 30 seconds of disconnect reattaches to the same PTY and replays the serialized buffer; after the grace window, the PTY is killed. There is no append-only log, no fan-out, and no `session/resume` — terminal sessions belong to one viewer at a time, and the harness's own on-disk session store is the only durable record (e.g. `~/.claude/projects/.../<HARNESS_SESSION_ID>.jsonl`).
 
 SSH sessions ([ADR-062](../adrs/062-ssh-access.md)) are unrelated to the session/mode machinery above — they carry no `sessionId`, no DB row, and no harness involvement. agent-runtime accepts a WebSocket on `/api/ssh`, spawns a per-connection OpenSSH `sshd -i` (inetd mode) as the agent user, and relays raw bytes verbatim between the socket and the child's stdio. SSH terminates at that sshd, which authenticates a CLI-registered public key (`ssh.authorizeKey`) and drops into a plain `/bin/bash` login shell; the api-server and CLI never parse the SSH wire. sshd resets the environment before that shell, so agent-runtime rebuilds `~/.ssh/environment` from the live injected env on each connection (with `PermitUserEnvironment yes`) — the SSH session gets the same proxy routing and credentials the harness has, rather than a bare env with no working egress, and picks up connection/credential changes injected since boot on the next reconnect. Concurrent SSH connections to one agent coexist (each its own `sshd`), and the endpoint exists only on images that ship `sshd`. Like the terminal and chat relays, an open SSH connection marks the agent `active-session`, so it will not hibernate while connected — close the editor/session to let it idle down. Two safety nets keep that pin honest: a WS ping/pong releases it if the connection half-dies, and the api-server clears stale pins at boot (a fresh process holds no connections, so any surviving pin is leaked).
+
+Beyond per-session children, agent-runtime supervises at most one **pod
+service** ([ADR-065](../adrs/065-pod-service-supervision.md)) — an optional
+background process the agent image provides at a well-known path, running for
+the life of the pod. The runtime spawns it once the runtime-channel env is
+first materialized (it typically consumes credentials/URLs from that env),
+respawns it whenever the env driver rewrites the env so it never operates on
+a stale snapshot, restarts crashes with capped backoff, and interprets a
+clean exit as "nothing to do for this env" — the service then stays down
+until the env next changes. Its output joins the pod log stream. The pod's
+PID 1 is a minimal init (catatonit) wrapping agent-runtime, so descendants
+the runtime did not spawn — processes orphaned by a dying harness or service
+— are reaped rather than left as zombies. claude-code uses the hook to front
+custom Anthropic-compatible upstreams with a local LiteLLM gateway
+([ADR-066](../adrs/066-local-litellm-gateway.md)); images without a pod
+service are unaffected.
 
 Switching a session's mode (e.g. chat → terminal) is metadata-only ([ADR-055](../adrs/055-agent-owned-session-metadata.md)): the switching client persists the new mode over ACP (`session/resume` carrying `_meta.platform.mode`), which the runtime merges into its session-metadata store. The running harness is unaffected — mode is a UI hint about which surface (chat vs. terminal PTY) to render. There is no cross-client notification; other clients reflect the change on their next `session/list`. The `--reset` / terminal-reset path is independent: it closes the terminal WebSocket and calls agent-runtime's `resetSession`, which sends `session/close` to the harness and clears the in-memory log and cursors.
 
