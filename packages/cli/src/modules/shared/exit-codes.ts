@@ -27,5 +27,9 @@ export const EXIT_AGENT_NOT_REACHABLE = 7;
  *  server reports `not_actionable`, so a typo'd id can't exit 0. */
 export const EXIT_APPROVAL_NOT_ACTIONABLE = 8;
 
+/** `dam schedule get/update/enable/disable/reset-session` against an unknown
+ *  schedule id (delete is idempotent — exits 0). Classified via data.code === "NOT_FOUND". */
+export const EXIT_SCHEDULE_NOT_FOUND = 9;
+
 /** POSIX convention: 128 + SIGINT(2). Emitted on Ctrl+C during bundle pack/upload. */
 export const EXIT_SIGINT = 130;

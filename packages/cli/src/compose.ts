@@ -9,6 +9,7 @@ import { composeConnectionModule } from "./modules/connection/compose.js";
 import { composeEgressModule } from "./modules/egress/compose.js";
 import { composeFileModule } from "./modules/file/compose.js";
 import { composeImportModule } from "./modules/import/compose.js";
+import { composeScheduleModule } from "./modules/schedule/compose.js";
 import { composeSkillModule } from "./modules/skill/compose.js";
 import { composeSshModule } from "./modules/ssh/compose.js";
 import { composeTemplateModule } from "./modules/template/compose.js";
@@ -102,6 +103,13 @@ export function compose(opts: ComposeOptions = {}): Command {
     browserOpener: createBrowserOpener(),
   });
 
+  const schedule = composeScheduleModule({
+    tokenProvider: auth.exports.tokenProvider,
+    configService: cli.services.configService,
+    compatService: cli.services.compatService,
+    createAgentService: agent.exports.createService,
+  });
+
   const skill = composeSkillModule({
     tokenProvider: auth.exports.tokenProvider,
     configService: cli.services.configService,
@@ -133,6 +141,7 @@ export function compose(opts: ComposeOptions = {}): Command {
   for (const command of egress.commands) program.addCommand(command);
   for (const command of approval.commands) program.addCommand(command);
   for (const command of connection.commands) program.addCommand(command);
+  for (const command of schedule.commands) program.addCommand(command);
   for (const command of skill.commands) program.addCommand(command);
   for (const command of ssh.commands) program.addCommand(command);
 
