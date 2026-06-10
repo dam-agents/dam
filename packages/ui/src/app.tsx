@@ -6,6 +6,7 @@ import { MobileNav } from "./components/mobile-nav.js";
 import { SetupProgressBar } from "./components/setup-progress-bar.js";
 import { Sidebar } from "./components/sidebar.js";
 import { emitToast } from "./lib/toast.js";
+import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { ListView } from "./modules/agents/views/list-view.js";
 import { InboxView } from "./modules/approvals/views/inbox-view.js";
 import { ConnectionsView } from "./modules/connections/views/connections-view.js";
@@ -20,6 +21,8 @@ import { useStore } from "./store.js";
 export default function App() {
   const view = useStore((s) => s.view);
   const theme = useStore((s) => s.theme);
+
+  useAgentCrashToasts();
 
   // Apply theme on mount + listen for system preference changes
   useEffect(() => {

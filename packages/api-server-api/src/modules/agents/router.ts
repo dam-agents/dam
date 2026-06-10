@@ -24,6 +24,7 @@ function toView(agent: Agent) {
     env: agent.spec.env,
     state: agent.state,
     error: agent.error,
+    podTerminationReason: agent.podTerminationReason,
     contributionFailures: agent.contributionFailures,
     channels: agent.channels,
     allowedUserEmails: agent.allowedUserEmails,

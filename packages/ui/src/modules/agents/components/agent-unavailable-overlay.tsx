@@ -155,6 +155,12 @@ export function AgentUnavailableOverlay({
         <StatusBadge state={state} />
       </div>
       <p className="max-w-105 text-[14px] text-text-secondary">{description}</p>
+      {agent.podTerminationReason && (
+        <p className="flex items-center gap-1.5 max-w-105 font-mono text-[13px] text-danger">
+          <AlertCircle size={14} className="shrink-0" />
+          {agent.podTerminationReason}
+        </p>
+      )}
       {powerAction === "start" && (
         <Button onClick={() => wake(agent.id)}>
           <Play size={14} /> Start agent

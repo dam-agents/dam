@@ -117,6 +117,8 @@ export interface AgentView {
   env?: EnvVar[];
   state: AgentState;
   error?: string;
+  /** Abnormal pod-termination cause (OOM / crash) while the pod is down; absent on normal lifecycle. */
+  podTerminationReason?: string;
   /** Contributions that failed to install on the last settle; empty when healthy. */
   contributionFailures: { kind: string; message: string }[];
   channels: (
