@@ -19,6 +19,7 @@ import { useCallback, useEffect, useState } from "react";
 import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 import { api } from "../../../api.js";
 import { ACTION_FAILED, runAction } from "../../../lib/query-helpers.js";
@@ -490,8 +491,8 @@ export function SkillsPanel({
                   </option>
                 ))}
               </select>
-              <input
-                className={inp}
+              <Input
+                size="sm"
                 placeholder="Pull request title"
                 value={publishForm.title}
                 onChange={(e) =>
@@ -510,15 +511,13 @@ export function SkillsPanel({
               <div className="flex justify-end gap-2">
                 <Button
                   variant="outline"
-                  size="sm"
-                  className="h-7 text-[11px]"
+                  size="xs"
                   onClick={() => setPublishFor(null)}
                 >
                   Cancel
                 </Button>
                 <Button
-                  size="sm"
-                  className="h-7 text-[11px]"
+                  size="xs"
                   disabled={publishBusy || !publishForm.sourceId}
                   onClick={publish}
                 >
@@ -554,18 +553,22 @@ export function SkillsPanel({
                     );
                   })()}
                   {onOpenFile && (
-                    <button
+                    <Button
                       type="button"
-                      className="text-text-muted hover:text-accent transition-colors shrink-0"
+                      variant="ghost"
+                      size="icon-xs"
+                      className="shrink-0"
                       title="View SKILL.md in Files"
                       onClick={() => onOpenFile(localSkillMdPath(skill))}
                     >
                       <Eye size={11} />
-                    </button>
+                    </Button>
                   )}
-                  <button
+                  <Button
                     type="button"
-                    className="text-text-muted hover:text-accent transition-colors shrink-0 disabled:opacity-40 disabled:hover:text-text-muted"
+                    variant="ghost"
+                    size="icon-xs"
+                    className="shrink-0"
                     title={
                       publishableSources.length === 0
                         ? "Add a GitHub source first to publish there"
@@ -575,7 +578,7 @@ export function SkillsPanel({
                     onClick={() => openPublish(skill)}
                   >
                     <Share2 size={11} />
-                  </button>
+                  </Button>
                 </div>
                 {skill.description && (
                   <div
@@ -592,29 +595,32 @@ export function SkillsPanel({
       )}
 
       <div className="px-3 py-2.5 shrink-0">
-        <button
-          className="w-full h-7 rounded-md border border-border-light text-[11px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center justify-center gap-1 transition-colors"
+        <Button
+          variant="outline"
+          size="xs"
+          className="w-full"
           onClick={() => {
             setAddForm({ name: "", gitUrl: "" });
             setShowAdd(true);
           }}
         >
           <Plus size={12} /> Add Source
-        </button>
+        </Button>
       </div>
 
       {showAdd && (
         <div className="flex flex-col gap-3 border-b border-border-light p-4 anim-in">
-          <input
-            className={inp}
+          <Input
+            size="sm"
             placeholder='Name (e.g. "My Skills")'
             value={addForm.name}
             onChange={(e) =>
               setAddForm((f) => ({ ...f, name: e.target.value }))
             }
           />
-          <input
-            className={`${inp} font-mono`}
+          <Input
+            size="sm"
+            variant="monospace"
             placeholder="https://github.com/your-org/skills"
             value={addForm.gitUrl}
             onChange={(e) =>

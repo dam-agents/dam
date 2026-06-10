@@ -411,12 +411,14 @@ export function ChatView() {
             </button>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <button
-              className="md:hidden h-7 w-7 rounded-md border border-border-light flex items-center justify-center text-text-muted hover:text-accent hover:border-accent transition-colors"
+            <Button
+              variant="outline"
+              size="icon-sm"
+              className="md:hidden"
               onClick={() => setShowMobilePanel(true)}
             >
               <Settings2 size={14} />
-            </button>
+            </Button>
             <ChatHeaderStatus
               selectedAgent={selectedAgent}
               agents={agents}
@@ -670,12 +672,13 @@ export function ChatView() {
           <div className="absolute right-0 top-0 bottom-0 w-full max-w-[400px] bg-surface flex flex-col anim-slide-in-right">
             <div className="flex items-center justify-between px-4 h-11 border-b border-border-light shrink-0">
               <span className="text-[13px] font-bold text-text">Panel</span>
-              <button
-                className="h-7 w-7 rounded-md border border-border-light flex items-center justify-center text-text-muted hover:text-accent hover:border-accent transition-colors"
+              <Button
+                variant="outline"
+                size="icon-sm"
                 onClick={() => setShowMobilePanel(false)}
               >
                 <ArrowLeft size={14} />
-              </button>
+              </Button>
             </div>
             {rightPanelContent}
           </div>

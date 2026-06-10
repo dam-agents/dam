@@ -1,5 +1,6 @@
 import { Trash2 } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
 import { StatusBadge } from "../../../components/status-indicator.js";
@@ -50,18 +51,21 @@ export function SandboxCard({
             </div>
           )}
         </div>
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          tone="danger"
+          size="icon-sm"
+          className="shrink-0"
           onClick={(e) => {
             e.stopPropagation();
             onDelete();
           }}
           disabled={deleting}
           title="Delete sandbox"
-          className="shrink-0 rounded-md p-2 text-muted-foreground hover:text-destructive disabled:opacity-50 transition-colors"
         >
           <Trash2 size={16} />
-        </button>
+        </Button>
       </div>
     </Card>
   );

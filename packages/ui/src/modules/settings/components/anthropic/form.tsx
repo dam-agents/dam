@@ -186,10 +186,11 @@ function QuickSetupHint() {
         <code className="font-mono font-semibold text-primary">
           claude setup-token
         </code>
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon-xs"
           onClick={copy}
-          className="h-5 w-5 rounded inline-flex items-center justify-center text-muted-foreground hover:text-primary"
           title="Copy command"
         >
           {copied ? (
@@ -197,7 +198,7 @@ function QuickSetupHint() {
           ) : (
             <Copy size={12} />
           )}
-        </button>
+        </Button>
       </span>{" "}
       on your own machine (with Claude Code installed) to generate a token.
     </div>

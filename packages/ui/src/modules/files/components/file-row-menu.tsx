@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { Button } from "@/components/ui/button";
+
 export type FileRowMenuAction =
   | "new-file"
   | "new-folder"
@@ -110,12 +112,15 @@ function MenuItem({
   onSelect: () => void;
 }) {
   return (
-    <button
+    <Button
       role="menuitem"
-      className={`block w-full text-left px-3 py-1.5 hover:bg-muted ${danger ? "text-destructive" : ""}`}
+      variant="ghost"
+      tone={danger ? "danger" : undefined}
+      size="sm"
+      className="w-full justify-start"
       onClick={onSelect}
     >
       {children}
-    </button>
+    </Button>
   );
 }

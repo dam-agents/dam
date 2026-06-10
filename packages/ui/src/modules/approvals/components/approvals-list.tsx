@@ -9,6 +9,8 @@ import {
 } from "lucide-react";
 import { useMemo } from "react";
 
+import { Button } from "@/components/ui/button";
+
 import { useStore } from "../../../store.js";
 import {
   useApproveHost,
@@ -134,8 +136,10 @@ function ApprovalRow({
       </div>
       {row.status !== "resolved" && (
         <div className="flex flex-wrap gap-1.5">
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="xs"
             disabled={inflight || allowOnceDisabled}
             onClick={() => approveOnce.mutate({ id: row.id })}
             title={
@@ -143,32 +147,36 @@ function ApprovalRow({
                 ? "Original request already failed; pick Allow permanently to allow future retries"
                 : "Allow this single request"
             }
-            className="h-7 inline-flex items-center gap-1 rounded-md border border-border-light px-2 text-[11px] text-text-secondary hover:text-accent hover:border-accent disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             <Check size={11} /> Allow once
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="outline"
+            size="xs"
             disabled={inflight}
             onClick={() => approvePermanent.mutate({ id: row.id })}
             title="Allow this exact path on this host (writes a rule)"
-            className="h-7 inline-flex items-center gap-1 rounded-md border border-border-light px-2 text-[11px] text-text-secondary hover:text-accent hover:border-accent disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             <CheckCheck size={11} /> Allow permanently
-          </button>
+          </Button>
           {showHostActions && (
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="xs"
               disabled={inflight}
               onClick={() => approveHost.mutate({ id: row.id })}
               title={`Allow all requests to ${hostLabel} (writes a wildcard rule)`}
-              className="h-7 inline-flex items-center gap-1 rounded-md border border-border-light px-2 text-[11px] text-text-secondary hover:text-accent hover:border-accent disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               <Globe size={11} /> Allow {hostLabel}
-            </button>
+            </Button>
           )}
-          <button
+          <Button
             type="button"
+            variant="outline"
+            tone="danger"
+            size="xs"
             disabled={inflight || !live}
             onClick={() => dismiss.mutate({ id: row.id })}
             title={
@@ -176,29 +184,31 @@ function ApprovalRow({
                 ? "Original request already failed; nothing to dismiss"
                 : "Deny this single request — re-prompts on the next attempt"
             }
-            className="h-7 inline-flex items-center gap-1 rounded-md border border-border-light px-2 text-[11px] text-text-secondary hover:text-danger hover:border-danger disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             <X size={11} /> Dismiss
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="outline"
+            tone="danger"
+            size="xs"
             disabled={inflight}
             onClick={() => denyForever.mutate({ id: row.id })}
             title="Deny this exact path on this host (writes a deny rule)"
-            className="h-7 inline-flex items-center gap-1 rounded-md border border-border-light px-2 text-[11px] text-text-secondary hover:text-danger hover:border-danger disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             <ShieldOff size={11} /> Deny forever
-          </button>
+          </Button>
           {showHostActions && (
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="xs"
               disabled={inflight}
               onClick={() => navigateToAgentEgress(row.agentId)}
               title="Manage all network access rules for this agent"
-              className="h-7 inline-flex items-center gap-1 rounded-md px-2 text-[11px] text-text-muted hover:text-text transition-colors"
             >
               <Settings2 size={11} /> Customize…
-            </button>
+            </Button>
           )}
         </div>
       )}

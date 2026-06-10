@@ -1,6 +1,8 @@
 import { Plus } from "lucide-react";
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
+
 import { useStore } from "../../../store.js";
 import { useSchedules, useScheduleSessions } from "../api/queries.js";
 import { CreateScheduleForm } from "../forms/create-schedule-form.js";
@@ -26,15 +28,17 @@ export function SchedulesPanel({
   return (
     <div className="flex flex-col">
       <div className="px-3 py-2.5 shrink-0">
-        <button
-          className="w-full h-7 rounded-md border border-border-light text-[11px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center justify-center gap-1 transition-colors"
+        <Button
+          variant="outline"
+          size="xs"
+          className="w-full"
           onClick={() => {
             setIsCreating(true);
             setEditingId(null);
           }}
         >
           <Plus size={12} /> Add Schedule
-        </button>
+        </Button>
       </div>
 
       {isCreating && selectedAgent && (

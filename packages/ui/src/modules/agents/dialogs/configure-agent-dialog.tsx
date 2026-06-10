@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Tooltip } from "@/components/ui/tooltip";
 
 import {
@@ -419,15 +420,10 @@ export function ConfigureAgentDialog({
             </p>
           </div>
           <FormField label="Name" error={errors.name?.message}>
-            <input
-              className="w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted"
-              disabled={saving}
-              {...register("name")}
-            />
+            <Input disabled={saving} {...register("name")} />
           </FormField>
           <FormField label="Description" error={errors.description?.message}>
-            <input
-              className="w-full h-10 rounded-lg border-2 border-border-light bg-bg px-4 text-[14px] text-text outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_var(--color-accent-glow)] placeholder:text-text-muted"
+            <Input
               placeholder="Optional"
               disabled={saving}
               {...register("description")}

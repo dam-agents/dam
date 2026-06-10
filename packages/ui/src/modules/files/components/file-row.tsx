@@ -7,6 +7,8 @@ import {
   MoreHorizontal,
 } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
+
 import { useFileRowDrag } from "../hooks/use-file-row-drag.js";
 import { useFilesPanel } from "./files-panel-controller.js";
 
@@ -71,8 +73,10 @@ export function FileRow({
       >
         <RowIcons isDir={isDir} isCollapsed={isCollapsed} name={name} />
         <span className="truncate flex-1">{name}</span>
-        <button
-          className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-text-muted hover:text-text-secondary p-0.5 rounded transition-opacity"
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          className="opacity-0 group-hover:opacity-100 focus:opacity-100"
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
@@ -81,7 +85,7 @@ export function FileRow({
           title="More actions"
         >
           <MoreHorizontal size={13} />
-        </button>
+        </Button>
       </div>
     </div>
   );

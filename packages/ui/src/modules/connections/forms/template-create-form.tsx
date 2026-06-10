@@ -305,10 +305,12 @@ function OAuthAppHint({
             <code className="text-[11px] font-mono text-foreground/90 break-all">
               {callbackUrl}
             </code>
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-xs"
+              className="shrink-0"
               onClick={copy}
-              className="h-5 w-5 shrink-0 rounded inline-flex items-center justify-center text-muted-foreground hover:text-primary"
               title="Copy redirect URI"
             >
               {copied ? (
@@ -316,7 +318,7 @@ function OAuthAppHint({
               ) : (
                 <Copy size={12} />
               )}
-            </button>
+            </Button>
           </div>
         </div>
       )}

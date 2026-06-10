@@ -532,13 +532,14 @@ export function AddAgentDialog({
                         <FileIcon /> Choose files
                       </Button>
                       {importPicker.hasContent && (
-                        <button
+                        <Button
                           type="button"
+                          variant="link"
+                          size="sm"
                           onClick={importPicker.clear}
-                          className="text-[12px] text-muted-foreground hover:text-foreground underline"
                         >
                           Clear
-                        </button>
+                        </Button>
                       )}
                     </div>
                     <div className="text-[11px] text-muted-foreground italic">
@@ -570,14 +571,16 @@ export function AddAgentDialog({
                           >
                             {pick.name}
                           </span>
-                          <button
+                          <Button
                             type="button"
+                            variant="ghost"
+                            size="icon-xs"
                             onClick={() => importPicker.removePick(pick.key)}
-                            className="text-muted-foreground hover:text-foreground shrink-0"
+                            className="shrink-0"
                             aria-label={`Remove ${pick.name}`}
                           >
                             <X size={12} />
-                          </button>
+                          </Button>
                         </span>
                       ))}
                     </div>

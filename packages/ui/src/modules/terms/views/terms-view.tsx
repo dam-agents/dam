@@ -1,3 +1,5 @@
+import { Button } from "@/components/ui/button";
+
 import { Markdown } from "../../../components/markdown.js";
 import { useAcceptTerms } from "../api/mutations.js";
 import { useLatestAcceptance, useTermsDocument } from "../api/queries.js";
@@ -76,26 +78,17 @@ function AcceptButton({
   onClick: () => void;
 }) {
   return (
-    <button
-      type="button"
-      disabled={pending}
-      onClick={onClick}
-      className="bg-accent text-white px-4 py-2 rounded disabled:opacity-50"
-    >
+    <Button type="button" disabled={pending} onClick={onClick}>
       {pending ? "Accepting…" : "I accept the Terms of Use"}
-    </button>
+    </Button>
   );
 }
 
 function BackButton() {
   return (
-    <button
-      type="button"
-      onClick={() => window.location.assign("/")}
-      className="bg-accent text-white px-4 py-2 rounded"
-    >
+    <Button type="button" onClick={() => window.location.assign("/")}>
       Back
-    </button>
+    </Button>
   );
 }
 

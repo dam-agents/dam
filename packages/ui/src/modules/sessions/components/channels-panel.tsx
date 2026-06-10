@@ -191,12 +191,15 @@ function ChannelsForm({
                       <span className="flex-1 text-[12px] font-mono text-foreground truncate">
                         {u}
                       </span>
-                      <button
+                      <Button
+                        variant="ghost"
+                        tone="danger"
+                        size="icon-xs"
                         onClick={() => removeUser(u)}
-                        className="text-muted-foreground hover:text-destructive shrink-0"
+                        className="shrink-0"
                       >
                         <X size={12} />
-                      </button>
+                      </Button>
                     </div>
                   ))}
                 </div>

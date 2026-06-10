@@ -155,12 +155,9 @@ export function SettingsView() {
             </Card>
 
             <div className="mt-6">
-              <button
-                onClick={() => setView("terms")}
-                className="text-[13px] font-medium text-foreground/80 hover:text-foreground underline underline-offset-2"
-              >
+              <Button variant="link" onClick={() => setView("terms")}>
                 View Terms of Use
-              </button>
+              </Button>
             </div>
 
             {appVersion && (

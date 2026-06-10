@@ -2,6 +2,8 @@ import { SessionMode } from "api-server-api";
 import { ArrowLeft, Plus, RefreshCw } from "lucide-react";
 import { useCallback } from "react";
 
+import { Button } from "@/components/ui/button";
+
 import { useStore } from "../../../store.js";
 import { useAgentRunState } from "../../agents/api/queries.js";
 import { AgentApprovalsTray } from "../../approvals/components/agent-approvals-tray.js";
@@ -51,23 +53,27 @@ export function SessionsSidebar({
     <>
       <div className="flex items-center justify-between px-4 h-11 border-b border-border-light shrink-0 relative">
         {/* Mobile: back to agents */}
-        <button
-          className="md:hidden h-6 w-6 rounded-md flex items-center justify-center text-text-muted hover:text-accent transition-colors mr-2"
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          className="md:hidden mr-2"
           onClick={goBack}
         >
           <ArrowLeft size={14} />
-        </button>
+        </Button>
         <span className="text-[11px] font-bold text-text-muted uppercase tracking-[0.05em]">
           Sessions
         </span>
-        <button
-          className={`ml-auto h-6 w-6 rounded-md border border-border-light flex items-center justify-center text-text-muted hover:text-accent hover:border-accent transition-colors`}
+        <Button
+          variant="outline"
+          size="icon-xs"
+          className="ml-auto"
           onClick={() => refetch()}
         >
           <span className={loading ? "anim-spin" : ""}>
             <RefreshCw size={11} />
           </span>
-        </button>
+        </Button>
         {loading && (
           <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-accent/20 overflow-hidden">
             <div className="h-full w-1/3 bg-accent rounded-full anim-slide" />
@@ -106,12 +112,14 @@ export function SessionsSidebar({
       </div>
       <AgentApprovalsTray agentId={selectedAgent} />
       <div className="px-3 py-3 border-t border-border-light shrink-0">
-        <button
-          className="w-full h-9 rounded-md border border-border-light text-[12px] font-semibold text-text-secondary hover:text-accent hover:border-accent flex items-center justify-center gap-1.5 transition-colors"
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full"
           onClick={onNewSession}
         >
           <Plus size={13} /> New Session
-        </button>
+        </Button>
       </div>
     </>
   );

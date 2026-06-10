@@ -13,6 +13,8 @@ import {
 import { Loader2, TerminalIcon, XCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { Button } from "@/components/ui/button";
+
 import { getAccessToken } from "../../../auth.js";
 
 type ConnectionState = "connecting" | "live" | "disconnected" | "exited";
@@ -195,12 +197,9 @@ export function Terminal({
             <p className="text-[14px] text-text-secondary">
               Session disconnected
             </p>
-            <button
-              className="rounded-md border border-border-light bg-surface-raised px-4 py-2 text-[13px] text-text-primary hover:bg-surface-hover transition-colors"
-              onClick={handleReconnect}
-            >
+            <Button variant="outline" onClick={handleReconnect}>
               Reconnect
-            </button>
+            </Button>
           </div>
         </div>
       )}
