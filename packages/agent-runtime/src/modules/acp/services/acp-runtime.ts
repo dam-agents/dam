@@ -44,11 +44,6 @@ const DEFAULT_WARM_START_TIMEOUT_MS = 15 * 1000;
 const DEFAULT_LOG_BYTES_CAP = 2 * 1024 * 1024;
 
 export interface AcpRuntimeStatus {
-  activeClientCount: number;
-  activePromptCount: number;
-  pendingRequestCount: number;
-  queuedPromptCount: number;
-  agentAlive: boolean;
   idle: boolean;
 }
 
@@ -1271,11 +1266,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       let queued = 0;
       for (const q of promptQueueBySession.values()) queued += q.length;
       return {
-        activeClientCount: engagedSessions.size,
-        activePromptCount: activePromptBySession.size,
-        pendingRequestCount: pendingFromAgent.size,
-        queuedPromptCount: queued,
-        agentAlive: agent !== null && !agentExited,
         idle:
           activePromptBySession.size === 0 &&
           pendingFromAgent.size === 0 &&

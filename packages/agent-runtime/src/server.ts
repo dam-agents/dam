@@ -324,15 +324,8 @@ const server = http.createServer((req, res) => {
   }
 
   if (req.url === "/api/status") {
-    const s = acpRuntime.status();
     const status = {
-      activeClients: s.activeClientCount,
-      activePrompts: s.activePromptCount,
-      pendingRequests: s.pendingRequestCount,
-      queuedPrompts: s.queuedPromptCount,
-      agentAlive: s.agentAlive,
-      terminalActive: ptySlots.size > 0,
-      idle: s.idle && ptySlots.size === 0,
+      idle: acpRuntime.status().idle && ptySlots.size === 0,
     };
     res
       .writeHead(200, { "Content-Type": "application/json", ...CORS })

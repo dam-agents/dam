@@ -230,12 +230,9 @@ describe("createAcpRuntime", () => {
     });
 
     expect(spawnCount).toBe(0);
-    expect(runtime.status().agentAlive).toBe(false);
 
     runtime.attach(makeFakeChannel().channel);
     expect(spawnCount).toBe(1);
-    expect(runtime.status().agentAlive).toBe(true);
-    expect(runtime.status().activeClientCount).toBe(1);
   });
 
   it("keeps the agent alive when a client disconnects", () => {
@@ -250,8 +247,6 @@ describe("createAcpRuntime", () => {
     c.remoteClose();
 
     expect(fa.killed()).toBe(false);
-    expect(runtime.status().agentAlive).toBe(true);
-    expect(runtime.status().activeClientCount).toBe(0);
   });
 
   it("accepts multiple channels without evicting existing ones", () => {
@@ -268,7 +263,6 @@ describe("createAcpRuntime", () => {
 
     expect(c1.isOpen()).toBe(true);
     expect(c2.isOpen()).toBe(true);
-    expect(runtime.status().activeClientCount).toBe(2);
   });
 
   it("does not broadcast session traffic to a channel that hasn't engaged with that session", () => {
@@ -478,7 +472,6 @@ describe("createAcpRuntime", () => {
     c2.pushMessage(promptRequest(1));
 
     expect(fa.sent).toHaveLength(1);
-    expect(runtime.status().queuedPromptCount).toBe(1);
   });
 
   it("advances the queue when the active prompt's response arrives", () => {
@@ -500,7 +493,6 @@ describe("createAcpRuntime", () => {
     fa.pushLine(agentPromptResponse(first));
 
     expect(fa.sent).toHaveLength(2);
-    expect(runtime.status().queuedPromptCount).toBe(0);
   });
 
   it("lets prompts for different sessions run in parallel", () => {
@@ -517,7 +509,6 @@ describe("createAcpRuntime", () => {
     c.pushMessage(promptRequest(2, OTHER_SID));
 
     expect(fa.sent).toHaveLength(2);
-    expect(runtime.status().queuedPromptCount).toBe(0);
   });
 
   it("drops queued prompts owned by a disconnecting client", () => {
@@ -534,10 +525,13 @@ describe("createAcpRuntime", () => {
 
     c1.pushMessage(promptRequest(1));
     c2.pushMessage(promptRequest(1));
-    expect(runtime.status().queuedPromptCount).toBe(1);
 
     c2.remoteClose();
-    expect(runtime.status().queuedPromptCount).toBe(0);
+
+    // Completing the active prompt must not forward the dropped queued one.
+    const first = outboundId(fa.sent[0]);
+    fa.pushLine(agentPromptResponse(first));
+    expect(fa.sent).toHaveLength(1);
   });
 
   it("still advances the queue if the client owning the active prompt disconnects mid-prompt", () => {
@@ -561,7 +555,6 @@ describe("createAcpRuntime", () => {
     fa.pushLine(agentPromptResponse(first));
 
     expect(fa.sent).toHaveLength(2);
-    expect(runtime.status().queuedPromptCount).toBe(0);
   });
 
   it("rejects prompts beyond the per-session queue cap with a JSON-RPC error", () => {
@@ -577,7 +570,6 @@ describe("createAcpRuntime", () => {
     // 1 active + 32 queued = 33 accepted.
     for (let i = 1; i <= 33; i++) c.pushMessage(promptRequest(i));
     expect(fa.sent).toHaveLength(1);
-    expect(runtime.status().queuedPromptCount).toBe(32);
 
     c.pushMessage(promptRequest(34));
     const last = JSON.parse(c.sent.at(-1)!) as {
@@ -657,7 +649,6 @@ describe("createAcpRuntime", () => {
 
     fa.exit();
     await new Promise<void>((r) => setImmediate(r));
-    expect(runtime.status().agentAlive).toBe(false);
     expect(c1.isOpen()).toBe(false);
 
     const c2 = makeFakeChannel();
@@ -712,7 +703,6 @@ describe("createAcpRuntime", () => {
       c.pushMessage(resumeSessionRequest(1));
 
       fa.pushLine(permissionRequest(5));
-      expect(runtime.status().pendingRequestCount).toBe(1);
 
       c.remoteClose();
 
@@ -723,7 +713,6 @@ describe("createAcpRuntime", () => {
       const errorSent = fa.sent.find((f) => (f as { error?: unknown }).error);
       expect(errorSent).toBeDefined();
       expect((errorSent as { id: number }).id).toBe(5);
-      expect(runtime.status().pendingRequestCount).toBe(0);
     } finally {
       vi.useRealTimers();
     }
@@ -752,7 +741,6 @@ describe("createAcpRuntime", () => {
 
       vi.advanceTimersByTime(200);
       expect(fa.sent.some((f) => (f as { error?: unknown }).error)).toBe(false);
-      expect(runtime.status().pendingRequestCount).toBe(1);
       expect(c2.sent).toContain(permissionRequest(7));
     } finally {
       vi.useRealTimers();
@@ -771,7 +759,6 @@ describe("createAcpRuntime", () => {
     viewer.pushMessage(resumeSessionRequest(1));
     fa.pushLine(permissionRequest(3));
     expect(viewer.sent).toContain(permissionRequest(3));
-    expect(runtime.status().pendingRequestCount).toBe(1);
 
     // An operational call arrives on a separate channel — list sessions and go.
     const ops = makeFakeChannel();
@@ -787,8 +774,13 @@ describe("createAcpRuntime", () => {
     // the pending is still there and the agent hasn't been notified.
     const before = fa.sent.length;
     ops.remoteClose();
-    expect(runtime.status().pendingRequestCount).toBe(1);
     expect(fa.sent).toHaveLength(before);
+
+    // The pending survives: a channel that does engage still gets the replay.
+    const engaged = makeFakeChannel();
+    runtime.attach(engaged.channel);
+    engaged.pushMessage(resumeSessionRequest(2));
+    expect(engaged.sent).toContain(permissionRequest(3));
   });
 
   it("broadcasts a platform/turnEnded notification to engaged channels when a prompt completes", () => {
@@ -1867,7 +1859,6 @@ describe("createAcpRuntime", () => {
     fa.pushLine(permissionRequest(7));
     expect(a.sent.some((f) => f === permissionRequest(7))).toBe(true);
     a.pushMessage(permissionResponse(7));
-    expect(runtime.status().pendingRequestCount).toBe(0);
 
     // Fresh viewer B loads the same session. Served from cached metadata.
     const b = makeFakeChannel();
