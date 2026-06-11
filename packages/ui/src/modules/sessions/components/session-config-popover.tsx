@@ -148,9 +148,13 @@ export function SessionConfigBar({
     }, "Couldn't change mode");
   };
 
-  // Optimistic model change
+  // Optimistic model change — legacy session-model state only; adapters that
+  // expose the model as a config option go through setConfigOption instead.
   const setModel = (modelId: string) => {
-    if (!models) return;
+    if (!models) {
+      if (modelOption) setConfigOption(modelOption, modelId);
+      return;
+    }
     setSessionModels({ ...models, currentModelId: modelId });
     savePreference(agentId, "model", modelId);
     runAction(async () => {
@@ -202,9 +206,28 @@ export function SessionConfigBar({
     (o) => o.category !== "model" && o.category !== "mode",
   );
 
-  const currentModel = models?.availableModels.find(
-    (m) => m.modelId === models.currentModelId,
+  // Newer adapters (ACP SDK ≥0.25) drop the unstable session-model state and
+  // expose the model as a `category: "model"` config option — normalize both
+  // shapes into one list so the dedicated section renders for either.
+  const modelOption = configOptions.find(
+    (o): o is Extract<SessionConfigOption, { type: "select" }> =>
+      o.category === "model" && o.type === "select",
   );
+  const modelChoices = models
+    ? models.availableModels.map((m) => ({
+        id: m.modelId,
+        name: m.name,
+        description: m.description,
+      }))
+    : modelOption
+      ? flattenSelectOptions(modelOption.options).map((o) => ({
+          id: o.value,
+          name: o.name,
+          description: o.description,
+        }))
+      : [];
+  const currentModelId = models?.currentModelId ?? modelOption?.currentValue;
+  const currentModel = modelChoices.find((m) => m.id === currentModelId);
 
   return (
     <>
@@ -246,24 +269,24 @@ export function SessionConfigBar({
             }}
           >
             {/* Model selector */}
-            {models && (
+            {modelChoices.length > 0 && (
               <div className="border-b border-border-light">
                 <div className="px-4 pt-3 pb-1 text-[10px] font-bold uppercase tracking-[0.05em] text-text-muted">
                   Model
                 </div>
-                {models.availableModels.map((m) => {
-                  const active = m.modelId === models.currentModelId;
+                {modelChoices.map((m) => {
+                  const active = m.id === currentModelId;
                   return (
                     <button
-                      key={m.modelId}
+                      key={m.id}
                       className={`flex items-center gap-2 w-full px-4 py-2 text-[13px] text-left transition-colors ${active ? "text-accent bg-accent-light font-semibold" : "text-text hover:bg-surface-raised"}`}
-                      onClick={() => setModel(m.modelId)}
+                      onClick={() => setModel(m.id)}
                     >
                       {active && <Check size={12} className="shrink-0" />}
                       <div className={active ? "" : "ml-[20px]"}>
                         <div>{m.name}</div>
                         <div className="text-[11px] text-text-muted font-normal font-mono">
-                          {m.modelId}
+                          {m.id}
                         </div>
                         {m.description && (
                           <div className="text-[11px] text-text-muted font-normal">
@@ -326,7 +349,7 @@ export function SessionConfigBar({
             )}
 
             {/* Empty state */}
-            {!models &&
+            {modelChoices.length === 0 &&
               (!modes || modes.availableModes.length <= 1) &&
               extraOptions.length === 0 && (
                 <div className="px-4 py-4 text-[12px] text-text-muted">
@@ -396,7 +419,7 @@ function ConfigOptionRow({
   );
 }
 
-function flattenSelectOptions(
+export function flattenSelectOptions(
   options: Array<SessionConfigSelectOption> | Array<SessionConfigSelectGroup>,
 ): SessionConfigSelectOption[] {
   if (!options || options.length === 0) return [];

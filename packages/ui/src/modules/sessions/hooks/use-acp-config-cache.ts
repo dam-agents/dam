@@ -1,4 +1,7 @@
-import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
+import type {
+  ClientSideConnection,
+  SessionConfigOption,
+} from "@agentclientprotocol/sdk/dist/acp.js";
 import { PROTOCOL_VERSION } from "@agentclientprotocol/sdk/dist/acp.js";
 import { useCallback, useEffect } from "react";
 
@@ -9,7 +12,10 @@ import {
   type SessionConfigPayload,
   sessionConfigPayloadSchema,
 } from "../../acp/types.js";
-import { getSavedPreferences } from "../components/session-config-popover.js";
+import {
+  flattenSelectOptions,
+  getSavedPreferences,
+} from "../components/session-config-popover.js";
 
 const cachedConfigKey = (agentId: string) =>
   `platform-cached-config:${agentId}`;
@@ -106,6 +112,33 @@ export function useAcpConfigCache(
           ...sessionResponse.models,
           currentModelId: prefs.model,
         });
+      }
+      // Newer adapters expose the model as a `category: "model"` config
+      // option instead of the legacy session-model state — forward the saved
+      // model preference through that channel (unless the config loop below
+      // already carries a value for it).
+      if (prefs.model && !sessionResponse.models) {
+        const modelOpt = sessionResponse.configOptions?.find(
+          (o): o is Extract<SessionConfigOption, { type: "select" }> =>
+            o.category === "model" && o.type === "select",
+        );
+        if (
+          modelOpt &&
+          prefs.config[modelOpt.id] === undefined &&
+          flattenSelectOptions(modelOpt.options).some(
+            (o) => o.value === prefs.model,
+          )
+        ) {
+          calls.push(
+            conn
+              .setSessionConfigOption({
+                sessionId: sid,
+                configId: modelOpt.id,
+                value: prefs.model,
+              })
+              .catch(() => {}),
+          );
+        }
       }
       if (
         prefs.mode &&

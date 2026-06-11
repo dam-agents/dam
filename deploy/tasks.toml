@@ -393,16 +393,7 @@ else
 
   echo "Loading images into k3s..."
   tar="/tmp/platform-images.tar"
-  rm -f "$tar"
-  IMAGES=(platform-controller:latest platform-api-server:latest platform-ui:latest platform-keycloak:latest "${AGENT_IMAGES[@]}")
-  if docker --version 2>/dev/null | grep -qi podman; then
-    for img in "${IMAGES[@]}"; do
-      podman tag "$img" "docker.io/library/$img"
-    done
-    podman save --multi-image-archive -o "$tar" "${IMAGES[@]/#/docker.io/library/}"
-  else
-    docker save -o "$tar" "${IMAGES[@]}"
-  fi
+  scripts/docker-save-images.sh "$tar" platform-controller:latest platform-api-server:latest platform-ui:latest platform-keycloak:latest "${AGENT_IMAGES[@]}"
   if [ -n "${IS_SANDBOX:-}" ]; then
     sudo k3s ctr images import "$tar"
     [ -z "${CI:-}" ] && docker image prune --all --force >/dev/null 2>&1 || true
@@ -497,7 +488,7 @@ set -eo pipefail
 
 echo "Loading into k3s..."
 tar="/tmp/platform-api-server.tar"
-docker save platform-api-server:latest -o "$tar"
+scripts/docker-save-images.sh "$tar" platform-api-server:latest
 
 if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
@@ -534,7 +525,7 @@ set -eo pipefail
 
 echo "Loading into k3s..."
 tar="/tmp/platform-controller.tar"
-docker save platform-controller:latest -o "$tar"
+scripts/docker-save-images.sh "$tar" platform-controller:latest
 
 if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
@@ -571,7 +562,7 @@ set -eo pipefail
 
 echo "Loading into k3s..."
 tar="/tmp/platform-ui.tar"
-docker save platform-ui:latest -o "$tar"
+scripts/docker-save-images.sh "$tar" platform-ui:latest
 
 if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
@@ -649,7 +640,7 @@ fi
 
 echo "Loading into k3s..."
 tar="/tmp/platform-agent-images.tar"
-docker save "${AGENT_IMAGES[@]}" -o "$tar"
+scripts/docker-save-images.sh "$tar" "${AGENT_IMAGES[@]}"
 
 if [ -n "${IS_SANDBOX:-}" ]; then
   sudo k3s ctr images import "$tar"
@@ -686,7 +677,7 @@ set -eo pipefail
 
 echo "Loading into k3s..."
 tar="/tmp/platform-keycloak.tar"
-docker save platform-keycloak:latest -o "$tar"
+scripts/docker-save-images.sh "$tar" platform-keycloak:latest
 
 if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
