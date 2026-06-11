@@ -17,7 +17,7 @@ import {
 } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { formatRelative } from "../../shared/relative-time.js";
-import { renderTable } from "../../shared/render-table.js";
+import { renderFittedTable } from "../../shared/render-table.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
 import type { ApprovalService } from "../services/approval-service.js";
 
@@ -71,8 +71,9 @@ export function buildListCommand(deps: {
         let limit: number | undefined;
         if (opts.limit !== undefined) {
           const n = Number(opts.limit);
-          // The contract schema rejects > 500 (no server-side clamp), so
-          // validate here for a clean exit 2 instead of a transport error.
+          // The contract schema (`limit.max(500)`) rejects > 500 at the tRPC
+          // boundary; validate here for a clean exit 2 with a clear message
+          // instead of a raw transport error.
           if (!Number.isInteger(n) || n <= 0 || n > 500) {
             process.stderr.write(
               `error: invalid \`--limit\` value \`${opts.limit}\`; expected integer between 1 and 500\n`,
@@ -129,12 +130,14 @@ export function buildListCommand(deps: {
           process.exit(EXIT_SUCCESS);
         }
 
-        // Server row order is kept (newest first).
+        // Server row order is kept (newest first). REQUEST is the flex
+        // column — it carries a full method/host/path line and is collapsed
+        // to fit the terminal width (--json keeps the full text).
         const now = new Date();
         writeStdoutAndExit(
-          renderTable([
+          renderFittedTable(
             ["ID", "TYPE", "AGENT", "REQUEST", "STATUS", "EXPIRES"],
-            ...result.value.map((row) => {
+            result.value.map((row) => {
               const { title, subtitle } = describeApprovalPayload(row.payload);
               return [
                 row.id,
@@ -147,7 +150,8 @@ export function buildListCommand(deps: {
                   : "—",
               ];
             }),
-          ]),
+            3,
+          ),
           EXIT_SUCCESS,
         );
       },

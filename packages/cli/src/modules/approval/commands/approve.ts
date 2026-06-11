@@ -23,7 +23,7 @@ export function buildApproveCommand(deps: {
       "allow only this held call — the same request shape re-prompts next time",
     )
     .option(
-      "--host",
+      "--host-wide",
       "write a host-wide allow rule (any method, any path); network requests only",
     )
     .option(
@@ -33,21 +33,21 @@ export function buildApproveCommand(deps: {
     .option("--json", "emit the raw action outcome as JSON")
     .addHelpText(
       "after",
-      "\nBare `approve` is durable: for a network (ext_authz) request it writes a\npermanent allow rule — egress to that host/method/path stays open and the rule\nappears in `dam network list <agent>`. Use --once to allow only the held call.\nTool-call (acp_native) approvals never write an egress rule; the harness owns\nits own permission persistence, and --host falls back to the durable approve.\n",
+      "\nBare `approve` is durable: for a network (ext_authz) request it writes a\npermanent allow rule — egress to that host/method/path stays open and the rule\nappears in `dam network list <agent>`. Use --once to allow only the held call.\nTool-call (acp_native) approvals never write an egress rule; the harness owns\nits own permission persistence, and --host-wide falls back to the durable approve.\n",
     )
     .action(
       async (
         id: string,
         opts: {
           once?: boolean;
-          host?: boolean;
+          hostWide?: boolean;
           server?: string;
           json?: boolean;
         },
       ) => {
-        if (opts.once && opts.host) {
+        if (opts.once && opts.hostWide) {
           process.stderr.write(
-            "error: --once and --host are mutually exclusive\n",
+            "error: --once and --host-wide are mutually exclusive\n",
           );
           process.exit(EXIT_INVALID_INPUT);
         }
@@ -63,7 +63,7 @@ export function buildApproveCommand(deps: {
         const service = deps.createApprovalService(host);
         const result = await (opts.once
           ? service.approveOnce(id)
-          : opts.host
+          : opts.hostWide
             ? service.approveHost(id)
             : service.approvePermanent(id));
         if (!result.ok) {
