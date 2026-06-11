@@ -8,7 +8,7 @@
 set -eo pipefail
 root="$1"
 out="$2"
-crds="$root/deploy/helm/platform/files/crds"
+crds="$root/deploy/helm/platform/crds"
 
 emit() { # <crd-file> <TypeName> — the CRD's .spec subschema as a TS interface
   yq -o=json ".spec.versions[0].schema.openAPIV3Schema.properties.spec | .title = \"$2\"" "$crds/$1" \

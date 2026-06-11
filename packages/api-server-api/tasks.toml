@@ -38,8 +38,8 @@ dir = "{{config_root}}/packages/api-server-api"
 # Chain: api/v1/*.go --(controller:generate)--> CRD yaml --(here)--> crd-types.gen.ts
 depends = ["controller:generate", "common:setup:pnpm"]
 sources = [
-  "{{config_root}}/deploy/helm/platform/files/crds/agent-platform.ai_agents.yaml",
-  "{{config_root}}/deploy/helm/platform/files/crds/agent-platform.ai_forks.yaml",
+  "{{config_root}}/deploy/helm/platform/crds/agent-platform.ai_agents.yaml",
+  "{{config_root}}/deploy/helm/platform/crds/agent-platform.ai_forks.yaml",
   "scripts/gen-crd-types.sh",
 ]
 outputs = ["src/crd-types.gen.ts"]
@@ -50,8 +50,8 @@ description = "Fail if the committed CRD types are stale vs the committed CRDs (
 dir = "{{config_root}}/packages/api-server-api"
 depends = ["common:setup:pnpm"]
 sources = [
-  "{{config_root}}/deploy/helm/platform/files/crds/agent-platform.ai_agents.yaml",
-  "{{config_root}}/deploy/helm/platform/files/crds/agent-platform.ai_forks.yaml",
+  "{{config_root}}/deploy/helm/platform/crds/agent-platform.ai_agents.yaml",
+  "{{config_root}}/deploy/helm/platform/crds/agent-platform.ai_forks.yaml",
   "src/crd-types.gen.ts",
   "scripts/gen-crd-types.sh",
 ]

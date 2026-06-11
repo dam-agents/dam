@@ -425,6 +425,10 @@ if [ "$ROOT_FSTYPE" = "btrfs" ]; then
 fi
 
 echo "Installing/upgrading Platform chart..."
+# Helm never upgrades the chart's crds/ on an existing release (ADR-068) — on
+# this single-env local cluster the freeze has no value, so apply them directly.
+kubectl --kubeconfig="$KUBECONFIG" apply --server-side --force-conflicts -f deploy/helm/platform/crds/
+
 # No --wait: the keycloak-provision post-install hook imports the platform realm
 # after deployments come up. With --wait, helm would block on readiness
 # before the hook runs.

@@ -1,0 +1,14 @@
+package v1
+
+// CRD schema generations (ADR-068). Shared-cluster CRDs are frozen for
+// environment deploys, so the controller asserts at startup that the live CRD
+// carries at least the generation it was built against. On any schema change,
+// bump the constant together with the matching
+// +kubebuilder:metadata:annotations marker on the type; the api/v1 test fails
+// if they drift from the generated manifests.
+const (
+	SchemaGenerationAnnotation = "agent-platform.ai/crd-schema-generation"
+
+	AgentSchemaGeneration = 1
+	ForkSchemaGeneration  = 1
+)

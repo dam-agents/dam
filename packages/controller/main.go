@@ -22,6 +22,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	"github.com/kagenti/platform/packages/controller/pkg/config"
+	"github.com/kagenti/platform/packages/controller/pkg/crdcheck"
 	"github.com/kagenti/platform/packages/controller/pkg/reconciler"
 )
 
@@ -62,6 +63,13 @@ func main() {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
+
+	// Fail fast on every replica, before leader election — a stale CRD schema
+	// would otherwise have this build's writes silently pruned (ADR-068).
+	if err := crdcheck.Assert(ctx, dynClient); err != nil {
+		slog.Error("CRD schema check failed", "error", err)
+		os.Exit(1)
+	}
 
 	lock := &resourcelock.LeaseLock{
 		LeaseMeta: metav1.ObjectMeta{Name: cfg.LeaseName, Namespace: cfg.Namespace},
