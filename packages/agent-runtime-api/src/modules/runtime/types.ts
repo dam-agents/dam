@@ -54,7 +54,12 @@ export const fileContribution = z.object({
   path: z.string().min(1),
   format: fileFormat,
   mergeMode: mergeMode,
-  content: z.unknown(),
+  // `.optional()` keeps the inferred type aligned with the wire: a bare
+  // `z.unknown()` infers a *required* key, but tRPC's JSON output inference
+  // drops it to optional (JSON can't carry `undefined`), so any tRPC client
+  // sees `content?` and would otherwise need a cast to the contract type.
+  // Runtime is unchanged — `z.unknown()` already accepts a missing key.
+  content: z.unknown().optional(),
 });
 
 export const mcpEntryContribution = z.object({

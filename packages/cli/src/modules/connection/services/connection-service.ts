@@ -59,16 +59,7 @@ export function createConnectionService(deps: {
 
   return {
     async list() {
-      // Load-bearing cast (not redundant): the router infers the `file`
-      // contribution's `content` as optional (zod `z.unknown()`), but the
-      // exported `ConnectionView` types it required — two structurally
-      // different shapes. Remove once that drift is reconciled.
-      return trpcCall(
-        () =>
-          deps.trpc.connections.list.query() as Promise<
-            readonly ConnectionView[]
-          >,
-      );
+      return trpcCall(() => deps.trpc.connections.list.query());
     },
     async listTemplates() {
       return trpcCall(() => deps.trpc.connections.listTemplates.query());
@@ -85,14 +76,7 @@ export function createConnectionService(deps: {
       return trpcCall(() => deps.trpc.connections.discoverMcp.mutate({ url }));
     },
     async getConnection(id) {
-      // Same load-bearing cast as `list` — bridges the `ConnectionView`
-      // `content` optional/required drift.
-      return trpcCall(
-        () =>
-          deps.trpc.connections.get.query({
-            id,
-          }) as Promise<ConnectionView | null>,
-      );
+      return trpcCall(() => deps.trpc.connections.get.query({ id }));
     },
     async agentConnectionIds(agentId) {
       return trpcCall(() => readIds(agentId));
