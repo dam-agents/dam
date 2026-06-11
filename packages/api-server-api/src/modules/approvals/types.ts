@@ -62,10 +62,10 @@ export interface ApprovalView {
   status: ApprovalStatus;
 }
 
-/** Shared options for the two `list*` procedures: server clamps `limit`
- *  to a safe upper bound, and `status` omitted means "include all"
- *  (subject to `limit`). The inbox always shows pending first; resolved
- *  and expired rows are capped to keep the list from growing unbounded. */
+/** Shared options for the two `list*` procedures: `limit` defaults
+ *  server-side (schema ceiling 500), and `status` omitted means "include
+ *  all" (subject to `limit`). Rows are returned newest-first; the cap
+ *  keeps the list from growing unbounded as resolved rows accumulate. */
 export type ApprovalListOptions = z.infer<typeof approvalListOptionsSchema>;
 
 /** Post-CAS truth a verdict mutation reports back. `rule_written_expired`

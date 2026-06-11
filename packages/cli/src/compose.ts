@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import { composeAgentModule } from "./modules/agent/compose.js";
+import { composeApprovalModule } from "./modules/approval/compose.js";
 import { composeAuthModule } from "./modules/auth/compose.js";
 import { createBrowserOpener } from "./modules/auth/index.js";
 import { composeChatModule } from "./modules/chat/compose.js";
@@ -86,6 +87,13 @@ export function compose(opts: ComposeOptions = {}): Command {
     createAgentService: agent.exports.createService,
   });
 
+  const approval = composeApprovalModule({
+    tokenProvider: auth.exports.tokenProvider,
+    configService: cli.services.configService,
+    compatService: cli.services.compatService,
+    createAgentService: agent.exports.createService,
+  });
+
   const connection = composeConnectionModule({
     tokenProvider: auth.exports.tokenProvider,
     configService: cli.services.configService,
@@ -123,6 +131,7 @@ export function compose(opts: ComposeOptions = {}): Command {
   for (const command of importModule.commands) program.addCommand(command);
   for (const command of fileModule.commands) program.addCommand(command);
   for (const command of egress.commands) program.addCommand(command);
+  for (const command of approval.commands) program.addCommand(command);
   for (const command of connection.commands) program.addCommand(command);
   for (const command of skill.commands) program.addCommand(command);
   for (const command of ssh.commands) program.addCommand(command);

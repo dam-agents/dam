@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-06-08
+Last verified: 2026-06-11
 
 ## Motivated by
 
@@ -18,10 +18,11 @@ Last verified: 2026-06-08
 - [#554 — Override preset credentials when creating a connection from the CLI](https://github.com/dam-agents/dam/issues/554) — lets `dam connection connect` override a preset-backed credential (operator default or family inheritance) by passing its typed flag, and prints a generic note (or a `presetsApplied` field under `--json`) when a preset is applied — closing the override + visibility gap against the web UI.
 - [#671 — Manage skills from the CLI](https://github.com/dam-agents/dam/issues/671) — the `dam skill` group that browses skill sources and their catalogs and installs/uninstalls skills on an Agent (a P1 sub-issue of [#329](https://github.com/dam-agents/dam/issues/329)); the skills-marketplace model — sources, scanned skills, installed refs, drift — is owned by [skills.md](skills.md) / [ADR-030](../adrs/030-skills-marketplace.md).
 - [#673 — Manage skill sources from the CLI](https://github.com/dam-agents/dam/issues/673) — adds the mutating source verbs (`source add`, `source remove`, `source refresh`) so a user can register, untrack, and refresh git-sourced skill catalogs without the web UI (a P1 sub-issue of [#329](https://github.com/dam-agents/dam/issues/329), following #671); skill **publish** stays out of scope.
+- [#773 — Action pending approvals from the CLI](https://github.com/dam-agents/dam/issues/773) — the `dam approval` group (`list`, `approve`, `deny`) that lists and actions the unified HITL inbox from the terminal (a P2 sub-issue of [#329](https://github.com/dam-agents/dam/issues/329)); the inbox and approvals model is [ADR-035](../adrs/035-unified-hitl-ux.md).
 
 ## Overview
 
-The `dam` CLI is a TypeScript Node package that users install on their own machine and point at a configured Platform deployment. It never runs inside the cluster. The current surface: `dam --version`, `dam --help` (built-in flags); `dam config set`; `dam ping`; `dam version`; the `dam auth` group (`login`, `logout`, `status`); the `dam agent` group (`list` [default], `get`, `create`, `create-interactive`, `delete`, `restart`); `dam chat`; `dam session list`; the `dam ssh` group (`connect`, `configure`, hidden `_proxy`); `dam template list`; `dam import`; the `dam file` group (`get`, `put`, `list`); the `dam network` group (`list`, `create`, `update`, `revoke`, `preset`, `apply-preset`, `trusted-hosts`); the `dam connection` group (`list`, `templates`, `connect`, `disconnect`, `grant`, `revoke`); and the `dam skill` group (`source list`, `source add`, `source remove`, `source refresh`, `catalog`, `list`, `install`, `uninstall`). Command groups are singular to align with `gh`, `git`, and `docker` conventions.
+The `dam` CLI is a TypeScript Node package that users install on their own machine and point at a configured Platform deployment. It never runs inside the cluster. The current surface: `dam --version`, `dam --help` (built-in flags); `dam config set`; `dam ping`; `dam version`; the `dam auth` group (`login`, `logout`, `status`); the `dam agent` group (`list` [default], `get`, `create`, `create-interactive`, `delete`, `restart`); `dam chat`; `dam session list`; the `dam ssh` group (`connect`, `configure`, hidden `_proxy`); `dam template list`; `dam import`; the `dam file` group (`get`, `put`, `list`); the `dam network` group (`list`, `create`, `update`, `revoke`, `preset`, `apply-preset`, `trusted-hosts`); the `dam approval` group (`list`, `approve`, `deny`); the `dam connection` group (`list`, `templates`, `connect`, `disconnect`, `grant`, `revoke`); and the `dam skill` group (`source list`, `source add`, `source remove`, `source refresh`, `catalog`, `list`, `install`, `uninstall`). Command groups are singular to align with `gh`, `git`, and `docker` conventions.
 
 The CLI shares types directly with the api-server via a shared contract package, so server-side type changes reach the CLI without codegen or manual mirroring. Most routes are reached through plain HTTP calls against the api-server's tRPC endpoints; the `dam chat` verb additionally opens a WebSocket to the terminal relay for the interactive PTY session. The auth probes (`/api/auth/config`, OIDC discovery) stay as raw `fetch` because they are not tRPC.
 
@@ -192,6 +193,18 @@ Two pieces of non-obvious behavior the CLI surfaces:
 `update` against an unknown rule ID exits `EXIT_RULE_NOT_FOUND` (6) — the contract change in `egress-rules-service.ts` converts the plain `Error("egress rule not found")` to `TRPCError({ code: "NOT_FOUND" })` so the CLI can classify the error via `data.code`.
 
 The `source` field is rendered via the shared `formatEgressRuleSource` helper in [packages/api-server-api/src/modules/egress-rules/format.ts](../../packages/api-server-api/src/modules/egress-rules/format.ts) so the CLI and UI use identical labels.
+
+## Approvals
+
+`dam approval` actions the unified HITL inbox ([ADR-035](../adrs/035-unified-hitl-ux.md)) — the pending decisions Agents are waiting on, the same `pending_approvals` queue the web UI surfaces. The boundary with `dam network`: `network` manages egress **rules**, the pre-approvals that stop a prompt from ever appearing; `approval` actions the **prompts that did appear**. A durable approve on a network (`ext_authz`) request writes a rule that then shows up in `dam network list <agent>` with source "from inbox". Tool-call (`acp_native`) verdicts go to the harness, which owns its own permission persistence — no egress rule is ever written for them, including under `--host` (the server falls back to the durable approve).
+
+Three verbs, a thin client over the `approvals.*` tRPC procedures:
+
+- `dam approval list [<agent>]` — the inbox, owner-wide by default; the optional Agent Ref scopes to one Agent. Six-column table (`ID TYPE AGENT REQUEST STATUS EXPIRES`); `REQUEST` renders via the shared `describeApprovalPayload` helper in [packages/api-server-api/src/modules/approvals/format.ts](../../packages/api-server-api/src/modules/approvals/format.ts) so CLI and UI labels can never drift. `--status pending|resolved|expired|all` defaults to `pending` — the actionable set, a deliberate divergence from the UI's unfiltered inbox; `all` omits the filter. `--limit <n>` accepts 1–500 (the contract schema rejects more; the CLI validates client-side and exits 2). Rows come back newest-first. `--json` emits raw `ApprovalView[]`.
+- `dam approval approve <id> [--once|--host]` — bare `approve` is the durable verdict (`approvePermanent`): for `ext_authz` it writes a permanent allow rule and the success line names it. `--once` (`approveOnce`) releases only the held call; `--host` (`approveHost`) writes a host-wide `(host, *, *)` allow rule. `--once` and `--host` together exit `EXIT_INVALID_INPUT` (2).
+- `dam approval deny <id> [--once]` — bare `deny` is durable (`denyForever`, writes a deny rule for `ext_authz`); `--once` (`dismiss`) denies only the held call, so the same shape re-prompts.
+
+The verdict mutations return an **Action Outcome** — the post-CAS truth — and the exit code derives from it: `applied` and `rule_written_expired` (the hold already lapsed but the durable rule was written, so the next request of that shape resolves from it) exit 0, with the human output naming any rule written; `not_actionable` (unknown, foreign, or already-settled id — deliberately indistinguishable) prints to stderr and exits **`EXIT_APPROVAL_NOT_ACTIONABLE` (8)**, so a typo'd id can't report success. The outcome is computed server-side and is race-free where a CLI-side pre-resolve would not be. `--json` emits the raw outcome and keeps the same exit codes. An `acp_native` verdict is delivered, not resumed — the CLI records the decision; real-time unblock of the held turn is best-effort (live relay or outbox retry, server-side).
 
 ## Connections
 

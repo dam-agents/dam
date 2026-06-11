@@ -23,5 +23,9 @@ export const EXIT_RULE_NOT_FOUND = 6;
  *  state, or the wake-to-ready primitive (ADR-032) timed out. */
 export const EXIT_AGENT_NOT_REACHABLE = 7;
 
+/** Approval verb against an id that is unknown or already settled — the
+ *  server reports `not_actionable`, so a typo'd id can't exit 0. */
+export const EXIT_APPROVAL_NOT_ACTIONABLE = 8;
+
 /** POSIX convention: 128 + SIGINT(2). Emitted on Ctrl+C during bundle pack/upload. */
 export const EXIT_SIGINT = 130;
