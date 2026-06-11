@@ -67,4 +67,4 @@ On every `v*` tag push, the release jobs in [`cd.yml`](../../.github/workflows/c
 - Packages and pushes the Helm chart to `oci://quay.io/dam-agents/charts`
 - Publishes `@dam-agents/cli` to npm (stable tags get `latest`, RC tags get `rc`)
 
-On every push to `main` (no tag), CD builds images and pushes a dev Helm chart (`0.0.0-main.*`).
+On every push to `main` (no tag), CD builds images and pushes a dev Helm chart versioned `<in-development version>-main.<run number>` (e.g. `0.2.2-main.359`), plus the floating `0.0.0-main` alias that the dev environment tracks. The semver prerelease suffix makes main builds sort above the last release, so registry version resolution treats them as the newest published chart.

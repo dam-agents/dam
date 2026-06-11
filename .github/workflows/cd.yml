@@ -307,8 +307,12 @@ jobs:
           RUN_NUMBER: ${{ github.run_number }}
           COMPOSITE: ${{ needs.appversion.outputs.composite }}
         run: |
-          helm package deploy/helm/platform --version "0.0.0-main.${RUN_NUMBER}" --app-version "$COMPOSITE"
-          helm push "platform-0.0.0-main.${RUN_NUMBER}.tgz" oci://quay.io/dam-agents/charts
+          # <in-development version>-main.<run> sorts between the previous and
+          # next release, so semver "latest" resolution ranks main builds
+          # correctly; 0.0.0-main stays as the floating alias dev Flux tracks.
+          VERSION="$(yq -r .version deploy/helm/platform/Chart.yaml)-main.${RUN_NUMBER}"
+          helm package deploy/helm/platform --version "$VERSION" --app-version "$COMPOSITE"
+          helm push "platform-${VERSION}.tgz" oci://quay.io/dam-agents/charts
           helm package deploy/helm/platform --version 0.0.0-main --app-version "$COMPOSITE"
           helm push platform-0.0.0-main.tgz oci://quay.io/dam-agents/charts
 
