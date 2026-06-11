@@ -113,10 +113,10 @@ func (c *IdleChecker) check(ctx context.Context) {
 		"scanned", len(agents.Items), "hibernated", hibernated, "duration", time.Since(start))
 }
 
-// podIsBusy probes the agent runtime's /api/status endpoint for in-flight work:
-// a running prompt turn, queued prompts, pending agent-to-client requests, or an
-// open terminal. Connected viewers (activeClients) deliberately don't count — an
-// open browser tab must not block hibernation.
+// podIsBusy probes the agent runtime's /api/status endpoint. The runtime is
+// authoritative about its own idleness — it reports a single idle flag and the
+// controller does not re-derive busy-ness from raw counters. A runtime too old
+// to report the flag parses as idle=false, i.e. busy, which fails safe.
 // Returns false (not busy) on any error — allows hibernation if the pod is unreachable.
 func (c *IdleChecker) podIsBusy(agentName string) bool {
 	url := fmt.Sprintf("http://%s-0.%s.%s.svc:8080/api/status", agentName, agentName, c.config.Namespace)
@@ -131,15 +131,12 @@ func (c *IdleChecker) podIsBusy(agentName string) bool {
 		return false
 	}
 	var status struct {
-		ActivePrompts   int  `json:"activePrompts"`
-		PendingRequests int  `json:"pendingRequests"`
-		QueuedPrompts   int  `json:"queuedPrompts"`
-		TerminalActive  bool `json:"terminalActive"`
+		Idle bool `json:"idle"`
 	}
 	if err := json.Unmarshal(body, &status); err != nil {
 		return false
 	}
-	return status.ActivePrompts > 0 || status.PendingRequests > 0 || status.QueuedPrompts > 0 || status.TerminalActive
+	return !status.Idle
 }
 
 // hibernate scales an agent's paired StatefulSets (agent + gateway, both

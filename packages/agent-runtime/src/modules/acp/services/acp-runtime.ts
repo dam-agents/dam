@@ -49,6 +49,7 @@ export interface AcpRuntimeStatus {
   pendingRequestCount: number;
   queuedPromptCount: number;
   agentAlive: boolean;
+  idle: boolean;
 }
 
 export interface AcpRuntime {
@@ -1275,6 +1276,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         pendingRequestCount: pendingFromAgent.size,
         queuedPromptCount: queued,
         agentAlive: agent !== null && !agentExited,
+        idle:
+          activePromptBySession.size === 0 &&
+          pendingFromAgent.size === 0 &&
+          queued === 0,
       };
     },
 

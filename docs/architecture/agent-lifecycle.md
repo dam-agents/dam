@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-06-10
+Last verified: 2026-06-11
 
 ## Motivated by
 
@@ -161,7 +161,7 @@ Beyond ACP frames, agent-runtime also serves a Bearer-authenticated tRPC surface
 
 ### Hibernate
 
-The controller's idle checker periodically scans running Agents. For each, it probes the agent-runtime over the cluster network: any active sessions, any inflight triggers? If the answer is no for long enough (and the probe doesn't error), the checker flips `spec.desiredState` to `hibernated`. The reconciler then scales the StatefulSet to zero.
+The controller's idle checker periodically scans running Agents. For each, it probes agent-runtime's `/api/status` over the cluster network. The runtime is authoritative about its own idleness: it reports a single `idle` flag (false while a prompt turn is running, prompts are queued, an agent-initiated request awaits a client, or a terminal is open — connected viewers don't count), and the controller does not re-derive busy-ness from raw counters. If the runtime reports idle for long enough (and the probe doesn't error), the checker hibernates the Agent by scaling its StatefulSets to zero.
 
 The pod terminates; the PVC, Secret, Service, and NetworkPolicy persist. Workspace state survives — the git checkout, `node_modules`, `.venv`, mise cache, and `$HOME` are all on the PVC and rejoin on the next wake. Anything written to the container's ephemeral filesystem (OS-level changes, tools installed outside `$HOME`) is lost; this is a deliberate constraint of the lifetime model ([ADR-012](../adrs/012-runtime-lifetime.md)).
 

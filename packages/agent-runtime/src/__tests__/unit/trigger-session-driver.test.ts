@@ -31,6 +31,7 @@ function fakeRuntime(): { runtime: AcpRuntime; sent: any[] } {
       pendingRequestCount: 0,
       queuedPromptCount: 0,
       agentAlive: true,
+      idle: true,
     }),
     resetSession: () => {},
     refreshEnv: () => {},

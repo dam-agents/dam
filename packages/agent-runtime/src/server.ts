@@ -332,6 +332,7 @@ const server = http.createServer((req, res) => {
       queuedPrompts: s.queuedPromptCount,
       agentAlive: s.agentAlive,
       terminalActive: ptySlots.size > 0,
+      idle: s.idle && ptySlots.size === 0,
     };
     res
       .writeHead(200, { "Content-Type": "application/json", ...CORS })
