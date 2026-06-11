@@ -393,11 +393,21 @@ else
 
   echo "Loading images into k3s..."
   tar="/tmp/platform-images.tar"
-  docker save -o "$tar" platform-controller:latest platform-api-server:latest platform-ui:latest platform-keycloak:latest "${AGENT_IMAGES[@]}"
+  IMAGES=(platform-controller:latest platform-api-server:latest platform-ui:latest platform-keycloak:latest "${AGENT_IMAGES[@]}")
   if [ -n "${IS_SANDBOX:-}" ]; then
+    # `docker` is podman in the sandbox: a multi-image `save` collapses all
+    # names onto one manifest, and unqualified names get a `localhost/`
+    # prefix kubelet's imagePullPolicy:Never lookup never matches. Qualify
+    # each name and import one archive per image instead.
+    for img in "${IMAGES[@]}"; do
+      rm -f "$tar" # podman's docker-archive writer refuses to overwrite
+      docker tag "$img" "docker.io/library/$img"
+      docker save -o "$tar" "docker.io/library/$img"
+      sudo k3s ctr images import "$tar"
+    done
     [ -z "${CI:-}" ] && docker image prune --all --force >/dev/null 2>&1 || true
-    sudo k3s ctr images import "$tar"
   else
+    docker save -o "$tar" "${IMAGES[@]}"
     limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
     limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
   fi
