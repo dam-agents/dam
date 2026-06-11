@@ -10,6 +10,9 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   reporter: [["list"], ["html", { open: "never" }]],
+  // First paint after the Keycloak redirect can exceed the 5s default on a
+  // cold CI cluster (bundle load + auth round-trips), which made 01-auth flaky.
+  expect: { timeout: 15_000 },
   use: {
     baseURL,
     trace: "on",
