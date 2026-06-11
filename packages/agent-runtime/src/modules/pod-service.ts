@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import type { DocumentStore } from "../core/document-store.js";
+import { z } from "zod";
+import type { DocumentStoreBackend } from "../core/document-store.js";
 import { mergedSpawnEnv, type RuntimeEnvReader } from "../core/runtime-env.js";
 
 const BACKOFF_INITIAL_MS = 1_000;
@@ -12,11 +13,15 @@ export interface PodServiceSupervisor {
 
 export function createPodServiceSupervisor(opts: {
   command: string;
-  snapshot: DocumentStore<{ env: NodeJS.ProcessEnv }>;
+  stateBackend: DocumentStoreBackend;
   envReader: RuntimeEnvReader;
   log: (msg: string) => void;
 }): PodServiceSupervisor {
-  const { command, snapshot, envReader, log } = opts;
+  const { command, envReader, log } = opts;
+  const snapshot = opts.stateBackend.open("pod-service-env", {
+    schema: z.object({ env: z.record(z.string(), z.string().optional()) }),
+    initial: () => ({ env: {} }),
+  });
 
   let child: ReturnType<typeof spawn> | null = null;
   let restartTimer: ReturnType<typeof setTimeout> | null = null;

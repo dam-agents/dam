@@ -8,7 +8,6 @@ import serializePkg from "@xterm/addon-serialize";
 const { SerializeAddon } = serializePkg;
 import * as nodePty from "@lydell/node-pty";
 import { WebSocketServer, type WebSocket as WsWebSocket } from "ws";
-import { z } from "zod";
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { appRouter } from "agent-runtime-api/router";
 import type { AgentRuntimeContext } from "agent-runtime-api";
@@ -91,10 +90,7 @@ const podLog = (msg: string) => process.stderr.write(`[pod-service] ${msg}\n`);
 const podService = existsSync(podServicePath)
   ? createPodServiceSupervisor({
       command: podServicePath,
-      snapshot: stateBackend.open("pod-service-env", {
-        schema: z.object({ env: z.record(z.string(), z.string().optional()) }),
-        initial: () => ({ env: {} }),
-      }),
+      stateBackend,
       envReader: envStore,
       log: podLog,
     })
