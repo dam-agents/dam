@@ -15,6 +15,7 @@ import {
 } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { renderTable } from "../../shared/render-table.js";
+import { writeStdoutAndExit } from "../../shared/stdout.js";
 import type { ConnectionService } from "../services/connection-service.js";
 
 const HEADER = ["ID", "NAME", "CATEGORY", "STATUS", "HOSTS"];
@@ -88,8 +89,11 @@ export function buildListCommand(deps: {
             process.exit(EXIT_RUNTIME_FAILURE);
           }
           if (opts.json) {
-            process.stdout.write(`${JSON.stringify(result.value)}\n`);
-            process.exit(EXIT_SUCCESS);
+            writeStdoutAndExit(
+              `${JSON.stringify(result.value)}\n`,
+              EXIT_SUCCESS,
+            );
+            return;
           }
           if (result.value.length === 0) {
             process.stderr.write(
@@ -97,8 +101,8 @@ export function buildListCommand(deps: {
             );
             process.exit(EXIT_SUCCESS);
           }
-          process.stdout.write(tableFor(result.value));
-          process.exit(EXIT_SUCCESS);
+          writeStdoutAndExit(tableFor(result.value), EXIT_SUCCESS);
+          return;
         }
 
         // Agent-scoped: resolve the ref, read its grants, intersect with the
@@ -138,8 +142,8 @@ export function buildListCommand(deps: {
         }
 
         if (opts.json) {
-          process.stdout.write(`${JSON.stringify(matched)}\n`);
-          process.exit(EXIT_SUCCESS);
+          writeStdoutAndExit(`${JSON.stringify(matched)}\n`, EXIT_SUCCESS);
+          return;
         }
         if (matched.length === 0 && missing.length === 0) {
           process.stderr.write(
@@ -147,11 +151,14 @@ export function buildListCommand(deps: {
           );
           process.exit(EXIT_SUCCESS);
         }
-        if (matched.length > 0) process.stdout.write(tableFor(matched));
         if (missing.length > 0) {
           process.stderr.write(
             `note: ${missing.length} granted connection(s) no longer exist: ${missing.join(", ")}\n`,
           );
+        }
+        if (matched.length > 0) {
+          writeStdoutAndExit(tableFor(matched), EXIT_SUCCESS);
+          return;
         }
         process.exit(EXIT_SUCCESS);
       },

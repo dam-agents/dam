@@ -7,6 +7,7 @@ import {
   printResolveError,
 } from "../../agent/commands/errors.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
+import { writeStdoutAndExit } from "../../shared/stdout.js";
 import { classifyTrpcError } from "../../shared/trpc/classify.js";
 import { createAgentTrpcClient } from "../../shared/trpc/trpc-client.js";
 import {
@@ -93,14 +94,13 @@ export function buildFileListCommand(deps: FileListDeps): Command {
           process.exit(EXIT_RUNTIME_FAILURE);
         }
 
-        if (opts.json) {
-          process.stdout.write(`${JSON.stringify(entries)}\n`);
-        } else {
-          for (const e of entries) {
-            if (e.type === "file") process.stdout.write(`${e.path}\n`);
-          }
-        }
-        process.exit(EXIT_SUCCESS);
+        const out = opts.json
+          ? `${JSON.stringify(entries)}\n`
+          : entries
+              .filter((e) => e.type === "file")
+              .map((e) => `${e.path}\n`)
+              .join("");
+        writeStdoutAndExit(out, EXIT_SUCCESS);
       },
     );
 }

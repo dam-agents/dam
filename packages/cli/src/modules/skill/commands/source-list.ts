@@ -15,6 +15,7 @@ import {
 } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { renderTable } from "../../shared/render-table.js";
+import { writeStdoutAndExit } from "../../shared/stdout.js";
 import { sourceKind } from "../domain/source-ref.js";
 import type { SkillsService } from "../services/skills-service.js";
 
@@ -86,8 +87,8 @@ export function buildSourceListCommand(deps: {
         }
 
         if (opts.json) {
-          process.stdout.write(`${JSON.stringify(result.value)}\n`);
-          process.exit(EXIT_SUCCESS);
+          writeStdoutAndExit(`${JSON.stringify(result.value)}\n`, EXIT_SUCCESS);
+          return;
         }
         if (result.value.length === 0) {
           process.stderr.write(
@@ -95,8 +96,7 @@ export function buildSourceListCommand(deps: {
           );
           process.exit(EXIT_SUCCESS);
         }
-        process.stdout.write(tableFor(result.value));
-        process.exit(EXIT_SUCCESS);
+        writeStdoutAndExit(tableFor(result.value), EXIT_SUCCESS);
       },
     );
 }

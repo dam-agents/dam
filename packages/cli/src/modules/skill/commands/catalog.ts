@@ -17,6 +17,7 @@ import {
 } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { renderTable } from "../../shared/render-table.js";
+import { writeStdoutAndExit } from "../../shared/stdout.js";
 import { resolveSourceRef } from "../domain/source-ref.js";
 import { type AnnotatedSkill, statusFor } from "../domain/skill-status.js";
 import type { SkillsService } from "../services/skills-service.js";
@@ -173,17 +174,21 @@ export function buildCatalogCommand(deps: {
         if (installed === undefined) {
           // No --agent: raw catalog, no status annotation.
           if (opts.json) {
-            process.stdout.write(`${JSON.stringify(catalogRes.value)}\n`);
-            process.exit(EXIT_SUCCESS);
+            writeStdoutAndExit(
+              `${JSON.stringify(catalogRes.value)}\n`,
+              EXIT_SUCCESS,
+            );
+            return;
           }
           const sorted = [...catalogRes.value].sort(byName);
-          process.stdout.write(
+          writeStdoutAndExit(
             renderFittedTable(
               ["NAME", "DESCRIPTION"],
               sorted.map((s) => [s.name, s.description]),
             ),
+            EXIT_SUCCESS,
           );
-          process.exit(EXIT_SUCCESS);
+          return;
         }
 
         const annotated: AnnotatedSkill[] = catalogRes.value.map((s) => ({
@@ -191,17 +196,17 @@ export function buildCatalogCommand(deps: {
           status: statusFor(s, installed),
         }));
         if (opts.json) {
-          process.stdout.write(`${JSON.stringify(annotated)}\n`);
-          process.exit(EXIT_SUCCESS);
+          writeStdoutAndExit(`${JSON.stringify(annotated)}\n`, EXIT_SUCCESS);
+          return;
         }
         const sorted = [...annotated].sort(byName);
-        process.stdout.write(
+        writeStdoutAndExit(
           renderFittedTable(
             ["NAME", "STATUS", "DESCRIPTION"],
             sorted.map((s) => [s.name, s.status, s.description]),
           ),
+          EXIT_SUCCESS,
         );
-        process.exit(EXIT_SUCCESS);
       },
     );
 }

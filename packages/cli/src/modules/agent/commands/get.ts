@@ -6,6 +6,7 @@ import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { AgentService } from "../services/agent-service.js";
 import { createAgentResolver } from "../services/agent-resolver.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
+import { writeStdoutAndExit } from "../../shared/stdout.js";
 import { exitCodeForResolveError, printResolveError } from "./errors.js";
 import {
   EXIT_BELOW_FLOOR,
@@ -48,12 +49,11 @@ export function buildGetCommand(deps: {
       }
 
       if (opts.json) {
-        process.stdout.write(`${JSON.stringify(result.value)}\n`);
-        process.exit(EXIT_SUCCESS);
+        writeStdoutAndExit(`${JSON.stringify(result.value)}\n`, EXIT_SUCCESS);
+        return;
       }
 
-      process.stdout.write(renderAgent(result.value));
-      process.exit(EXIT_SUCCESS);
+      writeStdoutAndExit(renderAgent(result.value), EXIT_SUCCESS);
     });
 }
 

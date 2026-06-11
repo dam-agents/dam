@@ -15,6 +15,7 @@ import {
 } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { renderTable } from "../../shared/render-table.js";
+import { writeStdoutAndExit } from "../../shared/stdout.js";
 import type { SkillsService } from "../services/skills-service.js";
 
 const INSTALLED_HEADER = ["SOURCE", "NAME", "VERSION"];
@@ -76,8 +77,8 @@ export function buildListCommand(deps: {
       const state = stateRes.value;
 
       if (opts.json) {
-        process.stdout.write(`${JSON.stringify(state)}\n`);
-        process.exit(EXIT_SUCCESS);
+        writeStdoutAndExit(`${JSON.stringify(state)}\n`, EXIT_SUCCESS);
+        return;
       }
       if (state.installed.length === 0 && state.standalone.length === 0) {
         process.stderr.write(
@@ -86,21 +87,22 @@ export function buildListCommand(deps: {
         process.exit(EXIT_SUCCESS);
       }
 
+      let out = "";
       if (state.installed.length > 0) {
-        renderInstalled(state.installed, sourcesRes.value);
+        out += renderInstalled(state.installed, sourcesRes.value);
       }
       if (state.standalone.length > 0) {
-        if (state.installed.length > 0) process.stdout.write("\n");
-        renderStandalone(state.standalone, state.instancePublishes);
+        if (out.length > 0) out += "\n";
+        out += renderStandalone(state.standalone, state.instancePublishes);
       }
-      process.exit(EXIT_SUCCESS);
+      writeStdoutAndExit(out, EXIT_SUCCESS);
     });
 }
 
 function renderInstalled(
   installed: SkillsState["installed"],
   sources: readonly { gitUrl: string; name: string }[],
-): void {
+): string {
   // Join key is the git URL: an installed ref's `source` is the gitUrl.
   // Unresolved gitUrls (source deleted) fall back to the raw URL.
   const nameByUrl = new Map(sources.map((s) => [s.gitUrl, s.name]));
@@ -110,19 +112,18 @@ function renderInstalled(
     if (name === undefined) unresolved.add(r.source);
     return [name ?? r.source, r.name, r.version.slice(0, 7)];
   });
-  process.stdout.write("Installed skills:\n");
-  process.stdout.write(renderTable([INSTALLED_HEADER, ...rows]));
   if (unresolved.size > 0) {
     process.stderr.write(
       `note: ${unresolved.size} source(s) no longer registered, shown by URL: ${[...unresolved].join(", ")}\n`,
     );
   }
+  return `Installed skills:\n${renderTable([INSTALLED_HEADER, ...rows])}`;
 }
 
 function renderStandalone(
   standalone: SkillsState["standalone"],
   publishes: SkillsState["instancePublishes"],
-): void {
+): string {
   // skillName → most-recent prUrl. publishedAt is ISO 8601, so lexicographic
   // max picks the latest when a skill was published more than once.
   const prByName = new Map<string, string>();
@@ -137,8 +138,7 @@ function renderStandalone(
   const rows = [...standalone]
     .sort((a, b) => a.name.localeCompare(b.name))
     .map((s: LocalSkill) => [s.name, prByName.get(s.name) ?? "—"]);
-  process.stdout.write("Standalone skills:\n");
-  process.stdout.write(renderTable([STANDALONE_HEADER, ...rows]));
+  return `Standalone skills:\n${renderTable([STANDALONE_HEADER, ...rows])}`;
 }
 
 function bySourceThenName(a: SkillRef, b: SkillRef): number {

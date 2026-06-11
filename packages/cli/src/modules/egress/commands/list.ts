@@ -15,6 +15,7 @@ import {
 } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { renderTable } from "../../shared/render-table.js";
+import { writeStdoutAndExit } from "../../shared/stdout.js";
 import type { EgressService } from "../services/egress-service.js";
 
 export function buildListCommand(deps: {
@@ -62,8 +63,8 @@ export function buildListCommand(deps: {
       }
 
       if (opts.json) {
-        process.stdout.write(`${JSON.stringify(result.value)}\n`);
-        process.exit(EXIT_SUCCESS);
+        writeStdoutAndExit(`${JSON.stringify(result.value)}\n`, EXIT_SUCCESS);
+        return;
       }
 
       if (result.value.length === 0) {
@@ -80,7 +81,7 @@ export function buildListCommand(deps: {
         if (m !== 0) return m;
         return a.pathPattern.localeCompare(b.pathPattern);
       });
-      process.stdout.write(
+      writeStdoutAndExit(
         renderTable([
           ["ID", "VERDICT", "METHOD", "HOST", "PATH", "SOURCE"],
           ...sorted.map((r) => [
@@ -92,7 +93,7 @@ export function buildListCommand(deps: {
             formatEgressRuleSource(r.source),
           ]),
         ]),
+        EXIT_SUCCESS,
       );
-      process.exit(EXIT_SUCCESS);
     });
 }

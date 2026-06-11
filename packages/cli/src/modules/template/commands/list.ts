@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
+import { writeStdoutAndExit } from "../../shared/stdout.js";
 import { printServiceError } from "../../agent/commands/errors.js";
 import { renderTable } from "../../shared/render-table.js";
 import type { TemplateService } from "../services/template-service.js";
@@ -44,8 +45,8 @@ export function buildListCommand(deps: {
       }
 
       if (opts.json) {
-        process.stdout.write(`${JSON.stringify(result.value)}\n`);
-        process.exit(EXIT_SUCCESS);
+        writeStdoutAndExit(`${JSON.stringify(result.value)}\n`, EXIT_SUCCESS);
+        return;
       }
 
       if (result.value.length === 0) {
@@ -58,7 +59,7 @@ export function buildListCommand(deps: {
       const sorted = [...result.value].sort((a, b) =>
         a.name.localeCompare(b.name),
       );
-      process.stdout.write(
+      writeStdoutAndExit(
         renderTable([
           ["NAME", "ID", "DESCRIPTION"],
           ...sorted.map((t) => [
@@ -67,8 +68,8 @@ export function buildListCommand(deps: {
             truncate(t.description ?? "", DESCRIPTION_MAX),
           ]),
         ]),
+        EXIT_SUCCESS,
       );
-      process.exit(EXIT_SUCCESS);
     });
 }
 

@@ -7,6 +7,7 @@ import {
   EXIT_SUCCESS,
 } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
+import { writeStdoutAndExit } from "../../shared/stdout.js";
 import type { EgressService } from "../services/egress-service.js";
 
 export function buildTrustedHostsCommand(deps: {
@@ -40,11 +41,11 @@ export function buildTrustedHostsCommand(deps: {
         process.exit(EXIT_RUNTIME_FAILURE);
       }
 
-      if (opts.json) {
-        process.stdout.write(`${JSON.stringify(result.value)}\n`);
-      } else if (result.value.length > 0) {
-        process.stdout.write(`${result.value.join("\n")}\n`);
-      }
-      process.exit(EXIT_SUCCESS);
+      const out = opts.json
+        ? `${JSON.stringify(result.value)}\n`
+        : result.value.length > 0
+          ? `${result.value.join("\n")}\n`
+          : "";
+      writeStdoutAndExit(out, EXIT_SUCCESS);
     });
 }

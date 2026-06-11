@@ -9,6 +9,7 @@ import {
 } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { renderTable } from "../../shared/render-table.js";
+import { writeStdoutAndExit } from "../../shared/stdout.js";
 import type { ConnectionService } from "../services/connection-service.js";
 
 const HEADER = ["ID", "NAME", "CATEGORY", "AUTH", "DESCRIPTION"];
@@ -80,14 +81,13 @@ export function buildTemplatesCommand(deps: {
       const connectable = result.value.filter((t) => t.category !== "mcp");
 
       if (opts.json) {
-        process.stdout.write(`${JSON.stringify(connectable)}\n`);
-        process.exit(EXIT_SUCCESS);
+        writeStdoutAndExit(`${JSON.stringify(connectable)}\n`, EXIT_SUCCESS);
+        return;
       }
 
-      process.stdout.write(tableFor(connectable));
       process.stderr.write(
         "\nMCP servers are added by URL: dam connection connect https://your-mcp-server\n",
       );
-      process.exit(EXIT_SUCCESS);
+      writeStdoutAndExit(tableFor(connectable), EXIT_SUCCESS);
     });
 }
