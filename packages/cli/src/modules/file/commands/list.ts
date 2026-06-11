@@ -100,7 +100,7 @@ export function buildFileListCommand(deps: FileListDeps): Command {
               .filter((e) => e.type === "file")
               .map((e) => `${e.path}\n`)
               .join("");
-        writeStdoutAndExit(out, EXIT_SUCCESS);
+        return writeStdoutAndExit(out, EXIT_SUCCESS);
       },
     );
 }

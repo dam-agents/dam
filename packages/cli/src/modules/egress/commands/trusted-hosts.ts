@@ -46,6 +46,6 @@ export function buildTrustedHostsCommand(deps: {
         : result.value.length > 0
           ? `${result.value.join("\n")}\n`
           : "";
-      writeStdoutAndExit(out, EXIT_SUCCESS);
+      return writeStdoutAndExit(out, EXIT_SUCCESS);
     });
 }

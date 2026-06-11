@@ -138,21 +138,19 @@ export function buildCatalogCommand(deps: {
         if (installed === undefined) {
           // No --agent: raw catalog, no status annotation.
           if (opts.json) {
-            writeStdoutAndExit(
+            return writeStdoutAndExit(
               `${JSON.stringify(catalogRes.value)}\n`,
               EXIT_SUCCESS,
             );
-            return;
           }
           const sorted = [...catalogRes.value].sort(byName);
-          writeStdoutAndExit(
+          return writeStdoutAndExit(
             renderFittedTable(
               ["NAME", "DESCRIPTION"],
               sorted.map((s) => [s.name, s.description]),
             ),
             EXIT_SUCCESS,
           );
-          return;
         }
 
         const annotated: AnnotatedSkill[] = catalogRes.value.map((s) => ({
@@ -160,11 +158,13 @@ export function buildCatalogCommand(deps: {
           status: statusFor(s, installed),
         }));
         if (opts.json) {
-          writeStdoutAndExit(`${JSON.stringify(annotated)}\n`, EXIT_SUCCESS);
-          return;
+          return writeStdoutAndExit(
+            `${JSON.stringify(annotated)}\n`,
+            EXIT_SUCCESS,
+          );
         }
         const sorted = [...annotated].sort(byName);
-        writeStdoutAndExit(
+        return writeStdoutAndExit(
           renderFittedTable(
             ["NAME", "STATUS", "DESCRIPTION"],
             sorted.map((s) => [s.name, s.status, s.description]),

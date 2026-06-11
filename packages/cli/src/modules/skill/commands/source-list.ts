@@ -87,8 +87,10 @@ export function buildSourceListCommand(deps: {
         }
 
         if (opts.json) {
-          writeStdoutAndExit(`${JSON.stringify(result.value)}\n`, EXIT_SUCCESS);
-          return;
+          return writeStdoutAndExit(
+            `${JSON.stringify(result.value)}\n`,
+            EXIT_SUCCESS,
+          );
         }
         if (result.value.length === 0) {
           process.stderr.write(
@@ -96,7 +98,7 @@ export function buildSourceListCommand(deps: {
           );
           process.exit(EXIT_SUCCESS);
         }
-        writeStdoutAndExit(tableFor(result.value), EXIT_SUCCESS);
+        return writeStdoutAndExit(tableFor(result.value), EXIT_SUCCESS);
       },
     );
 }

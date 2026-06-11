@@ -63,8 +63,10 @@ export function buildListCommand(deps: {
       }
 
       if (opts.json) {
-        writeStdoutAndExit(`${JSON.stringify(result.value)}\n`, EXIT_SUCCESS);
-        return;
+        return writeStdoutAndExit(
+          `${JSON.stringify(result.value)}\n`,
+          EXIT_SUCCESS,
+        );
       }
 
       if (result.value.length === 0) {
@@ -81,7 +83,7 @@ export function buildListCommand(deps: {
         if (m !== 0) return m;
         return a.pathPattern.localeCompare(b.pathPattern);
       });
-      writeStdoutAndExit(
+      return writeStdoutAndExit(
         renderTable([
           ["ID", "VERDICT", "METHOD", "HOST", "PATH", "SOURCE"],
           ...sorted.map((r) => [

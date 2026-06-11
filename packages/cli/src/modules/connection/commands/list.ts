@@ -89,11 +89,10 @@ export function buildListCommand(deps: {
             process.exit(EXIT_RUNTIME_FAILURE);
           }
           if (opts.json) {
-            writeStdoutAndExit(
+            return writeStdoutAndExit(
               `${JSON.stringify(result.value)}\n`,
               EXIT_SUCCESS,
             );
-            return;
           }
           if (result.value.length === 0) {
             process.stderr.write(
@@ -101,8 +100,7 @@ export function buildListCommand(deps: {
             );
             process.exit(EXIT_SUCCESS);
           }
-          writeStdoutAndExit(tableFor(result.value), EXIT_SUCCESS);
-          return;
+          return writeStdoutAndExit(tableFor(result.value), EXIT_SUCCESS);
         }
 
         // Agent-scoped: resolve the ref, read its grants, intersect with the
@@ -142,8 +140,10 @@ export function buildListCommand(deps: {
         }
 
         if (opts.json) {
-          writeStdoutAndExit(`${JSON.stringify(matched)}\n`, EXIT_SUCCESS);
-          return;
+          return writeStdoutAndExit(
+            `${JSON.stringify(matched)}\n`,
+            EXIT_SUCCESS,
+          );
         }
         if (matched.length === 0 && missing.length === 0) {
           process.stderr.write(
@@ -157,8 +157,7 @@ export function buildListCommand(deps: {
           );
         }
         if (matched.length > 0) {
-          writeStdoutAndExit(tableFor(matched), EXIT_SUCCESS);
-          return;
+          return writeStdoutAndExit(tableFor(matched), EXIT_SUCCESS);
         }
         process.exit(EXIT_SUCCESS);
       },

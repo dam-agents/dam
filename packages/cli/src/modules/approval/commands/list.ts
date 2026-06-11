@@ -117,8 +117,10 @@ export function buildListCommand(deps: {
         }
 
         if (opts.json) {
-          writeStdoutAndExit(`${JSON.stringify(result.value)}\n`, EXIT_SUCCESS);
-          return;
+          return writeStdoutAndExit(
+            `${JSON.stringify(result.value)}\n`,
+            EXIT_SUCCESS,
+          );
         }
 
         if (result.value.length === 0) {
@@ -134,7 +136,7 @@ export function buildListCommand(deps: {
         // column — it carries a full method/host/path line and is collapsed
         // to fit the terminal width (--json keeps the full text).
         const now = new Date();
-        writeStdoutAndExit(
+        return writeStdoutAndExit(
           renderFittedTable(
             ["ID", "TYPE", "AGENT", "REQUEST", "STATUS", "EXPIRES"],
             result.value.map((row) => {

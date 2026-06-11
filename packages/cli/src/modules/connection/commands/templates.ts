@@ -81,13 +81,15 @@ export function buildTemplatesCommand(deps: {
       const connectable = result.value.filter((t) => t.category !== "mcp");
 
       if (opts.json) {
-        writeStdoutAndExit(`${JSON.stringify(connectable)}\n`, EXIT_SUCCESS);
-        return;
+        return writeStdoutAndExit(
+          `${JSON.stringify(connectable)}\n`,
+          EXIT_SUCCESS,
+        );
       }
 
       process.stderr.write(
         "\nMCP servers are added by URL: dam connection connect https://your-mcp-server\n",
       );
-      writeStdoutAndExit(tableFor(connectable), EXIT_SUCCESS);
+      return writeStdoutAndExit(tableFor(connectable), EXIT_SUCCESS);
     });
 }

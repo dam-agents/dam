@@ -77,8 +77,7 @@ export function buildListCommand(deps: {
       const state = stateRes.value;
 
       if (opts.json) {
-        writeStdoutAndExit(`${JSON.stringify(state)}\n`, EXIT_SUCCESS);
-        return;
+        return writeStdoutAndExit(`${JSON.stringify(state)}\n`, EXIT_SUCCESS);
       }
       if (state.installed.length === 0 && state.standalone.length === 0) {
         process.stderr.write(
@@ -95,7 +94,7 @@ export function buildListCommand(deps: {
         if (out.length > 0) out += "\n";
         out += renderStandalone(state.standalone, state.instancePublishes);
       }
-      writeStdoutAndExit(out, EXIT_SUCCESS);
+      return writeStdoutAndExit(out, EXIT_SUCCESS);
     });
 }
 

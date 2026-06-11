@@ -49,11 +49,13 @@ export function buildGetCommand(deps: {
       }
 
       if (opts.json) {
-        writeStdoutAndExit(`${JSON.stringify(result.value)}\n`, EXIT_SUCCESS);
-        return;
+        return writeStdoutAndExit(
+          `${JSON.stringify(result.value)}\n`,
+          EXIT_SUCCESS,
+        );
       }
 
-      writeStdoutAndExit(renderAgent(result.value), EXIT_SUCCESS);
+      return writeStdoutAndExit(renderAgent(result.value), EXIT_SUCCESS);
     });
 }
 

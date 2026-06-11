@@ -43,8 +43,10 @@ export function buildListCommand(deps: {
       }
 
       if (opts.json) {
-        writeStdoutAndExit(`${JSON.stringify(result.value)}\n`, EXIT_SUCCESS);
-        return;
+        return writeStdoutAndExit(
+          `${JSON.stringify(result.value)}\n`,
+          EXIT_SUCCESS,
+        );
       }
 
       if (result.value.length === 0) {
@@ -57,7 +59,7 @@ export function buildListCommand(deps: {
       const sorted = [...result.value].sort((a, b) =>
         a.name.localeCompare(b.name),
       );
-      writeStdoutAndExit(
+      return writeStdoutAndExit(
         renderTable([
           ["NAME", "ID", "TEMPLATE", "STATE"],
           ...sorted.map((a) => [
