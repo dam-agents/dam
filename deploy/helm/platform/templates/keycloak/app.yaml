@@ -64,7 +64,7 @@ spec:
               name: http
           env:
             - name: KC_DB
-              value: {{ .Values.keycloak.db.database | quote }}
+              value: "postgres"
             - name: KC_DB_URL
               value: {{ include "platform.keycloak.db.url" . | quote }}
             - name: KC_DB_USERNAME
