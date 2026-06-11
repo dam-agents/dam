@@ -1,4 +1,4 @@
-# ADR-066: Local model gateway fronts custom Anthropic upstreams for claude-code
+# ADR-067: Local model gateway fronts custom Anthropic upstreams for claude-code
 
 **Date:** 2026-06-10
 **Status:** Accepted
@@ -22,7 +22,7 @@ catalog and translate the names back on each request.
 
 **When the agent's Anthropic base URL points at a custom upstream, the
 claude-code image fronts it with a loopback passthrough gateway — run as the
-runtime-supervised pod service ([ADR-065](065-pod-service-supervision.md)) —
+runtime-supervised pod service ([ADR-066](066-pod-service-supervision.md)) —
 and the harness entry paths re-point Claude Code at it.** The gateway serves
 the upstream's live catalog with chat-capable models renamed into the prefix
 namespace Claude Code's discovery accepts, maps names back to the verbatim
@@ -40,7 +40,7 @@ moves out of the provider presets entirely: presets carry credentials and
 endpoints, the gateway derives tier defaults, and an idempotent api-server
 boot sweep strips the pins that pre-gateway preset saves snapshotted into
 stored secrets — assign-if-unset would otherwise let those stale pins mask
-discovery forever. Env changes reach the running gateway as an ADR-065
+discovery forever. Env changes reach the running gateway as an ADR-066
 SIGHUP reload: it re-reads the runtime's env snapshot and re-points in
 place, so in-flight streams survive a mid-turn provider re-save. Its upstream hop rides the same egress path as everything else in
 the pod (the HTTP(S)_PROXY Envoy chain with credential injection). With no

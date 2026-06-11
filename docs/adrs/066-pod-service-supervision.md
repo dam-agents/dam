@@ -1,4 +1,4 @@
-# ADR-065: Pod services — image-provided background processes supervised by agent-runtime
+# ADR-066: Pod services — image-provided background processes supervised by agent-runtime
 
 **Date:** 2026-06-10
 **Status:** Accepted
@@ -7,7 +7,7 @@
 ## Context
 
 The claude-code image needs a pod-scoped background process (a local model
-gateway, [ADR-066](066-local-model-gateway.md)) — the first long-lived
+gateway, [ADR-067](067-local-model-gateway.md)) — the first long-lived
 process in an agent pod outside agent-runtime's per-session children. The
 first cut launched it as a `nohup`'d daemon from the harness shims, which
 exposed what an unsupervised daemon costs in this pod model: PID 1 is
