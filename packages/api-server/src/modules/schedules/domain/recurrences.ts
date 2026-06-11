@@ -71,9 +71,10 @@ export function validateHasVisibleOccurrence(
 }
 
 // Compare against UTC components rather than local: rrule.js produces
-// Dates whose UTC h:m echoes the RRULE's BYHOUR/BYMINUTE verbatim, which
-// is what the Go controller treats as wall-clock-in-schedule-tz. Reading
-// local components would apply the server's own tz offset incorrectly.
+// Dates whose UTC h:m echoes the RRULE's BYHOUR/BYMINUTE verbatim, i.e.
+// wall clock in the schedule's timezone — the same frame quiet-hours
+// HH:MM strings are in. Reading local components would apply the
+// server's own tz offset incorrectly.
 function isInQuietHours(date: Date, windows: QuietWindow[]): boolean {
   const m = date.getUTCHours() * 60 + date.getUTCMinutes();
   for (const w of windows) {
@@ -98,20 +99,71 @@ function parseHHMM(s: string): number | null {
 export function nextFireAt(spec: ScheduleSpec, from: Date): Date | null {
   if (spec.type === "cron") {
     try {
-      const cron = CronExpressionParser.parse(spec.cron, { currentDate: from });
+      // Legacy cron schedules are UTC by contract (ADR-031); cron-parser
+      // otherwise defaults to the server's local timezone.
+      const cron = CronExpressionParser.parse(spec.cron, {
+        currentDate: from,
+        tz: "UTC",
+      });
       return cron.next().toDate();
     } catch {
       return null;
     }
   }
-  const rule = RRule.fromString(spec.rrule);
+  // rrule.js occurrences live in the wall-clock frame (see isInQuietHours),
+  // not real time. Iterate there — quiet-hours HH:MM are wall-clock too —
+  // and convert only the surviving occurrence back to a real instant.
+  // dtstart is anchored explicitly: rrule.js's default (real "now" at parse
+  // time) sits in the wrong frame and skips same-day occurrences in zones
+  // behind UTC.
+  const wallFrom = toWallClock(from, spec.timezone);
+  const rule = new RRule({
+    dtstart: wallFrom,
+    ...RRule.parseString(spec.rrule),
+  });
   const enabled = (spec.quietHours ?? []).filter((w) => w.enabled);
-  let cursor = from;
+  let cursor = wallFrom;
   for (let i = 0; i < 1440; i++) {
     const next = rule.after(cursor, false);
     if (!next) return null;
-    if (enabled.length === 0 || !isInQuietHours(next, enabled)) return next;
+    if (enabled.length === 0 || !isInQuietHours(next, enabled)) {
+      return toInstant(next, spec.timezone);
+    }
     cursor = next;
   }
   return null;
+}
+
+// Wall-clock fields of `instant` in `tz`, re-encoded as a Date whose UTC
+// fields carry those values — the frame rrule.js occurrences live in.
+function toWallClock(instant: Date, tz: string): Date {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(instant);
+  const f: Record<string, number> = {};
+  for (const p of parts) {
+    if (p.type !== "literal") f[p.type] = Number(p.value);
+  }
+  return new Date(
+    Date.UTC(f.year, f.month - 1, f.day, f.hour % 24, f.minute, f.second),
+  );
+}
+
+// Inverse of toWallClock. Second pass re-reads the offset at the guessed
+// instant so DST boundaries resolve; wall times skipped by spring-forward
+// land just past the transition.
+function toInstant(wall: Date, tz: string): Date {
+  const guess = wall.getTime() - tzOffsetMs(wall, tz);
+  return new Date(wall.getTime() - tzOffsetMs(new Date(guess), tz));
+}
+
+function tzOffsetMs(instant: Date, tz: string): number {
+  return toWallClock(instant, tz).getTime() - instant.getTime();
 }
