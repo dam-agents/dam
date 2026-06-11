@@ -4,14 +4,10 @@ FROM ${BASE_IMAGE}
 USER root
 
 ARG CLAUDE_CODE_VERSION=2.1.173
-RUN printf '[claude-code]\nname=Claude Code\nbaseurl=https://downloads.claude.ai/claude-code/rpm/latest\nenabled=1\ngpgcheck=1\ngpgkey=https://downloads.claude.ai/keys/claude-code.asc\n' \
-      > /etc/yum.repos.d/claude-code.repo \
-    && dnf install -yq "claude-code-${CLAUDE_CODE_VERSION}" \
-    && dnf clean all
-
 ARG CLAUDE_AGENT_ACP_VERSION=0.44.0
 RUN --mount=type=cache,target=/root/.npm \
     npm install "@agentclientprotocol/claude-agent-acp@${CLAUDE_AGENT_ACP_VERSION}" \
+    && npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
     && chown -R 65532:0 /app
 
 COPY model-gateway.mjs /usr/local/lib/model-gateway.mjs
