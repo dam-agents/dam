@@ -36,12 +36,7 @@ fi
 """
 sources = ["**/*.go"]
 
-# Shared-cluster CRD compatibility gate (ADR-065): every environment in a
-# cluster writes through whatever CRD schema the newest release installed, so
-# the generated CRDs must stay compatible with what the last release shipped.
-# Compares each files/crds/ manifest against the same path at the baseline
-# (latest v* tag) with crdify; new CRDs are skipped, removed CRDs fail.
-["controller:check:crd-compat"]
+["controller:check:crd-backwards-compatibility"]
 dir = "{{config_root}}"
 sources = ["deploy/helm/platform/files/crds/*.yaml"]
 usage = 'flag "--baseline <ref>" help="Git ref to compare against (default: latest v* tag)"'
