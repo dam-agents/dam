@@ -37,13 +37,15 @@ export interface ApprovalsRepository {
   ): Promise<PendingApprovalRow[]>;
   /** CAS update: only succeeds if the row is still `pending`. The single
    *  consumer of the pending → resolved transition is enforced here, so
-   *  concurrent inbox clicks / in-session responses are at-most-once. */
+   *  concurrent inbox clicks / in-session responses are at-most-once.
+   *  Returns whether this call won the CAS — `false` means the row was
+   *  unknown or already settled/expired. */
   resolvePending(
     id: string,
     verdict: "allow_once" | "allow" | "deny_once" | "deny",
     decidedBy: string,
     opts?: { markDelivered?: boolean },
-  ): Promise<void>;
+  ): Promise<boolean>;
   /** Idempotent. Stamps `delivered_at` on a row whose response frame has
    *  reached the wrapper. Re-running is harmless: the WHERE keeps it from
    *  overwriting an earlier delivery timestamp. */
@@ -214,7 +216,7 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
 
     async resolvePending(id, verdict, decidedBy, opts) {
       const now = new Date();
-      await db
+      const rows = await db
         .update(pendingApprovals)
         .set({
           status: "resolved",
@@ -228,7 +230,9 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
             eq(pendingApprovals.id, id),
             eq(pendingApprovals.status, "pending"),
           ),
-        );
+        )
+        .returning({ id: pendingApprovals.id });
+      return rows.length > 0;
     },
 
     async markDelivered(id) {

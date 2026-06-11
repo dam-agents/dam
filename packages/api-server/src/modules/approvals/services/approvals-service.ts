@@ -1,4 +1,5 @@
 import type {
+  ApprovalActionOutcome,
   ApprovalVerdict,
   ApprovalView,
   ApprovalsService,
@@ -53,6 +54,11 @@ export interface CreateApprovalsServiceDeps {
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   ownerSub: string;
 }
+
+const NOT_ACTIONABLE: ApprovalActionOutcome = {
+  outcome: "not_actionable",
+  rule: null,
+};
 
 function toView(row: PendingApprovalRow): ApprovalView {
   return {
@@ -132,37 +138,49 @@ export function createApprovalsService(
 
     async approveOnce(id) {
       const row = await loadOwned(deps, id);
-      if (!row || row.status !== "pending") return;
+      if (!row || row.status !== "pending") return NOT_ACTIONABLE;
       if (row.type === "ext_authz") {
-        await deps.repo.resolvePending(id, "allow_once", deps.ownerSub);
+        const casWon = await deps.repo.resolvePending(
+          id,
+          "allow_once",
+          deps.ownerSub,
+        );
         await deps.notifier.notifyResolved(id);
         auditVerdict(deps, row, "allow", {
           verdict: "allow_once",
           ruleWritten: false,
         });
-        return;
+        return casWon ? { outcome: "applied", rule: null } : NOT_ACTIONABLE;
       }
-      await resolveAndDeliverAcpNative(deps, row, "allow_once");
+      const casWon = await resolveAndDeliverAcpNative(deps, row, "allow_once");
+      return casWon ? { outcome: "applied", rule: null } : NOT_ACTIONABLE;
     },
 
     async approvePermanent(id) {
       const row = await loadOwned(deps, id);
-      if (!row || row.status === "resolved") return;
+      if (!row || row.status === "resolved") return NOT_ACTIONABLE;
       if (row.type === "ext_authz" && row.payload.kind === "ext_authz") {
-        await deps.egressRuleWriter.insert({
-          id: randomUUID(),
-          agentId: row.agentId,
+        const rule = {
           host: row.payload.host,
           method: row.payload.method,
           pathPattern: row.payload.path,
-          verdict: "allow",
+          verdict: "allow" as const,
+        };
+        await deps.egressRuleWriter.insert({
+          id: randomUUID(),
+          agentId: row.agentId,
+          ...rule,
           decidedBy: deps.ownerSub,
           source: "inbox",
         });
         // The pending row may already be expired (the held call timed out),
         // in which case resolvePending no-ops — that's the timed-out
         // approve-permanent flow: rule is written, future retries match.
-        await deps.repo.resolvePending(id, "allow", deps.ownerSub);
+        const casWon = await deps.repo.resolvePending(
+          id,
+          "allow",
+          deps.ownerSub,
+        );
         await deps.notifier.notifyResolved(id);
         auditVerdict(deps, row, "allow", {
           verdict: "allow",
@@ -171,34 +189,42 @@ export function createApprovalsService(
           method: row.payload.method,
           pathPattern: row.payload.path,
         });
-        return;
+        return { outcome: casWon ? "applied" : "rule_written_expired", rule };
       }
       // ACP-native: persistence ("allow_always") is the harness's own
       // concern — Claude Code / Codex maintain their own permission rules
       // via the option's kind. We just send the verdict; the harness
       // remembers it.
-      await resolveAndDeliverAcpNative(deps, row, "allow");
+      const casWon = await resolveAndDeliverAcpNative(deps, row, "allow");
+      return casWon ? { outcome: "applied", rule: null } : NOT_ACTIONABLE;
     },
 
     async approveHost(id) {
       const row = await loadOwned(deps, id);
-      if (!row || row.status === "resolved") return;
+      if (!row || row.status === "resolved") return NOT_ACTIONABLE;
       // Wildcard rules only make sense for the ext_authz path; the
       // acp_native path's verdict goes back to the harness, which has its
       // own per-tool rule model. Treat the host-wildcard request as
       // approvePermanent for acp_native.
       if (row.type === "ext_authz" && row.payload.kind === "ext_authz") {
-        await deps.egressRuleWriter.insert({
-          id: randomUUID(),
-          agentId: row.agentId,
+        const rule = {
           host: row.payload.host,
           method: "*",
           pathPattern: "*",
-          verdict: "allow",
+          verdict: "allow" as const,
+        };
+        await deps.egressRuleWriter.insert({
+          id: randomUUID(),
+          agentId: row.agentId,
+          ...rule,
           decidedBy: deps.ownerSub,
           source: "inbox",
         });
-        await deps.repo.resolvePending(id, "allow", deps.ownerSub);
+        const casWon = await deps.repo.resolvePending(
+          id,
+          "allow",
+          deps.ownerSub,
+        );
         await deps.notifier.notifyResolved(id);
         // Host-wide allow (method:*/path:*) — a broad widening of the
         // allow-list; flag it.
@@ -208,26 +234,34 @@ export function createApprovalsService(
           host: row.payload.host,
           hostWide: true,
         });
-        return;
+        return { outcome: casWon ? "applied" : "rule_written_expired", rule };
       }
-      await resolveAndDeliverAcpNative(deps, row, "allow");
+      const casWon = await resolveAndDeliverAcpNative(deps, row, "allow");
+      return casWon ? { outcome: "applied", rule: null } : NOT_ACTIONABLE;
     },
 
     async denyForever(id) {
       const row = await loadOwned(deps, id);
-      if (!row || row.status === "resolved") return;
+      if (!row || row.status === "resolved") return NOT_ACTIONABLE;
       if (row.type === "ext_authz" && row.payload.kind === "ext_authz") {
-        await deps.egressRuleWriter.insert({
-          id: randomUUID(),
-          agentId: row.agentId,
+        const rule = {
           host: row.payload.host,
           method: row.payload.method,
           pathPattern: row.payload.path,
-          verdict: "deny",
+          verdict: "deny" as const,
+        };
+        await deps.egressRuleWriter.insert({
+          id: randomUUID(),
+          agentId: row.agentId,
+          ...rule,
           decidedBy: deps.ownerSub,
           source: "inbox",
         });
-        await deps.repo.resolvePending(id, "deny", deps.ownerSub);
+        const casWon = await deps.repo.resolvePending(
+          id,
+          "deny",
+          deps.ownerSub,
+        );
         await deps.notifier.notifyResolved(id);
         auditVerdict(deps, row, "deny", {
           verdict: "deny",
@@ -236,26 +270,32 @@ export function createApprovalsService(
           method: row.payload.method,
           pathPattern: row.payload.path,
         });
-        return;
+        return { outcome: casWon ? "applied" : "rule_written_expired", rule };
       }
-      await resolveAndDeliverAcpNative(deps, row, "deny");
+      const casWon = await resolveAndDeliverAcpNative(deps, row, "deny");
+      return casWon ? { outcome: "applied", rule: null } : NOT_ACTIONABLE;
     },
 
     async dismiss(id) {
       const row = await loadOwned(deps, id);
-      if (!row || row.status !== "pending") return;
+      if (!row || row.status !== "pending") return NOT_ACTIONABLE;
       // Symmetric to approveOnce: resolve the held call without writing
       // a rule. Future requests of the same shape will re-prompt.
       if (row.type === "ext_authz") {
-        await deps.repo.resolvePending(id, "deny_once", deps.ownerSub);
+        const casWon = await deps.repo.resolvePending(
+          id,
+          "deny_once",
+          deps.ownerSub,
+        );
         await deps.notifier.notifyResolved(id);
         auditVerdict(deps, row, "deny", {
           verdict: "deny_once",
           ruleWritten: false,
         });
-        return;
+        return casWon ? { outcome: "applied", rule: null } : NOT_ACTIONABLE;
       }
-      await resolveAndDeliverAcpNative(deps, row, "deny_once");
+      const casWon = await resolveAndDeliverAcpNative(deps, row, "deny_once");
+      return casWon ? { outcome: "applied", rule: null } : NOT_ACTIONABLE;
     },
   };
 }
@@ -266,21 +306,21 @@ export function createApprovalsService(
  * On send failure the row stays `resolved AND delivered_at IS NULL`; the
  * periodic sweep on any replica will retry. The wrapper deduplicates by
  * JSON-RPC id, so a sweep retry that overlaps a successful inline send is
- * harmless.
+ * harmless. Returns whether this call won the pending → resolved CAS.
  */
 async function resolveAndDeliverAcpNative(
   deps: CreateApprovalsServiceDeps,
   row: PendingApprovalRow,
   verdict: ApprovalVerdict,
-): Promise<void> {
-  if (row.payload.kind !== "acp_native") return;
-  await deps.repo.resolvePending(row.id, verdict, deps.ownerSub);
+): Promise<boolean> {
+  if (row.payload.kind !== "acp_native") return false;
+  const casWon = await deps.repo.resolvePending(row.id, verdict, deps.ownerSub);
   auditVerdict(deps, row, verdict.startsWith("allow") ? "allow" : "deny", {
     verdict,
     native: true,
   });
   const rpcId = row.payload.rpcId;
-  if (rpcId === undefined || rpcId === null) return;
+  if (rpcId === undefined || rpcId === null) return casWon;
   const optionId = pickOptionId(row.payload.options ?? [], verdict);
   const frame = JSON.stringify(buildAcpPermissionResponse(rpcId, optionId));
   try {
@@ -291,4 +331,5 @@ async function resolveAndDeliverAcpNative(
     // verdict accepted in the inbox; agent-side resumption is best-effort
     // beyond the click and self-heals on the next sweep tick.
   }
+  return casWon;
 }

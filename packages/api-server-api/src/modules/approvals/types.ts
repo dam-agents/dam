@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import type {
+  approvalActionOutcomeSchema,
   approvalListOptionsSchema,
   approvalStatusSchema,
 } from "./schemas.js";
@@ -67,21 +68,27 @@ export interface ApprovalView {
  *  and expired rows are capped to keep the list from growing unbounded. */
 export type ApprovalListOptions = z.infer<typeof approvalListOptionsSchema>;
 
+/** Post-CAS truth a verdict mutation reports back. `rule_written_expired`
+ *  means the CAS lost (hold expired or a concurrent verdict won) but the
+ *  durable egress rule *was* written. `not_actionable` keeps unknown,
+ *  foreign, and already-settled ids deliberately indistinguishable. */
+export type ApprovalActionOutcome = z.infer<typeof approvalActionOutcomeSchema>;
+
 export interface ApprovalsService {
   listForOwner(opts?: ApprovalListOptions): Promise<ApprovalView[]>;
   listForInstance(
     agentId: string,
     opts?: ApprovalListOptions,
   ): Promise<ApprovalView[]>;
-  approveOnce(id: string): Promise<void>;
-  approvePermanent(id: string): Promise<void>;
+  approveOnce(id: string): Promise<ApprovalActionOutcome>;
+  approvePermanent(id: string): Promise<ApprovalActionOutcome>;
   /** Wildcard-host variant of approve-permanent: writes a single rule that
    *  matches any method/path on the request's host. Only meaningful for
    *  ext_authz approvals — for acp_native, falls back to approvePermanent. */
-  approveHost(id: string): Promise<void>;
-  denyForever(id: string): Promise<void>;
+  approveHost(id: string): Promise<ApprovalActionOutcome>;
+  denyForever(id: string): Promise<ApprovalActionOutcome>;
   /** "Deny but ask again" — resolves the held call with deny and writes
    *  no rule, so the next request of the same shape re-prompts. Use for
    *  one-off rejections where the user doesn't want a permanent rule. */
-  dismiss(id: string): Promise<void>;
+  dismiss(id: string): Promise<ApprovalActionOutcome>;
 }
