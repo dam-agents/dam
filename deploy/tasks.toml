@@ -427,7 +427,10 @@ fi
 echo "Installing/upgrading Platform chart..."
 # Helm never upgrades the chart's crds/ on an existing release (ADR-068) — on
 # this single-env local cluster the freeze has no value, so apply them directly.
+# The explicit Established wait keeps the helm install below race-free even if
+# the chart ever grows a CR instance (today it deliberately ships none).
 kubectl --kubeconfig="$KUBECONFIG" apply --server-side --force-conflicts -f deploy/helm/platform/crds/
+kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Established --timeout=60s -f deploy/helm/platform/crds/
 
 # No --wait: the keycloak-provision post-install hook imports the platform realm
 # after deployments come up. With --wait, helm would block on readiness
