@@ -165,11 +165,13 @@ function ApprovalRow({
               type="button"
               variant="outline"
               size="xs"
+              className="min-w-0 max-w-full"
               disabled={inflight}
               onClick={() => approveHost.mutate({ id: row.id })}
               title={`Allow all requests to ${hostLabel} (writes a wildcard rule)`}
             >
-              <Globe size={11} /> Allow {hostLabel}
+              <Globe size={11} />
+              <span className="truncate">Allow {hostLabel}</span>
             </Button>
           )}
           <Button
