@@ -3,7 +3,6 @@ import { useEffect, useRef } from "react";
 import { emitToast } from "../../../lib/toast.js";
 import { useAgentsList } from "../api/queries.js";
 
-/** One toast per crash episode. Re-arms only on genuine recovery (running/hibernated), not on reason change — a crash-loop flaps the reason and would otherwise re-toast every restart. */
 export function useAgentCrashToasts(): void {
   const agents = useAgentsList();
   const toastedRef = useRef<Map<string, string>>(new Map());
