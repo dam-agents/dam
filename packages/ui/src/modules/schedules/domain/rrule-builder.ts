@@ -174,15 +174,14 @@ interface QuietWindow {
 }
 
 /**
- * Client-side mirror of the controller's isInQuietHours.
+ * Client-side mirror of the api-server's isInQuietHours (recurrences.ts).
  *
  * rrule.js returns occurrences as UTC Date objects whose UTC components
- * reflect the RRULE's BY* fields verbatim (BYHOUR=9 → 09:00Z). The Go
- * controller interprets the rule in the schedule's timezone, so that UTC
- * 09:00 really means "09:00 wall clock" in the user's frame — exactly
- * what their quiet-hours HH:MM is in. Hence: compare UTC components,
- * NOT local — otherwise the browser's offset (e.g. Europe/Prague +2h)
- * silently shifts fire times into or out of quiet windows.
+ * reflect the RRULE's BY* fields verbatim (BYHOUR=9 → 09:00Z) — wall
+ * clock in the schedule's timezone, exactly the frame quiet-hours HH:MM
+ * strings are in. Hence: compare UTC components, NOT local — otherwise
+ * the browser's offset (e.g. Europe/Prague +2h) silently shifts fire
+ * times into or out of quiet windows.
  */
 export function isInQuietHours(date: Date, windows: QuietWindow[]): boolean {
   if (windows.length === 0) return false;

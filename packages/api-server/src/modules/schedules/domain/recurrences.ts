@@ -42,10 +42,10 @@ interface QuietWindow {
 
 /**
  * Refuse to save a schedule whose every RRULE occurrence falls inside a
- * quiet-hours window — the controller's goroutine would spin its iteration
- * cap once and then never fire. Iteration cap matches the Go side (1440,
- * i.e. one day of minute-granularity occurrences). Uses rule.all with
- * early-exit instead of a rule.after loop, which is O(N²) in rrule.js.
+ * quiet-hours window — nextFireAt would exhaust its iteration cap and the
+ * schedule would never fire. Cap matches nextFireAt's (1440, i.e. one day
+ * of minute-granularity occurrences). Uses rule.all with early-exit
+ * instead of a rule.after loop, which is O(N²) in rrule.js.
  */
 export function validateHasVisibleOccurrence(
   rruleExpr: string,
