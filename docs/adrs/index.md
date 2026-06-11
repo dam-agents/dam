@@ -69,9 +69,10 @@ This directory contains ADRs for the Platform project.
 | [062](062-ssh-access.md)                      | SSH access to agents — in-pod inetd sshd tunneled over the agent WebSocket | @JanPokorny |
 | [063](063-hand-written-migrations.md)         | Generated table migrations, hand-written views, squashed baseline | @jezekra1 |
 | [064](064-slack-e2e-bolt-port.md)             | Slack E2E — Bolt behind a swappable port, fork path exercised end-to-end | @tomkis |
-| [065](065-shared-crds-multi-env.md)           | Shared CRDs across co-located environments — single owner release, release-compat CI gate | @jezekra1 |
+| [065](065-shared-crds-multi-env.md)           | Shared CRDs across co-located environments — single owner release, release-compat CI gate — ownership mechanism superseded by ADR-068 | @jezekra1 |
 | [066](066-pod-service-supervision.md)         | Pod services — image-provided background processes supervised by agent-runtime | @JanPokorny |
 | [067](067-local-model-gateway.md)             | Local model gateway fronts custom Anthropic upstreams for claude-code | @Tomas2D |
+| [068](068-operator-applied-crds.md)           | Frozen shared CRDs — operator-applied schema upgrades | @jezekra1 |
 
 ## Drafts
 
