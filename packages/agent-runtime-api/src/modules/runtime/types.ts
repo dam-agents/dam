@@ -47,6 +47,11 @@ export const egressInjectContribution = z.object({
   headerName: z.string().min(1),
   valueFormat: z.string().min(1),
   encoding: z.literal("basic-x-access-token").optional(),
+  // Moves the value into this query param instead of the header; restricted to unreserved chars since the Lua treats it as a trusted literal.
+  queryParamName: z
+    .string()
+    .regex(/^[A-Za-z0-9_.~-]+$/)
+    .optional(),
 });
 
 export const fileContribution = z.object({

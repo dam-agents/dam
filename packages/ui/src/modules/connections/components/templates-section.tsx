@@ -7,7 +7,11 @@ import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
 import { PROVIDER_PRESET_TYPES } from "api-server-api";
 import { useMemo, useState } from "react";
 
-const PROVIDER_PRESET_TEMPLATE_IDS = new Set<string>(PROVIDER_PRESET_TYPES);
+// Templates managed by the legacy Providers view, hidden here so they aren't offered twice; `anthropic-oauth` rides the same card as the API-key variant.
+const LEGACY_PROVIDER_TEMPLATE_IDS = new Set<string>([
+  ...PROVIDER_PRESET_TYPES,
+  "anthropic-oauth",
+]);
 
 import { Button } from "@/components/ui/button";
 
@@ -35,7 +39,7 @@ export function ConnectionTemplatesSection() {
   };
 
   const visibleTemplates = (templates.data ?? []).filter(
-    (t) => !PROVIDER_PRESET_TEMPLATE_IDS.has(t.id),
+    (t) => !LEGACY_PROVIDER_TEMPLATE_IDS.has(t.id),
   );
   const byCategory = groupByCategory(visibleTemplates);
   const iconByTemplateId = useMemo(() => {

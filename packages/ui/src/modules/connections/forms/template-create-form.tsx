@@ -107,6 +107,12 @@ export function TemplateCreateForm({
       case "header": {
         const value = submittedValue("value");
         if (!value) return { error: "Secret value is required" };
+        const configInputs: Record<string, string> = {};
+        for (const input of template.inputs) {
+          if (!input.configInput) continue;
+          const v = submittedValue(input.name);
+          if (v) configInputs[input.name] = v;
+        }
         return {
           ...common,
           authKind: "header",
@@ -120,6 +126,7 @@ export function TemplateCreateForm({
           ...(submittedValue("envName")
             ? { envName: submittedValue("envName")! }
             : {}),
+          ...(Object.keys(configInputs).length > 0 ? { configInputs } : {}),
           value,
         };
       }
@@ -201,7 +208,7 @@ export function TemplateCreateForm({
             <LabeledInput
               key={input.name}
               label={
-                labelFor(input.name) +
+                (input.label ?? labelFor(input.name)) +
                 (input.state === "optional" ? " (optional)" : "")
               }
               testId={`connection-field-${input.name}`}
@@ -209,6 +216,7 @@ export function TemplateCreateForm({
               type={input.secret ? "password" : "text"}
               value={f(input.name)}
               onChange={(v) => setF(input.name, v)}
+              help={input.hint}
             />
           ))}
 

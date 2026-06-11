@@ -66,7 +66,7 @@ export interface InjectionConfig {
   queryParamName?: string;
 }
 
-const IBM_LITELLM_HOST = "ete-litellm.ai-models.vpc.res.ibm.com";
+export const IBM_LITELLM_HOST = "ete-litellm.ai-models.vpc.res.ibm.com";
 const IBM_LITELLM_BASE_URL = `https://${IBM_LITELLM_HOST}`;
 
 export function ibmLitellmEnvMappings(): EnvMapping[] {
@@ -94,7 +94,7 @@ export interface BobModelPins {
 
 // Bob CLI silently downgrades to the legacy `prod.ibm-bob-staging` backend
 // when BOBSHELL_API_KEY starts with `sk-`/`pk-`; the placeholder must not.
-const BOB_HOST = "api.us-east.bob.ibm.com";
+export const BOB_HOST = "api.us-east.bob.ibm.com";
 const BOB_PLACEHOLDER = "dummy-placeholder";
 
 export function bobEnvMappings(pins: BobModelPins = {}): EnvMapping[] {

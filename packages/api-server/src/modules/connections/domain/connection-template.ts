@@ -38,11 +38,22 @@ export interface OAuthConnectionTemplate extends TemplateCommon {
   credentialFamily?: string;
 }
 
+// An optional config input a header template ships; filling it emits an `env` contribution, leaving it blank emits nothing.
+export interface ConfigInputSpec {
+  inputName: string;
+  envName: string;
+  label: string;
+  hint?: string;
+  pattern?: string;
+  enumValues?: readonly string[];
+}
+
 export interface HeaderConnectionTemplate extends TemplateCommon {
   authKind: "header";
   host?: string;
   headerName?: string;
   valueFormat?: string;
+  configInputs?: ConfigInputSpec[];
 }
 
 export interface NoneConnectionTemplate extends TemplateCommon {
@@ -210,6 +221,15 @@ function inputsFor(
       // Custom credential can also be exposed to the agent as an env var
       // (placeholder in-pod; Envoy injects the real value on egress).
       if (t.isCustom) out.push(optional("envName"));
+      for (const spec of t.configInputs ?? []) {
+        out.push({
+          name: spec.inputName,
+          state: "optional",
+          configInput: true,
+          label: spec.label,
+          ...(spec.hint ? { hint: spec.hint } : {}),
+        });
+      }
       return out;
     }
     case "none":

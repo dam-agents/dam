@@ -209,11 +209,12 @@ same token on more than one host with **different auth schemes per
 host**, all from one K8s Secret. The Secret carries a JSON
 `platform.ai/injection-hosts` annotation listing each
 `{host, headerName?, valueFormat?, encoding?, pathPattern?}` tuple; the
-controller fans the Secret into one Envoy filter chain per entry,
-mounting the Secret once and reading a per-host SDS file
-(`host-<sha8>.sds.yaml`) inside it per chain. The same list drives the
-egress allowlist (one `connection:<id>` rule per host) — there is no
-second source of truth.
+controller fans the Secret into one Envoy filter chain per host —
+entries that share a host stack into that chain as an ordered list of
+credential injectors (see *Multiple injection steps per host* below) —
+mounting the Secret once and reading one SDS file per injection step
+inside it. The same list drives the egress allowlist (one
+`connection:<id>` rule per host) — there is no second source of truth.
 
 GitHub.com is the motivating case ([issue #219](https://github.com/dam-agents/dam/issues/219)):
 the same OAuth token must reach `api.github.com` as

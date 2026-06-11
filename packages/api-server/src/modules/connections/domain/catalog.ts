@@ -1,9 +1,27 @@
+import {
+  type Contribution,
+  type EnvMapping,
+  ibmLitellmEnvMappings,
+  bobEnvMappings,
+  BOB_CHAT_MODES,
+  IBM_LITELLM_HOST,
+  BOB_HOST,
+} from "api-server-api";
 import type {
   ConnectionTemplate,
   HeaderConnectionTemplate,
   NoneConnectionTemplate,
   OAuthConnectionTemplate,
 } from "./connection-template.js";
+
+// Project a provider preset's env bundle into `env` contributions
+function envContributions(mappings: EnvMapping[]): Contribution[] {
+  return mappings.map((m) => ({
+    kind: "env" as const,
+    name: m.envName,
+    placeholder: m.placeholder,
+  }));
+}
 
 export interface OAuthClientCredentials {
   clientId: string;
@@ -28,7 +46,7 @@ export interface OperatorCredentials {
 
 const ANTHROPIC: HeaderConnectionTemplate = {
   id: "anthropic",
-  name: "Anthropic",
+  name: "Anthropic (API Key)",
   category: "app",
   isCustom: false,
   description: "Anthropic API access (Claude). Sent as `x-api-key`.",
@@ -43,7 +61,39 @@ const ANTHROPIC: HeaderConnectionTemplate = {
       name: "ANTHROPIC_API_KEY",
       placeholder: "dummy-placeholder",
     },
-    { kind: "egress-allow", host: "api.anthropic.com" },
+    {
+      kind: "egress-inject",
+      host: "api.anthropic.com",
+      headerName: "x-api-key",
+      valueFormat: "{value}",
+    },
+  ],
+};
+
+const ANTHROPIC_OAUTH: HeaderConnectionTemplate = {
+  id: "anthropic-oauth",
+  name: "Anthropic (OAuth Token)",
+  category: "app",
+  isCustom: false,
+  description:
+    "Anthropic API access (Claude) via an OAuth token. Sent as `Authorization: Bearer`.",
+  iconSlug: "anthropic",
+  authKind: "header",
+  host: "api.anthropic.com",
+  headerName: "Authorization",
+  valueFormat: "Bearer {value}",
+  contributions: [
+    {
+      kind: "env",
+      name: "CLAUDE_CODE_OAUTH_TOKEN",
+      placeholder: "dummy-placeholder",
+    },
+    {
+      kind: "egress-inject",
+      host: "api.anthropic.com",
+      headerName: "Authorization",
+      valueFormat: "Bearer {value}",
+    },
   ],
 };
 
@@ -61,9 +111,11 @@ const OPENAI: HeaderConnectionTemplate = {
   contributions: [
     { kind: "env", name: "OPENAI_API_KEY", placeholder: "dummy-placeholder" },
     {
-      kind: "egress-allow",
+      kind: "egress-inject",
       host: "api.openai.com",
       pathPattern: "/v1/*",
+      headerName: "Authorization",
+      valueFormat: "Bearer {value}",
     },
   ],
 };
@@ -77,28 +129,23 @@ const IBM_LITELLM: HeaderConnectionTemplate = {
     "Proxy that fronts model endpoints for IBM-internal Claude Code.",
   iconSlug: "ibm",
   authKind: "header",
-  host: "ete-litellm.bx.cloud9.ibm.com",
+  host: IBM_LITELLM_HOST,
   headerName: "Authorization",
   valueFormat: "Bearer {value}",
+  // Env bundle + host sourced from the provider preset so they can't drift; Claude model pins are omitted as the agent's gateway discovers them.
   contributions: [
+    ...envContributions(ibmLitellmEnvMappings()),
     {
-      kind: "env",
-      name: "ANTHROPIC_BASE_URL",
-      placeholder: "https://ete-litellm.bx.cloud9.ibm.com",
+      kind: "egress-inject",
+      host: IBM_LITELLM_HOST,
+      headerName: "Authorization",
+      valueFormat: "Bearer {value}",
     },
-    {
-      kind: "env",
-      name: "ANTHROPIC_AUTH_TOKEN",
-      placeholder: "dummy-placeholder",
-    },
-    // Claude model pins (ANTHROPIC_DEFAULT_*_MODEL) are intentionally omitted:
-    // the claude-code agent's local LiteLLM gateway discovers them from the
-    // upstream's /v1/models and sets them at session start. OPENAI_MODEL stays
-    // for Codex, which has no gateway.
-    { kind: "env", name: "OPENAI_MODEL", placeholder: "gpt-5.5" },
-    { kind: "egress-allow", host: "ete-litellm.bx.cloud9.ibm.com" },
   ],
 };
+
+// Transport header for Bob's `?key=` injection; distinct from `Authorization` so both injections coexist on one host without colliding.
+const BOB_QUERY_PARAM_HEADER = "X-Bobshell-Internal";
 
 const BOB: HeaderConnectionTemplate = {
   id: "bob",
@@ -108,17 +155,60 @@ const BOB: HeaderConnectionTemplate = {
   description: "Bob CLI model proxy.",
   iconSlug: "bob",
   authKind: "header",
-  host: "api.us-east.bob.ibm.com",
+  host: BOB_HOST,
   headerName: "Authorization",
+  // Opaque api-keys go in under `Apikey`; `Bearer` triggers JWT auth.
   valueFormat: "Apikey {value}",
+  // Dual injection: `Apikey` header on every request plus the `?key=` URL param Bob appends to admin endpoints.
   contributions: [
+    ...envContributions(bobEnvMappings()),
     {
-      kind: "env",
-      name: "BOB_BASE_URL",
-      placeholder: "https://api.us-east.bob.ibm.com",
+      kind: "egress-inject",
+      host: BOB_HOST,
+      headerName: "Authorization",
+      valueFormat: "Apikey {value}",
     },
-    { kind: "env", name: "BOB_API_KEY", placeholder: "dummy-placeholder" },
-    { kind: "egress-allow", host: "api.us-east.bob.ibm.com" },
+    {
+      kind: "egress-inject",
+      host: BOB_HOST,
+      headerName: BOB_QUERY_PARAM_HEADER,
+      valueFormat: "{value}",
+      queryParamName: "key",
+    },
+  ],
+  configInputs: [
+    {
+      inputName: "model",
+      envName: "BOB_SHELL_MODEL",
+      label: "Model",
+      hint: "Default model for new sessions. Empty → Bob's built-in default.",
+    },
+    {
+      inputName: "instanceId",
+      envName: "BOB_INSTANCE_ID",
+      label: "Instance ID",
+      hint: "Sets the x-instance-id header (IBM tenant scoping).",
+    },
+    {
+      inputName: "teamId",
+      envName: "BOB_TEAM_ID",
+      label: "Team ID",
+      hint: "Sets the x-team-id header.",
+    },
+    {
+      inputName: "maxCoins",
+      envName: "BOB_MAX_COINS",
+      label: "Max coins",
+      hint: "Budget cap; Bob exits when exceeded.",
+      pattern: "^[1-9]\\d*$",
+    },
+    {
+      inputName: "chatMode",
+      envName: "BOB_CHAT_MODE",
+      label: "Chat mode",
+      hint: `Default chat persona. One of: ${BOB_CHAT_MODES.join(", ")}.`,
+      enumValues: BOB_CHAT_MODES,
+    },
   ],
 };
 
@@ -519,6 +609,43 @@ function googleService(
   };
 }
 
+// github.com uses HTTP Basic `x-access-token:<pat>` (GitHub's git-over-HTTPS PAT form); api.github.com and raw.githubusercontent.com use Bearer.
+const GITHUB_PAT: HeaderConnectionTemplate = {
+  id: "github-pat",
+  name: "GitHub (Personal Access Token)",
+  category: "app",
+  isCustom: false,
+  description:
+    "Read + write GitHub repos, issues, PRs with a personal access token.",
+  iconSlug: "github",
+  authKind: "header",
+  host: "api.github.com",
+  headerName: "Authorization",
+  valueFormat: "Bearer {value}",
+  contributions: [
+    { kind: "env", name: "GH_TOKEN", placeholder: "dummy-placeholder" },
+    {
+      kind: "egress-inject",
+      host: "api.github.com",
+      headerName: "Authorization",
+      valueFormat: "Bearer {value}",
+    },
+    {
+      kind: "egress-inject",
+      host: "github.com",
+      headerName: "Authorization",
+      valueFormat: "Basic {value}",
+      encoding: "basic-x-access-token",
+    },
+    {
+      kind: "egress-inject",
+      host: "raw.githubusercontent.com",
+      headerName: "Authorization",
+      valueFormat: "Bearer {value}",
+    },
+  ],
+};
+
 const CUSTOM_HEADER: HeaderConnectionTemplate = {
   id: "custom-header",
   name: "Custom header credential",
@@ -562,10 +689,12 @@ export function buildCatalog(
 ): ConnectionTemplate[] {
   return [
     ANTHROPIC,
+    ANTHROPIC_OAUTH,
     OPENAI,
     IBM_LITELLM,
     BOB,
     github(creds.github),
+    GITHUB_PAT,
     githubEnterprise(creds.githubEnterprise),
     spotify(creds.spotify),
     slack(creds.slack),

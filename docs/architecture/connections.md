@@ -82,6 +82,8 @@ Two display-axis attributes drive UI grouping:
 
 Templates are registered in code; adding a new integration is one entry. Schemas validate user input; the template's `build()` function projects inputs into the concrete `auth` + `contributions[]` of the Connection record.
 
+Beyond the auth credential, a template may declare optional **config inputs** — e.g. Bob's model and tenant pins — that the user fills at connect time; each filled input projects into an additional `env` contribution, validated against the input's spec.
+
 ### Connection
 
 A uniform shape — every Connection looks the same regardless of category or auth mode:

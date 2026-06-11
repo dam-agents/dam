@@ -68,6 +68,8 @@ const headerCreateInput = z.object({
       "env var name must be letters, digits, and underscores (not starting with a digit)",
     )
     .optional(),
+  // Values for the template's declared config inputs, keyed by input name.
+  configInputs: z.record(z.string(), z.string()).optional(),
   value: z.string().min(1),
 });
 

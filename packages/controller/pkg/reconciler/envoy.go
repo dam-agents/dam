@@ -288,17 +288,27 @@ func credentialEnvVars(secrets []corev1.Secret) []corev1.EnvVar {
 // persisted on the `injection-hosts` annotation. Decoded once per Secret
 // and fanned out by `chainsFromSecrets`.
 type connectionHostInjection struct {
-	Host        string `json:"host"`
-	PathPattern string `json:"pathPattern,omitempty"`
-	HeaderName  string `json:"headerName,omitempty"`
-	ValueFormat string `json:"valueFormat,omitempty"`
-	Encoding    string `json:"encoding,omitempty"`
+	Host           string `json:"host"`
+	PathPattern    string `json:"pathPattern,omitempty"`
+	HeaderName     string `json:"headerName,omitempty"`
+	ValueFormat    string `json:"valueFormat,omitempty"`
+	Encoding       string `json:"encoding,omitempty"`
+	QueryParamName string `json:"queryParamName,omitempty"`
+	// SDS filename chosen by the api-server, used verbatim. Empty on pre-`sdsKey` Secrets, where `sdsFileKey` falls back.
+	SDSKey string `json:"sdsKey,omitempty"`
 }
 
-// sdsFileKeyForHost mirrors the api-server's `sdsFileKeyForHost`. MUST
-// stay byte-identical — pinned by tests on both sides.
+// sdsFileKeyForHost mirrors the api-server's `sdsFileKeyForHost` and is the fallback for pre-`sdsKey` Secrets. MUST stay byte-identical with the TS side — pinned by tests.
 func sdsFileKeyForHost(host string) string {
 	return "host-" + base64.RawURLEncoding.EncodeToString([]byte(host)) + ".sds.yaml"
+}
+
+// sdsFileKey returns the api-server's chosen key, else the legacy per-host key for pre-`sdsKey` Secrets.
+func sdsFileKey(e connectionHostInjection) string {
+	if e.SDSKey != "" {
+		return e.SDSKey
+	}
+	return sdsFileKeyForHost(e.Host)
 }
 
 // expandConnectionSecret turns a connection Secret into one (host, cred)
@@ -314,32 +324,32 @@ func expandConnectionSecret(s corev1.Secret) []hostCredential {
 	if len(entries) == 0 {
 		return nil
 	}
-	// Dedup hosts inside one Secret — descriptor bugs or migration
-	// quirks can list the same host twice; emitting two chains for the
-	// same SNI would crash Envoy with duplicate filter chains.
-	seenHost := map[string]struct{}{}
+	// Dedup by (host, header): a host may carry multiple injections, but a repeated (host, header) would make credential_injector clobber.
+	seen := map[struct{ host, header string }]struct{}{}
 	out := make([]hostCredential, 0, len(entries))
 	for _, e := range entries {
 		if e.Host == "" {
 			continue
 		}
-		if _, dup := seenHost[e.Host]; dup {
-			slog.Warn("duplicate host in injection-hosts; skipping later entry",
-				"namespace", s.Namespace, "secret", s.Name, "host", e.Host)
-			continue
-		}
-		seenHost[e.Host] = struct{}{}
 		header := e.HeaderName
 		if header == "" {
 			header = "Authorization"
 		}
+		key := struct{ host, header string }{e.Host, header}
+		if _, dup := seen[key]; dup {
+			slog.Warn("duplicate (host, header) in injection-hosts; skipping later entry",
+				"namespace", s.Namespace, "secret", s.Name, "host", e.Host, "headerName", header)
+			continue
+		}
+		seen[key] = struct{}{}
 		out = append(out, hostCredential{
 			host: e.Host,
 			cred: envoyCredential{
-				SecretName: s.Name,
-				HeaderName: header,
-				VolumeName: "cred-" + s.Name,
-				SDSFileKey: sdsFileKeyForHost(e.Host),
+				SecretName:     s.Name,
+				HeaderName:     header,
+				QueryParamName: e.QueryParamName,
+				VolumeName:     "cred-" + s.Name,
+				SDSFileKey:     sdsFileKey(e),
 			},
 		})
 	}

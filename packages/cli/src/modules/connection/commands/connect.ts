@@ -32,6 +32,7 @@ interface ConnectOpts {
   appSlug?: string;
   headerName?: string;
   valueFormat?: string;
+  envName?: string;
   value?: string;
   server?: string;
   json?: boolean;
@@ -66,6 +67,10 @@ export function buildConnectCommand(deps: {
     .option("--app-slug <slug>", "input: GitHub App slug")
     .option("--header-name <name>", "input: header name")
     .option("--value-format <format>", "input: header value format")
+    .option(
+      "--env-name <name>",
+      "input: expose the credential to the agent as this env var (custom header credentials)",
+    )
     .option("--value <value>", "input: header secret value")
     .option(
       "--server <url>",
@@ -399,12 +404,20 @@ function buildPayload(
     case "header": {
       const value = v("value");
       if (!value) return { error: "the secret value is required (--value)" };
+      const configInputs: Record<string, string> = {};
+      for (const input of template.inputs) {
+        if (!input.configInput) continue;
+        const ov = v(input.name);
+        if (ov) configInputs[input.name] = ov;
+      }
       return {
         ...common,
         authKind: "header",
         ...(v("host") ? { host: v("host")! } : {}),
         ...(v("headerName") ? { headerName: v("headerName")! } : {}),
         ...(v("valueFormat") ? { valueFormat: v("valueFormat")! } : {}),
+        ...(v("envName") ? { envName: v("envName")! } : {}),
+        ...(Object.keys(configInputs).length > 0 ? { configInputs } : {}),
         value,
       };
     }
@@ -522,6 +535,7 @@ const FIELD_LABELS: Record<string, string> = {
   clientId: "Client ID",
   clientSecret: "Client secret",
   appSlug: "GitHub App slug",
+  envName: "Env var name",
 };
 
 function labelFor(key: string): string {

@@ -24,6 +24,7 @@ import { buildConnection } from "../domain/build-connection.js";
 import {
   buildConnectionSdsFields,
   CONNECTION_TOKEN_PLACEHOLDER,
+  sdsFileKeyForInjection,
 } from "../domain/connection-sds.js";
 import { discoverMcpAuth } from "../infrastructure/mcp-discovery.js";
 import type { ContributionFanOut } from "./contribution-fanout.js";
@@ -452,6 +453,9 @@ function connectionSecretAnnotations(
       headerName: c.headerName,
       valueFormat: c.valueFormat,
       ...(c.encoding ? { encoding: c.encoding } : {}),
+      ...(c.queryParamName ? { queryParamName: c.queryParamName } : {}),
+      // Single source of truth for the filename; the controller reads it rather than recomputing the key.
+      sdsKey: sdsFileKeyForInjection(c),
     }));
 
   const out: Record<string, string> = {};

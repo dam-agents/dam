@@ -123,6 +123,8 @@ export {
   bobEnvMappings,
   bobPinsFromEnvMappings,
   BOB_CHAT_MODES,
+  IBM_LITELLM_HOST,
+  BOB_HOST,
 } from "./modules/secrets/types.js";
 export { hostPatternSchema } from "./modules/secrets/schemas.js";
 

@@ -8,6 +8,19 @@ export function sdsFileKeyForHost(host: string): string {
   return `host-${slug}.sds.yaml`;
 }
 
+// One SDS file per injection. Header injections keep the per-host key; query-param injections key off host+header so they don't collide with the header injection on the same host.
+export function sdsFileKeyForInjection(c: {
+  host: string;
+  headerName: string;
+  queryParamName?: string;
+}): string {
+  if (!c.queryParamName) return sdsFileKeyForHost(c.host);
+  const slug = Buffer.from(`${c.host}\n${c.headerName}`, "utf8").toString(
+    "base64url",
+  );
+  return `host-${slug}.sds.yaml`;
+}
+
 export function sdsYamlContent(inlineString: string): string {
   return [
     "resources:",
@@ -27,11 +40,14 @@ export function buildConnectionSdsFields(
   const out: Record<string, string> = {};
   for (const c of contributions) {
     if (c.kind !== "egress-inject") continue;
-    const headerValue = c.valueFormat.replaceAll(
-      "{value}",
-      encodeAccessToken(accessToken, c.encoding),
-    );
-    out[sdsFileKeyForHost(c.host)] = sdsYamlContent(headerValue);
+    // Query-param injections store the bare value; the Lua url-encodes it, so a baked `Bearer `/`Apikey ` prefix would corrupt the URL.
+    const inlineString = c.queryParamName
+      ? accessToken
+      : c.valueFormat.replaceAll(
+          "{value}",
+          encodeAccessToken(accessToken, c.encoding),
+        );
+    out[sdsFileKeyForInjection(c)] = sdsYamlContent(inlineString);
   }
   return out;
 }

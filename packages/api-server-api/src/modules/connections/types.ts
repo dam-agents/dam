@@ -92,6 +92,10 @@ export const templateInput = z.object({
   state: templateInputState,
   presetValue: z.string().optional(),
   secret: z.boolean().optional(),
+  // Marks a config input the form packs into `configInputs` rather than the typed auth fields.
+  configInput: z.boolean().optional(),
+  label: z.string().optional(),
+  hint: z.string().optional(),
 });
 export type TemplateInput = z.infer<typeof templateInput>;
 
