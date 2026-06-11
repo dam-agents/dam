@@ -327,6 +327,7 @@ const server = http.createServer((req, res) => {
     const s = acpRuntime.status();
     const status = {
       activeClients: s.activeClientCount,
+      activePrompts: s.activePromptCount,
       pendingRequests: s.pendingRequestCount,
       queuedPrompts: s.queuedPromptCount,
       agentAlive: s.agentAlive,

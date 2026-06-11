@@ -45,6 +45,7 @@ const DEFAULT_LOG_BYTES_CAP = 2 * 1024 * 1024;
 
 export interface AcpRuntimeStatus {
   activeClientCount: number;
+  activePromptCount: number;
   pendingRequestCount: number;
   queuedPromptCount: number;
   agentAlive: boolean;
@@ -1270,6 +1271,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       for (const q of promptQueueBySession.values()) queued += q.length;
       return {
         activeClientCount: engagedSessions.size,
+        activePromptCount: activePromptBySession.size,
         pendingRequestCount: pendingFromAgent.size,
         queuedPromptCount: queued,
         agentAlive: agent !== null && !agentExited,
