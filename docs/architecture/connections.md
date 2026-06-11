@@ -1,8 +1,6 @@
 # Connections, Contributions, and the Runtime Channel
 
-Last verified: 2026-06-05
-
-> **Status: Proposed — not yet implemented.** This page describes the target shape of the subsystem per [ADR-051](../adrs/051-connections-and-contributions.md), [ADR-052](../adrs/052-runtime-channel.md), and [ADR-053](../adrs/053-runtime-outbox-worker.md). The current system still uses the parallel OAuth-app / provider-preset registries, pod-files SSE (ADR-034), and exec-based trigger delivery (ADR-008). Other architecture pages that describe those retiring mechanisms are not updated yet — they will be revised in the implementation PR(s).
+Last verified: 2026-06-11
 
 ## Motivated by
 
