@@ -42,61 +42,29 @@ export function createApprovalService(deps: {
 }): ApprovalService {
   return {
     async listForOwner(opts) {
-      return trpcCall(
-        () =>
-          deps.trpc.approvals.listForOwner.query(opts) as Promise<
-            readonly ApprovalView[]
-          >,
-      );
+      return trpcCall(() => deps.trpc.approvals.listForOwner.query(opts));
     },
     async listForInstance(agentId, opts) {
-      return trpcCall(
-        () =>
-          deps.trpc.approvals.listForInstance.query({
-            agentId,
-            ...opts,
-          }) as Promise<readonly ApprovalView[]>,
+      return trpcCall(() =>
+        deps.trpc.approvals.listForInstance.query({ agentId, ...opts }),
       );
     },
     async approveOnce(id) {
-      return trpcCall(
-        () =>
-          deps.trpc.approvals.approveOnce.mutate({
-            id,
-          }) as Promise<ApprovalActionOutcome>,
-      );
+      return trpcCall(() => deps.trpc.approvals.approveOnce.mutate({ id }));
     },
     async approvePermanent(id) {
-      return trpcCall(
-        () =>
-          deps.trpc.approvals.approvePermanent.mutate({
-            id,
-          }) as Promise<ApprovalActionOutcome>,
+      return trpcCall(() =>
+        deps.trpc.approvals.approvePermanent.mutate({ id }),
       );
     },
     async approveHost(id) {
-      return trpcCall(
-        () =>
-          deps.trpc.approvals.approveHost.mutate({
-            id,
-          }) as Promise<ApprovalActionOutcome>,
-      );
+      return trpcCall(() => deps.trpc.approvals.approveHost.mutate({ id }));
     },
     async denyForever(id) {
-      return trpcCall(
-        () =>
-          deps.trpc.approvals.denyForever.mutate({
-            id,
-          }) as Promise<ApprovalActionOutcome>,
-      );
+      return trpcCall(() => deps.trpc.approvals.denyForever.mutate({ id }));
     },
     async dismiss(id) {
-      return trpcCall(
-        () =>
-          deps.trpc.approvals.dismiss.mutate({
-            id,
-          }) as Promise<ApprovalActionOutcome>,
-      );
+      return trpcCall(() => deps.trpc.approvals.dismiss.mutate({ id }));
     },
   };
 }

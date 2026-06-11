@@ -203,18 +203,13 @@ function classifyPublishError(
 export function createSkillsService(deps: { trpc: TrpcClient }): SkillsService {
   return {
     async listSources(agentId) {
-      return trpcCall(
-        () =>
-          deps.trpc.skills.sources.list.query(
-            agentId ? { agentId } : undefined,
-          ) as Promise<readonly SkillSource[]>,
+      return trpcCall(() =>
+        deps.trpc.skills.sources.list.query(agentId ? { agentId } : undefined),
       );
     },
     async addSource(input) {
       try {
-        const created = (await deps.trpc.skills.sources.create.mutate(
-          input,
-        )) as SkillSource;
+        const created = await deps.trpc.skills.sources.create.mutate(input);
         return ok(created);
       } catch (e) {
         if ((e as { data?: { code?: string } })?.data?.code === "CONFLICT") {
@@ -241,10 +236,10 @@ export function createSkillsService(deps: { trpc: TrpcClient }): SkillsService {
     },
     async catalog(sourceId, agentId) {
       try {
-        const skills = (await deps.trpc.skills.list.query({
+        const skills = await deps.trpc.skills.list.query({
           sourceId,
           agentId,
-        })) as readonly Skill[];
+        });
         return ok(skills);
       } catch (e) {
         // Without an agentId, a PRECONDITION_FAILED means the source is
@@ -273,22 +268,15 @@ export function createSkillsService(deps: { trpc: TrpcClient }): SkillsService {
     },
     async installed(agentId) {
       return trpcCall(
-        async () =>
-          (await deps.trpc.skills.state.query({ agentId }))
-            .installed as readonly SkillRef[],
+        async () => (await deps.trpc.skills.state.query({ agentId })).installed,
       );
     },
     async state(agentId) {
-      return trpcCall(
-        async () =>
-          (await deps.trpc.skills.state.query({ agentId })) as SkillsState,
-      );
+      return trpcCall(() => deps.trpc.skills.state.query({ agentId }));
     },
     async install(input) {
       try {
-        const refs = (await deps.trpc.skills.install.mutate(
-          input,
-        )) as readonly SkillRef[];
+        const refs = await deps.trpc.skills.install.mutate(input);
         return ok(refs);
       } catch (e) {
         return classifyWakeError(e);
@@ -296,9 +284,7 @@ export function createSkillsService(deps: { trpc: TrpcClient }): SkillsService {
     },
     async uninstall(input) {
       try {
-        const refs = (await deps.trpc.skills.uninstall.mutate(
-          input,
-        )) as readonly SkillRef[];
+        const refs = await deps.trpc.skills.uninstall.mutate(input);
         return ok(refs);
       } catch (e) {
         return classifyWakeError(e);
@@ -306,9 +292,7 @@ export function createSkillsService(deps: { trpc: TrpcClient }): SkillsService {
     },
     async publish(input) {
       try {
-        const result = (await deps.trpc.skills.publish.mutate(
-          input,
-        )) as SkillPublishResult;
+        const result = await deps.trpc.skills.publish.mutate(input);
         return ok(result);
       } catch (e) {
         return classifyPublishError(e);
