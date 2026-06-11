@@ -126,16 +126,6 @@ openshift:
     anyuidCapNet:
       enabled: false
 
-# -- Install the agent-platform.ai CRDs (Agent, Fork) that the controller
-# reconciles. These supersede the labeled-ConfigMap resource model (ADR-058)
-# and require cluster-admin at install time. When several releases share one
-# cluster, exactly one — the one tracking the newest chart — installs the CRDs;
-# all others set enabled: false (ADR-065). The CRDs carry
-# helm.sh/resource-policy=keep so uninstalling the owner can't cascade-delete
-# the other releases' Agents and Forks.
-crds:
-  enabled: true
-
 # -- Shared local PostgreSQL instance
 # Set enabled: false when using external/cloud DBs for all services.
 postgres:
