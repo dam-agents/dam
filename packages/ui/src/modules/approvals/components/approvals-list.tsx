@@ -1,4 +1,4 @@
-import type { ApprovalView } from "api-server-api";
+import { type ApprovalView, describeApprovalPayload } from "api-server-api";
 import {
   Check,
   CheckCheck,
@@ -28,19 +28,6 @@ function isHeldCallStillLive(row: ApprovalView): boolean {
   return (
     row.status === "pending" && new Date(row.expiresAt).getTime() > Date.now()
   );
-}
-
-function describePayload(row: ApprovalView): {
-  title: string;
-  subtitle: string;
-} {
-  if (row.payload.kind === "ext_authz") {
-    return {
-      title: `${row.payload.method} ${row.payload.host}`,
-      subtitle: row.payload.path,
-    };
-  }
-  return { title: row.payload.toolName ?? "tool call", subtitle: "" };
 }
 
 export interface ApprovalsListProps {
@@ -89,7 +76,7 @@ function ApprovalRow({
   const denyForever = useDenyForever();
   const dismiss = useDismissApproval();
   const navigateToAgentEgress = useStore((s) => s.navigateToAgentEgress);
-  const { title, subtitle } = describePayload(row);
+  const { title, subtitle } = describeApprovalPayload(row.payload);
   const live = isHeldCallStillLive(row);
   const inflight =
     approveOnce.isPending ||
