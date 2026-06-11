@@ -50,7 +50,7 @@ spec:
           command: ["sh", "-c"]
           args:
             - |
-              until pg_isready -h {{ include "platform.keycloak.db.host" . }} -U {{ .Values.keycloak.db.user }}; do
+              until pg_isready -h {{ include "platform.keycloak.db.host" . }} -p {{ .Values.keycloak.db.port }} -U {{ .Values.keycloak.db.user }}; do
                 echo "Waiting for PostgreSQL..."
                 sleep 2
               done
