@@ -77,7 +77,7 @@ bytes.**
   so every session (shell, `ssh <agent> <cmd>`, sftp/scp) gets the same networking and
   credentials the harness has. Per-connection rather than per-boot because env injection is
   now hot: connection and credential env land in the runtime-channel env file without a pod
-  restart ([env injection without pod rolls](DRAFT-runtime-env-injection.md)), so a boot
+  restart ([env injection without pod rolls](069-runtime-env-injection.md)), so a boot
   snapshot would go stale the moment a user adds a connection. The freshness boundary is the
   **connection**: a user picks up an env change by reconnecting. The rewrite is synchronous +
   atomic (temp + rename) immediately before sshd spawns, so the freshly spawned sshd reads

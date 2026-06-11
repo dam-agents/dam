@@ -1,7 +1,7 @@
-# ADR-DRAFT: Credential env via the runtime channel — injected at harness spawn, not baked into the pod
+# ADR-069: Credential env via the runtime channel — injected at harness spawn, not baked into the pod
 
 **Date:** 2026-06-04
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** @janjeliga
 
 ## Context

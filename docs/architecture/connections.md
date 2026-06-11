@@ -10,7 +10,7 @@ Last verified: 2026-06-11
 - [ADR-036 — Redis as a platform primitive](../adrs/036-redis-platform-primitive.md) — the signal-path substrate the worker wakes on
 - [ADR-022 — Harness API server](../adrs/022-harness-api-server.md) — the restricted port the agent reaches; per-kind event handlers live here
 - [ADR-040 — Unified secret contributions](../adrs/040-unified-secret-contributions.md) — established the `env` Contribution and user-wins precedence; its render-into-pod delivery is superseded below
-- [ADR-DRAFT — Credential env via the runtime channel](../adrs/DRAFT-runtime-env-injection.md) — moves `env` delivery off the pod spec onto the runtime channel, injected at harness spawn; a grant change no longer rolls the agent pod
+- [ADR-069 — Credential env via the runtime channel](../adrs/069-runtime-env-injection.md) — moves `env` delivery off the pod spec onto the runtime channel, injected at harness spawn; a grant change no longer rolls the agent pod
 
 ## Overview
 
@@ -27,7 +27,7 @@ A grant of one Connection produces Contributions of several kinds. They don't al
 ```mermaid
 flowchart LR
   grant[Connection grant on Agent A]
-  hostRail[egress-host Contributions]
+  hostRail[egress-allow / egress-inject Contributions]
   rtRail[env / file / mcp-entry / skill-ref Contributions]
   envoy[egress_rules then Envoy ext_authz]
   channel[runtime channel]
@@ -38,7 +38,7 @@ flowchart LR
   rtRail -->|outbox row| channel
 ```
 
-After [ADR-DRAFT](../adrs/DRAFT-runtime-env-injection.md) there are two rails. `egress-host` Contributions sync into Postgres `egress_rules` and are read live by Envoy ([ADR-035](../adrs/035-unified-hitl-ux.md)) — unchanged. Everything else — `env` (formerly a controller-render/pod-roll rail, [ADR-040](../adrs/040-unified-secret-contributions.md)), `file`, `mcp-entry`, `skill-ref` — now travels the runtime channel and is what the rest of this page is about.
+After [ADR-069](../adrs/069-runtime-env-injection.md) there are two rails. `egress-allow` and `egress-inject` Contributions sync into Postgres `egress_rules` and are read live by Envoy ([ADR-035](../adrs/035-unified-hitl-ux.md)) — unchanged; `egress-inject` additionally carries a credential the gateway injects on the wire (mechanics in [security and credentials](security-and-credentials.md)). Everything else — `env` (formerly a controller-render/pod-roll rail, [ADR-040](../adrs/040-unified-secret-contributions.md)), `file`, `mcp-entry`, `skill-ref` — now travels the runtime channel and is what the rest of this page is about.
 
 The runtime channel is two routes between api-server and agent-runtime, plus per-kind event handlers on the harness API:
 
@@ -111,11 +111,12 @@ A typed unit a Connection emits when granted to an Agent. Discriminated union, e
 
 ```ts
 type Contribution =
-  | { kind: "env";          name: string; placeholder: string }
-  | { kind: "egress-host";  host: string; pathPattern?: string; injection?: HostInjection }
-  | { kind: "file";         path: string; format: "yaml"|"json"|"text"|"ini"; mergeMode: MergeMode; content: unknown }
-  | { kind: "mcp-entry";    name: string; url: string; headers?: Record<string,string> }
-  | { kind: "skill-ref";    sourceUrl: string; name: string; version: string };
+  | { kind: "env";           name: string; placeholder: string }
+  | { kind: "egress-allow";  host: string; pathPattern?: string }
+  | { kind: "egress-inject"; host: string; pathPattern?: string; headerName: string; valueFormat: string; encoding?: "basic-x-access-token" }
+  | { kind: "file";          path: string; format: "yaml"|"json"|"text"|"ini"; mergeMode: MergeMode; content: unknown }
+  | { kind: "mcp-entry";     name: string; url: string; headers?: Record<string,string> }
+  | { kind: "skill-ref";     sourceUrl: string; name: string; version: string };
 ```
 
 Kinds are added by extending the union and gating on agent capabilities (see [Versioning](#versioning)).
@@ -153,9 +154,9 @@ The `trigger` kind is built-in to every agent. Future kinds (`rotate`, `rescan`,
     "scopes": ["repo", "read:user", "user:email"]
   },
   "contributions": [
-    { "kind": "egress-host", "host": "ghe.acme.com" },
-    { "kind": "env",         "name": "GH_TOKEN", "placeholder": "dummy-placeholder" },
-    { "kind": "env",         "name": "GH_HOST",  "placeholder": "ghe.acme.com" },
+    { "kind": "egress-allow", "host": "ghe.acme.com" },
+    { "kind": "env",          "name": "GH_TOKEN", "placeholder": "dummy-placeholder" },
+    { "kind": "env",          "name": "GH_HOST",  "placeholder": "ghe.acme.com" },
     { "kind": "file",
       "path": "$HOME/.config/gh/hosts.yml",
       "format": "yaml",
@@ -175,8 +176,8 @@ The `trigger` kind is built-in to every agent. Future kinds (`rotate`, `rescan`,
   "inputs": { "url": "https://mcp.acme.internal/sse", "authMode": "oauth" },
   "auth": { "kind": "oauth", "clientId": "…", "scopes": [], "…": "…" },
   "contributions": [
-    { "kind": "egress-host", "host": "mcp.acme.internal" },
-    { "kind": "mcp-entry",   "name": "acme",
+    { "kind": "egress-allow", "host": "mcp.acme.internal" },
+    { "kind": "mcp-entry",    "name": "acme",
       "url": "https://mcp.acme.internal/sse",
       "headers": { "Authorization": "Bearer dummy-placeholder" } }
   ]
@@ -198,7 +199,8 @@ The `trigger` kind is built-in to every agent. Future kinds (`rotate`, `rescan`,
     "valueFormat": "{value}"
   },
   "contributions": [
-    { "kind": "egress-host", "host": "billing.acme.internal" }
+    { "kind": "egress-inject", "host": "billing.acme.internal",
+      "headerName": "X-API-Key", "valueFormat": "{value}" }
   ]
 }
 ```
@@ -210,12 +212,13 @@ The api-server's contribution-fanout layer routes each Contribution kind to the 
 | Kind | Rail | Delivery semantics | Note |
 |---|---|---|---|
 | `env` | Runtime channel `applyState` (state slice) | Sub-second push; applied at next harness spawn | Written to a JSON file on the PV; the harness spawn path merges it into the process env (user env wins). A change recycles the harness at an idle turn boundary — no pod roll. |
-| `egress-host` | Postgres `egress_rules` → Envoy `ext_authz` | Live read; no pod involvement | Joined per-grant; revoke sweeps rows. Agent never sees these. |
+| `egress-allow` | Postgres `egress_rules` → Envoy `ext_authz` | Live read; no pod involvement | Joined per-grant; revoke sweeps rows. Agent never sees these. |
+| `egress-inject` | Postgres `egress_rules` → Envoy `ext_authz`, plus a wire-injected credential at the gateway | Live read; no pod involvement | Same `egress_rules` row as `egress-allow`; the gateway also injects `headerName`/`valueFormat` on the wire (mechanics in [security and credentials](security-and-credentials.md)). Agent never sees these. |
 | `file` | Runtime channel `applyState` (state slice) | Sub-second push; idempotent reconciliation | Per-format + per-mergeMode driver materializes. |
 | `mcp-entry` | Runtime channel `applyState` (state slice) | Sub-second push; idempotent reconciliation | Driver dispatches to harness-specific path. |
 | `skill-ref` | Runtime channel `applyState` (state slice) | Sub-second push; per-version installer | Driver wraps existing skill-fetch helpers. |
 
-The rail choice is a property of the kind, not of the Connection. A single grant of GitHub Enterprise produces Contributions on both rails: `egress-host` (egress_rules → Envoy live), and `env` + `file` (runtime channel push). They flow independently.
+The rail choice is a property of the kind, not of the Connection. A single grant of GitHub Enterprise produces Contributions on both rails: `egress-allow` (egress_rules → Envoy live), and `env` + `file` (runtime channel push). They flow independently.
 
 ## The runtime channel
 
@@ -558,7 +561,7 @@ The UI surfaces the gap at grant time: connecting GitHub to a Claude-Code agent 
 | Postgres `runtime_events` | One row per pending event | `id`, `agent_id`, `kind`, `payload`, `version`, `created_at`, `expires_at`, `dispatched_at`. Read by the state-builder; stamped by the worker in the apply-ack transaction. |
 | Per-kind side-effect table column | New column joining the kind's side-effect row back to `runtime_events.id`, with a unique constraint | The dedupe key for per-kind redelivery. Each event kind's harness handler owns one. |
 | Redis (BullMQ queues) | Pending BullMQ jobs referencing outbox row ids | Relaxed durability per ADR-036; Postgres outbox + cron sweep is the recovery path. |
-| Postgres `egress_rules` | `egress-host` Contributions joined per grant | Existing table; same as today (ADR-035). |
+| Postgres `egress_rules` | `egress-allow` and `egress-inject` Contributions joined per grant | Existing table; same as today (ADR-035). Both kinds produce the same allow row; `egress-inject`'s credential rides a separate gateway-side rail. |
 | K8s Secret per Connection | Auth credentials (refresh tokens, api-keys) | Owner-label-scoped; mounted into the paired gateway pod, never into the agent pod. |
 | Per-agent PVC `$HOME/.platform/runtime-env.json` | Reconciled credential-placeholder env | Written by the `env` driver from the channel snapshot; read by the harness/terminal spawn paths. |
 | `agents` table — new columns | `runtime_protocol_version`, `runtime_capabilities`, `runtime_last_hello_at`, `runtime_agent_version` | Populated on every `hello`. |
