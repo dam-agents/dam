@@ -1,3 +1,3 @@
 #!/bin/sh
 . /usr/local/lib/model-gateway.sh
-exec node /app/dist/agent.js "$@"
+exec /app/node_modules/.bin/claude-agent-acp "$@"

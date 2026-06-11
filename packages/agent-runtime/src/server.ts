@@ -100,7 +100,7 @@ if (envStore.ready()) podService?.refreshEnv();
 
 const { runtime: acpRuntime, triggerDriver } = composeAcp({
   command: config.PLATFORM_DEV
-    ? ["npx", "tsx", join(__dir, "agent.ts")]
+    ? ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]
     : ["/usr/local/bin/harness-chat"],
   workingDir: workDir,
   stateBackend,
