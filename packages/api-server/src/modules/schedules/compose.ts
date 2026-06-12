@@ -30,6 +30,7 @@ export interface ComposeSchedulesAtBootOpts {
   db: Db;
   bullConnection: ConnectionOptions;
   runtimeMutator: RuntimeMutator;
+  wakeAgent: (agentId: string) => Promise<void>;
   log?: (msg: string) => void;
 }
 
@@ -43,6 +44,7 @@ export function composeSchedulesAtBoot(
     repo,
     queue,
     runtimeMutator: opts.runtimeMutator,
+    wakeAgent: opts.wakeAgent,
     log,
   });
   const worker = startScheduleWorker({

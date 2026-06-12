@@ -394,6 +394,9 @@ const schedulesBoot = composeSchedulesAtBoot({
   db,
   bullConnection,
   runtimeMutator: runtimeDelivery.runtimeMutator,
+  wakeAgent: async (agentId) => {
+    await agentsRepo.wakeIfHibernated(agentId);
+  },
 });
 schedulesBoot.runner.restoreAll().catch((err) => {
   process.stderr.write(
