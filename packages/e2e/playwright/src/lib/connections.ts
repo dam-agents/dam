@@ -15,7 +15,11 @@ export async function createCustomHeaderConnection(
   page: Page,
   input: CustomHeaderConnectionInput,
 ): Promise<void> {
-  await page.locator("#tour-nav-connections").click();
+  await page
+    .getByTestId("app-sidebar")
+    .getByRole("button", { name: "Settings" })
+    .click();
+  await page.getByRole("button", { name: "Connections", exact: true }).click();
   await page.getByTestId("connection-template-custom-header").click();
 
   await page.getByTestId("connection-field-name").fill(input.name);

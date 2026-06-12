@@ -42,7 +42,7 @@ export function ListView() {
   const wakeAgent = useWakeAgent();
 
   const selectAgent = useStore((s) => s.selectAgent);
-  const setView = useStore((s) => s.setView);
+  const navigateToSettings = useStore((s) => s.navigateToSettings);
   const showConfirm = useStore((s) => s.showConfirm);
 
   const [showAddAgent, setShowAddAgent] = useState(false);
@@ -220,7 +220,7 @@ export function ListView() {
           onCancel={() => setShowAddAgent(false)}
           onGoToProviders={() => {
             setShowAddAgent(false);
-            setView("providers");
+            navigateToSettings("providers");
           }}
         />
       )}

@@ -2,17 +2,14 @@ import { useEffect } from "react";
 
 import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
-import { MobileNav } from "./components/mobile-nav.js";
+import { IconRail } from "./components/icon-rail.js";
 import { SetupProgressBar } from "./components/setup-progress-bar.js";
-import { Sidebar } from "./components/sidebar.js";
 import { emitToast } from "./lib/toast.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { ListView } from "./modules/agents/views/list-view.js";
 import { InboxView } from "./modules/approvals/views/inbox-view.js";
-import { ConnectionsView } from "./modules/connections/views/connections-view.js";
 import { AgentEgressView } from "./modules/egress-rules/views/agent-egress-view.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
-import { ProvidersView } from "./modules/settings/views/providers-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
 import { TermsView } from "./modules/terms/views/terms-view.js";
 import { V2App } from "./modules/v2/views/v2-app.js";
@@ -78,9 +75,6 @@ export default function App() {
       const sandboxMatch = path.match(/^\/v2\/([^/]+)$/);
       if (path.startsWith("/chat/"))
         enterChat(decodeURIComponent(path.slice(6)));
-      else if (path === "/providers") useStore.setState({ view: "providers" });
-      else if (path === "/connections")
-        useStore.setState({ view: "connections" });
       else if (path === "/settings" || path.startsWith("/settings/")) {
         const { settingsTab } = pathToState(path);
         useStore.setState({
@@ -138,20 +132,16 @@ export default function App() {
       </>
     );
 
-  // All non-chat views share the sidebar shell
+  // All non-chat views share the icon-rail shell
   return (
     <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
       <div className="flex flex-1 min-h-0 overflow-hidden">
-        <Sidebar />
+        <IconRail />
         <main className="relative z-10 flex-1 overflow-y-auto">
           <SetupProgressBar />
           <div className="mx-auto w-full max-w-[960px] px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10">
             {view === "settings" ? (
               <SettingsView />
-            ) : view === "providers" ? (
-              <ProvidersView />
-            ) : view === "connections" ? (
-              <ConnectionsView />
             ) : view === "inbox" ? (
               <InboxView />
             ) : view === "agent-egress" ? (
@@ -162,7 +152,6 @@ export default function App() {
           </div>
         </main>
       </div>
-      <MobileNav />
       <DialogOverlay />
       <ConnectionBanner />
     </div>

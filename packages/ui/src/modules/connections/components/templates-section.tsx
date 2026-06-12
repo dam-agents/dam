@@ -34,7 +34,7 @@ export function ConnectionTemplatesSection() {
     const r = (await startOAuth.mutateAsync({ connectionId })) as {
       authUrl: string;
     };
-    sessionStorage.setItem("platform-return-view", "connections");
+    sessionStorage.setItem("platform-return-view", "/settings/connections");
     window.location.href = r.authUrl;
   };
 

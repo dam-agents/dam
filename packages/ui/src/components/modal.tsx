@@ -13,9 +13,9 @@ interface ModalProps {
  * users can't lose in-progress form state by accident.
  *
  * Renders into document.body via a portal so it escapes the app shell's
- * `<main>` stacking context (z-10). Without the portal, MobileNav (z-40)
- * would render above the modal because the modal's effective stacking
- * happens at z-10 from the root's perspective.
+ * `<main>` stacking context (z-10). Without the portal, the mobile bottom
+ * bar (z-40) would render above the modal because the modal's effective
+ * stacking happens at z-10 from the root's perspective.
  *
  * Compose the inside with `DialogHeader`, `DialogBody`, and `DialogFooter`
  * so layout (padding, dividers, scroll region) is consistent across every

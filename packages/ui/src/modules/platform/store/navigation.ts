@@ -5,7 +5,6 @@ import {
   pathToState,
   type SettingsTab,
   type View,
-  viewSchema,
   viewToPath,
 } from "../lib/routes.js";
 
@@ -32,24 +31,23 @@ export const createNavigationSlice: StateCreator<
   NavigationSlice
 > = (set) => ({
   view: (() => {
+    // Holds the path to restore after an OAuth roundtrip (e.g. /settings/connections).
     const saved = sessionStorage.getItem("platform-return-view");
     if (saved) {
       sessionStorage.removeItem("platform-return-view");
-      const parsed = viewSchema.safeParse(saved);
-      if (parsed.success) {
-        const target = viewToPath(parsed.data);
-        if (window.location.pathname !== target) {
+      if (saved.startsWith("/")) {
+        if (window.location.pathname !== saved) {
           history.replaceState(
             null,
             "",
-            target + window.location.search + window.location.hash,
+            saved + window.location.search + window.location.hash,
           );
         }
-        return parsed.data;
+        return pathToState(saved).view;
       }
       console.warn(
-        "[navigation] schema mismatch on platform-return-view, falling back to URL:",
-        parsed.error.issues,
+        "[navigation] ignoring non-path platform-return-view:",
+        saved,
       );
     }
     return pathToState(window.location.pathname).view;

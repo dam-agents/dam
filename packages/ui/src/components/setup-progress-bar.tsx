@@ -17,12 +17,16 @@ import { isCustomSecret, isProviderPresetType } from "../types.js";
 export function SetupProgressBar() {
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
+  const settingsTab = useStore((s) => s.settingsTab);
+  const navigateToSettings = useStore((s) => s.navigateToSettings);
 
   // Gate on every signal the bar reads being loaded — otherwise the bar briefly
   // flashes the wrong state (e.g. step 2 pending for a user who already has
   // connections) while the initial fetches are in flight.
   const onOnboardingView =
-    view === "list" || view === "providers" || view === "connections";
+    view === "list" ||
+    (view === "settings" &&
+      (settingsTab === "providers" || settingsTab === "connections"));
   const { isSuccess: agentsLoaded } = useAgents();
   const agents = useAgentsList();
   const { data: secrets = [], isSuccess: secretsLoaded } = useSecrets({
@@ -52,13 +56,9 @@ export function SetupProgressBar() {
   const nextIndex = STEP_KEYS.indexOf(nextStep);
 
   const handlePillClick = (key: StepKey) => {
-    setView(
-      key === "provider"
-        ? "providers"
-        : key === "connections"
-          ? "connections"
-          : "list",
-    );
+    if (key === "provider") navigateToSettings("providers");
+    else if (key === "connections") navigateToSettings("connections");
+    else setView("list");
   };
 
   return (

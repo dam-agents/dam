@@ -153,7 +153,7 @@ export function TemplateCreateForm({
         const r = await api.connections.startOAuth.mutate({
           connectionId: result.id,
         });
-        sessionStorage.setItem("platform-return-view", "connections");
+        sessionStorage.setItem("platform-return-view", "/settings/connections");
         window.location.href = r.authUrl;
       } catch (err) {
         setAuthorizing(false);

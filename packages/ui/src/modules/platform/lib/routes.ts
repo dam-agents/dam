@@ -3,8 +3,6 @@ import { z } from "zod";
 export const viewSchema = z.enum([
   "list",
   "chat",
-  "providers",
-  "connections",
   "settings",
   "inbox",
   "agent-egress",
@@ -30,8 +28,6 @@ export function viewToPath(
   settingsTab?: SettingsTab | null,
 ): string {
   if (view === "chat" && agent) return `/chat/${encodeURIComponent(agent)}`;
-  if (view === "providers") return "/providers";
-  if (view === "connections") return "/connections";
   if (view === "settings")
     return settingsTab && settingsTab !== "account"
       ? `/settings/${settingsTab}`
@@ -55,8 +51,6 @@ export function pathToState(path: string): {
 } {
   if (path.startsWith("/chat/"))
     return { view: "chat", agent: decodeURIComponent(path.slice(6)) };
-  if (path === "/providers") return { view: "providers" };
-  if (path === "/connections") return { view: "connections" };
   if (path === "/settings") return { view: "settings", settingsTab: "account" };
   const settingsMatch = path.match(/^\/settings\/([^/]+)$/);
   if (settingsMatch) {
