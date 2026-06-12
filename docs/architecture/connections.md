@@ -9,7 +9,7 @@ A Connection is everything an agent needs to talk to one external integration �
 The subsystem cuts cleanly across three bounded contexts:
 
 - **api-server — Connections context** owns Connection Templates, Connections, grants. Computes per-agent Contribution sets. Routes Contributions to the right rail per kind.
-- **api-server — Runtime Delivery context** owns the outbox table, the events table, the delivery worker, the `runtime.applyState` call into agents, the `runtime.hello` callback from agents, and the per-kind event handlers on the harness API.
+- **api-server — Runtime Delivery context** owns the outbox table, the events table, the delivery worker, the `runtime.applyState` call into agents, and the `runtime.hello` callback from agents.
 - **agent-runtime — Runtime Channel context** receives `applyState`, dispatches Contributions to per-kind drivers, processes events in order through per-kind event handlers, reconciles on-disk state to match the snapshot, calls back to `hello` on boot.
 
 A grant of one Connection produces Contributions of several kinds. They don't all travel the same rail:
@@ -30,7 +30,7 @@ flowchart LR
 
 There are two rails. `egress-allow` and `egress-inject` Contributions sync into Postgres `egress_rules` and are read live by Envoy; `egress-inject` additionally carries a credential the gateway injects on the wire (mechanics in [security and credentials](security-and-credentials.md)). Everything else — `env` (formerly a controller-render/pod-roll rail; moving it onto the runtime channel means a grant change no longer rolls the agent pod), `file`, `mcp-entry`, `skill-ref` — travels the runtime channel and is what the rest of this page is about.
 
-The runtime channel is two routes between api-server and agent-runtime, plus per-kind event handlers on the harness API:
+The runtime channel is two routes between api-server and agent-runtime:
 
 ```mermaid
 flowchart LR
@@ -38,20 +38,21 @@ flowchart LR
   worker[delivery worker]
   rt[agent-runtime]
   drivers[per-kind contribution drivers]
-  handlers[per-kind event handlers on harness API]
+  handlers[per-kind event handlers]
+  api[harness API]
 
   outbox --> worker
   worker -->|applyState| rt
   rt --> drivers
-  rt -->|hello| handlers
-  rt -->|invoke event work| handlers
+  rt --> handlers
+  rt -->|hello| api
 ```
 
 The wire payload carries:
 
 - **`version`** (top-level) — per-agent monotonic counter, the single ack cursor for the payload. Bumped on any contribution edit or event insert.
 - **`state`** — the agent's full desired configuration (Contributions). Reconciled by diff. `hash` short-circuits no-op pushes.
-- **`events`** — ordered one-shot directives the agent must execute (trigger fires today; more kinds later). Processed in order through per-kind handlers on the harness API.
+- **`events`** — ordered one-shot directives the agent must execute (schedule triggers, schedule resets, workspace seeding). Processed in order through per-kind handlers inside the agent-runtime.
 
 State changes write to the outbox, the worker reads and dispatches a fresh payload, the agent receives state + events and reconciles contributions + invokes event handlers, and the agent calls back on boot/wake to catch up.
 
@@ -115,18 +116,20 @@ Kinds are added by extending the union and gating on agent capabilities (see [Ve
 
 ### Event
 
-A one-shot directive the agent executes through a per-kind handler on the harness API. Each event carries an `id` (stable across redeliveries), a `kind`, a `payload` (kind-specific), the agent-monotonic `version` slot it occupies, and an `expiresAt` ttl.
+A one-shot directive the agent executes through a per-kind handler inside the agent-runtime. Each event carries an `id` (stable across redeliveries), a `kind`, a `payload` (kind-specific), the agent-monotonic `version` slot it occupies, and an `expiresAt` ttl.
 
 ```ts
-type Event =
-  | { id: string; version: number; kind: "trigger";
-      scheduleId: string; task: string;
-      sessionMode?: "continuous" | "fresh"; mcpServers?: unknown[]; expiresAt: string };
+type Event = { id: string; version: number; expiresAt: string } & (
+  | { kind: "trigger"; payload: { scheduleId: string; task: string;
+      sessionMode?: "continuous" | "fresh"; mcpServers?: unknown[] } }
+  | { kind: "schedule-reset"; payload: { scheduleId: string } }
+  | { kind: "workspace-seed"; payload: { url: string; ref?: string } }
+);
 ```
 
-The `id` is the dedupe key. Each event kind's handler on the harness API holds a unique constraint on its side-effect table joining back to the event id, so a redelivered event finds the existing side-effect row and returns it without firing twice.
+The `id` is the dedupe key. Redelivery is caught agent-side: the event loop settles without re-firing when the event's `version` is already covered by the applied cursor or its dedupe key already ran at the same or a later fire timestamp (tracked in the agent's local state store), and locally expires anything past its ttl.
 
-The `trigger` kind is built-in to every agent. Future kinds (`rotate`, `rescan`, …) opt-in per agent via the manifest's capabilities.
+All event kinds are built-in to every agent: the agent advertises the full set in its `hello` capabilities, single-sourced from the schema enum. Manifest capabilities filter contribution kinds, not event kinds.
 
 ## Example Connections
 
@@ -225,7 +228,6 @@ sequenceDiagram
   participant BQ as BullMQ
   participant WK as worker handler
   participant RT as agent-runtime
-  participant HS as harness API
 
   USER->>AS: grant Connection X to Agent A
   AS->>PG: BEGIN, write grant, bump version, upsert outbox row, COMMIT
@@ -239,8 +241,7 @@ sequenceDiagram
   WK->>RT: runtime.v1.applyState (version, state, events)
   RT->>RT: reconcile contributions per kind
   loop per event in order
-    RT->>HS: per-kind handler — does the work, idempotent on event id
-    HS-->>RT: ok
+    RT->>RT: per-kind handler — does the work, dedup via local state store
   end
   RT-->>WK: appliedVersion, appliedHash
   WK->>PG: UPDATE outbox last_applied and stamp events dispatched_at up to appliedVersion
@@ -248,7 +249,7 @@ sequenceDiagram
 
 ### `applyState` — state and events delivery (server → agent)
 
-Carries `version`, the **full desired state** in `state`, and the **currently pending events** in `events`. The agent reconciles contributions per kind by diff and processes events in order through per-kind handlers on the harness API.
+Carries `version`, the **full desired state** in `state`, and the **currently pending events** in `events`. The agent reconciles contributions per kind by diff and processes events in order through per-kind handlers in the agent-runtime.
 
 ```ts
 runtime.v1.applyState({
@@ -268,7 +269,7 @@ Concurrent dispatches from different replicas race naturally; the agent's `lastA
 
 ### `hello` — agent → api-server catch-up
 
-Called on boot, on wake from hibernation, and on any agent-side reconnect. Returns the same envelope as `applyState` if anything diverged.
+Called on boot, on wake from hibernation, and on any agent-side reconnect. It never carries state itself — if the reported cursor is behind, it enqueues a worker dispatch and the catch-up arrives as an ordinary `applyState`.
 
 ```ts
 runtime.v1.hello({
@@ -278,11 +279,11 @@ runtime.v1.hello({
   agentRuntimeVersion: string;
   capabilities: { contributions: ContributionKind[]; events: EventKind[] };
 }) => {
-  version?: number;
-  state?: { contributions: Contribution[]; hash: string };
   events: Event[];
 }
 ```
+
+The returned `events` array is always empty today — catch-up state and events arrive via the worker's `applyState`, never inline.
 
 ```mermaid
 sequenceDiagram
@@ -292,26 +293,24 @@ sequenceDiagram
   participant PG as Postgres
 
   RT->>HS: runtime.v1.hello (lastAppliedVersion, lastAppliedHash, capabilities)
-  HS->>PG: read current state for this agent
-  HS->>PG: read non-dispatched, non-expired events
-  HS-->>RT: version, state, events
-  RT->>RT: reconcile contributions
-  loop per event in order
-    RT->>HS: per-kind handler — does the work, idempotent on event id
-  end
+  HS->>PG: compare reported cursor with outbox version
+  HS->>HS: enqueue worker dispatch if behind
+  HS-->>RT: events: []
+  HS->>RT: applyState (state + pending events, via the worker)
+  RT->>RT: reconcile contributions, run per-kind event handlers
 ```
 
-`hello` is read-only with respect to the outbox — the worker's next dispatch (which fires because `last_applied_version` is still behind `version`) is what stamps `dispatched_at`. In practice an event delivered via `hello` is immediately followed by an applyState that empties it from the next snapshot.
+`hello` is read-only with respect to the outbox — the worker dispatch it enqueues is what stamps `dispatched_at`. Events never travel inside the `hello` response; they ride the `applyState` that follows.
 
-### Per-kind event handlers (harness API)
+### Per-kind event handlers (agent-side)
 
-Each event kind has a corresponding handler endpoint on the harness API server. The kind determines which endpoint; the request shape, the side effect, and the idempotency key are all kind-specific. The common contract:
+Each event kind has a built-in handler inside the agent-runtime's event loop. The kind selects the handler; the payload shape and the side effect are kind-specific. The common contract:
 
-- The handler accepts the event's `id` and `payload` fields.
-- It is idempotent on `id` — a unique constraint on its side-effect table catches duplicates and returns the existing row.
-- It does the work (e.g. start a session for `trigger`); it does NOT touch `runtime_events`.
+- The handler receives the event's `payload`; the loop owns `id`-based dedupe before the handler is ever invoked (applied-version cursor plus a per-key last-run timestamp in the agent's local state store).
+- It does the work (e.g. open an in-process ACP session for `trigger`, clone the seed repo for `workspace-seed`); it does NOT touch `runtime_events`.
+- A handler failure leaves the event unsettled, so it is redelivered on the next dispatch until it succeeds or expires.
 
-The worker is the only writer to `runtime_events.dispatched_at` (it stamps in the apply-ack transaction). Splitting responsibilities this way means a new event kind adds a handler with a uniqueness constraint and doesn't have to know about the outbox at all.
+The worker is the only writer to `runtime_events.dispatched_at` (it stamps in the apply-ack transaction). Splitting responsibilities this way means a new event kind adds an agent-side handler and doesn't have to know about the outbox at all.
 
 ## Event lifecycle
 
@@ -324,14 +323,12 @@ sequenceDiagram
   participant PG as Postgres
   participant WK as worker
   participant RT as agent-runtime
-  participant HS as harness API
 
   SCH->>PG: BEGIN, bump agent.version to V, INSERT runtime_events (id, agentId, kind, payload, version=V, expiresAt), upsert outbox row, COMMIT
   PG->>WK: BullMQ wakes — worker reads outbox and non-dispatched events
   WK->>RT: applyState (version=V, state, events=[E1])
   RT->>RT: reconcile contributions
-  RT->>HS: per-kind handler for E1.kind — does the work, idempotent on E1.id
-  HS-->>RT: ok
+  RT->>RT: per-kind handler for E1.kind — does the work, records E1's run in the local state store
   RT-->>WK: appliedVersion=V, appliedHash
   WK->>PG: UPDATE runtime_events SET dispatched_at = now() where version up to V AND dispatched_at IS NULL
   Note over WK: Next dispatch state-builder excludes E1
@@ -339,15 +336,15 @@ sequenceDiagram
 
 ### Crash between dispatch and ack
 
-If the agent calls the work handler but crashes before sending the apply response, the worker doesn't get an `appliedVersion` — no rows are stamped. The event reappears in the next snapshot; the agent re-invokes the handler; the handler's unique constraint on `id` catches the duplicate side effect; the next ack stamps `dispatched_at`. Net: at-most-once.
+If the agent runs the handler but crashes before sending the apply response, the worker doesn't get an `appliedVersion` — no rows are stamped. The event reappears in the next snapshot; the agent's event loop consults its local state store (applied cursor plus per-key last-run timestamp, persisted on the PVC) and settles the already-run event without re-firing; the next ack stamps `dispatched_at`.
 
-If the work handler call succeeds at the server but the response is lost, same path — the agent re-invokes on next push, the unique constraint dedupes, the cursor advances.
+If the handler ran but the apply response is lost, same path — redelivery settles from the state store and the cursor advances. Re-fire is possible only if the crash lands between the side effect and the state-store write.
 
-If the work handler succeeds and the agent acks but then crashes before doing anything else, that's fine — events are already marked dispatched.
+If the handler succeeds and the agent acks but then crashes before doing anything else, that's fine — events are already marked dispatched.
 
 ### Server-side `dispatched_at` stamping
 
-Owned by the worker, set in the apply-ack transaction using the cursor. The per-kind work handler does not touch the outbox — its job is the side effect plus the side-effect-table uniqueness key.
+Owned by the worker, set in the apply-ack transaction using the cursor. The per-kind handler does not touch the outbox — its job is the side effect; dedupe bookkeeping lives in the agent's local state store.
 
 ### Expiry
 
@@ -516,12 +513,15 @@ After contribution reconciliation, the agent processes events in order:
 
 ```
 for each event E in payload.events:
+  if E.version <= lastAppliedVersion or E's dedupe key ran at >= E's fire ts:
+    settle and continue
   if E.expiresAt <= now():         # defense in depth — server may have raced
-    continue
-  POST to harness API: per-kind handler for E.kind, with E.id and E.payload
+    settle and continue
+  invoke per-kind handler with E.payload
+  record E's dedupe key + fire ts in the state store
 ```
 
-The handler call is what commits the event server-side. There is no agent-side state for "have I processed this event?" — a redelivered event hits the unique constraint at the harness handler and returns the existing side-effect row.
+Settled event ids ride back on the apply response, and the worker stamps `dispatched_at` from the ack cursor. The "have I run this?" state is the agent's own: the local state store records the applied cursor and per-key last-run timestamps, so a redelivered event settles without re-firing.
 
 ## Versioning
 
@@ -551,13 +551,13 @@ The UI surfaces the gap at grant time: connecting GitHub to a Claude-Code agent 
 | Postgres `connections` | Connection records (template id, auth, contributions[], inputs, owner) | New table for the unified model. |
 | Postgres `runtime_state_outbox` | One row per agent | `agent_id`, `version`, `last_enqueued_at`, `last_applied_version`, `last_applied_hash`, `last_applied_at`. |
 | Postgres `runtime_events` | One row per pending event | `id`, `agent_id`, `kind`, `payload`, `version`, `created_at`, `expires_at`, `dispatched_at`. Read by the state-builder; stamped by the worker in the apply-ack transaction. |
-| Per-kind side-effect table column | New column joining the kind's side-effect row back to `runtime_events.id`, with a unique constraint | The dedupe key for per-kind redelivery. Each event kind's harness handler owns one. |
+| Runtime-state file on the agent PVC | Applied cursor (`lastAppliedVersion`, `lastAppliedHash`) and per-key event last-run timestamps | The agent-side dedupe state for event redelivery. |
 | Redis (BullMQ queues) | Pending BullMQ jobs referencing outbox row ids | Relaxed durability; Postgres outbox + cron sweep is the recovery path. |
 | Postgres `egress_rules` | `egress-allow` and `egress-inject` Contributions joined per grant | Existing table; same as today. Both kinds produce the same allow row; `egress-inject`'s credential rides a separate gateway-side rail. |
 | K8s Secret per Connection | Auth credentials (refresh tokens, api-keys) | Owner-label-scoped; mounted into the paired gateway pod, never into the agent pod. |
 | Per-agent PVC env snapshot file | Reconciled credential-placeholder env | Written by the `env` driver from the channel snapshot ([`packages/agent-runtime/src/modules/runtime-channel/`](../../packages/agent-runtime/src/modules/runtime-channel/)); read by the harness/terminal spawn paths. |
 | `agents` table — new columns | `runtime_protocol_version`, `runtime_capabilities`, `runtime_last_hello_at`, `runtime_agent_version` | Populated on every `hello`. |
-| Per-Agent PVC | Materialized files, MCP config, installed skills | Driver-written via runtime channel. No event-dedupe log — events dedupe server-side. |
+| Per-Agent PVC | Materialized files, MCP config, installed skills | Driver-written via runtime channel. |
 | Per-driver state file on the agent PVC | Driver's tracking of what it has previously written | Per-contribution-driver, opt-in. Section-marker file driver doesn't need it; key-targeted does. |
 
 ## Invariants
@@ -565,8 +565,8 @@ The UI surfaces the gap at grant time: connecting GitHub to a Claude-Code agent 
 - **Mutation handlers never wait on agent reachability.** The user-facing response returns after the local transaction + BullMQ enqueue; delivery is the worker's concern. A hibernated, restarting, or unreachable agent does not delay or fail user actions.
 - **Postgres is the source of truth.** Every agent-bound change has a durable representation (a Connection grant, an outbox row, an event row) before any wire activity. BullMQ jobs and runtime-channel calls are signal/delivery paths only; either may fail or be replayed without correctness loss, with the cron sweep as the recovery path.
 - **State snapshots are idempotent; reapplying the latest snapshot is safe.** Drivers tolerate repeated apply. The agent's `lastAppliedVersion` rejects older state pushes; replay during disconnect/reconnect cannot regress state.
-- **Events fire at most once per id.** The unique constraint on each event kind's side-effect table is the single dedupe key, owned by the harness handler. The agent has no persistent dedupe state to keep in sync.
+- **Events fire once per dedupe key and version.** The agent's local state store (applied cursor plus per-key last-run timestamp, persisted on the PVC) settles redelivered events without re-firing; the worker's `dispatched_at` stamp stops redelivery once acked.
 - **One cursor for both slices.** The worker stamps `dispatched_at` for events with `version <= appliedVersion` in the same transaction that bumps `last_applied_version`. State and events share one ack marker.
-- **The api-server is the only caller of `applyState` from the cluster.** The harness port admits ingress only from api-server pods; the agent's only outbound channel is the paired gateway, which routes back to the harness-API-server's `hello` and per-kind event handlers.
+- **The api-server is the only caller of `applyState` from the cluster.** The harness port admits ingress only from api-server pods; the agent's only outbound channel is the paired gateway, which routes back to the harness-API-server's `hello`.
 - **Every Contribution kind has exactly one rail.** The api-server's fan-out determines which rail per kind; drivers, controller-render, and Envoy never overlap responsibilities on the same kind.
 - **Capabilities are honored end-to-end.** A Contribution or Event kind not in the agent's advertised set is dropped at send time, never silently delivered. A grant that requires unsupported kinds succeeds with a UI warning; the unsupported parts simply don't appear in the agent's payload.

@@ -18,6 +18,7 @@ flowchart LR
     controller[controller]
     keycloak[keycloak]
     postgres[(postgres)]
+    redis[(redis)]
     k8s-api[(K8s API)]
     subgraph agentpod[agent pod]
       agent-runtime
@@ -39,6 +40,7 @@ flowchart LR
   api-server -->|REST| k8s-api
   api-server -->|JWKS validate| keycloak
   api-server -->|metadata| postgres
+  api-server -->|BullMQ jobs / pub-sub| redis
 
   controller -->|watch + status| k8s-api
 

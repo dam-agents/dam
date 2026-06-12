@@ -116,10 +116,10 @@ Claimed-versus-spare is tracked entirely by labels: an unclaimed spare carries a
 | Wake (replicas → 1) | survives | survives | survives |
 | api-server restart | survives | survives | survives |
 | Controller restart | survives | survives | survives |
-| Agent delete | session rows removed by api-server | CR removed | PVCs removed by controller |
-| Schedule delete | schedule row removed; linked sessions optionally removed (UI checkbox) | n/a | n/a |
+| Agent delete | agent row marked deleted by api-server | CR removed | PVCs removed by controller |
+| Schedule delete | schedule row removed | n/a | n/a |
 
-Schedules are independent Postgres rows and survive Agent deletion as orphans unless the deletion path explicitly cascades. Sessions linked to a deleted schedule are kept by default; the UI offers a checkbox to remove them with the schedule.
+Schedules are independent Postgres rows and survive Agent deletion as orphans unless the deletion path explicitly cascades. Sessions are agent-owned files on the PVC, not Postgres rows — they follow the PVC column, not this one.
 
 Unclaimed warm-pool spares are not tied to any Agent and so are absent from this table — the pool manager reclaims them when it trims a pool below its inventory or when their size pool is removed, never via Agent deletion. Once claimed, a spare follows the PVC column above.
 

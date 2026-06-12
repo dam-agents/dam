@@ -12,9 +12,9 @@ Three rules carry the security model:
    into outbound traffic on the wire — the agent pod never mounts Secret
    bytes.
 2. **Identity flows from Keycloak.** Browser users authenticate against
-   Keycloak; the api-server validates the JWT and stamps `platform.ai/owner` on
+   Keycloak; the api-server validates the JWT and stamps `agent-platform.ai/owner` on
    every resource the user creates. Per-user credential isolation is the
-   `platform.ai/owner` label on the K8s Secret — the controller's selector
+   `agent-platform.ai/owner` label on the K8s Secret — the controller's selector
    refuses to mount any other owner's Secret into a given owner's gateway pod.
 3. **Two boundaries, layered.** The agent → gateway hop is gated at the
    *kernel* by a per-pair NetworkPolicy;
@@ -65,7 +65,7 @@ flowchart LR
   browser -->|user JWT| api-server
   api-server -->|JWKS validate| keycloak
 
-  api-server -->|write K8s Secrets<br/>platform.ai/owner=sub| gatewaypod
+  api-server -->|write K8s Secrets<br/>agent-platform.ai/owner=sub| gatewaypod
   controller -->|render bootstrap + leaf cert<br/>list owner Secrets| gatewaypod
   controller -->|render agent + paired gateway<br/>+ per-pair agent egress NetworkPolicy<br/>+ harness/ext-authz AuthorizationPolicies| agentpod
 
@@ -109,7 +109,7 @@ user agent flow:
    `platform-api`.
 2. UI sends the JWT to the api-server on every tRPC and ACP call. The
    api-server validates it against Keycloak's JWKS.
-3. The api-server's `sub` claim becomes `platform.ai/owner=<sub>` on every
+3. The api-server's `sub` claim becomes `agent-platform.ai/owner=<sub>` on every
    resource the user creates (Agent CR, K8s credential Secret,
    etc.).
 
@@ -154,16 +154,16 @@ values under [`deploy/helm/platform/`](../../deploy/helm/platform/).
 ## Resource ownership
 
 Multi-tenancy is **soft** — a single Kubernetes namespace, with a
-`platform.ai/owner` label on every owned resource carrying the authenticated
+`agent-platform.ai/owner` label on every owned resource carrying the authenticated
 user's `sub`. The api-server is the sole writer of resource spec and stamps
 the label on create; every list and get filters by it. There is no
 namespace-per-user.
 
 The controller picks credentials per-Agent by listing K8s Secrets
-labelled `platform.ai/owner=<sub>,platform.ai/managed-by=api-server` in the agent
+labelled `agent-platform.ai/owner=<sub>,agent-platform.ai/managed-by=api-server` in the agent
 namespace, then mounting the matching set into the paired gateway pod. Cross-
 owner leakage is structurally prevented by the label selector — a missing
-`platform.ai/owner` label is treated as no owner and never mounted.
+`agent-platform.ai/owner` label is treated as no owner and never mounted.
 
 ## Credential storage
 
@@ -191,7 +191,7 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
 **Multi-host connections.** A single OAuth connection can inject the
 same token on more than one host with **different auth schemes per
 host**, all from one K8s Secret. The Secret carries a JSON
-`platform.ai/injection-hosts` annotation listing each
+`agent-platform.ai/injection-hosts` annotation listing each
 `{host, headerName?, valueFormat?, encoding?, pathPattern?}` tuple; the
 controller fans the Secret into one Envoy filter chain per host —
 entries that share a host stack into that chain as an ordered list of
@@ -209,7 +209,7 @@ of private repos works without a credential helper), and
 
 The Secret carries the SDS YAML Envoy reads via its `path_config_source`.
 Only the gateway pod mounts the Secret; the agent pod does not. See
-[`packages/api-server/src/modules/connections/infrastructure/k8s-connections-port.ts`](../../packages/api-server/src/modules/connections/infrastructure/k8s-connections-port.ts) and
+[`packages/api-server/src/modules/connections/infrastructure/`](../../packages/api-server/src/modules/connections/infrastructure/) and
 [`packages/api-server/src/modules/secrets/infrastructure/k8s-secrets-port.ts`](../../packages/api-server/src/modules/secrets/infrastructure/k8s-secrets-port.ts).
 
 ## Envoy credential injection
@@ -286,7 +286,7 @@ When a user other than the Agent owner replies in a Slack thread,
 the api-server creates a Fork CR that the controller materialises
 into a per-turn paired pod set: a fork agent Job and a fork gateway
 Pod. The fork's gateway pod mounts the **replier's** K8s credential
-Secrets — selected by `platform.ai/owner=<replier-sub>`, not the Agent
+Secrets — selected by `agent-platform.ai/owner=<replier-sub>`, not the Agent
 owner's `sub`. The credential boundary is preserved: the fork pair runs
 the replier's credentials, never the parent Agent owner's. The fork
 agent's `agent-platform.ai/agent` label still points at the parent
@@ -331,7 +331,7 @@ differ:
   principal to `/api/agents/<id>/*`; handlers can treat URL `:id`
   as authenticated. For forks, an additional per-fork policy admits
   the fork *gateway*'s SA only to `/api/agents/<parent>/mcp` —
-  pod-files SSE and `/internal/trigger` stay parent-only.
+  the runtime channel stays parent-only.
 - **Gateway → api-server ext-authz** routes through a per-Agent
   Service `<rel>-extauthz-<id>` rendered by the controller alongside
   each Agent. The AuthorizationPolicy on each Service ALLOWs only
