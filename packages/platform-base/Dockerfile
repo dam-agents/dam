@@ -35,7 +35,7 @@ USER root
 RUN dnf install -y --installroot=/sysroot --use-host-config \
       --releasever="$(. /etc/os-release; echo "$VERSION_ID")" \
       --setopt=install_weak_deps=0 \
-      git tar gzip curl openssh-server catatonit &&\
+      git tar gzip curl openssh-server catatonit xz-libs &&\
       rm -rf /sysroot/var/lib/dnf /sysroot/var/cache /sysroot/var/log
 
 # release binaries CVE-tainted (GHSA-pmwq-pjrm-6p5r); build from source
