@@ -16,7 +16,7 @@ import { ProvidersView } from "./modules/settings/views/providers-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
 import { TermsView } from "./modules/terms/views/terms-view.js";
 import { V2App } from "./modules/v2/views/v2-app.js";
-import { useStore } from "./store.js";
+import { pathToState, useStore } from "./store.js";
 
 export default function App() {
   const view = useStore((s) => s.view);
@@ -81,8 +81,13 @@ export default function App() {
       else if (path === "/providers") useStore.setState({ view: "providers" });
       else if (path === "/connections")
         useStore.setState({ view: "connections" });
-      else if (path === "/settings") useStore.setState({ view: "settings" });
-      else if (path === "/inbox") useStore.setState({ view: "inbox" });
+      else if (path === "/settings" || path.startsWith("/settings/")) {
+        const { settingsTab } = pathToState(path);
+        useStore.setState({
+          view: "settings",
+          settingsTab: settingsTab ?? "account",
+        });
+      } else if (path === "/inbox") useStore.setState({ view: "inbox" });
       else if (path === "/terms") useStore.setState({ view: "terms" });
       else if (path === "/v2")
         useStore.setState({ view: "v2-list", agentId: null });

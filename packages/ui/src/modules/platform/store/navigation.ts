@@ -3,6 +3,7 @@ import type { StateCreator } from "zustand";
 import type { PlatformStore } from "../../../store.js";
 import {
   pathToState,
+  type SettingsTab,
   type View,
   viewSchema,
   viewToPath,
@@ -12,7 +13,10 @@ export interface NavigationSlice {
   view: View;
   /** Populated when `view === "agent-egress"`. */
   agentId: string | null;
+  /** Active sub-tab when `view === "settings"`. */
+  settingsTab: SettingsTab;
   setView: (v: View) => void;
+  navigateToSettings: (tab?: SettingsTab) => void;
   navigateToAgentEgress: (agentId: string) => void;
   openSandboxTerminal: (agentId: string) => void;
   mobileScreen: "sessions" | "chat";
@@ -51,9 +55,22 @@ export const createNavigationSlice: StateCreator<
     return pathToState(window.location.pathname).view;
   })(),
   agentId: pathToState(window.location.pathname).agentId ?? null,
+  settingsTab: pathToState(window.location.pathname).settingsTab ?? "account",
   setView: (v) => {
     history.pushState(null, "", viewToPath(v));
-    set({ view: v, agentId: null });
+    // viewToPath(v) without a tab is /settings, so keep the tab in sync.
+    if (v === "settings")
+      set({ view: v, agentId: null, settingsTab: "account" });
+    else set({ view: v, agentId: null });
+  },
+  navigateToSettings: (tab) => {
+    const settingsTab = tab ?? "account";
+    history.pushState(
+      null,
+      "",
+      viewToPath("settings", null, null, settingsTab),
+    );
+    set({ view: "settings", settingsTab, agentId: null });
   },
   navigateToAgentEgress: (agentId) => {
     history.pushState(null, "", viewToPath("agent-egress", null, agentId));

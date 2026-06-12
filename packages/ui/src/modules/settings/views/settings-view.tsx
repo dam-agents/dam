@@ -4,7 +4,6 @@ import {
   Logout as LogOut,
   Screen as Monitor,
 } from "@carbon/icons-react";
-import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -12,13 +11,16 @@ import { cn } from "@/lib/utils";
 
 import { getUser, logout } from "../../../auth.js";
 import { useStore } from "../../../store.js";
+import { ConnectionsView } from "../../connections/views/connections-view.js";
+import type { SettingsTab } from "../../platform/lib/routes.js";
 import { useAppVersion } from "../api/queries.js";
+import { ProvidersView } from "./providers-view.js";
 
-type Tab = "appearance" | "account";
-
-const tabs: { id: Tab; label: string }[] = [
+const tabs: { id: SettingsTab; label: string }[] = [
   { id: "account", label: "Account" },
   { id: "appearance", label: "Appearance" },
+  { id: "providers", label: "Providers" },
+  { id: "connections", label: "Connections" },
 ];
 
 const themeOptions = [
@@ -43,7 +45,8 @@ const themeOptions = [
 ];
 
 export function SettingsView() {
-  const [activeTab, setActiveTab] = useState<Tab>("account");
+  const activeTab = useStore((s) => s.settingsTab);
+  const navigateToSettings = useStore((s) => s.navigateToSettings);
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
   const setView = useStore((s) => s.setView);
@@ -57,7 +60,7 @@ export function SettingsView() {
         {tabs.map((tab) => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => navigateToSettings(tab.id)}
             className={cn(
               "px-3 py-2 text-[14px] font-medium rounded-lg text-left transition-colors",
               activeTab === tab.id
@@ -165,6 +168,18 @@ export function SettingsView() {
                 Version {appVersion}
               </div>
             )}
+          </div>
+        )}
+
+        {activeTab === "providers" && (
+          <div className="anim-in">
+            <ProvidersView />
+          </div>
+        )}
+
+        {activeTab === "connections" && (
+          <div className="anim-in">
+            <ConnectionsView />
           </div>
         )}
       </div>
