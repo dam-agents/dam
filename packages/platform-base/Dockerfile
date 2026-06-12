@@ -5,7 +5,7 @@ WORKDIR /app
 ENV PATH="/app/node_modules/.bin:$PATH"
 
 ARG MISE_VERSION=v2026.6.3
-RUN dnf install -y git tar gzip openssh-server catatonit && dnf clean all \
+RUN dnf install -y git tar gzip && dnf clean all \
     && set -eu; \
     case "$(uname -m)" in \
       x86_64) arch=x64 sha=61e7fd4bd3496e1b51c775536718ddb6c76d5a54821741d99cde73e15632a7db ;; \
@@ -28,6 +28,18 @@ ARG NPM_VERSION=11.16.0
 RUN --mount=type=cache,target=/root/.cache/mise \
     mise install && gws --version >/dev/null \
     && npm install -g "npm@${NPM_VERSION}" && mise reshim
+
+# The production stage is the dnf-less core-runtime image; stage the runtime
+# packages (and their dependency closure) into an installroot here and COPY
+# the result over. RPM scriptlet effects (sshd user/group) are replayed in
+# the runner's setup RUN.
+FROM registry.access.redhat.com/hi/core-runtime:latest-builder AS sysroot
+USER root
+RUN dnf install -y --installroot=/sysroot --use-host-config \
+      --releasever="$(. /etc/os-release; echo "$VERSION_ID")" \
+      --setopt=install_weak_deps=0 \
+      git tar gzip curl openssh-server catatonit \
+    && rm -rf /sysroot/var/lib/dnf /sysroot/var/cache /sysroot/var/log
 
 # gh's release binaries lag upstream: 2.93.0 ships Go 1.26.3 and pins in-toto
 # 0.9.0 (GHSA-pmwq-pjrm-6p5r). Build from source with a patched Go toolchain and
@@ -92,8 +104,22 @@ RUN npm_config_inject_workspace_packages=true \
     && cp packages/agent-runtime/package.json /deploy/package.json \
     && (cd /deploy && pnpm pkg delete devDependencies)
 
-# -builder base: agent images extending this need dnf+npm install at build time.
-FROM base AS runner
+# Production stage: the dnf-less core-runtime image. Derived agent images
+# still get npm at build time through the mise shims copied below; none of
+# them needs dnf. Runtime binaries (git, sshd, catatonit, curl, tar/gzip)
+# come pre-staged from the sysroot stage.
+FROM registry.access.redhat.com/hi/core-runtime:latest AS runner
+
+USER root
+WORKDIR /app
+ENV MISE_DATA_DIR=/usr/local/share/mise \
+    PATH="/app/node_modules/.bin:/usr/local/share/mise/shims:$PATH"
+
+COPY --from=sysroot /sysroot/usr/ /usr/
+COPY --from=sysroot /sysroot/etc/ssh/ /etc/ssh/
+COPY --from=base /usr/local/bin/mise /usr/local/bin/mise
+COPY --from=base /usr/local/share/mise/ /usr/local/share/mise/
+COPY --from=base /etc/mise/ /etc/mise/
 
 COPY --from=gh-builder /gh /usr/local/bin/gh
 
@@ -130,8 +156,11 @@ COPY packages/platform-base/working-dir/.claude/settings.json /app/working-dir/.
 COPY packages/platform-base/runtime-manifest.yaml /app/runtime-manifest.yaml
 COPY packages/platform-base/AGENTS.md /etc/AGENTS.md
 
-RUN chown -R 65532:0 /app \
+RUN ldconfig \
+    && chown -R 65532:0 /app \
     && mkdir -p /etc/claude-code && echo '{}' > /etc/claude-code/managed-settings.json \
+    && echo 'sshd:x:74:' >> /etc/group \
+    && echo 'sshd:x:74:74:Privilege-separated SSH:/usr/share/empty.sshd:/usr/sbin/nologin' >> /etc/passwd \
     && sed -i -E '/^[^:]*:[^:]*:65532:/d' /etc/passwd \
     && echo 'agent:x:65532:0:Agent User:/home/agent:/bin/bash' >> /etc/passwd \
     && mkdir -p /home/agent \
