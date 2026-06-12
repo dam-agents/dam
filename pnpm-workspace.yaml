@@ -51,15 +51,15 @@ trustPolicyExclude:
 minimumReleaseAgeExclude:
   # CVE-2026-45736 security fix — released 2026-05-12, inside the 7-day window
   - "ws@8.20.1"
-  # Pinned in packages/agents/pi-agent/Dockerfile and the pi-dynamic-providers
+  # Pinned in the pi-agent workspace mise config and the pi-dynamic-providers
   # extension to keep the extension's types aligned with the runtime fork that
   # actually loads against them (issue #375). The fork ships its core/ai/tui
-  # packages at the same version; bump all four together with the Dockerfile
-  # ARG. Safe to drop from this list once the chosen version ages past 7 days.
-  - "@earendil-works/pi-coding-agent@0.75.5"
-  - "@earendil-works/pi-agent-core@0.75.5"
-  - "@earendil-works/pi-ai@0.75.5"
-  - "@earendil-works/pi-tui@0.75.5"
+  # packages at the same version; bump all four together with the mise
+  # config. Safe to drop from this list once the chosen version ages past 7 days.
+  - "@earendil-works/pi-coding-agent@0.79.1"
+  - "@earendil-works/pi-agent-core@0.79.1"
+  - "@earendil-works/pi-ai@0.79.1"
+  - "@earendil-works/pi-tui@0.79.1"
 allowBuilds:
   # grpc-tools downloads the protoc binary in a postinstall step; needed
   # by `mise run api-server:gen:proto` (ts-proto codegen for ext_authz).
