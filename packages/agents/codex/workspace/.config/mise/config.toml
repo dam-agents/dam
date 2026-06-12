@@ -1,0 +1,6 @@
+[settings]
+lockfile = true
+
+[tools]
+"npm:@openai/codex" = "0.133.0"
+"npm:@zed-industries/codex-acp" = "0.14.0"

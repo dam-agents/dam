@@ -3,12 +3,13 @@ FROM ${BASE_IMAGE}
 
 USER root
 
-ARG CLAUDE_CODE_VERSION=2.1.173
-ARG CLAUDE_AGENT_ACP_VERSION=0.44.0
+# harness tools from the workspace-seeded user-level mise config
+COPY workspace/.config/mise/ /app/working-dir/.config/mise/
+# run postinstall manually: mise's npm backend skips it, claude needs its native binary
 RUN --mount=type=cache,target=/root/.npm \
-    npm install "@agentclientprotocol/claude-agent-acp@${CLAUDE_AGENT_ACP_VERSION}" &&\
-    npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" &&\
-    mise reshim &&\
+    export MISE_GLOBAL_CONFIG_FILE=/app/working-dir/.config/mise/config.toml &&\
+    mise install &&\
+    node "$(mise where npm:@anthropic-ai/claude-code)/lib/node_modules/@anthropic-ai/claude-code/install.cjs" &&\
     chown -R 65532:0 /app
 
 COPY model-gateway.mjs /usr/local/lib/model-gateway.mjs

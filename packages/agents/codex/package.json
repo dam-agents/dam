@@ -1,8 +1,0 @@
-{
-  "name": "platform-codex",
-  "private": true,
-  "dependencies": {
-    "@zed-industries/codex-acp": "0.14.0",
-    "@openai/codex": "0.133.0"
-  }
-}

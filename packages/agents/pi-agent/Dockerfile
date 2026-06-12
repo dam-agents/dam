@@ -3,16 +3,11 @@ FROM ${BASE_IMAGE}
 
 USER root
 
-ARG PI_CODING_AGENT_VERSION=0.75.5
-ARG PI_ACP_VERSION=0.0.27
-ARG PI_MEMORY_VERSION=1.0.2
+# harness tools from the workspace-seeded user-level mise config
+COPY workspace/.config/mise/ /app/working-dir/.config/mise/
 RUN --mount=type=cache,target=/root/.npm \
-    npm install -g \
-      "@earendil-works/pi-coding-agent@${PI_CODING_AGENT_VERSION}" \
-      "pi-acp@${PI_ACP_VERSION}" \
-      "@zhafron/pi-memory@${PI_MEMORY_VERSION}" &&\
-      mise reshim &&\
-      chown -R 65532:0 /app
+    MISE_GLOBAL_CONFIG_FILE=/app/working-dir/.config/mise/config.toml mise install &&\
+    chown -R 65532:0 /app
 
 COPY harness-chat.sh /usr/local/bin/harness-chat
 COPY harness-terminal.sh /usr/local/bin/harness-terminal
