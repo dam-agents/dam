@@ -8,7 +8,9 @@ export const INTERNAL_ONLY_TEMPLATE_IDS: ReadonlySet<string> = new Set([
 ]);
 
 // All Google services (catalog ids "google-*") are internal-only as a group.
-export const INTERNAL_ONLY_TEMPLATE_ID_PREFIXES: readonly string[] = ["google-"];
+export const INTERNAL_ONLY_TEMPLATE_ID_PREFIXES: readonly string[] = [
+  "google-",
+];
 
 export const SHOW_INTERNAL_CONNECTIONS_STORAGE_KEY =
   "platform-debug:show-internal-connections";
