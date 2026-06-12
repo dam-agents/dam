@@ -4,11 +4,14 @@ FROM ${BASE_IMAGE}
 
 USER root
 
-# Bob installer — bobshell isn't on npmjs.org; bob.ibm.com is the
-# official distribution channel. `--pm npm` skips pnpm/yarn detection.
+# bobshell isn't on npmjs.org; its official installer (bob.ibm.com) just
+# resolves the latest version and npm-installs an S3 tarball. Do the same
+# directly with a pinned version so builds are reproducible. Bump by checking
+# https://s3.us-south.cloud-object-storage.appdomain.cloud/bob-shell/bobshell-version.txt
+ARG BOBSHELL_VERSION=1.0.4
 RUN --mount=type=cache,target=/root/.npm \
-    curl -fsSL https://bob.ibm.com/download/bobshell.sh \
-    | bash -s -- --pm npm \
+    npm install -g \
+      "https://s3.us-south.cloud-object-storage.appdomain.cloud/bob-shell/bobshell-${BOBSHELL_VERSION}.tgz" \
     && mise reshim \
     && chown -R 65532:0 /app
 
