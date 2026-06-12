@@ -19,22 +19,17 @@ RUN dnf install -y git tar gzip && dnf clean all \
     rm -rf /tmp/mise /tmp/mise.tar.gz
 ENV MISE_DATA_DIR=/usr/local/share/mise \
     PATH="/usr/local/share/mise/shims:$PATH"
-# /etc/mise/config.toml is mise's canonical system-level config location.
-# The lock sibling is always named mise.lock (never config.lock) — verified:
-# a lock pin overrides a "latest" tool spec in this layout.
 COPY packages/platform-base/mise.toml /etc/mise/config.toml
 COPY packages/platform-base/mise.lock /etc/mise/mise.lock
-# `gws --version` once as root: the npm package downloads its platform
-# binary on first run, which the non-root agent user couldn't write.
+# `gws --version` once as root to download platform binary
 ARG NPM_VERSION=11.16.0
 RUN --mount=type=cache,target=/root/.cache/mise \
-    mise install && gws --version >/dev/null \
-    && npm install -g "npm@${NPM_VERSION}" && mise reshim
+    mise install &&\
+    gws --version >/dev/null &&\
+    npm install -g "npm@${NPM_VERSION}" &&\
+    mise reshim
 
-# The production stage is the dnf-less core-runtime image; stage the runtime
-# packages (and their dependency closure) into an installroot here and COPY
-# the result over. RPM scriptlet effects (sshd user/group) are replayed in
-# the runner's setup RUN.
+
 FROM registry.access.redhat.com/hi/core-runtime:latest-builder AS sysroot
 USER root
 RUN dnf install -y --installroot=/sysroot --use-host-config \
@@ -43,9 +38,7 @@ RUN dnf install -y --installroot=/sysroot --use-host-config \
       git tar gzip curl openssh-server catatonit \
     && rm -rf /sysroot/var/lib/dnf /sysroot/var/cache /sysroot/var/log
 
-# gh's release binaries lag upstream: 2.93.0 ships Go 1.26.3 and pins in-toto
-# 0.9.0 (GHSA-pmwq-pjrm-6p5r). Build from source with a patched Go toolchain and
-# a bumped in-toto so the binary is CVE-clean.
+# release binaries CVE-tainted (GHSA-pmwq-pjrm-6p5r); build from source
 FROM --platform=$BUILDPLATFORM registry.access.redhat.com/hi/go:1.25-builder AS gh-builder
 ARG GH_VERSION=2.93.0
 ARG INTOTO_VERSION=0.11.0
@@ -80,36 +73,14 @@ COPY packages/agent-runtime/ packages/agent-runtime/
 
 RUN pnpm --filter agent-runtime exec tsup
 
-# Materialize a flat, prod-only runtime tree for agent-runtime. The contract
-# packages (agent-runtime-api, api-server-api) are inlined into dist by tsup
-# (noExternal) and live in devDependencies, so --prod omits them from node_modules.
-#
-# Honor the lockfile: the `--legacy` deploy implementation re-resolves the graph
-# WITHOUT the lockfile, drifting to the latest published versions on every build
-# (non-reproducible, and it trips the repo's `no-downgrade` trust policy when a
-# transitive dep's publisher signal changes). pnpm 10's modern deploy uses the
-# lockfile but guards against non-injected workspaces — satisfy that guard with
-# a command-scoped `inject-workspace-packages=true` (no prod workspace deps are
-# actually injected here) rather than flipping the global config, which would
-# turn workspace symlinks into copies for everyone's dev install.
-#
-# Use the authored manifest, not pnpm's: modern deploy rewrites package.json
-# dependency versions to pnpm's peer-resolved form (e.g.
-# `@trpc/server: 11.16.0(typescript@6.0.2)`), which is invalid npm syntax and
-# breaks the plain `npm install` in derived agent images (e.g. claude-code)
-# with EINVALIDTAGNAME. agent-runtime's own package.json
-# already carries clean semver ranges, so overwrite the deployed manifest with
-# it and drop devDependencies — keeping deploy's lockfile-pinned node_modules
-# but an npm-consumable manifest.
+# --legacy deploy would ignore the lockfile; inject-workspace-packages only
+# command-scoped to satisfy modern deploy's guard. Deploy's manifest has
+# peer-suffixed versions that break npm in derived images: restore authored one.
 RUN npm_config_inject_workspace_packages=true \
     pnpm --filter agent-runtime deploy --frozen-lockfile --prod --node-linker=hoisted /deploy \
     && cp packages/agent-runtime/package.json /deploy/package.json \
     && (cd /deploy && pnpm pkg delete devDependencies)
 
-# Production stage: the dnf-less core-runtime image. Derived agent images
-# still get npm at build time through the mise shims copied below; none of
-# them needs dnf. Runtime binaries (git, sshd, catatonit, curl, tar/gzip)
-# come pre-staged from the sysroot stage.
 FROM registry.access.redhat.com/hi/core-runtime:latest AS runner
 
 USER root
@@ -130,19 +101,12 @@ COPY --from=builder /deploy/node_modules ./node_modules
 # dist/ is gitignored so pnpm deploy skips it.
 COPY --from=builder /app/packages/agent-runtime/dist/ ./dist/
 
-# ADR-037: agent-runtime spawns `/usr/local/bin/harness-chat` for chat
-# sessions and `/usr/local/bin/harness-terminal` for terminal sessions.
-# The shell shims live in this package's source; install them as
-# executables on the PATH the runtime expects.
+# ADR-037: harness shims spawned by agent-runtime
 COPY packages/platform-base/harness-chat.sh /usr/local/bin/harness-chat
 COPY packages/platform-base/harness-terminal.sh /usr/local/bin/harness-terminal
 RUN chmod +x /usr/local/bin/harness-chat /usr/local/bin/harness-terminal
 
-# CA-trust shim (entrypoint.sh): at startup it adds the cluster's CA to the
-# system trust store. It runs as the non-root agent user, so give that user
-# write access to the dirs update-ca-trust touches — the CA input dir, the
-# generated-bundle dir, and the legacy cert dir (/etc/pki/tls/certs, where only
-# the dir itself needs to be writable; its symlinks stay root-owned).
+# entrypoint runs update-ca-trust as the agent user; its dirs must be writable
 COPY packages/platform-base/entrypoint.sh /usr/local/bin/agent-entrypoint
 RUN chmod +x /usr/local/bin/agent-entrypoint \
     && chown -R 65532 /etc/pki/ca-trust/source/anchors /etc/pki/ca-trust/extracted \
@@ -151,10 +115,6 @@ RUN chmod +x /usr/local/bin/agent-entrypoint \
 COPY packages/platform-base/skills/ /app/working-dir/.agents/skills/
 COPY packages/platform-base/working-dir/.claude.json /app/working-dir/.claude.json
 COPY packages/platform-base/working-dir/.claude/settings.json /app/working-dir/.claude/settings.json
-# ADR-052: runtime-manifest.yaml — every agent image ships one. Lives
-# at /app/runtime-manifest.yaml (outside working-dir/) so the init
-# seed cp -rn ... $HOME doesn't shadow it on the user's PV. Per-image
-# overrides are COPY'd later in derived Dockerfiles.
 COPY packages/platform-base/runtime-manifest.yaml /app/runtime-manifest.yaml
 COPY packages/platform-base/AGENTS.md /etc/AGENTS.md
 
