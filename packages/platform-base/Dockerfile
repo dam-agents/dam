@@ -4,16 +4,15 @@ USER root
 WORKDIR /app
 ENV PATH="/app/node_modules/.bin:$PATH"
 
-RUN dnf install -y git tar gzip openssh-server catatonit && dnf clean all
-
 ARG MISE_VERSION=v2026.6.3
-RUN set -eu; \
+RUN dnf install -y git tar gzip openssh-server catatonit && dnf clean all \
+    && set -eu; \
     case "$(uname -m)" in \
       x86_64) arch=x64 sha=61e7fd4bd3496e1b51c775536718ddb6c76d5a54821741d99cde73e15632a7db ;; \
       aarch64) arch=arm64 sha=d528684a70fa8f5fbd9c80277fa25d564bffcc645a283e81d37367943f30dd17 ;; \
       *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;; \
     esac; \
-    curl -fsSL "https://github.com/jdx/mise/releases/download/v2026.6.3/mise-v2026.6.3-linux-${arch}.tar.gz" -o /tmp/mise.tar.gz; \
+    curl -fsSL "https://github.com/jdx/mise/releases/download/${MISE_VERSION}/mise-${MISE_VERSION}-linux-${arch}.tar.gz" -o /tmp/mise.tar.gz; \
     echo "$sha /tmp/mise.tar.gz" | sha256sum -c -; \
     tar -xzf /tmp/mise.tar.gz -C /tmp; \
     mv /tmp/mise/bin/mise /usr/local/bin/mise; \
@@ -25,11 +24,10 @@ COPY packages/platform-base/mise.toml /etc/mise/config.toml
 COPY packages/platform-base/mise.lock /etc/mise/mise.lock
 # `gws --version` once as root: the npm package downloads its platform
 # binary on first run, which the non-root agent user couldn't write.
-RUN --mount=type=cache,target=/root/.cache/mise \
-    mise install && gws --version >/dev/null
-
 ARG NPM_VERSION=11.16.0
-RUN npm install -g "npm@${NPM_VERSION}" && mise reshim
+RUN --mount=type=cache,target=/root/.cache/mise \
+    mise install && gws --version >/dev/null \
+    && npm install -g "npm@${NPM_VERSION}" && mise reshim
 
 # gh's release binaries lag upstream: 2.93.0 ships Go 1.26.3 and pins in-toto
 # 0.9.0 (GHSA-pmwq-pjrm-6p5r). Build from source with a patched Go toolchain and
@@ -130,27 +128,11 @@ COPY packages/platform-base/working-dir/.claude/settings.json /app/working-dir/.
 # seed cp -rn ... $HOME doesn't shadow it on the user's PV. Per-image
 # overrides are COPY'd later in derived Dockerfiles.
 COPY packages/platform-base/runtime-manifest.yaml /app/runtime-manifest.yaml
-RUN chown -R 65532:0 /app
-
-# Claude Code 2.x changed the managed-settings.json schema: `allowedMcpServers`
-# is no longer a `string[]` of server names — the array entries are expected
-# to be objects (or the field has been retired entirely). The legacy shape
-# made every agent pod fail Claude Code startup with:
-#   Unable to read managed policy settings.
-#   Detail: /etc/claude-code/managed-settings.json: Expected object, but
-#   received string
-# which manifested upstream as `Claude Code process exited with code 1` on
-# session/new. Stub the file to an empty object so startup succeeds; the
-# platform-outbound MCP server now goes through the standard "first use
-# allow" prompt until we re-derive the explicit allowlist for the v2 schema.
-RUN mkdir -p /etc/claude-code && echo '{}' > /etc/claude-code/managed-settings.json
-
-# System-level agent instructions documenting the available tools. Each harness
-# image wires its own discovery mechanism to this file (symlink or setting)
-# in its derived Dockerfile.
 COPY packages/platform-base/AGENTS.md /etc/AGENTS.md
 
-RUN sed -i -E '/^[^:]*:[^:]*:65532:/d' /etc/passwd \
+RUN chown -R 65532:0 /app \
+    && mkdir -p /etc/claude-code && echo '{}' > /etc/claude-code/managed-settings.json \
+    && sed -i -E '/^[^:]*:[^:]*:65532:/d' /etc/passwd \
     && echo 'agent:x:65532:0:Agent User:/home/agent:/bin/bash' >> /etc/passwd \
     && mkdir -p /home/agent \
     && chown -R 65532:0 /home/agent

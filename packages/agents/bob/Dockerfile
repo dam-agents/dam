@@ -1,11 +1,8 @@
 ARG BASE_IMAGE=platform-base
 FROM ${BASE_IMAGE}
 
-
 USER root
 
-# Single platformless tarball (pure-JS bundle); native node-pty prebuilds
-# come as optionalDependencies from npmjs, integrity-checked by npm itself.
 ARG BOBSHELL_VERSION=1.0.4
 ARG BOBSHELL_SHA256=128f8da8bc3a4a1eb07add4abcf05306096615f177a32d02058532c945b5489e
 RUN --mount=type=cache,target=/root/.npm \
@@ -21,10 +18,10 @@ RUN --mount=type=cache,target=/root/.npm \
 COPY bob-acp-shim.mjs /app/bob-acp-shim.mjs
 COPY harness-chat.sh /usr/local/bin/harness-chat
 COPY harness-terminal.sh /usr/local/bin/harness-terminal
-RUN chmod +x /usr/local/bin/harness-chat /usr/local/bin/harness-terminal
-RUN mkdir -p /etc/bobshell \
-    && jq --null-input '.context.fileName = ["/etc/AGENTS.md"]' >/etc/bobshell/system-defaults.json
-RUN mkdir -p /app/working-dir/.bob \
+RUN chmod +x /usr/local/bin/harness-chat /usr/local/bin/harness-terminal \
+    && mkdir -p /etc/bobshell \
+    && jq --null-input '.context.fileName = ["/etc/AGENTS.md"]' >/etc/bobshell/system-defaults.json \
+    && mkdir -p /app/working-dir/.bob \
     && ln -s ../.agents/skills /app/working-dir/.bob/skills
 
 COPY --chown=65532:0 runtime-manifest.yaml /app/runtime-manifest.yaml
