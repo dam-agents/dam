@@ -49,6 +49,14 @@ describe("nextFireAt (rrule)", () => {
     expect(next?.toISOString()).toBe("2026-06-11T13:00:00.000Z");
   });
 
+  it("does not inherit seconds from the evaluation instant", () => {
+    // Real schedules carry no BYSECOND; a from-instant with stray seconds
+    // must not shift the fire time off the whole minute.
+    const spec = rruleSpec("FREQ=DAILY;BYHOUR=9;BYMINUTE=0", "Europe/Prague");
+    const next = nextFireAt(spec, new Date("2026-06-11T00:00:59Z"));
+    expect(next?.toISOString()).toBe("2026-06-11T07:00:00.000Z");
+  });
+
   it("rolls to the next day once today's occurrence has passed locally", () => {
     // 09:30 Prague (07:30Z) — today's 09:00 already fired.
     const spec = rruleSpec(

@@ -110,6 +110,8 @@ export function nextFireAt(spec: ScheduleSpec, from: Date): Date | null {
     }
   }
   const wallFrom = toWallClock(from, spec.timezone);
+  // Without BYSECOND, occurrences inherit dtstart's seconds — zero them.
+  wallFrom.setUTCSeconds(0, 0);
   const rule = new RRule({
     dtstart: wallFrom,
     ...RRule.parseString(spec.rrule),
