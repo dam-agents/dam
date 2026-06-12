@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-05-29
+Last verified: 2026-06-12
 
 ## Motivated by
 
@@ -126,7 +126,7 @@ user agent flow:
 2. UI sends the JWT to the api-server on every tRPC and ACP call. The
    api-server validates it against Keycloak's JWKS.
 3. The api-server's `sub` claim becomes `platform.ai/owner=<sub>` on every
-   resource the user creates (Agent ConfigMap, K8s credential Secret,
+   resource the user creates (Agent CR, K8s credential Secret,
    etc.).
 
 There is no token exchange — credential storage is K8s-native and label-
@@ -171,7 +171,7 @@ values under [`deploy/helm/platform/`](../../deploy/helm/platform/).
 
 Multi-tenancy is **soft** — a single Kubernetes namespace, with a
 `platform.ai/owner` label on every owned resource carrying the authenticated
-user's `sub`. The api-server is the sole writer of `spec.yaml` and stamps
+user's `sub`. The api-server is the sole writer of resource spec and stamps
 the label on create; every list and get filters by it. There is no
 namespace-per-user.
 
@@ -296,7 +296,7 @@ filter on the catch-all chain sees SNI only.
 ## Per-turn fork pods (Slack foreign replier)
 
 When a user other than the Agent owner replies in a Slack thread,
-the api-server emits a fork ConfigMap that the controller materialises
+the api-server creates a Fork CR that the controller materialises
 into a per-turn paired pod set: a fork agent Job and a fork gateway Pod
 (ADR-038). The fork's gateway pod mounts the **replier's** K8s credential
 Secrets — selected by `platform.ai/owner=<replier-sub>`, not the Agent

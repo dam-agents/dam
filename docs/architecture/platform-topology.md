@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-06-02
+Last verified: 2026-06-12
 
 ## Motivated by
 
@@ -16,11 +16,13 @@ Last verified: 2026-06-02
 - [ADR-033 — Envoy-based credential gateway](../adrs/033-envoy-credential-gateway.md) — Envoy is the credential gateway; mounts owner-labelled K8s Secrets and injects credentials on the wire
 - [ADR-038 — Paired agent and gateway pods](../adrs/038-paired-gateway-pod.md) — agent and gateway run in two paired pods per agent
 - [ADR-041 — Istio ambient mesh](../adrs/041-istio-ambient-mesh.md) — SPIFFE identity for every internal hop; replaces the pair-key NetworkPolicy and the trusted `x-platform-instance` header
-- [ADR-046 — Eliminate Instance, collapse into Agent](../adrs/046-eliminate-instance.md) — a single Agent ConfigMap carries both definition and runtime state; the `agent-instance` type is gone
+- [ADR-046 — Eliminate Instance, collapse into Agent](../adrs/046-eliminate-instance.md) — a single Agent resource carries both definition and runtime state; the separate instance type is gone
+- [ADR-058 — CRDs over ConfigMaps](../adrs/058-crds-over-configmaps.md) — Agent and Fork are CRDs with a status subresource, validated at admission; the `desiredState` latch is eliminated
+- [ADR-059 — Agent readiness is controller-computed status](../adrs/059-agent-readiness-status.md) — the controller publishes agent ∧ gateway readiness on the Agent status; the api-server routes on it and never touches pods
 
 ## Overview
 
-Platform runs as four long-lived subsystems on Kubernetes: a Go **controller** that reconciles ConfigMap-declared resources, a TypeScript **api-server** that brokers user requests and relays agent traffic, per-agent paired **agent-runtime** + **gateway** pods that host the agent process and its egress proxy, and a React **ui** served by the api-server. The controller and api-server never talk to each other directly — they coordinate through the K8s API, using a `spec.yaml` / `status.yaml` split on each ConfigMap so that writes never contend.
+Platform runs as four long-lived subsystems on Kubernetes: a Go **controller** that reconciles the Agent and Fork custom resources, a TypeScript **api-server** that brokers user requests and relays agent traffic, per-agent paired **agent-runtime** + **gateway** pods that host the agent process and its egress proxy, and a React **ui** served by the api-server. The controller and api-server never talk to each other directly — they coordinate through the K8s API, using the `spec` / `status` subresource split on each custom resource so that writes never contend.
 
 ## Diagram
 
@@ -51,7 +53,7 @@ flowchart LR
 
 ### controller
 
-A stateless Go reconciler built on client-go. It watches ConfigMaps labelled `platform.ai/type` (template, agent, schedule, fork), reconciles the StatefulSet, Service, NetworkPolicy, and per-agent Secret for each agent, runs the schedule loop, and delivers trigger files to agent pods via `exec` (see [ADR-008](../adrs/008-trigger-files.md)). The controller writes only `status.yaml` on owned ConfigMaps; it never writes `spec.yaml`. See [`packages/controller/`](../../packages/controller/).
+A stateless Go reconciler built on client-go. It watches the `Agent` and `Fork` custom resources (`agent-platform.ai/v1`) plus agent-labelled pods, reconciles the StatefulSet, Service, NetworkPolicy, and per-agent Secret for each agent, computes agent readiness from the pod pair onto the Agent status ([ADR-059](../adrs/059-agent-readiness-status.md)), and hibernates idle agents by scaling the pair to zero. The schedule loop lives in the api-server, not here (see [agent-lifecycle](agent-lifecycle.md)). The controller writes only the `status` subresource on the resources it owns; it never writes `spec`. See [`packages/controller/`](../../packages/controller/).
 
 ### api-server
 
@@ -111,23 +113,23 @@ ACP frames are JSON-RPC 2.0, one logical message per WebSocket frame.
 
 ## K8s resource model
 
-Platform models all of its domain state as ConfigMaps labelled `platform.ai/type` ([ADR-006](../adrs/006-configmaps-over-crds.md)). Each ConfigMap carries two keys:
+The controller-reconciled domain resources are CRDs under the `agent-platform.ai/v1` API group, each with a status subresource ([ADR-058](../adrs/058-crds-over-configmaps.md)):
 
-- `spec.yaml` — user intent. Owned exclusively by the api-server.
-- `status.yaml` — observed state and scheduler bookkeeping. Owned exclusively by the controller.
+- `spec` — user intent. Owned exclusively by the api-server; validated by the K8s API server at admission.
+- `status` — observed state. Owned exclusively by the controller, written through the status subresource. Conditions (`Ready`, `AgentPodReady`, `GatewayPodReady`, `Reconciled`) are the source of truth; the api-server routes on `Ready` alone ([ADR-059](../adrs/059-agent-readiness-status.md)).
 
-| `platform.ai/type` | Purpose |
+| Kind | Purpose |
 |---|---|
-| `agent-template` | Template: image, command, default env, injection rules |
-| `agent` | Agent: image, command, env, skills, secret refs, allowed users, `desiredState`. Carries **both** `spec.yaml` (api-server) and `status.yaml` (controller) per [ADR-046](../adrs/046-eliminate-instance.md) |
-| `agent-schedule` | Schedule: cron or RRULE, quiet hours, task payload, session mode |
-| `agent-fork` | Forked run: parent agent ref + overrides |
+| `Agent` | Agent definition and runtime state: image, mounts, env, secret refs, granted secret and connection IDs. The sole resource per Agent per [ADR-046](../adrs/046-eliminate-instance.md); there is no `desiredState` — running-vs-hibernated is derived from activity annotations |
+| `Fork` | Forked run: parent agent ref + overrides |
 
-For each `agent`, the controller reconciles **two paired StatefulSets** (agent + gateway, both at replicas 0 when hibernated and 1 when running), **two pair-scoped Services** (agent's ACP and the gateway's `<agent>-gateway` proxy DNS), a **per-agent ServiceAccount** (in the agent ns), a **per-agent ext-authz Service** (`<release>-extauthz-<id>`, in the release ns), **three per-agent Istio AuthorizationPolicies** (gateway admission, harness path-prefix at the waypoint, ext-authz Service principal), and a per-agent Envoy bootstrap ConfigMap + leaf-TLS Certificate ([ADR-033](../adrs/033-envoy-credential-gateway.md), [ADR-038](../adrs/038-paired-gateway-pod.md), [ADR-041](../adrs/041-istio-ambient-mesh.md)). ConfigMaps are chosen over CRDs for the domain types so Platform installs without cluster-admin; the controller does need write access to ServiceAccounts and Istio AuthorizationPolicies. See [`deploy/helm/platform/templates/`](../../deploy/helm/platform/templates/) for the install layout.
+Two domain resources are deliberately not CRDs: **Templates** are chart-rendered ConfigMaps loaded by the api-server at boot (read-only, never reconciled), and **Schedules** are Postgres rows owned by the api-server — see [persistence](persistence.md).
+
+For each `Agent`, the controller reconciles **two paired StatefulSets** (agent + gateway, both at replicas 0 when hibernated and 1 when running), **two pair-scoped Services** (agent's ACP and the gateway's `<agent>-gateway` proxy DNS), a **per-agent ServiceAccount** (in the agent ns), a **per-agent ext-authz Service** (`<release>-extauthz-<id>`, in the release ns), **three per-agent Istio AuthorizationPolicies** (gateway admission, harness path-prefix at the waypoint, ext-authz Service principal), and a per-agent Envoy bootstrap ConfigMap + leaf-TLS Certificate ([ADR-033](../adrs/033-envoy-credential-gateway.md), [ADR-038](../adrs/038-paired-gateway-pod.md), [ADR-041](../adrs/041-istio-ambient-mesh.md)). Installing the CRDs requires cluster-admin at install time — [ADR-058](../adrs/058-crds-over-configmaps.md) deliberately gave up the namespace-scoped install that ADR-006's ConfigMap model protected; the controller also needs write access to ServiceAccounts and Istio AuthorizationPolicies. See [`deploy/helm/platform/`](../../deploy/helm/platform/) for the install layout.
 
 ## Invariants
 
-- **Spec/status ownership.** Controller never writes `spec.yaml`; api-server never writes `status.yaml`. Write contention between the two is impossible by convention.
+- **Spec/status ownership.** Controller never writes `spec`; api-server never writes `status`. The status subresource makes the split structural — write contention between the two is impossible.
 - **Relay-only ACP.** All ACP traffic is proxied through the api-server. Agent pods do not accept ACP connections from outside the cluster and the UI never dials pods directly.
 - **Two-port api-server.** The public port is user-authenticated; the harness port is cluster-internal and has no user authentication. They do not share routes.
 - **Credential isolation.** Agent pods never hold real upstream credentials. The paired gateway pod intercepts agent TLS using a per-agent leaf cert and injects the credential header from a K8s Secret mounted only on the gateway — the agent pod has no path to TCP 80/443 except through the paired gateway ([ADR-033](../adrs/033-envoy-credential-gateway.md), [ADR-038](../adrs/038-paired-gateway-pod.md)). See [security-and-credentials](security-and-credentials.md).

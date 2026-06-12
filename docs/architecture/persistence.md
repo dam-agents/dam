@@ -1,13 +1,13 @@
 # Persistence
 
-Last verified: 2026-06-09
+Last verified: 2026-06-12
 
 ## Motivated by
 
 - [ADR-001 — Ephemeral containers + persistent workspace volumes](../adrs/001-ephemeral-containers.md) — agents are stateless processes; their state lives on PVCs that outlive the pod
-- [ADR-006 — ConfigMaps over CRDs](../adrs/006-configmaps-over-crds.md) — domain resources are namespace-scoped ConfigMaps with a single-writer-per-key split
+- [ADR-058 — CRDs over ConfigMaps](../adrs/058-crds-over-configmaps.md) — reconciled domain resources (Agent, Fork) are CRDs with a status subresource; the `desiredState` latch is eliminated (supersedes [ADR-006](../adrs/006-configmaps-over-crds.md))
 - [ADR-055 — Agent-owned session metadata](../adrs/055-agent-owned-session-metadata.md) — sessions are owned by the agent and carried over ACP `_meta.platform`; Postgres holds no session state (supersedes [ADR-017](../adrs/017-db-backed-sessions.md))
-- [ADR-046 — Eliminate Instance, collapse into Agent](../adrs/046-eliminate-instance.md) — the merged `agent` ConfigMap is the sole resource per Agent and carries both `spec.yaml` and `status.yaml`
+- [ADR-046 — Eliminate Instance, collapse into Agent](../adrs/046-eliminate-instance.md) — the merged Agent is the sole resource per Agent and carries both definition and runtime state
 - [ADR-8 — Usage tracking with pseudonymized identifiers](../adrs/048-usage-tracking.md) — append-only activity log + agent mirror table, with HMAC-pseudonymized `sub` values at the write boundary
 - [ADR-061 — Warm PVC pool](../adrs/061-warm-pvc-pool.md) — pre-provisioned, size-keyed spare workspace volumes claimed at create time to skip first-start provisioning latency
 - [ADR-063 — Generated table migrations, hand-written views, squashed baseline](../adrs/063-hand-written-migrations.md) — table changes are generated from the schema, the reporting views are hand-written; the history is squashed to a baseline that existing deployments skip, with a no-database guard asserting every schema change was generated
@@ -18,16 +18,16 @@ Platform persists state on three durable substrates, split cleanly between the p
 
 **Platform-owned** (the agent never touches these):
 
-- **Postgres** — application state the api-server owns end-to-end. Sole writer: api-server; the controller never reads from or writes to Postgres. Holds anything that has to be queryable when no agent pod is running (channel bindings, identity links, allow-listed users) plus any other api-server-only domain resource. Session metadata is *not* here — it is agent-owned ([ADR-055](../adrs/055-agent-owned-session-metadata.md)).
-- **ConfigMaps** — resource state the controller reconciles into running infrastructure (templates, agents, schedules, forks), with a `spec.yaml` / `status.yaml` ownership split. Sole writer of `spec.yaml`: api-server. Sole writer of `status.yaml`: controller.
+- **Postgres** — application state the api-server owns end-to-end. Sole writer: api-server; the controller never reads from or writes to Postgres. Holds anything that has to be queryable when no agent pod is running (channel bindings, identity links, allow-listed users, schedules) plus any other api-server-only domain resource. Session metadata is *not* here — it is agent-owned ([ADR-055](../adrs/055-agent-owned-session-metadata.md)).
+- **Custom resources** — resource state the controller reconciles into running infrastructure (Agents, Forks), as CRDs with a `spec` / `status` ownership split enforced by the status subresource ([ADR-058](../adrs/058-crds-over-configmaps.md)). Sole writer of `spec`: api-server. Sole writer of `status`: controller.
 
 **Agent-owned**:
 
-- **Per-Agent PVCs** — the workspace and `$HOME` mounted into the agent pod. The agent process reads and writes here freely; it has no direct access to Postgres or to the ConfigMaps that describe it. Persists across hibernation; reclaimed when the Agent is deleted.
+- **Per-Agent PVCs** — the workspace and `$HOME` mounted into the agent pod. The agent process reads and writes here freely; it has no direct access to Postgres or to the custom resources that describe it. Persists across hibernation; reclaimed when the Agent is deleted.
 
-**Choosing between Postgres and ConfigMaps.** A new resource belongs on a ConfigMap iff the controller reconciles it. If only the api-server reads and writes it, it belongs in Postgres. The spec/status single-writer split exists to coordinate api-server and controller; without a controller reader, it has no purpose, and putting api-server-only state on a ConfigMap is using the K8s API as a generic key-value store. ADR-006's "K8s is the database" framing predates Postgres landing in the platform — the rule above is the post-[ADR-017](../adrs/017-db-backed-sessions.md) refinement.
+**Choosing between Postgres and the K8s API.** A new resource belongs on a CRD iff the controller reconciles it. If only the api-server reads and writes it, it belongs in Postgres. The spec/status single-writer split exists to coordinate api-server and controller; without a controller reader, it has no purpose, and putting api-server-only state on the K8s API is using it as a generic key-value store. ADR-006's "K8s is the database" framing predates Postgres landing in the platform — the rule above is the post-[ADR-017](../adrs/017-db-backed-sessions.md) refinement, carried forward unchanged by [ADR-058](../adrs/058-crds-over-configmaps.md). This is why schedules live in Postgres and templates never became a CRD.
 
-The controller and api-server never share writes on the same key — write contention is impossible by convention rather than by lock. The agent's only durable surface is the PVC; everything the platform knows *about* the agent is mirrored onto Postgres or a ConfigMap by the api-server or controller, not by the agent itself.
+The controller and api-server never write the same surface — the status subresource makes the split structural, not conventional. The agent's only durable surface is the PVC; everything the platform knows *about* the agent is mirrored onto Postgres or the Agent CR by the api-server or controller, not by the agent itself.
 
 ## Diagram
 
@@ -40,20 +40,20 @@ flowchart LR
   postgres[(Postgres)]
 
   subgraph k8s[K8s API]
-    cm-spec[ConfigMap<br/>spec.yaml]
-    cm-status[ConfigMap<br/>status.yaml]
-    cm-anno[ConfigMap<br/>annotations]
+    cr-spec[Agent / Fork CR<br/>spec]
+    cr-status[Agent / Fork CR<br/>status subresource]
+    cr-anno[Agent / Fork CR<br/>annotations]
   end
 
   pvc[(Per-Agent PVC)]
 
   api-server -->|write| postgres
-  api-server -->|write| cm-spec
-  api-server -->|read| cm-status
-  api-server -->|annotate| cm-anno
+  api-server -->|write| cr-spec
+  api-server -->|read| cr-status
+  api-server -->|annotate| cr-anno
 
-  controller -->|write| cm-status
-  controller -->|read| cm-spec
+  controller -->|write| cr-status
+  controller -->|read| cr-spec
   controller -.kubectl exec into running pod.-> agent-runtime
 
   agent-runtime -->|read/write| pvc
@@ -69,30 +69,32 @@ Postgres carries application state the api-server owns end-to-end — anything t
 - **identity and auth** — links between channel-side identities and platform users, plus the auth allow-list. Owned by [security-and-credentials](security-and-credentials.md).
 - **skills catalog** — connected sources, per-Agent install records, and publish history. Owned by [skills](skills.md).
 - **activity log + agent mirror** — append-only event log (`activity_events`), per-sub role flags (`actor_roles`), and the K8s↔Postgres agent ownership mirror (`agents`). Pseudonymized `actor_sub` and `owner_sub` columns at the write boundary. Owned by [usage-tracking](usage-tracking.md).
+- **schedules** — RRULE, quiet hours, task payload, session mode, and firing bookkeeping (`schedules`). The api-server's schedule loop fires them; the controller plays no part. Owned by [agent-lifecycle](agent-lifecycle.md).
 
-The api-server is the sole writer for all of it. The controller does not touch Postgres — its bookkeeping lives on `status.yaml` of the ConfigMap it owns. The authoritative schema and migrations live in [`packages/db/`](../../packages/db/): migrations run automatically on api-server startup — table/index/enum changes generated from the schema, the reporting views hand-written — with the original history squashed to a baseline that fresh installs run and existing deployments skip, and a no-database guard asserting every schema change was generated ([ADR-063](../adrs/063-hand-written-migrations.md); workflow in [`packages/db/README.md`](../../packages/db/README.md)).
+The api-server is the sole writer for all of it. The controller does not touch Postgres — its bookkeeping lives on the `status` subresource of the custom resources it owns. The authoritative schema and migrations live in [`packages/db/`](../../packages/db/): migrations run automatically on api-server startup — table/index/enum changes generated from the schema, the reporting views hand-written — with the original history squashed to a baseline that fresh installs run and existing deployments skip, and a no-database guard asserting every schema change was generated ([ADR-063](../adrs/063-hand-written-migrations.md); workflow in [`packages/db/README.md`](../../packages/db/README.md)).
 
-### ConfigMaps
+### Custom resources
 
-Resources the controller reconciles are labeled ConfigMaps ([ADR-006](../adrs/006-configmaps-over-crds.md)). Four types after [ADR-046](../adrs/046-eliminate-instance.md) collapsed the former `agent` (template) + `agent-instance` (instance) pair into a single `agent` CM that owns both definition and runtime state, distinguished by `platform.ai/type`:
+Resources the controller reconciles are Kubernetes CRDs under the `agent-platform.ai/v1` API group, each with a status subresource ([ADR-058](../adrs/058-crds-over-configmaps.md)):
 
-| Type | What it declares | `spec.yaml` writer | `status.yaml` writer |
+| Kind | What it declares | `spec` writer | `status` writer |
 |---|---|---|---|
-| `template` | Template: image, command, default env, mount declarations, injection rules (read-only blueprint copied into an Agent at create time) | api-server | (no status — templates are not reconciled) |
-| `agent` | Agent: image / mount declarations, env, secret refs, allowed users, `desiredState`. **Both** `spec.yaml` (api-server) **and** `status.yaml` (controller) live on this single CM — there is no longer a separate "instance" CM where status lives | api-server | controller |
-| `agent-schedule` | Schedule: RRULE, quiet hours, task payload, session mode | api-server | controller |
-| `agent-fork` | Forked run: parent Agent ref + overrides | api-server | controller |
+| `Agent` | Agent definition and runtime state: image, mount declarations, env, secret refs, granted secret and connection IDs. The sole resource per Agent after [ADR-046](../adrs/046-eliminate-instance.md) collapsed the former template/instance pair | api-server | controller |
+| `Fork` | Forked run: parent Agent ref + overrides | api-server | controller |
 
-The single-writer split for the merged `agent` CM is the same `spec.yaml` / `status.yaml` pattern used elsewhere — what changed in ADR-046 is that the runtime state (`status.yaml`, plus the high-frequency annotations) now lives on the **same** ConfigMap as the definition, rather than on a paired `agent-instance` CM. The `inst-` ID prefix retires; the merged Agent uses `agent-` as the sole ID prefix.
+Each CR carries strict single-writer ownership, made structural by the status subresource rather than held by convention:
 
-Each reconciled ConfigMap carries two `data` keys with strict single-writer ownership:
+- **`spec`** — user intent. Written exclusively by the api-server and validated by the K8s API server at admission against the CRD schema; the controller consumes typed objects without re-validating shape. Cross-field and referential rules stay application logic.
+- **`status`** — observed state, written exclusively by the controller through the status subresource. Conditions are the source of truth (`Ready`, `AgentPodReady`, `GatewayPodReady`, `Reconciled`); `Ready` is the agent-and-gateway pod intersection and the api-server's sole routing signal ([ADR-059](../adrs/059-agent-readiness-status.md)).
 
-- **`spec.yaml`** — user intent. Written exclusively by the api-server.
-- **`status.yaml`** — observed state and scheduler bookkeeping (next fire, last fire, error). Written exclusively by the controller.
+There is no stored desired state — ADR-058 eliminated the `desiredState` field. Wake is a one-off activity poke, the controller hibernates on idleness, and running-vs-hibernated is recorded as observed status; see [agent-lifecycle](agent-lifecycle.md).
 
-High-frequency, lightweight metadata (heartbeats, activity timestamps, `granted-secret-ids`, `granted-connection-ids`, `last-activity`) lives on **annotations** rather than `status.yaml` to avoid rewriting the spec/status payload on every update. (Credential `env` no longer has a `secrets-rev` annotation — it rides the runtime channel; see [connections.md](connections.md) and ADR-DRAFT.)
+High-frequency, out-of-band signals live on **annotations** rather than `status`, so they are independently patchable without a spec or status write: the last-activity timestamp and active-session marker that drive hibernation, and the roll trigger the api-server bumps to force a rolling restart of the pair. Connection and secret grants are intent and moved from annotations into `spec`. (Credential `env` rides the runtime channel; see [connections.md](connections.md).)
 
-ConfigMaps were chosen over CRDs so that Platform installs without cluster-admin — the schema maps directly onto a CRD spec if the constraint ever lifts. There is no schema validation at the K8s API layer; both the api-server (on write) and the controller (on read) validate in application code.
+Two domain resources are deliberately not CRDs:
+
+- **Templates** stay ConfigMaps — chart-rendered, read-only blueprints copied into an Agent at create time, never reconciled, loaded by the api-server at boot.
+- **Schedules** live in Postgres — only the api-server reads and writes them (see the Postgres/K8s rule above).
 
 ### Per-Agent PVCs
 
@@ -119,17 +121,17 @@ Claimed-versus-spare is tracked entirely by labels: an unclaimed spare carries a
 
 ## Lifetime
 
-| Event | Postgres | ConfigMap (spec/status) | PVC |
+| Event | Postgres | Agent CR (spec/status) | PVC |
 |---|---|---|---|
 | Pod restart | survives | survives | survives |
 | Hibernate (replicas → 0) | survives | survives | survives |
 | Wake (replicas → 1) | survives | survives | survives |
 | api-server restart | survives | survives | survives |
 | Controller restart | survives | survives | survives |
-| Agent delete | session rows removed by api-server | ConfigMap removed | PVCs removed by controller |
-| Schedule delete | session rows optionally removed (UI checkbox) | ConfigMap removed | n/a |
+| Agent delete | session rows removed by api-server | CR removed | PVCs removed by controller |
+| Schedule delete | schedule row removed; linked sessions optionally removed (UI checkbox) | n/a | n/a |
 
-Schedules are independent ConfigMaps and survive Agent deletion as orphans unless the deletion path explicitly cascades. Sessions linked to a deleted schedule are kept by default; the UI offers a checkbox to remove them with the schedule.
+Schedules are independent Postgres rows and survive Agent deletion as orphans unless the deletion path explicitly cascades. Sessions linked to a deleted schedule are kept by default; the UI offers a checkbox to remove them with the schedule.
 
 Unclaimed warm-pool spares are not tied to any Agent and so are absent from this table — the pool manager reclaims them when it trims a pool below its inventory or when their size pool is removed, never via Agent deletion. Once claimed, a spare follows the PVC column above.
 
