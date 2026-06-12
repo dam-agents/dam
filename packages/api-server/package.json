@@ -11,7 +11,7 @@
     "@bufbuild/protobuf": "^2.12.0",
     "@chat-adapter/state-pg": "^4.26.0",
     "@chat-adapter/telegram": "^4.26.0",
-    "@grpc/grpc-js": "^1.14.3",
+    "@grpc/grpc-js": "^1.14.4",
     "@hono/node-server": "^1.19.14",
     "@kubernetes/client-node": "^1.2.0",
     "@modelcontextprotocol/sdk": "^1.29.0",

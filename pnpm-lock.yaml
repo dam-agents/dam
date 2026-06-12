@@ -157,8 +157,8 @@ importers:
         specifier: ^4.26.0
         version: 4.26.0
       '@grpc/grpc-js':
-        specifier: ^1.14.3
-        version: 1.14.3
+        specifier: ^1.14.4
+        version: 1.14.4
       '@hono/node-server':
         specifier: ^1.19.14
         version: 1.19.14(hono@4.12.23)
@@ -1805,8 +1805,8 @@ packages:
       '@modelcontextprotocol/sdk':
         optional: true
 
-  '@grpc/grpc-js@1.14.3':
-    resolution: {integrity: sha512-Iq8QQQ/7X3Sac15oB6p0FmUg/klxQvXLeileoqrTRGJYLV+/9tubbr9ipz0GKHjmXVsgFPo/+W+2cA8eNcR+XA==}
+  '@grpc/grpc-js@1.14.4':
+    resolution: {integrity: sha512-k9Dj3DV/itK9D06Y8f190Qgop7/Ui+D0njFV3LHMPwPT75DpXLQohE9Wmz0QElrJnzsjB7KPWiKJbOl7IPDArQ==}
     engines: {node: '>=12.10.0'}
 
   '@grpc/proto-loader@0.8.0':
@@ -7849,7 +7849,7 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@grpc/grpc-js@1.14.3':
+  '@grpc/grpc-js@1.14.4':
     dependencies:
       '@grpc/proto-loader': 0.8.0
       '@js-sdsl/ordered-map': 4.4.2

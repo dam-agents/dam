@@ -49,8 +49,6 @@ trustPolicyExclude:
   - "@mariozechner/clipboard-win32-arm64-msvc@0.3.6"
   - "@mariozechner/clipboard-win32-x64-msvc@0.3.6"
 minimumReleaseAgeExclude:
-  # CVE-2026-45736 security fix — released 2026-05-12, inside the 7-day window
-  - "ws@8.20.1"
   # Pinned in the pi-agent workspace mise config and the pi-dynamic-providers
   # extension to keep the extension's types aligned with the runtime fork that
   # actually loads against them (issue #375). The fork ships its core/ai/tui
