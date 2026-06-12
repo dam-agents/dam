@@ -504,7 +504,7 @@ Custom contribution impl names may not collide with built-in names (`file`, `ski
 
 `applyState` delivers the full Contribution snapshot. The driver dispatcher groups contributions by kind and calls each driver's `apply(contributions, ctx)`:
 
-1. Driver compares the desired set with what's on disk (or in its own state file under `$HOME/.platform/<kind>.json`).
+1. Driver compares the desired set with what's on disk (or in its own per-kind state file on the agent PVC).
 2. Adds new contributions, updates changed ones, removes anything no longer in the snapshot.
 3. Returns per-driver outcome.
 
@@ -555,10 +555,10 @@ The UI surfaces the gap at grant time: connecting GitHub to a Claude-Code agent 
 | Redis (BullMQ queues) | Pending BullMQ jobs referencing outbox row ids | Relaxed durability; Postgres outbox + cron sweep is the recovery path. |
 | Postgres `egress_rules` | `egress-allow` and `egress-inject` Contributions joined per grant | Existing table; same as today. Both kinds produce the same allow row; `egress-inject`'s credential rides a separate gateway-side rail. |
 | K8s Secret per Connection | Auth credentials (refresh tokens, api-keys) | Owner-label-scoped; mounted into the paired gateway pod, never into the agent pod. |
-| Per-agent PVC `$HOME/.platform/runtime-env.json` | Reconciled credential-placeholder env | Written by the `env` driver from the channel snapshot; read by the harness/terminal spawn paths. |
+| Per-agent PVC env snapshot file | Reconciled credential-placeholder env | Written by the `env` driver from the channel snapshot ([`packages/agent-runtime/src/modules/runtime-channel/`](../../packages/agent-runtime/src/modules/runtime-channel/)); read by the harness/terminal spawn paths. |
 | `agents` table — new columns | `runtime_protocol_version`, `runtime_capabilities`, `runtime_last_hello_at`, `runtime_agent_version` | Populated on every `hello`. |
 | Per-Agent PVC | Materialized files, MCP config, installed skills | Driver-written via runtime channel. No event-dedupe log — events dedupe server-side. |
-| Per-agent state file under `$HOME/.platform/<kind>.json` | Driver's tracking of what it has previously written | Per-contribution-driver, opt-in. Section-marker file driver doesn't need it; key-targeted does. |
+| Per-driver state file on the agent PVC | Driver's tracking of what it has previously written | Per-contribution-driver, opt-in. Section-marker file driver doesn't need it; key-targeted does. |
 
 ## Invariants
 

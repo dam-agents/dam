@@ -4,7 +4,7 @@ Last verified: 2026-06-12
 
 ## Overview
 
-The api-server logs through a single process-wide **Pino** logger ([`packages/api-server/src/core/logger.ts`](../../packages/api-server/src/core/logger.ts)), configured once at startup from the `info`-default log level. Output is one JSON object per line on stdout; the common levels `error/warn/info/debug` are the only knob — there is no per-feature toggle. Visibility is the operator's level choice, governed the usual way.
+The api-server logs through a single process-wide **Pino** logger ([`packages/api-server/src/core/logger.ts`](../../packages/api-server/src/core/logger.ts)), configured once at startup from the `info`-default log level. Output is one JSON object per line on stdout; the common levels `error/warn/info/debug` are the only knob — there is no per-feature toggle. Visibility is the operator's level choice, governed the usual way. Every line also carries the server's `appVersion` as a base field, stamped once at logger configuration, so a line attributes to a build across restarts and upgrades.
 
 The logger's first and primary consumer is a **security audit trail**: a structured record at every security-relevant decision point, so a forensic investigation can reconstruct *who did what, to what, and whether it was allowed*. The trail is the orthogonal counterpart to [usage-tracking](usage-tracking.md): usage is **pseudonymized analytics** in Postgres (a database leak yields opaque hashes); the audit trail is **real-identity forensics** on stdout (an investigator can attribute directly). The two never share actor handling.
 

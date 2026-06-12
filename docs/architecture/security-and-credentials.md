@@ -312,13 +312,12 @@ differ:
   stays false on both pods; the gateway's SPIFFE cert is independent
   of SA-token mounts.
 - **Agent → paired gateway** is gated at the kernel by the per-pair
-  `<id>-agent-egress` NetworkPolicy. Three egress rules: DNS to
-  `kube-system` on UDP/TCP 53 (upstream Kubernetes), DNS to
-  `openshift-dns` on UDP/TCP 5353 (OpenShift's `dns-default` pods
-  listen on 5353 and NetworkPolicy evaluates pod port after
-  kube-proxy translation), and the paired gateway pod (`pair=<id>,
-  role=gateway`) on the Envoy proxy port. A cluster runs cluster DNS
-  in only one of those namespaces; the unused rule is harmless. HBONE
+  `<id>-agent-egress` NetworkPolicy. One egress rule: the paired
+  gateway pod (`pair=<id>, role=gateway`) on the Envoy proxy port.
+  DNS is not admitted — the agent addresses its gateway by ClusterIP,
+  and name resolution for external hosts happens in the gateway, so
+  anything in the pod that tries to resolve names directly fails
+  closed. HBONE
   15008 is not admitted; the agent has no ztunnel and never speaks
   HBONE. Pair pinning is structural — the policy's pod-selector is
   the gateway pod itself, so a compromised agent has no admitted
