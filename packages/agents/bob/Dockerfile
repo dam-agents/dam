@@ -9,6 +9,7 @@ USER root
 RUN --mount=type=cache,target=/root/.npm \
     curl -fsSL https://bob.ibm.com/download/bobshell.sh \
     | bash -s -- --pm npm \
+    && mise reshim \
     && chown -R 65532:0 /app
 
 COPY bob-acp-shim.mjs /app/bob-acp-shim.mjs

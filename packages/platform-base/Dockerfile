@@ -1,12 +1,35 @@
-FROM registry.access.redhat.com/hi/nodejs:24-builder AS base
+FROM registry.access.redhat.com/hi/core-runtime:latest-builder AS base
 
 USER root
+WORKDIR /app
 ENV PATH="/app/node_modules/.bin:$PATH"
 
-RUN dnf install -y git tar gzip jq openssh-server catatonit && dnf clean all
+RUN dnf install -y git tar gzip openssh-server catatonit && dnf clean all
+
+ARG MISE_VERSION=v2026.6.3
+RUN set -eu; \
+    case "$(uname -m)" in \
+      x86_64) arch=x64 sha=61e7fd4bd3496e1b51c775536718ddb6c76d5a54821741d99cde73e15632a7db ;; \
+      aarch64) arch=arm64 sha=d528684a70fa8f5fbd9c80277fa25d564bffcc645a283e81d37367943f30dd17 ;; \
+      *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/jdx/mise/releases/download/v2026.6.3/mise-v2026.6.3-linux-${arch}.tar.gz" -o /tmp/mise.tar.gz; \
+    echo "$sha /tmp/mise.tar.gz" | sha256sum -c -; \
+    tar -xzf /tmp/mise.tar.gz -C /tmp; \
+    mv /tmp/mise/bin/mise /usr/local/bin/mise; \
+    rm -rf /tmp/mise /tmp/mise.tar.gz
+ENV MISE_DATA_DIR=/usr/local/share/mise \
+    PATH="/usr/local/share/mise/shims:$PATH"
+# /etc/mise/config.toml is mise's canonical system-level config location.
+COPY packages/platform-base/mise.toml /etc/mise/config.toml
+COPY packages/platform-base/mise.lock /etc/mise/mise.lock
+# `gws --version` once as root: the npm package downloads its platform
+# binary on first run, which the non-root agent user couldn't write.
+RUN --mount=type=cache,target=/root/.cache/mise \
+    mise install && gws --version >/dev/null
 
 ARG NPM_VERSION=11.16.0
-RUN npm install -g "npm@${NPM_VERSION}" && rm -rf /usr/lib/node_modules_24/npm
+RUN npm install -g "npm@${NPM_VERSION}" && mise reshim
 
 # gh's release binaries lag upstream: 2.93.0 ships Go 1.26.3 and pins in-toto
 # 0.9.0 (GHSA-pmwq-pjrm-6p5r). Build from source with a patched Go toolchain and
@@ -27,7 +50,7 @@ FROM base AS builder
 
 COPY scripts/install-pnpm.sh /usr/local/bin/install-pnpm
 COPY package.json ./
-RUN install-pnpm
+RUN install-pnpm && mise reshim
 
 COPY pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY packages/dev-config/package.json packages/dev-config/
@@ -122,34 +145,10 @@ RUN chown -R 65532:0 /app
 # allow" prompt until we re-derive the explicit allowlist for the v2 schema.
 RUN mkdir -p /etc/claude-code && echo '{}' > /etc/claude-code/managed-settings.json
 
-# Baseline CLI tools for agents. ripgrep and fd aren't in the base image's
-# dnf repos, so fetch pinned release binaries (musl/static where available).
-ARG TARGETARCH
-ARG RIPGREP_VERSION=15.1.0
-ARG FD_VERSION=10.4.2
-RUN set -eu; \
-    case "${TARGETARCH}" in \
-      amd64) RG_TRIPLE=x86_64-unknown-linux-musl; FD_TRIPLE=x86_64-unknown-linux-musl ;; \
-      arm64) RG_TRIPLE=aarch64-unknown-linux-gnu; FD_TRIPLE=aarch64-unknown-linux-musl ;; \
-      *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
-    esac; \
-    curl -fsSL "https://github.com/BurntSushi/ripgrep/releases/download/${RIPGREP_VERSION}/ripgrep-${RIPGREP_VERSION}-${RG_TRIPLE}.tar.gz" \
-      | tar -xz -C /usr/local/bin --strip-components=1 "ripgrep-${RIPGREP_VERSION}-${RG_TRIPLE}/rg"; \
-    curl -fsSL "https://github.com/sharkdp/fd/releases/download/v${FD_VERSION}/fd-v${FD_VERSION}-${FD_TRIPLE}.tar.gz" \
-      | tar -xz -C /usr/local/bin --strip-components=1 "fd-v${FD_VERSION}-${FD_TRIPLE}/fd"
-
-# uv — Python package/environment manager, copied from the official image.
-COPY --from=ghcr.io/astral-sh/uv:0.11.21 /uv /uvx /usr/local/bin/
-
-# System-level agent instructions documenting the tools above. Each harness
+# System-level agent instructions documenting the available tools. Each harness
 # image wires its own discovery mechanism to this file (symlink or setting)
 # in its derived Dockerfile.
 COPY packages/platform-base/AGENTS.md /etc/AGENTS.md
-
-# Google Workspace CLI (`gws`) — baked into the base so every agent has it,
-# pinned to the latest stable release (no-downgrade policy).
-RUN --mount=type=cache,target=/root/.npm \
-    npm install -g @googleworkspace/cli@0.22.5
 
 RUN sed -i -E '/^[^:]*:[^:]*:65532:/d' /etc/passwd \
     && echo 'agent:x:65532:0:Agent User:/home/agent:/bin/bash' >> /etc/passwd \

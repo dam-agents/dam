@@ -1,0 +1,10 @@
+[settings]
+lockfile = true
+
+[tools]
+node = "24"
+ripgrep = "latest"
+fd = "latest"
+jq = "latest"
+uv = "latest"
+"npm:@googleworkspace/cli" = "latest"
