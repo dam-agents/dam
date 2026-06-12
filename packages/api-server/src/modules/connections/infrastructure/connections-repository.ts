@@ -42,6 +42,8 @@ export interface ConnectionsRepository {
   ): Promise<{ connectionId: string; grantedAt: Date }[]>;
   listConnectionsForAgent(agentId: string): Promise<Connection[]>;
   listAgentsForConnection(connectionId: string): Promise<string[]>;
+  revokeAllForAgent(agentId: string): Promise<void>;
+  listDistinctGrantAgentIds(): Promise<string[]>;
 }
 
 interface InternalConnectionRow {
@@ -185,6 +187,19 @@ export function createConnectionsRepository(db: Db): ConnectionsRepository {
         .where(eq(connectionGrantsTable.connectionId, connectionId))) as {
         agentId: string;
       }[];
+      return rows.map((r) => r.agentId);
+    },
+
+    async revokeAllForAgent(agentId): Promise<void> {
+      await db
+        .delete(connectionGrantsTable)
+        .where(eq(connectionGrantsTable.agentId, agentId));
+    },
+
+    async listDistinctGrantAgentIds(): Promise<string[]> {
+      const rows = (await db
+        .selectDistinct({ agentId: connectionGrantsTable.agentId })
+        .from(connectionGrantsTable)) as { agentId: string }[];
       return rows.map((r) => r.agentId);
     },
   };

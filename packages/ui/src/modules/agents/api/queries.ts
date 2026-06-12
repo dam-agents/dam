@@ -88,6 +88,7 @@ export function useAgentAccess(agentId: string | null) {
       agentId ? { agentId: agentId } : skipToken,
     ),
     retry: false,
+    refetchOnMount: "always",
   });
 }
 
@@ -102,5 +103,6 @@ export function useAgentConnections(agentId: string | null) {
       agentId ? { agentId: agentId } : skipToken,
     ),
     retry: false,
+    refetchOnMount: "always",
   });
 }

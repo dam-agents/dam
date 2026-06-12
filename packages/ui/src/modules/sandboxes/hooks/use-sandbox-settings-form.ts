@@ -131,6 +131,9 @@ export function useSandboxSettingsForm() {
   // agent + its grants resolve. `reset` makes subsequent toggles read as dirty.
   useEffect(() => {
     if (baselinedRef.current) return;
+    // Grants/access refetch on mount; baselining off a stale cache would adopt
+    // a since-deleted connection and render it as an unavailable grant.
+    if (accessQuery.isFetching || connectionsQuery.isFetching) return;
     if (!agent || !accessQuery.data || !connectionsQuery.data) return;
     baselinedRef.current = true;
     reset({
@@ -142,7 +145,15 @@ export function useSandboxSettingsForm() {
       envVars: userInitialEnv,
     });
     setFormReady(true);
-  }, [agent, accessQuery.data, connectionsQuery.data, userInitialEnv, reset]);
+  }, [
+    agent,
+    accessQuery.data,
+    accessQuery.isFetching,
+    connectionsQuery.data,
+    connectionsQuery.isFetching,
+    userInitialEnv,
+    reset,
+  ]);
 
   const assigned = watch("assigned");
   const assignedAppIds = watch("assignedAppIds");

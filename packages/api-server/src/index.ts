@@ -89,6 +89,10 @@ import {
   createPresetSeederAdapter,
   listEgressRuleAgentIds,
 } from "./modules/egress-rules/compose.js";
+import {
+  createConnectionGrantsCleanupHook,
+  listConnectionGrantAgentIds,
+} from "./modules/connections/compose.js";
 import { createAgentArtifactsSweeper } from "./sagas/agent-artifacts-sweeper.js";
 import { createK8sClient as createAgentsK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
@@ -378,11 +382,13 @@ deliverySweeper.start();
 // hook threw, etc.).
 const agentsCleanupK8s = createAgentsK8sClient(api, config.namespace);
 const registrySecretPort = createAgentRegistrySecretPort(agentsCleanupK8s);
+const connectionGrantsCleanupHook = createConnectionGrantsCleanupHook(db);
 
 const agentCleanupHooks = [
   createEgressRulesCleanupHook(db),
   createApprovalsCleanupHook(db),
   (agentId: string) => registrySecretPort.delete(agentId),
+  connectionGrantsCleanupHook,
 ];
 
 // Cross-store orphan reaper. Lists live agent ConfigMaps, finds DB rows
@@ -406,6 +412,11 @@ const agentArtifactsSweeper = createAgentArtifactsSweeper({
       name: "registry-pull-secrets",
       listAgentIds: () => registrySecretPort.listAgentIds(),
       cleanup: agentCleanupHooks[2]!,
+    },
+    {
+      name: "connection-grants",
+      listAgentIds: () => listConnectionGrantAgentIds(db),
+      cleanup: connectionGrantsCleanupHook,
     },
   ],
   intervalMs: 30 * 60_000,

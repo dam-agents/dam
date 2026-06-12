@@ -52,6 +52,17 @@ export function composeConnectionsAtBoot(
   return { templates, oauthEngine, refreshLoop };
 }
 
+export function createConnectionGrantsCleanupHook(
+  db: Db,
+): (agentId: string) => Promise<void> {
+  const repo = createConnectionsRepository(db);
+  return (agentId) => repo.revokeAllForAgent(agentId);
+}
+
+export function listConnectionGrantAgentIds(db: Db): Promise<string[]> {
+  return createConnectionsRepository(db).listDistinctGrantAgentIds();
+}
+
 export function composeConnectionsForOwner(opts: {
   ownerId: string;
   db: Db;
