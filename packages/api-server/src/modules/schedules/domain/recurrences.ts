@@ -99,8 +99,7 @@ function parseHHMM(s: string): number | null {
 export function nextFireAt(spec: ScheduleSpec, from: Date): Date | null {
   if (spec.type === "cron") {
     try {
-      // Legacy cron schedules are UTC by contract (ADR-031); cron-parser
-      // otherwise defaults to the server's local timezone.
+      // Legacy cron schedules are UTC by contract (ADR-031).
       const cron = CronExpressionParser.parse(spec.cron, {
         currentDate: from,
         tz: "UTC",
@@ -110,12 +109,6 @@ export function nextFireAt(spec: ScheduleSpec, from: Date): Date | null {
       return null;
     }
   }
-  // rrule.js occurrences live in the wall-clock frame (see isInQuietHours),
-  // not real time. Iterate there — quiet-hours HH:MM are wall-clock too —
-  // and convert only the surviving occurrence back to a real instant.
-  // dtstart is anchored explicitly: rrule.js's default (real "now" at parse
-  // time) sits in the wrong frame and skips same-day occurrences in zones
-  // behind UTC.
   const wallFrom = toWallClock(from, spec.timezone);
   const rule = new RRule({
     dtstart: wallFrom,
@@ -134,8 +127,7 @@ export function nextFireAt(spec: ScheduleSpec, from: Date): Date | null {
   return null;
 }
 
-// Wall-clock fields of `instant` in `tz`, re-encoded as a Date whose UTC
-// fields carry those values — the frame rrule.js occurrences live in.
+// Wall-clock fields of `instant` in `tz`, carried in the Date's UTC fields.
 function toWallClock(instant: Date, tz: string): Date {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: tz,
@@ -156,9 +148,7 @@ function toWallClock(instant: Date, tz: string): Date {
   );
 }
 
-// Inverse of toWallClock. Second pass re-reads the offset at the guessed
-// instant so DST boundaries resolve; wall times skipped by spring-forward
-// land just past the transition.
+// Inverse of toWallClock; the second offset read resolves DST boundaries.
 function toInstant(wall: Date, tz: string): Date {
   const guess = wall.getTime() - tzOffsetMs(wall, tz);
   return new Date(wall.getTime() - tzOffsetMs(new Date(guess), tz));
