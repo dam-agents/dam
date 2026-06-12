@@ -13,6 +13,10 @@ import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useDeleteConnection, useStartOAuth } from "../api/mutations.js";
 import { useAppConnections, useConnectionTemplates } from "../api/queries.js";
 import { TemplateCreateForm } from "../forms/template-create-form.js";
+import {
+  filterOfferedTemplates,
+  isShowInternalConnectionsEnabled,
+} from "../internal-only.js";
 import { PROVIDER_TEMPLATE_IDS } from "../lib/provider-templates.js";
 import { ConnectionIcon } from "./connection-icon.js";
 
@@ -35,7 +39,11 @@ export function ConnectionTemplatesSection() {
   const visibleTemplates = (templates.data ?? []).filter(
     (t) => !PROVIDER_TEMPLATE_IDS.has(t.id),
   );
-  const byCategory = groupByCategory(visibleTemplates);
+  const offeredTemplates = filterOfferedTemplates(
+    visibleTemplates,
+    isShowInternalConnectionsEnabled(),
+  );
+  const byCategory = groupByCategory(offeredTemplates);
   const iconByTemplateId = useMemo(() => {
     const m = new Map<string, string | undefined>();
     for (const t of templates.data ?? []) m.set(t.id, t.iconSlug);
