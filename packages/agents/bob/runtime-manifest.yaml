@@ -3,6 +3,9 @@
 manifestVersion: 1
 
 drivers:
+  env:
+    impl: env
+
   file:
     impl: file
 

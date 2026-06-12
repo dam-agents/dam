@@ -16,7 +16,7 @@ RUN --mount=type=cache,target=/root/.npm \
 COPY bob-acp-shim.mjs /app/bob-acp-shim.mjs
 COPY harness-chat.sh /usr/local/bin/harness-chat
 COPY harness-terminal.sh /usr/local/bin/harness-terminal
-RUN chmod +x /usr/local/bin/harness-chat /usr/local/bin/harness-terminal &&\
+RUN chmod 755 /usr/local/bin/harness-chat /usr/local/bin/harness-terminal &&\
     mkdir -p /etc/bobshell &&\
     jq --null-input '.context.fileName = ["/etc/AGENTS.md"]' >/etc/bobshell/system-defaults.json &&\
     mkdir -p /app/working-dir/.bob &&\
