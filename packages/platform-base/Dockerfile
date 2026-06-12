@@ -20,6 +20,8 @@ RUN dnf install -y git tar gzip && dnf clean all \
 ENV MISE_DATA_DIR=/usr/local/share/mise \
     PATH="/usr/local/share/mise/shims:$PATH"
 # /etc/mise/config.toml is mise's canonical system-level config location.
+# The lock sibling is always named mise.lock (never config.lock) — verified:
+# a lock pin overrides a "latest" tool spec in this layout.
 COPY packages/platform-base/mise.toml /etc/mise/config.toml
 COPY packages/platform-base/mise.lock /etc/mise/mise.lock
 # `gws --version` once as root: the npm package downloads its platform
