@@ -5,8 +5,8 @@ WORKDIR /app
 ENV PATH="/app/node_modules/.bin:$PATH"
 
 ARG MISE_VERSION=v2026.6.3
-RUN dnf install -y git tar gzip && dnf clean all \
-    && set -eu; \
+RUN dnf install -y git tar gzip && dnf clean all &&\
+set -eu; \
     case "$(uname -m)" in \
       x86_64) arch=x64 sha=61e7fd4bd3496e1b51c775536718ddb6c76d5a54821741d99cde73e15632a7db ;; \
       aarch64) arch=arm64 sha=d528684a70fa8f5fbd9c80277fa25d564bffcc645a283e81d37367943f30dd17 ;; \
@@ -35,8 +35,8 @@ USER root
 RUN dnf install -y --installroot=/sysroot --use-host-config \
       --releasever="$(. /etc/os-release; echo "$VERSION_ID")" \
       --setopt=install_weak_deps=0 \
-      git tar gzip curl openssh-server catatonit \
-    && rm -rf /sysroot/var/lib/dnf /sysroot/var/cache /sysroot/var/log
+      git tar gzip curl openssh-server catatonit &&\
+      rm -rf /sysroot/var/lib/dnf /sysroot/var/cache /sysroot/var/log
 
 # release binaries CVE-tainted (GHSA-pmwq-pjrm-6p5r); build from source
 FROM --platform=$BUILDPLATFORM registry.access.redhat.com/hi/go:1.25-builder AS gh-builder
@@ -77,9 +77,9 @@ RUN pnpm --filter agent-runtime exec tsup
 # command-scoped to satisfy modern deploy's guard. Deploy's manifest has
 # peer-suffixed versions that break npm in derived images: restore authored one.
 RUN npm_config_inject_workspace_packages=true \
-    pnpm --filter agent-runtime deploy --frozen-lockfile --prod --node-linker=hoisted /deploy \
-    && cp packages/agent-runtime/package.json /deploy/package.json \
-    && (cd /deploy && pnpm pkg delete devDependencies)
+    pnpm --filter agent-runtime deploy --frozen-lockfile --prod --node-linker=hoisted /deploy &&\
+    cp packages/agent-runtime/package.json /deploy/package.json &&\
+    (cd /deploy && pnpm pkg delete devDependencies)
 
 FROM registry.access.redhat.com/hi/core-runtime:latest AS runner
 
@@ -93,40 +93,28 @@ COPY --from=sysroot /sysroot/etc/ssh/ /etc/ssh/
 COPY --from=base /usr/local/bin/mise /usr/local/bin/mise
 COPY --from=base /usr/local/share/mise/ /usr/local/share/mise/
 COPY --from=base /etc/mise/ /etc/mise/
-
 COPY --from=gh-builder /gh /usr/local/bin/gh
-
 COPY --from=builder /deploy/package.json ./
 COPY --from=builder /deploy/node_modules ./node_modules
-# dist/ is gitignored so pnpm deploy skips it.
 COPY --from=builder /app/packages/agent-runtime/dist/ ./dist/
-
-# ADR-037: harness shims spawned by agent-runtime
-COPY packages/platform-base/harness-chat.sh /usr/local/bin/harness-chat
-COPY packages/platform-base/harness-terminal.sh /usr/local/bin/harness-terminal
-RUN chmod +x /usr/local/bin/harness-chat /usr/local/bin/harness-terminal
-
-# entrypoint runs update-ca-trust as the agent user; its dirs must be writable
-COPY packages/platform-base/entrypoint.sh /usr/local/bin/agent-entrypoint
-RUN chmod +x /usr/local/bin/agent-entrypoint \
-    && chown -R 65532 /etc/pki/ca-trust/source/anchors /etc/pki/ca-trust/extracted \
-    && chown 65532 /etc/pki/tls/certs
-
+COPY --chmod=755 packages/platform-base/harness-chat.sh /usr/local/bin/harness-chat
+COPY --chmod=755 packages/platform-base/harness-terminal.sh /usr/local/bin/harness-terminal
+COPY --chmod=755 packages/platform-base/entrypoint.sh /usr/local/bin/agent-entrypoint
 COPY packages/platform-base/skills/ /app/working-dir/.agents/skills/
 COPY packages/platform-base/working-dir/.claude.json /app/working-dir/.claude.json
 COPY packages/platform-base/working-dir/.claude/settings.json /app/working-dir/.claude/settings.json
 COPY packages/platform-base/runtime-manifest.yaml /app/runtime-manifest.yaml
 COPY packages/platform-base/AGENTS.md /etc/AGENTS.md
 
-RUN ldconfig \
-    && chown -R 65532:0 /app \
-    && mkdir -p /etc/claude-code && echo '{}' > /etc/claude-code/managed-settings.json \
-    && echo 'sshd:x:74:' >> /etc/group \
-    && echo 'sshd:x:74:74:Privilege-separated SSH:/usr/share/empty.sshd:/usr/sbin/nologin' >> /etc/passwd \
-    && sed -i -E '/^[^:]*:[^:]*:65532:/d' /etc/passwd \
-    && echo 'agent:x:65532:0:Agent User:/home/agent:/bin/bash' >> /etc/passwd \
-    && mkdir -p /home/agent \
-    && chown -R 65532:0 /home/agent
+RUN chown -R 65532 /etc/pki/ca-trust/source/anchors /etc/pki/ca-trust/extracted /etc/pki/tls/certs &&\
+    ldconfig &&\
+    chown -R 65532:0 /app &&\
+    echo 'sshd:x:74:' >> /etc/group &&\
+    echo 'sshd:x:74:74:Privilege-separated SSH:/usr/share/empty.sshd:/usr/sbin/nologin' >> /etc/passwd &&\
+    sed -i -E '/^[^:]*:[^:]*:65532:/d' /etc/passwd &&\
+    echo 'agent:x:65532:0:Agent User:/home/agent:/bin/bash' >> /etc/passwd &&\
+    mkdir -p /home/agent &&\
+    chown -R 65532:0 /home/agent
 
 USER 65532
 

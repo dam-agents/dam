@@ -6,10 +6,10 @@ USER root
 ARG CLAUDE_CODE_VERSION=2.1.173
 ARG CLAUDE_AGENT_ACP_VERSION=0.44.0
 RUN --mount=type=cache,target=/root/.npm \
-    npm install "@agentclientprotocol/claude-agent-acp@${CLAUDE_AGENT_ACP_VERSION}" \
-    && npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
-    && mise reshim \
-    && chown -R 65532:0 /app
+    npm install "@agentclientprotocol/claude-agent-acp@${CLAUDE_AGENT_ACP_VERSION}" &&\
+    npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" &&\
+    mise reshim &&\
+    chown -R 65532:0 /app
 
 COPY model-gateway.mjs /usr/local/lib/model-gateway.mjs
 COPY model-gateway.sh /usr/local/lib/model-gateway.sh
@@ -18,8 +18,11 @@ COPY model-gateway-login.sh /etc/profile.d/model-gateway.sh
 COPY --chmod=0755 harness-chat.sh /usr/local/bin/harness-chat
 COPY --chmod=0755 harness-terminal.sh /usr/local/bin/harness-terminal
 
-RUN ln -s ../.agents/skills /app/working-dir/.claude/skills \
-    && ln -s /etc/AGENTS.md /etc/claude-code/CLAUDE.md
+# empty managed-settings stub: legacy allowedMcpServers shape breaks Claude Code 2.x startup
+RUN ln -s ../.agents/skills /app/working-dir/.claude/skills &&\
+    mkdir -p /etc/claude-code &&\
+    echo '{}' > /etc/claude-code/managed-settings.json &&\
+    ln -s /etc/AGENTS.md /etc/claude-code/CLAUDE.md
 
 COPY --chown=65532:0 workspace/ /app/working-dir/
 

@@ -6,23 +6,21 @@ USER root
 ARG BOBSHELL_VERSION=1.0.4
 ARG BOBSHELL_SHA256=128f8da8bc3a4a1eb07add4abcf05306096615f177a32d02058532c945b5489e
 RUN --mount=type=cache,target=/root/.npm \
-    curl -fsSL \
-      "https://s3.us-south.cloud-object-storage.appdomain.cloud/bob-shell/bobshell-${BOBSHELL_VERSION}.tgz" \
-      -o /tmp/bobshell.tgz \
-    && echo "${BOBSHELL_SHA256} /tmp/bobshell.tgz" | sha256sum -c - \
-    && npm install -g /tmp/bobshell.tgz \
-    && rm /tmp/bobshell.tgz \
-    && mise reshim \
-    && chown -R 65532:0 /app
+    curl -fsSL "https://s3.us-south.cloud-object-storage.appdomain.cloud/bob-shell/bobshell-${BOBSHELL_VERSION}.tgz" -o /tmp/bobshell.tgz &&\
+    echo "${BOBSHELL_SHA256} /tmp/bobshell.tgz" | sha256sum -c - &&\
+    npm install -g /tmp/bobshell.tgz &&\
+    rm /tmp/bobshell.tgz &&\
+    mise reshim &&\
+    chown -R 65532:0 /app
 
 COPY bob-acp-shim.mjs /app/bob-acp-shim.mjs
 COPY harness-chat.sh /usr/local/bin/harness-chat
 COPY harness-terminal.sh /usr/local/bin/harness-terminal
-RUN chmod +x /usr/local/bin/harness-chat /usr/local/bin/harness-terminal \
-    && mkdir -p /etc/bobshell \
-    && jq --null-input '.context.fileName = ["/etc/AGENTS.md"]' >/etc/bobshell/system-defaults.json \
-    && mkdir -p /app/working-dir/.bob \
-    && ln -s ../.agents/skills /app/working-dir/.bob/skills
+RUN chmod +x /usr/local/bin/harness-chat /usr/local/bin/harness-terminal &&\
+    mkdir -p /etc/bobshell &&\
+    jq --null-input '.context.fileName = ["/etc/AGENTS.md"]' >/etc/bobshell/system-defaults.json &&\
+    mkdir -p /app/working-dir/.bob &&\
+    ln -s ../.agents/skills /app/working-dir/.bob/skills
 
 COPY --chown=65532:0 runtime-manifest.yaml /app/runtime-manifest.yaml
 COPY --chown=65532:0 workspace/ /app/working-dir/

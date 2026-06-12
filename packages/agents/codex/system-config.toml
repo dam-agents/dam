@@ -1,12 +1,7 @@
-# Codex system-level config (/etc/codex/config.toml). The agent pod is the
-# sandbox, so approvals and Codex's own sandboxing are disabled.
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
 cli_auth_credentials_store = "file"
-
-# Cross-harness system instructions baked into platform-base.
 developer_instructions = "/etc/AGENTS.md"
 
-# Trust the agent working directory so Codex doesn't prompt on startup.
 [projects."/home/agent/work"]
 trust_level = "trusted"
