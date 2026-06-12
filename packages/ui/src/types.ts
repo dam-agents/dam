@@ -115,6 +115,8 @@ export interface AgentView {
   image: string;
   description?: string;
   env?: EnvVar[];
+  grantedSecretIds: string[];
+  grantedConnectionIds: string[];
   state: AgentState;
   error?: string;
   /** Abnormal pod-termination cause (OOM / crash) while the pod is down; absent on normal lifecycle. */

@@ -22,6 +22,8 @@ function toView(agent: Agent) {
     image: agent.spec.image,
     description: agent.spec.description,
     env: agent.spec.env,
+    grantedSecretIds: agent.spec.grantedSecretIds ?? [],
+    grantedConnectionIds: agent.spec.grantedConnectionIds ?? [],
     state: agent.state,
     error: agent.error,
     podTerminationReason: agent.podTerminationReason,
